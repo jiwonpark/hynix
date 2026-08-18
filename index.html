@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SK hynix Perp Spread Monitor</title>
+  <style>
+    :root {
+      --bg: #f7f6f2;
+      --fg: #172026;
+      --muted: #5d6972;
+      --panel: #fff;
+      --line: #dbe2e7;
+      --red: #dc2626;
+      --black: #111827;
+      --blue: #2563eb;
+      --green: #059669;
+      --purple: #7c3aed;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    }
+    main {
+      width: min(1280px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    h1, h2, p { margin: 0; }
+    h1 {
+      font-size: clamp(30px, 4vw, 52px);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+    .pill {
+      min-width: 112px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 9px 14px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 800;
+      text-align: center;
+    }
+    .pill.open {
+      border-color: color-mix(in srgb, var(--purple) 35%, var(--line));
+      color: var(--purple);
+    }
+    .controls, .stats, .panel, .tablePanel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    select, input, button {
+      height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 0 11px;
+      background: #fbfbf9;
+      color: var(--fg);
+      font: inherit;
+    }
+    button {
+      align-self: end;
+      cursor: pointer;
+      background: var(--fg);
+      color: white;
+      font-weight: 800;
+    }
+    .ghostButton {
+      background: #fbfbf9;
+      color: var(--fg);
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      margin-bottom: 14px;
+    }
+    .stat {
+      padding: 15px 16px;
+      border-right: 1px solid var(--line);
+    }
+    .stat:last-child { border-right: 0; }
+    .stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .stat strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 24px;
+      line-height: 1;
+    }
+    .panel {
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .chartBox {
+      position: relative;
+      cursor: zoom-in;
+      touch-action: none;
+      user-select: none;
+    }
+    #dynamicPlot, #dynamicAllocation {
+      transform-box: fill-box;
+      transform-origin: center center;
+      will-change: transform;
+    }
+    .chartModeSwitch {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      z-index: 2;
+      display: inline-flex;
+      gap: 2px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 3px;
+      background: rgba(255, 255, 255, .92);
+      box-shadow: 0 6px 18px rgba(17, 24, 39, .08);
+    }
+    .chartModeSwitch button {
+      height: 30px;
+      border: 0;
+      border-radius: 5px;
+      padding: 0 11px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .chartModeSwitch button.active {
+      background: var(--fg);
+      color: #fff;
+    }
+    .controlHint {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.25;
+      text-transform: none;
+    }
+    .chartHeader {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+    .legend span:before {
+      width: 24px;
+      height: 4px;
+      border-radius: 99px;
+      background: currentColor;
+      content: "";
+    }
+    .red { color: var(--red); }
+    .black { color: var(--black); }
+    .gray { color: #8b96a1; }
+    .purple { color: var(--purple); }
+    .purple:before {
+      height: 13px !important;
+      background: color-mix(in srgb, var(--purple) 18%, transparent) !important;
+    }
+    svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      overflow: visible;
+    }
+    svg text {
+      fill: var(--muted);
+      font-size: 12px;
+    }
+    .grid { stroke: #e0e6eb; stroke-width: 1; }
+    .xgrid { stroke: #eef2f5; stroke-width: 1; }
+    .dayMark { stroke: #b9c3cc; stroke-width: 1.5; stroke-dasharray: 3 5; }
+    .dayLabel { font-size: 11px; font-weight: 800; fill: #66717b; }
+    .parity { stroke: var(--blue); stroke-width: 2; stroke-dasharray: 7 6; }
+    .position { fill: var(--purple); opacity: .07; }
+    .threshold { fill: none; stroke: #9ca3af; stroke-width: 1.8; stroke-dasharray: 4 5; }
+    .sigmaBandOne { fill: #111827; opacity: .045; }
+    .sigmaBandTwo { fill: #dc2626; opacity: .055; }
+    .sigmaLine { stroke: #8b96a1; stroke-width: 1; stroke-dasharray: 3 5; }
+    .mean { fill: none; stroke: var(--black); stroke-width: 3; stroke-dasharray: 8 5; }
+    .spread { fill: none; stroke: var(--red); stroke-width: 3.4; }
+    .dot { fill: var(--red); stroke: #fff; stroke-width: 1; }
+    .enter { fill: var(--purple); stroke: #fff; stroke-width: 1.5; }
+    .exit { fill: var(--green); stroke: #fff; stroke-width: 1.5; }
+    .sigText { font-size: 12px; font-weight: 900; fill: var(--purple); }
+    .sigText.exitText { fill: var(--green); }
+    .xLabel { font-size: 10px; }
+    .axisTitle { font-weight: 800; }
+    .histBar { fill: color-mix(in srgb, var(--red) 72%, white); }
+    .histZero { stroke: var(--black); stroke-width: 1.5; stroke-dasharray: 4 5; }
+    .inlineAllocation {
+      margin-top: 8px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+    .tablePanel { overflow: hidden; }
+    .tableHead {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .tableHead span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .tableHead.compact {
+      padding: 4px 0 8px;
+      border-bottom: 0;
+    }
+    .tableWrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      white-space: nowrap;
+    }
+    th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .badge {
+      display: inline-flex;
+      min-width: 56px;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: color-mix(in srgb, var(--purple) 12%, white);
+      color: var(--purple);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .badge.exitBadge {
+      background: color-mix(in srgb, var(--green) 12%, white);
+      color: var(--green);
+    }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    @media (max-width: 860px) {
+      main { width: min(100vw - 20px, 1280px); padding-top: 18px; }
+      .top, .chartHeader, .tableHead { flex-direction: column; }
+      .controls, .stats { grid-template-columns: 1fr; }
+      .stat { border-right: 0; border-bottom: 1px solid var(--line); }
+      .stat:last-child { border-bottom: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="top">
+      <div>
+        <p class="eyebrow">Binance Futures relative value monitor</p>
+        <h1>SKHY ADR perp vs Korean-share perp</h1>
+      </div>
+      <div id="position" class="pill">Loading</div>
+    </section>
+
+    <section class="controls" aria-label="Chart controls">
+      <label>Interval
+        <select id="interval">
+          <option value="1m">1m</option>
+          <option value="5m">5m</option>
+          <option value="15m" selected>15m</option>
+          <option value="1h">1h</option>
+          <option value="4h">4h</option>
+          <option value="1d">1d</option>
+        </select>
+      </label>
+      <label>Mean bars
+        <input id="meanBars" type="number" min="8" max="512" step="1" value="64">
+      </label>
+      <label>Start scaling %
+        <input id="minEdgePct" type="number" min="0" max="10" step="0.05" value="0.25">
+        <span class="controlHint">0% size below this edge</span>
+      </label>
+      <label>Full size at %
+        <input id="fullEdgePct" type="number" min="0.05" max="10" step="0.05" value="1.25">
+        <span class="controlHint">100% size at or above this edge</span>
+      </label>
+      <button id="refresh" type="button">Refresh</button>
+    </section>
+
+    <section class="stats">
+      <div class="stat"><span>Latest normalized</span><strong id="latest">--</strong></div>
+      <div class="stat"><span>Premium</span><strong id="premium">--</strong></div>
+      <div class="stat"><span>Mean</span><strong id="mean">--</strong></div>
+      <div class="stat"><span>MA premium</span><strong id="maPremium">--</strong></div>
+      <div class="stat"><span>Target size</span><strong id="targetSize">--</strong></div>
+      <div class="stat"><span>Avg position</span><strong id="avgPosition">--</strong></div>
+      <div class="stat"><span>Bars</span><strong id="bars">--</strong></div>
+    </section>
+
+    <section class="panel">
+      <div class="chartHeader">
+        <div class="legend">
+          <span id="spreadLegend" class="red">Spread</span>
+          <span class="black">Mean</span>
+          <span class="gray">Size bands</span>
+          <span class="purple">Exposure</span>
+        </div>
+      <p id="status">Loading Binance Futures data...</p>
+      </div>
+      <div id="chart" class="chartBox">
+        <div class="chartModeSwitch" aria-label="Chart mode">
+          <button id="modeParity" class="active" type="button">Parity</button>
+          <button id="modeMa" type="button">MA</button>
+        </div>
+        <div id="chartSvg"></div>
+      </div>
+      <div class="inlineAllocation">
+        <div class="tableHead compact">
+          <h2>Continuous Allocation</h2>
+          <span>Every candle: scale long <code>SKHYNIXUSDT</code> / short <code>SKHYUSDT</code></span>
+        </div>
+        <div id="allocationChart"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="chartHeader">
+        <div>
+          <h2>MA-Normalized Premium Histogram</h2>
+          <p>Distribution of <code>(spread / rolling mean - 1) * 100</code> over loaded bars</p>
+        </div>
+        <p id="histStats">--</p>
+      </div>
+      <div id="histogram"></div>
+    </section>
+
+  </main>
+
+  <script>
+    const limits = { "1m": 360, "5m": 360, "15m": 360, "1h": 240, "4h": 180, "1d": 80 };
+    const $ = (id) => document.getElementById(id);
+    const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
+    const std = (values, avg) => {
+      if (values.length < 2) return 0;
+      const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / (values.length - 1);
+      return Math.sqrt(variance);
+    };
+    const fmt = (value, digits = 2) => Number.isFinite(value) ? value.toFixed(digits) : "--";
+    const formatTime = (time, interval) => {
+      const options = interval === "1d"
+        ? { month: "short", day: "numeric", timeZone: "UTC" }
+        : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" };
+      return new Date(time).toLocaleString(undefined, options);
+    };
+    async function fetchKlines(symbol, interval, endTime) {
+      const url = new URL("https://fapi.binance.com/fapi/v1/klines");
+      url.searchParams.set("symbol", symbol);
+      url.searchParams.set("interval", interval);
+      url.searchParams.set("limit", String(limits[interval] || 300));
+      if (endTime) url.searchParams.set("endTime", String(endTime));
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`${symbol} returned ${response.status}`);
+      const data = await response.json();
+      return data.map((item) => ({ time: Number(item[0]), close: Number(item[4]) }));
+    }
+    function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct) {
+      const koreanByTime = new Map(korean.map((item) => [item.time, item]));
+      const aligned = adr.map((item) => {
+        const k = koreanByTime.get(item.time);
+        if (!k) return null;
+        const fairAdr = k.close / 10;
+        return {
+          time: item.time,
+          adr: item.close,
+          korean: k.close,
+          fairAdr,
+          normalized: item.close / fairAdr * 100
+        };
+      }).filter(Boolean);
+      const rows = aligned.map((row, index) => {
+        const sample = aligned.slice(Math.max(0, index - meanBars + 1), index + 1).map((x) => x.normalized);
+        const avg = mean(sample);
+        const deviation = std(sample, avg);
+        const maPremiumPct = (row.normalized / avg - 1) * 100;
+        const denominator = Math.max(0.0001, fullEdgePct - minEdgePct);
+        const targetSize = Math.max(0, Math.min(1, (maPremiumPct - minEdgePct) / denominator));
+        return {
+          ...row,
+          mean: avg,
+          std: deviation,
+          upper: avg * (1 + fullEdgePct / 100),
+          lower: avg * (1 + minEdgePct / 100),
+          maPremiumPct,
+          targetSize,
+          avgEntryNormalized: null,
+          avgEntryMaPremiumPct: null,
+          equity: 100,
+          drawdownPct: 0,
+          z: deviation ? (row.normalized - avg) / deviation : 0,
+        };
+      });
+      let equity = 100;
+      let peak = 100;
+      let avgEntryNormalized = null;
+      let avgEntryMaPremiumPct = null;
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const previousSize = index > 0 ? rows[index - 1].targetSize : 0;
+        if (row.targetSize > previousSize) {
+          const addedSize = row.targetSize - previousSize;
+          const existingSize = previousSize;
+          avgEntryNormalized =
+            avgEntryNormalized === null || existingSize === 0
+              ? row.normalized
+              : (avgEntryNormalized * existingSize + row.normalized * addedSize) / row.targetSize;
+          avgEntryMaPremiumPct =
+            avgEntryMaPremiumPct === null || existingSize === 0
+              ? row.maPremiumPct
+              : (avgEntryMaPremiumPct * existingSize + row.maPremiumPct * addedSize) / row.targetSize;
+        } else if (row.targetSize === 0) {
+          avgEntryNormalized = null;
+          avgEntryMaPremiumPct = null;
+        }
+        if (index > 0) {
+          const previous = rows[index - 1];
+          const longReturn = row.korean / previous.korean - 1;
+          const shortReturn = -(row.adr / previous.adr - 1);
+          const pairReturn = 0.5 * (longReturn + shortReturn);
+          equity *= 1 + previous.targetSize * pairReturn;
+        }
+        peak = Math.max(peak, equity);
+        row.avgEntryNormalized = avgEntryNormalized;
+        row.avgEntryMaPremiumPct = avgEntryMaPremiumPct;
+        row.equity = equity;
+        row.drawdownPct = peak ? (equity / peak - 1) * 100 : 0;
+      }
+      return rows;
+    }
+    function pathFor(rows, accessor, x, y) {
+      return rows.map((row, index) => `${index === 0 ? "M" : "L"}${x(index)},${y(accessor(row))}`).join(" ");
+    }
+    function sampledPoints(rows, maxPoints = 700) {
+      const stride = Math.max(1, Math.ceil(rows.length / maxPoints));
+      const points = [];
+      rows.forEach((row, index) => {
+        if (index % stride === 0 || index === rows.length - 1) points.push({ row, index });
+      });
+      return points;
+    }
+    function pathForPoints(points, accessor, x, y) {
+      return points.map((point, index) => `${index === 0 ? "M" : "L"}${x(point.index)},${y(accessor(point.row))}`).join(" ");
+    }
+    function niceStep(rawStep) {
+      const power = 10 ** Math.floor(Math.log10(rawStep));
+      const scaled = rawStep / power;
+      if (scaled <= 1) return power;
+      if (scaled <= 2) return 2 * power;
+      if (scaled <= 5) return 5 * power;
+      return 10 * power;
+    }
+    function draw(rows, interval) {
+      const chartMode = window.chartMode || "parity";
+      const visibleBars = Math.max(20, Math.min(window.visibleBars || rows.length, rows.length));
+      const maxEnd = rows.length - 1;
+      const rawEnd = window.viewEndFloat === null || window.viewEndFloat === undefined
+        ? window.viewEndIndex
+        : window.viewEndFloat;
+      const endFloat = rawEnd === null || rawEnd === undefined
+        ? maxEnd
+        : Math.max(visibleBars - 1, Math.min(rawEnd, maxEnd));
+      const startFloat = endFloat - visibleBars + 1;
+      const startIndex = Math.max(0, Math.floor(startFloat) - 1);
+      const endIndex = Math.min(maxEnd, Math.ceil(endFloat) + 1);
+      const visibleRows = rows.slice(startIndex, endIndex + 1).map((row, index) => ({ ...row, __index: startIndex + index }));
+      const width = 1180, height = 540;
+      const margin = { top: 38, right: 34, bottom: 86, left: 58 };
+      const plotWidth = width - margin.left - margin.right;
+      const plotHeight = height - margin.top - margin.bottom;
+      const valueOf = (row) => chartMode === "ma" ? row.normalized / row.mean * 100 : row.normalized;
+      const meanOf = (row) => chartMode === "ma" ? 100 : row.mean;
+      const upperOf = (row) => chartMode === "ma" ? row.upper / row.mean * 100 : row.upper;
+      const lowerOf = (row) => chartMode === "ma" ? row.lower / row.mean * 100 : row.lower;
+      const avgOf = (row) => {
+        if (row.avgEntryNormalized === null || row.avgEntryMaPremiumPct === null) return null;
+        return chartMode === "ma" ? 100 + row.avgEntryMaPremiumPct : row.avgEntryNormalized;
+      };
+      const minEdgePct = Number($("minEdgePct").value);
+      const fullEdgePct = Number($("fullEdgePct").value);
+      const values = visibleRows.flatMap((row) => [valueOf(row), meanOf(row), upperOf(row), lowerOf(row), avgOf(row)]).filter((value) => value !== null);
+      if (chartMode === "ma") {
+        values.push(100, 100 + minEdgePct, 100 + fullEdgePct);
+      }
+      if (chartMode !== "ma" && visibleRows.some((row) => row.normalized > 96 && row.normalized < 104)) values.push(100);
+      const rawMin = Math.min(...values);
+      const rawMax = Math.max(...values);
+      const padding = Math.max(0.75, (rawMax - rawMin) * 0.14);
+      const step = niceStep((rawMax - rawMin + padding * 2) / 7);
+      const yMin = Math.floor((rawMin - padding) / step) * step;
+      const yMax = Math.ceil((rawMax + padding) / step) * step;
+      const x = (index) => margin.left + plotWidth * (visibleRows[index].__index - startFloat) / Math.max(1, visibleBars - 1);
+      const y = (value) => margin.top + (yMax - value) / (yMax - yMin) * plotHeight;
+      const yTicks = Array.from({ length: Math.round((yMax - yMin) / step) + 1 }, (_, index) => yMin + index * step);
+      const labelEvery = Math.max(1, Math.ceil(visibleRows.length / 16));
+      const gridEvery = Math.max(1, Math.ceil(visibleRows.length / 90));
+      const showDots = visibleRows.length <= 180;
+      const linePoints = sampledPoints(visibleRows, 720);
+      let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Relative price chart">`;
+      svg += `<defs><clipPath id="plotClip"><rect x="${margin.left}" y="0" width="${plotWidth}" height="${height}"/></clipPath></defs>`;
+      yTicks.forEach((tick) => {
+        svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${y(tick)}" y2="${y(tick)}" class="grid"/>`;
+        svg += `<text x="${margin.left - 10}" y="${y(tick) + 4}" text-anchor="end">${Math.abs(tick) >= 10 ? tick.toFixed(0) : tick.toFixed(1)}</text>`;
+      });
+      svg += `<g id="dynamicPlot" clip-path="url(#plotClip)">`;
+      visibleRows.forEach((row, index) => {
+        if (index % gridEvery === 0) {
+          svg += `<line x1="${x(index)}" x2="${x(index)}" y1="${margin.top}" y2="${height - margin.bottom}" class="xgrid"/>`;
+        }
+      });
+      visibleRows.forEach((row, index) => {
+        const currentDay = new Date(row.time).toISOString().slice(0, 10);
+        const previousDay = index > 0 ? new Date(visibleRows[index - 1].time).toISOString().slice(0, 10) : "";
+        if (index === 0 || currentDay !== previousDay) {
+          svg += `<line x1="${x(index)}" x2="${x(index)}" y1="${margin.top}" y2="${height - margin.bottom}" class="dayMark"/>`;
+          svg += `<text x="${x(index) + 5}" y="${margin.top + 14}" class="dayLabel">${currentDay.slice(5)}</text>`;
+        }
+      });
+      if (chartMode === "ma") {
+        const minLevel = 100 + minEdgePct;
+        const fullLevel = 100 + fullEdgePct;
+        svg += `<rect x="${margin.left}" y="${y(fullLevel)}" width="${plotWidth}" height="${Math.max(1, y(minLevel) - y(fullLevel))}" class="sigmaBandTwo"/>`;
+        [100, minLevel, fullLevel].forEach((level) => {
+          svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${y(level)}" y2="${y(level)}" class="sigmaLine"/>`;
+        });
+        svg += `<text x="${width - margin.right}" y="${y(fullLevel) - 6}" text-anchor="end">100% size +${fmt(fullEdgePct, 2)}%</text>`;
+        svg += `<text x="${width - margin.right}" y="${y(minLevel) + 14}" text-anchor="end">start +${fmt(minEdgePct, 2)}%</text>`;
+      }
+      const shadeStride = Math.max(1, Math.ceil(visibleRows.length / 260));
+      for (let index = 0; index < visibleRows.length; index += shadeStride) {
+        const block = visibleRows.slice(index, index + shadeStride);
+        const avgSize = mean(block.map((row) => row.targetSize));
+        const avgEntryValues = block.map(avgOf).filter((value) => value !== null);
+        if (!avgSize || !avgEntryValues.length) continue;
+        const avgEntry = mean(avgEntryValues);
+        const nextIndex = Math.min(visibleRows.length - 1, index + shadeStride);
+        const shadeTop = Math.max(margin.top, Math.min(margin.top + plotHeight, y(avgEntry)));
+        const shadeHeight = Math.max(2, margin.top + plotHeight - shadeTop);
+        svg += `<rect x="${x(index)}" y="${shadeTop}" width="${Math.max(1, x(nextIndex) - x(index))}" height="${shadeHeight}" fill="var(--purple)" opacity="${0.08 + avgSize * 0.18}"/>`;
+      }
+      svg += `<path d="${pathForPoints(linePoints, upperOf, x, y)}" class="threshold"/>`;
+      svg += `<path d="${pathForPoints(linePoints, lowerOf, x, y)}" class="threshold"/>`;
+      svg += `<path d="${pathForPoints(linePoints, meanOf, x, y)}" class="mean"/>`;
+      svg += `<path d="${pathForPoints(linePoints, valueOf, x, y)}" class="spread"/>`;
+      if (showDots) {
+        visibleRows.forEach((row, index) => svg += `<circle cx="${x(index)}" cy="${y(valueOf(row))}" r="3" class="dot"/>`);
+      }
+      visibleRows.forEach((row, index) => {
+        if (index % labelEvery !== 0 && index !== visibleRows.length - 1) return;
+        const cx = x(index), label = formatTime(row.time, interval);
+        svg += `<text x="${cx}" y="${height - 42}" text-anchor="end" transform="rotate(-45 ${cx} ${height - 42})" class="xLabel">${label}</text>`;
+      });
+      const axisTitle = chartMode === "ma" ? "Spread normalized to rolling mean" : "ADR perp richness index";
+      svg += `</g><text x="${margin.left}" y="24" class="axisTitle">${axisTitle}</text></svg>`;
+      $("chartSvg").innerHTML = svg;
+      $("spreadLegend").textContent = chartMode === "ma" ? "Spread / MA" : "Spread";
+    }
+    function drawHistogram(rows) {
+      const premiums = rows
+        .map((row) => (row.normalized / row.mean - 1) * 100)
+        .filter((value) => Number.isFinite(value));
+      if (!premiums.length) {
+        $("histogram").innerHTML = "";
+        $("histStats").textContent = "--";
+        return;
+      }
+      const width = 1180, height = 250;
+      const margin = { top: 24, right: 30, bottom: 54, left: 56 };
+      const plotWidth = width - margin.left - margin.right;
+      const plotHeight = height - margin.top - margin.bottom;
+      const min = Math.min(...premiums);
+      const max = Math.max(...premiums);
+      const absMax = Math.max(Math.abs(min), Math.abs(max), 0.5);
+      const xMin = -absMax * 1.08;
+      const xMax = absMax * 1.08;
+      const binCount = 28;
+      const binWidth = (xMax - xMin) / binCount;
+      const bins = Array.from({ length: binCount }, (_, index) => ({
+        start: xMin + index * binWidth,
+        end: xMin + (index + 1) * binWidth,
+        count: 0
+      }));
+      premiums.forEach((value) => {
+        const index = Math.max(0, Math.min(binCount - 1, Math.floor((value - xMin) / binWidth)));
+        bins[index].count += 1;
+      });
+      const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
+      const x = (value) => margin.left + (value - xMin) / (xMax - xMin) * plotWidth;
+      const y = (count) => margin.top + (maxCount - count) / maxCount * plotHeight;
+      const avg = mean(premiums);
+      const sorted = premiums.slice().sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      const deviation = std(premiums, avg);
+      const tickStep = niceStep((xMax - xMin) / 8);
+      const firstTick = Math.ceil(xMin / tickStep) * tickStep;
+      const xTicks = [];
+      for (let tick = firstTick; tick <= xMax; tick += tickStep) xTicks.push(tick);
+      let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Histogram of moving-average normalized premium">`;
+      xTicks.forEach((tick) => {
+        svg += `<line x1="${x(tick)}" x2="${x(tick)}" y1="${margin.top}" y2="${height - margin.bottom}" class="xgrid"/>`;
+        svg += `<text x="${x(tick)}" y="${height - 28}" text-anchor="middle">${tick.toFixed(Math.abs(tickStep) < 1 ? 1 : 0)}%</text>`;
+      });
+      svg += `<line x1="${x(0)}" x2="${x(0)}" y1="${margin.top}" y2="${height - margin.bottom}" class="histZero"/>`;
+      bins.forEach((bin) => {
+        const barX = x(bin.start) + 1;
+        const barW = Math.max(1, x(bin.end) - x(bin.start) - 2);
+        const barY = y(bin.count);
+        const barH = height - margin.bottom - barY;
+        svg += `<rect x="${barX}" y="${barY}" width="${barW}" height="${barH}" rx="2" class="histBar"/>`;
+      });
+      svg += `<text x="${margin.left}" y="18" class="axisTitle">MA-normalized premium %</text>`;
+      svg += `<text x="${margin.left}" y="${height - 8}">Negative = below MA, positive = above MA</text>`;
+      svg += `</svg>`;
+      $("histogram").innerHTML = svg;
+      $("histStats").textContent = `n=${premiums.length}; mean ${fmt(avg)}%; median ${fmt(median)}%; std ${fmt(deviation)}%`;
+    }
+    function updateStats(rows) {
+      const latest = rows.at(-1);
+      const active = Boolean(latest && latest.targetSize > 0);
+      $("position").textContent = active ? "Position open" : "Flat";
+      $("position").className = active ? "pill open" : "pill";
+      $("latest").textContent = latest ? fmt(latest.normalized) : "--";
+      $("premium").textContent = latest ? `${fmt(latest.normalized - 100)}%` : "--";
+      $("mean").textContent = latest ? fmt(latest.mean) : "--";
+      $("maPremium").textContent = latest ? `${fmt(latest.maPremiumPct)}%` : "--";
+      $("targetSize").textContent = latest ? `${fmt(latest.targetSize * 100, 0)}%` : "--";
+      $("avgPosition").textContent = latest && latest.avgEntryMaPremiumPct !== null ? `${fmt(latest.avgEntryMaPremiumPct)}%` : "--";
+      $("bars").textContent = rows.length;
+    }
+    function drawAllocation(rows, interval) {
+      if (!rows.length) return;
+      const visibleBars = Math.max(20, Math.min(window.visibleBars || rows.length, rows.length));
+      const maxEnd = rows.length - 1;
+      const rawEnd = window.viewEndFloat === null || window.viewEndFloat === undefined
+        ? window.viewEndIndex
+        : window.viewEndFloat;
+      const endFloat = rawEnd === null || rawEnd === undefined
+        ? maxEnd
+        : Math.max(visibleBars - 1, Math.min(rawEnd, maxEnd));
+      const startFloat = endFloat - visibleBars + 1;
+      const startIndex = Math.max(0, Math.floor(startFloat) - 1);
+      const endIndex = Math.min(maxEnd, Math.ceil(endFloat) + 1);
+      const visibleRows = rows.slice(startIndex, endIndex + 1).map((row, index) => ({ ...row, __index: startIndex + index }));
+      const width = 1180, height = 300;
+      const margin = { top: 28, right: 34, bottom: 70, left: 58 };
+      const plotWidth = width - margin.left - margin.right;
+      const plotHeight = height - margin.top - margin.bottom;
+      const equities = visibleRows.map((row) => row.equity);
+      const minEquity = Math.min(...equities);
+      const maxEquity = Math.max(...equities);
+      const pad = Math.max(0.05, (maxEquity - minEquity) * 0.2);
+      const yMin = minEquity - pad;
+      const yMax = maxEquity + pad;
+      const x = (index) => margin.left + plotWidth * (visibleRows[index].__index - startFloat) / Math.max(1, visibleBars - 1);
+      const yEquity = (value) => margin.top + (yMax - value) / Math.max(0.0001, yMax - yMin) * (plotHeight * 0.62);
+      const ySize = (value) => margin.top + plotHeight * 0.72 + (1 - value) * (plotHeight * 0.28);
+      const labelEvery = Math.max(1, Math.ceil(visibleRows.length / 12));
+      const gridEvery = Math.max(1, Math.ceil(visibleRows.length / 80));
+      const linePoints = sampledPoints(visibleRows, 650);
+      let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Position size and paper equity">`;
+      svg += `<defs><clipPath id="allocationClip"><rect x="${margin.left}" y="0" width="${plotWidth}" height="${height}"/></clipPath></defs>`;
+      svg += `<g id="dynamicAllocation" clip-path="url(#allocationClip)">`;
+      visibleRows.forEach((row, index) => {
+        if (index % gridEvery === 0) {
+          svg += `<line x1="${x(index)}" x2="${x(index)}" y1="${margin.top}" y2="${height - margin.bottom}" class="xgrid"/>`;
+        }
+        if (index % labelEvery === 0 || index === visibleRows.length - 1) {
+          svg += `<text x="${x(index)}" y="${height - 28}" text-anchor="end" transform="rotate(-45 ${x(index)} ${height - 28})" class="xLabel">${formatTime(row.time, interval)}</text>`;
+        }
+      });
+      svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${yEquity(100)}" y2="${yEquity(100)}" class="sigmaLine"/>`;
+      svg += `<path d="${pathForPoints(linePoints, (row) => row.equity, x, yEquity)}" class="spread"/>`;
+      svg += `<path d="${pathForPoints(linePoints, (row) => row.targetSize, x, ySize)}" class="mean"/>`;
+      svg += `<text x="${margin.left}" y="18" class="axisTitle">Paper equity and target size</text>`;
+      svg += `<text x="${width - margin.right}" y="${yEquity(100) - 6}" text-anchor="end">equity 100</text>`;
+      svg += `<text x="${width - margin.right}" y="${ySize(1) + 12}" text-anchor="end">100% size</text>`;
+      svg += `<text x="${width - margin.right}" y="${ySize(0) - 6}" text-anchor="end">0% size</text>`;
+      svg += `</g></svg>`;
+      $("allocationChart").innerHTML = svg;
+    }
+    let cachedAdr = [];
+    let cachedKorean = [];
+    let cachedRows = [];
+    let cachedInterval = "15m";
+    let loadingOlder = false;
+    let socket = null;
+    let reconnectTimer = 0;
+    let redrawTimer = 0;
+    let socketVersion = 0;
+
+    function upsertKline(rows, item) {
+      const currentViewEnd = window.viewEndFloat === null || window.viewEndFloat === undefined ? window.viewEndIndex : window.viewEndFloat;
+      const wasPinned = currentViewEnd === null || currentViewEnd === undefined || currentViewEnd >= cachedRows.length - 1;
+      const index = rows.findIndex((row) => row.time === item.time);
+      if (index >= 0) {
+        rows[index] = item;
+      } else {
+        rows.push(item);
+        rows.sort((a, b) => a.time - b.time);
+      }
+      const limit = Math.max((limits[cachedInterval] || 300), window.visibleBars || 0, 600);
+      if (rows.length > limit) rows.splice(0, rows.length - limit);
+      if (wasPinned) {
+        window.viewEndIndex = null;
+        window.viewEndFloat = null;
+      }
+    }
+
+    async function prependOlderBars() {
+      if (loadingOlder || !cachedAdr.length || !cachedKorean.length) return;
+      loadingOlder = true;
+      $("status").textContent = "Loading older bars...";
+      const endTime = Math.min(cachedAdr[0].time, cachedKorean[0].time) - 1;
+      const before = cachedRows.length;
+      try {
+        const [olderAdr, olderKorean] = await Promise.all([
+          fetchKlines("SKHYUSDT", cachedInterval, endTime),
+          fetchKlines("SKHYNIXUSDT", cachedInterval, endTime)
+        ]);
+        const adrByTime = new Map(cachedAdr.map((row) => [row.time, row]));
+        const koreanByTime = new Map(cachedKorean.map((row) => [row.time, row]));
+        olderAdr.concat(cachedAdr).forEach((row) => adrByTime.set(row.time, row));
+        olderKorean.concat(cachedKorean).forEach((row) => koreanByTime.set(row.time, row));
+        cachedAdr = Array.from(adrByTime.values()).sort((a, b) => a.time - b.time);
+        cachedKorean = Array.from(koreanByTime.values()).sort((a, b) => a.time - b.time);
+        rebuildFromCache();
+        const added = Math.max(0, cachedRows.length - before);
+        if (window.viewEndFloat !== null && window.viewEndFloat !== undefined) {
+          window.viewEndFloat += added;
+        }
+        if (window.viewEndIndex !== null && window.viewEndIndex !== undefined) {
+          window.viewEndIndex += added;
+        }
+        renderCached();
+        $("status").textContent = added ? `Prepended ${added} older bars` : "No older aligned bars returned";
+      } catch (error) {
+        $("status").textContent = error.message;
+      } finally {
+        loadingOlder = false;
+      }
+    }
+
+    function rebuildFromCache() {
+      cachedRows = buildRows(
+        cachedAdr,
+        cachedKorean,
+        Number($("meanBars").value),
+        Number($("minEdgePct").value),
+        Number($("fullEdgePct").value)
+      );
+      return cachedRows;
+    }
+
+    function renderCached() {
+      const rows = rebuildFromCache();
+      if (!rows.length) return;
+      draw(rows, cachedInterval);
+      drawHistogram(rows);
+      drawAllocation(rows, cachedInterval);
+      updateStats(rows);
+    }
+
+    function scheduleLiveRender() {
+      window.clearTimeout(redrawTimer);
+      redrawTimer = window.setTimeout(() => {
+        renderCached();
+        const latest = cachedRows.at(-1);
+        if (latest) {
+          $("status").textContent = `WebSocket live: ${formatTime(latest.time, cachedInterval)} UTC`;
+        }
+      }, 250);
+    }
+
+    function connectWebSocket(interval) {
+      socketVersion += 1;
+      const version = socketVersion;
+      window.clearTimeout(reconnectTimer);
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+      }
+      const streams = `skhyusdt@kline_${interval}/skhynixusdt@kline_${interval}`;
+      socket = new WebSocket(`wss://fstream.binance.com/stream?streams=${streams}`);
+      socket.onopen = () => {
+        if (version !== socketVersion) return;
+        $("status").textContent = `WebSocket connected for ${interval} bars`;
+      };
+      socket.onmessage = (event) => {
+        if (version !== socketVersion) return;
+        const message = JSON.parse(event.data);
+        const kline = message.data && message.data.k;
+        if (!kline) return;
+        const item = { time: Number(kline.t), close: Number(kline.c) };
+        if (message.data.s === "SKHYUSDT") upsertKline(cachedAdr, item);
+        if (message.data.s === "SKHYNIXUSDT") upsertKline(cachedKorean, item);
+        scheduleLiveRender();
+      };
+      socket.onerror = () => {
+        if (version !== socketVersion) return;
+        $("status").textContent = "WebSocket error; retrying...";
+      };
+      socket.onclose = () => {
+        if (version !== socketVersion) return;
+        $("status").textContent = "WebSocket disconnected; reconnecting...";
+        reconnectTimer = window.setTimeout(() => connectWebSocket(interval), 2500);
+      };
+    }
+
+    async function refresh() {
+      const interval = $("interval").value;
+      const meanBars = Number($("meanBars").value);
+      const minEdgePct = Number($("minEdgePct").value);
+      const fullEdgePct = Number($("fullEdgePct").value);
+      $("status").textContent = "Loading Binance Futures data...";
+      try {
+        const [adr, korean] = await Promise.all([
+          fetchKlines("SKHYUSDT", interval),
+          fetchKlines("SKHYNIXUSDT", interval)
+        ]);
+        cachedAdr = adr;
+        cachedKorean = korean;
+        const rows = buildRows(cachedAdr, cachedKorean, meanBars, minEdgePct, fullEdgePct);
+        if (!rows.length) throw new Error("No aligned bars returned.");
+        cachedRows = rows;
+        cachedInterval = interval;
+        window.viewEndIndex = null;
+        window.viewEndFloat = null;
+        draw(rows, interval);
+        drawHistogram(rows);
+        drawAllocation(rows, interval);
+        updateStats(rows);
+        const latest = rows.at(-1);
+        window.visibleBars = rows.length;
+        $("status").textContent = `Loaded ${rows.length} bars; opening WebSocket...`;
+        connectWebSocket(interval);
+      } catch (error) {
+        $("status").textContent = error.message;
+      }
+    }
+    let viewRedrawFrame = 0;
+    function scheduleViewRedraw() {
+      if (viewRedrawFrame) return;
+      viewRedrawFrame = window.requestAnimationFrame(() => {
+        viewRedrawFrame = 0;
+        redrawViewOnly();
+      });
+    }
+    function zoomByFactor(factor) {
+      const max = cachedRows.length || 360;
+      const currentEnd = window.viewEndFloat === null || window.viewEndFloat === undefined ? window.viewEndIndex : window.viewEndFloat;
+      const wasPinned = currentEnd === null || currentEnd === undefined || currentEnd >= max - 1;
+      const current = window.visibleBars || max;
+      window.visibleBars = Math.max(20, Math.min(max, Math.round(current * factor)));
+      if (wasPinned) {
+        window.viewEndIndex = null;
+        window.viewEndFloat = null;
+      }
+      scheduleViewRedraw();
+    }
+    function panByBars(deltaBars, options = {}) {
+      if (!cachedRows.length) return;
+      const allowPrepend = options.allowPrepend !== false;
+      const visibleBars = Math.max(20, Math.min(window.visibleBars || cachedRows.length, cachedRows.length));
+      const maxEnd = cachedRows.length - 1;
+      const rawEnd = window.viewEndFloat === null || window.viewEndFloat === undefined ? window.viewEndIndex : window.viewEndFloat;
+      const currentEnd = rawEnd === null || rawEnd === undefined ? maxEnd : rawEnd;
+      const nextEnd = Math.max(visibleBars - 1, Math.min(maxEnd, currentEnd + deltaBars));
+      window.viewEndFloat = nextEnd >= maxEnd ? null : nextEnd;
+      window.viewEndIndex = nextEnd >= maxEnd ? null : Math.round(nextEnd);
+      scheduleViewRedraw();
+      if (allowPrepend && nextEnd <= visibleBars + 4 && deltaBars < 0) prependOlderBars();
+    }
+    function redrawViewOnly() {
+      if (!cachedRows.length) return;
+      draw(cachedRows, cachedInterval);
+      drawAllocation(cachedRows, cachedInterval);
+    }
+    function redrawOnly() {
+      if (!cachedAdr.length || !cachedKorean.length) return;
+      renderCached();
+    }
+    $("refresh").addEventListener("click", refresh);
+    $("interval").addEventListener("change", refresh);
+    $("meanBars").addEventListener("change", redrawOnly);
+    function setChartMode(mode) {
+      window.chartMode = mode;
+      $("modeParity").classList.toggle("active", mode === "parity");
+      $("modeMa").classList.toggle("active", mode === "ma");
+      redrawOnly();
+    }
+    $("modeParity").addEventListener("click", () => setChartMode("parity"));
+    $("modeMa").addEventListener("click", () => setChartMode("ma"));
+    $("minEdgePct").addEventListener("change", redrawOnly);
+    $("fullEdgePct").addEventListener("change", redrawOnly);
+    let queuedPanBars = 0;
+    let queuedZoomFactor = 1;
+    let queuedInputTimer = 0;
+    function flushQueuedInput() {
+      window.clearTimeout(queuedInputTimer);
+      queuedInputTimer = 0;
+      if (Math.abs(queuedPanBars) > 0.01) {
+        panByBars(queuedPanBars);
+        queuedPanBars = 0;
+      }
+      if (Math.abs(queuedZoomFactor - 1) > 0.003) {
+        zoomByFactor(queuedZoomFactor);
+        queuedZoomFactor = 1;
+      }
+    }
+    function queueInput(options) {
+      if (options.panBars) queuedPanBars += options.panBars;
+      if (options.zoomFactor) queuedZoomFactor *= options.zoomFactor;
+      window.clearTimeout(queuedInputTimer);
+      queuedInputTimer = window.setTimeout(flushQueuedInput, options.delay || 90);
+    }
+    $("chart").addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const horizontalIntent =
+        Math.abs(event.deltaX) > 1 &&
+        (Math.abs(event.deltaX) >= Math.abs(event.deltaY) * 0.45 || event.shiftKey);
+      if (horizontalIntent) {
+        const dx = event.shiftKey && Math.abs(event.deltaX) < 1 ? event.deltaY : event.deltaX;
+        const visibleBars = window.visibleBars || cachedRows.length || 120;
+        const pixelsPerBar = Math.max(1.2, $("chart").clientWidth / visibleBars);
+        queueInput({ panBars: (dx * 2.2) / pixelsPerBar, delay: 70 });
+        return;
+      } else {
+        const factor = Math.max(0.45, Math.min(2.2, Math.exp(event.deltaY / 210)));
+        queueInput({ zoomFactor: factor, delay: 70 });
+      }
+    });
+    let touchState = null;
+    let touchFrame = 0;
+    let touchCommitTimer = 0;
+    const touchPanSpeed = 18;
+    const touchZoomSpeed = 4.5;
+    function setPlotPreview(transform) {
+      const plot = document.getElementById("dynamicPlot");
+      const allocation = document.getElementById("dynamicAllocation");
+      if (plot) plot.style.transform = transform;
+      if (allocation) allocation.style.transform = transform;
+    }
+    function clearPlotPreview() {
+      setPlotPreview("");
+    }
+    function commitTouchGesture() {
+      let committed = false;
+      if (touchState.type === "pan") {
+        const visibleBars = window.visibleBars || cachedRows.length || 120;
+        const pixelsPerBar = Math.max(1.1, $("chart").clientWidth / visibleBars);
+        const bars = -(touchState.totalDx * touchPanSpeed) / pixelsPerBar;
+        touchState.startX = touchState.currentX;
+        touchState.totalDx = 0;
+        if (Math.abs(bars) > 0.01) {
+          panByBars(bars);
+          committed = true;
+        }
+      } else if (touchState.type === "pinch") {
+        const ratio = touchState.currentDistance / Math.max(1, touchState.startDistance);
+        const factor = 1 / Math.max(0.28, Math.min(3.6, ratio ** touchZoomSpeed));
+        touchState.startDistance = touchState.currentDistance;
+        if (Number.isFinite(factor) && Math.abs(factor - 1) > 0.003) {
+          zoomByFactor(factor);
+          committed = true;
+        }
+      }
+      if (committed) window.requestAnimationFrame(clearPlotPreview);
+      else clearPlotPreview();
+    }
+    function scheduleTouchCommit(delay = 90) {
+      window.clearTimeout(touchCommitTimer);
+      touchCommitTimer = window.setTimeout(() => {
+        touchCommitTimer = 0;
+        if (touchState) commitTouchGesture();
+      }, delay);
+    }
+    function applyTouchFrame() {
+      touchFrame = 0;
+      if (!touchState) return;
+      if (touchState.type === "pan") {
+        setPlotPreview(`translateX(${touchState.totalDx}px)`);
+      } else if (touchState.type === "pinch") {
+        const ratio = touchState.currentDistance / Math.max(1, touchState.startDistance);
+        setPlotPreview(`scaleX(${Math.max(0.55, Math.min(1.8, ratio))})`);
+      }
+    }
+    function scheduleTouchFrame() {
+      if (touchFrame) return;
+      touchFrame = window.requestAnimationFrame(applyTouchFrame);
+    }
+    const touchDistance = (touches) => {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.hypot(dx, dy);
+    };
+    $("chart").addEventListener("touchstart", (event) => {
+      if (event.target.closest(".chartModeSwitch")) return;
+      if (event.touches.length === 1) {
+        touchState = {
+          type: "pan",
+          startX: event.touches[0].clientX,
+          lastX: event.touches[0].clientX,
+          currentX: event.touches[0].clientX,
+          totalDx: 0,
+          startVisibleBars: window.visibleBars || cachedRows.length || 120
+        };
+      } else if (event.touches.length === 2) {
+        const distance = touchDistance(event.touches);
+        touchState = {
+          type: "pinch",
+          startDistance: distance,
+          currentDistance: distance,
+          startVisibleBars: window.visibleBars || cachedRows.length || 120
+        };
+      }
+    }, { passive: false });
+    $("chart").addEventListener("touchmove", (event) => {
+      if (!touchState || event.target.closest(".chartModeSwitch")) return;
+      event.preventDefault();
+      if (touchState.type === "pan" && event.touches.length === 1) {
+        const currentX = event.touches[0].clientX;
+        touchState.lastX = currentX;
+        touchState.currentX = currentX;
+        touchState.totalDx = currentX - touchState.startX;
+        scheduleTouchFrame();
+        scheduleTouchCommit();
+      } else if (touchState.type === "pinch" && event.touches.length === 2) {
+        const distance = touchDistance(event.touches);
+        touchState.currentDistance = distance;
+        scheduleTouchFrame();
+        scheduleTouchCommit();
+      }
+    }, { passive: false });
+    ["touchend", "touchcancel"].forEach((name) => {
+      $("chart").addEventListener(name, () => {
+        window.clearTimeout(touchCommitTimer);
+        if (touchFrame) {
+          window.cancelAnimationFrame(touchFrame);
+          applyTouchFrame();
+        }
+        if (touchState) commitTouchGesture();
+        touchState = null;
+      });
+    });
+    refresh();
+  </script>
+</body>
+</html>
