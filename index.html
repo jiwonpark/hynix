@@ -506,6 +506,7 @@
       let positionSize = 0;
       let tradingFeesPct = 0;
       let fundingFeesPct = 0;
+      let isTakeProfitActive = false;
       const entrySpeed = Math.max(0.01, Math.min(1, tradeSpeedPct / 100));
       const exitSpeed = Math.max(0.01, Math.min(1, (exitSpeedPct || tradeSpeedPct) / 100));
       const minProfit = Math.max(0, minProfitPct || 0);
@@ -514,14 +515,20 @@
       for (let index = 0; index < rows.length; index += 1) {
         const row = rows[index];
         const previousSize = positionSize;
-        let desired = row.desiredSize;
-        // Take profit check: if current open gain from average entry exceeds minProfit, force desired exit to 0
-        if (positionSize > 0 && avgEntryMaPremiumPct !== null && minProfit > 0) {
+        
+        // Check take-profit trigger: if active position has gained >= minProfit from avg entry
+        if (positionSize > 0.05 && avgEntryMaPremiumPct !== null && minProfit > 0) {
           const currentGain = avgEntryMaPremiumPct - row.maPremiumPct;
           if (currentGain >= minProfit) {
-            desired = 0;
+            isTakeProfitActive = true;
           }
         }
+        // Reset take-profit flag once position is fully flat or spread reset below entry threshold
+        if (positionSize < 0.01 || row.maPremiumPct <= minEdgePct) {
+          isTakeProfitActive = false;
+        }
+
+        let desired = isTakeProfitActive ? 0 : row.desiredSize;
         const sizeGap = desired - previousSize;
         const effectiveSpeed = sizeGap < 0 ? exitSpeed : entrySpeed;
         const tradeSize = Math.abs(sizeGap) < 0.000001 ? 0 : sizeGap * effectiveSpeed;
@@ -546,6 +553,7 @@
           row.targetSize = 0;
           avgEntryNormalized = null;
           avgEntryMaPremiumPct = null;
+          isTakeProfitActive = false;
         }
         if (index > 0) {
           const previous = rows[index - 1];
@@ -1182,16 +1190,20 @@
         let totalFeesPct = 0;
         let exposureSum = 0;
         let avgEntryMa = null;
+        let isTakeProfitActive = false;
         for (let rowIndex = 0; rowIndex < baseRows.length; rowIndex += 1) {
           const row = baseRows[rowIndex];
-          const rawDesiredSize = Math.max(0, Math.min(1, (row.maPremiumPct - params.minEdgePct) / denominator));
-          let desired = (rawDesiredSize ** Math.max(0.1, params.scaleCurve)) * maxSize;
-          if (positionSize > 0 && avgEntryMa !== null && minProfit > 0) {
+          if (positionSize > 0.05 && avgEntryMa !== null && minProfit > 0) {
             const currentGain = avgEntryMa - row.maPremiumPct;
             if (currentGain >= minProfit) {
-              desired = 0;
+              isTakeProfitActive = true;
             }
           }
+          if (positionSize < 0.01 || row.maPremiumPct <= params.minEdgePct) {
+            isTakeProfitActive = false;
+          }
+          const rawDesiredSize = Math.max(0, Math.min(1, (row.maPremiumPct - params.minEdgePct) / denominator));
+          let desired = isTakeProfitActive ? 0 : (rawDesiredSize ** Math.max(0.1, params.scaleCurve)) * maxSize;
           const previousSize = positionSize;
           const sizeGap = desired - previousSize;
           const speed = sizeGap < 0 ? exitSpeed : entrySpeed;
@@ -1205,6 +1217,7 @@
           } else if (positionSize < 0.000001) {
             positionSize = 0;
             avgEntryMa = null;
+            isTakeProfitActive = false;
           }
           const tradingFeePct = Math.abs(actualTraded) * 2 * feeRate * 100;
           let fundingFeePct = 0;
