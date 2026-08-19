@@ -772,7 +772,7 @@
           const time = Math.floor(row.time / 1000);
           const x = window.spreadChart.timeScale().timeToCoordinate(time);
           const avg = activeChartMode === "ma" ? row.avgEntryMaPremiumPct : row.avgEntryNormalized;
-          if (x === null || avg === null || !row.targetSize) return null;
+          if (x === null || avg === null || !row.targetSize || row.targetSize < 0.02) return null;
           const y = window.spreadSeries.value.priceToCoordinate(activeChartMode === "ma" ? 100 + avg : avg);
           if (y === null) return null;
           return { x, y, targetSize: row.targetSize };
@@ -793,7 +793,9 @@
         const rectWidth = Math.max(1, Math.round(rightEdge) - x);
         const top = Math.min(point.y, baseY);
         const bottom = Math.max(point.y, baseY);
-        ctx.fillStyle = `rgba(124, 58, 237, ${0.12 + point.targetSize * 0.45})`;
+        // Alpha is strictly proportional to actual target position size (0 to 100%)
+        const alpha = Math.max(0, Math.min(0.65, point.targetSize * 0.60));
+        ctx.fillStyle = `rgba(124, 58, 237, ${alpha})`;
         ctx.fillRect(x, top, rectWidth, Math.max(1, bottom - top));
       });
     }
