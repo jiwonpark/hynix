@@ -759,6 +759,7 @@
 
       // Compute Forward Projection: Extrapolate dominant wave at least 1 full day (24h) ahead
       let projectionPoints = [];
+      let futureTimePoints = [];
       if (rows.length >= 24) {
         const lastRow = rows.at(-1);
         const dominantLookback = Math.max(16, Math.min(192, meanBars));
@@ -773,7 +774,7 @@
         const recentRows = rows.slice(-dominantLookback);
         const synthValues = recentRows.map(synthOf);
         const meanLevel = mean(recentRows.map(meanOf));
-        const amp = Math.max(0.2, std(synthValues, meanLevel) * 1.3);
+        const amp = Math.max(0.3, std(synthValues, meanLevel) * 1.4);
         const currentDev = synthOf(lastRow) - meanLevel;
         const prevDev = synthOf(rows[rows.length - 2] || lastRow) - meanLevel;
         const velocity = currentDev - prevDev;
@@ -784,9 +785,10 @@
         for (let step = 1; step <= forecastBars; step++) {
           const futureTime = lastTime + step * dt;
           // Damped harmonic mean-reverting projection
-          const decay = Math.exp(-step / (forecastBars * 1.8));
+          const decay = Math.exp(-step / (forecastBars * 2.2));
           const projectedVal = meanLevel + amp * decay * Math.cos(omega * step + phase);
           projectionPoints.push({ time: futureTime, value: projectedVal });
+          futureTimePoints.push({ time: futureTime, value: NaN });
         }
         window.spreadSeries.projectedWave.setData(projectionPoints);
       }
@@ -804,15 +806,14 @@
       requestExposureOverlayDraw();
       const totalBars = rows.length;
       const forecastBars = projectionPoints.length || 96;
-      requestAnimationFrame(() => {
+      setTimeout(() => {
         if (!window.spreadChart) return;
-        const visibleSpan = 140;
-        window.spreadChart.timeScale().setVisibleLogicalRange({
-          from: totalBars - 60,
-          to: totalBars + forecastBars + 10
+        window.spreadChart.timeScale().setVisibleRange({
+          from: Math.floor(rows[Math.max(0, totalBars - 60)].time / 1000),
+          to: projectionPoints[projectionPoints.length - 1].time
         });
         requestExposureOverlayDraw();
-      });
+      }, 50);
       $("spreadLegend").textContent = chartMode === "ma" ? "Spread / MA" : "Spread";
     }
     function requestExposureOverlayDraw() {
