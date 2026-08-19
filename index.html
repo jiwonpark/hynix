@@ -808,9 +808,9 @@
       const forecastBars = projectionPoints.length || 96;
       setTimeout(() => {
         if (!window.spreadChart) return;
-        window.spreadChart.timeScale().setVisibleRange({
-          from: Math.floor(rows[Math.max(0, totalBars - 60)].time / 1000),
-          to: projectionPoints[projectionPoints.length - 1].time
+        window.spreadChart.timeScale().setVisibleLogicalRange({
+          from: totalBars - 60,
+          to: totalBars + forecastBars + 10
         });
         requestExposureOverlayDraw();
       }, 50);
