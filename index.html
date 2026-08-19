@@ -518,7 +518,9 @@
         const row = rows[index];
         const previousSize = positionSize;
         
-        // Take profit based on ACTUAL position price return: Long Korea / Short ADR
+        // Strict Profit-Gated Exit:
+        // When position is open and minProfit > 0, ONLY liquidate if actual position price gain >= minProfit.
+        // Otherwise, hold the position (or allow scaling UP if spread expands further), NEVER sell at a loss.
         if (positionSize > 0.05 && avgEntryAdr && avgEntryKorean && minProfit > 0) {
           const longGain = row.korean / avgEntryKorean - 1;
           const shortGain = -(row.adr / avgEntryAdr - 1);
@@ -527,12 +529,19 @@
             isTakeProfitActive = true;
           }
         }
-        // Reset take-profit flag once position is fully flat or spread resets below entry threshold
-        if (positionSize < 0.01 || row.maPremiumPct <= minEdgePct) {
+        if (positionSize < 0.01) {
           isTakeProfitActive = false;
         }
 
-        let desired = isTakeProfitActive ? 0 : row.desiredSize;
+        let desired;
+        if (isTakeProfitActive) {
+          desired = 0; // Liquidate to 0 at exitSpeed once profit target is hit
+        } else if (positionSize > 0.05 && minProfit > 0) {
+          // While in position, only allow adding (scaling up), NEVER reduce below current size at a loss
+          desired = Math.max(previousSize, row.desiredSize);
+        } else {
+          desired = row.desiredSize;
+        }
         const sizeGap = desired - previousSize;
         const effectiveSpeed = sizeGap < 0 ? exitSpeed : entrySpeed;
         const tradeSize = Math.abs(sizeGap) < 0.000001 ? 0 : sizeGap * effectiveSpeed;
@@ -1218,11 +1227,19 @@
               isTakeProfitActive = true;
             }
           }
-          if (positionSize < 0.01 || row.maPremiumPct <= params.minEdgePct) {
+          if (positionSize < 0.01) {
             isTakeProfitActive = false;
           }
           const rawDesiredSize = Math.max(0, Math.min(1, (row.maPremiumPct - params.minEdgePct) / denominator));
-          let desired = isTakeProfitActive ? 0 : (rawDesiredSize ** Math.max(0.1, params.scaleCurve)) * maxSize;
+          const curveDesired = (rawDesiredSize ** Math.max(0.1, params.scaleCurve)) * maxSize;
+          let desired;
+          if (isTakeProfitActive) {
+            desired = 0;
+          } else if (positionSize > 0.05 && minProfit > 0) {
+            desired = Math.max(previousSize, curveDesired);
+          } else {
+            desired = curveDesired;
+          }
           const previousSize = positionSize;
           const sizeGap = desired - previousSize;
           const speed = sizeGap < 0 ? exitSpeed : entrySpeed;
