@@ -441,7 +441,7 @@
       const options = interval === "1d"
         ? { month: "short", day: "numeric", timeZone: "UTC" }
         : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" };
-      return new Date(time).toLocaleString(undefined, options);
+      return new Date(time).toLocaleString("en-US", options);
     };
     async function fetchKlines(symbol, interval, endTime) {
       const url = new URL("https://fapi.binance.com/fapi/v1/klines");
@@ -618,6 +618,10 @@
         window.spreadChart = LightweightCharts.createChart(host, {
           height: Math.max(360, host.clientHeight || 540),
           layout: { background: { color: background }, textColor: foreground },
+          localization: {
+            locale: "en-US",
+            priceFormatter: (price) => Number(price).toFixed(2)
+          },
           grid: { vertLines: { color: grid }, horzLines: { color: grid } },
           rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.12 } },
           timeScale: {
@@ -643,16 +647,18 @@
           },
           crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
         });
+        const lineFormat = { type: "price", precision: 2, minMove: 0.01 };
         window.spreadSeries = {
-          value: window.spreadChart.addLineSeries({ color: "#dc2626", lineWidth: 2, priceLineVisible: false }),
-          mean: window.spreadChart.addLineSeries({ color: "#111827", lineWidth: 1, priceLineVisible: false }),
-          upper: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false }),
-          lower: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false }),
+          value: window.spreadChart.addLineSeries({ color: "#dc2626", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
+          mean: window.spreadChart.addLineSeries({ color: "#111827", lineWidth: 1, priceLineVisible: false, priceFormat: lineFormat }),
+          upper: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, priceFormat: lineFormat }),
+          lower: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, priceFormat: lineFormat }),
           avgEntry: window.spreadChart.addLineSeries({
             color: "#7c3aed",
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.LargeDashed,
-            priceLineVisible: false
+            priceLineVisible: false,
+            priceFormat: lineFormat
           })
         };
         window.spreadChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
