@@ -391,7 +391,8 @@
       <div class="chartHeader">
         <div class="legend">
           <span id="spreadLegend" class="red">Spread</span>
-          <span class="blue">Synthesized Wave (Filtered Cycle)</span>
+          <span class="blue">Synthesized Wave</span>
+          <span class="cyan" style="color: #06b6d4;">Projected Wave (Forward Path)</span>
           <span class="black">Mean</span>
           <span class="gray">Size bands</span>
           <span class="purple">Exposure / avg entry</span>
@@ -696,6 +697,13 @@
         window.spreadSeries = {
           value: window.spreadChart.addLineSeries({ color: "#dc2626", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
           synthWave: window.spreadChart.addLineSeries({ color: "#2563eb", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
+          projectedWave: window.spreadChart.addLineSeries({
+            color: "#06b6d4",
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            priceLineVisible: false,
+            priceFormat: lineFormat
+          }),
           mean: window.spreadChart.addLineSeries({ color: "#111827", lineWidth: 1, priceLineVisible: false, priceFormat: lineFormat }),
           upper: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, priceFormat: lineFormat }),
           lower: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, priceFormat: lineFormat }),
@@ -742,6 +750,39 @@
       window.exposureBase = exposureBase;
       window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)));
       window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
+
+      // Compute Forward Projection: Extrapolate dominant wave 32 bars into the future
+      if (rows.length >= 32) {
+        const lastRow = rows.at(-1);
+        const dominantLookback = Math.max(16, Math.min(128, meanBars));
+        const dt = rows.length > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
+        const lastTime = Math.floor(lastRow.time / 1000);
+        
+        // Estimate current cycle amplitude and phase from recent wave momentum
+        const recentRows = rows.slice(-dominantLookback);
+        const synthValues = recentRows.map(synthOf);
+        const meanLevel = mean(recentRows.map(meanOf));
+        const amp = std(synthValues, meanLevel) * 1.25;
+        const currentDev = synthOf(lastRow) - meanLevel;
+        const prevDev = synthOf(rows[rows.length - 2] || lastRow) - meanLevel;
+        const velocity = currentDev - prevDev;
+        const phase = Math.atan2(velocity * (dominantLookback / (2 * Math.PI)), currentDev);
+        const omega = (2 * Math.PI) / dominantLookback;
+        
+        const projectionPoints = [
+          { time: lastTime, value: synthOf(lastRow) }
+        ];
+        const forecastBars = Math.min(48, Math.round(dominantLookback * 1.2));
+        for (let step = 1; step <= forecastBars; step++) {
+          const futureTime = lastTime + step * dt;
+          // Damped harmonic mean-reverting projection
+          const decay = Math.exp(-step / (dominantLookback * 1.5));
+          const projectedVal = meanLevel + amp * decay * Math.cos(omega * step + phase);
+          projectionPoints.push({ time: futureTime, value: projectedVal });
+        }
+        window.spreadSeries.projectedWave.setData(projectionPoints);
+      }
+
       window.spreadSeries.mean.setData(rows.map((row) => toPoint(row, meanOf)));
       window.spreadSeries.upper.setData(rows.map((row) => toPoint(row, upperOf)));
       window.spreadSeries.lower.setData(rows.map((row) => toPoint(row, lowerOf)));
