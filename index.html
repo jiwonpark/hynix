@@ -803,24 +803,16 @@
       window.exposureOverlayRows = rows;
       requestExposureOverlayDraw();
       const totalBars = rows.length;
-      const forecastBars = projectionPoints.length;
-      if (!window.spreadChartInitialized) {
-        window.spreadChartInitialized = true;
-        const visibleSpan = 120;
+      const forecastBars = projectionPoints.length || 96;
+      requestAnimationFrame(() => {
+        if (!window.spreadChart) return;
+        const visibleSpan = 140;
         window.spreadChart.timeScale().setVisibleLogicalRange({
-          from: totalBars - (visibleSpan - forecastBars),
+          from: totalBars - 60,
           to: totalBars + forecastBars + 10
         });
         requestExposureOverlayDraw();
-      } else if (wasAtRightEdge && !window.pendingLogicalRangeBeforePrepend) {
-        const currentRange = window.spreadChart.timeScale().getVisibleLogicalRange();
-        const span = currentRange ? (currentRange.to - currentRange.from) : 120;
-        window.spreadChart.timeScale().setVisibleLogicalRange({
-          from: totalBars + forecastBars - span + 10,
-          to: totalBars + forecastBars + 10
-        });
-        requestExposureOverlayDraw();
-      }
+      });
       $("spreadLegend").textContent = chartMode === "ma" ? "Spread / MA" : "Spread";
     }
     function requestExposureOverlayDraw() {
