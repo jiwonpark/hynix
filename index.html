@@ -503,6 +503,8 @@
       let peak = 100;
       let avgEntryNormalized = null;
       let avgEntryMaPremiumPct = null;
+      let avgEntryAdr = null;
+      let avgEntryKorean = null;
       let positionSize = 0;
       let tradingFeesPct = 0;
       let fundingFeesPct = 0;
@@ -516,14 +518,16 @@
         const row = rows[index];
         const previousSize = positionSize;
         
-        // Check take-profit trigger: if active position has gained >= minProfit from avg entry
-        if (positionSize > 0.05 && avgEntryMaPremiumPct !== null && minProfit > 0) {
-          const currentGain = avgEntryMaPremiumPct - row.maPremiumPct;
-          if (currentGain >= minProfit) {
+        // Take profit based on ACTUAL position price return: Long Korea / Short ADR
+        if (positionSize > 0.05 && avgEntryAdr && avgEntryKorean && minProfit > 0) {
+          const longGain = row.korean / avgEntryKorean - 1;
+          const shortGain = -(row.adr / avgEntryAdr - 1);
+          const positionPriceGainPct = 0.5 * (longGain + shortGain) * 100;
+          if (positionPriceGainPct >= minProfit) {
             isTakeProfitActive = true;
           }
         }
-        // Reset take-profit flag once position is fully flat or spread reset below entry threshold
+        // Reset take-profit flag once position is fully flat or spread resets below entry threshold
         if (positionSize < 0.01 || row.maPremiumPct <= minEdgePct) {
           isTakeProfitActive = false;
         }
@@ -548,11 +552,21 @@
             avgEntryMaPremiumPct === null || existingSize === 0
               ? row.maPremiumPct
               : (avgEntryMaPremiumPct * existingSize + row.maPremiumPct * addedSize) / positionSize;
+          avgEntryAdr =
+            avgEntryAdr === null || existingSize === 0
+              ? row.adr
+              : (avgEntryAdr * existingSize + row.adr * addedSize) / positionSize;
+          avgEntryKorean =
+            avgEntryKorean === null || existingSize === 0
+              ? row.korean
+              : (avgEntryKorean * existingSize + row.korean * addedSize) / positionSize;
         } else if (positionSize < 0.000001) {
           positionSize = 0;
           row.targetSize = 0;
           avgEntryNormalized = null;
           avgEntryMaPremiumPct = null;
+          avgEntryAdr = null;
+          avgEntryKorean = null;
           isTakeProfitActive = false;
         }
         if (index > 0) {
@@ -1189,13 +1203,16 @@
         let positionSize = 0;
         let totalFeesPct = 0;
         let exposureSum = 0;
-        let avgEntryMa = null;
+        let avgEntryAdr = null;
+        let avgEntryKorean = null;
         let isTakeProfitActive = false;
         for (let rowIndex = 0; rowIndex < baseRows.length; rowIndex += 1) {
           const row = baseRows[rowIndex];
-          if (positionSize > 0.05 && avgEntryMa !== null && minProfit > 0) {
-            const currentGain = avgEntryMa - row.maPremiumPct;
-            if (currentGain >= minProfit) {
+          if (positionSize > 0.05 && avgEntryAdr && avgEntryKorean && minProfit > 0) {
+            const longGain = row.korean / avgEntryKorean - 1;
+            const shortGain = -(row.adr / avgEntryAdr - 1);
+            const posPriceGainPct = 0.5 * (longGain + shortGain) * 100;
+            if (posPriceGainPct >= minProfit) {
               isTakeProfitActive = true;
             }
           }
@@ -1211,12 +1228,16 @@
           positionSize = Math.max(0, Math.min(maxSize, previousSize + tradeSize));
           const actualTraded = positionSize - previousSize;
           if (actualTraded > 0) {
-            avgEntryMa = avgEntryMa === null || previousSize === 0
-              ? row.maPremiumPct
-              : (avgEntryMa * previousSize + row.maPremiumPct * actualTraded) / positionSize;
+            avgEntryAdr = avgEntryAdr === null || previousSize === 0
+              ? row.adr
+              : (avgEntryAdr * previousSize + row.adr * actualTraded) / positionSize;
+            avgEntryKorean = avgEntryKorean === null || previousSize === 0
+              ? row.korean
+              : (avgEntryKorean * previousSize + row.korean * actualTraded) / positionSize;
           } else if (positionSize < 0.000001) {
             positionSize = 0;
-            avgEntryMa = null;
+            avgEntryAdr = null;
+            avgEntryKorean = null;
             isTakeProfitActive = false;
           }
           const tradingFeePct = Math.abs(actualTraded) * 2 * feeRate * 100;
