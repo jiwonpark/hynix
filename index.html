@@ -71,7 +71,7 @@
     }
     .controls {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: 14px;
       padding: 14px;
       margin-bottom: 14px;
@@ -134,19 +134,26 @@
     .chartBox {
       position: relative;
       cursor: zoom-in;
-      touch-action: none;
       user-select: none;
     }
-    #dynamicPlot, #dynamicAllocation {
-      transform-box: fill-box;
-      transform-origin: center center;
-      will-change: transform;
+    #chartSvg {
+      position: relative;
+      z-index: 1;
+      height: 540px;
+      min-height: 360px;
+    }
+    .exposureOverlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
     }
     .chartModeSwitch {
       position: absolute;
       top: 8px;
       right: 10px;
-      z-index: 2;
+      z-index: 20;
+      pointer-events: auto;
       display: inline-flex;
       gap: 2px;
       border: 1px solid var(--line);
@@ -156,6 +163,7 @@
       box-shadow: 0 6px 18px rgba(17, 24, 39, .08);
     }
     .chartModeSwitch button {
+      pointer-events: auto;
       height: 30px;
       border: 0;
       border-radius: 5px;
@@ -324,17 +332,38 @@
         </select>
       </label>
       <label>Mean bars
-        <input id="meanBars" type="number" min="8" max="512" step="1" value="64">
+        <input id="meanBars" type="number" min="8" max="512" step="1" value="96">
       </label>
       <label>Start scaling %
-        <input id="minEdgePct" type="number" min="0" max="10" step="0.05" value="0.25">
+        <input id="minEdgePct" type="number" min="0" max="10" step="0.05" value="0.75">
         <span class="controlHint">0% size below this edge</span>
       </label>
       <label>Full size at %
-        <input id="fullEdgePct" type="number" min="0.05" max="10" step="0.05" value="1.25">
+        <input id="fullEdgePct" type="number" min="0.05" max="10" step="0.05" value="2.5">
         <span class="controlHint">100% size at or above this edge</span>
       </label>
+      <label>Max size %
+        <input id="maxSizePct" type="number" min="1" max="100" step="1" value="100">
+        <span class="controlHint">cap position size</span>
+      </label>
+      <label>Scale curve
+        <input id="scaleCurve" type="number" min="0.5" max="5" step="0.1" value="3">
+        <span class="controlHint">higher = slower sizing</span>
+      </label>
+      <label>Trade speed %
+        <input id="tradeSpeedPct" type="number" min="1" max="100" step="1" value="25">
+        <span class="controlHint">gap traded each candle</span>
+      </label>
+      <label>Trading fee bps
+        <input id="tradingFeeBps" type="number" min="0" max="50" step="0.1" value="5">
+        <span class="controlHint">per leg, on size change</span>
+      </label>
+      <label>Funding bps/day
+        <input id="fundingBpsDay" type="number" min="-100" max="100" step="0.1" value="3">
+        <span class="controlHint">net cost; negative = credit</span>
+      </label>
       <button id="refresh" type="button">Refresh</button>
+      <button id="optimizeProfit" type="button">Optimize profit</button>
     </section>
 
     <section class="stats">
@@ -342,8 +371,11 @@
       <div class="stat"><span>Premium</span><strong id="premium">--</strong></div>
       <div class="stat"><span>Mean</span><strong id="mean">--</strong></div>
       <div class="stat"><span>MA premium</span><strong id="maPremium">--</strong></div>
-      <div class="stat"><span>Target size</span><strong id="targetSize">--</strong></div>
+      <div class="stat"><span>Position size</span><strong id="targetSize">--</strong></div>
       <div class="stat"><span>Avg position</span><strong id="avgPosition">--</strong></div>
+      <div class="stat"><span>Acc PnL</span><strong id="accPnl">--</strong></div>
+      <div class="stat"><span>Fees drag</span><strong id="feesDrag">--</strong></div>
+      <div class="stat"><span>Best test</span><strong id="bestTest">--</strong></div>
       <div class="stat"><span>Bars</span><strong id="bars">--</strong></div>
     </section>
 
@@ -353,7 +385,7 @@
           <span id="spreadLegend" class="red">Spread</span>
           <span class="black">Mean</span>
           <span class="gray">Size bands</span>
-          <span class="purple">Exposure</span>
+          <span class="purple">Exposure / avg entry</span>
         </div>
       <p id="status">Loading Binance Futures data...</p>
       </div>
@@ -386,6 +418,7 @@
 
   </main>
 
+  <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     const limits = { "1m": 360, "5m": 360, "15m": 360, "1h": 240, "4h": 180, "1d": 80 };
     const $ = (id) => document.getElementById(id);
@@ -413,7 +446,7 @@
       const data = await response.json();
       return data.map((item) => ({ time: Number(item[0]), close: Number(item[4]) }));
     }
-    function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct) {
+    function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, tradingFeeBps, fundingBpsDay) {
       const koreanByTime = new Map(korean.map((item) => [item.time, item]));
       const aligned = adr.map((item) => {
         const k = koreanByTime.get(item.time);
@@ -433,7 +466,9 @@
         const deviation = std(sample, avg);
         const maPremiumPct = (row.normalized / avg - 1) * 100;
         const denominator = Math.max(0.0001, fullEdgePct - minEdgePct);
-        const targetSize = Math.max(0, Math.min(1, (maPremiumPct - minEdgePct) / denominator));
+        const rawDesiredSize = Math.max(0, Math.min(1, (maPremiumPct - minEdgePct) / denominator));
+        const curvedDesiredSize = rawDesiredSize ** Math.max(0.1, scaleCurve);
+        const desiredSize = curvedDesiredSize * Math.max(0, Math.min(1, maxSizePct / 100));
         return {
           ...row,
           mean: avg,
@@ -441,33 +476,55 @@
           upper: avg * (1 + fullEdgePct / 100),
           lower: avg * (1 + minEdgePct / 100),
           maPremiumPct,
-          targetSize,
+          desiredSize,
+          targetSize: 0,
+          tradeSize: 0,
           avgEntryNormalized: null,
           avgEntryMaPremiumPct: null,
           equity: 100,
+          grossEquity: 100,
+          tradingFeesPct: 0,
+          fundingFeesPct: 0,
+          totalFeesPct: 0,
           drawdownPct: 0,
           z: deviation ? (row.normalized - avg) / deviation : 0,
         };
       });
       let equity = 100;
+      let grossEquity = 100;
       let peak = 100;
       let avgEntryNormalized = null;
       let avgEntryMaPremiumPct = null;
+      let positionSize = 0;
+      let tradingFeesPct = 0;
+      let fundingFeesPct = 0;
+      const tradeSpeed = Math.max(0.01, Math.min(1, tradeSpeedPct / 100));
+      const tradingFeeRate = Math.max(0, tradingFeeBps) / 10000;
+      const fundingRateDay = fundingBpsDay / 10000;
       for (let index = 0; index < rows.length; index += 1) {
         const row = rows[index];
-        const previousSize = index > 0 ? rows[index - 1].targetSize : 0;
-        if (row.targetSize > previousSize) {
-          const addedSize = row.targetSize - previousSize;
+        const previousSize = positionSize;
+        const sizeGap = row.desiredSize - previousSize;
+        const tradeSize = Math.abs(sizeGap) < 0.000001 ? 0 : sizeGap * tradeSpeed;
+        positionSize = Math.max(0, Math.min(Math.max(0, maxSizePct / 100), previousSize + tradeSize));
+        row.targetSize = positionSize;
+        row.tradeSize = positionSize - previousSize;
+        const tradingFeePct = Math.abs(row.tradeSize) * 2 * tradingFeeRate * 100;
+        tradingFeesPct += tradingFeePct;
+        if (row.tradeSize > 0) {
+          const addedSize = row.tradeSize;
           const existingSize = previousSize;
           avgEntryNormalized =
             avgEntryNormalized === null || existingSize === 0
               ? row.normalized
-              : (avgEntryNormalized * existingSize + row.normalized * addedSize) / row.targetSize;
+              : (avgEntryNormalized * existingSize + row.normalized * addedSize) / positionSize;
           avgEntryMaPremiumPct =
             avgEntryMaPremiumPct === null || existingSize === 0
               ? row.maPremiumPct
-              : (avgEntryMaPremiumPct * existingSize + row.maPremiumPct * addedSize) / row.targetSize;
-        } else if (row.targetSize === 0) {
+              : (avgEntryMaPremiumPct * existingSize + row.maPremiumPct * addedSize) / positionSize;
+        } else if (positionSize < 0.000001) {
+          positionSize = 0;
+          row.targetSize = 0;
           avgEntryNormalized = null;
           avgEntryMaPremiumPct = null;
         }
@@ -476,12 +533,22 @@
           const longReturn = row.korean / previous.korean - 1;
           const shortReturn = -(row.adr / previous.adr - 1);
           const pairReturn = 0.5 * (longReturn + shortReturn);
-          equity *= 1 + previous.targetSize * pairReturn;
+          const intervalDays = Math.max(0, (row.time - previous.time) / 86400000);
+          const fundingFeePct = previous.targetSize * fundingRateDay * intervalDays * 100;
+          fundingFeesPct += fundingFeePct;
+          grossEquity *= 1 + previous.targetSize * pairReturn;
+          equity *= 1 + previous.targetSize * pairReturn - tradingFeePct / 100 - fundingFeePct / 100;
+        } else {
+          equity *= 1 - tradingFeePct / 100;
         }
         peak = Math.max(peak, equity);
         row.avgEntryNormalized = avgEntryNormalized;
         row.avgEntryMaPremiumPct = avgEntryMaPremiumPct;
         row.equity = equity;
+        row.grossEquity = grossEquity;
+        row.tradingFeesPct = tradingFeesPct;
+        row.fundingFeesPct = fundingFeesPct;
+        row.totalFeesPct = tradingFeesPct + fundingFeesPct;
         row.drawdownPct = peak ? (equity / peak - 1) * 100 : 0;
       }
       return rows;
@@ -510,108 +577,178 @@
     }
     function draw(rows, interval) {
       const chartMode = window.chartMode || "parity";
-      const visibleBars = Math.max(20, Math.min(window.visibleBars || rows.length, rows.length));
-      const maxEnd = rows.length - 1;
-      const rawEnd = window.viewEndFloat === null || window.viewEndFloat === undefined
-        ? window.viewEndIndex
-        : window.viewEndFloat;
-      const endFloat = rawEnd === null || rawEnd === undefined
-        ? maxEnd
-        : Math.max(visibleBars - 1, Math.min(rawEnd, maxEnd));
-      const startFloat = endFloat - visibleBars + 1;
-      const startIndex = Math.max(0, Math.floor(startFloat) - 1);
-      const endIndex = Math.min(maxEnd, Math.ceil(endFloat) + 1);
-      const visibleRows = rows.slice(startIndex, endIndex + 1).map((row, index) => ({ ...row, __index: startIndex + index }));
-      const width = 1180, height = 540;
-      const margin = { top: 38, right: 34, bottom: 86, left: 58 };
-      const plotWidth = width - margin.left - margin.right;
-      const plotHeight = height - margin.top - margin.bottom;
       const valueOf = (row) => chartMode === "ma" ? row.normalized / row.mean * 100 : row.normalized;
       const meanOf = (row) => chartMode === "ma" ? 100 : row.mean;
       const upperOf = (row) => chartMode === "ma" ? row.upper / row.mean * 100 : row.upper;
       const lowerOf = (row) => chartMode === "ma" ? row.lower / row.mean * 100 : row.lower;
-      const avgOf = (row) => {
-        if (row.avgEntryNormalized === null || row.avgEntryMaPremiumPct === null) return null;
+      const avgEntryOf = (row) => {
+        if (!row.targetSize || row.avgEntryNormalized === null || row.avgEntryMaPremiumPct === null) return null;
         return chartMode === "ma" ? 100 + row.avgEntryMaPremiumPct : row.avgEntryNormalized;
       };
       const minEdgePct = Number($("minEdgePct").value);
       const fullEdgePct = Number($("fullEdgePct").value);
-      const values = visibleRows.flatMap((row) => [valueOf(row), meanOf(row), upperOf(row), lowerOf(row), avgOf(row)]).filter((value) => value !== null);
-      if (chartMode === "ma") {
-        values.push(100, 100 + minEdgePct, 100 + fullEdgePct);
+      if (!window.LightweightCharts) {
+        $("chartSvg").textContent = "Chart engine failed to load.";
+        return;
       }
-      if (chartMode !== "ma" && visibleRows.some((row) => row.normalized > 96 && row.normalized < 104)) values.push(100);
-      const rawMin = Math.min(...values);
-      const rawMax = Math.max(...values);
-      const padding = Math.max(0.75, (rawMax - rawMin) * 0.14);
-      const step = niceStep((rawMax - rawMin + padding * 2) / 7);
-      const yMin = Math.floor((rawMin - padding) / step) * step;
-      const yMax = Math.ceil((rawMax + padding) / step) * step;
-      const x = (index) => margin.left + plotWidth * (visibleRows[index].__index - startFloat) / Math.max(1, visibleBars - 1);
-      const y = (value) => margin.top + (yMax - value) / (yMax - yMin) * plotHeight;
-      const yTicks = Array.from({ length: Math.round((yMax - yMin) / step) + 1 }, (_, index) => yMin + index * step);
-      const labelEvery = Math.max(1, Math.ceil(visibleRows.length / 16));
-      const gridEvery = Math.max(1, Math.ceil(visibleRows.length / 90));
-      const showDots = visibleRows.length <= 180;
-      const linePoints = sampledPoints(visibleRows, 720);
-      let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Relative price chart">`;
-      svg += `<defs><clipPath id="plotClip"><rect x="${margin.left}" y="0" width="${plotWidth}" height="${height}"/></clipPath></defs>`;
-      yTicks.forEach((tick) => {
-        svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${y(tick)}" y2="${y(tick)}" class="grid"/>`;
-        svg += `<text x="${margin.left - 10}" y="${y(tick) + 4}" text-anchor="end">${Math.abs(tick) >= 10 ? tick.toFixed(0) : tick.toFixed(1)}</text>`;
-      });
-      svg += `<g id="dynamicPlot" clip-path="url(#plotClip)">`;
-      visibleRows.forEach((row, index) => {
-        if (index % gridEvery === 0) {
-          svg += `<line x1="${x(index)}" x2="${x(index)}" y1="${margin.top}" y2="${height - margin.bottom}" class="xgrid"/>`;
-        }
-      });
-      visibleRows.forEach((row, index) => {
-        const currentDay = new Date(row.time).toISOString().slice(0, 10);
-        const previousDay = index > 0 ? new Date(visibleRows[index - 1].time).toISOString().slice(0, 10) : "";
-        if (index === 0 || currentDay !== previousDay) {
-          svg += `<line x1="${x(index)}" x2="${x(index)}" y1="${margin.top}" y2="${height - margin.bottom}" class="dayMark"/>`;
-          svg += `<text x="${x(index) + 5}" y="${margin.top + 14}" class="dayLabel">${currentDay.slice(5)}</text>`;
-        }
-      });
-      if (chartMode === "ma") {
-        const minLevel = 100 + minEdgePct;
-        const fullLevel = 100 + fullEdgePct;
-        svg += `<rect x="${margin.left}" y="${y(fullLevel)}" width="${plotWidth}" height="${Math.max(1, y(minLevel) - y(fullLevel))}" class="sigmaBandTwo"/>`;
-        [100, minLevel, fullLevel].forEach((level) => {
-          svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${y(level)}" y2="${y(level)}" class="sigmaLine"/>`;
+      const host = $("chartSvg");
+      const background = getComputedStyle(document.documentElement).getPropertyValue("--panel").trim() || "#fff";
+      const foreground = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || "#172026";
+      const grid = getComputedStyle(document.documentElement).getPropertyValue("--line").trim() || "#dbe2e7";
+      if (!window.spreadChart) {
+        window.spreadChart = LightweightCharts.createChart(host, {
+          height: Math.max(360, host.clientHeight || 540),
+          layout: { background: { color: background }, textColor: foreground },
+          grid: { vertLines: { color: grid }, horzLines: { color: grid } },
+          rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.12 } },
+          timeScale: {
+            borderVisible: false,
+            rightOffset: 2,
+            barSpacing: 8,
+            fixLeftEdge: false,
+            fixRightEdge: false,
+            lockVisibleTimeRangeOnResize: true,
+            timeVisible: interval !== "1d",
+            secondsVisible: false
+          },
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: false
+          },
+          handleScale: {
+            axisPressedMouseMove: true,
+            mouseWheel: true,
+            pinch: true
+          },
+          crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
         });
-        svg += `<text x="${width - margin.right}" y="${y(fullLevel) - 6}" text-anchor="end">100% size +${fmt(fullEdgePct, 2)}%</text>`;
-        svg += `<text x="${width - margin.right}" y="${y(minLevel) + 14}" text-anchor="end">start +${fmt(minEdgePct, 2)}%</text>`;
+        window.spreadSeries = {
+          value: window.spreadChart.addLineSeries({ color: "#dc2626", lineWidth: 2, priceLineVisible: false }),
+          mean: window.spreadChart.addLineSeries({ color: "#111827", lineWidth: 1, priceLineVisible: false }),
+          upper: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false }),
+          lower: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false }),
+          avgEntry: window.spreadChart.addLineSeries({
+            color: "#7c3aed",
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.LargeDashed,
+            priceLineVisible: false
+          })
+        };
+        window.spreadChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          requestExposureOverlayDraw();
+          if (!range || loadingOlder || !cachedRows.length) return;
+          if (range.from < 18) {
+            window.pendingLogicalRangeBeforePrepend = range;
+            prependOlderBars();
+          }
+        });
+        if (window.ResizeObserver) {
+          window.spreadResizeObserver = new ResizeObserver(() => {
+            if (window.spreadChart) {
+              window.spreadChart.applyOptions({ width: host.clientWidth, height: Math.max(360, host.clientHeight || 540) });
+              requestExposureOverlayDraw();
+            }
+          });
+          window.spreadResizeObserver.observe(host);
+        }
       }
-      const shadeStride = Math.max(1, Math.ceil(visibleRows.length / 260));
-      for (let index = 0; index < visibleRows.length; index += shadeStride) {
-        const block = visibleRows.slice(index, index + shadeStride);
-        const avgSize = mean(block.map((row) => row.targetSize));
-        const avgEntryValues = block.map(avgOf).filter((value) => value !== null);
-        if (!avgSize || !avgEntryValues.length) continue;
-        const avgEntry = mean(avgEntryValues);
-        const nextIndex = Math.min(visibleRows.length - 1, index + shadeStride);
-        const shadeTop = Math.max(margin.top, Math.min(margin.top + plotHeight, y(avgEntry)));
-        const shadeHeight = Math.max(2, margin.top + plotHeight - shadeTop);
-        svg += `<rect x="${x(index)}" y="${shadeTop}" width="${Math.max(1, x(nextIndex) - x(index))}" height="${shadeHeight}" fill="var(--purple)" opacity="${0.08 + avgSize * 0.18}"/>`;
-      }
-      svg += `<path d="${pathForPoints(linePoints, upperOf, x, y)}" class="threshold"/>`;
-      svg += `<path d="${pathForPoints(linePoints, lowerOf, x, y)}" class="threshold"/>`;
-      svg += `<path d="${pathForPoints(linePoints, meanOf, x, y)}" class="mean"/>`;
-      svg += `<path d="${pathForPoints(linePoints, valueOf, x, y)}" class="spread"/>`;
-      if (showDots) {
-        visibleRows.forEach((row, index) => svg += `<circle cx="${x(index)}" cy="${y(valueOf(row))}" r="3" class="dot"/>`);
-      }
-      visibleRows.forEach((row, index) => {
-        if (index % labelEvery !== 0 && index !== visibleRows.length - 1) return;
-        const cx = x(index), label = formatTime(row.time, interval);
-        svg += `<text x="${cx}" y="${height - 42}" text-anchor="end" transform="rotate(-45 ${cx} ${height - 42})" class="xLabel">${label}</text>`;
+      window.spreadChart.applyOptions({
+        width: host.clientWidth,
+        height: Math.max(360, host.clientHeight || 540),
+        timeScale: { timeVisible: interval !== "1d" }
       });
-      const axisTitle = chartMode === "ma" ? "Spread normalized to rolling mean" : "ADR perp richness index";
-      svg += `</g><text x="${margin.left}" y="24" class="axisTitle">${axisTitle}</text></svg>`;
-      $("chartSvg").innerHTML = svg;
+      const visibleRangeBeforeUpdate = window.spreadChart.timeScale().getVisibleLogicalRange();
+      const wasAtRightEdge = !visibleRangeBeforeUpdate || visibleRangeBeforeUpdate.to >= rows.length - 4;
+      const toPoint = (row, accessor) => ({ time: Math.floor(row.time / 1000), value: accessor(row) });
+      const priceValues = rows
+        .flatMap((row) => [valueOf(row), meanOf(row), upperOf(row), lowerOf(row), avgEntryOf(row)])
+        .filter((value) => value !== null && Number.isFinite(value));
+      const priceMin = Math.min(...priceValues);
+      const priceMax = Math.max(...priceValues);
+      const exposureBase = priceMin - Math.max(0.2, (priceMax - priceMin) * 0.08);
+      window.exposureBase = exposureBase;
+      window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)));
+      window.spreadSeries.mean.setData(rows.map((row) => toPoint(row, meanOf)));
+      window.spreadSeries.upper.setData(rows.map((row) => toPoint(row, upperOf)));
+      window.spreadSeries.lower.setData(rows.map((row) => toPoint(row, lowerOf)));
+      window.spreadSeries.avgEntry.setData(rows
+        .map((row) => {
+          const value = avgEntryOf(row);
+          return value === null ? null : { time: Math.floor(row.time / 1000), value };
+        })
+        .filter(Boolean));
+      window.exposureOverlayRows = rows;
+      requestExposureOverlayDraw();
+      if (!window.spreadChartInitialized) {
+        window.spreadChart.timeScale().fitContent();
+        window.spreadChartInitialized = true;
+        requestExposureOverlayDraw();
+      } else if (wasAtRightEdge && !window.pendingLogicalRangeBeforePrepend) {
+        window.spreadChart.timeScale().scrollToRealTime();
+        requestExposureOverlayDraw();
+      }
       $("spreadLegend").textContent = chartMode === "ma" ? "Spread / MA" : "Spread";
+    }
+    function requestExposureOverlayDraw() {
+      if (window.exposureOverlayFrame) cancelAnimationFrame(window.exposureOverlayFrame);
+      window.exposureOverlayFrame = requestAnimationFrame(drawExposureOverlay);
+    }
+    function drawExposureOverlay() {
+      window.exposureOverlayFrame = null;
+      const host = $("chartSvg");
+      if (!host || !window.spreadChart || !window.spreadSeries?.value || !window.exposureOverlayRows?.length) return;
+      let canvas = window.exposureOverlayCanvas;
+      if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.className = "exposureOverlay";
+        host.appendChild(canvas);
+        window.exposureOverlayCanvas = canvas;
+      }
+      const width = host.clientWidth;
+      const height = Math.max(360, host.clientHeight || 540);
+      const ratio = window.devicePixelRatio || 1;
+      if (canvas.width !== Math.floor(width * ratio) || canvas.height !== Math.floor(height * ratio)) {
+        canvas.width = Math.floor(width * ratio);
+        canvas.height = Math.floor(height * ratio);
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      const rows = window.exposureOverlayRows;
+      const activeChartMode = window.chartMode || "parity";
+      const points = rows
+        .map((row) => {
+          const time = Math.floor(row.time / 1000);
+          const x = window.spreadChart.timeScale().timeToCoordinate(time);
+          const avg = activeChartMode === "ma" ? row.avgEntryMaPremiumPct : row.avgEntryNormalized;
+          if (x === null || avg === null || !row.targetSize) return null;
+          const y = window.spreadSeries.value.priceToCoordinate(activeChartMode === "ma" ? 100 + avg : avg);
+          if (y === null) return null;
+          return { x, y, targetSize: row.targetSize };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.x - b.x);
+      if (!points.length) return;
+      const gaps = points.slice(1).map((point, index) => point.x - points[index].x).filter((gap) => gap > 0 && Number.isFinite(gap));
+      const defaultGap = gaps.length ? gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : Math.max(1, window.spreadChart.timeScale().options?.().barSpacing || 8);
+      const baseY = Math.min(height, Math.max(0, window.spreadSeries.value.priceToCoordinate(window.exposureBase) ?? height));
+      ctx.imageSmoothingEnabled = false;
+      points.forEach((point, index) => {
+        const previous = points[index - 1];
+        const next = points[index + 1];
+        const leftEdge = previous ? (previous.x + point.x) / 2 : point.x - defaultGap / 2;
+        const rightEdge = next ? (point.x + next.x) / 2 : point.x + defaultGap / 2;
+        const x = Math.round(leftEdge);
+        const rectWidth = Math.max(1, Math.round(rightEdge) - x);
+        const top = Math.min(point.y, baseY);
+        const bottom = Math.max(point.y, baseY);
+        ctx.fillStyle = `rgba(124, 58, 237, ${0.12 + point.targetSize * 0.45})`;
+        ctx.fillRect(x, top, rectWidth, Math.max(1, bottom - top));
+      });
     }
     function drawHistogram(rows) {
       const premiums = rows
@@ -683,6 +820,8 @@
       $("maPremium").textContent = latest ? `${fmt(latest.maPremiumPct)}%` : "--";
       $("targetSize").textContent = latest ? `${fmt(latest.targetSize * 100, 0)}%` : "--";
       $("avgPosition").textContent = latest && latest.avgEntryMaPremiumPct !== null ? `${fmt(latest.avgEntryMaPremiumPct)}%` : "--";
+      $("accPnl").textContent = latest ? `${fmt(latest.equity - 100)}%` : "--";
+      $("feesDrag").textContent = latest ? `${fmt(latest.totalFeesPct)}%` : "--";
       $("bars").textContent = rows.length;
     }
     function drawAllocation(rows, interval) {
@@ -715,7 +854,7 @@
       const labelEvery = Math.max(1, Math.ceil(visibleRows.length / 12));
       const gridEvery = Math.max(1, Math.ceil(visibleRows.length / 80));
       const linePoints = sampledPoints(visibleRows, 650);
-      let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Position size and paper equity">`;
+      let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Position size and net paper equity">`;
       svg += `<defs><clipPath id="allocationClip"><rect x="${margin.left}" y="0" width="${plotWidth}" height="${height}"/></clipPath></defs>`;
       svg += `<g id="dynamicAllocation" clip-path="url(#allocationClip)">`;
       visibleRows.forEach((row, index) => {
@@ -729,7 +868,7 @@
       svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${yEquity(100)}" y2="${yEquity(100)}" class="sigmaLine"/>`;
       svg += `<path d="${pathForPoints(linePoints, (row) => row.equity, x, yEquity)}" class="spread"/>`;
       svg += `<path d="${pathForPoints(linePoints, (row) => row.targetSize, x, ySize)}" class="mean"/>`;
-      svg += `<text x="${margin.left}" y="18" class="axisTitle">Paper equity and target size</text>`;
+      svg += `<text x="${margin.left}" y="18" class="axisTitle">Net paper equity and position size</text>`;
       svg += `<text x="${width - margin.right}" y="${yEquity(100) - 6}" text-anchor="end">equity 100</text>`;
       svg += `<text x="${width - margin.right}" y="${ySize(1) + 12}" text-anchor="end">100% size</text>`;
       svg += `<text x="${width - margin.right}" y="${ySize(0) - 6}" text-anchor="end">0% size</text>`;
@@ -790,6 +929,14 @@
           window.viewEndIndex += added;
         }
         renderCached();
+        if (added && window.spreadChart && window.pendingLogicalRangeBeforePrepend) {
+          const range = window.pendingLogicalRangeBeforePrepend;
+          window.spreadChart.timeScale().setVisibleLogicalRange({
+            from: range.from + added,
+            to: range.to + added
+          });
+        }
+        window.pendingLogicalRangeBeforePrepend = null;
         $("status").textContent = added ? `Prepended ${added} older bars` : "No older aligned bars returned";
       } catch (error) {
         $("status").textContent = error.message;
@@ -804,7 +951,12 @@
         cachedKorean,
         Number($("meanBars").value),
         Number($("minEdgePct").value),
-        Number($("fullEdgePct").value)
+        Number($("fullEdgePct").value),
+        Number($("maxSizePct").value),
+        Number($("scaleCurve").value),
+        Number($("tradeSpeedPct").value),
+        Number($("tradingFeeBps").value),
+        Number($("fundingBpsDay").value)
       );
       return cachedRows;
     }
@@ -869,6 +1021,11 @@
       const meanBars = Number($("meanBars").value);
       const minEdgePct = Number($("minEdgePct").value);
       const fullEdgePct = Number($("fullEdgePct").value);
+      const maxSizePct = Number($("maxSizePct").value);
+      const scaleCurve = Number($("scaleCurve").value);
+      const tradeSpeedPct = Number($("tradeSpeedPct").value);
+      const tradingFeeBps = Number($("tradingFeeBps").value);
+      const fundingBpsDay = Number($("fundingBpsDay").value);
       $("status").textContent = "Loading Binance Futures data...";
       try {
         const [adr, korean] = await Promise.all([
@@ -877,7 +1034,7 @@
         ]);
         cachedAdr = adr;
         cachedKorean = korean;
-        const rows = buildRows(cachedAdr, cachedKorean, meanBars, minEdgePct, fullEdgePct);
+        const rows = buildRows(cachedAdr, cachedKorean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, tradingFeeBps, fundingBpsDay);
         if (!rows.length) throw new Error("No aligned bars returned.");
         cachedRows = rows;
         cachedInterval = interval;
@@ -937,7 +1094,135 @@
       if (!cachedAdr.length || !cachedKorean.length) return;
       renderCached();
     }
+    function setNumberControl(id, value) {
+      $(id).value = String(value);
+    }
+    async function optimizeProfit() {
+      if (!cachedAdr.length || !cachedKorean.length) {
+        await refresh();
+        if (!cachedAdr.length || !cachedKorean.length) return;
+      }
+      const fee = Number($("tradingFeeBps").value);
+      const funding = Number($("fundingBpsDay").value);
+      const candidates = [];
+      const means = [24, 48, 64, 96, 128, 192];
+      const minEdges = [0, 0.15, 0.3, 0.5, 0.75];
+      const fullEdges = [0.6, 0.9, 1.25, 1.75, 2.5];
+      const maxSizes = [35, 50, 70, 100];
+      const curves = [0.8, 1.3, 2, 3];
+      const speeds = [14, 25, 40, 65, 100];
+      means.forEach((meanBars) => {
+        minEdges.forEach((minEdgePct) => {
+          fullEdges.forEach((fullEdgePct) => {
+            if (fullEdgePct <= minEdgePct + 0.05) return;
+            maxSizes.forEach((maxSizePct) => {
+              curves.forEach((scaleCurve) => {
+                speeds.forEach((tradeSpeedPct) => {
+                  candidates.push({ meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct });
+                });
+              });
+            });
+          });
+        });
+      });
+      const button = $("optimizeProfit");
+      button.disabled = true;
+      const baseRowsByMean = new Map(means.map((meanBars) => [
+        meanBars,
+        buildRows(cachedAdr, cachedKorean, meanBars, 0, 1, 0, 1, 1, fee, funding)
+      ]));
+      const feeRate = Math.max(0, fee) / 10000;
+      const fundingRateDay = funding / 10000;
+      const scoreCandidate = (params) => {
+        const baseRows = baseRowsByMean.get(params.meanBars);
+        if (!baseRows?.length) return null;
+        const maxSize = Math.max(0, Math.min(1, params.maxSizePct / 100));
+        const tradeSpeed = Math.max(0.01, Math.min(1, params.tradeSpeedPct / 100));
+        const denominator = Math.max(0.0001, params.fullEdgePct - params.minEdgePct);
+        let equity = 100;
+        let peak = 100;
+        let positionSize = 0;
+        let totalFeesPct = 0;
+        let exposureSum = 0;
+        for (let rowIndex = 0; rowIndex < baseRows.length; rowIndex += 1) {
+          const row = baseRows[rowIndex];
+          const rawDesiredSize = Math.max(0, Math.min(1, (row.maPremiumPct - params.minEdgePct) / denominator));
+          const desiredSize = (rawDesiredSize ** Math.max(0.1, params.scaleCurve)) * maxSize;
+          const previousSize = positionSize;
+          const tradeSize = (desiredSize - previousSize) * tradeSpeed;
+          positionSize = Math.max(0, Math.min(maxSize, previousSize + tradeSize));
+          const tradingFeePct = Math.abs(positionSize - previousSize) * 2 * feeRate * 100;
+          let fundingFeePct = 0;
+          if (rowIndex > 0) {
+            const previous = baseRows[rowIndex - 1];
+            const longReturn = row.korean / previous.korean - 1;
+            const shortReturn = -(row.adr / previous.adr - 1);
+            const pairReturn = 0.5 * (longReturn + shortReturn);
+            const intervalDays = Math.max(0, (row.time - previous.time) / 86400000);
+            fundingFeePct = previousSize * fundingRateDay * intervalDays * 100;
+            equity *= 1 + previousSize * pairReturn - tradingFeePct / 100 - fundingFeePct / 100;
+          } else {
+            equity *= 1 - tradingFeePct / 100;
+          }
+          totalFeesPct += tradingFeePct + fundingFeePct;
+          peak = Math.max(peak, equity);
+          exposureSum += positionSize;
+        }
+        return {
+          score: equity - 100,
+          avgExposure: exposureSum / baseRows.length,
+          fees: totalFeesPct,
+          drawdown: peak ? (equity / peak - 1) * 100 : 0
+        };
+      };
+      let best = null;
+      const chunkSize = 1200;
+      for (let index = 0; index < candidates.length; index += chunkSize) {
+        const chunk = candidates.slice(index, index + chunkSize);
+        chunk.forEach((params) => {
+          const scored = scoreCandidate(params);
+          if (!scored) return;
+          if (!best || scored.score > best.score) {
+            best = { ...params, ...scored };
+          }
+        });
+        $("status").textContent = `Optimizing profit: ${Math.min(candidates.length, index + chunk.length)} / ${candidates.length}`;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      button.disabled = false;
+      if (!best) {
+        $("status").textContent = "Optimizer found no valid run";
+        return;
+      }
+      setNumberControl("meanBars", best.meanBars);
+      setNumberControl("minEdgePct", best.minEdgePct);
+      setNumberControl("fullEdgePct", best.fullEdgePct);
+      setNumberControl("maxSizePct", best.maxSizePct);
+      setNumberControl("scaleCurve", best.scaleCurve);
+      setNumberControl("tradeSpeedPct", best.tradeSpeedPct);
+      best.rows = buildRows(
+        cachedAdr,
+        cachedKorean,
+        best.meanBars,
+        best.minEdgePct,
+        best.fullEdgePct,
+        best.maxSizePct,
+        best.scaleCurve,
+        best.tradeSpeedPct,
+        fee,
+        funding
+      );
+      cachedRows = best.rows;
+      window.lastOptimization = best;
+      draw(best.rows, cachedInterval);
+      drawHistogram(best.rows);
+      drawAllocation(best.rows, cachedInterval);
+      updateStats(best.rows);
+      $("bestTest").textContent = `${fmt(best.score)}%`;
+      $("status").textContent = `Optimized net PnL ${fmt(best.score)}%; avg exposure ${fmt(best.avgExposure * 100, 1)}%; fees ${fmt(best.fees)}%`;
+    }
     $("refresh").addEventListener("click", refresh);
+    $("optimizeProfit").addEventListener("click", optimizeProfit);
     $("interval").addEventListener("change", refresh);
     $("meanBars").addEventListener("change", redrawOnly);
     function setChartMode(mode) {
@@ -950,156 +1235,11 @@
     $("modeMa").addEventListener("click", () => setChartMode("ma"));
     $("minEdgePct").addEventListener("change", redrawOnly);
     $("fullEdgePct").addEventListener("change", redrawOnly);
-    let queuedPanBars = 0;
-    let queuedZoomFactor = 1;
-    let queuedInputTimer = 0;
-    function flushQueuedInput() {
-      window.clearTimeout(queuedInputTimer);
-      queuedInputTimer = 0;
-      if (Math.abs(queuedPanBars) > 0.01) {
-        panByBars(queuedPanBars);
-        queuedPanBars = 0;
-      }
-      if (Math.abs(queuedZoomFactor - 1) > 0.003) {
-        zoomByFactor(queuedZoomFactor);
-        queuedZoomFactor = 1;
-      }
-    }
-    function queueInput(options) {
-      if (options.panBars) queuedPanBars += options.panBars;
-      if (options.zoomFactor) queuedZoomFactor *= options.zoomFactor;
-      window.clearTimeout(queuedInputTimer);
-      queuedInputTimer = window.setTimeout(flushQueuedInput, options.delay || 90);
-    }
-    $("chart").addEventListener("wheel", (event) => {
-      event.preventDefault();
-      const horizontalIntent =
-        Math.abs(event.deltaX) > 1 &&
-        (Math.abs(event.deltaX) >= Math.abs(event.deltaY) * 0.45 || event.shiftKey);
-      if (horizontalIntent) {
-        const dx = event.shiftKey && Math.abs(event.deltaX) < 1 ? event.deltaY : event.deltaX;
-        const visibleBars = window.visibleBars || cachedRows.length || 120;
-        const pixelsPerBar = Math.max(1.2, $("chart").clientWidth / visibleBars);
-        queueInput({ panBars: (dx * 2.2) / pixelsPerBar, delay: 70 });
-        return;
-      } else {
-        const factor = Math.max(0.45, Math.min(2.2, Math.exp(event.deltaY / 210)));
-        queueInput({ zoomFactor: factor, delay: 70 });
-      }
-    });
-    let touchState = null;
-    let touchFrame = 0;
-    let touchCommitTimer = 0;
-    const touchPanSpeed = 18;
-    const touchZoomSpeed = 4.5;
-    function setPlotPreview(transform) {
-      const plot = document.getElementById("dynamicPlot");
-      const allocation = document.getElementById("dynamicAllocation");
-      if (plot) plot.style.transform = transform;
-      if (allocation) allocation.style.transform = transform;
-    }
-    function clearPlotPreview() {
-      setPlotPreview("");
-    }
-    function commitTouchGesture() {
-      let committed = false;
-      if (touchState.type === "pan") {
-        const visibleBars = window.visibleBars || cachedRows.length || 120;
-        const pixelsPerBar = Math.max(1.1, $("chart").clientWidth / visibleBars);
-        const bars = -(touchState.totalDx * touchPanSpeed) / pixelsPerBar;
-        touchState.startX = touchState.currentX;
-        touchState.totalDx = 0;
-        if (Math.abs(bars) > 0.01) {
-          panByBars(bars);
-          committed = true;
-        }
-      } else if (touchState.type === "pinch") {
-        const ratio = touchState.currentDistance / Math.max(1, touchState.startDistance);
-        const factor = 1 / Math.max(0.28, Math.min(3.6, ratio ** touchZoomSpeed));
-        touchState.startDistance = touchState.currentDistance;
-        if (Number.isFinite(factor) && Math.abs(factor - 1) > 0.003) {
-          zoomByFactor(factor);
-          committed = true;
-        }
-      }
-      if (committed) window.requestAnimationFrame(clearPlotPreview);
-      else clearPlotPreview();
-    }
-    function scheduleTouchCommit(delay = 90) {
-      window.clearTimeout(touchCommitTimer);
-      touchCommitTimer = window.setTimeout(() => {
-        touchCommitTimer = 0;
-        if (touchState) commitTouchGesture();
-      }, delay);
-    }
-    function applyTouchFrame() {
-      touchFrame = 0;
-      if (!touchState) return;
-      if (touchState.type === "pan") {
-        setPlotPreview(`translateX(${touchState.totalDx}px)`);
-      } else if (touchState.type === "pinch") {
-        const ratio = touchState.currentDistance / Math.max(1, touchState.startDistance);
-        setPlotPreview(`scaleX(${Math.max(0.55, Math.min(1.8, ratio))})`);
-      }
-    }
-    function scheduleTouchFrame() {
-      if (touchFrame) return;
-      touchFrame = window.requestAnimationFrame(applyTouchFrame);
-    }
-    const touchDistance = (touches) => {
-      const dx = touches[0].clientX - touches[1].clientX;
-      const dy = touches[0].clientY - touches[1].clientY;
-      return Math.hypot(dx, dy);
-    };
-    $("chart").addEventListener("touchstart", (event) => {
-      if (event.target.closest(".chartModeSwitch")) return;
-      if (event.touches.length === 1) {
-        touchState = {
-          type: "pan",
-          startX: event.touches[0].clientX,
-          lastX: event.touches[0].clientX,
-          currentX: event.touches[0].clientX,
-          totalDx: 0,
-          startVisibleBars: window.visibleBars || cachedRows.length || 120
-        };
-      } else if (event.touches.length === 2) {
-        const distance = touchDistance(event.touches);
-        touchState = {
-          type: "pinch",
-          startDistance: distance,
-          currentDistance: distance,
-          startVisibleBars: window.visibleBars || cachedRows.length || 120
-        };
-      }
-    }, { passive: false });
-    $("chart").addEventListener("touchmove", (event) => {
-      if (!touchState || event.target.closest(".chartModeSwitch")) return;
-      event.preventDefault();
-      if (touchState.type === "pan" && event.touches.length === 1) {
-        const currentX = event.touches[0].clientX;
-        touchState.lastX = currentX;
-        touchState.currentX = currentX;
-        touchState.totalDx = currentX - touchState.startX;
-        scheduleTouchFrame();
-        scheduleTouchCommit();
-      } else if (touchState.type === "pinch" && event.touches.length === 2) {
-        const distance = touchDistance(event.touches);
-        touchState.currentDistance = distance;
-        scheduleTouchFrame();
-        scheduleTouchCommit();
-      }
-    }, { passive: false });
-    ["touchend", "touchcancel"].forEach((name) => {
-      $("chart").addEventListener(name, () => {
-        window.clearTimeout(touchCommitTimer);
-        if (touchFrame) {
-          window.cancelAnimationFrame(touchFrame);
-          applyTouchFrame();
-        }
-        if (touchState) commitTouchGesture();
-        touchState = null;
-      });
-    });
+    $("maxSizePct").addEventListener("change", redrawOnly);
+    $("scaleCurve").addEventListener("change", redrawOnly);
+    $("tradeSpeedPct").addEventListener("change", redrawOnly);
+    $("tradingFeeBps").addEventListener("change", redrawOnly);
+    $("fundingBpsDay").addEventListener("change", redrawOnly);
     refresh();
   </script>
 </body>
