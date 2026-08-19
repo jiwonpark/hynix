@@ -672,7 +672,7 @@
           rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.12 } },
           timeScale: {
             borderVisible: false,
-            rightOffset: 2,
+            rightOffset: 96,
             barSpacing: 8,
             fixLeftEdge: false,
             fixRightEdge: false,
@@ -751,32 +751,34 @@
       window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)));
       window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
 
-      // Compute Forward Projection: Extrapolate dominant wave 32 bars into the future
-      if (rows.length >= 32) {
+      // Compute Forward Projection: Extrapolate dominant wave at least 1 full day (24h) ahead
+      let projectionPoints = [];
+      if (rows.length >= 24) {
         const lastRow = rows.at(-1);
-        const dominantLookback = Math.max(16, Math.min(128, meanBars));
+        const dominantLookback = Math.max(16, Math.min(192, meanBars));
         const dt = rows.length > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
         const lastTime = Math.floor(lastRow.time / 1000);
+        
+        // 24 hours in bars based on current interval dt
+        const dayBars = Math.max(24, Math.round(86400 / dt));
+        const forecastBars = Math.max(dayBars, Math.round(dominantLookback * 1.5));
         
         // Estimate current cycle amplitude and phase from recent wave momentum
         const recentRows = rows.slice(-dominantLookback);
         const synthValues = recentRows.map(synthOf);
         const meanLevel = mean(recentRows.map(meanOf));
-        const amp = std(synthValues, meanLevel) * 1.25;
+        const amp = Math.max(0.2, std(synthValues, meanLevel) * 1.3);
         const currentDev = synthOf(lastRow) - meanLevel;
         const prevDev = synthOf(rows[rows.length - 2] || lastRow) - meanLevel;
         const velocity = currentDev - prevDev;
         const phase = Math.atan2(velocity * (dominantLookback / (2 * Math.PI)), currentDev);
         const omega = (2 * Math.PI) / dominantLookback;
         
-        const projectionPoints = [
-          { time: lastTime, value: synthOf(lastRow) }
-        ];
-        const forecastBars = Math.min(48, Math.round(dominantLookback * 1.2));
+        projectionPoints.push({ time: lastTime, value: synthOf(lastRow) });
         for (let step = 1; step <= forecastBars; step++) {
           const futureTime = lastTime + step * dt;
           // Damped harmonic mean-reverting projection
-          const decay = Math.exp(-step / (dominantLookback * 1.5));
+          const decay = Math.exp(-step / (forecastBars * 1.8));
           const projectedVal = meanLevel + amp * decay * Math.cos(omega * step + phase);
           projectionPoints.push({ time: futureTime, value: projectedVal });
         }
