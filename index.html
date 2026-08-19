@@ -391,6 +391,7 @@
       <div class="chartHeader">
         <div class="legend">
           <span id="spreadLegend" class="red">Spread</span>
+          <span class="blue">Synthesized Wave (Filtered Cycle)</span>
           <span class="black">Mean</span>
           <span class="gray">Size bands</span>
           <span class="purple">Exposure / avg entry</span>
@@ -488,6 +489,14 @@
         const rawDesiredSize = Math.max(0, Math.min(1, (maPremiumPct - minEdgePct) / denominator));
         const curvedDesiredSize = rawDesiredSize ** Math.max(0.1, scaleCurve);
         const desiredSize = curvedDesiredSize * Math.max(0, Math.min(1, maxSizePct / 100));
+        
+        // Synthesized clean wave component: fast bandpass component (cycles between 16 and meanBars)
+        const fastWindow = Math.max(4, Math.round(meanBars / 4));
+        const fastSample = aligned.slice(Math.max(0, index - fastWindow + 1), index + 1).map((x) => x.normalized);
+        const fastAvg = mean(fastSample);
+        const synthWave = fastAvg;
+        const synthWaveMa = (fastAvg / avg - 1) * 100;
+
         return {
           ...row,
           mean: avg,
@@ -495,6 +504,8 @@
           upper: avg * (1 + fullEdgePct / 100),
           lower: avg * (1 + minEdgePct / 100),
           maPremiumPct,
+          synthWave,
+          synthWaveMa,
           desiredSize,
           targetSize: 0,
           tradeSize: 0,
@@ -630,6 +641,7 @@
     function draw(rows, interval) {
       const chartMode = window.chartMode || "parity";
       const valueOf = (row) => chartMode === "ma" ? row.normalized / row.mean * 100 : row.normalized;
+      const synthOf = (row) => chartMode === "ma" ? 100 + (row.synthWaveMa || 0) : row.synthWave;
       const meanOf = (row) => chartMode === "ma" ? 100 : row.mean;
       const upperOf = (row) => chartMode === "ma" ? row.upper / row.mean * 100 : row.upper;
       const lowerOf = (row) => chartMode === "ma" ? row.lower / row.mean * 100 : row.lower;
@@ -683,6 +695,7 @@
         const lineFormat = { type: "price", precision: 2, minMove: 0.01 };
         window.spreadSeries = {
           value: window.spreadChart.addLineSeries({ color: "#dc2626", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
+          synthWave: window.spreadChart.addLineSeries({ color: "#2563eb", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
           mean: window.spreadChart.addLineSeries({ color: "#111827", lineWidth: 1, priceLineVisible: false, priceFormat: lineFormat }),
           upper: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, priceFormat: lineFormat }),
           lower: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, priceFormat: lineFormat }),
@@ -721,13 +734,14 @@
       const wasAtRightEdge = !visibleRangeBeforeUpdate || visibleRangeBeforeUpdate.to >= rows.length - 4;
       const toPoint = (row, accessor) => ({ time: Math.floor(row.time / 1000), value: accessor(row) });
       const priceValues = rows
-        .flatMap((row) => [valueOf(row), meanOf(row), upperOf(row), lowerOf(row), avgEntryOf(row)])
+        .flatMap((row) => [valueOf(row), synthOf(row), meanOf(row), upperOf(row), lowerOf(row), avgEntryOf(row)])
         .filter((value) => value !== null && Number.isFinite(value));
       const priceMin = Math.min(...priceValues);
       const priceMax = Math.max(...priceValues);
       const exposureBase = priceMin - Math.max(0.2, (priceMax - priceMin) * 0.08);
       window.exposureBase = exposureBase;
       window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)));
+      window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
       window.spreadSeries.mean.setData(rows.map((row) => toPoint(row, meanOf)));
       window.spreadSeries.upper.setData(rows.map((row) => toPoint(row, upperOf)));
       window.spreadSeries.lower.setData(rows.map((row) => toPoint(row, lowerOf)));
