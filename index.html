@@ -352,7 +352,15 @@
       </label>
       <label>Trade speed %
         <input id="tradeSpeedPct" type="number" min="1" max="100" step="1" value="25">
-        <span class="controlHint">gap traded each candle</span>
+        <span class="controlHint">entry gap traded/candle</span>
+      </label>
+      <label>Exit speed %
+        <input id="exitSpeedPct" type="number" min="5" max="100" step="5" value="75">
+        <span class="controlHint">liquidation speed %</span>
+      </label>
+      <label>Min profit %
+        <input id="minProfitPct" type="number" min="0" max="5" step="0.05" value="0.5">
+        <span class="controlHint">take-profit gain from entry</span>
       </label>
       <label>Trading fee bps
         <input id="tradingFeeBps" type="number" min="0" max="50" step="0.1" value="5">
@@ -446,7 +454,7 @@
       const data = await response.json();
       return data.map((item) => ({ time: Number(item[0]), close: Number(item[4]) }));
     }
-    function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, tradingFeeBps, fundingBpsDay) {
+    function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay) {
       const koreanByTime = new Map(korean.map((item) => [item.time, item]));
       const aligned = adr.map((item) => {
         const k = koreanByTime.get(item.time);
@@ -498,14 +506,25 @@
       let positionSize = 0;
       let tradingFeesPct = 0;
       let fundingFeesPct = 0;
-      const tradeSpeed = Math.max(0.01, Math.min(1, tradeSpeedPct / 100));
+      const entrySpeed = Math.max(0.01, Math.min(1, tradeSpeedPct / 100));
+      const exitSpeed = Math.max(0.01, Math.min(1, (exitSpeedPct || tradeSpeedPct) / 100));
+      const minProfit = Math.max(0, minProfitPct || 0);
       const tradingFeeRate = Math.max(0, tradingFeeBps) / 10000;
       const fundingRateDay = fundingBpsDay / 10000;
       for (let index = 0; index < rows.length; index += 1) {
         const row = rows[index];
         const previousSize = positionSize;
-        const sizeGap = row.desiredSize - previousSize;
-        const tradeSize = Math.abs(sizeGap) < 0.000001 ? 0 : sizeGap * tradeSpeed;
+        let desired = row.desiredSize;
+        // Take profit check: if current open gain from average entry exceeds minProfit, force desired exit to 0
+        if (positionSize > 0 && avgEntryMaPremiumPct !== null && minProfit > 0) {
+          const currentGain = avgEntryMaPremiumPct - row.maPremiumPct;
+          if (currentGain >= minProfit) {
+            desired = 0;
+          }
+        }
+        const sizeGap = desired - previousSize;
+        const effectiveSpeed = sizeGap < 0 ? exitSpeed : entrySpeed;
+        const tradeSize = Math.abs(sizeGap) < 0.000001 ? 0 : sizeGap * effectiveSpeed;
         positionSize = Math.max(0, Math.min(Math.max(0, maxSizePct / 100), previousSize + tradeSize));
         row.targetSize = positionSize;
         row.tradeSize = positionSize - previousSize;
@@ -955,6 +974,8 @@
         Number($("maxSizePct").value),
         Number($("scaleCurve").value),
         Number($("tradeSpeedPct").value),
+        Number($("exitSpeedPct").value),
+        Number($("minProfitPct").value),
         Number($("tradingFeeBps").value),
         Number($("fundingBpsDay").value)
       );
@@ -1024,6 +1045,8 @@
       const maxSizePct = Number($("maxSizePct").value);
       const scaleCurve = Number($("scaleCurve").value);
       const tradeSpeedPct = Number($("tradeSpeedPct").value);
+      const exitSpeedPct = Number($("exitSpeedPct").value);
+      const minProfitPct = Number($("minProfitPct").value);
       const tradingFeeBps = Number($("tradingFeeBps").value);
       const fundingBpsDay = Number($("fundingBpsDay").value);
       $("status").textContent = "Loading Binance Futures data...";
@@ -1034,7 +1057,7 @@
         ]);
         cachedAdr = adr;
         cachedKorean = korean;
-        const rows = buildRows(cachedAdr, cachedKorean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, tradingFeeBps, fundingBpsDay);
+        const rows = buildRows(cachedAdr, cachedKorean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay);
         if (!rows.length) throw new Error("No aligned bars returned.");
         cachedRows = rows;
         cachedInterval = interval;
@@ -1106,19 +1129,25 @@
       const funding = Number($("fundingBpsDay").value);
       const candidates = [];
       const means = [24, 48, 64, 96, 128, 192];
-      const minEdges = [0, 0.15, 0.3, 0.5, 0.75];
-      const fullEdges = [0.6, 0.9, 1.25, 1.75, 2.5];
-      const maxSizes = [35, 50, 70, 100];
-      const curves = [0.8, 1.3, 2, 3];
-      const speeds = [14, 25, 40, 65, 100];
+      const minEdges = [0, 0.2, 0.4, 0.75];
+      const fullEdges = [0.75, 1.25, 2.0, 3.0];
+      const maxSizes = [50, 75, 100];
+      const curves = [1, 2, 3];
+      const entrySpeeds = [15, 25, 50, 100];
+      const exitSpeeds = [35, 60, 85, 100];
+      const minProfits = [0, 0.25, 0.5, 0.8, 1.2];
       means.forEach((meanBars) => {
         minEdges.forEach((minEdgePct) => {
           fullEdges.forEach((fullEdgePct) => {
-            if (fullEdgePct <= minEdgePct + 0.05) return;
+            if (fullEdgePct <= minEdgePct + 0.1) return;
             maxSizes.forEach((maxSizePct) => {
               curves.forEach((scaleCurve) => {
-                speeds.forEach((tradeSpeedPct) => {
-                  candidates.push({ meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct });
+                entrySpeeds.forEach((tradeSpeedPct) => {
+                  exitSpeeds.forEach((exitSpeedPct) => {
+                    minProfits.forEach((minProfitPct) => {
+                      candidates.push({ meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct });
+                    });
+                  });
                 });
               });
             });
@@ -1129,7 +1158,7 @@
       button.disabled = true;
       const baseRowsByMean = new Map(means.map((meanBars) => [
         meanBars,
-        buildRows(cachedAdr, cachedKorean, meanBars, 0, 1, 0, 1, 1, fee, funding)
+        buildRows(cachedAdr, cachedKorean, meanBars, 0, 1, 0, 1, 1, 1, 0, fee, funding)
       ]));
       const feeRate = Math.max(0, fee) / 10000;
       const fundingRateDay = funding / 10000;
@@ -1137,21 +1166,41 @@
         const baseRows = baseRowsByMean.get(params.meanBars);
         if (!baseRows?.length) return null;
         const maxSize = Math.max(0, Math.min(1, params.maxSizePct / 100));
-        const tradeSpeed = Math.max(0.01, Math.min(1, params.tradeSpeedPct / 100));
+        const entrySpeed = Math.max(0.01, Math.min(1, params.tradeSpeedPct / 100));
+        const exitSpeed = Math.max(0.01, Math.min(1, params.exitSpeedPct / 100));
+        const minProfit = Math.max(0, params.minProfitPct);
         const denominator = Math.max(0.0001, params.fullEdgePct - params.minEdgePct);
         let equity = 100;
         let peak = 100;
         let positionSize = 0;
         let totalFeesPct = 0;
         let exposureSum = 0;
+        let avgEntryMa = null;
         for (let rowIndex = 0; rowIndex < baseRows.length; rowIndex += 1) {
           const row = baseRows[rowIndex];
           const rawDesiredSize = Math.max(0, Math.min(1, (row.maPremiumPct - params.minEdgePct) / denominator));
-          const desiredSize = (rawDesiredSize ** Math.max(0.1, params.scaleCurve)) * maxSize;
+          let desired = (rawDesiredSize ** Math.max(0.1, params.scaleCurve)) * maxSize;
+          if (positionSize > 0 && avgEntryMa !== null && minProfit > 0) {
+            const currentGain = avgEntryMa - row.maPremiumPct;
+            if (currentGain >= minProfit) {
+              desired = 0;
+            }
+          }
           const previousSize = positionSize;
-          const tradeSize = (desiredSize - previousSize) * tradeSpeed;
+          const sizeGap = desired - previousSize;
+          const speed = sizeGap < 0 ? exitSpeed : entrySpeed;
+          const tradeSize = sizeGap * speed;
           positionSize = Math.max(0, Math.min(maxSize, previousSize + tradeSize));
-          const tradingFeePct = Math.abs(positionSize - previousSize) * 2 * feeRate * 100;
+          const actualTraded = positionSize - previousSize;
+          if (actualTraded > 0) {
+            avgEntryMa = avgEntryMa === null || previousSize === 0
+              ? row.maPremiumPct
+              : (avgEntryMa * previousSize + row.maPremiumPct * actualTraded) / positionSize;
+          } else if (positionSize < 0.000001) {
+            positionSize = 0;
+            avgEntryMa = null;
+          }
+          const tradingFeePct = Math.abs(actualTraded) * 2 * feeRate * 100;
           let fundingFeePct = 0;
           if (rowIndex > 0) {
             const previous = baseRows[rowIndex - 1];
@@ -1176,7 +1225,7 @@
         };
       };
       let best = null;
-      const chunkSize = 1200;
+      const chunkSize = 1500;
       for (let index = 0; index < candidates.length; index += chunkSize) {
         const chunk = candidates.slice(index, index + chunkSize);
         chunk.forEach((params) => {
@@ -1200,6 +1249,8 @@
       setNumberControl("maxSizePct", best.maxSizePct);
       setNumberControl("scaleCurve", best.scaleCurve);
       setNumberControl("tradeSpeedPct", best.tradeSpeedPct);
+      setNumberControl("exitSpeedPct", best.exitSpeedPct);
+      setNumberControl("minProfitPct", best.minProfitPct);
       best.rows = buildRows(
         cachedAdr,
         cachedKorean,
@@ -1209,6 +1260,8 @@
         best.maxSizePct,
         best.scaleCurve,
         best.tradeSpeedPct,
+        best.exitSpeedPct,
+        best.minProfitPct,
         fee,
         funding
       );
@@ -1219,7 +1272,7 @@
       drawAllocation(best.rows, cachedInterval);
       updateStats(best.rows);
       $("bestTest").textContent = `${fmt(best.score)}%`;
-      $("status").textContent = `Optimized net PnL ${fmt(best.score)}%; avg exposure ${fmt(best.avgExposure * 100, 1)}%; fees ${fmt(best.fees)}%`;
+      $("status").textContent = `Optimized net PnL ${fmt(best.score)}% (TP +${fmt(best.minProfitPct)}%, ExitSpd ${best.exitSpeedPct}%); avg exposure ${fmt(best.avgExposure * 100, 1)}%; fees ${fmt(best.fees)}%`;
     }
     $("refresh").addEventListener("click", refresh);
     $("optimizeProfit").addEventListener("click", optimizeProfit);
@@ -1238,6 +1291,8 @@
     $("maxSizePct").addEventListener("change", redrawOnly);
     $("scaleCurve").addEventListener("change", redrawOnly);
     $("tradeSpeedPct").addEventListener("change", redrawOnly);
+    $("exitSpeedPct").addEventListener("change", redrawOnly);
+    $("minProfitPct").addEventListener("change", redrawOnly);
     $("tradingFeeBps").addEventListener("change", redrawOnly);
     $("fundingBpsDay").addEventListener("change", redrawOnly);
     refresh();
