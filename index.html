@@ -424,6 +424,17 @@
       <div id="histogram"></div>
     </section>
 
+    <section class="panel">
+      <div class="chartHeader">
+        <div>
+          <h2>Dominant Wave Cycle Analyzer & Spectrum</h2>
+          <p>Signal-to-Friction Ratio (SFR), cycle half-life, and amplitude by lookback window</p>
+        </div>
+        <p id="waveSummary">Analyzing spectrum...</p>
+      </div>
+      <div id="waveSpectrum"></div>
+    </section>
+
   </main>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -858,6 +869,85 @@
       $("histogram").innerHTML = svg;
       $("histStats").textContent = `n=${premiums.length}; mean ${fmt(avg)}%; median ${fmt(median)}%; std ${fmt(deviation)}%`;
     }
+
+    function drawWaveSpectrum(rows) {
+      if (!rows || rows.length < 32) {
+        $("waveSpectrum").innerHTML = "";
+        $("waveSummary").textContent = "Need at least 32 bars to analyze wave spectrum.";
+        return;
+      }
+      const roundTripFeePct = (Number($("tradingFeeBps").value) * 2 * 2) / 100; // 2 legs x 2 (entry+exit)
+      const lookbacks = [16, 24, 32, 48, 64, 96, 128, 192, 256, 384].filter((k) => k <= rows.length / 2);
+      const normalizedValues = rows.map((r) => r.normalized);
+      
+      const waveMetrics = lookbacks.map((lookback) => {
+        // Compute rolling deviations and half-life for this lookback
+        const deviations = [];
+        let zeroCrossings = 0;
+        let runningMean = 0;
+        for (let i = lookback; i < normalizedValues.length; i++) {
+          const window = normalizedValues.slice(i - lookback + 1, i + 1);
+          const m = mean(window);
+          const dev = (normalizedValues[i] / m - 1) * 100;
+          deviations.push(dev);
+          if (deviations.length > 1) {
+            const prevDev = deviations[deviations.length - 2];
+            if ((dev >= 0 && prevDev < 0) || (dev < 0 && prevDev >= 0)) {
+              zeroCrossings++;
+            }
+          }
+        }
+        const avg = mean(deviations);
+        const amplitude = std(deviations, avg);
+        const sfr = roundTripFeePct > 0 ? amplitude / roundTripFeePct : amplitude * 10;
+        // Estimate half-life in bars from zero-crossing frequency
+        const halfLifeBars = zeroCrossings > 0 ? (deviations.length / zeroCrossings) : lookback;
+        return {
+          lookback,
+          amplitude,
+          sfr,
+          halfLifeBars,
+          score: sfr * (amplitude >= roundTripFeePct * 1.5 ? 1 : 0.2)
+        };
+      });
+
+      const bestWave = waveMetrics.slice().sort((a, b) => b.score - a.score)[0];
+      if (bestWave) {
+        $("waveSummary").innerHTML = `Dominant Wave: <strong>${bestWave.lookback} bars</strong> (~${(bestWave.halfLifeBars * (cachedInterval === '15m' ? 0.25 : cachedInterval === '1h' ? 1 : 4)).toFixed(1)}h cycle) | Avg Amplitude: <strong>±${bestWave.amplitude.toFixed(2)}%</strong> | Signal-to-Friction: <strong>${bestWave.sfr.toFixed(1)}x</strong>`;
+      }
+
+      const width = 1180, height = 240;
+      const margin = { top: 28, right: 30, bottom: 52, left: 56 };
+      const plotWidth = width - margin.left - margin.right;
+      const plotHeight = height - margin.top - margin.bottom;
+      const maxSfr = Math.max(...waveMetrics.map((w) => w.sfr), 4.0);
+      const colWidth = plotWidth / waveMetrics.length;
+
+      let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Wave Cycle Spectrum">`;
+      // Target SFR benchmark line (3.0x)
+      const targetSfrY = margin.top + (1 - Math.min(maxSfr, 3.0) / maxSfr) * plotHeight;
+      svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${targetSfrY}" y2="${targetSfrY}" class="threshold"/>`;
+      svg += `<text x="${width - margin.right}" y="${targetSfrY - 5}" text-anchor="end" fill="#9ca3af" font-size="11">3.0x SFR Hurdle (Profitable Zone)</text>`;
+
+      waveMetrics.forEach((w, index) => {
+        const x = margin.left + index * colWidth + colWidth * 0.15;
+        const wBar = colWidth * 0.7;
+        const barH = (w.sfr / maxSfr) * plotHeight;
+        const y = margin.top + plotHeight - barH;
+        const isBest = bestWave && w.lookback === bestWave.lookback;
+        const barColor = isBest ? "var(--purple)" : (w.sfr >= 3.0 ? "var(--blue)" : "#9ca3af");
+        svg += `<rect x="${x}" y="${y}" width="${wBar}" height="${Math.max(2, barH)}" rx="3" fill="${barColor}" opacity="${isBest ? 0.9 : 0.6}"/>`;
+        // Top label: SFR
+        svg += `<text x="${x + wBar / 2}" y="${y - 6}" text-anchor="middle" font-size="11" font-weight="${isBest ? '900' : '600'}" fill="${isBest ? 'var(--purple)' : 'var(--fg)'}">${w.sfr.toFixed(1)}x</text>`;
+        // Bottom label: lookback
+        svg += `<text x="${x + wBar / 2}" y="${height - 30}" text-anchor="middle" font-size="12" font-weight="${isBest ? '900' : '600'}" fill="${isBest ? 'var(--purple)' : 'var(--muted)'}">${w.lookback}b</text>`;
+        svg += `<text x="${x + wBar / 2}" y="${height - 14}" text-anchor="middle" font-size="10" fill="var(--muted)">±${w.amplitude.toFixed(2)}%</text>`;
+      });
+      svg += `<text x="${margin.left}" y="18" class="axisTitle">Wave Spectrum: Signal-to-Friction Ratio (SFR = Wave Amplitude / Roundtrip Fees)</text>`;
+      svg += `</svg>`;
+      $("waveSpectrum").innerHTML = svg;
+    }
+
     function updateStats(rows) {
       const latest = rows.at(-1);
       const active = Boolean(latest && latest.targetSize > 0);
@@ -1017,6 +1107,7 @@
       if (!rows.length) return;
       draw(rows, cachedInterval);
       drawHistogram(rows);
+      drawWaveSpectrum(rows);
       drawAllocation(rows, cachedInterval);
       updateStats(rows);
     }
@@ -1095,6 +1186,7 @@
         window.viewEndFloat = null;
         draw(rows, interval);
         drawHistogram(rows);
+        drawWaveSpectrum(rows);
         drawAllocation(rows, interval);
         updateStats(rows);
         const latest = rows.at(-1);
@@ -1311,6 +1403,7 @@
       window.lastOptimization = best;
       draw(best.rows, cachedInterval);
       drawHistogram(best.rows);
+      drawWaveSpectrum(best.rows);
       drawAllocation(best.rows, cachedInterval);
       updateStats(best.rows);
       $("bestTest").textContent = `${fmt(best.score)}%`;
