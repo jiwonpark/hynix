@@ -755,8 +755,26 @@
           window.clearTimeout(window.wheelInteractingTimer);
           window.wheelInteractingTimer = window.setTimeout(() => { window.userInteracting = false; }, 1000);
         }, { passive: true });
-        window.addEventListener("mouseup", () => { window.userInteracting = false; });
-        window.addEventListener("touchend", () => { window.userInteracting = false; });
+        window.spreadChart.subscribeCrosshairMove((param) => {
+          if (!param || !param.time) {
+            if (window.hoveredChartTime !== null) {
+              window.hoveredChartTime = null;
+              requestExposureOverlayDraw();
+            }
+            return;
+          }
+          const time = typeof param.time === "number" ? param.time : param.time.timestamp || param.time;
+          if (window.hoveredChartTime !== time) {
+            window.hoveredChartTime = time;
+            requestExposureOverlayDraw();
+          }
+        });
+        host.addEventListener("mouseleave", () => {
+          if (window.hoveredChartTime !== null) {
+            window.hoveredChartTime = null;
+            requestExposureOverlayDraw();
+          }
+        });
         if (window.ResizeObserver) {
           window.spreadResizeObserver = new ResizeObserver(() => {
             if (window.spreadChart) {
@@ -821,6 +839,18 @@
         harmonics.sort((a, b) => b.power - a.power);
         const dominantHarmonics = harmonics.slice(0, 4);
 
+        // Store lookback span metadata for interactive mouseover overlay
+        const startTime = Math.floor(rows[0].time / 1000);
+        const endTime = Math.floor(rows.at(-1).time / 1000);
+        const durationHours = ((endTime - startTime) / 3600).toFixed(1);
+        window.waveModelInfo = {
+          startTime,
+          endTime,
+          barCount: N,
+          durationText: `${durationHours}h`,
+          dominantHarmonics
+        };
+
         // 4. Synthesize Full Continuous Periodic Wave (Historical Fit + 24h+ Forward Projection)
         const fullWavePoints = [];
         for (let n = 0; n < N; n++) {
@@ -856,6 +886,7 @@
         window.spreadSeries.projectedWave.setData(fullWavePoints);
         window.spreadSeries.synthWave.setData([]);
       } else {
+        window.waveModelInfo = null;
         window.spreadSeries.projectedWave.setData([]);
         window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
       }
@@ -954,6 +985,59 @@
       const defaultGap = gaps.length ? gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : Math.max(1, window.spreadChart.timeScale().options?.().barSpacing || 8);
       const baseY = Math.min(height, Math.max(0, window.spreadSeries.value.priceToCoordinate(window.exposureBase) ?? height));
       ctx.imageSmoothingEnabled = false;
+
+      // Draw Lookback Span for Prediction if hovering on chart
+      if (window.hoveredChartTime && window.waveModelInfo && cachedRows.length) {
+        const info = window.waveModelInfo;
+        const timeScale = window.spreadChart.timeScale();
+        const startX = timeScale.timeToCoordinate(info.startTime);
+        const endX = timeScale.timeToCoordinate(info.endTime);
+        const hoveredX = timeScale.timeToCoordinate(window.hoveredChartTime);
+
+        if (startX !== null && endX !== null) {
+          const minX = Math.min(startX, endX);
+          const maxX = Math.max(startX, endX);
+          const spanWidth = Math.max(2, maxX - minX);
+
+          // Shaded lookback training region
+          ctx.fillStyle = "rgba(0, 210, 255, 0.08)";
+          ctx.fillRect(minX, 0, spanWidth, height);
+
+          // Boundary lines for lookback span
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 4]);
+          ctx.strokeStyle = "#00d2ff";
+          ctx.beginPath();
+          ctx.moveTo(minX, 0);
+          ctx.lineTo(minX, height);
+          ctx.moveTo(maxX, 0);
+          ctx.lineTo(maxX, height);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Informational lookback badge at top of highlight span
+          const isForward = window.hoveredChartTime > info.endTime;
+          const label = isForward
+            ? `⚡ Model Prediction Lookback: ${info.barCount} bars (${info.durationText})`
+            : `⚡ Model Fitted Lookback: ${info.barCount} bars (${info.durationText})`;
+          ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+          const textWidth = ctx.measureText(label).width;
+          const badgeX = Math.max(8, Math.min(width - textWidth - 24, minX + 6));
+          const badgeY = 14;
+
+          ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+          ctx.beginPath();
+          ctx.roundRect(badgeX, badgeY, textWidth + 16, 22, 5);
+          ctx.fill();
+          ctx.strokeStyle = "#00d2ff";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.fillStyle = "#38bdf8";
+          ctx.fillText(label, badgeX + 8, badgeY + 15);
+        }
+      }
+
       points.forEach((point, index) => {
         const previous = points[index - 1];
         const next = points[index + 1];
