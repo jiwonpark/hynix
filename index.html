@@ -766,6 +766,7 @@
         const dominantLookback = Math.max(16, Math.min(192, meanBars));
         const dt = rows.length > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
         const lastTime = Math.floor(lastRow.time / 1000);
+        const forecastBars = Math.max(96, Math.round(dominantLookback * 1.5));
         
         // Estimate current cycle amplitude and phase from recent wave momentum
         const recentRows = rows.slice(-dominantLookback);
