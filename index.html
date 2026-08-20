@@ -399,7 +399,7 @@
         <div class="legend">
           <span id="spreadLegend" class="red">Spread</span>
           <span class="navy" style="color: #1e3a8a; font-weight: 600;">Global Periodic Wave</span>
-          <span class="cyan" style="color: #00d2ff; font-weight: 600;">Rolling Prediction (Causal + 24h Path)</span>
+          <span class="cyan" style="color: #00d2ff; font-weight: 600;">Rolling +24h Prediction</span>
           <span class="black">Mean</span>
           <span class="gray">Size bands</span>
           <span class="purple">Exposure / avg entry</span>
@@ -883,37 +883,27 @@
         }
         window.spreadSeries.synthWave.setData(globalWavePoints);
 
-        // 2. True Causal Out-of-Sample Predictions across History (Light Blue Cyan #00d2ff)
+        // 2. True Causal +24h Ahead Out-of-Sample Predictions (Each point was predicted 24h in advance)
+        const forecastBars = 96; // 24 hours at 15m intervals
+        const dt = N > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
+        const lastTime = Math.floor(rows.at(-1).time / 1000);
+
+        // Historical +24h predictions: at bar i, predict target at bar (i + forecastBars)
         for (let i = lookback; i < N; i++) {
-          const slice = prices.slice(i - lookback, i); // past bars only!
-          const result = fitFourierAndPredict(slice, [1]); // 1-step ahead prediction
+          const slice = prices.slice(i - lookback, i); // trained on data up to bar i-1
+          const result = fitFourierAndPredict(slice, [forecastBars]); // exactly +24h ahead point
           if (result && result.predictions.length) {
             const predVal = result.predictions[0];
-            rows[i].synthPeriodicWave = predVal;
+            const targetTime = Math.floor(rows[i - 1].time / 1000) + forecastBars * dt;
             fullWavePoints.push({
-              time: Math.floor(rows[i].time / 1000),
+              time: targetTime,
               value: predVal
             });
           }
         }
 
-        // 3. Analytical 24h+ Forward Extrapolation from the latest live candle (Cyan #00d2ff)
-        const latestSlice = prices.slice(N - lookback, N);
-        const dt = N > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
-        const lastTime = Math.floor(rows.at(-1).time / 1000);
-        const forecastBars = 96; // 24h at 15m intervals
-
-        const forwardSteps = Array.from({ length: forecastBars }, (_, idx) => idx + 1);
-        const futureResult = fitFourierAndPredict(latestSlice, forwardSteps);
-        if (futureResult) {
-          futureResult.predictions.forEach((val, idx) => {
-            fullWavePoints.push({
-              time: lastTime + (idx + 1) * dt,
-              value: val
-            });
-          });
-        }
-
+        // Sort points by time and deduplicate
+        fullWavePoints.sort((a, b) => a.time - b.time);
         window.spreadSeries.projectedWave.setData(fullWavePoints);
       } else {
         window.spreadSeries.projectedWave.setData([]);
