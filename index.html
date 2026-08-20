@@ -813,13 +813,19 @@
         window.spreadChartInitialized = true;
         setTimeout(() => {
           if (!window.spreadChart) return;
-          window.spreadChart.timeScale().scrollToPosition(-96, false);
+          window.spreadChart.timeScale().setVisibleLogicalRange({
+            from: Math.max(0, totalBars - 60),
+            to: totalBars + 96
+          });
           requestExposureOverlayDraw();
         }, 150);
       } else if (wasAtRightEdge && !window.pendingLogicalRangeBeforePrepend) {
         setTimeout(() => {
           if (!window.spreadChart) return;
-          window.spreadChart.timeScale().scrollToPosition(-96, false);
+          window.spreadChart.timeScale().setVisibleLogicalRange({
+            from: Math.max(0, totalBars - 60),
+            to: totalBars + 96
+          });
           requestExposureOverlayDraw();
         }, 150);
       }
