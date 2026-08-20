@@ -398,8 +398,7 @@
       <div class="chartHeader">
         <div class="legend">
           <span id="spreadLegend" class="red">Spread</span>
-          <span class="blue">Synthesized Wave</span>
-          <span class="cyan" style="color: #06b6d4;">Projected Wave (Forward Path)</span>
+          <span class="cyan" style="color: #00d2ff; font-weight: 600;">Periodic Wave (Model + Forward Path)</span>
           <span class="black">Mean</span>
           <span class="gray">Size bands</span>
           <span class="purple">Exposure / avg entry</span>
@@ -822,8 +821,8 @@
         harmonics.sort((a, b) => b.power - a.power);
         const dominantHarmonics = harmonics.slice(0, 4);
 
-        // 4. Synthesize Historical Periodic Curve (Sum of Dominant Periodic Waves + Trend)
-        const synthHistorical = [];
+        // 4. Synthesize Full Continuous Periodic Wave (Historical Fit + 24h+ Forward Projection)
+        const fullWavePoints = [];
         for (let n = 0; n < N; n++) {
           let periodicSum = 0;
           for (const h of dominantHarmonics) {
@@ -832,16 +831,14 @@
           const trendVal = intercept + slope * (n - (N - 1) / 2);
           const time = Math.floor(rows[n].time / 1000);
           rows[n].synthPeriodicWave = trendVal + periodicSum;
-          synthHistorical.push({ time, value: trendVal + periodicSum });
+          fullWavePoints.push({ time, value: trendVal + periodicSum });
         }
-        window.spreadSeries.synthWave.setData(synthHistorical);
 
         // 5. Analytical Harmonic Forward Projection (Extrapolating Periodic Waves 24h+ into the Future)
         const dt = N > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
         const lastTime = Math.floor(rows.at(-1).time / 1000);
         const forecastBars = 96; // 24h at 15m intervals
 
-        projectionPoints.push({ time: lastTime, value: rows.at(-1).synthPeriodicWave });
         for (let step = 1; step <= forecastBars; step++) {
           const n = (N - 1) + step;
           let periodicSum = 0;
@@ -851,13 +848,15 @@
             periodicSum += h.amp * damping * Math.cos((2 * Math.PI * h.k * n) / N + h.phase);
           }
           const trendVal = intercept + slope * (n - (N - 1) / 2);
-          projectionPoints.push({
+          fullWavePoints.push({
             time: lastTime + step * dt,
             value: trendVal + periodicSum
           });
         }
-        window.spreadSeries.projectedWave.setData(projectionPoints);
+        window.spreadSeries.projectedWave.setData(fullWavePoints);
+        window.spreadSeries.synthWave.setData([]);
       } else {
+        window.spreadSeries.projectedWave.setData([]);
         window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
       }
 
