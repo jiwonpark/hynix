@@ -398,7 +398,8 @@
       <div class="chartHeader">
         <div class="legend">
           <span id="spreadLegend" class="red">Spread</span>
-          <span class="cyan" style="color: #00d2ff; font-weight: 600;">Periodic Wave (Model + Forward Path)</span>
+          <span class="navy" style="color: #1e3a8a; font-weight: 600;">Global Periodic Wave</span>
+          <span class="cyan" style="color: #00d2ff; font-weight: 600;">Rolling Prediction (Causal + 24h Path)</span>
           <span class="black">Mean</span>
           <span class="gray">Size bands</span>
           <span class="purple">Exposure / avg entry</span>
@@ -708,12 +709,12 @@
         window.spreadSeries = {
           projectedWave: window.spreadChart.addLineSeries({
             color: "#00d2ff",
-            lineWidth: 3,
+            lineWidth: 2.5,
             priceLineVisible: false,
             priceFormat: lineFormat
           }),
           value: window.spreadChart.addLineSeries({ color: "#dc2626", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
-          synthWave: window.spreadChart.addLineSeries({ color: "#2563eb", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
+          synthWave: window.spreadChart.addLineSeries({ color: "#1e3a8a", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
           mean: window.spreadChart.addLineSeries({ color: "#111827", lineWidth: 1, priceLineVisible: false, priceFormat: lineFormat }),
           upper: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, priceFormat: lineFormat }),
           lower: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, priceFormat: lineFormat }),
@@ -855,7 +856,34 @@
       if (N >= lookback) {
         const prices = rows.map((r) => r.normalized);
 
-        // 1. True Causal Out-of-Sample Predictions across History (Every point predicted strictly using past bars)
+        // 1. Static Global Periodic Wave across all data (Navy Blue #1e3a8a)
+        const globalResult = fitFourierAndPredict(prices, [0]);
+        const globalWavePoints = [];
+        if (globalResult) {
+          const meanY = mean(prices);
+          let sXY = 0, sXX = 0;
+          for (let i = 0; i < N; i++) {
+            const x = i - (N - 1) / 2;
+            sXY += x * (prices[i] - meanY);
+            sXX += x * x;
+          }
+          const slope = sXX ? sXY / sXX : 0;
+          const intercept = meanY;
+          for (let n = 0; n < N; n++) {
+            let periodicSum = 0;
+            for (const h of globalResult.dominant) {
+              periodicSum += h.amp * Math.cos((2 * Math.PI * h.k * n) / N + h.phase);
+            }
+            const trendVal = intercept + slope * (n - (N - 1) / 2);
+            globalWavePoints.push({
+              time: Math.floor(rows[n].time / 1000),
+              value: trendVal + periodicSum
+            });
+          }
+        }
+        window.spreadSeries.synthWave.setData(globalWavePoints);
+
+        // 2. True Causal Out-of-Sample Predictions across History (Light Blue Cyan #00d2ff)
         for (let i = lookback; i < N; i++) {
           const slice = prices.slice(i - lookback, i); // past bars only!
           const result = fitFourierAndPredict(slice, [1]); // 1-step ahead prediction
@@ -869,7 +897,7 @@
           }
         }
 
-        // 2. Analytical 24h+ Forward Extrapolation from the latest live candle
+        // 3. Analytical 24h+ Forward Extrapolation from the latest live candle (Cyan #00d2ff)
         const latestSlice = prices.slice(N - lookback, N);
         const dt = N > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
         const lastTime = Math.floor(rows.at(-1).time / 1000);
@@ -887,7 +915,6 @@
         }
 
         window.spreadSeries.projectedWave.setData(fullWavePoints);
-        window.spreadSeries.synthWave.setData([]);
       } else {
         window.spreadSeries.projectedWave.setData([]);
         window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
