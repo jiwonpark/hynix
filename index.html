@@ -986,51 +986,54 @@
           if (y === null) return null;
           return { x, y, targetSize: row.targetSize };
         })
-      // 1. Highlight the Exact Rolling Training Window Used to Predict the Hovered Candle
+      // Highlight the Exact Historical Training Window that was used to Predict the Hovered Point T
       const meanBarsParam = Number($("meanBars")?.value) || 96;
       const lookback = Math.max(32, Math.min(rows.length, meanBarsParam * 2));
+      const forecastBars = 96; // 24 hours at 15m intervals
+      const dt = rows.length > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
 
       if (window.hoveredChartTime && rows.length >= lookback) {
         const timeScale = window.spreadChart.timeScale();
         const hoveredTimeSec = window.hoveredChartTime;
         const latestTimeSec = Math.floor(rows.at(-1).time / 1000);
-        const isFuture = hoveredTimeSec > latestTimeSec;
 
-        let targetIndex = rows.length - 1;
-        if (!isFuture) {
-          let minDiff = Infinity;
-          for (let i = 0; i < rows.length; i++) {
-            const diff = Math.abs(Math.floor(rows[i].time / 1000) - hoveredTimeSec);
-            if (diff < minDiff) {
-              minDiff = diff;
-              targetIndex = i;
-            }
+        // Find how many bars the hovered time is from the start
+        // Origin bar is exactly 24h (96 bars) BEFORE the hovered timepoint
+        const originTimeSec = hoveredTimeSec - (forecastBars * dt);
+
+        // Find the closest row index for the origin time
+        let originIndex = 0;
+        let minDiff = Infinity;
+        for (let i = 0; i < rows.length; i++) {
+          const diff = Math.abs(Math.floor(rows[i].time / 1000) - originTimeSec);
+          if (diff < minDiff) {
+            minDiff = diff;
+            originIndex = i;
           }
         }
 
-        // Training span that generated the prediction at targetIndex
-        const startIndex = Math.max(0, targetIndex - lookback);
-        const endIndex = targetIndex;
-        const actualSpanBars = endIndex - startIndex;
+        // Training span that produced the prediction for the hovered candle
+        const startIndex = Math.max(0, originIndex - lookback + 1);
+        const actualSpanBars = originIndex - startIndex + 1;
 
         if (actualSpanBars >= 16) {
           const startTimeSec = Math.floor(rows[startIndex].time / 1000);
-          const endTimeSec = Math.floor(rows[endIndex].time / 1000);
+          const originCutoffSec = Math.floor(rows[originIndex].time / 1000);
 
           const startX = timeScale.timeToCoordinate(startTimeSec);
-          const endX = timeScale.timeToCoordinate(endTimeSec);
-          const hoveredX = timeScale.timeToCoordinate(hoveredTimeSec);
+          const originX = timeScale.timeToCoordinate(originCutoffSec);
+          const targetX = timeScale.timeToCoordinate(hoveredTimeSec);
 
-          if (startX !== null && endX !== null) {
-            const minX = Math.min(startX, endX);
-            const maxX = Math.max(startX, endX);
+          if (startX !== null && originX !== null) {
+            const minX = Math.min(startX, originX);
+            const maxX = Math.max(startX, originX);
             const spanWidth = Math.max(2, maxX - minX);
 
-            // Shaded lookback training region
+            // 1. Shaded lookback training region that generated the prediction
             ctx.fillStyle = "rgba(0, 210, 255, 0.12)";
             ctx.fillRect(minX, 0, spanWidth, height);
 
-            // Boundary dashed lines
+            // 2. Boundary dashed lines around the training span
             ctx.lineWidth = 1.5;
             ctx.setLineDash([5, 4]);
             ctx.strokeStyle = "#00d2ff";
@@ -1042,8 +1045,42 @@
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // 3. Compute and Draw the 24h Extrapolated Prediction Wave from this Origin Point
-            const trainingSlice = rows.slice(startIndex, endIndex + 1).map((r) => r.normalized);
+            // 3. Origin Cutoff Marker (The moment in time when the prediction was calculated)
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#0284c7";
+            ctx.beginPath();
+            ctx.moveTo(maxX, 0);
+            ctx.lineTo(maxX, height);
+            ctx.stroke();
+
+            // 4. Target Hovered Candle Indicator and 24h Prediction Arc Connector
+            if (targetX !== null) {
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = "#38bdf8";
+              ctx.beginPath();
+              ctx.moveTo(targetX, 0);
+              ctx.lineTo(targetX, height);
+              ctx.stroke();
+
+              // Draw arrow / connecting line from origin to target
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([3, 3]);
+              ctx.strokeStyle = "#38bdf8";
+              ctx.beginPath();
+              ctx.moveTo(maxX, height - 30);
+              ctx.lineTo(targetX, height - 30);
+              ctx.stroke();
+              ctx.setLineDash([]);
+
+              // Target dot
+              ctx.fillStyle = "#38bdf8";
+              ctx.beginPath();
+              ctx.arc(targetX, height - 30, 4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            // 5. Draw 24h Forward Path from Origin to Target
+            const trainingSlice = rows.slice(startIndex, originIndex + 1).map((r) => r.normalized);
             const M = trainingSlice.length;
             const trainMean = mean(trainingSlice);
             let sXY = 0, sXX = 0;
@@ -1073,10 +1110,7 @@
             harmonics.sort((a, b) => b.power - a.power);
             const dominant = harmonics.slice(0, 4);
 
-            const forecastBars = 96; // 24 hours (96 x 15m)
-            const dt = rows.length > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
             const forecastPoints = [];
-
             for (let step = 0; step <= forecastBars; step++) {
               const n = (M - 1) + step;
               let periodicSum = 0;
@@ -1085,20 +1119,20 @@
                 periodicSum += h.amp * damping * Math.cos((2 * Math.PI * h.k * n) / M + h.phase);
               }
               const trendVal = trainIntercept + trainSlope * (n - (M - 1) / 2);
-              const t = endTimeSec + step * dt;
+              const t = originCutoffSec + step * dt;
               const val = trendVal + periodicSum;
               const px = timeScale.timeToCoordinate(t);
-              const py = window.spreadSeries.value.priceToCoordinate(activeChartMode === "ma" ? (100 + (val / rows[endIndex].mean - 1) * 100) : val);
+              const py = window.spreadSeries.value.priceToCoordinate(activeChartMode === "ma" ? (100 + (val / rows[originIndex].mean - 1) * 100) : val);
               if (px !== null && py !== null) {
                 forecastPoints.push({ x: px, y: py });
               }
             }
 
             if (forecastPoints.length >= 2) {
-              ctx.lineWidth = 3.5;
+              ctx.lineWidth = 3;
               ctx.strokeStyle = "#00e5ff";
-              ctx.shadowColor = "rgba(0, 229, 255, 0.75)";
-              ctx.shadowBlur = 9;
+              ctx.shadowColor = "rgba(0, 229, 255, 0.7)";
+              ctx.shadowBlur = 8;
               ctx.beginPath();
               ctx.moveTo(forecastPoints[0].x, forecastPoints[0].y);
               for (let i = 1; i < forecastPoints.length; i++) {
@@ -1108,11 +1142,9 @@
               ctx.shadowBlur = 0;
             }
 
-            // 4. Informational lookback badge
-            const durationH = ((endTimeSec - startTimeSec) / 3600).toFixed(1);
-            const label = isFuture
-              ? `⚡ 24h Forward Forecast: ${actualSpanBars} bars training (${durationH}h) ➜ 24h Future Path`
-              : `⚡ 24h Prediction from ${formatTime(endTimeSec * 1000, cachedInterval)}: ${actualSpanBars} bars training (${durationH}h) ➜ Projected 24h Path`;
+            // 6. Informational Lookback Badge
+            const durationH = ((originCutoffSec - startTimeSec) / 3600).toFixed(1);
+            const label = `⚡ Training Window at ${formatTime(originCutoffSec * 1000, cachedInterval)} (${actualSpanBars} bars, ${durationH}h) ➜ Predicted this +24h Point`;
             
             ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
             const textWidth = ctx.measureText(label).width;
