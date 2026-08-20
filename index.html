@@ -726,17 +726,23 @@
             priceFormat: lineFormat
           })
         };
+        let saveRangeTimer = 0;
         window.spreadChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
           requestExposureOverlayDraw();
-          if (range && Number.isFinite(range.from) && Number.isFinite(range.to)) {
-            window.userHasInteracted = true;
-            window.savedLogicalRange = { from: range.from, to: range.to };
-            try {
-              localStorage.setItem("skhynix_logical_range", JSON.stringify(window.savedLogicalRange));
-            } catch (e) {}
+          if (range && Number.isFinite(range.from) && Number.isFinite(range.to) && cachedRows.length) {
+            const totalBars = cachedRows.length;
+            const barSpan = Math.max(10, range.to - range.from);
+            const barsFromRight = totalBars - range.to;
+            window.userViewport = { barSpan, barsFromRight };
+            window.clearTimeout(saveRangeTimer);
+            saveRangeTimer = window.setTimeout(() => {
+              try {
+                localStorage.setItem("skhynix_viewport", JSON.stringify(window.userViewport));
+              } catch (e) {}
+            }, 300);
           }
           if (!range || loadingOlder || !cachedRows.length) return;
-          if (range.from < 18) {
+          if (range.from < 10) {
             window.pendingLogicalRangeBeforePrepend = range;
             prependOlderBars();
           }
@@ -858,41 +864,30 @@
       requestExposureOverlayDraw();
 
       const totalBars = rows.length;
-      const forecastBars = projectionPoints.length || 96;
-
-      let storedLogicalRange = window.savedLogicalRange;
-      if (!storedLogicalRange) {
+      let vp = window.userViewport;
+      if (!vp) {
         try {
-          const raw = localStorage.getItem("skhynix_logical_range");
-          if (raw) storedLogicalRange = JSON.parse(raw);
+          const raw = localStorage.getItem("skhynix_viewport");
+          if (raw) vp = JSON.parse(raw);
         } catch (e) {}
       }
 
-      if (storedLogicalRange && Number.isFinite(storedLogicalRange.from) && Number.isFinite(storedLogicalRange.to)) {
-        setTimeout(() => {
-          if (!window.spreadChart) return;
-          window.spreadChart.timeScale().setVisibleLogicalRange(storedLogicalRange);
-          requestExposureOverlayDraw();
-        }, 50);
-      } else if (!window.spreadChartInitialized) {
+      if (!window.spreadChartInitialized) {
         window.spreadChartInitialized = true;
         setTimeout(() => {
           if (!window.spreadChart) return;
-          window.spreadChart.timeScale().setVisibleLogicalRange({
-            from: Math.max(0, totalBars - 60),
-            to: totalBars + 96
-          });
+          if (vp && Number.isFinite(vp.barSpan) && Number.isFinite(vp.barsFromRight)) {
+            const to = totalBars - vp.barsFromRight;
+            const from = to - vp.barSpan;
+            window.spreadChart.timeScale().setVisibleLogicalRange({ from, to });
+          } else {
+            window.spreadChart.timeScale().setVisibleLogicalRange({
+              from: Math.max(0, totalBars - 60),
+              to: totalBars + 96
+            });
+          }
           requestExposureOverlayDraw();
-        }, 150);
-      } else if (wasAtRightEdge && !window.pendingLogicalRangeBeforePrepend) {
-        setTimeout(() => {
-          if (!window.spreadChart) return;
-          window.spreadChart.timeScale().setVisibleLogicalRange({
-            from: Math.max(0, totalBars - 60),
-            to: totalBars + 96
-          });
-          requestExposureOverlayDraw();
-        }, 150);
+        }, 60);
       }
       $("spreadLegend").textContent = chartMode === "ma" ? "Spread / MA" : "Spread";
     }
