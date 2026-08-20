@@ -767,10 +767,6 @@
         const dt = rows.length > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
         const lastTime = Math.floor(lastRow.time / 1000);
         
-        // 24 hours in bars based on current interval dt
-        const dayBars = Math.max(24, Math.round(86400 / dt));
-        const forecastBars = Math.max(dayBars, Math.round(dominantLookback * 1.5));
-        
         // Estimate current cycle amplitude and phase from recent wave momentum
         const recentRows = rows.slice(-dominantLookback);
         const synthValues = recentRows.map(synthOf);
@@ -786,20 +782,18 @@
         for (let step = 1; step <= forecastBars; step++) {
           const futureTime = lastTime + step * dt;
           // Damped harmonic mean-reverting projection
-          const decay = Math.exp(-step / (forecastBars * 2.2));
+          const decay = Math.exp(-step / (forecastBars * 2.5));
           const projectedVal = meanLevel + amp * decay * Math.cos(omega * step + phase);
           projectionPoints.push({ time: futureTime, value: projectedVal });
-          futureTimePoints.push({ time: futureTime, value: NaN });
         }
         window.spreadSeries.projectedWave.setData(projectionPoints);
       }
 
-      const dummyPoints = (projectionPoints || []).slice(1).map(p => ({ time: p.time }));
-      window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)).concat(dummyPoints));
-      window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)).concat(dummyPoints));
-      window.spreadSeries.mean.setData(rows.map((row) => toPoint(row, meanOf)).concat(dummyPoints));
-      window.spreadSeries.upper.setData(rows.map((row) => toPoint(row, upperOf)).concat(dummyPoints));
-      window.spreadSeries.lower.setData(rows.map((row) => toPoint(row, lowerOf)).concat(dummyPoints));
+      window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)));
+      window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
+      window.spreadSeries.mean.setData(rows.map((row) => toPoint(row, meanOf)));
+      window.spreadSeries.upper.setData(rows.map((row) => toPoint(row, upperOf)));
+      window.spreadSeries.lower.setData(rows.map((row) => toPoint(row, lowerOf)));
       window.spreadSeries.avgEntry.setData(rows
         .map((row) => {
           const value = avgEntryOf(row);
@@ -815,22 +809,20 @@
         setTimeout(() => {
           if (!window.spreadChart) return;
           window.spreadChart.timeScale().setVisibleLogicalRange({
-            from: totalBars - 70,
-            to: totalBars + forecastBars + 5
+            from: totalBars - 60,
+            to: totalBars + forecastBars + 10
           });
           requestExposureOverlayDraw();
-        }, 100);
+        }, 150);
       } else if (wasAtRightEdge && !window.pendingLogicalRangeBeforePrepend) {
         setTimeout(() => {
           if (!window.spreadChart) return;
-          const currentRange = window.spreadChart.timeScale().getVisibleLogicalRange();
-          const span = currentRange ? (currentRange.to - currentRange.from) : 160;
           window.spreadChart.timeScale().setVisibleLogicalRange({
-            from: totalBars + forecastBars - span + 5,
-            to: totalBars + forecastBars + 5
+            from: totalBars - 60,
+            to: totalBars + forecastBars + 10
           });
           requestExposureOverlayDraw();
-        }, 100);
+        }, 150);
       }
       $("spreadLegend").textContent = chartMode === "ma" ? "Spread / MA" : "Spread";
     }
