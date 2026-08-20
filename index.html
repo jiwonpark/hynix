@@ -707,14 +707,14 @@
         });
         const lineFormat = { type: "price", precision: 2, minMove: 0.01 };
         window.spreadSeries = {
-          value: window.spreadChart.addLineSeries({ color: "#dc2626", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
-          synthWave: window.spreadChart.addLineSeries({ color: "#2563eb", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
           projectedWave: window.spreadChart.addLineSeries({
             color: "#00d2ff",
             lineWidth: 3,
             priceLineVisible: false,
             priceFormat: lineFormat
           }),
+          value: window.spreadChart.addLineSeries({ color: "#dc2626", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
+          synthWave: window.spreadChart.addLineSeries({ color: "#2563eb", lineWidth: 2, priceLineVisible: false, priceFormat: lineFormat }),
           mean: window.spreadChart.addLineSeries({ color: "#111827", lineWidth: 1, priceLineVisible: false, priceFormat: lineFormat }),
           upper: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, priceFormat: lineFormat }),
           lower: window.spreadChart.addLineSeries({ color: "#7c3aed", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, priceFormat: lineFormat }),
