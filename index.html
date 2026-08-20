@@ -986,9 +986,10 @@
       const baseY = Math.min(height, Math.max(0, window.spreadSeries.value.priceToCoordinate(window.exposureBase) ?? height));
       ctx.imageSmoothingEnabled = false;
 
-      // Draw Exact Causal Lookback Span for Prediction when hovering on any timepoint
+      // Option B: Dynamic Causal Rolling Out-of-Sample Walk-Forward Backtest on Hover
       if (window.hoveredChartTime && rows.length >= 32) {
         const timeScale = window.spreadChart.timeScale();
+        const valueSeries = window.spreadSeries.value;
         const hoveredTimeSec = window.hoveredChartTime;
         const meanBarsParam = Number($("meanBars")?.value) || 96;
         const lookbackBars = Math.max(32, Math.min(rows.length, meanBarsParam * 2));
@@ -1021,18 +1022,17 @@
 
           const startX = timeScale.timeToCoordinate(startTimeSec);
           const originX = timeScale.timeToCoordinate(originTimeSec);
-          const hoveredX = timeScale.timeToCoordinate(hoveredTimeSec);
 
           if (startX !== null && originX !== null) {
             const minX = Math.min(startX, originX);
             const maxX = Math.max(startX, originX);
             const spanWidth = Math.max(2, maxX - minX);
 
-            // Shaded lookback training region
-            ctx.fillStyle = "rgba(0, 210, 255, 0.10)";
+            // 1. Shaded lookback training region
+            ctx.fillStyle = "rgba(0, 210, 255, 0.12)";
             ctx.fillRect(minX, 0, spanWidth, height);
 
-            // Boundary lines for lookback span
+            // 2. Boundary dashed lines
             ctx.lineWidth = 1.5;
             ctx.setLineDash([5, 4]);
             ctx.strokeStyle = "#00d2ff";
@@ -1044,26 +1044,93 @@
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Marker line at the prediction origin point
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = "#38bdf8";
+            // 3. Origin Cutoff Marker Line
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = "#0284c7";
             ctx.beginPath();
             ctx.moveTo(maxX, 0);
             ctx.lineTo(maxX, height);
             ctx.stroke();
 
+            // 4. Compute Causal Rolling Fourier Forecast Cone from this origin point [T, T + 24h]
+            const trainingRows = rows.slice(startIndex, originIndex + 1);
+            const M = trainingRows.length;
+            const trainPrices = trainingRows.map((r) => r.normalized);
+            const trainMean = mean(trainPrices);
+            let sXY = 0, sXX = 0;
+            for (let i = 0; i < M; i++) {
+              const x = i - (M - 1) / 2;
+              sXY += x * (trainPrices[i] - trainMean);
+              sXX += x * x;
+            }
+            const trainSlope = sXX ? sXY / sXX : 0;
+            const trainIntercept = trainMean;
+            const trainDetrended = trainPrices.map((p, i) => p - (trainIntercept + trainSlope * (i - (M - 1) / 2)));
+
+            const maxK = Math.floor(M / 4);
+            const minK = Math.max(1, Math.floor(M / 192));
+            const harmonics = [];
+            for (let k = minK; k <= maxK; k++) {
+              let re = 0, im = 0;
+              for (let n = 0; n < M; n++) {
+                const angle = (2 * Math.PI * k * n) / M;
+                re += trainDetrended[n] * Math.cos(angle);
+                im -= trainDetrended[n] * Math.sin(angle);
+              }
+              const amp = (2 / M) * Math.sqrt(re * re + im * im);
+              const phase = Math.atan2(im, re);
+              harmonics.push({ k, amp, phase, power: amp * amp });
+            }
+            harmonics.sort((a, b) => b.power - a.power);
+            const dominant = harmonics.slice(0, 4);
+
+            // Compute forward projected path for 96 bars from origin
+            const forecastBars = 96;
+            const forecastPoints = [];
+            for (let step = 0; step <= forecastBars; step++) {
+              const n = (M - 1) + step;
+              let periodicSum = 0;
+              for (const h of dominant) {
+                const damping = Math.exp(-step / (forecastBars * 3.0));
+                periodicSum += h.amp * damping * Math.cos((2 * Math.PI * h.k * n) / M + h.phase);
+              }
+              const trendVal = trainIntercept + trainSlope * (n - (M - 1) / 2);
+              const t = originTimeSec + step * dt;
+              const val = trendVal + periodicSum;
+              const px = timeScale.timeToCoordinate(t);
+              const py = valueSeries.priceToCoordinate(activeChartMode === "ma" ? (100 + (val / trainingRows.at(-1).mean - 1) * 100) : val);
+              if (px !== null && py !== null) {
+                forecastPoints.push({ x: px, y: py });
+              }
+            }
+
+            // Draw Forecast Out-Of-Sample Path (Glowing cyan curve)
+            if (forecastPoints.length >= 2) {
+              ctx.lineWidth = 3;
+              ctx.strokeStyle = "#00e5ff";
+              ctx.shadowColor = "rgba(0, 229, 255, 0.6)";
+              ctx.shadowBlur = 8;
+              ctx.beginPath();
+              ctx.moveTo(forecastPoints[0].x, forecastPoints[0].y);
+              for (let i = 1; i < forecastPoints.length; i++) {
+                ctx.lineTo(forecastPoints[i].x, forecastPoints[i].y);
+              }
+              ctx.stroke();
+              ctx.shadowBlur = 0; // reset shadow
+            }
+
             // Informational badge
             const durationH = ((originTimeSec - startTimeSec) / 3600).toFixed(1);
             const label = isFuture
-              ? `⚡ Future Forecast Lookback: ${actualSpanBars} bars (${durationH}h) [from ${formatTime(startTimeSec * 1000, cachedInterval)} to Live]`
-              : `⚡ Training Span for this Prediction: ${actualSpanBars} bars (${durationH}h) [from ${formatTime(startTimeSec * 1000, cachedInterval)}]`;
+              ? `⚡ Future 24h Forecast Lookback: ${actualSpanBars} bars (${durationH}h) [from ${formatTime(startTimeSec * 1000, cachedInterval)} to Live]`
+              : `⚡ Walk-Forward Model at ${formatTime(originTimeSec * 1000, cachedInterval)}: ${actualSpanBars} bars training (${durationH}h) ➜ 24h Prediction Path`;
             
             ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
             const textWidth = ctx.measureText(label).width;
             const badgeX = Math.max(8, Math.min(width - textWidth - 24, minX + 6));
             const badgeY = 14;
 
-            ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+            ctx.fillStyle = "rgba(15, 23, 42, 0.90)";
             ctx.beginPath();
             ctx.roundRect(badgeX, badgeY, textWidth + 16, 22, 5);
             ctx.fill();
