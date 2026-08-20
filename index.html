@@ -726,18 +726,14 @@
             priceFormat: lineFormat
           })
         };
-        window.spreadChart.timeScale().subscribeVisibleTimeRangeChange((timeRange) => {
-          if (timeRange && Number.isFinite(timeRange.from) && Number.isFinite(timeRange.to)) {
-            window.savedTimeRange = timeRange;
-            try {
-              localStorage.setItem("skhynix_timerange", JSON.stringify(timeRange));
-            } catch (e) {}
-          }
-        });
         window.spreadChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
           requestExposureOverlayDraw();
-          if (range) {
-            window.savedLogicalRange = range;
+          if (range && Number.isFinite(range.from) && Number.isFinite(range.to)) {
+            window.userHasInteracted = true;
+            window.savedLogicalRange = { from: range.from, to: range.to };
+            try {
+              localStorage.setItem("skhynix_logical_range", JSON.stringify(window.savedLogicalRange));
+            } catch (e) {}
           }
           if (!range || loadingOlder || !cachedRows.length) return;
           if (range.from < 18) {
@@ -864,26 +860,20 @@
       const totalBars = rows.length;
       const forecastBars = projectionPoints.length || 96;
 
-      let storedRange = window.savedTimeRange;
-      if (!storedRange) {
+      let storedLogicalRange = window.savedLogicalRange;
+      if (!storedLogicalRange) {
         try {
-          const raw = localStorage.getItem("skhynix_timerange");
-          if (raw) storedRange = JSON.parse(raw);
+          const raw = localStorage.getItem("skhynix_logical_range");
+          if (raw) storedLogicalRange = JSON.parse(raw);
         } catch (e) {}
       }
 
-      if (storedRange && Number.isFinite(storedRange.from) && Number.isFinite(storedRange.to)) {
+      if (storedLogicalRange && Number.isFinite(storedLogicalRange.from) && Number.isFinite(storedLogicalRange.to)) {
         setTimeout(() => {
           if (!window.spreadChart) return;
-          try {
-            window.spreadChart.timeScale().setVisibleRange(storedRange);
-          } catch (e) {
-            if (window.savedLogicalRange) {
-              window.spreadChart.timeScale().setVisibleLogicalRange(window.savedLogicalRange);
-            }
-          }
+          window.spreadChart.timeScale().setVisibleLogicalRange(storedLogicalRange);
           requestExposureOverlayDraw();
-        }, 80);
+        }, 50);
       } else if (!window.spreadChartInitialized) {
         window.spreadChartInitialized = true;
         setTimeout(() => {
