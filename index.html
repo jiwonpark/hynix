@@ -943,28 +943,17 @@
       }
 
       if (!window.userInteracting && window.spreadChart) {
-        if (!window.spreadChartInitialized) {
-          window.spreadChartInitialized = true;
-          setTimeout(() => {
-            if (!window.spreadChart) return;
-            if (vp && Number.isFinite(vp.barSpan) && Number.isFinite(vp.barsFromRight)) {
-              const to = totalBars - vp.barsFromRight;
-              const from = to - vp.barSpan;
-              window.spreadChart.timeScale().setVisibleLogicalRange({ from, to });
-            } else {
-              window.spreadChart.timeScale().setVisibleLogicalRange({
-                from: Math.max(0, totalBars - 60),
-                to: totalBars + 96
-              });
-            }
-            requestExposureOverlayDraw();
-          }, 80);
-        } else if (vp && Number.isFinite(vp.barSpan) && Number.isFinite(vp.barsFromRight)) {
+        if (vp && Number.isFinite(vp.barSpan) && Number.isFinite(vp.barsFromRight)) {
           const to = totalBars - vp.barsFromRight;
           const from = to - vp.barSpan;
           window.spreadChart.timeScale().setVisibleLogicalRange({ from, to });
-          requestExposureOverlayDraw();
+        } else if (!window.spreadChartInitialized) {
+          window.spreadChart.timeScale().setVisibleLogicalRange({
+            from: Math.max(0, totalBars - 60),
+            to: totalBars + 96
+          });
         }
+        window.spreadChartInitialized = true;
       }
       $("spreadLegend").textContent = chartMode === "ma" ? "Spread / MA" : "Spread";
     }
