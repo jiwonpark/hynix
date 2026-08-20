@@ -1036,21 +1036,77 @@
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Predicted Target Candle Indicator
-            if (hoveredX !== null) {
-              ctx.lineWidth = 2;
-              ctx.strokeStyle = "#38bdf8";
-              ctx.beginPath();
-              ctx.moveTo(hoveredX, 0);
-              ctx.lineTo(hoveredX, height);
-              ctx.stroke();
+            // 3. Compute and Draw the 24h Extrapolated Prediction Wave from this Origin Point
+            const trainingSlice = rows.slice(startIndex, endIndex + 1).map((r) => r.normalized);
+            const M = trainingSlice.length;
+            const trainMean = mean(trainingSlice);
+            let sXY = 0, sXX = 0;
+            for (let i = 0; i < M; i++) {
+              const x = i - (M - 1) / 2;
+              sXY += x * (trainingSlice[i] - trainMean);
+              sXX += x * x;
+            }
+            const trainSlope = sXX ? sXY / sXX : 0;
+            const trainIntercept = trainMean;
+            const trainDetrended = trainingSlice.map((p, i) => p - (trainIntercept + trainSlope * (i - (M - 1) / 2)));
+
+            const maxK = Math.floor(M / 4);
+            const minK = Math.max(1, Math.floor(M / 192));
+            const harmonics = [];
+            for (let k = minK; k <= maxK; k++) {
+              let re = 0, im = 0;
+              for (let n = 0; n < M; n++) {
+                const angle = (2 * Math.PI * k * n) / M;
+                re += trainDetrended[n] * Math.cos(angle);
+                im -= trainDetrended[n] * Math.sin(angle);
+              }
+              const amp = (2 / M) * Math.sqrt(re * re + im * im);
+              const phase = Math.atan2(im, re);
+              harmonics.push({ k, amp, phase, power: amp * amp });
+            }
+            harmonics.sort((a, b) => b.power - a.power);
+            const dominant = harmonics.slice(0, 4);
+
+            const forecastBars = 96; // 24 hours (96 x 15m)
+            const dt = rows.length > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
+            const forecastPoints = [];
+
+            for (let step = 0; step <= forecastBars; step++) {
+              const n = (M - 1) + step;
+              let periodicSum = 0;
+              for (const h of dominant) {
+                const damping = Math.exp(-step / (forecastBars * 3.0));
+                periodicSum += h.amp * damping * Math.cos((2 * Math.PI * h.k * n) / M + h.phase);
+              }
+              const trendVal = trainIntercept + trainSlope * (n - (M - 1) / 2);
+              const t = endTimeSec + step * dt;
+              const val = trendVal + periodicSum;
+              const px = timeScale.timeToCoordinate(t);
+              const py = window.spreadSeries.value.priceToCoordinate(activeChartMode === "ma" ? (100 + (val / rows[endIndex].mean - 1) * 100) : val);
+              if (px !== null && py !== null) {
+                forecastPoints.push({ x: px, y: py });
+              }
             }
 
-            // Informational lookback badge
+            if (forecastPoints.length >= 2) {
+              ctx.lineWidth = 3.5;
+              ctx.strokeStyle = "#00e5ff";
+              ctx.shadowColor = "rgba(0, 229, 255, 0.75)";
+              ctx.shadowBlur = 9;
+              ctx.beginPath();
+              ctx.moveTo(forecastPoints[0].x, forecastPoints[0].y);
+              for (let i = 1; i < forecastPoints.length; i++) {
+                ctx.lineTo(forecastPoints[i].x, forecastPoints[i].y);
+              }
+              ctx.stroke();
+              ctx.shadowBlur = 0;
+            }
+
+            // 4. Informational lookback badge
             const durationH = ((endTimeSec - startTimeSec) / 3600).toFixed(1);
             const label = isFuture
-              ? `⚡ Forecast Lookback: ${actualSpanBars} bars (${durationH}h) ➜ Predicting Future Target ${formatTime(hoveredTimeSec * 1000, cachedInterval)}`
-              : `⚡ Causal Lookback: ${actualSpanBars} bars (${durationH}h) [from ${formatTime(startTimeSec * 1000, cachedInterval)}] ➜ Predicted this Candle`;
+              ? `⚡ 24h Forward Forecast: ${actualSpanBars} bars training (${durationH}h) ➜ 24h Future Path`
+              : `⚡ 24h Prediction from ${formatTime(endTimeSec * 1000, cachedInterval)}: ${actualSpanBars} bars training (${durationH}h) ➜ Projected 24h Path`;
             
             ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
             const textWidth = ctx.measureText(label).width;
