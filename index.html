@@ -759,43 +759,85 @@
       const priceMax = Math.max(...priceValues);
       const exposureBase = priceMin - Math.max(0.2, (priceMax - priceMin) * 0.08);
       window.exposureBase = exposureBase;
-      window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)));
-      window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
 
-      // Compute Forward Projection: Extrapolate dominant wave at least 1 full day (24h) ahead
+      // --- Rigorous Periodic Fourier Harmonic Cycle Decomposition ---
+      // 1. Detrend normalized spread series using linear regression
+      const N = rows.length;
       let projectionPoints = [];
-      let futureTimePoints = [];
-      if (rows.length >= 24) {
-        const lastRow = rows.at(-1);
-        const dominantLookback = Math.max(16, Math.min(192, meanBars));
-        const dt = rows.length > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
-        const lastTime = Math.floor(lastRow.time / 1000);
-        const forecastBars = Math.max(96, Math.round(dominantLookback * 1.5));
-        
-        // Estimate current cycle amplitude and phase from recent wave momentum
-        const recentRows = rows.slice(-dominantLookback);
-        const synthValues = recentRows.map(synthOf);
-        const meanLevel = mean(recentRows.map(meanOf));
-        const amp = Math.max(0.3, std(synthValues, meanLevel) * 1.4);
-        const currentDev = synthOf(lastRow) - meanLevel;
-        const prevDev = synthOf(rows[rows.length - 2] || lastRow) - meanLevel;
-        const velocity = currentDev - prevDev;
-        const phase = Math.atan2(velocity * (dominantLookback / (2 * Math.PI)), currentDev);
-        const omega = (2 * Math.PI) / dominantLookback;
-        
-        projectionPoints.push({ time: lastTime, value: synthOf(lastRow) });
+      if (N >= 32) {
+        const prices = rows.map((r) => r.normalized);
+        const meanY = mean(prices);
+        let sXY = 0, sXX = 0;
+        for (let i = 0; i < N; i++) {
+          const x = i - (N - 1) / 2;
+          sXY += x * (prices[i] - meanY);
+          sXX += x * x;
+        }
+        const slope = sXX ? sXY / sXX : 0;
+        const intercept = meanY;
+        const detrended = prices.map((p, i) => p - (intercept + slope * (i - (N - 1) / 2)));
+
+        // 2. Compute Discrete Fourier Transform (DFT) to isolate truly periodic components
+        const maxK = Math.floor(N / 4); // Capture cycles down to 4 bars
+        const minK = Math.max(1, Math.floor(N / 192)); // Up to 192 bars
+        const harmonics = [];
+        for (let k = minK; k <= maxK; k++) {
+          let re = 0, im = 0;
+          for (let n = 0; n < N; n++) {
+            const angle = (2 * Math.PI * k * n) / N;
+            re += detrended[n] * Math.cos(angle);
+            im -= detrended[n] * Math.sin(angle);
+          }
+          const amp = (2 / N) * Math.sqrt(re * re + im * im);
+          const phase = Math.atan2(im, re);
+          const periodBars = N / k;
+          harmonics.push({ k, periodBars, amp, phase, power: amp * amp });
+        }
+
+        // 3. Select the Top Dominant Periodic Cycles (highest spectral power)
+        harmonics.sort((a, b) => b.power - a.power);
+        const dominantHarmonics = harmonics.slice(0, 4);
+
+        // 4. Synthesize Historical Periodic Curve (Sum of Dominant Periodic Waves + Trend)
+        const synthHistorical = [];
+        for (let n = 0; n < N; n++) {
+          let periodicSum = 0;
+          for (const h of dominantHarmonics) {
+            periodicSum += h.amp * Math.cos((2 * Math.PI * h.k * n) / N + h.phase);
+          }
+          const trendVal = intercept + slope * (n - (N - 1) / 2);
+          const time = Math.floor(rows[n].time / 1000);
+          rows[n].synthPeriodicWave = trendVal + periodicSum;
+          synthHistorical.push({ time, value: trendVal + periodicSum });
+        }
+        window.spreadSeries.synthWave.setData(synthHistorical);
+
+        // 5. Analytical Harmonic Forward Projection (Extrapolating Periodic Waves 24h+ into the Future)
+        const dt = N > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
+        const lastTime = Math.floor(rows.at(-1).time / 1000);
+        const forecastBars = 96; // 24h at 15m intervals
+
+        projectionPoints.push({ time: lastTime, value: rows.at(-1).synthPeriodicWave });
         for (let step = 1; step <= forecastBars; step++) {
-          const futureTime = lastTime + step * dt;
-          // Damped harmonic mean-reverting projection
-          const decay = Math.exp(-step / (forecastBars * 2.5));
-          const projectedVal = meanLevel + amp * decay * Math.cos(omega * step + phase);
-          projectionPoints.push({ time: futureTime, value: projectedVal });
+          const n = (N - 1) + step;
+          let periodicSum = 0;
+          for (const h of dominantHarmonics) {
+            // Apply slight physical wave damping into the far future
+            const damping = Math.exp(-step / (forecastBars * 3.0));
+            periodicSum += h.amp * damping * Math.cos((2 * Math.PI * h.k * n) / N + h.phase);
+          }
+          const trendVal = intercept + slope * (n - (N - 1) / 2);
+          projectionPoints.push({
+            time: lastTime + step * dt,
+            value: trendVal + periodicSum
+          });
         }
         window.spreadSeries.projectedWave.setData(projectionPoints);
+      } else {
+        window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
       }
 
       window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)));
-      window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
       window.spreadSeries.mean.setData(rows.map((row) => toPoint(row, meanOf)));
       window.spreadSeries.upper.setData(rows.map((row) => toPoint(row, upperOf)));
       window.spreadSeries.lower.setData(rows.map((row) => toPoint(row, lowerOf)));
@@ -807,6 +849,7 @@
         .filter(Boolean));
       window.exposureOverlayRows = rows;
       requestExposureOverlayDraw();
+
       const totalBars = rows.length;
       const forecastBars = projectionPoints.length || 96;
       if (!window.spreadChartInitialized) {
