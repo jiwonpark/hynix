@@ -980,15 +980,10 @@
           if (y === null) return null;
           return { x, y, targetSize: row.targetSize };
         })
-        .filter(Boolean)
-        .sort((a, b) => a.x - b.x);
-      if (!points.length) return;
-      const gaps = points.slice(1).map((point, index) => point.x - points[index].x).filter((gap) => gap > 0 && Number.isFinite(gap));
-      const defaultGap = gaps.length ? gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : Math.max(1, window.spreadChart.timeScale().options?.().barSpacing || 8);
-      const baseY = Math.min(height, Math.max(0, window.spreadSeries.value.priceToCoordinate(window.exposureBase) ?? height));
-      ctx.imageSmoothingEnabled = false;
+      // 1. Highlight the Exact Rolling Training Window Used to Predict the Hovered Candle
+      const meanBarsParam = Number($("meanBars")?.value) || 96;
+      const lookback = Math.max(32, Math.min(rows.length, meanBarsParam * 2));
 
-      // Highlight the Exact Rolling Training Window Used to Predict the Hovered Candle
       if (window.hoveredChartTime && rows.length >= lookback) {
         const timeScale = window.spreadChart.timeScale();
         const hoveredTimeSec = window.hoveredChartTime;
@@ -1025,11 +1020,11 @@
             const maxX = Math.max(startX, endX);
             const spanWidth = Math.max(2, maxX - minX);
 
-            // 1. Shaded lookback training region
-            ctx.fillStyle = "rgba(0, 210, 255, 0.10)";
+            // Shaded lookback training region
+            ctx.fillStyle = "rgba(0, 210, 255, 0.12)";
             ctx.fillRect(minX, 0, spanWidth, height);
 
-            // 2. Boundary dashed lines
+            // Boundary dashed lines
             ctx.lineWidth = 1.5;
             ctx.setLineDash([5, 4]);
             ctx.strokeStyle = "#00d2ff";
@@ -1041,7 +1036,7 @@
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // 3. Predicted Target Candle Indicator
+            // Predicted Target Candle Indicator
             if (hoveredX !== null) {
               ctx.lineWidth = 2;
               ctx.strokeStyle = "#38bdf8";
@@ -1051,7 +1046,7 @@
               ctx.stroke();
             }
 
-            // 4. Informational lookback badge
+            // Informational lookback badge
             const durationH = ((endTimeSec - startTimeSec) / 3600).toFixed(1);
             const label = isFuture
               ? `⚡ Forecast Lookback: ${actualSpanBars} bars (${durationH}h) ➜ Predicting Future Target ${formatTime(hoveredTimeSec * 1000, cachedInterval)}`
@@ -1076,20 +1071,26 @@
         }
       }
 
-      points.forEach((point, index) => {
-        const previous = points[index - 1];
-        const next = points[index + 1];
-        const leftEdge = previous ? (previous.x + point.x) / 2 : point.x - defaultGap / 2;
-        const rightEdge = next ? (point.x + next.x) / 2 : point.x + defaultGap / 2;
-        const x = Math.round(leftEdge);
-        const rectWidth = Math.max(1, Math.round(rightEdge) - x);
-        const top = Math.min(point.y, baseY);
-        const bottom = Math.max(point.y, baseY);
-        // Alpha is strictly proportional to actual target position size (0 to 100%)
-        const alpha = Math.max(0, Math.min(0.65, point.targetSize * 0.60));
-        ctx.fillStyle = `rgba(124, 58, 237, ${alpha})`;
-        ctx.fillRect(x, top, rectWidth, Math.max(1, bottom - top));
-      });
+      // 2. Position Size Exposure Overlay
+      if (points.length) {
+        const gaps = points.slice(1).map((point, index) => point.x - points[index].x).filter((gap) => gap > 0 && Number.isFinite(gap));
+        const defaultGap = gaps.length ? gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : Math.max(1, window.spreadChart.timeScale().options?.().barSpacing || 8);
+        const baseY = Math.min(height, Math.max(0, window.spreadSeries.value.priceToCoordinate(window.exposureBase) ?? height));
+        
+        points.forEach((point, index) => {
+          const previous = points[index - 1];
+          const next = points[index + 1];
+          const leftEdge = previous ? (previous.x + point.x) / 2 : point.x - defaultGap / 2;
+          const rightEdge = next ? (point.x + next.x) / 2 : point.x + defaultGap / 2;
+          const x = Math.round(leftEdge);
+          const rectWidth = Math.max(1, Math.round(rightEdge) - x);
+          const top = Math.min(point.y, baseY);
+          const bottom = Math.max(point.y, baseY);
+          const alpha = Math.max(0, Math.min(0.65, point.targetSize * 0.60));
+          ctx.fillStyle = `rgba(124, 58, 237, ${alpha})`;
+          ctx.fillRect(x, top, rectWidth, Math.max(1, bottom - top));
+        });
+      }
     }
     function drawHistogram(rows) {
       const premiums = rows
