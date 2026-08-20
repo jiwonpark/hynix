@@ -801,92 +801,94 @@
       const exposureBase = priceMin - Math.max(0.2, (priceMax - priceMin) * 0.08);
       window.exposureBase = exposureBase;
 
-      // --- Rigorous Periodic Fourier Harmonic Cycle Decomposition ---
-      // 1. Detrend normalized spread series using linear regression
+      // --- True Causal Walk-Forward Rolling Predictive Fourier Model (Zero Lookahead / No Hindsight Bias) ---
       const N = rows.length;
-      let projectionPoints = [];
-      if (N >= 32) {
-        const prices = rows.map((r) => r.normalized);
-        const meanY = mean(prices);
+      const meanBarsParam = Number($("meanBars")?.value) || 96;
+      const lookback = Math.max(32, Math.min(N, meanBarsParam * 2));
+      const fullWavePoints = [];
+
+      function fitFourierAndPredict(dataSlice, stepsAhead) {
+        const M = dataSlice.length;
+        if (M < 16) return null;
+        const meanY = mean(dataSlice);
         let sXY = 0, sXX = 0;
-        for (let i = 0; i < N; i++) {
-          const x = i - (N - 1) / 2;
-          sXY += x * (prices[i] - meanY);
+        for (let i = 0; i < M; i++) {
+          const x = i - (M - 1) / 2;
+          sXY += x * (dataSlice[i] - meanY);
           sXX += x * x;
         }
         const slope = sXX ? sXY / sXX : 0;
         const intercept = meanY;
-        const detrended = prices.map((p, i) => p - (intercept + slope * (i - (N - 1) / 2)));
+        const detrended = dataSlice.map((p, i) => p - (intercept + slope * (i - (M - 1) / 2)));
 
-        // 2. Compute Discrete Fourier Transform (DFT) to isolate truly periodic components
-        const maxK = Math.floor(N / 4); // Capture cycles down to 4 bars
-        const minK = Math.max(1, Math.floor(N / 192)); // Up to 192 bars
+        const maxK = Math.floor(M / 4);
+        const minK = Math.max(1, Math.floor(M / 192));
         const harmonics = [];
         for (let k = minK; k <= maxK; k++) {
           let re = 0, im = 0;
-          for (let n = 0; n < N; n++) {
-            const angle = (2 * Math.PI * k * n) / N;
+          for (let n = 0; n < M; n++) {
+            const angle = (2 * Math.PI * k * n) / M;
             re += detrended[n] * Math.cos(angle);
             im -= detrended[n] * Math.sin(angle);
           }
-          const amp = (2 / N) * Math.sqrt(re * re + im * im);
+          const amp = (2 / M) * Math.sqrt(re * re + im * im);
           const phase = Math.atan2(im, re);
-          const periodBars = N / k;
-          harmonics.push({ k, periodBars, amp, phase, power: amp * amp });
+          harmonics.push({ k, amp, phase, power: amp * amp });
         }
-
-        // 3. Select the Top Dominant Periodic Cycles (highest spectral power)
         harmonics.sort((a, b) => b.power - a.power);
-        const dominantHarmonics = harmonics.slice(0, 4);
+        const dominant = harmonics.slice(0, 4);
 
-        // Store lookback span metadata for interactive mouseover overlay
-        const startTime = Math.floor(rows[0].time / 1000);
-        const endTime = Math.floor(rows.at(-1).time / 1000);
-        const durationHours = ((endTime - startTime) / 3600).toFixed(1);
-        window.waveModelInfo = {
-          startTime,
-          endTime,
-          barCount: N,
-          durationText: `${durationHours}h`,
-          dominantHarmonics
-        };
-
-        // 4. Synthesize Full Continuous Periodic Wave (Historical Fit + 24h+ Forward Projection)
-        const fullWavePoints = [];
-        for (let n = 0; n < N; n++) {
+        const predictions = [];
+        for (const step of stepsAhead) {
+          const n = (M - 1) + step;
           let periodicSum = 0;
-          for (const h of dominantHarmonics) {
-            periodicSum += h.amp * Math.cos((2 * Math.PI * h.k * n) / N + h.phase);
+          for (const h of dominant) {
+            const damping = Math.exp(-step / 288.0);
+            periodicSum += h.amp * damping * Math.cos((2 * Math.PI * h.k * n) / M + h.phase);
           }
-          const trendVal = intercept + slope * (n - (N - 1) / 2);
-          const time = Math.floor(rows[n].time / 1000);
-          rows[n].synthPeriodicWave = trendVal + periodicSum;
-          fullWavePoints.push({ time, value: trendVal + periodicSum });
+          const trendVal = intercept + slope * (n - (M - 1) / 2);
+          predictions.push(trendVal + periodicSum);
+        }
+        return { predictions, dominant, intercept, slope };
+      }
+
+      if (N >= lookback) {
+        const prices = rows.map((r) => r.normalized);
+
+        // 1. True Causal Out-of-Sample Predictions across History (Every point predicted strictly using past bars)
+        for (let i = lookback; i < N; i++) {
+          const slice = prices.slice(i - lookback, i); // past bars only!
+          const result = fitFourierAndPredict(slice, [1]); // 1-step ahead prediction
+          if (result && result.predictions.length) {
+            const predVal = result.predictions[0];
+            rows[i].synthPeriodicWave = predVal;
+            fullWavePoints.push({
+              time: Math.floor(rows[i].time / 1000),
+              value: predVal
+            });
+          }
         }
 
-        // 5. Analytical Harmonic Forward Projection (Extrapolating Periodic Waves 24h+ into the Future)
+        // 2. Analytical 24h+ Forward Extrapolation from the latest live candle
+        const latestSlice = prices.slice(N - lookback, N);
         const dt = N > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
         const lastTime = Math.floor(rows.at(-1).time / 1000);
         const forecastBars = 96; // 24h at 15m intervals
 
-        for (let step = 1; step <= forecastBars; step++) {
-          const n = (N - 1) + step;
-          let periodicSum = 0;
-          for (const h of dominantHarmonics) {
-            // Apply slight physical wave damping into the far future
-            const damping = Math.exp(-step / (forecastBars * 3.0));
-            periodicSum += h.amp * damping * Math.cos((2 * Math.PI * h.k * n) / N + h.phase);
-          }
-          const trendVal = intercept + slope * (n - (N - 1) / 2);
-          fullWavePoints.push({
-            time: lastTime + step * dt,
-            value: trendVal + periodicSum
+        const forwardSteps = Array.from({ length: forecastBars }, (_, idx) => idx + 1);
+        const futureResult = fitFourierAndPredict(latestSlice, forwardSteps);
+        if (futureResult) {
+          futureResult.predictions.forEach((val, idx) => {
+            fullWavePoints.push({
+              time: lastTime + (idx + 1) * dt,
+              value: val
+            });
           });
         }
+
         window.spreadSeries.projectedWave.setData(fullWavePoints);
         window.spreadSeries.synthWave.setData([]);
       } else {
-        window.waveModelInfo = null;
         window.spreadSeries.projectedWave.setData([]);
         window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
       }
@@ -986,64 +988,91 @@
       const baseY = Math.min(height, Math.max(0, window.spreadSeries.value.priceToCoordinate(window.exposureBase) ?? height));
       ctx.imageSmoothingEnabled = false;
 
-      // Option A: Global Training Dataset Span Highlight on Hover
-      if (window.hoveredChartTime && window.waveModelInfo && rows.length >= 32) {
-        const info = window.waveModelInfo;
+      // Highlight the Exact Rolling Training Window Used to Predict the Hovered Candle
+      if (window.hoveredChartTime && rows.length >= lookback) {
         const timeScale = window.spreadChart.timeScale();
-        const startX = timeScale.timeToCoordinate(info.startTime);
-        const endX = timeScale.timeToCoordinate(info.endTime);
-        const hoveredX = timeScale.timeToCoordinate(window.hoveredChartTime);
+        const hoveredTimeSec = window.hoveredChartTime;
+        const latestTimeSec = Math.floor(rows.at(-1).time / 1000);
+        const isFuture = hoveredTimeSec > latestTimeSec;
 
-        if (startX !== null && endX !== null) {
-          const minX = Math.min(startX, endX);
-          const maxX = Math.max(startX, endX);
-          const spanWidth = Math.max(2, maxX - minX);
+        let targetIndex = rows.length - 1;
+        if (!isFuture) {
+          let minDiff = Infinity;
+          for (let i = 0; i < rows.length; i++) {
+            const diff = Math.abs(Math.floor(rows[i].time / 1000) - hoveredTimeSec);
+            if (diff < minDiff) {
+              minDiff = diff;
+              targetIndex = i;
+            }
+          }
+        }
 
-          // 1. Shaded lookback training region
-          ctx.fillStyle = "rgba(0, 210, 255, 0.08)";
-          ctx.fillRect(minX, 0, spanWidth, height);
+        // Training span that generated the prediction at targetIndex
+        const startIndex = Math.max(0, targetIndex - lookback);
+        const endIndex = targetIndex;
+        const actualSpanBars = endIndex - startIndex;
 
-          // 2. Boundary dashed lines
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([5, 4]);
-          ctx.strokeStyle = "#00d2ff";
-          ctx.beginPath();
-          ctx.moveTo(minX, 0);
-          ctx.lineTo(minX, height);
-          ctx.moveTo(maxX, 0);
-          ctx.lineTo(maxX, height);
-          ctx.stroke();
-          ctx.setLineDash([]);
+        if (actualSpanBars >= 16) {
+          const startTimeSec = Math.floor(rows[startIndex].time / 1000);
+          const endTimeSec = Math.floor(rows[endIndex].time / 1000);
 
-          // 3. Origin line at latest historical candle cutoff
-          ctx.lineWidth = 2.5;
-          ctx.strokeStyle = "#0284c7";
-          ctx.beginPath();
-          ctx.moveTo(maxX, 0);
-          ctx.lineTo(maxX, height);
-          ctx.stroke();
+          const startX = timeScale.timeToCoordinate(startTimeSec);
+          const endX = timeScale.timeToCoordinate(endTimeSec);
+          const hoveredX = timeScale.timeToCoordinate(hoveredTimeSec);
 
-          // 4. Informational lookback badge
-          const isForward = window.hoveredChartTime > info.endTime;
-          const label = isForward
-            ? `⚡ Model Training Span: ${info.barCount} bars (${info.durationText}) ➜ Generating 24h Forward Projection`
-            : `⚡ Model Training Span: ${info.barCount} bars (${info.durationText}) [Fitted Periodic Wave]`;
-          
-          ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-          const textWidth = ctx.measureText(label).width;
-          const badgeX = Math.max(8, Math.min(width - textWidth - 24, minX + 6));
-          const badgeY = 14;
+          if (startX !== null && endX !== null) {
+            const minX = Math.min(startX, endX);
+            const maxX = Math.max(startX, endX);
+            const spanWidth = Math.max(2, maxX - minX);
 
-          ctx.fillStyle = "rgba(15, 23, 42, 0.90)";
-          ctx.beginPath();
-          ctx.roundRect(badgeX, badgeY, textWidth + 16, 22, 5);
-          ctx.fill();
-          ctx.strokeStyle = "#00d2ff";
-          ctx.lineWidth = 1;
-          ctx.stroke();
+            // 1. Shaded lookback training region
+            ctx.fillStyle = "rgba(0, 210, 255, 0.10)";
+            ctx.fillRect(minX, 0, spanWidth, height);
 
-          ctx.fillStyle = "#38bdf8";
-          ctx.fillText(label, badgeX + 8, badgeY + 15);
+            // 2. Boundary dashed lines
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([5, 4]);
+            ctx.strokeStyle = "#00d2ff";
+            ctx.beginPath();
+            ctx.moveTo(minX, 0);
+            ctx.lineTo(minX, height);
+            ctx.moveTo(maxX, 0);
+            ctx.lineTo(maxX, height);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 3. Predicted Target Candle Indicator
+            if (hoveredX !== null) {
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = "#38bdf8";
+              ctx.beginPath();
+              ctx.moveTo(hoveredX, 0);
+              ctx.lineTo(hoveredX, height);
+              ctx.stroke();
+            }
+
+            // 4. Informational lookback badge
+            const durationH = ((endTimeSec - startTimeSec) / 3600).toFixed(1);
+            const label = isFuture
+              ? `⚡ Forecast Lookback: ${actualSpanBars} bars (${durationH}h) ➜ Predicting Future Target ${formatTime(hoveredTimeSec * 1000, cachedInterval)}`
+              : `⚡ Causal Lookback: ${actualSpanBars} bars (${durationH}h) [from ${formatTime(startTimeSec * 1000, cachedInterval)}] ➜ Predicted this Candle`;
+            
+            ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+            const textWidth = ctx.measureText(label).width;
+            const badgeX = Math.max(8, Math.min(width - textWidth - 24, minX + 6));
+            const badgeY = 14;
+
+            ctx.fillStyle = "rgba(15, 23, 42, 0.90)";
+            ctx.beginPath();
+            ctx.roundRect(badgeX, badgeY, textWidth + 16, 22, 5);
+            ctx.fill();
+            ctx.strokeStyle = "#00d2ff";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.fillStyle = "#38bdf8";
+            ctx.fillText(label, badgeX + 8, badgeY + 15);
+          }
         }
       }
 
