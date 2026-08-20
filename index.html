@@ -809,19 +809,13 @@
         window.spreadChartInitialized = true;
         setTimeout(() => {
           if (!window.spreadChart) return;
-          window.spreadChart.timeScale().setVisibleLogicalRange({
-            from: totalBars - 60,
-            to: totalBars + forecastBars + 10
-          });
+          window.spreadChart.timeScale().scrollToPosition(-96, false);
           requestExposureOverlayDraw();
         }, 150);
       } else if (wasAtRightEdge && !window.pendingLogicalRangeBeforePrepend) {
         setTimeout(() => {
           if (!window.spreadChart) return;
-          window.spreadChart.timeScale().setVisibleLogicalRange({
-            from: totalBars - 60,
-            to: totalBars + forecastBars + 10
-          });
+          window.spreadChart.timeScale().scrollToPosition(-96, false);
           requestExposureOverlayDraw();
         }, 150);
       }
