@@ -726,8 +726,19 @@
             priceFormat: lineFormat
           })
         };
+        window.spreadChart.timeScale().subscribeVisibleTimeRangeChange((timeRange) => {
+          if (timeRange && Number.isFinite(timeRange.from) && Number.isFinite(timeRange.to)) {
+            window.savedTimeRange = timeRange;
+            try {
+              localStorage.setItem("skhynix_timerange", JSON.stringify(timeRange));
+            } catch (e) {}
+          }
+        });
         window.spreadChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
           requestExposureOverlayDraw();
+          if (range) {
+            window.savedLogicalRange = range;
+          }
           if (!range || loadingOlder || !cachedRows.length) return;
           if (range.from < 18) {
             window.pendingLogicalRangeBeforePrepend = range;
@@ -852,7 +863,28 @@
 
       const totalBars = rows.length;
       const forecastBars = projectionPoints.length || 96;
-      if (!window.spreadChartInitialized) {
+
+      let storedRange = window.savedTimeRange;
+      if (!storedRange) {
+        try {
+          const raw = localStorage.getItem("skhynix_timerange");
+          if (raw) storedRange = JSON.parse(raw);
+        } catch (e) {}
+      }
+
+      if (storedRange && Number.isFinite(storedRange.from) && Number.isFinite(storedRange.to)) {
+        setTimeout(() => {
+          if (!window.spreadChart) return;
+          try {
+            window.spreadChart.timeScale().setVisibleRange(storedRange);
+          } catch (e) {
+            if (window.savedLogicalRange) {
+              window.spreadChart.timeScale().setVisibleLogicalRange(window.savedLogicalRange);
+            }
+          }
+          requestExposureOverlayDraw();
+        }, 80);
+      } else if (!window.spreadChartInitialized) {
         window.spreadChartInitialized = true;
         setTimeout(() => {
           if (!window.spreadChart) return;
@@ -1534,27 +1566,67 @@
       $("bestTest").textContent = `${fmt(best.score)}%`;
       $("status").textContent = `Optimized net PnL ${fmt(best.score)}% (TP +${fmt(best.minProfitPct)}%, ExitSpd ${best.exitSpeedPct}%); avg exposure ${fmt(best.avgExposure * 100, 1)}%; fees ${fmt(best.fees)}%`;
     }
-    $("refresh").addEventListener("click", refresh);
-    $("optimizeProfit").addEventListener("click", optimizeProfit);
-    $("interval").addEventListener("change", refresh);
-    $("meanBars").addEventListener("change", redrawOnly);
+
+    const paramIds = ["interval", "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct", "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct", "tradingFeeBps", "fundingBpsDay"];
+    function saveSettings() {
+      try {
+        const settings = {};
+        paramIds.forEach((id) => {
+          const el = $(id);
+          if (el) settings[id] = el.value;
+        });
+        settings.chartMode = window.chartMode || "parity";
+        localStorage.setItem("skhynix_settings", JSON.stringify(settings));
+      } catch (e) {}
+    }
+    function loadSettings() {
+      try {
+        const raw = localStorage.getItem("skhynix_settings");
+        if (!raw) return;
+        const settings = JSON.parse(raw);
+        paramIds.forEach((id) => {
+          const el = $(id);
+          if (el && settings[id] !== undefined) el.value = settings[id];
+        });
+        if (settings.chartMode) {
+          window.chartMode = settings.chartMode;
+          $("modeParity").classList.toggle("active", settings.chartMode === "parity");
+          $("modeMa").classList.toggle("active", settings.chartMode === "ma");
+        }
+      } catch (e) {}
+    }
+
+    $("refresh").addEventListener("click", () => { saveSettings(); refresh(); });
+    $("optimizeProfit").addEventListener("click", () => { saveSettings(); optimizeProfit(); });
+    $("interval").addEventListener("change", () => { saveSettings(); refresh(); });
+    
+    function onParamChange() {
+      saveSettings();
+      redrawOnly();
+    }
+
     function setChartMode(mode) {
       window.chartMode = mode;
       $("modeParity").classList.toggle("active", mode === "parity");
       $("modeMa").classList.toggle("active", mode === "ma");
+      saveSettings();
       redrawOnly();
     }
     $("modeParity").addEventListener("click", () => setChartMode("parity"));
     $("modeMa").addEventListener("click", () => setChartMode("ma"));
-    $("minEdgePct").addEventListener("change", redrawOnly);
-    $("fullEdgePct").addEventListener("change", redrawOnly);
-    $("maxSizePct").addEventListener("change", redrawOnly);
-    $("scaleCurve").addEventListener("change", redrawOnly);
-    $("tradeSpeedPct").addEventListener("change", redrawOnly);
-    $("exitSpeedPct").addEventListener("change", redrawOnly);
-    $("minProfitPct").addEventListener("change", redrawOnly);
-    $("tradingFeeBps").addEventListener("change", redrawOnly);
-    $("fundingBpsDay").addEventListener("change", redrawOnly);
+
+    $("meanBars").addEventListener("change", onParamChange);
+    $("minEdgePct").addEventListener("change", onParamChange);
+    $("fullEdgePct").addEventListener("change", onParamChange);
+    $("maxSizePct").addEventListener("change", onParamChange);
+    $("scaleCurve").addEventListener("change", onParamChange);
+    $("tradeSpeedPct").addEventListener("change", onParamChange);
+    $("exitSpeedPct").addEventListener("change", onParamChange);
+    $("minProfitPct").addEventListener("change", onParamChange);
+    $("tradingFeeBps").addEventListener("change", onParamChange);
+    $("fundingBpsDay").addEventListener("change", onParamChange);
+
+    loadSettings();
     refresh();
   </script>
 </body>
