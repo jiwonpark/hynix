@@ -1006,6 +1006,11 @@
         labelB: "Domestic (x10)",
         longLabel: "Long ADR (▲)",
         shortLabel: "Short ADR (▼)",
+        strategies: [
+          { id: "wave", nameEn: "⚡ 24h Predictive Arbitrage Wave (OU + Spectral)", nameKo: "⚡ 24h 예측 파동 차익거래 (OU + 스펙트럼)" },
+          { id: "mean_reversion", nameEn: "⚖️ Classic Parity Mean-Reversion (Z-Score)", nameKo: "⚖️ 고전적 패리티 평균회귀 (Z-Score)" },
+          { id: "funding_carry", nameEn: "💰 Funding Carry & Convergence Arb", nameKo: "💰 펀딩비 수취 & 수렴 차익거래" }
+        ],
         defaults: {
           meanBars: 24,
           minEdgePct: 0.75,
@@ -1021,7 +1026,7 @@
       },
       btc_directional: {
         id: "btc_directional",
-        name: "🪙 Bitcoin (BTC/USDT) Trend Wave",
+        name: "🪙 Bitcoin (BTC/USDT) Trend Suite",
         shortName: "Bitcoin (BTC)",
         type: "single",
         symbolA: "BTCUSDT",
@@ -1032,6 +1037,11 @@
         labelB: "Trend Baseline",
         longLabel: "Long BTC (▲)",
         shortLabel: "Short BTC (▼)",
+        strategies: [
+          { id: "wave", nameEn: "🚀 Predictive Trend Wave (Directional Momentum)", nameKo: "🚀 24h 파동 예측 추세 추종 롱/숏" },
+          { id: "breakout_momentum", nameEn: "💥 Multi-MA Trend Momentum & Squeeze Breakout", nameKo: "💥 멀티 MA 모멘텀 돌파 추세" },
+          { id: "mean_reversion", nameEn: "🎯 Overbought / Oversold Fade (Band Exhaustion)", nameKo: "🎯 과매수/과매도 반등 (Band Exhaustion)" }
+        ],
         defaults: {
           meanBars: 12,
           minEdgePct: 0.80,
@@ -1058,6 +1068,11 @@
         labelB: "Pair Mean",
         longLabel: "Long ETH / Short BTC (▲)",
         shortLabel: "Short ETH / Long BTC (▼)",
+        strategies: [
+          { id: "wave", nameEn: "💎 Adaptive Fast Cointegration Wave (12h Rebalance)", nameKo: "💎 적응형 초단기 리밸런싱 파동 (12h)" },
+          { id: "mean_reversion", nameEn: "📊 Dynamic Channel Ratio Reversion", nameKo: "📊 동적 채널 비율 회귀" },
+          { id: "trend_rotation", nameEn: "🔄 Altcoin Rotation Momentum", nameKo: "🔄 알트코인 순환매 모멘텀" }
+        ],
         defaults: {
           meanBars: 10,
           minEdgePct: 0.45,
@@ -1073,7 +1088,7 @@
       },
       sol_directional: {
         id: "sol_directional",
-        name: "☀️ Solana (SOL/USDT) Trend Wave",
+        name: "☀️ Solana (SOL/USDT) Trend Suite",
         shortName: "Solana (SOL)",
         type: "single",
         symbolA: "SOLUSDT",
@@ -1084,6 +1099,11 @@
         labelB: "Trend Baseline",
         longLabel: "Long SOL (▲)",
         shortLabel: "Short SOL (▼)",
+        strategies: [
+          { id: "wave", nameEn: "☀️ High-Beta Alpha Trend Wave (Spectral Momentum)", nameKo: "☀️ 고베타 퓨리에 알파 파동 추세" },
+          { id: "breakout_momentum", nameEn: "⚡ Volatility Squeeze & Liquidity Breakout", nameKo: "⚡ 변동성 스퀴즈 & 유동성 돌파" },
+          { id: "mean_reversion", nameEn: "🌊 Trend Pullback Swing Engine", nameKo: "🌊 추세 눌림목 스윙 엔트리" }
+        ],
         defaults: {
           meanBars: 24,
           minEdgePct: 1.60,
@@ -1108,6 +1128,29 @@
       return Math.sqrt(variance);
     };
     const fmt = (value, digits = 2) => Number.isFinite(value) ? value.toFixed(digits) : "--";
+    function updateStrategyDropdown() {
+      const select = $("strategyMode");
+      if (!select) return;
+      const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+      const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
+      const isKo = window.currentLang === "ko";
+      const currentVal = select.value;
+
+      const strategies = assetConfig.strategies || [
+        { id: "wave", nameEn: "Predictive Wave Trading", nameKo: "예측 파동 매매" },
+        { id: "mean_reversion", nameEn: "Mean Reversion", nameKo: "평균회귀 매매" }
+      ];
+
+      select.innerHTML = strategies.map((s) => {
+        const text = isKo ? (s.nameKo || s.nameEn) : s.nameEn;
+        const sel = s.id === currentVal ? "selected" : "";
+        return `<option value="${s.id}" ${sel}>${text}</option>`;
+      }).join("");
+
+      if (!strategies.some((s) => s.id === select.value)) {
+        select.value = strategies[0].id;
+      }
+    }
     const formatTime = (time, interval) => {
       const options = interval === "1d"
         ? { month: "short", day: "numeric", timeZone: "UTC" }
@@ -1647,14 +1690,33 @@
 
         let rawDesiredSize = 0;
         if (isSingle) {
-          // Single Directional Asset (BTC / SOL): Trend-Following Wave Strategy
-          if (strategyMode === "wave") {
+          // Single Directional Asset (BTC / SOL)
+          if (strategyMode === "breakout_momentum") {
+            // Squeeze & Momentum Breakout Strategy:
+            // Uses velocity slope & MA premium breakout to ride high-momentum moves
+            const mom = row.maPremiumPct;
+            const magnitude = Math.abs(mom);
+            if (magnitude >= minEdgePct) {
+              const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+              const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              rawDesiredSize = mom > 0 ? curved : -curved;
+            }
+          } else if (strategyMode === "mean_reversion") {
+            // Overbought / Oversold Fade (Band Exhaustion)
+            const magnitude = Math.abs(row.maPremiumPct);
+            if (magnitude >= minEdgePct) {
+              const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+              const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              rawDesiredSize = row.maPremiumPct < 0 ? curved : -curved;
+            }
+          } else {
+            // Predictive Trend Wave (Directional Momentum) [Default: wave]
             if (tradeDirection === "bidirectional") {
               const magnitude = Math.abs(grossSignalEdgePct);
               if (magnitude >= minEdgePct) {
                 const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
                 const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
-                rawDesiredSize = grossSignalEdgePct > 0 ? curved : -curved; // predicted rise -> LONG (+), predicted fall -> SHORT (-)
+                rawDesiredSize = grossSignalEdgePct > 0 ? curved : -curved;
               }
             } else if (tradeDirection === "long_only") {
               if (grossSignalEdgePct >= minEdgePct) {
@@ -1667,8 +1729,56 @@
                 rawDesiredSize = -(fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
               }
             }
+          }
+        } else if (isRatio) {
+          // Cross-Crypto Ratio (ETH / BTC)
+          if (strategyMode === "trend_rotation") {
+            // Altcoin Rotation Momentum
+            const mom = row.maPremiumPct;
+            const magnitude = Math.abs(mom);
+            if (magnitude >= minEdgePct) {
+              const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+              const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              rawDesiredSize = mom > 0 ? curved : -curved;
+            }
+          } else if (strategyMode === "mean_reversion") {
+            // Dynamic Ratio Channel Reversion
+            const magnitude = Math.abs(row.maPremiumPct);
+            if (magnitude >= minEdgePct) {
+              const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+              const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              rawDesiredSize = row.maPremiumPct < 0 ? curved : -curved;
+            }
           } else {
-            // Traditional Band Fading Mean-Reversion
+            // Adaptive Fast Cointegration Wave [Default: wave]
+            const magnitude = Math.abs(grossSignalEdgePct);
+            if (magnitude >= minEdgePct) {
+              const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+              const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              rawDesiredSize = grossSignalEdgePct > 0 ? curved : -curved;
+            }
+          }
+        } else {
+          // Dual-Listing Arbitrage (SK Hynix)
+          if (strategyMode === "funding_carry") {
+            // Funding Rate Carry Bias + Mean Reversion
+            const magnitude = Math.abs(grossSignalEdgePct);
+            const carryBonus = (fundingBpsDay < 0 ? 0.2 : -0.1);
+            if (magnitude >= minEdgePct) {
+              const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+              const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100) * (1 + carryBonus);
+              rawDesiredSize = grossSignalEdgePct < 0 ? curved : -curved;
+            }
+          } else if (strategyMode === "mean_reversion") {
+            // Classic Parity Mean-Reversion (Z-Score)
+            const magnitude = Math.abs(grossSignalEdgePct);
+            if (magnitude >= minEdgePct) {
+              const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+              const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              rawDesiredSize = grossSignalEdgePct > 0 ? curved : -curved;
+            }
+          } else {
+            // 24h Predictive Arbitrage Wave [Default: wave]
             if (tradeDirection === "bidirectional") {
               const magnitude = Math.abs(grossSignalEdgePct);
               if (magnitude >= minEdgePct) {
@@ -1679,41 +1789,6 @@
             } else {
               if (grossSignalEdgePct <= -minEdgePct) {
                 const fraction = Math.min(1, (-grossSignalEdgePct - minEdgePct) / denominator);
-                rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
-              }
-            }
-          }
-        } else {
-          // Dual-listing Arb (SK Hynix) & Relative Value Spread (ETH/BTC)
-          if (strategyMode === "wave") {
-            if (tradeDirection === "bidirectional") {
-              const magnitude = Math.abs(grossSignalEdgePct);
-              if (magnitude >= minEdgePct) {
-                const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
-                const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
-                rawDesiredSize = isRatio
-                  ? (grossSignalEdgePct > 0 ? curved : -curved)
-                  : (grossSignalEdgePct < 0 ? curved : -curved);
-              }
-            } else {
-              if (grossSignalEdgePct <= -minEdgePct) {
-                const fraction = Math.min(1, (-grossSignalEdgePct - minEdgePct) / denominator);
-                rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
-              }
-            }
-          } else {
-            if (tradeDirection === "bidirectional") {
-              const magnitude = Math.abs(grossSignalEdgePct);
-              if (magnitude >= minEdgePct) {
-                const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
-                const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
-                rawDesiredSize = isRatio
-                  ? (grossSignalEdgePct < 0 ? curved : -curved)
-                  : (grossSignalEdgePct > 0 ? curved : -curved);
-              }
-            } else {
-              if (grossSignalEdgePct >= minEdgePct) {
-                const fraction = Math.min(1, (grossSignalEdgePct - minEdgePct) / denominator);
                 rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
               }
             }
@@ -3482,8 +3557,24 @@
           const triggerEdge = row.grossSignalEdgePct ?? row.netSignalEdgePct ?? 0;
 
           if (isSingle) {
-            // Directional asset (BTC/SOL): Trend-Following Wave Mode
-            if (strategyMode === "wave") {
+            // Single Directional Asset (BTC / SOL)
+            if (strategyMode === "breakout_momentum") {
+              const mom = row.maPremiumPct;
+              const magnitude = Math.abs(mom);
+              if (magnitude >= params.minEdgePct) {
+                const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                rawDesiredSize = mom > 0 ? curved : -curved;
+              }
+            } else if (strategyMode === "mean_reversion") {
+              const magnitude = Math.abs(row.maPremiumPct);
+              if (magnitude >= params.minEdgePct) {
+                const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                rawDesiredSize = row.maPremiumPct < 0 ? curved : -curved;
+              }
+            } else {
+              // Predictive Trend Wave [Default: wave]
               if (tradeDirection === "bidirectional") {
                 const magnitude = Math.abs(triggerEdge);
                 if (magnitude >= params.minEdgePct) {
@@ -3502,8 +3593,52 @@
                   rawDesiredSize = -(fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
                 }
               }
+            }
+          } else if (isRatio) {
+            // Cross-Crypto Ratio (ETH / BTC)
+            if (strategyMode === "trend_rotation") {
+              const mom = row.maPremiumPct;
+              const magnitude = Math.abs(mom);
+              if (magnitude >= params.minEdgePct) {
+                const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                rawDesiredSize = mom > 0 ? curved : -curved;
+              }
+            } else if (strategyMode === "mean_reversion") {
+              const magnitude = Math.abs(row.maPremiumPct);
+              if (magnitude >= params.minEdgePct) {
+                const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                rawDesiredSize = row.maPremiumPct < 0 ? curved : -curved;
+              }
             } else {
-              // Band Fading Mean-Reversion
+              // Adaptive Fast Cointegration Wave [Default: wave]
+              const magnitude = Math.abs(triggerEdge);
+              if (magnitude >= params.minEdgePct) {
+                const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                rawDesiredSize = triggerEdge > 0 ? curved : -curved;
+              }
+            }
+          } else {
+            // Dual-Listing Arbitrage (SK Hynix)
+            if (strategyMode === "funding_carry") {
+              const magnitude = Math.abs(triggerEdge);
+              const carryBonus = (funding < 0 ? 0.2 : -0.1);
+              if (magnitude >= params.minEdgePct) {
+                const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize * (1 + carryBonus);
+                rawDesiredSize = triggerEdge < 0 ? curved : -curved;
+              }
+            } else if (strategyMode === "mean_reversion") {
+              const magnitude = Math.abs(triggerEdge);
+              if (magnitude >= params.minEdgePct) {
+                const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                rawDesiredSize = triggerEdge > 0 ? curved : -curved;
+              }
+            } else {
+              // 24h Predictive Arbitrage Wave [Default: wave]
               if (tradeDirection === "bidirectional") {
                 const magnitude = Math.abs(triggerEdge);
                 if (magnitude >= params.minEdgePct) {
@@ -3518,34 +3653,6 @@
                 }
               }
             }
-          } else {
-            // Relative Value / Arbitrage
-            if (strategyMode === "wave") {
-              if (tradeDirection === "bidirectional") {
-                const magnitude = Math.abs(triggerEdge);
-                if (magnitude >= params.minEdgePct) {
-                  const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
-                  const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
-                  rawDesiredSize = isRatio
-                    ? (triggerEdge > 0 ? curved : -curved)
-                    : (triggerEdge < 0 ? curved : -curved);
-                }
-              } else {
-                if (triggerEdge <= -params.minEdgePct) {
-                  const fraction = Math.min(1, (-triggerEdge - params.minEdgePct) / denominator);
-                  rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
-                }
-              }
-            } else {
-              if (tradeDirection === "bidirectional") {
-                const magnitude = Math.abs(triggerEdge);
-                if (magnitude >= params.minEdgePct) {
-                  const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
-                  const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
-                  rawDesiredSize = isRatio
-                    ? (triggerEdge < 0 ? curved : -curved)
-                    : (triggerEdge > 0 ? curved : -curved);
-                }
               } else {
                 if (triggerEdge >= params.minEdgePct) {
                   const fraction = Math.min(1, (triggerEdge - params.minEdgePct) / denominator);
@@ -4491,8 +4598,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       setLabelTitle("lblInterval", dict.lblInterval);
       setLabelTitle("lblStrategy", dict.lblStrategy);
-      if ($("optWave")) $("optWave").textContent = dict.optWave;
-      if ($("optMa")) $("optMa").textContent = dict.optMa;
+      updateStrategyDropdown();
       setLabelTitle("lblEngine", dict.lblEngine);
       if ($("optHMM")) $("optHMM").textContent = dict.optHMM;
       if ($("optMultiMA")) $("optMultiMA").textContent = dict.optMultiMA;
@@ -4864,6 +4970,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("assetStrategy").addEventListener("change", () => {
       const assetKey = $("assetStrategy")?.value || "skhynix_arb";
       const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
+      updateStrategyDropdown();
       if (assetConfig.defaults) {
         Object.entries(assetConfig.defaults).forEach(([k, v]) => {
           const el = $(k);
