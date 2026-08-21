@@ -810,8 +810,8 @@
             <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; text-align: left;">
               <thead>
                 <tr style="background: #f1f5f9; color: #475569; font-weight: 700; border-bottom: 1px solid #cbd5e1;">
-                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('score')" title="Sort by Risk-Adjusted Score">Rank / Score <span id="sort_score" class="sortArrow">▼</span></th>
-                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('fullProfit')" title="Sort by Full Net PnL">Full PnL <span id="sort_fullProfit" class="sortArrow"></span></th>
+                  <th style="padding: 6px 8px;">Rank</th>
+                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('fullProfit')" title="Sort by Full Net PnL">Full PnL <span id="sort_fullProfit" class="sortArrow">▼</span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('netProfit')" title="Sort by Walk-Forward Median PnL">WF Median <span id="sort_netProfit" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('maxDd')" title="Sort by Max Drawdown">Max DD (Peak / 최악의 원금 손실) <span id="sort_maxDd" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('positiveFoldRate')" title="Sort by Winning Folds">Winning Folds <span id="sort_positiveFoldRate" class="sortArrow"></span></th>
@@ -3348,7 +3348,7 @@
           if (!scored) continue;
           latestScore = scored;
           latestCandidate = params;
-          if (!best || scored.score > best.score) {
+          if (!best || (scored.fullProfit > (best.fullProfit ?? -999999))) {
             best = { ...params, ...scored };
           }
           // Retain ALL evaluated candidate combinations
@@ -3486,7 +3486,7 @@
       $("status").textContent = window.lastOptimization.statusText;
     }
 
-    window.leaderboardSortKey = 'score';
+    window.leaderboardSortKey = 'fullProfit';
     window.leaderboardSortAsc = false;
 
     window.sortLeaderboard = function(key) {
@@ -3494,7 +3494,7 @@
         window.leaderboardSortAsc = !window.leaderboardSortAsc;
       } else {
         window.leaderboardSortKey = key;
-        // Default ascending for drawdown (less negative is better), descending for profits and scores
+        // Default ascending for drawdown (less negative is better), descending for profits
         window.leaderboardSortAsc = (key === 'maxDd');
       }
       renderLeaderboardTable();
@@ -3510,17 +3510,17 @@
       rawList.forEach((item) => {
         const key = candidateKey(item);
         const existing = uniqueMap.get(key);
-        if (!existing || (item.score || 0) > (existing.score || 0)) {
+        if (!existing || (item.fullProfit || 0) > (existing.fullProfit || 0)) {
           uniqueMap.set(key, item);
         }
       });
       const list = Array.from(uniqueMap.values());
 
-      const sortKey = window.leaderboardSortKey || 'score';
+      const sortKey = window.leaderboardSortKey || 'fullProfit';
       const isAsc = window.leaderboardSortAsc;
 
       // Update sort arrow indicators on all headers
-      const sortKeys = ['score', 'fullProfit', 'netProfit', 'maxDd', 'positiveFoldRate', 'meanBars', 'minEdgePct', 'maxSizePct', 'tradeSpeedPct', 'minProfitPct'];
+      const sortKeys = ['fullProfit', 'netProfit', 'maxDd', 'positiveFoldRate', 'meanBars', 'minEdgePct', 'maxSizePct', 'tradeSpeedPct', 'minProfitPct'];
       sortKeys.forEach((k) => {
         const el = $("sort_" + k);
         if (el) el.textContent = (k === sortKey) ? (isAsc ? '▲' : '▼') : '';
@@ -3533,7 +3533,7 @@
         if (typeof valA === 'string') valA = Number(valA) || 0;
         if (typeof valB === 'string') valB = Number(valB) || 0;
         if (valA === valB) {
-          return (b.score ?? 0) - (a.score ?? 0) || (b.fullProfit ?? 0) - (a.fullProfit ?? 0);
+          return (b.fullProfit ?? 0) - (a.fullProfit ?? 0) || (b.netProfit ?? 0) - (a.netProfit ?? 0);
         }
         return isAsc ? valA - valB : valB - valA;
       });
@@ -3543,7 +3543,6 @@
 
       if ($("lblOptTotalEvaluated")) {
         const keyNameMap = {
-          score: 'Risk Score',
           fullProfit: 'Full PnL %',
           netProfit: 'WF Median %',
           maxDd: 'Max DD %',
@@ -3572,7 +3571,6 @@
             <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">${item.fullProfit >= 0 ? "+" : ""}${fmt(item.fullProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${wfPnlColor}; font-family: monospace;">${item.netProfit >= 0 ? "+" : ""}${fmt(item.netProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;" title="Peak Drawdown: ${fmt(item.maxDd)}% | 최악의 원금 손실: ${fmt(item.principalDd ?? 0)}%">${fmt(item.maxDd)}% <span style="font-size: 10px; color: ${(item.principalDd ?? 0) < -0.01 ? '#dc2626' : '#16a34a'}; font-weight: 700;">(${(item.principalDd ?? 0) < -0.01 ? '원금 ' + fmt(item.principalDd) + '%' : '원금손실0%'})</span></td>
-            <td style="padding: 6px 8px; font-weight: 700; color: #0284c7; font-family: monospace;">${fmt(item.score)}</td>
             <td style="padding: 6px 8px; font-family: monospace;">${Math.round(item.positiveFoldRate * 3)}/3</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.meanBars} bars</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.minEdgePct}% ~ ${item.fullEdgePct}%</td>
