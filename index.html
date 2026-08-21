@@ -3393,7 +3393,7 @@
       const origBtnText = button.textContent;
       let best = null;
       const allEvaluatedCandidates = [];
-      const batchSize = Math.max(25, Math.floor(candidates.length / 60));
+      const batchSize = Math.max(4, Math.floor(candidates.length / 200));
 
       for (let index = 0; index < candidates.length; index += batchSize) {
         const batch = candidates.slice(index, index + batchSize);
@@ -3430,7 +3430,8 @@
         const pct = Math.min(100, Math.round((currentCount / candidates.length) * 100));
         button.textContent = `⚡ ${pct}% (${currentCount}/${candidates.length})`;
 
-        await new Promise((resolve) => setTimeout(resolve, 15));
+        // True 60fps frame synchronization so every micro-sweep paints smoothly without lag
+        await new Promise((resolve) => requestAnimationFrame(resolve));
       }
 
       window.allOptimizationCandidates = allEvaluatedCandidates;
