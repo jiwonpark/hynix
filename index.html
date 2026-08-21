@@ -3653,13 +3653,6 @@
                 }
               }
             }
-              } else {
-                if (triggerEdge >= params.minEdgePct) {
-                  const fraction = Math.min(1, (triggerEdge - params.minEdgePct) / denominator);
-                  rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
-                }
-              }
-            }
           }
 
           const previousSize = positionSize;
