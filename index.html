@@ -159,13 +159,17 @@
       gap: 12px;
       align-items: start;
     }
+    .controlGrid > label {
+      min-width: 0;
+      max-width: 100%;
+    }
     .controlGrid.environment {
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     }
     .controlGrid.optimizableGrid {
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     }
-    @media (min-width: 1200px) {
+    @media (min-width: 1280px) {
       .controlGrid.environment {
         grid-template-columns: repeat(6, 1fr);
       }
@@ -183,6 +187,7 @@
       text-transform: uppercase;
       word-break: keep-all;
       line-height: 1.2;
+      min-width: 0;
     }
     .controlTitle {
       height: 16px;
@@ -191,6 +196,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      max-width: 100%;
     }
     .controlHint {
       font-size: 10.5px;
@@ -211,18 +217,27 @@
       flex-direction: column;
       justify-content: flex-end;
       height: 100%;
+      min-width: 0;
     }
     select, input, button {
       height: 38px;
       width: 100%;
+      max-width: 100%;
       border: 1px solid var(--line);
       border-radius: 6px;
-      padding: 0 10px;
+      padding: 0 8px;
       background: #fbfbf9;
       color: var(--fg);
       font: inherit;
-      font-size: 13px;
+      font-size: 12.5px;
       box-sizing: border-box;
+      min-width: 0;
+    }
+    select {
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      overflow: hidden;
+      cursor: pointer;
     }
     input.optimizing, select.optimizing {
       background: #e0f2fe !important;
@@ -251,7 +266,7 @@
     }
     .stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(95px, 1fr));
       margin-bottom: 14px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -259,30 +274,37 @@
       overflow: hidden;
     }
     .stat {
-      padding: 12px 14px;
+      padding: 10px 12px;
       border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
       display: flex;
       flex-direction: column;
       justify-content: center;
+      min-width: 0;
+      overflow: hidden;
     }
     .stat:last-child { border-right: 0; }
     .stat span {
       display: block;
       color: var(--muted);
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 800;
       text-transform: uppercase;
       word-break: keep-all;
       line-height: 1.2;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .stat strong {
       display: block;
       margin-top: 4px;
-      font-size: 20px;
+      font-size: 19px;
       line-height: 1.1;
       font-feature-settings: "tnum";
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .panel {
       padding: 16px;
