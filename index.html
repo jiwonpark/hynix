@@ -3416,7 +3416,6 @@
         const currentCount = Math.min(candidates.length, index + batch.length);
         const pct = Math.min(100, Math.round((currentCount / candidates.length) * 100));
         button.textContent = `⚡ ${pct}% (${currentCount}/${candidates.length})`;
-        $("status").textContent = `[${pct}%] Evaluating candidates (${currentCount}/${candidates.length}) | Best Full PnL: ${best ? (best.fullProfit >= 0 ? '+' : '') + fmt(best.fullProfit) + '%' : '--'}`;
 
         await new Promise((resolve) => setTimeout(resolve, 15));
       }
@@ -3497,7 +3496,7 @@
       if (resultsPanel) resultsPanel.style.display = "block";
       renderLeaderboardTable();
       updateSelectedResultSummary(best, best.rows, holdout);
-      $("status").textContent = window.lastOptimization.statusText;
+      $("status").textContent = `WebSocket live: ${formatTime(best.rows.at(-1).time, cachedInterval)} UTC`;
     }
 
     window.leaderboardSortKey = 'fullProfit';
