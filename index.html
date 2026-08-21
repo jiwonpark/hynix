@@ -2917,12 +2917,13 @@
       svg += `<g id="dynamicAllocation" clip-path="url(#allocationClip)">`;
 
       // Vertical time grid lines
+      // Vertical time grid lines
       visibleRows.forEach((row, index) => {
         if (index % gridEvery === 0) {
           svg += `<line x1="${x(index)}" x2="${x(index)}" y1="${margin.top}" y2="${height - margin.bottom}" class="xgrid" style="stroke: #f1f5f9;"/>`;
         }
         if (index % labelEvery === 0 || index === visibleRows.length - 1) {
-          svg += `<text x="${x(index)}" y="${height - 24}" text-anchor="end" transform="rotate(-45 ${x(index)} ${height - 24})" class="xLabel" style="font-size: 10px; fill: #64748b;">${formatTime(row.time, interval)}</text>`;
+          svg += `<text x="${x(index)}" y="${height - 20}" text-anchor="end" transform="rotate(-45 ${x(index)} ${height - 20})" class="xLabel" style="font-size: 10px; fill: #64748b;">${formatTime(row.time, interval)}</text>`;
         }
       });
 
@@ -2933,17 +2934,18 @@
         const yPos = yPnl(p);
         if (yPos >= margin.top && yPos <= margin.top + pnlPlotHeight) {
           const isZero = Math.abs(p) < 0.001;
-          svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${yPos}" y2="${yPos}" style="stroke: ${isZero ? '#94a3b8' : '#f1f5f9'}; stroke-dasharray: ${isZero ? '4 3' : 'none'}; stroke-width: ${isZero ? '1.5' : '1'};"/>`;
-          svg += `<text x="${margin.left - 8}" y="${yPos + 4}" text-anchor="end" style="font-size: 11px; font-weight: ${isZero ? '700' : '600'}; font-family: monospace; fill: ${p > 0 ? '#10b981' : (p < 0 ? '#ef4444' : '#64748b')};">${p >= 0 ? '+' : ''}${p.toFixed(1)}%</text>`;
+          svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${yPos}" y2="${yPos}" style="stroke: ${isZero ? '#64748b' : '#f1f5f9'}; stroke-dasharray: ${isZero ? '4 3' : 'none'}; stroke-width: ${isZero ? '1.8' : '1'}; opacity: ${isZero ? '0.85' : '1'};"/>`;
+          const tickLabel = isZero ? (isKo ? '0.0% (원금)' : '0.0% (Par)') : `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`;
+          svg += `<text x="${margin.left - 8}" y="${yPos + 4}" text-anchor="end" style="font-size: ${isZero ? '10.5px' : '10px'}; font-weight: ${isZero ? '800' : '600'}; font-family: monospace; fill: ${isZero ? '#0f172a' : (p > 0 ? '#10b981' : '#ef4444')};">${tickLabel}</text>`;
         }
       }
 
       // Position Size baseline and guide lines (Right Axis)
       svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${sizeBaseY}" y2="${sizeBaseY}" style="stroke: #cbd5e1; stroke-dasharray: 2 2;"/>`;
-      svg += `<text x="${width - margin.right + 8}" y="${sizeBaseY + 4}" style="font-size: 10.5px; font-family: monospace; fill: #64748b;">0% (Flat)</text>`;
-      svg += `<text x="${width - margin.right + 8}" y="${ySize(maxAbsSize) + 4}" style="font-size: 10.5px; font-family: monospace; fill: #0284c7;">+${maxAbsSize.toFixed(0)}% (Short ADR)</text>`;
+      svg += `<text x="${width - margin.right + 8}" y="${sizeBaseY + 4}" style="font-size: 10px; font-family: monospace; fill: #64748b;">0% (Flat)</text>`;
+      svg += `<text x="${width - margin.right + 8}" y="${ySize(maxAbsSize) + 4}" style="font-size: 10px; font-family: monospace; fill: #0284c7;">+${maxAbsSize.toFixed(0)}% (Short ADR)</text>`;
       if (sizes.some(s => s < -5)) {
-        svg += `<text x="${width - margin.right + 8}" y="${ySize(-maxAbsSize) + 4}" style="font-size: 10.5px; font-family: monospace; fill: #8b5cf6;">-${maxAbsSize.toFixed(0)}% (Long ADR)</text>`;
+        svg += `<text x="${width - margin.right + 8}" y="${ySize(-maxAbsSize) + 4}" style="font-size: 10px; font-family: monospace; fill: #8b5cf6;">-${maxAbsSize.toFixed(0)}% (Long ADR)</text>`;
       }
 
       // 1. Position Size Fill & Line (Lower section)
@@ -2975,17 +2977,10 @@
       svg += `<path d="${pnlAreaD}" fill="url(#pnlGradGreen)"/>`;
       svg += `<path d="${pathForPoints(linePoints, (row) => row.equity - 100, x, yPnl)}" fill="none" stroke="${pnlColor}" stroke-width="2.5" stroke-linecap="round"/>`;
 
-      // 2B. Initial Capital (0.0% / 100 Reference Baseline)
-      svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${zeroY}" y2="${zeroY}" stroke="#475569" stroke-width="1.8" stroke-dasharray="4 3" opacity="0.85"/>`;
+      // 2B. Start Marker Circle at initial origin (0.0% PnL / Initial Capital)
       svg += `<circle cx="${x(0)}" cy="${zeroY}" r="4.5" fill="#475569" stroke="#ffffff" stroke-width="2"/>`;
-      const isKo = window.currentLang === "ko";
-      const initBadgeW = isKo ? 155 : 165;
-      const initBadgeX = margin.left + 8;
-      const initBadgeY = Math.max(margin.top + 2, Math.min(margin.top + pnlPlotHeight - 20, zeroY - 22));
-      svg += `<rect x="${initBadgeX}" y="${initBadgeY}" width="${initBadgeW}" height="18" rx="4" fill="#f8fafc" stroke="#64748b" stroke-width="1.2"/>`;
-      svg += `<text x="${initBadgeX + initBadgeW / 2}" y="${initBadgeY + 12.5}" text-anchor="middle" fill="#334155" font-size="9.5" font-weight="800" font-family="monospace">🏷️ ${isKo ? '원금 기준선 (100 / 0.0%)' : 'Initial Capital (100 / 0.0%)'}</text>`;
 
-      // 3. Worst Peak Drawdown Moment & Worst Principal Loss Moment Callouts
+      // 3. Worst Peak Drawdown Moment & Worst Principal Loss Moment Callouts (Collision-Free)
       let worstDdIdx = -1;
       let worstDdVal = 0;
       let worstPrinIdx = -1;
@@ -3004,55 +2999,63 @@
         }
       });
 
-      // A. Worst Peak Drawdown Marker & Flag
       if (worstDdIdx >= 0 && worstDdVal < -0.3) {
         const ddRow = visibleRows[worstDdIdx];
         const ddX = x(worstDdIdx);
         const ddY = yPnl(ddRow.equity - 100);
-        svg += `<line x1="${ddX}" x2="${ddX}" y1="${margin.top}" y2="${ddY}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`;
-        svg += `<circle cx="${ddX}" cy="${ddY}" r="5" fill="#dc2626" stroke="#ffffff" stroke-width="2"/>`;
-        const badgeW = 155;
-        const badgeH = 20;
-        const badgeX = Math.max(margin.left + 5, Math.min(width - margin.right - badgeW - 5, ddX - badgeW / 2));
-        const badgeY = Math.max(margin.top + 4, ddY - 25);
-        svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="4" fill="#fee2e2" stroke="#dc2626" stroke-width="1.2"/>`;
-        svg += `<text x="${badgeX + badgeW / 2}" y="${badgeY + 14}" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="800" font-family="monospace">🚨 ${isKo ? '자본금 최대 낙폭' : 'Max DD'}: ${fmt(worstDdVal)}%</text>`;
+        const isSameSpot = worstPrinIdx >= 0 && worstPrinVal < -0.01 && Math.abs(ddX - x(worstPrinIdx)) < 150;
+
+        if (isSameSpot) {
+          // Unified Single Drawdown Flag (No Collisions)
+          svg += `<line x1="${ddX}" x2="${ddX}" y1="${margin.top}" y2="${ddY}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`;
+          svg += `<circle cx="${ddX}" cy="${ddY}" r="5" fill="#dc2626" stroke="#ffffff" stroke-width="2"/>`;
+          const badgeW = isKo ? 220 : 210;
+          const badgeH = 20;
+          const badgeX = Math.max(margin.left + 5, Math.min(width - margin.right - badgeW - 5, ddX - badgeW / 2));
+          const badgeY = Math.max(margin.top + 4, ddY - 25);
+          svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="4" fill="#fee2e2" stroke="#dc2626" stroke-width="1.2"/>`;
+          svg += `<text x="${badgeX + badgeW / 2}" y="${badgeY + 14}" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="800" font-family="monospace">🚨 ${isKo ? '최대 낙폭' : 'Max DD'}: ${fmt(worstDdVal)}% | ⚠️ ${isKo ? '원금손실' : 'Prin'}: ${fmt(worstPrinVal)}%</text>`;
+        } else {
+          // Distinct DD Flag
+          svg += `<line x1="${ddX}" x2="${ddX}" y1="${margin.top}" y2="${ddY}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`;
+          svg += `<circle cx="${ddX}" cy="${ddY}" r="5" fill="#dc2626" stroke="#ffffff" stroke-width="2"/>`;
+          const badgeW = 150;
+          const badgeH = 20;
+          const badgeX = Math.max(margin.left + 5, Math.min(width - margin.right - badgeW - 5, ddX - badgeW / 2));
+          const badgeY = Math.max(margin.top + 4, ddY - 25);
+          svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="4" fill="#fee2e2" stroke="#dc2626" stroke-width="1.2"/>`;
+          svg += `<text x="${badgeX + badgeW / 2}" y="${badgeY + 14}" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="800" font-family="monospace">🚨 ${isKo ? '최대 낙폭' : 'Max DD'}: ${fmt(worstDdVal)}%</text>`;
+
+          if (worstPrinIdx >= 0 && worstPrinVal < -0.01) {
+            const prinRow = visibleRows[worstPrinIdx];
+            const prinX = x(worstPrinIdx);
+            const prinY = yPnl(worstPrinVal);
+            svg += `<line x1="${prinX}" x2="${prinX}" y1="${zeroY}" y2="${prinY}" stroke="#ea580c" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`;
+            svg += `<circle cx="${prinX}" cy="${prinY}" r="5" fill="#ea580c" stroke="#ffffff" stroke-width="2"/>`;
+            const pBadgeW = 155;
+            const pBadgeH = 20;
+            const pBadgeX = Math.max(margin.left + 5, Math.min(width - margin.right - pBadgeW - 5, prinX - pBadgeW / 2));
+            const pBadgeY = Math.min(margin.top + pnlPlotHeight - 5, prinY + 12);
+            svg += `<rect x="${pBadgeX}" y="${pBadgeY}" width="${pBadgeW}" height="${pBadgeH}" rx="4" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2"/>`;
+            svg += `<text x="${pBadgeX + pBadgeW / 2}" y="${pBadgeY + 14}" text-anchor="middle" fill="#c2410c" font-size="10" font-weight="800" font-family="monospace">⚠️ ${isKo ? '최악의 원금 손실' : 'Worst Prin Loss'}: ${fmt(worstPrinVal)}%</text>`;
+          }
+        }
       }
 
-      // B. Worst Principal Loss Marker & Flag
-      if (worstPrinIdx >= 0 && worstPrinVal < -0.01) {
-        const prinRow = visibleRows[worstPrinIdx];
-        const prinX = x(worstPrinIdx);
-        const prinY = yPnl(worstPrinVal);
-        svg += `<line x1="${prinX}" x2="${prinX}" y1="${zeroY}" y2="${prinY}" stroke="#ea580c" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`;
-        svg += `<circle cx="${prinX}" cy="${prinY}" r="5" fill="#ea580c" stroke="#ffffff" stroke-width="2"/>`;
-        const badgeW = 160;
-        const badgeH = 20;
-        const badgeX = Math.max(margin.left + 5, Math.min(width - margin.right - badgeW - 5, prinX - badgeW / 2));
-        const badgeY = Math.min(margin.top + pnlPlotHeight - 5, prinY + 12);
-        svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="4" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2"/>`;
-        svg += `<text x="${badgeX + badgeW / 2}" y="${badgeY + 14}" text-anchor="middle" fill="#c2410c" font-size="10" font-weight="800" font-family="monospace">⚠️ ${isKo ? '최악의 원금 손실' : 'Worst Prin Loss'}: ${fmt(worstPrinVal)}%</text>`;
-      } else {
-        const badgeW = 165;
-        const badgeH = 18;
-        const badgeX = margin.left + 10;
-        const badgeY = Math.min(margin.top + pnlPlotHeight - 4, Math.max(margin.top + 4, zeroY - 22));
-        svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="4" fill="#f0fdf4" stroke="#16a34a" stroke-width="1"/>`;
-        svg += `<text x="${badgeX + badgeW / 2}" y="${badgeY + 13}" text-anchor="middle" fill="#15803d" font-size="9.5" font-weight="800">🛡️ ${isKo ? '최악의 원금 손실: 0.0% (보존)' : 'Worst Prin Loss: 0.0%'}</text>`;
-      }
-
-      // Latest Acc PnL Badge on the right end of the curve
+      // Latest Acc PnL Tag cleanly rendered on the Right Scale Margin (TradingView Style)
       const lastX = x(visibleRows.length - 1);
       const lastPnlY = yPnl(latestPnl);
-      svg += `<circle cx="${lastX}" cy="${lastPnlY}" r="4.5" fill="${pnlColor}" stroke="#fff" stroke-width="2"/>`;
-      svg += `<rect x="${lastX - 68}" y="${lastPnlY - 22}" width="65" height="18" rx="4" fill="${pnlColor}"/>`;
-      svg += `<text x="${lastX - 35}" y="${lastPnlY - 10}" text-anchor="middle" fill="#fff" font-size="10.5" font-weight="800" font-family="monospace">${latestPnl >= 0 ? '+' : ''}${latestPnl.toFixed(2)}%</text>`;
+      svg += `<circle cx="${lastX}" cy="${lastPnlY}" r="4.5" fill="${pnlColor}" stroke="#fff" stroke-width="1.5"/>`;
+      svg += `<rect x="${width - margin.right + 4}" y="${Math.max(margin.top, Math.min(margin.top + pnlPlotHeight - 16, lastPnlY - 9))}" width="58" height="18" rx="3" fill="${pnlColor}"/>`;
+      svg += `<text x="${width - margin.right + 33}" y="${Math.max(margin.top, Math.min(margin.top + pnlPlotHeight - 16, lastPnlY - 9)) + 12.5}" text-anchor="middle" fill="#fff" font-size="10" font-weight="800" font-family="monospace">${latestPnl >= 0 ? '+' : ''}${latestPnl.toFixed(2)}%</text>`;
 
       svg += `</g>`;
 
-      // Axis Head Titles
-      svg += `<text x="${margin.left}" y="18" style="font-size: 11.5px; font-weight: 800; fill: ${pnlColor}; font-family: monospace;">▲ Acc PnL: ${latestPnl >= 0 ? '+' : ''}${latestPnl.toFixed(2)}% (Net)</text>`;
-      svg += `<text x="${width - margin.right}" y="${margin.top + pnlPlotHeight + 20}" text-anchor="end" style="font-size: 11px; font-weight: 700; fill: #0284c7;">▼ Position Size: ${latestSize >= 0 ? '+' : ''}${latestSize.toFixed(0)}% (${latestSize > 0 ? 'ADR Short' : latestSize < 0 ? 'ADR Long' : 'Flat'})</text>`;
+      // Unified Non-Overlapping Top Header Row
+      const isKoLang = window.currentLang === "ko";
+      svg += `<text x="${margin.left}" y="18" style="font-size: 12px; font-weight: 800; fill: ${pnlColor}; font-family: monospace;">▲ ${isKoLang ? '누적 손익' : 'Acc PnL'}: ${latestPnl >= 0 ? '+' : ''}${latestPnl.toFixed(2)}% (Net)</text>`;
+      svg += `<text x="${width / 2}" y="18" text-anchor="middle" style="font-size: 11px; font-weight: 700; fill: #475569;">🛡️ ${isKoLang ? '시작 원금 기준선' : 'Initial Capital Line'}: 100 (0.0%)</text>`;
+      svg += `<text x="${width - margin.right}" y="18" text-anchor="end" style="font-size: 11px; font-weight: 700; fill: #0284c7;">▼ ${isKoLang ? '포지션 비중' : 'Position Size'}: ${latestSize >= 0 ? '+' : ''}${latestSize.toFixed(0)}% (${latestSize > 0 ? (isKoLang ? 'ADR 숏' : 'ADR Short') : latestSize < 0 ? (isKoLang ? 'ADR 롱' : 'ADR Long') : (isKoLang ? '무포지션' : 'Flat')})</text>`;
 
       svg += `</svg>`;
       $("allocationChart").innerHTML = svg;
