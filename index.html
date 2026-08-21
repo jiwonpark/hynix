@@ -343,8 +343,8 @@
     #chartSvg {
       position: relative;
       z-index: 1;
-      height: 540px;
-      min-height: 360px;
+      height: 600px;
+      min-height: 400px;
     }
     .exposureOverlay {
       position: absolute;
@@ -828,15 +828,17 @@
 
     <section class="panel">
       <div class="chartHeader">
-        <div class="legend">
+        <div class="legend" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           <span id="legSpread" class="black" style="color: #0f172a; font-weight: 700;">Spread (Price)</span>
           <span id="legPrediction" class="cyan" style="color: #00d2ff; font-weight: 700;">Rolling Prediction</span>
           <span id="legMacroWave" class="gray" style="color: #64748b; font-weight: 600;">Global Wave</span>
           <span id="legMeanBands" class="gray" style="color: #cbd5e1; font-weight: 600;">Mean & Bands</span>
           <span id="legLongAdr" class="green" style="color: #16a34a; font-weight: 700;">Long ADR (▲)</span>
           <span id="legShortAdr" class="red" style="color: #dc2626; font-weight: 700;">Short ADR (▼)</span>
+          <span id="legPnl" style="color: #10b981; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; border-left: 1px solid #cbd5e1; padding-left: 8px;"><span style="display:inline-block;width:10px;height:3px;background:#10b981;border-radius:1px;"></span> 누적 손익 (Acc PnL %)</span>
+          <span id="simulationPeriodBadge" style="background: #f1f5f9; color: #1e293b; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; border: 1px solid #cbd5e1; font-family: monospace;">📅 --</span>
         </div>
-      <p id="status">Loading Binance Futures data...</p>
+        <p id="status">Loading Binance Futures data...</p>
       </div>
       <div id="chart" class="chartBox">
         <div class="newsFilterSwitch" aria-label="News filter">
@@ -852,25 +854,6 @@
         </div>
         <div id="chartSvg"></div>
         <div id="newsTooltip" class="newsTooltip"></div>
-      </div>
-      <div class="inlineAllocation">
-        <div class="tableHead compact" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-          <div>
-            <h2 id="secContinuousAlloc">Cumulative Strategy PnL (%) & Position Sizing</h2>
-            <span id="subContinuousAlloc">Real-time Acc PnL curve with dynamic leverage allocation (Long SKHYNIX / Short SKHY)</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-            <div id="simulationPeriodBadge" style="background: #f1f5f9; color: #1e293b; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 11.5px; border: 1px solid #cbd5e1; font-family: monospace;">
-              📅 기간: -- ~ -- (총 --일 / --개 봉)
-            </div>
-            <div class="legend" style="margin: 0; font-size: 11px;">
-              <span id="legPnl" style="color: #10b981; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 3px; background: #10b981; border-radius: 2px;"></span> Acc PnL (%)</span>
-              <span id="legAlloc" style="color: #0284c7; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 2px; background: #0284c7; border-top: 2px dashed #0284c7;"></span> Position Size (%)</span>
-              <span id="legBaseline" style="color: #94a3b8; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 1px; background: #94a3b8; border-top: 1px dashed #94a3b8;"></span> 0% Baseline</span>
-            </div>
-          </div>
-        </div>
-        <div id="allocationChart"></div>
       </div>
     </section>
 
@@ -1962,17 +1945,25 @@
       const grid = getComputedStyle(document.documentElement).getPropertyValue("--line").trim() || "#dbe2e7";
       if (!window.spreadChart) {
         window.spreadChart = LightweightCharts.createChart(host, {
-          height: Math.max(360, host.clientHeight || 540),
+          height: Math.max(400, host.clientHeight || 600),
           layout: { background: { color: background }, textColor: foreground },
           localization: {
             locale: "en-US",
             priceFormatter: (price) => Number(price).toFixed(2)
           },
           grid: { vertLines: { color: grid }, horzLines: { color: grid } },
-          rightPriceScale: {
+          leftPriceScale: {
+            visible: true,
             borderVisible: false,
             autoScale: true,
-            scaleMargins: { top: 0.15, bottom: 0.15 }
+            scaleMargins: { top: 0.74, bottom: 0.02 },
+            mode: LightweightCharts.PriceScaleMode.Normal
+          },
+          rightPriceScale: {
+            visible: true,
+            borderVisible: false,
+            autoScale: true,
+            scaleMargins: { top: 0.05, bottom: 0.30 }
           },
           timeScale: {
             borderVisible: false,
@@ -2025,6 +2016,25 @@
             lineStyle: LightweightCharts.LineStyle.LargeDashed,
             priceLineVisible: false,
             priceFormat: lineFormat
+          }),
+          accPnl: window.spreadChart.addBaselineSeries({
+            priceScaleId: 'left',
+            baseValue: { type: 'price', price: 0 },
+            topLineColor: '#10b981',
+            bottomLineColor: '#ef4444',
+            topFillColor1: 'rgba(16, 185, 129, 0.32)',
+            topFillColor2: 'rgba(16, 185, 129, 0.02)',
+            bottomFillColor1: 'rgba(239, 68, 68, 0.02)',
+            bottomFillColor2: 'rgba(239, 68, 68, 0.32)',
+            lineWidth: 2,
+            priceLineVisible: true,
+            priceLineColor: '#64748b',
+            priceLineStyle: LightweightCharts.LineStyle.Dotted,
+            title: 'Acc PnL',
+            priceFormat: {
+              type: 'custom',
+              formatter: (price) => `${Number(price) >= 0 ? '+' : ''}${Number(price).toFixed(2)}%`
+            }
           })
         };
         let saveRangeTimer = 0;
@@ -2398,6 +2408,27 @@
         }
       }
       window.spreadSeries.avgEntry.setData(continuousAvgEntry);
+      
+      // Populate Embedded Acc PnL (%) Series on Left Price Scale (Baseline with 0 Parity)
+      if (window.spreadSeries.accPnl) {
+        window.spreadSeries.accPnl.setData(
+          rows.map((row) => ({
+            time: Math.floor(row.time / 1000),
+            value: row.equity - 100
+          }))
+        );
+      }
+
+      // Update Top Simulation Period Badge in Header
+      const periodBadge = $("simulationPeriodBadge");
+      if (periodBadge && rows.length) {
+        const startTime = rows[0].time;
+        const endTime = rows.at(-1).time;
+        const totalDays = ((endTime - startTime) / (1000 * 86400)).toFixed(1);
+        const isKo = window.currentLang === "ko";
+        periodBadge.innerHTML = `📅 ${isKo ? '기간' : 'Span'}: <strong style="color: #0284c7;">${formatFullDate(startTime)} ~ ${formatFullDate(endTime)}</strong> (${totalDays}d / ${rows.length}b)`;
+      }
+
       updateNewsMarkers(rows);
       window.exposureOverlayRows = rows;
       requestExposureOverlayDraw();
@@ -2666,6 +2697,7 @@
       if (window.spreadSeries.liveForwardWave) window.spreadSeries.liveForwardWave.setData([]);
       if (window.spreadSeries.projectedWave) window.spreadSeries.projectedWave.setData([]);
       if (window.spreadSeries.synthWave) window.spreadSeries.synthWave.setData([]);
+      if (window.spreadSeries.accPnl) window.spreadSeries.accPnl.setData([]);
 
       // 3. Clear exposure overlay
       window.exposureOverlayRows = [];
@@ -3124,7 +3156,7 @@
       svg += `<text x="${width - margin.right}" y="18" text-anchor="end" style="font-size: 11px; font-weight: 700; fill: #0284c7;">▼ ${isKo ? '포지션 비중' : 'Position Size'}: ${latestSize >= 0 ? '+' : ''}${latestSize.toFixed(0)}% (${latestSize > 0 ? (isKo ? 'ADR 숏' : 'ADR Short') : latestSize < 0 ? (isKo ? 'ADR 롱' : 'ADR Long') : (isKo ? '무포지션' : 'Flat')})</text>`;
 
       svg += `</svg>`;
-      $("allocationChart").innerHTML = svg;
+      if ($("allocationChart")) $("allocationChart").innerHTML = svg;
     }
     let cachedAdr = [];
     let cachedKorean = [];
