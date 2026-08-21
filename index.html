@@ -2770,35 +2770,34 @@
 
       const origBtnText = button.textContent;
       let best = null;
-      let lastRenderedScore = -Infinity;
-      const totalSteps = 25; // 25 distinct visible live frames (~1.5-2 seconds total)
-      const chunkSize = Math.max(1, Math.floor(candidates.length / totalSteps));
+      const batchSize = Math.max(15, Math.floor(candidates.length / 100)); // ~80-100 continuous visible ticks
 
-      for (let index = 0; index < candidates.length; index += chunkSize) {
-        const chunk = candidates.slice(index, index + chunkSize);
-        let sampleParams = chunk[Math.floor(chunk.length / 2)] || chunk[0];
-        let foundBetterInChunk = false;
+      for (let index = 0; index < candidates.length; index += batchSize) {
+        const batch = candidates.slice(index, index + batchSize);
+        let latestCandidate = batch[batch.length - 1];
+        let latestScore = null;
 
-        chunk.forEach((params) => {
+        for (let bIdx = 0; bIdx < batch.length; bIdx += 1) {
+          const params = batch[bIdx];
           const scored = scoreCandidate(params);
-          if (!scored) return;
+          if (!scored) continue;
+          latestScore = scored;
+          latestCandidate = params;
           if (!best || scored.score > best.score) {
             best = { ...params, ...scored };
-            sampleParams = params;
-            foundBetterInChunk = true;
           }
-        });
+        }
 
-        // Live parameter display in fields while readonly
-        if (sampleParams) {
-          $("meanBars").value = sampleParams.meanBars;
-          $("minEdgePct").value = sampleParams.minEdgePct;
-          $("fullEdgePct").value = sampleParams.fullEdgePct;
-          $("maxSizePct").value = sampleParams.maxSizePct;
-          $("scaleCurve").value = sampleParams.scaleCurve;
-          $("tradeSpeedPct").value = sampleParams.tradeSpeedPct;
-          $("exitSpeedPct").value = sampleParams.exitSpeedPct;
-          $("minProfitPct").value = sampleParams.minProfitPct;
+        // Live display of every combination sweeping through the 8 input fields
+        if (latestCandidate) {
+          $("meanBars").value = latestCandidate.meanBars;
+          $("minEdgePct").value = latestCandidate.minEdgePct;
+          $("fullEdgePct").value = latestCandidate.fullEdgePct;
+          $("maxSizePct").value = latestCandidate.maxSizePct;
+          $("scaleCurve").value = latestCandidate.scaleCurve;
+          $("tradeSpeedPct").value = latestCandidate.tradeSpeedPct;
+          $("exitSpeedPct").value = latestCandidate.exitSpeedPct;
+          $("minProfitPct").value = latestCandidate.minProfitPct;
         }
 
         // Live stats update
@@ -2809,12 +2808,17 @@
           $("feesDrag").textContent = `${fmt(best.fees)}%`;
         }
 
-        const pct = Math.min(100, Math.round(((index + chunk.length) / candidates.length) * 100));
-        button.textContent = `⚡ ${pct}% (PnL: ${best ? fmt(best.netProfit) + '%' : '--'})`;
-        $("status").textContent = `Optimizing: ${Math.min(candidates.length, index + chunk.length)} / ${candidates.length} (${pct}%) ⟹ Current Best PnL: ${best ? fmt(best.netProfit) + '%' : '--'}, Max DD: ${best ? fmt(best.maxDd) + '%' : '--'}`;
+        const currentCount = Math.min(candidates.length, index + batch.length);
+        const pct = Math.min(100, Math.round((currentCount / candidates.length) * 100));
+        button.textContent = `⚡ ${pct}% (${currentCount}/${candidates.length})`;
         
-        // Give browser time to paint live UI updates
-        await new Promise((resolve) => setTimeout(resolve, 55));
+        const curPnL = latestScore ? `${fmt(latestScore.netProfit)}%` : "--";
+        const bestPnL = best ? `${fmt(best.netProfit)}%` : "--";
+        const bestDD = best ? `${fmt(best.maxDd)}%` : "--";
+        $("status").textContent = `[${pct}%] Testing #${currentCount}/${candidates.length} [Bars:${latestCandidate.meanBars}, Edge:${latestCandidate.minEdgePct}~${latestCandidate.fullEdgePct}%, Max:${latestCandidate.maxSizePct}%] ⟹ Curr PnL: ${curPnL} | Best PnL: ${bestPnL} (MaxDD: ${bestDD})`;
+
+        // Micro-pause to allow the browser to paint every combination live
+        await new Promise((resolve) => setTimeout(resolve, 20));
       }
 
       optInputs.forEach((input) => {
