@@ -917,15 +917,45 @@
       return new Date(time).toLocaleString("en-US", options);
     };
     async function fetchKlines(symbol, interval, endTime) {
-      const url = new URL("https://fapi.binance.com/fapi/v1/klines");
-      url.searchParams.set("symbol", symbol);
-      url.searchParams.set("interval", interval);
-      url.searchParams.set("limit", String(limits[interval] || 300));
-      if (endTime) url.searchParams.set("endTime", String(endTime));
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`${symbol} returned ${response.status}`);
-      const data = await response.json();
-      return data.map((item) => ({ time: Number(item[0]), close: Number(item[4]) }));
+      const endpoints = [
+        "https://fapi.binance.com/fapi/v1/klines",
+        "https://fapi.binance.vision/fapi/v1/klines",
+        "https://api.allorigins.win/raw?url=" + encodeURIComponent("https://fapi.binance.com/fapi/v1/klines")
+      ];
+      const limit = String(limits[interval] || 300);
+      let lastErr = null;
+
+      for (let i = 0; i < endpoints.length; i++) {
+        try {
+          let targetUrl;
+          if (endpoints[i].includes("allorigins")) {
+            let directUrl = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+            if (endTime) directUrl += `&endTime=${endTime}`;
+            targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`;
+          } else {
+            const url = new URL(endpoints[i]);
+            url.searchParams.set("symbol", symbol);
+            url.searchParams.set("interval", interval);
+            url.searchParams.set("limit", limit);
+            if (endTime) url.searchParams.set("endTime", String(endTime));
+            targetUrl = url.toString();
+          }
+
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
+          const response = await fetch(targetUrl, { signal: controller.signal });
+          clearTimeout(timeoutId);
+
+          if (!response.ok) throw new Error(`${symbol} returned ${response.status}`);
+          const data = await response.json();
+          if (Array.isArray(data) && data.length) {
+            return data.map((item) => ({ time: Number(item[0]), close: Number(item[4]) }));
+          }
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      throw lastErr || new Error(`Failed to fetch ${symbol}`);
     }
     function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode = "wave", tradeDirection = "bidirectional", predictionEngine = "ou_hybrid") {
       const koreanByTime = new Map(korean.map((item) => [item.time, item]));
@@ -2568,6 +2598,9 @@
       const tradeDirection = $("tradeDirection")?.value || "bidirectional";
       const predictionEngine = $("predictionEngine")?.value || "medallion_hmm";
       $("status").textContent = "Loading Binance Futures data...";
+      const isKo = window.currentLang === "ko";
+      $("position").textContent = isKo ? "동기화 중..." : "Connecting...";
+      $("position").className = "pill";
       try {
         const [adr, korean] = await Promise.all([
           fetchKlines("SKHYUSDT", interval),
@@ -2592,6 +2625,10 @@
         connectWebSocket(interval);
       } catch (error) {
         $("status").textContent = error.message;
+        $("position").textContent = isKo ? "연결 재시도" : "Retry Connect";
+        $("position").className = "pill";
+        $("position").style.cursor = "pointer";
+        $("position").onclick = () => refresh();
       }
     }
     let viewRedrawFrame = 0;
