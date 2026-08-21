@@ -2849,7 +2849,7 @@
           $("minProfitPct").value = latestCandidate.minProfitPct;
         }
 
-        // Live stats update for all 11 indicators
+        // Live stats update for all 11 indicators displaying the CURRENT tested candidate's metrics
         const baseRows = baseRowsByMean.get(latestCandidate.meanBars);
         const latestRow = baseRows ? baseRows[baseRows.length - 1] : null;
         if (latestRow) {
@@ -2857,18 +2857,19 @@
           $("premium").textContent = `${fmt(latestRow.normalized - 100)}%`;
           $("mean").textContent = fmt(latestRow.mean);
           $("maPremium").textContent = strategyMode === "wave" ? `${fmt(latestRow.expectedEdgePct)}% (Wave)` : `${fmt(latestRow.maPremiumPct)}% (MA)`;
-          if (latestScore) {
-            $("targetSize").textContent = `${fmt(latestScore.lastPositionSize * 100, 0)}%`;
-            $("avgPosition").textContent = latestScore.avgEntryMaPremiumPct !== null ? `${fmt(latestScore.avgEntryMaPremiumPct)}%` : "--";
-          }
           $("bars").textContent = baseRows.length;
+        }
+
+        if (latestScore) {
+          $("targetSize").textContent = `${fmt(latestScore.lastPositionSize * 100, 0)}%`;
+          $("avgPosition").textContent = latestScore.avgEntryMaPremiumPct !== null ? `${fmt(latestScore.avgEntryMaPremiumPct)}%` : "--";
+          $("accPnl").textContent = `${fmt(latestScore.netProfit)}%`;
+          $("maxDrawdown").textContent = `${fmt(latestScore.maxDd)}%`;
+          $("feesDrag").textContent = `${fmt(latestScore.fees)}%`;
         }
 
         if (best) {
           $("bestTest").textContent = `${fmt(best.score)}%`;
-          $("accPnl").textContent = `${fmt(best.netProfit)}%`;
-          $("maxDrawdown").textContent = `${fmt(best.maxDd)}%`;
-          $("feesDrag").textContent = `${fmt(best.fees)}%`;
         }
 
         const currentCount = Math.min(candidates.length, index + batch.length);
