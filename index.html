@@ -813,7 +813,7 @@
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('score')" title="Sort by Risk-Adjusted Score">Rank / Score <span id="sort_score" class="sortArrow">▼</span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('fullProfit')" title="Sort by Full Net PnL">Full PnL <span id="sort_fullProfit" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('netProfit')" title="Sort by Walk-Forward Median PnL">WF Median <span id="sort_netProfit" class="sortArrow"></span></th>
-                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('maxDd')" title="Sort by Max Drawdown">Max DD <span id="sort_maxDd" class="sortArrow"></span></th>
+                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('maxDd')" title="Sort by Max Drawdown">Max DD (Peak / 최악의 원금 손실) <span id="sort_maxDd" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('positiveFoldRate')" title="Sort by Winning Folds">Winning Folds <span id="sort_positiveFoldRate" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('meanBars')" title="Sort by Mean Bars Window">Mean Bars <span id="sort_meanBars" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('minEdgePct')" title="Sort by Edge Band">Edge Band <span id="sort_minEdgePct" class="sortArrow"></span></th>
@@ -2568,7 +2568,7 @@
       const maxDD = rows.length ? Math.min(...rows.map((r) => r.drawdownPct || 0)) : 0;
       const minEquity = rows.length ? Math.min(...rows.map((r) => r.equity || 100)) : 100;
       const principalDD = Math.min(0, minEquity - 100);
-      $("maxDrawdown").textContent = `${fmt(maxDD)}% (${isKo ? '원금최저' : 'Prin'}: ${fmt(principalDD)}%)`;
+      $("maxDrawdown").textContent = `${fmt(maxDD)}% (${isKo ? '최악의 원금 손실' : 'Worst Prin Loss'}: ${fmt(principalDD)}%)`;
       $("feesDrag").textContent = latest ? `${fmt(latest.totalFeesPct)}%` : "--";
       $("netEdge").textContent = latest ? `${fmt(latest.netSignalEdgePct)}%` : "--";
       $("forecastConfidence").textContent = latest ? `${fmt(latest.forecastConfidence * 100, 0)}%` : "--";
@@ -2705,6 +2705,64 @@
       pnlAreaD += ` L ${x(visibleRows.length - 1)} ${zeroY} Z`;
       svg += `<path d="${pnlAreaD}" fill="url(#pnlGradGreen)"/>`;
       svg += `<path d="${pathForPoints(linePoints, (row) => row.equity - 100, x, yPnl)}" fill="none" stroke="${pnlColor}" stroke-width="2.5" stroke-linecap="round"/>`;
+
+      // 3. Worst Peak Drawdown Moment & Worst Principal Loss Moment Callouts
+      let worstDdIdx = -1;
+      let worstDdVal = 0;
+      let worstPrinIdx = -1;
+      let worstPrinVal = 0;
+
+      visibleRows.forEach((r, idx) => {
+        const dd = r.drawdownPct || 0;
+        if (dd < worstDdVal) {
+          worstDdVal = dd;
+          worstDdIdx = idx;
+        }
+        const pLoss = r.equity - 100;
+        if (pLoss < worstPrinVal) {
+          worstPrinVal = pLoss;
+          worstPrinIdx = idx;
+        }
+      });
+
+      const isKo = window.currentLang === "ko";
+
+      // A. Worst Peak Drawdown Marker & Flag
+      if (worstDdIdx >= 0 && worstDdVal < -0.3) {
+        const ddRow = visibleRows[worstDdIdx];
+        const ddX = x(worstDdIdx);
+        const ddY = yPnl(ddRow.equity - 100);
+        svg += `<line x1="${ddX}" x2="${ddX}" y1="${margin.top}" y2="${ddY}" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`;
+        svg += `<circle cx="${ddX}" cy="${ddY}" r="5" fill="#dc2626" stroke="#ffffff" stroke-width="2"/>`;
+        const badgeW = 145;
+        const badgeH = 20;
+        const badgeX = Math.max(margin.left + 5, Math.min(width - margin.right - badgeW - 5, ddX - badgeW / 2));
+        const badgeY = Math.max(margin.top + 4, ddY - 25);
+        svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="4" fill="#fee2e2" stroke="#dc2626" stroke-width="1.2"/>`;
+        svg += `<text x="${badgeX + badgeW / 2}" y="${badgeY + 14}" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="800" font-family="monospace">🚨 ${isKo ? '최대 낙폭' : 'Max DD'}: ${fmt(worstDdVal)}%</text>`;
+      }
+
+      // B. Worst Principal Loss Marker & Flag
+      if (worstPrinIdx >= 0 && worstPrinVal < -0.01) {
+        const prinRow = visibleRows[worstPrinIdx];
+        const prinX = x(worstPrinIdx);
+        const prinY = yPnl(worstPrinVal);
+        svg += `<line x1="${prinX}" x2="${prinX}" y1="${zeroY}" y2="${prinY}" stroke="#ea580c" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`;
+        svg += `<circle cx="${prinX}" cy="${prinY}" r="5" fill="#ea580c" stroke="#ffffff" stroke-width="2"/>`;
+        const badgeW = 160;
+        const badgeH = 20;
+        const badgeX = Math.max(margin.left + 5, Math.min(width - margin.right - badgeW - 5, prinX - badgeW / 2));
+        const badgeY = Math.min(margin.top + pnlPlotHeight - 5, prinY + 12);
+        svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="4" fill="#ffedd5" stroke="#ea580c" stroke-width="1.2"/>`;
+        svg += `<text x="${badgeX + badgeW / 2}" y="${badgeY + 14}" text-anchor="middle" fill="#c2410c" font-size="10" font-weight="800" font-family="monospace">⚠️ ${isKo ? '최악의 원금 손실' : 'Worst Prin Loss'}: ${fmt(worstPrinVal)}%</text>`;
+      } else {
+        const badgeW = 165;
+        const badgeH = 18;
+        const badgeX = margin.left + 10;
+        const badgeY = Math.min(margin.top + pnlPlotHeight - 4, Math.max(margin.top + 4, zeroY - 22));
+        svg += `<rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}" rx="4" fill="#f0fdf4" stroke="#16a34a" stroke-width="1"/>`;
+        svg += `<text x="${badgeX + badgeW / 2}" y="${badgeY + 13}" text-anchor="middle" fill="#15803d" font-size="9.5" font-weight="800">🛡️ ${isKo ? '최악의 원금 손실: 0.0% (보존)' : 'Worst Prin Loss: 0.0%'}</text>`;
+      }
 
       // Latest Acc PnL Badge on the right end of the curve
       const lastX = x(visibleRows.length - 1);
@@ -2855,6 +2913,8 @@
       const latest = rows.at(-1);
       const fullPnl = latest.equity - 100;
       const fullDd = Math.min(...rows.map((row) => row.drawdownPct || 0));
+      const minEquity = Math.min(...rows.map((row) => row.equity || 100));
+      const principalDd = Math.min(0, minEquity - 100);
       const isKo = window.currentLang === "ko";
       $("selectedFullPnlLabel").textContent = isKo ? "전체 백테스트 누적 PnL" : "Full backtest PnL";
       $("selectedFullDdLabel").textContent = isKo ? "전체 최대 낙폭" : "Full max drawdown";
@@ -2863,7 +2923,7 @@
       $("selectedFeesLabel").textContent = isKo ? "수수료 + 슬리피지" : "Fees + slippage";
       $("selectedPositionLabel").textContent = isKo ? "현재 포지션" : "Current position";
       $("selectedFullPnl").textContent = signedPct(fullPnl);
-      $("selectedFullDd").textContent = signedPct(fullDd);
+      $("selectedFullDd").textContent = `${signedPct(fullDd)} (${isKo ? '최악 원금손실' : 'Worst Prin'}: ${signedPct(principalDd)})`;
       $("selectedWf").textContent = signedPct(candidate.netProfit);
       $("selectedOos").textContent = holdout ? signedPct(holdout.netProfit) : "N/A";
       $("selectedFees").textContent = signedPct(latest.totalFeesPct);
@@ -3329,7 +3389,7 @@
             ? `${fmt(latestScore.avgEntryMaPremiumPct)}%`
             : (window.currentLang === "ko" ? "무포지션" : "Flat");
           $("accPnl").textContent = `${fmt(latestScore.fullProfit)}%`;
-          $("maxDrawdown").textContent = `${fmt(latestScore.fullMaxDd)}% (${window.currentLang === 'ko' ? '원금최저' : 'Prin'}: ${fmt(latestScore.principalDd ?? 0)}%)`;
+          $("maxDrawdown").textContent = `${fmt(latestScore.fullMaxDd)}% (${window.currentLang === 'ko' ? '최악의 원금 손실' : 'Worst Prin Loss'}: ${fmt(latestScore.principalDd ?? 0)}%)`;
           $("feesDrag").textContent = `${fmt(latestScore.fees)}%`;
         }
 
@@ -3511,7 +3571,7 @@
             <td style="padding: 6px 8px; font-weight: 700; color: ${isWinner ? '#16a34a' : '#475569'};">${rankBadge}</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">${item.fullProfit >= 0 ? "+" : ""}${fmt(item.fullProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${wfPnlColor}; font-family: monospace;">${item.netProfit >= 0 ? "+" : ""}${fmt(item.netProfit)}%</td>
-            <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;" title="Peak Drawdown: ${fmt(item.maxDd)}% | Lowest vs Principal: ${fmt(item.principalDd ?? 0)}%">${fmt(item.maxDd)}% <span style="font-size: 10px; color: ${(item.principalDd ?? 0) < -0.01 ? '#dc2626' : '#16a34a'}; font-weight: 700;">(${(item.principalDd ?? 0) < -0.01 ? fmt(item.principalDd) + '%' : '원금0%'})</span></td>
+            <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;" title="Peak Drawdown: ${fmt(item.maxDd)}% | 최악의 원금 손실: ${fmt(item.principalDd ?? 0)}%">${fmt(item.maxDd)}% <span style="font-size: 10px; color: ${(item.principalDd ?? 0) < -0.01 ? '#dc2626' : '#16a34a'}; font-weight: 700;">(${(item.principalDd ?? 0) < -0.01 ? '원금 ' + fmt(item.principalDd) + '%' : '원금손실0%'})</span></td>
             <td style="padding: 6px 8px; font-weight: 700; color: #0284c7; font-family: monospace;">${fmt(item.score)}</td>
             <td style="padding: 6px 8px; font-family: monospace;">${Math.round(item.positiveFoldRate * 3)}/3</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.meanBars} bars</td>
