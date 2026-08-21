@@ -103,11 +103,55 @@
       background: var(--panel);
     }
     .controls {
-      display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
-      gap: 14px;
-      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 16px;
       margin-bottom: 14px;
+    }
+    .controlSection {
+      background: #fafafa;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 14px;
+    }
+    .controlSection.optimizable {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .controlSectionHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .controlSectionHeader h3 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 800;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .controlSectionHeader span {
+      font-size: 11.5px;
+      color: #64748b;
+      font-weight: 600;
+    }
+    .controlGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 12px;
+    }
+    .actionGrid {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
     }
     label {
       display: grid;
@@ -473,79 +517,102 @@
     </section>
 
     <section class="controls" aria-label="Chart controls">
-      <label id="lblInterval">Interval
-        <select id="interval">
-          <option value="1m">1m</option>
-          <option value="5m">5m</option>
-          <option value="15m" selected>15m</option>
-          <option value="1h">1h</option>
-          <option value="4h">4h</option>
-          <option value="1d">1d</option>
-        </select>
-      </label>
-      <label id="lblStrategy">Strategy
-        <select id="strategyMode">
-          <option id="optWave" value="wave" selected>Predictive Wave Trading</option>
-          <option id="optMa" value="ma">MA Mean Reversion</option>
-        </select>
-      </label>
-      <label id="lblEngine">Prediction Engine
-        <select id="predictionEngine">
-          <option id="optHMM" value="medallion_hmm" selected>Medallion HMM + Volatility Targeting</option>
-          <option id="optMultiMA" value="multi_ma">Multi-Scale MA Cascade (Fast/Med/Slow Momentum)</option>
-          <option id="optOU" value="ou_hybrid">OU + Adaptive Harmonic Hybrid</option>
-          <option id="optMultiHorizon" value="multi_horizon">Multi-Horizon Ensemble (6h/12h/24h)</option>
-          <option id="optBurg" value="burg_mem">Burg Maximum Entropy (AR Spectral)</option>
-          <option id="optDFT" value="fourier">Sparse DFT Decomposition</option>
-        </select>
-      </label>
-      <label id="lblDirection">Direction
-        <select id="tradeDirection">
-          <option id="optBidir" value="bidirectional" selected>Bidirectional (Long & Short)</option>
-          <option id="optShortOnly" value="shortOnly">Short ADR only (Harvest Premium)</option>
-        </select>
-      </label>
-      <label id="lblMeanBars">Mean bars
-        <input id="meanBars" type="number" min="8" max="512" step="1" value="96">
-      </label>
-      <label id="lblMinEdge">Start scaling %
-        <input id="minEdgePct" type="number" min="0" max="10" step="0.05" value="0.75">
-        <span id="hintMinEdge" class="controlHint">0% size below this edge</span>
-      </label>
-      <label id="lblFullEdge">Full size at %
-        <input id="fullEdgePct" type="number" min="0.05" max="10" step="0.05" value="2.5">
-        <span id="hintFullEdge" class="controlHint">100% size at or above this edge</span>
-      </label>
-      <label id="lblMaxSize">Max size % (Leverage)
-        <input id="maxSizePct" type="number" min="1" max="500" step="5" value="200">
-        <span id="hintMaxSize" class="controlHint">cap size / leverage (e.g. 200% = 2x, 500% = 5x)</span>
-      </label>
-      <label id="lblScaleCurve">Scale curve
-        <input id="scaleCurve" type="number" min="0.5" max="5" step="0.1" value="3">
-        <span id="hintScaleCurve" class="controlHint">higher = slower sizing</span>
-      </label>
-      <label id="lblTradeSpeed">Trade speed %
-        <input id="tradeSpeedPct" type="number" min="1" max="100" step="1" value="25">
-        <span id="hintTradeSpeed" class="controlHint">entry gap traded/candle</span>
-      </label>
-      <label id="lblExitSpeed">Exit speed %
-        <input id="exitSpeedPct" type="number" min="5" max="100" step="5" value="75">
-        <span id="hintExitSpeed" class="controlHint">liquidation speed %</span>
-      </label>
-      <label id="lblMinProfit">Min profit %
-        <input id="minProfitPct" type="number" min="0" max="5" step="0.05" value="0.5">
-        <span id="hintMinProfit" class="controlHint">take-profit gain from entry</span>
-      </label>
-      <label id="lblTradingFee">Trading fee bps
-        <input id="tradingFeeBps" type="number" min="0" max="50" step="0.1" value="5">
-        <span id="hintTradingFee" class="controlHint">per leg, on size change</span>
-      </label>
-      <label id="lblFundingFee">Funding bps/day
-        <input id="fundingBpsDay" type="number" min="-100" max="100" step="0.1" value="3">
-        <span id="hintFundingFee" class="controlHint">net cost; negative = credit</span>
-      </label>
-      <button id="refresh" type="button">Refresh</button>
-      <button id="optimizeProfit" type="button">Optimize profit</button>
+      <!-- Section 1: Market Environment, Strategy & Execution Cost Parameters -->
+      <div class="controlSection">
+        <div class="controlSectionHeader">
+          <h3 id="grpEnvTitle">⚙️ Market Environment & Cost Framework</h3>
+          <span id="grpEnvBadge">Environment & Fees (Fixed / User-Defined)</span>
+        </div>
+        <div class="controlGrid" style="grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));">
+          <label id="lblInterval">Interval
+            <select id="interval">
+              <option value="1m">1m</option>
+              <option value="5m">5m</option>
+              <option value="15m" selected>15m</option>
+              <option value="1h">1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1d</option>
+            </select>
+          </label>
+          <label id="lblStrategy">Strategy
+            <select id="strategyMode">
+              <option id="optWave" value="wave" selected>Predictive Wave Trading</option>
+              <option id="optMa" value="ma">MA Mean Reversion</option>
+            </select>
+          </label>
+          <label id="lblEngine">Prediction Engine
+            <select id="predictionEngine">
+              <option id="optHMM" value="medallion_hmm" selected>Medallion HMM + Volatility Targeting</option>
+              <option id="optMultiMA" value="multi_ma">Multi-Scale MA Cascade (Momentum)</option>
+              <option id="optOU" value="ou_hybrid">OU + Adaptive Harmonic Hybrid</option>
+              <option id="optMultiHorizon" value="multi_horizon">Multi-Horizon Ensemble (6h/12h/24h)</option>
+              <option id="optBurg" value="burg_mem">Burg Maximum Entropy (AR Spectral)</option>
+              <option id="optDFT" value="fourier">Sparse DFT Decomposition</option>
+            </select>
+          </label>
+          <label id="lblDirection">Direction
+            <select id="tradeDirection">
+              <option id="optBidir" value="bidirectional" selected>Bidirectional (Long & Short)</option>
+              <option id="optShortOnly" value="shortOnly">Short ADR only (Harvest Premium)</option>
+            </select>
+          </label>
+          <label id="lblTradingFee">Trading fee bps
+            <input id="tradingFeeBps" type="number" min="0" max="50" step="0.1" value="5">
+            <span id="hintTradingFee" class="controlHint">per leg, on size change</span>
+          </label>
+          <label id="lblFundingFee">Funding bps/day
+            <input id="fundingBpsDay" type="number" min="-100" max="100" step="0.1" value="3">
+            <span id="hintFundingFee" class="controlHint">net cost; negative = credit</span>
+          </label>
+          <div style="display: flex; align-items: flex-end;">
+            <button id="refresh" type="button" style="width: 100%; height: 40px;">Refresh Data</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: Auto-Optimizable Execution Parameters -->
+      <div class="controlSection optimizable">
+        <div class="controlSectionHeader">
+          <h3 id="grpOptTitle" style="color: #0369a1;">🎯 Auto-Optimizable Execution Parameters</h3>
+          <span id="grpOptBadge" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid #bae6fd;">TUNED BY ALGO OPTIMIZER</span>
+        </div>
+        <div class="controlGrid" style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));">
+          <label id="lblMeanBars">Mean bars
+            <input id="meanBars" type="number" min="8" max="512" step="1" value="96">
+          </label>
+          <label id="lblMinEdge">Start scaling %
+            <input id="minEdgePct" type="number" min="0" max="10" step="0.05" value="0.75">
+            <span id="hintMinEdge" class="controlHint">0% size below this edge</span>
+          </label>
+          <label id="lblFullEdge">Full size at %
+            <input id="fullEdgePct" type="number" min="0.05" max="10" step="0.05" value="2.5">
+            <span id="hintFullEdge" class="controlHint">100% size at or above</span>
+          </label>
+          <label id="lblMaxSize">Max size % (Leverage)
+            <input id="maxSizePct" type="number" min="1" max="500" step="5" value="200">
+            <span id="hintMaxSize" class="controlHint">cap leverage (200%=2x)</span>
+          </label>
+          <label id="lblScaleCurve">Scale curve
+            <input id="scaleCurve" type="number" min="0.5" max="5" step="0.1" value="3">
+            <span id="hintScaleCurve" class="controlHint">higher = slower sizing</span>
+          </label>
+          <label id="lblTradeSpeed">Trade speed %
+            <input id="tradeSpeedPct" type="number" min="1" max="100" step="1" value="25">
+            <span id="hintTradeSpeed" class="controlHint">entry gap traded/candle</span>
+          </label>
+          <label id="lblExitSpeed">Exit speed %
+            <input id="exitSpeedPct" type="number" min="5" max="100" step="5" value="75">
+            <span id="hintExitSpeed" class="controlHint">liquidation speed %</span>
+          </label>
+          <label id="lblMinProfit">Min profit %
+            <input id="minProfitPct" type="number" min="0" max="5" step="0.05" value="0.5">
+            <span id="hintMinProfit" class="controlHint">take-profit gain from entry</span>
+          </label>
+          <div style="display: flex; align-items: flex-end; grid-column: span 1;">
+            <button id="optimizeProfit" type="button" style="width: 100%; height: 40px; background: #0284c7;">⚡ Optimize Profit</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="stats">
@@ -2734,6 +2801,10 @@
         subNewsCatalyst: "Real-time correlation between global headlines, HBM chip announcements, Nvidia capex, and parity spread dislocation",
         tagZeroBias: "Zero Lookahead Bias",
         tagFaqVerified: "PROVEN ZERO LOOKAHEAD",
+        grpEnvTitle: "⚙️ Market Environment & Cost Framework",
+        grpEnvBadge: "Environment & Fees (Fixed / User-Defined)",
+        grpOptTitle: "🎯 Auto-Optimizable Execution Parameters",
+        grpOptBadge: "TUNED BY ALGO OPTIMIZER",
         tblColDateTime: "Date & Time (UTC)",
         tblColCategory: "Category",
         tblColHeadline: "Catalyst Headline & Event",
@@ -2778,8 +2849,8 @@
         hintTradingFee: "편도 기준 (비중 조절 시 발생)",
         lblFundingFee: "일일 펀딩비 (bps/day)",
         hintFundingFee: "순 비용 (음수일 경우 이자 수취)",
-        btnRefresh: "새로고침",
-        btnOptimize: "수익률 최적화",
+        btnRefresh: "데이터 새로고침",
+        btnOptimize: "⚡ 최적화 실행",
         statLatest: "현재 정규화 가격",
         statPremium: "패리티 프리미엄",
         statMean: "이동평균 중심선",
@@ -2816,6 +2887,10 @@
         subNewsCatalyst: "글로벌 뉴스, HBM 발표, 엔비디아 CapEx와 패리티 스프레드 괴리율 간의 상관관계",
         tagZeroBias: "미래참조 편향 0% 입증",
         tagFaqVerified: "무결성 검증 완료",
+        grpEnvTitle: "⚙️ 시장 환경 및 거래 비용 프레임워크",
+        grpEnvBadge: "기본 환경 및 수수료 (사용자 정의)",
+        grpOptTitle: "🎯 알고리즘 자동 최적화 파라미터",
+        grpOptBadge: "수익률 최적화 대상",
         tblColDateTime: "일시 (UTC)",
         tblColCategory: "분류",
         tblColHeadline: "촉매 헤드라인 및 주요 사건",
@@ -3207,6 +3282,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("subFaq")) $("subFaq").textContent = dict.subFaq;
       if ($("tagZeroBias")) $("tagZeroBias").textContent = dict.tagZeroBias;
       if ($("tagFaqVerified")) $("tagFaqVerified").textContent = dict.tagFaqVerified;
+
+      // Group Titles & Badges
+      if ($("grpEnvTitle")) $("grpEnvTitle").textContent = dict.grpEnvTitle;
+      if ($("grpEnvBadge")) $("grpEnvBadge").textContent = dict.grpEnvBadge;
+      if ($("grpOptTitle")) $("grpOptTitle").textContent = dict.grpOptTitle;
+      if ($("grpOptBadge")) $("grpOptBadge").textContent = dict.grpOptBadge;
 
       // Table Column Headers
       if ($("thDateTime")) $("thDateTime").textContent = dict.tblColDateTime;
