@@ -22,7 +22,10 @@
       margin: 0;
       background: var(--bg);
       color: var(--fg);
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Segoe UI", Roboto, Arial, sans-serif;
+      word-break: keep-all;
+      overflow-wrap: break-word;
+      -webkit-font-smoothing: antialiased;
     }
     main {
       width: min(1280px, calc(100vw - 32px));
@@ -49,6 +52,7 @@
       padding: 3px;
       background: rgba(255, 255, 255, .92);
       box-shadow: 0 4px 12px rgba(17, 24, 39, .06);
+      white-space: nowrap;
     }
     .langSwitch button {
       pointer-events: auto;
@@ -64,6 +68,7 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
+      white-space: nowrap;
     }
     .langSwitch button.active {
       background: var(--fg);
@@ -75,23 +80,26 @@
       font-size: 13px;
       font-weight: 800;
       text-transform: uppercase;
+      word-break: keep-all;
     }
-    h1, h2, p { margin: 0; }
+    h1, h2, p { margin: 0; word-break: keep-all; }
     h1 {
-      font-size: clamp(30px, 4vw, 52px);
-      line-height: 1.02;
-      letter-spacing: 0;
+      font-size: clamp(24px, 3.5vw, 44px);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      word-break: keep-all;
     }
     .pill {
-      min-width: 112px;
+      min-width: 120px;
       border: 1px solid var(--line);
       border-radius: 999px;
-      padding: 9px 14px;
+      padding: 8px 14px;
       background: var(--panel);
       color: var(--muted);
-      font-size: 14px;
+      font-size: 13.5px;
       font-weight: 800;
       text-align: center;
+      white-space: nowrap;
     }
     .pill.open {
       border-color: color-mix(in srgb, var(--purple) 35%, var(--line));
@@ -126,6 +134,8 @@
       margin-bottom: 12px;
       padding-bottom: 8px;
       border-bottom: 1px solid #e2e8f0;
+      flex-wrap: wrap;
+      gap: 8px;
     }
     .controlSectionHeader h3 {
       margin: 0;
@@ -137,16 +147,29 @@
       gap: 6px;
       text-transform: uppercase;
       letter-spacing: 0.03em;
+      word-break: keep-all;
     }
     .controlSectionHeader span {
       font-size: 11.5px;
       color: #64748b;
       font-weight: 600;
+      word-break: keep-all;
     }
     .controlGrid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
       gap: 12px;
+    }
+    .controlGrid.environment {
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    }
+    @media (min-width: 1024px) {
+      .controlGrid.environment {
+        grid-template-columns: 100px 180px 280px 200px 140px 140px 140px;
+      }
+      .controlGrid.optimizableGrid {
+        grid-template-columns: repeat(8, 1fr) 150px;
+      }
     }
     .actionGrid {
       display: flex;
@@ -155,20 +178,37 @@
     }
     label {
       display: grid;
-      gap: 7px;
+      gap: 6px;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 800;
       text-transform: uppercase;
+      word-break: keep-all;
+      line-height: 1.25;
+    }
+    .controlHint {
+      font-size: 10.5px;
+      color: #64748b;
+      font-weight: 500;
+      text-transform: none;
+      word-break: keep-all;
+      line-height: 1.2;
+      min-height: 13px;
     }
     select, input, button {
       height: 40px;
       border: 1px solid var(--line);
       border-radius: 7px;
-      padding: 0 11px;
+      padding: 0 10px;
       background: #fbfbf9;
       color: var(--fg);
       font: inherit;
+      font-size: 13px;
+    }
+    select {
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: pointer;
     }
     button {
       align-self: end;
@@ -176,6 +216,10 @@
       background: var(--fg);
       color: white;
       font-weight: 800;
+      white-space: nowrap;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
     }
     .ghostButton {
       background: #fbfbf9;
@@ -183,26 +227,31 @@
     }
     .stats {
       display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
       margin-bottom: 14px;
     }
     .stat {
-      padding: 15px 16px;
+      padding: 13px 14px;
       border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
     }
     .stat:last-child { border-right: 0; }
     .stat span {
       display: block;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 800;
       text-transform: uppercase;
+      word-break: keep-all;
+      line-height: 1.25;
     }
     .stat strong {
       display: block;
       margin-top: 6px;
-      font-size: 24px;
+      font-size: 22px;
       line-height: 1;
+      font-feature-settings: "tnum";
+      white-space: nowrap;
     }
     .panel {
       padding: 16px;
@@ -523,7 +572,7 @@
           <h3 id="grpEnvTitle">⚙️ Market Environment & Cost Framework</h3>
           <span id="grpEnvBadge">Environment & Fees (Fixed / User-Defined)</span>
         </div>
-        <div class="controlGrid" style="grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));">
+        <div class="controlGrid environment">
           <label id="lblInterval">Interval
             <select id="interval">
               <option value="1m">1m</option>
@@ -576,7 +625,7 @@
           <h3 id="grpOptTitle" style="color: #0369a1;">🎯 Auto-Optimizable Execution Parameters</h3>
           <span id="grpOptBadge" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid #bae6fd;">TUNED BY ALGO OPTIMIZER</span>
         </div>
-        <div class="controlGrid" style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));">
+        <div class="controlGrid optimizableGrid">
           <label id="lblMeanBars">Mean bars
             <input id="meanBars" type="number" min="8" max="512" step="1" value="96">
           </label>
@@ -2169,14 +2218,15 @@
       const latest = rows.at(-1);
       const isShort = Boolean(latest && latest.targetSize > 0.01);
       const isLong = Boolean(latest && latest.targetSize < -0.01);
+      const isKo = window.currentLang === "ko";
       if (isShort) {
-        $("position").textContent = `Short ADR (${fmt(latest.targetSize * 100, 0)}%)`;
+        $("position").textContent = isKo ? `ADR 숏 (${fmt(latest.targetSize * 100, 0)}%)` : `Short ADR (${fmt(latest.targetSize * 100, 0)}%)`;
         $("position").className = "pill open";
       } else if (isLong) {
-        $("position").textContent = `Long ADR (${fmt(Math.abs(latest.targetSize) * 100, 0)}%)`;
+        $("position").textContent = isKo ? `ADR 롱 (${fmt(Math.abs(latest.targetSize) * 100, 0)}%)` : `Long ADR (${fmt(Math.abs(latest.targetSize) * 100, 0)}%)`;
         $("position").className = "pill open";
       } else {
-        $("position").textContent = "Flat (0%)";
+        $("position").textContent = isKo ? "무포지션 (0%)" : "Flat (0%)";
         $("position").className = "pill";
       }
       $("latest").textContent = latest ? fmt(latest.normalized) : "--";
