@@ -810,7 +810,6 @@
             <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; text-align: left;">
               <thead>
                 <tr style="background: #f1f5f9; color: #475569; font-weight: 700; border-bottom: 1px solid #cbd5e1;">
-                  <th style="padding: 6px 8px;">Rank</th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('fullProfit')" title="Sort by Full Net PnL">Full PnL <span id="sort_fullProfit" class="sortArrow">▼</span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('netProfit')" title="Sort by Walk-Forward Median PnL">WF Median <span id="sort_netProfit" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('maxDd')" title="Sort by Max Drawdown">Max DD <span id="sort_maxDd" class="sortArrow"></span></th>
@@ -3330,88 +3329,38 @@
 
       const resultsPanel = $("optResultsPanel");
       const resultsBody = $("optResultsBody");
-      if (resultsPanel) resultsPanel.style.display = "block";
+      const summaryPanel = $("selectedResultSummary");
+      if (resultsPanel) resultsPanel.style.display = "none";
+      if (summaryPanel) summaryPanel.classList.remove("visible");
 
       const origBtnText = button.textContent;
       let best = null;
       const allEvaluatedCandidates = [];
-      const batchSize = Math.max(15, Math.floor(candidates.length / 100)); // ~80-100 continuous visible ticks
+      const batchSize = Math.max(30, Math.floor(candidates.length / 50));
 
       for (let index = 0; index < candidates.length; index += batchSize) {
         const batch = candidates.slice(index, index + batchSize);
-        let latestCandidate = batch[batch.length - 1];
-        let latestScore = null;
 
         for (let bIdx = 0; bIdx < batch.length; bIdx += 1) {
           const params = batch[bIdx];
           const scored = scoreCandidate(params);
           if (!scored) continue;
-          latestScore = scored;
-          latestCandidate = params;
           if (!best || (scored.fullProfit > (best.fullProfit ?? -999999))) {
             best = { ...params, ...scored };
           }
-          // Retain ALL evaluated candidate combinations
           allEvaluatedCandidates.push({ ...params, ...scored });
-        }
-
-        window.allOptimizationCandidates = allEvaluatedCandidates;
-
-        // Live display of every combination sweeping through the 8 input fields
-        if (latestCandidate) {
-          $("meanBars").value = latestCandidate.meanBars;
-          $("minEdgePct").value = latestCandidate.minEdgePct;
-          $("fullEdgePct").value = latestCandidate.fullEdgePct;
-          $("maxSizePct").value = latestCandidate.maxSizePct;
-          $("scaleCurve").value = latestCandidate.scaleCurve;
-          $("tradeSpeedPct").value = latestCandidate.tradeSpeedPct;
-          $("exitSpeedPct").value = latestCandidate.exitSpeedPct;
-          $("minProfitPct").value = latestCandidate.minProfitPct;
-        }
-
-        // Live stats update for all 11 indicators displaying the CURRENT tested candidate's metrics
-        const baseRows = baseRowsByMean.get(latestCandidate.meanBars);
-        const latestRow = baseRows ? baseRows[baseRows.length - 1] : null;
-        if (latestRow) {
-          $("latest").textContent = fmt(latestRow.normalized);
-          $("premium").textContent = `${fmt(latestRow.normalized - 100)}%`;
-          $("mean").textContent = fmt(latestRow.mean);
-          $("maPremium").textContent = strategyMode === "wave" ? `${fmt(latestRow.expectedEdgePct)}% (Wave)` : `${fmt(latestRow.maPremiumPct)}% (MA)`;
-          $("netEdge").textContent = `${fmt(latestRow.netSignalEdgePct)}%`;
-          $("forecastConfidence").textContent = `${fmt(latestRow.forecastConfidence * 100, 0)}%`;
-          $("hedgeBeta").textContent = fmt(latestRow.hedgeRatio, 2);
-          $("bars").textContent = baseRows.length;
-        }
-
-        if (latestScore) {
-          $("targetSize").textContent = `${fmt(latestScore.lastPositionSize * 100, 0)}%`;
-          $("avgPosition").textContent = latestScore.avgEntryMaPremiumPct !== null
-            ? `${fmt(latestScore.avgEntryMaPremiumPct)}%`
-            : (window.currentLang === "ko" ? "무포지션" : "Flat");
-          $("accPnl").textContent = `${fmt(latestScore.fullProfit)}%`;
-          $("maxDrawdown").textContent = `${fmt(latestScore.fullMaxDd)}% (${fmt(latestScore.principalDd ?? 0)}%)`;
-          $("feesDrag").textContent = `${fmt(latestScore.fees)}%`;
-        }
-
-        if (best) {
-          $("bestTest").textContent = `${fmt(best.score)}%`;
         }
 
         const currentCount = Math.min(candidates.length, index + batch.length);
         const pct = Math.min(100, Math.round((currentCount / candidates.length) * 100));
-        button.textContent = `⚡ ${pct}% (${currentCount}/${candidates.length})`;
-        
-        const curPnL = latestScore ? `${fmt(latestScore.fullProfit)}%` : "--";
-        const bestPnL = best ? `${fmt(best.fullProfit)}%` : "--";
-        const bestDD = best ? `${fmt(best.fullMaxDd)}%` : "--";
-        $("status").textContent = `[${pct}%] Full-history #${currentCount}/${candidates.length} [Bars:${latestCandidate.meanBars}, Edge:${latestCandidate.minEdgePct}~${latestCandidate.fullEdgePct}%, Max:${latestCandidate.maxSizePct}%] Current: ${curPnL} | Best: ${bestPnL} (DD: ${bestDD})`;
+        button.textContent = `⚡ Simulating... ${pct}% (${currentCount}/${candidates.length})`;
+        $("status").textContent = `Evaluating optimization grid... [${pct}%] ${currentCount}/${candidates.length} candidate combinations tested`;
 
-        // Render Top Leaderboard table dynamically across ALL accumulated candidates
-        renderLeaderboardTable();
-
-        // Micro-pause to allow the browser to paint every combination live
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        // Small yield so the progress updates cleanly without freezing or thrashing
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
+
+      window.allOptimizationCandidates = allEvaluatedCandidates;
 
       optInputs.forEach((input) => {
         input.readOnly = false;
@@ -3482,6 +3431,10 @@
       drawAllocation(best.rows, cachedInterval);
       updateStats(best.rows);
       $("bestTest").textContent = `${fmt(best.holdoutProfit)}% OOS`;
+
+      // Render and display the lower result table and summary ONLY after simulation is completely finished
+      if (resultsPanel) resultsPanel.style.display = "block";
+      renderLeaderboardTable();
       updateSelectedResultSummary(best, best.rows, holdout);
       $("status").textContent = window.lastOptimization.statusText;
     }
@@ -3567,7 +3520,6 @@
         const isSelected = candidateKey(window.selectedOptimizationCandidate) === key;
         return `
           <tr data-candidate-key="${key}" class="${isSelected ? "optimizerRowSelected" : ""}" style="background: ${rowBg}; border-bottom: 1px solid #e2e8f0; cursor: pointer;" onclick="applyCandidateByRank(${rankIdx})">
-            <td style="padding: 6px 8px; font-weight: 700; color: ${isWinner ? '#16a34a' : '#475569'};">${rankBadge}</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">${item.fullProfit >= 0 ? "+" : ""}${fmt(item.fullProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${wfPnlColor}; font-family: monospace;">${item.netProfit >= 0 ? "+" : ""}${fmt(item.netProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;" title="Peak Drawdown: ${fmt(item.maxDd)}% | Principal Drawdown: ${fmt(item.principalDd ?? 0)}%">${fmt(item.maxDd)}% <span style="font-size: 10px; color: ${(item.principalDd ?? 0) < -0.01 ? '#dc2626' : '#16a34a'}; font-weight: 700;">(${fmt(item.principalDd ?? 0)}%)</span></td>
