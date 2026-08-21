@@ -113,15 +113,15 @@
     .controls {
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      padding: 16px;
+      gap: 14px;
+      padding: 14px;
       margin-bottom: 14px;
     }
     .controlSection {
       background: #fafafa;
       border: 1px solid var(--line);
       border-radius: 7px;
-      padding: 14px;
+      padding: 12px 14px 14px;
     }
     .controlSection.optimizable {
       background: #f8fafc;
@@ -134,7 +134,6 @@
       margin-bottom: 12px;
       padding-bottom: 8px;
       border-bottom: 1px solid #e2e8f0;
-      flex-wrap: wrap;
       gap: 8px;
     }
     .controlSectionHeader h3 {
@@ -146,7 +145,7 @@
       align-items: center;
       gap: 6px;
       text-transform: uppercase;
-      letter-spacing: 0.03em;
+      letter-spacing: 0.02em;
       word-break: keep-all;
     }
     .controlSectionHeader span {
@@ -157,34 +156,33 @@
     }
     .controlGrid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
       gap: 12px;
+      align-items: start;
     }
     .controlGrid.environment {
-      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     }
-    @media (min-width: 1024px) {
-      .controlGrid.environment {
-        grid-template-columns: 100px 180px 280px 200px 140px 140px 140px;
-      }
-      .controlGrid.optimizableGrid {
-        grid-template-columns: repeat(8, 1fr) 150px;
-      }
-    }
-    .actionGrid {
-      display: flex;
-      gap: 10px;
-      align-items: flex-end;
+    .controlGrid.optimizableGrid {
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
     }
     label {
-      display: grid;
-      gap: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
       color: var(--muted);
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 800;
       text-transform: uppercase;
       word-break: keep-all;
-      line-height: 1.25;
+      line-height: 1.2;
+    }
+    .controlTitle {
+      height: 16px;
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .controlHint {
       font-size: 10.5px;
@@ -193,17 +191,30 @@
       text-transform: none;
       word-break: keep-all;
       line-height: 1.2;
-      min-height: 13px;
+      height: 28px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-top: 3px;
+    }
+    .btnWrapper {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      height: 100%;
     }
     select, input, button {
-      height: 40px;
+      height: 38px;
+      width: 100%;
       border: 1px solid var(--line);
-      border-radius: 7px;
+      border-radius: 6px;
       padding: 0 10px;
       background: #fbfbf9;
       color: var(--fg);
       font: inherit;
       font-size: 13px;
+      box-sizing: border-box;
     }
     select {
       text-overflow: ellipsis;
@@ -211,7 +222,6 @@
       cursor: pointer;
     }
     button {
-      align-self: end;
       cursor: pointer;
       background: var(--fg);
       color: white;
@@ -220,36 +230,43 @@
       display: inline-flex;
       justify-content: center;
       align-items: center;
+      transition: background 0.15s ease, opacity 0.15s ease;
     }
-    .ghostButton {
-      background: #fbfbf9;
-      color: var(--fg);
+    button:hover {
+      opacity: 0.92;
     }
     .stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
       margin-bottom: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      overflow: hidden;
     }
     .stat {
-      padding: 13px 14px;
+      padding: 12px 14px;
       border-right: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
     }
     .stat:last-child { border-right: 0; }
     .stat span {
       display: block;
       color: var(--muted);
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 800;
       text-transform: uppercase;
       word-break: keep-all;
-      line-height: 1.25;
+      line-height: 1.2;
+      white-space: nowrap;
     }
     .stat strong {
       display: block;
-      margin-top: 6px;
-      font-size: 22px;
-      line-height: 1;
+      margin-top: 4px;
+      font-size: 20px;
+      line-height: 1.1;
       font-feature-settings: "tnum";
       white-space: nowrap;
     }
@@ -573,7 +590,8 @@
           <span id="grpEnvBadge">Environment & Fees (Fixed / User-Defined)</span>
         </div>
         <div class="controlGrid environment">
-          <label id="lblInterval">Interval
+          <label id="lblInterval">
+            <span class="controlTitle">Interval</span>
             <select id="interval">
               <option value="1m">1m</option>
               <option value="5m">5m</option>
@@ -582,14 +600,18 @@
               <option value="4h">4h</option>
               <option value="1d">1d</option>
             </select>
+            <span class="controlHint">Data frequency bar span</span>
           </label>
-          <label id="lblStrategy">Strategy
+          <label id="lblStrategy">
+            <span class="controlTitle">Strategy</span>
             <select id="strategyMode">
               <option id="optWave" value="wave" selected>Predictive Wave Trading</option>
               <option id="optMa" value="ma">MA Mean Reversion</option>
             </select>
+            <span class="controlHint">Trading signal generation mode</span>
           </label>
-          <label id="lblEngine">Prediction Engine
+          <label id="lblEngine">
+            <span class="controlTitle">Prediction Engine</span>
             <select id="predictionEngine">
               <option id="optHMM" value="medallion_hmm" selected>Medallion HMM + Volatility Targeting</option>
               <option id="optMultiMA" value="multi_ma">Multi-Scale MA Cascade (Momentum)</option>
@@ -598,23 +620,30 @@
               <option id="optBurg" value="burg_mem">Burg Maximum Entropy (AR Spectral)</option>
               <option id="optDFT" value="fourier">Sparse DFT Decomposition</option>
             </select>
+            <span class="controlHint">Causal forecast algorithm</span>
           </label>
-          <label id="lblDirection">Direction
+          <label id="lblDirection">
+            <span class="controlTitle">Direction</span>
             <select id="tradeDirection">
               <option id="optBidir" value="bidirectional" selected>Bidirectional (Long & Short)</option>
               <option id="optShortOnly" value="shortOnly">Short ADR only (Harvest Premium)</option>
             </select>
+            <span class="controlHint">Position allocation direction</span>
           </label>
-          <label id="lblTradingFee">Trading fee bps
+          <label id="lblTradingFee">
+            <span class="controlTitle">Trading fee bps</span>
             <input id="tradingFeeBps" type="number" min="0" max="50" step="0.1" value="5">
             <span id="hintTradingFee" class="controlHint">per leg, on size change</span>
           </label>
-          <label id="lblFundingFee">Funding bps/day
+          <label id="lblFundingFee">
+            <span class="controlTitle">Funding bps/day</span>
             <input id="fundingBpsDay" type="number" min="-100" max="100" step="0.1" value="3">
             <span id="hintFundingFee" class="controlHint">net cost; negative = credit</span>
           </label>
-          <div style="display: flex; align-items: flex-end;">
-            <button id="refresh" type="button" style="width: 100%; height: 40px;">Refresh Data</button>
+          <div class="btnWrapper">
+            <span class="controlTitle" style="visibility: hidden;">Action</span>
+            <button id="refresh" type="button">Refresh Data</button>
+            <span class="controlHint" style="visibility: hidden;">--</span>
           </div>
         </div>
       </div>
@@ -626,39 +655,50 @@
           <span id="grpOptBadge" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid #bae6fd;">TUNED BY ALGO OPTIMIZER</span>
         </div>
         <div class="controlGrid optimizableGrid">
-          <label id="lblMeanBars">Mean bars
+          <label id="lblMeanBars">
+            <span class="controlTitle">Mean bars</span>
             <input id="meanBars" type="number" min="8" max="512" step="1" value="96">
+            <span class="controlHint">rolling window length</span>
           </label>
-          <label id="lblMinEdge">Start scaling %
+          <label id="lblMinEdge">
+            <span class="controlTitle">Start scaling %</span>
             <input id="minEdgePct" type="number" min="0" max="10" step="0.05" value="0.75">
             <span id="hintMinEdge" class="controlHint">0% size below this edge</span>
           </label>
-          <label id="lblFullEdge">Full size at %
+          <label id="lblFullEdge">
+            <span class="controlTitle">Full size at %</span>
             <input id="fullEdgePct" type="number" min="0.05" max="10" step="0.05" value="2.5">
             <span id="hintFullEdge" class="controlHint">100% size at or above</span>
           </label>
-          <label id="lblMaxSize">Max size % (Leverage)
+          <label id="lblMaxSize">
+            <span class="controlTitle">Max size %</span>
             <input id="maxSizePct" type="number" min="1" max="500" step="5" value="200">
             <span id="hintMaxSize" class="controlHint">cap leverage (200%=2x)</span>
           </label>
-          <label id="lblScaleCurve">Scale curve
+          <label id="lblScaleCurve">
+            <span class="controlTitle">Scale curve</span>
             <input id="scaleCurve" type="number" min="0.5" max="5" step="0.1" value="3">
             <span id="hintScaleCurve" class="controlHint">higher = slower sizing</span>
           </label>
-          <label id="lblTradeSpeed">Trade speed %
+          <label id="lblTradeSpeed">
+            <span class="controlTitle">Trade speed %</span>
             <input id="tradeSpeedPct" type="number" min="1" max="100" step="1" value="25">
             <span id="hintTradeSpeed" class="controlHint">entry gap traded/candle</span>
           </label>
-          <label id="lblExitSpeed">Exit speed %
+          <label id="lblExitSpeed">
+            <span class="controlTitle">Exit speed %</span>
             <input id="exitSpeedPct" type="number" min="5" max="100" step="5" value="75">
             <span id="hintExitSpeed" class="controlHint">liquidation speed %</span>
           </label>
-          <label id="lblMinProfit">Min profit %
+          <label id="lblMinProfit">
+            <span class="controlTitle">Min profit %</span>
             <input id="minProfitPct" type="number" min="0" max="5" step="0.05" value="0.5">
-            <span id="hintMinProfit" class="controlHint">take-profit gain from entry</span>
+            <span id="hintMinProfit" class="controlHint">take-profit gain target</span>
           </label>
-          <div style="display: flex; align-items: flex-end; grid-column: span 1;">
-            <button id="optimizeProfit" type="button" style="width: 100%; height: 40px; background: #0284c7;">⚡ Optimize Profit</button>
+          <div class="btnWrapper">
+            <span class="controlTitle" style="visibility: hidden;">Action</span>
+            <button id="optimizeProfit" type="button" style="background: #0284c7;">⚡ Optimize</button>
+            <span class="controlHint" style="visibility: hidden;">--</span>
           </div>
         </div>
       </div>
@@ -3259,38 +3299,46 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("topTitle")) $("topTitle").textContent = dict.topTitle;
 
       // Controls
-      if ($("lblInterval")) $("lblInterval").firstChild.textContent = dict.lblInterval + " ";
-      if ($("lblStrategy")) $("lblStrategy").firstChild.textContent = dict.lblStrategy + " ";
+      const setLabelTitle = (id, text) => {
+        const el = $(id);
+        if (!el) return;
+        const titleSpan = el.querySelector(".controlTitle");
+        if (titleSpan) titleSpan.textContent = text;
+        else if (el.firstChild) el.firstChild.textContent = text + " ";
+      };
+
+      setLabelTitle("lblInterval", dict.lblInterval);
+      setLabelTitle("lblStrategy", dict.lblStrategy);
       if ($("optWave")) $("optWave").textContent = dict.optWave;
       if ($("optMa")) $("optMa").textContent = dict.optMa;
-      if ($("lblEngine")) $("lblEngine").firstChild.textContent = dict.lblEngine + " ";
+      setLabelTitle("lblEngine", dict.lblEngine);
       if ($("optHMM")) $("optHMM").textContent = dict.optHMM;
       if ($("optMultiMA")) $("optMultiMA").textContent = dict.optMultiMA;
       if ($("optOU")) $("optOU").textContent = dict.optOU;
       if ($("optMultiHorizon")) $("optMultiHorizon").textContent = dict.optMultiHorizon;
       if ($("optBurg")) $("optBurg").textContent = dict.optBurg;
       if ($("optDFT")) $("optDFT").textContent = dict.optDFT;
-      if ($("lblDirection")) $("lblDirection").firstChild.textContent = dict.lblDirection + " ";
+      setLabelTitle("lblDirection", dict.lblDirection);
       if ($("optBidir")) $("optBidir").textContent = dict.optBidir;
       if ($("optShortOnly")) $("optShortOnly").textContent = dict.optShortOnly;
-      if ($("lblMeanBars")) $("lblMeanBars").firstChild.textContent = dict.lblMeanBars + " ";
-      if ($("lblMinEdge")) $("lblMinEdge").firstChild.textContent = dict.lblMinEdge + " ";
+      setLabelTitle("lblMeanBars", dict.lblMeanBars);
+      setLabelTitle("lblMinEdge", dict.lblMinEdge);
       if ($("hintMinEdge")) $("hintMinEdge").textContent = dict.hintMinEdge;
-      if ($("lblFullEdge")) $("lblFullEdge").firstChild.textContent = dict.lblFullEdge + " ";
+      setLabelTitle("lblFullEdge", dict.lblFullEdge);
       if ($("hintFullEdge")) $("hintFullEdge").textContent = dict.hintFullEdge;
-      if ($("lblMaxSize")) $("lblMaxSize").firstChild.textContent = dict.lblMaxSize + " ";
+      setLabelTitle("lblMaxSize", dict.lblMaxSize);
       if ($("hintMaxSize")) $("hintMaxSize").textContent = dict.hintMaxSize;
-      if ($("lblScaleCurve")) $("lblScaleCurve").firstChild.textContent = dict.lblScaleCurve + " ";
+      setLabelTitle("lblScaleCurve", dict.lblScaleCurve);
       if ($("hintScaleCurve")) $("hintScaleCurve").textContent = dict.hintScaleCurve;
-      if ($("lblTradeSpeed")) $("lblTradeSpeed").firstChild.textContent = dict.lblTradeSpeed + " ";
+      setLabelTitle("lblTradeSpeed", dict.lblTradeSpeed);
       if ($("hintTradeSpeed")) $("hintTradeSpeed").textContent = dict.hintTradeSpeed;
-      if ($("lblExitSpeed")) $("lblExitSpeed").firstChild.textContent = dict.lblExitSpeed + " ";
+      setLabelTitle("lblExitSpeed", dict.lblExitSpeed);
       if ($("hintExitSpeed")) $("hintExitSpeed").textContent = dict.hintExitSpeed;
-      if ($("lblMinProfit")) $("lblMinProfit").firstChild.textContent = dict.lblMinProfit + " ";
+      setLabelTitle("lblMinProfit", dict.lblMinProfit);
       if ($("hintMinProfit")) $("hintMinProfit").textContent = dict.hintMinProfit;
-      if ($("lblTradingFee")) $("lblTradingFee").firstChild.textContent = dict.lblTradingFee + " ";
+      setLabelTitle("lblTradingFee", dict.lblTradingFee);
       if ($("hintTradingFee")) $("hintTradingFee").textContent = dict.hintTradingFee;
-      if ($("lblFundingFee")) $("lblFundingFee").firstChild.textContent = dict.lblFundingFee + " ";
+      setLabelTitle("lblFundingFee", dict.lblFundingFee);
       if ($("hintFundingFee")) $("hintFundingFee").textContent = dict.hintFundingFee;
       if ($("refresh")) $("refresh").textContent = dict.btnRefresh;
       if ($("optimizeProfit")) $("optimizeProfit").textContent = dict.btnOptimize;
