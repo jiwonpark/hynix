@@ -686,6 +686,16 @@
           <button id="refresh" type="button" style="width: auto; height: 32px; padding: 0 14px; font-size: 12px; background: #334155;">🔄 Refresh Data</button>
         </div>
         <div class="controlGrid environment">
+          <label id="lblAssetStrategy">
+            <span class="controlTitle" style="color: #0284c7; font-weight: 800;">Asset / Strategy</span>
+            <select id="assetStrategy" style="font-weight: 700; color: #0369a1; background: #f0f9ff; border: 1.5px solid #0284c7;">
+              <option value="skhynix_arb" selected>⚡ SK Hynix Arb (SKHY / SKHYNIX)</option>
+              <option value="btc_directional">🪙 Bitcoin Wave (BTC/USDT)</option>
+              <option value="eth_btc_ratio">💎 ETH / BTC Ratio Spread</option>
+              <option value="sol_directional">☀️ Solana Alpha Wave (SOL/USDT)</option>
+            </select>
+            <span class="controlHint">Underlying asset & pair mechanics</span>
+          </label>
           <label id="lblInterval">
             <span class="controlTitle">Interval</span>
             <select id="interval">
@@ -982,6 +992,65 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
+    const ASSET_STRATEGIES = {
+      skhynix_arb: {
+        id: "skhynix_arb",
+        name: "⚡ SK Hynix ADR Arb (SKHY / SKHYNIX)",
+        shortName: "SK Hynix Arb",
+        type: "arbitrage",
+        symbolA: "SKHYUSDT",
+        symbolB: "SKHYNIXUSDT",
+        ratioMultiplier: 10,
+        priceUnit: "%",
+        labelA: "Spread (Price)",
+        labelB: "Domestic (x10)",
+        longLabel: "Long ADR (▲)",
+        shortLabel: "Short ADR (▼)"
+      },
+      btc_directional: {
+        id: "btc_directional",
+        name: "🪙 Bitcoin (BTC/USDT) Directional Wave",
+        shortName: "Bitcoin (BTC)",
+        type: "single",
+        symbolA: "BTCUSDT",
+        symbolB: null,
+        ratioMultiplier: 1,
+        priceUnit: "$",
+        labelA: "BTC/USDT Price",
+        labelB: "Trend Baseline",
+        longLabel: "Long BTC (▲)",
+        shortLabel: "Short BTC (▼)"
+      },
+      eth_btc_ratio: {
+        id: "eth_btc_ratio",
+        name: "💎 ETH / BTC Ratio Spread",
+        shortName: "ETH / BTC",
+        type: "ratio",
+        symbolA: "ETHUSDT",
+        symbolB: "BTCUSDT",
+        ratioMultiplier: 1,
+        priceUnit: "%",
+        labelA: "ETH/BTC Ratio",
+        labelB: "Pair Mean",
+        longLabel: "Long ETH / Short BTC (▲)",
+        shortLabel: "Short ETH / Long BTC (▼)"
+      },
+      sol_directional: {
+        id: "sol_directional",
+        name: "☀️ Solana (SOL/USDT) Alpha Wave",
+        shortName: "Solana (SOL)",
+        type: "single",
+        symbolA: "SOLUSDT",
+        symbolB: null,
+        ratioMultiplier: 1,
+        priceUnit: "$",
+        labelA: "SOL/USDT Price",
+        labelB: "Trend Baseline",
+        longLabel: "Long SOL (▲)",
+        shortLabel: "Short SOL (▼)"
+      }
+    };
+
     const limits = { "1m": 1000, "5m": 1000, "15m": 1000, "1h": 1000, "4h": 1000, "1d": 500 };
     const $ = (id) => document.getElementById(id);
     const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -1039,19 +1108,48 @@
       throw lastErr || new Error(`Failed to fetch ${symbol}`);
     }
     function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode = "wave", tradeDirection = "bidirectional", predictionEngine = "ou_hybrid", slippageBps = 0) {
-      const koreanByTime = new Map(korean.map((item) => [item.time, item]));
-      const aligned = adr.map((item) => {
-        const k = koreanByTime.get(item.time);
-        if (!k) return null;
-        const fairAdr = k.close / 10;
-        return {
+      const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+      const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
+      const isSingle = assetConfig.type === "single";
+      const isRatio = assetConfig.type === "ratio";
+
+      let aligned = [];
+      if (isSingle) {
+        aligned = (adr || []).map((item) => ({
           time: item.time,
           adr: item.close,
-          korean: k.close,
-          fairAdr,
-          normalized: item.close / fairAdr * 100
-        };
-      }).filter(Boolean);
+          korean: item.close,
+          fairAdr: item.close,
+          normalized: item.close
+        }));
+      } else if (isRatio) {
+        const koreanByTime = new Map((korean || []).map((item) => [item.time, item]));
+        aligned = (adr || []).map((item) => {
+          const k = koreanByTime.get(item.time);
+          if (!k || !k.close) return null;
+          return {
+            time: item.time,
+            adr: item.close,
+            korean: k.close,
+            fairAdr: k.close,
+            normalized: (item.close / k.close) * 100
+          };
+        }).filter(Boolean);
+      } else {
+        const koreanByTime = new Map((korean || []).map((item) => [item.time, item]));
+        aligned = (adr || []).map((item) => {
+          const k = koreanByTime.get(item.time);
+          if (!k || !k.close) return null;
+          const fairAdr = k.close / 10;
+          return {
+            time: item.time,
+            adr: item.close,
+            korean: k.close,
+            fairAdr,
+            normalized: (item.close / fairAdr) * 100
+          };
+        }).filter(Boolean);
+      }
 
       const lookback = Math.max(32, Math.min(aligned.length, meanBars * 2));
       const barMs = aligned.length > 1
@@ -1589,15 +1687,25 @@
 
       for (let index = 0; index < rows.length; index += 1) {
         const row = rows[index];
-        const previousSize = positionSize;
-
-        // Take profit check based on mark price gain
-        if (Math.abs(positionSize) > 0.05 && avgEntryAdr && avgEntryKorean && minProfit > 0) {
-          const longGain = row.korean / avgEntryKorean - 1;
-          const shortGain = -(row.adr / avgEntryAdr - 1);
-          const positionGain = positionSize > 0
-            ? 0.5 * (longGain + shortGain) * 100
-            : -0.5 * (longGain + shortGain) * 100;
+            if (Math.abs(positionSize) > 0.001 && avgEntryAdr && row.adr) {
+          let positionGain = 0;
+          if (isSingle) {
+            positionGain = positionSize > 0
+              ? (row.adr / avgEntryAdr - 1) * 100
+              : -(row.adr / avgEntryAdr - 1) * 100;
+          } else if (isRatio) {
+            const longGain = row.adr / avgEntryAdr - 1;
+            const shortGain = avgEntryKorean ? -(row.korean / avgEntryKorean - 1) : 0;
+            positionGain = positionSize > 0
+              ? 0.5 * (longGain + shortGain) * 100
+              : -0.5 * (longGain + shortGain) * 100;
+          } else {
+            const longGain = avgEntryKorean ? (row.korean / avgEntryKorean - 1) : 0;
+            const shortGain = -(row.adr / avgEntryAdr - 1);
+            positionGain = positionSize > 0
+              ? 0.5 * (longGain + shortGain) * 100
+              : -0.5 * (longGain + shortGain) * 100;
+          }
           if (positionGain >= minProfit) {
             isTakeProfitActive = true;
           }
@@ -1607,20 +1715,20 @@
         }
 
         const desired = isTakeProfitActive ? 0 : row.desiredSize;
-        const sizeGap = desired - previousSize;
-        const isReducing = (previousSize > 0 && sizeGap < 0) || (previousSize < 0 && sizeGap > 0);
+        const sizeGap = desired - positionSize;
+        const isReducing = (positionSize > 0 && sizeGap < 0) || (positionSize < 0 && sizeGap > 0);
         const effectiveSpeed = isReducing ? exitSpeed : entrySpeed;
         const tradeSize = Math.abs(sizeGap) < 0.000001 ? 0 : sizeGap * effectiveSpeed;
         
-        positionSize = previousSize + tradeSize;
+        positionSize = positionSize + tradeSize;
         row.targetSize = positionSize;
         row.tradeSize = tradeSize;
 
-        const tradingFeePct = Math.abs(row.tradeSize) * 2 * (tradingFeeRate + slippageRate) * 100;
+        const tradingFeePct = Math.abs(row.tradeSize) * (isSingle ? 1 : 2) * (tradingFeeRate + slippageRate) * 100;
         tradingFeesPct += tradingFeePct;
 
         if (Math.abs(positionSize) > 0.001) {
-          if (Math.abs(previousSize) < 0.001) {
+          if (Math.abs(positionSize - tradeSize) < 0.001) {
             // Fresh position entry
             avgEntryNormalized = row.normalized;
             avgEntryMaPremiumPct = row.maPremiumPct;
@@ -1628,11 +1736,12 @@
             avgEntryKorean = row.korean;
           } else if (!isReducing && Math.abs(tradeSize) > 0.00001) {
             // Adding to position: true dollar-weighted average price calculation
-            const total = previousSize + tradeSize;
-            avgEntryNormalized = (previousSize * avgEntryNormalized + tradeSize * row.normalized) / total;
-            avgEntryMaPremiumPct = (previousSize * avgEntryMaPremiumPct + tradeSize * row.maPremiumPct) / total;
-            avgEntryAdr = (previousSize * avgEntryAdr + tradeSize * row.adr) / total;
-            avgEntryKorean = (previousSize * avgEntryKorean + tradeSize * row.korean) / total;
+            const total = positionSize;
+            const previousTotal = positionSize - tradeSize;
+            avgEntryNormalized = (previousTotal * avgEntryNormalized + tradeSize * row.normalized) / total;
+            avgEntryMaPremiumPct = (previousTotal * avgEntryMaPremiumPct + tradeSize * row.maPremiumPct) / total;
+            avgEntryAdr = (previousTotal * avgEntryAdr + tradeSize * row.adr) / total;
+            avgEntryKorean = (previousTotal * avgEntryKorean + tradeSize * row.korean) / total;
           }
           // When reducing position, average entry price of remaining inventory does NOT change
         } else {
@@ -1647,9 +1756,19 @@
 
         if (index > 0) {
           const previous = rows[index - 1];
-          const longReturn = row.korean / previous.korean - 1;
-          const shortReturn = -(row.adr / previous.adr - 1);
-          const pairReturn = 0.5 * (longReturn + shortReturn); // return of Short ADR / Long Korea
+          let pairReturn = 0;
+          if (isSingle) {
+            const assetReturn = previous.adr ? (row.adr / previous.adr - 1) : 0;
+            pairReturn = assetReturn;
+          } else if (isRatio) {
+            const primReturn = previous.adr ? (row.adr / previous.adr - 1) : 0;
+            const secReturn = (previous.korean && previous.korean > 0) ? (row.korean / previous.korean - 1) : 0;
+            pairReturn = 0.5 * (primReturn - secReturn);
+          } else {
+            const longReturn = (previous.korean && previous.korean > 0) ? (row.korean / previous.korean - 1) : 0;
+            const shortReturn = previous.adr ? -(row.adr / previous.adr - 1) : 0;
+            pairReturn = 0.5 * (longReturn + shortReturn);
+          }
           const intervalDays = Math.max(0, (row.time - previous.time) / 86400000);
           const fundingFeePct = Math.abs(previous.targetSize) * fundingRateDay * intervalDays * 100;
           fundingFeesPct += fundingFeePct;
@@ -2173,11 +2292,15 @@
         }
         window.spreadChartInitialized = true;
       }
+      const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+      const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
       if ($("legSpread")) {
         $("legSpread").textContent = chartMode === "ma"
           ? (window.currentLang === "ko" ? "스프레드 / 이동평균" : "Spread / MA")
-          : (window.currentLang === "ko" ? "스프레드 (현재가)" : "Spread (Price)");
+          : (window.currentLang === "ko" ? `${assetConfig.shortName} (현재가)` : assetConfig.labelA);
       }
+      if ($("legLongAdr")) $("legLongAdr").textContent = assetConfig.longLabel;
+      if ($("legShortAdr")) $("legShortAdr").textContent = assetConfig.shortLabel;
     }
     function requestExposureOverlayDraw() {
       if (window.exposureOverlayFrame) cancelAnimationFrame(window.exposureOverlayFrame);
@@ -2835,22 +2958,42 @@
     }
 
     async function prependOlderBars() {
-      if (loadingOlder || !cachedAdr.length || !cachedKorean.length) return;
+      const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+      const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
+
+      if (loadingOlder || !cachedAdr.length) return;
+      if (assetConfig.symbolB && !cachedKorean.length) return;
+
       loadingOlder = true;
       $("status").textContent = "Loading older bars...";
-      const endTime = Math.min(cachedAdr[0].time, cachedKorean[0].time) - 1;
+      const endTime = assetConfig.symbolB
+        ? Math.min(cachedAdr[0].time, cachedKorean[0].time) - 1
+        : cachedAdr[0].time - 1;
       const before = cachedRows.length;
       try {
-        const [olderAdr, olderKorean] = await Promise.all([
-          fetchKlines("SKHYUSDT", cachedInterval, endTime),
-          fetchKlines("SKHYNIXUSDT", cachedInterval, endTime)
-        ]);
+        let olderAdr = [], olderKorean = [];
+        if (assetConfig.symbolB) {
+          [olderAdr, olderKorean] = await Promise.all([
+            fetchKlines(assetConfig.symbolA, cachedInterval, endTime),
+            fetchKlines(assetConfig.symbolB, cachedInterval, endTime)
+          ]);
+        } else {
+          olderAdr = await fetchKlines(assetConfig.symbolA, cachedInterval, endTime);
+          olderKorean = olderAdr;
+        }
+
         const adrByTime = new Map(cachedAdr.map((row) => [row.time, row]));
-        const koreanByTime = new Map(cachedKorean.map((row) => [row.time, row]));
         olderAdr.concat(cachedAdr).forEach((row) => adrByTime.set(row.time, row));
-        olderKorean.concat(cachedKorean).forEach((row) => koreanByTime.set(row.time, row));
         cachedAdr = Array.from(adrByTime.values()).sort((a, b) => a.time - b.time);
-        cachedKorean = Array.from(koreanByTime.values()).sort((a, b) => a.time - b.time);
+
+        if (assetConfig.symbolB) {
+          const koreanByTime = new Map(cachedKorean.map((row) => [row.time, row]));
+          olderKorean.concat(cachedKorean).forEach((row) => koreanByTime.set(row.time, row));
+          cachedKorean = Array.from(koreanByTime.values()).sort((a, b) => a.time - b.time);
+        } else {
+          cachedKorean = cachedAdr;
+        }
+
         rebuildFromCache();
         const added = Math.max(0, cachedRows.length - before);
         if (window.viewEndFloat !== null && window.viewEndFloat !== undefined) {
@@ -2979,11 +3122,19 @@
         socket.onclose = null;
         socket.close();
       }
-      const streams = `skhyusdt@kline_${interval}/skhynixusdt@kline_${interval}`;
+
+      const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+      const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
+
+      const symA = assetConfig.symbolA.toLowerCase();
+      const streams = assetConfig.symbolB
+        ? `${symA}@kline_${interval}/${assetConfig.symbolB.toLowerCase()}@kline_${interval}`
+        : `${symA}@kline_${interval}`;
+
       socket = new WebSocket(`wss://fstream.binance.com/stream?streams=${streams}`);
       socket.onopen = () => {
         if (version !== socketVersion) return;
-        $("status").textContent = `WebSocket connected for ${interval} bars`;
+        $("status").textContent = `WebSocket connected for ${assetConfig.shortName} (${interval})`;
       };
       socket.onmessage = (event) => {
         if (version !== socketVersion) return;
@@ -2991,8 +3142,8 @@
         const kline = message.data && message.data.k;
         if (!kline) return;
         const item = { time: Number(kline.t), close: Number(kline.c) };
-        if (message.data.s === "SKHYUSDT") upsertKline(cachedAdr, item);
-        if (message.data.s === "SKHYNIXUSDT") upsertKline(cachedKorean, item);
+        if (message.data.s === assetConfig.symbolA) upsertKline(cachedAdr, item);
+        if (assetConfig.symbolB && message.data.s === assetConfig.symbolB) upsertKline(cachedKorean, item);
         scheduleLiveRender();
       };
       socket.onerror = () => {
@@ -3022,21 +3173,31 @@
       const strategyMode = $("strategyMode")?.value || "wave";
       const tradeDirection = $("tradeDirection")?.value || "bidirectional";
       const predictionEngine = $("predictionEngine")?.value || "medallion_hmm";
-      $("status").textContent = "Loading Binance Futures data...";
+
+      const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+      const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
+
+      $("status").textContent = `Loading Binance Futures data for ${assetConfig.shortName}...`;
       const isKo = window.currentLang === "ko";
       $("position").textContent = isKo ? "동기화 중..." : "Connecting...";
       $("position").className = "pill";
       $("position").style.cursor = "default";
       $("position").onclick = null;
       try {
-        const [adr, korean] = await Promise.all([
-          fetchKlines("SKHYUSDT", interval),
-          fetchKlines("SKHYNIXUSDT", interval)
-        ]);
+        let adr = [], korean = [];
+        if (assetConfig.symbolB) {
+          [adr, korean] = await Promise.all([
+            fetchKlines(assetConfig.symbolA, interval),
+            fetchKlines(assetConfig.symbolB, interval)
+          ]);
+        } else {
+          adr = await fetchKlines(assetConfig.symbolA, interval);
+          korean = adr;
+        }
         cachedAdr = adr;
         cachedKorean = korean;
         const rows = buildRows(cachedAdr, cachedKorean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode, tradeDirection, predictionEngine, slippageBps);
-        if (!rows.length) throw new Error("No aligned bars returned.");
+        if (!rows.length) throw new Error(`No data returned for ${assetConfig.shortName}`);
         cachedRows = rows;
         cachedInterval = interval;
         window.viewEndIndex = null;
@@ -3048,7 +3209,7 @@
         updateStats(rows);
         const latest = rows.at(-1);
         window.visibleBars = rows.length;
-        $("status").textContent = `Loaded ${rows.length} bars; opening WebSocket...`;
+        $("status").textContent = `Loaded ${rows.length} bars for ${assetConfig.shortName}; opening WebSocket...`;
         connectWebSocket(interval);
       } catch (error) {
         console.error("Dashboard refresh failed", error);
@@ -4271,7 +4432,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       } catch (e) {}
     }
 
-    const paramIds = ["interval", "strategyMode", "predictionEngine", "tradeDirection", "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct", "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct", "tradingFeeBps", "fundingBpsDay", "slippageBps"];
+    const paramIds = ["assetStrategy", "interval", "strategyMode", "predictionEngine", "tradeDirection", "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct", "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct", "tradingFeeBps", "fundingBpsDay", "slippageBps"];
     function saveSettings() {
       try {
         const settings = {};
@@ -4524,6 +4685,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
     $("refresh").addEventListener("click", () => { saveSettings(); refresh(); });
     $("optimizeProfit").addEventListener("click", () => { saveSettings(); optimizeProfit(); });
+    $("assetStrategy").addEventListener("change", () => { saveSettings(); refresh(); });
     $("interval").addEventListener("change", () => { saveSettings(); refresh(); });
     $("strategyMode").addEventListener("change", onParamChange);
     $("predictionEngine").addEventListener("change", onParamChange);
