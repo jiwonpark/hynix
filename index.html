@@ -160,10 +160,18 @@
       align-items: start;
     }
     .controlGrid.environment {
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     }
     .controlGrid.optimizableGrid {
       grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    }
+    @media (min-width: 1200px) {
+      .controlGrid.environment {
+        grid-template-columns: repeat(6, 1fr);
+      }
+      .controlGrid.optimizableGrid {
+        grid-template-columns: repeat(8, 1fr);
+      }
     }
     label {
       display: flex;
@@ -586,8 +594,11 @@
       <!-- Section 1: Market Environment, Strategy & Execution Cost Parameters -->
       <div class="controlSection">
         <div class="controlSectionHeader">
-          <h3 id="grpEnvTitle">⚙️ Market Environment & Cost Framework</h3>
-          <span id="grpEnvBadge">Environment & Fees (Fixed / User-Defined)</span>
+          <div>
+            <h3 id="grpEnvTitle">⚙️ Market Environment & Cost Framework</h3>
+            <span id="grpEnvBadge">Environment & Fees (Fixed / User-Defined)</span>
+          </div>
+          <button id="refresh" type="button" style="width: auto; height: 32px; padding: 0 14px; font-size: 12px; background: #334155;">🔄 Refresh Data</button>
         </div>
         <div class="controlGrid environment">
           <label id="lblInterval">
@@ -640,19 +651,17 @@
             <input id="fundingBpsDay" type="number" min="-100" max="100" step="0.1" value="3">
             <span id="hintFundingFee" class="controlHint">net cost; negative = credit</span>
           </label>
-          <div class="btnWrapper">
-            <span class="controlTitle" style="visibility: hidden;">Action</span>
-            <button id="refresh" type="button">Refresh Data</button>
-            <span class="controlHint" style="visibility: hidden;">--</span>
-          </div>
         </div>
       </div>
 
       <!-- Section 2: Auto-Optimizable Execution Parameters -->
       <div class="controlSection optimizable">
         <div class="controlSectionHeader">
-          <h3 id="grpOptTitle" style="color: #0369a1;">🎯 Auto-Optimizable Execution Parameters</h3>
-          <span id="grpOptBadge" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid #bae6fd;">TUNED BY ALGO OPTIMIZER</span>
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <h3 id="grpOptTitle" style="color: #0369a1;">🎯 Auto-Optimizable Execution Parameters</h3>
+            <span id="grpOptBadge" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid #bae6fd;">TUNED BY ALGO OPTIMIZER</span>
+          </div>
+          <button id="optimizeProfit" type="button" style="width: auto; height: 32px; padding: 0 16px; font-size: 12px; background: #0284c7; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);">⚡ Optimize Profit</button>
         </div>
         <div class="controlGrid optimizableGrid">
           <label id="lblMeanBars">
@@ -695,11 +704,6 @@
             <input id="minProfitPct" type="number" min="0" max="5" step="0.05" value="0.5">
             <span id="hintMinProfit" class="controlHint">take-profit gain target</span>
           </label>
-          <div class="btnWrapper">
-            <span class="controlTitle" style="visibility: hidden;">Action</span>
-            <button id="optimizeProfit" type="button" style="background: #0284c7;">⚡ Optimize</button>
-            <span class="controlHint" style="visibility: hidden;">--</span>
-          </div>
         </div>
       </div>
     </section>
