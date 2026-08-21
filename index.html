@@ -2029,20 +2029,27 @@
         };
         let saveRangeTimer = 0;
         let overlayScrollTimer = 0;
+        let allocScrollTimer = 0;
 
         window.spreadChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
           if (!range || !cachedRows.length) return;
 
+          window.spreadVisibleRange = range;
           const totalBars = cachedRows.length;
           const from = range.from;
           const to = range.to;
 
           if (window.userInteracting) {
-            // Debounce canvas overlay redraw during high-frequency mouse drag / wheel events
+            // Debounce canvas overlay & allocation chart redraw during mouse drag / wheel events
             window.clearTimeout(overlayScrollTimer);
-            overlayScrollTimer = window.setTimeout(requestExposureOverlayDraw, 40);
+            overlayScrollTimer = window.setTimeout(requestExposureOverlayDraw, 30);
+            window.clearTimeout(allocScrollTimer);
+            allocScrollTimer = window.setTimeout(() => {
+              if (cachedRows.length) drawAllocation(cachedRows, cachedInterval, range);
+            }, 30);
           } else {
             requestExposureOverlayDraw();
+            if (cachedRows.length) drawAllocation(cachedRows, cachedInterval, range);
           }
 
           // Only save viewport if real data is loaded
@@ -2868,12 +2875,32 @@
       return `${Y}.${M}.${D} ${h}:${m}`;
     }
 
-    function drawAllocation(rows, interval) {
+    function drawAllocation(rows, interval, passedRange) {
       if (!rows.length) return;
       const isKo = window.currentLang === "ko";
       
-      // Always render the full continuous simulation history from Bar 0 to Latest
-      const visibleRows = rows.map((row, index) => ({ ...row, __index: index }));
+      const range = passedRange || window.spreadChart?.timeScale()?.getVisibleLogicalRange() || window.spreadVisibleRange;
+      let visibleRows = [];
+      let startFloat = 0;
+      let barSpan = rows.length - 1;
+      let startIdx = 0;
+      let endIdx = rows.length - 1;
+
+      if (range && Number.isFinite(range.from) && Number.isFinite(range.to)) {
+        startFloat = range.from;
+        barSpan = Math.max(1, range.to - range.from);
+        startIdx = Math.max(0, Math.min(rows.length - 1, Math.floor(range.from)));
+        endIdx = Math.max(0, Math.min(rows.length - 1, Math.ceil(range.to)));
+        visibleRows = rows.slice(startIdx, endIdx + 1).map((row, i) => ({ ...row, __index: startIdx + i }));
+      }
+      
+      if (!visibleRows.length) {
+        visibleRows = rows.map((row, index) => ({ ...row, __index: index }));
+        startFloat = 0;
+        barSpan = Math.max(1, rows.length - 1);
+        startIdx = 0;
+        endIdx = rows.length - 1;
+      }
       
       const width = 1180, height = 320;
       const margin = { top: 28, right: 90, bottom: 65, left: 68 };
@@ -2881,8 +2908,8 @@
       const plotHeight = height - margin.top - margin.bottom;
 
       // Calculate exact timeline dates and duration
-      const startTime = rows[0].time;
-      const endTime = rows.at(-1).time;
+      const startTime = visibleRows[0].time;
+      const endTime = visibleRows.at(-1).time;
       const totalDays = ((endTime - startTime) / (1000 * 86400)).toFixed(1);
       const startStr = formatFullDate(startTime);
       const endStr = formatFullDate(endTime);
@@ -2890,7 +2917,11 @@
       // Update simulation period badge in the section header
       const periodBadge = $("simulationPeriodBadge");
       if (periodBadge) {
-        periodBadge.innerHTML = `📅 ${isKo ? '시뮬레이션 기간' : 'Simulation Period'}: <strong style="color: #0284c7;">${startStr} ~ ${endStr}</strong> (${isKo ? `총 ${totalDays}일 / ${rows.length}개 봉` : `Total ${totalDays}d / ${rows.length} bars`})`;
+        if (startIdx === 0 && endIdx === rows.length - 1) {
+          periodBadge.innerHTML = `📅 ${isKo ? '시뮬레이션 전체 기간' : 'Full Period'}: <strong style="color: #0284c7;">${startStr} ~ ${endStr}</strong> (${isKo ? `총 ${totalDays}일 / ${rows.length}개 봉` : `Total ${totalDays}d / ${rows.length} bars`})`;
+        } else {
+          periodBadge.innerHTML = `📅 ${isKo ? '가격 차트 동기화 구간' : 'Synced Range'}: <strong style="color: #0284c7;">${startStr} ~ ${endStr}</strong> (${isKo ? `전체 ${rows.length}봉 중 ${visibleRows.length}봉 표시 / ${totalDays}일` : `Showing ${visibleRows.length}/${rows.length} bars / ${totalDays}d`})`;
+        }
       }
 
       // PnL % values (equity - 100)
@@ -2905,7 +2936,7 @@
       const sizes = visibleRows.map((row) => (row.targetSize || 0) * 100);
       const maxAbsSize = Math.max(100, ...sizes.map((s) => Math.abs(s)));
 
-      const x = (index) => margin.left + plotWidth * (index / Math.max(1, visibleRows.length - 1));
+      const x = (index) => margin.left + plotWidth * ((visibleRows[index].__index - startFloat) / barSpan);
       
       // Upper 62% for PnL curve
       const pnlPlotHeight = plotHeight * 0.60;
@@ -3006,10 +3037,15 @@
       svg += `<path d="${pnlAreaD}" fill="${pnlGradFill}"/>`;
       svg += `<path d="${pathForPoints(linePoints, (row) => row.equity - 100, x, yPnl)}" fill="none" stroke="${pnlColor}" stroke-width="2.5" stroke-linecap="round"/>`;
 
-      // 2B. Start Marker Pin at initial origin (Candle 0: 0.0% PnL / Initial Capital $100)
-      svg += `<circle cx="${x(0)}" cy="${zeroY}" r="5" fill="#0284c7" stroke="#ffffff" stroke-width="2"/>`;
-      svg += `<rect x="${margin.left - 4}" y="${Math.max(margin.top + 2, zeroY - 22)}" width="78" height="18" rx="3" fill="#0369a1"/>`;
-      svg += `<text x="${margin.left + 35}" y="${Math.max(margin.top + 2, zeroY - 22) + 12.5}" text-anchor="middle" fill="#fff" font-size="9.5" font-weight="800" font-family="monospace">📍 Start (0%)</text>`;
+      // 2B. Start Marker Pin at initial visible point
+      const startPnlVal = visibleRows[0].equity - 100;
+      const startY = yPnl(startPnlVal);
+      const isDay1 = (startIdx === 0);
+      svg += `<circle cx="${x(0)}" cy="${startY}" r="5" fill="#0284c7" stroke="#ffffff" stroke-width="2"/>`;
+      const startTagText = isDay1 ? "📍 Start (0%)" : `📍 ${startPnlVal >= 0 ? '+' : ''}${fmt(startPnlVal)}%`;
+      const startTagW = isDay1 ? 78 : 82;
+      svg += `<rect x="${Math.max(margin.left - 4, x(0) - 10)}" y="${Math.max(margin.top + 2, startY - 22)}" width="${startTagW}" height="18" rx="3" fill="#0369a1"/>`;
+      svg += `<text x="${Math.max(margin.left - 4, x(0) - 10) + startTagW / 2}" y="${Math.max(margin.top + 2, startY - 22) + 12.5}" text-anchor="middle" fill="#fff" font-size="9.5" font-weight="800" font-family="monospace">${startTagText}</text>`;
 
       // 3. Worst Peak Drawdown Moment & Worst Principal Loss Moment Callouts (Collision-Free)
       let worstDdIdx = -1;
