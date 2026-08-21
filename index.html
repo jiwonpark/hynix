@@ -813,7 +813,7 @@
                   <th style="padding: 6px 8px;">Rank</th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('fullProfit')" title="Sort by Full Net PnL">Full PnL <span id="sort_fullProfit" class="sortArrow">▼</span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('netProfit')" title="Sort by Walk-Forward Median PnL">WF Median <span id="sort_netProfit" class="sortArrow"></span></th>
-                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('maxDd')" title="Sort by Max Drawdown">Max DD (Peak / 최악의 원금 손실) <span id="sort_maxDd" class="sortArrow"></span></th>
+                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('maxDd')" title="Sort by Max Drawdown">Max DD <span id="sort_maxDd" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('positiveFoldRate')" title="Sort by Winning Folds">Winning Folds <span id="sort_positiveFoldRate" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('meanBars')" title="Sort by Mean Bars Window">Mean Bars <span id="sort_meanBars" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('minEdgePct')" title="Sort by Edge Band">Edge Band <span id="sort_minEdgePct" class="sortArrow"></span></th>
@@ -2568,7 +2568,7 @@
       const maxDD = rows.length ? Math.min(...rows.map((r) => r.drawdownPct || 0)) : 0;
       const minEquity = rows.length ? Math.min(...rows.map((r) => r.equity || 100)) : 100;
       const principalDD = Math.min(0, minEquity - 100);
-      $("maxDrawdown").textContent = `${fmt(maxDD)}% (${isKo ? '최악의 원금 손실' : 'Worst Prin Loss'}: ${fmt(principalDD)}%)`;
+      $("maxDrawdown").textContent = `${fmt(maxDD)}% (${fmt(principalDD)}%)`;
       $("feesDrag").textContent = latest ? `${fmt(latest.totalFeesPct)}%` : "--";
       $("netEdge").textContent = latest ? `${fmt(latest.netSignalEdgePct)}%` : "--";
       $("forecastConfidence").textContent = latest ? `${fmt(latest.forecastConfidence * 100, 0)}%` : "--";
@@ -2923,7 +2923,7 @@
       $("selectedFeesLabel").textContent = isKo ? "수수료 + 슬리피지" : "Fees + slippage";
       $("selectedPositionLabel").textContent = isKo ? "현재 포지션" : "Current position";
       $("selectedFullPnl").textContent = signedPct(fullPnl);
-      $("selectedFullDd").textContent = `${signedPct(fullDd)} (${isKo ? '최악 원금손실' : 'Worst Prin'}: ${signedPct(principalDd)})`;
+      $("selectedFullDd").textContent = `${signedPct(fullDd)} (${signedPct(principalDd)})`;
       $("selectedWf").textContent = signedPct(candidate.netProfit);
       $("selectedOos").textContent = holdout ? signedPct(holdout.netProfit) : "N/A";
       $("selectedFees").textContent = signedPct(latest.totalFeesPct);
@@ -3389,7 +3389,7 @@
             ? `${fmt(latestScore.avgEntryMaPremiumPct)}%`
             : (window.currentLang === "ko" ? "무포지션" : "Flat");
           $("accPnl").textContent = `${fmt(latestScore.fullProfit)}%`;
-          $("maxDrawdown").textContent = `${fmt(latestScore.fullMaxDd)}% (${window.currentLang === 'ko' ? '최악의 원금 손실' : 'Worst Prin Loss'}: ${fmt(latestScore.principalDd ?? 0)}%)`;
+          $("maxDrawdown").textContent = `${fmt(latestScore.fullMaxDd)}% (${fmt(latestScore.principalDd ?? 0)}%)`;
           $("feesDrag").textContent = `${fmt(latestScore.fees)}%`;
         }
 
@@ -3570,7 +3570,7 @@
             <td style="padding: 6px 8px; font-weight: 700; color: ${isWinner ? '#16a34a' : '#475569'};">${rankBadge}</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">${item.fullProfit >= 0 ? "+" : ""}${fmt(item.fullProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${wfPnlColor}; font-family: monospace;">${item.netProfit >= 0 ? "+" : ""}${fmt(item.netProfit)}%</td>
-            <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;" title="Peak Drawdown: ${fmt(item.maxDd)}% | 최악의 원금 손실: ${fmt(item.principalDd ?? 0)}%">${fmt(item.maxDd)}% <span style="font-size: 10px; color: ${(item.principalDd ?? 0) < -0.01 ? '#dc2626' : '#16a34a'}; font-weight: 700;">(${(item.principalDd ?? 0) < -0.01 ? '원금 ' + fmt(item.principalDd) + '%' : '원금손실0%'})</span></td>
+            <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;" title="Peak Drawdown: ${fmt(item.maxDd)}% | Principal Drawdown: ${fmt(item.principalDd ?? 0)}%">${fmt(item.maxDd)}% <span style="font-size: 10px; color: ${(item.principalDd ?? 0) < -0.01 ? '#dc2626' : '#16a34a'}; font-weight: 700;">(${fmt(item.principalDd ?? 0)}%)</span></td>
             <td style="padding: 6px 8px; font-family: monospace;">${Math.round(item.positiveFoldRate * 3)}/3</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.meanBars} bars</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.minEdgePct}% ~ ${item.fullEdgePct}%</td>
