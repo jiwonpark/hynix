@@ -224,10 +224,16 @@
       font-size: 13px;
       box-sizing: border-box;
     }
-    select {
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      cursor: pointer;
+    input.optimizing, select.optimizing {
+      background: #e0f2fe !important;
+      color: #0369a1 !important;
+      border-color: #38bdf8 !important;
+      font-weight: 700;
+      transition: background 0.1s ease, color 0.1s ease;
+    }
+    .controlSection.optimizingSection {
+      border-color: #0284c7 !important;
+      box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
     }
     button {
       cursor: pointer;
@@ -2750,21 +2756,59 @@
           drawdown: maxDd
         };
       };
+      const optInputIds = [
+        "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct",
+        "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct"
+      ];
+      const optInputs = optInputIds.map((id) => $(id)).filter(Boolean);
+      optInputs.forEach((input) => {
+        input.readOnly = true;
+        input.classList.add("optimizing");
+      });
+      const optSection = document.querySelector(".controlSection.optimizable");
+      if (optSection) optSection.classList.add("optimizingSection");
+
+      const origBtnText = button.textContent;
       let best = null;
-      const chunkSize = 1500;
+      const chunkSize = 250;
       for (let index = 0; index < candidates.length; index += chunkSize) {
         const chunk = candidates.slice(index, index + chunkSize);
+        let sampleParams = chunk[0];
         chunk.forEach((params) => {
           const scored = scoreCandidate(params);
           if (!scored) return;
           if (!best || scored.score > best.score) {
             best = { ...params, ...scored };
+            sampleParams = params;
           }
         });
-        $("status").textContent = `Optimizing profit: ${Math.min(candidates.length, index + chunk.length)} / ${candidates.length}`;
-        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Live parameter display in fields while readonly
+        if (sampleParams) {
+          $("meanBars").value = sampleParams.meanBars;
+          $("minEdgePct").value = sampleParams.minEdgePct;
+          $("fullEdgePct").value = sampleParams.fullEdgePct;
+          $("maxSizePct").value = sampleParams.maxSizePct;
+          $("scaleCurve").value = sampleParams.scaleCurve;
+          $("tradeSpeedPct").value = sampleParams.tradeSpeedPct;
+          $("exitSpeedPct").value = sampleParams.exitSpeedPct;
+          $("minProfitPct").value = sampleParams.minProfitPct;
+        }
+
+        const pct = Math.min(100, Math.round(((index + chunk.length) / candidates.length) * 100));
+        button.textContent = `⏳ ${pct}% (Best: ${best ? fmt(best.score) + '%' : '--'})`;
+        $("status").textContent = `Optimizing: ${Math.min(candidates.length, index + chunk.length)} / ${candidates.length} candidates (${pct}%)`;
+        await new Promise((resolve) => setTimeout(resolve, 8));
       }
+
+      optInputs.forEach((input) => {
+        input.readOnly = false;
+        input.classList.remove("optimizing");
+      });
+      if (optSection) optSection.classList.remove("optimizingSection");
       button.disabled = false;
+      button.textContent = origBtnText;
+
       if (!best) {
         $("status").textContent = "Optimizer found no valid run";
         return;
