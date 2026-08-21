@@ -2566,7 +2566,9 @@
         : (isKo ? "무포지션" : "Flat");
       $("accPnl").textContent = latest ? `${fmt(latest.equity - 100)}%` : "--";
       const maxDD = rows.length ? Math.min(...rows.map((r) => r.drawdownPct || 0)) : 0;
-      $("maxDrawdown").textContent = `${fmt(maxDD)}%`;
+      const minEquity = rows.length ? Math.min(...rows.map((r) => r.equity || 100)) : 100;
+      const principalDD = Math.min(0, minEquity - 100);
+      $("maxDrawdown").textContent = `${fmt(maxDD)}% (${isKo ? '원금최저' : 'Prin'}: ${fmt(principalDD)}%)`;
       $("feesDrag").textContent = latest ? `${fmt(latest.totalFeesPct)}%` : "--";
       $("netEdge").textContent = latest ? `${fmt(latest.netSignalEdgePct)}%` : "--";
       $("forecastConfidence").textContent = latest ? `${fmt(latest.forecastConfidence * 100, 0)}%` : "--";
@@ -3107,6 +3109,7 @@
         let avgEntryAdr = null;
         let avgEntryKorean = null;
         let isTakeProfitActive = false;
+        let minEquity = 100;
         let worstDrawdown = 0;
 
         for (let rowIndex = range.start; rowIndex < range.end; rowIndex += 1) {
@@ -3197,12 +3200,14 @@
           }
           totalFeesPct += tradingFeePct + fundingFeePct;
           peak = Math.max(peak, equity);
+          minEquity = Math.min(minEquity, equity);
           worstDrawdown = Math.min(worstDrawdown, peak ? (equity / peak - 1) * 100 : 0);
           exposureSum += positionSize;
         }
 
         const netProfit = equity - 100;
         const maxDd = worstDrawdown;
+        const principalDd = Math.min(0, minEquity - 100);
         
         const ddPenalty = Math.max(0.5, Math.abs(maxDd));
         const riskAdjustedScore = netProfit > 0 ? (netProfit / (ddPenalty ** 0.75)) : netProfit;
@@ -3211,6 +3216,7 @@
           score: riskAdjustedScore,
           netProfit,
           maxDd,
+          principalDd,
           avgExposure: exposureSum / Math.max(1, range.end - range.start),
           fees: totalFeesPct,
           drawdown: maxDd,
@@ -3234,6 +3240,7 @@
           score: fullRun.score,
           fullProfit: fullRun.netProfit,
           fullMaxDd: fullRun.maxDd,
+          principalDd: fullRun.principalDd,
           netProfit: medianPnl,
           maxDd: fullRun.maxDd,
           foldWorstDd: worstDd,
@@ -3322,7 +3329,7 @@
             ? `${fmt(latestScore.avgEntryMaPremiumPct)}%`
             : (window.currentLang === "ko" ? "무포지션" : "Flat");
           $("accPnl").textContent = `${fmt(latestScore.fullProfit)}%`;
-          $("maxDrawdown").textContent = `${fmt(latestScore.fullMaxDd)}%`;
+          $("maxDrawdown").textContent = `${fmt(latestScore.fullMaxDd)}% (${window.currentLang === 'ko' ? '원금최저' : 'Prin'}: ${fmt(latestScore.principalDd ?? 0)}%)`;
           $("feesDrag").textContent = `${fmt(latestScore.fees)}%`;
         }
 
@@ -3504,7 +3511,7 @@
             <td style="padding: 6px 8px; font-weight: 700; color: ${isWinner ? '#16a34a' : '#475569'};">${rankBadge}</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">${item.fullProfit >= 0 ? "+" : ""}${fmt(item.fullProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${wfPnlColor}; font-family: monospace;">${item.netProfit >= 0 ? "+" : ""}${fmt(item.netProfit)}%</td>
-            <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;">${fmt(item.maxDd)}%</td>
+            <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;" title="Peak Drawdown: ${fmt(item.maxDd)}% | Lowest vs Principal: ${fmt(item.principalDd ?? 0)}%">${fmt(item.maxDd)}% <span style="font-size: 10px; color: ${(item.principalDd ?? 0) < -0.01 ? '#dc2626' : '#16a34a'}; font-weight: 700;">(${(item.principalDd ?? 0) < -0.01 ? fmt(item.principalDd) + '%' : '원금0%'})</span></td>
             <td style="padding: 6px 8px; font-weight: 700; color: #0284c7; font-family: monospace;">${fmt(item.score)}</td>
             <td style="padding: 6px 8px; font-family: monospace;">${Math.round(item.positiveFoldRate * 3)}/3</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.meanBars} bars</td>
