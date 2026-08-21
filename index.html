@@ -3333,6 +3333,12 @@
       if (resultsPanel) resultsPanel.style.display = "none";
       if (summaryPanel) summaryPanel.classList.remove("visible");
 
+      // Clear chart and lower result panes while simulating
+      if ($("chartSvg")) $("chartSvg").innerHTML = "";
+      if ($("allocationChart")) $("allocationChart").innerHTML = "";
+      if ($("histogram")) $("histogram").innerHTML = "";
+      if ($("waveSpectrum")) $("waveSpectrum").innerHTML = "";
+
       const origBtnText = button.textContent;
       let best = null;
       const allEvaluatedCandidates = [];
