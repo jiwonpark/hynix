@@ -3410,6 +3410,19 @@
 
         window.allOptimizationCandidates = allEvaluatedCandidates;
 
+        // Live display of every tested candidate combination sweeping through the 8 parameter input fields
+        const latestCandidate = batch[batch.length - 1];
+        if (latestCandidate) {
+          $("meanBars").value = latestCandidate.meanBars;
+          $("minEdgePct").value = latestCandidate.minEdgePct;
+          $("fullEdgePct").value = latestCandidate.fullEdgePct;
+          $("maxSizePct").value = latestCandidate.maxSizePct;
+          $("scaleCurve").value = latestCandidate.scaleCurve;
+          $("tradeSpeedPct").value = latestCandidate.tradeSpeedPct;
+          $("exitSpeedPct").value = latestCandidate.exitSpeedPct;
+          $("minProfitPct").value = latestCandidate.minProfitPct;
+        }
+
         // Render simulation result list live in real-time as each batch is evaluated
         renderLeaderboardTable();
 
