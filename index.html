@@ -3552,14 +3552,20 @@
       $("bestTest").textContent = "--";
 
       const origBtnText = button.textContent;
+      window.isOptimizing = true;
+      window.abortOptimization = false;
+      button.style.background = "#dc2626";
+
       let best = null;
       const allEvaluatedCandidates = [];
       const batchSize = Math.max(4, Math.floor(candidates.length / 200));
 
       for (let index = 0; index < candidates.length; index += batchSize) {
+        if (window.abortOptimization) break;
         const batch = candidates.slice(index, index + batchSize);
 
         for (let bIdx = 0; bIdx < batch.length; bIdx += 1) {
+          if (window.abortOptimization) break;
           const params = batch[bIdx];
           const scored = scoreCandidate(params);
           if (!scored) continue;
@@ -3589,13 +3595,16 @@
 
         const currentCount = Math.min(candidates.length, index + batch.length);
         const pct = Math.min(100, Math.round((currentCount / candidates.length) * 100));
-        button.textContent = `⚡ ${pct}% (${currentCount}/${candidates.length})`;
+        button.textContent = `✕ Abort ${pct}% (${currentCount}/${candidates.length})`;
 
         // True 60fps frame synchronization so every micro-sweep paints smoothly without lag
         await new Promise((resolve) => requestAnimationFrame(resolve));
       }
 
       window.allOptimizationCandidates = allEvaluatedCandidates;
+      const wasAborted = window.abortOptimization;
+      window.isOptimizing = false;
+      window.abortOptimization = false;
 
       optInputs.forEach((input) => {
         input.readOnly = false;
@@ -3604,12 +3613,13 @@
       if (optSection) optSection.classList.remove("optimizingSection");
       button.disabled = false;
       button.textContent = origBtnText;
+      button.style.background = "#0284c7";
 
       if (!best) {
         Object.entries(originalParamValues).forEach(([id, value]) => { $(id).value = value; });
         renderCached();
         $("bestTest").textContent = "No robust result";
-        $("status").textContent = "Optimizer found no valid run; current configuration preserved";
+        $("status").textContent = wasAborted ? "Optimization aborted by user" : "Optimizer found no valid run; current configuration preserved";
         return;
       }
       setNumberControl("meanBars", best.meanBars);
@@ -3671,7 +3681,9 @@
       if (resultsPanel) resultsPanel.style.display = "block";
       renderLeaderboardTable();
       updateSelectedResultSummary(best, best.rows, holdout);
-      $("status").textContent = `WebSocket live: ${formatTime(best.rows.at(-1).time, cachedInterval)} UTC`;
+      $("status").textContent = wasAborted 
+        ? `Simulation aborted (${allEvaluatedCandidates.length} evaluated; applied best so far)`
+        : `WebSocket live: ${formatTime(best.rows.at(-1).time, cachedInterval)} UTC`;
     }
 
     window.leaderboardSortKey = 'fullProfit';
@@ -4684,7 +4696,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("langEn").addEventListener("click", () => { setLanguage("en"); saveSettings(); });
 
     $("refresh").addEventListener("click", () => { saveSettings(); refresh(); });
-    $("optimizeProfit").addEventListener("click", () => { saveSettings(); optimizeProfit(); });
+    $("optimizeProfit").addEventListener("click", () => {
+      if (window.isOptimizing) {
+        window.abortOptimization = true;
+        $("optimizeProfit").textContent = "✕ Aborting...";
+        return;
+      }
+      saveSettings();
+      optimizeProfit();
+    });
     $("assetStrategy").addEventListener("change", () => { saveSettings(); refresh(); });
     $("interval").addEventListener("change", () => { saveSettings(); refresh(); });
     $("strategyMode").addEventListener("change", onParamChange);
