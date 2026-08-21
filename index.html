@@ -1005,11 +1005,23 @@
         labelA: "Spread (Price)",
         labelB: "Domestic (x10)",
         longLabel: "Long ADR (▲)",
-        shortLabel: "Short ADR (▼)"
+        shortLabel: "Short ADR (▼)",
+        defaults: {
+          meanBars: 24,
+          minEdgePct: 0.75,
+          fullEdgePct: 2.50,
+          maxSizePct: 500,
+          scaleCurve: 1.5,
+          tradeSpeedPct: 50,
+          exitSpeedPct: 50,
+          minProfitPct: 0.20,
+          strategyMode: "wave",
+          predictionEngine: "medallion_hmm"
+        }
       },
       btc_directional: {
         id: "btc_directional",
-        name: "🪙 Bitcoin (BTC/USDT) Directional Wave",
+        name: "🪙 Bitcoin (BTC/USDT) Trend Wave",
         shortName: "Bitcoin (BTC)",
         type: "single",
         symbolA: "BTCUSDT",
@@ -1019,7 +1031,19 @@
         labelA: "BTC/USDT Price",
         labelB: "Trend Baseline",
         longLabel: "Long BTC (▲)",
-        shortLabel: "Short BTC (▼)"
+        shortLabel: "Short BTC (▼)",
+        defaults: {
+          meanBars: 12,
+          minEdgePct: 0.80,
+          fullEdgePct: 2.50,
+          maxSizePct: 200,
+          scaleCurve: 1.2,
+          tradeSpeedPct: 50,
+          exitSpeedPct: 50,
+          minProfitPct: 0.50,
+          strategyMode: "wave",
+          predictionEngine: "medallion_hmm"
+        }
       },
       eth_btc_ratio: {
         id: "eth_btc_ratio",
@@ -1033,11 +1057,23 @@
         labelA: "ETH/BTC Ratio",
         labelB: "Pair Mean",
         longLabel: "Long ETH / Short BTC (▲)",
-        shortLabel: "Short ETH / Long BTC (▼)"
+        shortLabel: "Short ETH / Long BTC (▼)",
+        defaults: {
+          meanBars: 10,
+          minEdgePct: 0.45,
+          fullEdgePct: 1.60,
+          maxSizePct: 300,
+          scaleCurve: 1.4,
+          tradeSpeedPct: 50,
+          exitSpeedPct: 50,
+          minProfitPct: 0.30,
+          strategyMode: "wave",
+          predictionEngine: "burg_mem"
+        }
       },
       sol_directional: {
         id: "sol_directional",
-        name: "☀️ Solana (SOL/USDT) Alpha Wave",
+        name: "☀️ Solana (SOL/USDT) Trend Wave",
         shortName: "Solana (SOL)",
         type: "single",
         symbolA: "SOLUSDT",
@@ -1047,7 +1083,19 @@
         labelA: "SOL/USDT Price",
         labelB: "Trend Baseline",
         longLabel: "Long SOL (▲)",
-        shortLabel: "Short SOL (▼)"
+        shortLabel: "Short SOL (▼)",
+        defaults: {
+          meanBars: 24,
+          minEdgePct: 1.60,
+          fullEdgePct: 4.00,
+          maxSizePct: 150,
+          scaleCurve: 1.5,
+          tradeSpeedPct: 50,
+          exitSpeedPct: 50,
+          minProfitPct: 0.80,
+          strategyMode: "wave",
+          predictionEngine: "sparse_dft"
+        }
       }
     };
 
@@ -1598,39 +1646,76 @@
         const hedgeRatio = rollingHedgeBeta(index);
 
         let rawDesiredSize = 0;
-        if (strategyMode === "wave") {
-          // Trading driven by 24h Predictive Wave
-          if (tradeDirection === "bidirectional") {
-            // Negative edge = spread predicted to drop -> Short ADR / Long Korea (positive position size)
-            // Positive edge = spread predicted to rise -> Long ADR / Short Korea (negative position size)
-            const magnitude = Math.abs(grossSignalEdgePct);
-            if (magnitude >= minEdgePct) {
-              const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
-              const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
-              // In our backtester: positive targetSize = Short ADR / Long Korea
-              //                    negative targetSize = Long ADR / Short Korea
-              rawDesiredSize = grossSignalEdgePct < 0 ? curved : -curved;
+        if (isSingle) {
+          // Single Directional Asset (BTC / SOL): Trend-Following Wave Strategy
+          if (strategyMode === "wave") {
+            if (tradeDirection === "bidirectional") {
+              const magnitude = Math.abs(grossSignalEdgePct);
+              if (magnitude >= minEdgePct) {
+                const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+                rawDesiredSize = grossSignalEdgePct > 0 ? curved : -curved; // predicted rise -> LONG (+), predicted fall -> SHORT (-)
+              }
+            } else if (tradeDirection === "long_only") {
+              if (grossSignalEdgePct >= minEdgePct) {
+                const fraction = Math.min(1, (grossSignalEdgePct - minEdgePct) / denominator);
+                rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              }
+            } else {
+              if (grossSignalEdgePct <= -minEdgePct) {
+                const fraction = Math.min(1, (-grossSignalEdgePct - minEdgePct) / denominator);
+                rawDesiredSize = -(fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              }
             }
           } else {
-            // Short ADR only: harvest downward compression when expectedEdge < -minEdgePct
-            if (grossSignalEdgePct <= -minEdgePct) {
-              const fraction = Math.min(1, (-grossSignalEdgePct - minEdgePct) / denominator);
-              rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+            // Traditional Band Fading Mean-Reversion
+            if (tradeDirection === "bidirectional") {
+              const magnitude = Math.abs(grossSignalEdgePct);
+              if (magnitude >= minEdgePct) {
+                const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+                rawDesiredSize = grossSignalEdgePct < 0 ? curved : -curved;
+              }
+            } else {
+              if (grossSignalEdgePct <= -minEdgePct) {
+                const fraction = Math.min(1, (-grossSignalEdgePct - minEdgePct) / denominator);
+                rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              }
             }
           }
         } else {
-          // Traditional MA Mean-Reversion
-          if (tradeDirection === "bidirectional") {
-            const magnitude = Math.abs(grossSignalEdgePct);
-            if (magnitude >= minEdgePct) {
-              const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
-              const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
-              rawDesiredSize = grossSignalEdgePct > 0 ? curved : -curved;
+          // Dual-listing Arb (SK Hynix) & Relative Value Spread (ETH/BTC)
+          if (strategyMode === "wave") {
+            if (tradeDirection === "bidirectional") {
+              const magnitude = Math.abs(grossSignalEdgePct);
+              if (magnitude >= minEdgePct) {
+                const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+                rawDesiredSize = isRatio
+                  ? (grossSignalEdgePct > 0 ? curved : -curved)
+                  : (grossSignalEdgePct < 0 ? curved : -curved);
+              }
+            } else {
+              if (grossSignalEdgePct <= -minEdgePct) {
+                const fraction = Math.min(1, (-grossSignalEdgePct - minEdgePct) / denominator);
+                rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              }
             }
           } else {
-            if (grossSignalEdgePct >= minEdgePct) {
-              const fraction = Math.min(1, (grossSignalEdgePct - minEdgePct) / denominator);
-              rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+            if (tradeDirection === "bidirectional") {
+              const magnitude = Math.abs(grossSignalEdgePct);
+              if (magnitude >= minEdgePct) {
+                const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
+                const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+                rawDesiredSize = isRatio
+                  ? (grossSignalEdgePct < 0 ? curved : -curved)
+                  : (grossSignalEdgePct > 0 ? curved : -curved);
+              }
+            } else {
+              if (grossSignalEdgePct >= minEdgePct) {
+                const fraction = Math.min(1, (grossSignalEdgePct - minEdgePct) / denominator);
+                rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+              }
             }
           }
         }
@@ -3359,14 +3444,32 @@
         let minEquity = 100;
         let worstDrawdown = 0;
 
+        const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+        const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
+        const isSingle = assetConfig.type === "single";
+        const isRatio = assetConfig.type === "ratio";
+
         for (let rowIndex = range.start; rowIndex < range.end; rowIndex += 1) {
           const row = baseRows[rowIndex];
-          if (Math.abs(positionSize) > 0.05 && avgEntryAdr && avgEntryKorean && minProfit > 0) {
-            const longGain = row.korean / avgEntryKorean - 1;
-            const shortGain = -(row.adr / avgEntryAdr - 1);
-            const posPriceGainPct = positionSize > 0
-              ? 0.5 * (longGain + shortGain) * 100
-              : -0.5 * (longGain + shortGain) * 100;
+          let posPriceGainPct = 0;
+          if (Math.abs(positionSize) > 0.05 && avgEntryAdr && minProfit > 0) {
+            if (isSingle) {
+              posPriceGainPct = positionSize > 0
+                ? (row.adr / avgEntryAdr - 1) * 100
+                : -(row.adr / avgEntryAdr - 1) * 100;
+            } else if (isRatio) {
+              const longGain = row.adr / avgEntryAdr - 1;
+              const shortGain = avgEntryKorean ? -(row.korean / avgEntryKorean - 1) : 0;
+              posPriceGainPct = positionSize > 0
+                ? 0.5 * (longGain + shortGain) * 100
+                : -0.5 * (longGain + shortGain) * 100;
+            } else {
+              const longGain = avgEntryKorean ? (row.korean / avgEntryKorean - 1) : 0;
+              const shortGain = -(row.adr / avgEntryAdr - 1);
+              posPriceGainPct = positionSize > 0
+                ? 0.5 * (longGain + shortGain) * 100
+                : -0.5 * (longGain + shortGain) * 100;
+            }
             if (posPriceGainPct >= minProfit) {
               isTakeProfitActive = true;
             }
@@ -3378,32 +3481,76 @@
           let rawDesiredSize = 0;
           const triggerEdge = row.grossSignalEdgePct ?? row.netSignalEdgePct ?? 0;
 
-          if (strategyMode === "wave") {
-            if (tradeDirection === "bidirectional") {
-              const magnitude = Math.abs(triggerEdge);
-              if (magnitude >= params.minEdgePct) {
-                const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
-                const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
-                rawDesiredSize = triggerEdge < 0 ? curved : -curved;
+          if (isSingle) {
+            // Directional asset (BTC/SOL): Trend-Following Wave Mode
+            if (strategyMode === "wave") {
+              if (tradeDirection === "bidirectional") {
+                const magnitude = Math.abs(triggerEdge);
+                if (magnitude >= params.minEdgePct) {
+                  const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                  const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                  rawDesiredSize = triggerEdge > 0 ? curved : -curved;
+                }
+              } else if (tradeDirection === "long_only") {
+                if (triggerEdge >= params.minEdgePct) {
+                  const fraction = Math.min(1, (triggerEdge - params.minEdgePct) / denominator);
+                  rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                }
+              } else {
+                if (triggerEdge <= -params.minEdgePct) {
+                  const fraction = Math.min(1, (-triggerEdge - params.minEdgePct) / denominator);
+                  rawDesiredSize = -(fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                }
               }
             } else {
-              if (triggerEdge <= -params.minEdgePct) {
-                const fraction = Math.min(1, (-triggerEdge - params.minEdgePct) / denominator);
-                rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+              // Band Fading Mean-Reversion
+              if (tradeDirection === "bidirectional") {
+                const magnitude = Math.abs(triggerEdge);
+                if (magnitude >= params.minEdgePct) {
+                  const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                  const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                  rawDesiredSize = triggerEdge < 0 ? curved : -curved;
+                }
+              } else {
+                if (triggerEdge <= -params.minEdgePct) {
+                  const fraction = Math.min(1, (-triggerEdge - params.minEdgePct) / denominator);
+                  rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                }
               }
             }
           } else {
-            if (tradeDirection === "bidirectional") {
-              const magnitude = Math.abs(triggerEdge);
-              if (magnitude >= params.minEdgePct) {
-                const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
-                const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
-                rawDesiredSize = triggerEdge > 0 ? curved : -curved;
+            // Relative Value / Arbitrage
+            if (strategyMode === "wave") {
+              if (tradeDirection === "bidirectional") {
+                const magnitude = Math.abs(triggerEdge);
+                if (magnitude >= params.minEdgePct) {
+                  const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                  const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                  rawDesiredSize = isRatio
+                    ? (triggerEdge > 0 ? curved : -curved)
+                    : (triggerEdge < 0 ? curved : -curved);
+                }
+              } else {
+                if (triggerEdge <= -params.minEdgePct) {
+                  const fraction = Math.min(1, (-triggerEdge - params.minEdgePct) / denominator);
+                  rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                }
               }
             } else {
-              if (triggerEdge >= params.minEdgePct) {
-                const fraction = Math.min(1, (triggerEdge - params.minEdgePct) / denominator);
-                rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+              if (tradeDirection === "bidirectional") {
+                const magnitude = Math.abs(triggerEdge);
+                if (magnitude >= params.minEdgePct) {
+                  const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
+                  const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                  rawDesiredSize = isRatio
+                    ? (triggerEdge < 0 ? curved : -curved)
+                    : (triggerEdge > 0 ? curved : -curved);
+                }
+              } else {
+                if (triggerEdge >= params.minEdgePct) {
+                  const fraction = Math.min(1, (triggerEdge - params.minEdgePct) / denominator);
+                  rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                }
               }
             }
           }
@@ -3431,13 +3578,22 @@
             avgEntryKorean = null;
             isTakeProfitActive = false;
           }
-          const tradingFeePct = Math.abs(actualTraded) * 2 * feeRate * 100;
+          const tradingFeePct = Math.abs(actualTraded) * (isSingle ? 1 : 2) * feeRate * 100;
           let fundingFeePct = 0;
           if (rowIndex > range.start) {
             const previous = baseRows[rowIndex - 1];
-            const longReturn = row.korean / previous.korean - 1;
-            const shortReturn = -(row.adr / previous.adr - 1);
-            const pairReturn = 0.5 * (longReturn + shortReturn);
+            let pairReturn = 0;
+            if (isSingle) {
+              pairReturn = previous.adr ? (row.adr / previous.adr - 1) : 0;
+            } else if (isRatio) {
+              const primReturn = previous.adr ? (row.adr / previous.adr - 1) : 0;
+              const secReturn = (previous.korean && previous.korean > 0) ? (row.korean / previous.korean - 1) : 0;
+              pairReturn = 0.5 * (primReturn - secReturn);
+            } else {
+              const longReturn = (previous.korean && previous.korean > 0) ? (row.korean / previous.korean - 1) : 0;
+              const shortReturn = previous.adr ? -(row.adr / previous.adr - 1) : 0;
+              pairReturn = 0.5 * (longReturn + shortReturn);
+            }
             const intervalDays = Math.max(0, (row.time - previous.time) / 86400000);
             fundingFeePct = Math.abs(previousSize) * fundingRateDay * intervalDays * 100;
             const returnContribution = previousSize * pairReturn;
@@ -4705,7 +4861,18 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       saveSettings();
       optimizeProfit();
     });
-    $("assetStrategy").addEventListener("change", () => { saveSettings(); refresh(); });
+    $("assetStrategy").addEventListener("change", () => {
+      const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+      const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
+      if (assetConfig.defaults) {
+        Object.entries(assetConfig.defaults).forEach(([k, v]) => {
+          const el = $(k);
+          if (el) el.value = v;
+        });
+      }
+      saveSettings();
+      refresh();
+    });
     $("interval").addEventListener("change", () => { saveSettings(); refresh(); });
     $("strategyMode").addEventListener("change", onParamChange);
     $("predictionEngine").addEventListener("change", onParamChange);
