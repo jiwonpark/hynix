@@ -2771,10 +2771,12 @@
       const origBtnText = button.textContent;
       let best = null;
       let lastRenderedScore = -Infinity;
-      const chunkSize = 200;
+      const totalSteps = 25; // 25 distinct visible live frames (~1.5-2 seconds total)
+      const chunkSize = Math.max(1, Math.floor(candidates.length / totalSteps));
+
       for (let index = 0; index < candidates.length; index += chunkSize) {
         const chunk = candidates.slice(index, index + chunkSize);
-        let sampleParams = chunk[0];
+        let sampleParams = chunk[Math.floor(chunk.length / 2)] || chunk[0];
         let foundBetterInChunk = false;
 
         chunk.forEach((params) => {
@@ -2807,35 +2809,12 @@
           $("feesDrag").textContent = `${fmt(best.fees)}%`;
         }
 
-        // Live chart & allocation update whenever a significantly better strategy is discovered
-        if (foundBetterInChunk && best && best.score > lastRenderedScore + 0.3) {
-          lastRenderedScore = best.score;
-          const liveRows = buildRows(
-            cachedAdr,
-            cachedKorean,
-            best.meanBars,
-            best.minEdgePct,
-            best.fullEdgePct,
-            best.maxSizePct,
-            best.scaleCurve,
-            best.tradeSpeedPct,
-            best.exitSpeedPct,
-            best.minProfitPct,
-            fee,
-            funding,
-            strategyMode,
-            tradeDirection,
-            predictionEngine
-          );
-          cachedRows = liveRows;
-          draw(liveRows, cachedInterval);
-          drawAllocation(liveRows, cachedInterval);
-        }
-
         const pct = Math.min(100, Math.round(((index + chunk.length) / candidates.length) * 100));
         button.textContent = `⚡ ${pct}% (PnL: ${best ? fmt(best.netProfit) + '%' : '--'})`;
         $("status").textContent = `Optimizing: ${Math.min(candidates.length, index + chunk.length)} / ${candidates.length} (${pct}%) ⟹ Current Best PnL: ${best ? fmt(best.netProfit) + '%' : '--'}, Max DD: ${best ? fmt(best.maxDd) + '%' : '--'}`;
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        
+        // Give browser time to paint live UI updates
+        await new Promise((resolve) => setTimeout(resolve, 55));
       }
 
       optInputs.forEach((input) => {
