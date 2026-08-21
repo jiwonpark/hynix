@@ -329,39 +329,6 @@
       color: #0284c7;
       font-weight: 900;
     }
-    .selectedResultSummary {
-      display: none;
-      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-      gap: 0;
-      margin-top: 12px;
-      border-top: 1px solid #cbd5e1;
-      border-bottom: 1px solid #cbd5e1;
-      background: #f8fafc;
-    }
-    .selectedResultSummary.visible { display: grid; }
-    .selectedResultMetric {
-      min-width: 0;
-      padding: 10px 12px;
-      border-right: 1px solid #e2e8f0;
-    }
-    .selectedResultMetric:last-child { border-right: 0; }
-    .selectedResultMetric span {
-      display: block;
-      min-height: 28px;
-      color: #64748b;
-      font-size: 10px;
-      font-weight: 800;
-      line-height: 1.3;
-      text-transform: uppercase;
-    }
-    .selectedResultMetric strong {
-      display: block;
-      margin-top: 4px;
-      color: #0f172a;
-      font-size: 16px;
-      line-height: 1.2;
-      overflow-wrap: anywhere;
-    }
     .panel {
       padding: 16px;
       margin-bottom: 14px;
@@ -836,14 +803,6 @@
                 <!-- Dynamically populated -->
               </tbody>
             </table>
-          </div>
-          <div id="selectedResultSummary" class="selectedResultSummary" aria-live="polite">
-            <div class="selectedResultMetric"><span id="selectedFullPnlLabel">Full backtest PnL</span><strong id="selectedFullPnl">--</strong></div>
-            <div class="selectedResultMetric"><span id="selectedFullDdLabel">Full max drawdown</span><strong id="selectedFullDd">--</strong></div>
-            <div class="selectedResultMetric"><span id="selectedWfLabel">WF median</span><strong id="selectedWf">--</strong></div>
-            <div class="selectedResultMetric"><span id="selectedOosLabel">Untouched OOS</span><strong id="selectedOos">--</strong></div>
-            <div class="selectedResultMetric"><span id="selectedFeesLabel">Fees + slippage</span><strong id="selectedFees">--</strong></div>
-            <div class="selectedResultMetric"><span id="selectedPositionLabel">Current position</span><strong id="selectedPosition">--</strong></div>
           </div>
         </div>
       </div>
@@ -3239,25 +3198,6 @@
 
     function updateSelectedResultSummary(candidate, rows, holdout) {
       if (!candidate || !rows?.length) return;
-      const latest = rows.at(-1);
-      const fullPnl = latest.equity - 100;
-      const fullDd = Math.min(...rows.map((row) => row.drawdownPct || 0));
-      const minEquity = Math.min(...rows.map((row) => row.equity || 100));
-      const principalDd = Math.min(0, minEquity - 100);
-      const isKo = window.currentLang === "ko";
-      $("selectedFullPnlLabel").textContent = isKo ? "전체 백테스트 누적 PnL" : "Full backtest PnL";
-      $("selectedFullDdLabel").textContent = isKo ? "자본금 최대 낙폭" : "Capital max drawdown";
-      $("selectedWfLabel").textContent = isKo ? "워크포워드 중간값" : "WF median";
-      $("selectedOosLabel").textContent = isKo ? "미사용 OOS 구간" : "Untouched OOS";
-      $("selectedFeesLabel").textContent = isKo ? "수수료 + 슬리피지" : "Fees + slippage";
-      $("selectedPositionLabel").textContent = isKo ? "현재 포지션" : "Current position";
-      $("selectedFullPnl").textContent = signedPct(fullPnl);
-      $("selectedFullDd").textContent = `${signedPct(fullDd)} (${signedPct(principalDd)})`;
-      $("selectedWf").textContent = signedPct(candidate.netProfit);
-      $("selectedOos").textContent = holdout ? signedPct(holdout.netProfit) : "N/A";
-      $("selectedFees").textContent = signedPct(latest.totalFeesPct);
-      $("selectedPosition").textContent = `${fmt(latest.targetSize * 100, 0)}%`;
-      $("selectedResultSummary").classList.add("visible");
       window.selectedOptimizationCandidate = candidate;
       window.selectedOptimizationHoldout = holdout || null;
       markSelectedCandidate(candidate);
@@ -3773,12 +3713,9 @@
 
       const resultsPanel = $("optResultsPanel");
       const resultsBody = $("optResultsBody");
-      const summaryPanel = $("selectedResultSummary");
 
       // 1. Result list IS VISIBLE and updates live during simulation
       if (resultsPanel) resultsPanel.style.display = "block";
-      // 2. Pane below that (selectedResultSummary) is blank/hidden during simulation
-      if (summaryPanel) summaryPanel.classList.remove("visible");
 
       // 3. Main chart displays ONLY raw market info (spread curve & news) stripped of model predictions
       if (cachedRows && cachedRows.length) {
