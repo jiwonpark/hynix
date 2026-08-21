@@ -32,9 +32,42 @@
     .top {
       display: flex;
       justify-content: space-between;
-      gap: 24px;
       align-items: flex-start;
-      margin-bottom: 16px;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .topRight {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .langSwitch {
+      display: inline-flex;
+      gap: 2px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 3px;
+      background: rgba(255, 255, 255, .92);
+      box-shadow: 0 4px 12px rgba(17, 24, 39, .06);
+    }
+    .langSwitch button {
+      pointer-events: auto;
+      height: 28px;
+      border: 0;
+      border-radius: 5px;
+      padding: 0 10px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11.5px;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .langSwitch button.active {
+      background: var(--fg);
+      color: #fff;
     }
     .eyebrow {
       margin: 0 0 8px;
@@ -427,14 +460,20 @@
   <main>
     <section class="top">
       <div>
-        <p class="eyebrow">Binance Futures relative value monitor</p>
-        <h1>SKHY ADR perp vs Korean-share perp</h1>
+        <p id="topEyebrow" class="eyebrow">Binance Futures relative value monitor</p>
+        <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
       </div>
-      <div id="position" class="pill">Loading</div>
+      <div class="topRight">
+        <div class="langSwitch" aria-label="Language switch">
+          <button id="langKo" type="button">🇰🇷 한국어</button>
+          <button id="langEn" class="active" type="button">🇺🇸 English</button>
+        </div>
+        <div id="position" class="pill">Loading</div>
+      </div>
     </section>
 
     <section class="controls" aria-label="Chart controls">
-      <label>Interval
+      <label id="lblInterval">Interval
         <select id="interval">
           <option value="1m">1m</option>
           <option value="5m">5m</option>
@@ -444,66 +483,66 @@
           <option value="1d">1d</option>
         </select>
       </label>
-      <label>Strategy
+      <label id="lblStrategy">Strategy
         <select id="strategyMode">
-          <option value="wave" selected>Predictive Wave Trading</option>
-          <option value="ma">MA Mean Reversion</option>
+          <option id="optWave" value="wave" selected>Predictive Wave Trading</option>
+          <option id="optMa" value="ma">MA Mean Reversion</option>
         </select>
       </label>
-      <label>Prediction Engine
+      <label id="lblEngine">Prediction Engine
         <select id="predictionEngine">
-          <option value="medallion_hmm" selected>Medallion HMM + Volatility Targeting</option>
-          <option value="multi_ma">Multi-Scale MA Cascade (Fast/Med/Slow Momentum)</option>
-          <option value="ou_hybrid">OU + Adaptive Harmonic Hybrid</option>
-          <option value="multi_horizon">Multi-Horizon Ensemble (6h/12h/24h)</option>
-          <option value="burg_mem">Burg Maximum Entropy (AR Spectral)</option>
-          <option value="fourier">Sparse DFT Decomposition</option>
+          <option id="optHMM" value="medallion_hmm" selected>Medallion HMM + Volatility Targeting</option>
+          <option id="optMultiMA" value="multi_ma">Multi-Scale MA Cascade (Fast/Med/Slow Momentum)</option>
+          <option id="optOU" value="ou_hybrid">OU + Adaptive Harmonic Hybrid</option>
+          <option id="optMultiHorizon" value="multi_horizon">Multi-Horizon Ensemble (6h/12h/24h)</option>
+          <option id="optBurg" value="burg_mem">Burg Maximum Entropy (AR Spectral)</option>
+          <option id="optDFT" value="fourier">Sparse DFT Decomposition</option>
         </select>
       </label>
-      <label>Direction
+      <label id="lblDirection">Direction
         <select id="tradeDirection">
-          <option value="bidirectional" selected>Bidirectional (Long & Short)</option>
-          <option value="shortOnly">Short ADR only (Harvest Premium)</option>
+          <option id="optBidir" value="bidirectional" selected>Bidirectional (Long & Short)</option>
+          <option id="optShortOnly" value="shortOnly">Short ADR only (Harvest Premium)</option>
         </select>
       </label>
-      <label>Mean bars
+      <label id="lblMeanBars">Mean bars
         <input id="meanBars" type="number" min="8" max="512" step="1" value="96">
       </label>
-      <label>Start scaling %
+      <label id="lblMinEdge">Start scaling %
         <input id="minEdgePct" type="number" min="0" max="10" step="0.05" value="0.75">
-        <span class="controlHint">0% size below this edge</span>
+        <span id="hintMinEdge" class="controlHint">0% size below this edge</span>
       </label>
-      <label>Full size at %
+      <label id="lblFullEdge">Full size at %
         <input id="fullEdgePct" type="number" min="0.05" max="10" step="0.05" value="2.5">
-        <span class="controlHint">100% size at or above this edge</span>
+        <span id="hintFullEdge" class="controlHint">100% size at or above this edge</span>
       </label>
-      <label>Max size % (Leverage)
+      <label id="lblMaxSize">Max size % (Leverage)
         <input id="maxSizePct" type="number" min="1" max="500" step="5" value="200">
-        <span class="controlHint">cap size / leverage (e.g. 200% = 2x, 500% = 5x)</span>
+        <span id="hintMaxSize" class="controlHint">cap size / leverage (e.g. 200% = 2x, 500% = 5x)</span>
       </label>
-      <label>Scale curve
+      <label id="lblScaleCurve">Scale curve
         <input id="scaleCurve" type="number" min="0.5" max="5" step="0.1" value="3">
-        <span class="controlHint">higher = slower sizing</span>
+        <span id="hintScaleCurve" class="controlHint">higher = slower sizing</span>
       </label>
-      <label>Trade speed %
+      <label id="lblTradeSpeed">Trade speed %
         <input id="tradeSpeedPct" type="number" min="1" max="100" step="1" value="25">
-        <span class="controlHint">entry gap traded/candle</span>
+        <span id="hintTradeSpeed" class="controlHint">entry gap traded/candle</span>
       </label>
-      <label>Exit speed %
+      <label id="lblExitSpeed">Exit speed %
         <input id="exitSpeedPct" type="number" min="5" max="100" step="5" value="75">
-        <span class="controlHint">liquidation speed %</span>
+        <span id="hintExitSpeed" class="controlHint">liquidation speed %</span>
       </label>
-      <label>Min profit %
+      <label id="lblMinProfit">Min profit %
         <input id="minProfitPct" type="number" min="0" max="5" step="0.05" value="0.5">
-        <span class="controlHint">take-profit gain from entry</span>
+        <span id="hintMinProfit" class="controlHint">take-profit gain from entry</span>
       </label>
-      <label>Trading fee bps
+      <label id="lblTradingFee">Trading fee bps
         <input id="tradingFeeBps" type="number" min="0" max="50" step="0.1" value="5">
-        <span class="controlHint">per leg, on size change</span>
+        <span id="hintTradingFee" class="controlHint">per leg, on size change</span>
       </label>
-      <label>Funding bps/day
+      <label id="lblFundingFee">Funding bps/day
         <input id="fundingBpsDay" type="number" min="-100" max="100" step="0.1" value="3">
-        <span class="controlHint">net cost; negative = credit</span>
+        <span id="hintFundingFee" class="controlHint">net cost; negative = credit</span>
       </label>
       <button id="refresh" type="button">Refresh</button>
       <button id="optimizeProfit" type="button">Optimize profit</button>
@@ -526,12 +565,12 @@
     <section class="panel">
       <div class="chartHeader">
         <div class="legend">
-          <span id="spreadLegend" class="black" style="color: #0f172a; font-weight: 700;">Spread (Price)</span>
-          <span class="cyan" style="color: #00d2ff; font-weight: 700;">Rolling Prediction</span>
-          <span class="gray" style="color: #64748b; font-weight: 600;">Global Wave</span>
-          <span class="gray" style="color: #cbd5e1; font-weight: 600;">Mean & Bands</span>
-          <span class="green" style="color: #16a34a; font-weight: 700;">Long ADR (▲)</span>
-          <span class="red" style="color: #dc2626; font-weight: 700;">Short ADR (▼)</span>
+          <span id="legSpread" class="black" style="color: #0f172a; font-weight: 700;">Spread (Price)</span>
+          <span id="legPrediction" class="cyan" style="color: #00d2ff; font-weight: 700;">Rolling Prediction</span>
+          <span id="legMacroWave" class="gray" style="color: #64748b; font-weight: 600;">Global Wave</span>
+          <span id="legMeanBands" class="gray" style="color: #cbd5e1; font-weight: 600;">Mean & Bands</span>
+          <span id="legLongAdr" class="green" style="color: #16a34a; font-weight: 700;">Long ADR (▲)</span>
+          <span id="legShortAdr" class="red" style="color: #dc2626; font-weight: 700;">Short ADR (▼)</span>
         </div>
       <p id="status">Loading Binance Futures data...</p>
       </div>
@@ -552,8 +591,8 @@
       </div>
       <div class="inlineAllocation">
         <div class="tableHead compact">
-          <h2>Continuous Allocation</h2>
-          <span>Every candle: scale long <code>SKHYNIXUSDT</code> / short <code>SKHYUSDT</code></span>
+          <h2 id="secContinuousAlloc">Continuous Allocation</h2>
+          <span id="subContinuousAlloc">Every candle: scale long <code>SKHYNIXUSDT</code> / short <code>SKHYUSDT</code></span>
         </div>
         <div id="allocationChart"></div>
       </div>
@@ -562,8 +601,8 @@
     <section class="panel">
       <div class="chartHeader">
         <div>
-          <h2>Semiconductor & SK Hynix News Catalyst Impact Feed</h2>
-          <p>Real-time correlation between global headlines, HBM chip announcements, Nvidia capex, and parity spread dislocation</p>
+          <h2 id="secNewsCatalyst">Semiconductor & SK Hynix News Catalyst Impact Feed</h2>
+          <p id="subNewsCatalyst">Real-time correlation between global headlines, HBM chip announcements, Nvidia capex, and parity spread dislocation</p>
         </div>
         <span style="background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; border: 1px solid #bae6fd;">HISTORICAL EVENT MAPPING</span>
       </div>
@@ -613,8 +652,8 @@
     <section class="panel">
       <div class="chartHeader">
         <div>
-          <h2>Quantitative Prediction Engines: Simplified & Detailed Architectures</h2>
-          <p>Mathematical foundations, regime-switching filters, and stochastic differential equations</p>
+          <h2 id="secQuantArchitecture">Quantitative Prediction Engines: Simplified & Detailed Architectures</h2>
+          <p id="subQuantArchitecture">Mathematical foundations, regime-switching filters, and stochastic differential equations</p>
         </div>
         <p style="color: #0284c7; font-weight: 700;">Zero Lookahead Bias</p>
       </div>
@@ -719,8 +758,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     <section class="panel">
       <div class="chartHeader">
         <div>
-          <h2>Frequently Asked Questions & Quantitative Verification (FAQ)</h2>
-          <p>Addressing lookahead bias, out-of-sample forecast accuracy, and statistical arbitrage physics</p>
+          <h2 id="secFaq">Frequently Asked Questions & Quantitative Verification (FAQ)</h2>
+          <p id="subFaq">Addressing lookahead bias, out-of-sample forecast accuracy, and statistical arbitrage physics</p>
         </div>
         <span style="background: #f0fdf4; color: #166534; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; border: 1px solid #bbf7d0;">PROVEN ZERO LOOKAHEAD</span>
       </div>
@@ -765,6 +804,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">Q5: How does the strategy protect against violent structural breakouts?</h3>
           <p style="margin: 0; color: #334155; font-size: 13.5px; line-height: 1.6;">
             Under the <strong>Medallion HMM</strong> engine, the system tracks increment autocorrelation <code>ρ₁</code>. If consecutive price changes trend in the same direction (positive autocorrelation, indicating a momentum breakout), the regime classifier automatically reduces reversion conviction <code>P_reversion</code> and shrinks target exposure toward cash.
+          </p>
+        </div>
+
+        <div class="modelStep" style="border-left: 4px solid #f59e0b;">
+          <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">Q6: Why are Renaissance Technologies / Medallion methods not trade secrets?</h3>
+          <p style="margin: 0; color: #334155; font-size: 13.5px; line-height: 1.6;">
+            <strong>Mathematical foundations are open academic science; execution and data pipelines are the secret.</strong><br>
+            The core mathematical frameworks used by Jim Simons, Nick Patterson, and Peter Brown—such as <em>Hidden Markov Models (Baum-Welch algorithm)</em>, <em>Ornstein-Uhlenbeck stochastic calculus</em>, <em>Burg Maximum Entropy Spectral Estimation</em>, and <em>Regularized Ridge Regression</em>—are peer-reviewed academic theorems published in mathematics, physics, and signal processing literature.
+          </p>
+          <p style="margin: 8px 0 0 0; color: #475569; font-size: 13px; line-height: 1.5;">
+            What makes quantitative hedge funds proprietary is not the equations themselves, but <strong>(1) high-frequency tick data cleaning</strong>, <strong>(2) algorithmic execution infrastructure (TWAP/VWAP/Smart Order Routing)</strong> to minimize market impact, and <strong>(3) multi-factor hyperparameter ensembling across thousands of assets</strong>.
           </p>
         </div>
       </div>
@@ -2742,6 +2792,228 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       $("status").textContent = window.lastOptimization.statusText;
     }
 
+    // --- BILINGUAL (KO / EN) LOCALIZATION ENGINE ---
+    window.currentLang = "ko"; // Default to Korean as requested
+
+    const I18N = {
+      en: {
+        topEyebrow: "Binance Futures relative value monitor",
+        topTitle: "SKHY ADR perp vs Korean-share perp",
+        lblInterval: "Interval",
+        lblStrategy: "Strategy",
+        optWave: "Predictive Wave Trading",
+        optMa: "MA Mean Reversion",
+        lblEngine: "Prediction Engine",
+        optHMM: "Medallion HMM + Volatility Targeting",
+        optMultiMA: "Multi-Scale MA Cascade (Fast/Med/Slow Momentum)",
+        optOU: "OU + Adaptive Harmonic Hybrid",
+        optMultiHorizon: "Multi-Horizon Ensemble (6h/12h/24h)",
+        optBurg: "Burg Maximum Entropy (AR Spectral)",
+        optDFT: "Sparse DFT Decomposition",
+        lblDirection: "Direction",
+        optBidir: "Bidirectional (Long & Short)",
+        optShortOnly: "Short ADR only (Harvest Premium)",
+        lblMeanBars: "Mean bars",
+        lblMinEdge: "Start scaling %",
+        hintMinEdge: "0% size below this edge",
+        lblFullEdge: "Full size at %",
+        hintFullEdge: "100% size at or above this edge",
+        lblMaxSize: "Max size % (Leverage)",
+        hintMaxSize: "cap size / leverage (e.g. 200% = 2x, 500% = 5x)",
+        lblScaleCurve: "Scale curve",
+        hintScaleCurve: "higher = slower sizing",
+        lblTradeSpeed: "Trade speed %",
+        hintTradeSpeed: "entry gap traded/candle",
+        lblExitSpeed: "Exit speed %",
+        hintExitSpeed: "liquidation speed %",
+        lblMinProfit: "Min profit %",
+        hintMinProfit: "take-profit gain from entry",
+        lblTradingFee: "Trading fee bps",
+        hintTradingFee: "per leg, on size change",
+        lblFundingFee: "Funding bps/day",
+        hintFundingFee: "net cost; negative = credit",
+        btnRefresh: "Refresh",
+        btnOptimize: "Optimize profit",
+        statLatest: "Latest normalized",
+        statPremium: "Premium",
+        statMean: "Mean",
+        statMaPremium: "MA premium",
+        statPositionSize: "Position size",
+        statAvgPosition: "Avg position",
+        statAccPnl: "Acc PnL",
+        statMaxDD: "Max DD",
+        statFeesDrag: "Fees drag",
+        statBestTest: "Best test",
+        statBars: "Bars",
+        legSpread: "Spread (Price)",
+        legPrediction: "Rolling Prediction",
+        legMacroWave: "Global Wave",
+        legMeanBands: "Mean & Bands",
+        legLongAdr: "Long ADR (▲)",
+        legShortAdr: "Short ADR (▼)",
+        btnNewsAll: "📰 All Catalysts",
+        btnNewsHynix: "⚡ SK Hynix",
+        btnNewsSemis: "🤖 Nvidia / Semis",
+        btnNewsMacro: "🌐 Macro / FX",
+        btnNewsHide: "✕ Hide",
+        secContinuousAlloc: "Continuous Allocation",
+        subContinuousAlloc: "Every candle: scale long SKHYNIXUSDT / short SKHYUSDT",
+        secQuantArchitecture: "Quantitative Model Architecture & Mathematical Foundations",
+        subQuantArchitecture: "How the 6 predictive wave engines, volatility targeting, and institutional execution algorithms operate causally",
+        secFaq: "Frequently Asked Questions & Quantitative Verification (FAQ)",
+        subFaq: "Addressing lookahead bias, out-of-sample forecast accuracy, and statistical arbitrage physics"
+      },
+      ko: {
+        topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
+        topTitle: "SK하이닉스 미국 ADR 무기한물 vs 국내주식 무기한물",
+        lblInterval: "봉 주기 (Interval)",
+        lblStrategy: "매매 전략",
+        optWave: "예측 파동 매매 (Wave Trading)",
+        optMa: "단순 이평 평균회귀 (MA Reversion)",
+        lblEngine: "파동 예측 엔진",
+        optHMM: "메달리온 HMM + 변동성 타겟팅",
+        optMultiMA: "다중 스케일 MA 캐스케이드 (단/중/장기 모멘텀)",
+        optOU: "OU 탄성 미분방정식 + 하모닉 하이브리드",
+        optMultiHorizon: "다중 시계열 앙상블 (6h/12h/24h)",
+        optBurg: "Burg 최대 엔트로피 (AR 스펙트럼)",
+        optDFT: "희소 DFT 주파수 분해",
+        lblDirection: "포지션 방향",
+        optBidir: "양방향 매매 (롱 & 숏 차익거래)",
+        optShortOnly: "ADR 숏 전용 (프리미엄 수취)",
+        lblMeanBars: "평균 산출 기간 (봉 개수)",
+        lblMinEdge: "진입 시작 괴리율 %",
+        hintMinEdge: "이 괴리율 미만에서는 포지션 0%",
+        lblFullEdge: "최대 비중 도달 괴리율 %",
+        hintFullEdge: "이 괴리율 이상에서 최대 비중 100%",
+        lblMaxSize: "최대 비중 % (레버리지)",
+        hintMaxSize: "비중 및 레버리지 상한 (200% = 2배, 500% = 5배)",
+        lblScaleCurve: "비중 스케일링 곡선",
+        hintScaleCurve: "수치가 클수록 점진적 분할 진입",
+        lblTradeSpeed: "진입 속도 %",
+        hintTradeSpeed: "봉당 목표 비중 대비 진입 체결 비율",
+        lblExitSpeed: "청산 속도 %",
+        hintExitSpeed: "평균회귀 및 익절 시 청산 비율",
+        lblMinProfit: "최소 익절 수익률 %",
+        hintMinProfit: "진입 평단가 대비 목표 차익 실현선",
+        lblTradingFee: "거래 수수료 (bps)",
+        hintTradingFee: "편도 기준 (비중 조절 시 발생)",
+        lblFundingFee: "일일 펀딩비 (bps/day)",
+        hintFundingFee: "순 비용 (음수일 경우 이자 수취)",
+        btnRefresh: "새로고침",
+        btnOptimize: "수익률 최적화",
+        statLatest: "현재 정규화 가격",
+        statPremium: "패리티 프리미엄",
+        statMean: "이동평균 중심선",
+        statMaPremium: "평균 괴리율",
+        statPositionSize: "현재 포지션 비중",
+        statAvgPosition: "포지션 평균 단가",
+        statAccPnl: "누적 수익률 (PnL)",
+        statMaxDD: "최대 낙폭 (Max DD)",
+        statFeesDrag: "수수료 비용 누적",
+        statBestTest: "최적화 백테스트",
+        statBars: "조회된 봉 수",
+        legSpread: "스프레드 (현재가)",
+        legPrediction: "24h 예측 파동선",
+        legMacroWave: "매크로 전체 파동",
+        legMeanBands: "평균선 & 진입 밴드",
+        legLongAdr: "ADR 롱 포지션 (▲)",
+        legShortAdr: "ADR 숏 포지션 (▼)",
+        btnNewsAll: "📰 전체 뉴스 촉매",
+        btnNewsHynix: "⚡ SK하이닉스",
+        btnNewsSemis: "🤖 엔비디아 / 반도체",
+        btnNewsMacro: "🌐 거시경제 / 환율",
+        btnNewsHide: "✕ 숨기기",
+        secContinuousAlloc: "실시간 포지션 배분 현황",
+        subContinuousAlloc: "매 봉마다 SKHYNIXUSDT 롱 / SKHYUSDT 숏 비중 동적 조절",
+        secQuantArchitecture: "계량수학 모델 아키텍처 및 통계역학 원리",
+        subQuantArchitecture: "6개 파동 예측 엔진, 변동성 타겟팅 및 르네상스 스타일 퀀트 알고리즘 원리",
+        secFaq: "자주 묻는 질문 및 계량 검증 (FAQ)",
+        subFaq: "미래참조 편향(Lookahead Bias) 검증, 표본외 예측력 및 통계적 차익거래 역학"
+      }
+    };
+
+    function setLanguage(lang) {
+      window.currentLang = lang;
+      const dict = I18N[lang] || I18N.en;
+      $("langKo").classList.toggle("active", lang === "ko");
+      $("langEn").classList.toggle("active", lang === "en");
+
+      // Header
+      if ($("topEyebrow")) $("topEyebrow").textContent = dict.topEyebrow;
+      if ($("topTitle")) $("topTitle").textContent = dict.topTitle;
+
+      // Controls
+      if ($("lblInterval")) $("lblInterval").firstChild.textContent = dict.lblInterval + " ";
+      if ($("lblStrategy")) $("lblStrategy").firstChild.textContent = dict.lblStrategy + " ";
+      if ($("optWave")) $("optWave").textContent = dict.optWave;
+      if ($("optMa")) $("optMa").textContent = dict.optMa;
+      if ($("lblEngine")) $("lblEngine").firstChild.textContent = dict.lblEngine + " ";
+      if ($("optHMM")) $("optHMM").textContent = dict.optHMM;
+      if ($("optMultiMA")) $("optMultiMA").textContent = dict.optMultiMA;
+      if ($("optOU")) $("optOU").textContent = dict.optOU;
+      if ($("optMultiHorizon")) $("optMultiHorizon").textContent = dict.optMultiHorizon;
+      if ($("optBurg")) $("optBurg").textContent = dict.optBurg;
+      if ($("optDFT")) $("optDFT").textContent = dict.optDFT;
+      if ($("lblDirection")) $("lblDirection").firstChild.textContent = dict.lblDirection + " ";
+      if ($("optBidir")) $("optBidir").textContent = dict.optBidir;
+      if ($("optShortOnly")) $("optShortOnly").textContent = dict.optShortOnly;
+      if ($("lblMeanBars")) $("lblMeanBars").firstChild.textContent = dict.lblMeanBars + " ";
+      if ($("lblMinEdge")) $("lblMinEdge").firstChild.textContent = dict.lblMinEdge + " ";
+      if ($("hintMinEdge")) $("hintMinEdge").textContent = dict.hintMinEdge;
+      if ($("lblFullEdge")) $("lblFullEdge").firstChild.textContent = dict.lblFullEdge + " ";
+      if ($("hintFullEdge")) $("hintFullEdge").textContent = dict.hintFullEdge;
+      if ($("lblMaxSize")) $("lblMaxSize").firstChild.textContent = dict.lblMaxSize + " ";
+      if ($("hintMaxSize")) $("hintMaxSize").textContent = dict.hintMaxSize;
+      if ($("lblScaleCurve")) $("lblScaleCurve").firstChild.textContent = dict.lblScaleCurve + " ";
+      if ($("hintScaleCurve")) $("hintScaleCurve").textContent = dict.hintScaleCurve;
+      if ($("lblTradeSpeed")) $("lblTradeSpeed").firstChild.textContent = dict.lblTradeSpeed + " ";
+      if ($("hintTradeSpeed")) $("hintTradeSpeed").textContent = dict.hintTradeSpeed;
+      if ($("lblExitSpeed")) $("lblExitSpeed").firstChild.textContent = dict.lblExitSpeed + " ";
+      if ($("hintExitSpeed")) $("hintExitSpeed").textContent = dict.hintExitSpeed;
+      if ($("lblMinProfit")) $("lblMinProfit").firstChild.textContent = dict.lblMinProfit + " ";
+      if ($("hintMinProfit")) $("hintMinProfit").textContent = dict.hintMinProfit;
+      if ($("lblTradingFee")) $("lblTradingFee").firstChild.textContent = dict.lblTradingFee + " ";
+      if ($("hintTradingFee")) $("hintTradingFee").textContent = dict.hintTradingFee;
+      if ($("lblFundingFee")) $("lblFundingFee").firstChild.textContent = dict.lblFundingFee + " ";
+      if ($("hintFundingFee")) $("hintFundingFee").textContent = dict.hintFundingFee;
+      if ($("refresh")) $("refresh").textContent = dict.btnRefresh;
+      if ($("optimizeProfit")) $("optimizeProfit").textContent = dict.btnOptimize;
+
+      // Stats
+      const statSpans = document.querySelectorAll(".stats .stat span");
+      const statKeys = ["statLatest", "statPremium", "statMean", "statMaPremium", "statPositionSize", "statAvgPosition", "statAccPnl", "statMaxDD", "statFeesDrag", "statBestTest", "statBars"];
+      statSpans.forEach((el, idx) => {
+        if (statKeys[idx] && dict[statKeys[idx]]) el.textContent = dict[statKeys[idx]];
+      });
+
+      // Chart Legend
+      if ($("legSpread")) $("legSpread").textContent = dict.legSpread;
+      if ($("legPrediction")) $("legPrediction").textContent = dict.legPrediction;
+      if ($("legMacroWave")) $("legMacroWave").textContent = dict.legMacroWave;
+      if ($("legMeanBands")) $("legMeanBands").textContent = dict.legMeanBands;
+      if ($("legLongAdr")) $("legLongAdr").textContent = dict.legLongAdr;
+      if ($("legShortAdr")) $("legShortAdr").textContent = dict.legShortAdr;
+
+      // News Buttons
+      if ($("newsAll")) $("newsAll").textContent = dict.btnNewsAll;
+      if ($("newsHynix")) $("newsHynix").textContent = dict.btnNewsHynix;
+      if ($("newsSemis")) $("newsSemis").textContent = dict.btnNewsSemis;
+      if ($("newsMacro")) $("newsMacro").textContent = dict.btnNewsMacro;
+      if ($("newsOff")) $("newsOff").textContent = dict.btnNewsHide;
+
+      // Sections
+      if ($("secContinuousAlloc")) $("secContinuousAlloc").textContent = dict.secContinuousAlloc;
+      if ($("subContinuousAlloc")) $("subContinuousAlloc").textContent = dict.subContinuousAlloc;
+      if ($("secQuantArchitecture")) $("secQuantArchitecture").textContent = dict.secQuantArchitecture;
+      if ($("subQuantArchitecture")) $("subQuantArchitecture").textContent = dict.subQuantArchitecture;
+      if ($("secFaq")) $("secFaq").textContent = dict.secFaq;
+      if ($("subFaq")) $("subFaq").textContent = dict.subFaq;
+
+      try {
+        localStorage.setItem("skhynix_lang", lang);
+      } catch (e) {}
+    }
+
     const paramIds = ["interval", "strategyMode", "predictionEngine", "tradeDirection", "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct", "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct", "tradingFeeBps", "fundingBpsDay"];
     function saveSettings() {
       try {
@@ -2751,6 +3023,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (el) settings[id] = el.value;
         });
         settings.chartMode = window.chartMode || "parity";
+        settings.lang = window.currentLang || "ko";
         localStorage.setItem("skhynix_settings", JSON.stringify(settings));
       } catch (e) {}
     }
@@ -2768,6 +3041,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("modeParity").classList.toggle("active", settings.chartMode === "parity");
             $("modeMa").classList.toggle("active", settings.chartMode === "ma");
           }
+          if (settings.lang) {
+            setLanguage(settings.lang);
+          } else {
+            setLanguage("ko");
+          }
+        } else {
+          setLanguage("ko");
         }
         const optRaw = localStorage.getItem("skhynix_last_optimization");
         if (optRaw) {
@@ -2776,7 +3056,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (opt.score !== undefined) $("bestTest").textContent = `${fmt(opt.score)}%`;
           if (opt.statusText) $("status").textContent = opt.statusText;
         }
-      } catch (e) {}
+      } catch (e) {
+        setLanguage("ko");
+      }
     }
 
     // Curated Semiconductor, SK Hynix, Nvidia & Macro Catalyst Database
@@ -2957,6 +3239,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("newsSemis").addEventListener("click", () => setNewsFilter("semis"));
     $("newsMacro").addEventListener("click", () => setNewsFilter("macro"));
     $("newsOff").addEventListener("click", () => setNewsFilter("off"));
+
+    $("langKo").addEventListener("click", () => { setLanguage("ko"); saveSettings(); });
+    $("langEn").addEventListener("click", () => { setLanguage("en"); saveSettings(); });
 
     $("refresh").addEventListener("click", () => { saveSettings(); refresh(); });
     $("optimizeProfit").addEventListener("click", () => { saveSettings(); optimizeProfit(); });
