@@ -2395,6 +2395,33 @@
         });
       }
     }
+    function drawRawMarketOnly(rows) {
+      if (!rows || !rows.length || !window.spreadChart || !window.spreadSeries?.value) return;
+      const toPoint = (row, fn) => ({ time: Math.floor(row.time / 1000), value: fn(row) });
+      const chartMode = window.chartMode || "parity";
+      const valueOf = (row) => (chartMode === "ma" ? (row.mean ? (row.normalized / row.mean - 1) * 100 : 0) : row.normalized);
+
+      // 1. Render ONLY raw market spread price curve
+      window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)));
+
+      // 2. Strip away all model-dependent forecasts, waves, moving averages, and bands
+      if (window.spreadSeries.mean) window.spreadSeries.mean.setData([]);
+      if (window.spreadSeries.upper) window.spreadSeries.upper.setData([]);
+      if (window.spreadSeries.avgEntry) window.spreadSeries.avgEntry.setData([]);
+      if (window.spreadSeries.liveForwardWave) window.spreadSeries.liveForwardWave.setData([]);
+      if (window.spreadSeries.projectedWave) window.spreadSeries.projectedWave.setData([]);
+      if (window.spreadSeries.synthWave) window.spreadSeries.synthWave.setData([]);
+
+      // 3. Clear exposure overlay
+      window.exposureOverlayRows = [];
+      if (window.exposureOverlayCanvas) {
+        const ctx = window.exposureOverlayCanvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, window.exposureOverlayCanvas.width, window.exposureOverlayCanvas.height);
+      }
+
+      // 4. Update News Markers (market info unrelated to model)
+      updateNewsMarkers(rows);
+    }
     function drawHistogram(rows) {
       const premiums = rows
         .map((row) => (row.normalized / row.mean - 1) * 100)
@@ -3330,19 +3357,43 @@
       const resultsPanel = $("optResultsPanel");
       const resultsBody = $("optResultsBody");
       const summaryPanel = $("selectedResultSummary");
-      if (resultsPanel) resultsPanel.style.display = "none";
+
+      // 1. Result list IS VISIBLE and updates live during simulation
+      if (resultsPanel) resultsPanel.style.display = "block";
+      // 2. Pane below that (selectedResultSummary) is blank/hidden during simulation
       if (summaryPanel) summaryPanel.classList.remove("visible");
 
-      // Clear chart and lower result panes while simulating
-      if ($("chartSvg")) $("chartSvg").innerHTML = "";
+      // 3. Main chart displays ONLY raw market info (spread curve & news) stripped of model predictions
+      if (cachedRows && cachedRows.length) {
+        drawRawMarketOnly(cachedRows);
+      }
+      // 4. Subcharts and model panes are blanked out during simulation
       if ($("allocationChart")) $("allocationChart").innerHTML = "";
       if ($("histogram")) $("histogram").innerHTML = "";
       if ($("waveSpectrum")) $("waveSpectrum").innerHTML = "";
 
+      // 5. Model-dependent stats cards display blank "--" values
+      const curLastRow = (cachedRows && cachedRows.length) ? cachedRows[cachedRows.length - 1] : null;
+      if (curLastRow) {
+        $("latest").textContent = fmt(curLastRow.normalized);
+        $("premium").textContent = `${fmt(curLastRow.normalized - 100)}%`;
+      }
+      $("mean").textContent = "--";
+      $("maPremium").textContent = "--";
+      $("targetSize").textContent = "--";
+      $("avgPosition").textContent = "--";
+      $("accPnl").textContent = "--";
+      $("maxDrawdown").textContent = "--";
+      $("feesDrag").textContent = "--";
+      $("netEdge").textContent = "--";
+      $("forecastConfidence").textContent = "--";
+      $("hedgeBeta").textContent = "--";
+      $("bestTest").textContent = "--";
+
       const origBtnText = button.textContent;
       let best = null;
       const allEvaluatedCandidates = [];
-      const batchSize = Math.max(30, Math.floor(candidates.length / 50));
+      const batchSize = Math.max(25, Math.floor(candidates.length / 60));
 
       for (let index = 0; index < candidates.length; index += batchSize) {
         const batch = candidates.slice(index, index + batchSize);
@@ -3357,13 +3408,17 @@
           allEvaluatedCandidates.push({ ...params, ...scored });
         }
 
+        window.allOptimizationCandidates = allEvaluatedCandidates;
+
+        // Render simulation result list live in real-time as each batch is evaluated
+        renderLeaderboardTable();
+
         const currentCount = Math.min(candidates.length, index + batch.length);
         const pct = Math.min(100, Math.round((currentCount / candidates.length) * 100));
-        button.textContent = `⚡ Simulating... ${pct}% (${currentCount}/${candidates.length})`;
-        $("status").textContent = `Evaluating optimization grid... [${pct}%] ${currentCount}/${candidates.length} candidate combinations tested`;
+        button.textContent = `⚡ ${pct}% (${currentCount}/${candidates.length})`;
+        $("status").textContent = `[${pct}%] Evaluating candidates (${currentCount}/${candidates.length}) | Best Full PnL: ${best ? (best.fullProfit >= 0 ? '+' : '') + fmt(best.fullProfit) + '%' : '--'}`;
 
-        // Small yield so the progress updates cleanly without freezing or thrashing
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 15));
       }
 
       window.allOptimizationCandidates = allEvaluatedCandidates;
