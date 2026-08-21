@@ -711,6 +711,38 @@
             <span id="hintMinProfit" class="controlHint">take-profit gain target</span>
           </label>
         </div>
+
+        <!-- Live Top Combinations Leaderboard Drawer -->
+        <div id="optResultsPanel" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #cbd5e1; display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <strong id="lblOptLeaderboard" style="font-size: 12px; color: #0369a1; text-transform: uppercase;">🏆 Top Ranked Combinations (Live Grid Search Results)</strong>
+              <span id="lblOptTotalEvaluated" style="font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 700;">0 evaluated</span>
+            </div>
+            <span style="font-size: 11px; color: #64748b;">Click any row to test & apply configuration</span>
+          </div>
+          <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; text-align: left;">
+              <thead>
+                <tr style="background: #f1f5f9; color: #475569; font-weight: 700; border-bottom: 1px solid #cbd5e1;">
+                  <th style="padding: 6px 8px;">Rank</th>
+                  <th style="padding: 6px 8px;">Net PnL</th>
+                  <th style="padding: 6px 8px;">Max DD</th>
+                  <th style="padding: 6px 8px;">Risk Score</th>
+                  <th style="padding: 6px 8px;">Mean Bars</th>
+                  <th style="padding: 6px 8px;">Edge Band</th>
+                  <th style="padding: 6px 8px;">Max Size</th>
+                  <th style="padding: 6px 8px;">Trade/Exit Spd</th>
+                  <th style="padding: 6px 8px;">Min Profit</th>
+                  <th style="padding: 6px 8px; text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="optResultsBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -2768,8 +2800,13 @@
       const optSection = document.querySelector(".controlSection.optimizable");
       if (optSection) optSection.classList.add("optimizingSection");
 
+      const resultsPanel = $("optResultsPanel");
+      const resultsBody = $("optResultsBody");
+      if (resultsPanel) resultsPanel.style.display = "block";
+
       const origBtnText = button.textContent;
       let best = null;
+      let topRanked = [];
       const batchSize = Math.max(15, Math.floor(candidates.length / 100)); // ~80-100 continuous visible ticks
 
       for (let index = 0; index < candidates.length; index += batchSize) {
@@ -2786,7 +2823,13 @@
           if (!best || scored.score > best.score) {
             best = { ...params, ...scored };
           }
+          // Track top 10 unique combinations
+          topRanked.push({ ...params, ...scored });
         }
+
+        // Sort and keep top 8 unique combinations
+        topRanked.sort((a, b) => b.score - a.score);
+        topRanked = topRanked.slice(0, 8);
 
         // Live display of every combination sweeping through the 8 input fields
         if (latestCandidate) {
@@ -2816,6 +2859,37 @@
         const bestPnL = best ? `${fmt(best.netProfit)}%` : "--";
         const bestDD = best ? `${fmt(best.maxDd)}%` : "--";
         $("status").textContent = `[${pct}%] Testing #${currentCount}/${candidates.length} [Bars:${latestCandidate.meanBars}, Edge:${latestCandidate.minEdgePct}~${latestCandidate.fullEdgePct}%, Max:${latestCandidate.maxSizePct}%] ⟹ Curr PnL: ${curPnL} | Best PnL: ${bestPnL} (MaxDD: ${bestDD})`;
+
+        if ($("lblOptTotalEvaluated")) {
+          $("lblOptTotalEvaluated").textContent = `${currentCount.toLocaleString()} / ${candidates.length.toLocaleString()} evaluated (${pct}%)`;
+        }
+
+        // Render Top Leaderboard table dynamically
+        if (resultsBody && topRanked.length) {
+          resultsBody.innerHTML = topRanked.map((item, rankIdx) => {
+            const isWinner = rankIdx === 0;
+            const rankBadge = isWinner ? '🥇 1st' : (rankIdx === 1 ? '🥈 2nd' : (rankIdx === 2 ? '🥉 3rd' : `#${rankIdx + 1}`));
+            const pnlColor = item.netProfit >= 0 ? '#16a34a' : '#dc2626';
+            const rowBg = isWinner ? '#f0fdf4' : (rankIdx % 2 === 0 ? '#fff' : '#f8fafc');
+            const candidateJson = JSON.stringify(item).replace(/"/g, '&quot;');
+            return `
+              <tr style="background: ${rowBg}; border-bottom: 1px solid #e2e8f0; cursor: pointer;" onclick="applyCandidateRow(${candidateJson})">
+                <td style="padding: 6px 8px; font-weight: 700; color: ${isWinner ? '#16a34a' : '#475569'};">${rankBadge}</td>
+                <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">+${fmt(item.netProfit)}%</td>
+                <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;">${fmt(item.maxDd)}%</td>
+                <td style="padding: 6px 8px; font-weight: 700; color: #0284c7; font-family: monospace;">${fmt(item.score)}</td>
+                <td style="padding: 6px 8px; font-family: monospace;">${item.meanBars} bars</td>
+                <td style="padding: 6px 8px; font-family: monospace;">${item.minEdgePct}% ~ ${item.fullEdgePct}%</td>
+                <td style="padding: 6px 8px; font-family: monospace;">${item.maxSizePct}% (${(item.maxSizePct/100).toFixed(1)}x)</td>
+                <td style="padding: 6px 8px; font-family: monospace;">${item.tradeSpeedPct}% / ${item.exitSpeedPct}%</td>
+                <td style="padding: 6px 8px; font-family: monospace;">${item.minProfitPct}%</td>
+                <td style="padding: 6px 8px; text-align: right;">
+                  <button type="button" style="height: 24px; padding: 0 8px; font-size: 10.5px; background: ${isWinner ? '#16a34a' : '#0284c7'};" onclick="event.stopPropagation(); applyCandidateRow(${candidateJson})">Apply</button>
+                </td>
+              </tr>
+            `;
+          }).join("");
+        }
 
         // Micro-pause to allow the browser to paint every combination live
         await new Promise((resolve) => setTimeout(resolve, 20));
@@ -2880,6 +2954,21 @@
       $("bestTest").textContent = `${fmt(best.score)}%`;
       $("status").textContent = window.lastOptimization.statusText;
     }
+
+    window.applyCandidateRow = function(candidate) {
+      if (!candidate) return;
+      setNumberControl("meanBars", candidate.meanBars);
+      setNumberControl("minEdgePct", candidate.minEdgePct);
+      setNumberControl("fullEdgePct", candidate.fullEdgePct);
+      setNumberControl("maxSizePct", candidate.maxSizePct);
+      setNumberControl("scaleCurve", candidate.scaleCurve);
+      setNumberControl("tradeSpeedPct", candidate.tradeSpeedPct);
+      setNumberControl("exitSpeedPct", candidate.exitSpeedPct);
+      setNumberControl("minProfitPct", candidate.minProfitPct);
+      saveSettings();
+      renderCached();
+      $("status").textContent = `Applied combination: PnL +${fmt(candidate.netProfit)}%, MaxDD ${fmt(candidate.maxDd)}%, Leverage ${candidate.maxSizePct}%`;
+    };
 
     // --- BILINGUAL (KO / EN) LOCALIZATION ENGINE ---
     window.currentLang = "ko"; // Default to Korean as requested
