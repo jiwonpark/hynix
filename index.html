@@ -1016,6 +1016,35 @@
       }
       throw lastErr || new Error(`Failed to fetch ${symbol}`);
     }
+    function guardedDesiredSize(rawDesired, previousSize, triggerEdge, minEdgePct, maxSize, equity, peak, strategyMode, tradeDirection, forceExit = false) {
+      if (forceExit) return 0;
+
+      let desired = rawDesired;
+      const signalDirection = strategyMode === "wave"
+        ? (triggerEdge < 0 ? 1 : (tradeDirection === "bidirectional" && triggerEdge > 0 ? -1 : 0))
+        : (triggerEdge > 0 ? 1 : (tradeDirection === "bidirectional" && triggerEdge < 0 ? -1 : 0));
+      const exitThreshold = Math.max(0.05, minEdgePct * 0.55);
+
+      if (Math.abs(desired) < 0.001 && Math.abs(previousSize) >= 0.01
+          && signalDirection === Math.sign(previousSize) && Math.abs(triggerEdge) >= exitThreshold) {
+        desired = previousSize;
+      }
+
+      const drawdownPct = peak > 0 ? (equity / peak - 1) * 100 : 0;
+      const riskScale = drawdownPct <= -2 ? 0 : (drawdownPct <= -1 ? 0.5 : 1);
+      desired *= riskScale;
+
+      const reversesDirection = Math.abs(desired) >= 0.001
+        && Math.abs(previousSize) >= 0.001
+        && Math.sign(desired) !== Math.sign(previousSize);
+      const isExit = Math.abs(desired) < 0.001 && Math.abs(previousSize) >= 0.001;
+      const rebalanceDeadband = Math.max(0.02, maxSize * 0.025);
+      if (!reversesDirection && !isExit && Math.abs(desired - previousSize) < rebalanceDeadband) {
+        return previousSize;
+      }
+      return desired;
+    }
+
     function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode = "wave", tradeDirection = "bidirectional", predictionEngine = "ou_hybrid", slippageBps = 2) {
       const koreanByTime = new Map(korean.map((item) => [item.time, item]));
       const aligned = adr.map((item) => {
@@ -1584,7 +1613,18 @@
           isTakeProfitActive = false;
         }
 
-        let desired = isTakeProfitActive ? 0 : row.desiredSize;
+        const desired = guardedDesiredSize(
+          row.desiredSize,
+          previousSize,
+          row.netSignalEdgePct || 0,
+          minEdgePct,
+          Math.max(0, maxSizePct / 100),
+          equity,
+          peak,
+          strategyMode,
+          tradeDirection,
+          isTakeProfitActive
+        );
         const sizeGap = desired - previousSize;
         const isReducing = (previousSize > 0 && sizeGap < 0) || (previousSize < 0 && sizeGap > 0);
         const effectiveSpeed = isReducing ? exitSpeed : entrySpeed;
@@ -2907,6 +2947,10 @@
         await refresh();
         if (!cachedAdr.length || !cachedKorean.length) return;
       }
+      const originalParamValues = Object.fromEntries([
+        "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct",
+        "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct"
+      ].map((id) => [id, $(id).value]));
       const fee = Number($("tradingFeeBps").value);
       const funding = Number($("fundingBpsDay").value);
       const slippage = Number($("slippageBps").value);
@@ -2989,7 +3033,7 @@
         let avgEntryAdr = null;
         let avgEntryKorean = null;
         let isTakeProfitActive = false;
-        let minEquity = 100;
+        let worstDrawdown = 0;
 
         for (let rowIndex = range.start; rowIndex < range.end; rowIndex += 1) {
           const row = baseRows[rowIndex];
@@ -3042,8 +3086,19 @@
             }
           }
 
-          let desired = isTakeProfitActive ? 0 : rawDesiredSize;
           const previousSize = positionSize;
+          const desired = guardedDesiredSize(
+            rawDesiredSize,
+            previousSize,
+            triggerEdge,
+            params.minEdgePct,
+            maxSize,
+            equity,
+            peak,
+            strategyMode,
+            tradeDirection,
+            isTakeProfitActive
+          );
           const sizeGap = desired - previousSize;
           const isReducing = (previousSize > 0 && sizeGap < 0) || (previousSize < 0 && sizeGap > 0);
           const speed = isReducing ? exitSpeed : entrySpeed;
@@ -3082,12 +3137,12 @@
           }
           totalFeesPct += tradingFeePct + fundingFeePct;
           peak = Math.max(peak, equity);
-          minEquity = Math.min(minEquity, equity);
+          worstDrawdown = Math.min(worstDrawdown, peak ? (equity / peak - 1) * 100 : 0);
           exposureSum += positionSize;
         }
 
         const netProfit = equity - 100;
-        const maxDd = peak ? (minEquity / peak - 1) * 100 : 0;
+        const maxDd = worstDrawdown;
         
         const ddPenalty = Math.max(0.5, Math.abs(maxDd));
         const riskAdjustedScore = netProfit > 0 ? (netProfit / (ddPenalty ** 0.75)) : netProfit;
@@ -3130,6 +3185,7 @@
           lastPositionSize: folds.at(-1).lastPositionSize,
           avgEntryMaPremiumPct: null,
           positiveFoldRate,
+          robust: medianPnl > 0 && positiveFoldRate >= 2 / 3,
           foldPnls,
           purgeBars: ranges.purgeBars
         };
@@ -3167,7 +3223,7 @@
           if (!scored) continue;
           latestScore = scored;
           latestCandidate = params;
-          if (!best || scored.score > best.score) {
+          if (scored.robust && (!best || scored.score > best.score)) {
             best = { ...params, ...scored };
           }
           // Track top 10 unique combinations
@@ -3175,7 +3231,7 @@
         }
 
         // Sort and keep top 8 unique combinations
-        topRanked.sort((a, b) => b.score - a.score);
+        topRanked.sort((a, b) => Number(b.robust) - Number(a.robust) || b.score - a.score);
         topRanked = topRanked.slice(0, 8);
         window.optimizationCandidates = topRanked;
 
@@ -3235,8 +3291,11 @@
         // Render Top Leaderboard table dynamically
         if (resultsBody && topRanked.length) {
           resultsBody.innerHTML = topRanked.map((item, rankIdx) => {
-            const isWinner = rankIdx === 0;
-            const rankBadge = isWinner ? '🥇 1st' : (rankIdx === 1 ? '🥈 2nd' : (rankIdx === 2 ? '🥉 3rd' : `#${rankIdx + 1}`));
+            const isWinner = rankIdx === 0 && item.robust;
+            const hasRobustWinner = topRanked[0]?.robust;
+            const rankBadge = isWinner
+              ? '🥇 1st'
+              : (hasRobustWinner && rankIdx === 1 ? '🥈 2nd' : (hasRobustWinner && rankIdx === 2 ? '🥉 3rd' : `#${rankIdx + 1}`));
             const pnlColor = item.netProfit >= 0 ? '#16a34a' : '#dc2626';
             const rowBg = isWinner ? '#f0fdf4' : (rankIdx % 2 === 0 ? '#fff' : '#f8fafc');
             const key = candidateKey(item);
@@ -3274,7 +3333,10 @@
       button.textContent = origBtnText;
 
       if (!best) {
-        $("status").textContent = "Optimizer found no valid run";
+        Object.entries(originalParamValues).forEach(([id, value]) => { $(id).value = value; });
+        renderCached();
+        $("bestTest").textContent = "No robust result";
+        $("status").textContent = "No profitable 2/3-fold candidate found; current configuration preserved";
         return;
       }
       setNumberControl("meanBars", best.meanBars);
