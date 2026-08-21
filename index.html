@@ -2437,7 +2437,7 @@
         Number($("fundingBpsDay").value),
         $("strategyMode")?.value || "wave",
         $("tradeDirection")?.value || "bidirectional",
-        $("predictionEngine")?.value || "ou_hybrid"
+        $("predictionEngine")?.value || "medallion_hmm"
       );
       return cachedRows;
     }
@@ -2512,7 +2512,7 @@
       const fundingBpsDay = Number($("fundingBpsDay").value);
       const strategyMode = $("strategyMode")?.value || "wave";
       const tradeDirection = $("tradeDirection")?.value || "bidirectional";
-      const predictionEngine = $("predictionEngine")?.value || "ou_hybrid";
+      const predictionEngine = $("predictionEngine")?.value || "medallion_hmm";
       $("status").textContent = "Loading Binance Futures data...";
       try {
         const [adr, korean] = await Promise.all([
