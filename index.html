@@ -25,6 +25,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Segoe UI", Roboto, Arial, sans-serif;
       word-break: keep-all;
       overflow-wrap: break-word;
+      overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
     }
     main {
@@ -310,6 +311,7 @@
       padding: 16px;
       margin-bottom: 14px;
     }
+    .tableBoundPanel { overflow: hidden; }
     .chartBox {
       position: relative;
       cursor: zoom-in;
@@ -656,6 +658,7 @@
               <option id="optMultiMA" value="multi_ma">Multi-Scale MA Cascade (Momentum)</option>
               <option id="optOU" value="ou_hybrid">OU + Adaptive Harmonic Hybrid</option>
               <option id="optMultiHorizon" value="multi_horizon">Multi-Horizon Ensemble (6h/12h/24h)</option>
+              <option id="optAdaptive" value="adaptive_ensemble">Adaptive Reliability Ensemble</option>
               <option id="optBurg" value="burg_mem">Burg Maximum Entropy (AR Spectral)</option>
               <option id="optDFT" value="fourier">Sparse DFT Decomposition</option>
             </select>
@@ -678,6 +681,11 @@
             <span class="controlTitle">Funding bps/day</span>
             <input id="fundingBpsDay" type="number" min="-100" max="100" step="0.1" value="3">
             <span id="hintFundingFee" class="controlHint">net cost; negative = credit</span>
+          </label>
+          <label id="lblSlippage">
+            <span class="controlTitle">Slippage bps</span>
+            <input id="slippageBps" type="number" min="0" max="50" step="0.1" value="2">
+            <span id="hintSlippage" class="controlHint">per leg, on size change</span>
           </label>
         </div>
       </div>
@@ -743,14 +751,15 @@
             </div>
             <span style="font-size: 11px; color: #64748b;">Click any row to test & apply configuration</span>
           </div>
-          <div style="overflow-x: auto;">
+          <div style="display: block; width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; contain: inline-size;">
             <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; text-align: left;">
               <thead>
                 <tr style="background: #f1f5f9; color: #475569; font-weight: 700; border-bottom: 1px solid #cbd5e1;">
                   <th style="padding: 6px 8px;">Rank</th>
-                  <th style="padding: 6px 8px;">Net PnL</th>
+                  <th style="padding: 6px 8px;">WF Median</th>
                   <th style="padding: 6px 8px;">Max DD</th>
                   <th style="padding: 6px 8px;">Risk Score</th>
+                  <th style="padding: 6px 8px;">Winning Folds</th>
                   <th style="padding: 6px 8px;">Mean Bars</th>
                   <th style="padding: 6px 8px;">Edge Band</th>
                   <th style="padding: 6px 8px;">Max Size</th>
@@ -778,6 +787,9 @@
       <div class="stat"><span>Acc PnL</span><strong id="accPnl">--</strong></div>
       <div class="stat"><span>Max DD</span><strong id="maxDrawdown" style="color: #dc2626;">--</strong></div>
       <div class="stat"><span>Fees drag</span><strong id="feesDrag">--</strong></div>
+      <div class="stat"><span>Net edge</span><strong id="netEdge">--</strong></div>
+      <div class="stat"><span>Confidence</span><strong id="forecastConfidence">--</strong></div>
+      <div class="stat"><span>Hedge beta</span><strong id="hedgeBeta">--</strong></div>
       <div class="stat"><span>Best test</span><strong id="bestTest">--</strong></div>
       <div class="stat"><span>Bars</span><strong id="bars">--</strong></div>
     </section>
@@ -818,7 +830,7 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel tableBoundPanel">
       <div class="chartHeader">
         <div>
           <h2 id="secNewsCatalyst">Semiconductor & SK Hynix News Catalyst Impact Feed</h2>
@@ -827,7 +839,7 @@
         <span style="background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; border: 1px solid #bae6fd;">HISTORICAL EVENT MAPPING</span>
       </div>
 
-      <div style="overflow-x: auto;">
+      <div style="display: block; width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; contain: inline-size;">
         <table class="strategyTable" style="width: 100%; border-collapse: collapse; font-size: 12px;">
           <thead>
             <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; color: #64748b;">
@@ -957,7 +969,7 @@
       }
       throw lastErr || new Error(`Failed to fetch ${symbol}`);
     }
-    function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode = "wave", tradeDirection = "bidirectional", predictionEngine = "ou_hybrid") {
+    function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode = "wave", tradeDirection = "bidirectional", predictionEngine = "ou_hybrid", slippageBps = 2) {
       const koreanByTime = new Map(korean.map((item) => [item.time, item]));
       const aligned = adr.map((item) => {
         const k = koreanByTime.get(item.time);
@@ -973,7 +985,10 @@
       }).filter(Boolean);
 
       const lookback = Math.max(32, Math.min(aligned.length, meanBars * 2));
-      const forecastBars = 96; // 24 hours (96 x 15m)
+      const barMs = aligned.length > 1
+        ? Math.max(60000, aligned[1].time - aligned[0].time)
+        : 15 * 60000;
+      const forecastBars = Math.max(1, Math.round(86400000 / barMs));
       const prices = aligned.map((x) => x.normalized);
 
       // Precompute trigonometric table for lookback window M to make Fourier decomposition 30x faster
@@ -1309,7 +1324,51 @@
         return fitFourierFast(slice, stepAhead);
       }
 
+      const engineKeys = ["medallion_hmm", "multi_ma", "ou_hybrid", "burg_mem", "multi_horizon", "fourier"];
+      const enginePredictions = Object.fromEntries(engineKeys.map((key) => [key, []]));
+      const engineErrors = Object.fromEntries(engineKeys.map((key) => [key, []]));
+      const selectedPredictions = [];
+      const forecastErrors = [];
+      const adrReturns = [];
+      const koreanReturns = [];
+
+      function predictEngine(key, slice, stepAhead) {
+        if (key === "medallion_hmm") return fitMedallionHMM(slice, stepAhead);
+        if (key === "multi_ma") return fitMultiMACascade(slice, stepAhead);
+        if (key === "ou_hybrid") return fitOUHybrid(slice, stepAhead);
+        if (key === "burg_mem") return fitBurgMEM(slice, stepAhead);
+        if (key === "multi_horizon") return fitMultiHorizon(slice, stepAhead);
+        return fitFourierFast(slice, stepAhead);
+      }
+
+      function recentMae(values, fallback) {
+        const sample = values.slice(-48).filter(Number.isFinite);
+        return sample.length ? mean(sample.map(Math.abs)) : fallback;
+      }
+
+      function rollingHedgeBeta(index) {
+        if (index < 16) return 1;
+        const start = Math.max(0, adrReturns.length - 64);
+        const x = adrReturns.slice(start);
+        const y = koreanReturns.slice(start);
+        if (x.length < 12 || x.length !== y.length) return 1;
+        const xMean = mean(x);
+        const yMean = mean(y);
+        let covariance = 0;
+        let variance = 0;
+        for (let i = 0; i < x.length; i++) {
+          covariance += (x[i] - xMean) * (y[i] - yMean);
+          variance += (x[i] - xMean) ** 2;
+        }
+        const beta = variance > 1e-12 ? covariance / variance : 1;
+        return Math.max(0.5, Math.min(1.5, beta));
+      }
+
       const rows = aligned.map((row, index) => {
+        if (index > 0) {
+          adrReturns.push(row.adr / aligned[index - 1].adr - 1);
+          koreanReturns.push(row.korean / aligned[index - 1].korean - 1);
+        }
         const sample = aligned.slice(Math.max(0, index - meanBars + 1), index + 1).map((x) => x.normalized);
         const avg = mean(sample);
         const deviation = std(sample, avg);
@@ -1319,13 +1378,57 @@
         // Causal Forecast 24h Ahead computed at this exact bar
         let pred24hVal = avg;
         let expectedEdgePct = 0;
+        let modelAgreement = 1;
+        if (index >= forecastBars) {
+          const maturedPrediction = selectedPredictions[index - forecastBars];
+          if (Number.isFinite(maturedPrediction)) {
+            forecastErrors.push((row.normalized / maturedPrediction - 1) * 100);
+          }
+          engineKeys.forEach((key) => {
+            const matured = enginePredictions[key][index - forecastBars];
+            if (Number.isFinite(matured)) {
+              engineErrors[key].push((row.normalized / matured - 1) * 100);
+            }
+          });
+        }
         if (index >= lookback) {
           const slice = prices.slice(index - lookback + 1, index + 1);
-          pred24hVal = getPredictor(slice, forecastBars);
+          if (predictionEngine === "adaptive_ensemble") {
+            const fallbackError = Math.max(0.15, deviation / Math.max(avg, 0.0001) * 100);
+            const forecasts = engineKeys.map((key) => {
+              const value = predictEngine(key, slice, forecastBars);
+              enginePredictions[key][index] = value;
+              const reliability = 1 / Math.max(0.05, recentMae(engineErrors[key], fallbackError));
+              return { key, value, reliability };
+            });
+            const weightSum = forecasts.reduce((sum, item) => sum + item.reliability, 0);
+            pred24hVal = forecasts.reduce((sum, item) => sum + item.value * item.reliability, 0) / Math.max(weightSum, 1e-9);
+            const dispersion = Math.sqrt(forecasts.reduce((sum, item) => (
+              sum + item.reliability * (item.value - pred24hVal) ** 2
+            ), 0) / Math.max(weightSum, 1e-9));
+            const projectedMove = Math.abs(pred24hVal - row.normalized);
+            modelAgreement = Math.max(0.15, Math.min(1, 1 - dispersion / Math.max(0.1, projectedMove * 2)));
+          } else {
+            pred24hVal = getPredictor(slice, forecastBars);
+            if (enginePredictions[predictionEngine]) enginePredictions[predictionEngine][index] = pred24hVal;
+          }
           // If predicted wave > current spread -> spread will expand (+ return on Long ADR / Short Korea)
           // If predicted wave < current spread -> spread will compress (- return on Short ADR / Long Korea)
           expectedEdgePct = (pred24hVal / row.normalized - 1) * 100;
         }
+        selectedPredictions[index] = index >= lookback ? pred24hVal : null;
+
+        const fallbackError = Math.max(0.15, deviation / Math.max(avg, 0.0001) * 100);
+        const forecastErrorPct = Math.max(0.05, recentMae(forecastErrors, fallbackError));
+        const grossSignalEdgePct = strategyMode === "wave" ? expectedEdgePct : maPremiumPct;
+        const roundTripCostPct = (4 * (Math.max(0, tradingFeeBps) + Math.max(0, slippageBps)) + Math.max(0, fundingBpsDay)) / 100;
+        const uncertaintyPenaltyPct = Math.min(Math.abs(grossSignalEdgePct) * 0.8, forecastErrorPct * 0.35);
+        const netMagnitudePct = Math.max(0, Math.abs(grossSignalEdgePct) - roundTripCostPct - uncertaintyPenaltyPct);
+        const netSignalEdgePct = Math.sign(grossSignalEdgePct) * netMagnitudePct;
+        const forecastConfidence = netMagnitudePct > 0
+          ? Math.max(0.05, Math.min(1, netMagnitudePct / Math.max(0.15, forecastErrorPct))) * modelAgreement
+          : 0;
+        const hedgeRatio = rollingHedgeBeta(index);
 
         let rawDesiredSize = 0;
         if (strategyMode === "wave") {
@@ -1333,34 +1436,34 @@
           if (tradeDirection === "bidirectional") {
             // Negative edge = spread predicted to drop -> Short ADR / Long Korea (positive position size)
             // Positive edge = spread predicted to rise -> Long ADR / Short Korea (negative position size)
-            const magnitude = Math.abs(expectedEdgePct);
+            const magnitude = Math.abs(netSignalEdgePct);
             if (magnitude >= minEdgePct) {
               const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
               const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
               // In our backtester: positive targetSize = Short ADR / Long Korea
               //                    negative targetSize = Long ADR / Short Korea
-              rawDesiredSize = expectedEdgePct < 0 ? curved : -curved;
+              rawDesiredSize = (netSignalEdgePct < 0 ? curved : -curved) * forecastConfidence;
             }
           } else {
             // Short ADR only: harvest downward compression when expectedEdge < -minEdgePct
-            if (expectedEdgePct <= -minEdgePct) {
-              const fraction = Math.min(1, (-expectedEdgePct - minEdgePct) / denominator);
-              rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+            if (netSignalEdgePct <= -minEdgePct) {
+              const fraction = Math.min(1, (-netSignalEdgePct - minEdgePct) / denominator);
+              rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100) * forecastConfidence;
             }
           }
         } else {
           // Traditional MA Mean-Reversion
           if (tradeDirection === "bidirectional") {
-            const magnitude = Math.abs(maPremiumPct);
+            const magnitude = Math.abs(netSignalEdgePct);
             if (magnitude >= minEdgePct) {
               const fraction = Math.min(1, (magnitude - minEdgePct) / denominator);
               const curved = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
-              rawDesiredSize = maPremiumPct > 0 ? curved : -curved;
+              rawDesiredSize = (netSignalEdgePct > 0 ? curved : -curved) * forecastConfidence;
             }
           } else {
-            if (maPremiumPct >= minEdgePct) {
-              const fraction = Math.min(1, (maPremiumPct - minEdgePct) / denominator);
-              rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100);
+            if (netSignalEdgePct >= minEdgePct) {
+              const fraction = Math.min(1, (netSignalEdgePct - minEdgePct) / denominator);
+              rawDesiredSize = (fraction ** Math.max(0.1, scaleCurve)) * (maxSizePct / 100) * forecastConfidence;
             }
           }
         }
@@ -1374,6 +1477,12 @@
           maPremiumPct,
           pred24hVal,
           expectedEdgePct,
+          netSignalEdgePct,
+          forecastErrorPct,
+          forecastConfidence,
+          modelAgreement,
+          hedgeRatio,
+          roundTripCostPct,
           desiredSize: rawDesiredSize,
           targetSize: 0,
           tradeSize: 0,
@@ -1405,6 +1514,7 @@
       const exitSpeed = Math.max(0.01, Math.min(1, (exitSpeedPct || tradeSpeedPct) / 100));
       const minProfit = Math.max(0, minProfitPct || 0);
       const tradingFeeRate = Math.max(0, tradingFeeBps) / 10000;
+      const slippageRate = Math.max(0, slippageBps) / 10000;
       const fundingRateDay = fundingBpsDay / 10000;
 
       for (let index = 0; index < rows.length; index += 1) {
@@ -1415,9 +1525,10 @@
         if (Math.abs(positionSize) > 0.05 && avgEntryAdr && avgEntryKorean && minProfit > 0) {
           const longGain = row.korean / avgEntryKorean - 1;
           const shortGain = -(row.adr / avgEntryAdr - 1);
+          const beta = row.hedgeRatio || 1;
           const positionGain = positionSize > 0
-            ? 0.5 * (longGain + shortGain) * 100
-            : -0.5 * (longGain + shortGain) * 100;
+            ? (longGain + beta * shortGain) / (1 + beta) * 100
+            : -(longGain + beta * shortGain) / (1 + beta) * 100;
           if (positionGain >= minProfit) {
             isTakeProfitActive = true;
           }
@@ -1436,7 +1547,7 @@
         row.targetSize = positionSize;
         row.tradeSize = tradeSize;
 
-        const tradingFeePct = Math.abs(row.tradeSize) * 2 * tradingFeeRate * 100;
+        const tradingFeePct = Math.abs(row.tradeSize) * 2 * (tradingFeeRate + slippageRate) * 100;
         tradingFeesPct += tradingFeePct;
 
         if (Math.abs(positionSize) > 0.001) {
@@ -1469,7 +1580,8 @@
           const previous = rows[index - 1];
           const longReturn = row.korean / previous.korean - 1;
           const shortReturn = -(row.adr / previous.adr - 1);
-          const pairReturn = 0.5 * (longReturn + shortReturn); // return of Short ADR / Long Korea
+          const beta = previous.hedgeRatio || 1;
+          const pairReturn = (longReturn + beta * shortReturn) / (1 + beta); // return of Short ADR / Long Korea
           const intervalDays = Math.max(0, (row.time - previous.time) / 86400000);
           const fundingFeePct = Math.abs(previous.targetSize) * fundingRateDay * intervalDays * 100;
           fundingFeesPct += fundingFeePct;
@@ -1827,8 +1939,8 @@
         window.spreadSeries.synthWave.setData(globalWavePoints);
 
         // 2. Historical Out-of-Sample Predictions (evaluated directly at target candle t)
-        const forecastBars = 96; // 24 hours at 15m intervals
         const dt = N > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
+        const forecastBars = Math.max(1, Math.round(86400 / Math.max(60, dt)));
         const lastTime = Math.floor(rows.at(-1).time / 1000);
 
         const histPoints = [];
@@ -1856,6 +1968,9 @@
           let predFutureVal = rows.at(-1).normalized;
           if (s === forecastBars) {
             predFutureVal = final24hTarget;
+          } else if (engine === "adaptive_ensemble") {
+            const progress = s / forecastBars;
+            predFutureVal = rows.at(-1).normalized + (final24hTarget - rows.at(-1).normalized) * progress;
           } else if (engine === "multi_ma") {
             predFutureVal = fitMultiMACascade(latestSlice, s);
           } else if (engine === "medallion_hmm" || engine === "ou_hybrid") {
@@ -1985,12 +2100,16 @@
         } else if (!window.spreadChartInitialized) {
           window.spreadChart.timeScale().setVisibleLogicalRange({
             from: Math.max(0, totalBars - 60),
-            to: totalBars + 96
+            to: totalBars + Math.max(1, Math.round(86400000 / Math.max(60000, rows.length > 1 ? rows.at(-1).time - rows.at(-2).time : 15 * 60000)))
           });
         }
         window.spreadChartInitialized = true;
       }
-      $("spreadLegend").textContent = chartMode === "ma" ? "Spread / MA" : "Spread";
+      if ($("legSpread")) {
+        $("legSpread").textContent = chartMode === "ma"
+          ? (window.currentLang === "ko" ? "스프레드 / 이동평균" : "Spread / MA")
+          : (window.currentLang === "ko" ? "스프레드 (현재가)" : "Spread (Price)");
+      }
     }
     function requestExposureOverlayDraw() {
       if (window.exposureOverlayFrame) cancelAnimationFrame(window.exposureOverlayFrame);
@@ -2044,8 +2163,8 @@
       // Highlight the Exact Historical Training Window that was used to Predict the Hovered Point T
       const meanBarsParam = Number($("meanBars")?.value) || 96;
       const lookback = Math.max(32, Math.min(rows.length, meanBarsParam * 2));
-      const forecastBars = 96; // 24 hours at 15m intervals
       const dt = rows.length > 1 ? Math.floor((rows.at(-1).time - rows.at(-2).time) / 1000) : 900;
+      const forecastBars = Math.max(1, Math.round(86400 / Math.max(60, dt)));
 
       if (window.hoveredChartTime && rows.length >= lookback) {
         const timeScale = window.spreadChart.timeScale();
@@ -2053,7 +2172,7 @@
         const latestTimeSec = Math.floor(rows.at(-1).time / 1000);
 
         // Find how many bars the hovered time is from the start
-        // Origin bar is exactly 24h (96 bars) BEFORE the hovered timepoint
+        // Origin bar is exactly 24h before the hovered timepoint.
         const originTimeSec = hoveredTimeSec - (forecastBars * dt);
 
         // Find the closest row index for the origin time
@@ -2378,6 +2497,9 @@
       const maxDD = rows.length ? Math.min(...rows.map((r) => r.drawdownPct || 0)) : 0;
       $("maxDrawdown").textContent = `${fmt(maxDD)}%`;
       $("feesDrag").textContent = latest ? `${fmt(latest.totalFeesPct)}%` : "--";
+      $("netEdge").textContent = latest ? `${fmt(latest.netSignalEdgePct)}%` : "--";
+      $("forecastConfidence").textContent = latest ? `${fmt(latest.forecastConfidence * 100, 0)}%` : "--";
+      $("hedgeBeta").textContent = latest ? fmt(latest.hedgeRatio, 2) : "--";
       $("bars").textContent = rows.length;
     }
     function drawAllocation(rows, interval) {
@@ -2521,7 +2643,8 @@
         Number($("fundingBpsDay").value),
         $("strategyMode")?.value || "wave",
         $("tradeDirection")?.value || "bidirectional",
-        $("predictionEngine")?.value || "medallion_hmm"
+        $("predictionEngine")?.value || "medallion_hmm",
+        Number($("slippageBps").value)
       );
       return cachedRows;
     }
@@ -2594,6 +2717,7 @@
       const minProfitPct = Number($("minProfitPct").value);
       const tradingFeeBps = Number($("tradingFeeBps").value);
       const fundingBpsDay = Number($("fundingBpsDay").value);
+      const slippageBps = Number($("slippageBps").value);
       const strategyMode = $("strategyMode")?.value || "wave";
       const tradeDirection = $("tradeDirection")?.value || "bidirectional";
       const predictionEngine = $("predictionEngine")?.value || "medallion_hmm";
@@ -2601,6 +2725,8 @@
       const isKo = window.currentLang === "ko";
       $("position").textContent = isKo ? "동기화 중..." : "Connecting...";
       $("position").className = "pill";
+      $("position").style.cursor = "default";
+      $("position").onclick = null;
       try {
         const [adr, korean] = await Promise.all([
           fetchKlines("SKHYUSDT", interval),
@@ -2608,7 +2734,7 @@
         ]);
         cachedAdr = adr;
         cachedKorean = korean;
-        const rows = buildRows(cachedAdr, cachedKorean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode, tradeDirection, predictionEngine);
+        const rows = buildRows(cachedAdr, cachedKorean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode, tradeDirection, predictionEngine, slippageBps);
         if (!rows.length) throw new Error("No aligned bars returned.");
         cachedRows = rows;
         cachedInterval = interval;
@@ -2624,6 +2750,7 @@
         $("status").textContent = `Loaded ${rows.length} bars; opening WebSocket...`;
         connectWebSocket(interval);
       } catch (error) {
+        console.error("Dashboard refresh failed", error);
         $("status").textContent = error.message;
         $("position").textContent = isKo ? "연결 재시도" : "Retry Connect";
         $("position").className = "pill";
@@ -2683,6 +2810,7 @@
       }
       const fee = Number($("tradingFeeBps").value);
       const funding = Number($("fundingBpsDay").value);
+      const slippage = Number($("slippageBps").value);
       const strategyMode = $("strategyMode")?.value || "wave";
       const tradeDirection = $("tradeDirection")?.value || "bidirectional";
       const predictionEngine = $("predictionEngine")?.value || "medallion_hmm";
@@ -2717,13 +2845,38 @@
       button.disabled = true;
       const baseRowsByMean = new Map(means.map((meanBars) => [
         meanBars,
-        buildRows(cachedAdr, cachedKorean, meanBars, 0, 1, 0, 1, 1, 1, 0, fee, funding, strategyMode, tradeDirection, predictionEngine)
+        buildRows(cachedAdr, cachedKorean, meanBars, 0, 1, 0, 1, 1, 1, 0, fee, funding, strategyMode, tradeDirection, predictionEngine, slippage)
       ]));
-      const feeRate = Math.max(0, fee) / 10000;
+      const feeRate = (Math.max(0, fee) + Math.max(0, slippage)) / 10000;
       const fundingRateDay = funding / 10000;
-      const scoreCandidate = (params) => {
-        const baseRows = baseRowsByMean.get(params.meanBars);
-        if (!baseRows?.length) return null;
+      const median = (values) => {
+        const sorted = [...values].sort((a, b) => a - b);
+        const middle = Math.floor(sorted.length / 2);
+        return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+      };
+      const simulationRanges = (baseRows) => {
+        const count = baseRows.length;
+        const dt = count > 1 ? Math.max(60000, baseRows[1].time - baseRows[0].time) : 15 * 60000;
+        const purgeBars = Math.max(1, Math.round(86400000 / dt));
+        if (count < purgeBars * 3 + 30) {
+          return { folds: [], holdout: null, purgeBars };
+        }
+        const validationStart = Math.max(purgeBars * 2, Math.floor(count * 0.25));
+        const holdoutStart = Math.max(validationStart + 3, Math.floor(count * 0.80));
+        const validationEnd = Math.max(validationStart + 3, holdoutStart - purgeBars);
+        const foldSize = Math.max(1, Math.floor((validationEnd - validationStart) / 3));
+        const folds = [0, 1, 2].map((fold) => ({
+          start: validationStart + fold * foldSize,
+          end: fold === 2 ? validationEnd : validationStart + (fold + 1) * foldSize
+        })).filter((range) => range.end - range.start >= 2);
+        return {
+          folds,
+          holdout: { start: Math.min(count - 1, holdoutStart + purgeBars), end: count },
+          purgeBars
+        };
+      };
+      const simulateCandidateRange = (params, baseRows, range) => {
+        if (!baseRows?.length || !range || range.end - range.start < 2) return null;
         const maxSize = Math.max(0, params.maxSizePct / 100);
         const entrySpeed = Math.max(0.01, Math.min(1, params.tradeSpeedPct / 100));
         const exitSpeed = Math.max(0.01, Math.min(1, params.exitSpeedPct / 100));
@@ -2739,14 +2892,15 @@
         let isTakeProfitActive = false;
         let minEquity = 100;
 
-        for (let rowIndex = 0; rowIndex < baseRows.length; rowIndex += 1) {
+        for (let rowIndex = range.start; rowIndex < range.end; rowIndex += 1) {
           const row = baseRows[rowIndex];
           if (Math.abs(positionSize) > 0.05 && avgEntryAdr && avgEntryKorean && minProfit > 0) {
             const longGain = row.korean / avgEntryKorean - 1;
             const shortGain = -(row.adr / avgEntryAdr - 1);
+            const beta = row.hedgeRatio || 1;
             const posPriceGainPct = positionSize > 0
-              ? 0.5 * (longGain + shortGain) * 100
-              : -0.5 * (longGain + shortGain) * 100;
+              ? (longGain + beta * shortGain) / (1 + beta) * 100
+              : -(longGain + beta * shortGain) / (1 + beta) * 100;
             if (posPriceGainPct >= minProfit) {
               isTakeProfitActive = true;
             }
@@ -2756,7 +2910,8 @@
           }
 
           let rawDesiredSize = 0;
-          const triggerEdge = strategyMode === "wave" ? row.expectedEdgePct : row.maPremiumPct;
+          const triggerEdge = row.netSignalEdgePct || 0;
+          const confidence = Math.max(0, Math.min(1, row.forecastConfidence || 0));
 
           if (strategyMode === "wave") {
             if (tradeDirection === "bidirectional") {
@@ -2764,12 +2919,12 @@
               if (magnitude >= params.minEdgePct) {
                 const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
                 const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
-                rawDesiredSize = triggerEdge < 0 ? curved : -curved;
+                rawDesiredSize = (triggerEdge < 0 ? curved : -curved) * confidence;
               }
             } else {
               if (triggerEdge <= -params.minEdgePct) {
                 const fraction = Math.min(1, (-triggerEdge - params.minEdgePct) / denominator);
-                rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize * confidence;
               }
             }
           } else {
@@ -2778,12 +2933,12 @@
               if (magnitude >= params.minEdgePct) {
                 const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
                 const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
-                rawDesiredSize = triggerEdge > 0 ? curved : -curved;
+                rawDesiredSize = (triggerEdge > 0 ? curved : -curved) * confidence;
               }
             } else {
               if (triggerEdge >= params.minEdgePct) {
                 const fraction = Math.min(1, (triggerEdge - params.minEdgePct) / denominator);
-                rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
+                rawDesiredSize = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize * confidence;
               }
             }
           }
@@ -2813,11 +2968,12 @@
           }
           const tradingFeePct = Math.abs(actualTraded) * 2 * feeRate * 100;
           let fundingFeePct = 0;
-          if (rowIndex > 0) {
+          if (rowIndex > range.start) {
             const previous = baseRows[rowIndex - 1];
             const longReturn = row.korean / previous.korean - 1;
             const shortReturn = -(row.adr / previous.adr - 1);
-            const pairReturn = 0.5 * (longReturn + shortReturn);
+            const beta = previous.hedgeRatio || 1;
+            const pairReturn = (longReturn + beta * shortReturn) / (1 + beta);
             const intervalDays = Math.max(0, (row.time - previous.time) / 86400000);
             fundingFeePct = Math.abs(previousSize) * fundingRateDay * intervalDays * 100;
             const returnContribution = previousSize * pairReturn;
@@ -2834,23 +2990,49 @@
         const netProfit = equity - 100;
         const maxDd = peak ? (minEquity / peak - 1) * 100 : 0;
         
-        // Calmar / Sharpe Risk-Adjusted Scoring (Return per unit of downside risk)
         const ddPenalty = Math.max(0.5, Math.abs(maxDd));
         const riskAdjustedScore = netProfit > 0 ? (netProfit / (ddPenalty ** 0.75)) : netProfit;
-        const lastRow = baseRows[baseRows.length - 1];
-        const avgEntryPrem = (avgEntryAdr && avgEntryKorean && lastRow && lastRow.mean)
-          ? ((avgEntryAdr / avgEntryKorean - 1) * 100)
-          : null;
 
         return {
           score: riskAdjustedScore,
           netProfit,
           maxDd,
-          avgExposure: exposureSum / baseRows.length,
+          avgExposure: exposureSum / Math.max(1, range.end - range.start),
           fees: totalFeesPct,
           drawdown: maxDd,
           lastPositionSize: positionSize,
-          avgEntryMaPremiumPct: avgEntryPrem
+          avgEntryMaPremiumPct: null
+        };
+      };
+      const scoreCandidate = (params) => {
+        const baseRows = baseRowsByMean.get(params.meanBars);
+        if (!baseRows?.length) return null;
+        const ranges = simulationRanges(baseRows);
+        const folds = ranges.folds.map((range) => simulateCandidateRange(params, baseRows, range)).filter(Boolean);
+        if (!folds.length) return null;
+        const foldPnls = folds.map((fold) => fold.netProfit);
+        const medianPnl = median(foldPnls);
+        const worstDd = Math.min(...folds.map((fold) => fold.maxDd));
+        const positiveFoldRate = folds.filter((fold) => fold.netProfit > 0).length / folds.length;
+        const pnlMean = mean(foldPnls);
+        const pnlVariance = foldPnls.reduce((sum, value) => sum + (value - pnlMean) ** 2, 0) / Math.max(1, foldPnls.length);
+        const stabilityPenalty = Math.sqrt(pnlVariance) / Math.max(0.5, Math.abs(medianPnl));
+        const ddPenalty = Math.max(0.5, Math.abs(worstDd));
+        const score = medianPnl > 0
+          ? medianPnl / (ddPenalty ** 0.75) * (0.5 + 0.5 * positiveFoldRate) / (1 + 0.35 * stabilityPenalty)
+          : medianPnl;
+        return {
+          score,
+          netProfit: medianPnl,
+          maxDd: worstDd,
+          avgExposure: mean(folds.map((fold) => fold.avgExposure)),
+          fees: median(folds.map((fold) => fold.fees)),
+          drawdown: worstDd,
+          lastPositionSize: folds.at(-1).lastPositionSize,
+          avgEntryMaPremiumPct: null,
+          positiveFoldRate,
+          foldPnls,
+          purgeBars: ranges.purgeBars
         };
       };
       const optInputIds = [
@@ -2916,6 +3098,9 @@
           $("premium").textContent = `${fmt(latestRow.normalized - 100)}%`;
           $("mean").textContent = fmt(latestRow.mean);
           $("maPremium").textContent = strategyMode === "wave" ? `${fmt(latestRow.expectedEdgePct)}% (Wave)` : `${fmt(latestRow.maPremiumPct)}% (MA)`;
+          $("netEdge").textContent = `${fmt(latestRow.netSignalEdgePct)}%`;
+          $("forecastConfidence").textContent = `${fmt(latestRow.forecastConfidence * 100, 0)}%`;
+          $("hedgeBeta").textContent = fmt(latestRow.hedgeRatio, 2);
           $("bars").textContent = baseRows.length;
         }
 
@@ -2938,7 +3123,7 @@
         const curPnL = latestScore ? `${fmt(latestScore.netProfit)}%` : "--";
         const bestPnL = best ? `${fmt(best.netProfit)}%` : "--";
         const bestDD = best ? `${fmt(best.maxDd)}%` : "--";
-        $("status").textContent = `[${pct}%] Testing #${currentCount}/${candidates.length} [Bars:${latestCandidate.meanBars}, Edge:${latestCandidate.minEdgePct}~${latestCandidate.fullEdgePct}%, Max:${latestCandidate.maxSizePct}%] ⟹ Curr PnL: ${curPnL} | Best PnL: ${bestPnL} (MaxDD: ${bestDD})`;
+        $("status").textContent = `[${pct}%] Walk-forward #${currentCount}/${candidates.length} [Bars:${latestCandidate.meanBars}, Edge:${latestCandidate.minEdgePct}~${latestCandidate.fullEdgePct}%, Max:${latestCandidate.maxSizePct}%] Curr median: ${curPnL} | Best: ${bestPnL} (Worst DD: ${bestDD})`;
 
         if ($("lblOptTotalEvaluated")) {
           $("lblOptTotalEvaluated").textContent = `${currentCount.toLocaleString()} / ${candidates.length.toLocaleString()} evaluated (${pct}%)`;
@@ -2955,9 +3140,10 @@
             return `
               <tr style="background: ${rowBg}; border-bottom: 1px solid #e2e8f0; cursor: pointer;" onclick="applyCandidateRow(${candidateJson})">
                 <td style="padding: 6px 8px; font-weight: 700; color: ${isWinner ? '#16a34a' : '#475569'};">${rankBadge}</td>
-                <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">+${fmt(item.netProfit)}%</td>
+                <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">${item.netProfit >= 0 ? "+" : ""}${fmt(item.netProfit)}%</td>
                 <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;">${fmt(item.maxDd)}%</td>
                 <td style="padding: 6px 8px; font-weight: 700; color: #0284c7; font-family: monospace;">${fmt(item.score)}</td>
+                <td style="padding: 6px 8px; font-family: monospace;">${Math.round(item.positiveFoldRate * 3)}/3</td>
                 <td style="padding: 6px 8px; font-family: monospace;">${item.meanBars} bars</td>
                 <td style="padding: 6px 8px; font-family: monospace;">${item.minEdgePct}% ~ ${item.fullEdgePct}%</td>
                 <td style="padding: 6px 8px; font-family: monospace;">${item.maxSizePct}% (${(item.maxSizePct/100).toFixed(1)}x)</td>
@@ -2995,6 +3181,11 @@
       setNumberControl("tradeSpeedPct", best.tradeSpeedPct);
       setNumberControl("exitSpeedPct", best.exitSpeedPct);
       setNumberControl("minProfitPct", best.minProfitPct);
+      const bestBaseRows = baseRowsByMean.get(best.meanBars);
+      const bestRanges = simulationRanges(bestBaseRows);
+      const holdout = simulateCandidateRange(best, bestBaseRows, bestRanges.holdout);
+      best.holdoutProfit = holdout?.netProfit ?? 0;
+      best.holdoutMaxDd = holdout?.maxDd ?? 0;
       best.rows = buildRows(
         cachedAdr,
         cachedKorean,
@@ -3010,7 +3201,8 @@
         funding,
         strategyMode,
         tradeDirection,
-        predictionEngine
+        predictionEngine,
+        slippage
       );
       cachedRows = best.rows;
       window.lastOptimization = {
@@ -3020,7 +3212,10 @@
         minProfitPct: best.minProfitPct,
         exitSpeedPct: best.exitSpeedPct,
         maxSizePct: best.maxSizePct,
-        statusText: `Optimized net PnL ${fmt(best.score)}% (Leverage ${best.maxSizePct}% / ${(best.maxSizePct/100).toFixed(1)}x; Max DD ${fmt(best.maxDd)}%); fees ${fmt(best.fees)}%`
+        holdoutProfit: best.holdoutProfit,
+        holdoutMaxDd: best.holdoutMaxDd,
+        positiveFoldRate: best.positiveFoldRate,
+        statusText: `Walk-forward score ${fmt(best.score)} | median validation ${fmt(best.netProfit)}% (${Math.round(best.positiveFoldRate * 3)}/3 folds positive) | untouched holdout ${fmt(best.holdoutProfit)}% (DD ${fmt(best.holdoutMaxDd)}%); ${best.purgeBars}-bar embargo`
       };
       try {
         localStorage.setItem("skhynix_last_optimization", JSON.stringify(window.lastOptimization));
@@ -3031,7 +3226,7 @@
       drawWaveSpectrum(best.rows);
       drawAllocation(best.rows, cachedInterval);
       updateStats(best.rows);
-      $("bestTest").textContent = `${fmt(best.score)}%`;
+      $("bestTest").textContent = `${fmt(best.holdoutProfit)}% OOS`;
       $("status").textContent = window.lastOptimization.statusText;
     }
 
@@ -3066,6 +3261,7 @@
         optMultiMA: "Multi-Scale MA Cascade (Fast/Med/Slow Momentum)",
         optOU: "OU + Adaptive Harmonic Hybrid",
         optMultiHorizon: "Multi-Horizon Ensemble (6h/12h/24h)",
+        optAdaptive: "Adaptive Reliability Ensemble",
         optBurg: "Burg Maximum Entropy (AR Spectral)",
         optDFT: "Sparse DFT Decomposition",
         lblDirection: "Direction",
@@ -3090,6 +3286,8 @@
         hintTradingFee: "per leg, on size change",
         lblFundingFee: "Funding bps/day",
         hintFundingFee: "net cost; negative = credit",
+        lblSlippage: "Slippage bps",
+        hintSlippage: "per leg, on size change",
         btnRefresh: "Refresh",
         btnOptimize: "Optimize profit",
         statLatest: "Latest normalized",
@@ -3100,7 +3298,10 @@
         statAvgPosition: "Avg position",
         statAccPnl: "Acc PnL",
         statMaxDD: "Max DD",
-        statFeesDrag: "Fees drag",
+        statFeesDrag: "Fees + slippage",
+        statNetEdge: "Net edge",
+        statConfidence: "Confidence",
+        statHedgeBeta: "Hedge beta",
         statBestTest: "Best test",
         statBars: "Bars",
         legSpread: "Spread (Price)",
@@ -3152,6 +3353,7 @@
         optMultiMA: "다중 스케일 MA 캐스케이드 (단/중/장기 모멘텀)",
         optOU: "OU 탄성 미분방정식 + 하모닉 하이브리드",
         optMultiHorizon: "다중 시계열 앙상블 (6h/12h/24h)",
+        optAdaptive: "적응형 신뢰도 앙상블",
         optBurg: "Burg 최대 엔트로피 (AR 스펙트럼)",
         optDFT: "희소 DFT 주파수 분해",
         lblDirection: "포지션 방향",
@@ -3176,6 +3378,8 @@
         hintTradingFee: "편도 기준 (비중 조절 시 발생)",
         lblFundingFee: "일일 펀딩비 (bps/day)",
         hintFundingFee: "순 비용 (음수일 경우 이자 수취)",
+        lblSlippage: "슬리피지 (bps)",
+        hintSlippage: "편도 및 레그별 체결 비용",
         btnRefresh: "데이터 새로고침",
         btnOptimize: "⚡ 최적화 실행",
         statLatest: "현재 정규화 가격",
@@ -3186,7 +3390,10 @@
         statAvgPosition: "포지션 평균 단가",
         statAccPnl: "누적 수익률 (PnL)",
         statMaxDD: "최대 낙폭 (Max DD)",
-        statFeesDrag: "수수료 비용 누적",
+        statFeesDrag: "수수료 + 슬리피지",
+        statNetEdge: "순 기대 엣지",
+        statConfidence: "예측 신뢰도",
+        statHedgeBeta: "헤지 베타",
         statBestTest: "최적화 백테스트",
         statBars: "조회된 봉 수",
         legSpread: "스프레드 (현재가)",
@@ -3553,6 +3760,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("optMultiMA")) $("optMultiMA").textContent = dict.optMultiMA;
       if ($("optOU")) $("optOU").textContent = dict.optOU;
       if ($("optMultiHorizon")) $("optMultiHorizon").textContent = dict.optMultiHorizon;
+      if ($("optAdaptive")) $("optAdaptive").textContent = dict.optAdaptive;
       if ($("optBurg")) $("optBurg").textContent = dict.optBurg;
       if ($("optDFT")) $("optDFT").textContent = dict.optDFT;
       setLabelTitle("lblDirection", dict.lblDirection);
@@ -3577,12 +3785,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("hintTradingFee")) $("hintTradingFee").textContent = dict.hintTradingFee;
       setLabelTitle("lblFundingFee", dict.lblFundingFee);
       if ($("hintFundingFee")) $("hintFundingFee").textContent = dict.hintFundingFee;
+      setLabelTitle("lblSlippage", dict.lblSlippage);
+      if ($("hintSlippage")) $("hintSlippage").textContent = dict.hintSlippage;
       if ($("refresh")) $("refresh").textContent = dict.btnRefresh;
       if ($("optimizeProfit")) $("optimizeProfit").textContent = dict.btnOptimize;
 
       // Stats
       const statSpans = document.querySelectorAll(".stats .stat span");
-      const statKeys = ["statLatest", "statPremium", "statMean", "statMaPremium", "statPositionSize", "statAvgPosition", "statAccPnl", "statMaxDD", "statFeesDrag", "statBestTest", "statBars"];
+      const statKeys = ["statLatest", "statPremium", "statMean", "statMaPremium", "statPositionSize", "statAvgPosition", "statAccPnl", "statMaxDD", "statFeesDrag", "statNetEdge", "statConfidence", "statHedgeBeta", "statBestTest", "statBars"];
       statSpans.forEach((el, idx) => {
         if (statKeys[idx] && dict[statKeys[idx]]) el.textContent = dict[statKeys[idx]];
       });
@@ -3642,7 +3852,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       } catch (e) {}
     }
 
-    const paramIds = ["interval", "strategyMode", "predictionEngine", "tradeDirection", "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct", "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct", "tradingFeeBps", "fundingBpsDay"];
+    const paramIds = ["interval", "strategyMode", "predictionEngine", "tradeDirection", "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct", "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct", "tradingFeeBps", "fundingBpsDay", "slippageBps"];
     function saveSettings() {
       try {
         const settings = {};
@@ -3800,7 +4010,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
         }
         const candleRow = rows[closestIndex];
-        const post24hIndex = Math.min(rows.length - 1, closestIndex + 96);
+        const dtMs = rows.length > 1 ? Math.max(60000, rows[1].time - rows[0].time) : 15 * 60000;
+        const post24hIndex = Math.min(rows.length - 1, closestIndex + Math.max(1, Math.round(86400000 / dtMs)));
         const post24hRow = rows[post24hIndex];
         const preSpread = candleRow.normalized;
         const postSpread = post24hRow.normalized;
@@ -3924,6 +4135,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("minProfitPct").addEventListener("change", onParamChange);
     $("tradingFeeBps").addEventListener("change", onParamChange);
     $("fundingBpsDay").addEventListener("change", onParamChange);
+    $("slippageBps").addEventListener("change", onParamChange);
 
     loadSettings();
     refresh();
