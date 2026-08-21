@@ -885,9 +885,16 @@
         <div id="newsTooltip" class="newsTooltip"></div>
       </div>
       <div class="inlineAllocation">
-        <div class="tableHead compact">
-          <h2 id="secContinuousAlloc">Continuous Allocation</h2>
-          <span id="subContinuousAlloc">Every candle: scale long <code>SKHYNIXUSDT</code> / short <code>SKHYUSDT</code></span>
+        <div class="tableHead compact" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h2 id="secContinuousAlloc">Cumulative Strategy PnL (%) & Position Sizing</h2>
+            <span id="subContinuousAlloc">Real-time Acc PnL curve with dynamic leverage allocation (Long SKHYNIX / Short SKHY)</span>
+          </div>
+          <div class="legend" style="margin: 0; font-size: 11px;">
+            <span id="legPnl" style="color: #10b981; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 3px; background: #10b981; border-radius: 2px;"></span> Acc PnL (%)</span>
+            <span id="legAlloc" style="color: #0284c7; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 2px; background: #0284c7; border-top: 2px dashed #0284c7;"></span> Position Size (%)</span>
+            <span id="legBaseline" style="color: #94a3b8; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 1px; background: #94a3b8; border-top: 1px dashed #94a3b8;"></span> 0% Baseline</span>
+          </div>
         </div>
         <div id="allocationChart"></div>
       </div>
@@ -2580,45 +2587,137 @@
       const startIndex = Math.max(0, Math.floor(startFloat) - 1);
       const endIndex = Math.min(maxEnd, Math.ceil(endFloat) + 1);
       const visibleRows = rows.slice(startIndex, endIndex + 1).map((row, index) => ({ ...row, __index: startIndex + index }));
-      const width = 1180, height = 300;
-      const margin = { top: 28, right: 34, bottom: 70, left: 58 };
+      
+      const width = 1180, height = 320;
+      const margin = { top: 28, right: 90, bottom: 65, left: 68 };
       const plotWidth = width - margin.left - margin.right;
       const plotHeight = height - margin.top - margin.bottom;
-      const equities = visibleRows.map((row) => row.equity);
-      const minEquity = Math.min(...equities);
-      const maxEquity = Math.max(...equities);
-      const pad = Math.max(0.05, (maxEquity - minEquity) * 0.2);
-      const yMin = minEquity - pad;
-      const yMax = maxEquity + pad;
+
+      // PnL % values (equity - 100)
+      const pnls = visibleRows.map((row) => row.equity - 100);
+      const minPnl = Math.min(...pnls);
+      const maxPnl = Math.max(...pnls);
+      const pnlSpan = Math.max(2.0, maxPnl - minPnl);
+      const yPnlMin = Math.min(0, minPnl) - pnlSpan * 0.12;
+      const yPnlMax = Math.max(0, maxPnl) + pnlSpan * 0.12;
+
+      // Position sizes (-maxSize to +maxSize)
+      const sizes = visibleRows.map((row) => (row.targetSize || 0) * 100);
+      const maxAbsSize = Math.max(100, ...sizes.map((s) => Math.abs(s)));
+
       const x = (index) => margin.left + plotWidth * (visibleRows[index].__index - startFloat) / Math.max(1, visibleBars - 1);
-      const yEquity = (value) => margin.top + (yMax - value) / Math.max(0.0001, yMax - yMin) * (plotHeight * 0.58);
-      // Support bidirectional position size (-1.0 to +1.0)
-      const sizeBaseY = margin.top + plotHeight * 0.82;
-      const ySize = (value) => sizeBaseY - (value * plotHeight * 0.16);
+      
+      // Upper 62% for PnL curve
+      const pnlPlotHeight = plotHeight * 0.60;
+      const yPnl = (pnlVal) => margin.top + (yPnlMax - pnlVal) / Math.max(0.0001, yPnlMax - yPnlMin) * pnlPlotHeight;
+      
+      // Lower 30% for Position Size
+      const sizeBaseY = margin.top + plotHeight * 0.84;
+      const sizePlotHeight = plotHeight * 0.15;
+      const ySize = (sizeVal) => sizeBaseY - (sizeVal / maxAbsSize) * sizePlotHeight;
+
       const labelEvery = Math.max(1, Math.ceil(visibleRows.length / 12));
       const gridEvery = Math.max(1, Math.ceil(visibleRows.length / 80));
       const linePoints = sampledPoints(visibleRows, 650);
-      let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Position size and net paper equity">`;
-      svg += `<defs><clipPath id="allocationClip"><rect x="${margin.left}" y="0" width="${plotWidth}" height="${height}"/></clipPath></defs>`;
+
+      // Latest stats
+      const latestRow = visibleRows.at(-1);
+      const latestPnl = latestRow ? latestRow.equity - 100 : 0;
+      const latestSize = latestRow ? (latestRow.targetSize || 0) * 100 : 0;
+      const pnlColor = latestPnl >= 0 ? "#10b981" : "#ef4444";
+
+      let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Strategy Cumulative PnL (%) and Dynamic Position Sizing">`;
+      svg += `<defs>
+        <clipPath id="allocationClip"><rect x="${margin.left}" y="0" width="${plotWidth}" height="${height}"/></clipPath>
+        <linearGradient id="pnlGradGreen" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#10b981" stop-opacity="0.32"/>
+          <stop offset="100%" stop-color="#10b981" stop-opacity="0.0"/>
+        </linearGradient>
+        <linearGradient id="pnlGradRed" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ef4444" stop-opacity="0.0"/>
+          <stop offset="100%" stop-color="#ef4444" stop-opacity="0.32"/>
+        </linearGradient>
+        <linearGradient id="sizeGradShort" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#0284c7" stop-opacity="0.25"/>
+          <stop offset="100%" stop-color="#0284c7" stop-opacity="0.05"/>
+        </linearGradient>
+      </defs>`;
+
       svg += `<g id="dynamicAllocation" clip-path="url(#allocationClip)">`;
+
+      // Vertical time grid lines
       visibleRows.forEach((row, index) => {
         if (index % gridEvery === 0) {
-          svg += `<line x1="${x(index)}" x2="${x(index)}" y1="${margin.top}" y2="${height - margin.bottom}" class="xgrid"/>`;
+          svg += `<line x1="${x(index)}" x2="${x(index)}" y1="${margin.top}" y2="${height - margin.bottom}" class="xgrid" style="stroke: #f1f5f9;"/>`;
         }
         if (index % labelEvery === 0 || index === visibleRows.length - 1) {
-          svg += `<text x="${x(index)}" y="${height - 28}" text-anchor="end" transform="rotate(-45 ${x(index)} ${height - 28})" class="xLabel">${formatTime(row.time, interval)}</text>`;
+          svg += `<text x="${x(index)}" y="${height - 24}" text-anchor="end" transform="rotate(-45 ${x(index)} ${height - 24})" class="xLabel" style="font-size: 10px; fill: #64748b;">${formatTime(row.time, interval)}</text>`;
         }
       });
-      svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${yEquity(100)}" y2="${yEquity(100)}" class="sigmaLine"/>`;
-      svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${sizeBaseY}" y2="${sizeBaseY}" class="xgrid" style="stroke: #cbd5e1; stroke-dasharray: 2 2;"/>`;
-      svg += `<path d="${pathForPoints(linePoints, (row) => row.equity, x, yEquity)}" class="spread"/>`;
-      svg += `<path d="${pathForPoints(linePoints, (row) => row.targetSize, x, ySize)}" class="mean"/>`;
-      svg += `<text x="${margin.left}" y="18" class="axisTitle">Net paper equity (red) and position size (black dashed)</text>`;
-      svg += `<text x="${width - margin.right}" y="${yEquity(100) - 6}" text-anchor="end">equity 100</text>`;
-      svg += `<text x="${width - margin.right}" y="${ySize(1) - 4}" text-anchor="end">+100% (Short ADR)</text>`;
-      svg += `<text x="${width - margin.right}" y="${sizeBaseY - 4}" text-anchor="end">0%</text>`;
-      svg += `<text x="${width - margin.right}" y="${ySize(-1) + 12}" text-anchor="end">-100% (Long ADR)</text>`;
-      svg += `</g></svg>`;
+
+      // Horizontal PnL grid lines (Left Axis)
+      const pnlStep = Math.max(1, Math.round(pnlSpan / 5));
+      const startPnlTick = Math.ceil(yPnlMin / pnlStep) * pnlStep;
+      for (let p = startPnlTick; p <= yPnlMax; p += pnlStep) {
+        const yPos = yPnl(p);
+        if (yPos >= margin.top && yPos <= margin.top + pnlPlotHeight) {
+          const isZero = Math.abs(p) < 0.001;
+          svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${yPos}" y2="${yPos}" style="stroke: ${isZero ? '#94a3b8' : '#f1f5f9'}; stroke-dasharray: ${isZero ? '4 3' : 'none'}; stroke-width: ${isZero ? '1.5' : '1'};"/>`;
+          svg += `<text x="${margin.left - 8}" y="${yPos + 4}" text-anchor="end" style="font-size: 11px; font-weight: ${isZero ? '700' : '600'}; font-family: monospace; fill: ${p > 0 ? '#10b981' : (p < 0 ? '#ef4444' : '#64748b')};">${p >= 0 ? '+' : ''}${p.toFixed(1)}%</text>`;
+        }
+      }
+
+      // Position Size baseline and guide lines (Right Axis)
+      svg += `<line x1="${margin.left}" x2="${width - margin.right}" y1="${sizeBaseY}" y2="${sizeBaseY}" style="stroke: #cbd5e1; stroke-dasharray: 2 2;"/>`;
+      svg += `<text x="${width - margin.right + 8}" y="${sizeBaseY + 4}" style="font-size: 10.5px; font-family: monospace; fill: #64748b;">0% (Flat)</text>`;
+      svg += `<text x="${width - margin.right + 8}" y="${ySize(maxAbsSize) + 4}" style="font-size: 10.5px; font-family: monospace; fill: #0284c7;">+${maxAbsSize.toFixed(0)}% (Short ADR)</text>`;
+      if (sizes.some(s => s < -5)) {
+        svg += `<text x="${width - margin.right + 8}" y="${ySize(-maxAbsSize) + 4}" style="font-size: 10.5px; font-family: monospace; fill: #8b5cf6;">-${maxAbsSize.toFixed(0)}% (Long ADR)</text>`;
+      }
+
+      // 1. Position Size Fill & Line (Lower section)
+      let sizeAreaD = `M ${x(0)} ${sizeBaseY}`;
+      linePoints.forEach((row) => {
+        const rowIdx = visibleRows.findIndex(r => r.time === row.time);
+        if (rowIdx >= 0) {
+          const ptX = x(rowIdx);
+          const ptY = ySize((row.targetSize || 0) * 100);
+          sizeAreaD += ` L ${ptX} ${ptY}`;
+        }
+      });
+      sizeAreaD += ` L ${x(visibleRows.length - 1)} ${sizeBaseY} Z`;
+      svg += `<path d="${sizeAreaD}" fill="url(#sizeGradShort)"/>`;
+      svg += `<path d="${pathForPoints(linePoints, (row) => (row.targetSize || 0) * 100, x, ySize)}" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-dasharray="3 2"/>`;
+
+      // 2. Acc PnL Area Fill & Line (Upper section)
+      const zeroY = yPnl(0);
+      let pnlAreaD = `M ${x(0)} ${zeroY}`;
+      linePoints.forEach((row) => {
+        const rowIdx = visibleRows.findIndex(r => r.time === row.time);
+        if (rowIdx >= 0) {
+          const ptX = x(rowIdx);
+          const ptY = yPnl(row.equity - 100);
+          pnlAreaD += ` L ${ptX} ${ptY}`;
+        }
+      });
+      pnlAreaD += ` L ${x(visibleRows.length - 1)} ${zeroY} Z`;
+      svg += `<path d="${pnlAreaD}" fill="url(#pnlGradGreen)"/>`;
+      svg += `<path d="${pathForPoints(linePoints, (row) => row.equity - 100, x, yPnl)}" fill="none" stroke="${pnlColor}" stroke-width="2.5" stroke-linecap="round"/>`;
+
+      // Latest Acc PnL Badge on the right end of the curve
+      const lastX = x(visibleRows.length - 1);
+      const lastPnlY = yPnl(latestPnl);
+      svg += `<circle cx="${lastX}" cy="${lastPnlY}" r="4.5" fill="${pnlColor}" stroke="#fff" stroke-width="2"/>`;
+      svg += `<rect x="${lastX - 68}" y="${lastPnlY - 22}" width="65" height="18" rx="4" fill="${pnlColor}"/>`;
+      svg += `<text x="${lastX - 35}" y="${lastPnlY - 10}" text-anchor="middle" fill="#fff" font-size="10.5" font-weight="800" font-family="monospace">${latestPnl >= 0 ? '+' : ''}${latestPnl.toFixed(2)}%</text>`;
+
+      svg += `</g>`;
+
+      // Axis Head Titles
+      svg += `<text x="${margin.left}" y="18" style="font-size: 11.5px; font-weight: 800; fill: ${pnlColor}; font-family: monospace;">▲ Acc PnL: ${latestPnl >= 0 ? '+' : ''}${latestPnl.toFixed(2)}% (Net)</text>`;
+      svg += `<text x="${width - margin.right}" y="${margin.top + pnlPlotHeight + 20}" text-anchor="end" style="font-size: 11px; font-weight: 700; fill: #0284c7;">▼ Position Size: ${latestSize >= 0 ? '+' : ''}${latestSize.toFixed(0)}% (${latestSize > 0 ? 'ADR Short' : latestSize < 0 ? 'ADR Long' : 'Flat'})</text>`;
+
+      svg += `</svg>`;
       $("allocationChart").innerHTML = svg;
     }
     let cachedAdr = [];
@@ -3512,8 +3611,11 @@
         btnNewsSemis: "🤖 Nvidia / Semis",
         btnNewsMacro: "🌐 Macro / FX",
         btnNewsHide: "✕ Hide",
-        secContinuousAlloc: "Continuous Allocation",
-        subContinuousAlloc: "Every candle: scale long SKHYNIXUSDT / short SKHYUSDT",
+        secContinuousAlloc: "Cumulative Strategy PnL (%) & Position Sizing",
+        subContinuousAlloc: "Real-time Acc PnL curve with dynamic leverage allocation (Long SKHYNIX / Short SKHY)",
+        legPnl: "Acc PnL (%)",
+        legAlloc: "Position Size (%)",
+        legBaseline: "0% Baseline",
         secQuantArchitecture: "Quantitative Model Architecture & Mathematical Foundations",
         subQuantArchitecture: "How the 6 predictive wave engines, volatility targeting, and institutional execution algorithms operate causally",
         secFaq: "Frequently Asked Questions & Quantitative Verification (FAQ)",
@@ -3604,8 +3706,11 @@
         btnNewsSemis: "🤖 엔비디아 / 반도체",
         btnNewsMacro: "🌐 거시경제 / 환율",
         btnNewsHide: "✕ 숨기기",
-        secContinuousAlloc: "실시간 포지션 배분 현황",
-        subContinuousAlloc: "매 봉마다 SKHYNIXUSDT 롱 / SKHYUSDT 숏 비중 동적 조절",
+        secContinuousAlloc: "누적 수익률 (Acc PnL %) 및 포지션 비중",
+        subContinuousAlloc: "캔들별 실시간 누적 차익거래 수익률(%) 및 동적 포지션 비중(레버리지) 곡선",
+        legPnl: "누적 수익률 (Acc PnL %)",
+        legAlloc: "포지션 비중 (%)",
+        legBaseline: "0% 기준선",
         secQuantArchitecture: "계량수학 모델 아키텍처 및 통계역학 원리",
         subQuantArchitecture: "6개 파동 예측 엔진, 변동성 타겟팅 및 르네상스 스타일 퀀트 알고리즘 원리",
         secFaq: "자주 묻는 질문 및 계량 검증 (FAQ)",
@@ -4012,6 +4117,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       // Sections
       if ($("secContinuousAlloc")) $("secContinuousAlloc").textContent = dict.secContinuousAlloc;
       if ($("subContinuousAlloc")) $("subContinuousAlloc").textContent = dict.subContinuousAlloc;
+      if ($("legPnl")) $("legPnl").innerHTML = `<span style="width: 14px; height: 3px; background: #10b981; border-radius: 2px;"></span> ${dict.legPnl || 'Acc PnL (%)'}`;
+      if ($("legAlloc")) $("legAlloc").innerHTML = `<span style="width: 14px; height: 2px; background: #0284c7; border-top: 2px dashed #0284c7;"></span> ${dict.legAlloc || 'Position Size (%)'}`;
+      if ($("legBaseline")) $("legBaseline").innerHTML = `<span style="width: 14px; height: 1px; background: #94a3b8; border-top: 1px dashed #94a3b8;"></span> ${dict.legBaseline || '0% Baseline'}`;
       if ($("secNewsCatalyst")) $("secNewsCatalyst").textContent = dict.secNewsCatalyst;
       if ($("subNewsCatalyst")) $("subNewsCatalyst").textContent = dict.subNewsCatalyst;
       if ($("secHist")) $("secHist").textContent = dict.secHist;
