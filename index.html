@@ -2858,6 +2858,7 @@
       const startIndex = Math.max(0, Math.floor(startFloat) - 1);
       const endIndex = Math.min(maxEnd, Math.ceil(endFloat) + 1);
       const visibleRows = rows.slice(startIndex, endIndex + 1).map((row, index) => ({ ...row, __index: startIndex + index }));
+      const isKo = window.currentLang === "ko";
       
       const width = 1180, height = 320;
       const margin = { top: 28, right: 90, bottom: 65, left: 68 };
@@ -3052,10 +3053,9 @@
       svg += `</g>`;
 
       // Unified Non-Overlapping Top Header Row
-      const isKoLang = window.currentLang === "ko";
-      svg += `<text x="${margin.left}" y="18" style="font-size: 12px; font-weight: 800; fill: ${pnlColor}; font-family: monospace;">▲ ${isKoLang ? '누적 손익' : 'Acc PnL'}: ${latestPnl >= 0 ? '+' : ''}${latestPnl.toFixed(2)}% (Net)</text>`;
-      svg += `<text x="${width / 2}" y="18" text-anchor="middle" style="font-size: 11px; font-weight: 700; fill: #475569;">🛡️ ${isKoLang ? '시작 원금 기준선' : 'Initial Capital Line'}: 100 (0.0%)</text>`;
-      svg += `<text x="${width - margin.right}" y="18" text-anchor="end" style="font-size: 11px; font-weight: 700; fill: #0284c7;">▼ ${isKoLang ? '포지션 비중' : 'Position Size'}: ${latestSize >= 0 ? '+' : ''}${latestSize.toFixed(0)}% (${latestSize > 0 ? (isKoLang ? 'ADR 숏' : 'ADR Short') : latestSize < 0 ? (isKoLang ? 'ADR 롱' : 'ADR Long') : (isKoLang ? '무포지션' : 'Flat')})</text>`;
+      svg += `<text x="${margin.left}" y="18" style="font-size: 12px; font-weight: 800; fill: ${pnlColor}; font-family: monospace;">▲ ${isKo ? '누적 손익' : 'Acc PnL'}: ${latestPnl >= 0 ? '+' : ''}${latestPnl.toFixed(2)}% (Net)</text>`;
+      svg += `<text x="${width / 2}" y="18" text-anchor="middle" style="font-size: 11px; font-weight: 700; fill: #475569;">🛡️ ${isKo ? '시작 원금 기준선' : 'Initial Capital Line'}: 100 (0.0%)</text>`;
+      svg += `<text x="${width - margin.right}" y="18" text-anchor="end" style="font-size: 11px; font-weight: 700; fill: #0284c7;">▼ ${isKo ? '포지션 비중' : 'Position Size'}: ${latestSize >= 0 ? '+' : ''}${latestSize.toFixed(0)}% (${latestSize > 0 ? (isKo ? 'ADR 숏' : 'ADR Short') : latestSize < 0 ? (isKo ? 'ADR 롱' : 'ADR Long') : (isKo ? '무포지션' : 'Flat')})</text>`;
 
       svg += `</svg>`;
       $("allocationChart").innerHTML = svg;
