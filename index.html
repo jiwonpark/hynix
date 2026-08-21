@@ -2770,16 +2770,20 @@
 
       const origBtnText = button.textContent;
       let best = null;
-      const chunkSize = 250;
+      let lastRenderedScore = -Infinity;
+      const chunkSize = 200;
       for (let index = 0; index < candidates.length; index += chunkSize) {
         const chunk = candidates.slice(index, index + chunkSize);
         let sampleParams = chunk[0];
+        let foundBetterInChunk = false;
+
         chunk.forEach((params) => {
           const scored = scoreCandidate(params);
           if (!scored) return;
           if (!best || scored.score > best.score) {
             best = { ...params, ...scored };
             sampleParams = params;
+            foundBetterInChunk = true;
           }
         });
 
@@ -2795,10 +2799,43 @@
           $("minProfitPct").value = sampleParams.minProfitPct;
         }
 
+        // Live stats update
+        if (best) {
+          $("bestTest").textContent = `${fmt(best.score)}%`;
+          $("accPnl").textContent = `${fmt(best.netProfit)}%`;
+          $("maxDrawdown").textContent = `${fmt(best.maxDd)}%`;
+          $("feesDrag").textContent = `${fmt(best.fees)}%`;
+        }
+
+        // Live chart & allocation update whenever a significantly better strategy is discovered
+        if (foundBetterInChunk && best && best.score > lastRenderedScore + 0.3) {
+          lastRenderedScore = best.score;
+          const liveRows = buildRows(
+            cachedAdr,
+            cachedKorean,
+            best.meanBars,
+            best.minEdgePct,
+            best.fullEdgePct,
+            best.maxSizePct,
+            best.scaleCurve,
+            best.tradeSpeedPct,
+            best.exitSpeedPct,
+            best.minProfitPct,
+            fee,
+            funding,
+            strategyMode,
+            tradeDirection,
+            predictionEngine
+          );
+          cachedRows = liveRows;
+          draw(liveRows, cachedInterval);
+          drawAllocation(liveRows, cachedInterval);
+        }
+
         const pct = Math.min(100, Math.round(((index + chunk.length) / candidates.length) * 100));
-        button.textContent = `⏳ ${pct}% (Best: ${best ? fmt(best.score) + '%' : '--'})`;
-        $("status").textContent = `Optimizing: ${Math.min(candidates.length, index + chunk.length)} / ${candidates.length} candidates (${pct}%)`;
-        await new Promise((resolve) => setTimeout(resolve, 8));
+        button.textContent = `⚡ ${pct}% (PnL: ${best ? fmt(best.netProfit) + '%' : '--'})`;
+        $("status").textContent = `Optimizing: ${Math.min(candidates.length, index + chunk.length)} / ${candidates.length} (${pct}%) ⟹ Current Best PnL: ${best ? fmt(best.netProfit) + '%' : '--'}, Max DD: ${best ? fmt(best.maxDd) + '%' : '--'}`;
+        await new Promise((resolve) => setTimeout(resolve, 10));
       }
 
       optInputs.forEach((input) => {
