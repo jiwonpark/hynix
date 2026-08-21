@@ -859,10 +859,15 @@
             <h2 id="secContinuousAlloc">Cumulative Strategy PnL (%) & Position Sizing</h2>
             <span id="subContinuousAlloc">Real-time Acc PnL curve with dynamic leverage allocation (Long SKHYNIX / Short SKHY)</span>
           </div>
-          <div class="legend" style="margin: 0; font-size: 11px;">
-            <span id="legPnl" style="color: #10b981; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 3px; background: #10b981; border-radius: 2px;"></span> Acc PnL (%)</span>
-            <span id="legAlloc" style="color: #0284c7; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 2px; background: #0284c7; border-top: 2px dashed #0284c7;"></span> Position Size (%)</span>
-            <span id="legBaseline" style="color: #94a3b8; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 1px; background: #94a3b8; border-top: 1px dashed #94a3b8;"></span> 0% Baseline</span>
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <div id="simulationPeriodBadge" style="background: #f1f5f9; color: #1e293b; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 11.5px; border: 1px solid #cbd5e1; font-family: monospace;">
+              📅 기간: -- ~ -- (총 --일 / --개 봉)
+            </div>
+            <div class="legend" style="margin: 0; font-size: 11px;">
+              <span id="legPnl" style="color: #10b981; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 3px; background: #10b981; border-radius: 2px;"></span> Acc PnL (%)</span>
+              <span id="legAlloc" style="color: #0284c7; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 2px; background: #0284c7; border-top: 2px dashed #0284c7;"></span> Position Size (%)</span>
+              <span id="legBaseline" style="color: #94a3b8; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;"><span style="width: 14px; height: 1px; background: #94a3b8; border-top: 1px dashed #94a3b8;"></span> 0% Baseline</span>
+            </div>
           </div>
         </div>
         <div id="allocationChart"></div>
@@ -2842,28 +2847,51 @@
       $("netEdge").textContent = latest ? `${fmt(latest.netSignalEdgePct)}%` : "--";
       $("forecastConfidence").textContent = latest ? `${fmt(latest.forecastConfidence * 100, 0)}%` : "--";
       $("hedgeBeta").textContent = latest ? fmt(latest.hedgeRatio, 2) : "--";
-      $("bars").textContent = rows.length;
+
+      if (rows.length) {
+        const startTime = rows[0].time;
+        const endTime = rows.at(-1).time;
+        const totalDays = ((endTime - startTime) / (1000 * 86400)).toFixed(1);
+        $("bars").textContent = `${rows.length} (${totalDays}d)`;
+      } else {
+        $("bars").textContent = rows.length;
+      }
     }
+
+    function formatFullDate(ts) {
+      const d = new Date(ts);
+      const Y = d.getFullYear();
+      const M = String(d.getMonth() + 1).padStart(2, '0');
+      const D = String(d.getDate()).padStart(2, '0');
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      return `${Y}.${M}.${D} ${h}:${m}`;
+    }
+
     function drawAllocation(rows, interval) {
       if (!rows.length) return;
-      const visibleBars = Math.max(20, Math.min(window.visibleBars || rows.length, rows.length));
-      const maxEnd = rows.length - 1;
-      const rawEnd = window.viewEndFloat === null || window.viewEndFloat === undefined
-        ? window.viewEndIndex
-        : window.viewEndFloat;
-      const endFloat = rawEnd === null || rawEnd === undefined
-        ? maxEnd
-        : Math.max(visibleBars - 1, Math.min(rawEnd, maxEnd));
-      const startFloat = endFloat - visibleBars + 1;
-      const startIndex = Math.max(0, Math.floor(startFloat) - 1);
-      const endIndex = Math.min(maxEnd, Math.ceil(endFloat) + 1);
-      const visibleRows = rows.slice(startIndex, endIndex + 1).map((row, index) => ({ ...row, __index: startIndex + index }));
       const isKo = window.currentLang === "ko";
+      
+      // Always render the full continuous simulation history from Bar 0 to Latest
+      const visibleRows = rows.map((row, index) => ({ ...row, __index: index }));
       
       const width = 1180, height = 320;
       const margin = { top: 28, right: 90, bottom: 65, left: 68 };
       const plotWidth = width - margin.left - margin.right;
       const plotHeight = height - margin.top - margin.bottom;
+
+      // Calculate exact timeline dates and duration
+      const startTime = rows[0].time;
+      const endTime = rows.at(-1).time;
+      const totalDays = ((endTime - startTime) / (1000 * 86400)).toFixed(1);
+      const startStr = formatFullDate(startTime);
+      const endStr = formatFullDate(endTime);
+
+      // Update simulation period badge in the section header
+      const periodBadge = $("simulationPeriodBadge");
+      if (periodBadge) {
+        periodBadge.innerHTML = `📅 ${isKo ? '시뮬레이션 기간' : 'Simulation Period'}: <strong style="color: #0284c7;">${startStr} ~ ${endStr}</strong> (${isKo ? `총 ${totalDays}일 / ${rows.length}개 봉` : `Total ${totalDays}d / ${rows.length} bars`})`;
+      }
 
       // PnL % values (equity - 100)
       const pnls = visibleRows.map((row) => row.equity - 100);
@@ -2877,7 +2905,7 @@
       const sizes = visibleRows.map((row) => (row.targetSize || 0) * 100);
       const maxAbsSize = Math.max(100, ...sizes.map((s) => Math.abs(s)));
 
-      const x = (index) => margin.left + plotWidth * (visibleRows[index].__index - startFloat) / Math.max(1, visibleBars - 1);
+      const x = (index) => margin.left + plotWidth * (index / Math.max(1, visibleRows.length - 1));
       
       // Upper 62% for PnL curve
       const pnlPlotHeight = plotHeight * 0.60;
@@ -2888,7 +2916,7 @@
       const sizePlotHeight = plotHeight * 0.15;
       const ySize = (sizeVal) => sizeBaseY - (sizeVal / maxAbsSize) * sizePlotHeight;
 
-      const labelEvery = Math.max(1, Math.ceil(visibleRows.length / 12));
+      const labelEvery = Math.max(1, Math.ceil(visibleRows.length / 10));
       const gridEvery = Math.max(1, Math.ceil(visibleRows.length / 80));
       const linePoints = sampledPoints(visibleRows, 650);
 
@@ -2917,7 +2945,6 @@
 
       svg += `<g id="dynamicAllocation" clip-path="url(#allocationClip)">`;
 
-      // Vertical time grid lines
       // Vertical time grid lines
       visibleRows.forEach((row, index) => {
         if (index % gridEvery === 0) {
@@ -2975,11 +3002,14 @@
         }
       });
       pnlAreaD += ` L ${x(visibleRows.length - 1)} ${zeroY} Z`;
-      svg += `<path d="${pnlAreaD}" fill="url(#pnlGradGreen)"/>`;
+      const pnlGradFill = latestPnl >= 0 ? "url(#pnlGradGreen)" : "url(#pnlGradRed)";
+      svg += `<path d="${pnlAreaD}" fill="${pnlGradFill}"/>`;
       svg += `<path d="${pathForPoints(linePoints, (row) => row.equity - 100, x, yPnl)}" fill="none" stroke="${pnlColor}" stroke-width="2.5" stroke-linecap="round"/>`;
 
-      // 2B. Start Marker Circle at initial origin (0.0% PnL / Initial Capital)
-      svg += `<circle cx="${x(0)}" cy="${zeroY}" r="4.5" fill="#475569" stroke="#ffffff" stroke-width="2"/>`;
+      // 2B. Start Marker Pin at initial origin (Candle 0: 0.0% PnL / Initial Capital $100)
+      svg += `<circle cx="${x(0)}" cy="${zeroY}" r="5" fill="#0284c7" stroke="#ffffff" stroke-width="2"/>`;
+      svg += `<rect x="${margin.left - 4}" y="${Math.max(margin.top + 2, zeroY - 22)}" width="78" height="18" rx="3" fill="#0369a1"/>`;
+      svg += `<text x="${margin.left + 35}" y="${Math.max(margin.top + 2, zeroY - 22) + 12.5}" text-anchor="middle" fill="#fff" font-size="9.5" font-weight="800" font-family="monospace">📍 Start (0%)</text>`;
 
       // 3. Worst Peak Drawdown Moment & Worst Principal Loss Moment Callouts (Collision-Free)
       let worstDdIdx = -1;
@@ -3054,7 +3084,7 @@
 
       // Unified Non-Overlapping Top Header Row
       svg += `<text x="${margin.left}" y="18" style="font-size: 12px; font-weight: 800; fill: ${pnlColor}; font-family: monospace;">▲ ${isKo ? '누적 손익' : 'Acc PnL'}: ${latestPnl >= 0 ? '+' : ''}${latestPnl.toFixed(2)}% (Net)</text>`;
-      svg += `<text x="${width / 2}" y="18" text-anchor="middle" style="font-size: 11px; font-weight: 700; fill: #475569;">🛡️ ${isKo ? '시작 원금 기준선' : 'Initial Capital Line'}: 100 (0.0%)</text>`;
+      svg += `<text x="${width / 2}" y="18" text-anchor="middle" style="font-size: 11px; font-weight: 700; fill: #475569;">📅 ${isKo ? '시뮬레이션 전체 기간' : 'Full Period'}: ${startStr} ~ ${endStr} (${totalDays}일)</text>`;
       svg += `<text x="${width - margin.right}" y="18" text-anchor="end" style="font-size: 11px; font-weight: 700; fill: #0284c7;">▼ ${isKo ? '포지션 비중' : 'Position Size'}: ${latestSize >= 0 ? '+' : ''}${latestSize.toFixed(0)}% (${latestSize > 0 ? (isKo ? 'ADR 숏' : 'ADR Short') : latestSize < 0 ? (isKo ? 'ADR 롱' : 'ADR Long') : (isKo ? '무포지션' : 'Flat')})</text>`;
 
       svg += `</svg>`;
