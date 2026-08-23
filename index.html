@@ -673,9 +673,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.2.4</span>
+            <span id="deployVersion">v1.2.5</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-08-23 18:45 KST</span>
+            <span id="deployTime">Deployed: 2026-08-23 19:13 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -984,7 +984,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.2.4</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 18:45 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.2.5</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 19:13 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -2013,7 +2013,7 @@
             borderVisible: false,
             autoScale: true,
             minimumWidth: 70,
-            scaleMargins: { top: 0.74, bottom: 0.08 },
+            scaleMargins: { top: 0.74, bottom: 0.10 },
             mode: LightweightCharts.PriceScaleMode.Normal
           },
           rightPriceScale: {
@@ -2747,11 +2747,17 @@
           // 3. Bottom Volume-Style Position Histogram Candles
           // Long ADR -> Rises ABOVE zero baseline (Green)
           // Short ADR -> Descends BELOW zero baseline (Red)
-          const barH = Math.min(maxBarPx, Math.max(2, Math.round(maxBarPx * Math.min(1, absSize))));
-          const barY = isLongAdr ? (zeroY - barH) : zeroY;
+          const requestedBarH = Math.min(maxBarPx, Math.max(2, Math.round(maxBarPx * Math.min(1, absSize))));
+          const availableBarH = isLongAdr
+            ? Math.max(0, zeroY - plotTop - 2)
+            : Math.max(0, plotBottom - zeroY - 2);
+          const barH = Math.min(requestedBarH, availableBarH);
+          const barY = isLongAdr ? zeroY - barH : zeroY;
 
-          ctx.fillStyle = isLongAdr ? "rgba(22, 163, 74, 0.85)" : "rgba(220, 38, 38, 0.85)";
-          ctx.fillRect(x, barY, rectWidth, barH);
+          if (barH > 0) {
+            ctx.fillStyle = isLongAdr ? "rgba(22, 163, 74, 0.85)" : "rgba(220, 38, 38, 0.85)";
+            ctx.fillRect(x, barY, rectWidth, barH);
+          }
           ctx.restore();
         });
       }
@@ -4297,8 +4303,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-08-23 18:45 KST",
-        footerDeploy: "Deployed: <strong>2026-08-23 18:45 KST</strong> (AWS EC2)"
+        deployTime: "Deployed: 2026-08-23 19:13 KST",
+        footerDeploy: "Deployed: <strong>2026-08-23 19:13 KST</strong> (AWS EC2)"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
@@ -4394,8 +4400,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-08-23 18:45 KST",
-        footerDeploy: "배포 일시: <strong>2026-08-23 18:45 KST</strong> (AWS EC2)"
+        deployTime: "배포 일시: 2026-08-23 19:13 KST",
+        footerDeploy: "배포 일시: <strong>2026-08-23 19:13 KST</strong> (AWS EC2)"
       }
     };
 
