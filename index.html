@@ -687,9 +687,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.2.9</span>
+            <span id="deployVersion">v1.3.0</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-08-23 19:40 KST</span>
+            <span id="deployTime">Deployed: 2026-08-23 21:56 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -1001,7 +1001,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.2.9</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 19:40 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.3.0</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 21:56 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -1144,6 +1144,33 @@
       return Math.sqrt(variance);
     };
     const fmt = (value, digits = 2) => Number.isFinite(value) ? value.toFixed(digits) : "--";
+    const ASSET_UI_COPY = {
+      skhynix_arb: {
+        en: ["SKHY ADR perp vs Korean-share perp", "Semiconductor & SK Hynix News Catalyst Impact Feed", "Real-time correlation between global headlines, HBM chip announcements, Nvidia capex, and parity spread dislocation"],
+        ko: ["SK하이닉스 미국 ADR 무기한물 vs 국내주식 무기한물", "반도체 및 SK하이닉스 뉴스 촉매 실시간 영향 피드", "글로벌 뉴스, HBM 발표, 엔비디아 CapEx와 패리티 스프레드 괴리율 간의 상관관계"]
+      },
+      btc_directional: {
+        en: ["Bitcoin BTC/USDT Predictive Strategy", "Bitcoin & Macro Market Catalyst Feed", "Market events mapped against BTC price, momentum, and forecast dislocation"],
+        ko: ["비트코인 BTC/USDT 예측 전략", "비트코인 및 거시시장 촉매 피드", "시장 이벤트와 BTC 가격, 모멘텀 및 예측 괴리의 실시간 매핑"]
+      },
+      eth_btc_ratio: {
+        en: ["ETH/BTC Relative-Value Strategy", "Crypto Relative-Value Catalyst Feed", "Market events mapped against ETH/BTC ratio shifts and model dislocation"],
+        ko: ["ETH/BTC 상대가치 전략", "암호화폐 상대가치 촉매 피드", "시장 이벤트와 ETH/BTC 비율 변화 및 모델 괴리의 실시간 매핑"]
+      },
+      sol_directional: {
+        en: ["Solana SOL/USDT Predictive Strategy", "Solana & Crypto Market Catalyst Feed", "Market events mapped against SOL price, momentum, and forecast dislocation"],
+        ko: ["솔라나 SOL/USDT 예측 전략", "솔라나 및 암호화폐 시장 촉매 피드", "시장 이벤트와 SOL 가격, 모멘텀 및 예측 괴리의 실시간 매핑"]
+      }
+    };
+    function updateAssetContext() {
+      const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+      const lang = window.currentLang === "ko" ? "ko" : "en";
+      const copy = (ASSET_UI_COPY[assetKey] || ASSET_UI_COPY.skhynix_arb)[lang];
+      if ($("topTitle")) $("topTitle").textContent = copy[0];
+      if ($("secNewsCatalyst")) $("secNewsCatalyst").textContent = copy[1];
+      if ($("subNewsCatalyst")) $("subNewsCatalyst").textContent = copy[2];
+      document.title = `${copy[0]} | Quant Monitor`;
+    }
     function updateStrategyDropdown() {
       const select = $("strategyMode");
       if (!select) return;
@@ -3381,6 +3408,7 @@
     let reconnectTimer = 0;
     let redrawTimer = 0;
     let socketVersion = 0;
+    let refreshVersion = 0;
 
     function upsertKline(rows, item) {
       const currentViewEnd = window.viewEndFloat === null || window.viewEndFloat === undefined ? window.viewEndIndex : window.viewEndFloat;
@@ -3582,6 +3610,7 @@
     }
 
     async function refresh() {
+      const refreshId = ++refreshVersion;
       const interval = $("interval").value;
       const meanBars = Number($("meanBars").value);
       const minEdgePct = Number($("minEdgePct").value);
@@ -3601,6 +3630,17 @@
       const assetKey = $("assetStrategy")?.value || "skhynix_arb";
       const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
 
+      updateAssetContext();
+      const assetSelect = $("assetStrategy");
+      if (assetSelect) assetSelect.setAttribute("aria-busy", "true");
+      socketVersion += 1;
+      window.clearTimeout(reconnectTimer);
+      window.clearTimeout(redrawTimer);
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+        socket = null;
+      }
       $("status").textContent = `Loading Binance Futures data for ${assetConfig.shortName}...`;
       const isKo = window.currentLang === "ko";
       $("position").textContent = isKo ? "동기화 중..." : "Connecting...";
@@ -3618,6 +3658,7 @@
           adr = await fetchKlines(assetConfig.symbolA, interval);
           korean = adr;
         }
+        if (refreshId !== refreshVersion) return;
         cachedAdr = adr;
         cachedKorean = korean;
         const rows = buildRows(cachedAdr, cachedKorean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode, tradeDirection, predictionEngine, slippageBps);
@@ -3636,12 +3677,15 @@
         $("status").textContent = `Loaded ${rows.length} bars for ${assetConfig.shortName}; opening WebSocket...`;
         connectWebSocket(interval);
       } catch (error) {
+        if (refreshId !== refreshVersion) return;
         console.error("Dashboard refresh failed", error);
         $("status").textContent = error.message;
         $("position").textContent = isKo ? "연결 재시도" : "Retry Connect";
         $("position").className = "pill";
         $("position").style.cursor = "pointer";
         $("position").onclick = () => refresh();
+      } finally {
+        if (refreshId === refreshVersion && assetSelect) assetSelect.removeAttribute("aria-busy");
       }
     }
     let viewRedrawFrame = 0;
@@ -4436,8 +4480,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-08-23 19:40 KST",
-        footerDeploy: "Deployed: <strong>2026-08-23 19:40 KST</strong> (AWS EC2)"
+        deployTime: "Deployed: 2026-08-23 21:56 KST",
+        footerDeploy: "Deployed: <strong>2026-08-23 21:56 KST</strong> (AWS EC2)"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
@@ -4533,8 +4577,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-08-23 19:40 KST",
-        footerDeploy: "배포 일시: <strong>2026-08-23 19:40 KST</strong> (AWS EC2)"
+        deployTime: "배포 일시: 2026-08-23 21:56 KST",
+        footerDeploy: "배포 일시: <strong>2026-08-23 21:56 KST</strong> (AWS EC2)"
       }
     };
 
@@ -4932,6 +4976,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("subFaq")) $("subFaq").textContent = dict.subFaq;
       if ($("tagZeroBias")) $("tagZeroBias").textContent = dict.tagZeroBias;
       if ($("tagFaqVerified")) $("tagFaqVerified").textContent = dict.tagFaqVerified;
+      updateAssetContext();
 
       // Group Titles & Badges
       if ($("grpEnvTitle")) $("grpEnvTitle").textContent = dict.grpEnvTitle;
@@ -5230,6 +5275,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("assetStrategy").addEventListener("change", () => {
       const assetKey = $("assetStrategy")?.value || "skhynix_arb";
       const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
+      updateAssetContext();
       updateStrategyDropdown();
       if (assetConfig.defaults) {
         Object.entries(assetConfig.defaults).forEach(([k, v]) => {
