@@ -381,8 +381,22 @@
     #chartSvg {
       position: relative;
       z-index: 1;
-      height: 600px;
-      min-height: 400px;
+      height: 470px;
+      min-height: 360px;
+    }
+    .positionPaneShell {
+      position: relative;
+      height: 160px;
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+    }
+    #positionPane {
+      height: 160px;
+      min-height: 140px;
+    }
+    @media (max-width: 720px) {
+      #chartSvg { height: 420px; }
+      .positionPaneShell, #positionPane { height: 145px; min-height: 130px; }
     }
     .exposureOverlay {
       position: absolute;
@@ -673,9 +687,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.2.5</span>
+            <span id="deployVersion">v1.2.6</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-08-23 19:13 KST</span>
+            <span id="deployTime">Deployed: 2026-08-23 19:20 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -899,6 +913,9 @@
           <button id="modeMa" type="button">MA</button>
         </div>
         <div id="chartSvg"></div>
+        <div class="positionPaneShell">
+          <div id="positionPane"></div>
+        </div>
         <div id="newsTooltip" class="newsTooltip"></div>
       </div>
     </section>
@@ -984,7 +1001,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.2.5</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 19:13 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.2.6</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 19:20 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -2021,9 +2038,10 @@
             borderVisible: false,
             autoScale: true,
             minimumWidth: 88,
-            scaleMargins: { top: 0.05, bottom: 0.30 }
+            scaleMargins: { top: 0.08, bottom: 0.08 }
           },
           timeScale: {
+            visible: false,
             borderVisible: false,
             rightOffset: 0,
             barSpacing: 8,
@@ -2074,8 +2092,57 @@
             lineStyle: LightweightCharts.LineStyle.LargeDashed,
             priceLineVisible: false,
             priceFormat: lineFormat
-          }),
-          accPnl: window.spreadChart.addBaselineSeries({
+          })
+        };
+        const positionHost = $("positionPane");
+        window.positionChart = LightweightCharts.createChart(positionHost, {
+          height: Math.max(140, positionHost.clientHeight || 160),
+          layout: { background: { color: background }, textColor: foreground },
+          localization: { locale: "en-US" },
+          grid: {
+            vertLines: { color: grid },
+            horzLines: { color: "rgba(203, 213, 225, 0.55)" }
+          },
+          leftPriceScale: {
+            visible: true,
+            borderVisible: false,
+            minimumWidth: 70,
+            scaleMargins: { top: 0.12, bottom: 0.12 }
+          },
+          rightPriceScale: {
+            visible: true,
+            borderVisible: false,
+            minimumWidth: 88,
+            scaleMargins: { top: 0.12, bottom: 0.12 }
+          },
+          timeScale: {
+            visible: true,
+            borderVisible: false,
+            rightOffset: 0,
+            barSpacing: 8,
+            minBarSpacing: 0.5,
+            fixLeftEdge: true,
+            fixRightEdge: true,
+            lockVisibleTimeRangeOnResize: true,
+            shiftVisibleRangeOnNewBar: false,
+            timeVisible: interval !== "1d",
+            secondsVisible: false
+          },
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: false
+          },
+          handleScale: {
+            axisPressedMouseMove: true,
+            mouseWheel: true,
+            pinch: true
+          },
+          crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+        });
+        window.positionSeries = {
+          pnl: window.positionChart.addBaselineSeries({
             priceScaleId: 'left',
             baseValue: { type: 'price', price: 0 },
             topLineColor: '#10b981',
@@ -2089,18 +2156,49 @@
             priceLineColor: '#64748b',
             priceLineStyle: LightweightCharts.LineStyle.Dotted,
             title: 'Acc PnL',
+            autoscaleInfoProvider: (baseImplementation) => {
+              const info = baseImplementation();
+              if (!info?.priceRange) return info;
+              const bound = Math.max(1, Math.abs(info.priceRange.minValue), Math.abs(info.priceRange.maxValue));
+              return { ...info, priceRange: { minValue: -bound, maxValue: bound } };
+            },
             priceFormat: {
               type: 'custom',
               formatter: (price) => `${Number(price) >= 0 ? '+' : ''}${Number(price).toFixed(2)}%`
             }
+          }),
+          amount: window.positionChart.addHistogramSeries({
+            priceScaleId: 'right',
+            base: 0,
+            priceLineVisible: false,
+            lastValueVisible: true,
+            title: 'Position',
+            autoscaleInfoProvider: () => ({ priceRange: { minValue: -100, maxValue: 100 } }),
+            priceFormat: {
+              type: 'custom',
+              formatter: (price) => `${Number(price).toFixed(0)}%`
+            }
           })
         };
+        window.positionSeries.pnl.createPriceLine({
+          price: 0,
+          color: '#94a3b8',
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dotted,
+          axisLabelVisible: false
+        });
         let saveRangeTimer = 0;
         let overlayScrollTimer = 0;
         let allocScrollTimer = 0;
 
         window.spreadChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          if (!range || !cachedRows.length) return;
+          if (!range) return;
+          if (!window.syncingChartRange && window.positionChart) {
+            window.syncingChartRange = true;
+            window.positionChart.timeScale().setVisibleLogicalRange(range);
+            window.syncingChartRange = false;
+          }
+          if (!cachedRows.length) return;
 
           window.spreadVisibleRange = range;
           const totalBars = cachedRows.length;
@@ -2139,16 +2237,26 @@
             prependOlderBars();
           }
         });
+        window.positionChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          if (!range || window.syncingChartRange || !window.spreadChart) return;
+          window.syncingChartRange = true;
+          window.spreadChart.timeScale().setVisibleLogicalRange(range);
+          window.syncingChartRange = false;
+        });
         // Track user interaction flags on chart element
         host.addEventListener("mousedown", () => { window.userInteracting = true; });
+        positionHost.addEventListener("mousedown", () => { window.userInteracting = true; });
         window.addEventListener("mouseup", () => { window.userInteracting = false; });
         host.addEventListener("touchstart", () => { window.userInteracting = true; }, { passive: true });
+        positionHost.addEventListener("touchstart", () => { window.userInteracting = true; }, { passive: true });
         window.addEventListener("touchend", () => { window.userInteracting = false; }, { passive: true });
-        host.addEventListener("wheel", () => {
+        const markWheelInteraction = () => {
           window.userInteracting = true;
           window.clearTimeout(window.wheelInteractingTimer);
           window.wheelInteractingTimer = window.setTimeout(() => { window.userInteracting = false; }, 300);
-        }, { passive: true });
+        };
+        host.addEventListener("wheel", markWheelInteraction, { passive: true });
+        positionHost.addEventListener("wheel", markWheelInteraction, { passive: true });
         window.spreadChart.subscribeCrosshairMove((param) => {
           const tooltip = $("newsTooltip");
           if (!param || !param.time) {
@@ -2224,8 +2332,15 @@
               window.spreadChart.applyOptions({ width: host.clientWidth, height: Math.max(360, host.clientHeight || 540) });
               requestExposureOverlayDraw();
             }
+            if (window.positionChart) {
+              window.positionChart.applyOptions({
+                width: positionHost.clientWidth,
+                height: Math.max(140, positionHost.clientHeight || 160)
+              });
+            }
           });
           window.spreadResizeObserver.observe(host);
+          window.spreadResizeObserver.observe(positionHost);
         }
       }
       window.spreadChart.applyOptions({
@@ -2235,6 +2350,14 @@
         rightPriceScale: { minimumWidth: 88 },
         timeScale: { timeVisible: interval !== "1d" }
       });
+      const positionHost = $("positionPane");
+      if (window.positionChart && positionHost) {
+        window.positionChart.applyOptions({
+          width: positionHost.clientWidth,
+          height: Math.max(140, positionHost.clientHeight || 160),
+          timeScale: { timeVisible: interval !== "1d" }
+        });
+      }
       const visibleRangeBeforeUpdate = window.spreadChart.timeScale().getVisibleLogicalRange();
       const wasAtRightEdge = !visibleRangeBeforeUpdate || visibleRangeBeforeUpdate.to >= rows.length - 4;
       const toPoint = (row, accessor) => ({ time: Math.floor(row.time / 1000), value: accessor(row) });
@@ -2468,13 +2591,25 @@
       }
       window.spreadSeries.avgEntry.setData(continuousAvgEntry);
       
-      // Populate Embedded Acc PnL (%) Series on Left Price Scale (Baseline with 0 Parity)
-      if (window.spreadSeries.accPnl) {
-        window.spreadSeries.accPnl.setData(
+      // Populate the synchronized lower indicator pane.
+      if (window.positionSeries?.pnl) {
+        window.positionSeries.pnl.setData(
           rows.map((row) => ({
             time: Math.floor(row.time / 1000),
             value: row.equity - 100
           }))
+        );
+      }
+      if (window.positionSeries?.amount) {
+        window.positionSeries.amount.setData(
+          rows.map((row) => {
+            const value = Math.max(-100, Math.min(100, row.targetSize * 100));
+            return {
+              time: Math.floor(row.time / 1000),
+              value,
+              color: value < 0 ? "rgba(22, 163, 74, 0.85)" : "rgba(220, 38, 38, 0.85)"
+            };
+          })
         );
       }
 
@@ -2695,26 +2830,10 @@
         }
       }
 
-      // 2. Position Size & Average Entry Price Exposure Overlay
+      // 2. Average Entry Price Exposure Overlay
       if (points.length) {
         const gaps = points.slice(1).map((point, index) => point.x - points[index].x).filter((gap) => gap > 0 && Number.isFinite(gap));
         const defaultGap = gaps.length ? gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : Math.max(1, window.spreadChart.timeScale().options?.().barSpacing || 8);
-        
-        // --- Volume-Style Allocation Sub-Pane (Bottom 70px with 0 Baseline) ---
-        const pnlZeroCoordinate = window.spreadSeries.accPnl?.priceToCoordinate(0);
-        const zeroY = Number.isFinite(pnlZeroCoordinate) ? pnlZeroCoordinate : plotBottom - 34;
-        const maxBarPx = 26; // max height for 100% position
-        const leftOverlayGutter = plotLeft + 8;
-
-        // 1. Draw 0 Baseline & Subtle Grid for Allocation Pane
-        ctx.strokeStyle = "rgba(148, 163, 184, 0.4)";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 3]);
-        ctx.beginPath();
-        ctx.moveTo(leftOverlayGutter, zeroY);
-        ctx.lineTo(Math.max(leftOverlayGutter, plotRight - 6), zeroY);
-        ctx.stroke();
-        ctx.setLineDash([]);
 
         points.forEach((point, index) => {
           const previous = points[index - 1];
@@ -2729,9 +2848,8 @@
           const entryY = Math.max(plotTop, Math.min(plotBottom, point.entryY));
           const absSize = Math.abs(point.targetSize);
           const isLongAdr = point.targetSize < 0; // Negative size in backtester = Long ADR / Short Korea
-          const isShortAdr = point.targetSize > 0; // Positive size in backtester = Short ADR / Long Korea
           
-          // 2. Main Chart: Sharp Average Entry Price Line (Green for Long, Red for Short)
+          // Main Chart: Sharp Average Entry Price Line (Green for Long, Red for Short)
           const capThickness = Math.max(2, Math.min(4, absSize * 3.5));
           ctx.strokeStyle = isLongAdr ? "#16a34a" : "#dc2626";
           ctx.lineWidth = capThickness;
@@ -2743,21 +2861,6 @@
           ctx.moveTo(x, entryY);
           ctx.lineTo(x + rectWidth, entryY);
           ctx.stroke();
-
-          // 3. Bottom Volume-Style Position Histogram Candles
-          // Long ADR -> Rises ABOVE zero baseline (Green)
-          // Short ADR -> Descends BELOW zero baseline (Red)
-          const requestedBarH = Math.min(maxBarPx, Math.max(2, Math.round(maxBarPx * Math.min(1, absSize))));
-          const availableBarH = isLongAdr
-            ? Math.max(0, zeroY - plotTop - 2)
-            : Math.max(0, plotBottom - zeroY - 2);
-          const barH = Math.min(requestedBarH, availableBarH);
-          const barY = isLongAdr ? zeroY - barH : zeroY;
-
-          if (barH > 0) {
-            ctx.fillStyle = isLongAdr ? "rgba(22, 163, 74, 0.85)" : "rgba(220, 38, 38, 0.85)";
-            ctx.fillRect(x, barY, rectWidth, barH);
-          }
           ctx.restore();
         });
       }
@@ -2778,7 +2881,8 @@
       if (window.spreadSeries.liveForwardWave) window.spreadSeries.liveForwardWave.setData([]);
       if (window.spreadSeries.projectedWave) window.spreadSeries.projectedWave.setData([]);
       if (window.spreadSeries.synthWave) window.spreadSeries.synthWave.setData([]);
-      if (window.spreadSeries.accPnl) window.spreadSeries.accPnl.setData([]);
+      if (window.positionSeries?.pnl) window.positionSeries.pnl.setData([]);
+      if (window.positionSeries?.amount) window.positionSeries.amount.setData([]);
 
       // 3. Clear exposure overlay
       window.exposureOverlayRows = [];
@@ -4303,8 +4407,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-08-23 19:13 KST",
-        footerDeploy: "Deployed: <strong>2026-08-23 19:13 KST</strong> (AWS EC2)"
+        deployTime: "Deployed: 2026-08-23 19:20 KST",
+        footerDeploy: "Deployed: <strong>2026-08-23 19:20 KST</strong> (AWS EC2)"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
@@ -4400,8 +4504,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-08-23 19:13 KST",
-        footerDeploy: "배포 일시: <strong>2026-08-23 19:13 KST</strong> (AWS EC2)"
+        deployTime: "배포 일시: 2026-08-23 19:20 KST",
+        footerDeploy: "배포 일시: <strong>2026-08-23 19:20 KST</strong> (AWS EC2)"
       }
     };
 
