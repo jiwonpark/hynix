@@ -106,6 +106,27 @@
       border-color: color-mix(in srgb, var(--purple) 35%, var(--line));
       color: var(--purple);
     }
+    .deployBadge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 11.5px;
+      color: #475569;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+    .deployDot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+    }
     .controls, .stats, .panel, .tablePanel {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -165,17 +186,34 @@
       max-width: 100%;
     }
     .controlGrid.environment {
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    }
+    .controlGrid.environment #lblAssetStrategy,
+    .controlGrid.environment #lblEngine,
+    .controlGrid.environment #lblDirection {
+      grid-column: span 2;
     }
     .controlGrid.optimizableGrid {
       grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     }
     @media (min-width: 1280px) {
       .controlGrid.environment {
-        grid-template-columns: repeat(6, 1fr);
+        grid-template-columns: minmax(230px, 1.65fr) minmax(78px, 0.62fr) minmax(150px, 1.05fr) minmax(260px, 1.85fr) minmax(220px, 1.55fr) repeat(3, minmax(100px, 0.85fr));
+      }
+      .controlGrid.environment #lblAssetStrategy,
+      .controlGrid.environment #lblEngine,
+      .controlGrid.environment #lblDirection {
+        grid-column: auto;
       }
       .controlGrid.optimizableGrid {
         grid-template-columns: repeat(8, 1fr);
+      }
+    }
+    @media (max-width: 720px) {
+      .controlGrid.environment #lblAssetStrategy,
+      .controlGrid.environment #lblEngine,
+      .controlGrid.environment #lblDirection {
+        grid-column: auto;
       }
     }
     label {
@@ -191,12 +229,12 @@
       min-width: 0;
     }
     .controlTitle {
-      height: 16px;
+      min-height: 16px;
       display: flex;
       align-items: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
       max-width: 100%;
     }
     .controlHint {
@@ -631,7 +669,15 @@
   <main>
     <section class="top">
       <div>
-        <p id="topEyebrow" class="eyebrow">Binance Futures relative value monitor</p>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
+          <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
+          <div class="deployBadge" title="Deployment Status">
+            <span class="deployDot"></span>
+            <span id="deployVersion">v1.2.3</span>
+            <span style="color: #cbd5e1;">&bull;</span>
+            <span id="deployTime">Deployed: 2026-08-23 16:37 KST</span>
+          </div>
+        </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
       </div>
       <div class="topRight">
@@ -935,6 +981,11 @@
         <!-- Dynamically rendered based on language -->
       </div>
     </section>
+
+    <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
+      <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
+      <span>Build: <strong id="footerVersion">v1.2.3</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 16:37 KST</strong> (AWS EC2)</span></span>
+    </footer>
 
   </main>
 
@@ -1823,12 +1874,13 @@
         }
 
         const desired = isTakeProfitActive ? 0 : row.desiredSize;
-        const sizeGap = desired - positionSize;
-        const isReducing = (positionSize > 0 && sizeGap < 0) || (positionSize < 0 && sizeGap > 0);
+        const previousSize = positionSize;
+        const sizeGap = desired - previousSize;
+        const isReducing = (previousSize > 0 && sizeGap < 0) || (previousSize < 0 && sizeGap > 0);
         const effectiveSpeed = isReducing ? exitSpeed : entrySpeed;
         const tradeSize = Math.abs(sizeGap) < 0.000001 ? 0 : sizeGap * effectiveSpeed;
         
-        positionSize = positionSize + tradeSize;
+        positionSize = previousSize + tradeSize;
         row.targetSize = positionSize;
         row.tradeSize = tradeSize;
 
@@ -1836,20 +1888,24 @@
         tradingFeesPct += tradingFeePct;
 
         if (Math.abs(positionSize) > 0.001) {
-          if (Math.abs(positionSize - tradeSize) < 0.001) {
-            // Fresh position entry
+          const openedFresh = Math.abs(previousSize) < 0.001;
+          const flippedSide = previousSize * positionSize < 0;
+          const addsToSameSide = previousSize * tradeSize > 0;
+          if (openedFresh || flippedSide) {
+            // Fresh entry, including a direct flip from long to short or short to long.
             avgEntryNormalized = row.normalized;
             avgEntryMaPremiumPct = row.maPremiumPct;
             avgEntryAdr = row.adr;
             avgEntryKorean = row.korean;
-          } else if (!isReducing && Math.abs(tradeSize) > 0.00001) {
-            // Adding to position: true dollar-weighted average price calculation
-            const total = positionSize;
-            const previousTotal = positionSize - tradeSize;
-            avgEntryNormalized = (previousTotal * avgEntryNormalized + tradeSize * row.normalized) / total;
-            avgEntryMaPremiumPct = (previousTotal * avgEntryMaPremiumPct + tradeSize * row.maPremiumPct) / total;
-            avgEntryAdr = (previousTotal * avgEntryAdr + tradeSize * row.adr) / total;
-            avgEntryKorean = (previousTotal * avgEntryKorean + tradeSize * row.korean) / total;
+          } else if (addsToSameSide && Math.abs(tradeSize) > 0.00001) {
+            // Adding to position: weighted by absolute inventory so long/short signs cannot distort the average.
+            const previousWeight = Math.abs(previousSize);
+            const tradeWeight = Math.abs(tradeSize);
+            const totalWeight = previousWeight + tradeWeight;
+            avgEntryNormalized = (previousWeight * avgEntryNormalized + tradeWeight * row.normalized) / totalWeight;
+            avgEntryMaPremiumPct = (previousWeight * avgEntryMaPremiumPct + tradeWeight * row.maPremiumPct) / totalWeight;
+            avgEntryAdr = (previousWeight * avgEntryAdr + tradeWeight * row.adr) / totalWeight;
+            avgEntryKorean = (previousWeight * avgEntryKorean + tradeWeight * row.korean) / totalWeight;
           }
           // When reducing position, average entry price of remaining inventory does NOT change
         } else {
@@ -1956,6 +2012,7 @@
             visible: true,
             borderVisible: false,
             autoScale: true,
+            minimumWidth: 70,
             scaleMargins: { top: 0.74, bottom: 0.02 },
             mode: LightweightCharts.PriceScaleMode.Normal
           },
@@ -1963,6 +2020,7 @@
             visible: true,
             borderVisible: false,
             autoScale: true,
+            minimumWidth: 88,
             scaleMargins: { top: 0.05, bottom: 0.30 }
           },
           timeScale: {
@@ -2173,6 +2231,8 @@
       window.spreadChart.applyOptions({
         width: host.clientWidth,
         height: Math.max(360, host.clientHeight || 540),
+        leftPriceScale: { minimumWidth: 70 },
+        rightPriceScale: { minimumWidth: 88 },
         timeScale: { timeVisible: interval !== "1d" }
       });
       const visibleRangeBeforeUpdate = window.spreadChart.timeScale().getVisibleLogicalRange();
@@ -2392,19 +2452,18 @@
       window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)));
       window.spreadSeries.mean.setData(rows.map((row) => toPoint(row, meanOf)));
       window.spreadSeries.upper.setData(rows.map((row) => toPoint(row, upperOf)));
-      // Populate Continuous Forward-Held Average Entry Price Series
-      let heldEntry = null;
+      // Plot average entry only while a position is open. Whitespace points break stale lines after flat periods.
       const continuousAvgEntry = [];
       for (let i = 0; i < rows.length; i++) {
         const val = avgEntryOf(rows[i]);
+        const time = Math.floor(rows[i].time / 1000);
         if (val !== null) {
-          heldEntry = val;
-        }
-        if (heldEntry !== null) {
           continuousAvgEntry.push({
-            time: Math.floor(rows[i].time / 1000),
-            value: heldEntry
+            time,
+            value: val
           });
+        } else {
+          continuousAvgEntry.push({ time });
         }
       }
       window.spreadSeries.avgEntry.setData(continuousAvgEntry);
@@ -2492,14 +2551,21 @@
       const ctx = canvas.getContext("2d");
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.clearRect(0, 0, width, height);
+      const plotLeft = 70;
+      const plotRight = Math.max(plotLeft + 1, width - 88);
+      const plotTop = 0;
+      const plotBottom = Math.max(plotTop + 1, height - 28);
+      const plotWidth = plotRight - plotLeft;
       const rows = window.exposureOverlayRows;
       const activeChartMode = window.chartMode || "parity";
       const points = rows
         .map((row, index) => {
           const time = Math.floor(row.time / 1000);
-          const x = window.spreadChart.timeScale().timeToCoordinate(time);
+          const rawX = window.spreadChart.timeScale().timeToCoordinate(time);
           const avg = activeChartMode === "ma" ? row.avgEntryMaPremiumPct : row.avgEntryNormalized;
-          if (x === null || avg === null || Math.abs(row.targetSize) < 0.02) return null;
+          if (rawX === null || avg === null || Math.abs(row.targetSize) < 0.02) return null;
+          const x = plotLeft + rawX;
+          if (x < plotLeft - 24 || x > plotRight + 24) return null;
           
           const entryVal = activeChartMode === "ma" ? 100 + avg : avg;
           const spotVal = activeChartMode === "ma" ? (row.normalized / row.mean * 100) : row.normalized;
@@ -2548,9 +2614,12 @@
           const startTimeSec = Math.floor(rows[startIndex].time / 1000);
           const originCutoffSec = Math.floor(rows[originIndex].time / 1000);
 
-          const startX = timeScale.timeToCoordinate(startTimeSec);
-          const originX = timeScale.timeToCoordinate(originCutoffSec);
-          const targetX = timeScale.timeToCoordinate(hoveredTimeSec);
+          const rawStartX = timeScale.timeToCoordinate(startTimeSec);
+          const rawOriginX = timeScale.timeToCoordinate(originCutoffSec);
+          const rawTargetX = timeScale.timeToCoordinate(hoveredTimeSec);
+          const startX = rawStartX === null ? null : plotLeft + rawStartX;
+          const originX = rawOriginX === null ? null : plotLeft + rawOriginX;
+          const targetX = rawTargetX === null ? null : plotLeft + rawTargetX;
 
           if (startX !== null && originX !== null) {
             const minX = Math.min(startX, originX);
@@ -2558,18 +2627,22 @@
             const spanWidth = Math.max(2, maxX - minX);
 
             // 1. Shaded lookback training region that generated the prediction
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(plotLeft, plotTop, plotWidth, plotBottom - plotTop);
+            ctx.clip();
             ctx.fillStyle = "rgba(0, 210, 255, 0.12)";
-            ctx.fillRect(minX, 0, spanWidth, height);
+            ctx.fillRect(minX, plotTop, spanWidth, plotBottom - plotTop);
 
             // 2. Boundary dashed lines around the training span
             ctx.lineWidth = 1.5;
             ctx.setLineDash([5, 4]);
             ctx.strokeStyle = "#00d2ff";
             ctx.beginPath();
-            ctx.moveTo(minX, 0);
-            ctx.lineTo(minX, height);
-            ctx.moveTo(maxX, 0);
-            ctx.lineTo(maxX, height);
+            ctx.moveTo(minX, plotTop);
+            ctx.lineTo(minX, plotBottom);
+            ctx.moveTo(maxX, plotTop);
+            ctx.lineTo(maxX, plotBottom);
             ctx.stroke();
             ctx.setLineDash([]);
 
@@ -2577,8 +2650,8 @@
             ctx.lineWidth = 2;
             ctx.strokeStyle = "#0284c7";
             ctx.beginPath();
-            ctx.moveTo(maxX, 0);
-            ctx.lineTo(maxX, height);
+            ctx.moveTo(maxX, plotTop);
+            ctx.lineTo(maxX, plotBottom);
             ctx.stroke();
 
             // 4. Target Hovered Candle Indicator
@@ -2587,16 +2660,17 @@
               ctx.setLineDash([3, 3]);
               ctx.strokeStyle = "#38bdf8";
               ctx.beginPath();
-              ctx.moveTo(maxX, height - 30);
-              ctx.lineTo(targetX, height - 30);
+              ctx.moveTo(maxX, plotBottom - 30);
+              ctx.lineTo(targetX, plotBottom - 30);
               ctx.stroke();
               ctx.setLineDash([]);
 
               ctx.fillStyle = "#38bdf8";
               ctx.beginPath();
-              ctx.arc(targetX, height - 30, 4, 0, Math.PI * 2);
+              ctx.arc(targetX, plotBottom - 30, 4, 0, Math.PI * 2);
               ctx.fill();
             }
+            ctx.restore();
 
             // 5. Informational Lookback Badge
             const durationH = ((originCutoffSec - startTimeSec) / 3600).toFixed(1);
@@ -2604,7 +2678,7 @@
             
             ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
             const textWidth = ctx.measureText(label).width;
-            const badgeX = Math.max(8, Math.min(width - textWidth - 24, minX + 6));
+            const badgeX = Math.max(plotLeft + 8, Math.min(plotRight - textWidth - 24, minX + 6));
             const badgeY = 14;
 
             ctx.fillStyle = "rgba(15, 23, 42, 0.90)";
@@ -2627,36 +2701,31 @@
         const defaultGap = gaps.length ? gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : Math.max(1, window.spreadChart.timeScale().options?.().barSpacing || 8);
         
         // --- Volume-Style Allocation Sub-Pane (Bottom 70px with 0 Baseline) ---
-        const paneHeight = 65;
-        const zeroY = height - 34; // 0.00 Position baseline
+        const zeroY = plotBottom - 34; // 0.00 Position baseline
         const maxBarPx = 26; // max height for 100% position
+        const leftOverlayGutter = plotLeft + 8;
 
         // 1. Draw 0 Baseline & Subtle Grid for Allocation Pane
         ctx.strokeStyle = "rgba(148, 163, 184, 0.4)";
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 3]);
         ctx.beginPath();
-        ctx.moveTo(0, zeroY);
-        ctx.lineTo(width, zeroY);
+        ctx.moveTo(leftOverlayGutter, zeroY);
+        ctx.lineTo(Math.max(leftOverlayGutter, plotRight - 6), zeroY);
         ctx.stroke();
         ctx.setLineDash([]);
-
-        // Baseline Labels
-        ctx.font = "bold 9px -apple-system, BlinkMacSystemFont, sans-serif";
-        ctx.fillStyle = "rgba(22, 163, 74, 0.90)";
-        ctx.fillText("▲ LONG ADR (+)", 8, zeroY - 14);
-        ctx.fillStyle = "rgba(220, 38, 38, 0.90)";
-        ctx.fillText("▼ SHORT ADR (-)", 8, zeroY + 22);
 
         points.forEach((point, index) => {
           const previous = points[index - 1];
           const next = points[index + 1];
           const leftEdge = previous ? (previous.x + point.x) / 2 : point.x - defaultGap / 2;
           const rightEdge = next ? (point.x + next.x) / 2 : point.x + defaultGap / 2;
-          const x = Math.round(leftEdge);
-          const rectWidth = Math.max(1, Math.round(rightEdge) - x);
+          const x = Math.max(plotLeft, Math.round(leftEdge));
+          const rectRight = Math.min(plotRight, Math.round(rightEdge));
+          const rectWidth = Math.max(1, rectRight - x);
+          if (rectRight <= plotLeft || x >= plotRight) return;
           
-          const entryY = point.entryY;
+          const entryY = Math.max(plotTop, Math.min(plotBottom, point.entryY));
           const absSize = Math.abs(point.targetSize);
           const isLongAdr = point.targetSize < 0; // Negative size in backtester = Long ADR / Short Korea
           const isShortAdr = point.targetSize > 0; // Positive size in backtester = Short ADR / Long Korea
@@ -2665,6 +2734,10 @@
           const capThickness = Math.max(2, Math.min(4, absSize * 3.5));
           ctx.strokeStyle = isLongAdr ? "#16a34a" : "#dc2626";
           ctx.lineWidth = capThickness;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(plotLeft, plotTop, plotWidth, plotBottom - plotTop);
+          ctx.clip();
           ctx.beginPath();
           ctx.moveTo(x, entryY);
           ctx.lineTo(x + rectWidth, entryY);
@@ -2673,11 +2746,12 @@
           // 3. Bottom Volume-Style Position Histogram Candles
           // Long ADR -> Rises ABOVE zero baseline (Green)
           // Short ADR -> Descends BELOW zero baseline (Red)
-          const barH = Math.max(2, Math.round(maxBarPx * absSize));
+          const barH = Math.min(maxBarPx, Math.max(2, Math.round(maxBarPx * Math.min(1, absSize))));
           const barY = isLongAdr ? (zeroY - barH) : zeroY;
 
           ctx.fillStyle = isLongAdr ? "rgba(22, 163, 74, 0.85)" : "rgba(220, 38, 38, 0.85)";
           ctx.fillRect(x, barY, rectWidth, barH);
+          ctx.restore();
         });
       }
     }
@@ -3714,13 +3788,18 @@
           positionSize = previousSize + tradeSize;
           const actualTraded = positionSize - previousSize;
           if (Math.abs(positionSize) > 0.001) {
-            if (Math.abs(previousSize) < 0.001) {
+            const openedFresh = Math.abs(previousSize) < 0.001;
+            const flippedSide = previousSize * positionSize < 0;
+            const addsToSameSide = previousSize * actualTraded > 0;
+            if (openedFresh || flippedSide) {
               avgEntryAdr = row.adr;
               avgEntryKorean = row.korean;
-            } else if (!isReducing && Math.abs(actualTraded) > 0.00001) {
-              const total = previousSize + actualTraded;
-              avgEntryAdr = (previousSize * avgEntryAdr + actualTraded * row.adr) / total;
-              avgEntryKorean = (previousSize * avgEntryKorean + actualTraded * row.korean) / total;
+            } else if (addsToSameSide && Math.abs(actualTraded) > 0.00001) {
+              const previousWeight = Math.abs(previousSize);
+              const tradeWeight = Math.abs(actualTraded);
+              const totalWeight = previousWeight + tradeWeight;
+              avgEntryAdr = (previousWeight * avgEntryAdr + tradeWeight * row.adr) / totalWeight;
+              avgEntryKorean = (previousWeight * avgEntryKorean + tradeWeight * row.korean) / totalWeight;
             }
           } else {
             positionSize = 0;
@@ -4216,7 +4295,9 @@
         tblColPreSpread: "Pre-Event Spread",
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
-        tblColModelAdapt: "Model Adaptation"
+        tblColModelAdapt: "Model Adaptation",
+        deployTime: "Deployed: 2026-08-23 16:37 KST",
+        footerDeploy: "Deployed: <strong>2026-08-23 16:37 KST</strong> (AWS EC2)"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
@@ -4311,7 +4392,9 @@
         tblColPreSpread: "사건 직전 스프레드",
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
-        tblColModelAdapt: "모델 적응 목표치"
+        tblColModelAdapt: "모델 적응 목표치",
+        deployTime: "배포 일시: 2026-08-23 16:37 KST",
+        footerDeploy: "배포 일시: <strong>2026-08-23 16:37 KST</strong> (AWS EC2)"
       }
     };
 
@@ -4724,6 +4807,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("thPostSpread")) $("thPostSpread").textContent = dict.tblColPostSpread;
       if ($("thDislocation")) $("thDislocation").textContent = dict.tblColDislocation;
       if ($("thModelAdapt")) $("thModelAdapt").textContent = dict.tblColModelAdapt;
+      if ($("deployTime")) $("deployTime").textContent = dict.deployTime;
+      if ($("footerDeploy")) $("footerDeploy").innerHTML = dict.footerDeploy;
 
       // Render Cards & Catalyst Feed
       renderBilingualCards(lang);
