@@ -692,9 +692,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.3.2</span>
+            <span id="deployVersion">v1.3.3</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-08-23 22:27 KST</span>
+            <span id="deployTime">Deployed: 2026-08-23 22:39 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -1006,7 +1006,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.3.2</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 22:27 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.3.3</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 22:39 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -2450,11 +2450,20 @@
       const visibleRangeBeforeUpdate = window.spreadChart.timeScale().getVisibleLogicalRange();
       const wasAtRightEdge = !visibleRangeBeforeUpdate || visibleRangeBeforeUpdate.to >= rows.length - 4;
       const toPoint = (row, accessor) => ({ time: Math.floor(row.time / 1000), value: accessor(row) });
-      const priceValues = rows
-        .flatMap((row) => [valueOf(row), synthOf(row), meanOf(row), upperOf(row), lowerOf(row), avgEntryOf(row)])
-        .filter((value) => value !== null && Number.isFinite(value));
-      const priceMin = Math.min(...priceValues);
-      const priceMax = Math.max(...priceValues);
+      let priceMin = Infinity;
+      let priceMax = -Infinity;
+      rows.forEach((row) => {
+        [valueOf(row), synthOf(row), meanOf(row), upperOf(row), lowerOf(row), avgEntryOf(row)].forEach((value) => {
+          if (value !== null && Number.isFinite(value)) {
+            priceMin = Math.min(priceMin, value);
+            priceMax = Math.max(priceMax, value);
+          }
+        });
+      });
+      if (!Number.isFinite(priceMin) || !Number.isFinite(priceMax)) {
+        priceMin = 0;
+        priceMax = 1;
+      }
       const exposureBase = priceMin - Math.max(0.2, (priceMax - priceMin) * 0.08);
       window.exposureBase = exposureBase;
 
@@ -3010,8 +3019,12 @@
       const margin = { top: 24, right: 30, bottom: 54, left: 56 };
       const plotWidth = width - margin.left - margin.right;
       const plotHeight = height - margin.top - margin.bottom;
-      const min = Math.min(...premiums);
-      const max = Math.max(...premiums);
+      let min = Infinity;
+      let max = -Infinity;
+      premiums.forEach((value) => {
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+      });
       const absMax = Math.max(Math.abs(min), Math.abs(max), 0.5);
       const xMin = -absMax * 1.08;
       const xMax = absMax * 1.08;
@@ -3169,10 +3182,12 @@
         ? `${fmt(latest.avgEntryMaPremiumPct)}%`
         : (isKo ? "무포지션" : "Flat");
       $("accPnl").textContent = latest ? `${fmt(latest.equity - 100)}%` : "--";
-      const maxDD = rows.length ? Math.min(...rows.map((r) => r.drawdownPct || 0)) : 0;
-      const minEquity = rows.length
-        ? Math.min(...rows.map((r) => Number.isFinite(r.equity) ? r.equity : 100))
-        : 100;
+      let maxDD = 0;
+      let minEquity = 100;
+      rows.forEach((row) => {
+        maxDD = Math.min(maxDD, row.drawdownPct || 0);
+        minEquity = Math.min(minEquity, Number.isFinite(row.equity) ? row.equity : 100);
+      });
       const principalDD = Math.min(0, minEquity - 100);
       $("maxDrawdown").textContent = `${fmt(maxDD)}% (${fmt(principalDD)}%)`;
       $("feesDrag").textContent = latest ? `${fmt(latest.totalFeesPct)}%` : "--";
@@ -3251,15 +3266,20 @@
 
       // PnL % values (equity - 100)
       const pnls = visibleRows.map((row) => row.equity - 100);
-      const minPnl = Math.min(...pnls);
-      const maxPnl = Math.max(...pnls);
+      let minPnl = Infinity;
+      let maxPnl = -Infinity;
+      pnls.forEach((value) => {
+        minPnl = Math.min(minPnl, value);
+        maxPnl = Math.max(maxPnl, value);
+      });
       const pnlSpan = Math.max(2.0, maxPnl - minPnl);
       const yPnlMin = Math.min(0, minPnl) - pnlSpan * 0.12;
       const yPnlMax = Math.max(0, maxPnl) + pnlSpan * 0.12;
 
       // Position sizes (-maxSize to +maxSize)
       const sizes = visibleRows.map((row) => (row.targetSize || 0) * 100);
-      const maxAbsSize = Math.max(100, ...sizes.map((s) => Math.abs(s)));
+      let maxAbsSize = 100;
+      sizes.forEach((size) => { maxAbsSize = Math.max(maxAbsSize, Math.abs(size)); });
 
       const x = (index) => margin.left + plotWidth * ((visibleRows[index].__index - startFloat) / barSpan);
       
@@ -3462,6 +3482,29 @@
     let socketVersion = 0;
     let refreshVersion = 0;
 
+    function invalidateOptimizationForHistoryChange(previousBars, currentBars) {
+      const hasResults = (window.allOptimizationCandidates?.length || 0) > 0
+        || (window.optimizationCandidates?.length || 0) > 0;
+      if (!hasResults) return;
+      window.allOptimizationCandidates = [];
+      window.optimizationCandidates = [];
+      window.selectedOptimizationCandidate = null;
+      window.selectedOptimizationHoldout = null;
+      window.optimizationContext = null;
+      window.lastOptimization = null;
+      const resultsPanel = $("optResultsPanel");
+      const resultsBody = $("optResultsBody");
+      if (resultsPanel) resultsPanel.style.display = "block";
+      if (resultsBody) {
+        resultsBody.innerHTML = `<tr><td colspan="10" style="padding: 16px; text-align: center; color: #b45309; font-weight: 700;">History expanded from ${previousBars.toLocaleString()} to ${currentBars.toLocaleString()} bars. Run Optimize profit again for matching results.</td></tr>`;
+      }
+      if ($("lblOptTotalEvaluated")) {
+        $("lblOptTotalEvaluated").textContent = "Results expired after older history was loaded";
+      }
+      if ($("bestTest")) $("bestTest").textContent = "Re-optimize";
+      try { localStorage.removeItem("skhynix_last_optimization"); } catch (e) {}
+    }
+
     function upsertKline(rows, item) {
       const currentViewEnd = window.viewEndFloat === null || window.viewEndFloat === undefined ? window.viewEndIndex : window.viewEndFloat;
       const wasPinned = currentViewEnd === null || currentViewEnd === undefined || currentViewEnd >= cachedRows.length - 1;
@@ -3519,6 +3562,7 @@
 
         rebuildFromCache();
         const added = Math.max(0, cachedRows.length - before);
+        if (added) invalidateOptimizationForHistoryChange(before, cachedRows.length);
         if (window.viewEndFloat !== null && window.viewEndFloat !== undefined) {
           window.viewEndFloat += added;
         }
@@ -4141,6 +4185,7 @@
         };
       };
       window.optimizationContext = { baseRowsByMean, simulationRanges, simulateCandidateRange };
+      window.optimizationBarCount = cachedRows.length;
       const optInputIds = [
         "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct",
         "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct"
@@ -4389,7 +4434,8 @@
           minProfitPct: 'Min Profit'
         };
         const activeName = keyNameMap[sortKey] || sortKey;
-        $("lblOptTotalEvaluated").textContent = `${list.length.toLocaleString()} unique tested | Top ${displayRows.length} by ${activeName} (${isAsc ? '▲ asc' : '▼ desc'})`;
+        const testedBars = window.optimizationBarCount || cachedRows.length;
+        $("lblOptTotalEvaluated").textContent = `${list.length.toLocaleString()} unique tested on ${testedBars.toLocaleString()} bars | Top ${displayRows.length} by ${activeName} (${isAsc ? '▲ asc' : '▼ desc'})`;
       }
 
       resultsBody.innerHTML = displayRows.map((item, rankIdx) => {
@@ -4446,7 +4492,8 @@
       markSelectedCandidate(candidate);
       const latest = rows.at(-1);
       const fullPnl = latest.equity - 100;
-      const fullDd = Math.min(...rows.map((row) => row.drawdownPct || 0));
+      let fullDd = 0;
+      rows.forEach((row) => { fullDd = Math.min(fullDd, row.drawdownPct || 0); });
       $("bestTest").textContent = `${fmt(candidate.score)}%`;
       $("status").textContent = `Selected combination applied | Full PnL ${signedPct(fullPnl)} | Max DD ${signedPct(fullDd)} | Score ${fmt(candidate.score)}`;
     };
@@ -4549,8 +4596,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-08-23 22:27 KST",
-        footerDeploy: "Deployed: <strong>2026-08-23 22:27 KST</strong> (AWS EC2)"
+        deployTime: "Deployed: 2026-08-23 22:39 KST",
+        footerDeploy: "Deployed: <strong>2026-08-23 22:39 KST</strong> (AWS EC2)"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
@@ -4646,8 +4693,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-08-23 22:27 KST",
-        footerDeploy: "배포 일시: <strong>2026-08-23 22:27 KST</strong> (AWS EC2)"
+        deployTime: "배포 일시: 2026-08-23 22:39 KST",
+        footerDeploy: "배포 일시: <strong>2026-08-23 22:39 KST</strong> (AWS EC2)"
       }
     };
 
