@@ -692,9 +692,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.3.1</span>
+            <span id="deployVersion">v1.3.2</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-08-23 22:13 KST</span>
+            <span id="deployTime">Deployed: 2026-08-23 22:27 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -1006,7 +1006,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.3.1</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 22:13 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.3.2</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 22:27 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -2513,25 +2513,26 @@
       if (N >= lookback) {
         const prices = rows.map((r) => r.normalized);
 
-        // 1. Static Global Periodic Wave across all data (Navy Blue #1e3a8a)
-        const globalResult = fitFourierAndPredict(prices, [0]);
+        // 1. Static Global Periodic Wave across all data (Navy Blue #1e3a8a).
+        // Bound the decorative fit cost for deep history while preserving full-resolution chart output.
+        const globalFitLimit = 768;
+        const globalPrices = N <= globalFitLimit
+          ? prices
+          : Array.from({ length: globalFitLimit }, (_, index) => (
+              prices[Math.round(index * (N - 1) / (globalFitLimit - 1))]
+            ));
+        const globalResult = fitFourierAndPredict(globalPrices, [0]);
         const globalWavePoints = [];
         if (globalResult) {
-          const meanY = mean(prices);
-          let sXY = 0, sXX = 0;
-          for (let i = 0; i < N; i++) {
-            const x = i - (N - 1) / 2;
-            sXY += x * (prices[i] - meanY);
-            sXX += x * x;
-          }
-          const slope = sXX ? sXY / sXX : 0;
-          const intercept = meanY;
+          const fitLength = globalPrices.length;
+          const fitCenter = (fitLength - 1) / 2;
           for (let n = 0; n < N; n++) {
+            const fitIndex = N > 1 ? n * (fitLength - 1) / (N - 1) : 0;
             let periodicSum = 0;
             for (const h of globalResult.dominant) {
-              periodicSum += h.amp * Math.cos((2 * Math.PI * h.k * n) / N + h.phase);
+              periodicSum += h.amp * Math.cos((2 * Math.PI * h.k * fitIndex) / fitLength + h.phase);
             }
-            const trendVal = intercept + slope * (n - (N - 1) / 2);
+            const trendVal = globalResult.intercept + globalResult.slope * (fitIndex - fitCenter);
             globalWavePoints.push({
               time: Math.floor(rows[n].time / 1000),
               value: trendVal + periodicSum
@@ -3524,7 +3525,7 @@
         if (window.viewEndIndex !== null && window.viewEndIndex !== undefined) {
           window.viewEndIndex += added;
         }
-        renderCached();
+        renderCached(cachedRows);
         if (added && window.spreadChart && window.pendingLogicalRangeBeforePrepend) {
           const range = window.pendingLogicalRangeBeforePrepend;
           window.spreadChart.timeScale().setVisibleLogicalRange({
@@ -3563,8 +3564,8 @@
       return cachedRows;
     }
 
-    function renderCached() {
-      const rows = rebuildFromCache();
+    function renderCached(prebuiltRows = null) {
+      const rows = prebuiltRows || rebuildFromCache();
       if (!rows.length) return rows;
       draw(rows, cachedInterval);
       drawHistogram(rows);
@@ -3614,7 +3615,7 @@
         if (latest) {
           $("status").textContent = `WebSocket live: ${formatTime(latest.time, cachedInterval)} UTC`;
         }
-      }, 250);
+      }, 1000);
     }
 
     function connectWebSocket(interval) {
@@ -4548,8 +4549,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-08-23 22:13 KST",
-        footerDeploy: "Deployed: <strong>2026-08-23 22:13 KST</strong> (AWS EC2)"
+        deployTime: "Deployed: 2026-08-23 22:27 KST",
+        footerDeploy: "Deployed: <strong>2026-08-23 22:27 KST</strong> (AWS EC2)"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
@@ -4645,8 +4646,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-08-23 22:13 KST",
-        footerDeploy: "배포 일시: <strong>2026-08-23 22:13 KST</strong> (AWS EC2)"
+        deployTime: "배포 일시: 2026-08-23 22:27 KST",
+        footerDeploy: "배포 일시: <strong>2026-08-23 22:27 KST</strong> (AWS EC2)"
       }
     };
 
