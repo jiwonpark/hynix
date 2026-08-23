@@ -687,9 +687,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.2.8</span>
+            <span id="deployVersion">v1.2.9</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-08-23 19:35 KST</span>
+            <span id="deployTime">Deployed: 2026-08-23 19:40 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -1001,7 +1001,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.2.8</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 19:35 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.2.9</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 19:40 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -2042,6 +2042,7 @@
           },
           timeScale: {
             visible: false,
+            ignoreWhitespaceIndices: false,
             borderVisible: false,
             rightOffset: 0,
             barSpacing: 8,
@@ -2117,6 +2118,7 @@
           },
           timeScale: {
             visible: true,
+            ignoreWhitespaceIndices: false,
             borderVisible: false,
             rightOffset: 0,
             barSpacing: 8,
@@ -2178,6 +2180,14 @@
               type: 'custom',
               formatter: (price) => `${Number(price).toFixed(0)}%`
             }
+          }),
+          timeline: window.positionChart.addLineSeries({
+            priceScaleId: 'left',
+            color: 'rgba(0, 0, 0, 0)',
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false
           })
         };
         window.positionSeries.pnl.createPriceLine({
@@ -2193,10 +2203,13 @@
 
         window.spreadChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
           if (!range) return;
-          if (!window.syncingChartRange && window.positionChart) {
-            window.syncingChartRange = true;
+          if (!window.syncingFromPosition && window.positionChart) {
+            window.syncingFromPrice = true;
             window.positionChart.timeScale().setVisibleLogicalRange(range);
-            window.syncingChartRange = false;
+            window.cancelAnimationFrame(window.clearPriceSyncFrame);
+            window.clearPriceSyncFrame = window.requestAnimationFrame(() => {
+              window.syncingFromPrice = false;
+            });
           }
           if (!cachedRows.length) return;
 
@@ -2238,10 +2251,13 @@
           }
         });
         window.positionChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          if (!range || window.syncingChartRange || !window.spreadChart) return;
-          window.syncingChartRange = true;
+          if (!range || window.syncingFromPrice || !window.spreadChart) return;
+          window.syncingFromPosition = true;
           window.spreadChart.timeScale().setVisibleLogicalRange(range);
-          window.syncingChartRange = false;
+          window.cancelAnimationFrame(window.clearPositionSyncFrame);
+          window.clearPositionSyncFrame = window.requestAnimationFrame(() => {
+            window.syncingFromPosition = false;
+          });
         });
         // Track user interaction flags on chart element
         host.addEventListener("mousedown", () => { window.userInteracting = true; });
@@ -2616,6 +2632,14 @@
           }).concat(futureTimelinePoints)
         );
       }
+      if (window.positionSeries?.timeline) {
+        window.positionSeries.timeline.setData(
+          rows.map((row) => ({
+            time: Math.floor(row.time / 1000),
+            value: 0
+          })).concat(futureTimelinePoints.map((point) => ({ time: point.time, value: 0 })))
+        );
+      }
 
       // Update Top Simulation Period Badge in Header
       const periodBadge = $("simulationPeriodBadge");
@@ -2887,6 +2911,7 @@
       if (window.spreadSeries.synthWave) window.spreadSeries.synthWave.setData([]);
       if (window.positionSeries?.pnl) window.positionSeries.pnl.setData([]);
       if (window.positionSeries?.amount) window.positionSeries.amount.setData([]);
+      if (window.positionSeries?.timeline) window.positionSeries.timeline.setData([]);
 
       // 3. Clear exposure overlay
       window.exposureOverlayRows = [];
@@ -4411,8 +4436,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-08-23 19:35 KST",
-        footerDeploy: "Deployed: <strong>2026-08-23 19:35 KST</strong> (AWS EC2)"
+        deployTime: "Deployed: 2026-08-23 19:40 KST",
+        footerDeploy: "Deployed: <strong>2026-08-23 19:40 KST</strong> (AWS EC2)"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
@@ -4508,8 +4533,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-08-23 19:35 KST",
-        footerDeploy: "배포 일시: <strong>2026-08-23 19:35 KST</strong> (AWS EC2)"
+        deployTime: "배포 일시: 2026-08-23 19:40 KST",
+        footerDeploy: "배포 일시: <strong>2026-08-23 19:40 KST</strong> (AWS EC2)"
       }
     };
 
