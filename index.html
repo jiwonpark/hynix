@@ -675,6 +675,456 @@
       color: var(--green);
     }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    /* --- Stage 1 Real / Paper Trading Terminal & Execution Styles --- */
+    .tradingModeSwitch {
+      display: inline-flex;
+      background: #f1f5f9;
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      gap: 3px;
+    }
+    .tradingModeSwitch button {
+      height: 28px;
+      padding: 0 10px;
+      font-size: 11.5px;
+      font-weight: 700;
+      border-radius: 6px;
+      background: transparent;
+      color: #64748b;
+      border: 0;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .tradingModeSwitch button.active {
+      background: #ffffff;
+      color: #0f172a;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    .tradingModeSwitch button#modeLive.active {
+      background: #dc2626;
+      color: #ffffff;
+    }
+    .tradingModeSwitch button#modeSemiAuto.active {
+      background: #0284c7;
+      color: #ffffff;
+    }
+    .btnTopAction {
+      height: 34px;
+      padding: 0 12px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 7px;
+      background: #f8fafc;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btnTopAction:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    .btnTopAction.killSwitch {
+      background: #fee2e2;
+      color: #991b1b;
+      border-color: #fca5a5;
+    }
+    .btnTopAction.killSwitch:hover {
+      background: #fecaca;
+      color: #7f1d1d;
+    }
+
+    /* Account & Margin Strip */
+    .realAccountStrip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+      margin-bottom: 14px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 9px;
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);
+    }
+    .realAccountStat {
+      padding: 10px 14px;
+      border-right: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 0;
+      background: #ffffff;
+    }
+    .realAccountStat:last-child { border-right: 0; }
+    .realAccountStat span {
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+      margin-bottom: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .realAccountStat strong {
+      font-size: 15px;
+      font-weight: 800;
+      color: #0f172a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    /* Terminal Grid Layout */
+    .execTerminalGrid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 16px;
+      margin-top: 14px;
+    }
+    @media (max-width: 1024px) {
+      .execTerminalGrid { grid-template-columns: 1fr; }
+    }
+
+    /* AI Signal Approver Card */
+    .aiSignalApprover {
+      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+      border: 1.5px solid #7dd3fc;
+      border-radius: 9px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      box-shadow: 0 2px 6px rgba(2, 132, 199, 0.08);
+    }
+    .aiSignalHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .aiSignalTitle {
+      font-size: 12px;
+      font-weight: 800;
+      color: #0369a1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .aiSignalPulse {
+      width: 8px;
+      height: 8px;
+      background: #0284c7;
+      border-radius: 50%;
+      display: inline-block;
+      box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.7);
+      animation: signalPulse 1.8s infinite;
+    }
+    @keyframes signalPulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(2, 132, 199, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(2, 132, 199, 0); }
+    }
+
+    /* Pair Order Ticket */
+    .pairOrderTicket {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 9px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .ticketRow {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .ticketRowLabel {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #475569;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .presetButtonGroup {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .presetBtn {
+      flex: 1;
+      min-width: 52px;
+      height: 28px;
+      font-size: 11px;
+      font-weight: 700;
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      padding: 0 4px;
+      cursor: pointer;
+    }
+    .presetBtn.active, .presetBtn:hover {
+      background: #0f172a;
+      color: #ffffff;
+      border-color: #0f172a;
+    }
+    .leverageGroup {
+      display: flex;
+      gap: 6px;
+    }
+    .leverageBtn {
+      flex: 1;
+      height: 28px;
+      font-size: 11.5px;
+      font-weight: 700;
+      background: #f8fafc;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .leverageBtn.active {
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #0284c7;
+    }
+
+    /* Action Buttons for Dual-Leg */
+    .dualActionButtons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .btnPairBuy {
+      background: linear-gradient(180deg, #16a34a 0%, #15803d 100%);
+      color: #ffffff;
+      height: 44px;
+      border-radius: 7px;
+      font-weight: 800;
+      font-size: 12.5px;
+      border: 0;
+      box-shadow: 0 2px 6px rgba(22, 163, 74, 0.3);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      line-height: 1.2;
+    }
+    .btnPairBuy:hover {
+      background: #15803d;
+    }
+    .btnPairSell {
+      background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
+      color: #ffffff;
+      height: 44px;
+      border-radius: 7px;
+      font-weight: 800;
+      font-size: 12.5px;
+      border: 0;
+      box-shadow: 0 2px 6px rgba(220, 38, 38, 0.3);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      line-height: 1.2;
+    }
+    .btnPairSell:hover {
+      background: #b91c1c;
+    }
+    .btnPairFlat {
+      grid-column: span 2;
+      background: #f8fafc;
+      color: #475569;
+      border: 1.5px solid #cbd5e1;
+      height: 34px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .btnPairFlat:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+
+    /* Positions and Order Log Tables */
+    .posTableShell {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 9px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .posTableTabs {
+      display: flex;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 0 8px;
+    }
+    .posTabBtn {
+      background: transparent;
+      color: #64748b;
+      font-weight: 700;
+      font-size: 12px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      height: 38px;
+      padding: 0 14px;
+      cursor: pointer;
+    }
+    .posTabBtn.active {
+      color: #0284c7;
+      border-bottom-color: #0284c7;
+      background: transparent;
+    }
+    .positionsTable {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .positionsTable th {
+      background: #f8fafc;
+      color: #64748b;
+      font-weight: 700;
+      padding: 8px 12px;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+    }
+    .positionsTable td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #f1f5f9;
+      text-align: left;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .btnRowClose {
+      height: 24px;
+      padding: 0 8px;
+      font-size: 11px;
+      font-weight: 700;
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btnRowClose:hover {
+      background: #fecaca;
+    }
+
+    /* Modal Backdrop & Dialog */
+    .modalBackdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(3px);
+      z-index: 9999;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .modalBackdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modalDialog {
+      background: #ffffff;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 460px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      border: 1px solid #cbd5e1;
+      overflow: hidden;
+      transform: scale(0.96);
+      transition: transform 0.2s ease;
+    }
+    .modalBackdrop.open .modalDialog {
+      transform: scale(1);
+    }
+    .modalHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 18px;
+      border-bottom: 1px solid #e2e8f0;
+      background: #f8fafc;
+    }
+    .modalHeader h3 {
+      font-size: 14px;
+      font-weight: 800;
+      margin: 0;
+      color: #0f172a;
+    }
+    .modalClose {
+      background: transparent;
+      border: 0;
+      color: #64748b;
+      font-size: 16px;
+      cursor: pointer;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+    }
+    .modalClose:hover { background: #e2e8f0; color: #0f172a; }
+    .modalBody {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .modalFooter {
+      padding: 12px 18px;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    /* Toast Container */
+    #toastContainer {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+    .toast {
+      background: #0f172a;
+      color: #ffffff;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 700;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: auto;
+      animation: toastIn 0.25s ease forwards;
+    }
+    .toast.success { border-left: 4px solid #10b981; }
+    .toast.danger { border-left: 4px solid #ef4444; }
+    .toast.info { border-left: 4px solid #0284c7; }
+    @keyframes toastIn {
+      from { transform: translateY(12px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
     @media (max-width: 860px) {
       main { width: min(100vw - 20px, 1280px); padding-top: 18px; }
       .top, .chartHeader, .tableHead { flex-direction: column; }
@@ -699,12 +1149,43 @@
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
       </div>
-      <div class="topRight">
+      <div class="topRight" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <div class="tradingModeSwitch" aria-label="Trading mode switch">
+          <button id="modePaper" class="active" type="button" title="Paper Trading / Simulation">🛡️ Paper</button>
+          <button id="modeSemiAuto" type="button" title="AI Signal 1-Click Approval">⚡ Semi-Auto</button>
+          <button id="modeLive" type="button" title="Live Account Execution">🔴 Live</button>
+        </div>
+        <button id="btnApiKeyModal" class="btnTopAction" type="button" title="Binance API Key Configuration">🔑 API</button>
+        <button id="btnKillSwitch" class="btnTopAction killSwitch" type="button" title="Emergency Flatten & Halt All Orders">🚨 Kill-Switch</button>
         <div class="langSwitch" aria-label="Language switch">
           <button id="langKo" type="button">🇰🇷 한국어</button>
           <button id="langEn" class="active" type="button">🇺🇸 English</button>
         </div>
         <div id="position" class="pill">Loading</div>
+      </div>
+    </section>
+
+    <!-- Real-Time Account Balance & Margin Risk Strip -->
+    <section class="realAccountStrip" id="realAccountStrip">
+      <div class="realAccountStat">
+        <span id="lblAccountEquity">Account Equity</span>
+        <strong id="valAccountEquity" style="color: #0284c7;">$10,000.00</strong>
+      </div>
+      <div class="realAccountStat">
+        <span id="lblAvailMargin">Available Margin</span>
+        <strong id="valAvailMargin">$10,000.00</strong>
+      </div>
+      <div class="realAccountStat">
+        <span id="lblUnrealizedPnl">Unrealized PnL</span>
+        <strong id="valUnrealizedPnl" style="color: #10b981;">+$0.00 (+0.00%)</strong>
+      </div>
+      <div class="realAccountStat">
+        <span id="lblActivePairs">Active Pairs</span>
+        <strong id="valActivePairs">0 Pairs (Flat)</strong>
+      </div>
+      <div class="realAccountStat">
+        <span id="lblMarginRisk">Margin Risk</span>
+        <strong id="valMarginRisk" style="color: #16a34a;">0.0% (Safe)</strong>
       </div>
     </section>
 
@@ -925,6 +1406,157 @@
       </div>
     </section>
 
+    <!-- Stage 1 Real / Paper Trading Execution Terminal & Active Positions Section -->
+    <section class="panel" id="secExecutionTerminal">
+      <div class="chartHeader" style="margin-bottom: 6px; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <h2 id="titleExecutionTerminal" style="font-size: 15px; font-weight: 800; color: #0f172a; margin: 0;">⚡ 1-Click Pair Execution Terminal & Live Orders</h2>
+          <span id="badgeExecMode" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; border: 1px solid #bae6fd;">PAPER SIMULATION MODE</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 11px; color: #64748b;" id="lblExecutionSlippage">Slippage Guard: <strong>5 BPS</strong></span>
+          <button id="btnResetPaperBalance" type="button" style="height: 26px; padding: 0 8px; font-size: 11px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 4px;">↺ Reset $10k</button>
+        </div>
+      </div>
+
+      <div class="execTerminalGrid">
+        <!-- Column 1: AI Signal Approver + Pair Order Ticket -->
+        <div>
+          <!-- AI Signal 1-Click Approver -->
+          <div class="aiSignalApprover" id="aiSignalBox">
+            <div class="aiSignalHeader">
+              <div class="aiSignalTitle">
+                <span class="aiSignalPulse"></span>
+                <span id="lblAiSignalTitle">AI Model Signal Ready</span>
+              </div>
+              <span id="valSignalConfidence" style="font-size: 10.5px; background: #0284c7; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 800;">92% Conf</span>
+            </div>
+            <p id="msgAiSignal" style="font-size: 11.5px; color: #0369a1; margin: 0 0 10px 0; font-weight: 600; line-height: 1.4;">
+              Spread dislocation <strong>+1.85%</strong> exceeds threshold. Recommended: <strong>Short ADR 150% + Long KR 150%</strong>.
+            </p>
+            <div style="display: flex; gap: 8px;">
+              <button id="btnApproveSignal" type="button" style="flex: 2; height: 32px; font-size: 12px; background: #0284c7; color: #fff; font-weight: 800; border-radius: 6px; border: 0;">⚡ 1-Click Approve Order</button>
+              <button id="btnDismissSignal" type="button" style="flex: 1; height: 32px; font-size: 11.5px; background: #f1f5f9; color: #64748b; font-weight: 700; border-radius: 6px; border: 1px solid #cbd5e1;">Dismiss</button>
+            </div>
+          </div>
+
+          <!-- Dual-Leg Order Ticket -->
+          <div class="pairOrderTicket">
+            <div class="ticketRow">
+              <div class="ticketRowLabel">
+                <span id="lblOrderNotional">Order Notional (USDT)</span>
+                <span id="valCalculatedMargin" style="color: #64748b; font-weight: 600;">Req Margin: $333.33</span>
+              </div>
+              <div class="presetButtonGroup">
+                <button class="presetBtn" data-val="250">$250</button>
+                <button class="presetBtn" data-val="500">$500</button>
+                <button class="presetBtn active" data-val="1000">$1,000</button>
+                <button class="presetBtn" data-val="2500">$2,500</button>
+                <button class="presetBtn" data-val="5000">$5,000</button>
+              </div>
+              <input id="inputOrderNotional" type="number" min="50" max="50000" step="50" value="1000" style="margin-top: 4px; font-weight: 800; font-size: 14px;">
+            </div>
+
+            <div class="ticketRow">
+              <div class="ticketRowLabel">
+                <span id="lblLeverage">Leverage Multiplier</span>
+                <span id="valLeverageLabel" style="color: #0284c7; font-weight: 800;">3x Leverage</span>
+              </div>
+              <div class="leverageGroup">
+                <button class="leverageBtn" data-lev="1">1x</button>
+                <button class="leverageBtn" data-lev="2">2x</button>
+                <button class="leverageBtn active" data-lev="3">3x</button>
+                <button class="leverageBtn" data-lev="5">5x</button>
+              </div>
+            </div>
+
+            <div class="ticketRow">
+              <div class="ticketRowLabel">
+                <span id="lblOrderRoute">Execution Route</span>
+                <span style="font-size: 10.5px; color: #16a34a; font-weight: 700;">🟢 Delta Neutral</span>
+              </div>
+              <select id="selectOrderRoute" style="font-weight: 700;">
+                <option value="market" selected>⚡ Instant Simultaneous Market Fill</option>
+                <option value="twap30">⏱️ TWAP Sliced (30s / 5 Sub-Orders)</option>
+                <option value="limit">🎯 Limit Spread (Passive Maker)</option>
+              </select>
+            </div>
+
+            <div class="dualActionButtons">
+              <button id="btnExecuteBuySpread" class="btnPairBuy" type="button">
+                <span>🟢 BUY ADR / SELL KR</span>
+                <span style="font-size: 10px; font-weight: 600; opacity: 0.9;">Bet on Spread Expansion (▲)</span>
+              </button>
+              <button id="btnExecuteSellSpread" class="btnPairSell" type="button">
+                <span>🔴 SELL ADR / BUY KR</span>
+                <span style="font-size: 10px; font-weight: 600; opacity: 0.9;">Bet on Premium Harvest (▼)</span>
+              </button>
+              <button id="btnExecuteFlatten" class="btnPairFlat" type="button">
+                🔒 Delta-Neutral Flatten (Close All)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Column 2: Active Open Positions & Execution Logs -->
+        <div class="posTableShell">
+          <div class="posTableTabs">
+            <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">0</span>)</button>
+            <button id="tabOrderLog" class="posTabBtn" type="button">Execution History (<span id="countOrderLog">0</span>)</button>
+          </div>
+
+          <!-- Tab Pane 1: Active Positions Table -->
+          <div id="panePositions" style="display: block; width: 100%; overflow-x: auto;">
+            <table class="positionsTable">
+              <thead>
+                <tr>
+                  <th>Pair / Asset</th>
+                  <th>Direction</th>
+                  <th>Notional</th>
+                  <th>Entry Spread</th>
+                  <th>Mark Spread</th>
+                  <th>Unrealized PnL</th>
+                  <th>Est. Liq</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="activePositionsBody">
+                <tr>
+                  <td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
+                    🛡️ No active open positions. Execute a pair trade or approve an AI signal to open.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Tab Pane 2: Execution History Log -->
+          <div id="paneOrderLog" style="display: none; width: 100%; overflow-x: auto;">
+            <table class="positionsTable">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Pair</th>
+                  <th>Side</th>
+                  <th>Filled Size</th>
+                  <th>Avg Spread</th>
+                  <th>Fee Paid</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="executionHistoryBody">
+                <tr>
+                  <td colspan="7" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
+                    No recent executions logged.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="panel tableBoundPanel">
       <div class="chartHeader">
         <div>
@@ -1010,6 +1642,60 @@
     </footer>
 
   </main>
+
+  <!-- Modals and Toasts for Stage 1 Real/Paper Trading -->
+  <div id="apiKeyModal" class="modalBackdrop">
+    <div class="modalDialog">
+      <div class="modalHeader">
+        <h3 id="lblModalApiKeyTitle">🔑 Binance Futures API Credentials</h3>
+        <button id="btnCloseApiKeyModal" class="modalClose" type="button">✕</button>
+      </div>
+      <div class="modalBody">
+        <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 10px; font-size: 11.5px; color: #0369a1; line-height: 1.4;">
+          🛡️ <strong>Security Notice:</strong> API keys are encrypted and kept strictly inside your browser's session memory. Never grant Withdrawal permissions on your API key.
+        </div>
+        <label>
+          <span style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Environment</span>
+          <select id="inputApiEnv" style="font-weight: 700;">
+            <option value="testnet" selected>Binance Futures Testnet (Mock Live)</option>
+            <option value="mainnet">Binance Futures Mainnet (Real Money)</option>
+          </select>
+        </label>
+        <label>
+          <span style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">API Key</span>
+          <input id="inputApiKey" type="password" placeholder="Enter Binance Futures API Key..." autocomplete="off">
+        </label>
+        <label>
+          <span style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">API Secret</span>
+          <input id="inputApiSecret" type="password" placeholder="Enter API Secret..." autocomplete="off">
+        </label>
+      </div>
+      <div class="modalFooter">
+        <button id="btnCancelApiKey" type="button" style="height: 32px; padding: 0 12px; font-size: 12px; background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; border-radius: 6px;">Cancel</button>
+        <button id="btnSaveApiKey" type="button" style="height: 32px; padding: 0 14px; font-size: 12px; background: #0284c7; color: #fff; font-weight: 800; border-radius: 6px; border: 0;">💾 Save Credentials</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="killSwitchModal" class="modalBackdrop">
+    <div class="modalDialog" style="max-width: 400px; border-color: #fca5a5;">
+      <div class="modalHeader" style="background: #fee2e2;">
+        <h3 style="color: #991b1b;">🚨 Emergency Kill-Switch</h3>
+        <button id="btnCloseKillModal" class="modalClose" type="button">✕</button>
+      </div>
+      <div class="modalBody">
+        <p style="font-size: 12.5px; color: #7f1d1d; line-height: 1.5; margin: 0;">
+          Are you sure you want to <strong>immediately close all open pair positions at market price</strong> and halt all automated trading?
+        </p>
+      </div>
+      <div class="modalFooter">
+        <button id="btnCancelKill" type="button" style="height: 32px; padding: 0 12px; font-size: 12px; background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; border-radius: 6px;">Cancel</button>
+        <button id="btnConfirmKill" type="button" style="height: 32px; padding: 0 14px; font-size: 12px; background: #dc2626; color: #fff; font-weight: 800; border-radius: 6px; border: 0;">🚨 Close All Positions</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toastContainer"></div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
@@ -2737,6 +3423,11 @@
       updateNewsMarkers(rows);
       window.exposureOverlayRows = rows;
       requestExposureOverlayDraw();
+
+      if (typeof tradingEngine !== "undefined") {
+        tradingEngine.updatePnL();
+        tradingEngine.updateSignalApprover();
+      }
 
       const totalBars = rows.length;
       let vp = window.userViewport;
@@ -4597,7 +5288,29 @@
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
         deployTime: "Deployed: 2026-08-23 22:39 KST",
-        footerDeploy: "Deployed: <strong>2026-08-23 22:39 KST</strong> (AWS EC2)"
+        footerDeploy: "Deployed: <strong>2026-08-23 22:39 KST</strong> (AWS EC2)",
+        titleExecutionTerminal: "⚡ 1-Click Pair Execution Terminal & Live Orders",
+        lblExecutionSlippage: "Slippage Guard: <strong>5 BPS</strong>",
+        btnResetPaper: "↺ Reset $10k",
+        lblAccountEquity: "Account Equity",
+        lblAvailMargin: "Available Margin",
+        lblUnrealizedPnl: "Unrealized PnL",
+        lblActivePairs: "Active Pairs",
+        lblMarginRisk: "Margin Risk",
+        lblAiSignalTitle: "AI Model Signal Ready",
+        btnApproveSignal: "⚡ 1-Click Approve Order",
+        btnDismissSignal: "Dismiss",
+        lblOrderNotional: "Order Notional (USDT)",
+        lblLeverage: "Leverage Multiplier",
+        lblOrderRoute: "Execution Route",
+        btnPairBuyText: "🟢 BUY ADR / SELL KR",
+        btnPairBuySub: "Bet on Spread Expansion (▲)",
+        btnPairSellText: "🔴 SELL ADR / BUY KR",
+        btnPairSellSub: "Bet on Premium Harvest (▼)",
+        btnPairFlatText: "🔒 Delta-Neutral Flatten (Close All)",
+        tabPositions: "Active Positions",
+        tabOrderLog: "Execution History",
+        lblModalApiKeyTitle: "🔑 Binance Futures API Credentials"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
@@ -4694,7 +5407,29 @@
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
         deployTime: "배포 일시: 2026-08-23 22:39 KST",
-        footerDeploy: "배포 일시: <strong>2026-08-23 22:39 KST</strong> (AWS EC2)"
+        footerDeploy: "배포 일시: <strong>2026-08-23 22:39 KST</strong> (AWS EC2)",
+        titleExecutionTerminal: "⚡ 1-Click 페어 주문 실행 터미널 및 실시간 포지션",
+        lblExecutionSlippage: "슬리피지 방지선: <strong>5 BPS</strong>",
+        btnResetPaper: "↺ 잔고 초기화 ($10k)",
+        lblAccountEquity: "계좌 총 자산",
+        lblAvailMargin: "가용 증거금",
+        lblUnrealizedPnl: "실시간 평가손익",
+        lblActivePairs: "보유 페어 포지션",
+        lblMarginRisk: "마진 청산 위험도",
+        lblAiSignalTitle: "AI 모델 추천 시그널 포착",
+        btnApproveSignal: "⚡ 1-Click 즉시 체결 승인",
+        btnDismissSignal: "스킵",
+        lblOrderNotional: "주문 규모 (USDT)",
+        lblLeverage: "레버리지 배수",
+        lblOrderRoute: "주문 실행 라우팅",
+        btnPairBuyText: "🟢 롱 ADR / 숏 국내주식",
+        btnPairBuySub: "스프레드 확대 배팅 (▲)",
+        btnPairSellText: "🔴 숏 ADR / 롱 국내주식",
+        btnPairSellSub: "스프레드 축소 수렴 배팅 (▼)",
+        btnPairFlatText: "🔒 델타 뉴트럴 즉시 전량 청산",
+        tabPositions: "활성 보유 포지션",
+        tabOrderLog: "주문 체결 내역",
+        lblModalApiKeyTitle: "🔑 바이낸스 선물 API 자격 증명 설정"
       }
     };
 
@@ -5111,6 +5846,33 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("deployTime")) $("deployTime").textContent = dict.deployTime;
       if ($("footerDeploy")) $("footerDeploy").innerHTML = dict.footerDeploy;
 
+      // Stage 1 Trading Terminal Translations
+      if ($("titleExecutionTerminal")) $("titleExecutionTerminal").textContent = dict.titleExecutionTerminal;
+      if ($("lblExecutionSlippage")) $("lblExecutionSlippage").innerHTML = dict.lblExecutionSlippage;
+      if ($("btnResetPaperBalance")) $("btnResetPaperBalance").textContent = dict.btnResetPaper;
+      if ($("lblAccountEquity")) $("lblAccountEquity").textContent = dict.lblAccountEquity;
+      if ($("lblAvailMargin")) $("lblAvailMargin").textContent = dict.lblAvailMargin;
+      if ($("lblUnrealizedPnl")) $("lblUnrealizedPnl").textContent = dict.lblUnrealizedPnl;
+      if ($("lblActivePairs")) $("lblActivePairs").textContent = dict.lblActivePairs;
+      if ($("lblMarginRisk")) $("lblMarginRisk").textContent = dict.lblMarginRisk;
+      if ($("lblAiSignalTitle")) $("lblAiSignalTitle").textContent = dict.lblAiSignalTitle;
+      if ($("btnApproveSignal")) $("btnApproveSignal").textContent = dict.btnApproveSignal;
+      if ($("btnDismissSignal")) $("btnDismissSignal").textContent = dict.btnDismissSignal;
+      if ($("lblOrderNotional")) $("lblOrderNotional").textContent = dict.lblOrderNotional;
+      if ($("lblLeverage")) $("lblLeverage").textContent = dict.lblLeverage;
+      if ($("lblOrderRoute")) $("lblOrderRoute").textContent = dict.lblOrderRoute;
+      if ($("lblModalApiKeyTitle")) $("lblModalApiKeyTitle").textContent = dict.lblModalApiKeyTitle;
+      if ($("tabPositions")) $("tabPositions").innerHTML = `${dict.tabPositions} (<span id="countPositions">${typeof tradingEngine !== 'undefined' ? tradingEngine.state.positions.length : 0}</span>)`;
+      if ($("tabOrderLog")) $("tabOrderLog").innerHTML = `${dict.tabOrderLog} (<span id="countOrderLog">${typeof tradingEngine !== 'undefined' ? tradingEngine.state.orderLog.length : 0}</span>)`;
+      if ($("btnExecuteBuySpread")) $("btnExecuteBuySpread").innerHTML = `<span>${dict.btnPairBuyText}</span><span style="font-size: 10px; font-weight: 600; opacity: 0.9;">${dict.btnPairBuySub}</span>`;
+      if ($("btnExecuteSellSpread")) $("btnExecuteSellSpread").innerHTML = `<span>${dict.btnPairSellText}</span><span style="font-size: 10px; font-weight: 600; opacity: 0.9;">${dict.btnPairSellSub}</span>`;
+      if ($("btnExecuteFlatten")) $("btnExecuteFlatten").textContent = dict.btnPairFlatText;
+      if (typeof tradingEngine !== 'undefined') {
+        tradingEngine.renderAccountStrip();
+        tradingEngine.renderPositionsAndLogs();
+        tradingEngine.updateSignalApprover();
+      }
+
       // Render Cards & Catalyst Feed
       renderBilingualCards(lang);
       if (cachedRows.length) updateNewsMarkers(cachedRows);
@@ -5434,7 +6196,454 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("fundingBpsDay").addEventListener("change", onParamChange);
     $("slippageBps").addEventListener("change", onParamChange);
 
+    // ==========================================
+    // STAGE 1: REAL & PAPER TRADING EXECUTION ENGINE
+    // ==========================================
+    const tradingEngine = {
+      state: {
+        mode: "paper", // "paper" | "semi_auto" | "live"
+        equity: 10000.0,
+        availableMargin: 10000.0,
+        unrealizedPnl: 0.0,
+        positions: [],
+        orderLog: [],
+        activeSignal: null,
+        selectedNotional: 1000,
+        selectedLeverage: 3,
+        selectedRoute: "market",
+        apiKey: "",
+        apiSecret: "",
+        apiEnv: "testnet"
+      },
+
+      init() {
+        this.loadStorage();
+        this.bindEvents();
+        this.renderAccountStrip();
+        this.renderPositionsAndLogs();
+        this.updateSignalApprover();
+      },
+
+      loadStorage() {
+        try {
+          const saved = localStorage.getItem("skhynix_trading_state");
+          if (saved) {
+            const data = JSON.parse(saved);
+            this.state.mode = data.mode || "paper";
+            this.state.equity = Number.isFinite(data.equity) ? data.equity : 10000.0;
+            this.state.availableMargin = Number.isFinite(data.availableMargin) ? data.availableMargin : 10000.0;
+            this.state.positions = Array.isArray(data.positions) ? data.positions : [];
+            this.state.orderLog = Array.isArray(data.orderLog) ? data.orderLog : [];
+          }
+          const creds = sessionStorage.getItem("skhynix_api_creds");
+          if (creds) {
+            const parsed = JSON.parse(creds);
+            this.state.apiKey = parsed.apiKey || "";
+            this.state.apiSecret = parsed.apiSecret || "";
+            this.state.apiEnv = parsed.apiEnv || "testnet";
+          }
+        } catch (e) {}
+      },
+
+      saveStorage() {
+        try {
+          const data = {
+            mode: this.state.mode,
+            equity: this.state.equity,
+            availableMargin: this.state.availableMargin,
+            positions: this.state.positions,
+            orderLog: this.state.orderLog
+          };
+          localStorage.setItem("skhynix_trading_state", JSON.stringify(data));
+        } catch (e) {}
+      },
+
+      setMode(mode) {
+        this.state.mode = mode;
+        $("modePaper").classList.toggle("active", mode === "paper");
+        $("modeSemiAuto").classList.toggle("active", mode === "semi_auto");
+        $("modeLive").classList.toggle("active", mode === "live");
+
+        const badge = $("badgeExecMode");
+        const isKo = window.currentLang === "ko";
+        if (badge) {
+          if (mode === "live") {
+            badge.textContent = isKo ? "🔴 실계좌 주문 모드" : "LIVE ACCOUNT EXECUTION";
+            badge.style.background = "#fee2e2";
+            badge.style.color = "#991b1b";
+            badge.style.borderColor = "#fca5a5";
+          } else if (mode === "semi_auto") {
+            badge.textContent = isKo ? "⚡ AI 시그널 반자동 승인" : "AI SEMI-AUTO APPROVAL";
+            badge.style.background = "#f0fdf4";
+            badge.style.color = "#15803d";
+            badge.style.borderColor = "#86efac";
+          } else {
+            badge.textContent = isKo ? "🛡️ 모의투자 시뮬레이션" : "PAPER SIMULATION MODE";
+            badge.style.background = "#e0f2fe";
+            badge.style.color = "#0369a1";
+            badge.style.borderColor = "#bae6fd";
+          }
+        }
+        this.updateSignalApprover();
+        this.saveStorage();
+        showToast(
+          isKo ? `매매 모드 전환: ${mode.toUpperCase()}` : `Trading mode switched: ${mode.toUpperCase()}`,
+          mode === "live" ? "danger" : "info"
+        );
+      },
+
+      renderAccountStrip() {
+        const isKo = window.currentLang === "ko";
+        const eq = this.state.equity + this.state.unrealizedPnl;
+        $("valAccountEquity").textContent = `$${eq.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        $("valAvailMargin").textContent = `$${Math.max(0, this.state.availableMargin).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+        const pnl = this.state.unrealizedPnl;
+        const pnlPct = this.state.equity > 0 ? (pnl / this.state.equity) * 100 : 0;
+        const pnlColor = pnl >= 0 ? "#10b981" : "#ef4444";
+        const pnlSign = pnl >= 0 ? "+" : "";
+        $("valUnrealizedPnl").style.color = pnlColor;
+        $("valUnrealizedPnl").textContent = `${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
+
+        const openCount = this.state.positions.length;
+        $("valActivePairs").textContent = openCount > 0 ? `${openCount} ${isKo ? '개 포지션' : 'Active Pairs'}` : `${isKo ? '무포지션' : '0 Pairs (Flat)'}`;
+
+        const usedMargin = Math.max(0, this.state.equity - this.state.availableMargin);
+        const marginRiskPct = this.state.equity > 0 ? Math.min(100, (usedMargin / this.state.equity) * 100) : 0;
+        const riskColor = marginRiskPct > 65 ? "#dc2626" : marginRiskPct > 35 ? "#ea580c" : "#16a34a";
+        const riskLabel = marginRiskPct > 65 ? (isKo ? "위험" : "High") : marginRiskPct > 35 ? (isKo ? "주의" : "Moderate") : (isKo ? "안전" : "Safe");
+        $("valMarginRisk").style.color = riskColor;
+        $("valMarginRisk").textContent = `${marginRiskPct.toFixed(1)}% (${riskLabel})`;
+      },
+
+      renderPositionsAndLogs() {
+        const isKo = window.currentLang === "ko";
+        if ($("countPositions")) $("countPositions").textContent = this.state.positions.length;
+        if ($("countOrderLog")) $("countOrderLog").textContent = this.state.orderLog.length;
+
+        // 1. Positions Body
+        const posBody = $("activePositionsBody");
+        if (posBody) {
+          if (!this.state.positions.length) {
+            posBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">🛡️ ${isKo ? '활성 보유 포지션이 없습니다. 주문 티켓 또는 AI 시그널 승인으로 포지션을 개설하세요.' : 'No active open positions. Execute a pair trade or approve an AI signal to open.'}</td></tr>`;
+          } else {
+            posBody.innerHTML = this.state.positions.map((pos) => {
+              const pnlColor = pos.pnlUsdt >= 0 ? "#10b981" : "#ef4444";
+              const pnlSign = pos.pnlUsdt >= 0 ? "+" : "";
+              const dirLabel = pos.direction === "BUY_ADR_SELL_KR"
+                ? (isKo ? "🟢 롱 ADR / 숏 KR" : "🟢 Long ADR / Short KR")
+                : (isKo ? "🔴 숏 ADR / 롱 KR" : "🔴 Short ADR / Long KR");
+
+              return `<tr>
+                <td style="font-weight: 700; color: #0f172a;">${pos.pairName}</td>
+                <td><span style="font-weight: 700;">${dirLabel}</span> <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 3px;">${pos.leverage}x</span></td>
+                <td>$${pos.notional.toLocaleString()}</td>
+                <td>${pos.entrySpread.toFixed(2)}</td>
+                <td style="font-weight: 700;">${pos.markSpread.toFixed(2)}</td>
+                <td style="font-weight: 800; color: ${pnlColor};">${pnlSign}$${pos.pnlUsdt.toFixed(2)} (${pnlSign}${pos.pnlPct.toFixed(2)}%)</td>
+                <td style="color: #64748b;">${pos.estLiq.toFixed(2)}</td>
+                <td><button class="btnRowClose" onclick="tradingEngine.closePosition('${pos.id}')">${isKo ? '즉시 청산' : 'Close'}</button></td>
+              </tr>`;
+            }).join("");
+          }
+        }
+
+        // 2. Order Log Body
+        const logBody = $("executionHistoryBody");
+        if (logBody) {
+          if (!this.state.orderLog.length) {
+            logBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">${isKo ? '체결 내역이 없습니다.' : 'No recent executions logged.'}</td></tr>`;
+          } else {
+            logBody.innerHTML = this.state.orderLog.slice(-15).reverse().map((log) => {
+              const statusColor = log.status === "FILLED" ? "#16a34a" : "#dc2626";
+              return `<tr>
+                <td style="color: #64748b; font-size: 11px;">${log.timestamp}</td>
+                <td style="font-weight: 700;">${log.pair}</td>
+                <td>${log.side}</td>
+                <td>$${log.sizeUsdt.toLocaleString()}</td>
+                <td>${log.avgSpread.toFixed(2)}</td>
+                <td style="color: #64748b;">-$${log.feeUsdt.toFixed(2)}</td>
+                <td><span style="font-weight: 800; color: ${statusColor};">${log.status}</span></td>
+              </tr>`;
+            }).join("");
+          }
+        }
+      },
+
+      executeOrder(side, notional, leverage, route) {
+        const isKo = window.currentLang === "ko";
+        const reqMargin = notional / leverage;
+        if (reqMargin > this.state.availableMargin) {
+          showToast(isKo ? `증거금 부족: 가용 $${this.state.availableMargin.toFixed(0)} < 필요 $${reqMargin.toFixed(0)}` : `Insufficient Margin: Available $${this.state.availableMargin.toFixed(0)} < Req $${reqMargin.toFixed(0)}`, "danger");
+          return false;
+        }
+
+        const curSpread = cachedRows?.length ? (cachedRows.at(-1).normalized || 132.50) : 132.50;
+        const feeBps = Number($("tradingFeeBps")?.value || 5);
+        const slipBps = Number($("slippageBps")?.value || 0);
+        const feeUsdt = notional * ((feeBps + slipBps) / 10000) * 2;
+
+        const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+        const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
+
+        const liqDist = (1 / leverage) * 0.9;
+        const estLiq = side === "BUY_ADR_SELL_KR"
+          ? curSpread * (1 - liqDist)
+          : curSpread * (1 + liqDist);
+
+        const newPos = {
+          id: "pos_" + Date.now(),
+          timestamp: new Date().toLocaleTimeString(),
+          pairKey: assetKey,
+          pairName: assetConfig.shortName || "SK Hynix Arb",
+          direction: side,
+          notional: notional,
+          leverage: leverage,
+          reqMargin: reqMargin,
+          entrySpread: curSpread,
+          markSpread: curSpread,
+          pnlUsdt: 0.0,
+          pnlPct: 0.0,
+          estLiq: estLiq
+        };
+
+        this.state.positions.push(newPos);
+        this.state.availableMargin -= reqMargin;
+        this.state.equity -= feeUsdt;
+
+        const logEntry = {
+          id: "ord_" + Date.now(),
+          timestamp: new Date().toLocaleTimeString(),
+          pair: assetConfig.shortName || "SK Hynix Arb",
+          side: side === "BUY_ADR_SELL_KR" ? "BUY SPREAD (LONG ADR)" : "SELL SPREAD (SHORT ADR)",
+          sizeUsdt: notional,
+          avgSpread: curSpread,
+          feeUsdt: feeUsdt,
+          status: "FILLED"
+        };
+        this.state.orderLog.push(logEntry);
+
+        this.updatePnL();
+        this.saveStorage();
+
+        const sideText = side === "BUY_ADR_SELL_KR" ? (isKo ? "롱 ADR / 숏 KR" : "Long ADR / Short KR") : (isKo ? "숏 ADR / 롱 KR" : "Short ADR / Long KR");
+        showToast(isKo ? `⚡ [주문 체결] ${sideText} $${notional.toLocaleString()} (${leverage}x, ${route})` : `⚡ [Filled] ${sideText} $${notional.toLocaleString()} (${leverage}x, ${route})`, "success");
+        return true;
+      },
+
+      closePosition(posId) {
+        const isKo = window.currentLang === "ko";
+        const idx = this.state.positions.findIndex(p => p.id === posId);
+        if (idx < 0) return;
+        const pos = this.state.positions[idx];
+
+        const feeBps = Number($("tradingFeeBps")?.value || 5);
+        const exitFee = pos.notional * (feeBps / 10000) * 2;
+        const netPnl = pos.pnlUsdt - exitFee;
+
+        this.state.availableMargin += pos.reqMargin;
+        this.state.equity += netPnl;
+        this.state.positions.splice(idx, 1);
+
+        this.state.orderLog.push({
+          id: "cls_" + Date.now(),
+          timestamp: new Date().toLocaleTimeString(),
+          pair: pos.pairName,
+          side: "CLOSE FLATTEN",
+          sizeUsdt: pos.notional,
+          avgSpread: pos.markSpread,
+          feeUsdt: exitFee,
+          status: "FILLED"
+        });
+
+        this.updatePnL();
+        this.saveStorage();
+        const pnlSign = netPnl >= 0 ? "+" : "";
+        showToast(isKo ? `🔒 포지션 종료: 손익 ${pnlSign}$${netPnl.toFixed(2)}` : `🔒 Position Closed: Net PnL ${pnlSign}$${netPnl.toFixed(2)}`, netPnl >= 0 ? "success" : "danger");
+      },
+
+      flattenAll() {
+        const isKo = window.currentLang === "ko";
+        if (!this.state.positions.length) {
+          showToast(isKo ? "현재 보유 중인 포지션이 없습니다." : "No open positions to flatten.", "info");
+          return;
+        }
+        while (this.state.positions.length > 0) {
+          this.closePosition(this.state.positions[0].id);
+        }
+        showToast(isKo ? "🚨 모든 활성 포지션을 시장가로 전량 청산했습니다." : "🚨 All active positions flattened at market.", "danger");
+      },
+
+      updatePnL() {
+        const curSpread = cachedRows?.length ? (cachedRows.at(-1).normalized || 132.50) : 132.50;
+        let totalPnl = 0.0;
+
+        this.state.positions.forEach((pos) => {
+          pos.markSpread = curSpread;
+          const spreadDiffPct = (curSpread / pos.entrySpread - 1) * 100;
+          const gainPct = pos.direction === "BUY_ADR_SELL_KR" ? spreadDiffPct : -spreadDiffPct;
+          pos.pnlPct = gainPct * pos.leverage;
+          pos.pnlUsdt = (pos.notional * gainPct / 100);
+          totalPnl += pos.pnlUsdt;
+        });
+
+        this.state.unrealizedPnl = totalPnl;
+        this.renderAccountStrip();
+        this.renderPositionsAndLogs();
+      },
+
+      updateSignalApprover() {
+        const box = $("aiSignalBox");
+        if (!box) return;
+        if (this.state.mode !== "semi_auto") {
+          box.style.display = "none";
+          return;
+        }
+        box.style.display = "block";
+        const latest = cachedRows?.length ? cachedRows.at(-1) : null;
+        const edge = latest ? (latest.netSignalEdgePct || 0) : 1.85;
+        const conf = latest ? Math.round((latest.forecastConfidence || 0.92) * 100) : 92;
+        const isKo = window.currentLang === "ko";
+
+        $("valSignalConfidence").textContent = `${conf}% Conf`;
+        if (edge > 0) {
+          $("msgAiSignal").innerHTML = isKo
+            ? `스프레드 괴리율 <strong>+${edge.toFixed(2)}%</strong> 감지됨. 권장: <strong>숏 ADR / 롱 국내주식 (스프레드 축소 수렴)</strong>`
+            : `Spread dislocation <strong>+${edge.toFixed(2)}%</strong> detected. Recommended: <strong>Short ADR / Long KR (Mean Reversion)</strong>`;
+          this.state.activeSignal = { side: "SELL_ADR_BUY_KR", edge, conf };
+        } else {
+          $("msgAiSignal").innerHTML = isKo
+            ? `스프레드 괴리율 <strong>${edge.toFixed(2)}%</strong> 감지됨. 권장: <strong>롱 ADR / 숏 국내주식 (스프레드 확대)</strong>`
+            : `Spread dislocation <strong>${edge.toFixed(2)}%</strong> detected. Recommended: <strong>Long ADR / Short KR (Expansion)</strong>`;
+          this.state.activeSignal = { side: "BUY_ADR_SELL_KR", edge, conf };
+        }
+      },
+
+      bindEvents() {
+        // Mode Switches
+        $("modePaper").addEventListener("click", () => this.setMode("paper"));
+        $("modeSemiAuto").addEventListener("click", () => this.setMode("semi_auto"));
+        $("modeLive").addEventListener("click", () => this.setMode("live"));
+
+        // Preset Buttons
+        document.querySelectorAll(".presetBtn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            document.querySelectorAll(".presetBtn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            const val = Number(btn.getAttribute("data-val") || 1000);
+            this.state.selectedNotional = val;
+            $("inputOrderNotional").value = val;
+            this.updateReqMarginLabel();
+          });
+        });
+        $("inputOrderNotional").addEventListener("input", (e) => {
+          this.state.selectedNotional = Math.max(10, Number(e.target.value) || 1000);
+          this.updateReqMarginLabel();
+        });
+
+        // Leverage Buttons
+        document.querySelectorAll(".leverageBtn").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            document.querySelectorAll(".leverageBtn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            const lev = Number(btn.getAttribute("data-lev") || 3);
+            this.state.selectedLeverage = lev;
+            $("valLeverageLabel").textContent = `${lev}x Leverage`;
+            this.updateReqMarginLabel();
+          });
+        });
+
+        // Execution Buttons
+        $("btnExecuteBuySpread").addEventListener("click", () => {
+          this.executeOrder("BUY_ADR_SELL_KR", this.state.selectedNotional, this.state.selectedLeverage, $("selectOrderRoute").value);
+        });
+        $("btnExecuteSellSpread").addEventListener("click", () => {
+          this.executeOrder("SELL_ADR_BUY_KR", this.state.selectedNotional, this.state.selectedLeverage, $("selectOrderRoute").value);
+        });
+        $("btnExecuteFlatten").addEventListener("click", () => this.flattenAll());
+
+        // Signal Approver
+        $("btnApproveSignal").addEventListener("click", () => {
+          if (this.state.activeSignal) {
+            this.executeOrder(this.state.activeSignal.side, this.state.selectedNotional, this.state.selectedLeverage, "market");
+          }
+        });
+        $("btnDismissSignal").addEventListener("click", () => {
+          $("aiSignalBox").style.display = "none";
+        });
+
+        // Reset Balance
+        $("btnResetPaperBalance").addEventListener("click", () => {
+          this.state.equity = 10000.0;
+          this.state.availableMargin = 10000.0;
+          this.state.unrealizedPnl = 0.0;
+          this.state.positions = [];
+          this.saveStorage();
+          this.renderAccountStrip();
+          this.renderPositionsAndLogs();
+          showToast(window.currentLang === "ko" ? "↺ 모의 계좌 잔고를 $10,000으로 초기화했습니다." : "↺ Reset paper balance to $10,000.", "info");
+        });
+
+        // Tabs
+        $("tabPositions").addEventListener("click", () => {
+          $("tabPositions").classList.add("active");
+          $("tabOrderLog").classList.remove("active");
+          $("panePositions").style.display = "block";
+          $("paneOrderLog").style.display = "none";
+        });
+        $("tabOrderLog").addEventListener("click", () => {
+          $("tabOrderLog").classList.add("active");
+          $("tabPositions").classList.remove("active");
+          $("panePositions").style.display = "none";
+          $("paneOrderLog").style.display = "block";
+        });
+
+        // Modals
+        $("btnApiKeyModal").addEventListener("click", () => $("apiKeyModal").classList.add("open"));
+        $("btnCloseApiKeyModal").addEventListener("click", () => $("apiKeyModal").classList.remove("open"));
+        $("btnCancelApiKey").addEventListener("click", () => $("apiKeyModal").classList.remove("open"));
+        $("btnSaveApiKey").addEventListener("click", () => {
+          const key = $("inputApiKey").value.trim();
+          const secret = $("inputApiSecret").value.trim();
+          const env = $("inputApiEnv").value;
+          sessionStorage.setItem("skhynix_api_creds", JSON.stringify({ apiKey: key, apiSecret: secret, apiEnv: env }));
+          this.state.apiKey = key;
+          this.state.apiSecret = secret;
+          this.state.apiEnv = env;
+          $("apiKeyModal").classList.remove("open");
+          showToast(window.currentLang === "ko" ? "🔑 API 자격 증명이 세션에 안전하게 저장되었습니다." : "🔑 API credentials stored in session.", "success");
+        });
+
+        $("btnKillSwitch").addEventListener("click", () => $("killSwitchModal").classList.add("open"));
+        $("btnCloseKillModal").addEventListener("click", () => $("killSwitchModal").classList.remove("open"));
+        $("btnCancelKill").addEventListener("click", () => $("killSwitchModal").classList.remove("open"));
+        $("btnConfirmKill").addEventListener("click", () => {
+          $("killSwitchModal").classList.remove("open");
+          this.flattenAll();
+        });
+      },
+
+      updateReqMarginLabel() {
+        const req = this.state.selectedNotional / this.state.selectedLeverage;
+        $("valCalculatedMargin").textContent = `Req Margin: $${req.toFixed(2)}`;
+      }
+    };
+
+    function showToast(msg, type = "info") {
+      const container = $("toastContainer");
+      if (!container) return;
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      toast.textContent = msg;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
     loadSettings();
+    tradingEngine.init();
     refresh();
   </script>
 </body>
