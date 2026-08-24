@@ -676,6 +676,79 @@
     }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
+    /* --- Top-Level Navigation Tabs (Backtest vs Trading) --- */
+    .mainNavTabs {
+      display: flex;
+      gap: 8px;
+      margin: 14px 0 16px 0;
+      border-bottom: 2px solid #cbd5e1;
+      padding-bottom: 0;
+    }
+    .mainNavBtn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      border-radius: 8px 8px 0 0;
+      background: #f1f5f9;
+      border: 1.5px solid #cbd5e1;
+      border-bottom: 0;
+      color: #64748b;
+      cursor: pointer;
+      position: relative;
+      bottom: -2px;
+      transition: all 0.15s ease;
+      height: auto;
+      text-align: left;
+    }
+    .mainNavBtn:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+    .mainNavBtn.active {
+      background: #ffffff;
+      color: #0284c7;
+      border-color: #0284c7;
+      border-top: 3.5px solid #0284c7;
+      border-bottom: 2px solid #ffffff;
+      box-shadow: 0 -2px 8px rgba(2, 132, 199, 0.12);
+      font-weight: 800;
+    }
+    .navBtnIcon {
+      font-size: 18px;
+      line-height: 1;
+    }
+    .navBtnText {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .navBtnText strong {
+      font-size: 13px;
+      font-weight: 800;
+      color: inherit;
+    }
+    .navBtnText small {
+      font-size: 10.5px;
+      color: #64748b;
+      font-weight: 600;
+    }
+    .navLivePill {
+      font-size: 10px;
+      font-weight: 800;
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+      border: 1px solid #bae6fd;
+    }
+    .mainNavBtn.active .navLivePill {
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #0284c7;
+    }
+
     /* --- Stage 1 Real / Paper Trading Terminal & Execution Styles --- */
     .tradingModeSwitch {
       display: inline-flex;
@@ -1225,13 +1298,6 @@
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
       </div>
       <div class="topRight" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-        <div class="tradingModeSwitch" aria-label="Trading mode switch">
-          <button id="modePaper" class="active" type="button" title="Manual Discretionary / Paper Mode">✋ Manual / Paper</button>
-          <button id="modeSemiAuto" type="button" title="AI Signal 1-Click Approval">⚡ Semi-Auto</button>
-          <button id="modeLive" type="button" title="24H Autonomous Execution Engine">🤖 Full-Auto</button>
-        </div>
-        <button id="btnApiKeyModal" class="btnTopAction" type="button" title="Binance API Key Configuration">🔑 API</button>
-        <button id="btnKillSwitch" class="btnTopAction killSwitch" type="button" title="Emergency Flatten & Halt All Orders">🚨 Kill-Switch</button>
         <div class="langSwitch" aria-label="Language switch">
           <button id="langKo" type="button">🇰🇷 한국어</button>
           <button id="langEn" class="active" type="button">🇺🇸 English</button>
@@ -1240,31 +1306,30 @@
       </div>
     </section>
 
-    <!-- Real-Time Account Balance & Margin Risk Strip -->
-    <section class="realAccountStrip" id="realAccountStrip">
-      <div class="realAccountStat">
-        <span id="lblAccountEquity">Account Equity</span>
-        <strong id="valAccountEquity" style="color: #0284c7;">$10,000.00</strong>
-      </div>
-      <div class="realAccountStat">
-        <span id="lblAvailMargin">Available Margin</span>
-        <strong id="valAvailMargin">$10,000.00</strong>
-      </div>
-      <div class="realAccountStat">
-        <span id="lblUnrealizedPnl">Unrealized PnL</span>
-        <strong id="valUnrealizedPnl" style="color: #10b981;">+$0.00 (+0.00%)</strong>
-      </div>
-      <div class="realAccountStat">
-        <span id="lblActivePairs">Active Pairs</span>
-        <strong id="valActivePairs">0 Pairs (Flat)</strong>
-      </div>
-      <div class="realAccountStat">
-        <span id="lblMarginRisk">Margin Risk</span>
-        <strong id="valMarginRisk" style="color: #16a34a;">0.0% (Safe)</strong>
-      </div>
-    </section>
+    <!-- Top Primary Navigation Tabs -->
+    <nav class="mainNavTabs" aria-label="Primary Navigation">
+      <button id="navTabBacktest" class="mainNavBtn active" type="button">
+        <span class="navBtnIcon">📊</span>
+        <div class="navBtnText">
+          <strong id="lblNavBacktest">Backtest & Strategy Research</strong>
+          <small id="subNavBacktest">Parameter Tuning & Historical Simulation</small>
+        </div>
+      </button>
+      <button id="navTabTrading" class="mainNavBtn" type="button">
+        <span class="navBtnIcon">⚡</span>
+        <div class="navBtnText">
+          <strong id="lblNavTrading">Live & Paper Execution Terminal</strong>
+          <small id="subNavTrading">Autonomous Bot, Active Positions & Orders</small>
+        </div>
+        <span id="navLivePill" class="navLivePill">BOT READY</span>
+      </button>
+    </nav>
 
-    <section class="controls" aria-label="Chart controls">
+    <!-- ======================================================= -->
+    <!-- TAB 1: BACKTEST & QUANTITATIVE RESEARCH                 -->
+    <!-- ======================================================= -->
+    <div id="tabContentBacktest">
+      <section class="controls" aria-label="Chart controls">
       <!-- Section 1: Market Environment, Strategy & Execution Cost Parameters -->
       <div class="controlSection">
         <div class="controlSectionHeader">
@@ -1481,189 +1546,6 @@
       </div>
     </section>
 
-    <!-- Stage 1 Real / Paper Trading Execution Terminal & Active Positions Section -->
-    <section class="panel" id="secExecutionTerminal">
-      <div class="chartHeader" style="margin-bottom: 6px; align-items: center;">
-        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-          <h2 id="titleExecutionTerminal" style="font-size: 15px; font-weight: 800; color: #0f172a; margin: 0;">⚡ 1-Click Pair Execution Terminal & Live Orders</h2>
-          <span id="badgeExecMode" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; border: 1px solid #bae6fd;">PAPER SIMULATION MODE</span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 11px; color: #64748b;" id="lblExecutionSlippage">Slippage Guard: <strong>5 BPS</strong></span>
-          <button id="btnResetPaperBalance" type="button" style="height: 26px; padding: 0 8px; font-size: 11px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 4px;">↺ Reset $10k</button>
-        </div>
-      </div>
-
-      <div class="execTerminalGrid">
-        <!-- Column 1: Autonomous Status / AI Signal Approver + Pair Order Ticket -->
-        <div>
-          <!-- 24H Autonomous Bot Live Telemetry (Active in Full-Auto mode) -->
-          <div class="autoBotActiveBox" id="autoBotBox" style="display: none;">
-            <div class="autoBotActiveHeader">
-              <div class="autoBotTitle">
-                <span class="autoBotPulse"></span>
-                <span id="lblAutoBotTitle">🤖 24H Autonomous Execution Active</span>
-              </div>
-              <span style="font-size: 10.5px; background: #0284c7; color: #fff; padding: 2px 7px; border-radius: 4px; font-weight: 800;">AUTOPILOT ON</span>
-            </div>
-            <div class="autoBotTelemetry">
-              <div class="autoBotItem">
-                <span id="lblAutoTargetSize">Model Dynamic Sizing</span>
-                <strong id="valAutoTargetSize" style="color: #38bdf8;">+150.0% (Long ADR)</strong>
-              </div>
-              <div class="autoBotItem">
-                <span id="lblAutoTargetNotional">Calculated Notional</span>
-                <strong id="valAutoTargetNotional" style="color: #10b981;">$15,000.00 USDT</strong>
-              </div>
-              <div class="autoBotItem">
-                <span id="lblAutoCurrentEdge">Current Edge / Spread</span>
-                <strong id="valAutoCurrentEdge">+1.85% (131.70)</strong>
-              </div>
-              <div class="autoBotItem">
-                <span id="lblAutoNextRebalance">Rebalance Pacing</span>
-                <strong id="valAutoNextRebalance">50% / 15m Candle</strong>
-              </div>
-            </div>
-            <p id="msgAutoBotHint" style="margin: 10px 0 0 0; font-size: 11px; color: #94a3b8; line-height: 1.4;">
-              🛡️ <em>Manual inputs are locked in Full-Auto. The model dynamically recalculates and executes allocation on every closed bar.</em>
-            </p>
-          </div>
-
-          <!-- AI Signal 1-Click Approver (Active in Semi-Auto mode) -->
-          <div class="aiSignalApprover" id="aiSignalBox" style="display: none;">
-            <div class="aiSignalHeader">
-              <div class="aiSignalTitle">
-                <span class="aiSignalPulse"></span>
-                <span id="lblAiSignalTitle">AI Model Signal Ready</span>
-              </div>
-              <span id="valSignalConfidence" style="font-size: 10.5px; background: #0284c7; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 800;">92% Conf</span>
-            </div>
-            <p id="msgAiSignal" style="font-size: 11.5px; color: #0369a1; margin: 0 0 10px 0; font-weight: 600; line-height: 1.4;">
-              Spread dislocation <strong>+1.85%</strong> exceeds threshold. Recommended: <strong>Short ADR 150% + Long KR 150% ($15,000 USDT)</strong>.
-            </p>
-            <div style="display: flex; gap: 8px;">
-              <button id="btnApproveSignal" type="button" style="flex: 2; height: 32px; font-size: 12px; background: #0284c7; color: #fff; font-weight: 800; border-radius: 6px; border: 0;">⚡ 1-Click Approve Order</button>
-              <button id="btnDismissSignal" type="button" style="flex: 1; height: 32px; font-size: 11.5px; background: #f1f5f9; color: #64748b; font-weight: 700; border-radius: 6px; border: 1px solid #cbd5e1;">Dismiss</button>
-            </div>
-          </div>
-
-          <!-- Dual-Leg Order Ticket (Locked in Auto Mode, Unlocked in Manual Mode) -->
-          <div class="pairOrderTicket" id="pairOrderTicket">
-            <div class="ticketRow">
-              <div class="ticketRowLabel">
-                <span id="lblOrderNotional">Order Notional (USDT)</span>
-                <span id="valCalculatedMargin" style="color: #64748b; font-weight: 600;">Req Margin: $333.33</span>
-              </div>
-              <div class="presetButtonGroup">
-                <button class="presetBtn" data-val="250">$250</button>
-                <button class="presetBtn" data-val="500">$500</button>
-                <button class="presetBtn active" data-val="1000">$1,000</button>
-                <button class="presetBtn" data-val="2500">$2,500</button>
-                <button class="presetBtn" data-val="5000">$5,000</button>
-              </div>
-              <input id="inputOrderNotional" type="number" min="50" max="50000" step="50" value="1000" style="margin-top: 4px; font-weight: 800; font-size: 14px;">
-            </div>
-
-            <div class="ticketRow">
-              <div class="ticketRowLabel">
-                <span id="lblLeverage">Leverage Multiplier</span>
-                <span id="valLeverageLabel" style="color: #0284c7; font-weight: 800;">3x Leverage</span>
-              </div>
-              <div class="leverageGroup">
-                <button class="leverageBtn" data-lev="1">1x</button>
-                <button class="leverageBtn" data-lev="2">2x</button>
-                <button class="leverageBtn active" data-lev="3">3x</button>
-                <button class="leverageBtn" data-lev="5">5x</button>
-              </div>
-            </div>
-
-            <div class="ticketRow">
-              <div class="ticketRowLabel">
-                <span id="lblOrderRoute">Execution Route</span>
-                <span style="font-size: 10.5px; color: #16a34a; font-weight: 700;">🟢 Delta Neutral</span>
-              </div>
-              <select id="selectOrderRoute" style="font-weight: 700;">
-                <option value="market" selected>⚡ Instant Simultaneous Market Fill</option>
-                <option value="twap30">⏱️ TWAP Sliced (30s / 5 Sub-Orders)</option>
-                <option value="limit">🎯 Limit Spread (Passive Maker)</option>
-              </select>
-            </div>
-
-            <div class="dualActionButtons">
-              <button id="btnExecuteBuySpread" class="btnPairBuy" type="button">
-                <span>🟢 BUY ADR / SELL KR</span>
-                <span style="font-size: 10px; font-weight: 600; opacity: 0.9;">Bet on Spread Expansion (▲)</span>
-              </button>
-              <button id="btnExecuteSellSpread" class="btnPairSell" type="button">
-                <span>🔴 SELL ADR / BUY KR</span>
-                <span style="font-size: 10px; font-weight: 600; opacity: 0.9;">Bet on Premium Harvest (▼)</span>
-              </button>
-              <button id="btnExecuteFlatten" class="btnPairFlat" type="button">
-                🔒 Delta-Neutral Flatten (Close All)
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Column 2: Active Open Positions & Execution Logs -->
-        <div class="posTableShell">
-          <div class="posTableTabs">
-            <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">0</span>)</button>
-            <button id="tabOrderLog" class="posTabBtn" type="button">Execution History (<span id="countOrderLog">0</span>)</button>
-          </div>
-
-          <!-- Tab Pane 1: Active Positions Table -->
-          <div id="panePositions" style="display: block; width: 100%; overflow-x: auto;">
-            <table class="positionsTable">
-              <thead>
-                <tr>
-                  <th>Pair / Asset</th>
-                  <th>Direction</th>
-                  <th>Notional</th>
-                  <th>Entry Spread</th>
-                  <th>Mark Spread</th>
-                  <th>Unrealized PnL</th>
-                  <th>Est. Liq</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="activePositionsBody">
-                <tr>
-                  <td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
-                    🛡️ No active open positions. Execute a pair trade or approve an AI signal to open.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Tab Pane 2: Execution History Log -->
-          <div id="paneOrderLog" style="display: none; width: 100%; overflow-x: auto;">
-            <table class="positionsTable">
-              <thead>
-                <tr>
-                  <th>Timestamp</th>
-                  <th>Pair</th>
-                  <th>Side</th>
-                  <th>Filled Size</th>
-                  <th>Avg Spread</th>
-                  <th>Fee Paid</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="executionHistoryBody">
-                <tr>
-                  <td colspan="7" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
-                    No recent executions logged.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <section class="panel tableBoundPanel">
       <div class="chartHeader">
         <div>
@@ -1742,6 +1624,236 @@
         <!-- Dynamically rendered based on language -->
       </div>
     </section>
+
+    </div><!-- End #tabContentBacktest -->
+
+    <!-- ======================================================= -->
+    <!-- TAB 2: LIVE & PAPER TRADING EXECUTION TERMINAL          -->
+    <!-- ======================================================= -->
+    <div id="tabContentTrading" style="display: none;">
+      
+      <!-- Top Trading Control Bar -->
+      <div style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 9px; padding: 10px 16px; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.04);">
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div class="tradingModeSwitch" aria-label="Trading mode switch">
+            <button id="modePaper" class="active" type="button" title="Manual Discretionary / Paper Mode">✋ Manual / Paper</button>
+            <button id="modeSemiAuto" type="button" title="AI Signal 1-Click Approval">⚡ Semi-Auto</button>
+            <button id="modeLive" type="button" title="24H Autonomous Execution Engine">🤖 Full-Auto</button>
+          </div>
+          <button id="btnApiKeyModal" class="btnTopAction" type="button" title="Binance API Key Configuration">🔑 API Key</button>
+          <button id="btnKillSwitch" class="btnTopAction killSwitch" type="button" title="Emergency Flatten & Halt All Orders">🚨 Kill-Switch</button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 11.5px; color: #64748b;" id="lblExecutionSlippage">Slippage Guard: <strong>5 BPS</strong></span>
+          <button id="btnResetPaperBalance" type="button" style="height: 30px; padding: 0 10px; font-size: 11.5px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 5px; font-weight: 700; cursor: pointer;">↺ Reset $10k</button>
+        </div>
+      </div>
+
+      <!-- Real-Time Account Balance & Margin Risk Strip -->
+      <section class="realAccountStrip" id="realAccountStrip">
+        <div class="realAccountStat">
+          <span id="lblAccountEquity">Account Equity</span>
+          <strong id="valAccountEquity" style="color: #0284c7;">$10,000.00</strong>
+        </div>
+        <div class="realAccountStat">
+          <span id="lblAvailMargin">Available Margin</span>
+          <strong id="valAvailMargin">$10,000.00</strong>
+        </div>
+        <div class="realAccountStat">
+          <span id="lblUnrealizedPnl">Unrealized PnL</span>
+          <strong id="valUnrealizedPnl" style="color: #10b981;">+$0.00 (+0.00%)</strong>
+        </div>
+        <div class="realAccountStat">
+          <span id="lblActivePairs">Active Pairs</span>
+          <strong id="valActivePairs">0 Pairs (Flat)</strong>
+        </div>
+        <div class="realAccountStat">
+          <span id="lblMarginRisk">Margin Risk</span>
+          <strong id="valMarginRisk" style="color: #16a34a;">0.0% (Safe)</strong>
+        </div>
+      </section>
+
+      <!-- Stage 1 Real / Paper Trading Execution Terminal & Active Positions Section -->
+      <section class="panel" id="secExecutionTerminal" style="margin-top: 0;">
+        <div class="chartHeader" style="margin-bottom: 6px; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <h2 id="titleExecutionTerminal" style="font-size: 15px; font-weight: 800; color: #0f172a; margin: 0;">⚡ 1-Click Pair Execution Terminal & Live Orders</h2>
+            <span id="badgeExecMode" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; border: 1px solid #bae6fd;">PAPER SIMULATION MODE</span>
+          </div>
+          <span style="font-size: 11px; color: #16a34a; font-weight: 700;">🟢 Delta Neutral Simultaneous Fill</span>
+        </div>
+
+        <div class="execTerminalGrid">
+          <!-- Column 1: Autonomous Status / AI Signal Approver + Pair Order Ticket -->
+          <div>
+            <!-- 24H Autonomous Bot Live Telemetry (Active in Full-Auto mode) -->
+            <div class="autoBotActiveBox" id="autoBotBox" style="display: none;">
+              <div class="autoBotActiveHeader">
+                <div class="autoBotTitle">
+                  <span class="autoBotPulse"></span>
+                  <span id="lblAutoBotTitle">🤖 24H Autonomous Execution Active</span>
+                </div>
+                <span style="font-size: 10.5px; background: #0284c7; color: #fff; padding: 2px 7px; border-radius: 4px; font-weight: 800;">AUTOPILOT ON</span>
+              </div>
+              <div class="autoBotTelemetry">
+                <div class="autoBotItem">
+                  <span id="lblAutoTargetSize">Model Dynamic Sizing</span>
+                  <strong id="valAutoTargetSize" style="color: #38bdf8;">+150.0% (Long ADR)</strong>
+                </div>
+                <div class="autoBotItem">
+                  <span id="lblAutoTargetNotional">Calculated Notional</span>
+                  <strong id="valAutoTargetNotional" style="color: #10b981;">$15,000.00 USDT</strong>
+                </div>
+                <div class="autoBotItem">
+                  <span id="lblAutoCurrentEdge">Current Edge / Spread</span>
+                  <strong id="valAutoCurrentEdge">+1.85% (131.70)</strong>
+                </div>
+                <div class="autoBotItem">
+                  <span id="lblAutoNextRebalance">Rebalance Pacing</span>
+                  <strong id="valAutoNextRebalance">50% / 15m Candle</strong>
+                </div>
+              </div>
+              <p id="msgAutoBotHint" style="margin: 10px 0 0 0; font-size: 11px; color: #94a3b8; line-height: 1.4;">
+                🛡️ <em>Manual inputs are locked in Full-Auto. The model dynamically recalculates and executes allocation on every closed bar.</em>
+              </p>
+            </div>
+
+            <!-- AI Signal 1-Click Approver (Active in Semi-Auto mode) -->
+            <div class="aiSignalApprover" id="aiSignalBox" style="display: none;">
+              <div class="aiSignalHeader">
+                <div class="aiSignalTitle">
+                  <span class="aiSignalPulse"></span>
+                  <span id="lblAiSignalTitle">AI Model Signal Ready</span>
+                </div>
+                <span id="valSignalConfidence" style="font-size: 10.5px; background: #0284c7; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 800;">92% Conf</span>
+              </div>
+              <p id="msgAiSignal" style="font-size: 11.5px; color: #0369a1; margin: 0 0 10px 0; font-weight: 600; line-height: 1.4;">
+                Spread dislocation <strong>+1.85%</strong> exceeds threshold. Recommended: <strong>Short ADR 150% + Long KR 150% ($15,000 USDT)</strong>.
+              </p>
+              <div style="display: flex; gap: 8px;">
+                <button id="btnApproveSignal" type="button" style="flex: 2; height: 32px; font-size: 12px; background: #0284c7; color: #fff; font-weight: 800; border-radius: 6px; border: 0;">⚡ 1-Click Approve Order</button>
+                <button id="btnDismissSignal" type="button" style="flex: 1; height: 32px; font-size: 11.5px; background: #f1f5f9; color: #64748b; font-weight: 700; border-radius: 6px; border: 1px solid #cbd5e1;">Dismiss</button>
+              </div>
+            </div>
+
+            <!-- Dual-Leg Order Ticket (Locked in Auto Mode, Unlocked in Manual Mode) -->
+            <div class="pairOrderTicket" id="pairOrderTicket">
+              <div class="ticketRow">
+                <div class="ticketRowLabel">
+                  <span id="lblOrderNotional">Order Notional (USDT)</span>
+                  <span id="valCalculatedMargin" style="color: #64748b; font-weight: 600;">Req Margin: $333.33</span>
+                </div>
+                <div class="presetButtonGroup">
+                  <button class="presetBtn" data-val="250">$250</button>
+                  <button class="presetBtn" data-val="500">$500</button>
+                  <button class="presetBtn active" data-val="1000">$1,000</button>
+                  <button class="presetBtn" data-val="2500">$2,500</button>
+                  <button class="presetBtn" data-val="5000">$5,000</button>
+                </div>
+                <input id="inputOrderNotional" type="number" min="50" max="50000" step="50" value="1000" style="margin-top: 4px; font-weight: 800; font-size: 14px;">
+              </div>
+
+              <div class="ticketRow">
+                <div class="ticketRowLabel">
+                  <span id="lblLeverage">Leverage Multiplier</span>
+                  <span id="valLeverageLabel" style="color: #0284c7; font-weight: 800;">3x Leverage</span>
+                </div>
+                <div class="leverageGroup">
+                  <button class="leverageBtn" data-lev="1">1x</button>
+                  <button class="leverageBtn" data-lev="2">2x</button>
+                  <button class="leverageBtn active" data-lev="3">3x</button>
+                  <button class="leverageBtn" data-lev="5">5x</button>
+                </div>
+              </div>
+
+              <div class="ticketRow">
+                <div class="ticketRowLabel">
+                  <span id="lblOrderRoute">Execution Route</span>
+                  <span style="font-size: 10.5px; color: #16a34a; font-weight: 700;">🟢 Delta Neutral</span>
+                </div>
+                <select id="selectOrderRoute" style="font-weight: 700;">
+                  <option value="market" selected>⚡ Instant Simultaneous Market Fill</option>
+                  <option value="twap30">⏱️ TWAP Sliced (30s / 5 Sub-Orders)</option>
+                  <option value="limit">🎯 Limit Spread (Passive Maker)</option>
+                </select>
+              </div>
+
+              <div class="dualActionButtons">
+                <button id="btnExecuteBuySpread" class="btnPairBuy" type="button">
+                  <span>🟢 BUY ADR / SELL KR</span>
+                  <span style="font-size: 10px; font-weight: 600; opacity: 0.9;">Bet on Spread Expansion (▲)</span>
+                </button>
+                <button id="btnExecuteSellSpread" class="btnPairSell" type="button">
+                  <span>🔴 SELL ADR / BUY KR</span>
+                  <span style="font-size: 10px; font-weight: 600; opacity: 0.9;">Bet on Premium Harvest (▼)</span>
+                </button>
+                <button id="btnExecuteFlatten" class="btnPairFlat" type="button">
+                  🔒 Delta-Neutral Flatten (Close All)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column 2: Active Open Positions & Execution Logs -->
+          <div class="posTableShell">
+            <div class="posTableTabs">
+              <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">0</span>)</button>
+              <button id="tabOrderLog" class="posTabBtn" type="button">Execution History (<span id="countOrderLog">0</span>)</button>
+            </div>
+
+            <!-- Tab Pane 1: Active Positions Table -->
+            <div id="panePositions" style="display: block; width: 100%; overflow-x: auto;">
+              <table class="positionsTable">
+                <thead>
+                  <tr>
+                    <th>Pair / Asset</th>
+                    <th>Direction</th>
+                    <th>Notional</th>
+                    <th>Entry Spread</th>
+                    <th>Mark Spread</th>
+                    <th>Unrealized PnL</th>
+                    <th>Est. Liq</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="activePositionsBody">
+                  <tr>
+                    <td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
+                      🛡️ No active open positions. Execute a pair trade or approve an AI signal to open.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Tab Pane 2: Execution History Log -->
+            <div id="paneOrderLog" style="display: none; width: 100%; overflow-x: auto;">
+              <table class="positionsTable">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Pair</th>
+                    <th>Side</th>
+                    <th>Filled Size</th>
+                    <th>Avg Spread</th>
+                    <th>Fee Paid</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="executionHistoryBody">
+                  <tr>
+                    <td colspan="7" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
+                      No recent executions logged.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- End #tabContentTrading -->
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
@@ -5417,11 +5529,19 @@
         btnPairFlatText: "🔒 Delta-Neutral Flatten (Close All)",
         tabPositions: "Active Positions",
         tabOrderLog: "Execution History",
-        lblModalApiKeyTitle: "🔑 Binance Futures API Credentials"
+        lblModalApiKeyTitle: "🔑 Binance Futures API Credentials",
+        lblNavBacktest: "Backtest & Strategy Research",
+        subNavBacktest: "Parameter Tuning & Historical Simulation",
+        lblNavTrading: "Live & Paper Execution Terminal",
+        subNavTrading: "Autonomous Bot, Active Positions & Orders"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
         topTitle: "SK하이닉스 미국 ADR 무기한물 vs 국내주식 무기한물",
+        lblNavBacktest: "백테스트 및 계량 전략 분석",
+        subNavBacktest: "알고리즘 파라미터 최적화 및 시뮬레이션",
+        lblNavTrading: "실전 및 모의 매매 실행 터미널",
+        subNavTrading: "자율운용 봇, 실시간 포지션 및 주문 관리",
         lblInterval: "봉 주기 (Interval)",
         lblStrategy: "매매 전략",
         optWave: "예측 파동 매매 (Wave Trading)",
@@ -5953,6 +6073,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("deployTime")) $("deployTime").textContent = dict.deployTime;
       if ($("footerDeploy")) $("footerDeploy").innerHTML = dict.footerDeploy;
 
+      // Primary Navigation Tabs
+      if ($("lblNavBacktest")) $("lblNavBacktest").textContent = dict.lblNavBacktest;
+      if ($("subNavBacktest")) $("subNavBacktest").textContent = dict.subNavBacktest;
+      if ($("lblNavTrading")) $("lblNavTrading").textContent = dict.lblNavTrading;
+      if ($("subNavTrading")) $("subNavTrading").textContent = dict.subNavTrading;
+
       // Stage 1 Trading Terminal Translations
       if ($("titleExecutionTerminal")) $("titleExecutionTerminal").textContent = dict.titleExecutionTerminal;
       if ($("lblExecutionSlippage")) $("lblExecutionSlippage").innerHTML = dict.lblExecutionSlippage;
@@ -6246,6 +6372,41 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
     $("langKo").addEventListener("click", () => { setLanguage("ko"); saveSettings(); });
     $("langEn").addEventListener("click", () => { setLanguage("en"); saveSettings(); });
+
+    // Primary Navigation Tab Switcher (Backtest vs Trading)
+    function switchMainTab(tab) {
+      window.activeMainTab = tab;
+      const isBacktest = tab === "backtest";
+      if ($("navTabBacktest")) $("navTabBacktest").classList.toggle("active", isBacktest);
+      if ($("navTabTrading")) $("navTabTrading").classList.toggle("active", !isBacktest);
+      if ($("tabContentBacktest")) $("tabContentBacktest").style.display = isBacktest ? "block" : "none";
+      if ($("tabContentTrading")) $("tabContentTrading").style.display = !isBacktest ? "block" : "none";
+      try {
+        localStorage.setItem("skhynix_active_tab", tab);
+      } catch (e) {}
+
+      setTimeout(() => {
+        if (window.spreadChart && isBacktest) {
+          const host = $("chartSvg");
+          if (host) window.spreadChart.applyOptions({ width: host.clientWidth });
+        }
+        if (window.positionChart && isBacktest) {
+          const posHost = $("positionPane");
+          if (posHost) window.positionChart.applyOptions({ width: posHost.clientWidth });
+        }
+      }, 60);
+    }
+
+    if ($("navTabBacktest")) $("navTabBacktest").addEventListener("click", () => switchMainTab("backtest"));
+    if ($("navTabTrading")) $("navTabTrading").addEventListener("click", () => switchMainTab("trading"));
+
+    // Restore saved tab on load
+    try {
+      const savedTab = localStorage.getItem("skhynix_active_tab");
+      if (savedTab === "trading" || savedTab === "backtest") {
+        switchMainTab(savedTab);
+      }
+    } catch (e) {}
 
     $("refresh").addEventListener("click", () => { saveSettings(); refresh(); });
     $("optimizeProfit").addEventListener("click", () => {
