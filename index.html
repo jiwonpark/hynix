@@ -824,6 +824,80 @@
       100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(2, 132, 199, 0); }
     }
 
+    /* Autonomous Bot Status Panel */
+    .autoBotActiveBox {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      border: 1.5px solid #38bdf8;
+      border-radius: 9px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
+      color: #ffffff;
+    }
+    .autoBotActiveHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      padding-bottom: 8px;
+    }
+    .autoBotTitle {
+      font-size: 13px;
+      font-weight: 800;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .autoBotPulse {
+      width: 9px;
+      height: 9px;
+      background: #10b981;
+      border-radius: 50%;
+      display: inline-block;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: autoPulse 1.6s infinite;
+    }
+    @keyframes autoPulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.8); }
+      70% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+    .autoBotTelemetry {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 11.5px;
+    }
+    .autoBotItem {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .autoBotItem span {
+      color: #94a3b8;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+    }
+    .autoBotItem strong {
+      color: #f8fafc;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+    }
+    .pairOrderTicket.locked {
+      opacity: 0.38;
+      pointer-events: none;
+      filter: grayscale(0.5);
+      user-select: none;
+    }
+
     /* Pair Order Ticket */
     .pairOrderTicket {
       background: #ffffff;
@@ -833,6 +907,7 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
+      transition: opacity 0.2s ease, filter 0.2s ease;
     }
     .ticketRow {
       display: flex;
@@ -1151,9 +1226,9 @@
       </div>
       <div class="topRight" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <div class="tradingModeSwitch" aria-label="Trading mode switch">
-          <button id="modePaper" class="active" type="button" title="Paper Trading / Simulation">🛡️ Paper</button>
+          <button id="modePaper" class="active" type="button" title="Manual Discretionary / Paper Mode">✋ Manual / Paper</button>
           <button id="modeSemiAuto" type="button" title="AI Signal 1-Click Approval">⚡ Semi-Auto</button>
-          <button id="modeLive" type="button" title="Live Account Execution">🔴 Live</button>
+          <button id="modeLive" type="button" title="24H Autonomous Execution Engine">🤖 Full-Auto</button>
         </div>
         <button id="btnApiKeyModal" class="btnTopAction" type="button" title="Binance API Key Configuration">🔑 API</button>
         <button id="btnKillSwitch" class="btnTopAction killSwitch" type="button" title="Emergency Flatten & Halt All Orders">🚨 Kill-Switch</button>
@@ -1420,10 +1495,42 @@
       </div>
 
       <div class="execTerminalGrid">
-        <!-- Column 1: AI Signal Approver + Pair Order Ticket -->
+        <!-- Column 1: Autonomous Status / AI Signal Approver + Pair Order Ticket -->
         <div>
-          <!-- AI Signal 1-Click Approver -->
-          <div class="aiSignalApprover" id="aiSignalBox">
+          <!-- 24H Autonomous Bot Live Telemetry (Active in Full-Auto mode) -->
+          <div class="autoBotActiveBox" id="autoBotBox" style="display: none;">
+            <div class="autoBotActiveHeader">
+              <div class="autoBotTitle">
+                <span class="autoBotPulse"></span>
+                <span id="lblAutoBotTitle">🤖 24H Autonomous Execution Active</span>
+              </div>
+              <span style="font-size: 10.5px; background: #0284c7; color: #fff; padding: 2px 7px; border-radius: 4px; font-weight: 800;">AUTOPILOT ON</span>
+            </div>
+            <div class="autoBotTelemetry">
+              <div class="autoBotItem">
+                <span id="lblAutoTargetSize">Model Dynamic Sizing</span>
+                <strong id="valAutoTargetSize" style="color: #38bdf8;">+150.0% (Long ADR)</strong>
+              </div>
+              <div class="autoBotItem">
+                <span id="lblAutoTargetNotional">Calculated Notional</span>
+                <strong id="valAutoTargetNotional" style="color: #10b981;">$15,000.00 USDT</strong>
+              </div>
+              <div class="autoBotItem">
+                <span id="lblAutoCurrentEdge">Current Edge / Spread</span>
+                <strong id="valAutoCurrentEdge">+1.85% (131.70)</strong>
+              </div>
+              <div class="autoBotItem">
+                <span id="lblAutoNextRebalance">Rebalance Pacing</span>
+                <strong id="valAutoNextRebalance">50% / 15m Candle</strong>
+              </div>
+            </div>
+            <p id="msgAutoBotHint" style="margin: 10px 0 0 0; font-size: 11px; color: #94a3b8; line-height: 1.4;">
+              🛡️ <em>Manual inputs are locked in Full-Auto. The model dynamically recalculates and executes allocation on every closed bar.</em>
+            </p>
+          </div>
+
+          <!-- AI Signal 1-Click Approver (Active in Semi-Auto mode) -->
+          <div class="aiSignalApprover" id="aiSignalBox" style="display: none;">
             <div class="aiSignalHeader">
               <div class="aiSignalTitle">
                 <span class="aiSignalPulse"></span>
@@ -1432,7 +1539,7 @@
               <span id="valSignalConfidence" style="font-size: 10.5px; background: #0284c7; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 800;">92% Conf</span>
             </div>
             <p id="msgAiSignal" style="font-size: 11.5px; color: #0369a1; margin: 0 0 10px 0; font-weight: 600; line-height: 1.4;">
-              Spread dislocation <strong>+1.85%</strong> exceeds threshold. Recommended: <strong>Short ADR 150% + Long KR 150%</strong>.
+              Spread dislocation <strong>+1.85%</strong> exceeds threshold. Recommended: <strong>Short ADR 150% + Long KR 150% ($15,000 USDT)</strong>.
             </p>
             <div style="display: flex; gap: 8px;">
               <button id="btnApproveSignal" type="button" style="flex: 2; height: 32px; font-size: 12px; background: #0284c7; color: #fff; font-weight: 800; border-radius: 6px; border: 0;">⚡ 1-Click Approve Order</button>
@@ -1440,8 +1547,8 @@
             </div>
           </div>
 
-          <!-- Dual-Leg Order Ticket -->
-          <div class="pairOrderTicket">
+          <!-- Dual-Leg Order Ticket (Locked in Auto Mode, Unlocked in Manual Mode) -->
+          <div class="pairOrderTicket" id="pairOrderTicket">
             <div class="ticketRow">
               <div class="ticketRowLabel">
                 <span id="lblOrderNotional">Order Notional (USDT)</span>
@@ -6265,29 +6372,49 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         $("modeLive").classList.toggle("active", mode === "live");
 
         const badge = $("badgeExecMode");
+        const ticket = $("pairOrderTicket");
+        const autoBox = $("autoBotBox");
         const isKo = window.currentLang === "ko";
-        if (badge) {
-          if (mode === "live") {
-            badge.textContent = isKo ? "🔴 실계좌 주문 모드" : "LIVE ACCOUNT EXECUTION";
+
+        if (mode === "live") {
+          // 🤖 Full-Auto: Lock manual inputs, show live telemetry
+          if (badge) {
+            badge.textContent = isKo ? "🤖 24H 전자동 알고리즘 가동" : "24H AUTONOMOUS ENGINE";
             badge.style.background = "#fee2e2";
             badge.style.color = "#991b1b";
             badge.style.borderColor = "#fca5a5";
-          } else if (mode === "semi_auto") {
+          }
+          if (ticket) ticket.classList.add("locked");
+          if (autoBox) autoBox.style.display = "block";
+          if ($("aiSignalBox")) $("aiSignalBox").style.display = "none";
+        } else if (mode === "semi_auto") {
+          // ⚡ Semi-Auto: Lock manual ticket, activate AI signal 1-click approver
+          if (badge) {
             badge.textContent = isKo ? "⚡ AI 시그널 반자동 승인" : "AI SEMI-AUTO APPROVAL";
             badge.style.background = "#f0fdf4";
             badge.style.color = "#15803d";
             badge.style.borderColor = "#86efac";
-          } else {
-            badge.textContent = isKo ? "🛡️ 모의투자 시뮬레이션" : "PAPER SIMULATION MODE";
+          }
+          if (ticket) ticket.classList.add("locked");
+          if (autoBox) autoBox.style.display = "none";
+          if ($("aiSignalBox")) $("aiSignalBox").style.display = "block";
+        } else {
+          // ✋ Manual / Paper: Fully unlock manual ticket for discretionary testing
+          if (badge) {
+            badge.textContent = isKo ? "✋ 수동 모의매매 / 테스트" : "MANUAL PAPER TRADING";
             badge.style.background = "#e0f2fe";
             badge.style.color = "#0369a1";
             badge.style.borderColor = "#bae6fd";
           }
+          if (ticket) ticket.classList.remove("locked");
+          if (autoBox) autoBox.style.display = "none";
+          if ($("aiSignalBox")) $("aiSignalBox").style.display = "none";
         }
+
         this.updateSignalApprover();
         this.saveStorage();
         showToast(
-          isKo ? `매매 모드 전환: ${mode.toUpperCase()}` : `Trading mode switched: ${mode.toUpperCase()}`,
+          isKo ? `매매 모드 전환: ${mode === "live" ? "전자동 봇" : mode === "semi_auto" ? "반자동 승인" : "수동 모의"}` : `Mode switched: ${mode.toUpperCase()}`,
           mode === "live" ? "danger" : "info"
         );
       },
@@ -6493,29 +6620,54 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       updateSignalApprover() {
-        const box = $("aiSignalBox");
-        if (!box) return;
-        if (this.state.mode !== "semi_auto") {
-          box.style.display = "none";
-          return;
-        }
-        box.style.display = "block";
+        const autoBox = $("autoBotBox");
+        const signalBox = $("aiSignalBox");
         const latest = cachedRows?.length ? cachedRows.at(-1) : null;
         const edge = latest ? (latest.netSignalEdgePct || 0) : 1.85;
         const conf = latest ? Math.round((latest.forecastConfidence || 0.92) * 100) : 92;
+        const targetSize = latest ? (latest.targetSize || (edge > 0 ? -150 : 150)) : (edge > 0 ? -150 : 150);
+        const dynamicNotional = Math.max(100, Math.round((this.state.equity * Math.abs(targetSize) / 100)));
+        const curSpread = latest ? (latest.normalized || 131.70) : 131.70;
         const isKo = window.currentLang === "ko";
 
-        $("valSignalConfidence").textContent = `${conf}% Conf`;
-        if (edge > 0) {
-          $("msgAiSignal").innerHTML = isKo
-            ? `스프레드 괴리율 <strong>+${edge.toFixed(2)}%</strong> 감지됨. 권장: <strong>숏 ADR / 롱 국내주식 (스프레드 축소 수렴)</strong>`
-            : `Spread dislocation <strong>+${edge.toFixed(2)}%</strong> detected. Recommended: <strong>Short ADR / Long KR (Mean Reversion)</strong>`;
-          this.state.activeSignal = { side: "SELL_ADR_BUY_KR", edge, conf };
-        } else {
-          $("msgAiSignal").innerHTML = isKo
-            ? `스프레드 괴리율 <strong>${edge.toFixed(2)}%</strong> 감지됨. 권장: <strong>롱 ADR / 숏 국내주식 (스프레드 확대)</strong>`
-            : `Spread dislocation <strong>${edge.toFixed(2)}%</strong> detected. Recommended: <strong>Long ADR / Short KR (Expansion)</strong>`;
-          this.state.activeSignal = { side: "BUY_ADR_SELL_KR", edge, conf };
+        // 1. Update Full-Auto Telemetry Box
+        if (autoBox && this.state.mode === "live") {
+          autoBox.style.display = "block";
+          const dirLabel = targetSize > 0
+            ? (isKo ? `+${targetSize.toFixed(1)}% (롱 ADR / 숏 KR)` : `+${targetSize.toFixed(1)}% (Long ADR / Short KR)`)
+            : targetSize < 0
+            ? (isKo ? `${targetSize.toFixed(1)}% (숏 ADR / 롱 KR)` : `${targetSize.toFixed(1)}% (Short ADR / Long KR)`)
+            : (isKo ? "0.0% (무포지션 관망)" : "0.0% (Flat / Cash)");
+
+          if ($("valAutoTargetSize")) $("valAutoTargetSize").textContent = dirLabel;
+          if ($("valAutoTargetNotional")) $("valAutoTargetNotional").textContent = `$${dynamicNotional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+          if ($("valAutoCurrentEdge")) $("valAutoCurrentEdge").textContent = `${edge >= 0 ? '+' : ''}${edge.toFixed(2)}% (${curSpread.toFixed(2)})`;
+        }
+
+        // 2. Update Semi-Auto Signal Card
+        if (signalBox && this.state.mode === "semi_auto") {
+          signalBox.style.display = "block";
+          if ($("valSignalConfidence")) $("valSignalConfidence").textContent = `${conf}% Conf`;
+          const recommendedSide = edge > 0 ? "SELL_ADR_BUY_KR" : "BUY_ADR_SELL_KR";
+          this.state.activeSignal = {
+            side: recommendedSide,
+            edge,
+            conf,
+            notional: dynamicNotional,
+            targetSize
+          };
+
+          if ($("msgAiSignal")) {
+            if (edge > 0) {
+              $("msgAiSignal").innerHTML = isKo
+                ? `스프레드 괴리율 <strong>+${edge.toFixed(2)}%</strong> 감지. 알고리즘 산출 권장: <strong>숏 ADR / 롱 국내주식 ${Math.abs(targetSize).toFixed(0)}% ($${dynamicNotional.toLocaleString()} USDT)</strong>`
+                : `Spread dislocation <strong>+${edge.toFixed(2)}%</strong> detected. Model Dynamic Sizing: <strong>Short ADR / Long KR ${Math.abs(targetSize).toFixed(0)}% ($${dynamicNotional.toLocaleString()} USDT)</strong>`;
+            } else {
+              $("msgAiSignal").innerHTML = isKo
+                ? `스프레드 괴리율 <strong>${edge.toFixed(2)}%</strong> 감지. 알고리즘 산출 권장: <strong>롱 ADR / 숏 국내주식 ${Math.abs(targetSize).toFixed(0)}% ($${dynamicNotional.toLocaleString()} USDT)</strong>`
+                : `Spread dislocation <strong>${edge.toFixed(2)}%</strong> detected. Model Dynamic Sizing: <strong>Long ADR / Short KR ${Math.abs(targetSize).toFixed(0)}% ($${dynamicNotional.toLocaleString()} USDT)</strong>`;
+            }
+          }
         }
       },
 
@@ -6565,7 +6717,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // Signal Approver
         $("btnApproveSignal").addEventListener("click", () => {
           if (this.state.activeSignal) {
-            this.executeOrder(this.state.activeSignal.side, this.state.selectedNotional, this.state.selectedLeverage, "market");
+            const notional = this.state.activeSignal.notional || this.state.selectedNotional;
+            const lev = Math.max(1, Math.min(5, Math.ceil(Math.abs(this.state.activeSignal.targetSize || 100) / 100)));
+            this.executeOrder(this.state.activeSignal.side, notional, lev, "market");
           }
         });
         $("btnDismissSignal").addEventListener("click", () => {
