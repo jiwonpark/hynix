@@ -1687,6 +1687,21 @@
       </div>
     </section>
 
+    <!-- Dedicated Section: Two-Stage Quantitative Model Evaluation Architecture -->
+    <section class="panel" id="secModelEvaluation">
+      <div class="chartHeader">
+        <div>
+          <h2 id="secModelEvaluationTitle">🏛️ Two-Stage Model Evaluation: ML Metrics vs Trading Backtest</h2>
+          <p id="subModelEvaluation">Why accuracy fails in quantitative finance, and how institutional funds separate Alpha Signal Validation from Execution Backtesting</p>
+        </div>
+        <span id="badgeEvaluationStage" style="background: #ede9fe; color: #6d28d9; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; border: 1px solid #ddd6fe;">TWO-STAGE PIPELINE</span>
+      </div>
+
+      <div id="evaluationCards" class="modelCard" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
+        <!-- Dynamically rendered based on language -->
+      </div>
+    </section>
+
     <section class="panel">
       <div class="chartHeader">
         <div>
@@ -5648,7 +5663,10 @@
         subNavTrading: "Autonomous Bot, Active Positions & Orders",
         btnDeployToBot: "🚀 Deploy Strategy to Trading Bot",
         badgeDeployedStrategy: "ACTIVE DEPLOYED STRATEGY",
-        lblChangeInBacktest: "Change in Backtest"
+        lblChangeInBacktest: "Change in Backtest",
+        secModelEvaluationTitle: "🏛️ Two-Stage Quantitative Model Evaluation Framework",
+        subModelEvaluation: "Why accuracy fails in quantitative finance, and how institutional funds separate Alpha Signal Validation from Execution Backtesting",
+        badgeEvaluationStage: "TWO-STAGE ARCHITECTURE"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
@@ -5660,6 +5678,9 @@
         btnDeployToBot: "🚀 실전 봇에 전략 배포",
         badgeDeployedStrategy: "현재 배포된 실전 봇 전략",
         lblChangeInBacktest: "백테스트에서 변경",
+        secModelEvaluationTitle: "🏛️ 계량 모델 평가 아키텍처: 머신러닝 vs 트레이딩 2단계 평가론",
+        subModelEvaluation: "왜 금융에서는 단순 정확도(Accuracy)가 실패하며, 퀀트 펀드가 신호 알파 검증과 실행 백테스트를 분리하는 이유",
+        badgeEvaluationStage: "2단계 평가 프레임워크",
         lblInterval: "봉 주기 (Interval)",
         lblStrategy: "매매 전략",
         optWave: "예측 파동 매매 (Wave Trading)",
@@ -5781,6 +5802,7 @@
     function renderBilingualCards(lang) {
       const archHost = $("architectureCards");
       const faqHost = $("faqCards");
+      const evalHost = $("evaluationCards");
       if (!archHost || !faqHost) return;
 
       if (lang === "ko") {
@@ -5942,6 +5964,70 @@
             </ul>
           </div>
         `;
+
+        if (evalHost) {
+          evalHost.innerHTML = `
+            <div class="modelStep" style="border-left: 4px solid #ef4444;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #0f172a; font-size: 15px;">1. 일반 머신러닝 지표의 한계 (Accuracy Paradox)</h3>
+                <span style="background: #fee2e2; color: #dc2626; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">PITFALL OF ML</span>
+              </div>
+              <p style="margin: 8px 0 0 0; color: #334155; font-size: 13px; line-height: 1.55;">
+                정확도(Accuracy), 정밀도(Precision), MSE는 금융 시계열에서 심각한 왜곡을 일으킵니다.
+              </p>
+              <ul style="margin: 8px 0 0 0; padding-left: 18px; color: #475569; font-size: 12.5px; line-height: 1.5;">
+                <li><strong>손익 비대칭성:</strong> 9번 +0.2% 벌고 1번 -5.0% 터지면 정확도는 <strong>90%</strong>지만 누적 손익은 <strong>-3.2% 파산</strong>입니다. 승률보다 <strong>손익비(Payoff Ratio)</strong>가 본질입니다.</li>
+                <li><strong>거래 마찰 비용 누락:</strong> 왕복 수수료(10 BPS)와 슬리피지를 감안하면 55% 적중률 모델도 순적자로 전락합니다.</li>
+                <li><strong>경로 의존성과 청산:</strong> 일시적 최대 낙폭(MDD)으로 마진 청산당하면 미래 적중 여부와 무관하게 즉시 탈락합니다.</li>
+              </ul>
+            </div>
+
+            <div class="modelStep" style="border-left: 4px solid #0284c7;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #0f172a; font-size: 15px;">2. [Stage 1] 알파 신호 검증 계층 (Alpha Signal Layer)</h3>
+                <span style="background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">PURE PREDICTION</span>
+              </div>
+              <p style="margin: 8px 0 0 0; color: #334155; font-size: 13px; line-height: 1.55;">
+                트레이딩 룰을 배제하고, <strong>"시장 노이즈를 뚫고 순수한 미래 가격 예측 정보가 존재하는가?"</strong>만을 통계적으로 검증합니다.
+              </p>
+              <ul style="margin: 8px 0 0 0; padding-left: 18px; color: #475569; font-size: 12.5px; line-height: 1.5;">
+                <li><strong>Information Coefficient (Rank IC):</strong> 예측치와 미래 실현 수익률 간 스피어만 순위 상관계수. 금융에서는 <code>IC > 0.03</code>만 나와도 탑티어 퀀트 펀드급 알파입니다.</li>
+                <li><strong>변동성 정규화 엣지:</strong> <code>E[sign(Δŷ) · Δy / σ]</code>로 시장 변동성을 감안한 순수 방향성 이득을 측정.</li>
+                <li><strong>국면 확률 캘리브레이션:</strong> Brier Score를 통해 HMM 레짐 확률 추정치가 실제 전이 빈도와 부합하는지 검증.</li>
+              </ul>
+            </div>
+
+            <div class="modelStep" style="border-left: 4px solid #16a34a;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #0f172a; font-size: 15px;">3. [Stage 2] 전략 실행 및 백테스트 계층 (Execution Layer)</h3>
+                <span style="background: #dcfce7; color: #166534; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">CAPITAL PRESERVATION</span>
+              </div>
+              <p style="margin: 8px 0 0 0; color: #334155; font-size: 13px; line-height: 1.55;">
+                Stage 1을 통과한 신호에 <strong>수수료, 슬리피지, 펀딩비, 레버리지, 리밸런싱 속도</strong>를 결합하여 실제 화폐화 가능성을 평가합니다.
+              </p>
+              <ul style="margin: 8px 0 0 0; padding-left: 18px; color: #475569; font-size: 12.5px; line-height: 1.5;">
+                <li><strong>칼마 비율 (Calmar = CAGR / Max DD):</strong> 단순 PnL보다 10배 중요합니다. 낙폭이 작아야 레버리지를 안전하게 올려 복리 극대화가 가능합니다.</li>
+                <li><strong>Profit Factor (비용 차감 후):</strong> <code>총이익 / (총손실 + 거래비용) ≥ 1.5</code> 이상을 유지해야 실전 생존이 가능합니다.</li>
+                <li><strong>Purged Walk-Forward (WFA):</strong> 비학습 홀드아웃(Holdout) 구간에서도 양호한 수익과 Max DD 방어를 검증.</li>
+              </ul>
+            </div>
+
+            <div class="modelStep" style="border-left: 4px solid #8b5cf6;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #0f172a; font-size: 15px;">4. SK하이닉스 엔진 매핑 & 배포 원칙 (System Mapping)</h3>
+                <span style="background: #ede9fe; color: #6d28d9; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">LIVE BOT DEPLOY</span>
+              </div>
+              <p style="margin: 8px 0 0 0; color: #334155; font-size: 13px; line-height: 1.55;">
+                본 대시보드는 이 2단계 파이프라인을 엄격히 분리하여 설계되었습니다.
+              </p>
+              <ul style="margin: 8px 0 0 0; padding-left: 18px; color: #475569; font-size: 12.5px; line-height: 1.5;">
+                <li><strong>파동 엔진 (Stage 1):</strong> Medallion HMM, Ridge OLS, OU Hybrid가 <strong>예측 신뢰도(%)와 순수 엣지(%)</strong> 신호를 실시간 추출.</li>
+                <li><strong>알고리즘 최적화기 (Stage 2):</strong> 윈도우, 진입/청산 밴드, 5x 레버리지, 50% 분할 체결 속도를 <strong>Calmar Score & Walk-Forward</strong>로 튜닝.</li>
+                <li><strong>배포 원칙:</strong> 신호는 IC로, 실행은 Walk-Forward 백테스트로 검증된 파라미터만 <strong>[🚀 실전 봇에 배포]</strong>하여 자율 운용.</li>
+              </ul>
+            </div>
+          `;
+        }
       } else {
         archHost.innerHTML = `
           <div class="modelStep" style="border-left: 4px solid #00d2ff;">
@@ -6102,6 +6188,70 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             </ul>
           </div>
         `;
+
+        if (evalHost) {
+          evalHost.innerHTML = `
+            <div class="modelStep" style="border-left: 4px solid #ef4444;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #0f172a; font-size: 15px;">1. The Financial Accuracy Paradox</h3>
+                <span style="background: #fee2e2; color: #dc2626; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">PITFALL OF ML</span>
+              </div>
+              <p style="margin: 8px 0 0 0; color: #334155; font-size: 13px; line-height: 1.55;">
+                Accuracy, Precision, and MSE fail in finance due to three structural characteristics:
+              </p>
+              <ul style="margin: 8px 0 0 0; padding-left: 18px; color: #475569; font-size: 12.5px; line-height: 1.5;">
+                <li><strong>Payoff Asymmetry:</strong> 9 wins at +0.2% and 1 loss at -5.0% yields <strong>90% accuracy</strong> but <strong>-3.2% net ruin</strong>. Payoff ratio dominates hit rate.</li>
+                <li><strong>Friction Blindness:</strong> Standard loss functions ignore round-trip trading fees (10 BPS), slippage, and funding drag.</li>
+                <li><strong>Path Dependency & Ruin:</strong> Cross-sectional accuracy ignores drawdown path; margin liquidation ends the strategy immediately.</li>
+              </ul>
+            </div>
+
+            <div class="modelStep" style="border-left: 4px solid #0284c7;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #0f172a; font-size: 15px;">2. [Stage 1] Alpha Signal Layer (Pure Prediction)</h3>
+                <span style="background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">PURE PREDICTION</span>
+              </div>
+              <p style="margin: 8px 0 0 0; color: #334155; font-size: 13px; line-height: 1.55;">
+                Isolates raw predictive information without trading rules, leverage, or thresholds:
+              </p>
+              <ul style="margin: 8px 0 0 0; padding-left: 18px; color: #475569; font-size: 12.5px; line-height: 1.5;">
+                <li><strong>Information Coefficient (Rank IC):</strong> Spearman rank correlation between forecasts and realized returns. <code>IC > 0.03</code> represents top-tier institutional alpha.</li>
+                <li><strong>Volatility-Adjusted Edge:</strong> <code>E[sign(Δŷ) · Δy / σ]</code> measures normalized directional edge across fluctuating volatility.</li>
+                <li><strong>Regime Calibration:</strong> Brier score verifies whether HMM regime probabilities match empirical transition frequencies.</li>
+              </ul>
+            </div>
+
+            <div class="modelStep" style="border-left: 4px solid #16a34a;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #0f172a; font-size: 15px;">3. [Stage 2] Portfolio Execution Layer (Backtest)</h3>
+                <span style="background: #dcfce7; color: #166534; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">CAPITAL PRESERVATION</span>
+              </div>
+              <p style="margin: 8px 0 0 0; color: #334155; font-size: 13px; line-height: 1.55;">
+                Combines validated alpha signals with real execution frictions, leverage, and sizing:
+              </p>
+              <ul style="margin: 8px 0 0 0; padding-left: 18px; color: #475569; font-size: 12.5px; line-height: 1.5;">
+                <li><strong>Calmar Ratio (CAGR / Max DD):</strong> 10x more critical than PnL. Lower drawdowns allow safe leverage scaling for compounding growth.</li>
+                <li><strong>Profit Factor (Net of Friction):</strong> <code>Gross Profit / (Gross Loss + Fees) ≥ 1.5</code> required for live production survival.</li>
+                <li><strong>Purged Walk-Forward (WFA):</strong> Validates stability on unseen out-of-sample holdout folds without lookahead leakage.</li>
+              </ul>
+            </div>
+
+            <div class="modelStep" style="border-left: 4px solid #8b5cf6;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #0f172a; font-size: 15px;">4. SK Hynix Arb Mapping & Deployment Protocol</h3>
+                <span style="background: #ede9fe; color: #6d28d9; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700;">LIVE BOT DEPLOY</span>
+              </div>
+              <p style="margin: 8px 0 0 0; color: #334155; font-size: 13px; line-height: 1.55;">
+                Strictly aligns with the institutional two-stage quantitative architecture:
+              </p>
+              <ul style="margin: 8px 0 0 0; padding-left: 18px; color: #475569; font-size: 12.5px; line-height: 1.5;">
+                <li><strong>Wave Engines (Stage 1):</strong> Medallion HMM, Ridge OLS, OU Hybrid generate real-time <strong>Confidence (%) and Edge (%)</strong> signals.</li>
+                <li><strong>Algo Optimizer (Stage 2):</strong> Calibrates rolling window, entry/exit bands, 5x leverage, and pacing via <strong>Calmar score & WFA</strong>.</li>
+                <li><strong>Protocol:</strong> Only parameter sets verified through Walk-Forward testing are deployed via <strong>[🚀 Deploy Strategy to Trading Bot]</strong>.</li>
+              </ul>
+            </div>
+          `;
+        }
       }
     }
 
@@ -6198,6 +6348,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("subSpectrum")) $("subSpectrum").textContent = dict.subSpectrum;
       if ($("secQuantArchitecture")) $("secQuantArchitecture").textContent = dict.secQuantArchitecture;
       if ($("subQuantArchitecture")) $("subQuantArchitecture").textContent = dict.subQuantArchitecture;
+      if ($("secModelEvaluationTitle")) $("secModelEvaluationTitle").textContent = dict.secModelEvaluationTitle;
+      if ($("subModelEvaluation")) $("subModelEvaluation").textContent = dict.subModelEvaluation;
+      if ($("badgeEvaluationStage")) $("badgeEvaluationStage").textContent = dict.badgeEvaluationStage;
       if ($("secFaq")) $("secFaq").textContent = dict.secFaq;
       if ($("subFaq")) $("subFaq").textContent = dict.subFaq;
       if ($("tagZeroBias")) $("tagZeroBias").textContent = dict.tagZeroBias;
