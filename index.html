@@ -5926,6 +5926,21 @@
               퀀트 헤지펀드의 진짜 독점 자산은 수식이 아니라 <strong>(1) 방대한 고빈도 틱 데이터 정제</strong>, <strong>(2) 시장 충격을 최소화하는 초저지연 알고리즘 체결(TWAP/VWAP/Smart Routing)</strong>, <strong>(3) 수천 개 자산에 걸친 미세 엣지(Edge 50.5%)의 하이퍼파라미터 앙상블</strong>입니다.
             </p>
           </div>
+
+          <div class="modelStep" style="border-left: 4px solid #0284c7;">
+            <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">Q7: 모델 학습 시 ML 지표(Accuracy/Precision)와 트레이딩 지표(PnL/Max DD) 중 무엇으로 평가해야 하나요?</h3>
+            <p style="margin: 0; color: #334155; font-size: 13.5px; line-height: 1.6;">
+              <strong>"둘 중 하나만 쓰면 실패하며, [Stage 1: 신호 알파 검증]과 [Stage 2: 트레이딩 실행 백테스트]를 분리하는 2단계 평가(Two-Stage Evaluation)가 정답입니다."</strong>
+            </p>
+            <ul style="margin: 8px 0 0 0; padding-left: 20px; color: #475569; font-size: 13px; line-height: 1.5;">
+              <li><strong>ML 지표(Accuracy)의 한계:</strong> 9번을 +0.2% 맞히고(승률 90%), 1번을 -5.0% 크게 틀리면 정확도는 90%이지만 계좌는 파산합니다. 또한 10 BPS 거래 수수료와 슬리피지를 반영하지 못합니다.</li>
+              <li><strong>직접 PnL 튜닝의 위험:</strong> 모델 내부 파라미터를 최종 PnL에만 맞추면 금융 시계열 특유의 노이즈에 과최적화(P-hacking/Curve-Fitting)되어 실전 배포 시 즉시 우하향합니다.</li>
+              <li><strong>퀀트 2단계 표준:</strong> 
+                (1) <strong>신호 계층 (Stage 1)</strong>: 순수 예측력은 Information Coefficient(Rank IC > 0.03)와 변동성 정규화 엣지 크기로 통계적 검증.<br>
+                (2) <strong>실행 계층 (Stage 2)</strong>: 검증된 신호에 수수료/슬리피지/레버리지를 결합하여 <strong>칼마 비율(Calmar = CAGR / Max DD)</strong>과 Purged Walk-Forward 점수로 포트폴리오 안전성 최종 승인.
+              </li>
+            </ul>
+          </div>
         `;
       } else {
         archHost.innerHTML = `
@@ -6070,6 +6085,21 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             <p style="margin: 8px 0 0 0; color: #475569; font-size: 13px; line-height: 1.5;">
               What makes quantitative hedge funds proprietary is not the equations themselves, but <strong>(1) high-frequency tick data cleaning</strong>, <strong>(2) algorithmic execution infrastructure (TWAP/VWAP/Smart Order Routing)</strong> to minimize market impact, and <strong>(3) multi-factor hyperparameter ensembling across thousands of assets</strong>.
             </p>
+          </div>
+
+          <div class="modelStep" style="border-left: 4px solid #0284c7;">
+            <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">Q7: Should quantitative models be evaluated by ML metrics (Accuracy/Precision) or Trading Backtest metrics (PnL/Max DD)?</h3>
+            <p style="margin: 0; color: #334155; font-size: 13.5px; line-height: 1.6;">
+              <strong>"Neither alone is sufficient. Institutional quantitative funds strictly separate [Stage 1: Alpha Signal Validation] from [Stage 2: Portfolio Execution & Sizing]."</strong>
+            </p>
+            <ul style="margin: 8px 0 0 0; padding-left: 20px; color: #475569; font-size: 13px; line-height: 1.5;">
+              <li><strong>Pitfall of ML Accuracy:</strong> A model winning 9 times at +0.2% (90% accuracy) and losing 1 time at -5.0% has 90% hit rate but suffers a net -3.2% loss. It also ignores 10 BPS transaction fees and funding drag.</li>
+              <li><strong>Pitfall of Direct PnL Optimization:</strong> Tuning model weights directly against backtest PnL causes severe data snooping (p-hacking / curve-fitting), overfitting to historical noise.</li>
+              <li><strong>The 2-Stage Quant Standard:</strong> 
+                (1) <strong>Alpha Signal Layer (Stage 1)</strong>: Validate raw statistical edge via Information Coefficient (Rank IC > 0.03) and volatility-normalized edge magnitude without trading rules.<br>
+                (2) <strong>Execution & Sizing Layer (Stage 2)</strong>: Apply transaction friction, funding costs, dynamic sizing, and evaluate risk-adjusted return via <strong>Calmar Ratio (CAGR / Max DD)</strong> and Purged Walk-Forward Cross-Validation.
+              </li>
+            </ul>
           </div>
         `;
       }

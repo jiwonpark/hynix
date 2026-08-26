@@ -71,7 +71,27 @@ $$\text{Score} = \frac{\text{Net Return}}{\left( \max(0.5, |\text{Max Drawdown}|
 
 ---
 
-## 4. Standard UI Color Hierarchy
+## 4. Quantitative Model Evaluation Framework: ML Metrics vs Trading Backtest (Two-Stage Architecture)
+
+A fundamental principle in institutional quant trading is separating **Alpha Signal Evaluation** from **Execution & Portfolio Evaluation**. Relying solely on conventional ML metrics (Accuracy, Precision, Recall) causes the **Accuracy Paradox** (e.g. 90% hit rate with small gains wiped out by a single fat-tail loss, or positive accuracy wiped out by 10 BPS transaction fees and funding drag). Conversely, optimizing model weights directly against backtest PnL causes catastrophic **overfitting & data snooping (p-hacking)**.
+
+### The 2-Stage Evaluation Pipeline:
+1. **Stage 1: Statistical Alpha Metric (Signal Validation)**:
+   - Evaluates whether the model possesses genuine predictive power over future price changes without trade rules:
+     - **Information Coefficient (Rank IC)**: Spearman rank correlation between $\hat{y}_{t+h}$ and realized $r_{t+h}$ ($\text{IC} > 0.03$ is institutional-grade).
+     - **Volatility-Normalized Edge**: $\mathbb{E}[\text{sign}(\Delta \hat{y}) \cdot \Delta y / \sigma]$.
+     - **Regime Calibration**: Brier score / log-loss for HMM regime transitions.
+2. **Stage 2: Execution & Sizing Optimization (Strategy Backtest)**:
+   - Evaluates how to monetize the validated signal under real-world market frictions (5 BPS fee, 3 BPS funding, leverage):
+     - **Calmar Ratio**: $\text{CAGR} / |\text{Max Drawdown}|$ (penalizes tail risk and capital ruin).
+     - **Profit Factor after Costs**: $\text{Gross Profit} / (\text{Gross Loss} + \text{Fees} + \text{Slippage}) \ge 1.5$.
+     - **Purged Walk-Forward Cross-Validation (WFA)**: Ensuring positive fold efficiency on untouched holdout data.
+
+*For complete theoretical formulation, see [QUANT_MODEL_EVALUATION_GUIDE.md](file:///Users/jiwon/Documents/hynix/QUANT_MODEL_EVALUATION_GUIDE.md).*
+
+---
+
+## 5. Standard UI Color Hierarchy
 
 To preserve clarity across analytical series:
 - **Spot Spread Price**: `Solid Black (#0f172a)`
@@ -82,7 +102,7 @@ To preserve clarity across analytical series:
 
 ---
 
-## 5. Deployment Runbook (Zero-Downtime EC2 Protocol)
+## 6. Deployment Runbook (Zero-Downtime EC2 Protocol)
 
 When making modifications or adding new features to `/Users/jiwon/Documents/hynix/index.html`:
 
