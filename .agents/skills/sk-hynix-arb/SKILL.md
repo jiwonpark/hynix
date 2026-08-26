@@ -118,6 +118,10 @@ ssh thejiwon2025 "sudo cp /tmp/index.html /var/www/skhynix/index.html"
 git add index.html
 git commit -m "Describe updates"
 git push origin main
+
+# 4. Mandatory Post-Deployment Verification (ALWAYS TEST)
+# MUST verify live URL returns HTTP 200 text/html (not 502 or fallback plain text):
+curl -sI https://control.jiwonova.com/skhynix/ | grep -E "(HTTP/|content-type|last-modified)"
 ```
 
-**Production URL**: `https://control.jiwonova.com/skhynix/`
+**Production URL**: `https://control.jiwonova.com/skhynix/` (Always test in browser / curl after any deploy)
