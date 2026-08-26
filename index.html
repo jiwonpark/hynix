@@ -812,6 +812,79 @@
       color: #7f1d1d;
     }
 
+    /* Active Deployed Strategy Banner in Trading Tab */
+    .deployedStrategyBanner {
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+      border: 1.5px solid #0284c7;
+      border-radius: 9px;
+      padding: 12px 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 2px 6px rgba(2, 132, 199, 0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .deployedStrategyInfo {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .deployedStrategyTitleRow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .deployedBadge {
+      font-size: 10.5px;
+      font-weight: 800;
+      background: #0284c7;
+      color: #ffffff;
+      padding: 2px 7px;
+      border-radius: 4px;
+      letter-spacing: 0.3px;
+    }
+    .deployedStrategyParams {
+      font-size: 11.5px;
+      color: #475569;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .deployedStrategyParams span {
+      background: #f1f5f9;
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+    }
+    .deployedStrategyParams strong {
+      color: #0f172a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .btnDeployStrategy {
+      background: #16a34a;
+      color: #ffffff;
+      font-weight: 800;
+      border: 0;
+      border-radius: 6px;
+      padding: 0 14px;
+      height: 32px;
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 2px 5px rgba(22, 163, 74, 0.25);
+      transition: all 0.15s ease;
+    }
+    .btnDeployStrategy:hover {
+      background: #15803d;
+      box-shadow: 0 3px 8px rgba(22, 163, 74, 0.35);
+    }
+
     /* Account & Margin Strip */
     .realAccountStrip {
       display: grid;
@@ -1416,7 +1489,10 @@
             <h3 id="grpOptTitle" style="color: #0369a1;">🎯 Auto-Optimizable Execution Parameters</h3>
             <span id="grpOptBadge" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid #bae6fd;">TUNED BY ALGO OPTIMIZER</span>
           </div>
-          <button id="optimizeProfit" type="button" style="width: auto; height: 32px; padding: 0 16px; font-size: 12px; background: #0284c7; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);">⚡ Optimize Profit</button>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button id="optimizeProfit" type="button" style="width: auto; height: 32px; padding: 0 14px; font-size: 12px; background: #0284c7; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);">⚡ Optimize Profit</button>
+            <button id="btnDeployToBot" class="btnDeployStrategy" type="button">🚀 Deploy Strategy to Trading Bot</button>
+          </div>
         </div>
         <div class="controlGrid optimizableGrid">
           <label id="lblMeanBars">
@@ -1647,6 +1723,29 @@
           <span style="font-size: 11.5px; color: #64748b;" id="lblExecutionSlippage">Slippage Guard: <strong>5 BPS</strong></span>
           <button id="btnResetPaperBalance" type="button" style="height: 30px; padding: 0 10px; font-size: 11.5px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 5px; font-weight: 700; cursor: pointer;">↺ Reset $10k</button>
         </div>
+      </div>
+
+      <!-- Active Deployed Strategy Specification Card -->
+      <div class="deployedStrategyBanner" id="deployedStrategyCard">
+        <div class="deployedStrategyInfo">
+          <div class="deployedStrategyTitleRow">
+            <span class="deployedBadge" id="badgeDeployedStrategy">ACTIVE DEPLOYED STRATEGY</span>
+            <strong id="valDeployedStrategyName" style="font-size: 13.5px; color: #0f172a;">⚡ SK Hynix Arb (SKHY ADR perp vs Korean-share perp)</strong>
+            <span id="valDeployedEngine" style="font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 700; border: 1px solid #bae6fd;">Medallion HMM + Volatility Targeting</span>
+            <span id="valDeployedInterval" style="font-size: 11px; background: #f1f5f9; color: #475569; padding: 2px 7px; border-radius: 4px; font-weight: 700; border: 1px solid #cbd5e1;">15m Candles</span>
+          </div>
+          <div class="deployedStrategyParams" id="deployedStrategyParamsList">
+            <span>Window: <strong id="valDeployedWindow">24 bars</strong></span>
+            <span>Edge Band: <strong id="valDeployedEdge">0.75% ~ 2.50%</strong></span>
+            <span>Max Leverage: <strong id="valDeployedMaxLeverage">500% (5.0x)</strong></span>
+            <span>Speed: <strong id="valDeployedSpeed">50% in / 50% out</strong></span>
+            <span>Min Profit: <strong id="valDeployedMinProfit">0.20%</strong></span>
+            <span>Cost: <strong id="valDeployedCost">5 BPS fee / 0 BPS slip</strong></span>
+          </div>
+        </div>
+        <button id="btnSyncFromBacktest" type="button" style="height: 32px; padding: 0 12px; font-size: 11.5px; background: #f0f9ff; color: #0369a1; border: 1.5px solid #0284c7; border-radius: 6px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+          <span>🔄</span> <span id="lblChangeInBacktest">Change in Backtest</span>
+        </button>
       </div>
 
       <!-- Real-Time Account Balance & Margin Risk Strip -->
@@ -5368,7 +5467,10 @@
             <td style="padding: 6px 8px; font-family: monospace;">${item.tradeSpeedPct}% / ${item.exitSpeedPct}%</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.minProfitPct}%</td>
             <td style="padding: 6px 8px; text-align: right;">
-              <button type="button" style="height: 24px; padding: 0 8px; font-size: 10.5px; background: ${isWinner ? '#16a34a' : '#0284c7'};" onclick="event.stopPropagation(); applyCandidateByRank(${rankIdx})">Apply</button>
+              <div style="display: flex; gap: 4px; justify-content: flex-end;">
+                <button type="button" style="height: 24px; padding: 0 6px; font-size: 10px; background: ${isWinner ? '#16a34a' : '#0284c7'}; border-radius: 4px; border: 0; color: #fff; font-weight: 700; cursor: pointer;" onclick="event.stopPropagation(); applyCandidateByRank(${rankIdx})">Apply</button>
+                <button type="button" style="height: 24px; padding: 0 6px; font-size: 10px; background: #0f172a; border-radius: 4px; border: 0; color: #38bdf8; font-weight: 800; cursor: pointer;" onclick="event.stopPropagation(); deployCandidateByRank(${rankIdx})" title="Deploy this parameter set directly to live/paper bot">🚀 Deploy</button>
+              </div>
             </td>
           </tr>
         `;
@@ -5378,6 +5480,16 @@
     window.applyCandidateByRank = function(rankIndex) {
       const candidate = window.optimizationCandidates?.[rankIndex];
       if (candidate) window.applyCandidateRow(candidate);
+    };
+
+    window.deployCandidateByRank = function(rankIndex) {
+      const candidate = window.optimizationCandidates?.[rankIndex];
+      if (candidate) {
+        window.applyCandidateRow(candidate);
+        if (typeof tradingEngine !== 'undefined') {
+          tradingEngine.deployCurrentStrategy();
+        }
+      }
     };
 
     window.applyCandidateRow = function(candidate) {
@@ -5533,7 +5645,10 @@
         lblNavBacktest: "Backtest & Strategy Research",
         subNavBacktest: "Parameter Tuning & Historical Simulation",
         lblNavTrading: "Live & Paper Execution Terminal",
-        subNavTrading: "Autonomous Bot, Active Positions & Orders"
+        subNavTrading: "Autonomous Bot, Active Positions & Orders",
+        btnDeployToBot: "🚀 Deploy Strategy to Trading Bot",
+        badgeDeployedStrategy: "ACTIVE DEPLOYED STRATEGY",
+        lblChangeInBacktest: "Change in Backtest"
       },
       ko: {
         topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
@@ -5542,6 +5657,9 @@
         subNavBacktest: "알고리즘 파라미터 최적화 및 시뮬레이션",
         lblNavTrading: "실전 및 모의 매매 실행 터미널",
         subNavTrading: "자율운용 봇, 실시간 포지션 및 주문 관리",
+        btnDeployToBot: "🚀 실전 봇에 전략 배포",
+        badgeDeployedStrategy: "현재 배포된 실전 봇 전략",
+        lblChangeInBacktest: "백테스트에서 변경",
         lblInterval: "봉 주기 (Interval)",
         lblStrategy: "매매 전략",
         optWave: "예측 파동 매매 (Wave Trading)",
@@ -6098,9 +6216,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("tabPositions")) $("tabPositions").innerHTML = `${dict.tabPositions} (<span id="countPositions">${typeof tradingEngine !== 'undefined' ? tradingEngine.state.positions.length : 0}</span>)`;
       if ($("tabOrderLog")) $("tabOrderLog").innerHTML = `${dict.tabOrderLog} (<span id="countOrderLog">${typeof tradingEngine !== 'undefined' ? tradingEngine.state.orderLog.length : 0}</span>)`;
       if ($("btnExecuteBuySpread")) $("btnExecuteBuySpread").innerHTML = `<span>${dict.btnPairBuyText}</span><span style="font-size: 10px; font-weight: 600; opacity: 0.9;">${dict.btnPairBuySub}</span>`;
-      if ($("btnExecuteSellSpread")) $("btnExecuteSellSpread").innerHTML = `<span>${dict.btnPairSellText}</span><span style="font-size: 10px; font-weight: 600; opacity: 0.9;">${dict.btnPairSellSub}</span>`;
       if ($("btnExecuteFlatten")) $("btnExecuteFlatten").textContent = dict.btnPairFlatText;
+      if ($("btnDeployToBot")) $("btnDeployToBot").textContent = dict.btnDeployToBot;
+      if ($("badgeDeployedStrategy")) $("badgeDeployedStrategy").textContent = dict.badgeDeployedStrategy;
+      if ($("lblChangeInBacktest")) $("lblChangeInBacktest").textContent = dict.lblChangeInBacktest;
+
       if (typeof tradingEngine !== 'undefined') {
+        tradingEngine.renderDeployedStrategyCard();
         tradingEngine.renderAccountStrip();
         tradingEngine.renderPositionsAndLogs();
         tradingEngine.updateSignalApprover();
@@ -6483,13 +6605,116 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         apiSecret: "",
         apiEnv: "testnet"
       },
+      deployedStrategy: null,
 
       init() {
         this.loadStorage();
+        this.loadDeployedStrategy();
         this.bindEvents();
+        this.renderDeployedStrategyCard();
         this.renderAccountStrip();
         this.renderPositionsAndLogs();
         this.updateSignalApprover();
+      },
+
+      loadDeployedStrategy() {
+        try {
+          const saved = localStorage.getItem("skhynix_deployed_strategy");
+          if (saved) {
+            this.deployedStrategy = JSON.parse(saved);
+          }
+        } catch(e) {}
+        if (!this.deployedStrategy) {
+          const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+          const assetConfig = typeof ASSET_STRATEGIES !== 'undefined' && ASSET_STRATEGIES[assetKey] ? ASSET_STRATEGIES[assetKey] : { title: "SK Hynix Arb (SKHY / SKHYNIX)" };
+          this.deployedStrategy = {
+            assetStrategy: assetKey,
+            assetName: assetConfig.title || "SK Hynix Arb (SKHY / SKHYNIX)",
+            interval: $("interval")?.value || "15m",
+            strategyMode: $("strategyMode")?.value || "wave",
+            predictionEngineKey: $("predictionEngine")?.value || "hmm_vol_target",
+            predictionEngine: $("predictionEngine")?.options[$("predictionEngine")?.selectedIndex]?.textContent || "Medallion HMM + Volatility Targeting",
+            tradeDirection: $("tradeDirection")?.value || "bidir",
+            meanBars: Number($("meanBars")?.value || 24),
+            minEdgePct: Number($("minEdgePct")?.value || 0.75),
+            fullEdgePct: Number($("fullEdgePct")?.value || 2.5),
+            maxSizePct: Number($("maxSizePct")?.value || 500),
+            scaleCurve: Number($("scaleCurve")?.value || 2.0),
+            tradeSpeedPct: Number($("tradeSpeedPct")?.value || 50),
+            exitSpeedPct: Number($("exitSpeedPct")?.value || 50),
+            minProfitPct: Number($("minProfitPct")?.value || 0.2),
+            tradingFeeBps: Number($("tradingFeeBps")?.value || 5),
+            slippageBps: Number($("slippageBps")?.value || 0),
+            fundingBpsDay: Number($("fundingBpsDay")?.value || 3),
+            deployedAt: new Date().toLocaleString()
+          };
+        }
+      },
+
+      deployCurrentStrategy() {
+        const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+        const assetConfig = typeof ASSET_STRATEGIES !== 'undefined' && ASSET_STRATEGIES[assetKey] ? ASSET_STRATEGIES[assetKey] : { title: "SK Hynix Arb" };
+        const engKey = $("predictionEngine")?.value || "hmm_vol_target";
+        const engineLabel = $("predictionEngine")?.options[$("predictionEngine")?.selectedIndex]?.textContent || "Medallion HMM + Volatility Targeting";
+        const interval = $("interval")?.value || "15m";
+        const nowStr = new Date().toLocaleString();
+
+        const deployed = {
+          assetStrategy: assetKey,
+          assetName: assetConfig.title || "SK Hynix Arb (SKHY / SKHYNIX)",
+          interval: interval,
+          strategyMode: $("strategyMode")?.value || "wave",
+          predictionEngineKey: engKey,
+          predictionEngine: engineLabel,
+          tradeDirection: $("tradeDirection")?.value || "bidir",
+          meanBars: Number($("meanBars")?.value || 24),
+          minEdgePct: Number($("minEdgePct")?.value || 0.75),
+          fullEdgePct: Number($("fullEdgePct")?.value || 2.5),
+          maxSizePct: Number($("maxSizePct")?.value || 500),
+          scaleCurve: Number($("scaleCurve")?.value || 2.0),
+          tradeSpeedPct: Number($("tradeSpeedPct")?.value || 50),
+          exitSpeedPct: Number($("exitSpeedPct")?.value || 50),
+          minProfitPct: Number($("minProfitPct")?.value || 0.2),
+          tradingFeeBps: Number($("tradingFeeBps")?.value || 5),
+          slippageBps: Number($("slippageBps")?.value || 0),
+          fundingBpsDay: Number($("fundingBpsDay")?.value || 3),
+          deployedAt: nowStr
+        };
+
+        this.deployedStrategy = deployed;
+        try {
+          localStorage.setItem("skhynix_deployed_strategy", JSON.stringify(deployed));
+        } catch(e) {}
+
+        this.renderDeployedStrategyCard();
+        this.updateSignalApprover();
+
+        const isKo = window.currentLang === "ko";
+        showToast(
+          isKo ? `🚀 실전 봇 전략 배포 완료: ${deployed.assetName}` : `🚀 Deployed Strategy to Bot: ${deployed.assetName}`,
+          "success"
+        );
+
+        // Switch to Trading Tab seamlessly
+        if (typeof switchMainTab === 'function') {
+          switchMainTab("trading");
+        }
+      },
+
+      renderDeployedStrategyCard() {
+        const dep = this.deployedStrategy;
+        if (!dep) return;
+        const isKo = window.currentLang === "ko";
+
+        if ($("valDeployedStrategyName")) $("valDeployedStrategyName").textContent = `⚡ ${dep.assetName}`;
+        if ($("valDeployedEngine")) $("valDeployedEngine").textContent = dep.predictionEngine;
+        if ($("valDeployedInterval")) $("valDeployedInterval").textContent = `${dep.interval} ${isKo ? '캔들' : 'Candles'}`;
+        if ($("valDeployedWindow")) $("valDeployedWindow").textContent = `${dep.meanBars} ${isKo ? '개 봉' : 'bars'}`;
+        if ($("valDeployedEdge")) $("valDeployedEdge").textContent = `${dep.minEdgePct.toFixed(2)}% ~ ${dep.fullEdgePct.toFixed(2)}%`;
+        if ($("valDeployedMaxLeverage")) $("valDeployedMaxLeverage").textContent = `${dep.maxSizePct}% (${(dep.maxSizePct/100).toFixed(1)}x)`;
+        if ($("valDeployedSpeed")) $("valDeployedSpeed").textContent = `${dep.tradeSpeedPct}% ${isKo ? '진입' : 'in'} / ${dep.exitSpeedPct}% ${isKo ? '청산' : 'out'}`;
+        if ($("valDeployedMinProfit")) $("valDeployedMinProfit").textContent = `${dep.minProfitPct.toFixed(2)}%`;
+        if ($("valDeployedCost")) $("valDeployedCost").textContent = `${dep.tradingFeeBps} BPS ${isKo ? '수수료' : 'fee'} / ${dep.slippageBps} BPS ${isKo ? '슬립' : 'slip'}`;
       },
 
       loadStorage() {
@@ -6936,6 +7161,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("killSwitchModal").classList.remove("open");
           this.flattenAll();
         });
+
+        // Deploy & Sync Buttons
+        if ($("btnDeployToBot")) {
+          $("btnDeployToBot").addEventListener("click", () => this.deployCurrentStrategy());
+        }
+        if ($("btnSyncFromBacktest")) {
+          $("btnSyncFromBacktest").addEventListener("click", () => {
+            if (typeof switchMainTab === 'function') switchMainTab("backtest");
+          });
+        }
       },
 
       updateReqMarginLabel() {
