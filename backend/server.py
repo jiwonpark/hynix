@@ -77,18 +77,24 @@ async def health_check() -> Dict[str, Any]:
         "status": "online",
         "binance_connected": ping_ok,
         "authenticated": bool(config.BINANCE_API_KEY and config.BINANCE_API_SECRET),
-        "use_testnet": config.USE_TESTNET
+        "auth_source": config.AUTH_SOURCE,
+        "use_testnet": config.USE_TESTNET,
+        "server_time_ms": int(asyncio.get_event_loop().time() * 1000)
     }
 
 @app.get("/api/account")
 async def get_account() -> Dict[str, Any]:
     """Returns total equity, balances, margin metrics, and active positions."""
     try:
-        return await binance_client.get_detailed_account_overview()
+        data = await binance_client.get_detailed_account_overview()
+        data["auth_source"] = config.AUTH_SOURCE
+        data["use_testnet"] = config.USE_TESTNET
+        return data
     except Exception as e:
         logger.exception("Error fetching account overview")
         return {
             "authenticated": False,
+            "auth_source": config.AUTH_SOURCE,
             "error": str(e),
             "summary": {},
             "assets": [],

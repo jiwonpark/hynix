@@ -25,6 +25,7 @@ keys_json_locations = [
 ]
 
 json_creds = {}
+loaded_json_source = ""
 for loc in keys_json_locations:
     if loc.is_file():
         try:
@@ -37,35 +38,39 @@ for loc in keys_json_locations:
                         json_creds.update(data["binance"])
                     if isinstance(data.get("binance_futures"), dict):
                         json_creds.update(data["binance_futures"])
+                    loaded_json_source = str(loc)
         except Exception:
             pass
 
-def get_config_val(aliases: list[str], default: str = "") -> str:
-    """Retrieve credential from env vars first, then from json creds."""
+def get_config_val_with_source(aliases: list[str], default: str = "") -> tuple[str, str]:
+    """Retrieve credential and its origin (env vs json)."""
     # Check env vars
     for key in aliases:
         val = os.getenv(key)
         if val and val.strip():
-            return val.strip()
+            return val.strip(), "env"
     # Check json creds
     for key in aliases:
         val = json_creds.get(key) or json_creds.get(key.lower())
         if val and isinstance(val, str) and val.strip():
-            return val.strip()
-    return default
+            return val.strip(), loaded_json_source or "keys.json"
+    return default, "none"
+
+_api_key, _key_src = get_config_val_with_source([
+    "BINANCE_API_KEY", "BINANCE_KEY", "BINANCE_FUTURES_KEY",
+    "BINANCE_FUTURES_API_KEY", "API_KEY", "apiKey", "api_key", "key"
+])
+
+_api_secret, _sec_src = get_config_val_with_source([
+    "BINANCE_API_SECRET", "BINANCE_SECRET", "BINANCE_SECRET_KEY",
+    "BINANCE_FUTURES_SECRET", "API_SECRET", "apiSecret", "api_secret", "secret"
+])
 
 class Config:
     # Binance API Credentials
-    BINANCE_API_KEY: str = get_config_val([
-        "BINANCE_API_KEY", "BINANCE_KEY", "BINANCE_FUTURES_KEY",
-        "BINANCE_FUTURES_API_KEY", "API_KEY", "apiKey", "api_key", "key"
-    ])
-    
-    BINANCE_API_SECRET: str = get_config_val([
-        "BINANCE_API_SECRET", "BINANCE_SECRET", "BINANCE_SECRET_KEY",
-        "BINANCE_FUTURES_SECRET", "API_SECRET", "apiSecret", "api_secret", "secret"
-    ])
-    
+    BINANCE_API_KEY: str = _api_key
+    BINANCE_API_SECRET: str = _api_secret
+    AUTH_SOURCE: str = _key_src if _api_key else "none"
     # Testnet vs Production
     USE_TESTNET: bool = os.getenv("BINANCE_USE_TESTNET", "false").lower() in ("true", "1", "yes")
     

@@ -885,10 +885,87 @@
       box-shadow: 0 3px 8px rgba(22, 163, 74, 0.35);
     }
 
+    /* Backend Telemetry Card */
+    .backendTelemetryCard {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 6px 12px;
+      border-radius: 7px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+      transition: all 0.2s ease;
+    }
+    .backendTelemetryCard.connected {
+      background: #f0fdf4;
+      border-color: #86efac;
+    }
+    .backendTelemetryCard.unauth {
+      background: #fefce8;
+      border-color: #fde047;
+    }
+    .telemetryPulse {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #94a3b8;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .backendTelemetryCard.connected .telemetryPulse {
+      background: #16a34a;
+      box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+      animation: telPulseGreen 1.8s infinite;
+    }
+    .backendTelemetryCard.unauth .telemetryPulse {
+      background: #eab308;
+      box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7);
+      animation: telPulseAmber 1.8s infinite;
+    }
+    @keyframes telPulseGreen {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+      70% { transform: scale(1.1); box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+    }
+    @keyframes telPulseAmber {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7); }
+      70% { transform: scale(1.1); box-shadow: 0 0 0 6px rgba(234, 179, 8, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+    }
+    .telemetryTextGroup {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+    .authBadge {
+      font-size: 9.5px;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+    }
+    .authBadge.authActive {
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+    }
+    .authBadge.authWarn {
+      background: #fef9c3;
+      color: #854d0e;
+      border: 1px solid #fef08a;
+    }
+    .authBadge.authOff {
+      background: #f1f5f9;
+      color: #64748b;
+      border: 1px solid #e2e8f0;
+    }
+
     /* Account & Margin Strip */
     .realAccountStrip {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       margin-bottom: 14px;
       border: 1.5px solid #cbd5e1;
       border-radius: 9px;
@@ -1731,11 +1808,21 @@
             <button id="modeSemiAuto" type="button" title="AI Signal 1-Click Approval">⚡ Semi-Auto</button>
             <button id="modeLive" type="button" title="24H Autonomous Execution Engine">🤖 Full-Auto</button>
           </div>
-          <span id="badgeBackendStatus" style="font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 5px; background: #f8fafc; color: #64748b; border: 1px solid #cbd5e1; display: inline-flex; align-items: center; gap: 5px;">
-            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8;" id="dotBackendStatus"></span>
-            <span id="lblBackendStatus">Daemon: Standalone</span>
-          </span>
-          <button id="btnApiKeyModal" class="btnTopAction" type="button" title="Binance API Key Configuration">🔑 API Key</button>
+
+          <!-- Real-Time Backend Daemon Telemetry & Activity Card -->
+          <div id="backendTelemetryCard" class="backendTelemetryCard">
+            <span class="telemetryPulse" id="telemetryPulseDot"></span>
+            <div class="telemetryTextGroup">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <strong id="lblDaemonMainStatus" style="font-size: 11.5px; color: #334155;">Daemon: Standalone</strong>
+                <span id="lblDaemonAuthBadge" class="authBadge authOff">NO SERVER KEYS</span>
+              </div>
+              <div id="lblDaemonSubInfo" style="font-size: 10px; color: #64748b; margin-top: 1px;">
+                <span id="lblDaemonSyncTime">Last Sync: —</span> • <span id="lblDaemonLatency">Ping: —</span> • <span id="lblDaemonStats">0 Pos, 0 Assets</span>
+              </div>
+            </div>
+          </div>
+
           <button id="btnKillSwitch" class="btnTopAction killSwitch" type="button" title="Emergency Flatten & Halt All Orders">🚨 Kill-Switch</button>
         </div>
         <div style="display: flex; align-items: center; gap: 10px;">
@@ -1770,24 +1857,33 @@
       <!-- Real-Time Account Balance & Margin Risk Strip -->
       <section class="realAccountStrip" id="realAccountStrip">
         <div class="realAccountStat">
-          <span id="lblAccountEquity">Account Equity</span>
-          <strong id="valAccountEquity" style="color: #0284c7;">$10,000.00</strong>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span id="lblAccountEquity">Account Total Equity</span>
+            <span id="badgeEquitySource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">PAPER SIM</span>
+          </div>
+          <strong id="valAccountEquity" style="color: #0284c7; font-size: 16px;">$10,000.00</strong>
         </div>
         <div class="realAccountStat">
           <span id="lblAvailMargin">Available Margin</span>
-          <strong id="valAvailMargin">$10,000.00</strong>
+          <strong id="valAvailMargin" style="font-size: 16px;">$10,000.00</strong>
         </div>
         <div class="realAccountStat">
           <span id="lblUnrealizedPnl">Unrealized PnL</span>
-          <strong id="valUnrealizedPnl" style="color: #10b981;">+$0.00 (+0.00%)</strong>
+          <strong id="valUnrealizedPnl" style="color: #10b981; font-size: 16px;">+$0.00 (+0.00%)</strong>
         </div>
         <div class="realAccountStat">
-          <span id="lblActivePairs">Active Pairs</span>
-          <strong id="valActivePairs">0 Pairs (Flat)</strong>
+          <span id="lblActivePairs">Active Positions</span>
+          <strong id="valActivePairs" style="font-size: 15px;">0 Open (Flat)</strong>
         </div>
         <div class="realAccountStat">
-          <span id="lblMarginRisk">Margin Risk</span>
-          <strong id="valMarginRisk" style="color: #16a34a;">0.0% (Safe)</strong>
+          <span id="lblMarginRisk">Margin Safety Ratio</span>
+          <strong id="valMarginRisk" style="color: #16a34a; font-size: 15px;">0.0% (Safe)</strong>
+        </div>
+        <div class="realAccountStat" id="statCollateralSummary" style="min-width: 170px;">
+          <span id="lblCollateralSummary">Collateral Breakdown</span>
+          <div id="valCollateralPills" style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px;">
+            <span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $10,000</span>
+          </div>
         </div>
       </section>
 
@@ -1917,6 +2013,7 @@
             <div class="posTableTabs">
               <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">0</span>)</button>
               <button id="tabAssets" class="posTabBtn" type="button">Wallet & Collateral (<span id="countAssets">0</span>)</button>
+              <button id="tabDaemonActivity" class="posTabBtn" type="button">Daemon Activity (<span id="countDaemonEvents">0</span>)</button>
               <button id="tabOrderLog" class="posTabBtn" type="button">Execution History (<span id="countOrderLog">0</span>)</button>
             </div>
 
@@ -1931,7 +2028,7 @@
                     <th>Entry Spread</th>
                     <th>Mark Spread</th>
                     <th>Unrealized PnL</th>
-                    <th>Est. Liq</th>
+                    <th>Est. Liq / Buffer</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -1968,7 +2065,14 @@
               </table>
             </div>
 
-            <!-- Tab Pane 3: Execution History Log -->
+            <!-- Tab Pane 3: Daemon Live Activity Feed -->
+            <div id="paneDaemonActivity" style="display: none; width: 100%; overflow-x: auto;">
+              <div style="padding: 12px 14px; background: #0f172a; border-radius: 6px; color: #f8fafc; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; max-height: 280px; overflow-y: auto;" id="daemonActivityLogBox">
+                <div style="color: #64748b;">[System Boot] Initializing SK Hynix Trading & Telemetry Interface...</div>
+              </div>
+            </div>
+
+            <!-- Tab Pane 4: Execution History Log -->
             <div id="paneOrderLog" style="display: none; width: 100%; overflow-x: auto;">
               <table class="positionsTable">
                 <thead>
@@ -2003,40 +2107,6 @@
     </footer>
 
   </main>
-
-  <!-- Modals and Toasts for Stage 1 Real/Paper Trading -->
-  <div id="apiKeyModal" class="modalBackdrop">
-    <div class="modalDialog">
-      <div class="modalHeader">
-        <h3 id="lblModalApiKeyTitle">🔑 Binance Futures API Credentials</h3>
-        <button id="btnCloseApiKeyModal" class="modalClose" type="button">✕</button>
-      </div>
-      <div class="modalBody">
-        <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 10px; font-size: 11.5px; color: #0369a1; line-height: 1.4;">
-          🛡️ <strong>Security Notice:</strong> API keys are encrypted and kept strictly inside your browser's session memory. Never grant Withdrawal permissions on your API key.
-        </div>
-        <label>
-          <span style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Environment</span>
-          <select id="inputApiEnv" style="font-weight: 700;">
-            <option value="testnet" selected>Binance Futures Testnet (Mock Live)</option>
-            <option value="mainnet">Binance Futures Mainnet (Real Money)</option>
-          </select>
-        </label>
-        <label>
-          <span style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">API Key</span>
-          <input id="inputApiKey" type="password" placeholder="Enter Binance Futures API Key..." autocomplete="off">
-        </label>
-        <label>
-          <span style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">API Secret</span>
-          <input id="inputApiSecret" type="password" placeholder="Enter API Secret..." autocomplete="off">
-        </label>
-      </div>
-      <div class="modalFooter">
-        <button id="btnCancelApiKey" type="button" style="height: 32px; padding: 0 12px; font-size: 12px; background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; border-radius: 6px;">Cancel</button>
-        <button id="btnSaveApiKey" type="button" style="height: 32px; padding: 0 14px; font-size: 12px; background: #0284c7; color: #fff; font-weight: 800; border-radius: 6px; border: 0;">💾 Save Credentials</button>
-      </div>
-    </div>
-  </div>
 
   <div id="killSwitchModal" class="modalBackdrop">
     <div class="modalDialog" style="max-width: 400px; border-color: #fca5a5;">
@@ -5681,10 +5751,11 @@
         btnPairBuySub: "Bet on Spread Expansion (▲)",
         btnPairSellText: "🔴 SELL ADR / BUY KR",
         btnPairSellSub: "Bet on Premium Harvest (▼)",
-        btnPairFlatText: "🔒 Delta-Neutral Flatten (Close All)",
         tabPositions: "Active Positions",
+        tabAssets: "Wallet & Collateral",
+        tabDaemonActivity: "Daemon Activity",
         tabOrderLog: "Execution History",
-        lblModalApiKeyTitle: "🔑 Binance Futures API Credentials",
+        lblCollateralSummary: "Collateral Breakdown",
         lblNavBacktest: "Backtest & Strategy Research",
         subNavBacktest: "Parameter Tuning & Historical Simulation",
         lblNavTrading: "Live & Paper Execution Terminal",
@@ -5822,8 +5893,10 @@
         btnPairSellSub: "스프레드 축소 수렴 배팅 (▼)",
         btnPairFlatText: "🔒 델타 뉴트럴 즉시 전량 청산",
         tabPositions: "활성 보유 포지션",
+        tabAssets: "보유 자산 및 담보",
+        tabDaemonActivity: "데몬 실시간 활동",
         tabOrderLog: "주문 체결 내역",
-        lblModalApiKeyTitle: "🔑 바이낸스 선물 API 자격 증명 설정"
+        lblCollateralSummary: "담보 자산 구성"
       }
     };
 
@@ -6424,8 +6497,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("lblLeverage")) $("lblLeverage").textContent = dict.lblLeverage;
       if ($("lblOrderRoute")) $("lblOrderRoute").textContent = dict.lblOrderRoute;
       if ($("lblModalApiKeyTitle")) $("lblModalApiKeyTitle").textContent = dict.lblModalApiKeyTitle;
-      if ($("tabPositions")) $("tabPositions").innerHTML = `${dict.tabPositions} (<span id="countPositions">${typeof tradingEngine !== 'undefined' ? tradingEngine.state.positions.length : 0}</span>)`;
-      if ($("tabOrderLog")) $("tabOrderLog").innerHTML = `${dict.tabOrderLog} (<span id="countOrderLog">${typeof tradingEngine !== 'undefined' ? tradingEngine.state.orderLog.length : 0}</span>)`;
+      if ($("lblCollateralSummary")) $("lblCollateralSummary").textContent = dict.lblCollateralSummary || (lang === "ko" ? "담보 자산 구성" : "Collateral Breakdown");
+      const posCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.backendPositions && tradingEngine.state.backendPositions.length) || tradingEngine.state.positions.length) : 0;
+      const assetCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.backendAssets && tradingEngine.state.backendAssets.length) || 0) : 0;
+      const daemonEventCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.daemonEvents && tradingEngine.state.daemonEvents.length) || 0) : 0;
+      const orderCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.orderLog && tradingEngine.state.orderLog.length) || 0) : 0;
+
+      if ($("tabPositions")) $("tabPositions").innerHTML = `${dict.tabPositions} (<span id="countPositions">${posCount}</span>)`;
+      if ($("tabAssets")) $("tabAssets").innerHTML = `${dict.tabAssets || (lang === "ko" ? "보유 자산 및 담보" : "Wallet & Collateral")} (<span id="countAssets">${assetCount}</span>)`;
+      if ($("tabDaemonActivity")) $("tabDaemonActivity").innerHTML = `${dict.tabDaemonActivity || (lang === "ko" ? "데몬 실시간 활동" : "Daemon Activity")} (<span id="countDaemonEvents">${daemonEventCount}</span>)`;
+      if ($("tabOrderLog")) $("tabOrderLog").innerHTML = `${dict.tabOrderLog} (<span id="countOrderLog">${orderCount}</span>)`;
       if ($("btnExecuteBuySpread")) $("btnExecuteBuySpread").innerHTML = `<span>${dict.btnPairBuyText}</span><span style="font-size: 10px; font-weight: 600; opacity: 0.9;">${dict.btnPairBuySub}</span>`;
       if ($("btnExecuteFlatten")) $("btnExecuteFlatten").textContent = dict.btnPairFlatText;
       if ($("btnDeployToBot")) $("btnDeployToBot").textContent = dict.btnDeployToBot;
@@ -6806,15 +6887,21 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         equity: 10000.0,
         availableMargin: 10000.0,
         unrealizedPnl: 0.0,
+        marginRatio: 0.0,
         positions: [],
+        backendPositions: [],
+        backendAssets: [],
+        backendConnected: false,
+        backendAuthenticated: false,
+        backendAuthSource: "none",
+        backendLatencyMs: 0,
+        lastSyncTime: null,
         orderLog: [],
+        daemonEvents: [],
         activeSignal: null,
         selectedNotional: 1000,
         selectedLeverage: 3,
-        selectedRoute: "market",
-        apiKey: "",
-        apiSecret: "",
-        apiEnv: "testnet"
+        selectedRoute: "market"
       },
       deployedStrategy: null,
 
@@ -6826,6 +6913,24 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.renderAccountStrip();
         this.renderPositionsAndLogs();
         this.updateSignalApprover();
+        this.logDaemonEvent("Trading engine initialized in " + this.state.mode.toUpperCase() + " mode.", "info");
+      },
+
+      logDaemonEvent(msg, type = "info") {
+        const timeStr = new Date().toLocaleTimeString();
+        const event = { time: timeStr, msg, type };
+        this.state.daemonEvents.unshift(event);
+        if (this.state.daemonEvents.length > 60) this.state.daemonEvents.pop();
+
+        if ($("countDaemonEvents")) $("countDaemonEvents").textContent = this.state.daemonEvents.length;
+
+        const box = $("daemonActivityLogBox");
+        if (box) {
+          box.innerHTML = this.state.daemonEvents.map(e => {
+            const color = e.type === "success" ? "#4ade80" : e.type === "warn" ? "#facc15" : e.type === "danger" ? "#f87171" : "#38bdf8";
+            return `<div style="margin-bottom: 5px; line-height: 1.4;"><span style="color: #64748b; font-size: 10.5px;">[${e.time}]</span> <span style="color: ${color}; font-weight: 600;">${e.msg}</span></div>`;
+          }).join("");
+        }
       },
 
       loadDeployedStrategy() {
@@ -6899,6 +7004,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         this.renderDeployedStrategyCard();
         this.updateSignalApprover();
+        this.logDaemonEvent(`Deployed strategy [${deployed.assetName}] to trading bot.`, "success");
 
         const isKo = window.currentLang === "ko";
         showToast(
@@ -6906,7 +7012,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           "success"
         );
 
-        // Switch to Trading Tab seamlessly
         if (typeof switchMainTab === 'function') {
           switchMainTab("trading");
         }
@@ -6939,13 +7044,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             this.state.positions = Array.isArray(data.positions) ? data.positions : [];
             this.state.orderLog = Array.isArray(data.orderLog) ? data.orderLog : [];
           }
-          const creds = sessionStorage.getItem("skhynix_api_creds");
-          if (creds) {
-            const parsed = JSON.parse(creds);
-            this.state.apiKey = parsed.apiKey || "";
-            this.state.apiSecret = parsed.apiSecret || "";
-            this.state.apiEnv = parsed.apiEnv || "testnet";
-          }
         } catch (e) {}
       },
 
@@ -6974,7 +7072,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const isKo = window.currentLang === "ko";
 
         if (mode === "live") {
-          // 🤖 Full-Auto: Lock manual inputs, show live telemetry
           if (badge) {
             badge.textContent = isKo ? "🤖 24H 전자동 알고리즘 가동" : "24H AUTONOMOUS ENGINE";
             badge.style.background = "#fee2e2";
@@ -6985,7 +7082,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (autoBox) autoBox.style.display = "block";
           if ($("aiSignalBox")) $("aiSignalBox").style.display = "none";
         } else if (mode === "semi_auto") {
-          // ⚡ Semi-Auto: Lock manual ticket, activate AI signal 1-click approver
           if (badge) {
             badge.textContent = isKo ? "⚡ AI 시그널 반자동 승인" : "AI SEMI-AUTO APPROVAL";
             badge.style.background = "#f0fdf4";
@@ -6996,7 +7092,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (autoBox) autoBox.style.display = "none";
           if ($("aiSignalBox")) $("aiSignalBox").style.display = "block";
         } else {
-          // ✋ Manual / Paper: Fully unlock manual ticket for discretionary testing
           if (badge) {
             badge.textContent = isKo ? "✋ 수동 모의매매 / 테스트" : "MANUAL PAPER TRADING";
             badge.style.background = "#e0f2fe";
@@ -7010,6 +7105,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         this.updateSignalApprover();
         this.saveStorage();
+        this.logDaemonEvent(`Trading mode changed to ${mode.toUpperCase()}`, "warn");
         showToast(
           isKo ? `매매 모드 전환: ${mode === "live" ? "전자동 봇" : mode === "semi_auto" ? "반자동 승인" : "수동 모의"}` : `Mode switched: ${mode.toUpperCase()}`,
           mode === "live" ? "danger" : "info"
@@ -7019,28 +7115,59 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       renderAccountStrip() {
         const isKo = window.currentLang === "ko";
         const eq = this.state.equity + this.state.unrealizedPnl;
-        $("valAccountEquity").textContent = `$${eq.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        $("valAvailMargin").textContent = `$${Math.max(0, this.state.availableMargin).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        if ($("valAccountEquity")) $("valAccountEquity").textContent = `$${eq.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        if ($("valAvailMargin")) $("valAvailMargin").textContent = `$${Math.max(0, this.state.availableMargin).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+        // Equity Source Badge
+        if ($("badgeEquitySource")) {
+          if (this.state.backendAuthenticated) {
+            $("badgeEquitySource").textContent = "LIVE BINANCE";
+            $("badgeEquitySource").style.background = "#dcfce7";
+            $("badgeEquitySource").style.color = "#166534";
+          } else {
+            $("badgeEquitySource").textContent = "PAPER SIM";
+            $("badgeEquitySource").style.background = "#f1f5f9";
+            $("badgeEquitySource").style.color = "#64748b";
+          }
+        }
 
         const pnl = this.state.unrealizedPnl;
         const pnlPct = this.state.equity > 0 ? (pnl / this.state.equity) * 100 : 0;
         const pnlColor = pnl >= 0 ? "#10b981" : "#ef4444";
         const pnlSign = pnl >= 0 ? "+" : "";
-        $("valUnrealizedPnl").style.color = pnlColor;
-        $("valUnrealizedPnl").textContent = `${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
+        if ($("valUnrealizedPnl")) {
+          $("valUnrealizedPnl").style.color = pnlColor;
+          $("valUnrealizedPnl").textContent = `${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
+        }
 
         const openCount = (this.state.backendPositions && this.state.backendPositions.length > 0) 
           ? this.state.backendPositions.length 
           : this.state.positions.length;
-        $("valActivePairs").textContent = openCount > 0 ? `${openCount} ${isKo ? '개 포지션' : 'Active Positions'}` : `${isKo ? '무포지션' : '0 (Flat)'}`;
+        if ($("valActivePairs")) {
+          $("valActivePairs").textContent = openCount > 0 ? `${openCount} ${isKo ? '개 포지션 보유' : 'Open Positions'}` : `${isKo ? '0개 (무포지션)' : '0 (Flat)'}`;
+        }
 
         const marginRiskPct = Number.isFinite(this.state.marginRatio) 
           ? this.state.marginRatio 
           : (this.state.equity > 0 ? Math.min(100, (Math.max(0, this.state.equity - this.state.availableMargin) / this.state.equity) * 100) : 0);
         const riskColor = marginRiskPct > 65 ? "#dc2626" : marginRiskPct > 35 ? "#ea580c" : "#16a34a";
         const riskLabel = marginRiskPct > 65 ? (isKo ? "위험" : "High") : marginRiskPct > 35 ? (isKo ? "주의" : "Moderate") : (isKo ? "안전" : "Safe");
-        $("valMarginRisk").style.color = riskColor;
-        $("valMarginRisk").textContent = `${marginRiskPct.toFixed(1)}% (${riskLabel})`;
+        if ($("valMarginRisk")) {
+          $("valMarginRisk").style.color = riskColor;
+          $("valMarginRisk").textContent = `${marginRiskPct.toFixed(1)}% (${riskLabel})`;
+        }
+
+        // Render Collateral Quick Pills
+        const pillsHost = $("valCollateralPills");
+        if (pillsHost) {
+          if (this.state.backendAssets && this.state.backendAssets.length > 0) {
+            pillsHost.innerHTML = this.state.backendAssets.slice(0, 3).map(a => {
+              return `<span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 700;">${a.asset}: $${a.margin_balance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>`;
+            }).join("");
+          } else {
+            pillsHost.innerHTML = `<span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $${this.state.equity.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>`;
+          }
+        }
       },
 
       renderAssetsTable(assets) {
@@ -7050,7 +7177,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("countAssets")) $("countAssets").textContent = assets ? assets.length : 0;
 
         if (!assets || !assets.length) {
-          body.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 28px 16px; font-family: sans-serif;">🛡️ ${isKo ? '보유 자산이 없거나 백엔드 데몬이 연결되지 않았습니다.' : 'No asset collateral found or backend daemon is unauthenticated.'}</td></tr>`;
+          body.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 28px 16px; font-family: sans-serif;">🛡️ ${isKo ? '보유 자산이 없거나 백엔드 데몬이 연결 대기 중입니다.' : 'No asset collateral found or backend daemon is unauthenticated.'}</td></tr>`;
           return;
         }
 
@@ -7079,14 +7206,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const posBody = $("activePositionsBody");
         if (posBody) {
           if (hasBackendPos) {
-            // Render Live Binance Positions from Backend
             posBody.innerHTML = this.state.backendPositions.map((pos) => {
               const pnlColor = pos.unrealized_pnl >= 0 ? "#10b981" : "#ef4444";
               const pnlSign = pos.unrealized_pnl >= 0 ? "+" : "";
               const dirLabel = pos.side === "LONG" 
                 ? (isKo ? "🟢 롱 (LONG)" : "🟢 LONG") 
                 : (isKo ? "🔴 숏 (SHORT)" : "🔴 SHORT");
-              const liqStr = pos.liquidation_price ? `$${pos.liquidation_price.toFixed(4)} (${pos.distance_to_liq_percent?.toFixed(1)}%)` : "—";
+              const liqStr = pos.liquidation_price ? `$${pos.liquidation_price.toFixed(4)} (${pos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : "—";
 
               return `<tr>
                 <td style="font-weight: 700; color: #0f172a;">${pos.symbol}</td>
@@ -7096,7 +7222,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <td style="font-weight: 700;">$${pos.mark_price.toFixed(4)}</td>
                 <td style="font-weight: 800; color: ${pnlColor};">${pnlSign}$${pos.unrealized_pnl.toFixed(2)} (${pnlSign}${pos.roe_percent.toFixed(2)}%)</td>
                 <td style="color: #64748b; font-size: 11px;">${liqStr}</td>
-                <td><span style="font-size: 11px; background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 700;">LIVE BINANCE</span></td>
+                <td><span style="font-size: 11px; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 700; border: 1px solid #bbf7d0;">LIVE BINANCE</span></td>
               </tr>`;
             }).join("");
           } else if (!this.state.positions.length) {
@@ -7146,26 +7272,52 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       async syncWithBackend() {
-        const endpoints = ["http://localhost:8000/api/account", "/api/account"];
+        const origin = window.location.origin;
+        const endpoints = [
+          `${origin}/skhynix/api/account`,
+          "/skhynix/api/account",
+          `${origin}/api/account`,
+          "/api/account",
+          "http://localhost:8000/api/account"
+        ];
         let success = false;
+        const tStart = performance.now();
 
         for (const url of endpoints) {
           try {
             const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
             if (res.ok) {
               const data = await res.json();
+              const latency = Math.round(performance.now() - tStart);
               success = true;
               this.state.backendConnected = true;
+              this.state.backendLatencyMs = latency;
+              this.state.lastSyncTime = new Date().toLocaleTimeString();
+
+              const card = $("backendTelemetryCard");
+              const mainLbl = $("lblDaemonMainStatus");
+              const authBadge = $("lblDaemonAuthBadge");
+              const syncTime = $("lblDaemonSyncTime");
+              const latencyLbl = $("lblDaemonLatency");
+              const statsLbl = $("lblDaemonStats");
+
+              if (syncTime) syncTime.textContent = `Sync: ${this.state.lastSyncTime}`;
+              if (latencyLbl) latencyLbl.textContent = `Ping: ${latency}ms`;
 
               if (data.authenticated) {
-                // Update Badge
-                if ($("dotBackendStatus")) $("dotBackendStatus").style.background = "#16a34a";
-                if ($("lblBackendStatus")) $("lblBackendStatus").textContent = `Daemon: Connected (${data.positions.length} Pos, ${data.assets.length} Assets)`;
-                if ($("badgeBackendStatus")) {
-                  $("badgeBackendStatus").style.background = "#f0fdf4";
-                  $("badgeBackendStatus").style.color = "#166534";
-                  $("badgeBackendStatus").style.borderColor = "#bbf7d0";
+                this.state.backendAuthenticated = true;
+                this.state.backendAuthSource = data.auth_source || "server";
+
+                if (card) {
+                  card.className = "backendTelemetryCard connected";
                 }
+                if (mainLbl) mainLbl.textContent = "Daemon: Connected & Active";
+                if (authBadge) {
+                  const srcName = data.auth_source ? (data.auth_source.includes('keys.json') ? 'AUTH: KEYS.JSON' : data.auth_source.includes('env') ? 'AUTH: .ENV' : 'AUTH: ACTIVE') : 'AUTH: ACTIVE';
+                  authBadge.textContent = srcName;
+                  authBadge.className = "authBadge authActive";
+                }
+                if (statsLbl) statsLbl.textContent = `${(data.positions || []).length} Pos, ${(data.assets || []).length} Assets`;
 
                 // Sync live account equity & balances
                 if (data.summary) {
@@ -7176,36 +7328,49 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 }
 
                 this.state.backendPositions = data.positions || [];
+                this.state.backendAssets = data.assets || [];
                 this.renderAssetsTable(data.assets || []);
                 this.renderAccountStrip();
                 this.renderPositionsAndLogs();
               } else {
-                // Online but unauthenticated
-                if ($("dotBackendStatus")) $("dotBackendStatus").style.background = "#f59e0b";
-                if ($("lblBackendStatus")) $("lblBackendStatus").textContent = "Daemon: Online (Unauthenticated)";
-                if ($("badgeBackendStatus")) {
-                  $("badgeBackendStatus").style.background = "#fefce8";
-                  $("badgeBackendStatus").style.color = "#854d0e";
-                  $("badgeBackendStatus").style.borderColor = "#fef08a";
+                this.state.backendAuthenticated = false;
+                if (card) {
+                  card.className = "backendTelemetryCard unauth";
                 }
+                if (mainLbl) mainLbl.textContent = "Daemon: Online (Unauthenticated)";
+                if (authBadge) {
+                  authBadge.textContent = "NO SERVER KEYS";
+                  authBadge.className = "authBadge authWarn";
+                }
+                if (statsLbl) statsLbl.textContent = "0 Pos, 0 Assets";
                 this.renderAssetsTable([]);
               }
               break;
             }
           } catch (err) {
-            // Try next endpoint or fallback
+            // Try next endpoint
           }
         }
 
         if (!success) {
           this.state.backendConnected = false;
-          if ($("dotBackendStatus")) $("dotBackendStatus").style.background = "#94a3b8";
-          if ($("lblBackendStatus")) $("lblBackendStatus").textContent = "Daemon: Standalone";
-          if ($("badgeBackendStatus")) {
-            $("badgeBackendStatus").style.background = "#f8fafc";
-            $("badgeBackendStatus").style.color = "#64748b";
-            $("badgeBackendStatus").style.borderColor = "#cbd5e1";
+          this.state.backendAuthenticated = false;
+          const card = $("backendTelemetryCard");
+          const mainLbl = $("lblDaemonMainStatus");
+          const authBadge = $("lblDaemonAuthBadge");
+          const syncTime = $("lblDaemonSyncTime");
+          const latencyLbl = $("lblDaemonLatency");
+          const statsLbl = $("lblDaemonStats");
+
+          if (card) card.className = "backendTelemetryCard";
+          if (mainLbl) mainLbl.textContent = "Daemon: Standalone (Browser)";
+          if (authBadge) {
+            authBadge.textContent = "STANDALONE";
+            authBadge.className = "authBadge authOff";
           }
+          if (syncTime) syncTime.textContent = "Last Sync: Standalone";
+          if (latencyLbl) latencyLbl.textContent = "Ping: —";
+          if (statsLbl) statsLbl.textContent = `${this.state.positions.length} Paper Pos`;
         }
       },
 
@@ -7264,6 +7429,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         this.updatePnL();
         this.saveStorage();
+        this.logDaemonEvent(`Order Executed: ${logEntry.side} $${notional.toLocaleString()} @ ${curSpread.toFixed(2)} (${leverage}x)`, "success");
 
         const sideText = side === "BUY_ADR_SELL_KR" ? (isKo ? "롱 ADR / 숏 KR" : "Long ADR / Short KR") : (isKo ? "숏 ADR / 롱 KR" : "Short ADR / Long KR");
         showToast(isKo ? `⚡ [주문 체결] ${sideText} $${notional.toLocaleString()} (${leverage}x, ${route})` : `⚡ [Filled] ${sideText} $${notional.toLocaleString()} (${leverage}x, ${route})`, "success");
@@ -7297,6 +7463,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         this.updatePnL();
         this.saveStorage();
+        this.logDaemonEvent(`Closed position ${pos.pairName} for PnL $${netPnl.toFixed(2)}`, netPnl >= 0 ? "success" : "danger");
         const pnlSign = netPnl >= 0 ? "+" : "";
         showToast(isKo ? `🔒 포지션 종료: 손익 ${pnlSign}$${netPnl.toFixed(2)}` : `🔒 Position Closed: Net PnL ${pnlSign}$${netPnl.toFixed(2)}`, netPnl >= 0 ? "success" : "danger");
       },
@@ -7310,6 +7477,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         while (this.state.positions.length > 0) {
           this.closePosition(this.state.positions[0].id);
         }
+        this.logDaemonEvent("Emergency Kill-Switch Triggered: All positions flattened.", "danger");
         showToast(isKo ? "🚨 모든 활성 포지션을 시장가로 전량 청산했습니다." : "🚨 All active positions flattened at market.", "danger");
       },
 
@@ -7447,43 +7615,31 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           this.saveStorage();
           this.renderAccountStrip();
           this.renderPositionsAndLogs();
+          this.logDaemonEvent("Reset paper trading balance to $10,000.00", "info");
           showToast(window.currentLang === "ko" ? "↺ 모의 계좌 잔고를 $10,000으로 초기화했습니다." : "↺ Reset paper balance to $10,000.", "info");
         });
 
         // Tabs
         const switchPosTab = (activeTab) => {
-          ["tabPositions", "tabAssets", "tabOrderLog"].forEach(id => {
+          ["tabPositions", "tabAssets", "tabDaemonActivity", "tabOrderLog"].forEach(id => {
             if ($(id)) $(id).classList.toggle("active", id === activeTab);
           });
           if ($("panePositions")) $("panePositions").style.display = (activeTab === "tabPositions") ? "block" : "none";
           if ($("paneAssets")) $("paneAssets").style.display = (activeTab === "tabAssets") ? "block" : "none";
+          if ($("paneDaemonActivity")) $("paneDaemonActivity").style.display = (activeTab === "tabDaemonActivity") ? "block" : "none";
           if ($("paneOrderLog")) $("paneOrderLog").style.display = (activeTab === "tabOrderLog") ? "block" : "none";
         };
 
         if ($("tabPositions")) $("tabPositions").addEventListener("click", () => switchPosTab("tabPositions"));
         if ($("tabAssets")) $("tabAssets").addEventListener("click", () => switchPosTab("tabAssets"));
+        if ($("tabDaemonActivity")) $("tabDaemonActivity").addEventListener("click", () => switchPosTab("tabDaemonActivity"));
         if ($("tabOrderLog")) $("tabOrderLog").addEventListener("click", () => switchPosTab("tabOrderLog"));
 
         // Periodically sync with backend daemon
         this.syncWithBackend();
         setInterval(() => this.syncWithBackend(), 3000);
 
-        // Modals
-        $("btnApiKeyModal").addEventListener("click", () => $("apiKeyModal").classList.add("open"));
-        $("btnCloseApiKeyModal").addEventListener("click", () => $("apiKeyModal").classList.remove("open"));
-        $("btnCancelApiKey").addEventListener("click", () => $("apiKeyModal").classList.remove("open"));
-        $("btnSaveApiKey").addEventListener("click", () => {
-          const key = $("inputApiKey").value.trim();
-          const secret = $("inputApiSecret").value.trim();
-          const env = $("inputApiEnv").value;
-          sessionStorage.setItem("skhynix_api_creds", JSON.stringify({ apiKey: key, apiSecret: secret, apiEnv: env }));
-          this.state.apiKey = key;
-          this.state.apiSecret = secret;
-          this.state.apiEnv = env;
-          $("apiKeyModal").classList.remove("open");
-          showToast(window.currentLang === "ko" ? "🔑 API 자격 증명이 세션에 안전하게 저장되었습니다." : "🔑 API credentials stored in session.", "success");
-        });
-
+        // Kill Switch Modal
         $("btnKillSwitch").addEventListener("click", () => $("killSwitchModal").classList.add("open"));
         $("btnCloseKillModal").addEventListener("click", () => $("killSwitchModal").classList.remove("open"));
         $("btnCancelKill").addEventListener("click", () => $("killSwitchModal").classList.remove("open"));
