@@ -32,13 +32,27 @@ for loc in keys_json_locations:
             with open(loc, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
-                    # Direct top-level or nested under 'binance' / 'binance_futures'
-                    json_creds.update(data)
-                    if isinstance(data.get("binance"), dict):
-                        json_creds.update(data["binance"])
-                    if isinstance(data.get("binance_futures"), dict):
-                        json_creds.update(data["binance_futures"])
-                    loaded_json_source = str(loc)
+                    # 1. Check list format: "binance": ["API_KEY", "API_SECRET"]
+                    for b_key in ["binance", "binance_futures", "binance_usdt"]:
+                        val = data.get(b_key)
+                        if isinstance(val, list) and len(val) >= 2:
+                            json_creds["BINANCE_API_KEY"] = str(val[0]).strip()
+                            json_creds["BINANCE_API_SECRET"] = str(val[1]).strip()
+                            loaded_json_source = str(loc)
+                        elif isinstance(val, dict):
+                            k = val.get("api_key") or val.get("key") or val.get("apiKey") or val.get("BINANCE_API_KEY")
+                            s = val.get("api_secret") or val.get("secret") or val.get("apiSecret") or val.get("BINANCE_API_SECRET")
+                            if k and s:
+                                json_creds["BINANCE_API_KEY"] = str(k).strip()
+                                json_creds["BINANCE_API_SECRET"] = str(s).strip()
+                                loaded_json_source = str(loc)
+                    
+                    # 2. Check top-level keys
+                    for k, v in data.items():
+                        if isinstance(v, str):
+                            json_creds[k] = v.strip()
+                            if "binance" in k.lower():
+                                loaded_json_source = str(loc)
         except Exception:
             pass
 
