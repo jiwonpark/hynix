@@ -1731,6 +1731,10 @@
             <button id="modeSemiAuto" type="button" title="AI Signal 1-Click Approval">⚡ Semi-Auto</button>
             <button id="modeLive" type="button" title="24H Autonomous Execution Engine">🤖 Full-Auto</button>
           </div>
+          <span id="badgeBackendStatus" style="font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 5px; background: #f8fafc; color: #64748b; border: 1px solid #cbd5e1; display: inline-flex; align-items: center; gap: 5px;">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #94a3b8;" id="dotBackendStatus"></span>
+            <span id="lblBackendStatus">Daemon: Standalone</span>
+          </span>
           <button id="btnApiKeyModal" class="btnTopAction" type="button" title="Binance API Key Configuration">🔑 API Key</button>
           <button id="btnKillSwitch" class="btnTopAction killSwitch" type="button" title="Emergency Flatten & Halt All Orders">🚨 Kill-Switch</button>
         </div>
@@ -1912,6 +1916,7 @@
           <div class="posTableShell">
             <div class="posTableTabs">
               <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">0</span>)</button>
+              <button id="tabAssets" class="posTabBtn" type="button">Wallet & Collateral (<span id="countAssets">0</span>)</button>
               <button id="tabOrderLog" class="posTabBtn" type="button">Execution History (<span id="countOrderLog">0</span>)</button>
             </div>
 
@@ -1940,7 +1945,30 @@
               </table>
             </div>
 
-            <!-- Tab Pane 2: Execution History Log -->
+            <!-- Tab Pane 2: Assets & Collateral Balances Table -->
+            <div id="paneAssets" style="display: none; width: 100%; overflow-x: auto;">
+              <table class="positionsTable">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Wallet Balance</th>
+                    <th>Unrealized PnL</th>
+                    <th>Margin Balance</th>
+                    <th>Available for Orders</th>
+                    <th>Max Withdraw</th>
+                  </tr>
+                </thead>
+                <tbody id="assetsTableBody">
+                  <tr>
+                    <td colspan="6" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
+                      Connecting to backend daemon for live collateral data...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Tab Pane 3: Execution History Log -->
             <div id="paneOrderLog" style="display: none; width: 100%; overflow-x: auto;">
               <table class="positionsTable">
                 <thead>
@@ -7001,26 +7029,77 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         $("valUnrealizedPnl").style.color = pnlColor;
         $("valUnrealizedPnl").textContent = `${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
 
-        const openCount = this.state.positions.length;
-        $("valActivePairs").textContent = openCount > 0 ? `${openCount} ${isKo ? '개 포지션' : 'Active Pairs'}` : `${isKo ? '무포지션' : '0 Pairs (Flat)'}`;
+        const openCount = (this.state.backendPositions && this.state.backendPositions.length > 0) 
+          ? this.state.backendPositions.length 
+          : this.state.positions.length;
+        $("valActivePairs").textContent = openCount > 0 ? `${openCount} ${isKo ? '개 포지션' : 'Active Positions'}` : `${isKo ? '무포지션' : '0 (Flat)'}`;
 
-        const usedMargin = Math.max(0, this.state.equity - this.state.availableMargin);
-        const marginRiskPct = this.state.equity > 0 ? Math.min(100, (usedMargin / this.state.equity) * 100) : 0;
+        const marginRiskPct = Number.isFinite(this.state.marginRatio) 
+          ? this.state.marginRatio 
+          : (this.state.equity > 0 ? Math.min(100, (Math.max(0, this.state.equity - this.state.availableMargin) / this.state.equity) * 100) : 0);
         const riskColor = marginRiskPct > 65 ? "#dc2626" : marginRiskPct > 35 ? "#ea580c" : "#16a34a";
         const riskLabel = marginRiskPct > 65 ? (isKo ? "위험" : "High") : marginRiskPct > 35 ? (isKo ? "주의" : "Moderate") : (isKo ? "안전" : "Safe");
         $("valMarginRisk").style.color = riskColor;
         $("valMarginRisk").textContent = `${marginRiskPct.toFixed(1)}% (${riskLabel})`;
       },
 
+      renderAssetsTable(assets) {
+        const isKo = window.currentLang === "ko";
+        const body = $("assetsTableBody");
+        if (!body) return;
+        if ($("countAssets")) $("countAssets").textContent = assets ? assets.length : 0;
+
+        if (!assets || !assets.length) {
+          body.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 28px 16px; font-family: sans-serif;">🛡️ ${isKo ? '보유 자산이 없거나 백엔드 데몬이 연결되지 않았습니다.' : 'No asset collateral found or backend daemon is unauthenticated.'}</td></tr>`;
+          return;
+        }
+
+        body.innerHTML = assets.map(a => {
+          const unPnlColor = a.unrealized_profit >= 0 ? "#10b981" : "#ef4444";
+          const unPnlSign = a.unrealized_profit >= 0 ? "+" : "";
+          return `<tr>
+            <td style="font-weight: 800; color: #0f172a;"><span style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${a.asset}</span></td>
+            <td style="font-weight: 700;">${a.wallet_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+            <td style="font-weight: 700; color: ${unPnlColor};">${unPnlSign}$${a.unrealized_profit.toFixed(2)}</td>
+            <td style="font-weight: 700; color: #0284c7;">$${a.margin_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td style="font-weight: 700; color: #16a34a;">$${a.available_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td style="color: #64748b;">$${a.max_withdraw_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          </tr>`;
+        }).join("");
+      },
+
       renderPositionsAndLogs() {
         const isKo = window.currentLang === "ko";
-        if ($("countPositions")) $("countPositions").textContent = this.state.positions.length;
+        const hasBackendPos = this.state.backendPositions && this.state.backendPositions.length > 0;
+        const count = hasBackendPos ? this.state.backendPositions.length : this.state.positions.length;
+        if ($("countPositions")) $("countPositions").textContent = count;
         if ($("countOrderLog")) $("countOrderLog").textContent = this.state.orderLog.length;
 
         // 1. Positions Body
         const posBody = $("activePositionsBody");
         if (posBody) {
-          if (!this.state.positions.length) {
+          if (hasBackendPos) {
+            // Render Live Binance Positions from Backend
+            posBody.innerHTML = this.state.backendPositions.map((pos) => {
+              const pnlColor = pos.unrealized_pnl >= 0 ? "#10b981" : "#ef4444";
+              const pnlSign = pos.unrealized_pnl >= 0 ? "+" : "";
+              const dirLabel = pos.side === "LONG" 
+                ? (isKo ? "🟢 롱 (LONG)" : "🟢 LONG") 
+                : (isKo ? "🔴 숏 (SHORT)" : "🔴 SHORT");
+              const liqStr = pos.liquidation_price ? `$${pos.liquidation_price.toFixed(4)} (${pos.distance_to_liq_percent?.toFixed(1)}%)` : "—";
+
+              return `<tr>
+                <td style="font-weight: 700; color: #0f172a;">${pos.symbol}</td>
+                <td><span style="font-weight: 700;">${dirLabel}</span> <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 3px;">${pos.leverage}x ${pos.margin_type}</span></td>
+                <td>$${pos.notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td>$${pos.entry_price.toFixed(4)}</td>
+                <td style="font-weight: 700;">$${pos.mark_price.toFixed(4)}</td>
+                <td style="font-weight: 800; color: ${pnlColor};">${pnlSign}$${pos.unrealized_pnl.toFixed(2)} (${pnlSign}${pos.roe_percent.toFixed(2)}%)</td>
+                <td style="color: #64748b; font-size: 11px;">${liqStr}</td>
+                <td><span style="font-size: 11px; background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 700;">LIVE BINANCE</span></td>
+              </tr>`;
+            }).join("");
+          } else if (!this.state.positions.length) {
             posBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">🛡️ ${isKo ? '활성 보유 포지션이 없습니다. 주문 티켓 또는 AI 시그널 승인으로 포지션을 개설하세요.' : 'No active open positions. Execute a pair trade or approve an AI signal to open.'}</td></tr>`;
           } else {
             posBody.innerHTML = this.state.positions.map((pos) => {
@@ -7062,6 +7141,70 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <td><span style="font-weight: 800; color: ${statusColor};">${log.status}</span></td>
               </tr>`;
             }).join("");
+          }
+        }
+      },
+
+      async syncWithBackend() {
+        const endpoints = ["http://localhost:8000/api/account", "/api/account"];
+        let success = false;
+
+        for (const url of endpoints) {
+          try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+            if (res.ok) {
+              const data = await res.json();
+              success = true;
+              this.state.backendConnected = true;
+
+              if (data.authenticated) {
+                // Update Badge
+                if ($("dotBackendStatus")) $("dotBackendStatus").style.background = "#16a34a";
+                if ($("lblBackendStatus")) $("lblBackendStatus").textContent = `Daemon: Connected (${data.positions.length} Pos, ${data.assets.length} Assets)`;
+                if ($("badgeBackendStatus")) {
+                  $("badgeBackendStatus").style.background = "#f0fdf4";
+                  $("badgeBackendStatus").style.color = "#166534";
+                  $("badgeBackendStatus").style.borderColor = "#bbf7d0";
+                }
+
+                // Sync live account equity & balances
+                if (data.summary) {
+                  this.state.equity = data.summary.total_equity_usd;
+                  this.state.availableMargin = data.summary.available_margin_usd;
+                  this.state.unrealizedPnl = data.summary.total_unrealized_pnl_usd;
+                  this.state.marginRatio = data.summary.margin_ratio_percent;
+                }
+
+                this.state.backendPositions = data.positions || [];
+                this.renderAssetsTable(data.assets || []);
+                this.renderAccountStrip();
+                this.renderPositionsAndLogs();
+              } else {
+                // Online but unauthenticated
+                if ($("dotBackendStatus")) $("dotBackendStatus").style.background = "#f59e0b";
+                if ($("lblBackendStatus")) $("lblBackendStatus").textContent = "Daemon: Online (Unauthenticated)";
+                if ($("badgeBackendStatus")) {
+                  $("badgeBackendStatus").style.background = "#fefce8";
+                  $("badgeBackendStatus").style.color = "#854d0e";
+                  $("badgeBackendStatus").style.borderColor = "#fef08a";
+                }
+                this.renderAssetsTable([]);
+              }
+              break;
+            }
+          } catch (err) {
+            // Try next endpoint or fallback
+          }
+        }
+
+        if (!success) {
+          this.state.backendConnected = false;
+          if ($("dotBackendStatus")) $("dotBackendStatus").style.background = "#94a3b8";
+          if ($("lblBackendStatus")) $("lblBackendStatus").textContent = "Daemon: Standalone";
+          if ($("badgeBackendStatus")) {
+            $("badgeBackendStatus").style.background = "#f8fafc";
+            $("badgeBackendStatus").style.color = "#64748b";
+            $("badgeBackendStatus").style.borderColor = "#cbd5e1";
           }
         }
       },
@@ -7308,18 +7451,22 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
 
         // Tabs
-        $("tabPositions").addEventListener("click", () => {
-          $("tabPositions").classList.add("active");
-          $("tabOrderLog").classList.remove("active");
-          $("panePositions").style.display = "block";
-          $("paneOrderLog").style.display = "none";
-        });
-        $("tabOrderLog").addEventListener("click", () => {
-          $("tabOrderLog").classList.add("active");
-          $("tabPositions").classList.remove("active");
-          $("panePositions").style.display = "none";
-          $("paneOrderLog").style.display = "block";
-        });
+        const switchPosTab = (activeTab) => {
+          ["tabPositions", "tabAssets", "tabOrderLog"].forEach(id => {
+            if ($(id)) $(id).classList.toggle("active", id === activeTab);
+          });
+          if ($("panePositions")) $("panePositions").style.display = (activeTab === "tabPositions") ? "block" : "none";
+          if ($("paneAssets")) $("paneAssets").style.display = (activeTab === "tabAssets") ? "block" : "none";
+          if ($("paneOrderLog")) $("paneOrderLog").style.display = (activeTab === "tabOrderLog") ? "block" : "none";
+        };
+
+        if ($("tabPositions")) $("tabPositions").addEventListener("click", () => switchPosTab("tabPositions"));
+        if ($("tabAssets")) $("tabAssets").addEventListener("click", () => switchPosTab("tabAssets"));
+        if ($("tabOrderLog")) $("tabOrderLog").addEventListener("click", () => switchPosTab("tabOrderLog"));
+
+        // Periodically sync with backend daemon
+        this.syncWithBackend();
+        setInterval(() => this.syncWithBackend(), 3000);
 
         // Modals
         $("btnApiKeyModal").addEventListener("click", () => $("apiKeyModal").classList.add("open"));
