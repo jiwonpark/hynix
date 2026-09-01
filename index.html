@@ -1440,9 +1440,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.3.3</span>
+            <span id="deployVersion">v1.4.0</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-08-23 22:39 KST</span>
+            <span id="deployTime">Deployed: 2026-09-01 15:56 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -2103,7 +2103,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.3.3</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-08-23 22:39 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.4.0</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-01 15:56 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -2322,13 +2322,13 @@
         : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" };
       return new Date(time).toLocaleString("en-US", options);
     };
-    async function fetchKlines(symbol, interval, endTime) {
+    async function fetchKlines(symbol, interval, endTime, requestedLimit) {
       const endpoints = [
         "https://fapi.binance.com/fapi/v1/klines",
         "https://fapi.binance.vision/fapi/v1/klines",
         "https://api.allorigins.win/raw?url=" + encodeURIComponent("https://fapi.binance.com/fapi/v1/klines")
       ];
-      const limit = String(limits[interval] || 300);
+      const limit = String(requestedLimit || limits[interval] || 300);
       let lastErr = null;
 
       for (let i = 0; i < endpoints.length; i++) {
@@ -2354,7 +2354,7 @@
 
           if (!response.ok) throw new Error(`${symbol} returned ${response.status}`);
           const data = await response.json();
-          if (Array.isArray(data) && data.length) {
+          if (Array.isArray(data)) {
             return data.map((item) => ({ time: Number(item[0]), close: Number(item[4]) }));
           }
         } catch (err) {
@@ -2362,6 +2362,33 @@
         }
       }
       throw lastErr || new Error(`Failed to fetch ${symbol}`);
+    }
+
+    async function fetchFullKlineHistory(symbol, interval, onProgress) {
+      const pageSize = 1000;
+      const rowsByTime = new Map();
+      let endTime;
+      let previousEarliest = Infinity;
+      let pageCount = 0;
+
+      while (true) {
+        const page = await fetchKlines(symbol, interval, endTime, pageSize);
+        if (!page.length) break;
+        page.forEach((row) => rowsByTime.set(row.time, row));
+        pageCount += 1;
+
+        const earliest = page[0].time;
+        if (typeof onProgress === "function") {
+          onProgress({ symbol, bars: rowsByTime.size, pageCount, earliest });
+        }
+        if (page.length < pageSize || earliest >= previousEarliest) break;
+
+        previousEarliest = earliest;
+        endTime = earliest - 1;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      return Array.from(rowsByTime.values()).sort((a, b) => a.time - b.time);
     }
     function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode = "wave", tradeDirection = "bidirectional", predictionEngine = "ou_hybrid", slippageBps = 0) {
       const assetKey = $("assetStrategy")?.value || "skhynix_arb";
@@ -4603,6 +4630,7 @@
     let redrawTimer = 0;
     let socketVersion = 0;
     let refreshVersion = 0;
+    let fullHistoryLoaded = false;
 
     function invalidateOptimizationForHistoryChange(previousBars, currentBars) {
       const hasResults = (window.allOptimizationCandidates?.length || 0) > 0
@@ -4637,8 +4665,10 @@
         rows.push(item);
         rows.sort((a, b) => a.time - b.time);
       }
-      const limit = Math.max((limits[cachedInterval] || 1000), window.visibleBars || 0, 3000);
-      if (rows.length > limit) rows.splice(0, rows.length - limit);
+      if (!fullHistoryLoaded) {
+        const limit = Math.max((limits[cachedInterval] || 1000), window.visibleBars || 0, 3000);
+        if (rows.length > limit) rows.splice(0, rows.length - limit);
+      }
       if (wasPinned) {
         window.viewEndIndex = null;
         window.viewEndFloat = null;
@@ -4859,7 +4889,17 @@
         socket.close();
         socket = null;
       }
-      $("status").textContent = `Loading Binance Futures data for ${assetConfig.shortName}...`;
+      fullHistoryLoaded = false;
+      const historyProgress = {};
+      const reportHistoryProgress = ({ symbol, bars, earliest }) => {
+        historyProgress[symbol] = { bars, earliest };
+        const details = Object.entries(historyProgress)
+          .map(([name, progress]) => `${name}: ${progress.bars.toLocaleString()} bars`)
+          .join(" | ");
+        const oldest = Math.min(...Object.values(historyProgress).map((progress) => progress.earliest));
+        $("status").textContent = `Loading full history ${details} | oldest ${formatTime(oldest, interval)} UTC`;
+      };
+      $("status").textContent = `Loading full Binance Futures history for ${assetConfig.shortName}...`;
       const isKo = window.currentLang === "ko";
       $("position").textContent = isKo ? "동기화 중..." : "Connecting...";
       $("position").className = "pill";
@@ -4869,11 +4909,11 @@
         let adr = [], korean = [];
         if (assetConfig.symbolB) {
           [adr, korean] = await Promise.all([
-            fetchKlines(assetConfig.symbolA, interval),
-            fetchKlines(assetConfig.symbolB, interval)
+            fetchFullKlineHistory(assetConfig.symbolA, interval, reportHistoryProgress),
+            fetchFullKlineHistory(assetConfig.symbolB, interval, reportHistoryProgress)
           ]);
         } else {
-          adr = await fetchKlines(assetConfig.symbolA, interval);
+          adr = await fetchFullKlineHistory(assetConfig.symbolA, interval, reportHistoryProgress);
           korean = adr;
         }
         if (refreshId !== refreshVersion) return;
@@ -4883,6 +4923,7 @@
         if (!rows.length) throw new Error(`No data returned for ${assetConfig.shortName}`);
         cachedRows = rows;
         cachedInterval = interval;
+        fullHistoryLoaded = true;
         window.viewEndIndex = null;
         window.viewEndFloat = null;
         draw(rows, interval);
@@ -4892,7 +4933,10 @@
         updateStats(rows);
         const latest = rows.at(-1);
         window.visibleBars = rows.length;
-        $("status").textContent = `Loaded ${rows.length} bars for ${assetConfig.shortName}; opening WebSocket...`;
+        const firstTime = rows[0]?.time;
+        const lastTime = rows.at(-1)?.time;
+        const spanDays = firstTime && lastTime ? (lastTime - firstTime) / 86400000 : 0;
+        $("status").textContent = `Loaded full history: ${rows.length.toLocaleString()} bars over ${spanDays.toFixed(1)} days for ${assetConfig.shortName}; opening WebSocket...`;
         connectWebSocket(interval);
       } catch (error) {
         if (refreshId !== refreshVersion) return;
@@ -4967,14 +5011,15 @@
       const tradeDirection = $("tradeDirection")?.value || "bidirectional";
       const predictionEngine = $("predictionEngine")?.value || "medallion_hmm";
       const candidates = [];
-      const means = [12, 16, 20, 24, 32, 48, 64, 96, 128];
-      const minEdges = [0.2, 0.4, 0.6, 0.75, 1.0, 1.5];
-      const fullEdges = [0.8, 1.2, 1.8, 2.5, 3.5];
-      const maxSizes = [150, 200, 300, 400, 500, 600, 800, 1000];
+      const fullSpanGrid = cachedRows.length > 2000;
+      const means = fullSpanGrid ? [16, 24, 32, 48, 64, 96] : [12, 16, 20, 24, 32, 48, 64, 96, 128];
+      const minEdges = fullSpanGrid ? [0.4, 0.75, 1.0, 1.5] : [0.2, 0.4, 0.6, 0.75, 1.0, 1.5];
+      const fullEdges = fullSpanGrid ? [1.2, 1.8, 2.5, 3.5] : [0.8, 1.2, 1.8, 2.5, 3.5];
+      const maxSizes = fullSpanGrid ? [200, 400, 600, 800, 1000] : [150, 200, 300, 400, 500, 600, 800, 1000];
       const curves = [1, 2, 3];
-      const entrySpeeds = [25, 50, 75, 100];
+      const entrySpeeds = fullSpanGrid ? [50, 75, 100] : [25, 50, 75, 100];
       const exitSpeeds = [50, 75, 100];
-      const minProfits = [0, 0.2, 0.5, 1.0];
+      const minProfits = fullSpanGrid ? [0, 0.5, 1.0] : [0, 0.2, 0.5, 1.0];
       means.forEach((meanBars) => {
         minEdges.forEach((minEdgePct) => {
           fullEdges.forEach((fullEdgePct) => {
@@ -4995,6 +5040,9 @@
       });
       const button = $("optimizeProfit");
       button.disabled = true;
+      if ($("lblOptTotalEvaluated") && fullSpanGrid) {
+        $("lblOptTotalEvaluated").textContent = `Full-span adaptive grid: ${candidates.length.toLocaleString()} combinations across ${cachedRows.length.toLocaleString()} bars`;
+      }
       const baseRowsByMean = new Map(means.map((meanBars) => [
         meanBars,
         buildRows(cachedAdr, cachedKorean, meanBars, 0, 1, 0, 1, 1, 1, 0, fee, funding, strategyMode, tradeDirection, predictionEngine, slippage)
@@ -5731,8 +5779,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-08-23 22:39 KST",
-        footerDeploy: "Deployed: <strong>2026-08-23 22:39 KST</strong> (AWS EC2)",
+        deployTime: "Deployed: 2026-09-01 15:56 KST",
+        footerDeploy: "Deployed: <strong>2026-09-01 15:56 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click Pair Execution Terminal & Live Orders",
         lblExecutionSlippage: "Slippage Guard: <strong>5 BPS</strong>",
         btnResetPaper: "↺ Reset $10k",
@@ -5871,8 +5919,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-08-23 22:39 KST",
-        footerDeploy: "배포 일시: <strong>2026-08-23 22:39 KST</strong> (AWS EC2)",
+        deployTime: "배포 일시: 2026-09-01 15:56 KST",
+        footerDeploy: "배포 일시: <strong>2026-09-01 15:56 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click 페어 주문 실행 터미널 및 실시간 포지션",
         lblExecutionSlippage: "슬리피지 방지선: <strong>5 BPS</strong>",
         btnResetPaper: "↺ 잔고 초기화 ($10k)",
