@@ -1440,9 +1440,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.4.5</span>
+            <span id="deployVersion">v1.5.0</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-09-01 16:28 KST</span>
+            <span id="deployTime">Deployed: 2026-09-01 18:07 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -1623,12 +1623,21 @@
             </div>
             <span style="font-size: 11px; color: #64748b;">Click any row to test & apply configuration</span>
           </div>
+          <div id="robustnessDiagnostics" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; padding: 8px 0 10px; border-bottom: 1px solid #e2e8f0; margin-bottom: 8px;">
+            <span style="font-size: 11px; color: #64748b;">Validation <strong id="diagValidation" style="display:block;color:#0f172a;">Pending</strong></span>
+            <span style="font-size: 11px; color: #64748b;">Nested WF median <strong id="diagNested" style="display:block;color:#0f172a;">--</strong></span>
+            <span style="font-size: 11px; color: #64748b;">Trial-adjusted confidence <strong id="diagTrialConfidence" style="display:block;color:#0f172a;">--</strong></span>
+            <span style="font-size: 11px; color: #64748b;">PBO estimate <strong id="diagPbo" style="display:block;color:#0f172a;">--</strong></span>
+            <span style="font-size: 11px; color: #64748b;">Neighbor stability <strong id="diagNeighbors" style="display:block;color:#0f172a;">--</strong></span>
+            <span style="font-size: 11px; color: #64748b;">Stress PnL / DD <strong id="diagStress" style="display:block;color:#0f172a;">--</strong></span>
+            <span style="font-size: 11px; color: #64748b;">Locked holdout <strong id="diagHoldout" style="display:block;color:#0f172a;">--</strong></span>
+          </div>
           <div style="display: block; width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; contain: inline-size;">
             <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; text-align: left;">
               <thead>
                 <tr style="background: #f1f5f9; color: #475569; font-weight: 700; border-bottom: 1px solid #cbd5e1;">
-                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('fullProfit')" title="Sort by Full Net PnL">Full PnL <span id="sort_fullProfit" class="sortArrow">▼</span></th>
-                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('netProfit')" title="Sort by Walk-Forward Median PnL">WF Median <span id="sort_netProfit" class="sortArrow"></span></th>
+                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('fullProfit')" title="Development PnL; locked holdout excluded">Dev PnL <span id="sort_fullProfit" class="sortArrow"></span></th>
+                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('netProfit')" title="Median across five purged chronological folds">5-Fold WF <span id="sort_netProfit" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('maxDd')" title="Sort by Max Drawdown">Max DD <span id="sort_maxDd" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('positiveFoldRate')" title="Sort by Winning Folds">Winning Folds <span id="sort_positiveFoldRate" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('meanBars')" title="Sort by Mean Bars Window">Mean Bars <span id="sort_meanBars" class="sortArrow"></span></th>
@@ -2103,7 +2112,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.4.5</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-01 16:28 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.5.0</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-01 18:07 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -5052,29 +5061,45 @@
         const middle = Math.floor(sorted.length / 2);
         return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
       };
+      const normalCdf = (value) => {
+        const x = value / Math.sqrt(2);
+        const sign = x < 0 ? -1 : 1;
+        const absX = Math.abs(x);
+        const t = 1 / (1 + 0.3275911 * absX);
+        const polynomial = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
+        const erf = sign * (1 - polynomial * Math.exp(-absX * absX));
+        return 0.5 * (1 + erf);
+      };
       const simulationRanges = (baseRows) => {
         const count = baseRows.length;
         const dt = count > 1 ? Math.max(60000, baseRows[1].time - baseRows[0].time) : 15 * 60000;
         const purgeBars = Math.max(1, Math.round(86400000 / dt));
-        if (count < purgeBars * 3 + 30) {
-          return { folds: [], holdout: null, purgeBars };
+        const foldCount = 5;
+        if (count < purgeBars * 4 + foldCount * 10) {
+          return { folds: [], development: null, holdout: null, purgeBars, foldCount };
         }
-        const validationStart = Math.max(purgeBars * 2, Math.floor(count * 0.25));
-        const holdoutStart = Math.max(validationStart + 3, Math.floor(count * 0.80));
-        const validationEnd = Math.max(validationStart + 3, holdoutStart - purgeBars);
-        const foldSize = Math.max(1, Math.floor((validationEnd - validationStart) / 3));
-        const folds = [0, 1, 2].map((fold) => ({
+        const holdoutBoundary = Math.floor(count * 0.80);
+        const developmentEnd = Math.max(purgeBars * 3, holdoutBoundary - purgeBars);
+        const validationStart = Math.max(purgeBars * 2, Math.floor(developmentEnd * 0.20));
+        const foldSize = Math.max(1, Math.floor((developmentEnd - validationStart) / foldCount));
+        const folds = Array.from({ length: foldCount }, (_, fold) => ({
           start: validationStart + fold * foldSize,
-          end: fold === 2 ? validationEnd : validationStart + (fold + 1) * foldSize
+          end: fold === foldCount - 1 ? developmentEnd : validationStart + (fold + 1) * foldSize
         })).filter((range) => range.end - range.start >= 2);
         return {
           folds,
-          holdout: { start: Math.min(count - 1, holdoutStart + purgeBars), end: count },
-          purgeBars
+          development: { start: 0, end: developmentEnd },
+          holdout: { start: Math.min(count - 1, holdoutBoundary + purgeBars), end: count },
+          purgeBars,
+          foldCount
         };
       };
-      const simulateCandidateRange = (params, baseRows, range) => {
+      const simulateCandidateRange = (params, baseRows, range, options = {}) => {
         if (!baseRows?.length || !range || range.end - range.start < 2) return null;
+        const frictionMultiplier = Math.max(1, Number(options.frictionMultiplier) || 1);
+        const signalDelayBars = Math.max(0, Math.floor(Number(options.signalDelayBars) || 0));
+        const effectiveFeeRate = feeRate * frictionMultiplier;
+        const effectiveFundingRateDay = fundingRateDay * frictionMultiplier;
         const maxSize = Math.max(0, params.maxSizePct / 100);
         const entrySpeed = Math.max(0.01, Math.min(1, params.tradeSpeedPct / 100));
         const exitSpeed = Math.max(0.01, Math.min(1, params.exitSpeedPct / 100));
@@ -5091,6 +5116,9 @@
         let minEquity = 100;
         let worstDrawdown = 0;
         let liquidated = false;
+        let returnCount = 0;
+        let returnSum = 0;
+        let returnSumSquares = 0;
 
         const assetKey = $("assetStrategy")?.value || "skhynix_arb";
         const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
@@ -5100,6 +5128,7 @@
         for (let rowIndex = range.start; rowIndex < range.end; rowIndex += 1) {
           if (liquidated) break;
           const row = baseRows[rowIndex];
+          const signalRow = baseRows[Math.max(range.start, rowIndex - signalDelayBars)];
           let posPriceGainPct = 0;
           if (Math.abs(positionSize) > 0.05 && avgEntryAdr && minProfit > 0) {
             if (isSingle) {
@@ -5128,12 +5157,12 @@
           }
 
           let rawDesiredSize = 0;
-          const triggerEdge = row.grossSignalEdgePct ?? row.netSignalEdgePct ?? 0;
+          const triggerEdge = signalRow.grossSignalEdgePct ?? signalRow.netSignalEdgePct ?? 0;
 
           if (isSingle) {
             // Single Directional Asset (BTC / SOL)
             if (strategyMode === "breakout_momentum") {
-              const mom = row.maPremiumPct;
+              const mom = signalRow.maPremiumPct;
               const magnitude = Math.abs(mom);
               if (magnitude >= params.minEdgePct) {
                 const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
@@ -5141,11 +5170,11 @@
                 rawDesiredSize = mom > 0 ? curved : -curved;
               }
             } else if (strategyMode === "mean_reversion") {
-              const magnitude = Math.abs(row.maPremiumPct);
+              const magnitude = Math.abs(signalRow.maPremiumPct);
               if (magnitude >= params.minEdgePct) {
                 const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
                 const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
-                rawDesiredSize = row.maPremiumPct < 0 ? curved : -curved;
+                rawDesiredSize = signalRow.maPremiumPct < 0 ? curved : -curved;
               }
             } else {
               // Predictive Trend Wave [Default: wave]
@@ -5171,7 +5200,7 @@
           } else if (isRatio) {
             // Cross-Crypto Ratio (ETH / BTC)
             if (strategyMode === "trend_rotation") {
-              const mom = row.maPremiumPct;
+              const mom = signalRow.maPremiumPct;
               const magnitude = Math.abs(mom);
               if (magnitude >= params.minEdgePct) {
                 const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
@@ -5179,11 +5208,11 @@
                 rawDesiredSize = mom > 0 ? curved : -curved;
               }
             } else if (strategyMode === "mean_reversion") {
-              const magnitude = Math.abs(row.maPremiumPct);
+              const magnitude = Math.abs(signalRow.maPremiumPct);
               if (magnitude >= params.minEdgePct) {
                 const fraction = Math.min(1, (magnitude - params.minEdgePct) / denominator);
                 const curved = (fraction ** Math.max(0.1, params.scaleCurve)) * maxSize;
-                rawDesiredSize = row.maPremiumPct < 0 ? curved : -curved;
+                rawDesiredSize = signalRow.maPremiumPct < 0 ? curved : -curved;
               }
             } else {
               // Adaptive Fast Cointegration Wave [Default: wave]
@@ -5257,8 +5286,9 @@
             avgEntryKorean = null;
             isTakeProfitActive = false;
           }
-          const tradingFeePct = Math.abs(actualTraded) * (isSingle ? 1 : 2) * feeRate * 100;
+          const tradingFeePct = Math.abs(actualTraded) * (isSingle ? 1 : 2) * effectiveFeeRate * 100;
           let fundingFeePct = 0;
+          let realizedFactor = 1;
           if (rowIndex > range.start) {
             const previous = baseRows[rowIndex - 1];
             let pairReturn = 0;
@@ -5274,9 +5304,10 @@
               pairReturn = 0.5 * (longReturn + shortReturn);
             }
             const intervalDays = Math.max(0, (row.time - previous.time) / 86400000);
-            fundingFeePct = Math.abs(previousSize) * fundingRateDay * intervalDays * 100;
+            fundingFeePct = Math.abs(previousSize) * effectiveFundingRateDay * intervalDays * 100;
             const returnContribution = previousSize * pairReturn;
             const netFactor = 1 + returnContribution - (tradingFeePct + fundingFeePct) / 100;
+            realizedFactor = netFactor;
             if (!Number.isFinite(netFactor) || netFactor <= 0) {
               equity = 0;
               liquidated = true;
@@ -5285,6 +5316,7 @@
             }
           } else {
             const netFactor = 1 - tradingFeePct / 100;
+            realizedFactor = netFactor;
             if (!Number.isFinite(netFactor) || netFactor <= 0) {
               equity = 0;
               liquidated = true;
@@ -5292,6 +5324,10 @@
               equity *= netFactor;
             }
           }
+          const realizedReturn = Math.max(-1, realizedFactor - 1);
+          returnCount += 1;
+          returnSum += realizedReturn;
+          returnSumSquares += realizedReturn * realizedReturn;
           totalFeesPct += tradingFeePct + fundingFeePct;
           peak = Math.max(peak, equity);
           minEquity = Math.min(minEquity, equity);
@@ -5304,6 +5340,13 @@
         const netProfit = equity - 100;
         const maxDd = worstDrawdown;
         const principalDd = Math.min(0, minEquity - 100);
+        const meanReturn = returnCount ? returnSum / returnCount : 0;
+        const returnVariance = returnCount > 1
+          ? Math.max(0, (returnSumSquares - returnCount * meanReturn * meanReturn) / (returnCount - 1))
+          : 0;
+        const returnStd = Math.sqrt(returnVariance);
+        const effectiveReturnCount = Math.max(1, returnCount * 0.5);
+        const tStat = returnStd > 1e-12 ? (meanReturn / returnStd) * Math.sqrt(effectiveReturnCount) : 0;
         
         const ddPenalty = Math.max(0.5, Math.abs(maxDd));
         const riskAdjustedScore = netProfit > 0 ? (netProfit / (ddPenalty ** 0.75)) : netProfit;
@@ -5315,6 +5358,8 @@
           principalDd,
           liquidated,
           avgExposure: exposureSum / Math.max(1, range.end - range.start),
+          tStat,
+          returnCount,
           fees: totalFeesPct,
           drawdown: maxDd,
           lastPositionSize: positionSize,
@@ -5327,28 +5372,47 @@
         const ranges = simulationRanges(baseRows);
         const folds = ranges.folds.map((range) => simulateCandidateRange(params, baseRows, range)).filter(Boolean);
         if (!folds.length) return null;
-        const fullRun = simulateCandidateRange(params, baseRows, { start: 0, end: baseRows.length });
-        if (!fullRun) return null;
+        const developmentRun = simulateCandidateRange(params, baseRows, ranges.development);
+        if (!developmentRun) return null;
         const foldPnls = folds.map((fold) => fold.netProfit);
         const medianPnl = median(foldPnls);
         const worstDd = Math.min(...folds.map((fold) => fold.maxDd));
         const positiveFoldRate = folds.filter((fold) => fold.netProfit > 0).length / folds.length;
+        const minimumFoldPnl = Math.min(...foldPnls);
+        const expectedBestZ = Math.sqrt(2 * Math.log(Math.max(2, candidates.length)));
+        const trialAdjustedZ = developmentRun.tStat - expectedBestZ;
+        const trialConfidence = normalCdf(trialAdjustedZ) * 100;
+        const developmentCalmar = developmentRun.netProfit / Math.max(1, Math.abs(developmentRun.maxDd));
+        const selectionScore = (
+          medianPnl * positiveFoldRate
+          + Math.min(0, minimumFoldPnl) * 0.5
+          + developmentCalmar
+          + Math.max(-5, Math.min(5, trialAdjustedZ)) * 0.25
+        );
+        const robust = developmentRun.netProfit > 0
+          && medianPnl > 0
+          && positiveFoldRate >= 0.6
+          && developmentRun.maxDd > -25;
         return {
-          score: fullRun.score,
-          fullProfit: fullRun.netProfit,
-          fullMaxDd: fullRun.maxDd,
-          principalDd: fullRun.principalDd,
+          score: selectionScore,
+          selectionScore,
+          fullProfit: developmentRun.netProfit,
+          fullMaxDd: developmentRun.maxDd,
+          principalDd: developmentRun.principalDd,
           netProfit: medianPnl,
-          maxDd: fullRun.maxDd,
+          maxDd: developmentRun.maxDd,
           foldWorstDd: worstDd,
-          avgExposure: fullRun.avgExposure,
-          fees: fullRun.fees,
-          drawdown: fullRun.maxDd,
-          lastPositionSize: fullRun.lastPositionSize,
+          avgExposure: developmentRun.avgExposure,
+          fees: developmentRun.fees,
+          drawdown: developmentRun.maxDd,
+          lastPositionSize: developmentRun.lastPositionSize,
           avgEntryMaPremiumPct: null,
           positiveFoldRate,
-          robust: medianPnl > 0 && positiveFoldRate >= 2 / 3,
+          robust,
           foldPnls,
+          minimumFoldPnl,
+          trialAdjustedZ,
+          trialConfidence,
           purgeBars: ranges.purgeBars
         };
       };
@@ -5398,6 +5462,11 @@
       $("forecastConfidence").textContent = "--";
       $("hedgeBeta").textContent = "--";
       $("bestTest").textContent = "--";
+      $("diagValidation").textContent = "Running";
+      $("diagValidation").style.color = "#0284c7";
+      ["diagNested", "diagTrialConfidence", "diagPbo", "diagNeighbors", "diagStress", "diagHoldout"].forEach((id) => {
+        $(id).textContent = "--";
+      });
 
       const origBtnText = button.textContent;
       window.isOptimizing = true;
@@ -5417,7 +5486,7 @@
           const params = batch[bIdx];
           const scored = scoreCandidate(params);
           if (!scored) continue;
-          if (!best || (scored.fullProfit > (best.fullProfit ?? -999999))) {
+          if (!best || scored.selectionScore > (best.selectionScore ?? -999999)) {
             best = { ...params, ...scored };
           }
           allEvaluatedCandidates.push({ ...params, ...scored });
@@ -5462,6 +5531,105 @@
       button.textContent = origBtnText;
       button.style.background = "#0284c7";
 
+      const axes = [means, minEdges, fullEdges, maxSizes, curves, entrySpeeds, exitSpeeds, minProfits];
+      const candidateMap = new Map(allEvaluatedCandidates.map((candidate) => [candidateKey(candidate), candidate]));
+      allEvaluatedCandidates.forEach((candidate) => {
+        candidate.robustSelectionScore = candidate.selectionScore;
+      });
+      const getNeighborStats = (candidate) => {
+        const values = [candidate.meanBars, candidate.minEdgePct, candidate.fullEdgePct, candidate.maxSizePct, candidate.scaleCurve, candidate.tradeSpeedPct, candidate.exitSpeedPct, candidate.minProfitPct];
+        const neighbors = [];
+        axes.forEach((axis, axisIndex) => {
+          const currentIndex = axis.indexOf(values[axisIndex]);
+          [currentIndex - 1, currentIndex + 1].forEach((neighborIndex) => {
+            if (neighborIndex < 0 || neighborIndex >= axis.length) return;
+            const neighborValues = [...values];
+            neighborValues[axisIndex] = axis[neighborIndex];
+            const neighbor = candidateMap.get(neighborValues.join("|"));
+            if (neighbor) neighbors.push(neighbor);
+          });
+        });
+        const stable = neighbors.filter((neighbor) => neighbor.fullProfit > 0 && neighbor.netProfit > 0);
+        return {
+          count: neighbors.length,
+          stableCount: stable.length,
+          rate: neighbors.length ? (stable.length / neighbors.length) * 100 : 0
+        };
+      };
+      const robustCandidates = allEvaluatedCandidates.filter((candidate) => candidate.robust);
+      const preselectionPool = allEvaluatedCandidates;
+      preselectionPool.forEach((candidate) => {
+        const candidateBaseRows = baseRowsByMean.get(candidate.meanBars);
+        const candidateRanges = simulationRanges(candidateBaseRows);
+        const candidateStress = simulateCandidateRange(candidate, candidateBaseRows, candidateRanges.development, {
+          frictionMultiplier: 2,
+          signalDelayBars: 1
+        });
+        const neighborStats = getNeighborStats(candidate);
+        candidate.stressProfit = candidateStress?.netProfit ?? -100;
+        candidate.stressMaxDd = candidateStress?.maxDd ?? -100;
+        candidate.neighborCount = neighborStats.count;
+        candidate.stableNeighborCount = neighborStats.stableCount;
+        candidate.neighborStability = neighborStats.rate;
+        const stressCalmar = candidate.stressProfit / Math.max(1, Math.abs(candidate.stressMaxDd));
+        candidate.robustSelectionScore = candidate.selectionScore + stressCalmar * 2 + candidate.neighborStability / 50;
+      });
+      const stressStableCandidates = robustCandidates.filter((candidate) => (
+        candidate.stressProfit > 0 && candidate.neighborStability >= 60
+      ));
+      const stressPositiveCandidates = robustCandidates.filter((candidate) => candidate.stressProfit > 0);
+      const conservativeStressCandidates = allEvaluatedCandidates.filter((candidate) => (
+        candidate.fullProfit > 0
+        && candidate.stressProfit > 0
+        && candidate.maxDd > -20
+        && candidate.positiveFoldRate >= 0.4
+      ));
+      const safetyFallbackCandidates = allEvaluatedCandidates.filter((candidate) => (
+        candidate.fullProfit > 0
+        && candidate.maxDd > -15
+        && candidate.positiveFoldRate >= 0.4
+        && candidate.maxSizePct <= 600
+      ));
+      const selectionPool = stressStableCandidates.length
+        ? stressStableCandidates
+        : (stressPositiveCandidates.length
+          ? stressPositiveCandidates
+          : (conservativeStressCandidates.length
+            ? conservativeStressCandidates
+            : (safetyFallbackCandidates.length
+              ? safetyFallbackCandidates
+              : (robustCandidates.length ? robustCandidates : allEvaluatedCandidates))));
+      const selected = [...selectionPool].sort((a, b) => b.robustSelectionScore - a.robustSelectionScore)[0];
+      best = selected ? { ...selected } : null;
+
+      let pboEstimate = 100;
+      const nestedFoldPnls = [];
+      const foldCount = allEvaluatedCandidates[0]?.foldPnls?.length || 0;
+      if (foldCount >= 3 && allEvaluatedCandidates.length > 1) {
+        let overfitSelections = 0;
+        for (let heldOutFold = 0; heldOutFold < foldCount; heldOutFold += 1) {
+          const trainingWinner = [...allEvaluatedCandidates].sort((a, b) => {
+            const scoreWithoutHeldOut = (candidate) => {
+              const retained = candidate.foldPnls.filter((_, index) => index !== heldOutFold);
+              return median(retained) + retained.filter((value) => value > 0).length / retained.length;
+            };
+            return scoreWithoutHeldOut(b) - scoreWithoutHeldOut(a);
+          })[0];
+          const heldOutReturns = allEvaluatedCandidates
+            .map((candidate) => candidate.foldPnls[heldOutFold])
+            .sort((a, b) => a - b);
+          const winnerReturn = trainingWinner.foldPnls[heldOutFold];
+          nestedFoldPnls.push(winnerReturn);
+          const rank = heldOutReturns.filter((value) => value <= winnerReturn).length / heldOutReturns.length;
+          if (rank < 0.5) overfitSelections += 1;
+        }
+        pboEstimate = (overfitSelections / foldCount) * 100;
+      }
+      const nestedWfMedian = nestedFoldPnls.length ? median(nestedFoldPnls) : -Infinity;
+      const nestedPositiveFoldRate = nestedFoldPnls.length
+        ? nestedFoldPnls.filter((value) => value > 0).length / nestedFoldPnls.length
+        : 0;
+
       if (!best) {
         Object.entries(originalParamValues).forEach(([id, value]) => { $(id).value = value; });
         renderCached();
@@ -5482,6 +5650,19 @@
       const holdout = simulateCandidateRange(best, bestBaseRows, bestRanges.holdout);
       best.holdoutProfit = holdout?.netProfit ?? 0;
       best.holdoutMaxDd = holdout?.maxDd ?? 0;
+      best.pboEstimate = pboEstimate;
+      best.nestedFoldPnls = nestedFoldPnls;
+      best.nestedWfMedian = nestedWfMedian;
+      best.nestedPositiveFoldRate = nestedPositiveFoldRate;
+      best.validationPassed = best.robust
+        && best.nestedWfMedian > 0
+        && best.nestedPositiveFoldRate >= 0.6
+        && best.holdoutProfit > 0
+        && best.stressProfit > 0
+        && best.pboEstimate <= 40
+        && best.neighborStability >= 60
+        && best.trialConfidence >= 50;
+      window.lockedOptimizationCandidateKey = candidateKey(best);
       best.rows = buildRows(
         cachedAdr,
         cachedKorean,
@@ -5510,8 +5691,16 @@
         maxSizePct: best.maxSizePct,
         holdoutProfit: best.holdoutProfit,
         holdoutMaxDd: best.holdoutMaxDd,
+        stressProfit: best.stressProfit,
+        stressMaxDd: best.stressMaxDd,
+        pboEstimate: best.pboEstimate,
+        nestedWfMedian: best.nestedWfMedian,
+        nestedPositiveFoldRate: best.nestedPositiveFoldRate,
+        neighborStability: best.neighborStability,
+        trialConfidence: best.trialConfidence,
+        validationPassed: best.validationPassed,
         positiveFoldRate: best.positiveFoldRate,
-        statusText: `Full-history PnL ${fmt(best.fullProfit)}% (DD ${fmt(best.fullMaxDd)}%) | WF median ${fmt(best.netProfit)}% (${Math.round(best.positiveFoldRate * 3)}/3 folds positive) | untouched holdout ${fmt(best.holdoutProfit)}% (DD ${fmt(best.holdoutMaxDd)}%); ${best.purgeBars}-bar embargo`
+        statusText: `Development PnL ${fmt(best.fullProfit)}% (DD ${fmt(best.fullMaxDd)}%) | nested WF ${fmt(best.nestedWfMedian)}% (${Math.round(best.nestedPositiveFoldRate * foldCount)}/${foldCount}) | locked holdout ${fmt(best.holdoutProfit)}% | stress ${fmt(best.stressProfit)}% | PBO ${fmt(best.pboEstimate)}%`
       };
       try {
         localStorage.setItem("skhynix_last_optimization", JSON.stringify(window.lastOptimization));
@@ -5523,17 +5712,25 @@
       drawAllocation(best.rows, cachedInterval);
       updateStats(best.rows);
       $("bestTest").textContent = `${fmt(best.holdoutProfit)}% OOS`;
+      $("diagValidation").textContent = best.validationPassed ? "PASS" : "FAIL";
+      $("diagValidation").style.color = best.validationPassed ? "#16a34a" : "#dc2626";
+      $("diagNested").textContent = `${signedPct(best.nestedWfMedian)} (${Math.round(best.nestedPositiveFoldRate * foldCount)}/${foldCount})`;
+      $("diagTrialConfidence").textContent = `${fmt(best.trialConfidence)}%`;
+      $("diagPbo").textContent = `${fmt(best.pboEstimate)}%`;
+      $("diagNeighbors").textContent = `${fmt(best.neighborStability)}% (${best.stableNeighborCount}/${best.neighborCount})`;
+      $("diagStress").textContent = `${signedPct(best.stressProfit)} / ${signedPct(best.stressMaxDd)}`;
+      $("diagHoldout").textContent = `${signedPct(best.holdoutProfit)} / ${signedPct(best.holdoutMaxDd)}`;
 
       // Render and display the lower result table and summary ONLY after simulation is completely finished
       if (resultsPanel) resultsPanel.style.display = "block";
-      renderLeaderboardTable();
       updateSelectedResultSummary(best, best.rows, holdout);
+      renderLeaderboardTable();
       $("status").textContent = wasAborted 
         ? `Simulation aborted (${allEvaluatedCandidates.length} evaluated; applied best so far)`
         : `WebSocket live: ${formatTime(best.rows.at(-1).time, cachedInterval)} UTC`;
     }
 
-    window.leaderboardSortKey = 'fullProfit';
+    window.leaderboardSortKey = 'robustSelectionScore';
     window.leaderboardSortAsc = false;
 
     window.sortLeaderboard = function(key) {
@@ -5585,13 +5782,22 @@
         return isAsc ? valA - valB : valB - valA;
       });
 
+      const selectedKey = candidateKey(window.selectedOptimizationCandidate);
+      if (selectedKey) {
+        const selectedIndex = sorted.findIndex((candidate) => candidateKey(candidate) === selectedKey);
+        if (selectedIndex > 0) {
+          sorted.unshift(sorted.splice(selectedIndex, 1)[0]);
+        }
+      }
       window.optimizationCandidates = sorted;
-      const displayRows = sorted.slice(0, 30); // Display top 30 ranked combinations
+      const displayRows = sorted.slice(0, 30);
 
       if ($("lblOptTotalEvaluated")) {
         const keyNameMap = {
-          fullProfit: 'Full PnL %',
-          netProfit: 'WF Median %',
+          robustSelectionScore: 'Stress-Stable Selection Score',
+          selectionScore: 'Robust Selection Score',
+          fullProfit: 'Development PnL %',
+          netProfit: '5-Fold WF Median %',
           maxDd: 'Max DD %',
           positiveFoldRate: 'Winning Folds',
           meanBars: 'Mean Bars',
@@ -5602,7 +5808,7 @@
         };
         const activeName = keyNameMap[sortKey] || sortKey;
         const testedBars = window.optimizationBarCount || cachedRows.length;
-        $("lblOptTotalEvaluated").textContent = `${list.length.toLocaleString()} unique tested on ${testedBars.toLocaleString()} bars | Top ${displayRows.length} by ${activeName} (${isAsc ? '▲ asc' : '▼ desc'})`;
+        $("lblOptTotalEvaluated").textContent = `${list.length.toLocaleString()} tested on ${testedBars.toLocaleString()} bars | Selected + top ${Math.max(0, displayRows.length - 1)} by ${activeName}`;
       }
 
       resultsBody.innerHTML = displayRows.map((item, rankIdx) => {
@@ -5618,7 +5824,7 @@
             <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">${item.fullProfit >= 0 ? "+" : ""}${fmt(item.fullProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${wfPnlColor}; font-family: monospace;">${item.netProfit >= 0 ? "+" : ""}${fmt(item.netProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;" title="Peak Drawdown: ${fmt(item.maxDd)}% | Principal Drawdown: ${fmt(item.principalDd ?? 0)}%">${fmt(item.maxDd)}% <span style="font-size: 10px; color: ${(item.principalDd ?? 0) < -0.01 ? '#dc2626' : '#16a34a'}; font-weight: 700;">(${fmt(item.principalDd ?? 0)}%)</span></td>
-            <td style="padding: 6px 8px; font-family: monospace;">${Math.round(item.positiveFoldRate * 3)}/3</td>
+            <td style="padding: 6px 8px; font-family: monospace;">${Math.round(item.positiveFoldRate * (item.foldPnls?.length || 5))}/${item.foldPnls?.length || 5}</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.meanBars} bars</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.minEdgePct}% ~ ${item.fullEdgePct}%</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.maxSizePct}% (${(item.maxSizePct/100).toFixed(1)}x)</td>
@@ -5670,12 +5876,16 @@
       const rows = renderCached();
       if (!rows?.length) return;
       markSelectedCandidate(candidate);
-      const latest = rows.at(-1);
-      const fullPnl = latest.equity - 100;
-      let fullDd = 0;
-      rows.forEach((row) => { fullDd = Math.min(fullDd, row.drawdownPct || 0); });
-      $("bestTest").textContent = `${fmt(candidate.score)}%`;
-      $("status").textContent = `Selected combination applied | Full PnL ${signedPct(fullPnl)} | Max DD ${signedPct(fullDd)} | Score ${fmt(candidate.score)}`;
+      const isLockedWinner = candidateKey(candidate) === window.lockedOptimizationCandidateKey;
+      if (isLockedWinner && window.lastOptimization) {
+        $("bestTest").textContent = `${fmt(window.lastOptimization.holdoutProfit)}% OOS`;
+        $("diagHoldout").textContent = `${signedPct(window.lastOptimization.holdoutProfit)} / ${signedPct(window.lastOptimization.holdoutMaxDd)}`;
+        $("status").textContent = window.lastOptimization.statusText;
+      } else {
+        $("bestTest").textContent = "Holdout locked";
+        $("diagHoldout").textContent = "Locked; rerun to validate";
+        $("status").textContent = `Development review only | Dev PnL ${signedPct(candidate.fullProfit)} | Dev Max DD ${signedPct(candidate.maxDd)} | locked holdout not evaluated`;
+      }
     };
 
     // --- BILINGUAL (KO / EN) LOCALIZATION ENGINE ---
@@ -5776,8 +5986,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-09-01 16:28 KST",
-        footerDeploy: "Deployed: <strong>2026-09-01 16:28 KST</strong> (AWS EC2)",
+        deployTime: "Deployed: 2026-09-01 18:07 KST",
+        footerDeploy: "Deployed: <strong>2026-09-01 18:07 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click Pair Execution Terminal & Live Orders",
         lblExecutionSlippage: "Slippage Guard: <strong>5 BPS</strong>",
         btnResetPaper: "↺ Reset $10k",
@@ -5916,8 +6126,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-09-01 16:28 KST",
-        footerDeploy: "배포 일시: <strong>2026-09-01 16:28 KST</strong> (AWS EC2)",
+        deployTime: "배포 일시: 2026-09-01 18:07 KST",
+        footerDeploy: "배포 일시: <strong>2026-09-01 18:07 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click 페어 주문 실행 터미널 및 실시간 포지션",
         lblExecutionSlippage: "슬리피지 방지선: <strong>5 BPS</strong>",
         btnResetPaper: "↺ 잔고 초기화 ($10k)",
