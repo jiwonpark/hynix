@@ -1440,9 +1440,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.4.2</span>
+            <span id="deployVersion">v1.4.3</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-09-01 16:19 KST</span>
+            <span id="deployTime">Deployed: 2026-09-01 16:22 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -2103,7 +2103,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.4.2</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-01 16:19 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.4.3</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-01 16:22 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -3724,11 +3724,9 @@
           let predFutureVal = rows.at(-1).normalized;
           if (s === forecastBars) {
             predFutureVal = final24hTarget;
-          } else if (engine === "adaptive_ensemble") {
+          } else if (engine === "adaptive_ensemble" || engine === "multi_ma") {
             const progress = s / forecastBars;
             predFutureVal = rows.at(-1).normalized + (final24hTarget - rows.at(-1).normalized) * progress;
-          } else if (engine === "multi_ma") {
-            predFutureVal = fitMultiMACascade(latestSlice, s);
           } else if (engine === "medallion_hmm" || engine === "ou_hybrid") {
             const N_ou = latestSlice.length - 1;
             let sumX = 0, sumY = 0, sumXX = 0, sumXY = 0;
@@ -5778,8 +5776,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-09-01 16:19 KST",
-        footerDeploy: "Deployed: <strong>2026-09-01 16:19 KST</strong> (AWS EC2)",
+        deployTime: "Deployed: 2026-09-01 16:22 KST",
+        footerDeploy: "Deployed: <strong>2026-09-01 16:22 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click Pair Execution Terminal & Live Orders",
         lblExecutionSlippage: "Slippage Guard: <strong>5 BPS</strong>",
         btnResetPaper: "↺ Reset $10k",
@@ -5918,8 +5916,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-09-01 16:19 KST",
-        footerDeploy: "배포 일시: <strong>2026-09-01 16:19 KST</strong> (AWS EC2)",
+        deployTime: "배포 일시: 2026-09-01 16:22 KST",
+        footerDeploy: "배포 일시: <strong>2026-09-01 16:22 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click 페어 주문 실행 터미널 및 실시간 포지션",
         lblExecutionSlippage: "슬리피지 방지선: <strong>5 BPS</strong>",
         btnResetPaper: "↺ 잔고 초기화 ($10k)",
