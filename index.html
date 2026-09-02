@@ -1440,9 +1440,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.6.0</span>
+            <span id="deployVersion">v1.7.0</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-09-02 14:49 KST</span>
+            <span id="deployTime">Deployed: 2026-09-02 17:13 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -1634,7 +1634,7 @@
             <label><span class="controlTitle">Stress delay bars</span><input id="stressDelayBars" type="number" min="0" max="24" step="1" value="1"><span class="controlHint">execution delay scenario</span></label>
           </div>
           <div id="validationGateSummary" style="margin-top:8px; padding:8px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; color:#475569; font-size:11px; line-height:1.55;">
-            PASS gate: positive development, walk-forward median, holdout and stress PnL; at least 60% winning folds and neighbors; PBO at most 40%; trial confidence at least 50%.
+            PASS gate: forecast beats no-change with positive future-move correlation; positive development, walk-forward median, holdout and stress PnL; at least 60% winning folds and neighbors; PBO at most 40%; trial confidence at least 50%.
           </div>
         </div>
 
@@ -1665,6 +1665,7 @@
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('fullProfit')" title="Development PnL; locked holdout excluded">Dev PnL <span id="sort_fullProfit" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('netProfit')" title="Median across five purged chronological folds">5-Fold WF <span id="sort_netProfit" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('maxDd')" title="Sort by Max Drawdown">Max DD <span id="sort_maxDd" class="sortArrow"></span></th>
+                  <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('forecastSkillPct')" title="Development forecast improvement over no-change">Forecast skill <span id="sort_forecastSkillPct" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('positiveFoldRate')" title="Sort by Winning Folds">Winning Folds <span id="sort_positiveFoldRate" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('meanBars')" title="Sort by Mean Bars Window">Mean Bars <span id="sort_meanBars" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('minEdgePct')" title="Sort by Edge Band">Edge Band <span id="sort_minEdgePct" class="sortArrow"></span></th>
@@ -1696,6 +1697,13 @@
       <div class="stat"><span>Fees drag</span><strong id="feesDrag">--</strong></div>
       <div class="stat"><span>Net edge</span><strong id="netEdge">--</strong></div>
       <div class="stat"><span>Confidence</span><strong id="forecastConfidence">--</strong></div>
+      <div class="stat"><span id="lblForecastHorizon">Forecast target</span><strong id="forecastHorizon">+24h</strong></div>
+      <div class="stat"><span id="lblDirectionAccuracy">OOS direction</span><strong id="directionAccuracy">--</strong></div>
+      <div class="stat"><span id="lblMoveIc">Move correlation</span><strong id="moveIc">--</strong></div>
+      <div class="stat"><span id="lblForecastMae">Forecast MAE</span><strong id="forecastMae">--</strong></div>
+      <div class="stat"><span id="lblNaiveMae">No-change MAE</span><strong id="naiveMae">--</strong></div>
+      <div class="stat"><span id="lblForecastSkill">Skill vs no-change</span><strong id="forecastSkill">--</strong></div>
+      <div class="stat"><span id="lblModelWeight">Model contribution</span><strong id="modelWeight">--</strong></div>
       <div class="stat"><span>Hedge beta</span><strong id="hedgeBeta">--</strong></div>
       <div class="stat"><span>Best test</span><strong id="bestTest">--</strong></div>
       <div class="stat"><span>Bars</span><strong id="bars">--</strong></div>
@@ -1706,6 +1714,7 @@
         <div class="legend" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           <span id="legSpread" class="black" style="color: #0f172a; font-weight: 700;">Spread (Price)</span>
           <span id="legPrediction" class="cyan" style="color: #00d2ff; font-weight: 700;">Rolling Prediction</span>
+          <span id="legNaiveForecast" style="color: #d97706; font-weight: 700;">No-change baseline</span>
           <span id="legMacroWave" class="gray" style="color: #64748b; font-weight: 600;">Global Wave</span>
           <span id="legMeanBands" class="gray" style="color: #cbd5e1; font-weight: 600;">Mean & Bands</span>
           <span id="legLongAdr" class="green" style="color: #16a34a; font-weight: 700;">Long ADR (▲)</span>
@@ -2139,7 +2148,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.6.0</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-02 14:49 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.7.0</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-02 17:13 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -2458,7 +2467,7 @@
           `<strong>Turnover:</strong> ${config.rebalanceBandPct}% rebalance deadband; ${config.minHoldBars}-bar minimum hold`,
           `<strong>Validation:</strong> ${config.wfFolds} purged folds; newest ${config.holdoutPct}% locked; ${config.purgeHours}h embargo`,
           `<strong>Stress:</strong> ${config.stressCostMultiplier}x costs plus ${config.stressDelayBars}-bar delay`,
-          `<strong>PASS:</strong> positive development/WF/holdout/stress; worst fold >-5%; >=60% winning folds/neighbors; PBO <=40%; trial confidence >=50%`
+          `<strong>PASS:</strong> forecast skill >0 with positive move correlation; positive development/WF/holdout/stress; worst fold >-5%; >=60% winning folds/neighbors; PBO <=40%; confidence >=50%`
         ].join(" &nbsp;|&nbsp; ");
       }
     }
@@ -2852,6 +2861,8 @@
       const enginePredictions = Object.fromEntries(engineKeys.map((key) => [key, []]));
       const engineErrors = Object.fromEntries(engineKeys.map((key) => [key, []]));
       const selectedPredictions = [];
+      const rawSelectedPredictions = [];
+      const forecastCalibrationPairs = [];
       const forecastErrors = [];
       const adrReturns = [];
       const koreanReturns = [];
@@ -2901,12 +2912,22 @@
 
         // Causal Forecast 24h Ahead computed at this exact bar
         let pred24hVal = avg;
+        let rawPred24hVal = avg;
+        let forecastCalibrationWeight = 0;
         let expectedEdgePct = 0;
         let modelAgreement = 1;
         if (index >= forecastBars) {
           const maturedPrediction = selectedPredictions[index - forecastBars];
           if (Number.isFinite(maturedPrediction)) {
             forecastErrors.push((row.normalized / maturedPrediction - 1) * 100);
+          }
+          const maturedRawPrediction = rawSelectedPredictions[index - forecastBars];
+          const forecastOrigin = aligned[index - forecastBars];
+          if (Number.isFinite(maturedRawPrediction) && forecastOrigin?.normalized) {
+            forecastCalibrationPairs.push({
+              predictedMove: maturedRawPrediction / forecastOrigin.normalized - 1,
+              realizedMove: row.normalized / forecastOrigin.normalized - 1
+            });
           }
           engineKeys.forEach((key) => {
             const matured = enginePredictions[key][index - forecastBars];
@@ -2936,11 +2957,24 @@
             pred24hVal = getPredictor(slice, forecastBars);
             if (enginePredictions[predictionEngine]) enginePredictions[predictionEngine][index] = pred24hVal;
           }
-          // If predicted wave > current spread -> spread will expand (+ return on Long ADR / Short Korea)
+          rawPred24hVal = pred24hVal;
+          const calibrationSample = forecastCalibrationPairs.slice(-256);
+          if (calibrationSample.length >= 24) {
+            let crossProduct = 0;
+            let predictedSquare = 0;
+            calibrationSample.forEach((pair) => {
+              crossProduct += pair.predictedMove * pair.realizedMove;
+              predictedSquare += pair.predictedMove * pair.predictedMove;
+            });
+            forecastCalibrationWeight = Math.max(0, Math.min(1, crossProduct / Math.max(1e-12, predictedSquare)));
+          }
+          pred24hVal = row.normalized + (rawPred24hVal - row.normalized) * forecastCalibrationWeight;
+          // If calibrated prediction > current spread -> spread will expand (+ return on Long ADR / Short Korea)
           // If predicted wave < current spread -> spread will compress (- return on Short ADR / Long Korea)
           expectedEdgePct = (pred24hVal / row.normalized - 1) * 100;
         }
         selectedPredictions[index] = index >= lookback ? pred24hVal : null;
+        rawSelectedPredictions[index] = index >= lookback ? rawPred24hVal : null;
 
         const fallbackError = Math.max(0.15, deviation / Math.max(avg, 0.0001) * 100);
         const forecastErrorPct = Math.max(0.05, recentMae(forecastErrors, fallbackError));
@@ -3077,6 +3111,8 @@
           lower: avg * (1 + minEdgePct / 100),
           maPremiumPct,
           pred24hVal,
+          rawPred24hVal,
+          forecastCalibrationWeight,
           expectedEdgePct,
           grossSignalEdgePct,
           netSignalEdgePct,
@@ -3385,6 +3421,27 @@
           projectedWave: window.spreadChart.addLineSeries({
             color: "#00d2ff",
             lineWidth: 2,
+            priceLineVisible: false,
+            priceFormat: lineFormat
+          }),
+          forecastUpper: window.spreadChart.addLineSeries({
+            color: "rgba(0, 160, 200, 0.38)",
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            priceLineVisible: false,
+            priceFormat: lineFormat
+          }),
+          forecastLower: window.spreadChart.addLineSeries({
+            color: "rgba(0, 160, 200, 0.38)",
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            priceLineVisible: false,
+            priceFormat: lineFormat
+          }),
+          naiveForecast: window.spreadChart.addLineSeries({
+            color: "#d97706",
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
             priceLineVisible: false,
             priceFormat: lineFormat
           }),
@@ -3796,17 +3853,27 @@
         const lastTime = Math.floor(rows.at(-1).time / 1000);
 
         const histPoints = [];
+        const forecastUpperPoints = [];
+        const forecastLowerPoints = [];
+        const naivePoints = [];
         for (let i = lookback; i < N; i++) {
           const targetTime = Math.floor(rows[i].time / 1000) + forecastBars * dt;
           if (targetTime <= lastTime) {
+            const errorBandPct = Math.max(0.05, rows[i].forecastErrorPct || 0);
             histPoints.push({
               time: targetTime,
               value: rows[i].pred24hVal
             });
+            forecastUpperPoints.push({ time: targetTime, value: rows[i].pred24hVal * (1 + errorBandPct / 100) });
+            forecastLowerPoints.push({ time: targetTime, value: rows[i].pred24hVal * (1 - errorBandPct / 100) });
+            naivePoints.push({ time: targetTime, value: rows[i].normalized });
           }
         }
         histPoints.sort((a, b) => a.time - b.time);
         window.spreadSeries.projectedWave.setData(histPoints);
+        window.spreadSeries.forecastUpper.setData(forecastUpperPoints);
+        window.spreadSeries.forecastLower.setData(forecastLowerPoints);
+        window.spreadSeries.naiveForecast.setData(naivePoints);
 
         // 3. Live Forward Prediction Cone (t > now) launching continuously into future whitespace
         const forwardPoints = [
@@ -3907,9 +3974,16 @@
           if (point.time > lastTime) futureTimelinePoints.push({ time: point.time });
         });
         window.spreadSeries.liveForwardWave.setData(forwardPoints);
+        const latestErrorBandPct = Math.max(0.05, rows.at(-1).forecastErrorPct || 0);
+        window.spreadSeries.forecastUpper.update({ time: lastTime + forecastBars * dt, value: final24hTarget * (1 + latestErrorBandPct / 100) });
+        window.spreadSeries.forecastLower.update({ time: lastTime + forecastBars * dt, value: final24hTarget * (1 - latestErrorBandPct / 100) });
+        window.spreadSeries.naiveForecast.update({ time: lastTime + forecastBars * dt, value: rows.at(-1).normalized });
       } else {
         window.spreadSeries.projectedWave.setData([]);
         window.spreadSeries.liveForwardWave.setData([]);
+        window.spreadSeries.forecastUpper.setData([]);
+        window.spreadSeries.forecastLower.setData([]);
+        window.spreadSeries.naiveForecast.setData([]);
         window.spreadSeries.synthWave.setData(rows.map((row) => toPoint(row, synthOf)));
       }
 
@@ -4234,6 +4308,9 @@
       if (window.spreadSeries.avgEntry) window.spreadSeries.avgEntry.setData([]);
       if (window.spreadSeries.liveForwardWave) window.spreadSeries.liveForwardWave.setData([]);
       if (window.spreadSeries.projectedWave) window.spreadSeries.projectedWave.setData([]);
+      if (window.spreadSeries.forecastUpper) window.spreadSeries.forecastUpper.setData([]);
+      if (window.spreadSeries.forecastLower) window.spreadSeries.forecastLower.setData([]);
+      if (window.spreadSeries.naiveForecast) window.spreadSeries.naiveForecast.setData([]);
       if (window.spreadSeries.synthWave) window.spreadSeries.synthWave.setData([]);
       if (window.positionSeries?.pnl) window.positionSeries.pnl.setData([]);
       if (window.positionSeries?.amount) window.positionSeries.amount.setData([]);
@@ -4393,6 +4470,66 @@
       $("waveSpectrum").innerHTML = svg;
     }
 
+    function calculateForecastQuality(rows, targetRange = null) {
+      if (!rows?.length || rows.length < 4) return null;
+      const dt = Math.max(60000, rows[1].time - rows[0].time);
+      const forecastBars = Math.max(1, Math.round(86400000 / dt));
+      const targetStart = Math.max(forecastBars, targetRange?.start ?? Math.floor(rows.length * 0.80));
+      const targetEnd = Math.min(rows.length, targetRange?.end ?? rows.length);
+      const predictedMoves = [];
+      const realizedMoves = [];
+      let forecastAbsError = 0;
+      let naiveAbsError = 0;
+      let directionHits = 0;
+      let directionCount = 0;
+
+      for (let targetIndex = targetStart; targetIndex < targetEnd; targetIndex += 1) {
+        const originIndex = targetIndex - forecastBars;
+        const origin = rows[originIndex];
+        const target = rows[targetIndex];
+        if (!Number.isFinite(origin.pred24hVal) || !origin.normalized || !target?.normalized) continue;
+        const predictedMove = (origin.pred24hVal / origin.normalized - 1) * 100;
+        const realizedMove = (target.normalized / origin.normalized - 1) * 100;
+        predictedMoves.push(predictedMove);
+        realizedMoves.push(realizedMove);
+        forecastAbsError += Math.abs(predictedMove - realizedMove);
+        naiveAbsError += Math.abs(realizedMove);
+        if (Math.abs(predictedMove) >= 0.05 && Math.abs(realizedMove) > 0.0001) {
+          directionCount += 1;
+          if (Math.sign(predictedMove) === Math.sign(realizedMove)) directionHits += 1;
+        }
+      }
+      if (!predictedMoves.length) return null;
+
+      const predictedMean = mean(predictedMoves);
+      const realizedMean = mean(realizedMoves);
+      let covariance = 0;
+      let predictedVariance = 0;
+      let realizedVariance = 0;
+      predictedMoves.forEach((value, index) => {
+        const predictedDelta = value - predictedMean;
+        const realizedDelta = realizedMoves[index] - realizedMean;
+        covariance += predictedDelta * realizedDelta;
+        predictedVariance += predictedDelta * predictedDelta;
+        realizedVariance += realizedDelta * realizedDelta;
+      });
+      const moveCorrelation = predictedVariance > 0 && realizedVariance > 0
+        ? covariance / Math.sqrt(predictedVariance * realizedVariance)
+        : 0;
+      const forecastMae = forecastAbsError / predictedMoves.length;
+      const naiveMae = naiveAbsError / predictedMoves.length;
+      return {
+        forecastBars,
+        samples: predictedMoves.length,
+        directionSamples: directionCount,
+        directionAccuracy: directionCount ? directionHits / directionCount * 100 : 0,
+        moveCorrelation,
+        forecastMae,
+        naiveMae,
+        skillPct: naiveMae > 1e-12 ? (1 - forecastMae / naiveMae) * 100 : 0
+      };
+    }
+
     function updateStats(rows) {
       const latest = rows.at(-1);
       const isShort = Boolean(latest && latest.targetSize > 0.01);
@@ -4436,6 +4573,30 @@
       $("feesDrag").textContent = latest ? `${fmt(latest.totalFeesPct)}%` : "--";
       $("netEdge").textContent = latest ? `${fmt(latest.netSignalEdgePct)}%` : "--";
       $("forecastConfidence").textContent = latest ? `${fmt(latest.forecastConfidence * 100, 0)}%` : "--";
+      const forecastQuality = calculateForecastQuality(rows);
+      window.latestForecastQuality = forecastQuality;
+      const horizonHours = forecastQuality && rows.length > 1
+        ? Math.round(forecastQuality.forecastBars * (rows[1].time - rows[0].time) / 3600000)
+        : 24;
+      $("forecastHorizon").textContent = `+${horizonHours}h`;
+      $("directionAccuracy").textContent = forecastQuality
+        ? (forecastQuality.directionSamples
+          ? `${fmt(forecastQuality.directionAccuracy, 1)}% (n=${forecastQuality.directionSamples})`
+          : (isKo ? "유의미한 신호 없음" : "No >0.05% calls"))
+        : "--";
+      $("moveIc").textContent = forecastQuality ? fmt(forecastQuality.moveCorrelation, 3) : "--";
+      $("forecastMae").textContent = forecastQuality ? `${fmt(forecastQuality.forecastMae, 2)}%` : "--";
+      $("naiveMae").textContent = forecastQuality ? `${fmt(forecastQuality.naiveMae, 2)}%` : "--";
+      $("forecastSkill").textContent = forecastQuality ? `${forecastQuality.skillPct >= 0 ? "+" : ""}${fmt(forecastQuality.skillPct, 1)}%` : "--";
+      $("forecastSkill").style.color = forecastQuality?.skillPct > 0 ? "#16a34a" : "#dc2626";
+      $("modelWeight").textContent = latest ? `${fmt((latest.forecastCalibrationWeight || 0) * 100, 0)}%` : "--";
+      $("lblForecastHorizon").textContent = isKo ? "예측 목표 시점" : "Forecast target";
+      $("lblDirectionAccuracy").textContent = isKo ? "최근 20% 방향 적중" : "Recent 20% direction";
+      $("lblMoveIc").textContent = isKo ? "미래 변동 상관" : "Future-move correlation";
+      $("lblForecastMae").textContent = isKo ? "모델 예측 오차" : "Forecast MAE";
+      $("lblNaiveMae").textContent = isKo ? "현 수준 유지 오차" : "No-change MAE";
+      $("lblForecastSkill").textContent = isKo ? "단순 기준 대비 개선" : "Skill vs no-change";
+      $("lblModelWeight").textContent = isKo ? "모델 반영 비중" : "Model contribution";
       $("hedgeBeta").textContent = latest ? fmt(latest.hedgeRatio, 2) : "--";
 
       if (rows.length) {
@@ -5520,17 +5681,27 @@
         const trialAdjustedZ = developmentRun.tStat - expectedBestZ;
         const trialConfidence = normalCdf(trialAdjustedZ) * 100;
         const developmentCalmar = developmentRun.netProfit / Math.max(1, Math.abs(developmentRun.maxDd));
+        const forecastQuality = calculateForecastQuality(baseRows, {
+          start: Math.max(ranges.purgeBars, Math.floor(ranges.development.end * 0.20)),
+          end: ranges.development.end
+        });
+        const forecastSkillPct = forecastQuality?.skillPct ?? -100;
+        const forecastMoveCorrelation = forecastQuality?.moveCorrelation ?? -1;
         const selectionScore = (
           medianPnl * positiveFoldRate
           + minimumFoldPnl * 0.35
           + developmentCalmar
           + Math.max(-5, Math.min(5, trialAdjustedZ)) * 0.25
           - developmentRun.fees * 0.15
+          + Math.max(-100, Math.min(100, forecastSkillPct)) * 0.02
+          + forecastMoveCorrelation * 2
         );
         const robust = developmentRun.netProfit > 0
           && medianPnl > 0
           && positiveFoldRate >= 0.6
           && minimumFoldPnl > -5
+          && forecastSkillPct > 0
+          && forecastMoveCorrelation > 0
           && developmentRun.maxDd > -25;
         return {
           score: selectionScore,
@@ -5555,6 +5726,9 @@
           robust,
           foldPnls,
           minimumFoldPnl,
+          forecastSkillPct,
+          forecastMoveCorrelation,
+          forecastDirectionAccuracy: forecastQuality?.directionAccuracy ?? 0,
           trialAdjustedZ,
           trialConfidence,
           purgeBars: ranges.purgeBars
@@ -5604,6 +5778,9 @@
       $("feesDrag").textContent = "--";
       $("netEdge").textContent = "--";
       $("forecastConfidence").textContent = "--";
+      ["directionAccuracy", "moveIc", "forecastMae", "naiveMae", "forecastSkill", "modelWeight"].forEach((id) => {
+        $(id).textContent = "--";
+      });
       $("hedgeBeta").textContent = "--";
       $("bestTest").textContent = "--";
       $("diagValidation").textContent = "Running";
@@ -5701,6 +5878,9 @@
         };
       };
       const robustCandidates = allEvaluatedCandidates.filter((candidate) => candidate.robust);
+      const forecastValidCandidates = allEvaluatedCandidates.filter((candidate) => (
+        candidate.forecastSkillPct > 0 && candidate.forecastMoveCorrelation > 0
+      ));
       const preselectionPool = allEvaluatedCandidates;
       preselectionPool.forEach((candidate) => {
         const candidateBaseRows = baseRowsByMean.get(candidate.meanBars);
@@ -5722,28 +5902,21 @@
         candidate.stressProfit > 0 && candidate.neighborStability >= 60
       ));
       const stressPositiveCandidates = robustCandidates.filter((candidate) => candidate.stressProfit > 0);
-      const conservativeStressCandidates = allEvaluatedCandidates.filter((candidate) => (
-        candidate.fullProfit > 0
-        && candidate.stressProfit > 0
-        && candidate.maxDd > -20
-        && candidate.positiveFoldRate >= 0.4
-      ));
-      const safetyFallbackCandidates = allEvaluatedCandidates.filter((candidate) => (
-        candidate.fullProfit > 0
-        && candidate.maxDd > -15
-        && candidate.positiveFoldRate >= 0.4
-        && candidate.maxSizePct <= 600
-      ));
       const selectionPool = stressStableCandidates.length
         ? stressStableCandidates
         : (stressPositiveCandidates.length
           ? stressPositiveCandidates
-          : (conservativeStressCandidates.length
-            ? conservativeStressCandidates
-            : (safetyFallbackCandidates.length
-              ? safetyFallbackCandidates
-              : (robustCandidates.length ? robustCandidates : allEvaluatedCandidates))));
-      const selected = [...selectionPool].sort((a, b) => b.robustSelectionScore - a.robustSelectionScore)[0];
+          : (robustCandidates.length
+            ? robustCandidates
+            : (forecastValidCandidates.length ? forecastValidCandidates : allEvaluatedCandidates)));
+      const selected = [...selectionPool].sort((a, b) => {
+        if (!robustCandidates.length && forecastValidCandidates.length) {
+          return b.forecastSkillPct - a.forecastSkillPct
+            || b.forecastMoveCorrelation - a.forecastMoveCorrelation
+            || b.robustSelectionScore - a.robustSelectionScore;
+        }
+        return b.robustSelectionScore - a.robustSelectionScore;
+      })[0];
       best = selected ? { ...selected } : null;
 
       let pboEstimate = 100;
@@ -5802,6 +5975,8 @@
         && best.nestedWfMedian > 0
         && best.nestedPositiveFoldRate >= 0.6
         && best.minimumFoldPnl > -5
+        && best.forecastSkillPct > 0
+        && best.forecastMoveCorrelation > 0
         && best.holdoutProfit > 0
         && best.stressProfit > 0
         && best.pboEstimate <= 40
@@ -5846,9 +6021,11 @@
         validationPassed: best.validationPassed,
         positiveFoldRate: best.positiveFoldRate,
         minimumFoldPnl: best.minimumFoldPnl,
+        forecastSkillPct: best.forecastSkillPct,
+        forecastMoveCorrelation: best.forecastMoveCorrelation,
         tradeCount: best.tradeCount,
         robustness,
-        statusText: `Development PnL ${fmt(best.fullProfit)}% (DD ${fmt(best.fullMaxDd)}%) | nested WF ${fmt(best.nestedWfMedian)}% (${Math.round(best.nestedPositiveFoldRate * foldCount)}/${foldCount}) | worst fold ${fmt(best.minimumFoldPnl)}% | holdout ${fmt(best.holdoutProfit)}% | stress ${fmt(best.stressProfit)}% | PBO ${fmt(best.pboEstimate)}%`
+        statusText: `Forecast skill ${fmt(best.forecastSkillPct)}% (move corr ${fmt(best.forecastMoveCorrelation, 3)}) | Development PnL ${fmt(best.fullProfit)}% (DD ${fmt(best.fullMaxDd)}%) | nested WF ${fmt(best.nestedWfMedian)}% (${Math.round(best.nestedPositiveFoldRate * foldCount)}/${foldCount}) | holdout ${fmt(best.holdoutProfit)}% | stress ${fmt(best.stressProfit)}% | PBO ${fmt(best.pboEstimate)}%`
       };
       try {
         localStorage.setItem("skhynix_last_optimization", JSON.stringify(window.lastOptimization));
@@ -5914,7 +6091,7 @@
       const isAsc = window.leaderboardSortAsc;
 
       // Update sort arrow indicators on all headers
-      const sortKeys = ['fullProfit', 'netProfit', 'maxDd', 'positiveFoldRate', 'meanBars', 'minEdgePct', 'maxSizePct', 'tradeSpeedPct', 'minProfitPct'];
+      const sortKeys = ['fullProfit', 'netProfit', 'maxDd', 'forecastSkillPct', 'positiveFoldRate', 'meanBars', 'minEdgePct', 'maxSizePct', 'tradeSpeedPct', 'minProfitPct'];
       sortKeys.forEach((k) => {
         const el = $("sort_" + k);
         if (el) el.textContent = (k === sortKey) ? (isAsc ? '▲' : '▼') : '';
@@ -5949,6 +6126,7 @@
           fullProfit: 'Development PnL %',
           netProfit: '5-Fold WF Median %',
           maxDd: 'Max DD %',
+          forecastSkillPct: 'Forecast Skill vs No-Change',
           positiveFoldRate: 'Winning Folds',
           meanBars: 'Mean Bars',
           minEdgePct: 'Edge Band',
@@ -5974,6 +6152,7 @@
             <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">${item.fullProfit >= 0 ? "+" : ""}${fmt(item.fullProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${wfPnlColor}; font-family: monospace;">${item.netProfit >= 0 ? "+" : ""}${fmt(item.netProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;" title="Peak Drawdown: ${fmt(item.maxDd)}% | Principal Drawdown: ${fmt(item.principalDd ?? 0)}%">${fmt(item.maxDd)}% <span style="font-size: 10px; color: ${(item.principalDd ?? 0) < -0.01 ? '#dc2626' : '#16a34a'}; font-weight: 700;">(${fmt(item.principalDd ?? 0)}%)</span></td>
+            <td style="padding: 6px 8px; font-weight: 700; color: ${item.forecastSkillPct > 0 ? '#16a34a' : '#dc2626'}; font-family: monospace;" title="Future-move correlation: ${fmt(item.forecastMoveCorrelation, 3)}">${item.forecastSkillPct >= 0 ? '+' : ''}${fmt(item.forecastSkillPct)}%</td>
             <td style="padding: 6px 8px; font-family: monospace;">${Math.round(item.positiveFoldRate * (item.foldPnls?.length || 5))}/${item.foldPnls?.length || 5}</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.meanBars} bars</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.minEdgePct}% ~ ${item.fullEdgePct}%</td>
@@ -6100,6 +6279,7 @@
         statBars: "Bars",
         legSpread: "Spread (Price)",
         legPrediction: "Rolling Prediction",
+        legNaiveForecast: "No-change baseline",
         legMacroWave: "Global Wave",
         legMeanBands: "Mean & Bands",
         legLongAdr: "Long ADR (▲)",
@@ -6137,8 +6317,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-09-02 14:49 KST",
-        footerDeploy: "Deployed: <strong>2026-09-02 14:49 KST</strong> (AWS EC2)",
+        deployTime: "Deployed: 2026-09-02 17:13 KST",
+        footerDeploy: "Deployed: <strong>2026-09-02 17:13 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click Pair Execution Terminal & Live Orders",
         lblExecutionSlippage: "Slippage Guard: <strong>5 BPS</strong>",
         btnResetPaper: "↺ Reset $10k",
@@ -6240,6 +6420,7 @@
         statBars: "조회된 봉 수",
         legSpread: "스프레드 (현재가)",
         legPrediction: "24h 예측 파동선",
+        legNaiveForecast: "현 수준 유지 기준선",
         legMacroWave: "매크로 전체 파동",
         legMeanBands: "평균선 & 진입 밴드",
         legLongAdr: "ADR 롱 포지션 (▲)",
@@ -6277,8 +6458,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-09-02 14:49 KST",
-        footerDeploy: "배포 일시: <strong>2026-09-02 14:49 KST</strong> (AWS EC2)",
+        deployTime: "배포 일시: 2026-09-02 17:13 KST",
+        footerDeploy: "배포 일시: <strong>2026-09-02 17:13 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click 페어 주문 실행 터미널 및 실시간 포지션",
         lblExecutionSlippage: "슬리피지 방지선: <strong>5 BPS</strong>",
         btnResetPaper: "↺ 잔고 초기화 ($10k)",
@@ -6829,6 +7010,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       // Chart Legend
       if ($("legSpread")) $("legSpread").textContent = dict.legSpread;
       if ($("legPrediction")) $("legPrediction").textContent = dict.legPrediction;
+      if ($("legNaiveForecast")) $("legNaiveForecast").textContent = dict.legNaiveForecast;
       if ($("legMacroWave")) $("legMacroWave").textContent = dict.legMacroWave;
       if ($("legMeanBands")) $("legMeanBands").textContent = dict.legMeanBands;
       if ($("legLongAdr")) $("legLongAdr").textContent = dict.legLongAdr;
