@@ -1440,9 +1440,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.5.0</span>
+            <span id="deployVersion">v1.6.0</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-09-01 18:07 KST</span>
+            <span id="deployTime">Deployed: 2026-09-02 14:49 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -1614,6 +1614,30 @@
           </label>
         </div>
 
+        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+            <strong style="font-size:12px; color:#0f172a; text-transform:uppercase;">Robustness, Turnover & Validation Policy</strong>
+            <span id="robustPolicySummary" style="font-size:11px; color:#0369a1; font-weight:700;">Compact model-specific search</span>
+          </div>
+          <div class="controlGrid optimizableGrid">
+            <label><span class="controlTitle">Search profile</span><select id="searchProfile"><option value="robust" selected>Compact robust</option><option value="broad">Broad research</option></select><span class="controlHint">controls trial count</span></label>
+            <label><span class="controlTitle">Search leverage cap</span><input id="searchMaxLeverage" type="number" min="1" max="10" step="1" value="4"><span class="controlHint">maximum tested leverage</span></label>
+            <label><span class="controlTitle">Min confidence %</span><input id="minConfidencePct" type="number" min="0" max="100" step="5" value="20"><span class="controlHint">skip weak forecasts</span></label>
+            <label><span class="controlTitle">Min agreement %</span><input id="minAgreementPct" type="number" min="0" max="100" step="5" value="50"><span class="controlHint">adaptive ensemble only</span></label>
+            <label><span class="controlTitle">Volatility cap %</span><input id="regimeVolCapPct" type="number" min="0" max="20" step="0.1" value="2.5"><span class="controlHint">0 disables regime filter</span></label>
+            <label><span class="controlTitle">Rebalance band %</span><input id="rebalanceBandPct" type="number" min="0" max="100" step="1" value="15"><span class="controlHint">ignore small size changes</span></label>
+            <label><span class="controlTitle">Minimum hold bars</span><input id="minHoldBars" type="number" min="0" max="168" step="1" value="3"><span class="controlHint">before signal exit or flip</span></label>
+            <label><span class="controlTitle">Holdout %</span><input id="holdoutPct" type="number" min="10" max="40" step="5" value="20"><span class="controlHint">newest data, locked</span></label>
+            <label><span class="controlTitle">Walk-forward folds</span><input id="wfFolds" type="number" min="3" max="10" step="1" value="5"><span class="controlHint">chronological OOS folds</span></label>
+            <label><span class="controlTitle">Purge hours</span><input id="purgeHours" type="number" min="0" max="168" step="1" value="24"><span class="controlHint">embargo around holdout</span></label>
+            <label><span class="controlTitle">Stress cost multiplier</span><input id="stressCostMultiplier" type="number" min="1" max="5" step="0.25" value="2"><span class="controlHint">fees, slippage, funding</span></label>
+            <label><span class="controlTitle">Stress delay bars</span><input id="stressDelayBars" type="number" min="0" max="24" step="1" value="1"><span class="controlHint">execution delay scenario</span></label>
+          </div>
+          <div id="validationGateSummary" style="margin-top:8px; padding:8px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; color:#475569; font-size:11px; line-height:1.55;">
+            PASS gate: positive development, walk-forward median, holdout and stress PnL; at least 60% winning folds and neighbors; PBO at most 40%; trial confidence at least 50%.
+          </div>
+        </div>
+
         <!-- Live Top Combinations Leaderboard Drawer -->
         <div id="optResultsPanel" style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #cbd5e1; display: none;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -1626,11 +1650,13 @@
           <div id="robustnessDiagnostics" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; padding: 8px 0 10px; border-bottom: 1px solid #e2e8f0; margin-bottom: 8px;">
             <span style="font-size: 11px; color: #64748b;">Validation <strong id="diagValidation" style="display:block;color:#0f172a;">Pending</strong></span>
             <span style="font-size: 11px; color: #64748b;">Nested WF median <strong id="diagNested" style="display:block;color:#0f172a;">--</strong></span>
+            <span style="font-size: 11px; color: #64748b;">Worst fold <strong id="diagWorstFold" style="display:block;color:#0f172a;">--</strong></span>
             <span style="font-size: 11px; color: #64748b;">Trial-adjusted confidence <strong id="diagTrialConfidence" style="display:block;color:#0f172a;">--</strong></span>
             <span style="font-size: 11px; color: #64748b;">PBO estimate <strong id="diagPbo" style="display:block;color:#0f172a;">--</strong></span>
             <span style="font-size: 11px; color: #64748b;">Neighbor stability <strong id="diagNeighbors" style="display:block;color:#0f172a;">--</strong></span>
             <span style="font-size: 11px; color: #64748b;">Stress PnL / DD <strong id="diagStress" style="display:block;color:#0f172a;">--</strong></span>
             <span style="font-size: 11px; color: #64748b;">Locked holdout <strong id="diagHoldout" style="display:block;color:#0f172a;">--</strong></span>
+            <span style="font-size: 11px; color: #64748b;">Turnover / skipped <strong id="diagTurnover" style="display:block;color:#0f172a;">--</strong></span>
           </div>
           <div style="display: block; width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; contain: inline-size;">
             <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; text-align: left;">
@@ -1645,6 +1671,7 @@
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('maxSizePct')" title="Sort by Leverage %">Max Size <span id="sort_maxSizePct" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('tradeSpeedPct')" title="Sort by Trade Speed">Trade/Exit Spd <span id="sort_tradeSpeedPct" class="sortArrow"></span></th>
                   <th class="sortableTh" style="padding: 6px 8px;" onclick="sortLeaderboard('minProfitPct')" title="Sort by Min Profit">Min Profit <span id="sort_minProfitPct" class="sortArrow"></span></th>
+                  <th style="padding: 6px 8px;">Fees / Trades</th>
                   <th style="padding: 6px 8px; text-align: right;">Action</th>
                 </tr>
               </thead>
@@ -2112,7 +2139,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.5.0</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-01 18:07 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.6.0</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-02 14:49 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -2399,11 +2426,49 @@
 
       return Array.from(rowsByTime.values()).sort((a, b) => a.time - b.time);
     }
+    function getRobustnessConfig() {
+      const numberValue = (id, fallback) => {
+        const value = Number($(id)?.value);
+        return Number.isFinite(value) ? value : fallback;
+      };
+      return {
+        searchProfile: $("searchProfile")?.value || "robust",
+        searchMaxLeverage: Math.max(1, numberValue("searchMaxLeverage", 4)),
+        minConfidencePct: Math.max(0, numberValue("minConfidencePct", 20)),
+        minAgreementPct: Math.max(0, numberValue("minAgreementPct", 50)),
+        regimeVolCapPct: Math.max(0, numberValue("regimeVolCapPct", 2.5)),
+        rebalanceBandPct: Math.max(0, numberValue("rebalanceBandPct", 15)),
+        minHoldBars: Math.max(0, Math.floor(numberValue("minHoldBars", 3))),
+        holdoutPct: Math.max(10, Math.min(40, numberValue("holdoutPct", 20))),
+        wfFolds: Math.max(3, Math.min(10, Math.floor(numberValue("wfFolds", 5)))),
+        purgeHours: Math.max(0, numberValue("purgeHours", 24)),
+        stressCostMultiplier: Math.max(1, numberValue("stressCostMultiplier", 2)),
+        stressDelayBars: Math.max(0, Math.floor(numberValue("stressDelayBars", 1)))
+      };
+    }
+
+    function updateRobustPolicyUi(config = getRobustnessConfig(), trialCount = null) {
+      if ($("robustPolicySummary")) {
+        const trialText = trialCount === null ? "before grid build" : `${trialCount.toLocaleString()} trials`;
+        $("robustPolicySummary").textContent = `${config.searchProfile === "broad" ? "Broad research" : "Compact model-specific"} | ${trialText} | <=${config.searchMaxLeverage}x`;
+      }
+      if ($("validationGateSummary")) {
+        $("validationGateSummary").innerHTML = [
+          `<strong>Signal:</strong> confidence >=${config.minConfidencePct}%; ensemble agreement >=${config.minAgreementPct}%; volatility <=${config.regimeVolCapPct || "off"}%`,
+          `<strong>Turnover:</strong> ${config.rebalanceBandPct}% rebalance deadband; ${config.minHoldBars}-bar minimum hold`,
+          `<strong>Validation:</strong> ${config.wfFolds} purged folds; newest ${config.holdoutPct}% locked; ${config.purgeHours}h embargo`,
+          `<strong>Stress:</strong> ${config.stressCostMultiplier}x costs plus ${config.stressDelayBars}-bar delay`,
+          `<strong>PASS:</strong> positive development/WF/holdout/stress; worst fold >-5%; >=60% winning folds/neighbors; PBO <=40%; trial confidence >=50%`
+        ].join(" &nbsp;|&nbsp; ");
+      }
+    }
+
     function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode = "wave", tradeDirection = "bidirectional", predictionEngine = "ou_hybrid", slippageBps = 0) {
       const assetKey = $("assetStrategy")?.value || "skhynix_arb";
       const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
       const isSingle = assetConfig.type === "single";
       const isRatio = assetConfig.type === "ratio";
+      const robustness = getRobustnessConfig();
 
       let aligned = [];
       if (isSingle) {
@@ -2888,6 +2953,7 @@
           ? Math.max(0.05, Math.min(1, netMagnitudePct / Math.max(0.15, forecastErrorPct))) * modelAgreement
           : 0;
         const hedgeRatio = rollingHedgeBeta(index);
+        const regimeVolPct = deviation / Math.max(0.0001, Math.abs(avg)) * 100;
 
         let rawDesiredSize = 0;
         if (isSingle) {
@@ -2996,6 +3062,13 @@
           }
         }
 
+        const confidenceBlocked = forecastConfidence * 100 < robustness.minConfidencePct;
+        const agreementBlocked = predictionEngine === "adaptive_ensemble"
+          && modelAgreement * 100 < robustness.minAgreementPct;
+        const volatilityBlocked = robustness.regimeVolCapPct > 0
+          && regimeVolPct > robustness.regimeVolCapPct;
+        if (confidenceBlocked || agreementBlocked || volatilityBlocked) rawDesiredSize = 0;
+
         return {
           ...row,
           mean: avg,
@@ -3010,6 +3083,10 @@
           forecastErrorPct,
           forecastConfidence,
           modelAgreement,
+          regimeVolPct,
+          confidenceBlocked,
+          agreementBlocked,
+          volatilityBlocked,
           hedgeRatio,
           roundTripCostPct,
           desiredSize: rawDesiredSize,
@@ -3040,6 +3117,7 @@
       let avgEntryNormalized = null;
       let avgEntryMaPremiumPct = null;
       let liquidated = false;
+      let heldBars = 0;
 
       const entrySpeed = Math.max(0.01, Math.min(1, tradeSpeedPct / 100));
       const exitSpeed = Math.max(0.01, Math.min(1, (exitSpeedPct || tradeSpeedPct) / 100));
@@ -3092,14 +3170,23 @@
           isTakeProfitActive = false;
         }
 
-        const desired = isTakeProfitActive ? 0 : row.desiredSize;
         const previousSize = positionSize;
+        let desired = isTakeProfitActive ? 0 : row.desiredSize;
+        const signalExitOrFlip = Math.abs(previousSize) > 0.001
+          && (Math.abs(desired) < 0.001 || previousSize * desired < 0);
+        if (!isTakeProfitActive && signalExitOrFlip && heldBars < robustness.minHoldBars) {
+          desired = previousSize;
+        }
         const sizeGap = desired - previousSize;
         const isReducing = (previousSize > 0 && sizeGap < 0) || (previousSize < 0 && sizeGap > 0);
         const effectiveSpeed = isReducing ? exitSpeed : entrySpeed;
-        const tradeSize = Math.abs(sizeGap) < 0.000001 ? 0 : sizeGap * effectiveSpeed;
+        const rebalanceBand = (maxSizePct / 100) * robustness.rebalanceBandPct / 100;
+        const tradeSize = Math.abs(sizeGap) <= rebalanceBand ? 0 : sizeGap * effectiveSpeed;
         
         positionSize = previousSize + tradeSize;
+        if (Math.abs(positionSize) < 0.001) heldBars = 0;
+        else if (Math.abs(previousSize) < 0.001 || previousSize * positionSize < 0) heldBars = 1;
+        else heldBars += 1;
         row.targetSize = positionSize;
         row.tradeSize = tradeSize;
 
@@ -5017,16 +5104,33 @@
       const strategyMode = $("strategyMode")?.value || "wave";
       const tradeDirection = $("tradeDirection")?.value || "bidirectional";
       const predictionEngine = $("predictionEngine")?.value || "medallion_hmm";
+      const robustness = getRobustnessConfig();
       const candidates = [];
       const fullSpanGrid = fullHistoryLoaded || cachedRows.length > 2000;
-      const means = fullSpanGrid ? [16, 20, 24, 32, 48, 64, 96] : [12, 16, 20, 24, 32, 48, 64, 96, 128];
-      const minEdges = fullSpanGrid ? [0.75, 1.0, 1.5] : [0.2, 0.4, 0.6, 0.75, 1.0, 1.5];
-      const fullEdges = fullSpanGrid ? [1.8, 2.5, 3.5] : [0.8, 1.2, 1.8, 2.5, 3.5];
-      const maxSizes = fullSpanGrid ? [400, 600, 800, 1000] : [150, 200, 300, 400, 500, 600, 800, 1000];
-      const curves = fullSpanGrid ? [1, 2] : [1, 2, 3];
-      const entrySpeeds = fullSpanGrid ? [25, 50, 75] : [25, 50, 75, 100];
-      const exitSpeeds = fullSpanGrid ? [50, 100] : [50, 75, 100];
-      const minProfits = fullSpanGrid ? [0.5, 1.0] : [0, 0.2, 0.5, 1.0];
+      const modelMeans = {
+        medallion_hmm: [16, 24, 48, 96],
+        multi_ma: [16, 32, 64, 96],
+        ou_hybrid: [20, 32, 48, 96],
+        multi_horizon: [24, 48, 72, 96],
+        adaptive_ensemble: [24, 48, 72, 96],
+        burg_mem: [16, 24, 32, 48],
+        fourier: [32, 64, 96, 128]
+      };
+      const broadSearch = robustness.searchProfile === "broad";
+      const means = broadSearch
+        ? (fullSpanGrid ? [16, 20, 24, 32, 48, 64, 96] : [12, 16, 20, 24, 32, 48, 64, 96, 128])
+        : (modelMeans[predictionEngine] || [16, 24, 48, 96]);
+      const minEdges = broadSearch ? [0.4, 0.75, 1.0, 1.5] : [0.75, 1.25, 1.75];
+      const fullEdges = broadSearch ? [1.2, 1.8, 2.5, 3.5, 4.5] : [2.0, 3.0, 4.0];
+      const leverageSteps = broadSearch ? [1, 2, 3, 4, 6, 8, 10] : [1, 2, 4];
+      const maxSizes = leverageSteps
+        .filter((value) => value <= robustness.searchMaxLeverage)
+        .map((value) => value * 100);
+      if (!maxSizes.length) maxSizes.push(100);
+      const curves = broadSearch ? [1, 2, 3] : [1.5, 2.5];
+      const entrySpeeds = broadSearch ? [15, 25, 50, 75] : [15, 25];
+      const exitSpeeds = broadSearch ? [50, 75, 100] : [75];
+      const minProfits = broadSearch ? [0.2, 0.5, 1.0, 1.5] : [0.5, 1.0];
       means.forEach((meanBars) => {
         minEdges.forEach((minEdgePct) => {
           fullEdges.forEach((fullEdgePct) => {
@@ -5045,10 +5149,11 @@
           });
         });
       });
+      updateRobustPolicyUi(robustness, candidates.length);
       const button = $("optimizeProfit");
       button.disabled = true;
-      if ($("lblOptTotalEvaluated") && fullSpanGrid) {
-        $("lblOptTotalEvaluated").textContent = `Full-span adaptive grid: ${candidates.length.toLocaleString()} combinations across ${cachedRows.length.toLocaleString()} bars`;
+      if ($("lblOptTotalEvaluated")) {
+        $("lblOptTotalEvaluated").textContent = `${broadSearch ? "Broad" : "Compact model-specific"} grid: ${candidates.length.toLocaleString()} combinations across ${cachedRows.length.toLocaleString()} bars`;
       }
       const baseRowsByMean = new Map(means.map((meanBars) => [
         meanBars,
@@ -5073,12 +5178,12 @@
       const simulationRanges = (baseRows) => {
         const count = baseRows.length;
         const dt = count > 1 ? Math.max(60000, baseRows[1].time - baseRows[0].time) : 15 * 60000;
-        const purgeBars = Math.max(1, Math.round(86400000 / dt));
-        const foldCount = 5;
+        const purgeBars = Math.max(0, Math.round(robustness.purgeHours * 3600000 / dt));
+        const foldCount = robustness.wfFolds;
         if (count < purgeBars * 4 + foldCount * 10) {
           return { folds: [], development: null, holdout: null, purgeBars, foldCount };
         }
-        const holdoutBoundary = Math.floor(count * 0.80);
+        const holdoutBoundary = Math.floor(count * (1 - robustness.holdoutPct / 100));
         const developmentEnd = Math.max(purgeBars * 3, holdoutBoundary - purgeBars);
         const validationStart = Math.max(purgeBars * 2, Math.floor(developmentEnd * 0.20));
         const foldSize = Math.max(1, Math.floor((developmentEnd - validationStart) / foldCount));
@@ -5119,6 +5224,12 @@
         let returnCount = 0;
         let returnSum = 0;
         let returnSumSquares = 0;
+        let heldBars = 0;
+        let tradeCount = 0;
+        let confidenceSkips = 0;
+        let agreementSkips = 0;
+        let volatilitySkips = 0;
+        let rebalanceSkips = 0;
 
         const assetKey = $("assetStrategy")?.value || "skhynix_arb";
         const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
@@ -5258,14 +5369,35 @@
             }
           }
 
+          const confidenceBlocked = (signalRow.forecastConfidence || 0) * 100 < robustness.minConfidencePct;
+          const agreementBlocked = predictionEngine === "adaptive_ensemble"
+            && (signalRow.modelAgreement || 0) * 100 < robustness.minAgreementPct;
+          const volatilityBlocked = robustness.regimeVolCapPct > 0
+            && (signalRow.regimeVolPct || 0) > robustness.regimeVolCapPct;
+          if (confidenceBlocked) confidenceSkips += 1;
+          if (agreementBlocked) agreementSkips += 1;
+          if (volatilityBlocked) volatilitySkips += 1;
+          if (confidenceBlocked || agreementBlocked || volatilityBlocked) rawDesiredSize = 0;
+
           const previousSize = positionSize;
-          const desired = isTakeProfitActive ? 0 : rawDesiredSize;
+          let desired = isTakeProfitActive ? 0 : rawDesiredSize;
+          const signalExitOrFlip = Math.abs(previousSize) > 0.001
+            && (Math.abs(desired) < 0.001 || previousSize * desired < 0);
+          if (!isTakeProfitActive && signalExitOrFlip && heldBars < robustness.minHoldBars) {
+            desired = previousSize;
+          }
           const sizeGap = desired - previousSize;
           const isReducing = (previousSize > 0 && sizeGap < 0) || (previousSize < 0 && sizeGap > 0);
           const speed = isReducing ? exitSpeed : entrySpeed;
-          const tradeSize = sizeGap * speed;
+          const rebalanceBand = maxSize * robustness.rebalanceBandPct / 100;
+          const tradeSize = Math.abs(sizeGap) <= rebalanceBand ? 0 : sizeGap * speed;
+          if (Math.abs(sizeGap) > 0.000001 && tradeSize === 0) rebalanceSkips += 1;
           positionSize = previousSize + tradeSize;
           const actualTraded = positionSize - previousSize;
+          if (Math.abs(actualTraded) > 0.000001) tradeCount += 1;
+          if (Math.abs(positionSize) < 0.001) heldBars = 0;
+          else if (Math.abs(previousSize) < 0.001 || previousSize * positionSize < 0) heldBars = 1;
+          else heldBars += 1;
           if (Math.abs(positionSize) > 0.001) {
             const openedFresh = Math.abs(previousSize) < 0.001;
             const flippedSide = previousSize * positionSize < 0;
@@ -5361,6 +5493,11 @@
           tStat,
           returnCount,
           fees: totalFeesPct,
+          tradeCount,
+          confidenceSkips,
+          agreementSkips,
+          volatilitySkips,
+          rebalanceSkips,
           drawdown: maxDd,
           lastPositionSize: positionSize,
           avgEntryMaPremiumPct: null
@@ -5385,13 +5522,15 @@
         const developmentCalmar = developmentRun.netProfit / Math.max(1, Math.abs(developmentRun.maxDd));
         const selectionScore = (
           medianPnl * positiveFoldRate
-          + Math.min(0, minimumFoldPnl) * 0.5
+          + minimumFoldPnl * 0.35
           + developmentCalmar
           + Math.max(-5, Math.min(5, trialAdjustedZ)) * 0.25
+          - developmentRun.fees * 0.15
         );
         const robust = developmentRun.netProfit > 0
           && medianPnl > 0
           && positiveFoldRate >= 0.6
+          && minimumFoldPnl > -5
           && developmentRun.maxDd > -25;
         return {
           score: selectionScore,
@@ -5404,6 +5543,11 @@
           foldWorstDd: worstDd,
           avgExposure: developmentRun.avgExposure,
           fees: developmentRun.fees,
+          tradeCount: developmentRun.tradeCount,
+          confidenceSkips: developmentRun.confidenceSkips,
+          agreementSkips: developmentRun.agreementSkips,
+          volatilitySkips: developmentRun.volatilitySkips,
+          rebalanceSkips: developmentRun.rebalanceSkips,
           drawdown: developmentRun.maxDd,
           lastPositionSize: developmentRun.lastPositionSize,
           avgEntryMaPremiumPct: null,
@@ -5464,7 +5608,7 @@
       $("bestTest").textContent = "--";
       $("diagValidation").textContent = "Running";
       $("diagValidation").style.color = "#0284c7";
-      ["diagNested", "diagTrialConfidence", "diagPbo", "diagNeighbors", "diagStress", "diagHoldout"].forEach((id) => {
+      ["diagNested", "diagWorstFold", "diagTrialConfidence", "diagPbo", "diagNeighbors", "diagStress", "diagHoldout", "diagTurnover"].forEach((id) => {
         $(id).textContent = "--";
       });
 
@@ -5562,8 +5706,8 @@
         const candidateBaseRows = baseRowsByMean.get(candidate.meanBars);
         const candidateRanges = simulationRanges(candidateBaseRows);
         const candidateStress = simulateCandidateRange(candidate, candidateBaseRows, candidateRanges.development, {
-          frictionMultiplier: 2,
-          signalDelayBars: 1
+          frictionMultiplier: robustness.stressCostMultiplier,
+          signalDelayBars: robustness.stressDelayBars
         });
         const neighborStats = getNeighborStats(candidate);
         candidate.stressProfit = candidateStress?.netProfit ?? -100;
@@ -5657,6 +5801,7 @@
       best.validationPassed = best.robust
         && best.nestedWfMedian > 0
         && best.nestedPositiveFoldRate >= 0.6
+        && best.minimumFoldPnl > -5
         && best.holdoutProfit > 0
         && best.stressProfit > 0
         && best.pboEstimate <= 40
@@ -5700,7 +5845,10 @@
         trialConfidence: best.trialConfidence,
         validationPassed: best.validationPassed,
         positiveFoldRate: best.positiveFoldRate,
-        statusText: `Development PnL ${fmt(best.fullProfit)}% (DD ${fmt(best.fullMaxDd)}%) | nested WF ${fmt(best.nestedWfMedian)}% (${Math.round(best.nestedPositiveFoldRate * foldCount)}/${foldCount}) | locked holdout ${fmt(best.holdoutProfit)}% | stress ${fmt(best.stressProfit)}% | PBO ${fmt(best.pboEstimate)}%`
+        minimumFoldPnl: best.minimumFoldPnl,
+        tradeCount: best.tradeCount,
+        robustness,
+        statusText: `Development PnL ${fmt(best.fullProfit)}% (DD ${fmt(best.fullMaxDd)}%) | nested WF ${fmt(best.nestedWfMedian)}% (${Math.round(best.nestedPositiveFoldRate * foldCount)}/${foldCount}) | worst fold ${fmt(best.minimumFoldPnl)}% | holdout ${fmt(best.holdoutProfit)}% | stress ${fmt(best.stressProfit)}% | PBO ${fmt(best.pboEstimate)}%`
       };
       try {
         localStorage.setItem("skhynix_last_optimization", JSON.stringify(window.lastOptimization));
@@ -5715,11 +5863,13 @@
       $("diagValidation").textContent = best.validationPassed ? "PASS" : "FAIL";
       $("diagValidation").style.color = best.validationPassed ? "#16a34a" : "#dc2626";
       $("diagNested").textContent = `${signedPct(best.nestedWfMedian)} (${Math.round(best.nestedPositiveFoldRate * foldCount)}/${foldCount})`;
+      $("diagWorstFold").textContent = signedPct(best.minimumFoldPnl);
       $("diagTrialConfidence").textContent = `${fmt(best.trialConfidence)}%`;
       $("diagPbo").textContent = `${fmt(best.pboEstimate)}%`;
       $("diagNeighbors").textContent = `${fmt(best.neighborStability)}% (${best.stableNeighborCount}/${best.neighborCount})`;
       $("diagStress").textContent = `${signedPct(best.stressProfit)} / ${signedPct(best.stressMaxDd)}`;
       $("diagHoldout").textContent = `${signedPct(best.holdoutProfit)} / ${signedPct(best.holdoutMaxDd)}`;
+      $("diagTurnover").textContent = `${best.tradeCount} trades / ${best.confidenceSkips + best.agreementSkips + best.volatilitySkips + best.rebalanceSkips} skipped`;
 
       // Render and display the lower result table and summary ONLY after simulation is completely finished
       if (resultsPanel) resultsPanel.style.display = "block";
@@ -5830,6 +5980,7 @@
             <td style="padding: 6px 8px; font-family: monospace;">${item.maxSizePct}% (${(item.maxSizePct/100).toFixed(1)}x)</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.tradeSpeedPct}% / ${item.exitSpeedPct}%</td>
             <td style="padding: 6px 8px; font-family: monospace;">${item.minProfitPct}%</td>
+            <td style="padding: 6px 8px; font-family: monospace;">${fmt(item.fees)}% / ${item.tradeCount ?? 0}</td>
             <td style="padding: 6px 8px; text-align: right;">
               <div style="display: flex; gap: 4px; justify-content: flex-end;">
                 <button type="button" style="height: 24px; padding: 0 6px; font-size: 10px; background: ${isWinner ? '#16a34a' : '#0284c7'}; border-radius: 4px; border: 0; color: #fff; font-weight: 700; cursor: pointer;" onclick="event.stopPropagation(); applyCandidateByRank(${rankIdx})">Apply</button>
@@ -5986,8 +6137,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-09-01 18:07 KST",
-        footerDeploy: "Deployed: <strong>2026-09-01 18:07 KST</strong> (AWS EC2)",
+        deployTime: "Deployed: 2026-09-02 14:49 KST",
+        footerDeploy: "Deployed: <strong>2026-09-02 14:49 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click Pair Execution Terminal & Live Orders",
         lblExecutionSlippage: "Slippage Guard: <strong>5 BPS</strong>",
         btnResetPaper: "↺ Reset $10k",
@@ -6126,8 +6277,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-09-01 18:07 KST",
-        footerDeploy: "배포 일시: <strong>2026-09-01 18:07 KST</strong> (AWS EC2)",
+        deployTime: "배포 일시: 2026-09-02 14:49 KST",
+        footerDeploy: "배포 일시: <strong>2026-09-02 14:49 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click 페어 주문 실행 터미널 및 실시간 포지션",
         lblExecutionSlippage: "슬리피지 방지선: <strong>5 BPS</strong>",
         btnResetPaper: "↺ 잔고 초기화 ($10k)",
@@ -6792,7 +6943,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     }
 
     const SETTINGS_VERSION = "v1.4.1";
-    const paramIds = ["assetStrategy", "interval", "strategyMode", "predictionEngine", "tradeDirection", "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct", "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct", "tradingFeeBps", "fundingBpsDay", "slippageBps"];
+    const paramIds = ["assetStrategy", "interval", "strategyMode", "predictionEngine", "tradeDirection", "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct", "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct", "tradingFeeBps", "fundingBpsDay", "slippageBps", "searchProfile", "searchMaxLeverage", "minConfidencePct", "minAgreementPct", "regimeVolCapPct", "rebalanceBandPct", "minHoldBars", "holdoutPct", "wfFolds", "purgeHours", "stressCostMultiplier", "stressDelayBars"];
     function saveSettings() {
       try {
         const settings = {};
@@ -7138,6 +7289,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("tradingFeeBps").addEventListener("change", onParamChange);
     $("fundingBpsDay").addEventListener("change", onParamChange);
     $("slippageBps").addEventListener("change", onParamChange);
+    ["searchProfile", "searchMaxLeverage", "minConfidencePct", "minAgreementPct", "regimeVolCapPct", "rebalanceBandPct", "minHoldBars", "holdoutPct", "wfFolds", "purgeHours", "stressCostMultiplier", "stressDelayBars"].forEach((id) => {
+      $(id)?.addEventListener("change", () => {
+        updateRobustPolicyUi();
+        onParamChange();
+      });
+    });
+    updateRobustPolicyUi();
 
     // ==========================================
     // STAGE 1: REAL & PAPER TRADING EXECUTION ENGINE
