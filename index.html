@@ -4645,7 +4645,13 @@
       $("avgPosition").textContent = latest && latest.avgEntryMaPremiumPct !== null
         ? `${fmt(latest.avgEntryMaPremiumPct)}%`
         : (isKo ? "무포지션" : "Flat");
-      $("accPnl").textContent = latest ? `${fmt(latest.equity - 100)}%` : "--";
+      if (window.selectedOptimizationCandidate) {
+        const sel = window.selectedOptimizationCandidate;
+        const fullPnl = latest ? (latest.equity - 100) : 0;
+        $("accPnl").innerHTML = `<span style="color: ${sel.fullProfit >= 0 ? '#16a34a' : '#dc2626'}">${signedPct(sel.fullProfit)}</span> <span style="font-size: 11px; font-weight: 500; color: #64748b;">(Full: ${signedPct(fullPnl)})</span>`;
+      } else {
+        $("accPnl").textContent = latest ? `${fmt(latest.equity - 100)}%` : "--";
+      }
       let maxDD = 0;
       let minEquity = 100;
       rows.forEach((row) => {
@@ -5148,7 +5154,12 @@
         renderCached();
         const latest = cachedRows.at(-1);
         if (latest) {
-          $("status").textContent = `WebSocket live: ${formatTime(latest.time, cachedInterval)} UTC`;
+          const selected = window.selectedOptimizationCandidate;
+          if (selected) {
+            $("status").textContent = `Selected Candidate: Dev PnL ${signedPct(selected.fullProfit)} | Max DD ${signedPct(selected.maxDd)} | Live ${formatTime(latest.time, cachedInterval)} UTC`;
+          } else {
+            $("status").textContent = `WebSocket live: ${formatTime(latest.time, cachedInterval)} UTC`;
+          }
         }
       }, 1000);
     }
@@ -5423,10 +5434,14 @@
       const simulationRanges = (baseRows) => {
         const count = baseRows.length;
         const dt = count > 1 ? Math.max(60000, baseRows[1].time - baseRows[0].time) : 15 * 60000;
-        const purgeBars = Math.max(0, Math.round(robustness.purgeHours * 3600000 / dt));
-        const foldCount = robustness.wfFolds;
+        let purgeBars = Math.max(0, Math.round(robustness.purgeHours * 3600000 / dt));
+        let foldCount = robustness.wfFolds;
         if (count < purgeBars * 4 + foldCount * 10) {
-          return { folds: [], development: null, holdout: null, purgeBars, foldCount };
+          purgeBars = Math.max(1, Math.floor(count * 0.04));
+          foldCount = Math.max(2, Math.min(robustness.wfFolds, Math.floor(count / 60)));
+        }
+        if (count < purgeBars * 2 + foldCount * 4 || count < 20) {
+          return { folds: [], development: { start: 0, end: count }, holdout: { start: Math.max(0, count - 1), end: count }, purgeBars: 0, foldCount: 0 };
         }
         const holdoutBoundary = Math.floor(count * (1 - robustness.holdoutPct / 100));
         const developmentEnd = Math.max(purgeBars * 3, holdoutBoundary - purgeBars);
@@ -6169,6 +6184,7 @@
           uniqueMap.set(key, item);
         }
       });
+      window.candidateByKeyMap = uniqueMap;
       const list = Array.from(uniqueMap.values());
 
       const sortKey = window.leaderboardSortKey || 'fullProfit';
@@ -6232,7 +6248,7 @@
         const key = candidateKey(item);
         const isSelected = candidateKey(window.selectedOptimizationCandidate) === key;
         return `
-          <tr data-candidate-key="${key}" class="${isSelected ? "optimizerRowSelected" : ""}" style="background: ${rowBg}; border-bottom: 1px solid #e2e8f0; cursor: pointer;" onclick="applyCandidateByRank(${rankIdx})">
+          <tr data-candidate-key="${key}" class="${isSelected ? "optimizerRowSelected" : ""}" style="background: ${rowBg}; border-bottom: 1px solid #e2e8f0; cursor: pointer;" onclick="applyCandidateByKey('${key}')">
             <td style="padding: 6px 8px; font-weight: 800; color: ${pnlColor}; font-family: monospace;">${item.fullProfit >= 0 ? "+" : ""}${fmt(item.fullProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 800; color: ${wfPnlColor}; font-family: monospace;">${item.netProfit >= 0 ? "+" : ""}${fmt(item.netProfit)}%</td>
             <td style="padding: 6px 8px; font-weight: 600; color: #dc2626; font-family: monospace;" title="Peak Drawdown: ${fmt(item.maxDd)}% | Principal Drawdown: ${fmt(item.principalDd ?? 0)}%">${fmt(item.maxDd)}% <span style="font-size: 10px; color: ${(item.principalDd ?? 0) < -0.01 ? '#dc2626' : '#16a34a'}; font-weight: 700;">(${fmt(item.principalDd ?? 0)}%)</span></td>
@@ -6246,13 +6262,32 @@
             <td style="padding: 6px 8px; font-family: monospace;">${fmt(item.fees)}% / ${item.tradeCount ?? 0}</td>
             <td style="padding: 6px 8px; text-align: right;">
               <div style="display: flex; gap: 4px; justify-content: flex-end;">
-                <button type="button" style="height: 24px; padding: 0 6px; font-size: 10px; background: ${isWinner ? '#16a34a' : '#0284c7'}; border-radius: 4px; border: 0; color: #fff; font-weight: 700; cursor: pointer;" onclick="event.stopPropagation(); applyCandidateByRank(${rankIdx})">Apply</button>
-                <button type="button" style="height: 24px; padding: 0 6px; font-size: 10px; background: #0f172a; border-radius: 4px; border: 0; color: #38bdf8; font-weight: 800; cursor: pointer;" onclick="event.stopPropagation(); deployCandidateByRank(${rankIdx})" title="Deploy this parameter set directly to live/paper bot">🚀 Deploy</button>
+                <button type="button" style="height: 24px; padding: 0 6px; font-size: 10px; background: ${isWinner ? '#16a34a' : '#0284c7'}; border-radius: 4px; border: 0; color: #fff; font-weight: 700; cursor: pointer;" onclick="event.stopPropagation(); applyCandidateByKey('${key}')">Apply</button>
+                <button type="button" style="height: 24px; padding: 0 6px; font-size: 10px; background: #0f172a; border-radius: 4px; border: 0; color: #38bdf8; font-weight: 800; cursor: pointer;" onclick="event.stopPropagation(); deployCandidateByKey('${key}')" title="Deploy this parameter set directly to live/paper bot">🚀 Deploy</button>
               </div>
             </td>
           </tr>
         `;
       }).join("");
+    };
+
+    window.applyCandidateByKey = function(key) {
+      const candidate = window.candidateByKeyMap?.get(key)
+        || window.allOptimizationCandidates?.find((c) => candidateKey(c) === key)
+        || window.optimizationCandidates?.find((c) => candidateKey(c) === key);
+      if (candidate) window.applyCandidateRow(candidate);
+    };
+
+    window.deployCandidateByKey = function(key) {
+      const candidate = window.candidateByKeyMap?.get(key)
+        || window.allOptimizationCandidates?.find((c) => candidateKey(c) === key)
+        || window.optimizationCandidates?.find((c) => candidateKey(c) === key);
+      if (candidate) {
+        window.applyCandidateRow(candidate);
+        if (typeof tradingEngine !== 'undefined') {
+          tradingEngine.deployCurrentStrategy();
+        }
+      }
     };
 
     window.applyCandidateByRank = function(rankIndex) {
@@ -6298,8 +6333,11 @@
       } else {
         $("bestTest").textContent = "Holdout locked";
         $("diagHoldout").textContent = "Locked; rerun to validate";
-        $("status").textContent = `Development review only | Dev PnL ${signedPct(candidate.fullProfit)} | Dev Max DD ${signedPct(candidate.maxDd)} | locked holdout not evaluated`;
+        $("status").textContent = `Selected Candidate: Dev PnL ${signedPct(candidate.fullProfit)} | 5-Fold WF ${signedPct(candidate.netProfit)} | Max DD ${signedPct(candidate.maxDd)} | Trades ${candidate.tradeCount ?? 0}`;
       }
+      const latest = rows.at(-1);
+      const fullPnl = latest ? (latest.equity - 100) : 0;
+      $("accPnl").innerHTML = `<span style="color: ${candidate.fullProfit >= 0 ? '#16a34a' : '#dc2626'}">${signedPct(candidate.fullProfit)}</span> <span style="font-size: 11px; font-weight: 500; color: #64748b;">(Full: ${signedPct(fullPnl)})</span>`;
     };
 
     // --- BILINGUAL (KO / EN) LOCALIZATION ENGINE ---
@@ -7536,6 +7574,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("tradeDirection").addEventListener("change", onParamChange);
     
     function onParamChange() {
+      window.selectedOptimizationCandidate = null;
+      document.querySelectorAll("#optResultsBody tr.optimizerRowSelected").forEach((r) => r.classList.remove("optimizerRowSelected"));
       saveSettings();
       redrawOnly();
     }
