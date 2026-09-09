@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -93,6 +93,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/api/klines")
+async def get_klines(symbol: str, interval: str = "15m", limit: int = 1000, endTime: Optional[int] = None):
+    """Proxy Binance Futures klines endpoint to bypass browser CORS / ISP blocks with server-side speed."""
+    params = {"symbol": symbol, "interval": interval, "limit": min(1500, max(1, limit))}
+    if endTime:
+        params["endTime"] = endTime
+    try:
+        data = await binance_client.request("GET", "/fapi/v1/klines", params=params)
+        return data
+    except Exception as e:
+        logger.error(f"Error fetching klines for {symbol}: {e}")
+        return []
 
 @app.get("/api/health")
 async def health_check() -> Dict[str, Any]:

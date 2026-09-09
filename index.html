@@ -2413,24 +2413,38 @@
         : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" };
       return new Date(time).toLocaleString("en-US", options);
     };
+    let workingKlineEndpoint = null;
     async function fetchKlines(symbol, interval, endTime, requestedLimit) {
-      const endpoints = [
+      const origin = window.location.origin;
+      const isControlDomain = window.location.hostname.includes("jiwonova.com") || window.location.hostname.includes("localhost") || window.location.port === "8000";
+      const proxyPath = window.location.pathname.startsWith("/skhynix") ? "/skhynix/api/klines" : "/api/klines";
+      
+      const endpoints = [];
+      if (workingKlineEndpoint) {
+        endpoints.push(workingKlineEndpoint);
+      }
+      if (isControlDomain) {
+        endpoints.push(`${origin}${proxyPath}`);
+      }
+      endpoints.push(
         "https://fapi.binance.com/fapi/v1/klines",
         "https://fapi.binance.vision/fapi/v1/klines",
         "https://api.allorigins.win/raw?url=" + encodeURIComponent("https://fapi.binance.com/fapi/v1/klines")
-      ];
-      const limit = String(requestedLimit || limits[interval] || 300);
+      );
+      const uniqueEndpoints = [...new Set(endpoints)];
+      const limit = String(requestedLimit || limits[interval] || 1000);
       let lastErr = null;
 
-      for (let i = 0; i < endpoints.length; i++) {
+      for (let i = 0; i < uniqueEndpoints.length; i++) {
+        const ep = uniqueEndpoints[i];
         try {
           let targetUrl;
-          if (endpoints[i].includes("allorigins")) {
+          if (ep.includes("allorigins")) {
             let directUrl = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
             if (endTime) directUrl += `&endTime=${endTime}`;
             targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`;
           } else {
-            const url = new URL(endpoints[i]);
+            const url = new URL(ep, window.location.href);
             url.searchParams.set("symbol", symbol);
             url.searchParams.set("interval", interval);
             url.searchParams.set("limit", limit);
@@ -2439,13 +2453,15 @@
           }
 
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 6000);
+          const timeoutMs = ep.includes("allorigins") ? 4000 : 2500;
+          const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
           const response = await fetch(targetUrl, { signal: controller.signal });
           clearTimeout(timeoutId);
 
           if (!response.ok) throw new Error(`${symbol} returned ${response.status}`);
           const data = await response.json();
-          if (Array.isArray(data)) {
+          if (Array.isArray(data) && data.length) {
+            workingKlineEndpoint = ep;
             return data.map((item) => ({ time: Number(item[0]), close: Number(item[4]) }));
           }
         } catch (err) {
@@ -5240,30 +5256,23 @@
         socket = null;
       }
       fullHistoryLoaded = false;
-      const historyProgress = {};
-      const reportHistoryProgress = ({ symbol, bars, earliest }) => {
-        historyProgress[symbol] = { bars, earliest };
-        const details = Object.entries(historyProgress)
-          .map(([name, progress]) => `${name}: ${progress.bars.toLocaleString()} bars`)
-          .join(" | ");
-        const oldest = Math.min(...Object.values(historyProgress).map((progress) => progress.earliest));
-        $("status").textContent = `Loading full history ${details} | oldest ${formatTime(oldest, interval)} UTC`;
-      };
-      $("status").textContent = `Loading full Binance Futures history for ${assetConfig.shortName}...`;
+      $("status").textContent = `Connecting to ${assetConfig.shortName}...`;
       const isKo = window.currentLang === "ko";
       $("position").textContent = isKo ? "동기화 중..." : "Connecting...";
       $("position").className = "pill";
       $("position").style.cursor = "default";
       $("position").onclick = null;
       try {
+        // Fast Initial Load: Fetch latest 1,000 bars for instant chart render (<300ms)
+        const initialLimit = 1000;
         let adr = [], korean = [];
         if (assetConfig.symbolB) {
           [adr, korean] = await Promise.all([
-            fetchFullKlineHistory(assetConfig.symbolA, interval, reportHistoryProgress),
-            fetchFullKlineHistory(assetConfig.symbolB, interval, reportHistoryProgress)
+            fetchKlines(assetConfig.symbolA, interval, null, initialLimit),
+            fetchKlines(assetConfig.symbolB, interval, null, initialLimit)
           ]);
         } else {
-          adr = await fetchFullKlineHistory(assetConfig.symbolA, interval, reportHistoryProgress);
+          adr = await fetchKlines(assetConfig.symbolA, interval, null, initialLimit);
           korean = adr;
         }
         if (refreshId !== refreshVersion) return;
@@ -5273,21 +5282,23 @@
         if (!rows.length) throw new Error(`No data returned for ${assetConfig.shortName}`);
         cachedRows = rows;
         cachedInterval = interval;
-        fullHistoryLoaded = true;
         window.viewEndIndex = null;
         window.viewEndFloat = null;
+        window.visibleBars = Math.min(360, rows.length);
         draw(rows, interval);
         drawHistogram(rows);
         drawWaveSpectrum(rows);
         drawAllocation(rows, interval);
         updateStats(rows);
-        const latest = rows.at(-1);
-        window.visibleBars = rows.length;
+        connectWebSocket(interval);
+
         const firstTime = rows[0]?.time;
         const lastTime = rows.at(-1)?.time;
         const spanDays = firstTime && lastTime ? (lastTime - firstTime) / 86400000 : 0;
-        $("status").textContent = `Loaded full history: ${rows.length.toLocaleString()} bars over ${spanDays.toFixed(1)} days for ${assetConfig.shortName}; opening WebSocket...`;
-        connectWebSocket(interval);
+        $("status").textContent = `WebSocket live: ${rows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d) | ${formatTime(lastTime, interval)} UTC`;
+
+        // Background History Backfill: Asynchronously fetch older pages without blocking UI
+        backfillHistoryInBackground(assetConfig, interval, refreshId);
       } catch (error) {
         if (refreshId !== refreshVersion) return;
         console.error("Dashboard refresh failed", error);
@@ -5298,6 +5309,76 @@
         $("position").onclick = () => refresh();
       } finally {
         if (refreshId === refreshVersion && assetSelect) assetSelect.removeAttribute("aria-busy");
+      }
+    }
+
+    async function backfillHistoryInBackground(assetConfig, interval, refreshId) {
+      try {
+        let pagesLoaded = 0;
+        const maxPages = 6;
+        while (pagesLoaded < maxPages) {
+          if (refreshId !== refreshVersion) return;
+          const earliestTime = Math.min(
+            cachedAdr[0]?.time || Infinity,
+            (assetConfig.symbolB ? cachedKorean[0]?.time : Infinity) || Infinity
+          );
+          if (!Number.isFinite(earliestTime)) break;
+          const endTime = earliestTime - 1;
+
+          let olderAdr = [], olderKorean = [];
+          if (assetConfig.symbolB) {
+            [olderAdr, olderKorean] = await Promise.all([
+              fetchKlines(assetConfig.symbolA, interval, endTime, 1000),
+              fetchKlines(assetConfig.symbolB, interval, endTime, 1000)
+            ]);
+          } else {
+            olderAdr = await fetchKlines(assetConfig.symbolA, interval, endTime, 1000);
+            olderKorean = olderAdr;
+          }
+
+          if (!olderAdr.length || (assetConfig.symbolB && !olderKorean.length)) break;
+
+          const beforeCount = cachedRows.length;
+          const adrByTime = new Map(cachedAdr.map((r) => [r.time, r]));
+          olderAdr.concat(cachedAdr).forEach((r) => adrByTime.set(r.time, r));
+          cachedAdr = Array.from(adrByTime.values()).sort((a, b) => a.time - b.time);
+
+          if (assetConfig.symbolB) {
+            const korByTime = new Map(cachedKorean.map((r) => [r.time, r]));
+            olderKorean.concat(cachedKorean).forEach((r) => korByTime.set(r.time, r));
+            cachedKorean = Array.from(korByTime.values()).sort((a, b) => a.time - b.time);
+          } else {
+            cachedKorean = cachedAdr;
+          }
+
+          pagesLoaded += 1;
+          rebuildFromCache();
+          const added = Math.max(0, cachedRows.length - beforeCount);
+          if (window.viewEndIndex !== null && window.viewEndIndex !== undefined) {
+            window.viewEndIndex += added;
+          }
+          if (window.viewEndFloat !== null && window.viewEndFloat !== undefined) {
+            window.viewEndFloat += added;
+          }
+
+          if (refreshId === refreshVersion) {
+            const firstTime = cachedRows[0]?.time;
+            const lastTime = cachedRows.at(-1)?.time;
+            const spanDays = firstTime && lastTime ? (lastTime - firstTime) / 86400000 : 0;
+            const selected = window.selectedOptimizationCandidate;
+            if (selected) {
+              $("status").textContent = `Selected Candidate: Dev PnL ${signedPct(selected.fullProfit)} | Max DD ${signedPct(selected.maxDd)} | ${cachedRows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d)`;
+            } else {
+              $("status").textContent = `WebSocket live: ${cachedRows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d) | ${formatTime(lastTime, interval)} UTC`;
+            }
+          }
+
+          if (olderAdr.length < 1000) break;
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+        fullHistoryLoaded = true;
+      } catch (e) {
+        console.warn("Background history backfill paused", e);
       }
     }
     let viewRedrawFrame = 0;
