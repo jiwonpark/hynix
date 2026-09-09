@@ -1579,12 +1579,12 @@
           </label>
           <label id="lblMinEdge">
             <span class="controlTitle">Start scaling %</span>
-            <input id="minEdgePct" type="number" min="0" max="10" step="0.05" value="1.5">
+            <input id="minEdgePct" type="number" min="0" max="10" step="0.05" value="0.30">
             <span id="hintMinEdge" class="controlHint">0% size below this edge</span>
           </label>
           <label id="lblFullEdge">
             <span class="controlTitle">Full size at %</span>
-            <input id="fullEdgePct" type="number" min="0.05" max="10" step="0.05" value="3.5">
+            <input id="fullEdgePct" type="number" min="0.05" max="10" step="0.05" value="1.00">
             <span id="hintFullEdge" class="controlHint">100% size at or above</span>
           </label>
           <label id="lblMaxSize">
@@ -1622,10 +1622,10 @@
           <div class="controlGrid optimizableGrid">
             <label><span class="controlTitle">Search profile</span><select id="searchProfile"><option value="robust" selected>Compact robust</option><option value="broad">Broad research</option></select><span class="controlHint">controls trial count</span></label>
             <label><span class="controlTitle">Search leverage cap</span><input id="searchMaxLeverage" type="number" min="1" max="10" step="1" value="4"><span class="controlHint">maximum tested leverage</span></label>
-            <label><span class="controlTitle">Min confidence %</span><input id="minConfidencePct" type="number" min="0" max="100" step="5" value="20"><span class="controlHint">skip weak forecasts</span></label>
+            <label><span class="controlTitle">Min confidence %</span><input id="minConfidencePct" type="number" min="0" max="100" step="5" value="10"><span class="controlHint">skip weak forecasts</span></label>
             <label><span class="controlTitle">Min agreement %</span><input id="minAgreementPct" type="number" min="0" max="100" step="5" value="50"><span class="controlHint">adaptive ensemble only</span></label>
             <label><span class="controlTitle">Volatility cap %</span><input id="regimeVolCapPct" type="number" min="0" max="20" step="0.1" value="2.5"><span class="controlHint">0 disables regime filter</span></label>
-            <label><span class="controlTitle">Rebalance band %</span><input id="rebalanceBandPct" type="number" min="0" max="100" step="1" value="15"><span class="controlHint">ignore small size changes</span></label>
+            <label><span class="controlTitle">Rebalance band %</span><input id="rebalanceBandPct" type="number" min="0" max="100" step="1" value="2"><span class="controlHint">ignore small size changes</span></label>
             <label><span class="controlTitle">Minimum hold bars</span><input id="minHoldBars" type="number" min="0" max="168" step="1" value="3"><span class="controlHint">before signal exit or flip</span></label>
             <label><span class="controlTitle">Holdout %</span><input id="holdoutPct" type="number" min="10" max="40" step="5" value="20"><span class="controlHint">newest data, locked</span></label>
             <label><span class="controlTitle">Walk-forward folds</span><input id="wfFolds" type="number" min="3" max="10" step="1" value="5"><span class="controlHint">chronological OOS folds</span></label>
@@ -2242,8 +2242,8 @@
         ],
         defaults: {
           meanBars: 24,
-          minEdgePct: 0.75,
-          fullEdgePct: 2.50,
+          minEdgePct: 0.30,
+          fullEdgePct: 1.00,
           maxSizePct: 500,
           scaleCurve: 1.5,
           tradeSpeedPct: 50,
@@ -2505,10 +2505,10 @@
       return {
         searchProfile: $("searchProfile")?.value || "robust",
         searchMaxLeverage: Math.max(1, numberValue("searchMaxLeverage", 4)),
-        minConfidencePct: Math.max(0, numberValue("minConfidencePct", 20)),
+        minConfidencePct: Math.max(0, numberValue("minConfidencePct", 10)),
         minAgreementPct: Math.max(0, numberValue("minAgreementPct", 50)),
         regimeVolCapPct: Math.max(0, numberValue("regimeVolCapPct", 2.5)),
-        rebalanceBandPct: Math.max(0, numberValue("rebalanceBandPct", 15)),
+        rebalanceBandPct: Math.max(0, numberValue("rebalanceBandPct", 2)),
         minHoldBars: Math.max(0, Math.floor(numberValue("minHoldBars", 3))),
         holdoutPct: Math.max(10, Math.min(40, numberValue("holdoutPct", 20))),
         wfFolds: Math.max(3, Math.min(10, Math.floor(numberValue("wfFolds", 5)))),
@@ -5520,8 +5520,8 @@
       const means = broadSearch
         ? (fullSpanGrid ? [16, 20, 24, 32, 48, 64, 96] : [12, 16, 20, 24, 32, 48, 64, 96, 128])
         : (modelMeans[predictionEngine] || [16, 24, 48, 96]);
-      const minEdges = broadSearch ? [0.4, 0.75, 1.0, 1.5] : [0.75, 1.25, 1.75];
-      const fullEdges = broadSearch ? [1.2, 1.8, 2.5, 3.5, 4.5] : [2.0, 3.0, 4.0];
+      const minEdges = broadSearch ? [0.15, 0.25, 0.40, 0.60, 0.80] : [0.20, 0.35, 0.50, 0.75];
+      const fullEdges = broadSearch ? [0.50, 0.80, 1.20, 1.60, 2.20] : [0.60, 0.90, 1.30, 1.80];
       const leverageSteps = broadSearch ? [1, 2, 3, 4, 6, 8, 10] : [1, 2, 4];
       const maxSizes = leverageSteps
         .filter((value) => value <= robustness.searchMaxLeverage)
