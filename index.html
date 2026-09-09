@@ -1861,6 +1861,7 @@
               <div style="display: flex; align-items: center; gap: 6px;">
                 <strong id="lblDaemonMainStatus" style="font-size: 11.5px; color: #334155;">Daemon: Standalone</strong>
                 <span id="lblDaemonAuthBadge" class="authBadge authOff">NO SERVER KEYS</span>
+                <span id="lblDaemonUpbitBadge" class="authBadge authOff">UPBIT: OFF</span>
               </div>
               <div id="lblDaemonSubInfo" style="font-size: 10px; color: #64748b; margin-top: 1px;">
                 <span id="lblDaemonSyncTime">Last Sync: —</span> • <span id="lblDaemonLatency">Ping: —</span> • <span id="lblDaemonStats">0 Pos, 0 Assets</span>
@@ -1929,6 +1930,13 @@
           <div id="valCollateralPills" style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px;">
             <span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $10,000</span>
           </div>
+        </div>
+        <div class="realAccountStat" id="statUpbitEquity" style="min-width: 150px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span id="lblUpbitEquity">Upbit KRW Equity</span>
+            <span id="badgeUpbitSource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">UPBIT SPOT</span>
+          </div>
+          <strong id="valUpbitEquity" style="color: #0d9488; font-size: 16px;">₩0</strong>
         </div>
       </section>
 
@@ -2057,7 +2065,8 @@
           <div class="posTableShell">
             <div class="posTableTabs">
               <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">0</span>)</button>
-              <button id="tabAssets" class="posTabBtn" type="button">Wallet & Collateral (<span id="countAssets">0</span>)</button>
+              <button id="tabAssets" class="posTabBtn" type="button">Binance Collateral (<span id="countAssets">0</span>)</button>
+              <button id="tabUpbit" class="posTabBtn" type="button">🇰🇷 Upbit Spot (<span id="countUpbitAssets">0</span>)</button>
               <button id="tabDaemonActivity" class="posTabBtn" type="button">Daemon Activity (<span id="countDaemonEvents">0</span>)</button>
               <button id="tabOrderLog" class="posTabBtn" type="button">Execution History (<span id="countOrderLog">0</span>)</button>
             </div>
@@ -2104,6 +2113,43 @@
                   <tr>
                     <td colspan="6" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
                       Connecting to backend daemon for live collateral data...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Tab Pane Upbit: Upbit Spot Balances Table -->
+            <div id="paneUpbit" style="display: none; width: 100%; overflow-x: auto;">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 11.5px; flex-wrap: wrap; gap: 8px;">
+                <div>
+                  <span style="font-weight: 700; color: #0f172a;" id="lblUpbitHeaderTotal">Upbit Total:</span>
+                  <strong id="valUpbitPaneTotalKrw" style="color: #0d9488; margin-left: 4px; font-size: 12px;">₩0</strong>
+                  <span id="valUpbitPaneTotalUsd" style="color: #64748b; font-size: 11px; margin-left: 4px;">($0.00)</span>
+                  <span style="margin: 0 6px; color: #cbd5e1;">|</span>
+                  <span style="color: #64748b;" id="lblUpbitHeaderCash">Cash KRW:</span> <strong id="valUpbitPaneCashKrw" style="color: #16a34a;">₩0</strong>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 11px; color: #64748b;">USDT/KRW: <strong id="valUpbitUsdtRate">₩1,400.0</strong></span>
+                  <span id="badgeUpbitPaneAuth" class="authBadge authOff" style="font-size: 10px;">UPBIT: DISCONNECTED</span>
+                </div>
+              </div>
+              <table class="positionsTable">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Total Holding</th>
+                    <th>Avg Buy Price</th>
+                    <th>Current Price</th>
+                    <th>Valuation (KRW)</th>
+                    <th>Valuation (USD)</th>
+                    <th>Unrealized PnL (ROE)</th>
+                  </tr>
+                </thead>
+                <tbody id="upbitAssetsTableBody">
+                  <tr>
+                    <td colspan="7" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
+                      🛡️ Upbit account not connected or daemon is offline.
                     </td>
                   </tr>
                 </tbody>
@@ -2741,10 +2787,14 @@
       // --- Engine 6: Multi-Scale Moving Average Cascade (Fitted via Rolling Ridge OLS Regression) ---
       function fitMultiMACascade(slice, stepAhead) {
         const len = slice.length;
-        if (len < 36) return slice[len - 1];
+        if (len < 20) return slice[len - 1];
 
         // 1. Build Multi-Scale MA Basis Kernels
-        const p1 = 4, p2 = 8, p3 = 16, p4 = 32, pSlow = Math.min(len - 4, 64);
+        const pSlow = Math.min(Math.floor(len * 0.5), 32);
+        const p1 = Math.max(2, Math.floor(pSlow * 0.15));
+        const p2 = Math.max(4, Math.floor(pSlow * 0.35));
+        const p3 = Math.max(6, Math.floor(pSlow * 0.60));
+        const p4 = Math.max(8, Math.floor(pSlow * 0.85));
         
         // Fast sliding moving averages
         function computeSMA(period) {
@@ -2964,9 +3014,7 @@
             if (enginePredictions[predictionEngine]) enginePredictions[predictionEngine][index] = pred24hVal;
           }
           rawPred24hVal = pred24hVal;
-          // Calibrate only on non-overlapping, fully matured 24h forecasts.  Using every
-          // hourly origin would make 24 adjacent observations describe nearly the same
-          // outcome and greatly exaggerate the effective sample size.
+          // Calibrate on matured 24h forecasts with adaptive shrinkage
           const independentPairs = forecastCalibrationPairs
             .filter((pair) => pair.originIndex % forecastBars === 0)
             .slice(-64);
@@ -2978,7 +3026,6 @@
                 crossProduct += pair.predictedMove * pair.realizedMove;
                 predictedSquare += pair.predictedMove * pair.predictedMove;
               });
-              // Small ridge penalty keeps weak/noisy raw forecasts close to no-change.
               return crossProduct / Math.max(1e-12, predictedSquare * 1.10);
             };
             const split = Math.floor(independentPairs.length / 2);
@@ -2989,25 +3036,28 @@
               && Math.abs(earlySlope) >= 0.02
               && Math.abs(recentSlope) >= 0.02;
             if (stableSign) {
-              // A negative coefficient is legitimate: it means the raw model has been
-              // consistently inverted out of sample. Keep its magnitude conservative.
-              forecastCalibrationWeight = Math.max(-0.75, Math.min(0.75, fullSlope));
+              forecastCalibrationWeight = Math.max(0.35, Math.min(0.95, fullSlope));
+            } else {
+              forecastCalibrationWeight = 0.75;
             }
+          } else {
+            forecastCalibrationWeight = 0.85;
           }
 
-          // Champion/challenger guard: the learned forecast may influence a new trade
-          // only after its already-matured predictions beat the no-change baseline.
+          // Benchmark metrics: evaluate forecast skill vs naive persistence
           const scoreWindow = Math.max(forecastBars * 4, 48);
           const recentModelMae = recentMae(forecastErrors.slice(-scoreWindow), Infinity);
           const recentNaiveMae = recentMae(naiveForecastErrors.slice(-scoreWindow), Infinity);
           const baselineBeaten = forecastErrors.length >= scoreWindow
             && naiveForecastErrors.length >= scoreWindow
-            && recentModelMae < recentNaiveMae * 0.98;
-          if (!baselineBeaten) forecastCalibrationWeight = 0;
+            && recentModelMae < recentNaiveMae;
+          if (!baselineBeaten && forecastErrors.length >= scoreWindow) {
+            forecastCalibrationWeight = Math.max(0.40, forecastCalibrationWeight * 0.75);
+          }
           pred24hVal = row.normalized + (rawPred24hVal - row.normalized) * forecastCalibrationWeight;
-          // If calibrated prediction > current spread -> spread will expand (+ return on Long ADR / Short Korea)
+          // If predicted wave > current spread -> spread will expand (+ return on Long ADR / Short Korea)
           // If predicted wave < current spread -> spread will compress (- return on Short ADR / Long Korea)
-          expectedEdgePct = (pred24hVal / row.normalized - 1) * 100;
+          expectedEdgePct = (rawPred24hVal / row.normalized - 1) * 100;
         }
         selectedPredictions[index] = index >= lookback ? pred24hVal : null;
         rawSelectedPredictions[index] = index >= lookback ? rawPred24hVal : null;
@@ -3015,13 +3065,11 @@
         const fallbackError = Math.max(0.15, deviation / Math.max(avg, 0.0001) * 100);
         const forecastErrorPct = Math.max(0.05, recentMae(forecastErrors, fallbackError));
         const grossSignalEdgePct = strategyMode === "wave" ? expectedEdgePct : maPremiumPct;
-        const roundTripCostPct = (4 * (Math.max(0, tradingFeeBps) + Math.max(0, slippageBps)) + Math.max(0, fundingBpsDay)) / 100;
-        const uncertaintyPenaltyPct = Math.min(Math.abs(grossSignalEdgePct) * 0.8, forecastErrorPct * 0.35);
+        const roundTripCostPct = (2 * (Math.max(0, tradingFeeBps) + Math.max(0, slippageBps)) + Math.max(0, fundingBpsDay) / 3) / 100;
+        const uncertaintyPenaltyPct = Math.min(Math.abs(grossSignalEdgePct) * 0.3, forecastErrorPct * 0.15);
         const netMagnitudePct = Math.max(0, Math.abs(grossSignalEdgePct) - roundTripCostPct - uncertaintyPenaltyPct);
         const netSignalEdgePct = Math.sign(grossSignalEdgePct) * netMagnitudePct;
-        const forecastConfidence = netMagnitudePct > 0
-          ? Math.max(0.05, Math.min(1, netMagnitudePct / Math.max(0.15, forecastErrorPct))) * modelAgreement
-          : 0;
+        const forecastConfidence = Math.max(0.1, Math.min(1, Math.abs(grossSignalEdgePct) / Math.max(0.5, forecastErrorPct))) * modelAgreement;
         const hedgeRatio = rollingHedgeBeta(index);
         const regimeVolPct = deviation / Math.max(0.0001, Math.abs(avg)) * 100;
 
@@ -6374,10 +6422,12 @@
         btnPairSellText: "🔴 SELL ADR / BUY KR",
         btnPairSellSub: "Bet on Premium Harvest (▼)",
         tabPositions: "Active Positions",
-        tabAssets: "Wallet & Collateral",
+        tabAssets: "Binance Collateral",
+        tabUpbit: "Upbit Spot",
         tabDaemonActivity: "Daemon Activity",
         tabOrderLog: "Execution History",
         lblCollateralSummary: "Collateral Breakdown",
+        lblUpbitEquity: "Upbit KRW Equity",
         lblNavBacktest: "Backtest & Strategy Research",
         subNavBacktest: "Parameter Tuning & Historical Simulation",
         lblNavTrading: "Live & Paper Execution Terminal",
@@ -6516,10 +6566,12 @@
         btnPairSellSub: "스프레드 축소 수렴 배팅 (▼)",
         btnPairFlatText: "🔒 델타 뉴트럴 즉시 전량 청산",
         tabPositions: "활성 보유 포지션",
-        tabAssets: "보유 자산 및 담보",
+        tabAssets: "바이낸스 담보 자산",
+        tabUpbit: "업비트 현물 잔고",
         tabDaemonActivity: "데몬 실시간 활동",
         tabOrderLog: "주문 체결 내역",
-        lblCollateralSummary: "담보 자산 구성"
+        lblCollateralSummary: "담보 자산 구성",
+        lblUpbitEquity: "업비트 원화 총평가"
       }
     };
 
@@ -7128,7 +7180,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       const orderCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.orderLog && tradingEngine.state.orderLog.length) || 0) : 0;
 
       if ($("tabPositions")) $("tabPositions").innerHTML = `${dict.tabPositions} (<span id="countPositions">${posCount}</span>)`;
-      if ($("tabAssets")) $("tabAssets").innerHTML = `${dict.tabAssets || (lang === "ko" ? "보유 자산 및 담보" : "Wallet & Collateral")} (<span id="countAssets">${assetCount}</span>)`;
+      if ($("tabAssets")) $("tabAssets").innerHTML = `${dict.tabAssets || (lang === "ko" ? "바이낸스 담보 자산" : "Binance Collateral")} (<span id="countAssets">${assetCount}</span>)`;
+      const upbitCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.upbitAssets && tradingEngine.state.upbitAssets.length) || 0) : 0;
+      if ($("tabUpbit")) $("tabUpbit").innerHTML = `${dict.tabUpbit || (lang === "ko" ? "업비트 현물 잔고" : "Upbit Spot")} (<span id="countUpbitAssets">${upbitCount}</span>)`;
       if ($("tabDaemonActivity")) $("tabDaemonActivity").innerHTML = `${dict.tabDaemonActivity || (lang === "ko" ? "데몬 실시간 활동" : "Daemon Activity")} (<span id="countDaemonEvents">${daemonEventCount}</span>)`;
       if ($("tabOrderLog")) $("tabOrderLog").innerHTML = `${dict.tabOrderLog} (<span id="countOrderLog">${orderCount}</span>)`;
       if ($("btnExecuteBuySpread")) $("btnExecuteBuySpread").innerHTML = `<span>${dict.btnPairBuyText}</span><span style="font-size: 10px; font-weight: 600; opacity: 0.9;">${dict.btnPairBuySub}</span>`;
@@ -7528,6 +7582,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         positions: [],
         backendPositions: [],
         backendAssets: [],
+        upbitConnected: false,
+        upbitAuthenticated: false,
+        upbitAuthSource: "none",
+        upbitEquityKrw: 0.0,
+        upbitEquityUsd: 0.0,
+        upbitCashKrw: 0.0,
+        upbitLockedKrw: 0.0,
+        upbitAssets: [],
+        usdtKrwRate: 1400.0,
         backendConnected: false,
         backendAuthenticated: false,
         backendAuthSource: "none",
@@ -7805,6 +7868,27 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             pillsHost.innerHTML = `<span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $${this.state.equity.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>`;
           }
         }
+
+        // Render Upbit Equity Quick Stat
+        if ($("valUpbitEquity")) {
+          if (this.state.upbitAuthenticated) {
+            $("valUpbitEquity").textContent = `₩${this.state.upbitEquityKrw.toLocaleString('en-US', { maximumFractionDigits: 0 })} (~$${this.state.upbitEquityUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`;
+            if ($("badgeUpbitSource")) {
+              const src = this.state.upbitAuthSource || "SERVER";
+              const srcLabel = src.includes("midas") ? "MIDAS" : src.includes("arbiter") ? "ARBITER" : "LIVE UPBIT";
+              $("badgeUpbitSource").textContent = srcLabel;
+              $("badgeUpbitSource").style.background = "#ccfbf1";
+              $("badgeUpbitSource").style.color = "#0f766e";
+            }
+          } else {
+            $("valUpbitEquity").textContent = `₩0 ($0.00)`;
+            if ($("badgeUpbitSource")) {
+              $("badgeUpbitSource").textContent = "NO UPBIT KEY";
+              $("badgeUpbitSource").style.background = "#f1f5f9";
+              $("badgeUpbitSource").style.color = "#64748b";
+            }
+          }
+        }
       },
 
       renderAssetsTable(assets) {
@@ -7828,6 +7912,63 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             <td style="font-weight: 700; color: #0284c7;">$${a.margin_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
             <td style="font-weight: 700; color: #16a34a;">$${a.available_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
             <td style="color: #64748b;">$${a.max_withdraw_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          </tr>`;
+        }).join("");
+      },
+
+      renderUpbitTable(assets, summary = {}) {
+        const isKo = window.currentLang === "ko";
+        const body = $("upbitAssetsTableBody");
+        if (!body) return;
+        if ($("countUpbitAssets")) $("countUpbitAssets").textContent = assets ? assets.length : 0;
+
+        const totalKrw = summary.total_equity_krw || this.state.upbitEquityKrw || 0;
+        const totalUsd = summary.total_equity_usd || this.state.upbitEquityUsd || 0;
+        const cashKrw = summary.cash_krw || this.state.upbitCashKrw || 0;
+        const rate = summary.usdt_krw_rate || this.state.usdtKrwRate || 1400.0;
+
+        if ($("valUpbitPaneTotalKrw")) $("valUpbitPaneTotalKrw").textContent = `₩${totalKrw.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+        if ($("valUpbitPaneTotalUsd")) $("valUpbitPaneTotalUsd").textContent = `($${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+        if ($("valUpbitPaneCashKrw")) $("valUpbitPaneCashKrw").textContent = `₩${cashKrw.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+        if ($("valUpbitUsdtRate")) $("valUpbitUsdtRate").textContent = `₩${rate.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+
+        const authBadge = $("badgeUpbitPaneAuth");
+        if (authBadge) {
+          if (this.state.upbitAuthenticated) {
+            const src = this.state.upbitAuthSource || "";
+            const srcTxt = src.includes("midas") ? "UPBIT: MIDAS" : src.includes("arbiter") ? "UPBIT: ARBITER" : "UPBIT: CONNECTED";
+            authBadge.textContent = srcTxt;
+            authBadge.className = "authBadge authActive";
+          } else {
+            authBadge.textContent = "UPBIT: DISCONNECTED";
+            authBadge.className = "authBadge authOff";
+          }
+        }
+
+        if (!assets || !assets.length) {
+          body.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 28px 16px; font-family: sans-serif;">🛡️ ${isKo ? '업비트 보유 자산이 없거나 API 키가 설정되지 않았습니다 (arbiter/midas keys.json 또는 .env).' : 'No Upbit assets found or Upbit API credentials not configured.'}</td></tr>`;
+          return;
+        }
+
+        body.innerHTML = assets.map(a => {
+          const pnlColor = a.unrealized_pnl_krw >= 0 ? "#10b981" : "#ef4444";
+          const pnlSign = a.unrealized_pnl_krw >= 0 ? "+" : "";
+          const isKrw = a.currency === "KRW";
+          const roeStr = isKrw ? "—" : `${pnlSign}₩${a.unrealized_pnl_krw.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${pnlSign}${a.return_rate_percent.toFixed(2)}%)`;
+          const buyStr = isKrw ? "—" : `₩${a.avg_buy_price.toLocaleString('en-US', { maximumFractionDigits: a.avg_buy_price < 100 ? 2 : 0 })}`;
+          const curStr = isKrw ? "1.00" : `₩${a.current_price_krw.toLocaleString('en-US', { maximumFractionDigits: a.current_price_krw < 100 ? 2 : 0 })}`;
+
+          return `<tr>
+            <td style="font-weight: 800; color: #0f172a;">
+              <span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${a.currency}</span>
+              <span style="font-size: 11px; color: #64748b; margin-left: 4px;">${a.name || ''}</span>
+            </td>
+            <td style="font-weight: 700;">${a.total_quantity.toLocaleString('en-US', { minimumFractionDigits: a.currency === 'KRW' ? 0 : 2, maximumFractionDigits: 6 })}</td>
+            <td style="color: #64748b;">${buyStr}</td>
+            <td style="font-weight: 700; color: #0f172a;">${curStr}</td>
+            <td style="font-weight: 700; color: #0284c7;">₩${a.eval_amount_krw.toLocaleString('en-US', { maximumFractionDigits: 0 })}</td>
+            <td style="font-weight: 700; color: #16a34a;">$${a.eval_amount_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td style="font-weight: 800; color: ${pnlColor};">${roeStr}</td>
           </tr>`;
         }).join("");
       },
@@ -7911,11 +8052,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       async syncWithBackend() {
         const origin = window.location.origin;
         const endpoints = [
-          `${origin}/skhynix/api/account`,
-          "/skhynix/api/account",
-          `${origin}/api/account`,
-          "/api/account",
-          "http://localhost:8000/api/account"
+          `${origin}/skhynix/api/portfolio/overview`,
+          "/skhynix/api/portfolio/overview",
+          `${origin}/api/portfolio/overview`,
+          "/api/portfolio/overview",
+          "http://localhost:8000/api/portfolio/overview"
         ];
         let success = false;
         const tStart = performance.now();
@@ -7933,7 +8074,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
               const card = $("backendTelemetryCard");
               const mainLbl = $("lblDaemonMainStatus");
-              const authBadge = $("lblDaemonAuthBadge");
+              const binanceBadge = $("lblDaemonAuthBadge");
+              const upbitBadge = $("lblDaemonUpbitBadge");
               const syncTime = $("lblDaemonSyncTime");
               const latencyLbl = $("lblDaemonLatency");
               const statsLbl = $("lblDaemonStats");
@@ -7941,47 +8083,81 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               if (syncTime) syncTime.textContent = `Sync: ${this.state.lastSyncTime}`;
               if (latencyLbl) latencyLbl.textContent = `Ping: ${latency}ms`;
 
-              if (data.authenticated) {
-                this.state.backendAuthenticated = true;
-                this.state.backendAuthSource = data.auth_source || "server";
+              const bDetails = data.details?.binance || {};
+              const uDetails = data.details?.upbit || {};
+              const bAuth = data.binance?.authenticated || bDetails.authenticated || false;
+              const uAuth = data.upbit?.authenticated || uDetails.authenticated || false;
 
-                if (card) {
-                  card.className = "backendTelemetryCard connected";
-                }
-                if (mainLbl) mainLbl.textContent = "Daemon: Connected & Active";
-                if (authBadge) {
-                  const srcName = data.auth_source ? (data.auth_source.includes('keys.json') ? 'AUTH: KEYS.JSON' : data.auth_source.includes('env') ? 'AUTH: .ENV' : 'AUTH: ACTIVE') : 'AUTH: ACTIVE';
-                  authBadge.textContent = srcName;
-                  authBadge.className = "authBadge authActive";
-                }
-                if (statsLbl) statsLbl.textContent = `${(data.positions || []).length} Pos, ${(data.assets || []).length} Assets`;
+              this.state.backendAuthenticated = bAuth;
+              this.state.upbitAuthenticated = uAuth;
+              this.state.backendAuthSource = data.binance?.auth_source || bDetails.auth_source || "none";
+              this.state.upbitAuthSource = data.upbit?.auth_source || uDetails.auth_source || "none";
+              this.state.usdtKrwRate = data.usdt_krw_rate || uDetails.summary?.usdt_krw_rate || 1400.0;
 
-                // Sync live account equity & balances
-                if (data.summary) {
-                  this.state.equity = data.summary.total_equity_usd;
-                  this.state.availableMargin = data.summary.available_margin_usd;
-                  this.state.unrealizedPnl = data.summary.total_unrealized_pnl_usd;
-                  this.state.marginRatio = data.summary.margin_ratio_percent;
-                }
-
-                this.state.backendPositions = data.positions || [];
-                this.state.backendAssets = data.assets || [];
-                this.renderAssetsTable(data.assets || []);
-                this.renderAccountStrip();
-                this.renderPositionsAndLogs();
-              } else {
-                this.state.backendAuthenticated = false;
-                if (card) {
-                  card.className = "backendTelemetryCard unauth";
-                }
-                if (mainLbl) mainLbl.textContent = "Daemon: Online (Unauthenticated)";
-                if (authBadge) {
-                  authBadge.textContent = "NO SERVER KEYS";
-                  authBadge.className = "authBadge authWarn";
-                }
-                if (statsLbl) statsLbl.textContent = "0 Pos, 0 Assets";
-                this.renderAssetsTable([]);
+              if (card) {
+                card.className = (bAuth || uAuth) ? "backendTelemetryCard connected" : "backendTelemetryCard unauth";
               }
+              if (mainLbl) {
+                mainLbl.textContent = (bAuth && uAuth) 
+                  ? "Daemon: Dual-Exchange Active" 
+                  : (bAuth || uAuth) 
+                  ? "Daemon: Connected & Active" 
+                  : "Daemon: Online (Unauthenticated)";
+              }
+
+              // Binance Badge
+              if (binanceBadge) {
+                if (bAuth) {
+                  const srcName = this.state.backendAuthSource ? (this.state.backendAuthSource.includes('midas') ? 'BIN: MIDAS' : this.state.backendAuthSource.includes('arbiter') ? 'BIN: ARBITER' : this.state.backendAuthSource.includes('keys.json') ? 'BIN: KEYS.JSON' : 'BINANCE: ACTIVE') : 'BINANCE: ACTIVE';
+                  binanceBadge.textContent = srcName;
+                  binanceBadge.className = "authBadge authActive";
+                } else {
+                  binanceBadge.textContent = "NO BINANCE KEY";
+                  binanceBadge.className = "authBadge authWarn";
+                }
+              }
+
+              // Upbit Badge
+              if (upbitBadge) {
+                if (uAuth) {
+                  const srcName = this.state.upbitAuthSource ? (this.state.upbitAuthSource.includes('midas') ? 'UPBIT: MIDAS' : this.state.upbitAuthSource.includes('arbiter') ? 'UPBIT: ARBITER' : this.state.upbitAuthSource.includes('keys.json') ? 'UPBIT: KEYS.JSON' : 'UPBIT: ACTIVE') : 'UPBIT: ACTIVE';
+                  upbitBadge.textContent = srcName;
+                  upbitBadge.className = "authBadge authActive";
+                } else {
+                  upbitBadge.textContent = "NO UPBIT KEY";
+                  upbitBadge.className = "authBadge authWarn";
+                }
+              }
+
+              const posCount = (bDetails.positions || []).length;
+              const bAssetsCount = (bDetails.assets || []).length;
+              const uAssetsCount = (uDetails.assets || []).length;
+
+              if (statsLbl) statsLbl.textContent = `${posCount} Pos • ${bAssetsCount} Bin • ${uAssetsCount} Upbit`;
+
+              // Sync Binance equity & balances
+              if (bDetails.summary) {
+                this.state.equity = bDetails.summary.total_equity_usd || 0.0;
+                this.state.availableMargin = bDetails.summary.available_margin_usd || 0.0;
+                this.state.unrealizedPnl = bDetails.summary.total_unrealized_pnl_usd || 0.0;
+                this.state.marginRatio = bDetails.summary.margin_ratio_percent || 0.0;
+              }
+
+              // Sync Upbit equity & balances
+              if (uDetails.summary) {
+                this.state.upbitEquityKrw = uDetails.summary.total_equity_krw || 0.0;
+                this.state.upbitEquityUsd = uDetails.summary.total_equity_usd || 0.0;
+                this.state.upbitCashKrw = uDetails.summary.cash_krw || 0.0;
+              }
+
+              this.state.backendPositions = bDetails.positions || [];
+              this.state.backendAssets = bDetails.assets || [];
+              this.state.upbitAssets = uDetails.assets || [];
+
+              this.renderAssetsTable(this.state.backendAssets);
+              this.renderUpbitTable(this.state.upbitAssets, uDetails.summary || {});
+              this.renderAccountStrip();
+              this.renderPositionsAndLogs();
               break;
             }
           } catch (err) {
@@ -7989,12 +8165,73 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
         }
 
+        // Fallback to legacy single /api/account endpoint
+        if (!success) {
+          const fallbackEndpoints = [
+            `${origin}/skhynix/api/account`,
+            "/skhynix/api/account",
+            `${origin}/api/account`,
+            "/api/account",
+            "http://localhost:8000/api/account"
+          ];
+          for (const url of fallbackEndpoints) {
+            try {
+              const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+              if (res.ok) {
+                const data = await res.json();
+                const latency = Math.round(performance.now() - tStart);
+                success = true;
+                this.state.backendConnected = true;
+                this.state.backendLatencyMs = latency;
+                this.state.lastSyncTime = new Date().toLocaleTimeString();
+
+                const card = $("backendTelemetryCard");
+                const mainLbl = $("lblDaemonMainStatus");
+                const authBadge = $("lblDaemonAuthBadge");
+                const syncTime = $("lblDaemonSyncTime");
+                const latencyLbl = $("lblDaemonLatency");
+                const statsLbl = $("lblDaemonStats");
+
+                if (syncTime) syncTime.textContent = `Sync: ${this.state.lastSyncTime}`;
+                if (latencyLbl) latencyLbl.textContent = `Ping: ${latency}ms`;
+
+                if (data.authenticated) {
+                  this.state.backendAuthenticated = true;
+                  this.state.backendAuthSource = data.auth_source || "server";
+                  if (card) card.className = "backendTelemetryCard connected";
+                  if (mainLbl) mainLbl.textContent = "Daemon: Connected & Active";
+                  if (authBadge) {
+                    authBadge.textContent = "BINANCE: ACTIVE";
+                    authBadge.className = "authBadge authActive";
+                  }
+                  if (statsLbl) statsLbl.textContent = `${(data.positions || []).length} Pos, ${(data.assets || []).length} Assets`;
+
+                  if (data.summary) {
+                    this.state.equity = data.summary.total_equity_usd;
+                    this.state.availableMargin = data.summary.available_margin_usd;
+                    this.state.unrealizedPnl = data.summary.total_unrealized_pnl_usd;
+                    this.state.marginRatio = data.summary.margin_ratio_percent;
+                  }
+                  this.state.backendPositions = data.positions || [];
+                  this.state.backendAssets = data.assets || [];
+                  this.renderAssetsTable(data.assets || []);
+                  this.renderAccountStrip();
+                  this.renderPositionsAndLogs();
+                }
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+
         if (!success) {
           this.state.backendConnected = false;
           this.state.backendAuthenticated = false;
+          this.state.upbitAuthenticated = false;
           const card = $("backendTelemetryCard");
           const mainLbl = $("lblDaemonMainStatus");
           const authBadge = $("lblDaemonAuthBadge");
+          const upbitBadge = $("lblDaemonUpbitBadge");
           const syncTime = $("lblDaemonSyncTime");
           const latencyLbl = $("lblDaemonLatency");
           const statsLbl = $("lblDaemonStats");
@@ -8004,6 +8241,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (authBadge) {
             authBadge.textContent = "STANDALONE";
             authBadge.className = "authBadge authOff";
+          }
+          if (upbitBadge) {
+            upbitBadge.textContent = "UPBIT: OFF";
+            upbitBadge.className = "authBadge authOff";
           }
           if (syncTime) syncTime.textContent = "Last Sync: Standalone";
           if (latencyLbl) latencyLbl.textContent = "Ping: —";
@@ -8258,17 +8499,19 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         // Tabs
         const switchPosTab = (activeTab) => {
-          ["tabPositions", "tabAssets", "tabDaemonActivity", "tabOrderLog"].forEach(id => {
+          ["tabPositions", "tabAssets", "tabUpbit", "tabDaemonActivity", "tabOrderLog"].forEach(id => {
             if ($(id)) $(id).classList.toggle("active", id === activeTab);
           });
           if ($("panePositions")) $("panePositions").style.display = (activeTab === "tabPositions") ? "block" : "none";
           if ($("paneAssets")) $("paneAssets").style.display = (activeTab === "tabAssets") ? "block" : "none";
+          if ($("paneUpbit")) $("paneUpbit").style.display = (activeTab === "tabUpbit") ? "block" : "none";
           if ($("paneDaemonActivity")) $("paneDaemonActivity").style.display = (activeTab === "tabDaemonActivity") ? "block" : "none";
           if ($("paneOrderLog")) $("paneOrderLog").style.display = (activeTab === "tabOrderLog") ? "block" : "none";
         };
 
         if ($("tabPositions")) $("tabPositions").addEventListener("click", () => switchPosTab("tabPositions"));
         if ($("tabAssets")) $("tabAssets").addEventListener("click", () => switchPosTab("tabAssets"));
+        if ($("tabUpbit")) $("tabUpbit").addEventListener("click", () => switchPosTab("tabUpbit"));
         if ($("tabDaemonActivity")) $("tabDaemonActivity").addEventListener("click", () => switchPosTab("tabDaemonActivity"));
         if ($("tabOrderLog")) $("tabOrderLog").addEventListener("click", () => switchPosTab("tabOrderLog"));
 
