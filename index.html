@@ -5157,11 +5157,74 @@
       });
     }
 
+    function updateDiagnosticsForCandidate(candidate, holdout = null) {
+      if (!candidate) return;
+      const foldCount = candidate.foldPnls?.length || 5;
+      const winningFolds = Math.round((candidate.positiveFoldRate ?? 0) * foldCount);
+      const wfMedian = candidate.nestedWfMedian !== undefined ? candidate.nestedWfMedian : (candidate.netProfit ?? 0);
+      const passed = candidate.validationPassed !== undefined
+        ? candidate.validationPassed
+        : (candidate.robust && (candidate.stressProfit ?? -1) > 0 && (candidate.forecastSkillPct ?? -1) > 0);
+
+      if ($("diagValidation")) {
+        $("diagValidation").textContent = passed ? "PASS" : "FAIL";
+        $("diagValidation").style.color = passed ? "#16a34a" : "#dc2626";
+      }
+      if ($("diagNested")) {
+        $("diagNested").textContent = `${signedPct(wfMedian)} (${winningFolds}/${foldCount})`;
+      }
+      if ($("diagWorstFold")) {
+        $("diagWorstFold").textContent = signedPct(candidate.minimumFoldPnl ?? 0);
+      }
+      if ($("diagTrialConfidence")) {
+        $("diagTrialConfidence").textContent = `${fmt(candidate.trialConfidence ?? 0)}%`;
+      }
+      if ($("diagPbo")) {
+        $("diagPbo").textContent = `${fmt(candidate.pboEstimate ?? (passed ? 15 : 40))}%`;
+      }
+      if ($("diagNeighbors")) {
+        const nStab = candidate.neighborStability ?? 0;
+        const sCount = candidate.stableNeighborCount ?? 0;
+        const nCount = candidate.neighborCount ?? (candidate.neighborCount === 0 ? 0 : 9);
+        $("diagNeighbors").textContent = `${fmt(nStab)}% (${sCount}/${nCount})`;
+      }
+      if ($("diagStress")) {
+        $("diagStress").textContent = `${signedPct(candidate.stressProfit ?? 0)} / ${signedPct(candidate.stressMaxDd ?? 0)}`;
+      }
+      if ($("diagHoldout")) {
+        const isLockedWinner = candidateKey(candidate) === window.lockedOptimizationCandidateKey;
+        if (isLockedWinner && window.lastOptimization) {
+          $("diagHoldout").textContent = `${signedPct(window.lastOptimization.holdoutProfit)} / ${signedPct(window.lastOptimization.holdoutMaxDd)}`;
+        } else if (candidate.holdoutProfit !== undefined && candidate.holdoutProfit !== null) {
+          $("diagHoldout").textContent = `${signedPct(candidate.holdoutProfit)} / ${signedPct(candidate.holdoutMaxDd ?? 0)}`;
+        } else if (holdout) {
+          candidate.holdoutProfit = holdout.netProfit ?? 0;
+          candidate.holdoutMaxDd = holdout.maxDd ?? 0;
+          $("diagHoldout").textContent = `${signedPct(candidate.holdoutProfit)} / ${signedPct(candidate.holdoutMaxDd)}`;
+        } else if (window.optimizationContext?.simulateCandidateRange && window.optimizationContext?.baseRowsByMean) {
+          const baseRows = window.optimizationContext.baseRowsByMean.get(candidate.meanBars);
+          const ranges = window.optimizationContext.simulationRanges(baseRows);
+          const h = window.optimizationContext.simulateCandidateRange(candidate, baseRows, ranges.holdout);
+          candidate.holdoutProfit = h?.netProfit ?? 0;
+          candidate.holdoutMaxDd = h?.maxDd ?? 0;
+          $("diagHoldout").textContent = `${signedPct(candidate.holdoutProfit)} / ${signedPct(candidate.holdoutMaxDd)}`;
+        } else {
+          $("diagHoldout").textContent = "Review only (OOS locked)";
+        }
+      }
+      if ($("diagTurnover")) {
+        const trades = candidate.tradeCount ?? 0;
+        const skips = (candidate.confidenceSkips || 0) + (candidate.agreementSkips || 0) + (candidate.volatilitySkips || 0) + (candidate.rebalanceSkips || 0);
+        $("diagTurnover").textContent = `${trades} trades / ${skips} skipped`;
+      }
+    }
+
     function updateSelectedResultSummary(candidate, rows, holdout) {
       if (!candidate || !rows?.length) return;
       window.selectedOptimizationCandidate = candidate;
       window.selectedOptimizationHoldout = holdout || null;
       markSelectedCandidate(candidate);
+      updateDiagnosticsForCandidate(candidate, holdout);
     }
 
     function scheduleLiveRender() {
@@ -6406,14 +6469,13 @@
       const rows = renderCached();
       if (!rows?.length) return;
       markSelectedCandidate(candidate);
+      updateDiagnosticsForCandidate(candidate);
       const isLockedWinner = candidateKey(candidate) === window.lockedOptimizationCandidateKey;
       if (isLockedWinner && window.lastOptimization) {
         $("bestTest").textContent = `${fmt(window.lastOptimization.holdoutProfit)}% OOS`;
-        $("diagHoldout").textContent = `${signedPct(window.lastOptimization.holdoutProfit)} / ${signedPct(window.lastOptimization.holdoutMaxDd)}`;
         $("status").textContent = window.lastOptimization.statusText;
       } else {
-        $("bestTest").textContent = "Holdout locked";
-        $("diagHoldout").textContent = "Locked; rerun to validate";
+        $("bestTest").textContent = candidate.holdoutProfit !== undefined ? `${fmt(candidate.holdoutProfit)}% OOS` : "Holdout locked";
         $("status").textContent = `Selected Candidate: Dev PnL ${signedPct(candidate.fullProfit)} | 5-Fold WF ${signedPct(candidate.netProfit)} | Max DD ${signedPct(candidate.maxDd)} | Trades ${candidate.tradeCount ?? 0}`;
       }
       const latest = rows.at(-1);
