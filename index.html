@@ -1440,9 +1440,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.7.0</span>
+            <span id="deployVersion">v1.7.1</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-09-02 17:13 KST</span>
+            <span id="deployTime">Deployed: 2026-09-09 15:43 KST</span>
           </div>
         </div>
         <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
@@ -1523,7 +1523,7 @@
           <label id="lblEngine">
             <span class="controlTitle">Prediction Engine</span>
             <select id="predictionEngine">
-              <option id="optHMM" value="medallion_hmm" selected>Medallion HMM + Volatility Targeting</option>
+              <option id="optHMM" value="medallion_hmm" selected>Autocorrelation Regime Filter + OU</option>
               <option id="optMultiMA" value="multi_ma">Multi-Scale MA Cascade (Momentum)</option>
               <option id="optOU" value="ou_hybrid">OU + Adaptive Harmonic Hybrid</option>
               <option id="optMultiHorizon" value="multi_horizon">Multi-Horizon Ensemble (6h/12h/24h)</option>
@@ -1882,7 +1882,7 @@
           <div class="deployedStrategyTitleRow">
             <span class="deployedBadge" id="badgeDeployedStrategy">ACTIVE DEPLOYED STRATEGY</span>
             <strong id="valDeployedStrategyName" style="font-size: 13.5px; color: #0f172a;">⚡ SK Hynix Arb (SKHY ADR perp vs Korean-share perp)</strong>
-            <span id="valDeployedEngine" style="font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 700; border: 1px solid #bae6fd;">Medallion HMM + Volatility Targeting</span>
+            <span id="valDeployedEngine" style="font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 700; border: 1px solid #bae6fd;">Autocorrelation Regime Filter + OU</span>
             <span id="valDeployedInterval" style="font-size: 11px; background: #f1f5f9; color: #475569; padding: 2px 7px; border-radius: 4px; font-weight: 700; border: 1px solid #cbd5e1;">15m Candles</span>
           </div>
           <div class="deployedStrategyParams" id="deployedStrategyParamsList">
@@ -2148,7 +2148,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
-      <span>Build: <strong id="footerVersion">v1.7.0</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-02 17:13 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.7.1</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-09 15:43 KST</strong> (AWS EC2)</span></span>
     </footer>
 
   </main>
@@ -2696,7 +2696,7 @@
         return 0.30 * pred6h + 0.30 * pred12h + 0.25 * pred24h + 0.15 * predBurg;
       }
 
-      // --- Engine 5: Medallion Regime-Switching HMM + Volatility Targeting ---
+      // --- Engine 5: Autocorrelation Regime Filter + OU ---
       function fitMedallionHMM(slice, stepAhead) {
         const len = slice.length;
         if (len < 16) return slice[len - 1];
@@ -2864,6 +2864,7 @@
       const rawSelectedPredictions = [];
       const forecastCalibrationPairs = [];
       const forecastErrors = [];
+      const naiveForecastErrors = [];
       const adrReturns = [];
       const koreanReturns = [];
 
@@ -2918,13 +2919,18 @@
         let modelAgreement = 1;
         if (index >= forecastBars) {
           const maturedPrediction = selectedPredictions[index - forecastBars];
+          const maturedOrigin = aligned[index - forecastBars];
           if (Number.isFinite(maturedPrediction)) {
             forecastErrors.push((row.normalized / maturedPrediction - 1) * 100);
+          }
+          if (maturedOrigin?.normalized) {
+            naiveForecastErrors.push((row.normalized / maturedOrigin.normalized - 1) * 100);
           }
           const maturedRawPrediction = rawSelectedPredictions[index - forecastBars];
           const forecastOrigin = aligned[index - forecastBars];
           if (Number.isFinite(maturedRawPrediction) && forecastOrigin?.normalized) {
             forecastCalibrationPairs.push({
+              originIndex: index - forecastBars,
               predictedMove: maturedRawPrediction / forecastOrigin.normalized - 1,
               realizedMove: row.normalized / forecastOrigin.normalized - 1
             });
@@ -2958,16 +2964,46 @@
             if (enginePredictions[predictionEngine]) enginePredictions[predictionEngine][index] = pred24hVal;
           }
           rawPred24hVal = pred24hVal;
-          const calibrationSample = forecastCalibrationPairs.slice(-256);
-          if (calibrationSample.length >= 24) {
-            let crossProduct = 0;
-            let predictedSquare = 0;
-            calibrationSample.forEach((pair) => {
-              crossProduct += pair.predictedMove * pair.realizedMove;
-              predictedSquare += pair.predictedMove * pair.predictedMove;
-            });
-            forecastCalibrationWeight = Math.max(0, Math.min(1, crossProduct / Math.max(1e-12, predictedSquare)));
+          // Calibrate only on non-overlapping, fully matured 24h forecasts.  Using every
+          // hourly origin would make 24 adjacent observations describe nearly the same
+          // outcome and greatly exaggerate the effective sample size.
+          const independentPairs = forecastCalibrationPairs
+            .filter((pair) => pair.originIndex % forecastBars === 0)
+            .slice(-64);
+          if (independentPairs.length >= 20) {
+            const fitSlope = (pairs) => {
+              let crossProduct = 0;
+              let predictedSquare = 0;
+              pairs.forEach((pair) => {
+                crossProduct += pair.predictedMove * pair.realizedMove;
+                predictedSquare += pair.predictedMove * pair.predictedMove;
+              });
+              // Small ridge penalty keeps weak/noisy raw forecasts close to no-change.
+              return crossProduct / Math.max(1e-12, predictedSquare * 1.10);
+            };
+            const split = Math.floor(independentPairs.length / 2);
+            const earlySlope = fitSlope(independentPairs.slice(0, split));
+            const recentSlope = fitSlope(independentPairs.slice(split));
+            const fullSlope = fitSlope(independentPairs);
+            const stableSign = Math.sign(earlySlope) === Math.sign(recentSlope)
+              && Math.abs(earlySlope) >= 0.02
+              && Math.abs(recentSlope) >= 0.02;
+            if (stableSign) {
+              // A negative coefficient is legitimate: it means the raw model has been
+              // consistently inverted out of sample. Keep its magnitude conservative.
+              forecastCalibrationWeight = Math.max(-0.75, Math.min(0.75, fullSlope));
+            }
           }
+
+          // Champion/challenger guard: the learned forecast may influence a new trade
+          // only after its already-matured predictions beat the no-change baseline.
+          const scoreWindow = Math.max(forecastBars * 4, 48);
+          const recentModelMae = recentMae(forecastErrors.slice(-scoreWindow), Infinity);
+          const recentNaiveMae = recentMae(naiveForecastErrors.slice(-scoreWindow), Infinity);
+          const baselineBeaten = forecastErrors.length >= scoreWindow
+            && naiveForecastErrors.length >= scoreWindow
+            && recentModelMae < recentNaiveMae * 0.98;
+          if (!baselineBeaten) forecastCalibrationWeight = 0;
           pred24hVal = row.normalized + (rawPred24hVal - row.normalized) * forecastCalibrationWeight;
           // If calibrated prediction > current spread -> spread will expand (+ return on Long ADR / Short Korea)
           // If predicted wave < current spread -> spread will compress (- return on Short ADR / Long Korea)
@@ -6230,7 +6266,7 @@
         optWave: "Predictive Wave Trading",
         optMa: "MA Mean Reversion",
         lblEngine: "Prediction Engine",
-        optHMM: "Medallion HMM + Volatility Targeting",
+        optHMM: "Autocorrelation Regime Filter + OU",
         optMultiMA: "Multi-Scale MA Cascade (Fast/Med/Slow Momentum)",
         optOU: "OU + Adaptive Harmonic Hybrid",
         optMultiHorizon: "Multi-Horizon Ensemble (6h/12h/24h)",
@@ -6317,8 +6353,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-09-02 17:13 KST",
-        footerDeploy: "Deployed: <strong>2026-09-02 17:13 KST</strong> (AWS EC2)",
+        deployTime: "Deployed: 2026-09-09 15:43 KST",
+        footerDeploy: "Deployed: <strong>2026-09-09 15:43 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click Pair Execution Terminal & Live Orders",
         lblExecutionSlippage: "Slippage Guard: <strong>5 BPS</strong>",
         btnResetPaper: "↺ Reset $10k",
@@ -6371,7 +6407,7 @@
         optWave: "예측 파동 매매 (Wave Trading)",
         optMa: "단순 이평 평균회귀 (MA Reversion)",
         lblEngine: "파동 예측 엔진",
-        optHMM: "메달리온 HMM + 변동성 타겟팅",
+        optHMM: "자기상관 국면 필터 + OU",
         optMultiMA: "다중 스케일 MA 캐스케이드 (단/중/장기 모멘텀)",
         optOU: "OU 탄성 미분방정식 + 하모닉 하이브리드",
         optMultiHorizon: "다중 시계열 앙상블 (6h/12h/24h)",
@@ -6458,8 +6494,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-09-02 17:13 KST",
-        footerDeploy: "배포 일시: <strong>2026-09-02 17:13 KST</strong> (AWS EC2)",
+        deployTime: "배포 일시: 2026-09-09 15:43 KST",
+        footerDeploy: "배포 일시: <strong>2026-09-09 15:43 KST</strong> (AWS EC2)",
         titleExecutionTerminal: "⚡ 1-Click 페어 주문 실행 터미널 및 실시간 포지션",
         lblExecutionSlippage: "슬리피지 방지선: <strong>5 BPS</strong>",
         btnResetPaper: "↺ 잔고 초기화 ($10k)",
@@ -6497,7 +6533,7 @@
         archHost.innerHTML = `
           <div class="modelStep" style="border-left: 4px solid #00d2ff;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <h3 style="margin: 0; color: #0f172a; font-size: 16px;">1. 메달리온 HMM + 변동성 타겟팅 (기본 추천 엔진)</h3>
+              <h3 style="margin: 0; color: #0f172a; font-size: 16px;">1. 자기상관 국면 필터 + OU (기본 방어 엔진)</h3>
               <span style="background: #e0f2fe; color: #0369a1; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">REGIME-ADAPTIVE</span>
             </div>
             <div style="margin-top: 10px; padding: 10px 14px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
@@ -6622,15 +6658,15 @@
           <div class="modelStep" style="border-left: 4px solid #ef4444;">
             <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">Q5: 급격한 구조적 추세 돌파 시 전략은 어떻게 자산을 보호하나요?</h3>
             <p style="margin: 0; color: #334155; font-size: 13.5px; line-height: 1.6;">
-              <strong>메달리온 HMM</strong> 엔진은 가격 변화의 1차 자기상관 계수 <code>ρ₁</code>을 실시간 추적합니다. 가격이 한 방향으로 연속 돌파(양의 자기상관)하면 평균회귀 확신도 <code>P_reversion</code>를 급격히 낮추어 목표 포지션을 현금(0%)으로 축소합니다.
+              <strong>자기상관 국면 필터</strong>는 가격 변화의 1차 자기상관 계수 <code>ρ₁</code>을 실시간 추적합니다. 가격이 한 방향으로 연속 돌파(양의 자기상관)하면 평균회귀 확신도 <code>P_reversion</code>를 낮추어 목표 포지션을 현금(0%) 쪽으로 축소합니다.
             </p>
           </div>
 
           <div class="modelStep" style="border-left: 4px solid #f59e0b;">
-            <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">Q6: 르네상스 테크놀로지 / 메달리온의 방법론은 왜 영업기밀이 아닌가요?</h3>
+            <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">Q6: 이것이 르네상스 테크놀로지의 메달리온 알고리즘인가요?</h3>
             <p style="margin: 0; color: #334155; font-size: 13.5px; line-height: 1.6;">
-              <strong>수학적 원리는 공개된 학술 과학이며, 데이터 파이프라인과 체결 인프라가 진짜 기밀입니다.</strong><br>
-              짐 사이먼스, 닉 패터슨, 피터 브라운 등이 도입한 <em>은닉 마르코프 모델(HMM)</em>, <em>오른슈타인-울렌벡(OU) 미분방정식</em>, <em>Burg 최대 엔트로피 스펙트럼</em>, <em>정규화 릿지 회귀</em>는 모두 학술지에 공개된 논문 이론입니다.
+              <strong>아닙니다. 르네상스의 실제 모델은 비공개이며 이 시스템은 복제품이 아닙니다.</strong><br>
+              여기서는 공개된 자기상관, OU, Burg 스펙트럼, 릿지 회귀 기법을 실험적으로 조합합니다. 현재 기본 엔진은 학습된 HMM이 아니라 자기상관 기반 국면 휴리스틱입니다.
             </p>
             <p style="margin: 8px 0 0 0; color: #475569; font-size: 13px; line-height: 1.5;">
               퀀트 헤지펀드의 진짜 독점 자산은 수식이 아니라 <strong>(1) 방대한 고빈도 틱 데이터 정제</strong>, <strong>(2) 시장 충격을 최소화하는 초저지연 알고리즘 체결(TWAP/VWAP/Smart Routing)</strong>, <strong>(3) 수천 개 자산에 걸친 미세 엣지(Edge 50.5%)의 하이퍼파라미터 앙상블</strong>입니다.
@@ -6720,7 +6756,7 @@
         archHost.innerHTML = `
           <div class="modelStep" style="border-left: 4px solid #00d2ff;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <h3 style="margin: 0; color: #0f172a; font-size: 16px;">1. Medallion HMM + Volatility Targeting (Default)</h3>
+              <h3 style="margin: 0; color: #0f172a; font-size: 16px;">1. Autocorrelation Regime Filter + OU (Defensive Default)</h3>
               <span style="background: #e0f2fe; color: #0369a1; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">REGIME-ADAPTIVE</span>
             </div>
             <div style="margin-top: 10px; padding: 10px 14px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
@@ -6846,15 +6882,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           <div class="modelStep" style="border-left: 4px solid #ef4444;">
             <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">Q5: How does the strategy protect against violent structural breakouts?</h3>
             <p style="margin: 0; color: #334155; font-size: 13.5px; line-height: 1.6;">
-              Under the <strong>Medallion HMM</strong> engine, the system tracks increment autocorrelation <code>ρ₁</code>. If consecutive price changes trend in the same direction (positive autocorrelation, indicating a momentum breakout), the regime classifier automatically reduces reversion conviction <code>P_reversion</code> and shrinks target exposure toward cash.
+              The <strong>autocorrelation regime filter</strong> tracks increment autocorrelation <code>ρ₁</code>. If consecutive price changes trend in the same direction, it reduces reversion conviction <code>P_reversion</code> and shrinks target exposure toward cash.
             </p>
           </div>
 
           <div class="modelStep" style="border-left: 4px solid #f59e0b;">
-            <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">Q6: Why are Renaissance Technologies / Medallion methods not trade secrets?</h3>
+            <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">Q6: Is this Renaissance Technologies' Medallion algorithm?</h3>
             <p style="margin: 0; color: #334155; font-size: 13.5px; line-height: 1.6;">
-              <strong>Mathematical foundations are open academic science; execution and data pipelines are the secret.</strong><br>
-              The core mathematical frameworks used by Jim Simons, Nick Patterson, and Peter Brown—such as <em>Hidden Markov Models (Baum-Welch algorithm)</em>, <em>Ornstein-Uhlenbeck stochastic calculus</em>, <em>Burg Maximum Entropy Spectral Estimation</em>, and <em>Regularized Ridge Regression</em>—are peer-reviewed academic theorems published in mathematics, physics, and signal processing literature.
+              <strong>No. Renaissance's actual models are proprietary, and this system is not a replica.</strong><br>
+              It experimentally combines public techniques including autocorrelation, OU dynamics, Burg spectral estimation, and ridge regression. The default engine is an autocorrelation-based regime heuristic, not a fitted hidden Markov model.
             </p>
             <p style="margin: 8px 0 0 0; color: #475569; font-size: 13px; line-height: 1.5;">
               What makes quantitative hedge funds proprietary is not the equations themselves, but <strong>(1) high-frequency tick data cleaning</strong>, <strong>(2) algorithmic execution infrastructure (TWAP/VWAP/Smart Order Routing)</strong> to minimize market impact, and <strong>(3) multi-factor hyperparameter ensembling across thousands of assets</strong>.
@@ -7550,7 +7586,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             interval: $("interval")?.value || "15m",
             strategyMode: $("strategyMode")?.value || "wave",
             predictionEngineKey: $("predictionEngine")?.value || "hmm_vol_target",
-            predictionEngine: $("predictionEngine")?.options[$("predictionEngine")?.selectedIndex]?.textContent || "Medallion HMM + Volatility Targeting",
+            predictionEngine: $("predictionEngine")?.options[$("predictionEngine")?.selectedIndex]?.textContent || "Autocorrelation Regime Filter + OU",
             tradeDirection: $("tradeDirection")?.value || "bidir",
             meanBars: Number($("meanBars")?.value || 24),
             minEdgePct: Number($("minEdgePct")?.value || 0.75),
@@ -7572,7 +7608,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const assetKey = $("assetStrategy")?.value || "skhynix_arb";
         const assetConfig = typeof ASSET_STRATEGIES !== 'undefined' && ASSET_STRATEGIES[assetKey] ? ASSET_STRATEGIES[assetKey] : { title: "SK Hynix Arb" };
         const engKey = $("predictionEngine")?.value || "hmm_vol_target";
-        const engineLabel = $("predictionEngine")?.options[$("predictionEngine")?.selectedIndex]?.textContent || "Medallion HMM + Volatility Targeting";
+        const engineLabel = $("predictionEngine")?.options[$("predictionEngine")?.selectedIndex]?.textContent || "Autocorrelation Regime Filter + OU";
         const interval = $("interval")?.value || "15m";
         const nowStr = new Date().toLocaleString();
 
