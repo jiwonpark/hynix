@@ -79,6 +79,36 @@ class BinanceFuturesClient:
         """Fetch raw position risk endpoint /fapi/v2/positionRisk."""
         return await self.request("GET", "/fapi/v2/positionRisk", signed=True)
 
+    async def set_leverage(self, symbol: str, leverage: int) -> Dict[str, Any]:
+        """Set initial leverage for a symbol (e.g. 10x)."""
+        return await self.request("POST", "/fapi/v1/leverage", {"symbol": symbol, "leverage": leverage}, signed=True)
+
+    async def set_margin_type(self, symbol: str, margin_type: str = "CROSSED") -> Dict[str, Any]:
+        """Set margin type: ISOLATED or CROSSED."""
+        try:
+            return await self.request("POST", "/fapi/v1/marginType", {"symbol": symbol, "marginType": margin_type.upper()}, signed=True)
+        except Exception as e:
+            if "-4046" in str(e):
+                return {"code": 200, "msg": "Already set"}
+            raise
+
+    async def create_order(self, symbol: str, side: str, quantity: float, order_type: str = "MARKET", price: Optional[float] = None, reduce_only: bool = False) -> Dict[str, Any]:
+        """Create a new futures order on Binance."""
+        params: Dict[str, Any] = {
+            "symbol": symbol,
+            "side": side.upper(),
+            "type": order_type.upper(),
+            "quantity": f"{quantity:.2f}"
+        }
+        if reduce_only:
+            params["reduceOnly"] = "true"
+        if order_type.upper() == "LIMIT":
+            if price is None:
+                raise ValueError("Price required for LIMIT orders")
+            params["price"] = f"{price:.2f}"
+            params["timeInForce"] = "GTC"
+        return await self.request("POST", "/fapi/v1/order", params, signed=True)
+
     async def get_detailed_account_overview(self) -> Dict[str, Any]:
         """
         Fetch and synthesize all account balances, margin stats, and open positions

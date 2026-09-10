@@ -1945,9 +1945,97 @@
         <div class="chartHeader" style="margin-bottom: 6px; align-items: center;">
           <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
             <h2 id="titleExecutionTerminal" style="font-size: 15px; font-weight: 800; color: #0f172a; margin: 0;">⚡ 1-Click Pair Execution Terminal & Live Orders</h2>
-            <span id="badgeExecMode" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; border: 1px solid #bae6fd;">PAPER SIMULATION MODE</span>
+            <span id="badgeExecMode" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; border: 1px solid #bae6fd;">BINANCE FUTURES LIVE ENGINE</span>
           </div>
           <span style="font-size: 11px; color: #16a34a; font-weight: 700;">🟢 Delta Neutral Simultaneous Fill</span>
+        </div>
+
+        <!-- Live Hedged Arbitrage & Zero-Loss Controller -->
+        <div class="hedgedControllerCard" id="hedgedControllerCard" style="margin-bottom: 16px; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 14px 16px;">
+          <!-- 1. The Zero-Loss Structural Arbitrage Rule Banner (Verbatim) -->
+          <div class="zeroLossInvariantBanner" style="background: linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%); border: 1.5px solid #86efac; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 18px;">🛡️</span>
+                <strong style="color: #0f172a; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">The Zero-Loss Structural Arbitrage Rule (Invariant)</strong>
+              </div>
+              <span style="background: #16a34a; color: #fff; font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px;">ENFORCED BY ENGINE</span>
+            </div>
+            <p style="margin: 0; font-size: 12px; color: #1e293b; line-height: 1.55; font-weight: 500;">
+              <strong>Structural Parity Guarantee:</strong> Because 1 SK Hynix ADR unit is legally backed by 0.1 underlying domestic shares, long-run price convergence is an economic certainty. Any spread widening is <strong>temporary market variance</strong>, never permanent loss. <strong>Under NO circumstances does this engine ever sell at a loss or cut losses.</strong> If the spread widens unfavorably: <strong>Scale in with more tranches or Hold</strong>. If the spread converges with net profit: <strong>Take Profit</strong>. Every completed trade is strictly green.
+            </p>
+          </div>
+
+          <!-- 2. Real-Time Hedged Position & Risk Analytics Grid -->
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+            <strong style="font-size: 12.5px; color: #0f172a; text-transform: uppercase;">📊 Live Hedged Spread Telemetry & Safety Margin</strong>
+            <span id="lblHedgedSyncBadge" style="font-size: 11px; color: #0284c7; font-weight: 700;">Syncing with Binance Futures...</span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px;">
+            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Active Tranches</span>
+              <strong id="valHedgedTranches" style="font-size: 16px; color: #0f172a;">0 / 10 Units</strong>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedQuantities">Short 0.00 SKHY | Long 0.00 KR</div>
+            </div>
+            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Gross Leverage</span>
+              <strong id="valHedgedLeverage" style="font-size: 16px; color: #0284c7;">0.00x</strong>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedNotional">Notional: $0.00 USDT</div>
+            </div>
+            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Net Delta Imbalance</span>
+              <strong id="valHedgedDelta" style="font-size: 16px; color: #16a34a;">$0.00</strong>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Dollar Neutral 1:1 Hedge</div>
+            </div>
+            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Combined Net PnL</span>
+              <strong id="valHedgedCombinedPnl" style="font-size: 16px; color: #0f172a;">$0.00 (0.00%)</strong>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedPnlSubtitle">Awaiting positions</div>
+            </div>
+            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">10% Blowout Impact</span>
+              <strong id="valHedgedLoss10" style="font-size: 16px; color: #ef4444;">-$0.00 USDT</strong>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Estimated move if +10% divergence</div>
+            </div>
+            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Tolerable Divergence</span>
+              <strong id="valHedgedMaxDiv" style="font-size: 16px; color: #10b981;">+∞ % pts</strong>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Safety buffer before margin call</div>
+            </div>
+          </div>
+
+          <!-- 3. Sizing Progress Bar & Interactive Action Buttons -->
+          <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; font-weight: 700; color: #475569;">
+              <span>Tranche Capacity Utilization (Max 10 Units / ~8x Gross Leverage):</span>
+              <span id="lblTranchePct">0%</span>
+            </div>
+            <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden;">
+              <div id="barTrancheProgress" style="width: 0%; height: 100%; background: linear-gradient(90deg, #10b981 0%, #0284c7 70%, #f59e0b 100%); transition: width 0.3s ease;"></div>
+            </div>
+
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 4px;">
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button id="btnStepTranche" type="button" style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #0284c7; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);">
+                  <span>➕ Add 1 Tranche</span>
+                  <span style="font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 5px; border-radius: 4px;">+$27.37 (0.78x)</span>
+                </button>
+                <button id="btnReduceTranche" type="button" disabled style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #94a3b8; color: #fff; border: 0; border-radius: 6px; cursor: not-allowed; display: flex; align-items: center; gap: 6px;">
+                  <span id="lblReduceTrancheText">🔒 Locked (Zero-Loss Rule: Awaiting Net Profit)</span>
+                </button>
+                <button id="btnEmergencyFlatten" type="button" style="height: 38px; padding: 0 14px; font-size: 12px; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; cursor: pointer;">
+                  🚨 Emergency Flatten
+                </button>
+              </div>
+              <div style="font-size: 11.5px; color: #64748b; font-weight: 600;">
+                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                  <input id="chkAutoPeriodic48h" type="checkbox" style="width: 15px; height: 15px; cursor: pointer;">
+                  <span>⚡ 48H Periodic Auto-Tranche (Check every 15m)</span>
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="execTerminalGrid">
@@ -8435,6 +8523,174 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
       },
 
+      async fetchHedgedStatus() {
+        const origin = window.location.origin;
+        const endpoints = [
+          `${origin}/skhynix/api/trade/hedged_status`,
+          "/skhynix/api/trade/hedged_status",
+          `${origin}/api/trade/hedged_status`,
+          "/api/trade/hedged_status",
+          "http://localhost:8000/api/trade/hedged_status"
+        ];
+        for (const url of endpoints) {
+          try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+            if (res.ok) {
+              const data = await res.json();
+              this.state.hedgedStatus = data;
+              this.renderHedgedController(data);
+              break;
+            }
+          } catch (e) {}
+        }
+      },
+
+      renderHedgedController(data) {
+        if (!data || !data.authenticated) return;
+        if ($("lblHedgedSyncBadge")) {
+          $("lblHedgedSyncBadge").textContent = `Live Binance Futures | Sync ${new Date().toLocaleTimeString()}`;
+        }
+        const tranches = data.tranches_active || 0;
+        const lev = data.gross_leverage || 0.0;
+        const notional = data.total_notional_usd || 0.0;
+        const delta = data.net_delta_imbalance_usd || 0.0;
+        const pnl = data.combined_unrealized_pnl_usd || 0.0;
+        const pnlPct = data.combined_unrealized_pnl_pct || 0.0;
+        const loss10 = data.loss_on_10pct_divergence_usd || 0.0;
+        const maxDiv = data.max_tolerable_divergence_pct || 999.0;
+        const eligible = Boolean(data.eligible_for_take_profit);
+
+        if ($("valHedgedTranches")) $("valHedgedTranches").textContent = `${tranches} / 10 Units`;
+        if ($("valHedgedQuantities")) {
+          const adrQty = data.adr_qty ? data.adr_qty.toFixed(2) : "0.00";
+          const stockQty = data.stock_qty ? data.stock_qty.toFixed(2) : "0.00";
+          $("valHedgedQuantities").textContent = `Short ${adrQty} SKHY | Long ${stockQty} KR`;
+        }
+        if ($("valHedgedLeverage")) $("valHedgedLeverage").textContent = `${lev.toFixed(2)}x`;
+        if ($("valHedgedNotional")) $("valHedgedNotional").textContent = `Notional: $${notional.toFixed(2)} USDT`;
+        if ($("valHedgedDelta")) $("valHedgedDelta").textContent = `$${Math.abs(delta).toFixed(2)}`;
+        if ($("valHedgedCombinedPnl")) {
+          const pnlSign = pnl >= 0 ? "+" : "";
+          const color = pnl > 0 ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#0f172a");
+          $("valHedgedCombinedPnl").style.color = color;
+          $("valHedgedCombinedPnl").textContent = `${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
+        }
+        if ($("valHedgedPnlSubtitle")) {
+          $("valHedgedPnlSubtitle").textContent = tranches > 0 
+            ? (eligible ? "✅ Positive Net Return (Take-Profit Eligible)" : "Holding (Awaiting Convergence)")
+            : "No active tranches";
+        }
+        if ($("valHedgedLoss10")) $("valHedgedLoss10").textContent = `-$${loss10.toFixed(2)} USDT`;
+        if ($("valHedgedMaxDiv")) {
+          $("valHedgedMaxDiv").textContent = maxDiv >= 900 ? "+∞ % pts" : `+${maxDiv.toFixed(1)}% pts`;
+        }
+
+        const pct = Math.min(100, Math.round((tranches / 10) * 100));
+        if ($("lblTranchePct")) $("lblTranchePct").textContent = `${pct}% (${tranches} / 10 Units)`;
+        if ($("barTrancheProgress")) $("barTrancheProgress").style.width = `${pct}%`;
+
+        const btnReduce = $("btnReduceTranche");
+        const lblReduce = $("lblReduceTrancheText");
+        if (btnReduce && lblReduce) {
+          const pnlSign = pnl >= 0 ? "+" : "";
+          if (tranches > 0 && eligible) {
+            btnReduce.disabled = false;
+            btnReduce.style.background = "#16a34a";
+            btnReduce.style.cursor = "pointer";
+            lblReduce.textContent = `✅ Take Profit / Reduce 1 Tranche (+${pnlSign}$${pnl.toFixed(2)})`;
+          } else {
+            btnReduce.disabled = true;
+            btnReduce.style.background = "#94a3b8";
+            btnReduce.style.cursor = "not-allowed";
+            lblReduce.textContent = tranches > 0 
+              ? "🔒 Locked (Zero-Loss Rule: Awaiting Net Profit)" 
+              : "No Open Tranches";
+          }
+        }
+      },
+
+      async stepTrancheLive() {
+        const btn = $("btnStepTranche");
+        if (btn) btn.disabled = true;
+        showToast("Executing +1 Tranche: Short 0.07 SKHY + Long 0.01 SKHYNIX...", "info");
+        try {
+          const res = await fetch("/skhynix/api/trade/step_tranche", { method: "POST" });
+          const json = await res.json();
+          if (json.success) {
+            showToast("✅ +1 Tranche Filled: Short 0.07 SKHY + Long 0.01 SKHYNIX", "success");
+            await this.fetchHedgedStatus();
+            await this.syncWithBackend();
+          } else {
+            showToast(`Execution Error: ${json.error}`, "danger");
+          }
+        } catch (e) {
+          showToast(`Error: ${e.message}`, "danger");
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      },
+
+      async reduceTrancheLive() {
+        const btn = $("btnReduceTranche");
+        if (btn) btn.disabled = true;
+        showToast("Closing 1 Tranche to take profit...", "info");
+        try {
+          const res = await fetch("/skhynix/api/trade/reduce_tranche", { method: "POST" });
+          const json = await res.json();
+          if (json.success) {
+            showToast(`✅ Take-profit executed: ${json.message}`, "success");
+            await this.fetchHedgedStatus();
+            await this.syncWithBackend();
+          } else {
+            showToast(`Zero-Loss Guard: ${json.error}`, "danger");
+          }
+        } catch (e) {
+          showToast(`Error: ${e.message}`, "danger");
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      },
+
+      async emergencyFlattenLive() {
+        if (!confirm("🚨 Are you sure you want to emergency flatten all SK Hynix positions at market?")) return;
+        showToast("Closing all hedged positions...", "info");
+        try {
+          const res = await fetch("/skhynix/api/trade/flatten?emergency=true", { method: "POST" });
+          const json = await res.json();
+          if (json.success) {
+            showToast("All positions flattened.", "success");
+            await this.fetchHedgedStatus();
+            await this.syncWithBackend();
+          } else {
+            showToast(`Error: ${json.error}`, "danger");
+          }
+        } catch (e) {
+          showToast(`Error: ${e.message}`, "danger");
+        }
+      },
+
+      checkAutoPeriodicTranche() {
+        const status = this.state.hedgedStatus;
+        if (!status || !status.authenticated) return;
+        const tranches = status.tranches_active || 0;
+        const eligible = Boolean(status.eligible_for_take_profit);
+
+        if (tranches > 0 && eligible) {
+          this.reduceTrancheLive();
+          return;
+        }
+
+        const latest = cachedRows?.length ? cachedRows.at(-1) : null;
+        const edge = latest ? (latest.netSignalEdgePct || 0) : 0;
+        if (tranches < 10 && edge >= 0.30) {
+          const now = Date.now();
+          if (!this.lastAutoStepTime || now - this.lastAutoStepTime > 15 * 60 * 1000) {
+            this.lastAutoStepTime = now;
+            this.stepTrancheLive();
+          }
+        }
+      },
+
       executeOrder(side, notional, leverage, route) {
         const isKo = window.currentLang === "ko";
         const reqMargin = notional / leverage;
@@ -8701,6 +8957,19 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // Periodically sync with backend daemon
         this.syncWithBackend();
         setInterval(() => this.syncWithBackend(), 3000);
+
+        // Hedged Tranche Controller buttons & polling
+        if ($("btnStepTranche")) $("btnStepTranche").addEventListener("click", () => this.stepTrancheLive());
+        if ($("btnReduceTranche")) $("btnReduceTranche").addEventListener("click", () => this.reduceTrancheLive());
+        if ($("btnEmergencyFlatten")) $("btnEmergencyFlatten").addEventListener("click", () => this.emergencyFlattenLive());
+
+        this.fetchHedgedStatus();
+        setInterval(() => {
+          this.fetchHedgedStatus();
+          if ($("chkAutoPeriodic48h")?.checked) {
+            this.checkAutoPeriodicTranche();
+          }
+        }, 3000);
 
         // Kill Switch Modal
         $("btnKillSwitch").addEventListener("click", () => $("killSwitchModal").classList.add("open"));

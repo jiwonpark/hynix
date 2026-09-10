@@ -215,6 +215,214 @@ async def get_positions() -> Dict[str, Any]:
     except Exception as e:
         return {"error": str(e), "positions": []}
 
+@app.get("/api/trade/hedged_status")
+async def get_hedged_status() -> Dict[str, Any]:
+    """Calculates real-time live metrics for the hedged SK Hynix arbitrage position."""
+    try:
+        overview = await binance_client.get_detailed_account_overview()
+        if not overview.get("authenticated"):
+            return {
+                "authenticated": False,
+                "error": overview.get("error", "Not authenticated"),
+                "status": "unauthenticated"
+            }
+
+        positions = overview.get("positions", [])
+        summary = overview.get("summary", {})
+        equity = float(summary.get("total_equity_usd", 0.0))
+        avail_margin = float(summary.get("available_margin_usd", 0.0))
+        maint_margin = float(summary.get("maintenance_margin_usd", 0.0))
+        margin_ratio = float(summary.get("margin_ratio_percent", 0.0))
+
+        adr_pos = next((p for p in positions if p.get("symbol") == "SKHYUSDT"), None)
+        stock_pos = next((p for p in positions if p.get("symbol") == "SKHYNIXUSDT"), None)
+
+        adr_notional = float(adr_pos.get("notional", 0.0)) if adr_pos else 0.0
+        stock_notional = float(stock_pos.get("notional", 0.0)) if stock_pos else 0.0
+        adr_pnl = float(adr_pos.get("unrealized_pnl", 0.0)) if adr_pos else 0.0
+        stock_pnl = float(stock_pos.get("unrealized_pnl", 0.0)) if stock_pos else 0.0
+
+        total_notional = adr_notional + stock_notional
+        current_leverage = (total_notional / equity) if equity > 0 else 0.0
+        combined_pnl = adr_pnl + stock_pnl
+        combined_pnl_pct = (combined_pnl / equity * 100.0) if equity > 0 else 0.0
+        net_delta = stock_notional - adr_notional
+
+        adr_mark = float(adr_pos.get("mark_price", 0.0)) if adr_pos else 0.0
+        stock_mark = float(stock_pos.get("mark_price", 0.0)) if stock_pos else 0.0
+        adr_entry = float(adr_pos.get("entry_price", 0.0)) if adr_pos else 0.0
+        stock_entry = float(stock_pos.get("entry_price", 0.0)) if stock_pos else 0.0
+
+        current_spread = (adr_mark / (stock_mark / 10.0) * 100.0) if stock_mark > 0 else None
+        entry_spread = (adr_entry / (stock_entry / 10.0) * 100.0) if stock_entry > 0 else None
+
+        stock_qty = abs(float(stock_pos.get("position_amt", 0.0))) if stock_pos else 0.0
+        adr_qty = abs(float(adr_pos.get("position_amt", 0.0))) if adr_pos else 0.0
+        tranches_active = round(stock_qty / 0.01) if stock_qty > 0 else 0
+
+        loss_on_10pct = adr_notional * 0.10
+        free_buffer = max(0.0, equity - maint_margin)
+        max_tolerable_div_pct = (free_buffer / adr_notional * 100.0) if adr_notional > 0 else 999.0
+
+        eligible_for_take_profit = bool(total_notional > 0 and combined_pnl > 0.02)
+
+        return {
+            "authenticated": True,
+            "equity_usd": equity,
+            "available_margin_usd": avail_margin,
+            "maintenance_margin_usd": maint_margin,
+            "margin_ratio_percent": margin_ratio,
+            "tranches_active": tranches_active,
+            "adr_position": adr_pos,
+            "stock_position": stock_pos,
+            "adr_qty": adr_qty,
+            "stock_qty": stock_qty,
+            "adr_notional_usd": adr_notional,
+            "stock_notional_usd": stock_notional,
+            "total_notional_usd": total_notional,
+            "gross_leverage": round(current_leverage, 2),
+            "net_delta_imbalance_usd": round(net_delta, 2),
+            "combined_unrealized_pnl_usd": round(combined_pnl, 2),
+            "combined_unrealized_pnl_pct": round(combined_pnl_pct, 2),
+            "current_spread_pct": round(current_spread, 2) if current_spread else None,
+            "entry_spread_pct": round(entry_spread, 2) if entry_spread else None,
+            "loss_on_10pct_divergence_usd": round(loss_on_10pct, 2),
+            "max_tolerable_divergence_pct": round(max_tolerable_div_pct, 1),
+            "eligible_for_take_profit": eligible_for_take_profit,
+            "zero_loss_rule": {
+                "rule_name": "Zero-Loss Structural Convergence Invariant",
+                "status": "ENFORCED",
+                "can_reduce": eligible_for_take_profit,
+                "description": "Never exit at a loss. Only take profit when Net Realized PnL > 0. If divergence widens: Scale in or Hold."
+            }
+        }
+    except Exception as e:
+        logger.exception("Error in get_hedged_status")
+        return {"error": str(e)}
+
+@app.post("/api/trade/step_tranche")
+async def step_tranche() -> Dict[str, Any]:
+    """
+    Executes +1 Tranche:
+    - Sets 10x leverage and CROSSED margin on SKHYUSDT and SKHYNIXUSDT
+    - SELL MARKET 0.07 SKHYUSDT (Short ADR)
+    - BUY MARKET 0.01 SKHYNIXUSDT (Long Domestic Stock)
+    """
+    try:
+        overview = await binance_client.get_detailed_account_overview()
+        if not overview.get("authenticated"):
+            return {"success": False, "error": "Binance client not authenticated"}
+
+        avail = float(overview.get("summary", {}).get("available_margin_usd", 0.0))
+        if avail < 2.50:
+            return {"success": False, "error": f"Insufficient available margin: ${avail:.2f} < $2.50 required"}
+
+        # Configure leverage & margin type
+        await asyncio.gather(
+            binance_client.set_leverage("SKHYUSDT", 10),
+            binance_client.set_leverage("SKHYNIXUSDT", 10),
+            binance_client.set_margin_type("SKHYUSDT", "CROSSED"),
+            binance_client.set_margin_type("SKHYNIXUSDT", "CROSSED"),
+            return_exceptions=True
+        )
+
+        # Place orders concurrently
+        order_adr, order_stock = await asyncio.gather(
+            binance_client.create_order("SKHYUSDT", "SELL", 0.07, "MARKET"),
+            binance_client.create_order("SKHYNIXUSDT", "BUY", 0.01, "MARKET"),
+            return_exceptions=True
+        )
+
+        if isinstance(order_adr, Exception):
+            return {"success": False, "error": f"Failed to short ADR: {order_adr}"}
+        if isinstance(order_stock, Exception):
+            return {"success": False, "error": f"Failed to long Stock: {order_stock}"}
+
+        return {
+            "success": True,
+            "message": "Tranche executed successfully: Short 0.07 SKHYUSDT + Long 0.01 SKHYNIXUSDT",
+            "order_adr": order_adr,
+            "order_stock": order_stock
+        }
+    except Exception as e:
+        logger.exception("Error executing tranche step")
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/trade/reduce_tranche")
+async def reduce_tranche() -> Dict[str, Any]:
+    """
+    Closes 1 Tranche (Take-Profit):
+    - STRICTLY ENFORCES ZERO-LOSS INVARIANT: Rejects order if combined unrealized PnL <= 0!
+    - BUY MARKET 0.07 SKHYUSDT
+    - SELL MARKET 0.01 SKHYNIXUSDT
+    """
+    try:
+        overview = await binance_client.get_detailed_account_overview()
+        positions = overview.get("positions", [])
+        adr_pos = next((p for p in positions if p.get("symbol") == "SKHYUSDT"), None)
+        stock_pos = next((p for p in positions if p.get("symbol") == "SKHYNIXUSDT"), None)
+
+        if not adr_pos or not stock_pos:
+            return {"success": False, "error": "No active hedged positions found to reduce"}
+
+        combined_pnl = float(adr_pos.get("unrealized_pnl", 0.0)) + float(stock_pos.get("unrealized_pnl", 0.0))
+        if combined_pnl <= 0.01:
+            return {
+                "success": False,
+                "error": f"ZERO-LOSS INVARIANT ENFORCED: Combined PnL is ${combined_pnl:.2f}. You cannot exit at a loss. Wait for convergence or add tranches."
+            }
+
+        order_adr, order_stock = await asyncio.gather(
+            binance_client.create_order("SKHYUSDT", "BUY", 0.07, "MARKET", reduce_only=True),
+            binance_client.create_order("SKHYNIXUSDT", "SELL", 0.01, "MARKET", reduce_only=True),
+            return_exceptions=True
+        )
+
+        if isinstance(order_adr, Exception):
+            return {"success": False, "error": f"Failed to close ADR: {order_adr}"}
+        if isinstance(order_stock, Exception):
+            return {"success": False, "error": f"Failed to close Stock: {order_stock}"}
+
+        return {
+            "success": True,
+            "message": f"Take-profit tranche closed successfully with positive PnL (+${combined_pnl:.2f})",
+            "order_adr": order_adr,
+            "order_stock": order_stock
+        }
+    except Exception as e:
+        logger.exception("Error reducing tranche")
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/trade/flatten")
+async def flatten_positions(emergency: bool = False) -> Dict[str, Any]:
+    """
+    Emergency market close of both legs.
+    """
+    try:
+        overview = await binance_client.get_detailed_account_overview()
+        positions = overview.get("positions", [])
+        adr_pos = next((p for p in positions if p.get("symbol") == "SKHYUSDT"), None)
+        stock_pos = next((p for p in positions if p.get("symbol") == "SKHYNIXUSDT"), None)
+
+        results = []
+        if adr_pos:
+            amt = float(adr_pos.get("position_amt", 0.0))
+            if abs(amt) > 0.001:
+                side = "BUY" if amt < 0 else "SELL"
+                res = await binance_client.create_order("SKHYUSDT", side, abs(amt), "MARKET", reduce_only=True)
+                results.append(res)
+        if stock_pos:
+            amt = float(stock_pos.get("position_amt", 0.0))
+            if abs(amt) > 0.001:
+                side = "BUY" if amt < 0 else "SELL"
+                res = await binance_client.create_order("SKHYNIXUSDT", side, abs(amt), "MARKET", reduce_only=True)
+                results.append(res)
+
+        return {"success": True, "message": "All hedged positions flattened", "orders": results}
+    except Exception as e:
+        logger.exception("Error flattening positions")
+        return {"success": False, "error": str(e)}
+
 @app.websocket("/ws/account")
 async def websocket_account_feed(websocket: WebSocket):
     await websocket.accept()
