@@ -252,6 +252,34 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
 
         print("\n[LIFO Active Tranche Queue Matching Verification] PASSED: Sequential popping verified, cascading churn impossible.")
 
+    def test_persistent_auto_tranche_state(self):
+        """
+        Verify that auto_tranche state persists, toggles correctly, and holds last action metadata.
+        """
+        from backend.server import load_auto_tranche_state, save_auto_tranche_state
+
+        initial_state = load_auto_tranche_state()
+        self.assertIn("enabled", initial_state)
+        self.assertIn("last_step_time", initial_state)
+        self.assertIn("last_reduce_time", initial_state)
+
+        # Test toggle mutation
+        initial_enabled = initial_state.get("enabled", False)
+        test_state = dict(initial_state)
+        test_state["enabled"] = not initial_enabled
+        test_state["last_action"] = "UNIT_TEST_TOGGLE"
+        save_auto_tranche_state(test_state)
+
+        reloaded = load_auto_tranche_state()
+        self.assertEqual(reloaded["enabled"], not initial_enabled)
+        self.assertEqual(reloaded["last_action"], "UNIT_TEST_TOGGLE")
+
+        # Restore
+        save_auto_tranche_state(initial_state)
+        restored = load_auto_tranche_state()
+        self.assertEqual(restored["enabled"], initial_enabled)
+        print("\n[Persistent Auto-Tranche State Verification] PASSED: State persists across cycles and reloads.")
+
 if __name__ == '__main__':
     unittest.main()
 

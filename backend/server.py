@@ -1,6 +1,8 @@
 import asyncio
+import json
 import logging
 import time
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -10,6 +12,31 @@ import uvicorn
 from .config import config
 from .binance_client import BinanceFuturesClient
 from .upbit_client import UpbitClient
+
+STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
+
+def load_auto_tranche_state() -> Dict[str, Any]:
+    try:
+        if STATE_FILE.exists():
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to read auto_tranche_state: {e}")
+    return {
+        "enabled": False,
+        "last_step_time": 0,
+        "last_reduce_time": 0,
+        "last_action": "INITIALIZED",
+        "last_action_time": 0,
+        "last_error": None
+    }
+
+def save_auto_tranche_state(state: Dict[str, Any]):
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save auto_tranche_state: {e}")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,8 +102,10 @@ async def lifespan(app: FastAPI):
         logger.warning("No Upbit Access Key detected (checked .env, arbiter/keys.json, midas/keys.json).")
 
     broadcaster_task = asyncio.create_task(account_broadcaster())
+    auto_tranche_task = asyncio.create_task(auto_tranche_worker())
     yield
     broadcaster_task.cancel()
+    auto_tranche_task.cancel()
     await asyncio.gather(binance_client.close(), upbit_client.close(), return_exceptions=True)
     logger.info("SK Hynix Trading Daemon shutdown complete.")
 
@@ -492,7 +521,11 @@ async def get_hedged_status() -> Dict[str, Any]:
             else f"ANTI_CHURN_WAITING_CONVERGENCE (Target <={out_target_spread}%)")))
         )
 
+        auto_state = load_auto_tranche_state()
+
         auto_criteria = {
+            "backend_auto_tranche_enabled": bool(auto_state.get("enabled", False)),
+            "backend_auto_tranche_state": auto_state,
             "entry_baseline_spread": round(base_entry, 2),
             "current_spread": round(curr_spread, 2),
             "rolling_ma_24": round(ma24, 2),
@@ -809,6 +842,85 @@ async def reduce_tranche(force: bool = False) -> Dict[str, Any]:
     except Exception as e:
         logger.exception("Error reducing tranche")
         return {"success": False, "error": str(e)}
+
+@app.get("/api/trade/auto_tranche_status")
+async def get_auto_tranche_status() -> Dict[str, Any]:
+    """Returns persistent 24/7 EC2 auto-tranche state."""
+    state = load_auto_tranche_state()
+    return {"success": True, "state": state}
+
+@app.post("/api/trade/toggle_auto_tranche")
+async def toggle_auto_tranche(enabled: Optional[bool] = None) -> Dict[str, Any]:
+    """Toggles or sets the 24/7 EC2 server-side auto-tranche execution daemon."""
+    state = load_auto_tranche_state()
+    if enabled is None:
+        state["enabled"] = not state.get("enabled", False)
+    else:
+        state["enabled"] = bool(enabled)
+    state["last_action"] = f"TOGGLED_{'ENABLED' if state['enabled'] else 'DISABLED'}"
+    state["last_action_time"] = time.time()
+    save_auto_tranche_state(state)
+    logger.info(f"[Auto-Tranche] Daemon mode toggled to: {state['enabled']}")
+    return {"success": True, "state": state}
+
+async def auto_tranche_worker():
+    """
+    EC2 Server-Side Autonomous 24/7 Auto-Tranche Execution Worker:
+    Continuously monitors live hedged status and executes scale-in / take-profit
+    without needing any client browser to be open.
+    """
+    logger.info("Autonomous 24/7 Auto-Tranche Worker started.")
+    while True:
+        try:
+            state = load_auto_tranche_state()
+            if state.get("enabled", False):
+                status = await get_hedged_status()
+                if status.get("authenticated"):
+                    criteria = status.get("auto_tranche_criteria", {})
+                    can_take_profit = bool(criteria.get("can_take_profit", False))
+                    scale_in_armed = bool(criteria.get("scale_in_armed", False))
+                    tranches_active = int(status.get("tranches_active", 0))
+
+                    now = time.time()
+                    last_reduce = float(state.get("last_reduce_time", 0))
+                    last_step = float(state.get("last_step_time", 0))
+
+                    # 1. Take-Profit (Conservative Anti-Churn Scale-Out)
+                    if tranches_active > 0 and can_take_profit:
+                        if now - last_reduce >= 30:
+                            logger.info("[Auto-Tranche Worker] Executing autonomous take-profit trim...")
+                            res = await reduce_tranche()
+                            state["last_reduce_time"] = now
+                            state["last_action_time"] = now
+                            if res.get("success"):
+                                state["last_action"] = f"TAKE_PROFIT_TRIM: {res.get('message', 'Filled')}"
+                                state["last_error"] = None
+                                logger.info(f"[Auto-Tranche Worker] Trim succeeded: {res}")
+                            else:
+                                state["last_error"] = res.get("error")
+                                logger.warning(f"[Auto-Tranche Worker] Trim rejected: {res.get('error')}")
+                            save_auto_tranche_state(state)
+
+                    # 2. Speculative Scale-In (Peak-Out / MA Stretch Filter)
+                    elif scale_in_armed and tranches_active < 10:
+                        if now - last_step >= 60:
+                            logger.info("[Auto-Tranche Worker] Executing autonomous speculative scale-in step...")
+                            res = await step_tranche()
+                            state["last_step_time"] = now
+                            state["last_action_time"] = now
+                            if res.get("success"):
+                                state["last_action"] = f"SCALE_IN_STEP: {res.get('message', 'Filled')}"
+                                state["last_error"] = None
+                                logger.info(f"[Auto-Tranche Worker] Scale-in succeeded: {res}")
+                            else:
+                                state["last_error"] = res.get("error")
+                                logger.warning(f"[Auto-Tranche Worker] Scale-in rejected: {res.get('error')}")
+                            save_auto_tranche_state(state)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.exception(f"Error in auto_tranche_worker: {e}")
+        await asyncio.sleep(3)
 
 @app.post("/api/trade/flatten")
 async def flatten_positions(emergency: bool = False) -> Dict[str, Any]:
