@@ -2297,6 +2297,10 @@
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
                   <span>Current Parity: <strong id="valCritTpCurrentSpread">139.30%</strong></span>
+                  <span>Bottoming Out: <strong id="valCritBottomingOut" style="color: #16a34a;">TROUGH REBOUND / MA</strong></span>
+                </div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
+                  <span>Ref Fill Spread: <strong id="valCritLatestInSpread">139.30%</strong></span>
                   <span>Gap to Out: <strong id="valCritGapTP" style="color: #0284c7;">+0.08% pts</strong></span>
                 </div>
                 <!-- Progress bar towards TP -->
@@ -9057,6 +9061,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               lblReduce.textContent = `⏳ Anti-Churn Dwell (${Math.max(0, 120 - criteria.dwell_time_sec)}s left)`;
             } else if (criteria && !criteria.is_out_profitable_relative_to_latest) {
               lblReduce.textContent = `🔒 Anti-Churn Locked: Awaiting Convergence (Target <= ${criteria.out_target_spread}%)`;
+            } else if (criteria && !criteria.is_bottoming_out) {
+              lblReduce.textContent = "🌊 Riding Convergence (Waiting for Trough / MA Touch)";
             } else {
               lblReduce.textContent = "🔒 Locked (Awaiting Convergence)";
             }
@@ -9313,8 +9319,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const isDwellOk = Boolean(criteria.is_dwell_satisfied);
         const isOutProfitable = Boolean(criteria.is_out_profitable_relative_to_latest);
 
+        const isBottomingOut = Boolean(criteria.is_bottoming_out);
+
         if ($("valCritLatestInSpread")) $("valCritLatestInSpread").textContent = `${latestIn.toFixed(2)}%`;
         if ($("valCritOutTargetSpread")) $("valCritOutTargetSpread").textContent = `${outTarget.toFixed(2)}%`;
+        if ($("valCritBottomingOut")) {
+          $("valCritBottomingOut").textContent = isBottomingOut ? (isKo ? "바닥 반등/MA 도달 확인" : "TROUGH REBOUND / MA") : (isKo ? "하락 파동 진행 중" : "CASCADE IN PROGRESS");
+          $("valCritBottomingOut").style.color = isBottomingOut ? "#16a34a" : "#0284c7";
+        }
         if ($("valCritCombinedPnl")) {
           const sign = pnl >= 0 ? "+" : "";
           const col = pnl > 0.02 ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#64748b");
@@ -9350,6 +9362,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("badgeCriteriaTP").textContent = isKo ? "코어 물량 보존 (신규 진입 대기)" : "CORE INVENTORY RETAINED";
             $("badgeCriteriaTP").style.background = "#eff6ff";
             $("badgeCriteriaTP").style.color = "#1d4ed8";
+          } else if (isOutProfitable && !isBottomingOut) {
+            $("badgeCriteriaTP").textContent = isKo ? "수렴 파동 타기 (바닥 확인 대기)" : "RIDING DOWNWARD CASCADE";
+            $("badgeCriteriaTP").style.background = "#e0f2fe";
+            $("badgeCriteriaTP").style.color = "#0369a1";
           } else if (pnl <= 0.02) {
             $("badgeCriteriaTP").textContent = isKo ? "무손실 원칙 잠금" : "ZERO-LOSS LOCKED";
             $("badgeCriteriaTP").style.background = "#f1f5f9";

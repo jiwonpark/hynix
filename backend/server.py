@@ -432,11 +432,16 @@ async def get_hedged_status() -> Dict[str, Any]:
             prev_val = parity_bars[-2]["value"] if len(parity_bars) > 1 else last_val
             prev2_val = parity_bars[-3]["value"] if len(parity_bars) > 2 else prev_val
             local_high_3 = max(prev_val, prev2_val)
+            local_low_3 = min(prev_val, prev2_val)
             is_peaking_out = bool(last_val <= prev_val or last_val < local_high_3)
+            # Conservative Scale-Out: Bottoming-out occurs when downward cascade stops / bounces
+            # (last_val >= prev_val or last_val > local_low_3) OR spread has fully pierced 24-MA (last_val <= ma24)
+            is_bottoming_out = bool(last_val >= prev_val or last_val > local_low_3 or last_val <= ma24)
             spread_velocity = round(last_val - prev_val, 3)
         else:
             ma24 = base_entry
             is_peaking_out = True
+            is_bottoming_out = True
             spread_velocity = 0.0
 
         ma_stretch_pts = round(curr_spread - ma24, 2)
@@ -503,6 +508,7 @@ async def get_hedged_status() -> Dict[str, Any]:
             and eligible_for_take_profit 
             and is_out_profitable_relative_to_latest 
             and is_dwell_satisfied
+            and is_bottoming_out
             and adr_qty >= 0.07
             and stock_qty >= 1.20
         )
@@ -521,7 +527,8 @@ async def get_hedged_status() -> Dict[str, Any]:
             else ("CORE_INVENTORY_RETAINED" if speculative_tranches_active == 0
             else ("LOCKED_AWAITING_PROFIT" if not eligible_for_take_profit
             else (f"ANTI_CHURN_DWELL ({120 - dwell_time_sec}s)" if not is_dwell_satisfied
-            else f"ANTI_CHURN_WAITING_CONVERGENCE (Target <={out_target_spread}%)"))))
+            else ("RIDING_CONVERGENCE (Awaiting Trough Rebound / MA Touch)" if (is_out_profitable_relative_to_latest and not is_bottoming_out)
+            else f"ANTI_CHURN_WAITING_CONVERGENCE (Target <={out_target_spread}%)")))))
         )
 
         auto_state = load_auto_tranche_state()
@@ -535,6 +542,7 @@ async def get_hedged_status() -> Dict[str, Any]:
             "ma_stretch_pts": ma_stretch_pts,
             "is_stretched_above_ma": is_stretched_above_ma,
             "is_peaking_out": is_peaking_out,
+            "is_bottoming_out": is_bottoming_out,
             "spread_velocity_1bar": spread_velocity,
             "scale_in_trigger_spread": scale_in_trigger,
             "gap_to_scale_in_pts": round(scale_in_trigger - curr_spread, 2),

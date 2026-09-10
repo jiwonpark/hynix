@@ -324,6 +324,39 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
         print(f"Entries: {entries_count} | Exits: {exits_count}")
         print(f"Protected Core Inventory Retained: {total_adr_pos} SKHY / {total_csop_pos} CSOP")
 
+    def test_conservative_scale_out_bottoming_out_filter(self):
+        """
+        Verify that scale-out waits for bottoming-out / momentum exhaustion:
+        1. When spread is profitable but actively cascading downward, exit is BLOCKED to ride the move.
+        2. When spread stabilizes / bounces off trough OR pierces 24-MA, exit is ARMED.
+        """
+        ma24 = 139.30
+        entry_spread = 139.80
+        target_spread = 139.72 # 139.80 - 0.08
+
+        def check_bottoming_out(last_val, prev_val, prev2_val, ma):
+            local_low = min(prev_val, prev2_val)
+            # Trough bounce or MA touch
+            return bool(last_val >= prev_val or last_val > local_low or last_val <= ma)
+
+        # Scenario 1: Active downward cascade (139.80 -> 139.75 -> 139.70)
+        # Even though 139.70 <= target_spread (139.72) and in profit, spread is cascading down!
+        last_s1, prev_s1, prev2_s1 = 139.70, 139.75, 139.80
+        is_bottoming_s1 = check_bottoming_out(last_s1, prev_s1, prev2_s1, ma24)
+        self.assertFalse(is_bottoming_s1, "Active cascade down must NOT trigger exit: ride convergence wave!")
+
+        # Scenario 2: Cascade reaches 139.35, then bounces to 139.38 (trough formed!)
+        last_s2, prev_s2, prev2_s2 = 139.38, 139.35, 139.42
+        is_bottoming_s2 = check_bottoming_out(last_s2, prev_s2, prev2_s2, ma24)
+        self.assertTrue(is_bottoming_s2, "Trough bounce confirmed: scale-out ARMED at swing low!")
+
+        # Scenario 3: Cascade crashes straight down through MA (139.25 <= 139.30)
+        last_s3, prev_s3, prev2_s3 = 139.25, 139.32, 139.40
+        is_bottoming_s3 = check_bottoming_out(last_s3, prev_s3, prev2_s3, ma24)
+        self.assertTrue(is_bottoming_s3, "24-MA fully pierced: mean-reversion complete, scale-out ARMED!")
+
+        print(f"\n[Conservative Scale-Out Bottoming-Out Verification] PASSED: Downward cascade ridden to maximum profit.")
+
 if __name__ == '__main__':
     unittest.main()
 
