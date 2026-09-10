@@ -1493,7 +1493,7 @@
           <label id="lblAssetStrategy">
             <span class="controlTitle" style="color: #0284c7; font-weight: 800;">Asset / Strategy</span>
             <select id="assetStrategy" style="font-weight: 700; color: #0369a1; background: #f0f9ff; border: 1.5px solid #0284c7;">
-              <option value="skhynix_arb" selected>⚡ SK Hynix Arb (SKHY / SKHYNIX)</option>
+              <option value="skhynix_arb" selected>⚡ SK Hynix Arb (SKHY / CSOP 2x ETF)</option>
               <option value="btc_directional">🪙 Bitcoin Wave (BTC/USDT)</option>
               <option value="eth_btc_ratio">💎 ETH / BTC Ratio Spread</option>
               <option value="sol_directional">☀️ Solana Alpha Wave (SOL/USDT)</option>
@@ -2312,15 +2312,15 @@
     const ASSET_STRATEGIES = {
       skhynix_arb: {
         id: "skhynix_arb",
-        name: "⚡ SK Hynix ADR Arb (SKHY / SKHYNIX)",
+        name: "⚡ SK Hynix ADR Arb (SKHY / CSOP 2x ETF)",
         shortName: "SK Hynix Arb",
         type: "arbitrage",
         symbolA: "SKHYUSDT",
-        symbolB: "SKHYNIXUSDT",
-        ratioMultiplier: 10,
+        symbolB: "CSOPSKHYNIX2LUSDT",
+        ratioMultiplier: 34.0,
         priceUnit: "%",
         labelA: "Spread (Price)",
-        labelB: "Domestic (x10)",
+        labelB: "CSOP 2x ETF (x34)",
         longLabel: "Long ADR (▲)",
         shortLabel: "Short ADR (▼)",
         strategies: [
@@ -2655,8 +2655,8 @@
         const koreanByTime = new Map((korean || []).map((item) => [item.time, item]));
         aligned = (adr || []).map((item) => {
           const k = koreanByTime.get(item.time);
-          if (!k || !k.close) return null;
-          const fairAdr = k.close / 10;
+          const mult = (assetConfig && assetConfig.ratioMultiplier) ? assetConfig.ratioMultiplier : 34.0;
+          const fairAdr = k.close * mult;
           return {
             time: item.time,
             adr: item.close,
@@ -6643,7 +6643,7 @@
         btnNewsMacro: "🌐 Macro / FX",
         btnNewsHide: "✕ Hide",
         secContinuousAlloc: "Cumulative Strategy PnL (%) & Position Sizing",
-        subContinuousAlloc: "Real-time Acc PnL curve with dynamic leverage allocation (Long SKHYNIX / Short SKHY)",
+        subContinuousAlloc: "Real-time Acc PnL curve with dynamic leverage allocation (Long CSOP / Short SKHY)",
         legPnl: "Acc PnL (%)",
         legAlloc: "Position Size (%)",
         legBaseline: "0% Baseline",
@@ -7913,10 +7913,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         } catch(e) {}
         if (!this.deployedStrategy) {
           const assetKey = $("assetStrategy")?.value || "skhynix_arb";
-          const assetConfig = typeof ASSET_STRATEGIES !== 'undefined' && ASSET_STRATEGIES[assetKey] ? ASSET_STRATEGIES[assetKey] : { title: "SK Hynix Arb (SKHY / SKHYNIX)" };
+          const assetConfig = typeof ASSET_STRATEGIES !== 'undefined' && ASSET_STRATEGIES[assetKey] ? ASSET_STRATEGIES[assetKey] : { name: "SK Hynix Arb (SKHY / CSOP 2x ETF)" };
           this.deployedStrategy = {
             assetStrategy: assetKey,
-            assetName: assetConfig.title || "SK Hynix Arb (SKHY / SKHYNIX)",
+            assetName: assetConfig.name || "SK Hynix Arb (SKHY / CSOP 2x ETF)",
             interval: $("interval")?.value || "15m",
             strategyMode: $("strategyMode")?.value || "wave",
             predictionEngineKey: $("predictionEngine")?.value || "hmm_vol_target",
@@ -7948,7 +7948,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const deployed = {
           assetStrategy: assetKey,
-          assetName: assetConfig.title || "SK Hynix Arb (SKHY / SKHYNIX)",
+          assetName: assetConfig.name || assetConfig.title || "SK Hynix Arb (SKHY / CSOP 2x ETF)",
           interval: interval,
           strategyMode: $("strategyMode")?.value || "wave",
           predictionEngineKey: engKey,
@@ -8612,12 +8612,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       async stepTrancheLive() {
         const btn = $("btnStepTranche");
         if (btn) btn.disabled = true;
-        showToast("Executing +1 Tranche: Short 0.07 SKHY + Long 0.01 SKHYNIX...", "info");
+        showToast("Executing +1 Tranche: Short 0.07 SKHY + Long 1.20 CSOP 2x ETF...", "info");
         try {
           const res = await fetch("/skhynix/api/trade/step_tranche", { method: "POST" });
           const json = await res.json();
           if (json.success) {
-            showToast("✅ +1 Tranche Filled: Short 0.07 SKHY + Long 0.01 SKHYNIX", "success");
+            showToast("✅ +1 Tranche Filled: Short 0.07 SKHY + Long 1.20 CSOP 2x ETF", "success");
             await this.fetchHedgedStatus();
             await this.syncWithBackend();
           } else {

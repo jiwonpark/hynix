@@ -235,7 +235,9 @@ async def get_hedged_status() -> Dict[str, Any]:
         margin_ratio = float(summary.get("margin_ratio_percent", 0.0))
 
         adr_pos = next((p for p in positions if p.get("symbol") == "SKHYUSDT"), None)
-        stock_pos = next((p for p in positions if p.get("symbol") == "SKHYNIXUSDT"), None)
+        stock_pos = next((p for p in positions if p.get("symbol") == "CSOPSKHYNIX2LUSDT"), None)
+        if not stock_pos:
+            stock_pos = next((p for p in positions if p.get("symbol") == "SKHYNIXUSDT"), None)
 
         adr_notional = float(adr_pos.get("notional", 0.0)) if adr_pos else 0.0
         stock_notional = float(stock_pos.get("notional", 0.0)) if stock_pos else 0.0
@@ -246,19 +248,21 @@ async def get_hedged_status() -> Dict[str, Any]:
         current_leverage = (total_notional / equity) if equity > 0 else 0.0
         combined_pnl = adr_pnl + stock_pnl
         combined_pnl_pct = (combined_pnl / equity * 100.0) if equity > 0 else 0.0
-        net_delta = stock_notional - adr_notional
+        # CSOP is a 2x leveraged ETF perp, so its effective delta is 2.0x notional
+        effective_stock_delta = stock_notional * 2.0
+        net_delta = effective_stock_delta - adr_notional
 
         adr_mark = float(adr_pos.get("mark_price", 0.0)) if adr_pos else 0.0
         stock_mark = float(stock_pos.get("mark_price", 0.0)) if stock_pos else 0.0
         adr_entry = float(adr_pos.get("entry_price", 0.0)) if adr_pos else 0.0
         stock_entry = float(stock_pos.get("entry_price", 0.0)) if stock_pos else 0.0
 
-        current_spread = (adr_mark / (stock_mark / 10.0) * 100.0) if stock_mark > 0 else None
-        entry_spread = (adr_entry / (stock_entry / 10.0) * 100.0) if stock_entry > 0 else None
+        current_spread = (adr_mark / (stock_mark * 34.0) * 100.0) if stock_mark > 0 else None
+        entry_spread = (adr_entry / (stock_entry * 34.0) * 100.0) if stock_entry > 0 else None
 
         stock_qty = abs(float(stock_pos.get("position_amt", 0.0))) if stock_pos else 0.0
         adr_qty = abs(float(adr_pos.get("position_amt", 0.0))) if adr_pos else 0.0
-        tranches_active = round(stock_qty / 0.01) if stock_qty > 0 else 0
+        tranches_active = round(stock_qty / 1.20) if stock_qty > 0 else 0
 
         loss_on_10pct = adr_notional * 0.10
         free_buffer = max(0.0, equity - maint_margin)
@@ -304,9 +308,9 @@ async def get_hedged_status() -> Dict[str, Any]:
 async def step_tranche() -> Dict[str, Any]:
     """
     Executes +1 Tranche:
-    - Sets 10x leverage and CROSSED margin on SKHYUSDT and SKHYNIXUSDT
+    - Sets 10x leverage and CROSSED margin on SKHYUSDT and CSOPSKHYNIX2LUSDT
     - SELL MARKET 0.07 SKHYUSDT (Short ADR)
-    - BUY MARKET 0.01 SKHYNIXUSDT (Long Domestic Stock)
+    - BUY MARKET 1.20 CSOPSKHYNIX2LUSDT (Long CSOP 2x ETF Perp)
     """
     try:
         overview = await binance_client.get_detailed_account_overview()
@@ -320,27 +324,18 @@ async def step_tranche() -> Dict[str, Any]:
         # Configure leverage & margin type
         await asyncio.gather(
             binance_client.set_leverage("SKHYUSDT", 10),
-            binance_client.set_leverage("SKHYNIXUSDT", 10),
+            binance_client.set_leverage("CSOPSKHYNIX2LUSDT", 10),
             binance_client.set_margin_type("SKHYUSDT", "CROSSED"),
-            binance_client.set_margin_type("SKHYNIXUSDT", "CROSSED"),
+            binance_client.set_margin_type("CSOPSKHYNIX2LUSDT", "CROSSED"),
             return_exceptions=True
         )
 
-        # Place orders concurrently
-        order_adr, order_stock = await asyncio.gather(
-            binance_client.create_order("SKHYUSDT", "SELL", 0.07, "MARKET"),
-            binance_client.create_order("SKHYNIXUSDT", "BUY", 0.01, "MARKET"),
-            return_exceptions=True
-        )
-
-        if isinstance(order_adr, Exception):
-            return {"success": False, "error": f"Failed to short ADR: {order_adr}"}
-        if isinstance(order_stock, Exception):
-            return {"success": False, "error": f"Failed to long Stock: {order_stock}"}
+        order_adr = await binance_client.create_order("SKHYUSDT", "SELL", 0.07, "MARKET")
+        order_stock = await binance_client.create_order("CSOPSKHYNIX2LUSDT", "BUY", 1.20, "MARKET")
 
         return {
             "success": True,
-            "message": "Tranche executed successfully: Short 0.07 SKHYUSDT + Long 0.01 SKHYNIXUSDT",
+            "message": "Tranche executed successfully: Short 0.07 SKHYUSDT + Long 1.20 CSOPSKHYNIX2LUSDT",
             "order_adr": order_adr,
             "order_stock": order_stock
         }
@@ -354,13 +349,13 @@ async def reduce_tranche() -> Dict[str, Any]:
     Closes 1 Tranche (Take-Profit):
     - STRICTLY ENFORCES ZERO-LOSS INVARIANT: Rejects order if combined unrealized PnL <= 0!
     - BUY MARKET 0.07 SKHYUSDT
-    - SELL MARKET 0.01 SKHYNIXUSDT
+    - SELL MARKET 1.20 CSOPSKHYNIX2LUSDT
     """
     try:
         overview = await binance_client.get_detailed_account_overview()
         positions = overview.get("positions", [])
         adr_pos = next((p for p in positions if p.get("symbol") == "SKHYUSDT"), None)
-        stock_pos = next((p for p in positions if p.get("symbol") == "SKHYNIXUSDT"), None)
+        stock_pos = next((p for p in positions if p.get("symbol") in ["CSOPSKHYNIX2LUSDT", "SKHYNIXUSDT"]), None)
 
         if not adr_pos or not stock_pos:
             return {"success": False, "error": "No active hedged positions found to reduce"}
@@ -372,16 +367,19 @@ async def reduce_tranche() -> Dict[str, Any]:
                 "error": f"ZERO-LOSS INVARIANT ENFORCED: Combined PnL is ${combined_pnl:.2f}. You cannot exit at a loss. Wait for convergence or add tranches."
             }
 
+        stock_sym = stock_pos.get("symbol", "CSOPSKHYNIX2LUSDT")
+        stock_reduce_qty = 1.20 if stock_sym == "CSOPSKHYNIX2LUSDT" else 0.01
+
         order_adr, order_stock = await asyncio.gather(
             binance_client.create_order("SKHYUSDT", "BUY", 0.07, "MARKET", reduce_only=True),
-            binance_client.create_order("SKHYNIXUSDT", "SELL", 0.01, "MARKET", reduce_only=True),
+            binance_client.create_order(stock_sym, "SELL", stock_reduce_qty, "MARKET", reduce_only=True),
             return_exceptions=True
         )
 
         if isinstance(order_adr, Exception):
             return {"success": False, "error": f"Failed to close ADR: {order_adr}"}
         if isinstance(order_stock, Exception):
-            return {"success": False, "error": f"Failed to close Stock: {order_stock}"}
+            return {"success": False, "error": f"Failed to close Stock/ETF: {order_stock}"}
 
         return {
             "success": True,
@@ -401,22 +399,17 @@ async def flatten_positions(emergency: bool = False) -> Dict[str, Any]:
     try:
         overview = await binance_client.get_detailed_account_overview()
         positions = overview.get("positions", [])
-        adr_pos = next((p for p in positions if p.get("symbol") == "SKHYUSDT"), None)
-        stock_pos = next((p for p in positions if p.get("symbol") == "SKHYNIXUSDT"), None)
+        symbols_to_close = ["SKHYUSDT", "CSOPSKHYNIX2LUSDT", "SKHYNIXUSDT"]
 
         results = []
-        if adr_pos:
-            amt = float(adr_pos.get("position_amt", 0.0))
-            if abs(amt) > 0.001:
-                side = "BUY" if amt < 0 else "SELL"
-                res = await binance_client.create_order("SKHYUSDT", side, abs(amt), "MARKET", reduce_only=True)
-                results.append(res)
-        if stock_pos:
-            amt = float(stock_pos.get("position_amt", 0.0))
-            if abs(amt) > 0.001:
-                side = "BUY" if amt < 0 else "SELL"
-                res = await binance_client.create_order("SKHYNIXUSDT", side, abs(amt), "MARKET", reduce_only=True)
-                results.append(res)
+        for sym in symbols_to_close:
+            pos = next((p for p in positions if p.get("symbol") == sym), None)
+            if pos:
+                amt = float(pos.get("position_amt", 0.0))
+                if abs(amt) > 0.001:
+                    side = "BUY" if amt < 0 else "SELL"
+                    res = await binance_client.create_order(sym, side, abs(amt), "MARKET", reduce_only=True)
+                    results.append(res)
 
         return {"success": True, "message": "All hedged positions flattened", "orders": results}
     except Exception as e:

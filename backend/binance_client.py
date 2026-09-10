@@ -56,12 +56,21 @@ class BinanceFuturesClient:
                 url = f"{self.base_url}{endpoint}"
 
         async with session.request(method, url, headers=headers) as resp:
-            data = await resp.json()
+            text = await resp.text()
+            try:
+                import json
+                data = json.loads(text)
+            except Exception:
+                data = text
             if resp.status != 200:
                 msg = data.get("msg", str(data)) if isinstance(data, dict) else str(data)
                 code = data.get("code", resp.status) if isinstance(data, dict) else resp.status
                 raise Exception(f"Binance API Error [{code}]: {msg}")
             return data
+
+    async def sign_tradfi_agreement(self) -> Any:
+        """Sign TradFi-Perps agreement contract to enable stock perpetual trading."""
+        return await self.request("POST", "/fapi/v1/stock/contract", signed=True)
 
     async def ping(self) -> bool:
         """Test connectivity to Binance Futures API."""
@@ -232,12 +241,12 @@ class BinanceFuturesClient:
                 "update_time": int(p.get("updateTime", 0))
             })
 
-        # Sort positions: SKHYUSDT and SKHYNIXUSDT first, then by notional descending
+        # Sort positions: SKHYUSDT and CSOPSKHYNIX2LUSDT/SKHYNIXUSDT first, then by notional descending
         def pos_sort_key(item):
             sym = item["symbol"].upper()
             if sym == "SKHYUSDT":
                 return (0, -item["notional"])
-            elif sym == "SKHYNIXUSDT":
+            elif sym in ["CSOPSKHYNIX2LUSDT", "SKHYNIXUSDT"]:
                 return (1, -item["notional"])
             return (2, -item["notional"])
 

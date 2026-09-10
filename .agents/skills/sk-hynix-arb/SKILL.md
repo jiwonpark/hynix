@@ -2,7 +2,7 @@
 name: sk-hynix-arb
 description: >-
   Quantitative arbitrage engine and real-time forecasting suite for dual-listed
-  SK Hynix (SKHYNIXUSDT Korean domestic vs SKHYUSDT US OTC ADR). Covers market data
+  SK Hynix (CSOPSKHYNIX2LUSDT 2x ETF perp / SKHYNIXUSDT Korean domestic vs SKHYUSDT US OTC ADR). Covers market data
   alignment, 6 predictive wave engines (Medallion HMM, Multi-Scale Ridge OLS, OU Hybrid,
   Burg MEM, Sparse DFT, Multi-Horizon), Calmar risk-adjusted leverage optimization,
   and zero-downtime EC2 deployment workflows.
@@ -20,10 +20,11 @@ This skill encapsulates the complete quantitative model architecture, backtestin
 The corporate ratio mandates that 1 ADR unit is backed by 0.1 underlying Korean shares:
 $$\text{Fair ADR (USDT)} = \frac{\text{SK Hynix (KRW)}}{10 \times \text{USD/KRW FX}}$$
 
-On Binance Futures (`SKHYUSDT` vs `SKHYNIXUSDT`), the normalized spread tracks the percentage valuation:
-$$\text{Normalized Spread} = \left( \frac{\text{SKHYUSDT}}{\text{SKHYNIXUSDT}} \right) \times 100$$
-- **Spread $> \text{Mean}$**: ADR is expensive $\rightarrow$ **Short ADR / Long Korea** (displayed as **Red $\blacktriangledown$**).
-- **Spread $< \text{Mean}$**: ADR is cheap $\rightarrow$ **Long ADR / Short Korea** (displayed as **Green $\blacktriangle$**).
+On Binance Futures, due to South Korean FSC regulatory restrictions on single-stock Korean perps (`SKHYNIXUSDT`), the platform uses the CSOP SK Hynix 2x Daily Leveraged Product perp (`CSOPSKHYNIX2LUSDT`):
+$$\text{Normalized Spread} = \left( \frac{\text{SKHYUSDT}}{\text{CSOPSKHYNIX2LUSDT} \times 34.0} \right) \times 100$$
+- **Spread $> \text{Mean}$**: ADR is expensive $\rightarrow$ **Short ADR / Long CSOP 2x** (displayed as **Red $\blacktriangledown$**).
+- **Spread $< \text{Mean}$**: ADR is cheap $\rightarrow$ **Long ADR / Short CSOP 2x** (displayed as **Green $\blacktriangle$**).
+- **Delta Neutrality**: Because CSOP is a 2x leveraged product, tranche sizing pairs 0.07 `SKHYUSDT` ($13.55 notional) with 1.20 `CSOPSKHYNIX2LUSDT` ($6.86 notional $\times 2.0 = $13.72 effective delta), maintaining $< $0.20 net delta imbalance.
 
 ---
 
