@@ -257,8 +257,38 @@ async def get_hedged_status() -> Dict[str, Any]:
         adr_entry = float(adr_pos.get("entry_price", 0.0)) if adr_pos else 0.0
         stock_entry = float(stock_pos.get("entry_price", 0.0)) if stock_pos else 0.0
 
-        current_spread = (adr_mark / (stock_mark * 34.0) * 100.0) if stock_mark > 0 else None
-        entry_spread = (adr_entry / (stock_entry * 34.0) * 100.0) if stock_entry > 0 else None
+        stock_sym = stock_pos.get("symbol") if stock_pos else ""
+
+        # Retrieve live domestic Korean share price (SKHYNIXUSDT contract = 10 domestic shares)
+        # to calculate the true ADR vs. Domestic Parity ratio (~135% - 139%)
+        domestic_price = None
+        if stock_sym == "SKHYNIXUSDT" and stock_mark > 0:
+            domestic_price = stock_mark / 10.0
+        else:
+            try:
+                ticker = await binance_client.request("GET", "/fapi/v1/ticker/price", {"symbol": "SKHYNIXUSDT"})
+                if ticker and "price" in ticker:
+                    domestic_price = float(ticker["price"]) / 10.0
+            except Exception:
+                pass
+
+        if not domestic_price and stock_mark > 0:
+            # CSOP fallback estimation (CSOP is roughly 1/24.5th of domestic share price)
+            domestic_price = stock_mark * 24.5
+
+        if domestic_price and adr_mark > 0:
+            current_spread = (adr_mark / domestic_price) * 100.0
+            if stock_sym == "CSOPSKHYNIX2LUSDT" and stock_entry > 0 and stock_mark > 0:
+                csop_pct = (stock_mark - stock_entry) / stock_entry
+                domestic_entry = domestic_price / (1.0 + (csop_pct / 2.0))
+                entry_spread = (adr_entry / domestic_entry) * 100.0 if domestic_entry > 0 else current_spread
+            elif stock_sym == "SKHYNIXUSDT" and stock_entry > 0:
+                entry_spread = (adr_entry / (stock_entry / 10.0)) * 100.0
+            else:
+                entry_spread = current_spread
+        else:
+            current_spread = (adr_mark / (stock_mark * 34.0) * 100.0) if stock_mark > 0 else None
+            entry_spread = (adr_entry / (stock_entry * 34.0) * 100.0) if stock_entry > 0 else None
 
         stock_qty = abs(float(stock_pos.get("position_amt", 0.0))) if stock_pos else 0.0
         adr_qty = abs(float(adr_pos.get("position_amt", 0.0))) if adr_pos else 0.0
@@ -276,8 +306,6 @@ async def get_hedged_status() -> Dict[str, Any]:
 
         adr_skhy_shares = adr_amt
         adr_krx_shares = adr_amt * 0.1
-
-        stock_sym = stock_pos.get("symbol") if stock_pos else ""
         if stock_sym == "CSOPSKHYNIX2LUSDT":
             stock_delta_usd = stock_amt * stock_mark * 2.0
             stock_skhy_shares = (stock_delta_usd / adr_mark) if adr_mark > 0 else 0.0
