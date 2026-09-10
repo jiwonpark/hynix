@@ -2233,8 +2233,12 @@
                 <button id="btnShortInterval5m" class="btnShortInterval active" type="button" onclick="tradingEngine.setShortTermInterval('5m')">5m</button>
                 <button id="btnShortInterval15m" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('15m')">15m</button>
               </div>
-              <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a;">
-                Parity: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
+              <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span>Parity: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong></span>
+                <span style="color: #cbd5e1;">|</span>
+                <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display:inline-block;width:8px;height:2px;background:#f59e0b;border-radius:1px;"></span>7-MA: <strong id="valShortTermMa7" style="color: #b45309;">--%</strong></span>
+                <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display:inline-block;width:8px;height:2px;background:#8b5cf6;border-radius:1px;"></span>24-MA: <strong id="valShortTermMa24" style="color: #6d28d9;">--%</strong></span>
+                <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display:inline-block;width:8px;height:2px;background:#06b6d4;border-radius:1px;"></span>60-MA: <strong id="valShortTermMa60" style="color: #0891b2;">--%</strong></span>
               </div>
             </div>
           </div>
@@ -2244,14 +2248,24 @@
             <!-- Left Column: Short-Term Lightweight Chart -->
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
               <div id="shortTermSpreadChartHost" style="width: 100%; height: 260px;"></div>
-              <!-- Chart Legend -->
+              <!-- Chart Legend & MA Toggles -->
               <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #475569;">
-                <div style="display: flex; gap: 10px; flex-wrap: wrap; font-weight: 600;">
-                  <span style="display: inline-flex; align-items: center; gap: 4px;"><strong style="color: #16a34a;">▲</strong> Tranche Entry</span>
-                  <span style="display: inline-flex; align-items: center; gap: 4px;"><strong style="color: #dc2626;">▼</strong> Exit / TP</span>
-                  <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 10px; height: 2px; background: #0284c7;"></span> Entry Baseline</span>
-                  <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 10px; height: 2px; background: #d97706; border-top: 1px dashed #d97706;"></span> Next Scale-In</span>
-                  <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 10px; height: 2px; background: #16a34a; border-top: 1px dashed #16a34a;"></span> TP Target</span>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap; font-weight: 600; align-items: center;">
+                  <span style="display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #0369a1;"><span style="display: inline-block; width: 10px; height: 3px; background: #0284c7; border-radius: 1px;"></span> Parity</span>
+                  <button id="btnToggleShortMa7" type="button" onclick="tradingEngine.toggleShortTermMA('ma7')" style="cursor: pointer; border: 1px solid #fde68a; background: #fef3c7; color: #92400e; font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;">
+                    <span style="display: inline-block; width: 10px; height: 2px; background: #f59e0b; border-radius: 1px;"></span> 7-MA
+                  </button>
+                  <button id="btnToggleShortMa24" type="button" onclick="tradingEngine.toggleShortTermMA('ma24')" style="cursor: pointer; border: 1px solid #ddd6fe; background: #ede9fe; color: #5b21b6; font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;">
+                    <span style="display: inline-block; width: 10px; height: 2px; background: #8b5cf6; border-radius: 1px;"></span> 24-MA
+                  </button>
+                  <button id="btnToggleShortMa60" type="button" onclick="tradingEngine.toggleShortTermMA('ma60')" style="cursor: pointer; border: 1px solid #a5f3fc; background: #ecfeff; color: #0e7490; font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;">
+                    <span style="display: inline-block; width: 10px; height: 2px; background: #06b6d4; border-radius: 1px;"></span> 60-MA
+                  </button>
+                  <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;"><strong style="color: #16a34a;">▲</strong> Entry</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #dc2626;">▼</strong> Exit</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #0284c7;"></span> Base</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #d97706; border-top: 1px dashed #d97706;"></span> Scale-In</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #16a34a; border-top: 1px dashed #16a34a;"></span> TP</span>
                 </div>
                 <span id="lblShortTermChartSync" style="font-size: 10px; color: #94a3b8;">Updated 0s ago</span>
               </div>
@@ -3877,6 +3891,30 @@
             lineStyle: LightweightCharts.LineStyle.LargeDashed,
             priceLineVisible: false,
             priceFormat: lineFormat
+          }),
+          ma7: window.spreadChart.addLineSeries({
+            color: "#f59e0b",
+            lineWidth: 1.5,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            priceFormat: lineFormat,
+            title: "7-MA"
+          }),
+          ma24: window.spreadChart.addLineSeries({
+            color: "#8b5cf6",
+            lineWidth: 1.5,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            priceFormat: lineFormat,
+            title: "24-MA"
+          }),
+          ma60: window.spreadChart.addLineSeries({
+            color: "#06b6d4",
+            lineWidth: 1.5,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            priceFormat: lineFormat,
+            title: "60-MA"
           })
         };
         const positionHost = $("positionPane");
@@ -4425,6 +4463,26 @@
       window.spreadSeries.value.setData(rows.map((row) => toPoint(row, valueOf)));
       window.spreadSeries.mean.setData(rows.map((row) => toPoint(row, meanOf)));
       window.spreadSeries.upper.setData(rows.map((row) => toPoint(row, upperOf)));
+
+      function calcRowsMA(inputRows, valueAccessor, period) {
+        if (!inputRows || inputRows.length < period) return [];
+        const result = [];
+        for (let i = period - 1; i < inputRows.length; i++) {
+          let sum = 0;
+          for (let j = i - period + 1; j <= i; j++) {
+            sum += valueAccessor(inputRows[j]);
+          }
+          result.push({
+            time: Math.floor(inputRows[i].time / 1000),
+            value: Number((sum / period).toFixed(2))
+          });
+        }
+        return result;
+      }
+      if (window.spreadSeries?.ma7) window.spreadSeries.ma7.setData(calcRowsMA(rows, valueOf, 7));
+      if (window.spreadSeries?.ma24) window.spreadSeries.ma24.setData(calcRowsMA(rows, valueOf, 24));
+      if (window.spreadSeries?.ma60) window.spreadSeries.ma60.setData(calcRowsMA(rows, valueOf, 60));
+
       // Plot average entry only while a position is open. Whitespace points break stale lines after flat periods.
       const continuousAvgEntry = [];
       for (let i = 0; i < rows.length; i++) {
@@ -4747,6 +4805,9 @@
       if (window.spreadSeries.forecastLower) window.spreadSeries.forecastLower.setData([]);
       if (window.spreadSeries.naiveForecast) window.spreadSeries.naiveForecast.setData([]);
       if (window.spreadSeries.synthWave) window.spreadSeries.synthWave.setData([]);
+      if (window.spreadSeries?.ma7) window.spreadSeries.ma7.setData([]);
+      if (window.spreadSeries?.ma24) window.spreadSeries.ma24.setData([]);
+      if (window.spreadSeries?.ma60) window.spreadSeries.ma60.setData([]);
       if (window.positionSeries?.pnl) window.positionSeries.pnl.setData([]);
       if (window.positionSeries?.amount) window.positionSeries.amount.setData([]);
       if (window.positionSeries?.timeline) window.positionSeries.timeline.setData([]);
@@ -9130,18 +9191,97 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
 
         this.shortTermSeries = this.shortTermChart.addAreaSeries({
-          topColor: "rgba(2, 132, 199, 0.30)",
+          topColor: "rgba(2, 132, 199, 0.25)",
           bottomColor: "rgba(2, 132, 199, 0.02)",
           lineColor: "#0284c7",
           lineWidth: 2,
-          priceFormat: { type: "price", precision: 2, minMove: 0.01 }
+          priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+          title: "Parity"
         });
+
+        this.shortTermMa7Series = this.shortTermChart.addLineSeries({
+          color: "#f59e0b",
+          lineWidth: 1.5,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: true,
+          priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+          title: "7-MA"
+        });
+
+        this.shortTermMa24Series = this.shortTermChart.addLineSeries({
+          color: "#8b5cf6",
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: true,
+          priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+          title: "24-MA"
+        });
+
+        this.shortTermMa60Series = this.shortTermChart.addLineSeries({
+          color: "#06b6d4",
+          lineWidth: 1.5,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: true,
+          priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+          title: "60-MA"
+        });
+
+        this.maVisibility = { ma7: true, ma24: true, ma60: true };
 
         window.addEventListener("resize", () => {
           if (this.shortTermChart && host) {
             this.shortTermChart.applyOptions({ width: host.clientWidth });
           }
         });
+      },
+
+      calcMovingAverage(bars, period) {
+        if (!bars || bars.length < period) return [];
+        const res = [];
+        for (let i = period - 1; i < bars.length; i++) {
+          let sum = 0;
+          for (let j = i - period + 1; j <= i; j++) {
+            sum += bars[j].value;
+          }
+          res.push({
+            time: bars[i].time,
+            value: Number((sum / period).toFixed(3))
+          });
+        }
+        return res;
+      },
+
+      toggleShortTermMA(maKey) {
+        if (!this.maVisibility) {
+          this.maVisibility = { ma7: true, ma24: true, ma60: true };
+        }
+        this.maVisibility[maKey] = !this.maVisibility[maKey];
+        const isVis = this.maVisibility[maKey];
+        const seriesMap = {
+          ma7: { series: this.shortTermMa7Series, btn: $("btnToggleShortMa7"), activeBg: "#fef3c7", activeBorder: "#fde68a", activeColor: "#92400e" },
+          ma24: { series: this.shortTermMa24Series, btn: $("btnToggleShortMa24"), activeBg: "#ede9fe", activeBorder: "#ddd6fe", activeColor: "#5b21b6" },
+          ma60: { series: this.shortTermMa60Series, btn: $("btnToggleShortMa60"), activeBg: "#ecfeff", activeBorder: "#a5f3fc", activeColor: "#0e7490" }
+        };
+        const cfg = seriesMap[maKey];
+        if (cfg && cfg.series) {
+          cfg.series.applyOptions({ visible: isVis });
+        }
+        if (cfg && cfg.btn) {
+          if (isVis) {
+            cfg.btn.style.background = cfg.activeBg;
+            cfg.btn.style.borderColor = cfg.activeBorder;
+            cfg.btn.style.color = cfg.activeColor;
+            cfg.btn.style.opacity = "1";
+          } else {
+            cfg.btn.style.background = "#f1f5f9";
+            cfg.btn.style.borderColor = "#cbd5e1";
+            cfg.btn.style.color = "#94a3b8";
+            cfg.btn.style.opacity = "0.5";
+          }
+        }
       },
 
       setShortTermInterval(interval) {
@@ -9157,11 +9297,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const interval = this.state.shortTermInterval || "5m";
         const origin = window.location.origin;
         const endpoints = [
-          `${origin}/skhynix/api/trade/short_term_parity?interval=${interval}&limit=60`,
-          `/skhynix/api/trade/short_term_parity?interval=${interval}&limit=60`,
-          `${origin}/api/trade/short_term_parity?interval=${interval}&limit=60`,
-          `/api/trade/short_term_parity?interval=${interval}&limit=60`,
-          `http://localhost:8000/api/trade/short_term_parity?interval=${interval}&limit=60`
+          `${origin}/skhynix/api/trade/short_term_parity?interval=${interval}&limit=120`,
+          `/skhynix/api/trade/short_term_parity?interval=${interval}&limit=120`,
+          `${origin}/api/trade/short_term_parity?interval=${interval}&limit=120`,
+          `/api/trade/short_term_parity?interval=${interval}&limit=120`,
+          `http://localhost:8000/api/trade/short_term_parity?interval=${interval}&limit=120`
         ];
         for (const url of endpoints) {
           try {
@@ -9182,6 +9322,24 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!this.shortTermSeries || !data.bars || !data.bars.length) return;
 
         this.shortTermSeries.setData(data.bars.map(b => ({ time: b.time, value: b.value })));
+
+        const ma7Data = this.calcMovingAverage(data.bars, 7);
+        const ma24Data = this.calcMovingAverage(data.bars, 24);
+        const ma60Data = this.calcMovingAverage(data.bars, 60);
+
+        if (this.shortTermMa7Series) this.shortTermMa7Series.setData(ma7Data);
+        if (this.shortTermMa24Series) this.shortTermMa24Series.setData(ma24Data);
+        if (this.shortTermMa60Series) this.shortTermMa60Series.setData(ma60Data);
+
+        if ($("valShortTermMa7")) {
+          $("valShortTermMa7").textContent = ma7Data.length ? `${ma7Data[ma7Data.length - 1].value.toFixed(2)}%` : "--%";
+        }
+        if ($("valShortTermMa24")) {
+          $("valShortTermMa24").textContent = ma24Data.length ? `${ma24Data[ma24Data.length - 1].value.toFixed(2)}%` : "--%";
+        }
+        if ($("valShortTermMa60")) {
+          $("valShortTermMa60").textContent = ma60Data.length ? `${ma60Data[ma60Data.length - 1].value.toFixed(2)}%` : "--%";
+        }
 
         const markers = Array.isArray(data.markers) ? data.markers : [];
         this.shortTermSeries.setMarkers(markers);

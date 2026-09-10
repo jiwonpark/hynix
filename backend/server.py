@@ -633,13 +633,13 @@ async def get_hedged_status() -> Dict[str, Any]:
         return {"error": str(e)}
 
 @app.get("/api/trade/short_term_parity")
-async def get_short_term_parity(interval: str = "5m", limit: int = 60) -> Dict[str, Any]:
+async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[str, Any]:
     """
     Returns high-resolution short-term parity spread series, aligned executions,
     and markers for the live entry/exit chart.
     """
     try:
-        limit = min(120, max(20, limit))
+        limit = min(200, max(20, limit))
         interval = interval if interval in ["1m", "5m", "15m"] else "5m"
         interval_ms = (1 if interval == "1m" else (5 if interval == "5m" else 15)) * 60 * 1000
 
