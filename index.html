@@ -2431,18 +2431,19 @@
               <table class="positionsTable">
                 <thead>
                   <tr>
-                    <th>Timestamp</th>
-                    <th>Pair</th>
+                    <th>Timestamp (KST)</th>
+                    <th>Symbol</th>
                     <th>Side</th>
                     <th>Filled Size</th>
-                    <th>Avg Spread</th>
+                    <th>Exec Price</th>
                     <th>Fee Paid</th>
+                    <th>Realized PnL</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody id="executionHistoryBody">
                   <tr>
-                    <td colspan="7" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
+                    <td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">
                       No recent executions logged.
                     </td>
                   </tr>
@@ -8681,15 +8682,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (logBody) {
           const recentExecs = (this.state.hedgedStatus && Array.isArray(this.state.hedgedStatus.recent_executions)) ? this.state.hedgedStatus.recent_executions : [];
           if (!this.state.orderLog.length && !recentExecs.length) {
-            logBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">${isKo ? '체결 내역이 없습니다.' : 'No recent executions logged.'}</td></tr>`;
+            logBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">${isKo ? '체결 내역이 없습니다.' : 'No recent executions logged.'}</td></tr>`;
           } else if (recentExecs.length) {
-            logBody.innerHTML = recentExecs.slice(-20).reverse().map((ex) => {
+            logBody.innerHTML = recentExecs.slice(-25).reverse().map((ex) => {
               const timeStr = formatKstDateTime(ex.time);
               const isEntry = ex.side === "SELL";
               const sideText = isEntry ? (isKo ? "숏 진입 (SELL)" : "SHORT ENTRY (SELL)") : (isKo ? "롱 청산/익절 (BUY)" : "LONG TRIM/TP (BUY)");
               const sideColor = isEntry ? "#0284c7" : "#16a34a";
-              const pnlColor = ex.realized_pnl >= 0 ? "#16a34a" : "#dc2626";
-              const pnlSign = ex.realized_pnl >= 0 ? "+" : "";
+              const pnlColor = ex.realized_pnl > 0 ? "#16a34a" : (ex.realized_pnl < 0 ? "#dc2626" : "#64748b");
+              const pnlSign = ex.realized_pnl > 0 ? "+" : "";
+              const fee = ex.commission != null ? ex.commission : 0.0054;
+              const feeStr = `-$${fee.toFixed(4)} ${ex.commission_asset || 'USDT'}`;
 
               return `<tr>
                 <td style="color: #64748b; font-size: 11px;">${timeStr}</td>
@@ -8697,6 +8700,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <td><span style="font-weight: 800; color: ${sideColor};">${sideText}</span></td>
                 <td>${ex.qty.toFixed(2)} ($${(ex.qty * ex.price).toFixed(2)})</td>
                 <td>$${ex.price.toFixed(2)}</td>
+                <td style="color: #d97706; font-family: monospace; font-size: 11px;">${feeStr}</td>
                 <td style="color: ${pnlColor}; font-weight: 700;">${ex.realized_pnl ? `${pnlSign}$${ex.realized_pnl.toFixed(4)}` : '—'}</td>
                 <td><span style="font-weight: 800; color: #16a34a;">FILLED</span></td>
               </tr>`;
@@ -8709,8 +8713,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <td style="font-weight: 700;">${log.pair}</td>
                 <td>${log.side}</td>
                 <td>$${log.sizeUsdt.toLocaleString()}</td>
-                <td>${log.avgSpread.toFixed(2)}</td>
-                <td style="color: #64748b;">-$${log.feeUsdt.toFixed(2)}</td>
+                <td>${log.avgSpread.toFixed(2)}%</td>
+                <td style="color: #d97706; font-family: monospace; font-size: 11px;">-$${log.feeUsdt.toFixed(4)} USDT</td>
+                <td style="color: #64748b;">—</td>
                 <td><span style="font-weight: 800; color: ${statusColor};">${log.status}</span></td>
               </tr>`;
             }).join("");

@@ -379,6 +379,8 @@ async def get_hedged_status() -> Dict[str, Any]:
                         "price": float(t.get("price", 0.0)),
                         "qty": float(t.get("qty", 0.0)),
                         "realized_pnl": float(t.get("realizedPnl", 0.0)),
+                        "commission": float(t.get("commission", 0.0)),
+                        "commission_asset": str(t.get("commissionAsset", "USDT")),
                         "time": int(t.get("time", 0)),
                         "action_type": "ENTRY_SHORT" if t.get("side") == "SELL" else "EXIT_SHORT"
                     })
