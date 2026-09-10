@@ -87,7 +87,7 @@ async def account_broadcaster():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting SK Hynix Trading & Multi-Exchange Telemetry Daemon...")
+    logger.info("Starting HYPERION Trading & Multi-Exchange Telemetry Daemon...")
     logger.info(f"Connecting to Binance ({'TESTNET' if config.USE_TESTNET else 'PRODUCTION'})...")
     if config.BINANCE_API_KEY:
         masked_binance = config.BINANCE_API_KEY[:6] + "..." + config.BINANCE_API_KEY[-4:]
@@ -107,12 +107,12 @@ async def lifespan(app: FastAPI):
     broadcaster_task.cancel()
     auto_tranche_task.cancel()
     await asyncio.gather(binance_client.close(), upbit_client.close(), return_exceptions=True)
-    logger.info("SK Hynix Trading Daemon shutdown complete.")
+    logger.info("HYPERION Trading Daemon shutdown complete.")
 
 app = FastAPI(
-    title="SK Hynix Arbitrage Trading Daemon",
+    title="HYPERION // Dual-Leg Arbitrage Daemon",
     version="1.1.0",
-    description="Automated execution daemon and multi-exchange account telemetry engine (Binance & Upbit).",
+    description="HYPERION autonomous execution daemon and multi-exchange account telemetry engine (Binance & Upbit).",
     lifespan=lifespan
 )
 

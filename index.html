@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SK hynix Perp Spread Monitor</title>
+  <title>HYPERION // SK Hynix Relative Value Terminal</title>
   <style>
     :root {
       --bg: #f7f6f2;
@@ -1482,7 +1482,7 @@
     <section class="top">
       <div>
         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
-          <p id="topEyebrow" class="eyebrow" style="margin: 0;">Binance Futures relative value monitor</p>
+          <p id="topEyebrow" class="eyebrow" style="margin: 0; font-weight: 800; letter-spacing: 0.5px; color: #0284c7;">HYPERION // AUTONOMOUS RELATIVE VALUE ENGINE</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
             <span id="deployVersion">v1.7.1</span>
@@ -1490,7 +1490,7 @@
             <span id="deployTime">Deployed: 2026-09-09 15:43 KST</span>
           </div>
         </div>
-        <h1 id="topTitle">SKHY ADR perp vs Korean-share perp</h1>
+        <h1 id="topTitle" style="letter-spacing: -0.5px; font-weight: 900;">HYPERION · Dual-Leg Quant Terminal</h1>
       </div>
       <div class="topRight" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <div class="langSwitch" aria-label="Language switch">
@@ -2462,7 +2462,7 @@
     </div><!-- End #tabContentTrading -->
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
-      <span id="footerTitle">SK hynix Perp Spread Monitor &middot; Quantitative Trading System</span>
+      <span id="footerTitle">HYPERION &middot; Quantitative Trading System &middot; Dual-Leg Parity Engine</span>
       <span>Build: <strong id="footerVersion">v1.7.1</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-09 15:43 KST</strong> (AWS EC2)</span></span>
     </footer>
 
@@ -2628,8 +2628,8 @@
     const fmt = (value, digits = 2) => Number.isFinite(value) ? value.toFixed(digits) : "--";
     const ASSET_UI_COPY = {
       skhynix_arb: {
-        en: ["SKHY ADR perp vs Korean-share perp", "Semiconductor & SK Hynix News Catalyst Impact Feed", "Real-time correlation between global headlines, HBM chip announcements, Nvidia capex, and parity spread dislocation"],
-        ko: ["SK하이닉스 미국 ADR 무기한물 vs 국내주식 무기한물", "반도체 및 SK하이닉스 뉴스 촉매 실시간 영향 피드", "글로벌 뉴스, HBM 발표, 엔비디아 CapEx와 패리티 스프레드 괴리율 간의 상관관계"]
+        en: ["HYPERION · Dual-Leg Quant Terminal", "Semiconductor & SK Hynix News Catalyst Impact Feed", "Real-time correlation between global headlines, HBM chip announcements, Nvidia capex, and parity spread dislocation"],
+        ko: ["HYPERION · 듀얼렉 퀀트 터미널", "반도체 및 SK하이닉스 뉴스 촉매 실시간 영향 피드", "글로벌 뉴스, HBM 발표, 엔비디아 CapEx와 패리티 스프레드 괴리율 간의 상관관계"]
       },
       btc_directional: {
         en: ["Bitcoin BTC/USDT Predictive Strategy", "Bitcoin & Macro Market Catalyst Feed", "Market events mapped against BTC price, momentum, and forecast dislocation"],
@@ -2651,7 +2651,7 @@
       if ($("topTitle")) $("topTitle").textContent = copy[0];
       if ($("secNewsCatalyst")) $("secNewsCatalyst").textContent = copy[1];
       if ($("subNewsCatalyst")) $("subNewsCatalyst").textContent = copy[2];
-      document.title = `${copy[0]} | Quant Monitor`;
+      document.title = `${copy[0]} | HYPERION`;
     }
     function updateStrategyDropdown() {
       const select = $("strategyMode");
@@ -6826,8 +6826,8 @@
 
     const I18N = {
       en: {
-        topEyebrow: "Binance Futures relative value monitor",
-        topTitle: "SKHY ADR perp vs Korean-share perp",
+        topEyebrow: "HYPERION // AUTONOMOUS RELATIVE VALUE ENGINE",
+        topTitle: "HYPERION · Dual-Leg Quant Terminal",
         lblInterval: "Interval",
         lblStrategy: "Strategy",
         optWave: "Predictive Wave Trading",
@@ -6959,8 +6959,8 @@
         badgeEvaluationStage: "TWO-STAGE ARCHITECTURE"
       },
       ko: {
-        topEyebrow: "바이낸스 선물 상대가치 차익거래 모니터",
-        topTitle: "SK하이닉스 미국 ADR 무기한물 vs 국내주식 무기한물",
+        topEyebrow: "HYPERION // 자율 상대가치 차익거래 엔진",
+        topTitle: "HYPERION · 듀얼렉 퀀트 트레이딩 터미널",
         lblNavBacktest: "백테스트 및 계량 전략 분석",
         subNavBacktest: "알고리즘 파라미터 최적화 및 시뮬레이션",
         lblNavTrading: "실전 및 모의 매매 실행 터미널",
