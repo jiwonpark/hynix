@@ -366,7 +366,7 @@ async def get_hedged_status() -> Dict[str, Any]:
         # Fetch recent user fills for SKHYUSDT to display exact entry and exit markers on chart
         executions = []
         try:
-            skhy_trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 20}, signed=True)
+            skhy_trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 50}, signed=True)
             if isinstance(skhy_trades, list):
                 for t in skhy_trades:
                     executions.append({
@@ -411,28 +411,62 @@ async def get_hedged_status() -> Dict[str, Any]:
         scale_in_armed = bool(can_scale_in and is_stretched_above_ma and is_above_entry and is_peaking_out)
         scale_in_trigger = round(max(ma24 + 0.10, base_entry + 0.10), 2)
 
-        # 2. Multi-Tranche Entry Tracking (Anti-Churn LIFO Attribution)
-        entry_trades = [t for t in executions if t.get("action_type") == "ENTRY_SHORT"]
+        # 2. Multi-Tranche Entry Tracking (Anti-Churn LIFO Stack Queue)
+        # Reconstruct the active open tranche stack from chronological trade history
         now_sec = time.time()
+        active_tranches_queue = []
 
-        if entry_trades and parity_bars:
-            latest_entry = entry_trades[-1]
-            latest_entry_sec = latest_entry["time"] / 1000
-            dwell_time_sec = int(now_sec - latest_entry_sec)
-            matched_bar = min(parity_bars, key=lambda b: abs(b["time"] - latest_entry_sec))
-            latest_in_spread = matched_bar["value"]
+        if executions:
+            for tr in executions:
+                action = tr.get("action_type")
+                t_sec = tr.get("time", 0) / 1000
+                matched_bar = min(parity_bars, key=lambda b: abs(b["time"] - t_sec)) if parity_bars else None
+                bar_spread = matched_bar["value"] if matched_bar else base_entry
 
-            recent_entry_spreads = []
-            for et in entry_trades[-3:]:
-                mb = min(parity_bars, key=lambda b: abs(b["time"] - (et["time"] / 1000)))
-                recent_entry_spreads.append(mb["value"])
-            min_recent_in_spread = min(recent_entry_spreads) if recent_entry_spreads else latest_in_spread
+                if action == "ENTRY_SHORT":
+                    active_tranches_queue.append({
+                        "trade_id": str(tr.get("id", "")),
+                        "time": t_sec,
+                        "qty": float(tr.get("qty", 0.08)),
+                        "entry_spread": round(bar_spread, 2),
+                        "entry_price": float(tr.get("price", 0.0)),
+                        "target_out_spread": round(bar_spread - 0.08, 2)
+                    })
+                elif action == "EXIT_SHORT":
+                    if active_tranches_queue:
+                        active_tranches_queue.pop()  # LIFO: exit pops the most recent entry tranche
+
+        # Align queue length with actual live position tranches on exchange
+        if tranches_active == 0:
+            active_tranches_queue = []
+        elif len(active_tranches_queue) > tranches_active:
+            active_tranches_queue = active_tranches_queue[-tranches_active:]
+        elif len(active_tranches_queue) < tranches_active:
+            missing = tranches_active - len(active_tranches_queue)
+            prepended = []
+            for i in range(missing):
+                prepended.append({
+                    "trade_id": f"base_{i+1}",
+                    "time": now_sec - 7200,
+                    "qty": 0.07,
+                    "entry_spread": round(base_entry, 2),
+                    "entry_price": round(float(adr_pos.get("entry_price", 193.0)), 2),
+                    "target_out_spread": round(base_entry - 0.08, 2)
+                })
+            active_tranches_queue = prepended + active_tranches_queue
+
+        # The active candidate for the next scale-out is strictly the top of the LIFO stack
+        if active_tranches_queue:
+            current_target_tranche = active_tranches_queue[-1]
+            latest_in_spread = current_target_tranche["entry_spread"]
+            dwell_time_sec = int(now_sec - current_target_tranche["time"])
+            out_target_spread = current_target_tranche["target_out_spread"]
         else:
+            current_target_tranche = None
             latest_in_spread = base_entry
-            min_recent_in_spread = base_entry
             dwell_time_sec = 999
+            out_target_spread = round(base_entry - 0.08, 2)
 
-        out_target_spread = round(latest_in_spread - 0.08, 2)
         is_out_profitable_relative_to_latest = bool(curr_spread <= out_target_spread)
         is_dwell_satisfied = bool(dwell_time_sec >= 120)
         can_take_profit = bool(tranches_active > 0 and eligible_for_take_profit and is_out_profitable_relative_to_latest and is_dwell_satisfied)
@@ -471,9 +505,10 @@ async def get_hedged_status() -> Dict[str, Any]:
             "can_scale_in": can_scale_in,
             "status_scale_in": status_scale_in,
 
-            # Anti-Churn & Multi-Tranche Out Tracking:
+            # Anti-Churn & Queued Multi-Tranche Out Tracking:
+            "active_tranches_queue": active_tranches_queue,
+            "current_target_tranche": current_target_tranche,
             "latest_entry_spread": round(latest_in_spread, 2),
-            "min_recent_in_spread": round(min_recent_in_spread, 2),
             "out_target_spread": out_target_spread,
             "take_profit_trigger_spread": out_target_spread,
             "gap_to_out_pts": round(curr_spread - out_target_spread, 2),

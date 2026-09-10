@@ -2302,6 +2302,9 @@
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
                   <div id="barCritTPProgress" style="width: 10%; height: 100%; background: #10b981;"></div>
                 </div>
+                <div style="font-size: 10px; color: #64748b; margin-top: 5px; padding-top: 4px; border-top: 1px dashed #e2e8f0; display: flex; justify-content: space-between; overflow-x: auto;">
+                  <span>LIFO Queue: <strong id="valCritQueueSummary" style="color: #0f172a;">T1: 139.30% (≤139.22%)</strong></span>
+                </div>
               </div>
 
               <!-- 3. Sizing & Risk Gate Card -->
@@ -9328,6 +9331,20 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("badgeCriteriaTP").textContent = isKo ? "대기 중" : "HOLDING";
             $("badgeCriteriaTP").style.background = "#f1f5f9";
             $("badgeCriteriaTP").style.color = "#475569";
+          }
+        }
+
+        if ($("valCritQueueSummary")) {
+          const queue = criteria.active_tranches_queue;
+          if (Array.isArray(queue) && queue.length > 0) {
+            $("valCritQueueSummary").innerHTML = queue.map((t, i) => {
+              const isTop = (i === queue.length - 1);
+              return isTop 
+                ? `<span style="color: #16a34a; font-weight: 800;">[Next Out: T${i+1} ${t.entry_spread}% ➔ ≤${t.target_out_spread}%]</span>` 
+                : `<span style="color: #64748b;">T${i+1}: ${t.entry_spread}%</span>`;
+            }).join(" &rarr; ");
+          } else {
+            $("valCritQueueSummary").textContent = "Queue Empty (0 Tranches)";
           }
         }
 

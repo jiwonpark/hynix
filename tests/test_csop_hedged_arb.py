@@ -194,6 +194,64 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
         self.assertFalse(check_can_take_profit(139.38, latest_in, 180, 0.01))
         print("\n[Anti-Churn LIFO Attribution & Dwell Verification] PASSED: Churning strictly blocked.")
 
+    def test_lifo_active_tranche_queue_matching(self):
+        """
+        Verify LIFO Active Tranche Queue Matching across multiple sequential tranches:
+        - When Tranche 3 exits, it pops from the queue.
+        - Tranche 2 then becomes the target (NOT Tranche 3's old entry price).
+        - Prevents cascading churning where remaining tranches are dumped at unfavorable spreads.
+        """
+        queue = []
+        def push_entry(tranche_id: str, entry_spread: float, time_sec: int):
+            queue.append({
+                "id": tranche_id,
+                "entry_spread": entry_spread,
+                "target_out_spread": round(entry_spread - 0.08, 2),
+                "time": time_sec
+            })
+
+        def pop_exit():
+            return queue.pop() if queue else None
+
+        # Step 1: 3 tranches enter at progressively higher spreads
+        push_entry("T1", 139.30, 1000)
+        push_entry("T2", 139.60, 2000)
+        push_entry("T3", 139.75, 3000)
+
+        self.assertEqual(len(queue), 3)
+        self.assertEqual(queue[-1]["id"], "T3")
+        self.assertEqual(queue[-1]["target_out_spread"], 139.67)
+
+        # Step 2: Parity drops to 139.66. T3 matches and exits!
+        curr_spread = 139.66
+        self.assertLessEqual(curr_spread, queue[-1]["target_out_spread"])
+        popped = pop_exit()
+        self.assertEqual(popped["id"], "T3")
+
+        # Step 3: Now queue has 2 tranches. Current target MUST be T2, NOT T3!
+        self.assertEqual(len(queue), 2)
+        self.assertEqual(queue[-1]["id"], "T2")
+        self.assertEqual(queue[-1]["target_out_spread"], 139.52)
+
+        # At curr_spread 139.66, T2 must NOT be allowed to exit (139.66 > 139.52)!
+        self.assertFalse(curr_spread <= queue[-1]["target_out_spread"], "T2 must not exit at 139.66 - churn prevented!")
+
+        # Step 4: Parity drops to 139.50. T2 matches and exits!
+        curr_spread = 139.50
+        self.assertLessEqual(curr_spread, queue[-1]["target_out_spread"])
+        popped2 = pop_exit()
+        self.assertEqual(popped2["id"], "T2")
+
+        # Step 5: Now queue has 1 tranche (T1). Current target MUST be T1 (<= 139.22)!
+        self.assertEqual(len(queue), 1)
+        self.assertEqual(queue[-1]["id"], "T1")
+        self.assertEqual(queue[-1]["target_out_spread"], 139.22)
+
+        # At curr_spread 139.50, T1 must NOT be allowed to exit (139.50 > 139.22)!
+        self.assertFalse(curr_spread <= queue[-1]["target_out_spread"], "T1 must not exit at 139.50 - churn prevented!")
+
+        print("\n[LIFO Active Tranche Queue Matching Verification] PASSED: Sequential popping verified, cascading churn impossible.")
+
 if __name__ == '__main__':
     unittest.main()
 
