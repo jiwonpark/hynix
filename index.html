@@ -998,7 +998,18 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
 
-    /* Terminal Grid Layout */
+    /* Terminal Grid Layout & Top Hedged / Execution Split */
+    .topHedgedAndTicketGrid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(330px, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+      align-items: stretch;
+    }
+    @media (max-width: 1100px) {
+      .topHedgedAndTicketGrid { grid-template-columns: 1fr; }
+    }
+
     .execTerminalGrid {
       display: grid;
       grid-template-columns: 360px 1fr;
@@ -1950,111 +1961,112 @@
           <span style="font-size: 11px; color: #16a34a; font-weight: 700;">🟢 Delta Neutral Simultaneous Fill</span>
         </div>
 
-        <!-- Live Hedged Arbitrage & Zero-Loss Controller -->
-        <div class="hedgedControllerCard" id="hedgedControllerCard" style="margin-bottom: 16px; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 14px 16px;">
-          <!-- 1. The Zero-Loss Structural Arbitrage Rule Banner (Verbatim) -->
-          <div class="zeroLossInvariantBanner" style="background: linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%); border: 1.5px solid #86efac; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 18px;">🛡️</span>
-                <strong style="color: #0f172a; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">The Zero-Loss Structural Arbitrage Rule (Invariant)</strong>
+        <!-- Top Section: Hedged Arbitrage Controller (Left) + Trade Execute Pane (Right) -->
+        <div class="topHedgedAndTicketGrid">
+          <!-- Left: Live Hedged Arbitrage & Zero-Loss Controller -->
+          <div class="hedgedControllerCard" id="hedgedControllerCard" style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; justify-content: space-between;">
+            <!-- 1. The Zero-Loss Structural Arbitrage Rule Banner (Verbatim) -->
+            <div class="zeroLossInvariantBanner" style="background: linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%); border: 1.5px solid #86efac; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 18px;">🛡️</span>
+                  <strong style="color: #0f172a; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">The Zero-Loss Structural Arbitrage Rule (Invariant)</strong>
+                </div>
+                <span style="background: #16a34a; color: #fff; font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px;">ENFORCED BY ENGINE</span>
               </div>
-              <span style="background: #16a34a; color: #fff; font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px;">ENFORCED BY ENGINE</span>
-            </div>
-            <p style="margin: 0; font-size: 12px; color: #1e293b; line-height: 1.55; font-weight: 500;">
-              <strong>Structural Parity Guarantee:</strong> Because 1 SK Hynix ADR unit is legally backed by 0.1 underlying domestic shares, long-run price convergence is an economic certainty. Any spread widening is <strong>temporary market variance</strong>, never permanent loss. <strong>Under NO circumstances does this engine ever sell at a loss or cut losses.</strong> If the spread widens unfavorably: <strong>Scale in with more tranches or Hold</strong>. If the spread converges with net profit: <strong>Take Profit</strong>. Every completed trade is strictly green.
-            </p>
-          </div>
-
-          <!-- 2. Real-Time Hedged Position & Risk Analytics Grid -->
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
-            <strong style="font-size: 12.5px; color: #0f172a; text-transform: uppercase;">📊 Live Hedged Spread Telemetry & Safety Margin</strong>
-            <span id="lblHedgedSyncBadge" style="font-size: 11px; color: #0284c7; font-weight: 700;">Syncing with Binance Futures...</span>
-          </div>
-
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px;">
-            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
-              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Active Tranches</span>
-              <strong id="valHedgedTranches" style="font-size: 16px; color: #0f172a;">0 / 10 Units</strong>
-              <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedQuantities">Short 0.00 SKHY | Long 0.00 CSOP</div>
-              <div style="font-size: 11px; color: #0284c7; font-weight: 700; margin-top: 2px;" id="valHedgedShares">Exposure: — SKHY eq.</div>
-            </div>
-            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
-              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Gross Leverage</span>
-              <strong id="valHedgedLeverage" style="font-size: 16px; color: #0284c7;">0.00x</strong>
-              <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedNotional">Notional: $0.00 USDT</div>
-            </div>
-            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
-              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Net Delta Imbalance</span>
-              <strong id="valHedgedDelta" style="font-size: 16px; color: #16a34a;">$0.00</strong>
-              <div style="font-size: 11px; color: #16a34a; font-weight: 700; margin-top: 2px;" id="valHedgedNetDeltaSubtitle">Net: 0.0000 SKHY shares</div>
-            </div>
-            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
-              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Combined Net PnL</span>
-              <strong id="valHedgedCombinedPnl" style="font-size: 16px; color: #0f172a;">$0.00 (0.00%)</strong>
-              <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedPnlSubtitle">Awaiting positions</div>
-            </div>
-            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
-              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">10% Blowout Impact</span>
-              <strong id="valHedgedLoss10" style="font-size: 16px; color: #ef4444;">-$0.00 USDT</strong>
-              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Estimated move if +10% divergence</div>
-            </div>
-            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
-              <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Tolerable Divergence</span>
-              <strong id="valHedgedMaxDiv" style="font-size: 16px; color: #10b981;">+∞ % pts</strong>
-              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Safety buffer before margin call</div>
-            </div>
-          </div>
-
-          <!-- Live SKHY Shares & Underlying Domestic Exposure Breakdown Bar -->
-          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 11.5px;">
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="background: #0284c7; color: #fff; font-weight: 800; font-size: 10px; padding: 2px 6px; border-radius: 3px;">EQUITY EXPOSURE</span>
-              <span style="color: #475569; font-weight: 600;">Position Exposure in SKHY Shares (1 ADR = 0.1 KRX 000660):</span>
-            </div>
-            <div style="display: flex; gap: 14px; font-family: monospace; font-weight: 700; flex-wrap: wrap;">
-              <span style="color: #dc2626;" id="pillAdrShares">Short Leg: 0.00 SKHY</span>
-              <span style="color: #16a34a;" id="pillStockShares">Long Hedge: 0.00 SKHY eq.</span>
-              <span style="color: #0f172a; background: #e2e8f0; padding: 1px 6px; border-radius: 4px;" id="pillNetShares">Net Delta: 0.0000 SKHY shares</span>
-            </div>
-          </div>
-
-          <!-- 3. Sizing Progress Bar & Interactive Action Buttons -->
-          <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
-            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; font-weight: 700; color: #475569;">
-              <span>Tranche Capacity Utilization (Max 10 Units / ~8x Gross Leverage):</span>
-              <span id="lblTranchePct">0%</span>
-            </div>
-            <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden;">
-              <div id="barTrancheProgress" style="width: 0%; height: 100%; background: linear-gradient(90deg, #10b981 0%, #0284c7 70%, #f59e0b 100%); transition: width 0.3s ease;"></div>
+              <p style="margin: 0; font-size: 12px; color: #1e293b; line-height: 1.55; font-weight: 500;">
+                <strong>Structural Parity Guarantee:</strong> Because 1 SK Hynix ADR unit is legally backed by 0.1 underlying domestic shares, long-run price convergence is an economic certainty. Any spread widening is <strong>temporary market variance</strong>, never permanent loss. <strong>Under NO circumstances does this engine ever sell at a loss or cut losses.</strong> If the spread widens unfavorably: <strong>Scale in with more tranches or Hold</strong>. If the spread converges with net profit: <strong>Take Profit</strong>. Every completed trade is strictly green.
+              </p>
             </div>
 
-            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 4px;">
-              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button id="btnStepTranche" type="button" style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #0284c7; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);">
-                  <span>➕ Add 1 Tranche</span>
-                  <span style="font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 5px; border-radius: 4px;">+$27.37 (0.78x)</span>
-                </button>
-                <button id="btnReduceTranche" type="button" disabled style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #94a3b8; color: #fff; border: 0; border-radius: 6px; cursor: not-allowed; display: flex; align-items: center; gap: 6px;">
-                  <span id="lblReduceTrancheText">🔒 Locked (Zero-Loss Rule: Awaiting Net Profit)</span>
-                </button>
-                <button id="btnEmergencyFlatten" type="button" style="height: 38px; padding: 0 14px; font-size: 12px; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; cursor: pointer;">
-                  🚨 Emergency Flatten
-                </button>
+            <!-- 2. Real-Time Hedged Position & Risk Analytics Grid -->
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
+              <strong style="font-size: 12.5px; color: #0f172a; text-transform: uppercase;">📊 Live Hedged Spread Telemetry & Safety Margin</strong>
+              <span id="lblHedgedSyncBadge" style="font-size: 11px; color: #0284c7; font-weight: 700;">Syncing with Binance Futures...</span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 12px;">
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+                <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Active Tranches</span>
+                <strong id="valHedgedTranches" style="font-size: 16px; color: #0f172a;">0 / 10 Units</strong>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedQuantities">Short 0.00 SKHY | Long 0.00 CSOP</div>
+                <div style="font-size: 11px; color: #0284c7; font-weight: 700; margin-top: 2px;" id="valHedgedShares">Exposure: — SKHY eq.</div>
               </div>
-              <div style="font-size: 11.5px; color: #64748b; font-weight: 600;">
-                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
-                  <input id="chkAutoPeriodic48h" type="checkbox" style="width: 15px; height: 15px; cursor: pointer;">
-                  <span>⚡ 48H Periodic Auto-Tranche (Check every 15m)</span>
-                </label>
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+                <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Gross Leverage</span>
+                <strong id="valHedgedLeverage" style="font-size: 16px; color: #0284c7;">0.00x</strong>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedNotional">Notional: $0.00 USDT</div>
+              </div>
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+                <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Net Delta Imbalance</span>
+                <strong id="valHedgedDelta" style="font-size: 16px; color: #16a34a;">$0.00</strong>
+                <div style="font-size: 11px; color: #16a34a; font-weight: 700; margin-top: 2px;" id="valHedgedNetDeltaSubtitle">Net: 0.0000 SKHY shares</div>
+              </div>
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+                <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Combined Net PnL</span>
+                <strong id="valHedgedCombinedPnl" style="font-size: 16px; color: #0f172a;">$0.00 (0.00%)</strong>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedPnlSubtitle">Awaiting positions</div>
+              </div>
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+                <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">10% Blowout Impact</span>
+                <strong id="valHedgedLoss10" style="font-size: 16px; color: #ef4444;">-$0.00 USDT</strong>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Estimated move if +10% divergence</div>
+              </div>
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+                <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Tolerable Divergence</span>
+                <strong id="valHedgedMaxDiv" style="font-size: 16px; color: #10b981;">+∞ % pts</strong>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Safety buffer before margin call</div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <div class="execTerminalGrid">
-          <!-- Column 1: Autonomous Status / AI Signal Approver + Pair Order Ticket -->
-          <div>
+            <!-- Live SKHY Shares & Underlying Domestic Exposure Breakdown Bar -->
+            <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 11.5px;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="background: #0284c7; color: #fff; font-weight: 800; font-size: 10px; padding: 2px 6px; border-radius: 3px;">EQUITY EXPOSURE</span>
+                <span style="color: #475569; font-weight: 600;">Position Exposure in SKHY Shares (1 ADR = 0.1 KRX 000660):</span>
+              </div>
+              <div style="display: flex; gap: 14px; font-family: monospace; font-weight: 700; flex-wrap: wrap;">
+                <span style="color: #dc2626;" id="pillAdrShares">Short Leg: 0.00 SKHY</span>
+                <span style="color: #16a34a;" id="pillStockShares">Long Hedge: 0.00 SKHY eq.</span>
+                <span style="color: #0f172a; background: #e2e8f0; padding: 1px 6px; border-radius: 4px;" id="pillNetShares">Net Delta: 0.0000 SKHY shares</span>
+              </div>
+            </div>
+
+            <!-- 3. Sizing Progress Bar & Interactive Action Buttons -->
+            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; font-weight: 700; color: #475569;">
+                <span>Tranche Capacity Utilization (Max 10 Units / ~8x Gross Leverage):</span>
+                <span id="lblTranchePct">0%</span>
+              </div>
+              <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden;">
+                <div id="barTrancheProgress" style="width: 0%; height: 100%; background: linear-gradient(90deg, #10b981 0%, #0284c7 70%, #f59e0b 100%); transition: width 0.3s ease;"></div>
+              </div>
+
+              <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 4px;">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button id="btnStepTranche" type="button" style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #0284c7; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);">
+                    <span>➕ Add 1 Tranche</span>
+                    <span style="font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 5px; border-radius: 4px;">+$20.41 (0.58x)</span>
+                  </button>
+                  <button id="btnReduceTranche" type="button" disabled style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #94a3b8; color: #fff; border: 0; border-radius: 6px; cursor: not-allowed; display: flex; align-items: center; gap: 6px;">
+                    <span id="lblReduceTrancheText">🔒 Locked (Zero-Loss Rule: Awaiting Net Profit)</span>
+                  </button>
+                  <button id="btnEmergencyFlatten" type="button" style="height: 38px; padding: 0 14px; font-size: 12px; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; cursor: pointer;">
+                    🚨 Emergency Flatten
+                  </button>
+                </div>
+                <div style="font-size: 11.5px; color: #64748b; font-weight: 600;">
+                  <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input id="chkAutoPeriodic48h" type="checkbox" style="width: 15px; height: 15px; cursor: pointer;">
+                    <span>⚡ 48H Periodic Auto-Tranche (Check every 15m)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Autonomous Status / AI Signal Approver + Trade Execute Pane -->
+          <div class="tradeExecutePaneCol" style="display: flex; flex-direction: column; gap: 12px;">
             <!-- 24H Autonomous Bot Live Telemetry (Active in Full-Auto mode) -->
             <div class="autoBotActiveBox" id="autoBotBox" style="display: none;">
               <div class="autoBotActiveHeader">
@@ -2105,8 +2117,8 @@
               </div>
             </div>
 
-            <!-- Dual-Leg Order Ticket (Locked in Auto Mode, Unlocked in Manual Mode) -->
-            <div class="pairOrderTicket" id="pairOrderTicket">
+            <!-- Dual-Leg Order Ticket (Trade Execute Pane) -->
+            <div class="pairOrderTicket" id="pairOrderTicket" style="margin: 0;">
               <div class="ticketRow">
                 <div class="ticketRowLabel">
                   <span id="lblOrderNotional">Order Notional (USDT)</span>
@@ -2162,9 +2174,10 @@
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- Column 2: Active Open Positions & Execution Logs -->
-          <div class="posTableShell">
+        <!-- Full-Width Positions & Execution History Shell -->
+        <div class="posTableShell" style="width: 100%;">
             <div class="posTableTabs">
               <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">0</span>)</button>
               <button id="tabAssets" class="posTabBtn" type="button">Binance Collateral (<span id="countAssets">0</span>)</button>
@@ -2178,14 +2191,14 @@
               <table class="positionsTable">
                 <thead>
                   <tr>
-                    <th>Pair / Asset</th>
-                    <th>Direction</th>
-                    <th>Notional</th>
-                    <th>Entry Spread</th>
-                    <th>Mark Spread</th>
-                    <th>Unrealized PnL</th>
+                    <th style="min-width: 250px;">Pair / Asset & Captured Premium</th>
+                    <th>Leg / Direction</th>
+                    <th>Notional & Share Exposure</th>
+                    <th>Entry Price</th>
+                    <th>Mark Price</th>
+                    <th>Unrealized PnL (ROE)</th>
                     <th>Est. Liq / Buffer</th>
-                    <th>Action</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody id="activePositionsBody">
@@ -8269,37 +8282,144 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const posBody = $("activePositionsBody");
         if (posBody) {
           if (hasBackendPos) {
-            posBody.innerHTML = this.state.backendPositions.map((pos) => {
-              const pnlColor = pos.unrealized_pnl >= 0 ? "#10b981" : "#ef4444";
-              const pnlSign = pos.unrealized_pnl >= 0 ? "+" : "";
-              const dirLabel = pos.side === "LONG" 
-                ? (isKo ? "🟢 롱 (LONG)" : "🟢 LONG") 
-                : (isKo ? "🔴 숏 (SHORT)" : "🔴 SHORT");
-              const liqStr = pos.liquidation_price ? `$${pos.liquidation_price.toFixed(4)} (${pos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : "—";
-              const skhySharesStr = pos.skhy_shares != null 
-                ? `<div style="font-size: 11px; color: #0284c7; font-weight: 700; margin-top: 2px;">${pos.skhy_shares >= 0 ? '+' : ''}${pos.skhy_shares.toFixed(3)} SKHY shares</div>` 
-                : '';
-              const krxSharesStr = pos.krx_shares != null 
-                ? `<div style="font-size: 10px; color: #64748b; font-weight: 600;">(${pos.krx_shares >= 0 ? '+' : ''}${pos.krx_shares.toFixed(4)} KR shares)</div>` 
-                : '';
+            const adrPos = this.state.backendPositions.find(p => p.symbol === "SKHYUSDT");
+            const stockPos = this.state.backendPositions.find(p => p.symbol === "CSOPSKHYNIX2LUSDT" || p.symbol === "SKHYNIXUSDT");
+            const otherPositions = this.state.backendPositions.filter(p => p.symbol !== "SKHYUSDT" && p.symbol !== "CSOPSKHYNIX2LUSDT" && p.symbol !== "SKHYNIXUSDT");
 
-              return `<tr>
-                <td style="font-weight: 700; color: #0f172a;">
-                  ${pos.symbol}
-                  ${skhySharesStr}
+            let html = "";
+            if (adrPos && stockPos) {
+              const h = this.state.hedgedStatus || {};
+              const tranches = h.tranches_active || 0;
+              const combinedPnl = h.combined_unrealized_pnl_usd != null ? h.combined_unrealized_pnl_usd : (adrPos.unrealized_pnl + stockPos.unrealized_pnl);
+              const combinedPnlPct = h.combined_unrealized_pnl_pct != null ? h.combined_unrealized_pnl_pct : 0.0;
+              const entrySpread = h.entry_spread_pct || 0.0;
+              const currentSpread = h.current_spread_pct || 0.0;
+              const capturedSpread = (entrySpread > 0 && currentSpread > 0) ? (entrySpread - currentSpread) : 0.0;
+              const isProfit = combinedPnl > 0;
+              const pnlSign = combinedPnl >= 0 ? "+" : "";
+              const spreadSign = capturedSpread >= 0 ? "+" : "";
+              const netDelta = h.net_skhy_shares != null ? h.net_skhy_shares : 0.0;
+              const netDeltaSign = netDelta >= 0 ? "+" : "";
+              const stockDisplayName = stockPos.symbol === "CSOPSKHYNIX2LUSDT" ? "CSOP 2x ETF" : "SK Hynix KR";
+
+              html += `<tr>
+                <!-- Merged Front Cell: Captured Premium & Dual-Leg Parity Summary -->
+                <td rowspan="2" style="font-weight: 700; color: #0f172a; vertical-align: middle; background: #f8fafc; border-right: 2px solid #e2e8f0; min-width: 250px; padding: 14px 16px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                    <span style="font-size: 13.5px; font-weight: 800; color: #0284c7;">⚡ SK Hynix Dual-Leg Arb</span>
+                    <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">${tranches} / 10 UNITS</span>
+                  </div>
+                  <div style="font-size: 11px; color: #64748b; font-weight: 600; margin-bottom: 8px;">
+                    SKHYUSDT (ADR) + ${stockDisplayName}
+                  </div>
+
+                  <div style="background: ${isProfit ? '#ecfdf5' : '#fff1f2'}; border: 1.5px solid ${isProfit ? '#86efac' : '#fecaca'}; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">
+                    <div style="font-size: 10px; font-weight: 800; color: ${isProfit ? '#047857' : '#be123c'}; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between;">
+                      <span>Captured Premium</span>
+                      <span>${spreadSign}${capturedSpread.toFixed(2)}% pts</span>
+                    </div>
+                    <div style="font-size: 16px; font-weight: 900; color: ${isProfit ? '#16a34a' : '#dc2626'}; margin-top: 2px;">
+                      ${pnlSign}$${combinedPnl.toFixed(2)} (${pnlSign}${combinedPnlPct.toFixed(2)}%)
+                    </div>
+                    <div style="font-size: 10.5px; color: ${isProfit ? '#065f46' : '#9f1239'}; margin-top: 3px; font-family: monospace;">
+                      Entry: ${entrySpread.toFixed(2)}% ➔ Mark: ${currentSpread.toFixed(2)}%
+                    </div>
+                  </div>
+
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-family: monospace; font-weight: 700; color: #0284c7;">
+                    <span>Net Share Delta:</span>
+                    <span style="color: ${Math.abs(netDelta) < 0.01 ? '#16a34a' : '#0284c7'};">${netDeltaSign}${netDelta.toFixed(4)} SKHY</span>
+                  </div>
                 </td>
-                <td><span style="font-weight: 700;">${dirLabel}</span> <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 3px;">${pos.leverage}x ${pos.margin_type}</span></td>
+
+                <!-- Leg 1: ADR Short -->
                 <td>
-                  $${pos.notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  ${krxSharesStr}
+                  <span style="font-weight: 800; color: #dc2626;">🔴 SHORT ADR</span> 
+                  <span style="font-size: 10px; background: #fee2e2; color: #991b1b; padding: 1px 4px; border-radius: 3px; font-weight: 700;">${adrPos.leverage}x ${adrPos.margin_type}</span>
+                  <div style="font-size: 10.5px; color: #64748b; font-family: monospace; margin-top: 2px;">${adrPos.symbol}</div>
                 </td>
-                <td>$${pos.entry_price.toFixed(4)}</td>
-                <td style="font-weight: 700;">$${pos.mark_price.toFixed(4)}</td>
-                <td style="font-weight: 800; color: ${pnlColor};">${pnlSign}$${pos.unrealized_pnl.toFixed(2)} (${pnlSign}${pos.roe_percent.toFixed(2)}%)</td>
-                <td style="color: #64748b; font-size: 11px;">${liqStr}</td>
+                <td>
+                  <div style="font-weight: 800; font-size: 13px;">$${adrPos.notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  <div style="font-size: 11px; color: #dc2626; font-weight: 700;">${adrPos.skhy_shares != null ? (adrPos.skhy_shares >= 0 ? '+' : '') + adrPos.skhy_shares.toFixed(3) + ' SKHY shares' : ''}</div>
+                  <div style="font-size: 10px; color: #64748b;">(${adrPos.krx_shares != null ? (adrPos.krx_shares >= 0 ? '+' : '') + adrPos.krx_shares.toFixed(4) + ' KR shares' : ''})</div>
+                </td>
+                <td>$${adrPos.entry_price.toFixed(4)}</td>
+                <td style="font-weight: 700;">$${adrPos.mark_price.toFixed(4)}</td>
+                <td style="font-weight: 800; color: ${adrPos.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'};">
+                  ${adrPos.unrealized_pnl >= 0 ? '+' : ''}$${adrPos.unrealized_pnl.toFixed(2)} (${adrPos.unrealized_pnl >= 0 ? '+' : ''}${adrPos.roe_percent.toFixed(2)}%)
+                </td>
+                <td style="color: #64748b; font-size: 11px;">
+                  ${adrPos.liquidation_price ? `$${adrPos.liquidation_price.toFixed(2)} (${adrPos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : '—'}
+                </td>
+                <td><span style="font-size: 11px; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 700; border: 1px solid #bbf7d0;">LIVE BINANCE</span></td>
+              </tr>
+
+              <!-- Leg 2: Stock / CSOP Long -->
+              <tr>
+                <td>
+                  <span style="font-weight: 800; color: #16a34a;">🟢 LONG ${stockDisplayName}</span> 
+                  <span style="font-size: 10px; background: #dcfce7; color: #166534; padding: 1px 4px; border-radius: 3px; font-weight: 700;">${stockPos.leverage}x ${stockPos.margin_type}</span>
+                  <div style="font-size: 10.5px; color: #64748b; font-family: monospace; margin-top: 2px;">${stockPos.symbol}</div>
+                </td>
+                <td>
+                  <div style="font-weight: 800; font-size: 13px;">$${stockPos.notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  <div style="font-size: 11px; color: #16a34a; font-weight: 700;">${stockPos.skhy_shares != null ? (stockPos.skhy_shares >= 0 ? '+' : '') + stockPos.skhy_shares.toFixed(3) + ' SKHY shares' : ''}</div>
+                  <div style="font-size: 10px; color: #64748b;">(${stockPos.krx_shares != null ? (stockPos.krx_shares >= 0 ? '+' : '') + stockPos.krx_shares.toFixed(4) + ' KR shares' : ''})</div>
+                </td>
+                <td>$${stockPos.entry_price.toFixed(4)}</td>
+                <td style="font-weight: 700;">$${stockPos.mark_price.toFixed(4)}</td>
+                <td style="font-weight: 800; color: ${stockPos.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'};">
+                  ${stockPos.unrealized_pnl >= 0 ? '+' : ''}$${stockPos.unrealized_pnl.toFixed(2)} (${stockPos.unrealized_pnl >= 0 ? '+' : ''}${stockPos.roe_percent.toFixed(2)}%)
+                </td>
+                <td style="color: #64748b; font-size: 11px;">
+                  ${stockPos.liquidation_price ? `$${stockPos.liquidation_price.toFixed(2)} (${stockPos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : '—'}
+                </td>
                 <td><span style="font-size: 11px; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 700; border: 1px solid #bbf7d0;">LIVE BINANCE</span></td>
               </tr>`;
-            }).join("");
+            } else {
+              const singlePositions = [adrPos, stockPos].filter(Boolean);
+              html += singlePositions.map(pos => {
+                const pnlColor = pos.unrealized_pnl >= 0 ? "#10b981" : "#ef4444";
+                const pnlSign = pos.unrealized_pnl >= 0 ? "+" : "";
+                const dirLabel = pos.side === "LONG" ? (isKo ? "🟢 롱 (LONG)" : "🟢 LONG") : (isKo ? "🔴 숏 (SHORT)" : "🔴 SHORT");
+                const liqStr = pos.liquidation_price ? `$${pos.liquidation_price.toFixed(4)} (${pos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : "—";
+                const skhySharesStr = pos.skhy_shares != null ? `<div style="font-size: 11px; color: #0284c7; font-weight: 700; margin-top: 2px;">${pos.skhy_shares >= 0 ? '+' : ''}${pos.skhy_shares.toFixed(3)} SKHY shares</div>` : '';
+                const krxSharesStr = pos.krx_shares != null ? `<div style="font-size: 10px; color: #64748b; font-weight: 600;">(${pos.krx_shares >= 0 ? '+' : ''}${pos.krx_shares.toFixed(4)} KR shares)</div>` : '';
+
+                return `<tr>
+                  <td style="font-weight: 700; color: #0f172a;">${pos.symbol}${skhySharesStr}</td>
+                  <td><span style="font-weight: 700;">${dirLabel}</span> <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 3px;">${pos.leverage}x ${pos.margin_type}</span></td>
+                  <td>$${pos.notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${krxSharesStr}</td>
+                  <td>$${pos.entry_price.toFixed(4)}</td>
+                  <td style="font-weight: 700;">$${pos.mark_price.toFixed(4)}</td>
+                  <td style="font-weight: 800; color: ${pnlColor};">${pnlSign}$${pos.unrealized_pnl.toFixed(2)} (${pnlSign}${pos.roe_percent.toFixed(2)}%)</td>
+                  <td style="color: #64748b; font-size: 11px;">${liqStr}</td>
+                  <td><span style="font-size: 11px; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 700; border: 1px solid #bbf7d0;">LIVE BINANCE</span></td>
+                </tr>`;
+              }).join("");
+            }
+
+            if (otherPositions.length > 0) {
+              html += otherPositions.map(pos => {
+                const pnlColor = pos.unrealized_pnl >= 0 ? "#10b981" : "#ef4444";
+                const pnlSign = pos.unrealized_pnl >= 0 ? "+" : "";
+                const dirLabel = pos.side === "LONG" ? (isKo ? "🟢 롱 (LONG)" : "🟢 LONG") : (isKo ? "🔴 숏 (SHORT)" : "🔴 SHORT");
+                const liqStr = pos.liquidation_price ? `$${pos.liquidation_price.toFixed(4)} (${pos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : "—";
+                return `<tr>
+                  <td style="font-weight: 700; color: #0f172a;">${pos.symbol}</td>
+                  <td><span style="font-weight: 700;">${dirLabel}</span> <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 3px;">${pos.leverage}x ${pos.margin_type}</span></td>
+                  <td>$${pos.notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td>$${pos.entry_price.toFixed(4)}</td>
+                  <td style="font-weight: 700;">$${pos.mark_price.toFixed(4)}</td>
+                  <td style="font-weight: 800; color: ${pnlColor};">${pnlSign}$${pos.unrealized_pnl.toFixed(2)} (${pnlSign}${pos.roe_percent.toFixed(2)}%)</td>
+                  <td style="color: #64748b; font-size: 11px;">${liqStr}</td>
+                  <td><span style="font-size: 11px; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 700; border: 1px solid #bbf7d0;">LIVE BINANCE</span></td>
+                </tr>`;
+              }).join("");
+            }
+
+            posBody.innerHTML = html;
+          }
           } else if (!this.state.positions.length) {
             posBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">🛡️ ${isKo ? '활성 보유 포지션이 없습니다. 주문 티켓 또는 AI 시그널 승인으로 포지션을 개설하세요.' : 'No active open positions. Execute a pair trade or approve an AI signal to open.'}</td></tr>`;
           } else {
