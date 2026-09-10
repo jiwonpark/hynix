@@ -717,14 +717,20 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[
                 for (m_time, is_entry), m_data in sorted(candle_markers.items(), key=lambda x: x[0][0]):
                     avg_px = m_data["weighted_price"] / max(1e-6, m_data["total_qty"])
                     qty_str = f"{m_data['total_qty']:.2f}"
-                    cnt_str = f" ({m_data['count']}x)" if m_data['count'] > 1 else ""
-                    lbl = f"{'Short' if is_entry else 'Cover'}{cnt_str} ${avg_px:.2f} ({qty_str})"
+                    cnt_str = f" {m_data['count']}x" if m_data['count'] > 1 else ""
+                    # Clean price/qty label without redundant Short/Cover words (arrow already conveys side)
+                    hover_lbl = f"${avg_px:.2f} ({qty_str}){cnt_str}"
                     markers.append({
                         "time": m_time,
                         "position": "aboveBar" if is_entry else "belowBar",
-                        "color": "#dc2626" if is_entry else "#16a34a",
+                        "color": "rgba(220, 38, 38, 0.35)" if is_entry else "rgba(22, 163, 74, 0.35)",
+                        "activeColor": "#dc2626" if is_entry else "#16a34a",
                         "shape": "arrowDown" if is_entry else "arrowUp",
-                        "text": lbl
+                        "text": "",
+                        "hoverText": hover_lbl,
+                        "is_entry": is_entry,
+                        "avg_price": round(avg_px, 2),
+                        "qty": round(m_data["total_qty"], 2)
                     })
         except Exception:
             logger.exception("Error loading trade markers")

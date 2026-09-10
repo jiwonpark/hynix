@@ -9250,11 +9250,60 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         this.maVisibility = { ma7: true, ma24: true, ma60: true };
 
+        let activeHoveredMarkerTime = null;
+        this.shortTermChart.subscribeCrosshairMove((param) => {
+          if (!param || !param.time || !param.point) {
+            if (activeHoveredMarkerTime !== null) {
+              activeHoveredMarkerTime = null;
+              this.updateMarkerState(null);
+            }
+            return;
+          }
+          const time = param.time;
+          const hasMarker = this.rawExecutionMarkers && this.rawExecutionMarkers.some((m) => m.time === time);
+          const nextHover = hasMarker ? time : null;
+          if (nextHover !== activeHoveredMarkerTime) {
+            activeHoveredMarkerTime = nextHover;
+            this.updateMarkerState(nextHover);
+          }
+        });
+
         window.addEventListener("resize", () => {
           if (this.shortTermChart && host) {
             this.shortTermChart.applyOptions({ width: host.clientWidth });
           }
         });
+      },
+
+      updateMarkerState(hoveredTime = null) {
+        if (!this.shortTermSeries || !this.rawExecutionMarkers) return;
+        
+        const formattedMarkers = this.rawExecutionMarkers.map((m) => {
+          const isMatch = (hoveredTime !== null && m.time === hoveredTime);
+          const isShort = (m.shape === "arrowDown" || m.is_entry || m.color === "#dc2626" || (typeof m.color === "string" && m.color.includes("220")));
+          
+          if (isMatch) {
+            return {
+              time: m.time,
+              position: m.position,
+              shape: m.shape,
+              color: isShort ? "#dc2626" : "#16a34a",
+              size: 2,
+              text: m.hoverText || m.text || ""
+            };
+          } else {
+            return {
+              time: m.time,
+              position: m.position,
+              shape: m.shape,
+              color: isShort ? "rgba(220, 38, 38, 0.35)" : "rgba(22, 163, 74, 0.35)",
+              size: 1,
+              text: ""
+            };
+          }
+        });
+        
+        this.shortTermSeries.setMarkers(formattedMarkers);
       },
 
       calcMovingAverage(bars, period) {
@@ -9361,7 +9410,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
 
         const markers = Array.isArray(data.markers) ? data.markers : [];
-        this.shortTermSeries.setMarkers(markers);
+        this.rawExecutionMarkers = markers;
+        this.updateMarkerState(null);
         window.latestExecutionMarkers = markers;
 
         const latest = data.bars[data.bars.length - 1];
