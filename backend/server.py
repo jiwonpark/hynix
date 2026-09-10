@@ -320,6 +320,58 @@ async def get_hedged_status() -> Dict[str, Any]:
         net_skhy_shares = adr_skhy_shares + stock_skhy_shares
         net_krx_shares = adr_krx_shares + stock_krx_shares
 
+        # Fetch recent user fills for SKHYUSDT to display exact entry and exit markers on chart
+        executions = []
+        try:
+            skhy_trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 20}, signed=True)
+            if isinstance(skhy_trades, list):
+                for t in skhy_trades:
+                    executions.append({
+                        "id": str(t.get("id", "")),
+                        "symbol": "SKHYUSDT",
+                        "side": t.get("side", ""),
+                        "price": float(t.get("price", 0.0)),
+                        "qty": float(t.get("qty", 0.0)),
+                        "realized_pnl": float(t.get("realizedPnl", 0.0)),
+                        "time": int(t.get("time", 0)),
+                        "action_type": "ENTRY_SHORT" if t.get("side") == "SELL" else "EXIT_SHORT"
+                    })
+            executions.sort(key=lambda x: x["time"])
+        except Exception:
+            pass
+
+        # Real-time criteria for auto-tranching (기준)
+        base_entry = entry_spread if entry_spread else 139.30
+        curr_spread = current_spread if current_spread else 139.30
+        scale_in_trigger = round(base_entry + 0.35, 2)
+        take_profit_trigger = round(base_entry - 0.40, 2)
+        tranches_remaining = max(0, 10 - tranches_active)
+        can_scale_in = bool(tranches_remaining > 0 and free_buffer >= 2.0)
+
+        auto_criteria = {
+            "entry_baseline_spread": round(base_entry, 2),
+            "current_spread": round(curr_spread, 2),
+            "scale_in_trigger_spread": scale_in_trigger,
+            "take_profit_trigger_spread": take_profit_trigger,
+            "gap_to_scale_in_pts": round(scale_in_trigger - curr_spread, 2),
+            "gap_to_take_profit_pts": round(curr_spread - take_profit_trigger, 2),
+            "scale_in_threshold_pts": 0.35,
+            "take_profit_threshold_pts": 0.40,
+            "tranches_active": tranches_active,
+            "tranches_max": 10,
+            "tranches_remaining": tranches_remaining,
+            "can_scale_in": can_scale_in,
+            "can_take_profit": eligible_for_take_profit,
+            "status_scale_in": "ARMED_READY" if (curr_spread >= scale_in_trigger and can_scale_in) else "WAITING_DIVERGENCE",
+            "status_take_profit": "TAKE_PROFIT_READY" if eligible_for_take_profit else "LOCKED_AWAITING_PROFIT",
+            "next_tranche_size": {
+                "skhy_qty": 0.07,
+                "csop_qty": 1.20,
+                "notional_usd": 20.41,
+                "leverage_add": 0.58
+            }
+        }
+
         return {
             "authenticated": True,
             "equity_usd": equity,
@@ -349,6 +401,8 @@ async def get_hedged_status() -> Dict[str, Any]:
             "stock_krx_shares": round(stock_krx_shares, 5),
             "net_krx_shares": round(net_krx_shares, 5),
             "eligible_for_take_profit": eligible_for_take_profit,
+            "recent_executions": executions,
+            "auto_tranche_criteria": auto_criteria,
             "zero_loss_rule": {
                 "rule_name": "Zero-Loss Structural Convergence Invariant",
                 "status": "ENFORCED",
@@ -359,6 +413,89 @@ async def get_hedged_status() -> Dict[str, Any]:
     except Exception as e:
         logger.exception("Error in get_hedged_status")
         return {"error": str(e)}
+
+@app.get("/api/trade/short_term_parity")
+async def get_short_term_parity(interval: str = "5m", limit: int = 60) -> Dict[str, Any]:
+    """
+    Returns high-resolution short-term parity spread series, aligned executions,
+    and markers for the live entry/exit chart.
+    """
+    try:
+        limit = min(120, max(20, limit))
+        interval = interval if interval in ["1m", "5m", "15m"] else "5m"
+        interval_ms = (1 if interval == "1m" else (5 if interval == "5m" else 15)) * 60 * 1000
+
+        k1, k2 = await asyncio.gather(
+            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYUSDT", "interval": interval, "limit": limit}),
+            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYNIXUSDT", "interval": interval, "limit": limit}),
+            return_exceptions=True
+        )
+
+        if not isinstance(k1, list) or not isinstance(k2, list):
+            return {"error": "Failed to fetch klines from Binance", "bars": [], "markers": []}
+
+        m2 = {x[0]: float(x[4]) for x in k2}
+        bars = []
+        for x in k1:
+            t = x[0]
+            if t in m2 and m2[t] > 0:
+                p1 = float(x[4])
+                p2 = m2[t] / 10.0  # Domestic Korean price in USD
+                ratio = round((p1 / p2) * 100.0, 3)
+                bars.append({
+                    "time": int(t / 1000),
+                    "value": ratio,
+                    "adr": p1,
+                    "domestic": round(p2, 2)
+                })
+
+        markers = []
+        executions = []
+        try:
+            trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 20}, signed=True)
+            if isinstance(trades, list) and bars:
+                min_time_sec = bars[0]["time"]
+                for tr in trades:
+                    t_ms = int(tr.get("time", 0))
+                    t_sec = int(t_ms / 1000)
+                    if t_sec >= min_time_sec - 600:
+                        bar_bucket_sec = int((t_ms // interval_ms) * (interval_ms // 1000))
+                        matched_bar = min(bars, key=lambda b: abs(b["time"] - bar_bucket_sec))
+                        marker_time = matched_bar["time"]
+
+                        side = tr.get("side", "")
+                        is_entry = (side == "SELL")
+                        price = float(tr.get("price", 0.0))
+                        qty = float(tr.get("qty", 0.0))
+
+                        markers.append({
+                            "time": marker_time,
+                            "position": "belowBar" if is_entry else "aboveBar",
+                            "color": "#16a34a" if is_entry else "#dc2626",
+                            "shape": "arrowUp" if is_entry else "arrowDown",
+                            "text": f"{'Entry' if is_entry else 'Exit'} ${price:.2f} ({qty:.2f})"
+                        })
+                        executions.append({
+                            "time": t_sec,
+                            "side": side,
+                            "price": price,
+                            "qty": qty,
+                            "type": "ENTRY" if is_entry else "EXIT"
+                        })
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "interval": interval,
+            "bars": bars,
+            "markers": markers,
+            "executions": executions,
+            "latest_parity": bars[-1]["value"] if bars else None
+        }
+    except Exception as e:
+        logger.exception("Error in get_short_term_parity")
+        return {"error": str(e), "bars": [], "markers": []}
 
 @app.post("/api/trade/step_tranche")
 async def step_tranche() -> Dict[str, Any]:

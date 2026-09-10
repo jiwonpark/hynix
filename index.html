@@ -1020,6 +1020,40 @@
       .execTerminalGrid { grid-template-columns: 1fr; }
     }
 
+    .shortTermExecutionSection {
+      margin-bottom: 16px;
+      background: #ffffff;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .shortTermGrid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.75fr) minmax(320px, 1.25fr);
+      gap: 14px;
+    }
+    @media (max-width: 1024px) {
+      .shortTermGrid { grid-template-columns: 1fr; }
+    }
+    .btnShortInterval {
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      border: 0;
+      background: transparent;
+      color: #64748b;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btnShortInterval.active {
+      background: #ffffff;
+      color: #0284c7;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+      font-weight: 800;
+    }
+
     /* AI Signal Approver Card */
     .aiSignalApprover {
       background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
@@ -2171,6 +2205,109 @@
                 <button id="btnExecuteFlatten" class="btnPairFlat" type="button">
                   🔒 Delta-Neutral Flatten (Close All)
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Short-Term Parity Execution Tracker & Real-Time Auto-Tranche Criteria Section -->
+        <div class="shortTermExecutionSection" id="shortTermExecutionSection">
+          <!-- Section Header -->
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 16px;">📈</span>
+                <strong style="font-size: 13.5px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;" id="lblShortTermTitle">Short-Term Parity Tracker & Auto-Tranche Criteria</strong>
+                <span style="font-size: 10.5px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">LIVE BINANCE EXECUTION</span>
+              </div>
+              <div style="font-size: 11.5px; color: #64748b; margin-top: 2px;" id="lblShortTermSubtitle">
+                Visualizes all executed tranche entries (▲), exits (▼), and real-time auto-tranche trigger thresholds on live 5m/15m parity curve.
+              </div>
+            </div>
+
+            <!-- Controls & Live Status -->
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <div class="pillGroup" style="display: inline-flex; background: #f1f5f9; padding: 2px; border-radius: 6px;">
+                <button id="btnShortInterval1m" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('1m')">1m</button>
+                <button id="btnShortInterval5m" class="btnShortInterval active" type="button" onclick="tradingEngine.setShortTermInterval('5m')">5m</button>
+                <button id="btnShortInterval15m" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('15m')">15m</button>
+              </div>
+              <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a;">
+                Parity: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Two Column Grid: Left = Chart, Right = Auto-Tranche Criteria Panel -->
+          <div class="shortTermGrid">
+            <!-- Left Column: Short-Term Lightweight Chart -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
+              <div id="shortTermSpreadChartHost" style="width: 100%; height: 260px;"></div>
+              <!-- Chart Legend -->
+              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #475569;">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; font-weight: 600;">
+                  <span style="display: inline-flex; align-items: center; gap: 4px;"><strong style="color: #16a34a;">▲</strong> Tranche Entry</span>
+                  <span style="display: inline-flex; align-items: center; gap: 4px;"><strong style="color: #dc2626;">▼</strong> Exit / TP</span>
+                  <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 10px; height: 2px; background: #0284c7;"></span> Entry Baseline</span>
+                  <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 10px; height: 2px; background: #d97706; border-top: 1px dashed #d97706;"></span> Next Scale-In</span>
+                  <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="display: inline-block; width: 10px; height: 2px; background: #16a34a; border-top: 1px dashed #16a34a;"></span> TP Target</span>
+                </div>
+                <span id="lblShortTermChartSync" style="font-size: 10px; color: #94a3b8;">Updated 0s ago</span>
+              </div>
+            </div>
+
+            <!-- Right Column: Real-Time Auto-Tranche Criteria Panel (실시간 자동 트랜치 판단 기준) -->
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <!-- 1. Scale-in Criteria Card -->
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Scale-In Rule (추가 진입 기준)</span>
+                  <span id="badgeCriteriaScaleIn" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #b45309;">WAITING</span>
+                </div>
+                <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritScaleInDesc">
+                  Trigger: Parity <strong>≥ <span id="valCritScaleInThreshold">139.65%</span></strong> (+0.35% pts divergence)
+                </div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 3px; display: flex; justify-content: space-between;">
+                  <span>Current Parity: <strong id="valCritCurrentSpread">139.29%</strong></span>
+                  <span>Gap to Scale-in: <strong id="valCritGapScaleIn" style="color: #d97706;">+0.36% pts</strong></span>
+                </div>
+                <!-- Progress bar towards scale-in -->
+                <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
+                  <div id="barCritScaleInProgress" style="width: 25%; height: 100%; background: #f59e0b;"></div>
+                </div>
+              </div>
+
+              <!-- 2. Convergence Take-Profit Criteria Card -->
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lblCritTPTitle">🎯 Take-Profit Rule (수렴 익절 기준)</span>
+                  <span id="badgeCriteriaTP" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #166534;">ZERO-LOSS LOCKED</span>
+                </div>
+                <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritTPDesc">
+                  Trigger: Parity <strong>≤ <span id="valCritTPThreshold">138.90%</span></strong> &amp; Net Realized PnL <strong>&gt; +$0.02</strong>
+                </div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 3px; display: flex; justify-content: space-between;">
+                  <span>Current PnL: <strong id="valCritCombinedPnl">$0.00</strong></span>
+                  <span>Gap to TP: <strong id="valCritGapTP" style="color: #0284c7;">0.39% pts</strong></span>
+                </div>
+                <!-- Progress bar towards TP -->
+                <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
+                  <div id="barCritTPProgress" style="width: 10%; height: 100%; background: #10b981;"></div>
+                </div>
+              </div>
+
+              <!-- 3. Sizing & Risk Gate Card -->
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #0284c7; border-radius: 6px; padding: 10px 12px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <span style="font-size: 11px; font-weight: 800; color: #0369a1; text-transform: uppercase;" id="lblCritGateTitle">⚙️ Sizing & Risk Gate (수량 및 리스크)</span>
+                  <span id="valCritRemainingTranches" style="font-size: 10px; font-weight: 800; color: #0284c7;">3 UNITS LEFT</span>
+                </div>
+                <div style="font-size: 11px; color: #475569; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 2px;">
+                  <div>Next Unit: <strong>0.07 SKHY + 1.20 CSOP</strong></div>
+                  <div>Estimated Lev: <strong>+0.58x ($20.41)</strong></div>
+                  <div>Current Lev: <strong id="valCritGrossLev">4.08x / 8.0x</strong></div>
+                  <div>Tolerable Buffer: <strong id="valCritMaxDiv" style="color: #16a34a;">34.6%</strong></div>
+                </div>
               </div>
             </div>
           </div>
@@ -7788,6 +7925,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const posHost = $("positionPane");
           if (posHost) window.positionChart.applyOptions({ width: posHost.clientWidth });
         }
+        if (typeof tradingEngine !== "undefined" && tradingEngine.shortTermChart && !isBacktest) {
+          const stHost = $("shortTermSpreadChartHost");
+          if (stHost) tradingEngine.shortTermChart.applyOptions({ width: stHost.clientWidth });
+        }
       }, 60);
     }
 
@@ -7899,7 +8040,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         activeSignal: null,
         selectedNotional: 1000,
         selectedLeverage: 3,
-        selectedRoute: "market"
+        selectedRoute: "market",
+        shortTermInterval: "5m"
       },
       deployedStrategy: null,
 
@@ -7911,6 +8053,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.renderAccountStrip();
         this.renderPositionsAndLogs();
         this.updateSignalApprover();
+        this.initShortTermChart();
+        this.fetchShortTermParity();
         this.logDaemonEvent("Trading engine initialized in " + this.state.mode.toUpperCase() + " mode.", "info");
       },
 
@@ -8782,6 +8926,240 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               ? "🔒 Locked (Zero-Loss Rule: Awaiting Net Profit)" 
               : "No Open Tranches";
           }
+        }
+
+        if (data.auto_tranche_criteria) {
+          this.renderAutoTrancheCriteria(data.auto_tranche_criteria, data);
+        }
+        this.fetchShortTermParity();
+      },
+
+      initShortTermChart() {
+        const host = $("shortTermSpreadChartHost");
+        if (!host || this.shortTermChart) return;
+        if (typeof LightweightCharts === "undefined") return;
+
+        this.shortTermChart = LightweightCharts.createChart(host, {
+          height: 250,
+          layout: { background: { color: "#f8fafc" }, textColor: "#475569" },
+          localization: {
+            locale: "en-US",
+            priceFormatter: (p) => Number(p).toFixed(2) + "%"
+          },
+          grid: { vertLines: { color: "#e2e8f0" }, horzLines: { color: "#e2e8f0" } },
+          rightPriceScale: {
+            visible: true,
+            borderVisible: false,
+            autoScale: true,
+            scaleMargins: { top: 0.15, bottom: 0.15 }
+          },
+          timeScale: {
+            visible: true,
+            timeVisible: true,
+            secondsVisible: false,
+            borderVisible: false
+          },
+          crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+        });
+
+        this.shortTermSeries = this.shortTermChart.addAreaSeries({
+          topColor: "rgba(2, 132, 199, 0.30)",
+          bottomColor: "rgba(2, 132, 199, 0.02)",
+          lineColor: "#0284c7",
+          lineWidth: 2,
+          priceFormat: { type: "price", precision: 2, minMove: 0.01 }
+        });
+
+        window.addEventListener("resize", () => {
+          if (this.shortTermChart && host) {
+            this.shortTermChart.applyOptions({ width: host.clientWidth });
+          }
+        });
+      },
+
+      setShortTermInterval(interval) {
+        this.state.shortTermInterval = interval;
+        ["1m", "5m", "15m"].forEach(i => {
+          const btn = $("btnShortInterval" + i);
+          if (btn) btn.classList.toggle("active", i === interval);
+        });
+        this.fetchShortTermParity();
+      },
+
+      async fetchShortTermParity() {
+        const interval = this.state.shortTermInterval || "5m";
+        const origin = window.location.origin;
+        const endpoints = [
+          `${origin}/skhynix/api/trade/short_term_parity?interval=${interval}&limit=60`,
+          `/skhynix/api/trade/short_term_parity?interval=${interval}&limit=60`,
+          `${origin}/api/trade/short_term_parity?interval=${interval}&limit=60`,
+          `/api/trade/short_term_parity?interval=${interval}&limit=60`,
+          `http://localhost:8000/api/trade/short_term_parity?interval=${interval}&limit=60`
+        ];
+        for (const url of endpoints) {
+          try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && Array.isArray(data.bars)) {
+                this.renderShortTermChart(data);
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+      },
+
+      renderShortTermChart(data) {
+        this.initShortTermChart();
+        if (!this.shortTermSeries || !data.bars || !data.bars.length) return;
+
+        this.shortTermSeries.setData(data.bars.map(b => ({ time: b.time, value: b.value })));
+
+        if (data.markers && data.markers.length) {
+          this.shortTermSeries.setMarkers(data.markers);
+        }
+
+        const latest = data.bars[data.bars.length - 1];
+        if ($("valShortTermCurrentParity") && latest) {
+          const prem = (latest.value - 100.0).toFixed(2);
+          $("valShortTermCurrentParity").textContent = `${latest.value.toFixed(2)}% (+${prem}%)`;
+        }
+        if ($("lblShortTermChartSync")) {
+          $("lblShortTermChartSync").textContent = `Sync ${new Date().toLocaleTimeString()}`;
+        }
+
+        const criteria = (this.state.hedgedStatus && this.state.hedgedStatus.auto_tranche_criteria) || {};
+        if (criteria.entry_baseline_spread) {
+          if (this.shortTermPriceLines && this.shortTermPriceLines.length) {
+            this.shortTermPriceLines.forEach(l => {
+              try { this.shortTermSeries.removePriceLine(l); } catch (e) {}
+            });
+          }
+          this.shortTermPriceLines = [];
+
+          this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
+            price: criteria.entry_baseline_spread,
+            color: "#0284c7",
+            lineWidth: 1.5,
+            lineStyle: LightweightCharts.LineStyle.Solid,
+            axisLabelVisible: true,
+            title: `ENTRY (${criteria.entry_baseline_spread.toFixed(2)}%)`
+          }));
+
+          if (criteria.scale_in_trigger_spread) {
+            this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
+              price: criteria.scale_in_trigger_spread,
+              color: "#d97706",
+              lineWidth: 1.5,
+              lineStyle: LightweightCharts.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: `SCALE-IN (${criteria.scale_in_trigger_spread.toFixed(2)}%)`
+            }));
+          }
+
+          if (criteria.take_profit_trigger_spread) {
+            this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
+              price: criteria.take_profit_trigger_spread,
+              color: "#16a34a",
+              lineWidth: 1.5,
+              lineStyle: LightweightCharts.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: `TP TARGET (${criteria.take_profit_trigger_spread.toFixed(2)}%)`
+            }));
+          }
+        }
+      },
+
+      renderAutoTrancheCriteria(criteria, hedgedData) {
+        if (!criteria) return;
+        const isKo = window.currentLang === "ko";
+
+        // 1. Scale-in Rule
+        const scaleInThreshold = criteria.scale_in_trigger_spread || 139.65;
+        const currSpread = criteria.current_spread || 139.29;
+        const gapScaleIn = criteria.gap_to_scale_in_pts != null ? criteria.gap_to_scale_in_pts : (scaleInThreshold - currSpread);
+        const canScaleIn = criteria.can_scale_in;
+
+        if ($("valCritScaleInThreshold")) $("valCritScaleInThreshold").textContent = `${scaleInThreshold.toFixed(2)}%`;
+        if ($("valCritCurrentSpread")) $("valCritCurrentSpread").textContent = `${currSpread.toFixed(2)}%`;
+        if ($("valCritGapScaleIn")) {
+          const sign = gapScaleIn > 0 ? "+" : "";
+          $("valCritGapScaleIn").textContent = `${sign}${gapScaleIn.toFixed(2)}% pts`;
+          $("valCritGapScaleIn").style.color = gapScaleIn <= 0 ? "#16a34a" : "#d97706";
+        }
+        if ($("barCritScaleInProgress")) {
+          const base = criteria.entry_baseline_spread || 139.30;
+          const range = Math.max(0.01, scaleInThreshold - base);
+          const prog = Math.max(0, Math.min(100, Math.round(((currSpread - base) / range) * 100)));
+          $("barCritScaleInProgress").style.width = `${prog}%`;
+          $("barCritScaleInProgress").style.background = prog >= 100 ? "#16a34a" : "#f59e0b";
+        }
+        if ($("badgeCriteriaScaleIn")) {
+          if (currSpread >= scaleInThreshold && canScaleIn) {
+            $("badgeCriteriaScaleIn").textContent = isKo ? "트리거 충족" : "TRIGGER ARMED";
+            $("badgeCriteriaScaleIn").style.background = "#dcfce7";
+            $("badgeCriteriaScaleIn").style.color = "#166534";
+          } else if (!canScaleIn) {
+            $("badgeCriteriaScaleIn").textContent = isKo ? "최대 한도 도달" : "MAX CAPACITY";
+            $("badgeCriteriaScaleIn").style.background = "#fee2e2";
+            $("badgeCriteriaScaleIn").style.color = "#991b1b";
+          } else {
+            $("badgeCriteriaScaleIn").textContent = isKo ? "괴리율 확대 대기" : "WAITING DIVERGENCE";
+            $("badgeCriteriaScaleIn").style.background = "#fef3c7";
+            $("badgeCriteriaScaleIn").style.color = "#b45309";
+          }
+        }
+
+        // 2. Take-Profit Rule
+        const tpThreshold = criteria.take_profit_trigger_spread || 138.90;
+        const gapTP = criteria.gap_to_take_profit_pts != null ? criteria.gap_to_take_profit_pts : (currSpread - tpThreshold);
+        const canTP = Boolean(criteria.can_take_profit);
+        const pnl = (hedgedData && hedgedData.combined_unrealized_pnl_usd != null) ? hedgedData.combined_unrealized_pnl_usd : 0.0;
+        const pnlPct = (hedgedData && hedgedData.combined_unrealized_pnl_pct != null) ? hedgedData.combined_unrealized_pnl_pct : 0.0;
+
+        if ($("valCritTPThreshold")) $("valCritTPThreshold").textContent = `${tpThreshold.toFixed(2)}%`;
+        if ($("valCritCombinedPnl")) {
+          const sign = pnl >= 0 ? "+" : "";
+          const col = pnl > 0 ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#64748b");
+          $("valCritCombinedPnl").style.color = col;
+          $("valCritCombinedPnl").textContent = `${sign}$${pnl.toFixed(2)} (${sign}${pnlPct.toFixed(2)}%)`;
+        }
+        if ($("valCritGapTP")) {
+          $("valCritGapTP").textContent = `${Math.abs(gapTP).toFixed(2)}% pts`;
+          $("valCritGapTP").style.color = canTP ? "#16a34a" : "#0284c7";
+        }
+        if ($("barCritTPProgress")) {
+          const base = criteria.entry_baseline_spread || 139.30;
+          const range = Math.max(0.01, base - tpThreshold);
+          const prog = Math.max(0, Math.min(100, Math.round(((base - currSpread) / range) * 100)));
+          $("barCritTPProgress").style.width = `${prog}%`;
+        }
+        if ($("badgeCriteriaTP")) {
+          if (canTP) {
+            $("badgeCriteriaTP").textContent = isKo ? "익절 청산 가능" : "TAKE PROFIT READY";
+            $("badgeCriteriaTP").style.background = "#dcfce7";
+            $("badgeCriteriaTP").style.color = "#166534";
+          } else {
+            $("badgeCriteriaTP").textContent = isKo ? "무손실 원칙 잠금" : "ZERO-LOSS LOCKED";
+            $("badgeCriteriaTP").style.background = "#f1f5f9";
+            $("badgeCriteriaTP").style.color = "#475569";
+          }
+        }
+
+        // 3. Sizing & Risk Gate
+        const remaining = criteria.tranches_remaining != null ? criteria.tranches_remaining : (10 - (criteria.tranches_active || 0));
+        const lev = (hedgedData && hedgedData.gross_leverage != null) ? hedgedData.gross_leverage : 0.0;
+        const maxDiv = (hedgedData && hedgedData.max_tolerable_divergence_pct != null) ? hedgedData.max_tolerable_divergence_pct : 999.0;
+
+        if ($("valCritRemainingTranches")) {
+          $("valCritRemainingTranches").textContent = `${remaining} / 10 UNITS LEFT`;
+        }
+        if ($("valCritGrossLev")) {
+          $("valCritGrossLev").textContent = `${lev.toFixed(2)}x / 8.0x`;
+        }
+        if ($("valCritMaxDiv")) {
+          $("valCritMaxDiv").textContent = maxDiv >= 900 ? "+∞ % pts" : `+${maxDiv.toFixed(1)}% pts`;
         }
       },
 
