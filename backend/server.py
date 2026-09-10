@@ -366,7 +366,10 @@ async def get_hedged_status() -> Dict[str, Any]:
         # Fetch recent user fills for SKHYUSDT to display exact entry and exit markers on chart
         executions = []
         try:
-            skhy_trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 50}, signed=True)
+            start_ms = int((time.time() - 24 * 3600) * 1000)
+            skhy_trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "startTime": start_ms, "limit": 100}, signed=True)
+            if not isinstance(skhy_trades, list) or len(skhy_trades) == 0:
+                skhy_trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
             if isinstance(skhy_trades, list):
                 for t in skhy_trades:
                     executions.append({
@@ -618,10 +621,15 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 60) -> Dict[s
         markers = []
         executions = []
         try:
-            trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 20}, signed=True)
+            start_ms = int((bars[0]["time"] - 1800) * 1000) if bars else int((time.time() - 6 * 3600) * 1000)
+            trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "startTime": start_ms, "limit": 100}, signed=True)
+            if not isinstance(trades, list) or len(trades) == 0:
+                trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
+
             if isinstance(trades, list) and bars:
                 min_time_sec = bars[0]["time"]
-                for tr in trades:
+                candle_markers = {}
+                for tr in sorted(trades, key=lambda x: x.get("time", 0)):
                     t_ms = int(tr.get("time", 0))
                     t_sec = int(t_ms / 1000)
                     if t_sec >= min_time_sec - 600:
@@ -634,13 +642,20 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 60) -> Dict[s
                         price = float(tr.get("price", 0.0))
                         qty = float(tr.get("qty", 0.0))
 
-                        markers.append({
-                            "time": marker_time,
-                            "position": "belowBar" if is_entry else "aboveBar",
-                            "color": "#16a34a" if is_entry else "#dc2626",
-                            "shape": "arrowUp" if is_entry else "arrowDown",
-                            "text": f"{'Entry' if is_entry else 'Exit'} ${price:.2f} ({qty:.2f})"
-                        })
+                        key = (marker_time, is_entry)
+                        if key not in candle_markers:
+                            candle_markers[key] = {
+                                "time": marker_time,
+                                "is_entry": is_entry,
+                                "total_qty": qty,
+                                "weighted_price": price * qty,
+                                "count": 1
+                            }
+                        else:
+                            candle_markers[key]["total_qty"] += qty
+                            candle_markers[key]["weighted_price"] += price * qty
+                            candle_markers[key]["count"] += 1
+
                         executions.append({
                             "time": t_sec,
                             "side": side,
@@ -648,8 +663,22 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 60) -> Dict[s
                             "qty": qty,
                             "type": "ENTRY" if is_entry else "EXIT"
                         })
+
+                # Sort chronologically by marker_time to satisfy Lightweight Charts strict monotonic ordering
+                for (m_time, is_entry), m_data in sorted(candle_markers.items(), key=lambda x: x[0][0]):
+                    avg_px = m_data["weighted_price"] / max(1e-6, m_data["total_qty"])
+                    qty_str = f"{m_data['total_qty']:.2f}"
+                    cnt_str = f" ({m_data['count']}x)" if m_data['count'] > 1 else ""
+                    lbl = f"{'Entry' if is_entry else 'Exit'}{cnt_str} ${avg_px:.2f} ({qty_str})"
+                    markers.append({
+                        "time": m_time,
+                        "position": "belowBar" if is_entry else "aboveBar",
+                        "color": "#16a34a" if is_entry else "#dc2626",
+                        "shape": "arrowUp" if is_entry else "arrowDown",
+                        "text": lbl
+                    })
         except Exception:
-            pass
+            logger.exception("Error loading trade markers")
 
         return {
             "success": True,

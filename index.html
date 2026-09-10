@@ -7929,7 +7929,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         };
       }).sort((a, b) => a.time - b.time);
 
-      window.spreadSeries.value.setMarkers(markers);
+      const execMarkers = (window.latestExecutionMarkers || []).map(m => ({
+        ...m,
+        size: 1.2
+      }));
+      const allMarkers = [...markers, ...execMarkers].sort((a, b) => a.time - b.time);
+      window.spreadSeries.value.setMarkers(allMarkers);
 
       // 2. Populate Catalyst Table
       const tbody = $("newsFeedBody");
@@ -8500,7 +8505,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const hasBackendPos = this.state.backendPositions && this.state.backendPositions.length > 0;
         const count = hasBackendPos ? this.state.backendPositions.length : this.state.positions.length;
         if ($("countPositions")) $("countPositions").textContent = count;
-        if ($("countOrderLog")) $("countOrderLog").textContent = this.state.orderLog.length;
+        const recentExecCount = (this.state.hedgedStatus && Array.isArray(this.state.hedgedStatus.recent_executions)) ? this.state.hedgedStatus.recent_executions.length : (this.state.orderLog.length || 0);
+        if ($("countOrderLog")) $("countOrderLog").textContent = recentExecCount;
 
         // 1. Positions Body
         const posBody = $("activePositionsBody");
@@ -9145,9 +9151,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         this.shortTermSeries.setData(data.bars.map(b => ({ time: b.time, value: b.value })));
 
-        if (data.markers && data.markers.length) {
-          this.shortTermSeries.setMarkers(data.markers);
-        }
+        const markers = Array.isArray(data.markers) ? data.markers : [];
+        this.shortTermSeries.setMarkers(markers);
+        window.latestExecutionMarkers = markers;
 
         const latest = data.bars[data.bars.length - 1];
         if ($("valShortTermCurrentParity") && latest) {
