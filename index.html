@@ -2437,7 +2437,7 @@
                     <th>Filled Size</th>
                     <th>Exec Price</th>
                     <th>Fee Paid</th>
-                    <th>Realized PnL</th>
+                    <th>Realized PnL (Gross / Net)</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -8693,6 +8693,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               const pnlSign = ex.realized_pnl > 0 ? "+" : "";
               const fee = ex.commission != null ? ex.commission : 0.0054;
               const feeStr = `-$${fee.toFixed(4)} ${ex.commission_asset || 'USDT'}`;
+              const netPnl = ex.realized_pnl ? (ex.realized_pnl - fee) : null;
+              const netColor = (netPnl != null && netPnl > 0) ? "#16a34a" : ((netPnl != null && netPnl < 0) ? "#dc2626" : "#64748b");
+              const netSign = (netPnl != null && netPnl > 0) ? "+" : "";
+
+              const pnlCell = ex.realized_pnl ? `
+                <div style="color: ${pnlColor}; font-weight: 800;">${pnlSign}$${ex.realized_pnl.toFixed(4)}</div>
+                <div style="font-size: 10px; color: ${netColor}; font-weight: 700;">Net: ${netSign}$${netPnl.toFixed(4)}</div>
+              ` : '—';
 
               return `<tr>
                 <td style="color: #64748b; font-size: 11px;">${timeStr}</td>
@@ -8701,7 +8709,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <td>${ex.qty.toFixed(2)} ($${(ex.qty * ex.price).toFixed(2)})</td>
                 <td>$${ex.price.toFixed(2)}</td>
                 <td style="color: #d97706; font-family: monospace; font-size: 11px;">${feeStr}</td>
-                <td style="color: ${pnlColor}; font-weight: 700;">${ex.realized_pnl ? `${pnlSign}$${ex.realized_pnl.toFixed(4)}` : '—'}</td>
+                <td>${pnlCell}</td>
                 <td><span style="font-weight: 800; color: #16a34a;">FILLED</span></td>
               </tr>`;
             }).join("");
