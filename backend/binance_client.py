@@ -197,6 +197,15 @@ class BinanceFuturesClient:
 
         # 2. Parse Active Open Positions
         positions_list = []
+        # Reference SKHY mark price for share conversion
+        skhy_mark_ref = 193.0
+        for p in pos_data:
+            if p.get("symbol") == "SKHYUSDT":
+                sm = float(p.get("markPrice", 0.0))
+                if sm > 0:
+                    skhy_mark_ref = sm
+                    break
+
         for p in pos_data:
             amt = float(p.get("positionAmt", 0.0))
             if abs(amt) < 1e-8:
@@ -223,6 +232,22 @@ class BinanceFuturesClient:
                 else:
                     distance_to_liq_percent = ((liq_price - mark_price) / mark_price) * 100.0
 
+            # Exposure converted to SKHY and Korean domestic shares
+            sym = p.get("symbol")
+            if sym == "SKHYUSDT":
+                skhy_shares = amt
+                krx_shares = amt * 0.1
+            elif sym == "CSOPSKHYNIX2LUSDT":
+                effective_delta_usd = amt * mark_price * 2.0
+                skhy_shares = (effective_delta_usd / skhy_mark_ref) if skhy_mark_ref > 0 else 0.0
+                krx_shares = skhy_shares * 0.1
+            elif sym == "SKHYNIXUSDT":
+                krx_shares = amt
+                skhy_shares = amt * 10.0
+            else:
+                skhy_shares = None
+                krx_shares = None
+
             positions_list.append({
                 "symbol": p.get("symbol"),
                 "side": side,
@@ -238,6 +263,8 @@ class BinanceFuturesClient:
                 "notional": notional,
                 "initial_margin": initial_margin,
                 "margin_type": "ISOLATED" if isolated else "CROSS",
+                "skhy_shares": round(skhy_shares, 4) if skhy_shares is not None else None,
+                "krx_shares": round(krx_shares, 5) if krx_shares is not None else None,
                 "update_time": int(p.get("updateTime", 0))
             })
 

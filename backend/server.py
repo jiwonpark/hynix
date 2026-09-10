@@ -270,6 +270,28 @@ async def get_hedged_status() -> Dict[str, Any]:
 
         eligible_for_take_profit = bool(total_notional > 0 and combined_pnl > 0.02)
 
+        # Exposure converted to SKHY and Korean domestic shares
+        adr_amt = float(adr_pos.get("position_amt", 0.0)) if adr_pos else 0.0
+        stock_amt = float(stock_pos.get("position_amt", 0.0)) if stock_pos else 0.0
+
+        adr_skhy_shares = adr_amt
+        adr_krx_shares = adr_amt * 0.1
+
+        stock_sym = stock_pos.get("symbol") if stock_pos else ""
+        if stock_sym == "CSOPSKHYNIX2LUSDT":
+            stock_delta_usd = stock_amt * stock_mark * 2.0
+            stock_skhy_shares = (stock_delta_usd / adr_mark) if adr_mark > 0 else 0.0
+            stock_krx_shares = stock_skhy_shares * 0.1
+        elif stock_sym == "SKHYNIXUSDT":
+            stock_krx_shares = stock_amt
+            stock_skhy_shares = stock_amt * 10.0
+        else:
+            stock_skhy_shares = 0.0
+            stock_krx_shares = 0.0
+
+        net_skhy_shares = adr_skhy_shares + stock_skhy_shares
+        net_krx_shares = adr_krx_shares + stock_krx_shares
+
         return {
             "authenticated": True,
             "equity_usd": equity,
@@ -292,6 +314,12 @@ async def get_hedged_status() -> Dict[str, Any]:
             "entry_spread_pct": round(entry_spread, 2) if entry_spread else None,
             "loss_on_10pct_divergence_usd": round(loss_on_10pct, 2),
             "max_tolerable_divergence_pct": round(max_tolerable_div_pct, 1),
+            "adr_skhy_shares": round(adr_skhy_shares, 4),
+            "stock_skhy_shares": round(stock_skhy_shares, 4),
+            "net_skhy_shares": round(net_skhy_shares, 4),
+            "adr_krx_shares": round(adr_krx_shares, 5),
+            "stock_krx_shares": round(stock_krx_shares, 5),
+            "net_krx_shares": round(net_krx_shares, 5),
             "eligible_for_take_profit": eligible_for_take_profit,
             "zero_loss_rule": {
                 "rule_name": "Zero-Loss Structural Convergence Invariant",

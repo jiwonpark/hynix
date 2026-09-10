@@ -1976,7 +1976,8 @@
             <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
               <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Active Tranches</span>
               <strong id="valHedgedTranches" style="font-size: 16px; color: #0f172a;">0 / 10 Units</strong>
-              <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedQuantities">Short 0.00 SKHY | Long 0.00 KR</div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedQuantities">Short 0.00 SKHY | Long 0.00 CSOP</div>
+              <div style="font-size: 11px; color: #0284c7; font-weight: 700; margin-top: 2px;" id="valHedgedShares">Exposure: — SKHY eq.</div>
             </div>
             <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
               <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Gross Leverage</span>
@@ -1986,7 +1987,7 @@
             <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
               <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Net Delta Imbalance</span>
               <strong id="valHedgedDelta" style="font-size: 16px; color: #16a34a;">$0.00</strong>
-              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Dollar Neutral 1:1 Hedge</div>
+              <div style="font-size: 11px; color: #16a34a; font-weight: 700; margin-top: 2px;" id="valHedgedNetDeltaSubtitle">Net: 0.0000 SKHY shares</div>
             </div>
             <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
               <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Combined Net PnL</span>
@@ -2002,6 +2003,19 @@
               <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Tolerable Divergence</span>
               <strong id="valHedgedMaxDiv" style="font-size: 16px; color: #10b981;">+∞ % pts</strong>
               <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Safety buffer before margin call</div>
+            </div>
+          </div>
+
+          <!-- Live SKHY Shares & Underlying Domestic Exposure Breakdown Bar -->
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 11.5px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="background: #0284c7; color: #fff; font-weight: 800; font-size: 10px; padding: 2px 6px; border-radius: 3px;">EQUITY EXPOSURE</span>
+              <span style="color: #475569; font-weight: 600;">Position Exposure in SKHY Shares (1 ADR = 0.1 KRX 000660):</span>
+            </div>
+            <div style="display: flex; gap: 14px; font-family: monospace; font-weight: 700; flex-wrap: wrap;">
+              <span style="color: #dc2626;" id="pillAdrShares">Short Leg: 0.00 SKHY</span>
+              <span style="color: #16a34a;" id="pillStockShares">Long Hedge: 0.00 SKHY eq.</span>
+              <span style="color: #0f172a; background: #e2e8f0; padding: 1px 6px; border-radius: 4px;" id="pillNetShares">Net Delta: 0.0000 SKHY shares</span>
             </div>
           </div>
 
@@ -8262,11 +8276,23 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 ? (isKo ? "🟢 롱 (LONG)" : "🟢 LONG") 
                 : (isKo ? "🔴 숏 (SHORT)" : "🔴 SHORT");
               const liqStr = pos.liquidation_price ? `$${pos.liquidation_price.toFixed(4)} (${pos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : "—";
+              const skhySharesStr = pos.skhy_shares != null 
+                ? `<div style="font-size: 11px; color: #0284c7; font-weight: 700; margin-top: 2px;">${pos.skhy_shares >= 0 ? '+' : ''}${pos.skhy_shares.toFixed(3)} SKHY shares</div>` 
+                : '';
+              const krxSharesStr = pos.krx_shares != null 
+                ? `<div style="font-size: 10px; color: #64748b; font-weight: 600;">(${pos.krx_shares >= 0 ? '+' : ''}${pos.krx_shares.toFixed(4)} KR shares)</div>` 
+                : '';
 
               return `<tr>
-                <td style="font-weight: 700; color: #0f172a;">${pos.symbol}</td>
+                <td style="font-weight: 700; color: #0f172a;">
+                  ${pos.symbol}
+                  ${skhySharesStr}
+                </td>
                 <td><span style="font-weight: 700;">${dirLabel}</span> <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 3px;">${pos.leverage}x ${pos.margin_type}</span></td>
-                <td>$${pos.notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td>
+                  $${pos.notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${krxSharesStr}
+                </td>
                 <td>$${pos.entry_price.toFixed(4)}</td>
                 <td style="font-weight: 700;">$${pos.mark_price.toFixed(4)}</td>
                 <td style="font-weight: 800; color: ${pnlColor};">${pnlSign}$${pos.unrealized_pnl.toFixed(2)} (${pnlSign}${pos.roe_percent.toFixed(2)}%)</td>
@@ -8560,15 +8586,33 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const maxDiv = data.max_tolerable_divergence_pct || 999.0;
         const eligible = Boolean(data.eligible_for_take_profit);
 
+        const adrShares = data.adr_skhy_shares != null ? data.adr_skhy_shares : -(data.adr_qty || 0);
+        const stockShares = data.stock_skhy_shares != null ? data.stock_skhy_shares : ((data.stock_qty || 0) * 5.628 * 2.0 / 192.8);
+        const netShares = data.net_skhy_shares != null ? data.net_skhy_shares : (adrShares + stockShares);
+        const adrKrx = data.adr_krx_shares != null ? data.adr_krx_shares : (adrShares * 0.1);
+        const stockKrx = data.stock_krx_shares != null ? data.stock_krx_shares : (stockShares * 0.1);
+        const netKrx = data.net_krx_shares != null ? data.net_krx_shares : (netShares * 0.1);
+
         if ($("valHedgedTranches")) $("valHedgedTranches").textContent = `${tranches} / 10 Units`;
         if ($("valHedgedQuantities")) {
           const adrQty = data.adr_qty ? data.adr_qty.toFixed(2) : "0.00";
           const stockQty = data.stock_qty ? data.stock_qty.toFixed(2) : "0.00";
-          $("valHedgedQuantities").textContent = `Short ${adrQty} SKHY | Long ${stockQty} KR`;
+          $("valHedgedQuantities").textContent = `Short ${adrQty} SKHY | Long ${stockQty} CSOP`;
+        }
+        if ($("valHedgedShares")) {
+          $("valHedgedShares").textContent = tranches > 0 
+            ? `Exp: ${adrShares.toFixed(2)} vs +${stockShares.toFixed(2)} SKHY eq.` 
+            : `Exposure: 0.00 SKHY eq.`;
         }
         if ($("valHedgedLeverage")) $("valHedgedLeverage").textContent = `${lev.toFixed(2)}x`;
         if ($("valHedgedNotional")) $("valHedgedNotional").textContent = `Notional: $${notional.toFixed(2)} USDT`;
         if ($("valHedgedDelta")) $("valHedgedDelta").textContent = `$${Math.abs(delta).toFixed(2)}`;
+        if ($("valHedgedNetDeltaSubtitle")) {
+          const sign = netShares >= 0 ? "+" : "";
+          $("valHedgedNetDeltaSubtitle").textContent = tranches > 0 
+            ? `Net: ${sign}${netShares.toFixed(4)} SKHY shares` 
+            : "Dollar Neutral 1:1 Hedge";
+        }
         if ($("valHedgedCombinedPnl")) {
           const pnlSign = pnl >= 0 ? "+" : "";
           const color = pnl > 0 ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#0f172a");
@@ -8583,6 +8627,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("valHedgedLoss10")) $("valHedgedLoss10").textContent = `-$${loss10.toFixed(2)} USDT`;
         if ($("valHedgedMaxDiv")) {
           $("valHedgedMaxDiv").textContent = maxDiv >= 900 ? "+∞ % pts" : `+${maxDiv.toFixed(1)}% pts`;
+        }
+        if ($("pillAdrShares")) {
+          $("pillAdrShares").textContent = `Short Leg: ${adrShares.toFixed(2)} SKHY (${adrKrx.toFixed(3)} KR)`;
+        }
+        if ($("pillStockShares")) {
+          $("pillStockShares").textContent = `Long Hedge: +${stockShares.toFixed(2)} SKHY eq. (+${stockKrx.toFixed(3)} KR)`;
+        }
+        if ($("pillNetShares")) {
+          const sign = netShares >= 0 ? "+" : "";
+          $("pillNetShares").textContent = `Net Delta: ${sign}${netShares.toFixed(4)} SKHY (${sign}${netKrx.toFixed(5)} KR)`;
         }
 
         const pct = Math.min(100, Math.round((tranches / 10) * 100));

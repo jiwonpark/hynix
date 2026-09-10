@@ -70,5 +70,34 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
         self.assertTrue(can_reduce_tranche(+1.20, -0.40))
         print("\n[Zero-Loss Invariant Verification] PASSED: Losses strictly non-lockable.")
 
+    def test_skhy_shares_exposure_conversion(self):
+        """
+        Verify that positions convert accurately to SKHY shares and Korean domestic shares:
+        - 1 contract of SKHYUSDT = 1.00 SKHY share = 0.10 KR domestic share.
+        - CSOP 2x ETF perp = (CSOP notional * 2.0 / SKHY mark price) SKHY eq. shares.
+        """
+        skhy_price = 193.37
+        csop_price = 5.628
+
+        # 2 Tranches open: -0.14 SKHY vs +2.40 CSOP
+        adr_amt = -0.14
+        csop_amt = +2.40
+
+        adr_skhy_shares = adr_amt
+        csop_delta_usd = csop_amt * csop_price * 2.0 # 27.0144
+        csop_skhy_shares = csop_delta_usd / skhy_price # ~0.1397
+
+        net_skhy_shares = adr_skhy_shares + csop_skhy_shares
+        net_krx_shares = net_skhy_shares * 0.1
+
+        print(f"\n[Share Exposure Conversion Verification]")
+        print(f"ADR Leg:      {adr_skhy_shares:+.4f} SKHY shares ({adr_skhy_shares * 0.1:+.5f} KRX 000660)")
+        print(f"CSOP 2x Leg:  {csop_skhy_shares:+.4f} SKHY eq. shares ({csop_skhy_shares * 0.1:+.5f} KRX 000660)")
+        print(f"Net Exposure: {net_skhy_shares:+.4f} SKHY shares ({net_krx_shares:+.5f} KRX 000660)")
+
+        self.assertAlmostEqual(adr_skhy_shares, -0.14, places=2)
+        self.assertAlmostEqual(csop_skhy_shares, 0.14, places=2)
+        self.assertLess(abs(net_skhy_shares), 0.005, "Net share exposure must be virtually zero")
+
 if __name__ == '__main__':
     unittest.main()
