@@ -8762,11 +8762,20 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (!this.state.orderLog.length && !recentExecs.length) {
             logBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">${isKo ? '체결 내역이 없습니다.' : 'No recent executions logged.'}</td></tr>`;
           } else if (recentExecs.length) {
-            logBody.innerHTML = recentExecs.slice(-25).reverse().map((ex) => {
+            logBody.innerHTML = recentExecs.slice(-30).reverse().map((ex) => {
               const timeStr = formatKstDateTime(ex.time);
-              const isEntry = ex.side === "SELL";
-              const sideText = isEntry ? (isKo ? "🔴 숏 진입 (SELL)" : "🔴 SHORT (SELL)") : (isKo ? "🟢 롱 청산/익절 (BUY)" : "🟢 LONG (BUY)");
-              const sideColor = isEntry ? "#dc2626" : "#16a34a";
+              const isAdr = ex.symbol === "SKHYUSDT";
+              let sideText = "";
+              let sideColor = "#64748b";
+              if (isAdr) {
+                const isEntry = ex.side === "SELL";
+                sideText = isEntry ? (isKo ? "🔴 숏 진입 (SELL)" : "🔴 SHORT (SELL)") : (isKo ? "🟢 롱 청산/익절 (BUY)" : "🟢 COVER (BUY)");
+                sideColor = isEntry ? "#dc2626" : "#16a34a";
+              } else {
+                const isEntry = ex.side === "BUY";
+                sideText = isEntry ? (isKo ? "🟢 ETF 롱 진입 (BUY)" : "🟢 ETF 2x LONG (BUY)") : (isKo ? "🔴 ETF 청산/익절 (SELL)" : "🔴 ETF 2x COVER (SELL)");
+                sideColor = isEntry ? "#16a34a" : "#dc2626";
+              }
               const pnlColor = ex.realized_pnl > 0 ? "#16a34a" : (ex.realized_pnl < 0 ? "#dc2626" : "#64748b");
               const pnlSign = ex.realized_pnl > 0 ? "+" : "";
               const fee = ex.commission != null ? ex.commission : 0.0054;

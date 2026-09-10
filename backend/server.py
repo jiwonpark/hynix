@@ -392,15 +392,21 @@ async def get_hedged_status() -> Dict[str, Any]:
         net_skhy_shares = adr_skhy_shares + stock_skhy_shares
         net_krx_shares = adr_krx_shares + stock_krx_shares
 
-        # Fetch recent user fills for SKHYUSDT to display exact entry and exit markers on chart
+        # Fetch recent user fills for both legs (SKHYUSDT ADR and CSOPSKHYNIX2LUSDT 2x ETF)
         executions = []
         try:
             start_ms = int((time.time() - 24 * 3600) * 1000)
-            skhy_trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "startTime": start_ms, "limit": 100}, signed=True)
-            if not isinstance(skhy_trades, list) or len(skhy_trades) == 0:
-                skhy_trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
-            if isinstance(skhy_trades, list):
-                for t in skhy_trades:
+            skhy_coro = binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "startTime": start_ms, "limit": 100}, signed=True)
+            stock_coro = binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": stock_sym, "startTime": start_ms, "limit": 100}, signed=True) if stock_sym else asyncio.sleep(0, result=[])
+            res_skhy, res_stock = await asyncio.gather(skhy_coro, stock_coro, return_exceptions=True)
+
+            if isinstance(res_skhy, list) and len(res_skhy) == 0:
+                res_skhy = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
+            if isinstance(res_stock, list) and len(res_stock) == 0 and stock_sym:
+                res_stock = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": stock_sym, "limit": 100}, signed=True)
+
+            if isinstance(res_skhy, list):
+                for t in res_skhy:
                     executions.append({
                         "id": str(t.get("id", "")),
                         "symbol": "SKHYUSDT",
@@ -412,6 +418,20 @@ async def get_hedged_status() -> Dict[str, Any]:
                         "commission_asset": str(t.get("commissionAsset", "USDT")),
                         "time": int(t.get("time", 0)),
                         "action_type": "ENTRY_SHORT" if t.get("side") == "SELL" else "EXIT_SHORT"
+                    })
+            if isinstance(res_stock, list):
+                for t in res_stock:
+                    executions.append({
+                        "id": str(t.get("id", "")),
+                        "symbol": stock_sym,
+                        "side": t.get("side", ""),
+                        "price": float(t.get("price", 0.0)),
+                        "qty": float(t.get("qty", 0.0)),
+                        "realized_pnl": float(t.get("realizedPnl", 0.0)),
+                        "commission": float(t.get("commission", 0.0)),
+                        "commission_asset": str(t.get("commissionAsset", "USDT")),
+                        "time": int(t.get("time", 0)),
+                        "action_type": "ENTRY_LONG" if t.get("side") == "BUY" else "EXIT_LONG"
                     })
             executions.sort(key=lambda x: x["time"])
         except Exception:
