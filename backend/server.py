@@ -470,24 +470,19 @@ async def get_hedged_status() -> Dict[str, Any]:
                     if active_tranches_queue:
                         active_tranches_queue.pop()  # LIFO: exit pops the most recent entry tranche
 
-        # Align queue length with actual live position tranches on exchange
-        if tranches_active == 0:
+        # 1-to-1 Entry-to-Exit Matching Invariant:
+        # Each scale-out requires a corresponding un-exited scale-in entry.
+        # Once all entries are exited, remaining position is accumulated core inventory and CANNOT be trimmed.
+        if adr_qty == 0 or stock_qty == 0:
             active_tranches_queue = []
         elif len(active_tranches_queue) > tranches_active:
             active_tranches_queue = active_tranches_queue[-tranches_active:]
-        elif len(active_tranches_queue) < tranches_active:
-            missing = tranches_active - len(active_tranches_queue)
-            prepended = []
-            for i in range(missing):
-                prepended.append({
-                    "trade_id": f"base_{i+1}",
-                    "time": now_sec - 7200,
-                    "qty": 0.07,
-                    "entry_spread": round(base_entry, 2),
-                    "entry_price": round(float(adr_pos.get("entry_price", 193.0)), 2),
-                    "target_out_spread": round(base_entry - 0.08, 2)
-                })
-            active_tranches_queue = prepended + active_tranches_queue
+        # DO NOT prepend missing tranches! If len(active_tranches_queue) < tranches_active,
+        # the difference represents accumulated core inventory that must remain protected.
+
+        speculative_tranches_active = len(active_tranches_queue)
+        core_accumulated_skhy = round(max(0.0, adr_qty - (speculative_tranches_active * 0.08)), 4)
+        core_accumulated_csop = round(max(0.0, stock_qty - (speculative_tranches_active * 1.40)), 4)
 
         # The active candidate for the next scale-out is strictly the top of the LIFO stack
         if active_tranches_queue:
@@ -501,9 +496,16 @@ async def get_hedged_status() -> Dict[str, Any]:
             dwell_time_sec = 999
             out_target_spread = round(base_entry - 0.08, 2)
 
-        is_out_profitable_relative_to_latest = bool(curr_spread <= out_target_spread)
-        is_dwell_satisfied = bool(dwell_time_sec >= 120)
-        can_take_profit = bool(tranches_active > 0 and eligible_for_take_profit and is_out_profitable_relative_to_latest and is_dwell_satisfied)
+        is_out_profitable_relative_to_latest = bool(current_target_tranche and curr_spread <= out_target_spread)
+        is_dwell_satisfied = bool(current_target_tranche and dwell_time_sec >= 120)
+        can_take_profit = bool(
+            speculative_tranches_active > 0 
+            and eligible_for_take_profit 
+            and is_out_profitable_relative_to_latest 
+            and is_dwell_satisfied
+            and adr_qty >= 0.07
+            and stock_qty >= 1.20
+        )
 
         status_scale_in = (
             "PEAK_REVERSAL_ARMED" if scale_in_armed
@@ -515,10 +517,11 @@ async def get_hedged_status() -> Dict[str, Any]:
 
         status_take_profit = (
             "TRIM_READY" if can_take_profit
-            else ("NO_ACTIVE_TRANCHES" if tranches_active == 0
+            else ("NO_ACTIVE_TRANCHES" if adr_qty == 0
+            else ("CORE_INVENTORY_RETAINED" if speculative_tranches_active == 0
             else ("LOCKED_AWAITING_PROFIT" if not eligible_for_take_profit
             else (f"ANTI_CHURN_DWELL ({120 - dwell_time_sec}s)" if not is_dwell_satisfied
-            else f"ANTI_CHURN_WAITING_CONVERGENCE (Target <={out_target_spread}%)")))
+            else f"ANTI_CHURN_WAITING_CONVERGENCE (Target <={out_target_spread}%)"))))
         )
 
         auto_state = load_auto_tranche_state()
@@ -538,6 +541,9 @@ async def get_hedged_status() -> Dict[str, Any]:
             "scale_in_threshold_pts": 0.10,
             "scale_in_armed": scale_in_armed,
             "tranches_active": tranches_active,
+            "speculative_tranches_active": speculative_tranches_active,
+            "core_accumulated_skhy": core_accumulated_skhy,
+            "core_accumulated_csop": core_accumulated_csop,
             "tranches_max": 10,
             "tranches_remaining": tranches_remaining,
             "can_scale_in": can_scale_in,
@@ -815,9 +821,19 @@ async def reduce_tranche(force: bool = False) -> Dict[str, Any]:
         adr_pos_amt = abs(float(adr_pos.get("position_amt", 0.0)))
         stock_pos_amt = abs(float(stock_pos.get("position_amt", 0.0)))
 
-        adr_reduce_qty = round(min(0.07, adr_pos_amt), 2)
+        # 1-to-1 Entry-to-Exit Matching Guard:
+        # Require position to have at least 1 full tranche size (0.07 SKHY / 1.20 CSOP)
+        # to prevent liquidating fractional core accumulation!
+        if not force:
+            if adr_pos_amt < 0.07 or stock_pos_amt < 1.20:
+                return {
+                    "success": False,
+                    "error": f"CORE INVENTORY PROTECTED: Position size ({adr_pos_amt} SKHY / {stock_pos_amt} CSOP) is below 1 full tranche (0.07 / 1.20). Remaining inventory is retained core accumulation."
+                }
+
+        adr_reduce_qty = 0.07 if (adr_pos_amt >= 0.07 or force) else adr_pos_amt
         stock_target = 1.20 if stock_sym == "CSOPSKHYNIX2LUSDT" else 0.01
-        stock_reduce_qty = round(min(stock_target, stock_pos_amt), 2)
+        stock_reduce_qty = stock_target if (stock_pos_amt >= stock_target or force) else stock_pos_amt
 
         if adr_reduce_qty <= 0 or stock_reduce_qty <= 0:
             return {"success": False, "error": f"Position sizes too small to reduce: ADR {adr_pos_amt}, Stock {stock_pos_amt}"}

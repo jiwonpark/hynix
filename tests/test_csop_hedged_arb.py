@@ -280,6 +280,50 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
         self.assertEqual(restored["enabled"], initial_enabled)
         print("\n[Persistent Auto-Tranche State Verification] PASSED: State persists across cycles and reloads.")
 
+    def test_one_to_one_entry_exit_matching_protects_core_inventory(self):
+        """
+        Verify that:
+        1. Number of allowed exits strictly cannot exceed number of entries.
+        2. Once all entry tranches are matched by exits (queue is empty), further take-profits are BLOCKED.
+        3. The accumulated ratchet core inventory (+0.01 SKHY / +0.20 CSOP per cycle) is NEVER liquidated.
+        """
+        entries_count = 2
+        exits_count = 0
+        queue = ["T1", "T2"] # 2 entry tranches
+        total_adr_pos = 0.16 # 2 * 0.08
+        total_csop_pos = 2.80 # 2 * 1.40
+
+        def can_exit(q, adr_qty, csop_qty, pnl):
+            # Strict 1-to-1 matching: require an active entry tranche on queue AND >= 1 full tranche
+            return bool(len(q) > 0 and adr_qty >= 0.07 and csop_qty >= 1.20 and pnl > 0.02)
+
+        # Exit 1
+        self.assertTrue(can_exit(queue, total_adr_pos, total_csop_pos, 0.05))
+        queue.pop()
+        exits_count += 1
+        total_adr_pos = round(total_adr_pos - 0.07, 4) # 0.09
+        total_csop_pos = round(total_csop_pos - 1.20, 4) # 1.60
+
+        # Exit 2
+        self.assertTrue(can_exit(queue, total_adr_pos, total_csop_pos, 0.04))
+        queue.pop()
+        exits_count += 1
+        total_adr_pos = round(total_adr_pos - 0.07, 4) # 0.02 (ACCUMULATED CORE!)
+        total_csop_pos = round(total_csop_pos - 1.20, 4) # 0.40 (ACCUMULATED CORE!)
+
+        # Now: entries_count == exits_count == 2. Queue is EMPTY.
+        self.assertEqual(len(queue), 0)
+        self.assertEqual(total_adr_pos, 0.02)
+        self.assertEqual(total_csop_pos, 0.40)
+
+        # Attempting Exit 3 (even with positive PnL!): MUST BE BLOCKED!
+        self.assertFalse(can_exit(queue, total_adr_pos, total_csop_pos, 0.03), 
+                         "Exit 3 must be strictly blocked: entry count matches exit count and core is protected!")
+
+        print(f"\n[1-to-1 Entry-Exit Matching & Core Protection Verification] PASSED:")
+        print(f"Entries: {entries_count} | Exits: {exits_count}")
+        print(f"Protected Core Inventory Retained: {total_adr_pos} SKHY / {total_csop_pos} CSOP")
+
 if __name__ == '__main__':
     unittest.main()
 

@@ -8688,8 +8688,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             logBody.innerHTML = recentExecs.slice(-25).reverse().map((ex) => {
               const timeStr = formatKstDateTime(ex.time);
               const isEntry = ex.side === "SELL";
-              const sideText = isEntry ? (isKo ? "숏 진입 (SELL)" : "SHORT ENTRY (SELL)") : (isKo ? "롱 청산/익절 (BUY)" : "LONG TRIM/TP (BUY)");
-              const sideColor = isEntry ? "#0284c7" : "#16a34a";
+              const sideText = isEntry ? (isKo ? "🔴 숏 진입 (SELL)" : "🔴 SHORT (SELL)") : (isKo ? "🟢 롱 청산/익절 (BUY)" : "🟢 LONG (BUY)");
+              const sideColor = isEntry ? "#dc2626" : "#16a34a";
               const pnlColor = ex.realized_pnl > 0 ? "#16a34a" : (ex.realized_pnl < 0 ? "#dc2626" : "#64748b");
               const pnlSign = ex.realized_pnl > 0 ? "+" : "";
               const fee = ex.commission != null ? ex.commission : 0.0054;
@@ -8717,10 +8717,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           } else {
             logBody.innerHTML = this.state.orderLog.slice(-15).reverse().map((log) => {
               const statusColor = log.status === "FILLED" ? "#16a34a" : "#dc2626";
+              const isShort = log.side && (log.side.includes("SELL") || log.side.includes("SHORT"));
+              const sideColor = isShort ? "#dc2626" : "#16a34a";
+              const sideIcon = isShort ? "🔴 " : "🟢 ";
               return `<tr>
                 <td style="color: #64748b; font-size: 11px;">${log.timestamp}</td>
                 <td style="font-weight: 700;">${log.pair}</td>
-                <td>${log.side}</td>
+                <td><span style="font-weight: 800; color: ${sideColor};">${sideIcon}${log.side}</span></td>
                 <td>$${log.sizeUsdt.toLocaleString()}</td>
                 <td>${log.avgSpread.toFixed(2)}%</td>
                 <td style="color: #d97706; font-family: monospace; font-size: 11px;">-$${log.feeUsdt.toFixed(4)} USDT</td>
@@ -9046,6 +9049,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             btnReduce.style.cursor = "not-allowed";
             if (tranches === 0) {
               lblReduce.textContent = "No Open Tranches";
+            } else if (criteria && criteria.speculative_tranches_active === 0) {
+              lblReduce.textContent = "🔒 Core Inventory Retained (Awaiting Next Scale-In)";
             } else if (!eligible) {
               lblReduce.textContent = "🔒 Locked (Zero-Loss Rule: Awaiting Net Profit > +$0.02)";
             } else if (criteria && !criteria.is_dwell_satisfied) {
@@ -9341,6 +9346,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("badgeCriteriaTP").textContent = isKo ? "수렴 익절 가능" : "TRIM READY";
             $("badgeCriteriaTP").style.background = "#dcfce7";
             $("badgeCriteriaTP").style.color = "#166534";
+          } else if (criteria.speculative_tranches_active === 0 && ((hedgedData && hedgedData.adr_qty > 0) || criteria.active_tranches_queue?.length === 0)) {
+            $("badgeCriteriaTP").textContent = isKo ? "코어 물량 보존 (신규 진입 대기)" : "CORE INVENTORY RETAINED";
+            $("badgeCriteriaTP").style.background = "#eff6ff";
+            $("badgeCriteriaTP").style.color = "#1d4ed8";
           } else if (pnl <= 0.02) {
             $("badgeCriteriaTP").textContent = isKo ? "무손실 원칙 잠금" : "ZERO-LOSS LOCKED";
             $("badgeCriteriaTP").style.background = "#f1f5f9";
