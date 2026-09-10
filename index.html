@@ -2261,13 +2261,17 @@
               <!-- 1. Scale-in Criteria Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Asymmetric Scale-In (+0.08 SKHY / +1.40 CSOP)</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Speculative Scale-In (+0.08 SKHY / +1.40 CSOP)</span>
                   <span id="badgeCriteriaScaleIn" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #b45309;">WAITING</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritScaleInDesc">
-                  Trigger: Parity <strong>≥ <span id="valCritScaleInThreshold">139.42%</span></strong> (+0.12% pts divergence)
+                  Trigger: Parity <strong>≥ <span id="valCritScaleInThreshold">139.42%</span></strong> (MA-24: <span id="valCritMa24">139.25%</span> + 0.10%)
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 3px; display: flex; justify-content: space-between;">
+                  <span>MA Stretch: <strong id="valCritMaStretch" style="color: #d97706;">+0.00% pts</strong></span>
+                  <span>Trend: <strong id="valCritPeakOut" style="color: #64748b;">WAITING</strong></span>
+                </div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
                   <span>Current Parity: <strong id="valCritCurrentSpread">139.30%</strong></span>
                   <span>Gap to Scale-in: <strong id="valCritGapScaleIn" style="color: #d97706;">+0.12% pts</strong></span>
                 </div>
@@ -2280,15 +2284,19 @@
               <!-- 2. Convergence Take-Profit Criteria Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lblCritTPTitle">🎯 Micro-Churn Trim (0.07 SKHY / 1.20 CSOP)</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lblCritTPTitle">🎯 Anti-Churn Take-Profit (0.07 SKHY / 1.20 CSOP)</span>
                   <span id="badgeCriteriaTP" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #166534;">ZERO-LOSS LOCKED</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritTPDesc">
-                  Trigger: Net Unrealized PnL <strong>&gt; +$0.02</strong> (Guaranteed Fee Coverage)
+                  Target: Parity <strong>≤ <span id="valCritOutTargetSpread">139.22%</span></strong> (Ref: <span id="valCritLatestInSpread">139.30%</span> - 0.08%)
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 3px; display: flex; justify-content: space-between;">
                   <span>Current PnL: <strong id="valCritCombinedPnl">$0.00</strong></span>
-                  <span>Target: <strong id="valCritGapTP" style="color: #0284c7;">&gt; +$0.02</strong></span>
+                  <span>Hold Dwell: <strong id="valCritDwell" style="color: #64748b;">0s / 120s</strong></span>
+                </div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
+                  <span>Current Parity: <strong id="valCritTpCurrentSpread">139.30%</strong></span>
+                  <span>Gap to Out: <strong id="valCritGapTP" style="color: #0284c7;">+0.08% pts</strong></span>
                 </div>
                 <!-- Progress bar towards TP -->
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
@@ -9000,9 +9008,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const btnReduce = $("btnReduceTranche");
         const lblReduce = $("lblReduceTrancheText");
+        const criteria = data.auto_tranche_criteria;
+        const canTakeProfit = Boolean(criteria ? criteria.can_take_profit : eligible);
         if (btnReduce && lblReduce) {
           const pnlSign = pnl >= 0 ? "+" : "";
-          if (tranches > 0 && eligible) {
+          if (tranches > 0 && canTakeProfit) {
             btnReduce.disabled = false;
             btnReduce.style.background = "#16a34a";
             btnReduce.style.cursor = "pointer";
@@ -9011,9 +9021,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             btnReduce.disabled = true;
             btnReduce.style.background = "#94a3b8";
             btnReduce.style.cursor = "not-allowed";
-            lblReduce.textContent = tranches > 0 
-              ? "🔒 Locked (Zero-Loss Rule: Awaiting Net Profit > +$0.02)" 
-              : "No Open Tranches";
+            if (tranches === 0) {
+              lblReduce.textContent = "No Open Tranches";
+            } else if (!eligible) {
+              lblReduce.textContent = "🔒 Locked (Zero-Loss Rule: Awaiting Net Profit > +$0.02)";
+            } else if (criteria && !criteria.is_dwell_satisfied) {
+              lblReduce.textContent = `⏳ Anti-Churn Dwell (${Math.max(0, 120 - criteria.dwell_time_sec)}s left)`;
+            } else if (criteria && !criteria.is_out_profitable_relative_to_latest) {
+              lblReduce.textContent = `🔒 Anti-Churn Locked: Awaiting Convergence (Target <= ${criteria.out_target_spread}%)`;
+            } else {
+              lblReduce.textContent = "🔒 Locked (Awaiting Convergence)";
+            }
           }
         }
 
@@ -9155,6 +9173,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             title: `ENTRY (${criteria.entry_baseline_spread.toFixed(2)}%)`
           }));
 
+          if (criteria.rolling_ma_24) {
+            this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
+              price: criteria.rolling_ma_24,
+              color: "#8b5cf6",
+              lineWidth: 1.5,
+              lineStyle: LightweightCharts.LineStyle.Dotted,
+              axisLabelVisible: true,
+              title: `24-MA (${criteria.rolling_ma_24.toFixed(2)}%)`
+            }));
+          }
+
           if (criteria.scale_in_trigger_spread) {
             this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
               price: criteria.scale_in_trigger_spread,
@@ -9166,14 +9195,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             }));
           }
 
-          if (criteria.take_profit_trigger_spread) {
+          const tpLinePrice = criteria.out_target_spread || criteria.take_profit_trigger_spread;
+          if (tpLinePrice) {
             this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
-              price: criteria.take_profit_trigger_spread,
+              price: tpLinePrice,
               color: "#16a34a",
               lineWidth: 1.5,
               lineStyle: LightweightCharts.LineStyle.Dashed,
               axisLabelVisible: true,
-              title: `TP TARGET (${criteria.take_profit_trigger_spread.toFixed(2)}%)`
+              title: `TP TARGET (${tpLinePrice.toFixed(2)}%)`
             }));
           }
         }
@@ -9183,13 +9213,27 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!criteria) return;
         const isKo = window.currentLang === "ko";
 
-        // 1. Scale-in Rule
+        // 1. Scale-in Rule (Speculative MA Stretch + Peak-Out Momentum Exhaustion)
         const scaleInThreshold = criteria.scale_in_trigger_spread || 139.65;
         const currSpread = criteria.current_spread || 139.29;
         const gapScaleIn = criteria.gap_to_scale_in_pts != null ? criteria.gap_to_scale_in_pts : (scaleInThreshold - currSpread);
         const canScaleIn = criteria.can_scale_in;
+        const ma24 = criteria.rolling_ma_24 != null ? criteria.rolling_ma_24 : (criteria.entry_baseline_spread || 139.30);
+        const maStretch = criteria.ma_stretch_pts != null ? criteria.ma_stretch_pts : (currSpread - ma24);
+        const isPeakingOut = Boolean(criteria.is_peaking_out);
+        const scaleInArmed = Boolean(criteria.scale_in_armed);
 
         if ($("valCritScaleInThreshold")) $("valCritScaleInThreshold").textContent = `${scaleInThreshold.toFixed(2)}%`;
+        if ($("valCritMa24")) $("valCritMa24").textContent = `${ma24.toFixed(2)}%`;
+        if ($("valCritMaStretch")) {
+          const sign = maStretch >= 0 ? "+" : "";
+          $("valCritMaStretch").textContent = `${sign}${maStretch.toFixed(2)}% pts`;
+          $("valCritMaStretch").style.color = maStretch >= 0.10 ? "#16a34a" : "#d97706";
+        }
+        if ($("valCritPeakOut")) {
+          $("valCritPeakOut").textContent = isPeakingOut ? (isKo ? "피크 반전 확인" : "PEAK EXHAUSTION") : (isKo ? "상승 모멘텀 지속" : "RISING MOMENTUM");
+          $("valCritPeakOut").style.color = isPeakingOut ? "#16a34a" : "#dc2626";
+        }
         if ($("valCritCurrentSpread")) $("valCritCurrentSpread").textContent = `${currSpread.toFixed(2)}%`;
         if ($("valCritGapScaleIn")) {
           const sign = gapScaleIn > 0 ? "+" : "";
@@ -9197,59 +9241,91 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("valCritGapScaleIn").style.color = gapScaleIn <= 0 ? "#16a34a" : "#d97706";
         }
         if ($("barCritScaleInProgress")) {
-          const base = criteria.entry_baseline_spread || 139.30;
+          const base = ma24;
           const range = Math.max(0.01, scaleInThreshold - base);
           const prog = Math.max(0, Math.min(100, Math.round(((currSpread - base) / range) * 100)));
           $("barCritScaleInProgress").style.width = `${prog}%`;
-          $("barCritScaleInProgress").style.background = prog >= 100 ? "#16a34a" : "#f59e0b";
+          $("barCritScaleInProgress").style.background = scaleInArmed ? "#16a34a" : "#f59e0b";
         }
         if ($("badgeCriteriaScaleIn")) {
-          if (currSpread >= scaleInThreshold && canScaleIn) {
-            $("badgeCriteriaScaleIn").textContent = isKo ? "트리거 충족" : "TRIGGER ARMED";
+          if (scaleInArmed) {
+            $("badgeCriteriaScaleIn").textContent = isKo ? "피크반전 체결대기" : "PEAK REVERSAL ARMED";
             $("badgeCriteriaScaleIn").style.background = "#dcfce7";
             $("badgeCriteriaScaleIn").style.color = "#166534";
           } else if (!canScaleIn) {
             $("badgeCriteriaScaleIn").textContent = isKo ? "최대 한도 도달" : "MAX CAPACITY";
             $("badgeCriteriaScaleIn").style.background = "#fee2e2";
             $("badgeCriteriaScaleIn").style.color = "#991b1b";
-          } else {
-            $("badgeCriteriaScaleIn").textContent = isKo ? "괴리율 확대 대기" : "WAITING DIVERGENCE";
+          } else if (maStretch < 0.10) {
+            $("badgeCriteriaScaleIn").textContent = isKo ? "MA 이격 부족" : "WAITING MA STRETCH";
             $("badgeCriteriaScaleIn").style.background = "#fef3c7";
             $("badgeCriteriaScaleIn").style.color = "#b45309";
+          } else {
+            $("badgeCriteriaScaleIn").textContent = isKo ? "피크 모멘텀 소진 대기" : "TRENDING UP - WAITING PEAK";
+            $("badgeCriteriaScaleIn").style.background = "#e0f2fe";
+            $("badgeCriteriaScaleIn").style.color = "#0369a1";
           }
         }
 
-        // 2. Take-Profit Rule
-        const tpThreshold = criteria.take_profit_trigger_spread || 138.90;
-        const gapTP = criteria.gap_to_take_profit_pts != null ? criteria.gap_to_take_profit_pts : (currSpread - tpThreshold);
+        // 2. Take-Profit Rule (Anti-Churn Multi-Tranche Attribution + Zero-Loss Guard)
         const canTP = Boolean(criteria.can_take_profit);
         const pnl = (hedgedData && hedgedData.combined_unrealized_pnl_usd != null) ? hedgedData.combined_unrealized_pnl_usd : 0.0;
         const pnlPct = (hedgedData && hedgedData.combined_unrealized_pnl_pct != null) ? hedgedData.combined_unrealized_pnl_pct : 0.0;
+        const latestIn = criteria.latest_entry_spread != null ? criteria.latest_entry_spread : (criteria.entry_baseline_spread || 139.30);
+        const outTarget = criteria.out_target_spread != null ? criteria.out_target_spread : (criteria.take_profit_trigger_spread || (latestIn - 0.08));
+        const gapOut = criteria.gap_to_out_pts != null ? criteria.gap_to_out_pts : (currSpread - outTarget);
+        const dwellSec = criteria.dwell_time_sec != null ? criteria.dwell_time_sec : 999;
+        const isDwellOk = Boolean(criteria.is_dwell_satisfied);
+        const isOutProfitable = Boolean(criteria.is_out_profitable_relative_to_latest);
 
-        if ($("valCritTPThreshold")) $("valCritTPThreshold").textContent = `${tpThreshold.toFixed(2)}%`;
+        if ($("valCritLatestInSpread")) $("valCritLatestInSpread").textContent = `${latestIn.toFixed(2)}%`;
+        if ($("valCritOutTargetSpread")) $("valCritOutTargetSpread").textContent = `${outTarget.toFixed(2)}%`;
         if ($("valCritCombinedPnl")) {
           const sign = pnl >= 0 ? "+" : "";
-          const col = pnl > 0 ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#64748b");
+          const col = pnl > 0.02 ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#64748b");
           $("valCritCombinedPnl").style.color = col;
           $("valCritCombinedPnl").textContent = `${sign}$${pnl.toFixed(2)} (${sign}${pnlPct.toFixed(2)}%)`;
         }
+        if ($("valCritDwell")) {
+          if (dwellSec >= 120) {
+            $("valCritDwell").textContent = "120s+ (OK)";
+            $("valCritDwell").style.color = "#16a34a";
+          } else {
+            $("valCritDwell").textContent = `${dwellSec}s / 120s`;
+            $("valCritDwell").style.color = "#d97706";
+          }
+        }
+        if ($("valCritTpCurrentSpread")) $("valCritTpCurrentSpread").textContent = `${currSpread.toFixed(2)}%`;
         if ($("valCritGapTP")) {
-          $("valCritGapTP").textContent = `${Math.abs(gapTP).toFixed(2)}% pts`;
-          $("valCritGapTP").style.color = canTP ? "#16a34a" : "#0284c7";
+          const sign = gapOut > 0 ? "+" : "";
+          $("valCritGapTP").textContent = `${sign}${gapOut.toFixed(2)}% pts`;
+          $("valCritGapTP").style.color = gapOut <= 0 ? "#16a34a" : "#0284c7";
         }
         if ($("barCritTPProgress")) {
-          const base = criteria.entry_baseline_spread || 139.30;
-          const range = Math.max(0.01, base - tpThreshold);
-          const prog = Math.max(0, Math.min(100, Math.round(((base - currSpread) / range) * 100)));
+          const prog = Math.max(0, Math.min(100, Math.round(((latestIn - currSpread) / 0.08) * 100)));
           $("barCritTPProgress").style.width = `${prog}%`;
+          $("barCritTPProgress").style.background = canTP ? "#16a34a" : "#0284c7";
         }
         if ($("badgeCriteriaTP")) {
           if (canTP) {
-            $("badgeCriteriaTP").textContent = isKo ? "익절 청산 가능" : "TAKE PROFIT READY";
+            $("badgeCriteriaTP").textContent = isKo ? "수렴 익절 가능" : "TRIM READY";
             $("badgeCriteriaTP").style.background = "#dcfce7";
             $("badgeCriteriaTP").style.color = "#166534";
-          } else {
+          } else if (pnl <= 0.02) {
             $("badgeCriteriaTP").textContent = isKo ? "무손실 원칙 잠금" : "ZERO-LOSS LOCKED";
+            $("badgeCriteriaTP").style.background = "#f1f5f9";
+            $("badgeCriteriaTP").style.color = "#475569";
+          } else if (!isDwellOk) {
+            const rem = Math.max(0, 120 - dwellSec);
+            $("badgeCriteriaTP").textContent = isKo ? `쿨다운 대기 (${rem}초)` : `DWELL COOLDOWN (${rem}s)`;
+            $("badgeCriteriaTP").style.background = "#fef3c7";
+            $("badgeCriteriaTP").style.color = "#b45309";
+          } else if (!isOutProfitable) {
+            $("badgeCriteriaTP").textContent = isKo ? "단기 수렴 대기" : "AWAITING CONVERGENCE";
+            $("badgeCriteriaTP").style.background = "#fef3c7";
+            $("badgeCriteriaTP").style.color = "#b45309";
+          } else {
+            $("badgeCriteriaTP").textContent = isKo ? "대기 중" : "HOLDING";
             $("badgeCriteriaTP").style.background = "#f1f5f9";
             $("badgeCriteriaTP").style.color = "#475569";
           }
@@ -9336,12 +9412,18 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!status || !status.authenticated) return;
         const tranches = status.tranches_active || 0;
         const criteria = status.auto_tranche_criteria;
-        const eligible = Boolean(status.eligible_for_take_profit) || Boolean(criteria?.can_take_profit);
+        const eligible = Boolean(status.eligible_for_take_profit);
 
-        // 1. High-Frequency Micro-Churn Take-Profit:
-        // The instant net profit > $0.02 (covering fees), trim 1 GCD unit (0.07 SKHY / 1.20 CSOP),
-        // leaving accumulated residual core inventory (+0.01 SKHY / +0.20 CSOP) in the book!
-        if (tranches > 0 && eligible) {
+        // 1. Conservative Scale-Out (Anti-Churn Multi-Tranche Attribution):
+        // Only trim 1 GCD unit if:
+        // - Global net profit > $0.02 (Zero-Loss Rule)
+        // - AND spread has converged relative to the latest entry fill (S_curr <= S_latest - 0.08% pts)
+        // - AND minimum dwell time elapsed (>= 120s)
+        const canTakeProfit = criteria 
+          ? Boolean(criteria.can_take_profit) 
+          : (tranches > 0 && eligible);
+
+        if (tranches > 0 && canTakeProfit) {
           const now = Date.now();
           if (!this.lastAutoReduceTime || now - this.lastAutoReduceTime > 30 * 1000) {
             this.lastAutoReduceTime = now;
@@ -9350,14 +9432,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           return;
         }
 
-        // 2. High-Frequency Micro Scale-In:
-        // If spread diverges >= 0.12% pts above entry baseline, or criterion status is ARMED_READY,
-        // execute asymmetric scale-in tranche (0.08 SKHY / 1.40 CSOP).
-        const canScaleIn = criteria ? criteria.can_scale_in : (tranches < 10);
-        const currSpread = criteria ? criteria.current_spread : (cachedRows?.length ? (cachedRows.at(-1).normalized || 139.30) : 139.30);
-        const scaleInTrigger = criteria ? criteria.scale_in_trigger_spread : 139.42;
+        // 2. Speculative Scale-In (Peak-Out / MA Stretch Filter):
+        // Only scale in if:
+        // - Parity spread >= 24-MA + 0.10% pts
+        // - AND Parity spread >= entry baseline + 0.10% pts
+        // - AND Upward divergence is showing peak-out / momentum exhaustion
+        const canScaleIn = criteria 
+          ? Boolean(criteria.scale_in_armed) 
+          : (tranches < 10);
 
-        if (canScaleIn && (currSpread >= scaleInTrigger || (criteria && criteria.status_scale_in === "ARMED_READY"))) {
+        if (canScaleIn) {
           const now = Date.now();
           if (!this.lastAutoStepTime || now - this.lastAutoStepTime > 60 * 1000) {
             this.lastAutoStepTime = now;

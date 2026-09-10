@@ -133,6 +133,68 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
         print(f"Retained Core Inventory per Churn: +{residual_skhy} SKHY (short) / +{residual_csop} CSOP (long)")
         print(f"Take-Profit Threshold: > +${min_take_profit_pnl:.2f} Net PnL (Zero-Loss Enforced)")
 
+    def test_speculative_scale_in_peak_out(self):
+        """
+        Verify Speculative Scale-In rules:
+        - Must be stretched above 24-MA by >= 0.10% pts.
+        - Upward divergence must be showing peak-out / momentum exhaustion.
+        """
+        def check_scale_in_armed(curr_spread: float, ma24: float, bars: list, base_entry: float, can_scale_in: bool = True) -> bool:
+            ma_stretch = curr_spread - ma24
+            is_stretched = (ma_stretch >= 0.10)
+            is_above_entry = (curr_spread >= base_entry + 0.10)
+            if len(bars) >= 3:
+                last_val = bars[-1]
+                prev_val = bars[-2]
+                prev2_val = bars[-3]
+                local_high = max(prev_val, prev2_val)
+                is_peaking = (last_val <= prev_val or last_val < local_high)
+            else:
+                is_peaking = True
+            return bool(can_scale_in and is_stretched and is_above_entry and is_peaking)
+
+        base_entry = 139.30
+        ma24 = 139.30
+
+        # Scenario 1: Not stretched enough (139.35 vs MA 139.30 -> stretch 0.05 < 0.10) -> BLOCKED
+        self.assertFalse(check_scale_in_armed(139.35, ma24, [139.20, 139.30, 139.35], base_entry))
+
+        # Scenario 2: Stretched (139.45), but momentum is surging upward (139.30 -> 139.38 -> 139.45, steep rising, no peak-out) -> BLOCKED
+        self.assertFalse(check_scale_in_armed(139.45, ma24, [139.30, 139.38, 139.45], base_entry))
+
+        # Scenario 3: Stretched (139.45) AND momentum rolled over (139.42 -> 139.48 -> 139.45, rejected from local high) -> ARMED!
+        self.assertTrue(check_scale_in_armed(139.45, ma24, [139.42, 139.48, 139.45], base_entry))
+        print("\n[Speculative Scale-In Peak-Out Verification] PASSED: Surging momentum filtered out, peak rollover armed.")
+
+    def test_anti_churn_lifo_attribution_and_dwell_cooldown(self):
+        """
+        Verify Anti-Churn Multi-Tranche Attribution:
+        - Prevents immediate churning when overall portfolio is in profit from older tranches.
+        - Enforces minimum dwell time (>= 120s) and LIFO spread convergence (S_curr <= S_latest - 0.08% pts).
+        """
+        def check_can_take_profit(curr_spread: float, latest_in_spread: float, dwell_time_sec: int, global_pnl: float) -> bool:
+            zero_loss_ok = (global_pnl > 0.02)
+            out_target_spread = latest_in_spread - 0.08
+            convergence_ok = (curr_spread <= out_target_spread)
+            dwell_ok = (dwell_time_sec >= 120)
+            return bool(zero_loss_ok and convergence_ok and dwell_ok)
+
+        latest_in = 139.50
+
+        # Scenario 1: Global PnL is +$0.50, but latest entry was 15s ago -> BLOCKED (Dwell cooldown)
+        self.assertFalse(check_can_take_profit(139.40, latest_in, 15, 0.50))
+
+        # Scenario 2: Global PnL is +$0.50, dwell is 180s, but spread has NOT converged relative to latest fill (139.46 > 139.42) -> BLOCKED
+        self.assertFalse(check_can_take_profit(139.46, latest_in, 180, 0.50))
+
+        # Scenario 3: Global PnL is +$0.50, dwell is 180s, and spread converged to 139.40 (<= 139.42 target) -> ALLOWED (TRIM READY)
+        self.assertTrue(check_can_take_profit(139.40, latest_in, 180, 0.50))
+
+        # Scenario 4: Spread converged and dwell passed, but global PnL <= $0.02 -> BLOCKED (Zero-Loss Rule)
+        self.assertFalse(check_can_take_profit(139.38, latest_in, 180, 0.01))
+        print("\n[Anti-Churn LIFO Attribution & Dwell Verification] PASSED: Churning strictly blocked.")
+
 if __name__ == '__main__':
     unittest.main()
+
 

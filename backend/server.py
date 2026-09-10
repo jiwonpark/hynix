@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -215,6 +216,48 @@ async def get_positions() -> Dict[str, Any]:
     except Exception as e:
         return {"error": str(e), "positions": []}
 
+_parity_cache: Dict[str, Any] = {
+    "key": "",
+    "timestamp": 0.0,
+    "data": []
+}
+
+async def get_cached_parity_bars(interval: str = "5m", limit: int = 60) -> List[Dict[str, Any]]:
+    global _parity_cache
+    now = time.time()
+    cache_key = f"{interval}_{limit}"
+    if _parity_cache["key"] == cache_key and (now - _parity_cache["timestamp"]) < 4.0:
+        return _parity_cache["data"]
+
+    try:
+        k1, k2 = await asyncio.gather(
+            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYUSDT", "interval": interval, "limit": limit}),
+            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYNIXUSDT", "interval": interval, "limit": limit}),
+            return_exceptions=True
+        )
+        if isinstance(k1, list) and isinstance(k2, list):
+            m2 = {x[0]: float(x[4]) for x in k2}
+            bars = []
+            for x in k1:
+                t = x[0]
+                if t in m2 and m2[t] > 0:
+                    p1 = float(x[4])
+                    p2 = m2[t] / 10.0
+                    ratio = round((p1 / p2) * 100.0, 3)
+                    bars.append({
+                        "time": int(t / 1000),
+                        "value": ratio,
+                        "adr": p1,
+                        "domestic": round(p2, 2)
+                    })
+            if bars:
+                _parity_cache = {"key": cache_key, "timestamp": now, "data": bars}
+                return bars
+    except Exception as e:
+        logger.warning(f"Error fetching parity bars: {e}")
+
+    return _parity_cache.get("data", [])
+
 @app.get("/api/trade/hedged_status")
 async def get_hedged_status() -> Dict[str, Any]:
     """Calculates real-time live metrics for the hedged SK Hynix arbitrage position."""
@@ -340,30 +383,108 @@ async def get_hedged_status() -> Dict[str, Any]:
         except Exception:
             pass
 
-        # Real-time criteria for auto-tranching & micro-churn accumulation (기준)
+        # Real-time criteria for speculative trend-reversal auto-tranching & anti-churn LIFO ratchet
         base_entry = entry_spread if entry_spread else 139.30
         curr_spread = current_spread if current_spread else 139.30
-        scale_in_trigger = round(base_entry + 0.12, 2)
-        take_profit_trigger = round(base_entry - 0.08, 2)
         tranches_remaining = max(0, 10 - tranches_active)
         can_scale_in = bool(tranches_remaining > 0 and free_buffer >= 2.0)
+
+        # 1. Moving Average & Speculative Peak-Out Metrics
+        parity_bars = await get_cached_parity_bars("5m", 30)
+        if parity_bars and len(parity_bars) >= 6:
+            ma_subset = parity_bars[-24:] if len(parity_bars) >= 24 else parity_bars
+            ma24 = sum(b["value"] for b in ma_subset) / len(ma_subset)
+            last_val = parity_bars[-1]["value"]
+            prev_val = parity_bars[-2]["value"] if len(parity_bars) > 1 else last_val
+            prev2_val = parity_bars[-3]["value"] if len(parity_bars) > 2 else prev_val
+            local_high_3 = max(prev_val, prev2_val)
+            is_peaking_out = bool(last_val <= prev_val or last_val < local_high_3)
+            spread_velocity = round(last_val - prev_val, 3)
+        else:
+            ma24 = base_entry
+            is_peaking_out = True
+            spread_velocity = 0.0
+
+        ma_stretch_pts = round(curr_spread - ma24, 2)
+        is_stretched_above_ma = bool(ma_stretch_pts >= 0.10)
+        is_above_entry = bool(curr_spread >= base_entry + 0.10) if tranches_active > 0 else True
+        scale_in_armed = bool(can_scale_in and is_stretched_above_ma and is_above_entry and is_peaking_out)
+        scale_in_trigger = round(max(ma24 + 0.10, base_entry + 0.10), 2)
+
+        # 2. Multi-Tranche Entry Tracking (Anti-Churn LIFO Attribution)
+        entry_trades = [t for t in executions if t.get("action_type") == "ENTRY_SHORT"]
+        now_sec = time.time()
+
+        if entry_trades and parity_bars:
+            latest_entry = entry_trades[-1]
+            latest_entry_sec = latest_entry["time"] / 1000
+            dwell_time_sec = int(now_sec - latest_entry_sec)
+            matched_bar = min(parity_bars, key=lambda b: abs(b["time"] - latest_entry_sec))
+            latest_in_spread = matched_bar["value"]
+
+            recent_entry_spreads = []
+            for et in entry_trades[-3:]:
+                mb = min(parity_bars, key=lambda b: abs(b["time"] - (et["time"] / 1000)))
+                recent_entry_spreads.append(mb["value"])
+            min_recent_in_spread = min(recent_entry_spreads) if recent_entry_spreads else latest_in_spread
+        else:
+            latest_in_spread = base_entry
+            min_recent_in_spread = base_entry
+            dwell_time_sec = 999
+
+        out_target_spread = round(latest_in_spread - 0.08, 2)
+        is_out_profitable_relative_to_latest = bool(curr_spread <= out_target_spread)
+        is_dwell_satisfied = bool(dwell_time_sec >= 120)
+        can_take_profit = bool(tranches_active > 0 and eligible_for_take_profit and is_out_profitable_relative_to_latest and is_dwell_satisfied)
+
+        status_scale_in = (
+            "PEAK_REVERSAL_ARMED" if scale_in_armed
+            else ("MAX_CAPACITY" if not can_scale_in
+            else ("AWAITING_MA_STRETCH" if not is_stretched_above_ma
+            else ("WAITING_PEAK_EXHAUSTION" if not is_peaking_out
+            else "WAITING_DIVERGENCE")))
+        )
+
+        status_take_profit = (
+            "TRIM_READY" if can_take_profit
+            else ("NO_ACTIVE_TRANCHES" if tranches_active == 0
+            else ("LOCKED_AWAITING_PROFIT" if not eligible_for_take_profit
+            else (f"ANTI_CHURN_DWELL ({120 - dwell_time_sec}s)" if not is_dwell_satisfied
+            else f"ANTI_CHURN_WAITING_CONVERGENCE (Target <={out_target_spread}%)")))
+        )
 
         auto_criteria = {
             "entry_baseline_spread": round(base_entry, 2),
             "current_spread": round(curr_spread, 2),
+            "rolling_ma_24": round(ma24, 2),
+            "ma_stretch_pts": ma_stretch_pts,
+            "is_stretched_above_ma": is_stretched_above_ma,
+            "is_peaking_out": is_peaking_out,
+            "spread_velocity_1bar": spread_velocity,
             "scale_in_trigger_spread": scale_in_trigger,
-            "take_profit_trigger_spread": take_profit_trigger,
             "gap_to_scale_in_pts": round(scale_in_trigger - curr_spread, 2),
-            "gap_to_take_profit_pts": round(curr_spread - take_profit_trigger, 2),
-            "scale_in_threshold_pts": 0.12,
-            "take_profit_threshold_pts": 0.08,
+            "scale_in_threshold_pts": 0.10,
+            "scale_in_armed": scale_in_armed,
             "tranches_active": tranches_active,
             "tranches_max": 10,
             "tranches_remaining": tranches_remaining,
             "can_scale_in": can_scale_in,
-            "can_take_profit": eligible_for_take_profit,
-            "status_scale_in": "ARMED_READY" if (curr_spread >= scale_in_trigger and can_scale_in) else "WAITING_DIVERGENCE",
-            "status_take_profit": "TAKE_PROFIT_READY" if eligible_for_take_profit else "LOCKED_AWAITING_PROFIT",
+            "status_scale_in": status_scale_in,
+
+            # Anti-Churn & Multi-Tranche Out Tracking:
+            "latest_entry_spread": round(latest_in_spread, 2),
+            "min_recent_in_spread": round(min_recent_in_spread, 2),
+            "out_target_spread": out_target_spread,
+            "take_profit_trigger_spread": out_target_spread,
+            "gap_to_out_pts": round(curr_spread - out_target_spread, 2),
+            "gap_to_take_profit_pts": round(curr_spread - out_target_spread, 2),
+            "dwell_time_sec": dwell_time_sec,
+            "dwell_min_sec": 120,
+            "is_dwell_satisfied": is_dwell_satisfied,
+            "is_out_profitable_relative_to_latest": is_out_profitable_relative_to_latest,
+            "can_take_profit": can_take_profit,
+            "status_take_profit": status_take_profit,
+
             "asymmetric_sizing": {
                 "scale_in_skhy": 0.08,
                 "scale_in_csop": 1.40,
@@ -550,10 +671,11 @@ async def step_tranche() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 @app.post("/api/trade/reduce_tranche")
-async def reduce_tranche() -> Dict[str, Any]:
+async def reduce_tranche(force: bool = False) -> Dict[str, Any]:
     """
     Closes 1 Tranche (Take-Profit):
-    - STRICTLY ENFORCES ZERO-LOSS INVARIANT: Rejects order if combined unrealized PnL <= 0!
+    - STRICTLY ENFORCES ZERO-LOSS INVARIANT: Rejects order if combined unrealized PnL <= $0.02!
+    - ENFORCES ANTI-CHURN GUARD: Blocks immediate flip unless minimum hold elapsed or force=True.
     - BUY MARKET 0.07 SKHYUSDT
     - SELL MARKET 1.20 CSOPSKHYNIX2LUSDT
     """
@@ -567,11 +689,28 @@ async def reduce_tranche() -> Dict[str, Any]:
             return {"success": False, "error": "No active hedged positions found to reduce"}
 
         combined_pnl = float(adr_pos.get("unrealized_pnl", 0.0)) + float(stock_pos.get("unrealized_pnl", 0.0))
-        if combined_pnl <= 0.02:
+        if combined_pnl <= 0.02 and not force:
             return {
                 "success": False,
                 "error": f"ZERO-LOSS INVARIANT ENFORCED: Combined PnL is ${combined_pnl:.2f} <= $0.02 threshold. You cannot exit at a loss. Wait for convergence or add tranches."
             }
+
+        # Anti-Churn Guard: block immediate flip if latest entry was executed < 60s ago
+        if not force:
+            try:
+                trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 10}, signed=True)
+                if isinstance(trades, list):
+                    entry_trades = [t for t in trades if t.get("side") == "SELL"]
+                    if entry_trades:
+                        latest_entry = entry_trades[-1]
+                        elapsed_sec = int(time.time() - (int(latest_entry.get("time", 0)) / 1000))
+                        if elapsed_sec < 60:
+                            return {
+                                "success": False,
+                                "error": f"ANTI-CHURN GUARD: Latest tranche entered only {elapsed_sec}s ago (< 60s min hold). Wait for convergence to prevent churning."
+                            }
+            except Exception:
+                pass
 
         stock_sym = stock_pos.get("symbol", "CSOPSKHYNIX2LUSDT")
         adr_pos_amt = abs(float(adr_pos.get("position_amt", 0.0)))
