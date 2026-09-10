@@ -2079,11 +2079,11 @@
               <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 4px;">
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                   <button id="btnStepTranche" type="button" style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #0284c7; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);">
-                    <span>➕ Add 1 Tranche</span>
-                    <span style="font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 5px; border-radius: 4px;">+$20.41 (0.58x)</span>
+                    <span>➕ Scale In (+0.08 SKHY / +1.40 CSOP)</span>
+                    <span style="font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 5px; border-radius: 4px;">+$23.40 (0.67x)</span>
                   </button>
                   <button id="btnReduceTranche" type="button" disabled style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #94a3b8; color: #fff; border: 0; border-radius: 6px; cursor: not-allowed; display: flex; align-items: center; gap: 6px;">
-                    <span id="lblReduceTrancheText">🔒 Locked (Zero-Loss Rule: Awaiting Net Profit)</span>
+                    <span id="lblReduceTrancheText">🔒 Locked (Zero-Loss Rule: Awaiting Net Profit &gt; +$0.02)</span>
                   </button>
                   <button id="btnEmergencyFlatten" type="button" style="height: 38px; padding: 0 14px; font-size: 12px; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; cursor: pointer;">
                     🚨 Emergency Flatten
@@ -2092,7 +2092,7 @@
                 <div style="font-size: 11.5px; color: #64748b; font-weight: 600;">
                   <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
                     <input id="chkAutoPeriodic48h" type="checkbox" style="width: 15px; height: 15px; cursor: pointer;">
-                    <span>⚡ 48H Periodic Auto-Tranche (Check every 15m)</span>
+                    <span>⚡ Micro-Churn Auto-Tranche (60s Check | +$0.02 Net Profit TP | +0.12% Scale-In)</span>
                   </label>
                 </div>
               </div>
@@ -2261,15 +2261,15 @@
               <!-- 1. Scale-in Criteria Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Scale-In Rule (추가 진입 기준)</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Asymmetric Scale-In (+0.08 SKHY / +1.40 CSOP)</span>
                   <span id="badgeCriteriaScaleIn" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #b45309;">WAITING</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritScaleInDesc">
-                  Trigger: Parity <strong>≥ <span id="valCritScaleInThreshold">139.65%</span></strong> (+0.35% pts divergence)
+                  Trigger: Parity <strong>≥ <span id="valCritScaleInThreshold">139.42%</span></strong> (+0.12% pts divergence)
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 3px; display: flex; justify-content: space-between;">
-                  <span>Current Parity: <strong id="valCritCurrentSpread">139.29%</strong></span>
-                  <span>Gap to Scale-in: <strong id="valCritGapScaleIn" style="color: #d97706;">+0.36% pts</strong></span>
+                  <span>Current Parity: <strong id="valCritCurrentSpread">139.30%</strong></span>
+                  <span>Gap to Scale-in: <strong id="valCritGapScaleIn" style="color: #d97706;">+0.12% pts</strong></span>
                 </div>
                 <!-- Progress bar towards scale-in -->
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
@@ -2280,15 +2280,15 @@
               <!-- 2. Convergence Take-Profit Criteria Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lblCritTPTitle">🎯 Take-Profit Rule (수렴 익절 기준)</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lblCritTPTitle">🎯 Micro-Churn Trim (0.07 SKHY / 1.20 CSOP)</span>
                   <span id="badgeCriteriaTP" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #166534;">ZERO-LOSS LOCKED</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritTPDesc">
-                  Trigger: Parity <strong>≤ <span id="valCritTPThreshold">138.90%</span></strong> &amp; Net Realized PnL <strong>&gt; +$0.02</strong>
+                  Trigger: Net Unrealized PnL <strong>&gt; +$0.02</strong> (Guaranteed Fee Coverage)
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 3px; display: flex; justify-content: space-between;">
                   <span>Current PnL: <strong id="valCritCombinedPnl">$0.00</strong></span>
-                  <span>Gap to TP: <strong id="valCritGapTP" style="color: #0284c7;">0.39% pts</strong></span>
+                  <span>Target: <strong id="valCritGapTP" style="color: #0284c7;">&gt; +$0.02</strong></span>
                 </div>
                 <!-- Progress bar towards TP -->
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
@@ -2299,14 +2299,14 @@
               <!-- 3. Sizing & Risk Gate Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #0284c7; border-radius: 6px; padding: 10px 12px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #0369a1; text-transform: uppercase;" id="lblCritGateTitle">⚙️ Sizing & Risk Gate (수량 및 리스크)</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #0369a1; text-transform: uppercase;" id="lblCritGateTitle">⚙️ Inventory Ratchet (축적 잔여량 &amp; 한도)</span>
                   <span id="valCritRemainingTranches" style="font-size: 10px; font-weight: 800; color: #0284c7;">3 UNITS LEFT</span>
                 </div>
                 <div style="font-size: 11px; color: #475569; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 2px;">
-                  <div>Next Unit: <strong>0.07 SKHY + 1.20 CSOP</strong></div>
-                  <div>Estimated Lev: <strong>+0.58x ($20.41)</strong></div>
+                  <div>Scale In: <strong>0.08 SKHY / 1.40 CSOP</strong></div>
+                  <div>Trim Unit: <strong>0.07 SKHY / 1.20 CSOP</strong></div>
+                  <div>Ratchet/Cycle: <strong style="color: #16a34a;">+0.01 SKHY / +0.20 CSOP</strong></div>
                   <div>Current Lev: <strong id="valCritGrossLev">4.08x / 8.0x</strong></div>
-                  <div>Tolerable Buffer: <strong id="valCritMaxDiv" style="color: #16a34a;">34.6%</strong></div>
                 </div>
               </div>
             </div>
@@ -8917,13 +8917,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             btnReduce.disabled = false;
             btnReduce.style.background = "#16a34a";
             btnReduce.style.cursor = "pointer";
-            lblReduce.textContent = `✅ Take Profit / Reduce 1 Tranche (+${pnlSign}$${pnl.toFixed(2)})`;
+            lblReduce.textContent = `✅ Trim 1 GCD Unit (-0.07 SKHY / -1.20 CSOP | +${pnlSign}$${pnl.toFixed(2)})`;
           } else {
             btnReduce.disabled = true;
             btnReduce.style.background = "#94a3b8";
             btnReduce.style.cursor = "not-allowed";
             lblReduce.textContent = tranches > 0 
-              ? "🔒 Locked (Zero-Loss Rule: Awaiting Net Profit)" 
+              ? "🔒 Locked (Zero-Loss Rule: Awaiting Net Profit > +$0.02)" 
               : "No Open Tranches";
           }
         }
@@ -9166,12 +9166,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       async stepTrancheLive() {
         const btn = $("btnStepTranche");
         if (btn) btn.disabled = true;
-        showToast("Executing +1 Tranche: Short 0.07 SKHY + Long 1.20 CSOP 2x ETF...", "info");
+        showToast("Executing Asymmetric Scale-In: Short 0.08 SKHY + Long 1.40 CSOP 2x ETF...", "info");
         try {
           const res = await fetch("/skhynix/api/trade/step_tranche", { method: "POST" });
           const json = await res.json();
           if (json.success) {
-            showToast("✅ +1 Tranche Filled: Short 0.07 SKHY + Long 1.20 CSOP 2x ETF", "success");
+            showToast(`✅ ${json.message} (+0.01 SKHY / +0.20 CSOP ratcheted)`, "success");
             await this.fetchHedgedStatus();
             await this.syncWithBackend();
           } else {
@@ -9187,12 +9187,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       async reduceTrancheLive() {
         const btn = $("btnReduceTranche");
         if (btn) btn.disabled = true;
-        showToast("Closing 1 Tranche to take profit...", "info");
+        showToast("Trimming 1 GCD Unit (0.07 SKHY / 1.20 CSOP) to skim profit...", "info");
         try {
           const res = await fetch("/skhynix/api/trade/reduce_tranche", { method: "POST" });
           const json = await res.json();
           if (json.success) {
-            showToast(`✅ Take-profit executed: ${json.message}`, "success");
+            showToast(`✅ Take-Profit Trimmed: ${json.message}`, "success");
             await this.fetchHedgedStatus();
             await this.syncWithBackend();
           } else {
@@ -9227,18 +9227,31 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const status = this.state.hedgedStatus;
         if (!status || !status.authenticated) return;
         const tranches = status.tranches_active || 0;
-        const eligible = Boolean(status.eligible_for_take_profit);
+        const criteria = status.auto_tranche_criteria;
+        const eligible = Boolean(status.eligible_for_take_profit) || Boolean(criteria?.can_take_profit);
 
+        // 1. High-Frequency Micro-Churn Take-Profit:
+        // The instant net profit > $0.02 (covering fees), trim 1 GCD unit (0.07 SKHY / 1.20 CSOP),
+        // leaving accumulated residual core inventory (+0.01 SKHY / +0.20 CSOP) in the book!
         if (tranches > 0 && eligible) {
-          this.reduceTrancheLive();
+          const now = Date.now();
+          if (!this.lastAutoReduceTime || now - this.lastAutoReduceTime > 30 * 1000) {
+            this.lastAutoReduceTime = now;
+            this.reduceTrancheLive();
+          }
           return;
         }
 
-        const latest = cachedRows?.length ? cachedRows.at(-1) : null;
-        const edge = latest ? (latest.netSignalEdgePct || 0) : 0;
-        if (tranches < 10 && edge >= 0.30) {
+        // 2. High-Frequency Micro Scale-In:
+        // If spread diverges >= 0.12% pts above entry baseline, or criterion status is ARMED_READY,
+        // execute asymmetric scale-in tranche (0.08 SKHY / 1.40 CSOP).
+        const canScaleIn = criteria ? criteria.can_scale_in : (tranches < 10);
+        const currSpread = criteria ? criteria.current_spread : (cachedRows?.length ? (cachedRows.at(-1).normalized || 139.30) : 139.30);
+        const scaleInTrigger = criteria ? criteria.scale_in_trigger_spread : 139.42;
+
+        if (canScaleIn && (currSpread >= scaleInTrigger || (criteria && criteria.status_scale_in === "ARMED_READY"))) {
           const now = Date.now();
-          if (!this.lastAutoStepTime || now - this.lastAutoStepTime > 15 * 60 * 1000) {
+          if (!this.lastAutoStepTime || now - this.lastAutoStepTime > 60 * 1000) {
             this.lastAutoStepTime = now;
             this.stepTrancheLive();
           }

@@ -340,11 +340,11 @@ async def get_hedged_status() -> Dict[str, Any]:
         except Exception:
             pass
 
-        # Real-time criteria for auto-tranching (기준)
+        # Real-time criteria for auto-tranching & micro-churn accumulation (기준)
         base_entry = entry_spread if entry_spread else 139.30
         curr_spread = current_spread if current_spread else 139.30
-        scale_in_trigger = round(base_entry + 0.35, 2)
-        take_profit_trigger = round(base_entry - 0.40, 2)
+        scale_in_trigger = round(base_entry + 0.12, 2)
+        take_profit_trigger = round(base_entry - 0.08, 2)
         tranches_remaining = max(0, 10 - tranches_active)
         can_scale_in = bool(tranches_remaining > 0 and free_buffer >= 2.0)
 
@@ -355,8 +355,8 @@ async def get_hedged_status() -> Dict[str, Any]:
             "take_profit_trigger_spread": take_profit_trigger,
             "gap_to_scale_in_pts": round(scale_in_trigger - curr_spread, 2),
             "gap_to_take_profit_pts": round(curr_spread - take_profit_trigger, 2),
-            "scale_in_threshold_pts": 0.35,
-            "take_profit_threshold_pts": 0.40,
+            "scale_in_threshold_pts": 0.12,
+            "take_profit_threshold_pts": 0.08,
             "tranches_active": tranches_active,
             "tranches_max": 10,
             "tranches_remaining": tranches_remaining,
@@ -364,11 +364,21 @@ async def get_hedged_status() -> Dict[str, Any]:
             "can_take_profit": eligible_for_take_profit,
             "status_scale_in": "ARMED_READY" if (curr_spread >= scale_in_trigger and can_scale_in) else "WAITING_DIVERGENCE",
             "status_take_profit": "TAKE_PROFIT_READY" if eligible_for_take_profit else "LOCKED_AWAITING_PROFIT",
+            "asymmetric_sizing": {
+                "scale_in_skhy": 0.08,
+                "scale_in_csop": 1.40,
+                "scale_in_notional_usd": 23.40,
+                "scale_out_skhy": 0.07,
+                "scale_out_csop": 1.20,
+                "scale_out_notional_usd": 20.41,
+                "residual_retained_skhy": 0.01,
+                "residual_retained_csop": 0.20
+            },
             "next_tranche_size": {
-                "skhy_qty": 0.07,
-                "csop_qty": 1.20,
-                "notional_usd": 20.41,
-                "leverage_add": 0.58
+                "skhy_qty": 0.08,
+                "csop_qty": 1.40,
+                "notional_usd": 23.40,
+                "leverage_add": 0.67
             }
         }
 
@@ -500,10 +510,11 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 60) -> Dict[s
 @app.post("/api/trade/step_tranche")
 async def step_tranche() -> Dict[str, Any]:
     """
-    Executes +1 Tranche:
+    Executes Asymmetric Scale-In Tranche:
     - Sets 10x leverage and CROSSED margin on SKHYUSDT and CSOPSKHYNIX2LUSDT
-    - SELL MARKET 0.07 SKHYUSDT (Short ADR)
-    - BUY MARKET 1.20 CSOPSKHYNIX2LUSDT (Long CSOP 2x ETF Perp)
+    - SELL MARKET 0.08 SKHYUSDT (Short ADR)
+    - BUY MARKET 1.40 CSOPSKHYNIX2LUSDT (Long CSOP 2x ETF Perp)
+    - Leaves +0.01 SKHY / +0.20 CSOP residual core inventory upon GCD trim!
     """
     try:
         overview = await binance_client.get_detailed_account_overview()
@@ -523,12 +534,14 @@ async def step_tranche() -> Dict[str, Any]:
             return_exceptions=True
         )
 
-        order_adr = await binance_client.create_order("SKHYUSDT", "SELL", 0.07, "MARKET")
-        order_stock = await binance_client.create_order("CSOPSKHYNIX2LUSDT", "BUY", 1.20, "MARKET")
+        order_adr = await binance_client.create_order("SKHYUSDT", "SELL", 0.08, "MARKET")
+        order_stock = await binance_client.create_order("CSOPSKHYNIX2LUSDT", "BUY", 1.40, "MARKET")
 
         return {
             "success": True,
-            "message": "Tranche executed successfully: Short 0.07 SKHYUSDT + Long 1.20 CSOPSKHYNIX2LUSDT",
+            "message": "Asymmetric Scale-in filled: Short 0.08 SKHYUSDT + Long 1.40 CSOPSKHYNIX2LUSDT",
+            "scale_in_adr_qty": 0.08,
+            "scale_in_stock_qty": 1.40,
             "order_adr": order_adr,
             "order_stock": order_stock
         }
@@ -554,17 +567,25 @@ async def reduce_tranche() -> Dict[str, Any]:
             return {"success": False, "error": "No active hedged positions found to reduce"}
 
         combined_pnl = float(adr_pos.get("unrealized_pnl", 0.0)) + float(stock_pos.get("unrealized_pnl", 0.0))
-        if combined_pnl <= 0.01:
+        if combined_pnl <= 0.02:
             return {
                 "success": False,
-                "error": f"ZERO-LOSS INVARIANT ENFORCED: Combined PnL is ${combined_pnl:.2f}. You cannot exit at a loss. Wait for convergence or add tranches."
+                "error": f"ZERO-LOSS INVARIANT ENFORCED: Combined PnL is ${combined_pnl:.2f} <= $0.02 threshold. You cannot exit at a loss. Wait for convergence or add tranches."
             }
 
         stock_sym = stock_pos.get("symbol", "CSOPSKHYNIX2LUSDT")
-        stock_reduce_qty = 1.20 if stock_sym == "CSOPSKHYNIX2LUSDT" else 0.01
+        adr_pos_amt = abs(float(adr_pos.get("position_amt", 0.0)))
+        stock_pos_amt = abs(float(stock_pos.get("position_amt", 0.0)))
+
+        adr_reduce_qty = round(min(0.07, adr_pos_amt), 2)
+        stock_target = 1.20 if stock_sym == "CSOPSKHYNIX2LUSDT" else 0.01
+        stock_reduce_qty = round(min(stock_target, stock_pos_amt), 2)
+
+        if adr_reduce_qty <= 0 or stock_reduce_qty <= 0:
+            return {"success": False, "error": f"Position sizes too small to reduce: ADR {adr_pos_amt}, Stock {stock_pos_amt}"}
 
         order_adr, order_stock = await asyncio.gather(
-            binance_client.create_order("SKHYUSDT", "BUY", 0.07, "MARKET", reduce_only=True),
+            binance_client.create_order("SKHYUSDT", "BUY", adr_reduce_qty, "MARKET", reduce_only=True),
             binance_client.create_order(stock_sym, "SELL", stock_reduce_qty, "MARKET", reduce_only=True),
             return_exceptions=True
         )
