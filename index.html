@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HYPERION // SK Hynix Relative Value Terminal</title>
+  <title>HYPERION // Dual-Leg Quant Terminal</title>
   <style>
     :root {
       --bg: #f7f6f2;
@@ -1538,10 +1538,7 @@
           <label id="lblAssetStrategy">
             <span class="controlTitle" style="color: #0284c7; font-weight: 800;">Asset / Strategy</span>
             <select id="assetStrategy" style="font-weight: 700; color: #0369a1; background: #f0f9ff; border: 1.5px solid #0284c7;">
-              <option value="skhynix_arb" selected>⚡ SK Hynix Arb (SKHY / Domestic KRX)</option>
-              <option value="btc_directional">🪙 Bitcoin Wave (BTC/USDT)</option>
-              <option value="eth_btc_ratio">💎 ETH / BTC Ratio Spread</option>
-              <option value="sol_directional">☀️ Solana Alpha Wave (SOL/USDT)</option>
+              <option value="skhynix_arb" selected>⚡ SK Hynix Arb (CSOP 2x ETF / ADR vs Domestic)</option>
             </select>
             <span class="controlHint">Underlying asset & pair mechanics</span>
           </label>
@@ -2631,6 +2628,17 @@
       }
     };
 
+    try {
+      const rawInit = localStorage.getItem("skhynix_settings");
+      if (rawInit) {
+        const parsed = JSON.parse(rawInit);
+        if (parsed && parsed.assetStrategy && parsed.assetStrategy !== "skhynix_arb") {
+          parsed.assetStrategy = "skhynix_arb";
+          localStorage.setItem("skhynix_settings", JSON.stringify(parsed));
+        }
+      }
+    } catch (e) {}
+
     const limits = { "1m": 1000, "5m": 1000, "15m": 1000, "1h": 1000, "4h": 1000, "1d": 500 };
     const $ = (id) => document.getElementById(id);
     const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -2642,30 +2650,34 @@
     const fmt = (value, digits = 2) => Number.isFinite(value) ? value.toFixed(digits) : "--";
     const ASSET_UI_COPY = {
       skhynix_arb: {
-        en: ["HYPERION · Dual-Leg Quant Terminal", "Semiconductor & SK Hynix News Catalyst Impact Feed", "Real-time correlation between global headlines, HBM chip announcements, Nvidia capex, and parity spread dislocation"],
-        ko: ["HYPERION · 듀얼렉 퀀트 터미널", "반도체 및 SK하이닉스 뉴스 촉매 실시간 영향 피드", "글로벌 뉴스, HBM 발표, 엔비디아 CapEx와 패리티 스프레드 괴리율 간의 상관관계"]
+        en: ["HYPERION // Dual-Leg Quant Terminal", "Semiconductor & SK Hynix News Catalyst Impact Feed", "Real-time correlation between global headlines, HBM chip announcements, Nvidia capex, and parity spread dislocation"],
+        ko: ["HYPERION // 듀얼렉 퀀트 터미널", "반도체 및 SK하이닉스 뉴스 촉매 실시간 영향 피드", "글로벌 뉴스, HBM 발표, 엔비디아 CapEx와 패리티 스프레드 괴리율 간의 상관관계"]
       },
       btc_directional: {
-        en: ["Bitcoin BTC/USDT Predictive Strategy", "Bitcoin & Macro Market Catalyst Feed", "Market events mapped against BTC price, momentum, and forecast dislocation"],
-        ko: ["비트코인 BTC/USDT 예측 전략", "비트코인 및 거시시장 촉매 피드", "시장 이벤트와 BTC 가격, 모멘텀 및 예측 괴리의 실시간 매핑"]
+        en: ["HYPERION // Dual-Leg Quant Terminal", "Bitcoin & Macro Market Catalyst Feed", "Market events mapped against BTC price, momentum, and forecast dislocation"],
+        ko: ["HYPERION // 듀얼렉 퀀트 터미널", "비트코인 및 거시시장 촉매 피드", "시장 이벤트와 BTC 가격, 모멘텀 및 예측 괴리의 실시간 매핑"]
       },
       eth_btc_ratio: {
-        en: ["ETH/BTC Relative-Value Strategy", "Crypto Relative-Value Catalyst Feed", "Market events mapped against ETH/BTC ratio shifts and model dislocation"],
-        ko: ["ETH/BTC 상대가치 전략", "암호화폐 상대가치 촉매 피드", "시장 이벤트와 ETH/BTC 비율 변화 및 모델 괴리의 실시간 매핑"]
+        en: ["HYPERION // Dual-Leg Quant Terminal", "Crypto Relative-Value Catalyst Feed", "Market events mapped against ETH/BTC ratio shifts and model dislocation"],
+        ko: ["HYPERION // 듀얼렉 퀀트 터미널", "암호화폐 상대가치 촉매 피드", "시장 이벤트와 ETH/BTC 비율 변화 및 모델 괴리의 실시간 매핑"]
       },
       sol_directional: {
-        en: ["Solana SOL/USDT Predictive Strategy", "Solana & Crypto Market Catalyst Feed", "Market events mapped against SOL price, momentum, and forecast dislocation"],
-        ko: ["솔라나 SOL/USDT 예측 전략", "솔라나 및 암호화폐 시장 촉매 피드", "시장 이벤트와 SOL 가격, 모멘텀 및 예측 괴리의 실시간 매핑"]
+        en: ["HYPERION // Dual-Leg Quant Terminal", "Solana & Crypto Market Catalyst Feed", "Market events mapped against SOL price, momentum, and forecast dislocation"],
+        ko: ["HYPERION // 듀얼렉 퀀트 터미널", "솔라나 및 암호화폐 시장 촉매 피드", "시장 이벤트와 SOL 가격, 모멘텀 및 예측 괴리의 실시간 매핑"]
       }
     };
     function updateAssetContext() {
-      const assetKey = $("assetStrategy")?.value || "skhynix_arb";
+      const assetSelect = $("assetStrategy");
+      if (assetSelect && assetSelect.value !== "skhynix_arb") {
+        assetSelect.value = "skhynix_arb";
+      }
+      const assetKey = "skhynix_arb";
       const lang = window.currentLang === "ko" ? "ko" : "en";
-      const copy = (ASSET_UI_COPY[assetKey] || ASSET_UI_COPY.skhynix_arb)[lang];
+      const copy = ASSET_UI_COPY.skhynix_arb[lang] || ASSET_UI_COPY.skhynix_arb.en;
       if ($("topTitle")) $("topTitle").textContent = copy[0];
       if ($("secNewsCatalyst")) $("secNewsCatalyst").textContent = copy[1];
       if ($("subNewsCatalyst")) $("subNewsCatalyst").textContent = copy[2];
-      document.title = `${copy[0]} | HYPERION`;
+      document.title = "HYPERION // Dual-Leg Quant Terminal";
     }
     function updateStrategyDropdown() {
       const select = $("strategyMode");
@@ -7799,7 +7811,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       } catch (e) {}
     }
 
-    const SETTINGS_VERSION = "v1.4.1";
+    const SETTINGS_VERSION = "v2.0.0";
     const paramIds = ["assetStrategy", "interval", "strategyMode", "predictionEngine", "tradeDirection", "meanBars", "minEdgePct", "fullEdgePct", "maxSizePct", "scaleCurve", "tradeSpeedPct", "exitSpeedPct", "minProfitPct", "tradingFeeBps", "fundingBpsDay", "slippageBps", "searchProfile", "searchMaxLeverage", "minConfidencePct", "minAgreementPct", "regimeVolCapPct", "rebalanceBandPct", "minHoldBars", "holdoutPct", "wfFolds", "purgeHours", "stressCostMultiplier", "stressDelayBars"];
     function saveSettings() {
       try {
@@ -7808,6 +7820,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const el = $(id);
           if (el) settings[id] = el.value;
         });
+        settings.assetStrategy = "skhynix_arb";
         settings.chartMode = window.chartMode || "parity";
         settings.lang = window.currentLang || "ko";
         settings.version = SETTINGS_VERSION;
@@ -7827,6 +7840,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               if (el && settings[id] !== undefined) el.value = settings[id];
             });
           }
+          if ($("assetStrategy")) $("assetStrategy").value = "skhynix_arb";
           if (settings.chartMode) {
             window.chartMode = settings.chartMode;
             $("modeParity").classList.toggle("active", settings.chartMode === "parity");
