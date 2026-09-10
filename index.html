@@ -2261,10 +2261,10 @@
                   <button id="btnToggleShortMa60" type="button" onclick="tradingEngine.toggleShortTermMA('ma60')" style="cursor: pointer; border: 1px solid #a5f3fc; background: #ecfeff; color: #0e7490; font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;">
                     <span style="display: inline-block; width: 10px; height: 2px; background: #06b6d4; border-radius: 1px;"></span> 60-MA
                   </button>
-                  <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;"><strong style="color: #16a34a;">▲</strong> Entry</span>
-                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #dc2626;">▼</strong> Exit</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;"><strong style="color: #dc2626;">▼</strong> Short (Entry)</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #16a34a;">▲</strong> Cover (Exit)</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #0284c7;"></span> Base</span>
-                  <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #d97706; border-top: 1px dashed #d97706;"></span> Scale-In</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #dc2626; border-top: 1px dashed #dc2626;"></span> Scale-In</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #16a34a; border-top: 1px dashed #16a34a;"></span> TP</span>
                 </div>
                 <span id="lblShortTermChartSync" style="font-size: 10px; color: #94a3b8;">Updated 0s ago</span>
@@ -4496,6 +4496,11 @@
         } else {
           continuousAvgEntry.push({ time });
         }
+      }
+      const latestActiveRow = rows.slice().reverse().find((r) => r.targetSize);
+      const isLatestShort = latestActiveRow ? latestActiveRow.targetSize > 0 : true;
+      if (window.spreadSeries?.avgEntry) {
+        window.spreadSeries.avgEntry.applyOptions({ color: isLatestShort ? "#dc2626" : "#16a34a" });
       }
       window.spreadSeries.avgEntry.setData(continuousAvgEntry);
       
@@ -9386,11 +9391,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (criteria.scale_in_trigger_spread) {
             this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
               price: criteria.scale_in_trigger_spread,
-              color: "#d97706",
+              color: "#dc2626",
               lineWidth: 1.5,
               lineStyle: LightweightCharts.LineStyle.Dashed,
               axisLabelVisible: true,
-              title: `SCALE-IN (${criteria.scale_in_trigger_spread.toFixed(2)}%)`
+              title: `SCALE-IN SHORT (${criteria.scale_in_trigger_spread.toFixed(2)}%)`
             }));
           }
 
@@ -9402,7 +9407,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               lineWidth: 1.5,
               lineStyle: LightweightCharts.LineStyle.Dashed,
               axisLabelVisible: true,
-              title: `TP TARGET (${tpLinePrice.toFixed(2)}%)`
+              title: `TP COVER (${tpLinePrice.toFixed(2)}%)`
             }));
           }
         }

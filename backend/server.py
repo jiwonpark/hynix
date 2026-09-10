@@ -710,7 +710,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[
                             "side": side,
                             "price": price,
                             "qty": qty,
-                            "type": "ENTRY" if is_entry else "EXIT"
+                            "type": "SHORT" if is_entry else "COVER"
                         })
 
                 # Sort chronologically by marker_time to satisfy Lightweight Charts strict monotonic ordering
@@ -718,12 +718,12 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[
                     avg_px = m_data["weighted_price"] / max(1e-6, m_data["total_qty"])
                     qty_str = f"{m_data['total_qty']:.2f}"
                     cnt_str = f" ({m_data['count']}x)" if m_data['count'] > 1 else ""
-                    lbl = f"{'Entry' if is_entry else 'Exit'}{cnt_str} ${avg_px:.2f} ({qty_str})"
+                    lbl = f"{'Short' if is_entry else 'Cover'}{cnt_str} ${avg_px:.2f} ({qty_str})"
                     markers.append({
                         "time": m_time,
-                        "position": "belowBar" if is_entry else "aboveBar",
-                        "color": "#16a34a" if is_entry else "#dc2626",
-                        "shape": "arrowUp" if is_entry else "arrowDown",
+                        "position": "aboveBar" if is_entry else "belowBar",
+                        "color": "#dc2626" if is_entry else "#16a34a",
+                        "shape": "arrowDown" if is_entry else "arrowUp",
                         "text": lbl
                     })
         except Exception:
