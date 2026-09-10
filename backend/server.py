@@ -723,7 +723,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[
                     markers.append({
                         "time": m_time,
                         "position": "aboveBar" if is_entry else "belowBar",
-                        "color": "rgba(220, 38, 38, 0.35)" if is_entry else "rgba(22, 163, 74, 0.35)",
+                        "color": "rgba(220, 38, 38, 0.70)" if is_entry else "rgba(22, 163, 74, 0.70)",
                         "activeColor": "#dc2626" if is_entry else "#16a34a",
                         "shape": "arrowDown" if is_entry else "arrowUp",
                         "text": "",
