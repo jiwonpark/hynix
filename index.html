@@ -2230,12 +2230,8 @@
                 <button id="btnShortInterval5m" class="btnShortInterval active" type="button" onclick="tradingEngine.setShortTermInterval('5m')">5m</button>
                 <button id="btnShortInterval15m" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('15m')">15m</button>
               </div>
-              <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                <span>Parity: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong></span>
-                <span style="color: #cbd5e1;">|</span>
-                <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display:inline-block;width:8px;height:2px;background:#f59e0b;border-radius:1px;"></span>7-MA: <strong id="valShortTermMa7" style="color: #b45309;">--%</strong></span>
-                <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display:inline-block;width:8px;height:2px;background:#8b5cf6;border-radius:1px;"></span>24-MA: <strong id="valShortTermMa24" style="color: #6d28d9;">--%</strong></span>
-                <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display:inline-block;width:8px;height:2px;background:#06b6d4;border-radius:1px;"></span>60-MA: <strong id="valShortTermMa60" style="color: #0891b2;">--%</strong></span>
+              <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a;">
+                Parity: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
               </div>
             </div>
           </div>
@@ -2245,21 +2241,21 @@
             <!-- Left Column: Short-Term Lightweight Chart -->
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
               <div id="shortTermSpreadChartHost" style="width: 100%; height: 260px;"></div>
-              <!-- Chart Legend & MA Toggles -->
+              <!-- Chart Legend (Interactive MA Toggles) -->
               <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #475569;">
-                <div style="display: flex; gap: 6px; flex-wrap: wrap; font-weight: 600; align-items: center;">
-                  <span style="display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #0369a1;"><span style="display: inline-block; width: 10px; height: 3px; background: #0284c7; border-radius: 1px;"></span> Parity</span>
-                  <button id="btnToggleShortMa7" type="button" onclick="tradingEngine.toggleShortTermMA('ma7')" style="cursor: pointer; border: 1px solid #fde68a; background: #fef3c7; color: #92400e; font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;">
-                    <span style="display: inline-block; width: 10px; height: 2px; background: #f59e0b; border-radius: 1px;"></span> 7-MA
-                  </button>
-                  <button id="btnToggleShortMa24" type="button" onclick="tradingEngine.toggleShortTermMA('ma24')" style="cursor: pointer; border: 1px solid #ddd6fe; background: #ede9fe; color: #5b21b6; font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;">
-                    <span style="display: inline-block; width: 10px; height: 2px; background: #8b5cf6; border-radius: 1px;"></span> 24-MA
-                  </button>
-                  <button id="btnToggleShortMa60" type="button" onclick="tradingEngine.toggleShortTermMA('ma60')" style="cursor: pointer; border: 1px solid #a5f3fc; background: #ecfeff; color: #0e7490; font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 6px; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;">
-                    <span style="display: inline-block; width: 10px; height: 2px; background: #06b6d4; border-radius: 1px;"></span> 60-MA
-                  </button>
-                  <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;"><strong style="color: #dc2626;">▼</strong> Short (Entry)</span>
-                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #16a34a;">▲</strong> Cover (Exit)</span>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; font-weight: 600; align-items: center;">
+                  <span style="display: inline-flex; align-items: center; gap: 4px; color: #0284c7;"><span style="display: inline-block; width: 10px; height: 3px; background: #0284c7; border-radius: 1px;"></span> Parity</span>
+                  <span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA('ma7')" title="Click to toggle 7-MA" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; color: #b45309; transition: opacity 0.15s ease;">
+                    <span style="display: inline-block; width: 10px; height: 2px; background: #f59e0b; border-radius: 1px;"></span> 7-MA: <strong id="valShortTermMa7">--%</strong>
+                  </span>
+                  <span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA('ma24')" title="Click to toggle 24-MA" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; color: #6d28d9; transition: opacity 0.15s ease;">
+                    <span style="display: inline-block; width: 10px; height: 2px; background: #8b5cf6; border-radius: 1px;"></span> 24-MA: <strong id="valShortTermMa24">--%</strong>
+                  </span>
+                  <span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA('ma60')" title="Click to toggle 60-MA" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; color: #0891b2; transition: opacity 0.15s ease;">
+                    <span style="display: inline-block; width: 10px; height: 2px; background: #06b6d4; border-radius: 1px;"></span> 60-MA: <strong id="valShortTermMa60">--%</strong>
+                  </span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;"><strong style="color: #dc2626;">▼</strong> Short</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #16a34a;">▲</strong> Cover</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #0284c7;"></span> Base</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #dc2626; border-top: 1px dashed #dc2626;"></span> Scale-In</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #16a34a; border-top: 1px dashed #16a34a;"></span> TP</span>
@@ -9322,25 +9318,21 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.maVisibility[maKey] = !this.maVisibility[maKey];
         const isVis = this.maVisibility[maKey];
         const seriesMap = {
-          ma7: { series: this.shortTermMa7Series, btn: $("btnToggleShortMa7"), activeBg: "#fef3c7", activeBorder: "#fde68a", activeColor: "#92400e" },
-          ma24: { series: this.shortTermMa24Series, btn: $("btnToggleShortMa24"), activeBg: "#ede9fe", activeBorder: "#ddd6fe", activeColor: "#5b21b6" },
-          ma60: { series: this.shortTermMa60Series, btn: $("btnToggleShortMa60"), activeBg: "#ecfeff", activeBorder: "#a5f3fc", activeColor: "#0e7490" }
+          ma7: { series: this.shortTermMa7Series, el: $("legendShortMa7") },
+          ma24: { series: this.shortTermMa24Series, el: $("legendShortMa24") },
+          ma60: { series: this.shortTermMa60Series, el: $("legendShortMa60") }
         };
         const cfg = seriesMap[maKey];
         if (cfg && cfg.series) {
           cfg.series.applyOptions({ visible: isVis });
         }
-        if (cfg && cfg.btn) {
+        if (cfg && cfg.el) {
           if (isVis) {
-            cfg.btn.style.background = cfg.activeBg;
-            cfg.btn.style.borderColor = cfg.activeBorder;
-            cfg.btn.style.color = cfg.activeColor;
-            cfg.btn.style.opacity = "1";
+            cfg.el.style.opacity = "1";
+            cfg.el.style.textDecoration = "none";
           } else {
-            cfg.btn.style.background = "#f1f5f9";
-            cfg.btn.style.borderColor = "#cbd5e1";
-            cfg.btn.style.color = "#94a3b8";
-            cfg.btn.style.opacity = "0.5";
+            cfg.el.style.opacity = "0.35";
+            cfg.el.style.textDecoration = "line-through";
           }
         }
       },
