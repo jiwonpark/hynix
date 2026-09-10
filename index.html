@@ -1802,7 +1802,7 @@
         <table class="strategyTable" style="width: 100%; border-collapse: collapse; font-size: 12px;">
           <thead>
             <tr style="border-bottom: 2px solid #e2e8f0; text-align: left; color: #64748b;">
-              <th id="thDateTime" style="padding: 8px 10px;">Date & Time (UTC)</th>
+              <th id="thDateTime" style="padding: 8px 10px;">Date & Time (KST)</th>
               <th id="thCategory" style="padding: 8px 10px;">Category</th>
               <th id="thHeadline" style="padding: 8px 10px;">Catalyst Headline & Event</th>
               <th id="thPreSpread" style="padding: 8px 10px;">Pre-Event Spread</th>
@@ -2659,10 +2659,36 @@
         select.value = strategies[0].id;
       }
     }
+    const KST_TZ = "Asia/Seoul";
+    const formatKstTime = (dateOrMs, options = {}) => {
+      const d = typeof dateOrMs === "number" ? new Date(dateOrMs < 1e11 ? dateOrMs * 1000 : dateOrMs) : (dateOrMs ? new Date(dateOrMs) : new Date());
+      return d.toLocaleTimeString("ko-KR", {
+        timeZone: KST_TZ,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+        ...options
+      }) + " KST";
+    };
+
+    const formatKstDateTime = (dateOrMs, options = {}) => {
+      const d = typeof dateOrMs === "number" ? new Date(dateOrMs < 1e11 ? dateOrMs * 1000 : dateOrMs) : (dateOrMs ? new Date(dateOrMs) : new Date());
+      return d.toLocaleString("ko-KR", {
+        timeZone: KST_TZ,
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        ...options
+      }) + " KST";
+    };
+
     const formatTime = (time, interval) => {
       const options = interval === "1d"
-        ? { month: "short", day: "numeric", timeZone: "UTC" }
-        : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" };
+        ? { month: "short", day: "numeric", timeZone: KST_TZ }
+        : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: KST_TZ };
       return new Date(time).toLocaleString("en-US", options);
     };
     let workingKlineEndpoint = null;
@@ -3722,8 +3748,19 @@
           height: Math.max(400, host.clientHeight || 600),
           layout: { background: { color: background }, textColor: foreground },
           localization: {
-            locale: "en-US",
-            priceFormatter: (price) => Number(price).toFixed(2)
+            locale: "ko-KR",
+            priceFormatter: (price) => Number(price).toFixed(2),
+            timeFormatter: (time) => {
+              const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+              return new Date(t).toLocaleString("ko-KR", {
+                timeZone: "Asia/Seoul",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false
+              }) + " KST";
+            }
           },
           grid: { vertLines: { color: grid }, horzLines: { color: grid } },
           leftPriceScale: {
@@ -3753,7 +3790,15 @@
             lockVisibleTimeRangeOnResize: true,
             shiftVisibleRangeOnNewBar: false,
             timeVisible: interval !== "1d",
-            secondsVisible: false
+            secondsVisible: false,
+            tickMarkFormatter: (time, tickMarkType) => {
+              const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+              const d = new Date(t);
+              if (tickMarkType <= 2) {
+                return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(d);
+              }
+              return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+            }
           },
           handleScroll: {
             mouseWheel: true,
@@ -3821,7 +3866,20 @@
         window.positionChart = LightweightCharts.createChart(positionHost, {
           height: Math.max(140, positionHost.clientHeight || 160),
           layout: { background: { color: background }, textColor: foreground },
-          localization: { locale: "en-US" },
+          localization: {
+            locale: "ko-KR",
+            timeFormatter: (time) => {
+              const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+              return new Date(t).toLocaleString("ko-KR", {
+                timeZone: "Asia/Seoul",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false
+              }) + " KST";
+            }
+          },
           grid: {
             vertLines: { color: grid },
             horzLines: { color: "rgba(203, 213, 225, 0.55)" }
@@ -3850,7 +3908,15 @@
             lockVisibleTimeRangeOnResize: true,
             shiftVisibleRangeOnNewBar: false,
             timeVisible: interval !== "1d",
-            secondsVisible: false
+            secondsVisible: false,
+            tickMarkFormatter: (time, tickMarkType) => {
+              const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+              const d = new Date(t);
+              if (tickMarkType <= 2) {
+                return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(d);
+              }
+              return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+            }
           },
           handleScroll: {
             mouseWheel: true,
@@ -4969,12 +5035,15 @@
 
     function formatFullDate(ts) {
       const d = new Date(ts);
-      const Y = d.getFullYear();
-      const M = String(d.getMonth() + 1).padStart(2, '0');
-      const D = String(d.getDate()).padStart(2, '0');
-      const h = String(d.getHours()).padStart(2, '0');
-      const m = String(d.getMinutes()).padStart(2, '0');
-      return `${Y}.${M}.${D} ${h}:${m}`;
+      return d.toLocaleString("ko-KR", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }) + " KST";
     }
 
     function drawAllocation(rows, interval, passedRange) {
@@ -5487,9 +5556,9 @@
         if (latest) {
           const selected = window.selectedOptimizationCandidate;
           if (selected) {
-            $("status").textContent = `Selected Candidate: Dev PnL ${signedPct(selected.fullProfit)} | Max DD ${signedPct(selected.maxDd)} | Live ${formatTime(latest.time, cachedInterval)} UTC`;
+            $("status").textContent = `Selected Candidate: Dev PnL ${signedPct(selected.fullProfit)} | Max DD ${signedPct(selected.maxDd)} | Live ${formatTime(latest.time, cachedInterval)} KST`;
           } else {
-            $("status").textContent = `WebSocket live: ${formatTime(latest.time, cachedInterval)} UTC`;
+            $("status").textContent = `WebSocket live: ${formatTime(latest.time, cachedInterval)} KST`;
           }
         }
       }, 1000);
@@ -5610,7 +5679,7 @@
         const firstTime = rows[0]?.time;
         const lastTime = rows.at(-1)?.time;
         const spanDays = firstTime && lastTime ? (lastTime - firstTime) / 86400000 : 0;
-        $("status").textContent = `WebSocket live: ${rows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d) | ${formatTime(lastTime, interval)} UTC`;
+        $("status").textContent = `WebSocket live: ${rows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d) | ${formatTime(lastTime, interval)} KST`;
 
         // Background History Backfill: Asynchronously fetch older pages without blocking UI
         backfillHistoryInBackground(assetConfig, interval, refreshId);
@@ -5684,7 +5753,7 @@
             if (selected) {
               $("status").textContent = `Selected Candidate: Dev PnL ${signedPct(selected.fullProfit)} | Max DD ${signedPct(selected.maxDd)} | ${cachedRows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d)`;
             } else {
-              $("status").textContent = `WebSocket live: ${cachedRows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d) | ${formatTime(lastTime, interval)} UTC`;
+              $("status").textContent = `WebSocket live: ${cachedRows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d) | ${formatTime(lastTime, interval)} KST`;
             }
           }
 
@@ -6549,7 +6618,7 @@
       renderLeaderboardTable();
       $("status").textContent = wasAborted 
         ? `Simulation aborted (${allEvaluatedCandidates.length} evaluated; applied best so far)`
-        : `WebSocket live: ${formatTime(best.rows.at(-1).time, cachedInterval)} UTC`;
+        : `WebSocket live: ${formatTime(best.rows.at(-1).time, cachedInterval)} KST`;
     }
 
     window.leaderboardSortKey = 'robustSelectionScore';
@@ -6827,7 +6896,7 @@
         grpEnvBadge: "Environment & Fees (Fixed / User-Defined)",
         grpOptTitle: "🎯 Auto-Optimizable Execution Parameters",
         grpOptBadge: "TUNED BY ALGO OPTIMIZER",
-        tblColDateTime: "Date & Time (UTC)",
+        tblColDateTime: "Date & Time (KST)",
         tblColCategory: "Category",
         tblColHeadline: "Catalyst Headline & Event",
         tblColPreSpread: "Pre-Event Spread",
@@ -6970,7 +7039,7 @@
         grpEnvBadge: "기본 환경 및 수수료 (사용자 정의)",
         grpOptTitle: "🎯 알고리즘 자동 최적화 파라미터",
         grpOptBadge: "수익률 최적화 대상",
-        tblColDateTime: "일시 (UTC)",
+        tblColDateTime: "일시 (KST)",
         tblColCategory: "분류",
         tblColHeadline: "촉매 헤드라인 및 주요 사건",
         tblColPreSpread: "사건 직전 스프레드",
@@ -8059,7 +8128,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       logDaemonEvent(msg, type = "info") {
-        const timeStr = new Date().toLocaleTimeString();
+        const timeStr = formatKstTime();
         const event = { time: timeStr, msg, type };
         this.state.daemonEvents.unshift(event);
         if (this.state.daemonEvents.length > 60) this.state.daemonEvents.pop();
@@ -8104,7 +8173,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             tradingFeeBps: Number($("tradingFeeBps")?.value || 5),
             slippageBps: Number($("slippageBps")?.value || 0),
             fundingBpsDay: Number($("fundingBpsDay")?.value || 3),
-            deployedAt: new Date().toLocaleString()
+            deployedAt: formatKstDateTime()
           };
         }
       },
@@ -8115,7 +8184,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const engKey = $("predictionEngine")?.value || "hmm_vol_target";
         const engineLabel = $("predictionEngine")?.options[$("predictionEngine")?.selectedIndex]?.textContent || "Autocorrelation Regime Filter + OU";
         const interval = $("interval")?.value || "15m";
-        const nowStr = new Date().toLocaleString();
+        const nowStr = formatKstDateTime();
 
         const deployed = {
           assetStrategy: assetKey,
@@ -8593,8 +8662,28 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // 2. Order Log Body
         const logBody = $("executionHistoryBody");
         if (logBody) {
-          if (!this.state.orderLog.length) {
+          const recentExecs = (this.state.hedgedStatus && Array.isArray(this.state.hedgedStatus.recent_executions)) ? this.state.hedgedStatus.recent_executions : [];
+          if (!this.state.orderLog.length && !recentExecs.length) {
             logBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">${isKo ? '체결 내역이 없습니다.' : 'No recent executions logged.'}</td></tr>`;
+          } else if (recentExecs.length) {
+            logBody.innerHTML = recentExecs.slice(-20).reverse().map((ex) => {
+              const timeStr = formatKstDateTime(ex.time);
+              const isEntry = ex.side === "SELL";
+              const sideText = isEntry ? (isKo ? "숏 진입 (SELL)" : "SHORT ENTRY (SELL)") : (isKo ? "롱 청산/익절 (BUY)" : "LONG TRIM/TP (BUY)");
+              const sideColor = isEntry ? "#0284c7" : "#16a34a";
+              const pnlColor = ex.realized_pnl >= 0 ? "#16a34a" : "#dc2626";
+              const pnlSign = ex.realized_pnl >= 0 ? "+" : "";
+
+              return `<tr>
+                <td style="color: #64748b; font-size: 11px;">${timeStr}</td>
+                <td style="font-weight: 700;">${ex.symbol}</td>
+                <td><span style="font-weight: 800; color: ${sideColor};">${sideText}</span></td>
+                <td>${ex.qty.toFixed(2)} ($${(ex.qty * ex.price).toFixed(2)})</td>
+                <td>$${ex.price.toFixed(2)}</td>
+                <td style="color: ${pnlColor}; font-weight: 700;">${ex.realized_pnl ? `${pnlSign}$${ex.realized_pnl.toFixed(4)}` : '—'}</td>
+                <td><span style="font-weight: 800; color: #16a34a;">FILLED</span></td>
+              </tr>`;
+            }).join("");
           } else {
             logBody.innerHTML = this.state.orderLog.slice(-15).reverse().map((log) => {
               const statusColor = log.status === "FILLED" ? "#16a34a" : "#dc2626";
@@ -8633,7 +8722,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               success = true;
               this.state.backendConnected = true;
               this.state.backendLatencyMs = latency;
-              this.state.lastSyncTime = new Date().toLocaleTimeString();
+              this.state.lastSyncTime = formatKstTime();
 
               const card = $("backendTelemetryCard");
               const mainLbl = $("lblDaemonMainStatus");
@@ -8746,7 +8835,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 success = true;
                 this.state.backendConnected = true;
                 this.state.backendLatencyMs = latency;
-                this.state.lastSyncTime = new Date().toLocaleTimeString();
+                this.state.lastSyncTime = formatKstTime();
 
                 const card = $("backendTelemetryCard");
                 const mainLbl = $("lblDaemonMainStatus");
@@ -8840,7 +8929,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       renderHedgedController(data) {
         if (!data || !data.authenticated) return;
         if ($("lblHedgedSyncBadge")) {
-          $("lblHedgedSyncBadge").textContent = `Live Binance Futures | Sync ${new Date().toLocaleTimeString()}`;
+          $("lblHedgedSyncBadge").textContent = `Live Binance Futures | Sync ${formatKstTime()}`;
         }
         const tranches = data.tranches_active || 0;
         const lev = data.gross_leverage || 0.0;
@@ -8943,8 +9032,19 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           height: 250,
           layout: { background: { color: "#f8fafc" }, textColor: "#475569" },
           localization: {
-            locale: "en-US",
-            priceFormatter: (p) => Number(p).toFixed(2) + "%"
+            locale: "ko-KR",
+            priceFormatter: (p) => Number(p).toFixed(2) + "%",
+            timeFormatter: (time) => {
+              const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+              return new Date(t).toLocaleString("ko-KR", {
+                timeZone: "Asia/Seoul",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false
+              }) + " KST";
+            }
           },
           grid: { vertLines: { color: "#e2e8f0" }, horzLines: { color: "#e2e8f0" } },
           rightPriceScale: {
@@ -8957,7 +9057,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             visible: true,
             timeVisible: true,
             secondsVisible: false,
-            borderVisible: false
+            borderVisible: false,
+            tickMarkFormatter: (time, tickMarkType) => {
+              const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+              const d = new Date(t);
+              if (tickMarkType <= 2) {
+                return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(d);
+              }
+              return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+            }
           },
           crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
         });
@@ -9026,7 +9134,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("valShortTermCurrentParity").textContent = `${latest.value.toFixed(2)}% (+${prem}%)`;
         }
         if ($("lblShortTermChartSync")) {
-          $("lblShortTermChartSync").textContent = `Sync ${new Date().toLocaleTimeString()}`;
+          $("lblShortTermChartSync").textContent = `Sync ${formatKstTime()}`;
         }
 
         const criteria = (this.state.hedgedStatus && this.state.hedgedStatus.auto_tranche_criteria) || {};
@@ -9281,7 +9389,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const newPos = {
           id: "pos_" + Date.now(),
-          timestamp: new Date().toLocaleTimeString(),
+          timestamp: formatKstTime(),
           pairKey: assetKey,
           pairName: assetConfig.shortName || "SK Hynix Arb",
           direction: side,
@@ -9301,7 +9409,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const logEntry = {
           id: "ord_" + Date.now(),
-          timestamp: new Date().toLocaleTimeString(),
+          timestamp: formatKstTime(),
           pair: assetConfig.shortName || "SK Hynix Arb",
           side: side === "BUY_ADR_SELL_KR" ? "BUY SPREAD (LONG ADR)" : "SELL SPREAD (SHORT ADR)",
           sizeUsdt: notional,
@@ -9336,7 +9444,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         this.state.orderLog.push({
           id: "cls_" + Date.now(),
-          timestamp: new Date().toLocaleTimeString(),
+          timestamp: formatKstTime(),
           pair: pos.pairName,
           side: "CLOSE FLATTEN",
           sizeUsdt: pos.notional,
