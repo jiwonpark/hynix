@@ -3909,24 +3909,21 @@
             lineWidth: 1.5,
             priceLineVisible: false,
             lastValueVisible: false,
-            priceFormat: lineFormat,
-            title: "7-MA"
+            priceFormat: lineFormat
           }),
           ma24: window.spreadChart.addLineSeries({
             color: "#8b5cf6",
             lineWidth: 1.5,
             priceLineVisible: false,
             lastValueVisible: false,
-            priceFormat: lineFormat,
-            title: "24-MA"
+            priceFormat: lineFormat
           }),
           ma60: window.spreadChart.addLineSeries({
             color: "#06b6d4",
             lineWidth: 1.5,
             priceLineVisible: false,
             lastValueVisible: false,
-            priceFormat: lineFormat,
-            title: "60-MA"
+            priceFormat: lineFormat
           })
         };
         const positionHost = $("positionPane");
@@ -9214,8 +9211,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           bottomColor: "rgba(2, 132, 199, 0.02)",
           lineColor: "#0284c7",
           lineWidth: 2,
-          priceFormat: { type: "price", precision: 2, minMove: 0.01 },
-          title: "Parity"
+          priceFormat: { type: "price", precision: 2, minMove: 0.01 }
         });
 
         this.shortTermMa7Series = this.shortTermChart.addLineSeries({
@@ -9224,8 +9220,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: true,
-          priceFormat: { type: "price", precision: 2, minMove: 0.01 },
-          title: "7-MA"
+          priceFormat: { type: "price", precision: 2, minMove: 0.01 }
         });
 
         this.shortTermMa24Series = this.shortTermChart.addLineSeries({
@@ -9234,8 +9229,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: true,
-          priceFormat: { type: "price", precision: 2, minMove: 0.01 },
-          title: "24-MA"
+          priceFormat: { type: "price", precision: 2, minMove: 0.01 }
         });
 
         this.shortTermMa60Series = this.shortTermChart.addLineSeries({
@@ -9244,8 +9238,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: true,
-          priceFormat: { type: "price", precision: 2, minMove: 0.01 },
-          title: "60-MA"
+          priceFormat: { type: "price", precision: 2, minMove: 0.01 }
         });
 
         this.maVisibility = { ma7: true, ma24: true, ma60: true };
@@ -9440,17 +9433,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             axisLabelVisible: true,
             title: `ENTRY (${criteria.entry_baseline_spread.toFixed(2)}%)`
           }));
-
-          if (criteria.rolling_ma_24) {
-            this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
-              price: criteria.rolling_ma_24,
-              color: "#8b5cf6",
-              lineWidth: 1.5,
-              lineStyle: LightweightCharts.LineStyle.Dotted,
-              axisLabelVisible: true,
-              title: `24-MA (${criteria.rolling_ma_24.toFixed(2)}%)`
-            }));
-          }
 
           if (criteria.scale_in_trigger_spread) {
             this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
