@@ -15,10 +15,9 @@ class TrancheStackUITests(unittest.TestCase):
 
     def test_stack_shows_pair_prices_orders_targets_and_profit(self):
         for field in ('estimated_net_pnl_usd', 'paired_stock_order_id',
-                      'entry_price', 'stock_entry_price', 'target_out_spread',
-                      'minimum_net_profit_usd'):
+                      'entry_price', 'stock_entry_price', 'target_out_spread'):
             self.assertIn(field, self.html)
-        self.assertIn('Min profit', self.html)
+        self.assertNotIn('<span>Min profit', self.html)
 
     def test_old_queue_label_is_removed(self):
         self.assertNotIn('LIFO Queue:', self.html)

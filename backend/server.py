@@ -805,6 +805,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                             candle_markers[key] = {
                                 "time": marker_time,
                                 "is_entry": is_entry,
+                                "entry_spread": matched_bar["value"],
                                 "total_qty": qty,
                                 "weighted_price": price * qty,
                                 "count": 1
@@ -828,8 +829,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                     qty_str = f"{m_data['total_qty']:.2f}"
                     cnt_str = f" {m_data['count']}x" if m_data['count'] > 1 else ""
                     # Clean price/qty label without redundant Short/Cover words (arrow already conveys side)
-                    min_profit_lbl = f" · Min net >${MIN_NET_PROFIT_USD:.2f}" if is_entry else ""
-                    hover_lbl = f"${avg_px:.2f} ({qty_str}){cnt_str}{min_profit_lbl}"
+                    hover_lbl = f"${avg_px:.2f} ({qty_str}){cnt_str}"
                     markers.append({
                         "time": m_time,
                         "position": "aboveBar" if is_entry else "belowBar",
@@ -841,7 +841,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         "is_entry": is_entry,
                         "avg_price": round(avg_px, 2),
                         "qty": round(m_data["total_qty"], 2),
-                        "minimum_net_profit_usd": MIN_NET_PROFIT_USD if is_entry else None
+                        "minimum_net_profit_usd": MIN_NET_PROFIT_USD if is_entry else None,
+                        "minimum_profit_spread": round(m_data["entry_spread"] - 0.08, 2) if is_entry else None
                     })
         except Exception:
             logger.exception("Error loading trade markers")

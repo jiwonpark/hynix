@@ -118,7 +118,8 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result['markers']), 1)
         marker = result['markers'][0]
         self.assertEqual(marker['minimum_net_profit_usd'], .02)
-        self.assertIn('Min net >$0.02', marker['hoverText'])
+        self.assertEqual(marker['minimum_profit_spread'], 999.92)
+        self.assertNotIn('Min net', marker['hoverText'])
 
     def ma_bars(self, values):
         end = int(time.time() // 300) * 300
