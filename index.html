@@ -9212,9 +9212,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             }
             return;
           }
-          const time = param.time;
-          const hasMarker = this.rawExecutionMarkers && this.rawExecutionMarkers.some((m) => m.time === time);
-          const nextHover = hasMarker ? time : null;
+          // Treat the full vertical candle column as the marker hover target.
+          // Marker details therefore depend only on mouse X, never mouse Y.
+          const nextHover = this.executionMarkerTimeAtX(param.point.x);
           if (nextHover !== activeHoveredMarkerTime) {
             activeHoveredMarkerTime = nextHover;
             this.updateMarkerState(nextHover);
@@ -9226,6 +9226,29 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             this.shortTermChart.applyOptions({ width: host.clientWidth });
           }
         });
+      },
+
+      executionMarkerTimeAtX(mouseX) {
+        if (!Number.isFinite(mouseX) || !this.shortTermChart || !this.rawExecutionMarkers?.length) return null;
+        const timeScale = this.shortTermChart.timeScale();
+        const range = timeScale.getVisibleLogicalRange?.();
+        const hostWidth = $("shortTermSpreadChartHost")?.clientWidth || 0;
+        const visibleBars = range ? Math.max(1, range.to - range.from) : 0;
+        const barSpacing = visibleBars && hostWidth ? hostWidth / visibleBars : 12;
+        const columnHalfWidth = Math.max(8, Math.min(24, barSpacing / 2));
+        let closestTime = null;
+        let closestDistance = Infinity;
+
+        for (const marker of this.rawExecutionMarkers) {
+          const markerX = timeScale.timeToCoordinate(marker.time);
+          if (!Number.isFinite(markerX)) continue;
+          const distance = Math.abs(mouseX - markerX);
+          if (distance <= columnHalfWidth && distance < closestDistance) {
+            closestTime = marker.time;
+            closestDistance = distance;
+          }
+        }
+        return closestTime;
       },
 
       updateMarkerState(hoveredTime = null) {
