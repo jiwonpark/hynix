@@ -10,7 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from .tranche_accounting import estimate_tranche_exit
+from .tranche_accounting import MIN_NET_PROFIT_USD, estimate_tranche_exit
 from .config import config
 from .binance_client import BinanceFuturesClient
 from .upbit_client import UpbitClient
@@ -564,6 +564,7 @@ async def get_hedged_status() -> Dict[str, Any]:
             tranche["pairing"] = profit.get("pairing")
             tranche["profit_estimate_available"] = profit["available"]
             tranche["profit_reason"] = profit["reason"]
+            tranche["minimum_net_profit_usd"] = profit["threshold_usd"]
             tranche["estimated_net_pnl_usd"] = (
                 round(profit["net_pnl_usd"], 6)
                 if profit["net_pnl_usd"] is not None else None)
@@ -827,7 +828,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                     qty_str = f"{m_data['total_qty']:.2f}"
                     cnt_str = f" {m_data['count']}x" if m_data['count'] > 1 else ""
                     # Clean price/qty label without redundant Short/Cover words (arrow already conveys side)
-                    hover_lbl = f"${avg_px:.2f} ({qty_str}){cnt_str}"
+                    min_profit_lbl = f" · Min net >${MIN_NET_PROFIT_USD:.2f}" if is_entry else ""
+                    hover_lbl = f"${avg_px:.2f} ({qty_str}){cnt_str}{min_profit_lbl}"
                     markers.append({
                         "time": m_time,
                         "position": "aboveBar" if is_entry else "belowBar",
@@ -838,7 +840,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         "hoverText": hover_lbl,
                         "is_entry": is_entry,
                         "avg_price": round(avg_px, 2),
-                        "qty": round(m_data["total_qty"], 2)
+                        "qty": round(m_data["total_qty"], 2),
+                        "minimum_net_profit_usd": MIN_NET_PROFIT_USD if is_entry else None
                     })
         except Exception:
             logger.exception("Error loading trade markers")

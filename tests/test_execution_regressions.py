@@ -106,6 +106,20 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result['next_end_time'])
         self.assertEqual(self.client.request.await_count, 3)
 
+    async def test_entry_chart_marker_shows_minimum_net_profit(self):
+        times = [300000 * i for i in range(1, 21)]
+        async def request(method, path, params, **kwargs):
+            if 'klines' in path:
+                return [[t, 0, 0, 0, '100'] for t in times]
+            return [{'id': 1, 'orderId': 2, 'time': times[5], 'side': 'SELL',
+                     'price': '191.25', 'qty': '.08'}]
+        self.client.request.side_effect = request
+        result = await server.get_short_term_parity('5m', 20)
+        self.assertEqual(len(result['markers']), 1)
+        marker = result['markers'][0]
+        self.assertEqual(marker['minimum_net_profit_usd'], .02)
+        self.assertIn('Min net >$0.02', marker['hoverText'])
+
     def ma_bars(self, values):
         end = int(time.time() // 300) * 300
         return [{'time': end - (len(values) - 1 - i) * 300, 'value': v} for i, v in enumerate(values)]
@@ -145,6 +159,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(criteria['active_tranche_stack']), 1)
         stack_top = criteria['active_tranche_stack'][-1]
         self.assertEqual(stack_top['paired_stock_order_id'], '1')
+        self.assertEqual(stack_top['minimum_net_profit_usd'], .02)
         self.assertTrue(stack_top['profit_estimate_available'])
         self.assertIsNotNone(stack_top['estimated_net_pnl_usd'])
         server.get_cached_parity_bars.assert_awaited_with('5m', 60)

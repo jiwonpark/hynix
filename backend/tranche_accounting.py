@@ -6,6 +6,7 @@ EXIT_FEE_BPS = 5.0
 EXIT_SLIPPAGE_BPS = 3.0
 FUNDING_RESERVE_BPS_DAY = 3.0
 LEG_PAIR_MAX_DELAY_MS = 5000
+MIN_NET_PROFIT_USD = 0.02
 
 
 def aggregate_orders(executions):
@@ -60,7 +61,7 @@ def infer_entry_pairs(orders, stock_symbol):
 
 def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol, pairs, now):
     result = {'available': False, 'net_pnl_usd': None, 'profitable': False,
-              'reason': 'NO_TARGET_TRANCHE', 'threshold_usd': 0.02,
+              'reason': 'NO_TARGET_TRANCHE', 'threshold_usd': MIN_NET_PROFIT_USD,
               'valuation': 'mark_prices_with_cost_reserves',
               'exit_fee_bps': EXIT_FEE_BPS, 'slippage_bps': EXIT_SLIPPAGE_BPS,
               'funding_reserve_bps_day': FUNDING_RESERVE_BPS_DAY}
@@ -125,7 +126,7 @@ def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol
     holding_days = max(0, now - min(adr['time'], stock['time']) / 1000) / 86400
     funding = (.07 * adr_entry + 1.2 * stock_entry) * FUNDING_RESERVE_BPS_DAY / 10000 * holding_days
     net = adr_pnl + stock_pnl - entry_fees - closing_fee - slippage - funding
-    return {**result, 'available': True, 'profitable': net > .02, 'reason': 'ESTIMATE_READY',
+    return {**result, 'available': True, 'profitable': net > MIN_NET_PROFIT_USD, 'reason': 'ESTIMATE_READY',
             'stock_order_id': stock['order_id'], 'pairing': pairing,
             'adr_entry_price': adr_entry, 'stock_entry_price': stock_entry,
             'adr_exit_qty': .07, 'stock_exit_qty': 1.2,

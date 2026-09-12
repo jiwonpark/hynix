@@ -26,6 +26,7 @@ class TrancheAccountingTests(unittest.TestCase):
     def test_uses_exact_trim_quantities_and_all_cost_reserves(self):
         result = self.estimate(self.entries())
         self.assertTrue(result['profitable'])
+        self.assertEqual(result['threshold_usd'], .02)
         self.assertAlmostEqual(result['gross_pnl_usd'], .19)
         self.assertAlmostEqual(result['entry_fees_usd'], .001*.07/.08 + .001*1.2/1.4)
         self.assertAlmostEqual(result['net_pnl_usd'], result['gross_pnl_usd'] - sum(result[k] for k in

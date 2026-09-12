@@ -9642,6 +9642,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("lifoTrancheStack").innerHTML = newestFirst.map(({ tranche: t, index }, visualIndex) => {
               const top = visualIndex === 0;
               const net = Number(t.estimated_net_pnl_usd);
+              const minProfit = Number(t.minimum_net_profit_usd);
               const hasPnl = t.profit_estimate_available && Number.isFinite(net);
               const pnlText = hasPnl ? `${net >= 0 ? "+" : ""}$${net.toFixed(3)}` : "unverified";
               const pnlColor = hasPnl ? (net > 0.02 ? "#16a34a" : "#dc2626") : "#d97706";
@@ -9658,6 +9659,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 </div>
                 <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); gap:2px 10px; margin-top:4px; color:#64748b;">
                   <span>Spread <strong style="color:#334155;">${Number(t.entry_spread).toFixed(2)}% → ≤${Number(t.target_out_spread).toFixed(2)}%</strong></span>
+                  <span>Min profit <strong style="color:#334155;">${Number.isFinite(minProfit) ? `>$${minProfit.toFixed(2)} net` : "—"}</strong></span>
                   <span>Age <strong style="color:#334155;">${ageText}</strong></span>
                   <span>ADR 0.08 @ <strong style="color:#334155;">${Number.isFinite(adrEntry) ? `$${adrEntry.toFixed(2)}` : "—"}</strong> · #${adrOrder}</span>
                   <span>ETF 1.40 @ <strong style="color:#334155;">${Number.isFinite(etfEntry) ? `$${etfEntry.toFixed(4)}` : "—"}</strong> · #${etfOrder}</span>

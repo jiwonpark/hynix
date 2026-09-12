@@ -18,7 +18,8 @@ class TestFrontendSyntax(unittest.TestCase):
 
         node_code = """
 const vm = require("vm");
-const scripts = JSON.parse(process.argv[1]);
+const fs = require("fs");
+const scripts = JSON.parse(fs.readFileSync(0, "utf8"));
 scripts.forEach((code, idx) => {
   try {
     new vm.Script(code, { filename: `inline_script_${idx}.js` });
@@ -31,7 +32,8 @@ console.log("ALL_SCRIPTS_VALID");
 """
         import json
         res = subprocess.run(
-            ["node", "-e", node_code, json.dumps(inline_scripts)],
+            ["node", "-e", node_code],
+            input=json.dumps(inline_scripts),
             capture_output=True,
             text=True
         )
