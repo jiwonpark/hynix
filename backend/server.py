@@ -10,7 +10,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from .tranche_accounting import MIN_NET_PROFIT_USD, estimate_tranche_exit
+from .tranche_accounting import (
+    MIN_NET_PROFIT_USD,
+    aggregate_orders,
+    estimate_tranche_exit,
+    infer_entry_pairs,
+)
 from .config import config
 from .binance_client import BinanceFuturesClient
 from .upbit_client import UpbitClient
@@ -780,11 +785,62 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
         executions = []
         try:
             start_ms = int((bars[0]["time"] - 1800) * 1000) if bars else int((time.time() - 6 * 3600) * 1000)
-            trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "startTime": start_ms, "endTime": (bars[-1]["time"] * 1000 + interval_ms - 1) if bars else int(time.time() * 1000), "limit": 1000}, signed=True)
+            history_end_ms = (bars[-1]["time"] * 1000 + interval_ms - 1) if bars else int(time.time() * 1000)
+            trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "startTime": start_ms, "endTime": history_end_ms, "limit": 1000}, signed=True)
             if end_time is None and (not isinstance(trades, list) or len(trades) == 0):
                 trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
 
             if isinstance(trades, list) and bars:
+                stock_trades = []
+                if trades:
+                    try:
+                        result = await binance_client.request(
+                            "GET", "/fapi/v1/userTrades",
+                            {"symbol": "CSOPSKHYNIX2LUSDT", "startTime": start_ms,
+                             "endTime": history_end_ms, "limit": 1000}, signed=True)
+                        if isinstance(result, list):
+                            stock_trades = result
+                    except Exception:
+                        logger.exception("Error loading paired hedge trades for chart markers")
+
+                pair_executions = []
+                for symbol, raw_trades in (("SKHYUSDT", trades), ("CSOPSKHYNIX2LUSDT", stock_trades)):
+                    for raw in raw_trades:
+                        pair_executions.append({
+                            "id": str(raw.get("id", "")),
+                            "order_id": str(raw.get("orderId", raw.get("id", ""))),
+                            "symbol": symbol,
+                            "side": raw.get("side", ""),
+                            "price": float(raw.get("price", 0.0)),
+                            "qty": float(raw.get("qty", 0.0)),
+                            "commission": float(raw["commission"]) if raw.get("commission") is not None else None,
+                            "commission_asset": str(raw.get("commissionAsset", "USDT")),
+                            "time": int(raw.get("time", 0)),
+                        })
+                pair_orders = aggregate_orders(pair_executions)
+                inferred_pairs = infer_entry_pairs(pair_orders, "CSOPSKHYNIX2LUSDT")
+                for pair in load_auto_tranche_state().get("entry_order_pairs", []):
+                    inferred_pairs[str(pair["adr_order_id"])] = str(pair["stock_order_id"])
+                stock_entries = {
+                    order["order_id"]: order for order in pair_orders
+                    if order["symbol"] == "CSOPSKHYNIX2LUSDT" and order["side"] == "BUY"
+                }
+                adr_entries = {
+                    order["order_id"]: order for order in pair_orders
+                    if order["symbol"] == "SKHYUSDT" and order["side"] == "SELL"
+                }
+                minimum_net_pct_by_order = {}
+                for adr_order_id, stock_order_id in inferred_pairs.items():
+                    adr_order = adr_entries.get(adr_order_id)
+                    stock_order = stock_entries.get(stock_order_id)
+                    if not adr_order or not stock_order or adr_order["qty"] <= 0 or stock_order["qty"] <= 0:
+                        continue
+                    adr_fill = adr_order["cost"] / adr_order["qty"]
+                    stock_fill = stock_order["cost"] / stock_order["qty"]
+                    entry_notional = 0.07 * adr_fill + 1.2 * stock_fill
+                    if entry_notional > 0:
+                        minimum_net_pct_by_order[adr_order_id] = MIN_NET_PROFIT_USD / entry_notional * 100.0
+
                 min_time_sec = bars[0]["time"]
                 candle_markers = {}
                 for tr in sorted(trades, key=lambda x: x.get("time", 0)):
@@ -799,6 +855,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         is_entry = (side == "SELL")
                         price = float(tr.get("price", 0.0))
                         qty = float(tr.get("qty", 0.0))
+                        min_net_pct = minimum_net_pct_by_order.get(str(tr.get("orderId", tr.get("id", "")))) if is_entry else None
 
                         key = (marker_time, is_entry)
                         if key not in candle_markers:
@@ -808,12 +865,17 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                                 "entry_spread": matched_bar["value"],
                                 "total_qty": qty,
                                 "weighted_price": price * qty,
-                                "count": 1
+                                "count": 1,
+                                "min_net_pct_cost": (min_net_pct * qty) if min_net_pct is not None else 0.0,
+                                "min_net_pct_qty": qty if min_net_pct is not None else 0.0,
                             }
                         else:
                             candle_markers[key]["total_qty"] += qty
                             candle_markers[key]["weighted_price"] += price * qty
                             candle_markers[key]["count"] += 1
+                            if min_net_pct is not None:
+                                candle_markers[key]["min_net_pct_cost"] += min_net_pct * qty
+                                candle_markers[key]["min_net_pct_qty"] += qty
 
                         executions.append({
                             "time": t_sec,
@@ -830,6 +892,9 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                     cnt_str = f" {m_data['count']}x" if m_data['count'] > 1 else ""
                     # Clean price/qty label without redundant Short/Cover words (arrow already conveys side)
                     hover_lbl = f"${avg_px:.2f} ({qty_str}){cnt_str}"
+                    minimum_net_profit_pct = (
+                        m_data["min_net_pct_cost"] / m_data["min_net_pct_qty"]
+                        if m_data["min_net_pct_qty"] > 0 else None)
                     markers.append({
                         "time": m_time,
                         "position": "aboveBar" if is_entry else "belowBar",
@@ -842,6 +907,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         "avg_price": round(avg_px, 2),
                         "qty": round(m_data["total_qty"], 2),
                         "minimum_net_profit_usd": MIN_NET_PROFIT_USD if is_entry else None,
+                        "minimum_net_profit_pct": round(minimum_net_profit_pct, 4) if minimum_net_profit_pct is not None else None,
                         "minimum_profit_spread": round(m_data["entry_spread"] - 0.08, 2) if is_entry else None
                     })
         except Exception:

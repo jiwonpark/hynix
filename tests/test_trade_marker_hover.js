@@ -45,13 +45,20 @@ const lineSeries = {
 };
 const lineEngine = vm.runInContext(`({
   shortTermSeries: lineSeries,
-  rawExecutionMarkers: [{time: 1000, is_entry: true, minimum_profit_spread: 139.26}],
+  rawExecutionMarkers: [{time: 1000, is_entry: true, minimum_profit_spread: 139.26, minimum_net_profit_pct: 0.0987}],
   ${lineMethod}
 })`, vm.createContext({lineSeries, Number, LightweightCharts: {LineStyle: {Dashed: 2}}}));
 lineEngine.syncHoveredMinimumProfitLine(1000);
 assert.equal(created[0].price, 139.26, 'entry x-hover must draw its minimum-profit spread');
-assert.equal(created[0].title, '', 'minimum profit must be a line, not a text label');
+assert.equal(created[0].title, 'MIN PROFIT (+0.10% NET)',
+  'the horizontal line should identify the paired tranche net return threshold');
 lineEngine.syncHoveredMinimumProfitLine(null);
 assert.equal(removed.length, 1, 'leaving the entry column must remove the horizontal line');
+
+for (const redundantTitle of ['title: `ENTRY (${criteria.entry_baseline_spread.toFixed(2)}%)`',
+                              'title: `SCALE-IN SHORT (${criteria.scale_in_trigger_spread.toFixed(2)}%)`',
+                              'title: `TP COVER (${tpLinePrice.toFixed(2)}%)`']) {
+  assert.ok(!html.includes(redundantTitle), 'horizontal line titles must not repeat axis percentages');
+}
 
 console.log('Trade marker x-hover regression checks passed');

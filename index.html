@@ -9288,6 +9288,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const marker = this.rawExecutionMarkers?.find((m) =>
           hoveredTime !== null && m.time === hoveredTime && m.is_entry);
         const targetSpread = Number(marker?.minimum_profit_spread);
+        const minimumNetPct = marker?.minimum_net_profit_pct == null
+          ? null
+          : Number(marker.minimum_net_profit_pct);
         const nextSpread = Number.isFinite(targetSpread) ? targetSpread : null;
         if (this.shortTermHoverProfitLine && this.shortTermHoverProfitSpread === nextSpread) return;
         if (this.shortTermHoverProfitLine) {
@@ -9302,7 +9305,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Dashed,
             axisLabelVisible: true,
-            title: ""
+            title: Number.isFinite(minimumNetPct) ? `MIN PROFIT (+${minimumNetPct.toFixed(2)}% NET)` : "MIN PROFIT"
           });
           this.shortTermHoverProfitSpread = nextSpread;
         }
@@ -9479,7 +9482,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             lineWidth: 1.5,
             lineStyle: LightweightCharts.LineStyle.Solid,
             axisLabelVisible: true,
-            title: `ENTRY (${criteria.entry_baseline_spread.toFixed(2)}%)`
+            title: "ENTRY"
           }));
 
           if (criteria.scale_in_trigger_spread) {
@@ -9489,7 +9492,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               lineWidth: 1.5,
               lineStyle: LightweightCharts.LineStyle.Dashed,
               axisLabelVisible: true,
-              title: `SCALE-IN SHORT (${criteria.scale_in_trigger_spread.toFixed(2)}%)`
+              title: "SCALE-IN SHORT"
             }));
           }
 
@@ -9501,7 +9504,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               lineWidth: 1.5,
               lineStyle: LightweightCharts.LineStyle.Dashed,
               axisLabelVisible: true,
-              title: `TP COVER (${tpLinePrice.toFixed(2)}%)`
+              title: "TP COVER"
             }));
           }
         }

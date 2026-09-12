@@ -111,6 +111,9 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         async def request(method, path, params, **kwargs):
             if 'klines' in path:
                 return [[t, 0, 0, 0, '100'] for t in times]
+            if params['symbol'] == 'CSOPSKHYNIX2LUSDT':
+                return [{'id': 2, 'orderId': 3, 'time': times[5] + 1000, 'side': 'BUY',
+                         'price': '5.55', 'qty': '1.40'}]
             return [{'id': 1, 'orderId': 2, 'time': times[5], 'side': 'SELL',
                      'price': '191.25', 'qty': '.08'}]
         self.client.request.side_effect = request
@@ -118,6 +121,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result['markers']), 1)
         marker = result['markers'][0]
         self.assertEqual(marker['minimum_net_profit_usd'], .02)
+        self.assertAlmostEqual(marker['minimum_net_profit_pct'], .0998, places=4)
         self.assertEqual(marker['minimum_profit_spread'], 999.92)
         self.assertNotIn('Min net', marker['hoverText'])
 
