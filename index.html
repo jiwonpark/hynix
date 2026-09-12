@@ -9203,11 +9203,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
         this.maVisibility = { ma7: true, ma24: true, ma60: true };
 
-        let activeHoveredMarkerTime = null;
+        this.activeHoveredExecutionMarkerTime = null;
         this.shortTermChart.subscribeCrosshairMove((param) => {
           if (!param || !param.time || !param.point) {
-            if (activeHoveredMarkerTime !== null) {
-              activeHoveredMarkerTime = null;
+            if (this.activeHoveredExecutionMarkerTime !== null) {
+              this.activeHoveredExecutionMarkerTime = null;
               this.updateMarkerState(null);
             }
             return;
@@ -9215,8 +9215,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           // Treat the full vertical candle column as the marker hover target.
           // Marker details therefore depend only on mouse X, never mouse Y.
           const nextHover = this.executionMarkerTimeAtX(param.point.x);
-          if (nextHover !== activeHoveredMarkerTime) {
-            activeHoveredMarkerTime = nextHover;
+          if (nextHover !== this.activeHoveredExecutionMarkerTime) {
+            this.activeHoveredExecutionMarkerTime = nextHover;
             this.updateMarkerState(nextHover);
           }
         });
@@ -9423,7 +9423,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const markers = Array.isArray(data.markers) ? data.markers : [];
         this.rawExecutionMarkers = markers;
-        this.updateMarkerState(null);
+        if (!markers.some((m) => m.time === this.activeHoveredExecutionMarkerTime)) {
+          this.activeHoveredExecutionMarkerTime = null;
+        }
+        this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
         window.latestExecutionMarkers = markers;
 
         const latest = data.bars[data.bars.length - 1];

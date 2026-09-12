@@ -30,4 +30,9 @@ assert.equal(engine.executionMarkerTimeAtX(150), null,
 assert.equal(engine.executionMarkerTimeAtX(196), 2000,
   'the closest visible marker should activate by x-coordinate');
 
+assert.ok(html.includes('this.updateMarkerState(this.activeHoveredExecutionMarkerTime);'),
+  'live chart redraws must preserve the active trade price label');
+assert.ok(!html.includes('let activeHoveredMarkerTime = null;'),
+  'hover state must survive beyond the chart initialization closure');
+
 console.log('Trade marker x-hover regression checks passed');
