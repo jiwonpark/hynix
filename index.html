@@ -2240,19 +2240,19 @@
           <div class="shortTermGrid">
             <!-- Left Column: Short-Term Lightweight Chart -->
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
-              <div id="shortTermSpreadChartHost" style="width: 100%; height: 360px;"></div>
+              <div id="shortTermSpreadChartHost" style="width: 100%; height: 350px;"></div>
               <!-- Chart Legend (Interactive MA Toggles) -->
               <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #475569;">
                 <div style="display: flex; gap: 8px; flex-wrap: wrap; font-weight: 600; align-items: center;">
                   <span style="display: inline-flex; align-items: center; gap: 4px; color: #0284c7;"><span style="display: inline-block; width: 10px; height: 3px; background: #0284c7; border-radius: 1px;"></span> Parity</span>
                   <span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA('ma7')" title="Click to toggle 7-MA" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; color: #b45309; transition: opacity 0.15s ease;">
-                    <span style="display: inline-block; width: 10px; height: 2px; background: #f59e0b; border-radius: 1px;"></span> 7-MA: <strong id="valShortTermMa7">--%</strong>
+                    <span style="display: inline-block; width: 10px; height: 1px; background: #f59e0b; border-radius: 1px;"></span> 7-MA: <strong id="valShortTermMa7">--%</strong>
                   </span>
                   <span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA('ma24')" title="Click to toggle 24-MA" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; color: #6d28d9; transition: opacity 0.15s ease;">
-                    <span style="display: inline-block; width: 10px; height: 2px; background: #8b5cf6; border-radius: 1px;"></span> 24-MA: <strong id="valShortTermMa24">--%</strong>
+                    <span style="display: inline-block; width: 10px; height: 1px; background: #8b5cf6; border-radius: 1px;"></span> 24-MA: <strong id="valShortTermMa24">--%</strong>
                   </span>
                   <span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA('ma60')" title="Click to toggle 60-MA" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; color: #0891b2; transition: opacity 0.15s ease;">
-                    <span style="display: inline-block; width: 10px; height: 2px; background: #06b6d4; border-radius: 1px;"></span> 60-MA: <strong id="valShortTermMa60">--%</strong>
+                    <span style="display: inline-block; width: 10px; height: 1px; background: #06b6d4; border-radius: 1px;"></span> 60-MA: <strong id="valShortTermMa60">--%</strong>
                   </span>
                   <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;"><strong style="color: #dc2626;">▼</strong> Short</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #16a34a;">▲</strong> Cover</span>
@@ -9144,7 +9144,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             visible: true,
             borderVisible: false,
             autoScale: true,
-            scaleMargins: { top: 0.15, bottom: 0.15 }
+            scaleMargins: { top: 0.06, bottom: 0.06 }
           },
           timeScale: {
             visible: true,
@@ -9173,7 +9173,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         this.shortTermMa7Series = this.shortTermChart.addLineSeries({
           color: "#f59e0b",
-          lineWidth: 1.5,
+          lineWidth: 1,
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: true,
@@ -9182,7 +9182,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         this.shortTermMa24Series = this.shortTermChart.addLineSeries({
           color: "#8b5cf6",
-          lineWidth: 2,
+          lineWidth: 1,
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: true,
@@ -9191,7 +9191,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         this.shortTermMa60Series = this.shortTermChart.addLineSeries({
           color: "#06b6d4",
-          lineWidth: 1.5,
+          lineWidth: 1,
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: true,
