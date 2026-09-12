@@ -258,6 +258,15 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
         """
         from backend.server import load_auto_tranche_state, save_auto_tranche_state
 
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        state_patch = patch("backend.server.STATE_FILE", Path(temporary.name) / "state.json")
+        state_patch.start()
+        self.addCleanup(state_patch.stop)
+
         initial_state = load_auto_tranche_state()
         self.assertIn("enabled", initial_state)
         self.assertIn("last_step_time", initial_state)

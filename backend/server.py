@@ -14,6 +14,7 @@ from .binance_client import BinanceFuturesClient
 from .upbit_client import UpbitClient
 
 STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
+scale_in_lock = asyncio.Lock()
 
 def load_auto_tranche_state() -> Dict[str, Any]:
     try:
@@ -22,6 +23,7 @@ def load_auto_tranche_state() -> Dict[str, Any]:
                 return json.load(f)
     except Exception as e:
         logger.error(f"Failed to read auto_tranche_state: {e}")
+        return {"enabled": False, "execution_recovery": {"error": "Cannot read execution state"}}
     return {
         "enabled": False,
         "last_step_time": 0,
@@ -33,10 +35,13 @@ def load_auto_tranche_state() -> Dict[str, Any]:
 
 def save_auto_tranche_state(state: Dict[str, Any]):
     try:
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
+        temporary = STATE_FILE.with_suffix(".tmp")
+        with open(temporary, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
+        temporary.replace(STATE_FILE)
     except Exception as e:
         logger.error(f"Failed to save auto_tranche_state: {e}")
+        raise
 
 logging.basicConfig(
     level=logging.INFO,
@@ -396,19 +401,21 @@ async def get_hedged_status() -> Dict[str, Any]:
         executions = []
         try:
             start_ms = int((time.time() - 24 * 3600) * 1000)
-            skhy_coro = binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "startTime": start_ms, "limit": 100}, signed=True)
-            stock_coro = binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": stock_sym, "startTime": start_ms, "limit": 100}, signed=True) if stock_sym else asyncio.sleep(0, result=[])
-            res_skhy, res_stock = await asyncio.gather(skhy_coro, stock_coro, return_exceptions=True)
+            async def recent_trades(symbol):
+                trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": symbol, "startTime": start_ms, "limit": 1000}, signed=True)
+                if isinstance(trades, list) and not trades:
+                    trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": symbol, "limit": 1000}, signed=True)
+                return trades
 
-            if isinstance(res_skhy, list) and len(res_skhy) == 0:
-                res_skhy = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
-            if isinstance(res_stock, list) and len(res_stock) == 0 and stock_sym:
-                res_stock = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": stock_sym, "limit": 100}, signed=True)
+            history_stock_sym = stock_sym or "CSOPSKHYNIX2LUSDT"
+            res_skhy, res_stock = await asyncio.gather(
+                recent_trades("SKHYUSDT"), recent_trades(history_stock_sym), return_exceptions=True)
 
             if isinstance(res_skhy, list):
                 for t in res_skhy:
                     executions.append({
                         "id": str(t.get("id", "")),
+                        "order_id": str(t.get("orderId", t.get("id", ""))),
                         "symbol": "SKHYUSDT",
                         "side": t.get("side", ""),
                         "price": float(t.get("price", 0.0)),
@@ -423,7 +430,8 @@ async def get_hedged_status() -> Dict[str, Any]:
                 for t in res_stock:
                     executions.append({
                         "id": str(t.get("id", "")),
-                        "symbol": stock_sym,
+                        "order_id": str(t.get("orderId", t.get("id", ""))),
+                        "symbol": history_stock_sym,
                         "side": t.get("side", ""),
                         "price": float(t.get("price", 0.0)),
                         "qty": float(t.get("qty", 0.0)),
@@ -475,25 +483,41 @@ async def get_hedged_status() -> Dict[str, Any]:
         now_sec = time.time()
         active_tranches_queue = []
 
-        if executions:
-            for tr in executions:
-                action = tr.get("action_type")
-                t_sec = tr.get("time", 0) / 1000
+        # A market order may produce many fills. Attribute by order and consume
+        # trim quantities, retaining the 0.01 ADR core from each full entry.
+        orders = {}
+        for tr in executions:
+            if tr["symbol"] != "SKHYUSDT":
+                continue
+            key = (tr["order_id"], tr["side"])
+            order = orders.setdefault(key, {**tr, "qty": 0.0, "cost": 0.0})
+            order["qty"] += tr["qty"]
+            order["cost"] += tr["qty"] * tr["price"]
+            order["time"] = max(order["time"], tr["time"])
+        for tr in sorted(orders.values(), key=lambda t: t["time"]):
+            qty = round(tr["qty"], 8)
+            if tr["action_type"] == "ENTRY_SHORT":
+                t_sec = tr["time"] / 1000
                 matched_bar = min(parity_bars, key=lambda b: abs(b["time"] - t_sec)) if parity_bars else None
                 bar_spread = matched_bar["value"] if matched_bar else base_entry
-
-                if action == "ENTRY_SHORT":
+                while qty > 1e-8:
+                    entry_qty = min(0.08, qty)
                     active_tranches_queue.append({
-                        "trade_id": str(tr.get("id", "")),
-                        "time": t_sec,
-                        "qty": float(tr.get("qty", 0.08)),
+                        "trade_id": tr["order_id"], "time": t_sec,
+                        "qty": entry_qty, "trim_qty": min(0.07, entry_qty),
                         "entry_spread": round(bar_spread, 2),
-                        "entry_price": float(tr.get("price", 0.0)),
+                        "entry_price": tr["cost"] / tr["qty"],
                         "target_out_spread": round(bar_spread - 0.08, 2)
                     })
-                elif action == "EXIT_SHORT":
-                    if active_tranches_queue:
-                        active_tranches_queue.pop()  # LIFO: exit pops the most recent entry tranche
+                    qty = round(qty - entry_qty, 8)
+            else:
+                while qty > 1e-8 and active_tranches_queue:
+                    tranche = active_tranches_queue[-1]
+                    consumed = min(qty, tranche["trim_qty"])
+                    tranche["trim_qty"] = round(tranche["trim_qty"] - consumed, 8)
+                    qty = round(qty - consumed, 8)
+                    if tranche["trim_qty"] <= 1e-8:
+                        active_tranches_queue.pop()
 
         # 1-to-1 Entry-to-Exit Matching Invariant:
         # Each scale-out requires a corresponding un-exited scale-in entry.
@@ -524,7 +548,8 @@ async def get_hedged_status() -> Dict[str, Any]:
         is_out_profitable_relative_to_latest = bool(current_target_tranche and curr_spread <= out_target_spread)
         is_dwell_satisfied = bool(current_target_tranche and dwell_time_sec >= 120)
         can_take_profit = bool(
-            speculative_tranches_active > 0 
+            speculative_tranches_active > 0
+            and current_target_tranche["trim_qty"] >= 0.07
             and eligible_for_take_profit 
             and is_out_profitable_relative_to_latest 
             and is_dwell_satisfied
@@ -653,7 +678,7 @@ async def get_hedged_status() -> Dict[str, Any]:
         return {"error": str(e)}
 
 @app.get("/api/trade/short_term_parity")
-async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[str, Any]:
+async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time: Optional[int] = None) -> Dict[str, Any]:
     """
     Returns high-resolution short-term parity spread series, aligned executions,
     and markers for the live entry/exit chart.
@@ -663,9 +688,13 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[
         interval = interval if interval in ["1m", "5m", "15m"] else "5m"
         interval_ms = (1 if interval == "1m" else (5 if interval == "5m" else 15)) * 60 * 1000
 
+        page_params = {"interval": interval, "limit": limit}
+        if end_time is not None:
+            page_params["endTime"] = max(0, end_time)
+
         k1, k2 = await asyncio.gather(
-            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYUSDT", "interval": interval, "limit": limit}),
-            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYNIXUSDT", "interval": interval, "limit": limit}),
+            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYUSDT", **page_params}),
+            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYNIXUSDT", **page_params}),
             return_exceptions=True
         )
 
@@ -691,8 +720,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[
         executions = []
         try:
             start_ms = int((bars[0]["time"] - 1800) * 1000) if bars else int((time.time() - 6 * 3600) * 1000)
-            trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "startTime": start_ms, "limit": 100}, signed=True)
-            if not isinstance(trades, list) or len(trades) == 0:
+            trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "startTime": start_ms, "endTime": (bars[-1]["time"] * 1000 + interval_ms - 1) if bars else int(time.time() * 1000), "limit": 1000}, signed=True)
+            if end_time is None and (not isinstance(trades, list) or len(trades) == 0):
                 trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
 
             if isinstance(trades, list) and bars:
@@ -701,7 +730,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[
                 for tr in sorted(trades, key=lambda x: x.get("time", 0)):
                     t_ms = int(tr.get("time", 0))
                     t_sec = int(t_ms / 1000)
-                    if t_sec >= min_time_sec - 600:
+                    if min_time_sec <= t_sec < bars[-1]["time"] + interval_ms // 1000:
                         bar_bucket_sec = int((t_ms // interval_ms) * (interval_ms // 1000))
                         matched_bar = min(bars, key=lambda b: abs(b["time"] - bar_bucket_sec))
                         marker_time = matched_bar["time"]
@@ -761,6 +790,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[
             "bars": bars,
             "markers": markers,
             "executions": executions,
+            "next_end_time": bars[0]["time"] * 1000 - 1 if bars else None,
+            "has_more": bool(bars) and len(k1) >= limit and len(k2) >= limit,
             "latest_parity": bars[-1]["value"] if bars else None
         }
     except Exception as e:
@@ -769,6 +800,11 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100) -> Dict[
 
 @app.post("/api/trade/step_tranche")
 async def step_tranche() -> Dict[str, Any]:
+    async with scale_in_lock:
+        return await execute_scale_in()
+
+
+async def execute_scale_in() -> Dict[str, Any]:
     """
     Executes Asymmetric Scale-In Tranche:
     - Sets 10x leverage and CROSSED margin on SKHYUSDT and CSOPSKHYNIX2LUSDT
@@ -776,7 +812,11 @@ async def step_tranche() -> Dict[str, Any]:
     - BUY MARKET 1.40 CSOPSKHYNIX2LUSDT (Long CSOP 2x ETF Perp)
     - Leaves +0.01 SKHY / +0.20 CSOP residual core inventory upon GCD trim!
     """
+    recovery = None
     try:
+        state = load_auto_tranche_state()
+        if state.get("execution_recovery"):
+            return {"success": False, "error": "Scale-in paused: reconcile the previous order outcomes before resuming.", "recovery_required": True, "execution_recovery": state["execution_recovery"]}
         overview = await binance_client.get_detailed_account_overview()
         if not overview.get("authenticated"):
             return {"success": False, "error": "Binance client not authenticated"}
@@ -791,12 +831,25 @@ async def step_tranche() -> Dict[str, Any]:
             binance_client.set_leverage("CSOPSKHYNIX2LUSDT", 10),
             binance_client.set_margin_type("SKHYUSDT", "CROSSED"),
             binance_client.set_margin_type("CSOPSKHYNIX2LUSDT", "CROSSED"),
-            return_exceptions=True
         )
 
+        recovery = {"started_at": time.time(), "phase": "ADR_SUBMITTING", "order_adr": None, "order_stock": None}
+        state["execution_recovery"] = recovery
+        save_auto_tranche_state(state)  # Persist before any order can reach the exchange.
         order_adr = await binance_client.create_order("SKHYUSDT", "SELL", 0.08, "MARKET")
+        recovery["order_adr"] = order_adr
+        if order_adr.get("status") != "FILLED" or float(order_adr.get("executedQty", 0)) < 0.08:
+            raise RuntimeError("ADR fill is incomplete or unconfirmed")
+        recovery["phase"] = "ETF_SUBMITTING"
+        save_auto_tranche_state(state)
         order_stock = await binance_client.create_order("CSOPSKHYNIX2LUSDT", "BUY", 1.40, "MARKET")
 
+        recovery["order_stock"] = order_stock
+        if order_stock.get("status") != "FILLED" or float(order_stock.get("executedQty", 0)) < 1.40:
+            raise RuntimeError("ETF fill is incomplete or unconfirmed")
+        state = load_auto_tranche_state()
+        state.pop("execution_recovery", None)
+        save_auto_tranche_state(state)
         return {
             "success": True,
             "message": "Asymmetric Scale-in filled: Short 0.08 SKHYUSDT + Long 1.40 CSOPSKHYNIX2LUSDT",
@@ -807,7 +860,12 @@ async def step_tranche() -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception("Error executing tranche step")
-        return {"success": False, "error": str(e)}
+        if recovery is not None:
+            recovery["error"] = str(e)
+            state = load_auto_tranche_state()
+            state.update(enabled=False, execution_recovery=recovery, last_error=str(e), last_action="EXECUTION_RECONCILIATION_REQUIRED")
+            save_auto_tranche_state(state)
+        return {"success": False, "error": str(e), "recovery_required": recovery is not None, "execution_recovery": recovery}
 
 @app.post("/api/trade/reduce_tranche")
 async def reduce_tranche(force: bool = False) -> Dict[str, Any]:
@@ -903,6 +961,8 @@ async def get_auto_tranche_status() -> Dict[str, Any]:
 async def toggle_auto_tranche(enabled: Optional[bool] = None) -> Dict[str, Any]:
     """Toggles or sets the 24/7 EC2 server-side auto-tranche execution daemon."""
     state = load_auto_tranche_state()
+    if state.get("execution_recovery") and enabled is not False:
+        return {"success": False, "error": "Reconcile the recorded order outcomes before resuming auto-trading.", "state": state}
     if enabled is None:
         state["enabled"] = not state.get("enabled", False)
     else:
@@ -923,7 +983,7 @@ async def auto_tranche_worker():
     while True:
         try:
             state = load_auto_tranche_state()
-            if state.get("enabled", False):
+            if state.get("enabled", False) and not state.get("execution_recovery"):
                 status = await get_hedged_status()
                 if status.get("authenticated"):
                     criteria = status.get("auto_tranche_criteria", {})
@@ -956,6 +1016,7 @@ async def auto_tranche_worker():
                         if now - last_step >= 60:
                             logger.info("[Auto-Tranche Worker] Executing autonomous speculative scale-in step...")
                             res = await step_tranche()
+                            state = load_auto_tranche_state()
                             state["last_step_time"] = now
                             state["last_action_time"] = now
                             if res.get("success"):

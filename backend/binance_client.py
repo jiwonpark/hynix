@@ -109,6 +109,8 @@ class BinanceFuturesClient:
             "type": order_type.upper(),
             "quantity": f"{quantity:.2f}"
         }
+        if order_type.upper() == "MARKET":
+            params["newOrderRespType"] = "RESULT"
         if reduce_only:
             params["reduceOnly"] = "true"
         if order_type.upper() == "LIMIT":

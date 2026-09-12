@@ -1,0 +1,57 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const html = fs.readFileSync(require('node:path').join(__dirname, '../index.html'), 'utf8');
+const start = html.indexOf('      async fetchShortTermParity(older = false)');
+const end = html.indexOf('      renderShortTermChart(data)', start);
+const method = html.slice(start, end);
+const label = {};
+const context = vm.createContext({ window: { location: { origin: 'http://test' } }, $: () => label, AbortSignal, console, Date });
+const engine = vm.runInContext(`({state: {shortTermInterval: '5m'}, ${method}})`, context);
+let range = { from: 0, to: 1 }, rendered;
+engine.shortTermChart = { timeScale: () => ({getVisibleLogicalRange: () => range, setVisibleLogicalRange: r => {range = r;}}) };
+engine.renderShortTermChart = data => { rendered = data; };
+const bars = times => times.map(time => ({time, value: 139}));
+const response = (times, more = true) => ({ok: true, json: async () => ({success: true, bars: bars(times), markers: [], has_more: more})});
+(async () => {
+  context.fetch = async () => response([300, 600, 900]);
+  await engine.fetchShortTermParity();
+  range = {from: 0, to: 1};
+  let release, calls = 0;
+  context.fetch = async url => {
+    calls++;
+    assert.ok(url.includes('end_time=299999'));
+    return new Promise(resolve => {release = resolve;});
+  };
+  const pending = engine.fetchShortTermParity(true);
+  await engine.fetchShortTermParity(true);
+  assert.equal(calls, 1, 'duplicate scrolling requests must be coalesced');
+  range = {from: -1, to: 0}; // The user continues dragging while the request is pending.
+  release(response([60, 120, 240]));
+  await pending;
+  assert.deepEqual(JSON.parse(JSON.stringify(range)), {from: 2, to: 3});
+  assert.equal(rendered.bars.length, 6);
+  context.fetch = async () => response([600, 900, 1200]);
+  await engine.fetchShortTermParity();
+  assert.equal(rendered.bars[0].time, 60, 'live polling must preserve older bars');
+  assert.equal(rendered.bars.length, 7);
+  assert.equal(range.from, 2, 'live polling must preserve historical viewport');
+  context.fetch = async () => response([], false);
+  await engine.fetchShortTermParity(true);
+  assert.equal(engine.shortTermHistory.hasMore, false);
+  context.fetch = async () => {throw new Error('exhausted history must not refetch');};
+  await engine.fetchShortTermParity(true);
+
+  engine.shortTermHistory.hasMore = true;
+  context.fetch = async () => new Promise(resolve => {release = resolve;});
+  const stale = engine.fetchShortTermParity(true);
+  engine.state.shortTermInterval = '1m';
+  engine.shortTermHistory = null;
+  context.fetch = async () => response([1800, 1860]);
+  await engine.fetchShortTermParity();
+  release(response([1, 2]));
+  await stale;
+  assert.equal(engine.shortTermHistory.interval, '1m');
+  assert.equal(rendered.bars[0].time, 1800, 'old interval response must be ignored');
+  console.log('Chart history regression checks passed');
+})().catch(error => {console.error(error); process.exitCode = 1;});

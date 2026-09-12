@@ -2777,7 +2777,7 @@
 
           if (!response.ok) throw new Error(`${symbol} returned ${response.status}`);
           const data = await response.json();
-          if (Array.isArray(data) && data.length) {
+          if (Array.isArray(data)) {
             workingKlineEndpoint = ep;
             return data.map((item) => ({ time: Number(item[0]), close: Number(item[4]) }));
           }
@@ -5401,6 +5401,7 @@
     let socketVersion = 0;
     let refreshVersion = 0;
     let fullHistoryLoaded = false;
+    let olderHistoryExhausted = false;
 
     function invalidateOptimizationForHistoryChange(previousBars, currentBars) {
       const hasResults = (window.allOptimizationCandidates?.length || 0) > 0
@@ -5435,10 +5436,7 @@
         rows.push(item);
         rows.sort((a, b) => a.time - b.time);
       }
-      if (!fullHistoryLoaded) {
-        const limit = Math.max((limits[cachedInterval] || 1000), window.visibleBars || 0, 3000);
-        if (rows.length > limit) rows.splice(0, rows.length - limit);
-      }
+      // Keep scrolled-in history when a live candle arrives.
       if (wasPinned) {
         window.viewEndIndex = null;
         window.viewEndFloat = null;
@@ -5449,27 +5447,31 @@
       const assetKey = $("assetStrategy")?.value || "skhynix_arb";
       const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
 
-      if (loadingOlder || !cachedAdr.length) return;
+      if (loadingOlder || olderHistoryExhausted || !cachedAdr.length) return;
       if (assetConfig.symbolB && !cachedKorean.length) return;
 
       loadingOlder = true;
+      const requestVersion = refreshVersion;
+      const requestInterval = cachedInterval;
       $("status").textContent = "Loading older bars...";
       const endTime = assetConfig.symbolB
         ? Math.min(cachedAdr[0].time, cachedKorean[0].time) - 1
         : cachedAdr[0].time - 1;
-      const before = cachedRows.length;
       try {
         let olderAdr = [], olderKorean = [];
         if (assetConfig.symbolB) {
           [olderAdr, olderKorean] = await Promise.all([
-            fetchKlines(assetConfig.symbolA, cachedInterval, endTime),
-            fetchKlines(assetConfig.symbolB, cachedInterval, endTime)
+            fetchKlines(assetConfig.symbolA, requestInterval, endTime),
+            fetchKlines(assetConfig.symbolB, requestInterval, endTime)
           ]);
         } else {
-          olderAdr = await fetchKlines(assetConfig.symbolA, cachedInterval, endTime);
+          olderAdr = await fetchKlines(assetConfig.symbolA, requestInterval, endTime);
           olderKorean = olderAdr;
         }
 
+        if (requestVersion !== refreshVersion) return;
+        const currentRange = window.spreadChart?.timeScale().getVisibleLogicalRange();
+        const before = cachedRows.length;
         const adrByTime = new Map(cachedAdr.map((row) => [row.time, row]));
         olderAdr.concat(cachedAdr).forEach((row) => adrByTime.set(row.time, row));
         cachedAdr = Array.from(adrByTime.values()).sort((a, b) => a.time - b.time);
@@ -5484,6 +5486,7 @@
 
         rebuildFromCache();
         const added = Math.max(0, cachedRows.length - before);
+        olderHistoryExhausted = !olderAdr.length || (assetConfig.symbolB && !olderKorean.length);
         if (added) invalidateOptimizationForHistoryChange(before, cachedRows.length);
         if (window.viewEndFloat !== null && window.viewEndFloat !== undefined) {
           window.viewEndFloat += added;
@@ -5492,8 +5495,8 @@
           window.viewEndIndex += added;
         }
         renderCached(cachedRows);
-        if (added && window.spreadChart && window.pendingLogicalRangeBeforePrepend) {
-          const range = window.pendingLogicalRangeBeforePrepend;
+        if (added && window.spreadChart && currentRange) {
+          const range = currentRange;
           window.spreadChart.timeScale().setVisibleLogicalRange({
             from: range.from + added,
             to: range.to + added
@@ -5502,9 +5505,9 @@
         window.pendingLogicalRangeBeforePrepend = null;
         $("status").textContent = added ? `Prepended ${added} older bars` : "No older aligned bars returned";
       } catch (error) {
-        $("status").textContent = error.message;
+        if (requestVersion === refreshVersion) $("status").textContent = error.message;
       } finally {
-        loadingOlder = false;
+        if (requestVersion === refreshVersion) loadingOlder = false;
       }
     }
 
@@ -5728,6 +5731,8 @@
         socket = null;
       }
       fullHistoryLoaded = false;
+      olderHistoryExhausted = false;
+      loadingOlder = false;
       $("status").textContent = `Connecting to ${assetConfig.shortName}...`;
       const isKo = window.currentLang === "ko";
       $("position").textContent = isKo ? "동기화 중..." : "Connecting...";
@@ -5770,7 +5775,7 @@
         $("status").textContent = `WebSocket live: ${rows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d) | ${formatTime(lastTime, interval)} KST`;
 
         // Background History Backfill: Asynchronously fetch older pages without blocking UI
-        backfillHistoryInBackground(assetConfig, interval, refreshId);
+        // Older pages load on demand when the viewport approaches the left edge.
       } catch (error) {
         if (refreshId !== refreshVersion) return;
         console.error("Dashboard refresh failed", error);
@@ -5784,75 +5789,6 @@
       }
     }
 
-    async function backfillHistoryInBackground(assetConfig, interval, refreshId) {
-      try {
-        let pagesLoaded = 0;
-        const maxPages = 6;
-        while (pagesLoaded < maxPages) {
-          if (refreshId !== refreshVersion) return;
-          const earliestTime = Math.min(
-            cachedAdr[0]?.time || Infinity,
-            (assetConfig.symbolB ? cachedKorean[0]?.time : Infinity) || Infinity
-          );
-          if (!Number.isFinite(earliestTime)) break;
-          const endTime = earliestTime - 1;
-
-          let olderAdr = [], olderKorean = [];
-          if (assetConfig.symbolB) {
-            [olderAdr, olderKorean] = await Promise.all([
-              fetchKlines(assetConfig.symbolA, interval, endTime, 1000),
-              fetchKlines(assetConfig.symbolB, interval, endTime, 1000)
-            ]);
-          } else {
-            olderAdr = await fetchKlines(assetConfig.symbolA, interval, endTime, 1000);
-            olderKorean = olderAdr;
-          }
-
-          if (!olderAdr.length || (assetConfig.symbolB && !olderKorean.length)) break;
-
-          const beforeCount = cachedRows.length;
-          const adrByTime = new Map(cachedAdr.map((r) => [r.time, r]));
-          olderAdr.concat(cachedAdr).forEach((r) => adrByTime.set(r.time, r));
-          cachedAdr = Array.from(adrByTime.values()).sort((a, b) => a.time - b.time);
-
-          if (assetConfig.symbolB) {
-            const korByTime = new Map(cachedKorean.map((r) => [r.time, r]));
-            olderKorean.concat(cachedKorean).forEach((r) => korByTime.set(r.time, r));
-            cachedKorean = Array.from(korByTime.values()).sort((a, b) => a.time - b.time);
-          } else {
-            cachedKorean = cachedAdr;
-          }
-
-          pagesLoaded += 1;
-          rebuildFromCache();
-          const added = Math.max(0, cachedRows.length - beforeCount);
-          if (window.viewEndIndex !== null && window.viewEndIndex !== undefined) {
-            window.viewEndIndex += added;
-          }
-          if (window.viewEndFloat !== null && window.viewEndFloat !== undefined) {
-            window.viewEndFloat += added;
-          }
-
-          if (refreshId === refreshVersion) {
-            const firstTime = cachedRows[0]?.time;
-            const lastTime = cachedRows.at(-1)?.time;
-            const spanDays = firstTime && lastTime ? (lastTime - firstTime) / 86400000 : 0;
-            const selected = window.selectedOptimizationCandidate;
-            if (selected) {
-              $("status").textContent = `Selected Candidate: Dev PnL ${signedPct(selected.fullProfit)} | Max DD ${signedPct(selected.maxDd)} | ${cachedRows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d)`;
-            } else {
-              $("status").textContent = `WebSocket live: ${cachedRows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d) | ${formatTime(lastTime, interval)} KST`;
-            }
-          }
-
-          if (olderAdr.length < 1000) break;
-          await new Promise((resolve) => setTimeout(resolve, 300));
-        }
-        fullHistoryLoaded = true;
-      } catch (e) {
-        console.warn("Background history backfill paused", e);
-      }
-    }
     let viewRedrawFrame = 0;
     function scheduleViewRedraw() {
       if (viewRedrawFrame) return;
@@ -9157,7 +9093,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const isDaemonOn = Boolean(data.auto_tranche_criteria.backend_auto_tranche_enabled);
             $("chkAutoPeriodic48h").checked = isDaemonOn;
             if ($("badgeAutoPeriodicStatus")) {
-              $("badgeAutoPeriodicStatus").style.display = isDaemonOn ? "inline-block" : "none";
+              const recovery = data.auto_tranche_criteria.backend_auto_tranche_state?.execution_recovery;
+              const badge = $("badgeAutoPeriodicStatus");
+              badge.style.display = isDaemonOn || recovery ? "inline-block" : "none";
+              badge.textContent = recovery ? "⚠ PAUSED — CHECK ORDER OUTCOMES" : "● EC2 DAEMON ACTIVE";
+              badge.style.color = recovery ? "#b91c1c" : "#059669";
+              badge.title = recovery ? (recovery.error || "An order outcome needs reconciliation before trading resumes.") : "";
             }
           }
         }
@@ -9246,6 +9187,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           priceFormat: { type: "price", precision: 2, minMove: 0.01 }
         });
 
+        this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          if (range && range.from < 20 && !this.shortTermRendering) this.fetchShortTermParity(true);
+        });
         this.maVisibility = { ma7: true, ma24: true, ma60: true };
 
         let activeHoveredMarkerTime = null;
@@ -9347,7 +9291,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       setShortTermInterval(interval) {
+        if (interval === this.state.shortTermInterval) return;
         this.state.shortTermInterval = interval;
+        this.shortTermHistory = null;
         ["1m", "5m", "15m"].forEach(i => {
           const btn = $("btnShortInterval" + i);
           if (btn) btn.classList.toggle("active", i === interval);
@@ -9355,28 +9301,66 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.fetchShortTermParity();
       },
 
-      async fetchShortTermParity() {
+      async fetchShortTermParity(older = false) {
         const interval = this.state.shortTermInterval || "5m";
-        const origin = window.location.origin;
-        const endpoints = [
-          `${origin}/skhynix/api/trade/short_term_parity?interval=${interval}&limit=120`,
-          `/skhynix/api/trade/short_term_parity?interval=${interval}&limit=120`,
-          `${origin}/api/trade/short_term_parity?interval=${interval}&limit=120`,
-          `/api/trade/short_term_parity?interval=${interval}&limit=120`,
-          `http://localhost:8000/api/trade/short_term_parity?interval=${interval}&limit=120`
-        ];
-        for (const url of endpoints) {
-          try {
-            const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-            if (res.ok) {
-              const data = await res.json();
-              if (data.success && Array.isArray(data.bars)) {
-                this.renderShortTermChart(data);
-                break;
-              }
-            }
-          } catch (e) {}
+        if (!this.shortTermHistory || this.shortTermHistory.interval !== interval) {
+          this.shortTermHistory = { interval, bars: [], markers: [], hasMore: true, loading: false, loadingOlder: false };
         }
+        const history = this.shortTermHistory;
+        const flag = older ? "loadingOlder" : "loading";
+        if (history[flag] || (older && (!history.bars.length || !history.hasMore || Date.now() < (history.retryAfter || 0)))) return;
+        history[flag] = true;
+        const endTime = older ? history.bars[0].time * 1000 - 1 : null;
+        const query = `interval=${interval}&limit=120${older ? `&end_time=${endTime}` : ""}`;
+        const origin = window.location.origin;
+        const endpoints = [...new Set([
+          `${origin}/skhynix/api/trade/short_term_parity?${query}`,
+          `${origin}/api/trade/short_term_parity?${query}`,
+          `http://localhost:8000/api/trade/short_term_parity?${query}`
+        ])];
+        if (older && $("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Loading older data…";
+        try {
+          for (const url of endpoints) {
+            if (this.shortTermHistory !== history) return;
+            try {
+              const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+              if (!res.ok) continue;
+              const data = await res.json();
+              if (this.shortTermHistory !== history) return;
+              if (!data.success || !Array.isArray(data.bars)) continue;
+              // Capture the viewport at response time so scrolling during the request is preserved.
+              const previous = history.bars;
+              const range = previous.length ? this.shortTermChart?.timeScale().getVisibleLogicalRange() : null;
+              const page = data.bars.filter(b => !older || b.time * 1000 <= endTime);
+              const byTime = new Map(previous.map(b => [b.time, b]));
+              page.forEach(b => byTime.set(b.time, b));
+              history.bars = [...byTime.values()].sort((a, b) => a.time - b.time);
+              const added = previous.length ? history.bars.filter(b => b.time < previous[0].time).length : 0;
+              if (older || !previous.length) history.hasMore = data.has_more !== false && page.length > 0 && (!older || added > 0);
+              const min = page[0]?.time, max = page.at(-1)?.time;
+              const markers = new Map(history.markers.filter(m => !(m.time >= min && m.time <= max)).map(m => [`${m.time}:${m.is_entry}`, m]));
+              (data.markers || []).forEach(m => markers.set(`${m.time}:${m.is_entry}`, m));
+              history.markers = [...markers.values()].sort((a, b) => a.time - b.time);
+              this.shortTermRendering = true;
+              try {
+                this.renderShortTermChart({ ...data, bars: history.bars, markers: history.markers });
+                if (range) {
+                  // Follow new bars only if already watching the live edge.
+                  const shift = !older && range.to >= previous.length - 1 ? history.bars.length - previous.length : added;
+                  this.shortTermChart.timeScale().setVisibleLogicalRange({ from: range.from + shift, to: range.to + shift });
+                } else if (history.bars.length) {
+                  this.shortTermChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, history.bars.length - 100), to: history.bars.length + 2 });
+                }
+              } finally { this.shortTermRendering = false; }
+              if (older && !history.hasMore && $("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Start of available history";
+              return;
+            } catch (e) { console.warn("Parity page request failed", e); }
+          }
+          if (this.shortTermHistory === history) {
+            history.retryAfter = Date.now() + 5000;
+            if ($("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Data unavailable — scroll to retry";
+          }
+        } finally { history[flag] = false; }
       },
 
       renderShortTermChart(data) {
@@ -10018,13 +10002,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               `/api/trade/toggle_auto_tranche?enabled=${isChecked}`,
               `http://localhost:8000/api/trade/toggle_auto_tranche?enabled=${isChecked}`
             ];
+            let result = null;
             for (const url of endpoints) {
               try {
                 const res = await fetch(url, { method: "POST", signal: AbortSignal.timeout(2000) });
-                if (res.ok) break;
+                if (res.ok) { result = await res.json(); break; }
               } catch (err) {}
             }
-            if (isChecked) {
+            if (!result?.success) {
+              showToast(result?.error || "Could not update auto-trading status", "error");
+              e.target.checked = false;
+            } else if (isChecked) {
               showToast("⚡ 24/7 EC2 Autonomous Auto-Tranche Activated (Daemon running server-side)", "success");
             } else {
               showToast("⏸ EC2 Autonomous Auto-Tranche Paused", "info");
