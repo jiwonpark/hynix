@@ -2315,8 +2315,14 @@
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
                   <div id="barCritTPProgress" style="width: 10%; height: 100%; background: #10b981;"></div>
                 </div>
-                <div style="font-size: 10px; color: #64748b; margin-top: 5px; padding-top: 4px; border-top: 1px dashed #e2e8f0; display: flex; justify-content: space-between; overflow-x: auto;">
-                  <span>LIFO Queue: <strong id="valCritQueueSummary" style="color: #0f172a;">T1: 139.30% (≤139.22%)</strong></span>
+                <div style="font-size: 10px; color: #64748b; margin-top: 5px; padding-top: 5px; border-top: 1px dashed #e2e8f0;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
+                    <strong style="color: #0f172a; font-size: 10.5px;">LIFO TRANCHE STACK</strong>
+                    <span id="valCritStackCount">0 unmatched · newest exits first</span>
+                  </div>
+                  <div id="lifoTrancheStack" style="display: flex; flex-direction: column; gap: 5px; max-height: 320px; overflow-y: auto; padding-right: 2px;" aria-live="polite">
+                    <div style="padding: 8px; text-align: center; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 5px;">Stack empty</div>
+                  </div>
                 </div>
               </div>
 
@@ -9597,17 +9603,41 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
         }
 
-        if ($("valCritQueueSummary")) {
-          const queue = criteria.active_tranches_queue;
-          if (Array.isArray(queue) && queue.length > 0) {
-            $("valCritQueueSummary").innerHTML = queue.map((t, i) => {
-              const isTop = (i === queue.length - 1);
-              return isTop 
-                ? `<span style="color: #16a34a; font-weight: 800;">[Next Out: T${i+1} ${t.entry_spread}% ➔ ≤${t.target_out_spread}%]</span>` 
-                : `<span style="color: #64748b;">T${i+1}: ${t.entry_spread}%</span>`;
-            }).join(" &rarr; ");
+        if ($("lifoTrancheStack")) {
+          const stack = Array.isArray(criteria.active_tranche_stack)
+            ? criteria.active_tranche_stack
+            : (Array.isArray(criteria.active_tranches_queue) ? criteria.active_tranches_queue : []);
+          const count = $("valCritStackCount");
+          if (count) count.textContent = `${stack.length} unmatched · newest exits first`;
+          if (!stack.length) {
+            $("lifoTrancheStack").innerHTML = `<div style="padding: 8px; text-align: center; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 5px;">Stack empty · accumulated core remains protected</div>`;
           } else {
-            $("valCritQueueSummary").textContent = "Queue Empty (0 Tranches)";
+            const newestFirst = stack.map((tranche, index) => ({ tranche, index })).reverse();
+            $("lifoTrancheStack").innerHTML = newestFirst.map(({ tranche: t, index }, visualIndex) => {
+              const top = visualIndex === 0;
+              const net = Number(t.estimated_net_pnl_usd);
+              const hasPnl = t.profit_estimate_available && Number.isFinite(net);
+              const pnlText = hasPnl ? `${net >= 0 ? "+" : ""}$${net.toFixed(3)}` : "unverified";
+              const pnlColor = hasPnl ? (net > 0.02 ? "#16a34a" : "#dc2626") : "#d97706";
+              const ageSec = Math.max(0, Math.floor(Date.now() / 1000 - Number(t.time || 0)));
+              const ageText = ageSec >= 3600 ? `${Math.floor(ageSec / 3600)}h ${Math.floor((ageSec % 3600) / 60)}m` : `${Math.floor(ageSec / 60)}m ${ageSec % 60}s`;
+              const adrOrder = String(t.trade_id || "").replace(/\D/g, "") || "—";
+              const etfOrder = String(t.paired_stock_order_id || "").replace(/\D/g, "") || "—";
+              const adrEntry = Number(t.entry_price);
+              const etfEntry = Number(t.stock_entry_price);
+              return `<div style="padding: 7px 8px; border: ${top ? "1.5px solid #16a34a" : "1px solid #cbd5e1"}; border-radius: 6px; background: ${top ? "#f0fdf4" : "#fff"}; box-shadow: ${top ? "0 1px 3px rgba(22,163,74,.12)" : "none"};">
+                <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+                  <strong style="color:${top ? "#166534" : "#334155"};">${top ? "TOP · NEXT EXIT" : `STACK ${visualIndex + 1}`} <span style="color:#64748b;">T${index + 1}</span></strong>
+                  <strong style="color:${pnlColor};">Est. net ${pnlText}</strong>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); gap:2px 10px; margin-top:4px; color:#64748b;">
+                  <span>Spread <strong style="color:#334155;">${Number(t.entry_spread).toFixed(2)}% → ≤${Number(t.target_out_spread).toFixed(2)}%</strong></span>
+                  <span>Age <strong style="color:#334155;">${ageText}</strong></span>
+                  <span>ADR 0.08 @ <strong style="color:#334155;">${Number.isFinite(adrEntry) ? `$${adrEntry.toFixed(2)}` : "—"}</strong> · #${adrOrder}</span>
+                  <span>ETF 1.40 @ <strong style="color:#334155;">${Number.isFinite(etfEntry) ? `$${etfEntry.toFixed(4)}` : "—"}</strong> · #${etfOrder}</span>
+                </div>
+              </div>`;
+            }).join("");
           }
         }
 

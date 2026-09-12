@@ -141,6 +141,12 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.client.request.side_effect = request
         criteria = (await server.get_hedged_status())['auto_tranche_criteria']
         self.assertTrue(criteria['can_take_profit'])
+        self.assertIs(criteria['active_tranche_stack'], criteria['active_tranches_queue'])
+        self.assertEqual(len(criteria['active_tranche_stack']), 1)
+        stack_top = criteria['active_tranche_stack'][-1]
+        self.assertEqual(stack_top['paired_stock_order_id'], '1')
+        self.assertTrue(stack_top['profit_estimate_available'])
+        self.assertIsNotNone(stack_top['estimated_net_pnl_usd'])
         server.get_cached_parity_bars.assert_awaited_with('5m', 60)
         server.get_cached_parity_bars.return_value = self.ma_bars([141] * 60)
         criteria = (await server.get_hedged_status())['auto_tranche_criteria']

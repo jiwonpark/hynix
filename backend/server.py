@@ -554,6 +554,24 @@ async def get_hedged_status() -> Dict[str, Any]:
         core_accumulated_skhy = round(max(0.0, adr_qty - (speculative_tranches_active * 0.08)), 4)
         core_accumulated_csop = round(max(0.0, stock_qty - (speculative_tranches_active * 1.40)), 4)
 
+        auto_state = load_auto_tranche_state()
+        for stack_index, tranche in enumerate(active_tranches_queue):
+            profit = estimate_tranche_exit(
+                tranche, executions, adr_mark, stock_mark, stock_sym,
+                auto_state.get("entry_order_pairs", []), now_sec)
+            tranche["stack_index"] = stack_index
+            tranche["paired_stock_order_id"] = profit.get("stock_order_id")
+            tranche["pairing"] = profit.get("pairing")
+            tranche["profit_estimate_available"] = profit["available"]
+            tranche["profit_reason"] = profit["reason"]
+            tranche["estimated_net_pnl_usd"] = (
+                round(profit["net_pnl_usd"], 6)
+                if profit["net_pnl_usd"] is not None else None)
+            tranche["estimated_gross_pnl_usd"] = (
+                round(profit["gross_pnl_usd"], 6)
+                if profit.get("gross_pnl_usd") is not None else None)
+            tranche["stock_entry_price"] = profit.get("stock_entry_price")
+
         # The active candidate for the next scale-out is strictly the top of the LIFO stack
         if active_tranches_queue:
             current_target_tranche = active_tranches_queue[-1]
@@ -566,7 +584,6 @@ async def get_hedged_status() -> Dict[str, Any]:
             dwell_time_sec = 999
             out_target_spread = round(base_entry - 0.08, 2)
 
-        auto_state = load_auto_tranche_state()
         tranche_profit = estimate_tranche_exit(
             current_target_tranche, executions, adr_mark, stock_mark, stock_sym,
             auto_state.get("entry_order_pairs", []), now_sec)
@@ -642,7 +659,8 @@ async def get_hedged_status() -> Dict[str, Any]:
             "status_scale_in": status_scale_in,
 
             # Anti-Churn & Queued Multi-Tranche Out Tracking:
-            "active_tranches_queue": active_tranches_queue,
+            "active_tranche_stack": active_tranches_queue,
+            "active_tranches_queue": active_tranches_queue,  # Backward-compatible alias.
             "current_target_tranche": current_target_tranche,
             "latest_entry_spread": round(latest_in_spread, 2),
             "out_target_spread": out_target_spread,
