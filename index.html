@@ -2240,7 +2240,7 @@
           <div class="shortTermGrid">
             <!-- Left Column: Short-Term Lightweight Chart -->
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
-              <div id="shortTermSpreadChartHost" style="width: 100%; height: 260px;"></div>
+              <div id="shortTermSpreadChartHost" style="width: 100%; height: 360px;"></div>
               <!-- Chart Legend (Interactive MA Toggles) -->
               <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #475569;">
                 <div style="display: flex; gap: 8px; flex-wrap: wrap; font-weight: 600; align-items: center;">
@@ -9122,7 +9122,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (typeof LightweightCharts === "undefined") return;
 
         this.shortTermChart = LightweightCharts.createChart(host, {
-          height: 250,
+          height: 350,
           layout: { background: { color: "#f8fafc" }, textColor: "#475569" },
           localization: {
             locale: "ko-KR",
