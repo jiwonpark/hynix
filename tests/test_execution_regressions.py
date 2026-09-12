@@ -128,8 +128,11 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         async def request(method, path, params, **kwargs):
             if 'ticker' in path:
                 return {'price': '1400'}
-            return [{'id': 1, 'orderId': 1, 'side': 'SELL', 'qty': .08, 'price': 196,
-                     'time': bars[0]['time'] * 1000}] if params['symbol'] == 'SKHYUSDT' else []
+            if params['symbol'] == 'SKHYUSDT':
+                return [{'id': 1, 'orderId': 1, 'side': 'SELL', 'qty': .08, 'price': 196, 'commission': .001,
+                         'time': bars[0]['time'] * 1000}]
+            return [{'id': 1, 'orderId': 1, 'side': 'BUY', 'qty': 1.4, 'price': 5.6, 'commission': .001,
+                     'time': bars[0]['time'] * 1000 + 1000}]
         self.client.request.side_effect = request
         criteria = (await server.get_hedged_status())['auto_tranche_criteria']
         self.assertTrue(criteria['can_take_profit'])
@@ -140,18 +143,35 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(criteria['status_take_profit'], 'AWAITING_DOWNWARD_MA_STACK')
         server.get_cached_parity_bars.return_value = bars
         overview['positions'][0]['unrealized_pnl'] = -1
-        self.assertFalse((await server.get_hedged_status())['auto_tranche_criteria']['can_take_profit'])
+        self.assertTrue((await server.get_hedged_status())['auto_tranche_criteria']['can_take_profit'])
+        # Account profit cannot subsidize a losing target tranche.
+        overview['positions'][0]['unrealized_pnl'] = 100
+        overview['positions'][0]['mark_price'] = 205
+        result = await server.get_hedged_status()
+        self.assertFalse(result['eligible_for_take_profit'])
+        self.assertFalse(result['auto_tranche_criteria']['can_take_profit'])
 
-    async def test_manual_exit_blocks_without_stack_and_emergency_bypasses(self):
-        self.client.get_detailed_account_overview.return_value['positions'] = [
+    async def test_manual_exit_uses_shared_criteria_and_emergency_bypasses(self):
+        positions = [
             {'symbol': 'SKHYUSDT', 'position_amt': -.08, 'unrealized_pnl': 1},
             {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 1.4}]
-        self.client.request.return_value = []
+        self.client.get_detailed_account_overview.return_value['positions'] = positions
         self.client.create_order.return_value = {'status': 'FILLED'}
-        self.assertFalse((await server.reduce_tranche())['success'])
-        self.client.create_order.assert_not_awaited()
-        server.get_cached_parity_bars.return_value = self.ma_bars([141 - i * .01 for i in range(60)])
-        self.assertTrue((await server.reduce_tranche())['success'])
-        self.assertEqual(self.client.create_order.await_count, 2)
-        server.get_cached_parity_bars.return_value = []
-        self.assertTrue((await server.reduce_tranche(force=True))['success'])
+        status = {'adr_position': positions[0], 'stock_position': positions[1],
+                  'auto_tranche_criteria': {'can_take_profit': False, 'status_take_profit': 'LOCKED_AWAITING_PROFIT'}}
+        with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
+            self.assertFalse((await server.reduce_tranche())['success'])
+            self.client.create_order.assert_not_awaited()
+            status['auto_tranche_criteria']['can_take_profit'] = True
+            self.assertTrue((await server.reduce_tranche())['success'])
+            self.assertEqual(self.client.create_order.await_count, 2)
+            status['auto_tranche_criteria']['can_take_profit'] = False
+            self.assertTrue((await server.reduce_tranche(force=True))['success'])
+
+    async def test_successful_entry_records_both_order_ids(self):
+        self.client.create_order.side_effect = [
+            {'status': 'FILLED', 'executedQty': '0.08', 'orderId': 101},
+            {'status': 'FILLED', 'executedQty': '1.40', 'orderId': 202}]
+        self.assertTrue((await server.step_tranche())['success'])
+        self.assertEqual(server.load_auto_tranche_state()['entry_order_pairs'],
+                         [{'adr_order_id': '101', 'stock_order_id': '202'}])

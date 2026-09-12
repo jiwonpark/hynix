@@ -10,6 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+from .tranche_accounting import estimate_tranche_exit
 from .config import config
 from .binance_client import BinanceFuturesClient
 from .upbit_client import UpbitClient
@@ -393,7 +394,7 @@ async def get_hedged_status() -> Dict[str, Any]:
         free_buffer = max(0.0, equity - maint_margin)
         max_tolerable_div_pct = (free_buffer / adr_notional * 100.0) if adr_notional > 0 else 999.0
 
-        eligible_for_take_profit = bool(total_notional > 0 and combined_pnl > 0.02)
+        # Account-wide PnL is telemetry only; eligibility is calculated for the LIFO trim below.
 
         # Exposure converted to SKHY and Korean domestic shares
         adr_amt = float(adr_pos.get("position_amt", 0.0)) if adr_pos else 0.0
@@ -439,7 +440,7 @@ async def get_hedged_status() -> Dict[str, Any]:
                         "price": float(t.get("price", 0.0)),
                         "qty": float(t.get("qty", 0.0)),
                         "realized_pnl": float(t.get("realizedPnl", 0.0)),
-                        "commission": float(t.get("commission", 0.0)),
+                        "commission": float(t["commission"]) if t.get("commission") is not None else None,
                         "commission_asset": str(t.get("commissionAsset", "USDT")),
                         "time": int(t.get("time", 0)),
                         "action_type": "ENTRY_SHORT" if t.get("side") == "SELL" else "EXIT_SHORT"
@@ -454,7 +455,7 @@ async def get_hedged_status() -> Dict[str, Any]:
                         "price": float(t.get("price", 0.0)),
                         "qty": float(t.get("qty", 0.0)),
                         "realized_pnl": float(t.get("realizedPnl", 0.0)),
-                        "commission": float(t.get("commission", 0.0)),
+                        "commission": float(t["commission"]) if t.get("commission") is not None else None,
                         "commission_asset": str(t.get("commissionAsset", "USDT")),
                         "time": int(t.get("time", 0)),
                         "action_type": "ENTRY_LONG" if t.get("side") == "BUY" else "EXIT_LONG"
@@ -564,6 +565,12 @@ async def get_hedged_status() -> Dict[str, Any]:
             dwell_time_sec = 999
             out_target_spread = round(base_entry - 0.08, 2)
 
+        auto_state = load_auto_tranche_state()
+        tranche_profit = estimate_tranche_exit(
+            current_target_tranche, executions, adr_mark, stock_mark, stock_sym,
+            auto_state.get("entry_order_pairs", []), now_sec)
+        eligible_for_take_profit = bool(tranche_profit["profitable"])
+
         is_out_profitable_relative_to_latest = bool(current_target_tranche and curr_spread <= out_target_spread)
         is_dwell_satisfied = bool(current_target_tranche and dwell_time_sec >= 120)
         can_take_profit = bool(
@@ -576,6 +583,8 @@ async def get_hedged_status() -> Dict[str, Any]:
             and exit_alignment["downward"]
             and adr_qty >= 0.07
             and stock_qty >= 1.20
+            and adr_amt < 0 and stock_amt > 0
+            and not auto_state.get("execution_recovery")
         )
 
         status_scale_in = (
@@ -602,7 +611,8 @@ async def get_hedged_status() -> Dict[str, Any]:
             elif not exit_alignment["downward"]:
                 status_take_profit = "AWAITING_DOWNWARD_MA_STACK"
 
-        auto_state = load_auto_tranche_state()
+        if current_target_tranche and not tranche_profit["available"]:
+            status_take_profit = tranche_profit["reason"]
 
         auto_criteria = {
             "backend_auto_tranche_enabled": bool(auto_state.get("enabled", False)),
@@ -643,6 +653,7 @@ async def get_hedged_status() -> Dict[str, Any]:
             "is_dwell_satisfied": is_dwell_satisfied,
             "is_out_profitable_relative_to_latest": is_out_profitable_relative_to_latest,
             "can_take_profit": can_take_profit,
+            "target_tranche_profit": tranche_profit,
             "status_take_profit": status_take_profit,
 
             "asymmetric_sizing": {
@@ -692,13 +703,14 @@ async def get_hedged_status() -> Dict[str, Any]:
             "stock_krx_shares": round(stock_krx_shares, 5),
             "net_krx_shares": round(net_krx_shares, 5),
             "eligible_for_take_profit": eligible_for_take_profit,
+            "target_tranche_profit": tranche_profit,
             "recent_executions": executions,
             "auto_tranche_criteria": auto_criteria,
             "zero_loss_rule": {
-                "rule_name": "Zero-Loss Structural Convergence Invariant",
+                "rule_name": "LIFO Tranche Estimated Net Profit Guard",
                 "status": "ENFORCED",
-                "can_reduce": eligible_for_take_profit,
-                "description": "Never exit at a loss. Only take profit when Net Realized PnL > 0. If divergence widens: Scale in or Hold."
+                "can_reduce": can_take_profit,
+                "description": "Latest matched tranche must have estimated net PnL > $0.02 after entry fees and exit fee, slippage, and funding reserves. Actual execution PnL may differ."
             }
         }
     except Exception as e:
@@ -876,6 +888,10 @@ async def execute_scale_in() -> Dict[str, Any]:
         if order_stock.get("status") != "FILLED" or float(order_stock.get("executedQty", 0)) < 1.40:
             raise RuntimeError("ETF fill is incomplete or unconfirmed")
         state = load_auto_tranche_state()
+        if order_adr.get("orderId") is not None and order_stock.get("orderId") is not None:
+            state.setdefault("entry_order_pairs", []).append({
+                "adr_order_id": str(order_adr["orderId"]),
+                "stock_order_id": str(order_stock["orderId"])})
         state.pop("execution_recovery", None)
         save_auto_tranche_state(state)
         return {
@@ -897,52 +913,30 @@ async def execute_scale_in() -> Dict[str, Any]:
 
 @app.post("/api/trade/reduce_tranche")
 async def reduce_tranche(force: bool = False) -> Dict[str, Any]:
-    """
-    Closes 1 Tranche (Take-Profit):
-    - STRICTLY ENFORCES ZERO-LOSS INVARIANT: Rejects order if combined unrealized PnL <= $0.02!
-    - ENFORCES ANTI-CHURN GUARD: Blocks immediate flip unless minimum hold elapsed or force=True.
-    - BUY MARKET 0.07 SKHYUSDT
-    - SELL MARKET 1.20 CSOPSKHYNIX2LUSDT
-    """
-    try:
-        overview = await binance_client.get_detailed_account_overview()
-        positions = overview.get("positions", [])
-        adr_pos = next((p for p in positions if p.get("symbol") == "SKHYUSDT"), None)
-        stock_pos = next((p for p in positions if p.get("symbol") in ["CSOPSKHYNIX2LUSDT", "SKHYNIXUSDT"]), None)
+    async with scale_in_lock:
+        return await execute_tranche_reduction(force)
 
+
+async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
+    """Close the latest matched tranche only when the shared exit criteria pass."""
+    try:
+        status = None
+        if not force:
+            status = await get_hedged_status()
+            criteria = status.get("auto_tranche_criteria", {})
+            if not criteria.get("can_take_profit", False):
+                return {"success": False,
+                        "error": "EXIT GUARD: " + criteria.get("status_take_profit", "Cannot verify latest tranche"),
+                        "target_tranche_profit": criteria.get("target_tranche_profit")}
+            adr_pos = status.get("adr_position")
+            stock_pos = status.get("stock_position")
+        else:
+            overview = await binance_client.get_detailed_account_overview()
+            positions = overview.get("positions", [])
+            adr_pos = next((p for p in positions if p.get("symbol") == "SKHYUSDT"), None)
+            stock_pos = next((p for p in positions if p.get("symbol") in ["CSOPSKHYNIX2LUSDT", "SKHYNIXUSDT"]), None)
         if not adr_pos or not stock_pos:
             return {"success": False, "error": "No active hedged positions found to reduce"}
-
-        combined_pnl = float(adr_pos.get("unrealized_pnl", 0.0)) + float(stock_pos.get("unrealized_pnl", 0.0))
-        if combined_pnl <= 0.02 and not force:
-            return {
-                "success": False,
-                "error": f"ZERO-LOSS INVARIANT ENFORCED: Combined PnL is ${combined_pnl:.2f} <= $0.02 threshold. You cannot exit at a loss. Wait for convergence or add tranches."
-            }
-
-        if not force:
-            alignment = exit_ma_alignment(await get_cached_parity_bars("5m", 60))
-            if not alignment["downward"]:
-                return {"success": False,
-                        "error": "EXIT MA GUARD: Requires MA7 < MA24 < MA60 on 5m spread bars; waiting for alignment or sufficient fresh history.",
-                        "exit_ma_alignment": alignment}
-
-        # Anti-Churn Guard: block immediate flip if latest entry was executed < 60s ago
-        if not force:
-            try:
-                trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 10}, signed=True)
-                if isinstance(trades, list):
-                    entry_trades = [t for t in trades if t.get("side") == "SELL"]
-                    if entry_trades:
-                        latest_entry = entry_trades[-1]
-                        elapsed_sec = int(time.time() - (int(latest_entry.get("time", 0)) / 1000))
-                        if elapsed_sec < 60:
-                            return {
-                                "success": False,
-                                "error": f"ANTI-CHURN GUARD: Latest tranche entered only {elapsed_sec}s ago (< 60s min hold). Wait for convergence to prevent churning."
-                            }
-            except Exception:
-                pass
 
         stock_sym = stock_pos.get("symbol", "CSOPSKHYNIX2LUSDT")
         adr_pos_amt = abs(float(adr_pos.get("position_amt", 0.0)))
@@ -978,7 +972,8 @@ async def reduce_tranche(force: bool = False) -> Dict[str, Any]:
 
         return {
             "success": True,
-            "message": f"Take-profit tranche closed successfully with positive PnL (+${combined_pnl:.2f})",
+            "message": "Tranche reduction filled" if not force else "Forced tranche reduction filled",
+            "target_tranche_profit": status.get("target_tranche_profit") if status else None,
             "order_adr": order_adr,
             "order_stock": order_stock
         }
@@ -1035,6 +1030,7 @@ async def auto_tranche_worker():
                         if now - last_reduce >= 30:
                             logger.info("[Auto-Tranche Worker] Executing autonomous take-profit trim...")
                             res = await reduce_tranche()
+                            state = load_auto_tranche_state()
                             state["last_reduce_time"] = now
                             state["last_action_time"] = now
                             if res.get("success"):
