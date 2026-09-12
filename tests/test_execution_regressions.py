@@ -100,3 +100,58 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['has_more'])
         self.assertIsNone(result['next_end_time'])
         self.assertEqual(self.client.request.await_count, 3)
+
+    def ma_bars(self, values):
+        end = int(time.time() // 300) * 300
+        return [{'time': end - (len(values) - 1 - i) * 300, 'value': v} for i, v in enumerate(values)]
+
+    async def test_exit_alignment_strict_order_and_data_requirements(self):
+        downward = self.ma_bars([141 - i * .01 for i in range(60)])
+        self.assertTrue(server.exit_ma_alignment(downward)['downward'])
+        for values in ([140 + i * .01 for i in range(60)], [140] * 60,
+                       [140] * 36 + [142] * 17 + [139] * 7):
+            self.assertFalse(server.exit_ma_alignment(self.ma_bars(values))['downward'])
+        self.assertFalse(server.exit_ma_alignment(downward[-59:])['ready'])
+        self.assertFalse(server.exit_ma_alignment([])['downward'])
+        self.assertFalse(server.exit_ma_alignment(self.ma_bars([float('nan')] * 60))['ready'])
+        for bar in downward:
+            bar['time'] -= 900
+        self.assertFalse(server.exit_ma_alignment(downward)['ready'])
+
+    async def test_auto_exit_requires_downward_stack_alongside_existing_guards(self):
+        overview = self.client.get_detailed_account_overview.return_value
+        overview['positions'] = [
+            {'symbol': 'SKHYUSDT', 'position_amt': -.08, 'mark_price': 193.2, 'entry_price': 196, 'unrealized_pnl': 1, 'notional': 15},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 1.4, 'mark_price': 5.7, 'entry_price': 5.6, 'notional': 8}]
+        bars = self.ma_bars([141 - i * .01 for i in range(60)])
+        server.get_cached_parity_bars.return_value = bars
+        async def request(method, path, params, **kwargs):
+            if 'ticker' in path:
+                return {'price': '1400'}
+            return [{'id': 1, 'orderId': 1, 'side': 'SELL', 'qty': .08, 'price': 196,
+                     'time': bars[0]['time'] * 1000}] if params['symbol'] == 'SKHYUSDT' else []
+        self.client.request.side_effect = request
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertTrue(criteria['can_take_profit'])
+        server.get_cached_parity_bars.assert_awaited_with('5m', 60)
+        server.get_cached_parity_bars.return_value = self.ma_bars([141] * 60)
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertFalse(criteria['can_take_profit'])
+        self.assertEqual(criteria['status_take_profit'], 'AWAITING_DOWNWARD_MA_STACK')
+        server.get_cached_parity_bars.return_value = bars
+        overview['positions'][0]['unrealized_pnl'] = -1
+        self.assertFalse((await server.get_hedged_status())['auto_tranche_criteria']['can_take_profit'])
+
+    async def test_manual_exit_blocks_without_stack_and_emergency_bypasses(self):
+        self.client.get_detailed_account_overview.return_value['positions'] = [
+            {'symbol': 'SKHYUSDT', 'position_amt': -.08, 'unrealized_pnl': 1},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 1.4}]
+        self.client.request.return_value = []
+        self.client.create_order.return_value = {'status': 'FILLED'}
+        self.assertFalse((await server.reduce_tranche())['success'])
+        self.client.create_order.assert_not_awaited()
+        server.get_cached_parity_bars.return_value = self.ma_bars([141 - i * .01 for i in range(60)])
+        self.assertTrue((await server.reduce_tranche())['success'])
+        self.assertEqual(self.client.create_order.await_count, 2)
+        server.get_cached_parity_bars.return_value = []
+        self.assertTrue((await server.reduce_tranche(force=True))['success'])

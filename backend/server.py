@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import time
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -292,6 +293,23 @@ async def get_cached_parity_bars(interval: str = "5m", limit: int = 60) -> List[
 
     return _parity_cache.get("data", [])
 
+def exit_ma_alignment(bars: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Exit filter on the strategy's fixed 5-minute spread bars."""
+    result = {"interval": "5m", "ma7": None, "ma24": None, "ma60": None,
+              "ready": False, "downward": False}
+    if len(bars) < 60:
+        return result
+    values = [float(b["value"]) for b in bars[-60:]]
+    if not all(math.isfinite(v) for v in values):
+        return result
+    if time.time() - bars[-1]["time"] > 600:
+        return result
+    result.update(ready=True, ma7=sum(values[-7:]) / 7,
+                  ma24=sum(values[-24:]) / 24, ma60=sum(values) / 60)
+    result["downward"] = result["ma7"] < result["ma24"] < result["ma60"]
+    return result
+
+
 @app.get("/api/trade/hedged_status")
 async def get_hedged_status() -> Dict[str, Any]:
     """Calculates real-time live metrics for the hedged SK Hynix arbitrage position."""
@@ -452,7 +470,8 @@ async def get_hedged_status() -> Dict[str, Any]:
         can_scale_in = bool(tranches_remaining > 0 and free_buffer >= 2.0)
 
         # 1. Moving Average & Speculative Peak-Out Metrics
-        parity_bars = await get_cached_parity_bars("5m", 30)
+        parity_bars = await get_cached_parity_bars("5m", 60)
+        exit_alignment = exit_ma_alignment(parity_bars)
         if parity_bars and len(parity_bars) >= 6:
             ma_subset = parity_bars[-24:] if len(parity_bars) >= 24 else parity_bars
             ma24 = sum(b["value"] for b in ma_subset) / len(ma_subset)
@@ -554,6 +573,7 @@ async def get_hedged_status() -> Dict[str, Any]:
             and is_out_profitable_relative_to_latest 
             and is_dwell_satisfied
             and is_bottoming_out
+            and exit_alignment["downward"]
             and adr_qty >= 0.07
             and stock_qty >= 1.20
         )
@@ -576,6 +596,12 @@ async def get_hedged_status() -> Dict[str, Any]:
             else f"ANTI_CHURN_WAITING_CONVERGENCE (Target <={out_target_spread}%)")))))
         )
 
+        if not can_take_profit and speculative_tranches_active > 0 and eligible_for_take_profit and is_dwell_satisfied:
+            if not exit_alignment["ready"]:
+                status_take_profit = "AWAITING_MA_HISTORY"
+            elif not exit_alignment["downward"]:
+                status_take_profit = "AWAITING_DOWNWARD_MA_STACK"
+
         auto_state = load_auto_tranche_state()
 
         auto_criteria = {
@@ -588,6 +614,8 @@ async def get_hedged_status() -> Dict[str, Any]:
             "is_stretched_above_ma": is_stretched_above_ma,
             "is_peaking_out": is_peaking_out,
             "is_bottoming_out": is_bottoming_out,
+            "exit_ma_alignment": exit_alignment,
+            "is_exit_ma_aligned": exit_alignment["downward"],
             "spread_velocity_1bar": spread_velocity,
             "scale_in_trigger_spread": scale_in_trigger,
             "gap_to_scale_in_pts": round(scale_in_trigger - curr_spread, 2),
@@ -891,6 +919,13 @@ async def reduce_tranche(force: bool = False) -> Dict[str, Any]:
                 "success": False,
                 "error": f"ZERO-LOSS INVARIANT ENFORCED: Combined PnL is ${combined_pnl:.2f} <= $0.02 threshold. You cannot exit at a loss. Wait for convergence or add tranches."
             }
+
+        if not force:
+            alignment = exit_ma_alignment(await get_cached_parity_bars("5m", 60))
+            if not alignment["downward"]:
+                return {"success": False,
+                        "error": "EXIT MA GUARD: Requires MA7 < MA24 < MA60 on 5m spread bars; waiting for alignment or sufficient fresh history.",
+                        "exit_ma_alignment": alignment}
 
         # Anti-Churn Guard: block immediate flip if latest entry was executed < 60s ago
         if not force:
