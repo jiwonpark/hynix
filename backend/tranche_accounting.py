@@ -5,6 +5,7 @@ import math
 EXIT_FEE_BPS = 5.0
 EXIT_SLIPPAGE_BPS = 3.0
 FUNDING_RESERVE_BPS_DAY = 3.0
+LEG_PAIR_MAX_DELAY_MS = 5000
 
 
 def aggregate_orders(executions):
@@ -29,6 +30,34 @@ def aggregate_orders(executions):
     return sorted(orders.values(), key=lambda order: order['time'])
 
 
+def infer_entry_pairs(orders, stock_symbol):
+    """Infer legacy ADR/ETF pairs from the strategy's sequential order history.
+
+    Scale-in submits the ADR order first and waits for it to fill before submitting
+    its ETF hedge.  Therefore a valid legacy pair is the sole fixed-size ETF entry
+    after an ADR entry and before the next ADR entry, within a short delay.
+    """
+    entries = [order for order in orders
+               if ((order['symbol'] == 'SKHYUSDT' and order['side'] == 'SELL')
+                   or (order['symbol'] == stock_symbol and order['side'] == 'BUY'))]
+    pairs = {}
+    for index, adr in enumerate(entries):
+        if adr['symbol'] != 'SKHYUSDT' or abs(adr['qty'] - .08) >= 1e-8:
+            continue
+        candidates = []
+        for candidate in entries[index + 1:]:
+            if candidate['symbol'] == 'SKHYUSDT':
+                break
+            delay = candidate['time'] - adr['time']
+            if delay > LEG_PAIR_MAX_DELAY_MS:
+                break
+            if delay >= 0 and abs(candidate['qty'] - 1.4) < 1e-8:
+                candidates.append(candidate)
+        if len(candidates) == 1:
+            pairs[adr['order_id']] = candidates[0]['order_id']
+    return pairs
+
+
 def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol, pairs, now):
     result = {'available': False, 'net_pnl_usd': None, 'profitable': False,
               'reason': 'NO_TARGET_TRANCHE', 'threshold_usd': 0.02,
@@ -44,7 +73,6 @@ def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol
         return {**result, 'reason': 'MISSING_MARK_PRICES'}
     orders = aggregate_orders(executions)
     adr_entries = [o for o in orders if o['symbol'] == 'SKHYUSDT' and o['side'] == 'SELL']
-    stock_entries = [o for o in orders if o['symbol'] == stock_symbol and o['side'] == 'BUY']
     adr = next((o for o in adr_entries if o['order_id'] == target['trade_id']), None)
     # Reconstruct the hedge stack independently; an unmatched hedge exit must
     # not cause an unrelated ETF lot to be attributed to the selected ADR lot.
@@ -68,26 +96,19 @@ def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol
                     stock_stack.pop()
     if not adr or not stock_stack:
         return {**result, 'reason': 'MISSING_ENTRY_LEG'}
-    stock = stock_stack[-1]['order']
+    active_stock = {item['order']['order_id']: item for item in stock_stack}
     saved_pair = next((p for p in reversed(pairs) if str(p['adr_order_id']) == adr['order_id']), None)
     if saved_pair:
-        paired = str(saved_pair['stock_order_id']) == stock['order_id']
+        stock_item = active_stock.get(str(saved_pair['stock_order_id']))
         pairing = 'recorded_order_ids'
     else:
-        # Legacy fills have no pair journal. Accept only a unique, reciprocal
-        # fixed-size pair within 15 seconds; never use account average entries.
-        def compatible(a, b):
-            return (abs(a['qty'] - .08) < 1e-8 and abs(b['qty'] - 1.4) < 1e-8
-                    and abs(a['time'] - b['time']) <= 15000)
-        candidates = [o for o in stock_entries if compatible(adr, o)]
-        reverse = [o for o in adr_entries if compatible(o, stock)]
-        paired = (len(candidates) == len(reverse) == 1
-                  and candidates[0]['order_id'] == stock['order_id']
-                  and reverse[0]['order_id'] == adr['order_id'])
-        pairing = 'unique_legacy_time_and_size_match'
-    if not paired:
+        inferred_order_id = infer_entry_pairs(orders, stock_symbol).get(adr['order_id'])
+        stock_item = active_stock.get(inferred_order_id)
+        pairing = 'restored_from_account_history_sequence'
+    if not stock_item:
         return {**result, 'reason': 'AMBIGUOUS_OR_MISMATCHED_ENTRY_LEGS'}
-    if target['trim_qty'] < .07 or stock_stack[-1]['trim_qty'] < 1.2:
+    stock = stock_item['order']
+    if target['trim_qty'] < .07 or stock_item['trim_qty'] < 1.2:
         return {**result, 'reason': 'INCOMPLETE_REMAINING_TRANCHE'}
     if not adr['fee_known'] or not stock['fee_known']:
         return {**result, 'reason': 'ENTRY_COMMISSION_UNAVAILABLE_IN_USDT'}

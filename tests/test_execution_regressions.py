@@ -53,13 +53,18 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('execution_recovery', server.load_auto_tranche_state())
 
     async def test_flat_account_still_returns_both_histories(self):
+        requested = []
         async def request(method, path, params, **kwargs):
             if 'ticker' in path:
                 return {'price': '1400'}
+            requested.append(params)
             return [{'id': 1, 'orderId': 2, 'side': 'BUY', 'qty': '.07', 'price': '195', 'time': 1000}]
         self.client.request.side_effect = request
         result = await server.get_hedged_status()
         self.assertEqual({t['symbol'] for t in result['recent_executions']}, {'SKHYUSDT', 'CSOPSKHYNIX2LUSDT'})
+        self.assertEqual(len(requested), 2)
+        self.assertTrue(all(params['limit'] == 1000 for params in requested))
+        self.assertTrue(all('startTime' not in params for params in requested))
 
     async def test_split_entry_and_exit_fills_preserve_one_remaining_tranche(self):
         self.client.get_detailed_account_overview.return_value['positions'] = [

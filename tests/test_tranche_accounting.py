@@ -36,9 +36,20 @@ class TrancheAccountingTests(unittest.TestCase):
         self.assertGreater(result['gross_pnl_usd'], 0)
         self.assertFalse(result['profitable'])
 
-    def test_unknown_or_ambiguous_pair_is_blocked(self):
+    def test_missing_pair_is_blocked(self):
         self.assertFalse(self.estimate(self.entries()[:1])['available'])
-        trades = self.entries() + [self.trade('CSOPSKHYNIX2LUSDT', 3, 'BUY', 1.4, 5.6, 1002000)]
+
+    def test_rapid_sequential_entries_restore_from_account_history(self):
+        trades = []
+        for order, timestamp in [(1, 1000000), (2, 1001000), (3, 1002000)]:
+            trades.extend(self.entries(order=order, time=timestamp))
+        result = self.estimate(trades, '3')
+        self.assertTrue(result['available'])
+        self.assertEqual(result['stock_order_id'], '3')
+        self.assertEqual(result['pairing'], 'restored_from_account_history_sequence')
+
+    def test_multiple_hedges_before_next_adr_is_ambiguous(self):
+        trades = self.entries() + [self.trade('CSOPSKHYNIX2LUSDT', 3, 'BUY', 1.4, 5.6, 1001500)]
         self.assertFalse(self.estimate(trades)['available'])
 
     def test_recorded_pair_ids_resolve_legacy_ambiguity(self):

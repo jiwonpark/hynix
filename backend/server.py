@@ -416,19 +416,20 @@ async def get_hedged_status() -> Dict[str, Any]:
         net_skhy_shares = adr_skhy_shares + stock_skhy_shares
         net_krx_shares = adr_krx_shares + stock_krx_shares
 
-        # Fetch recent user fills for both legs (SKHYUSDT ADR and CSOPSKHYNIX2LUSDT 2x ETF)
+        # Fetch the latest account trade history for both legs. This history is
+        # sufficient to restore the bounded active LIFO stack after a restart.
         executions = []
         try:
-            start_ms = int((time.time() - 24 * 3600) * 1000)
-            async def recent_trades(symbol):
-                trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": symbol, "startTime": start_ms, "limit": 1000}, signed=True)
-                if isinstance(trades, list) and not trades:
-                    trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": symbol, "limit": 1000}, signed=True)
-                return trades
+            async def account_trade_history(symbol):
+                return await binance_client.request(
+                    "GET", "/fapi/v1/userTrades",
+                    {"symbol": symbol, "limit": 1000}, signed=True)
 
             history_stock_sym = stock_sym or "CSOPSKHYNIX2LUSDT"
             res_skhy, res_stock = await asyncio.gather(
-                recent_trades("SKHYUSDT"), recent_trades(history_stock_sym), return_exceptions=True)
+                account_trade_history("SKHYUSDT"),
+                account_trade_history(history_stock_sym),
+                return_exceptions=True)
 
             if isinstance(res_skhy, list):
                 for t in res_skhy:
@@ -1122,4 +1123,3 @@ async def websocket_account_feed(websocket: WebSocket):
 
 if __name__ == "__main__":
     uvicorn.run("backend.server:app", host=config.HOST, port=config.PORT, reload=False)
-
