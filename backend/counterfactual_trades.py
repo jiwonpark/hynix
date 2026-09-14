@@ -299,7 +299,7 @@ def chart_markers(records, bars, interval_ms, confirmed_markers=None):
 
     start_ms = bars[0]["time"] * 1000
     end_ms = bars[-1]["time"] * 1000 + interval_ms
-    markers = []
+    marker_map = {}
     for trade in records:
         for is_entry, time_key in ((True, "entry_time_ms"), (False, "exit_time_ms")):
             event_ms = trade.get(time_key)
@@ -312,8 +312,23 @@ def chart_markers(records, bars, interval_ms, confirmed_markers=None):
             # suppress the hypothetical marker so the real fill shows in place of paper.
             if (marker_time, is_entry) in confirmed_keys:
                 continue
+            key = (marker_time, is_entry)
             reason = str(trade.get("blocked_reason", "CAPITAL CONSTRAINT")).replace("_", " ")
             net_pnl = trade.get("estimated_net_pnl_usd")
+
+            if key in marker_map:
+                existing = marker_map[key]
+                existing["count"] = existing.get("count", 1) + 1
+                qty = (ENTRY_ADR_QTY if is_entry else EXIT_ADR_QTY) * existing["count"]
+                existing["qty"] = round(qty, 2)
+                if not is_entry and net_pnl is not None:
+                    prev_pnl = existing.get("estimated_net_pnl_usd", 0.0)
+                    total_pnl = prev_pnl + net_pnl
+                    existing["estimated_net_pnl_usd"] = total_pnl
+                    cnt_str = f" ({existing['count']}x)" if existing["count"] > 1 else ""
+                    existing["hoverText"] = f"MISSED COVER {qty:.2f}{cnt_str} · est. net ${total_pnl:+.3f}"
+                continue
+
             hover = (
                 f"MISSED SHORT 0.08 · {reason}"
                 if is_entry else f"MISSED COVER 0.07 · est. net ${net_pnl:+.3f}"
@@ -330,6 +345,8 @@ def chart_markers(records, bars, interval_ms, confirmed_markers=None):
                 "hypothetical": True,
                 "qty": ENTRY_ADR_QTY if is_entry else EXIT_ADR_QTY,
                 "blocked_reason": trade.get("blocked_reason"),
+                "estimated_net_pnl_usd": net_pnl if not is_entry and net_pnl is not None else 0.0,
+                "count": 1,
             }
             if is_entry:
                 entry_notional = ENTRY_ADR_QTY * trade["adr_entry_price"] + ENTRY_STOCK_QTY * trade["stock_entry_price"]
@@ -346,5 +363,5 @@ def chart_markers(records, bars, interval_ms, confirmed_markers=None):
                     "funding_reserve_bps_day": FUNDING_RESERVE_BPS_DAY,
                     "threshold_usd": MIN_NET_PROFIT_USD,
                 }
-            markers.append(marker)
-    return sorted(markers, key=lambda marker: marker["time"])
+            marker_map[key] = marker
+    return sorted(marker_map.values(), key=lambda marker: marker["time"])
