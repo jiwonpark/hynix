@@ -9,7 +9,10 @@ const label = {};
 const context = vm.createContext({ window: { location: { origin: 'http://test' } }, $: () => label, AbortSignal, console, Date });
 const engine = vm.runInContext(`({state: {shortTermInterval: '5m'}, ${method}})`, context);
 assert.ok(html.includes("setShortTermInterval('1d')"), 'daily chart control must be visible');
-assert.ok(html.includes('["1m", "5m", "15m", "1d"]'), 'daily mode must participate in interval selection');
+assert.ok(html.includes("setShortTermInterval('1h')"), 'hourly chart control must be visible');
+assert.ok(html.includes("setShortTermInterval('4h')"), 'four-hour chart control must be visible');
+assert.ok(html.includes('["1m", "5m", "15m", "1h", "4h", "1d"]'),
+  'every chart mode must participate in interval selection');
 let range = { from: 0, to: 1 }, rendered;
 engine.shortTermChart = { timeScale: () => ({getVisibleLogicalRange: () => range, setVisibleLogicalRange: r => {range = r;}}) };
 engine.renderShortTermChart = data => { rendered = data; };

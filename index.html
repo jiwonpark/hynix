@@ -2229,6 +2229,8 @@
                 <button id="btnShortInterval1m" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('1m')">1m</button>
                 <button id="btnShortInterval5m" class="btnShortInterval active" type="button" onclick="tradingEngine.setShortTermInterval('5m')">5m</button>
                 <button id="btnShortInterval15m" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('15m')">15m</button>
+                <button id="btnShortInterval1h" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('1h')">1h</button>
+                <button id="btnShortInterval4h" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('4h')">4h</button>
                 <button id="btnShortInterval1d" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('1d')">1d</button>
               </div>
               <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a;">
@@ -9458,7 +9460,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (interval === this.state.shortTermInterval) return;
         this.state.shortTermInterval = interval;
         this.shortTermHistory = null;
-        ["1m", "5m", "15m", "1d"].forEach(i => {
+        ["1m", "5m", "15m", "1h", "4h", "1d"].forEach(i => {
           const btn = $("btnShortInterval" + i);
           if (btn) btn.classList.toggle("active", i === interval);
         });

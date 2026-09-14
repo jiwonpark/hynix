@@ -768,8 +768,11 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
     """
     try:
         limit = min(200, max(20, limit))
-        interval = interval if interval in ["1m", "5m", "15m", "1d"] else "5m"
-        interval_ms = {"1m": 60000, "5m": 300000, "15m": 900000, "1d": 86400000}[interval]
+        interval = interval if interval in ["1m", "5m", "15m", "1h", "4h", "1d"] else "5m"
+        interval_ms = {
+            "1m": 60000, "5m": 300000, "15m": 900000,
+            "1h": 3600000, "4h": 14400000, "1d": 86400000,
+        }[interval]
 
         page_params = {"interval": interval, "limit": limit}
         if end_time is not None:
@@ -807,13 +810,13 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
         try:
             start_ms = int((bars[0]["time"] - 1800) * 1000) if bars else int((time.time() - 6 * 3600) * 1000)
             history_end_ms = (bars[-1]["time"] * 1000 + interval_ms - 1) if bars else int(time.time() * 1000)
-            unbounded_daily_history = interval == "1d" and end_time is None
+            unbounded_wide_history = interval in {"4h", "1d"} and end_time is None
             bounded_start_ms = max(start_ms, history_end_ms - 7 * 86400000 + 1)
-            trade_window = ({"limit": 1000} if unbounded_daily_history else
+            trade_window = ({"limit": 1000} if unbounded_wide_history else
                             {"startTime": bounded_start_ms, "endTime": history_end_ms, "limit": 1000})
             trades = await binance_client.request(
                 "GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", **trade_window}, signed=True)
-            if not unbounded_daily_history and end_time is None and (not isinstance(trades, list) or len(trades) == 0):
+            if not unbounded_wide_history and end_time is None and (not isinstance(trades, list) or len(trades) == 0):
                 trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
 
             if isinstance(trades, list) and bars:

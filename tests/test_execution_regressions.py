@@ -125,6 +125,31 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('startTime', trade_params[0])
         self.assertNotIn('endTime', trade_params[0])
 
+    async def test_hourly_and_four_hour_chart_intervals(self):
+        for interval in ('1h', '4h'):
+            with self.subTest(interval=interval):
+                self.client.reset_mock()
+                requests = []
+                step = 3600000 if interval == '1h' else 14400000
+                times = [step * i for i in range(1, 21)]
+                async def request(method, path, params, **kwargs):
+                    requests.append((path, params))
+                    if 'klines' in path:
+                        return [[timestamp, 0, 0, 0, '100'] for timestamp in times]
+                    return []
+                self.client.request.side_effect = request
+                result = await server.get_short_term_parity(interval, 20)
+                self.assertEqual(result['interval'], interval)
+                kline_params = [params for path, params in requests if 'klines' in path]
+                self.assertTrue(all(params['interval'] == interval for params in kline_params))
+                first_trade = next(params for path, params in requests if 'userTrades' in path)
+                if interval == '1h':
+                    self.assertIn('startTime', first_trade)
+                    self.assertIn('endTime', first_trade)
+                else:
+                    self.assertNotIn('startTime', first_trade)
+                    self.assertNotIn('endTime', first_trade)
+
     async def test_entry_chart_marker_shows_minimum_net_profit(self):
         times = [300000 * i for i in range(1, 21)]
         async def request(method, path, params, **kwargs):
