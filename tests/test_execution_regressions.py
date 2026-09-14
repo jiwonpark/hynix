@@ -104,7 +104,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         result = await server.get_short_term_parity('5m', 20, 1)
         self.assertFalse(result['has_more'])
         self.assertIsNone(result['next_end_time'])
-        self.assertEqual(self.client.request.await_count, 3)
+        self.assertEqual(self.client.request.await_count, 4)
 
     async def test_entry_chart_marker_shows_minimum_net_profit(self):
         times = [300000 * i for i in range(1, 21)]
@@ -113,16 +113,19 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
                 return [[t, 0, 0, 0, '100'] for t in times]
             if params['symbol'] == 'CSOPSKHYNIX2LUSDT':
                 return [{'id': 2, 'orderId': 3, 'time': times[5] + 1000, 'side': 'BUY',
-                         'price': '5.55', 'qty': '1.40'}]
+                         'price': '5.55', 'qty': '1.40', 'commission': '.001'}]
             return [{'id': 1, 'orderId': 2, 'time': times[5], 'side': 'SELL',
-                     'price': '191.25', 'qty': '.08'}]
+                     'price': '191.25', 'qty': '.08', 'commission': '.001'}]
         self.client.request.side_effect = request
         result = await server.get_short_term_parity('5m', 20)
         self.assertEqual(len(result['markers']), 1)
         marker = result['markers'][0]
         self.assertEqual(marker['minimum_net_profit_usd'], .02)
-        self.assertAlmostEqual(marker['minimum_net_profit_pct'], .0998, places=4)
-        self.assertEqual(marker['minimum_profit_spread'], 999.92)
+        self.assertEqual(marker['convergence_target_spread'], 999.92)
+        self.assertNotIn('minimum_profit_spread', marker)
+        self.assertAlmostEqual(marker['pnl_model']['adr_entry_price'], 191.25)
+        self.assertAlmostEqual(marker['pnl_model']['stock_entry_price'], 5.55)
+        self.assertEqual(marker['pnl_model']['threshold_usd'], .02)
         self.assertNotIn('Min net', marker['hoverText'])
 
     def ma_bars(self, values):

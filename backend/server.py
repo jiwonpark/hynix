@@ -11,6 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from .tranche_accounting import (
+    EXIT_FEE_BPS,
+    EXIT_SLIPPAGE_BPS,
+    FUNDING_RESERVE_BPS_DAY,
     MIN_NET_PROFIT_USD,
     aggregate_orders,
     estimate_tranche_exit,
@@ -757,9 +760,10 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
         if end_time is not None:
             page_params["endTime"] = max(0, end_time)
 
-        k1, k2 = await asyncio.gather(
+        k1, k2, k3 = await asyncio.gather(
             binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYUSDT", **page_params}),
             binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYNIXUSDT", **page_params}),
+            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "CSOPSKHYNIX2LUSDT", **page_params}),
             return_exceptions=True
         )
 
@@ -767,6 +771,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
             return {"error": "Failed to fetch klines from Binance", "bars": [], "markers": []}
 
         m2 = {x[0]: float(x[4]) for x in k2}
+        m3 = {x[0]: float(x[4]) for x in k3} if isinstance(k3, list) else {}
         bars = []
         for x in k1:
             t = x[0]
@@ -778,7 +783,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                     "time": int(t / 1000),
                     "value": ratio,
                     "adr": p1,
-                    "domestic": round(p2, 2)
+                    "domestic": round(p2, 2),
+                    "csop": m3.get(t)
                 })
 
         markers = []
@@ -829,7 +835,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                     order["order_id"]: order for order in pair_orders
                     if order["symbol"] == "SKHYUSDT" and order["side"] == "SELL"
                 }
-                minimum_net_pct_by_order = {}
+                pnl_model_by_order = {}
                 for adr_order_id, stock_order_id in inferred_pairs.items():
                     adr_order = adr_entries.get(adr_order_id)
                     stock_order = stock_entries.get(stock_order_id)
@@ -837,9 +843,15 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         continue
                     adr_fill = adr_order["cost"] / adr_order["qty"]
                     stock_fill = stock_order["cost"] / stock_order["qty"]
-                    entry_notional = 0.07 * adr_fill + 1.2 * stock_fill
-                    if entry_notional > 0:
-                        minimum_net_pct_by_order[adr_order_id] = MIN_NET_PROFIT_USD / entry_notional * 100.0
+                    if adr_order["fee_known"] and stock_order["fee_known"]:
+                        pnl_model_by_order[adr_order_id] = {
+                            "adr_entry_price": adr_fill,
+                            "stock_entry_price": stock_fill,
+                            "entry_fees_usd": (
+                                adr_order["fee"] * 0.07 / adr_order["qty"]
+                                + stock_order["fee"] * 1.2 / stock_order["qty"]),
+                            "entry_time_ms": min(adr_order["time"], stock_order["time"]),
+                        }
 
                 min_time_sec = bars[0]["time"]
                 candle_markers = {}
@@ -855,7 +867,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         is_entry = (side == "SELL")
                         price = float(tr.get("price", 0.0))
                         qty = float(tr.get("qty", 0.0))
-                        min_net_pct = minimum_net_pct_by_order.get(str(tr.get("orderId", tr.get("id", "")))) if is_entry else None
+                        order_id = str(tr.get("orderId", tr.get("id", "")))
+                        pnl_model = pnl_model_by_order.get(order_id) if is_entry else None
 
                         key = (marker_time, is_entry)
                         if key not in candle_markers:
@@ -866,16 +879,16 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                                 "total_qty": qty,
                                 "weighted_price": price * qty,
                                 "count": 1,
-                                "min_net_pct_cost": (min_net_pct * qty) if min_net_pct is not None else 0.0,
-                                "min_net_pct_qty": qty if min_net_pct is not None else 0.0,
+                                "pnl_models": [pnl_model] if pnl_model else [],
+                                "pnl_order_ids": {order_id} if pnl_model else set(),
                             }
                         else:
                             candle_markers[key]["total_qty"] += qty
                             candle_markers[key]["weighted_price"] += price * qty
                             candle_markers[key]["count"] += 1
-                            if min_net_pct is not None:
-                                candle_markers[key]["min_net_pct_cost"] += min_net_pct * qty
-                                candle_markers[key]["min_net_pct_qty"] += qty
+                            if pnl_model and order_id not in candle_markers[key]["pnl_order_ids"]:
+                                candle_markers[key]["pnl_models"].append(pnl_model)
+                                candle_markers[key]["pnl_order_ids"].add(order_id)
 
                         executions.append({
                             "time": t_sec,
@@ -892,9 +905,23 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                     cnt_str = f" {m_data['count']}x" if m_data['count'] > 1 else ""
                     # Clean price/qty label without redundant Short/Cover words (arrow already conveys side)
                     hover_lbl = f"${avg_px:.2f} ({qty_str}){cnt_str}"
-                    minimum_net_profit_pct = (
-                        m_data["min_net_pct_cost"] / m_data["min_net_pct_qty"]
-                        if m_data["min_net_pct_qty"] > 0 else None)
+                    pnl_models = m_data["pnl_models"]
+                    pnl_model = None
+                    if pnl_models:
+                        count = len(pnl_models)
+                        pnl_model = {
+                            "adr_entry_price": sum(m["adr_entry_price"] for m in pnl_models) / count,
+                            "stock_entry_price": sum(m["stock_entry_price"] for m in pnl_models) / count,
+                            "entry_fees_usd": sum(m["entry_fees_usd"] for m in pnl_models) / count,
+                            "entry_time_ms": sum(m["entry_time_ms"] for m in pnl_models) / count,
+                            "adr_exit_qty": 0.07,
+                            "stock_exit_qty": 1.2,
+                            "exit_fee_bps": EXIT_FEE_BPS,
+                            "slippage_bps": EXIT_SLIPPAGE_BPS,
+                            "funding_reserve_bps_day": FUNDING_RESERVE_BPS_DAY,
+                            "threshold_usd": MIN_NET_PROFIT_USD,
+                            "paired_entries": count,
+                        }
                     markers.append({
                         "time": m_time,
                         "position": "aboveBar" if is_entry else "belowBar",
@@ -907,8 +934,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         "avg_price": round(avg_px, 2),
                         "qty": round(m_data["total_qty"], 2),
                         "minimum_net_profit_usd": MIN_NET_PROFIT_USD if is_entry else None,
-                        "minimum_net_profit_pct": round(minimum_net_profit_pct, 4) if minimum_net_profit_pct is not None else None,
-                        "minimum_profit_spread": round(m_data["entry_spread"] - 0.08, 2) if is_entry else None
+                        "convergence_target_spread": round(m_data["entry_spread"] - 0.08, 2) if is_entry else None,
+                        "pnl_model": pnl_model,
                     })
         except Exception:
             logger.exception("Error loading trade markers")
