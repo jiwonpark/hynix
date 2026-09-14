@@ -9321,6 +9321,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!bars?.length || !Number.isFinite(positionAmt)) return null;
         const firstVisibleIndex = Math.max(0, Math.min(bars.length - 1, Math.ceil(Number(visibleFrom) || 0)));
         const firstVisibleTime = bars[firstVisibleIndex].time;
+        const markerIndex = Math.min(bars.length - 1, firstVisibleIndex + 2);
         const confirmedNetShort = (confirmedMarkers || []).reduce((net, marker) => {
           if (marker.time < firstVisibleTime) return net;
           const qty = Number(marker.qty);
@@ -9332,7 +9333,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const isEntry = carryDifference > 0;
         const qty = Math.abs(carryDifference);
         return {
-          time: firstVisibleTime,
+          time: bars[markerIndex].time,
           position: isEntry ? "aboveBar" : "belowBar",
           shape: isEntry ? "arrowDown" : "arrowUp",
           color: isEntry ? "#dc2626" : "#16a34a",

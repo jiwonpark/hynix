@@ -92,7 +92,7 @@ const visibleCarry = inferredEngine.positionImpliedMarker(
   [{time: 100, is_entry: true, qty: .8}, {time: 200, is_entry: false, qty: .1}],
   1
 );
-assert.equal(visibleCarry.time, 200, 'outline marker must stay on the first visible bar');
+assert.equal(visibleCarry.time, 300, 'outline marker must stay just inside the visible canvas boundary');
 assert.ok(Math.abs(visibleCarry.qty - 1.09) < 1e-8,
   'opening inventory must reconcile the current position using trades after the visible boundary');
 assert.ok(html.includes('this.refreshPositionImpliedMarker(range);'),
