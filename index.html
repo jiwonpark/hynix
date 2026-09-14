@@ -2219,7 +2219,7 @@
                 <span style="font-size: 10.5px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">LIVE BINANCE EXECUTION</span>
               </div>
               <div style="font-size: 11.5px; color: #64748b; margin-top: 2px;" id="lblShortTermSubtitle">
-                Visualizes all executed tranche entries (▲), exits (▼), and real-time auto-tranche trigger thresholds on live 5m/15m parity curve.
+                Solid ▼/▲ marks executed shorts/covers. Outline ⇩/⇧ marks paper entries blocked by capacity or margin and their simulated exits.
               </div>
             </div>
 
@@ -2256,7 +2256,7 @@
                   </span>
                   <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;"><strong style="color: #dc2626;">▼</strong> Short</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #16a34a;">▲</strong> Cover</span>
-                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #64748b;">⇩</strong> Inferred carry</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #dc2626;">⇩</strong>/<strong style="color: #16a34a;">⇧</strong> Missed: capacity/margin</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px; color: #0f766e;"><span style="display: inline-block; width: 10px; height: 2px; background: #0f766e;"></span> Selected net PnL: <strong id="valShortTermNetPnl">--</strong> · Exit &gt; +$0.02</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #0284c7;"></span> Base</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #dc2626; border-top: 1px dashed #dc2626;"></span> Scale-In</span>
@@ -9220,7 +9220,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
 
         this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          this.refreshPositionImpliedMarker(range);
           if (range && range.from < 20 && !this.shortTermRendering) this.fetchShortTermParity(true);
         });
         this.maVisibility = { ma7: true, ma24: true, ma60: true };
@@ -9280,7 +9279,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const isMatch = (hoveredTime !== null && m.time === hoveredTime);
           const isShort = (m.shape === "arrowDown" || m.is_entry || m.color === "#dc2626" || (typeof m.color === "string" && m.color.includes("220")));
 
-          if (m.inferred) {
+          if (m.hypothetical) {
             return {
               time: m.time,
               position: m.position,
@@ -9316,50 +9315,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.syncHoveredTrancheAnalytics(hoveredTime);
       },
 
-      positionImpliedMarker(bars, confirmedMarkers, visibleFrom = 0) {
-        const positionAmt = Number(this.state.hedgedStatus?.adr_position?.position_amt);
-        if (!bars?.length || !Number.isFinite(positionAmt)) return null;
-        const firstVisibleIndex = Math.max(0, Math.min(bars.length - 1, Math.ceil(Number(visibleFrom) || 0)));
-        const firstVisibleTime = bars[firstVisibleIndex].time;
-        const markerIndex = Math.min(bars.length - 1, firstVisibleIndex + 2);
-        const confirmedNetShort = (confirmedMarkers || []).reduce((net, marker) => {
-          if (marker.time < firstVisibleTime) return net;
-          const qty = Number(marker.qty);
-          if (!Number.isFinite(qty)) return net;
-          return net + (marker.is_entry ? qty : -qty);
-        }, 0);
-        const carryDifference = -positionAmt - confirmedNetShort;
-        if (Math.abs(carryDifference) < 0.005) return null;
-        const isEntry = carryDifference > 0;
-        const qty = Math.abs(carryDifference);
-        return {
-          time: bars[markerIndex].time,
-          position: isEntry ? "aboveBar" : "belowBar",
-          shape: isEntry ? "arrowDown" : "arrowUp",
-          color: isEntry ? "#dc2626" : "#16a34a",
-          is_entry: isEntry,
-          inferred: true,
-          outlineGlyph: isEntry ? "⇩" : "⇧",
-          qty,
-          hoverText: `INFERRED OPENING ${isEntry ? "SHORT" : "COVER"} ${qty.toFixed(2)} · exact execution time before visible window`
-        };
-      },
-
-      refreshPositionImpliedMarker(range = null) {
-        const bars = this.shortTermHistory?.bars || [];
-        const confirmedMarkers = this.confirmedExecutionMarkers || [];
-        if (!bars.length || !this.shortTermSeries) return;
-        const visibleRange = range || this.shortTermChart?.timeScale().getVisibleLogicalRange?.();
-        const inferredMarker = this.positionImpliedMarker(bars, confirmedMarkers, visibleRange?.from ?? 0);
-        const markers = inferredMarker ? [...confirmedMarkers, inferredMarker] : [...confirmedMarkers];
-        this.rawExecutionMarkers = markers.sort((a, b) => a.time - b.time);
-        if (!markers.some((marker) => marker.time === this.activeHoveredExecutionMarkerTime)) {
-          this.activeHoveredExecutionMarkerTime = null;
-        }
-        this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
-        window.latestExecutionMarkers = markers;
-      },
-
       tranchePnlSeries(marker) {
         const model = marker?.pnl_model;
         const bars = this.shortTermHistory?.bars || [];
@@ -9391,7 +9346,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       syncHoveredTrancheAnalytics(hoveredTime = null) {
         if (!this.shortTermSeries) return;
         const marker = this.rawExecutionMarkers?.find((m) =>
-          hoveredTime !== null && m.time === hoveredTime && m.is_entry && !m.inferred);
+          hoveredTime !== null && m.time === hoveredTime && m.is_entry && m.pnl_model);
         const targetSpread = Number(marker?.convergence_target_spread);
         const nextSpread = Number.isFinite(targetSpread) ? targetSpread : null;
         if (this.shortTermHoverReferenceLine) {
@@ -9575,9 +9530,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("valShortTermMa60").textContent = ma60Data.length ? `${ma60Data[ma60Data.length - 1].value.toFixed(2)}%` : "--%";
         }
 
-        const confirmedMarkers = Array.isArray(data.markers) ? data.markers : [];
-        this.confirmedExecutionMarkers = confirmedMarkers;
-        this.refreshPositionImpliedMarker();
+        const markers = Array.isArray(data.markers) ? [...data.markers] : [];
+        this.rawExecutionMarkers = markers.sort((a, b) => a.time - b.time);
+        if (!markers.some((marker) => marker.time === this.activeHoveredExecutionMarkerTime)) {
+          this.activeHoveredExecutionMarkerTime = null;
+        }
+        this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
+        window.latestExecutionMarkers = markers;
 
         const latest = data.bars[data.bars.length - 1];
         if ($("valShortTermCurrentParity") && latest) {

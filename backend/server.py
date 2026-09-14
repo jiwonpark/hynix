@@ -19,6 +19,8 @@ from .tranche_accounting import (
     estimate_tranche_exit,
     infer_entry_pairs,
 )
+from .counterfactual_trades import chart_markers as counterfactual_chart_markers
+from .counterfactual_trades import update_counterfactual_trades
 from .config import config
 from .binance_client import BinanceFuturesClient
 from .upbit_client import UpbitClient
@@ -477,7 +479,9 @@ async def get_hedged_status() -> Dict[str, Any]:
         base_entry = entry_spread if entry_spread else 139.30
         curr_spread = current_spread if current_spread else 139.30
         tranches_remaining = max(0, 10 - tranches_active)
-        can_scale_in = bool(tranches_remaining > 0 and free_buffer >= 2.0)
+        has_scale_in_capacity = tranches_remaining > 0
+        has_scale_in_margin = free_buffer >= 2.50
+        can_scale_in = bool(has_scale_in_capacity and has_scale_in_margin)
 
         # 1. Moving Average & Speculative Peak-Out Metrics
         parity_bars = await get_cached_parity_bars("5m", 60)
@@ -504,7 +508,12 @@ async def get_hedged_status() -> Dict[str, Any]:
         ma_stretch_pts = round(curr_spread - ma24, 2)
         is_stretched_above_ma = bool(ma_stretch_pts >= 0.10)
         is_above_entry = bool(curr_spread >= base_entry + 0.10) if tranches_active > 0 else True
-        scale_in_armed = bool(can_scale_in and is_stretched_above_ma and is_above_entry and is_peaking_out)
+        scale_in_setup = bool(is_stretched_above_ma and is_above_entry and is_peaking_out)
+        scale_in_armed = bool(can_scale_in and scale_in_setup)
+        scale_in_blocked_reason = (
+            "POSITION_CAPACITY" if not has_scale_in_capacity
+            else ("INSUFFICIENT_MARGIN" if not has_scale_in_margin else None)
+        )
         scale_in_trigger = round(max(ma24 + 0.10, base_entry + 0.10), 2)
 
         # 2. Multi-Tranche Entry Tracking (Anti-Churn LIFO Stack Queue)
@@ -658,6 +667,8 @@ async def get_hedged_status() -> Dict[str, Any]:
             "gap_to_scale_in_pts": round(scale_in_trigger - curr_spread, 2),
             "scale_in_threshold_pts": 0.10,
             "scale_in_armed": scale_in_armed,
+            "scale_in_setup": scale_in_setup,
+            "scale_in_blocked_reason": scale_in_blocked_reason,
             "tranches_active": tranches_active,
             "speculative_tranches_active": speculative_tranches_active,
             "core_accumulated_skhy": core_accumulated_skhy,
@@ -940,6 +951,10 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
         except Exception:
             logger.exception("Error loading trade markers")
 
+        markers.extend(counterfactual_chart_markers(
+            load_auto_tranche_state().get("counterfactual_trades", []), bars, interval_ms))
+        markers.sort(key=lambda marker: marker["time"])
+
         return {
             "success": True,
             "interval": interval,
@@ -1183,6 +1198,11 @@ async def auto_tranche_worker():
                     can_take_profit = bool(criteria.get("can_take_profit", False))
                     scale_in_armed = bool(criteria.get("scale_in_armed", False))
                     tranches_active = int(status.get("tranches_active", 0))
+
+                    adr_mark = float((status.get("adr_position") or {}).get("mark_price", 0.0))
+                    stock_mark = float((status.get("stock_position") or {}).get("mark_price", 0.0))
+                    if update_counterfactual_trades(state, criteria, adr_mark, stock_mark):
+                        save_auto_tranche_state(state)
 
                     now = time.time()
                     last_reduce = float(state.get("last_reduce_time", 0))

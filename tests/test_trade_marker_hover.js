@@ -35,13 +35,16 @@ assert.ok(html.includes('this.updateMarkerState(this.activeHoveredExecutionMarke
 assert.ok(!html.includes('let activeHoveredMarkerTime = null;'),
   'hover state must survive beyond the chart initialization closure');
 assert.ok(html.includes('size: 0.35,'),
-  'inferred marker glyphs need a nonzero body or Lightweight Charts hides their text');
+  'hypothetical marker glyphs need a nonzero body or Lightweight Charts hides their text');
+assert.ok(html.includes('if (m.hypothetical)'),
+  'only persisted counterfactual trades should use outline arrows');
+assert.ok(html.includes('Missed: capacity/margin'));
+assert.ok(!html.includes('positionImpliedMarker'),
+  'current inventory must never be presented as a missed trade');
 
-const inferredStart = html.indexOf('      positionImpliedMarker(bars, confirmedMarkers, visibleFrom = 0)');
-const pnlStart = html.indexOf('      tranchePnlSeries(marker)', inferredStart);
+const pnlStart = html.indexOf('      tranchePnlSeries(marker)');
 const lineStart = html.indexOf('      syncHoveredTrancheAnalytics(hoveredTime = null)', pnlStart);
 const lineEnd = html.indexOf('      calcMovingAverage(bars, period)', lineStart);
-const inferredMethod = html.slice(inferredStart, pnlStart);
 const pnlMethod = html.slice(pnlStart, lineStart);
 const lineMethod = html.slice(lineStart, lineEnd);
 const created = [], removed = [], pnlData = [], pnlCreated = [], pnlRemoved = [];
@@ -76,29 +79,6 @@ assert.equal(pnlLabel.textContent, '+$1.270');
 lineEngine.syncHoveredTrancheAnalytics(null);
 assert.equal(removed.length, 1, 'leaving the entry column must remove the convergence reference');
 assert.equal(pnlData.at(-1).length, 0, 'leaving the entry column must clear selected PnL');
-
-const inferredEngine = vm.runInContext(`({
-  state: {hedgedStatus: {adr_position: {position_amt: -.99}}},
-  ${inferredMethod}
-})`, vm.createContext({Number, Math}));
-const inferred = inferredEngine.positionImpliedMarker([{time: 100}], [
-  {is_entry: true, qty: .8}, {is_entry: false, qty: .1}
-]);
-assert.equal(inferred.is_entry, true);
-assert.equal(inferred.outlineGlyph, '⇩');
-assert.ok(Math.abs(inferred.qty - .29) < 1e-8, 'outline marker must reconcile loaded trades to position size');
-assert.equal(inferredEngine.positionImpliedMarker([{time: 100}], [{is_entry: true, qty: .99}]), null,
-  'no inferred marker should remain after confirmed history reconciles the position');
-const visibleCarry = inferredEngine.positionImpliedMarker(
-  [{time: 100}, {time: 200}, {time: 300}],
-  [{time: 100, is_entry: true, qty: .8}, {time: 200, is_entry: false, qty: .1}],
-  1
-);
-assert.equal(visibleCarry.time, 300, 'outline marker must stay just inside the visible canvas boundary');
-assert.ok(Math.abs(visibleCarry.qty - 1.09) < 1e-8,
-  'opening inventory must reconcile the current position using trades after the visible boundary');
-assert.ok(html.includes('this.refreshPositionImpliedMarker(range);'),
-  'panning the chart must re-anchor inferred inventory to the visible window');
 
 for (const redundantTitle of ['title: `ENTRY (${criteria.entry_baseline_spread.toFixed(2)}%)`',
                               'title: `SCALE-IN SHORT (${criteria.scale_in_trigger_spread.toFixed(2)}%)`',
