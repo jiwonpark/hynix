@@ -9275,7 +9275,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       updateMarkerState(hoveredTime = null) {
         if (!this.shortTermSeries || !this.rawExecutionMarkers) return;
         
-        const formattedMarkers = this.rawExecutionMarkers.map((m) => {
+        const confirmedKeys = new Set(
+          this.rawExecutionMarkers.filter((m) => !m.hypothetical).map((m) => `${m.time}_${m.is_entry ? 1 : 0}`)
+        );
+        const markersToRender = this.rawExecutionMarkers.filter((m) => {
+          if (m.hypothetical && confirmedKeys.has(`${m.time}_${m.is_entry ? 1 : 0}`)) {
+            return false;
+          }
+          return true;
+        });
+
+        const formattedMarkers = markersToRender.map((m) => {
           const isMatch = (hoveredTime !== null && m.time === hoveredTime);
           const isShort = (m.shape === "arrowDown" || m.is_entry || m.color === "#dc2626" || (typeof m.color === "string" && m.color.includes("220")));
 
@@ -9346,6 +9356,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       syncHoveredTrancheAnalytics(hoveredTime = null) {
         if (!this.shortTermSeries) return;
         const marker = this.rawExecutionMarkers?.find((m) =>
+          hoveredTime !== null && m.time === hoveredTime && m.is_entry && !m.hypothetical && m.pnl_model)
+          || this.rawExecutionMarkers?.find((m) =>
           hoveredTime !== null && m.time === hoveredTime && m.is_entry && m.pnl_model);
         const targetSpread = Number(marker?.convergence_target_spread);
         const nextSpread = Number.isFinite(targetSpread) ? targetSpread : null;
@@ -9530,8 +9542,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("valShortTermMa60").textContent = ma60Data.length ? `${ma60Data[ma60Data.length - 1].value.toFixed(2)}%` : "--%";
         }
 
-        const markers = Array.isArray(data.markers) ? [...data.markers] : [];
-        this.rawExecutionMarkers = markers.sort((a, b) => a.time - b.time);
+        const rawMarkers = Array.isArray(data.markers) ? [...data.markers] : [];
+        const confirmedKeys = new Set(
+          rawMarkers.filter((m) => !m.hypothetical).map((m) => `${m.time}_${m.is_entry ? 1 : 0}`)
+        );
+        const markers = rawMarkers
+          .filter((m) => !(m.hypothetical && confirmedKeys.has(`${m.time}_${m.is_entry ? 1 : 0}`)))
+          .sort((a, b) => a.time - b.time);
+        this.rawExecutionMarkers = markers;
         if (!markers.some((marker) => marker.time === this.activeHoveredExecutionMarkerTime)) {
           this.activeHoveredExecutionMarkerTime = null;
         }

@@ -19,8 +19,11 @@ from .tranche_accounting import (
     estimate_tranche_exit,
     infer_entry_pairs,
 )
-from .counterfactual_trades import chart_markers as counterfactual_chart_markers
-from .counterfactual_trades import update_counterfactual_trades
+from .counterfactual_trades import (
+    chart_markers as counterfactual_chart_markers,
+    reconcile_counterfactual_trades,
+    update_counterfactual_trades,
+)
 from .config import config
 from .binance_client import BinanceFuturesClient
 from .upbit_client import UpbitClient
@@ -951,8 +954,12 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
         except Exception:
             logger.exception("Error loading trade markers")
 
+        state = load_auto_tranche_state()
+        if reconcile_counterfactual_trades(state, executions, interval_ms):
+            save_auto_tranche_state(state)
+
         markers.extend(counterfactual_chart_markers(
-            load_auto_tranche_state().get("counterfactual_trades", []), bars, interval_ms))
+            state.get("counterfactual_trades", []), bars, interval_ms, confirmed_markers=markers))
         markers.sort(key=lambda marker: marker["time"])
 
         return {
@@ -1201,7 +1208,10 @@ async def auto_tranche_worker():
 
                     adr_mark = float((status.get("adr_position") or {}).get("mark_price", 0.0))
                     stock_mark = float((status.get("stock_position") or {}).get("mark_price", 0.0))
+                    state_changed = reconcile_counterfactual_trades(state, status.get("recent_executions", []))
                     if update_counterfactual_trades(state, criteria, adr_mark, stock_mark):
+                        state_changed = True
+                    if state_changed:
                         save_auto_tranche_state(state)
 
                     now = time.time()

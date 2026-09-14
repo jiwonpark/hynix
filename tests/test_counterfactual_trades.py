@@ -64,6 +64,27 @@ class CounterfactualTradeTests(unittest.TestCase):
         self.assertIn("est. net", markers[1]["hoverText"])
         self.assertIn("pnl_model", markers[0])
 
+    def test_confirmed_execution_suppresses_paper_marker_on_same_bar(self):
+        state = {}
+        update_counterfactual_trades(state, self.criteria(), 200, 5, now=1001)
+        bars = [{"time": 900}, {"time": 1200}]
+        # When a real manual scale in exists on bar 900:
+        confirmed = [{"time": 900, "is_entry": True, "qty": 0.16}]
+        markers = chart_markers(state["counterfactual_trades"], bars, 300000, confirmed_markers=confirmed)
+        self.assertEqual(len(markers), 0, "hypothetical marker must be suppressed when confirmed execution exists on same bar")
+
+    def test_reconcile_purges_open_trade_when_manual_scale_in_filled(self):
+        from backend.counterfactual_trades import reconcile_counterfactual_trades
+        state = {}
+        update_counterfactual_trades(state, self.criteria(), 200, 5, now=1001)
+        trade = state["counterfactual_trades"][0]
+        candle_ms = trade["entry_candle_ms"]
+        # Simulate manual scale in fill on that candle
+        executions = [{"time": candle_ms // 1000 + 20, "type": "SHORT", "qty": 0.08}]
+        changed = reconcile_counterfactual_trades(state, executions, 300000)
+        self.assertTrue(changed)
+        self.assertEqual(len(state["counterfactual_trades"]), 0, "open counterfactual trade superseded by manual scale in must be purged")
+
 
 if __name__ == "__main__":
     unittest.main()

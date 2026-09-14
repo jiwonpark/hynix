@@ -106,9 +106,47 @@ def update_counterfactual_trades(state, criteria, adr_mark, stock_mark, now=None
     return True
 
 
-def chart_markers(records, bars, interval_ms):
+def reconcile_counterfactual_trades(state, executions, candle_interval_ms=300000):
+    """Purge open counterfactual trades whose entry candle was executed with a real fill (e.g. manual scale in)."""
+    records = state.get("counterfactual_trades", [])
+    if not records or not executions:
+        return False
+    real_entry_candles = set()
+    for ex in executions:
+        is_entry = (
+            ex.get("type") == "SHORT"
+            or ex.get("action_type") == "ENTRY_SHORT"
+            or (ex.get("symbol") == "SKHYUSDT" and ex.get("side") == "SELL")
+        )
+        if is_entry:
+            t = ex.get("time", 0)
+            t_ms = int(t * 1000) if t < 1e11 else int(t)
+            candle_bucket = (t_ms // candle_interval_ms) * candle_interval_ms
+            real_entry_candles.add(candle_bucket)
+
+    if not real_entry_candles:
+        return False
+
+    initial_len = len(records)
+    state["counterfactual_trades"] = [
+        t for t in records
+        if not (t.get("status") == "OPEN" and t.get("entry_candle_ms") in real_entry_candles)
+    ]
+    if len(state["counterfactual_trades"]) != initial_len:
+        state["last_counterfactual_action"] = "SUPERSEDED_BY_MANUAL_EXECUTION"
+        return True
+    return False
+
+
+def chart_markers(records, bars, interval_ms, confirmed_markers=None):
     if not records or not bars:
         return []
+    confirmed_keys = set()
+    if confirmed_markers:
+        for cm in confirmed_markers:
+            if not cm.get("hypothetical"):
+                confirmed_keys.add((cm["time"], bool(cm.get("is_entry"))))
+
     start_ms = bars[0]["time"] * 1000
     end_ms = bars[-1]["time"] * 1000 + interval_ms
     markers = []
@@ -119,6 +157,11 @@ def chart_markers(records, bars, interval_ms):
                 continue
             bucket_sec = (event_ms // interval_ms) * (interval_ms // 1000)
             marker_bar = min(bars, key=lambda bar: abs(bar["time"] - bucket_sec))
+            marker_time = marker_bar["time"]
+            # If a confirmed execution already exists for this candle bar and direction,
+            # suppress the hypothetical marker so the real fill shows in place of paper.
+            if (marker_time, is_entry) in confirmed_keys:
+                continue
             reason = str(trade.get("blocked_reason", "CAPITAL CONSTRAINT")).replace("_", " ")
             net_pnl = trade.get("estimated_net_pnl_usd")
             hover = (
@@ -126,7 +169,7 @@ def chart_markers(records, bars, interval_ms):
                 if is_entry else f"MISSED COVER 0.07 · est. net ${net_pnl:+.3f}"
             )
             marker = {
-                "time": marker_bar["time"],
+                "time": marker_time,
                 "position": "aboveBar" if is_entry else "belowBar",
                 "color": "#dc2626" if is_entry else "#16a34a",
                 "shape": "arrowDown" if is_entry else "arrowUp",
