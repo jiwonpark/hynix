@@ -20,6 +20,7 @@ from .tranche_accounting import (
     infer_entry_pairs,
 )
 from .counterfactual_trades import (
+    backfill_historical_paper_trades,
     chart_markers as counterfactual_chart_markers,
     reconcile_counterfactual_trades,
     update_counterfactual_trades,
@@ -958,8 +959,19 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
         if reconcile_counterfactual_trades(state, executions, interval_ms):
             save_auto_tranche_state(state)
 
+        live_records = state.get("counterfactual_trades", [])
+        current_tranches = int(state.get("latest_tranches_active", 10))
+        backfilled_records = backfill_historical_paper_trades(
+            bars,
+            executions=executions,
+            interval_ms=interval_ms,
+            current_tranches=current_tranches,
+            existing_records=live_records,
+        )
+        combined_records = list(live_records) + backfilled_records
+
         markers.extend(counterfactual_chart_markers(
-            state.get("counterfactual_trades", []), bars, interval_ms, confirmed_markers=markers))
+            combined_records, bars, interval_ms, confirmed_markers=markers))
         markers.sort(key=lambda marker: marker["time"])
 
         return {
@@ -1205,10 +1217,14 @@ async def auto_tranche_worker():
                     can_take_profit = bool(criteria.get("can_take_profit", False))
                     scale_in_armed = bool(criteria.get("scale_in_armed", False))
                     tranches_active = int(status.get("tranches_active", 0))
+                    if state.get("latest_tranches_active") != tranches_active:
+                        state["latest_tranches_active"] = tranches_active
+                        state_changed = True
 
                     adr_mark = float((status.get("adr_position") or {}).get("mark_price", 0.0))
                     stock_mark = float((status.get("stock_position") or {}).get("mark_price", 0.0))
-                    state_changed = reconcile_counterfactual_trades(state, status.get("recent_executions", []))
+                    if reconcile_counterfactual_trades(state, status.get("recent_executions", [])):
+                        state_changed = True
                     if update_counterfactual_trades(state, criteria, adr_mark, stock_mark):
                         state_changed = True
                     if state_changed:

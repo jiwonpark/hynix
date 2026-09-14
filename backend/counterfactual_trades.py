@@ -138,6 +138,156 @@ def reconcile_counterfactual_trades(state, executions, candle_interval_ms=300000
     return False
 
 
+def backfill_historical_paper_trades(
+    bars,
+    executions=None,
+    interval_ms=300000,
+    current_tranches=10,
+    existing_records=None,
+    min_cooldown_bars=6,
+):
+    """
+    Scans historical parity bars to synthesize counterfactual (paper) trades
+    that occurred when tranches were at capacity (tranches_active >= 10).
+    """
+    if not bars or len(bars) < 26:
+        return []
+
+    existing_candle_times = set()
+    if existing_records:
+        for r in existing_records:
+            t = r.get("entry_candle_ms")
+            if t is not None:
+                existing_candle_times.add(int(t // interval_ms * (interval_ms // 1000)))
+            if r.get("exit_candle_ms") is not None:
+                existing_candle_times.add(int(r["exit_candle_ms"] // interval_ms * (interval_ms // 1000)))
+
+    confirmed_entry_times = set()
+    confirmed_exit_times = set()
+    trade_deltas_by_sec = []
+    step_sec = interval_ms // 1000
+    if executions:
+        for ex in executions:
+            t = ex.get("time", 0)
+            t_sec = int(t / 1000) if t > 1e11 else int(t)
+            is_entry = (
+                ex.get("type") == "SHORT"
+                or ex.get("action_type") == "ENTRY_SHORT"
+                or (ex.get("symbol") == "SKHYUSDT" and ex.get("side") == "SELL")
+            )
+            # Find closest candle bar within 1 bar window
+            matched = min(bars, key=lambda b: abs(b["time"] - t_sec))
+            if abs(matched["time"] - t_sec) <= step_sec:
+                if is_entry:
+                    confirmed_entry_times.add(matched["time"])
+                else:
+                    confirmed_exit_times.add(matched["time"])
+            if is_entry:
+                trade_deltas_by_sec.append((t_sec, +1))
+            else:
+                trade_deltas_by_sec.append((t_sec, -1))
+
+    trade_deltas_by_sec.sort(key=lambda x: x[0])
+
+    def get_tranches_at_sec(target_sec):
+        tranches = current_tranches
+        for t_sec, delta in reversed(trade_deltas_by_sec):
+            if t_sec > target_sec:
+                tranches -= delta
+            else:
+                break
+        return max(0, tranches)
+
+    backfilled = []
+    last_entry_bar_idx = -999
+
+    for i in range(24, len(bars)):
+        bar = bars[i]
+        bar_time = bar["time"]
+        val = float(bar["value"])
+
+        if bar_time in existing_candle_times:
+            last_entry_bar_idx = i
+            continue
+
+        if bar_time in confirmed_entry_times:
+            last_entry_bar_idx = i
+            continue
+
+        tranches = get_tranches_at_sec(bar_time)
+        if tranches < 10:
+            continue
+
+        if (i - last_entry_bar_idx) < min_cooldown_bars:
+            continue
+
+        ma_window = [float(b["value"]) for b in bars[i - 23 : i + 1]]
+        ma24 = sum(ma_window) / 24.0
+        stretch = val - ma24
+        if stretch < 0.10:
+            continue
+
+        prev_val = float(bars[i - 1]["value"])
+        prev2_val = float(bars[i - 2]["value"]) if i >= 2 else prev_val
+        is_peaking_out = (prev_val >= prev2_val and val <= prev_val) or (val < max(prev_val, prev2_val))
+        if not is_peaking_out:
+            continue
+
+        adr_px = float(bar.get("adr") or 0.0)
+        stock_px = float(bar.get("csop") or (adr_px / 37.5 if adr_px > 0 else 0.0))
+        if adr_px <= 0 or stock_px <= 0:
+            continue
+
+        entry_time_ms = bar_time * 1000
+        trade = {
+            "id": f"hist-missed-{entry_time_ms}",
+            "status": "OPEN",
+            "blocked_reason": "POSITION_CAPACITY",
+            "entry_time_ms": entry_time_ms,
+            "entry_candle_ms": entry_time_ms,
+            "entry_spread": round(val, 3),
+            "adr_entry_price": adr_px,
+            "stock_entry_price": stock_px,
+            "adr_entry_qty": ENTRY_ADR_QTY,
+            "stock_entry_qty": ENTRY_STOCK_QTY,
+            "historical_backfill": True,
+        }
+        last_entry_bar_idx = i
+
+        target_spread = round(val - 0.08, 3)
+        for k in range(i + 1, len(bars)):
+            exit_bar = bars[k]
+            exit_time_sec = exit_bar["time"]
+            if (exit_time_sec - bar_time) < 120:
+                continue
+
+            k_val = float(exit_bar["value"])
+            if k_val <= target_spread:
+                k_ma_window = [float(b["value"]) for b in bars[max(0, k - 23) : k + 1]]
+                k_ma24 = sum(k_ma_window) / len(k_ma_window)
+                k_prev = float(bars[k - 1]["value"])
+                is_bottoming = (k_val >= k_prev or k_val <= k_ma24)
+                if is_bottoming:
+                    exit_adr = float(exit_bar.get("adr") or adr_px)
+                    exit_stock = float(exit_bar.get("csop") or stock_px)
+                    est = estimate_counterfactual_exit(trade, exit_adr, exit_stock, exit_time_sec)
+                    if est and est["net_pnl_usd"] > MIN_NET_PROFIT_USD:
+                        trade.update({
+                            "status": "CLOSED",
+                            "exit_time_ms": exit_time_sec * 1000,
+                            "exit_candle_ms": exit_time_sec * 1000,
+                            "exit_spread": round(k_val, 3),
+                            "adr_exit_price": exit_adr,
+                            "stock_exit_price": exit_stock,
+                            "estimated_net_pnl_usd": round(est["net_pnl_usd"], 6),
+                        })
+                        break
+
+        backfilled.append(trade)
+
+    return backfilled
+
+
 def chart_markers(records, bars, interval_ms, confirmed_markers=None):
     if not records or not bars:
         return []

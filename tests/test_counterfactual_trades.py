@@ -85,6 +85,52 @@ class CounterfactualTradeTests(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual(len(state["counterfactual_trades"]), 0, "open counterfactual trade superseded by manual scale in must be purged")
 
+    def test_backfill_historical_paper_trades_at_capacity(self):
+        from backend.counterfactual_trades import backfill_historical_paper_trades
+        # Construct 35 bars (5m each)
+        bars = []
+        base_time = 100000
+        for i in range(35):
+            # First 24 bars flat at 139.0
+            if i < 24:
+                val = 139.0
+            elif i == 24:
+                val = 140.2  # Spike up
+            elif i == 25:
+                val = 140.5  # Crest peak
+            elif i == 26:
+                val = 140.4  # Peak-out rollover
+            elif i == 27:
+                val = 139.8  # Dropping
+            else:
+                val = 138.8  # Converged / bottomed
+            adr_val = 180.0 if i < 28 else 177.0
+            bars.append({
+                "time": base_time + i * 300,
+                "value": val,
+                "adr": adr_val,
+                "csop": 4.80,
+            })
+
+        # 1. At capacity (10 tranches): should generate backfilled trade
+        trades = backfill_historical_paper_trades(bars, current_tranches=10)
+        self.assertGreaterEqual(len(trades), 1)
+        trade = trades[0]
+        self.assertEqual(trade["blocked_reason"], "POSITION_CAPACITY")
+        self.assertTrue(trade["historical_backfill"])
+        self.assertEqual(trade["status"], "CLOSED")
+        self.assertGreater(trade["estimated_net_pnl_usd"], 0.02)
+
+        # 2. Not at capacity (e.g. 5 tranches): should not generate paper trade
+        no_trades = backfill_historical_paper_trades(bars, current_tranches=5)
+        self.assertEqual(len(no_trades), 0)
+
+        # 3. Confirmed execution on the peak bar: should suppress paper trade
+        peak_time = trade["entry_candle_ms"] // 1000
+        execs = [{"time": peak_time, "type": "SHORT", "qty": 0.08}]
+        suppressed = backfill_historical_paper_trades(bars, executions=execs, current_tranches=10)
+        self.assertEqual(len(suppressed), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
