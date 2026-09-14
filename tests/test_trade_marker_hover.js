@@ -67,7 +67,7 @@ const lineEngine = vm.runInContext(`({
   $: id => id === 'valShortTermNetPnl' ? pnlLabel : null}));
 lineEngine.syncHoveredTrancheAnalytics(1000);
 assert.equal(created[0].price, 139.26, 'entry x-hover must draw its convergence reference');
-assert.equal(created[0].title, 'CONVERGENCE REF', 'the spread line must not claim exact profitability');
+assert.equal(created[0].title, 'SELECTED REF', 'the spread line must not claim exact profitability');
 assert.equal(pnlData[0][0].value, 1.27, 'net PnL must use both paired legs');
 assert.equal(pnlCreated[0].price, .02, 'the PnL pane must show the actual exit threshold');
 assert.equal(pnlLabel.textContent, '+$1.270');
