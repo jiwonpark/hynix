@@ -79,11 +79,22 @@ def update_counterfactual_trades(state, criteria, adr_mark, stock_mark, now=None
             state["last_counterfactual_action"] = "MISSED_EXIT_RECORDED"
             return True
 
+    # Restrict volume of missed opportunities:
+    # 1. Allow at most 1 open paper trade at any time.
+    if open_trades:
+        return False
+
     blocker = criteria.get("scale_in_blocked_reason")
     if not criteria.get("scale_in_setup") or blocker not in {"POSITION_CAPACITY", "INSUFFICIENT_MARGIN"}:
         return False
     if not _valid_prices(adr_mark, stock_mark):
         return False
+
+    # 2. Enforce minimum cooldown of at least 45 minutes (2700s) between consecutive entries
+    if records:
+        last_entry_time = max(t.get("entry_time_ms", 0) for t in records) / 1000
+        if (now - last_entry_time) < 2700:
+            return False
 
     candle_ms = int(now // 300) * 300000
     if any(trade.get("entry_candle_ms") == candle_ms for trade in records):
@@ -144,7 +155,7 @@ def backfill_historical_paper_trades(
     interval_ms=300000,
     current_tranches=10,
     existing_records=None,
-    min_cooldown_bars=6,
+    min_cooldown_bars=12,
 ):
     """
     Scans historical parity bars to synthesize counterfactual (paper) trades
@@ -216,6 +227,9 @@ def backfill_historical_paper_trades(
 
         tranches = get_tranches_at_sec(bar_time)
         if tranches < 10:
+            continue
+
+        if backfilled and backfilled[-1].get("status") == "OPEN":
             continue
 
         if (i - last_entry_bar_idx) < min_cooldown_bars:
