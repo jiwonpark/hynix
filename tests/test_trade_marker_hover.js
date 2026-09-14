@@ -34,6 +34,8 @@ assert.ok(html.includes('this.updateMarkerState(this.activeHoveredExecutionMarke
   'live chart redraws must preserve the active trade price label');
 assert.ok(!html.includes('let activeHoveredMarkerTime = null;'),
   'hover state must survive beyond the chart initialization closure');
+assert.ok(html.includes('size: 0.35,'),
+  'inferred marker glyphs need a nonzero body or Lightweight Charts hides their text');
 
 const inferredStart = html.indexOf('      positionImpliedMarker(bars, confirmedMarkers, visibleFrom = 0)');
 const pnlStart = html.indexOf('      tranchePnlSeries(marker)', inferredStart);
