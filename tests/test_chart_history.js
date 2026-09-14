@@ -13,6 +13,10 @@ assert.ok(html.includes("setShortTermInterval('1h')"), 'hourly chart control mus
 assert.ok(html.includes("setShortTermInterval('4h')"), 'four-hour chart control must be visible');
 assert.ok(html.includes('["1m", "5m", "15m", "1h", "4h", "1d"]'),
   'every chart mode must participate in interval selection');
+assert.ok(html.includes('grid-template-columns: minmax(0, 1fr);'),
+  'the parity chart must occupy the full execution panel width');
+assert.ok(html.includes('class="shortTermCriteriaGrid"'),
+  'criteria should move below the full-width chart');
 let range = { from: 0, to: 1 }, rendered;
 engine.shortTermChart = { timeScale: () => ({getVisibleLogicalRange: () => range, setVisibleLogicalRange: r => {range = r;}}) };
 engine.renderShortTermChart = data => { rendered = data; };
