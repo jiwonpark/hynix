@@ -106,6 +106,25 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result['next_end_time'])
         self.assertEqual(self.client.request.await_count, 4)
 
+    async def test_daily_chart_uses_daily_klines_and_valid_trade_history_window(self):
+        times = [86400000 * i for i in range(1, 21)]
+        requests = []
+        async def request(method, path, params, **kwargs):
+            requests.append((path, params))
+            if 'klines' in path:
+                return [[timestamp, 0, 0, 0, '100'] for timestamp in times]
+            return []
+        self.client.request.side_effect = request
+        result = await server.get_short_term_parity('1d', 20)
+        self.assertEqual(result['interval'], '1d')
+        self.assertEqual(len(result['bars']), 20)
+        kline_params = [params for path, params in requests if 'klines' in path]
+        self.assertTrue(all(params['interval'] == '1d' for params in kline_params))
+        trade_params = [params for path, params in requests if 'userTrades' in path]
+        self.assertEqual(len(trade_params), 1)
+        self.assertNotIn('startTime', trade_params[0])
+        self.assertNotIn('endTime', trade_params[0])
+
     async def test_entry_chart_marker_shows_minimum_net_profit(self):
         times = [300000 * i for i in range(1, 21)]
         async def request(method, path, params, **kwargs):
