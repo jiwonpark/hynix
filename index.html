@@ -9517,7 +9517,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   const shift = !older && range.to >= previous.length - 1 ? history.bars.length - previous.length : added;
                   this.shortTermChart.timeScale().setVisibleLogicalRange({ from: range.from + shift, to: range.to + shift });
                 } else if (history.bars.length) {
-                  this.shortTermChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, history.bars.length - 100), to: history.bars.length + 2 });
+                  this.shortTermChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, history.bars.length - 120), to: history.bars.length + 2 });
                 }
               } finally { this.shortTermRendering = false; }
               if (older && !history.hasMore && $("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Start of available history";
