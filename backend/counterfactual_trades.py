@@ -54,9 +54,9 @@ def update_counterfactual_trades(state, criteria, adr_mark, stock_mark, now=None
     records = state.setdefault("counterfactual_trades", [])
     open_trades = [trade for trade in records if trade.get("status") == "OPEN"]
 
-    # Match the live worker's priority: exit the newest eligible tranche before considering entry.
-    if open_trades:
-        trade = open_trades[-1]
+    # Evaluate exits for all eligible open trades so each missed tranche can take profit.
+    state_changed = False
+    for trade in open_trades:
         estimate = estimate_counterfactual_exit(trade, adr_mark, stock_mark, now)
         target = float(trade["entry_spread"]) - 0.08
         exit_ready = bool(
@@ -76,29 +76,29 @@ def update_counterfactual_trades(state, criteria, adr_mark, stock_mark, now=None
                 stock_exit_price=float(stock_mark),
                 estimated_net_pnl_usd=round(estimate["net_pnl_usd"], 6),
             )
+            state_changed = True
             state["last_counterfactual_action"] = "MISSED_EXIT_RECORDED"
-            return True
 
-    # Restrict volume of missed opportunities:
-    # 1. Allow at most 1 open paper trade at any time.
-    if open_trades:
-        return False
+    # Allow comprehensive multi-tranche paper tracking (up to 10 paper tranches)
+    open_count = sum(1 for t in records if t.get("status") == "OPEN")
+    if open_count >= 10:
+        return state_changed
 
     blocker = criteria.get("scale_in_blocked_reason")
     if not criteria.get("scale_in_setup") or blocker not in {"POSITION_CAPACITY", "INSUFFICIENT_MARGIN"}:
-        return False
+        return state_changed
     if not _valid_prices(adr_mark, stock_mark):
-        return False
+        return state_changed
 
-    # 2. Enforce minimum cooldown of at least 45 minutes (2700s) between consecutive entries
+    # 15-minute (900s) wave cadence between entries to capture distinct crests without 5m clutter
     if records:
         last_entry_time = max(t.get("entry_time_ms", 0) for t in records) / 1000
-        if (now - last_entry_time) < 2700:
-            return False
+        if (now - last_entry_time) < 900:
+            return state_changed
 
     candle_ms = int(now // 300) * 300000
     if any(trade.get("entry_candle_ms") == candle_ms for trade in records):
-        return False
+        return state_changed
     records.append({
         "id": f"missed-{int(now * 1000)}",
         "status": "OPEN",
@@ -155,11 +155,12 @@ def backfill_historical_paper_trades(
     interval_ms=300000,
     current_tranches=10,
     existing_records=None,
-    min_cooldown_bars=12,
+    min_cooldown_bars=3,
+    capacity_threshold=7,
 ):
     """
     Scans historical parity bars to synthesize counterfactual (paper) trades
-    that occurred when tranches were at capacity (tranches_active >= 10).
+    that occurred when tranches were heavily loaded / at capacity (tranches_active >= capacity_threshold).
     """
     if not bars or len(bars) < 26:
         return []
@@ -226,10 +227,7 @@ def backfill_historical_paper_trades(
             continue
 
         tranches = get_tranches_at_sec(bar_time)
-        if tranches < 10:
-            continue
-
-        if backfilled and backfilled[-1].get("status") == "OPEN":
+        if tranches < capacity_threshold:
             continue
 
         if (i - last_entry_bar_idx) < min_cooldown_bars:
