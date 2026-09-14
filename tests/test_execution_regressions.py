@@ -187,7 +187,9 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             {'symbol': 'SKHYUSDT', 'position_amt': -.08, 'unrealized_pnl': 1},
             {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 1.4}]
         self.client.get_detailed_account_overview.return_value['positions'] = positions
-        self.client.create_order.return_value = {'status': 'FILLED'}
+        async def filled_order(symbol, side, quantity, order_type, **kwargs):
+            return {'status': 'FILLED', 'executedQty': str(quantity)}
+        self.client.create_order.side_effect = filled_order
         status = {'adr_position': positions[0], 'stock_position': positions[1],
                   'auto_tranche_criteria': {'can_take_profit': False, 'status_take_profit': 'LOCKED_AWAITING_PROFIT'}}
         with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
@@ -198,6 +200,52 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.client.create_order.await_count, 2)
             status['auto_tranche_criteria']['can_take_profit'] = False
             self.assertTrue((await server.reduce_tranche(force=True))['success'])
+
+    async def test_failed_second_reduction_leg_records_fill_and_blocks_retry(self):
+        positions = [
+            {'symbol': 'SKHYUSDT', 'position_amt': -.08},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 1.4}]
+        status = {'adr_position': positions[0], 'stock_position': positions[1],
+                  'auto_tranche_criteria': {'can_take_profit': True}}
+        self.client.create_order.side_effect = [
+            {'status': 'FILLED', 'executedQty': '0.07', 'orderId': 301},
+            RuntimeError('ETF reduction rejected')]
+        with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
+            first = await server.reduce_tranche()
+            self.assertFalse(first['success'])
+            recovery = first['execution_recovery']
+            self.assertEqual(recovery['operation'], 'REDUCE_TRANCHE')
+            self.assertEqual(recovery['order_adr']['orderId'], 301)
+            self.assertFalse(server.load_auto_tranche_state()['enabled'])
+            second = await server.reduce_tranche()
+            self.assertTrue(second['recovery_required'])
+            self.assertEqual(self.client.create_order.await_count, 2)
+            self.assertFalse((await server.toggle_auto_tranche(True))['success'])
+
+    async def test_unknown_first_reduction_leg_does_not_submit_etf(self):
+        positions = [
+            {'symbol': 'SKHYUSDT', 'position_amt': -.08},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 1.4}]
+        self.client.get_detailed_account_overview.return_value['positions'] = positions
+        self.client.create_order.side_effect = TimeoutError('unknown reduction outcome')
+        first = await server.reduce_tranche(force=True)
+        self.assertTrue(first['recovery_required'])
+        self.assertEqual(first['execution_recovery']['phase'], 'ADR_SUBMITTING')
+        await server.reduce_tranche(force=True)
+        self.assertEqual(self.client.create_order.await_count, 1)
+
+    async def test_partial_reduction_fill_is_not_reported_as_success(self):
+        positions = [
+            {'symbol': 'SKHYUSDT', 'position_amt': -.08},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 1.4}]
+        self.client.get_detailed_account_overview.return_value['positions'] = positions
+        self.client.create_order.return_value = {
+            'status': 'PARTIALLY_FILLED', 'executedQty': '0.03', 'orderId': 401}
+        result = await server.reduce_tranche(force=True)
+        self.assertFalse(result['success'])
+        self.assertTrue(result['recovery_required'])
+        self.assertEqual(result['execution_recovery']['order_adr']['orderId'], 401)
+        self.assertEqual(self.client.create_order.await_count, 1)
 
     async def test_successful_entry_records_both_order_ids(self):
         self.client.create_order.side_effect = [

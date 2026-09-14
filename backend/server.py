@@ -1008,7 +1008,16 @@ async def reduce_tranche(force: bool = False) -> Dict[str, Any]:
 
 async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
     """Close the latest matched tranche only when the shared exit criteria pass."""
+    recovery = None
     try:
+        state = load_auto_tranche_state()
+        if state.get("execution_recovery"):
+            return {
+                "success": False,
+                "error": "Reduction paused: reconcile the previous order outcomes before resuming.",
+                "recovery_required": True,
+                "execution_recovery": state["execution_recovery"],
+            }
         status = None
         if not force:
             status = await get_hedged_status()
@@ -1048,16 +1057,39 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         if adr_reduce_qty <= 0 or stock_reduce_qty <= 0:
             return {"success": False, "error": f"Position sizes too small to reduce: ADR {adr_pos_amt}, Stock {stock_pos_amt}"}
 
-        order_adr, order_stock = await asyncio.gather(
-            binance_client.create_order("SKHYUSDT", "BUY", adr_reduce_qty, "MARKET", reduce_only=True),
-            binance_client.create_order(stock_sym, "SELL", stock_reduce_qty, "MARKET", reduce_only=True),
-            return_exceptions=True
-        )
+        recovery = {
+            "operation": "REDUCE_TRANCHE",
+            "started_at": time.time(),
+            "phase": "ADR_SUBMITTING",
+            "adr_symbol": "SKHYUSDT",
+            "adr_quantity": adr_reduce_qty,
+            "stock_symbol": stock_sym,
+            "stock_quantity": stock_reduce_qty,
+            "order_adr": None,
+            "order_stock": None,
+        }
+        state["execution_recovery"] = recovery
+        save_auto_tranche_state(state)
 
-        if isinstance(order_adr, Exception):
-            return {"success": False, "error": f"Failed to close ADR: {order_adr}"}
-        if isinstance(order_stock, Exception):
-            return {"success": False, "error": f"Failed to close Stock/ETF: {order_stock}"}
+        order_adr = await binance_client.create_order(
+            "SKHYUSDT", "BUY", adr_reduce_qty, "MARKET", reduce_only=True)
+        recovery["order_adr"] = order_adr
+        if (order_adr.get("status") != "FILLED"
+                or float(order_adr.get("executedQty", 0)) < adr_reduce_qty):
+            raise RuntimeError("ADR reduction fill is incomplete or unconfirmed")
+
+        recovery["phase"] = "ETF_SUBMITTING"
+        save_auto_tranche_state(state)
+        order_stock = await binance_client.create_order(
+            stock_sym, "SELL", stock_reduce_qty, "MARKET", reduce_only=True)
+        recovery["order_stock"] = order_stock
+        if (order_stock.get("status") != "FILLED"
+                or float(order_stock.get("executedQty", 0)) < stock_reduce_qty):
+            raise RuntimeError("Stock/ETF reduction fill is incomplete or unconfirmed")
+
+        state = load_auto_tranche_state()
+        state.pop("execution_recovery", None)
+        save_auto_tranche_state(state)
 
         return {
             "success": True,
@@ -1068,7 +1100,22 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception("Error reducing tranche")
-        return {"success": False, "error": str(e)}
+        if recovery is not None:
+            recovery["error"] = str(e)
+            state = load_auto_tranche_state()
+            state.update(
+                enabled=False,
+                execution_recovery=recovery,
+                last_error=str(e),
+                last_action="EXECUTION_RECONCILIATION_REQUIRED",
+            )
+            save_auto_tranche_state(state)
+        return {
+            "success": False,
+            "error": str(e),
+            "recovery_required": recovery is not None,
+            "execution_recovery": recovery,
+        }
 
 @app.get("/api/trade/auto_tranche_status")
 async def get_auto_tranche_status() -> Dict[str, Any]:
