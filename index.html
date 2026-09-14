@@ -9220,6 +9220,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
 
         this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          this.refreshPositionImpliedMarker(range);
           if (range && range.from < 20 && !this.shortTermRendering) this.fetchShortTermParity(true);
         });
         this.maVisibility = { ma7: true, ma24: true, ma60: true };
@@ -9315,10 +9316,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.syncHoveredTrancheAnalytics(hoveredTime);
       },
 
-      positionImpliedMarker(bars, confirmedMarkers) {
+      positionImpliedMarker(bars, confirmedMarkers, visibleFrom = 0) {
         const positionAmt = Number(this.state.hedgedStatus?.adr_position?.position_amt);
         if (!bars?.length || !Number.isFinite(positionAmt)) return null;
+        const firstVisibleIndex = Math.max(0, Math.min(bars.length - 1, Math.ceil(Number(visibleFrom) || 0)));
+        const firstVisibleTime = bars[firstVisibleIndex].time;
         const confirmedNetShort = (confirmedMarkers || []).reduce((net, marker) => {
+          if (marker.time < firstVisibleTime) return net;
           const qty = Number(marker.qty);
           if (!Number.isFinite(qty)) return net;
           return net + (marker.is_entry ? qty : -qty);
@@ -9328,7 +9332,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const isEntry = carryDifference > 0;
         const qty = Math.abs(carryDifference);
         return {
-          time: bars[0].time,
+          time: firstVisibleTime,
           position: isEntry ? "aboveBar" : "belowBar",
           shape: isEntry ? "arrowDown" : "arrowUp",
           color: isEntry ? "#dc2626" : "#16a34a",
@@ -9336,8 +9340,23 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           inferred: true,
           outlineGlyph: isEntry ? "⇩" : "⇧",
           qty,
-          hoverText: `INFERRED PRIOR ${isEntry ? "SHORT" : "COVER"} ${qty.toFixed(2)} · exact time before loaded history`
+          hoverText: `INFERRED OPENING ${isEntry ? "SHORT" : "COVER"} ${qty.toFixed(2)} · exact execution time before visible window`
         };
+      },
+
+      refreshPositionImpliedMarker(range = null) {
+        const bars = this.shortTermHistory?.bars || [];
+        const confirmedMarkers = this.confirmedExecutionMarkers || [];
+        if (!bars.length || !this.shortTermSeries) return;
+        const visibleRange = range || this.shortTermChart?.timeScale().getVisibleLogicalRange?.();
+        const inferredMarker = this.positionImpliedMarker(bars, confirmedMarkers, visibleRange?.from ?? 0);
+        const markers = inferredMarker ? [...confirmedMarkers, inferredMarker] : [...confirmedMarkers];
+        this.rawExecutionMarkers = markers.sort((a, b) => a.time - b.time);
+        if (!markers.some((marker) => marker.time === this.activeHoveredExecutionMarkerTime)) {
+          this.activeHoveredExecutionMarkerTime = null;
+        }
+        this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
+        window.latestExecutionMarkers = markers;
       },
 
       tranchePnlSeries(marker) {
@@ -9556,14 +9575,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
 
         const confirmedMarkers = Array.isArray(data.markers) ? data.markers : [];
-        const inferredMarker = this.positionImpliedMarker(data.bars, confirmedMarkers);
-        const markers = inferredMarker ? [...confirmedMarkers, inferredMarker] : confirmedMarkers;
-        this.rawExecutionMarkers = markers.sort((a, b) => a.time - b.time);
-        if (!markers.some((m) => m.time === this.activeHoveredExecutionMarkerTime)) {
-          this.activeHoveredExecutionMarkerTime = null;
-        }
-        this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
-        window.latestExecutionMarkers = markers;
+        this.confirmedExecutionMarkers = confirmedMarkers;
+        this.refreshPositionImpliedMarker();
 
         const latest = data.bars[data.bars.length - 1];
         if ($("valShortTermCurrentParity") && latest) {
