@@ -34,10 +34,12 @@ assert.ok(html.includes('this.updateMarkerState(this.activeHoveredExecutionMarke
   'live chart redraws must preserve the active trade price label');
 assert.ok(!html.includes('let activeHoveredMarkerTime = null;'),
   'hover state must survive beyond the chart initialization closure');
-assert.ok(html.includes('size: 0.35,'),
-  'hypothetical marker glyphs need a nonzero body or Lightweight Charts hides their text');
+assert.ok(html.includes('shape: isShort ? "arrowDown" : "arrowUp"'),
+  'hypothetical markers must use arrow shapes instead of colored circle dots');
+assert.ok(html.includes('rgba(220, 38, 38, 0.35)'),
+  'hypothetical markers must be styled with subtle dimmed transparency');
 assert.ok(html.includes('if (m.hypothetical)'),
-  'only persisted counterfactual trades should use outline arrows');
+  'only persisted counterfactual trades should use dimmed paper arrows');
 assert.ok(html.includes('Missed: capacity/margin'));
 assert.ok(!html.includes('positionImpliedMarker'),
   'current inventory must never be presented as a missed trade');
