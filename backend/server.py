@@ -1324,6 +1324,7 @@ async def auto_tranche_worker():
     while True:
         try:
             state = load_auto_tranche_state()
+            state_changed = False
             if state.get("enabled", False) and not state.get("execution_recovery"):
                 status = await get_hedged_status()
                 if status.get("authenticated"):
