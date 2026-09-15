@@ -28,3 +28,25 @@ class TrancheStackUITests(unittest.TestCase):
         self.assertIn('>SYNCING</span>', self.html)
         self.assertIn('accountSyncPending: true', self.html)
         self.assertNotIn('id="valAccountEquity" style="color: #0284c7; font-size: 16px;">$10,000.00', self.html)
+
+    def test_entry_and_exit_condition_checklists_are_visible(self):
+        # Entry conditions
+        self.assertIn('id="entryConditionsChecklist"', self.html)
+        self.assertIn('1. MA-24 Stretch', self.html)
+        self.assertIn('2. Base Entry Spread', self.html)
+        self.assertIn('3. 5m Peak Rollover Filter', self.html)
+        self.assertIn('4. Dynamic Tranche Capacity', self.html)
+        self.assertIn('5. Gross Leverage Cap', self.html)
+        self.assertIn('6. Buffered Margin Check', self.html)
+        self.assertIn('7. Worker State & Cooldown', self.html)
+
+        # Exit conditions
+        self.assertIn('id="exitConditionsChecklist"', self.html)
+        self.assertIn('1. Active Speculative Tranche', self.html)
+        self.assertIn('2. Spread Convergence Target', self.html)
+        self.assertIn('3. Net Profit (> +$0.02 USD)', self.html)
+        self.assertIn('4. Anti-Churn Dwell (≥ 120s)', self.html)
+        self.assertIn('5. Bearish MA Stack (5m + 1h)', self.html)
+        self.assertIn('6. Bottoming-Out Filter', self.html)
+        self.assertIn('7. Position Sufficiency Check', self.html)
+

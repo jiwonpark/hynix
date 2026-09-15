@@ -1042,6 +1042,65 @@
     @media (max-width: 1100px) {
       .shortTermCriteriaGrid { grid-template-columns: 1fr; }
     }
+    .condChecklist {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid #f1f5f9;
+      font-size: 11px;
+    }
+    .condRow {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 6px;
+      border-radius: 4px;
+      background: #f8fafc;
+      gap: 6px;
+    }
+    .condLabel {
+      color: #475569;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+      font-size: 10.5px;
+    }
+    .condValue {
+      color: #0f172a;
+      font-weight: 700;
+      font-family: monospace;
+      font-size: 10px;
+      white-space: nowrap;
+    }
+    .condBadge {
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      white-space: nowrap;
+      letter-spacing: 0.3px;
+    }
+    .condBadge.pass {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .condBadge.wait {
+      background: #fef3c7;
+      color: #b45309;
+    }
+    .condBadge.fail {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .condBadge.neutral {
+      background: #f1f5f9;
+      color: #64748b;
+    }
     .btnShortInterval {
       padding: 3px 10px;
       font-size: 11px;
@@ -2278,7 +2337,7 @@
             <!-- Real-Time Auto-Tranche Criteria Panel (실시간 자동 트랜치 판단 기준) -->
             <div class="shortTermCriteriaGrid">
               <!-- 1. Scale-in Criteria Card -->
-              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px;">
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                   <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Speculative Scale-In (+0.08 SKHY / +1.40 CSOP)</span>
                   <span id="badgeCriteriaScaleIn" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #b45309;">WAITING</span>
@@ -2286,22 +2345,57 @@
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritScaleInDesc">
                   Trigger: Parity <strong>≥ <span id="valCritScaleInThreshold">139.42%</span></strong> (MA-24: <span id="valCritMa24">139.25%</span> + 0.10%)
                 </div>
-                <div style="font-size: 11px; color: #64748b; margin-top: 3px; display: flex; justify-content: space-between;">
-                  <span>MA Stretch: <strong id="valCritMaStretch" style="color: #d97706;">+0.00% pts</strong></span>
-                  <span>Trend: <strong id="valCritPeakOut" style="color: #64748b;">WAITING</strong></span>
-                </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
                   <span>Current Parity: <strong id="valCritCurrentSpread">139.30%</strong></span>
-                  <span>Gap to Scale-in: <strong id="valCritGapScaleIn" style="color: #d97706;">+0.12% pts</strong></span>
+                  <span>Gap to Trigger: <strong id="valCritGapScaleIn" style="color: #d97706;">+0.12% pts</strong></span>
                 </div>
                 <!-- Progress bar towards scale-in -->
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
                   <div id="barCritScaleInProgress" style="width: 25%; height: 100%; background: #f59e0b;"></div>
                 </div>
+
+                <!-- 7 Entry Conditions Checklist -->
+                <div class="condChecklist" id="entryConditionsChecklist">
+                  <div class="condRow">
+                    <span class="condLabel" title="Current spread must exceed 24-period MA by at least +0.10% points">1. MA-24 Stretch (≥ +0.10%)</span>
+                    <span class="condValue" id="valCondEntryMaStretch"><strong id="valCritMaStretch" style="color: #d97706;">+0.00% pts</strong></span>
+                    <span class="condBadge wait" id="badgeCondEntryMaStretch">WAIT</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Current spread must exceed base entry by +0.10% points if tranches are active">2. Base Entry Spread (+0.10%)</span>
+                    <span class="condValue" id="valCondEntryBase">--</span>
+                    <span class="condBadge wait" id="badgeCondEntryBase">WAIT</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="5-minute bar momentum must be exhausted (current bar ≤ prev bar or lower than local high)">3. 5m Peak Rollover Filter</span>
+                    <span class="condValue" id="valCondEntryPeak"><strong id="valCritPeakOut" style="color: #64748b;">WAITING</strong></span>
+                    <span class="condBadge wait" id="badgeCondEntryPeak">WAIT</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Active speculative tranches must not exceed live equity-based capacity limit">4. Dynamic Tranche Capacity</span>
+                    <span class="condValue" id="valCondEntryCapacity">-- / --</span>
+                    <span class="condBadge pass" id="badgeCondEntryCapacity">PASS</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Projected gross portfolio leverage after new tranche must remain ≤ 8.00x">5. Gross Leverage Cap (≤ 8.0x)</span>
+                    <span class="condValue" id="valCondEntryLeverage">-- / 8.0x</span>
+                    <span class="condBadge pass" id="badgeCondEntryLeverage">PASS</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Free margin must satisfy 125% buffered requirement (min $2.50)">6. Buffered Margin Check</span>
+                    <span class="condValue" id="valCondEntryMargin">-- ≥ $2.50</span>
+                    <span class="condBadge pass" id="badgeCondEntryMargin">PASS</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Auto-tranche daemon must be enabled, cooldown expired (60s), and no recovery lock">7. Worker State & Cooldown</span>
+                    <span class="condValue" id="valCondEntryEngine">READY</span>
+                    <span class="condBadge pass" id="badgeCondEntryEngine">READY</span>
+                  </div>
+                </div>
               </div>
 
               <!-- 2. Convergence Take-Profit Criteria Card -->
-              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px;">
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                   <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lblCritTPTitle">🎯 Anti-Churn Take-Profit (0.07 SKHY / 1.20 CSOP)</span>
                   <span id="badgeCriteriaTP" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #166534;">ZERO-LOSS LOCKED</span>
@@ -2309,45 +2403,80 @@
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritTPDesc">
                   Convergence ref: Parity <strong>≤ <span id="valCritOutTargetSpread">139.22%</span></strong> (<span id="valCritLatestInSpread">139.30%</span> - 0.08%)
                 </div>
-                <div style="font-size: 11px; color: #64748b; margin-top: 3px; display: flex; justify-content: space-between;">
-                  <span>Latest Tranche Est. Net PnL: <strong id="valCritCombinedPnl">—</strong></span>
-                  <span>Hold Dwell: <strong id="valCritDwell" style="color: #64748b;">0s / 120s</strong></span>
-                </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
                   <span>Current Parity: <strong id="valCritTpCurrentSpread">139.30%</strong></span>
-                  <span>Exit MA Stack (5m + 1h): <strong id="valCritExitMaStack" style="color: #d97706;">Both timeframes required</strong></span>
-                  <span>Bottoming Out: <strong id="valCritBottomingOut" style="color: #16a34a;">TROUGH REBOUND / MA</strong></span>
-                </div>
-                <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
-                  <span>Ref Fill Spread: <strong id="valCritLatestInSpread">139.30%</strong></span>
-                  <span>Gap to Out: <strong id="valCritGapTP" style="color: #0284c7;">+0.08% pts</strong></span>
+                  <span>Gap to Target: <strong id="valCritGapTP" style="color: #0284c7;">+0.08% pts</strong></span>
                 </div>
                 <!-- Progress bar towards TP -->
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
                   <div id="barCritTPProgress" style="width: 10%; height: 100%; background: #10b981;"></div>
                 </div>
-                <div style="font-size: 10px; color: #64748b; margin-top: 5px; padding-top: 5px; border-top: 1px dashed #e2e8f0;">
-                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
-                    <strong style="color: #0f172a; font-size: 10.5px;">LIFO TRANCHE STACK</strong>
-                    <span id="valCritStackCount">0 unmatched · newest exits first</span>
+
+                <!-- 7 Exit Conditions Checklist -->
+                <div class="condChecklist" id="exitConditionsChecklist">
+                  <div class="condRow">
+                    <span class="condLabel" title="Must have at least 1 open speculative tranche (core accumulated inventory is permanently protected)">1. Active Speculative Tranche</span>
+                    <span class="condValue" id="valCondExitActive">--</span>
+                    <span class="condBadge wait" id="badgeCondExitActive">WAIT</span>
                   </div>
-                  <div id="lifoTrancheStack" style="display: flex; flex-direction: column; gap: 5px; max-height: 320px; overflow-y: auto; padding-right: 2px;" aria-live="polite">
-                    <div style="padding: 8px; text-align: center; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 5px;">Stack empty</div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Current spread must reach or fall below target convergence spread (entry - 0.08% pts)">2. Spread Convergence Target</span>
+                    <span class="condValue" id="valCondExitConvergence">--</span>
+                    <span class="condBadge wait" id="badgeCondExitConvergence">WAIT</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Zero-loss invariant: Est. Net PnL must exceed +$0.02 USD after deducting all fees, slippage, and carry funding">3. Net Profit (> +$0.02 USD)</span>
+                    <span class="condValue" id="valCondExitNetPnl"><strong id="valCritCombinedPnl">—</strong></span>
+                    <span class="condBadge wait" id="badgeCondExitNetPnl">LOCKED</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Anti-churn dwell cooldown: Must hold tranche for at least 120 seconds before taking profit">4. Anti-Churn Dwell (≥ 120s)</span>
+                    <span class="condValue" id="valCondExitDwell"><strong id="valCritDwell" style="color: #64748b;">0s / 120s</strong></span>
+                    <span class="condBadge wait" id="badgeCondExitDwell">WAIT</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Macro trend confirmation: MA7 < MA24 < MA60 required on both 5m AND 1h timeframes">5. Bearish MA Stack (5m + 1h)</span>
+                    <span class="condValue" id="valCondExitMaStack"><strong id="valCritExitMaStack" style="color: #d97706;">Both required</strong></span>
+                    <span class="condBadge wait" id="badgeCondExitMaStack">WAIT</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Downward cascade exhaustion: Trough rebound off low, bounce, or spread crossed below 24-period MA">6. Bottoming-Out Filter</span>
+                    <span class="condValue" id="valCondExitBottoming"><strong id="valCritBottomingOut" style="color: #16a34a;">TROUGH REBOUND / MA</strong></span>
+                    <span class="condBadge wait" id="badgeCondExitBottoming">WAIT</span>
+                  </div>
+                  <div class="condRow">
+                    <span class="condLabel" title="Open futures positions must have at least 0.07 short SKHY and 1.20 long CSOP">7. Position Sufficiency Check</span>
+                    <span class="condValue" id="valCondExitPosition">--</span>
+                    <span class="condBadge pass" id="badgeCondExitPosition">PASS</span>
                   </div>
                 </div>
               </div>
 
-              <!-- 3. Sizing & Risk Gate Card -->
-              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #0284c7; border-radius: 6px; padding: 10px 12px;">
+              <!-- 3. Sizing, Risk Gate & LIFO Tranche Stack Card -->
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #0284c7; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #0369a1; text-transform: uppercase;" id="lblCritGateTitle">⚙️ Inventory Ratchet (축적 잔여량 &amp; 한도)</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #0369a1; text-transform: uppercase;" id="lblCritGateTitle">⚙️ Inventory Ratchet &amp; Headroom</span>
                   <span id="valCritRemainingTranches" style="font-size: 10px; font-weight: 800; color: #0284c7;">3 UNITS LEFT</span>
                 </div>
-                <div style="font-size: 11px; color: #475569; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 2px;">
+                <div style="font-size: 11px; color: #475569; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 2px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9;">
                   <div>Scale In: <strong>0.08 SKHY / 1.40 CSOP</strong></div>
                   <div>Trim Unit: <strong>0.07 SKHY / 1.20 CSOP</strong></div>
                   <div>Ratchet/Cycle: <strong style="color: #16a34a;">+0.01 SKHY / +0.20 CSOP</strong></div>
                   <div>Current Lev: <strong id="valCritGrossLev">4.08x / 8.0x</strong></div>
+                  <div>Dynamic Cap: <strong id="valCritGrossCap">$0.00 (8.0x)</strong></div>
+                  <div>Headroom: <strong id="valCritGrossHeadroom">$0.00 free</strong></div>
+                  <div style="grid-column: span 2;">Protected Core: <strong id="valCritRetainedCore" style="color: #0369a1;">0.00 SKHY / 0.00 CSOP</strong></div>
+                </div>
+
+                <!-- LIFO Tranche Stack (Newest-first exit queue) -->
+                <div style="font-size: 10px; color: #64748b; margin-top: 6px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
+                    <strong style="color: #0f172a; font-size: 10.5px;">LIFO TRANCHE STACK</strong>
+                    <span id="valCritStackCount">0 unmatched · newest exits first</span>
+                  </div>
+                  <div id="lifoTrancheStack" style="display: flex; flex-direction: column; gap: 5px; max-height: 240px; overflow-y: auto; padding-right: 2px;" aria-live="polite">
+                    <div style="padding: 8px; text-align: center; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 5px;">Stack empty</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -9679,28 +9808,40 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       renderAutoTrancheCriteria(criteria, hedgedData) {
         if (!criteria) return;
         const isKo = window.currentLang === "ko";
+        const setBadge = (id, text, type) => {
+          const el = $(id);
+          if (!el) return;
+          el.textContent = text;
+          el.className = `condBadge ${type}`;
+        };
 
         // 1. Scale-in Rule (Speculative MA Stretch + Peak-Out Momentum Exhaustion)
         const scaleInThreshold = criteria.scale_in_trigger_spread || 139.65;
         const currSpread = criteria.current_spread || 139.29;
         const gapScaleIn = criteria.gap_to_scale_in_pts != null ? criteria.gap_to_scale_in_pts : (scaleInThreshold - currSpread);
-        const canScaleIn = criteria.can_scale_in;
-        const ma24 = criteria.rolling_ma_24 != null ? criteria.rolling_ma_24 : (criteria.entry_baseline_spread || 139.30);
+        const canScaleIn = Boolean(criteria.can_scale_in);
+        const baseEntry = criteria.entry_baseline_spread || 139.30;
+        const ma24 = criteria.rolling_ma_24 != null ? criteria.rolling_ma_24 : baseEntry;
         const maStretch = criteria.ma_stretch_pts != null ? criteria.ma_stretch_pts : (currSpread - ma24);
         const isPeakingOut = Boolean(criteria.is_peaking_out);
         const scaleInArmed = Boolean(criteria.scale_in_armed);
+        const isStretchedAboveMa = criteria.is_stretched_above_ma != null ? Boolean(criteria.is_stretched_above_ma) : (maStretch >= 0.10);
+        const isAboveEntry = criteria.is_above_entry != null ? Boolean(criteria.is_above_entry) : ((criteria.tranches_active || 0) > 0 ? (currSpread >= baseEntry + 0.10) : true);
+        const tranchesMax = criteria.tranches_max != null ? criteria.tranches_max : 10;
+        const tranchesActive = criteria.tranches_active || 0;
+        const tranchesRemaining = criteria.tranches_remaining != null ? criteria.tranches_remaining : Math.max(0, tranchesMax - tranchesActive);
+        const hasCapacity = criteria.has_scale_in_capacity != null ? Boolean(criteria.has_scale_in_capacity) : (tranchesRemaining > 0);
+        const levCap = criteria.gross_leverage_cap || 8.0;
+        const projLev = criteria.projected_gross_leverage != null ? criteria.projected_gross_leverage : ((hedgedData && hedgedData.gross_leverage) || 0.0);
+        const hasLeverage = criteria.has_scale_in_leverage != null ? Boolean(criteria.has_scale_in_leverage) : (projLev <= levCap);
+        const reqBuffer = criteria.required_margin_buffer_usd != null ? criteria.required_margin_buffer_usd : 2.50;
+        const freeBuffer = criteria.free_margin_buffer_usd != null ? criteria.free_margin_buffer_usd : ((hedgedData && hedgedData.available_margin_usd) || 0.0);
+        const hasMargin = criteria.has_scale_in_margin != null ? Boolean(criteria.has_scale_in_margin) : (freeBuffer >= reqBuffer);
+        const hasRecovery = Boolean(criteria.has_execution_recovery || criteria.backend_auto_tranche_state?.execution_recovery);
+        const isEngineReady = Boolean(criteria.backend_auto_tranche_enabled && !hasRecovery);
 
         if ($("valCritScaleInThreshold")) $("valCritScaleInThreshold").textContent = `${scaleInThreshold.toFixed(2)}%`;
         if ($("valCritMa24")) $("valCritMa24").textContent = `${ma24.toFixed(2)}%`;
-        if ($("valCritMaStretch")) {
-          const sign = maStretch >= 0 ? "+" : "";
-          $("valCritMaStretch").textContent = `${sign}${maStretch.toFixed(2)}% pts`;
-          $("valCritMaStretch").style.color = maStretch >= 0.10 ? "#16a34a" : "#d97706";
-        }
-        if ($("valCritPeakOut")) {
-          $("valCritPeakOut").textContent = isPeakingOut ? (isKo ? "피크 반전 확인" : "PEAK EXHAUSTION") : (isKo ? "상승 모멘텀 지속" : "RISING MOMENTUM");
-          $("valCritPeakOut").style.color = isPeakingOut ? "#16a34a" : "#dc2626";
-        }
         if ($("valCritCurrentSpread")) $("valCritCurrentSpread").textContent = `${currSpread.toFixed(2)}%`;
         if ($("valCritGapScaleIn")) {
           const sign = gapScaleIn > 0 ? "+" : "";
@@ -9714,6 +9855,47 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("barCritScaleInProgress").style.width = `${prog}%`;
           $("barCritScaleInProgress").style.background = scaleInArmed ? "#16a34a" : "#f59e0b";
         }
+
+        // 7 Scale-In Conditions Checklist
+        if ($("valCritMaStretch")) {
+          const sign = maStretch >= 0 ? "+" : "";
+          $("valCritMaStretch").textContent = `${sign}${maStretch.toFixed(2)}% pts (≥ +0.10%)`;
+          $("valCritMaStretch").style.color = isStretchedAboveMa ? "#16a34a" : "#d97706";
+        }
+        setBadge("badgeCondEntryMaStretch", isStretchedAboveMa ? (isKo ? "충족" : "PASS") : (isKo ? "대기" : "WAIT"), isStretchedAboveMa ? "pass" : "wait");
+
+        if ($("valCondEntryBase")) {
+          $("valCondEntryBase").textContent = tranchesActive > 0 ? `${currSpread.toFixed(2)}% vs ${(baseEntry + 0.10).toFixed(2)}%` : (isKo ? "초기 상태" : "FIRST TRANCHE");
+        }
+        setBadge("badgeCondEntryBase", isAboveEntry ? (isKo ? "충족" : "PASS") : (isKo ? "대기" : "WAIT"), isAboveEntry ? "pass" : "wait");
+
+        if ($("valCritPeakOut")) {
+          $("valCritPeakOut").textContent = isPeakingOut ? (isKo ? "피크 반전 확인" : "PEAK ROLLOVER") : (isKo ? "상승 모멘텀 지속" : "RISING MOMENTUM");
+          $("valCritPeakOut").style.color = isPeakingOut ? "#16a34a" : "#dc2626";
+        }
+        setBadge("badgeCondEntryPeak", isPeakingOut ? (isKo ? "충족" : "PASS") : (isKo ? "대기" : "WAIT"), isPeakingOut ? "pass" : "wait");
+
+        if ($("valCondEntryCapacity")) {
+          $("valCondEntryCapacity").textContent = `${tranchesActive} / ${tranchesMax} (${tranchesRemaining} ${isKo ? "잔여" : "Left"})`;
+        }
+        setBadge("badgeCondEntryCapacity", hasCapacity ? (isKo ? "충족" : "PASS") : (isKo ? "한도초과" : "MAX CAP"), hasCapacity ? "pass" : "fail");
+
+        if ($("valCondEntryLeverage")) {
+          $("valCondEntryLeverage").textContent = `${projLev.toFixed(2)}x ≤ ${levCap.toFixed(1)}x`;
+        }
+        setBadge("badgeCondEntryLeverage", hasLeverage ? (isKo ? "충족" : "PASS") : (isKo ? "레버리지한도" : "LEV CAP"), hasLeverage ? "pass" : "fail");
+
+        if ($("valCondEntryMargin")) {
+          $("valCondEntryMargin").textContent = `$${freeBuffer.toFixed(2)} ≥ $${reqBuffer.toFixed(2)}`;
+        }
+        setBadge("badgeCondEntryMargin", hasMargin ? (isKo ? "충족" : "PASS") : (isKo ? "증거금부족" : "LOW MARGIN"), hasMargin ? "pass" : "fail");
+
+        if ($("valCondEntryEngine")) {
+          $("valCondEntryEngine").textContent = isEngineReady ? (isKo ? "가동 중" : "ACTIVE · READY") : (hasRecovery ? (isKo ? "복구 대기" : "RECOVERY LOCK") : (isKo ? "비활성화" : "DISABLED"));
+        }
+        setBadge("badgeCondEntryEngine", isEngineReady ? (isKo ? "가동" : "READY") : (isKo ? "대기" : "PAUSED"), isEngineReady ? "pass" : "wait");
+
+        // Scale-In Top Badge
         if ($("badgeCriteriaScaleIn")) {
           if (scaleInArmed) {
             $("badgeCriteriaScaleIn").textContent = isKo ? "피크반전 체결대기" : "PEAK REVERSAL ARMED";
@@ -9738,49 +9920,29 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const canTP = Boolean(criteria.can_take_profit);
         const trancheProfit = criteria.target_tranche_profit;
         const pnl = trancheProfit?.available ? trancheProfit.net_pnl_usd : null;
-        const latestIn = criteria.latest_entry_spread != null ? criteria.latest_entry_spread : (criteria.entry_baseline_spread || 139.30);
+        const isNetProfitable = Boolean(trancheProfit?.profitable);
+        const latestIn = criteria.latest_entry_spread != null ? criteria.latest_entry_spread : baseEntry;
         const outTarget = criteria.out_target_spread != null ? criteria.out_target_spread : (criteria.take_profit_trigger_spread || (latestIn - 0.08));
         const gapOut = criteria.gap_to_out_pts != null ? criteria.gap_to_out_pts : (currSpread - outTarget);
         const dwellSec = criteria.dwell_time_sec != null ? criteria.dwell_time_sec : 999;
         const isDwellOk = Boolean(criteria.is_dwell_satisfied);
         const isOutProfitable = Boolean(criteria.is_out_profitable_relative_to_latest);
-
         const isBottomingOut = Boolean(criteria.is_bottoming_out);
         const exitMa5m = criteria.exit_ma_alignment_5m || criteria.exit_ma_alignment;
         const exitMa1h = criteria.exit_ma_alignment_1h;
-        if ($("valCritExitMaStack")) {
-          const label = $("valCritExitMaStack");
-          const bothReady = Boolean(exitMa5m?.ready && exitMa1h?.ready);
-          const bothDown = Boolean(exitMa5m?.downward && exitMa1h?.downward);
-          const state5m = exitMa5m?.downward ? "✓" : "✗";
-          const state1h = exitMa1h?.downward ? "✓" : "✗";
-          label.textContent = !bothReady ? "Waiting for 60 fresh bars on both" : (bothDown ? "5m ✓ AND 1h ✓ — ALIGNED" : `5m ${state5m} AND 1h ${state1h}`);
-          label.style.color = bothDown ? "#16a34a" : "#d97706";
-          label.title = bothReady ? `5m: ${exitMa5m.ma7.toFixed(3)} / ${exitMa5m.ma24.toFixed(3)} / ${exitMa5m.ma60.toFixed(3)} · 1h: ${exitMa1h.ma7.toFixed(3)} / ${exitMa1h.ma24.toFixed(3)} / ${exitMa1h.ma60.toFixed(3)}` : "MA7 < MA24 < MA60 is required on both 5m and 1h charts";
-        }
+        const bothReady = Boolean(exitMa5m?.ready && exitMa1h?.ready);
+        const bothDown = Boolean(exitMa5m?.downward && exitMa1h?.downward);
+        const specActive = criteria.speculative_tranches_active || 0;
+        const topTranche = criteria.current_target_tranche;
+        const hasSpecTranche = criteria.has_speculative_tranche != null ? Boolean(criteria.has_speculative_tranche) : (specActive > 0 && topTranche && topTranche.trim_qty >= 0.07);
+        const adrQty = hedgedData?.adr_qty || 0.0;
+        const stockQty = hedgedData?.stock_qty || 0.0;
+        const hasExitPos = criteria.has_exit_position_qty != null ? Boolean(criteria.has_exit_position_qty) : (adrQty >= 0.07 && stockQty >= 1.20);
+        const coreSkhy = criteria.core_accumulated_skhy != null ? criteria.core_accumulated_skhy : 0.0;
+        const coreCsop = criteria.core_accumulated_csop != null ? criteria.core_accumulated_csop : 0.0;
 
         if ($("valCritLatestInSpread")) $("valCritLatestInSpread").textContent = `${latestIn.toFixed(2)}%`;
         if ($("valCritOutTargetSpread")) $("valCritOutTargetSpread").textContent = `${outTarget.toFixed(2)}%`;
-        if ($("valCritBottomingOut")) {
-          $("valCritBottomingOut").textContent = isBottomingOut ? (isKo ? "바닥 반등/MA 도달 확인" : "TROUGH REBOUND / MA") : (isKo ? "하락 파동 진행 중" : "CASCADE IN PROGRESS");
-          $("valCritBottomingOut").style.color = isBottomingOut ? "#16a34a" : "#0284c7";
-        }
-        if ($("valCritCombinedPnl")) {
-          const sign = pnl >= 0 ? "+" : "";
-          const col = pnl > 0.02 ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#64748b");
-          $("valCritCombinedPnl").style.color = col;
-          $("valCritCombinedPnl").textContent = pnl == null ? "Unverified entry pair / costs" : `${sign}$${pnl.toFixed(3)}`;
-          $("valCritCombinedPnl").title = pnl == null ? (trancheProfit?.reason || "No matched tranche") : `Latest paired fills only. Entry fees + estimated exit fee (${trancheProfit.exit_fee_bps} bps), slippage (${trancheProfit.slippage_bps} bps), and funding reserve (${trancheProfit.funding_reserve_bps_day} bps/day) deducted. Actual PnL may differ.`;
-        }
-        if ($("valCritDwell")) {
-          if (dwellSec >= 120) {
-            $("valCritDwell").textContent = "120s+ (OK)";
-            $("valCritDwell").style.color = "#16a34a";
-          } else {
-            $("valCritDwell").textContent = `${dwellSec}s / 120s`;
-            $("valCritDwell").style.color = "#d97706";
-          }
-        }
         if ($("valCritTpCurrentSpread")) $("valCritTpCurrentSpread").textContent = `${currSpread.toFixed(2)}%`;
         if ($("valCritGapTP")) {
           const sign = gapOut > 0 ? "+" : "";
@@ -9792,12 +9954,65 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("barCritTPProgress").style.width = `${prog}%`;
           $("barCritTPProgress").style.background = canTP ? "#16a34a" : "#0284c7";
         }
+
+        // 7 Exit Conditions Checklist
+        if ($("valCondExitActive")) {
+          $("valCondExitActive").textContent = hasSpecTranche ? `${specActive} ${isKo ? "개 활성" : "Active"} (0.07 ${isKo ? "익절" : "trim"})` : (coreSkhy > 0 ? (isKo ? "코어 보존 중" : "CORE PROTECTED") : (isKo ? "트랜치 없음" : "EMPTY"));
+        }
+        setBadge("badgeCondExitActive", hasSpecTranche ? (isKo ? "충족" : "PASS") : (coreSkhy > 0 ? (isKo ? "코어보호" : "PROTECTED") : (isKo ? "없음" : "EMPTY")), hasSpecTranche ? "pass" : "neutral");
+
+        if ($("valCondExitConvergence")) {
+          $("valCondExitConvergence").textContent = `${currSpread.toFixed(2)}% ≤ ${outTarget.toFixed(2)}% (${gapOut <= 0 ? "Target Met" : "+" + gapOut.toFixed(2) + "% gap"})`;
+        }
+        setBadge("badgeCondExitConvergence", isOutProfitable ? (isKo ? "충족" : "PASS") : (isKo ? "대기" : "WAIT"), isOutProfitable ? "pass" : "wait");
+
+        if ($("valCritCombinedPnl")) {
+          const sign = pnl >= 0 ? "+" : "";
+          const col = pnl > 0.02 ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#64748b");
+          $("valCritCombinedPnl").style.color = col;
+          $("valCritCombinedPnl").textContent = pnl == null ? (isKo ? "미확인" : "Unverified") : `${sign}$${pnl.toFixed(3)} net (> +$0.02)`;
+          $("valCritCombinedPnl").title = pnl == null ? (trancheProfit?.reason || "No matched tranche") : `Latest paired fills only. Entry fees + estimated exit fee (${trancheProfit.exit_fee_bps} bps), slippage (${trancheProfit.slippage_bps} bps), and funding reserve (${trancheProfit.funding_reserve_bps_day} bps/day) deducted. Actual PnL may differ.`;
+        }
+        setBadge("badgeCondExitNetPnl", isNetProfitable ? (isKo ? "충족" : "PASS") : (isKo ? "수익미달" : "LOCKED"), isNetProfitable ? "pass" : "wait");
+
+        if ($("valCritDwell")) {
+          if (dwellSec >= 120) {
+            $("valCritDwell").textContent = "120s+ (OK)";
+            $("valCritDwell").style.color = "#16a34a";
+          } else {
+            $("valCritDwell").textContent = `${dwellSec}s / 120s (${120 - dwellSec}s left)`;
+            $("valCritDwell").style.color = "#d97706";
+          }
+        }
+        setBadge("badgeCondExitDwell", isDwellOk ? (isKo ? "충족" : "PASS") : (isKo ? "쿨다운" : "WAIT"), isDwellOk ? "pass" : "wait");
+
+        if ($("valCritExitMaStack")) {
+          const state5m = exitMa5m?.downward ? "✓" : "✗";
+          const state1h = exitMa1h?.downward ? "✓" : "✗";
+          $("valCritExitMaStack").textContent = !bothReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (bothDown ? "5m ✓ AND 1h ✓ (ALIGNED)" : `5m ${state5m} · 1h ${state1h}`);
+          $("valCritExitMaStack").style.color = bothDown ? "#16a34a" : "#d97706";
+          $("valCritExitMaStack").title = bothReady ? `5m: ${exitMa5m.ma7.toFixed(3)} / ${exitMa5m.ma24.toFixed(3)} / ${exitMa5m.ma60.toFixed(3)} · 1h: ${exitMa1h.ma7.toFixed(3)} / ${exitMa1h.ma24.toFixed(3)} / ${exitMa1h.ma60.toFixed(3)}` : "MA7 < MA24 < MA60 is required on both 5m and 1h charts";
+        }
+        setBadge("badgeCondExitMaStack", bothDown ? (isKo ? "충족" : "PASS") : (isKo ? "대기" : "WAIT"), bothDown ? "pass" : "wait");
+
+        if ($("valCritBottomingOut")) {
+          $("valCritBottomingOut").textContent = isBottomingOut ? (isKo ? "바닥 반등/MA 도달 확인" : "REBOUND / BELOW MA") : (isKo ? "하락 파동 진행 중" : "CASCADE IN PROGRESS");
+          $("valCritBottomingOut").style.color = isBottomingOut ? "#16a34a" : "#0284c7";
+        }
+        setBadge("badgeCondExitBottoming", isBottomingOut ? (isKo ? "충족" : "PASS") : (isKo ? "파동진행" : "RIDING"), isBottomingOut ? "pass" : "wait");
+
+        if ($("valCondExitPosition")) {
+          $("valCondExitPosition").textContent = `${adrQty.toFixed(2)} ADR / ${stockQty.toFixed(2)} CSOP`;
+        }
+        setBadge("badgeCondExitPosition", hasExitPos ? (isKo ? "충족" : "PASS") : (isKo ? "물량부족" : "DEFICIT"), hasExitPos ? "pass" : "fail");
+
+        // Take-Profit Top Badge
         if ($("badgeCriteriaTP")) {
           if (canTP) {
             $("badgeCriteriaTP").textContent = isKo ? "수렴 익절 가능" : "TRIM READY";
             $("badgeCriteriaTP").style.background = "#dcfce7";
             $("badgeCriteriaTP").style.color = "#166534";
-          } else if (criteria.speculative_tranches_active === 0 && ((hedgedData && hedgedData.adr_qty > 0) || criteria.active_tranches_queue?.length === 0)) {
+          } else if (specActive === 0 && ((hedgedData && hedgedData.adr_qty > 0) || criteria.active_tranches_queue?.length === 0)) {
             $("badgeCriteriaTP").textContent = isKo ? "코어 물량 보존 (신규 진입 대기)" : "CORE INVENTORY RETAINED";
             $("badgeCriteriaTP").style.background = "#eff6ff";
             $("badgeCriteriaTP").style.color = "#1d4ed8";
@@ -9829,6 +10044,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
         }
 
+        // LIFO Tranche Stack
         if ($("lifoTrancheStack")) {
           const stack = Array.isArray(criteria.active_tranche_stack)
             ? criteria.active_tranche_stack
@@ -9867,16 +10083,26 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
         }
 
-        // 3. Sizing & Risk Gate
-        const remaining = criteria.tranches_remaining != null ? criteria.tranches_remaining : (10 - (criteria.tranches_active || 0));
+        // 3. Sizing, Risk Gate & Headroom
         const lev = (hedgedData && hedgedData.gross_leverage != null) ? hedgedData.gross_leverage : 0.0;
         const maxDiv = (hedgedData && hedgedData.max_tolerable_divergence_pct != null) ? hedgedData.max_tolerable_divergence_pct : 999.0;
+        const grossCapUsd = criteria.gross_capacity_usd != null ? criteria.gross_capacity_usd : 0.0;
+        const grossHeadroomUsd = criteria.gross_headroom_usd != null ? criteria.gross_headroom_usd : 0.0;
 
         if ($("valCritRemainingTranches")) {
-          $("valCritRemainingTranches").textContent = `${remaining} / 10 UNITS LEFT`;
+          $("valCritRemainingTranches").textContent = `${tranchesRemaining} / ${tranchesMax} UNITS LEFT`;
         }
         if ($("valCritGrossLev")) {
-          $("valCritGrossLev").textContent = `${lev.toFixed(2)}x / 8.0x`;
+          $("valCritGrossLev").textContent = `${lev.toFixed(2)}x / ${levCap.toFixed(1)}x`;
+        }
+        if ($("valCritGrossCap")) {
+          $("valCritGrossCap").textContent = `$${grossCapUsd.toFixed(2)} (${levCap.toFixed(1)}x)`;
+        }
+        if ($("valCritGrossHeadroom")) {
+          $("valCritGrossHeadroom").textContent = `$${grossHeadroomUsd.toFixed(2)} free`;
+        }
+        if ($("valCritRetainedCore")) {
+          $("valCritRetainedCore").textContent = `${coreSkhy.toFixed(2)} SKHY / ${coreCsop.toFixed(2)} CSOP`;
         }
         if ($("valCritMaxDiv")) {
           $("valCritMaxDiv").textContent = maxDiv >= 900 ? "+∞ % pts" : `+${maxDiv.toFixed(1)}% pts`;
