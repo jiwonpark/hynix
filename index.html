@@ -1953,17 +1953,17 @@
         <div class="realAccountStat">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <span id="lblAccountEquity">Binance Total Equity</span>
-            <span id="badgeEquitySource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">PAPER SIM</span>
+            <span id="badgeEquitySource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">SYNCING</span>
           </div>
-          <strong id="valAccountEquity" style="color: #0284c7; font-size: 16px;">$10,000.00</strong>
+          <strong id="valAccountEquity" style="color: #0284c7; font-size: 16px;">—</strong>
         </div>
         <div class="realAccountStat">
           <span id="lblAvailMargin">Available Margin</span>
-          <strong id="valAvailMargin" style="font-size: 16px;">$10,000.00</strong>
+          <strong id="valAvailMargin" style="font-size: 16px;">—</strong>
         </div>
         <div class="realAccountStat">
           <span id="lblUnrealizedPnl">Unrealized PnL</span>
-          <strong id="valUnrealizedPnl" style="color: #10b981; font-size: 16px;">+$0.00 (+0.00%)</strong>
+          <strong id="valUnrealizedPnl" style="color: #64748b; font-size: 16px;">—</strong>
         </div>
         <div class="realAccountStat">
           <span id="lblActivePairs">Active Positions</span>
@@ -1971,7 +1971,7 @@
         </div>
         <div class="realAccountStat">
           <span id="lblMarginRisk">Margin Safety Ratio</span>
-          <strong id="valMarginRisk" style="color: #16a34a; font-size: 15px;">0.0% (Safe)</strong>
+          <strong id="valMarginRisk" style="color: #64748b; font-size: 15px;">—</strong>
         </div>
         <div class="realAccountStat" id="statCollateralSummary" style="min-width: 170px;">
           <span id="lblCollateralSummary">Binance Wallet Split</span>
@@ -8153,6 +8153,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         usdtKrwRate: 1400.0,
         backendConnected: false,
         backendAuthenticated: false,
+        accountSyncPending: true,
         backendAuthSource: "none",
         backendLatencyMs: 0,
         lastSyncTime: null,
@@ -8377,6 +8378,27 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       renderAccountStrip() {
         const isKo = window.currentLang === "ko";
+        if (this.state.accountSyncPending) {
+          if ($("valAccountEquity")) $("valAccountEquity").textContent = "—";
+          if ($("valAvailMargin")) $("valAvailMargin").textContent = "—";
+          if ($("valUnrealizedPnl")) {
+            $("valUnrealizedPnl").textContent = "—";
+            $("valUnrealizedPnl").style.color = "#64748b";
+          }
+          if ($("valMarginRisk")) {
+            $("valMarginRisk").textContent = "—";
+            $("valMarginRisk").style.color = "#64748b";
+          }
+          if ($("badgeEquitySource")) {
+            $("badgeEquitySource").textContent = "SYNCING";
+            $("badgeEquitySource").style.background = "#f1f5f9";
+            $("badgeEquitySource").style.color = "#64748b";
+          }
+          if ($("valCollateralPills")) {
+            $("valCollateralPills").innerHTML = `<span style="font-size: 10px; color: #64748b; font-weight: 700;">Connecting to Binance…</span>`;
+          }
+          return;
+        }
         const eq = this.state.equity + this.state.binanceSpotStablecoinUsd;
         if ($("valAccountEquity")) $("valAccountEquity").textContent = `$${eq.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         if ($("valAvailMargin")) $("valAvailMargin").textContent = `$${Math.max(0, this.state.availableMargin).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -8388,7 +8410,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("badgeEquitySource").style.background = "#dcfce7";
             $("badgeEquitySource").style.color = "#166534";
           } else {
-            $("badgeEquitySource").textContent = "PAPER SIM";
+            $("badgeEquitySource").textContent = this.state.mode === "paper" ? "PAPER SIM" : "OFFLINE";
             $("badgeEquitySource").style.background = "#f1f5f9";
             $("badgeEquitySource").style.color = "#64748b";
           }
@@ -8800,6 +8822,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               const latency = Math.round(performance.now() - tStart);
               success = true;
               this.state.backendConnected = true;
+              this.state.accountSyncPending = false;
               this.state.backendLatencyMs = latency;
               this.state.lastSyncTime = formatKstTime();
 
@@ -8917,6 +8940,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 const latency = Math.round(performance.now() - tStart);
                 success = true;
                 this.state.backendConnected = true;
+                this.state.accountSyncPending = false;
                 this.state.backendLatencyMs = latency;
                 this.state.lastSyncTime = formatKstTime();
 
@@ -8963,6 +8987,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
 
         if (!success) {
+          this.state.accountSyncPending = false;
           this.state.backendConnected = false;
           this.state.backendAuthenticated = false;
           this.state.upbitAuthenticated = false;

@@ -22,3 +22,9 @@ class TrancheStackUITests(unittest.TestCase):
     def test_old_queue_label_is_removed(self):
         self.assertNotIn('LIFO Queue:', self.html)
         self.assertNotIn('Queue Empty', self.html)
+
+    def test_account_strip_starts_in_neutral_sync_state(self):
+        self.assertIn('id="badgeEquitySource"', self.html)
+        self.assertIn('>SYNCING</span>', self.html)
+        self.assertIn('accountSyncPending: true', self.html)
+        self.assertNotIn('id="valAccountEquity" style="color: #0284c7; font-size: 16px;">$10,000.00', self.html)
