@@ -113,7 +113,8 @@ class CounterfactualTradeTests(unittest.TestCase):
             })
 
         # 1. At capacity (10 tranches): should generate backfilled trade
-        trades = backfill_historical_paper_trades(bars, current_tranches=10)
+        trades = backfill_historical_paper_trades(
+            bars, current_tranches=10, tranche_capacity=10)
         self.assertGreaterEqual(len(trades), 1)
         trade = trades[0]
         self.assertEqual(trade["blocked_reason"], "POSITION_CAPACITY")
@@ -122,13 +123,20 @@ class CounterfactualTradeTests(unittest.TestCase):
         self.assertGreater(trade["estimated_net_pnl_usd"], 0.02)
 
         # 2. Not at capacity (e.g. 5 tranches): should not generate paper trade
-        no_trades = backfill_historical_paper_trades(bars, current_tranches=5)
+        no_trades = backfill_historical_paper_trades(
+            bars, current_tranches=5, tranche_capacity=10)
+        self.assertEqual(len(no_trades), 0)
+
+        # Dynamic capacity must replace the legacy seven/ten tranche assumption.
+        no_trades = backfill_historical_paper_trades(
+            bars, current_tranches=12, tranche_capacity=189)
         self.assertEqual(len(no_trades), 0)
 
         # 3. Confirmed execution on the peak bar: should suppress paper trade
         peak_time = trade["entry_candle_ms"] // 1000
         execs = [{"time": peak_time, "type": "SHORT", "qty": 0.08}]
-        suppressed = backfill_historical_paper_trades(bars, executions=execs, current_tranches=10)
+        suppressed = backfill_historical_paper_trades(
+            bars, executions=execs, current_tranches=10, tranche_capacity=10)
         self.assertEqual(len(suppressed), 0)
 
 

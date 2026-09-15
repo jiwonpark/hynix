@@ -1106,12 +1106,14 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
 
         live_records = state.get("counterfactual_trades", [])
         current_tranches = int(state.get("latest_tranches_active", 10))
+        current_capacity = state.get("latest_tranches_max")
         backfilled_records = backfill_historical_paper_trades(
             bars,
             executions=executions,
             interval_ms=interval_ms,
             current_tranches=current_tranches,
             existing_records=live_records,
+            tranche_capacity=current_capacity,
         )
         combined_records = list(live_records) + backfilled_records
 
@@ -1427,6 +1429,10 @@ async def auto_tranche_worker():
                     tranches_active = int(status.get("tranches_active", 0))
                     if state.get("latest_tranches_active") != tranches_active:
                         state["latest_tranches_active"] = tranches_active
+                        state_changed = True
+                    tranches_max = criteria.get("tranches_max")
+                    if state.get("latest_tranches_max") != tranches_max:
+                        state["latest_tranches_max"] = tranches_max
                         state_changed = True
 
                     adr_mark = float((status.get("adr_position") or {}).get("mark_price", 0.0))

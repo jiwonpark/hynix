@@ -156,13 +156,20 @@ def backfill_historical_paper_trades(
     current_tranches=10,
     existing_records=None,
     min_cooldown_bars=3,
-    capacity_threshold=7,
+    tranche_capacity=None,
 ):
     """
     Scans historical parity bars to synthesize counterfactual (paper) trades
-    that occurred when tranches were heavily loaded / at capacity (tranches_active >= capacity_threshold).
+    that occurred when the reconstructed tranche count reached the live dynamic
+    capacity used by the execution engine.
     """
-    if not bars or len(bars) < 26:
+    if not bars or len(bars) < 26 or tranche_capacity is None:
+        return []
+    try:
+        tranche_capacity = int(tranche_capacity)
+    except (TypeError, ValueError):
+        return []
+    if tranche_capacity <= 0:
         return []
 
     existing_candle_times = set()
@@ -227,7 +234,7 @@ def backfill_historical_paper_trades(
             continue
 
         tranches = get_tranches_at_sec(bar_time)
-        if tranches < capacity_threshold:
+        if tranches < tranche_capacity:
             continue
 
         if (i - last_entry_bar_idx) < min_cooldown_bars:
