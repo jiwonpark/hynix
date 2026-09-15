@@ -35,10 +35,12 @@ class TrancheStackUITests(unittest.TestCase):
         self.assertIn('1. MA-24 Stretch', self.html)
         self.assertIn('2. Base Entry Spread', self.html)
         self.assertIn('3. 5m Peak Rollover Filter', self.html)
-        self.assertIn('4. Dynamic Tranche Capacity', self.html)
-        self.assertIn('5. Gross Leverage Cap', self.html)
-        self.assertIn('6. Buffered Margin Check', self.html)
-        self.assertIn('7. Worker State & Cooldown', self.html)
+        self.assertIn('4. 5m Bullish MA Stack', self.html)
+        self.assertIn('5. 1h Bullish MA Stack', self.html)
+        self.assertIn('6. Dynamic Tranche Capacity', self.html)
+        self.assertIn('7. Gross Leverage Cap', self.html)
+        self.assertIn('8. Buffered Margin Check', self.html)
+        self.assertIn('9. Worker State & Cooldown', self.html)
 
         # Exit conditions
         self.assertIn('id="exitConditionsChecklist"', self.html)
@@ -46,7 +48,9 @@ class TrancheStackUITests(unittest.TestCase):
         self.assertIn('2. Spread Convergence Target', self.html)
         self.assertIn('3. Net Profit (> +$0.02 USD)', self.html)
         self.assertIn('4. Anti-Churn Dwell (≥ 120s)', self.html)
-        self.assertIn('5. Bearish MA Stack (5m + 1h)', self.html)
-        self.assertIn('6. Bottoming-Out Filter', self.html)
-        self.assertIn('7. Position Sufficiency Check', self.html)
+        self.assertIn('5. 5m Bearish MA Stack', self.html)
+        self.assertIn('6. 1h Bearish MA Stack', self.html)
+        self.assertIn('7. Bottoming-Out Filter', self.html)
+        self.assertIn('8. Position Sufficiency Check', self.html)
+
 

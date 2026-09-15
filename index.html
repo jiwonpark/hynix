@@ -2444,12 +2444,30 @@
                     <span class="condValue" id="valCondEntryPeak"><strong id="valCritPeakOut" style="color: #64748b;">WAITING</strong></span>
                     <span class="condBadge wait" id="badgeCondEntryPeak">WAIT</span>
                   </div>
+                  <div class="condRow" id="rowCondEntryMaStack5m">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="chkCondEntryMaStack5m" checked onchange="tradingEngine.toggleCondition('entry_ma_stack_5m', this.checked)">
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="5m upward trend confirmation: MA7 > MA24 > MA60 required on 5m timeframe">4. 5m Bullish MA Stack (MA7 > MA24 > MA60)</span>
+                    <span class="condValue" id="valCondEntryMaStack5m"><strong id="valCritEntryMaStack5m" style="color: #d97706;">5m WAITING</strong></span>
+                    <span class="condBadge wait" id="badgeCondEntryMaStack5m">WAIT</span>
+                  </div>
+                  <div class="condRow" id="rowCondEntryMaStack1h">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="chkCondEntryMaStack1h" checked onchange="tradingEngine.toggleCondition('entry_ma_stack_1h', this.checked)">
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="1h macro upward trend confirmation: MA7 > MA24 > MA60 required on 1h timeframe">5. 1h Bullish MA Stack (MA7 > MA24 > MA60)</span>
+                    <span class="condValue" id="valCondEntryMaStack1h"><strong id="valCritEntryMaStack1h" style="color: #d97706;">1h WAITING</strong></span>
+                    <span class="condBadge wait" id="badgeCondEntryMaStack1h">WAIT</span>
+                  </div>
                   <div class="condRow" id="rowCondEntryCapacity">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
                       <input type="checkbox" id="chkCondEntryCapacity" checked onchange="tradingEngine.toggleCondition('entry_capacity', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Active speculative tranches must not exceed live equity-based capacity limit">4. Dynamic Tranche Capacity</span>
+                    <span class="condLabel" title="Active speculative tranches must not exceed live equity-based capacity limit">6. Dynamic Tranche Capacity</span>
                     <span class="condValue" id="valCondEntryCapacity">-- / --</span>
                     <span class="condBadge pass" id="badgeCondEntryCapacity">PASS</span>
                   </div>
@@ -2458,7 +2476,7 @@
                       <input type="checkbox" id="chkCondEntryLeverage" checked onchange="tradingEngine.toggleCondition('entry_gross_leverage', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Projected gross portfolio leverage after new tranche must remain ≤ 8.00x">5. Gross Leverage Cap (≤ 8.0x)</span>
+                    <span class="condLabel" title="Projected gross portfolio leverage after new tranche must remain ≤ 8.00x">7. Gross Leverage Cap (≤ 8.0x)</span>
                     <span class="condValue" id="valCondEntryLeverage">-- / 8.0x</span>
                     <span class="condBadge pass" id="badgeCondEntryLeverage">PASS</span>
                   </div>
@@ -2467,7 +2485,7 @@
                       <input type="checkbox" id="chkCondEntryMargin" checked onchange="tradingEngine.toggleCondition('entry_margin_buffer', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Free margin must satisfy 125% buffered requirement (min $2.50)">6. Buffered Margin Check</span>
+                    <span class="condLabel" title="Free margin must satisfy 125% buffered requirement (min $2.50)">8. Buffered Margin Check</span>
                     <span class="condValue" id="valCondEntryMargin">-- ≥ $2.50</span>
                     <span class="condBadge pass" id="badgeCondEntryMargin">PASS</span>
                   </div>
@@ -2476,7 +2494,7 @@
                       <input type="checkbox" id="chkCondEntryEngine" checked onchange="tradingEngine.toggleCondition('entry_worker_state', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Auto-tranche daemon must be enabled, cooldown expired (60s), and no recovery lock">7. Worker State & Cooldown</span>
+                    <span class="condLabel" title="Auto-tranche daemon must be enabled, cooldown expired (60s), and no recovery lock">9. Worker State & Cooldown</span>
                     <span class="condValue" id="valCondEntryEngine">READY</span>
                     <span class="condBadge pass" id="badgeCondEntryEngine">READY</span>
                   </div>
@@ -2501,7 +2519,7 @@
                   <div id="barCritTPProgress" style="width: 10%; height: 100%; background: #10b981;"></div>
                 </div>
 
-                <!-- 7 Exit Conditions Checklist -->
+                <!-- 8 Exit Conditions Checklist -->
                 <div class="condChecklist" id="exitConditionsChecklist">
                   <div class="condRow" id="rowCondExitActive">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
@@ -2539,21 +2557,30 @@
                     <span class="condValue" id="valCondExitDwell"><strong id="valCritDwell" style="color: #64748b;">0s / 120s</strong></span>
                     <span class="condBadge wait" id="badgeCondExitDwell">WAIT</span>
                   </div>
-                  <div class="condRow" id="rowCondExitMaStack">
+                  <div class="condRow" id="rowCondExitMaStack5m">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
-                      <input type="checkbox" id="chkCondExitMaStack" checked onchange="tradingEngine.toggleCondition('exit_ma_stack', this.checked)">
+                      <input type="checkbox" id="chkCondExitMaStack5m" checked onchange="tradingEngine.toggleCondition('exit_ma_stack_5m', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Macro trend confirmation: MA7 < MA24 < MA60 required on both 5m AND 1h timeframes">5. Bearish MA Stack (5m + 1h)</span>
-                    <span class="condValue" id="valCondExitMaStack"><strong id="valCritExitMaStack" style="color: #d97706;">Both required</strong></span>
-                    <span class="condBadge wait" id="badgeCondExitMaStack">WAIT</span>
+                    <span class="condLabel" title="5m downward trend confirmation: MA7 < MA24 < MA60 required on 5m timeframe">5. 5m Bearish MA Stack (MA7 < MA24 < MA60)</span>
+                    <span class="condValue" id="valCondExitMaStack5m"><strong id="valCritExitMaStack5m" style="color: #d97706;">5m WAITING</strong></span>
+                    <span class="condBadge wait" id="badgeCondExitMaStack5m">WAIT</span>
+                  </div>
+                  <div class="condRow" id="rowCondExitMaStack1h">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="chkCondExitMaStack1h" checked onchange="tradingEngine.toggleCondition('exit_ma_stack_1h', this.checked)">
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="1h macro downward trend confirmation: MA7 < MA24 < MA60 required on 1h timeframe">6. 1h Bearish MA Stack (MA7 < MA24 < MA60)</span>
+                    <span class="condValue" id="valCondExitMaStack1h"><strong id="valCritExitMaStack1h" style="color: #d97706;">1h WAITING</strong></span>
+                    <span class="condBadge wait" id="badgeCondExitMaStack1h">WAIT</span>
                   </div>
                   <div class="condRow" id="rowCondExitBottoming">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
                       <input type="checkbox" id="chkCondExitBottoming" checked onchange="tradingEngine.toggleCondition('exit_bottoming_out', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Downward cascade exhaustion: Trough rebound off low, bounce, or spread crossed below 24-period MA">6. Bottoming-Out Filter</span>
+                    <span class="condLabel" title="Downward cascade exhaustion: Trough rebound off low, bounce, or spread crossed below 24-period MA">7. Bottoming-Out Filter</span>
                     <span class="condValue" id="valCondExitBottoming"><strong id="valCritBottomingOut" style="color: #16a34a;">TROUGH REBOUND / MA</strong></span>
                     <span class="condBadge wait" id="badgeCondExitBottoming">WAIT</span>
                   </div>
@@ -2562,7 +2589,7 @@
                       <input type="checkbox" id="chkCondExitPosition" checked onchange="tradingEngine.toggleCondition('exit_position_qty', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Open futures positions must have at least 0.07 short SKHY and 1.20 long CSOP">7. Position Sufficiency Check</span>
+                    <span class="condLabel" title="Open futures positions must have at least 0.07 short SKHY and 1.20 long CSOP">8. Position Sufficiency Check</span>
                     <span class="condValue" id="valCondExitPosition">--</span>
                     <span class="condBadge pass" id="badgeCondExitPosition">PASS</span>
                   </div>
@@ -8590,6 +8617,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           entry_ma_stretch: "rowCondEntryMaStretch",
           entry_base_spread: "rowCondEntryBase",
           entry_peak_rollover: "rowCondEntryPeak",
+          entry_ma_stack_5m: "rowCondEntryMaStack5m",
+          entry_ma_stack_1h: "rowCondEntryMaStack1h",
           entry_capacity: "rowCondEntryCapacity",
           entry_gross_leverage: "rowCondEntryLeverage",
           entry_margin_buffer: "rowCondEntryMargin",
@@ -8598,7 +8627,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           exit_convergence: "rowCondExitConvergence",
           exit_net_profit: "rowCondExitNetPnl",
           exit_dwell_time: "rowCondExitDwell",
-          exit_ma_stack: "rowCondExitMaStack",
+          exit_ma_stack_5m: "rowCondExitMaStack5m",
+          exit_ma_stack_1h: "rowCondExitMaStack1h",
+          exit_ma_stack: "rowCondExitMaStack5m",
           exit_bottoming_out: "rowCondExitBottoming",
           exit_position_qty: "rowCondExitPosition"
         };
@@ -8625,6 +8656,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
         if (backendToggles && typeof backendToggles[key] === "boolean") {
           return backendToggles[key];
+        }
+        if ((key === "exit_ma_stack_5m" || key === "exit_ma_stack_1h") && this.state.conditionToggles && typeof this.state.conditionToggles["exit_ma_stack"] === "boolean") {
+          return this.state.conditionToggles["exit_ma_stack"];
         }
         return true;
       },
@@ -10065,6 +10099,26 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
         syncCondRow("entry_peak_rollover", "rowCondEntryPeak", "chkCondEntryPeak", "badgeCondEntryPeak", isPeakingOut, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
+        const entryMa5m = criteria.entry_ma_alignment_5m || criteria.exit_ma_alignment_5m;
+        const entry5mReady = Boolean(entryMa5m?.ready);
+        const entry5mUp = Boolean(entryMa5m?.upward);
+        if ($("valCritEntryMaStack5m")) {
+          $("valCritEntryMaStack5m").textContent = !entry5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry5mUp ? "5m ✓ (MA7 > MA24 > MA60)" : "5m ✗ (NOT ALIGNED)");
+          $("valCritEntryMaStack5m").style.color = entry5mUp ? "#16a34a" : "#d97706";
+          $("valCritEntryMaStack5m").title = entry5mReady ? `5m: ${entryMa5m.ma7.toFixed(3)} / ${entryMa5m.ma24.toFixed(3)} / ${entryMa5m.ma60.toFixed(3)} (MA7 > MA24 > MA60)` : "Requires 60 bars on 5m chart";
+        }
+        syncCondRow("entry_ma_stack_5m", "rowCondEntryMaStack5m", "chkCondEntryMaStack5m", "badgeCondEntryMaStack5m", entry5mUp, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
+
+        const entryMa1h = criteria.entry_ma_alignment_1h || criteria.exit_ma_alignment_1h;
+        const entry1hReady = Boolean(entryMa1h?.ready);
+        const entry1hUp = Boolean(entryMa1h?.upward);
+        if ($("valCritEntryMaStack1h")) {
+          $("valCritEntryMaStack1h").textContent = !entry1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry1hUp ? "1h ✓ (MA7 > MA24 > MA60)" : "1h ✗ (NOT ALIGNED)");
+          $("valCritEntryMaStack1h").style.color = entry1hUp ? "#16a34a" : "#d97706";
+          $("valCritEntryMaStack1h").title = entry1hReady ? `1h: ${entryMa1h.ma7.toFixed(3)} / ${entryMa1h.ma24.toFixed(3)} / ${entryMa1h.ma60.toFixed(3)} (MA7 > MA24 > MA60)` : "Requires 60 bars on 1h chart";
+        }
+        syncCondRow("entry_ma_stack_1h", "rowCondEntryMaStack1h", "chkCondEntryMaStack1h", "badgeCondEntryMaStack1h", entry1hUp, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
+
         if ($("valCondEntryCapacity")) {
           $("valCondEntryCapacity").textContent = `${tranchesActive} / ${tranchesMax} (${tranchesRemaining} ${isKo ? "잔여" : "Left"})`;
         }
@@ -10095,8 +10149,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("badgeCriteriaScaleIn").textContent = isKo ? "최대 한도 도달" : "MAX CAPACITY";
             $("badgeCriteriaScaleIn").style.background = "#fee2e2";
             $("badgeCriteriaScaleIn").style.color = "#991b1b";
-          } else if (maStretch < 0.10) {
+          } else if (maStretch < 0.10 && this.isConditionEnabled("entry_ma_stretch", criteria.condition_toggles)) {
             $("badgeCriteriaScaleIn").textContent = isKo ? "MA 이격 부족" : "WAITING MA STRETCH";
+            $("badgeCriteriaScaleIn").style.background = "#fef3c7";
+            $("badgeCriteriaScaleIn").style.color = "#b45309";
+          } else if ((!entry5mUp && this.isConditionEnabled("entry_ma_stack_5m", criteria.condition_toggles)) || (!entry1hUp && this.isConditionEnabled("entry_ma_stack_1h", criteria.condition_toggles))) {
+            $("badgeCriteriaScaleIn").textContent = isKo ? "MA 정배열 대기 (5m/1h)" : "AWAITING MA STACKS (5m/1h)";
             $("badgeCriteriaScaleIn").style.background = "#fef3c7";
             $("badgeCriteriaScaleIn").style.color = "#b45309";
           } else {
@@ -10120,8 +10178,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const isBottomingOut = Boolean(criteria.is_bottoming_out);
         const exitMa5m = criteria.exit_ma_alignment_5m || criteria.exit_ma_alignment;
         const exitMa1h = criteria.exit_ma_alignment_1h;
-        const bothReady = Boolean(exitMa5m?.ready && exitMa1h?.ready);
-        const bothDown = Boolean(exitMa5m?.downward && exitMa1h?.downward);
+        const exit5mReady = Boolean(exitMa5m?.ready);
+        const exit5mDown = Boolean(exitMa5m?.downward);
+        const exit1hReady = Boolean(exitMa1h?.ready);
+        const exit1hDown = Boolean(exitMa1h?.downward);
+        const bothReady = Boolean(exit5mReady && exit1hReady);
+        const bothDown = Boolean(exit5mDown && exit1hDown);
         const specActive = criteria.speculative_tranches_active || 0;
         const topTranche = criteria.current_target_tranche;
         const hasSpecTranche = criteria.has_speculative_tranche != null ? Boolean(criteria.has_speculative_tranche) : (specActive > 0 && topTranche && topTranche.trim_qty >= 0.07);
@@ -10145,7 +10207,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("barCritTPProgress").style.background = canTP ? "#16a34a" : "#0284c7";
         }
 
-        // 7 Exit Conditions Checklist
+        // 8 Exit Conditions Checklist
         if ($("valCondExitActive")) {
           $("valCondExitActive").textContent = hasSpecTranche ? `${specActive} ${isKo ? "개 활성" : "Active"} (0.07 ${isKo ? "익절" : "trim"})` : (coreSkhy > 0 ? (isKo ? "코어 보존 중" : "CORE PROTECTED") : (isKo ? "트랜치 없음" : "EMPTY"));
         }
@@ -10176,6 +10238,20 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
         syncCondRow("exit_dwell_time", "rowCondExitDwell", "chkCondExitDwell", "badgeCondExitDwell", isDwellOk, isKo ? "충족" : "PASS", isKo ? "쿨다운" : "WAIT", "wait");
 
+        if ($("valCritExitMaStack5m")) {
+          $("valCritExitMaStack5m").textContent = !exit5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (exit5mDown ? "5m ✓ (MA7 < MA24 < MA60)" : "5m ✗ (NOT ALIGNED)");
+          $("valCritExitMaStack5m").style.color = exit5mDown ? "#16a34a" : "#d97706";
+          $("valCritExitMaStack5m").title = exit5mReady ? `5m: ${exitMa5m.ma7.toFixed(3)} / ${exitMa5m.ma24.toFixed(3)} / ${exitMa5m.ma60.toFixed(3)} (MA7 < MA24 < MA60)` : "Requires 60 bars on 5m chart";
+        }
+        syncCondRow("exit_ma_stack_5m", "rowCondExitMaStack5m", "chkCondExitMaStack5m", "badgeCondExitMaStack5m", exit5mDown, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
+
+        if ($("valCritExitMaStack1h")) {
+          $("valCritExitMaStack1h").textContent = !exit1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (exit1hDown ? "1h ✓ (MA7 < MA24 < MA60)" : "1h ✗ (NOT ALIGNED)");
+          $("valCritExitMaStack1h").style.color = exit1hDown ? "#16a34a" : "#d97706";
+          $("valCritExitMaStack1h").title = exit1hReady ? `1h: ${exitMa1h.ma7.toFixed(3)} / ${exitMa1h.ma24.toFixed(3)} / ${exitMa1h.ma60.toFixed(3)} (MA7 < MA24 < MA60)` : "Requires 60 bars on 1h chart";
+        }
+        syncCondRow("exit_ma_stack_1h", "rowCondExitMaStack1h", "chkCondExitMaStack1h", "badgeCondExitMaStack1h", exit1hDown, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
+
         if ($("valCritExitMaStack")) {
           const state5m = exitMa5m?.downward ? "✓" : "✗";
           const state1h = exitMa1h?.downward ? "✓" : "✗";
@@ -10183,7 +10259,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("valCritExitMaStack").style.color = bothDown ? "#16a34a" : "#d97706";
           $("valCritExitMaStack").title = bothReady ? `5m: ${exitMa5m.ma7.toFixed(3)} / ${exitMa5m.ma24.toFixed(3)} / ${exitMa5m.ma60.toFixed(3)} · 1h: ${exitMa1h.ma7.toFixed(3)} / ${exitMa1h.ma24.toFixed(3)} / ${exitMa1h.ma60.toFixed(3)}` : "MA7 < MA24 < MA60 is required on both 5m and 1h charts";
         }
-        syncCondRow("exit_ma_stack", "rowCondExitMaStack", "chkCondExitMaStack", "badgeCondExitMaStack", bothDown, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
+        if ($("rowCondExitMaStack")) {
+          syncCondRow("exit_ma_stack", "rowCondExitMaStack", "chkCondExitMaStack", "badgeCondExitMaStack", bothDown, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
+        }
 
         if ($("valCritBottomingOut")) {
           $("valCritBottomingOut").textContent = isBottomingOut ? (isKo ? "바닥 반등/MA 도달 확인" : "REBOUND / BELOW MA") : (isKo ? "하락 파동 진행 중" : "CASCADE IN PROGRESS");

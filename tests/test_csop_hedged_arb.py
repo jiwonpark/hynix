@@ -389,11 +389,18 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
             self.assertFalse(res["condition_toggles"]["entry_ma_stretch"])
 
             # Batch update
-            batch = {"entry_peak_rollover": False, "exit_dwell_time": False}
+            batch = {
+                "entry_peak_rollover": False,
+                "exit_dwell_time": False,
+                "entry_ma_stack_5m": False,
+                "exit_ma_stack_1h": False
+            }
             res_batch = await server.update_conditions(batch)
             self.assertTrue(res_batch["success"])
             self.assertFalse(res_batch["condition_toggles"]["entry_peak_rollover"])
             self.assertFalse(res_batch["condition_toggles"]["exit_dwell_time"])
+            self.assertFalse(res_batch["condition_toggles"]["entry_ma_stack_5m"])
+            self.assertFalse(res_batch["condition_toggles"]["exit_ma_stack_1h"])
 
         asyncio.run(run_toggle())
 
@@ -404,6 +411,8 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
             "chkCondEntryMaStretch",
             "chkCondEntryBase",
             "chkCondEntryPeak",
+            "chkCondEntryMaStack5m",
+            "chkCondEntryMaStack1h",
             "chkCondEntryCapacity",
             "chkCondEntryLeverage",
             "chkCondEntryMargin",
@@ -417,7 +426,8 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
             "chkCondExitConvergence",
             "chkCondExitNetPnl",
             "chkCondExitDwell",
-            "chkCondExitMaStack",
+            "chkCondExitMaStack5m",
+            "chkCondExitMaStack1h",
             "chkCondExitBottoming",
             "chkCondExitPosition"
         ]
@@ -427,7 +437,7 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
         self.assertIn(".toggleSwitch", content)
         self.assertIn(".toggleSlider", content)
         self.assertIn(".condRow.disabled-cond", content)
-        print("\n[Condition Toggles & HTML Checklist Verification] PASSED: All 14 condition toggles and endpoints verified.")
+        print("\n[Condition Toggles & HTML Checklist Verification] PASSED: All 17 condition toggles and endpoints verified.")
 
 if __name__ == '__main__':
     unittest.main()

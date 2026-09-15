@@ -334,9 +334,16 @@ async def get_cached_parity_bars(interval: str = "5m", limit: int = 60) -> List[
 def exit_ma_alignment(
     bars: List[Dict[str, Any]], interval: str = "5m", max_age_sec: int = 600
 ) -> Dict[str, Any]:
-    """Bearish MA-stack filter for spread bars on the requested timeframe."""
-    result = {"interval": interval, "ma7": None, "ma24": None, "ma60": None,
-              "ready": False, "downward": False}
+    """MA-stack filter for spread bars on requested timeframe (upward/bullish and downward/bearish)."""
+    result = {
+        "interval": interval,
+        "ma7": None,
+        "ma24": None,
+        "ma60": None,
+        "ready": False,
+        "upward": False,
+        "downward": False,
+    }
     if len(bars) < 60:
         return result
     values = [float(b["value"]) for b in bars[-60:]]
@@ -344,9 +351,17 @@ def exit_ma_alignment(
         return result
     if time.time() - bars[-1]["time"] > max_age_sec:
         return result
-    result.update(ready=True, ma7=sum(values[-7:]) / 7,
-                  ma24=sum(values[-24:]) / 24, ma60=sum(values) / 60)
-    result["downward"] = result["ma7"] < result["ma24"] < result["ma60"]
+    ma7 = sum(values[-7:]) / 7
+    ma24 = sum(values[-24:]) / 24
+    ma60 = sum(values) / 60
+    result.update(
+        ready=True,
+        ma7=ma7,
+        ma24=ma24,
+        ma60=ma60,
+        upward=bool(ma7 > ma24 > ma60),
+        downward=bool(ma7 < ma24 < ma60),
+    )
     return result
 
 
@@ -510,8 +525,8 @@ async def get_hedged_status() -> Dict[str, Any]:
         # Real-time criteria for speculative trend-reversal auto-tranching & anti-churn LIFO ratchet
         auto_state = load_auto_tranche_state()
         cond_toggles = auto_state.get("condition_toggles", {})
-        def is_cond_enabled(k: str) -> bool:
-            return bool(cond_toggles.get(k, True))
+        def is_cond_enabled(k: str, default: bool = True) -> bool:
+            return bool(cond_toggles.get(k, default))
 
         base_entry = entry_spread if entry_spread else 139.30
         curr_spread = current_spread if current_spread else 139.30
@@ -525,11 +540,20 @@ async def get_hedged_status() -> Dict[str, Any]:
             get_cached_parity_bars("5m", 60),
             get_cached_parity_bars("1h", 60),
         )
-        exit_alignment_5m = exit_ma_alignment(parity_bars, "5m", 600)
-        exit_alignment_1h = exit_ma_alignment(parity_bars_1h, "1h", 7200)
-        is_exit_ma_aligned = bool(
-            exit_alignment_5m["downward"] and exit_alignment_1h["downward"]
-        )
+        alignment_5m = exit_ma_alignment(parity_bars, "5m", 600)
+        alignment_1h = exit_ma_alignment(parity_bars_1h, "1h", 7200)
+        exit_alignment_5m = alignment_5m
+        exit_alignment_1h = alignment_1h
+        entry_alignment_5m = alignment_5m
+        entry_alignment_1h = alignment_1h
+
+        is_entry_ma_aligned_5m = bool(entry_alignment_5m.get("upward"))
+        is_entry_ma_aligned_1h = bool(entry_alignment_1h.get("upward"))
+        is_entry_ma_aligned = bool(is_entry_ma_aligned_5m and is_entry_ma_aligned_1h)
+
+        is_exit_ma_aligned_5m = bool(exit_alignment_5m.get("downward"))
+        is_exit_ma_aligned_1h = bool(exit_alignment_1h.get("downward"))
+        is_exit_ma_aligned = bool(is_exit_ma_aligned_5m and is_exit_ma_aligned_1h)
         if parity_bars and len(parity_bars) >= 6:
             ma_subset = parity_bars[-24:] if len(parity_bars) >= 24 else parity_bars
             ma24 = sum(b["value"] for b in ma_subset) / len(ma_subset)
@@ -555,7 +579,9 @@ async def get_hedged_status() -> Dict[str, Any]:
         eff_stretched = is_stretched_above_ma if is_cond_enabled("entry_ma_stretch") else True
         eff_above_entry = is_above_entry if is_cond_enabled("entry_base_spread") else True
         eff_peaking_out = is_peaking_out if is_cond_enabled("entry_peak_rollover") else True
-        scale_in_setup = bool(eff_stretched and eff_above_entry and eff_peaking_out)
+        eff_entry_ma_5m = is_entry_ma_aligned_5m if is_cond_enabled("entry_ma_stack_5m") else True
+        eff_entry_ma_1h = is_entry_ma_aligned_1h if is_cond_enabled("entry_ma_stack_1h") else True
+        scale_in_setup = bool(eff_stretched and eff_above_entry and eff_peaking_out and eff_entry_ma_5m and eff_entry_ma_1h)
         scale_in_armed = bool(can_scale_in and scale_in_setup)
         scale_in_blocked_reason = (
             "POSITION_CAPACITY" if not has_scale_in_capacity
@@ -692,7 +718,9 @@ async def get_hedged_status() -> Dict[str, Any]:
         eff_convergence = is_out_profitable_relative_to_latest if is_cond_enabled("exit_convergence") else True
         eff_dwell = is_dwell_satisfied if is_cond_enabled("exit_dwell_time") else True
         eff_bottoming = is_bottoming_out if is_cond_enabled("exit_bottoming_out") else True
-        eff_ma_aligned = is_exit_ma_aligned if is_cond_enabled("exit_ma_stack") else True
+        eff_exit_ma_5m = is_exit_ma_aligned_5m if (is_cond_enabled("exit_ma_stack_5m") and is_cond_enabled("exit_ma_stack", True)) else True
+        eff_exit_ma_1h = is_exit_ma_aligned_1h if (is_cond_enabled("exit_ma_stack_1h") and is_cond_enabled("exit_ma_stack", True)) else True
+        eff_ma_aligned = bool(eff_exit_ma_5m and eff_exit_ma_1h)
         eff_pos_qty = (adr_qty >= 0.07 and stock_qty >= 1.20 and adr_amt < 0 and stock_amt > 0) if is_cond_enabled("exit_position_qty") else True
         eff_no_recovery = not auto_state.get("execution_recovery")
 
@@ -710,9 +738,10 @@ async def get_hedged_status() -> Dict[str, Any]:
         status_scale_in = (
             "PEAK_REVERSAL_ARMED" if scale_in_armed
             else ("MAX_CAPACITY" if not can_scale_in
-            else ("AWAITING_MA_STRETCH" if not is_stretched_above_ma
-            else ("WAITING_PEAK_EXHAUSTION" if not is_peaking_out
-            else "WAITING_DIVERGENCE")))
+            else ("AWAITING_MA_STRETCH" if (is_cond_enabled("entry_ma_stretch") and not is_stretched_above_ma)
+            else ("AWAITING_UPWARD_MA_STACK" if not (eff_entry_ma_5m and eff_entry_ma_1h)
+            else ("WAITING_PEAK_EXHAUSTION" if (is_cond_enabled("entry_peak_rollover") and not is_peaking_out)
+            else "WAITING_DIVERGENCE"))))
         )
 
         status_take_profit = (
@@ -726,9 +755,9 @@ async def get_hedged_status() -> Dict[str, Any]:
         )
 
         if not can_take_profit and speculative_tranches_active > 0 and eligible_for_take_profit and is_dwell_satisfied:
-            if not exit_alignment_5m["ready"] or not exit_alignment_1h["ready"]:
+            if (is_cond_enabled("exit_ma_stack_5m") and not exit_alignment_5m["ready"]) or (is_cond_enabled("exit_ma_stack_1h") and not exit_alignment_1h["ready"]):
                 status_take_profit = "AWAITING_MA_HISTORY"
-            elif not is_exit_ma_aligned:
+            elif not eff_ma_aligned:
                 status_take_profit = "AWAITING_DOWNWARD_MA_STACK"
 
         if current_target_tranche and not tranche_profit["available"]:
@@ -745,10 +774,17 @@ async def get_hedged_status() -> Dict[str, Any]:
             "is_stretched_above_ma": is_stretched_above_ma,
             "is_peaking_out": is_peaking_out,
             "is_bottoming_out": is_bottoming_out,
+            "entry_ma_alignment_5m": entry_alignment_5m,
+            "entry_ma_alignment_1h": entry_alignment_1h,
+            "is_entry_ma_aligned_5m": is_entry_ma_aligned_5m,
+            "is_entry_ma_aligned_1h": is_entry_ma_aligned_1h,
+            "is_entry_ma_aligned": is_entry_ma_aligned,
             # Preserve the original field as the 5m detail for older clients.
             "exit_ma_alignment": exit_alignment_5m,
             "exit_ma_alignment_5m": exit_alignment_5m,
             "exit_ma_alignment_1h": exit_alignment_1h,
+            "is_exit_ma_aligned_5m": is_exit_ma_aligned_5m,
+            "is_exit_ma_aligned_1h": is_exit_ma_aligned_1h,
             "is_exit_ma_aligned": is_exit_ma_aligned,
             "spread_velocity_1bar": spread_velocity,
             "scale_in_trigger_spread": scale_in_trigger,
