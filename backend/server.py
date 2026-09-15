@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -508,6 +508,11 @@ async def get_hedged_status() -> Dict[str, Any]:
             pass
 
         # Real-time criteria for speculative trend-reversal auto-tranching & anti-churn LIFO ratchet
+        auto_state = load_auto_tranche_state()
+        cond_toggles = auto_state.get("condition_toggles", {})
+        def is_cond_enabled(k: str) -> bool:
+            return bool(cond_toggles.get(k, True))
+
         base_entry = entry_spread if entry_spread else 139.30
         curr_spread = current_spread if current_spread else 139.30
         tranches_remaining = 0
@@ -547,7 +552,10 @@ async def get_hedged_status() -> Dict[str, Any]:
         ma_stretch_pts = round(curr_spread - ma24, 2)
         is_stretched_above_ma = bool(ma_stretch_pts >= 0.10)
         is_above_entry = bool(curr_spread >= base_entry + 0.10) if tranches_active > 0 else True
-        scale_in_setup = bool(is_stretched_above_ma and is_above_entry and is_peaking_out)
+        eff_stretched = is_stretched_above_ma if is_cond_enabled("entry_ma_stretch") else True
+        eff_above_entry = is_above_entry if is_cond_enabled("entry_base_spread") else True
+        eff_peaking_out = is_peaking_out if is_cond_enabled("entry_peak_rollover") else True
+        scale_in_setup = bool(eff_stretched and eff_above_entry and eff_peaking_out)
         scale_in_armed = bool(can_scale_in and scale_in_setup)
         scale_in_blocked_reason = (
             "POSITION_CAPACITY" if not has_scale_in_capacity
@@ -630,8 +638,10 @@ async def get_hedged_status() -> Dict[str, Any]:
             (total_notional + next_tranche_notional) / equity if equity > 0 else float("inf"))
         has_scale_in_margin = free_buffer >= required_margin_buffer
         has_scale_in_leverage = projected_gross_leverage <= leverage_cap
-        can_scale_in = bool(
-            has_scale_in_capacity and has_scale_in_margin and has_scale_in_leverage)
+        eff_capacity = has_scale_in_capacity if is_cond_enabled("entry_capacity") else True
+        eff_margin = has_scale_in_margin if is_cond_enabled("entry_margin_buffer") else True
+        eff_leverage = has_scale_in_leverage if is_cond_enabled("entry_gross_leverage") else True
+        can_scale_in = bool(eff_capacity and eff_margin and eff_leverage)
         scale_in_armed = bool(can_scale_in and scale_in_setup)
         scale_in_blocked_reason = (
             "POSITION_CAPACITY" if not has_scale_in_capacity
@@ -639,7 +649,6 @@ async def get_hedged_status() -> Dict[str, Any]:
             else ("INSUFFICIENT_MARGIN" if not has_scale_in_margin else None))
         )
 
-        auto_state = load_auto_tranche_state()
         for stack_index, tranche in enumerate(active_tranches_queue):
             profit = estimate_tranche_exit(
                 tranche, executions, adr_mark, stock_mark, stock_sym,
@@ -677,18 +686,25 @@ async def get_hedged_status() -> Dict[str, Any]:
 
         is_out_profitable_relative_to_latest = bool(current_target_tranche and curr_spread <= out_target_spread)
         is_dwell_satisfied = bool(current_target_tranche and dwell_time_sec >= 120)
+
+        eff_spec_tranche = (speculative_tranches_active > 0 and current_target_tranche and current_target_tranche.get("trim_qty", 0) >= 0.07) if is_cond_enabled("exit_speculative_tranche") else True
+        eff_profitable = eligible_for_take_profit if is_cond_enabled("exit_net_profit") else True
+        eff_convergence = is_out_profitable_relative_to_latest if is_cond_enabled("exit_convergence") else True
+        eff_dwell = is_dwell_satisfied if is_cond_enabled("exit_dwell_time") else True
+        eff_bottoming = is_bottoming_out if is_cond_enabled("exit_bottoming_out") else True
+        eff_ma_aligned = is_exit_ma_aligned if is_cond_enabled("exit_ma_stack") else True
+        eff_pos_qty = (adr_qty >= 0.07 and stock_qty >= 1.20 and adr_amt < 0 and stock_amt > 0) if is_cond_enabled("exit_position_qty") else True
+        eff_no_recovery = not auto_state.get("execution_recovery")
+
         can_take_profit = bool(
-            speculative_tranches_active > 0
-            and current_target_tranche["trim_qty"] >= 0.07
-            and eligible_for_take_profit 
-            and is_out_profitable_relative_to_latest 
-            and is_dwell_satisfied
-            and is_bottoming_out
-            and is_exit_ma_aligned
-            and adr_qty >= 0.07
-            and stock_qty >= 1.20
-            and adr_amt < 0 and stock_amt > 0
-            and not auto_state.get("execution_recovery")
+            eff_spec_tranche
+            and eff_profitable
+            and eff_convergence
+            and eff_dwell
+            and eff_bottoming
+            and eff_ma_aligned
+            and eff_pos_qty
+            and eff_no_recovery
         )
 
         status_scale_in = (
@@ -721,6 +737,7 @@ async def get_hedged_status() -> Dict[str, Any]:
         auto_criteria = {
             "backend_auto_tranche_enabled": bool(auto_state.get("enabled", False)),
             "backend_auto_tranche_state": auto_state,
+            "condition_toggles": cond_toggles,
             "entry_baseline_spread": round(base_entry, 2),
             "current_spread": round(curr_spread, 2),
             "rolling_ma_24": round(ma24, 2),
@@ -1333,6 +1350,26 @@ async def toggle_auto_tranche(enabled: Optional[bool] = None) -> Dict[str, Any]:
     save_auto_tranche_state(state)
     logger.info(f"[Auto-Tranche] Daemon mode toggled to: {state['enabled']}")
     return {"success": True, "state": state}
+
+@app.post("/api/trade/toggle_condition")
+async def toggle_condition(key: str = Query(...), enabled: bool = Query(...)) -> Dict[str, Any]:
+    """Sets a specific entry or exit condition toggle state."""
+    state = load_auto_tranche_state()
+    toggles = state.setdefault("condition_toggles", {})
+    toggles[key] = bool(enabled)
+    save_auto_tranche_state(state)
+    logger.info(f"[Auto-Tranche] Condition '{key}' toggled to {enabled}")
+    return {"success": True, "condition_toggles": toggles}
+
+@app.post("/api/trade/update_conditions")
+async def update_conditions(toggles_update: Dict[str, bool]) -> Dict[str, Any]:
+    """Batch updates entry and exit condition toggles."""
+    state = load_auto_tranche_state()
+    toggles = state.setdefault("condition_toggles", {})
+    toggles.update(toggles_update)
+    save_auto_tranche_state(state)
+    logger.info(f"[Auto-Tranche] Batch updated {len(toggles_update)} condition toggles")
+    return {"success": True, "condition_toggles": toggles}
 
 async def auto_tranche_worker():
     """

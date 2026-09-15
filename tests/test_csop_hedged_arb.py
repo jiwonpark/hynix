@@ -366,6 +366,69 @@ class TestCSOPHedgedArbitrage(unittest.TestCase):
 
         print(f"\n[Conservative Scale-Out Bottoming-Out Verification] PASSED: Downward cascade ridden to maximum profit.")
 
+    def test_condition_toggles_and_bypass(self):
+        """
+        Verify that condition toggles can be individually bypassed and persist.
+        """
+        import asyncio
+        from backend import server
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        state_patch = patch("backend.server.STATE_FILE", Path(tmp_dir.name) / "state.json")
+        state_patch.start()
+        self.addCleanup(state_patch.stop)
+
+        # 1. Test toggle endpoint
+        async def run_toggle():
+            res = await server.toggle_condition("entry_ma_stretch", False)
+            self.assertTrue(res["success"])
+            self.assertFalse(res["condition_toggles"]["entry_ma_stretch"])
+
+            # Batch update
+            batch = {"entry_peak_rollover": False, "exit_dwell_time": False}
+            res_batch = await server.update_conditions(batch)
+            self.assertTrue(res_batch["success"])
+            self.assertFalse(res_batch["condition_toggles"]["entry_peak_rollover"])
+            self.assertFalse(res_batch["condition_toggles"]["exit_dwell_time"])
+
+        asyncio.run(run_toggle())
+
+        # 2. Verify HTML elements
+        html_path = Path(__file__).resolve().parent.parent / "index.html"
+        content = html_path.read_text(encoding="utf-8")
+        entry_keys = [
+            "chkCondEntryMaStretch",
+            "chkCondEntryBase",
+            "chkCondEntryPeak",
+            "chkCondEntryCapacity",
+            "chkCondEntryLeverage",
+            "chkCondEntryMargin",
+            "chkCondEntryEngine"
+        ]
+        for chk_id in entry_keys:
+            self.assertIn(f'id="{chk_id}"', content)
+
+        exit_keys = [
+            "chkCondExitActive",
+            "chkCondExitConvergence",
+            "chkCondExitNetPnl",
+            "chkCondExitDwell",
+            "chkCondExitMaStack",
+            "chkCondExitBottoming",
+            "chkCondExitPosition"
+        ]
+        for chk_id in exit_keys:
+            self.assertIn(f'id="{chk_id}"', content)
+
+        self.assertIn(".toggleSwitch", content)
+        self.assertIn(".toggleSlider", content)
+        self.assertIn(".condRow.disabled-cond", content)
+        print("\n[Condition Toggles & HTML Checklist Verification] PASSED: All 14 condition toggles and endpoints verified.")
+
 if __name__ == '__main__':
     unittest.main()
 
