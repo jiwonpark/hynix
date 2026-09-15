@@ -20,6 +20,11 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             'authenticated': True, 'positions': [],
             'summary': {'available_margin_usd': 30, 'total_equity_usd': 35},
         }
+        async def default_request(method, path, params, **kwargs):
+            if 'ticker' in path:
+                return {'price': '190' if params.get('symbol') == 'SKHYUSDT' else '5.6'}
+            return []
+        self.client.request.side_effect = default_request
         self.client_patch = patch.object(server, 'binance_client', self.client)
         self.client_patch.start()
         self.addCleanup(self.client_patch.stop)
@@ -51,6 +56,14 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             {'status': 'FILLED', 'executedQty': '1.40'}]
         self.assertTrue((await server.step_tranche())['success'])
         self.assertNotIn('execution_recovery', server.load_auto_tranche_state())
+
+    async def test_scale_in_rejects_speculative_stack_at_capacity(self):
+        status = {'tranches_active': 10, 'auto_tranche_criteria': {'tranches_max': 10}}
+        with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
+            result = await server.step_tranche()
+        self.assertFalse(result['success'])
+        self.assertIn('Speculative tranche capacity', result['error'])
+        self.client.create_order.assert_not_awaited()
 
     async def test_flat_account_still_returns_both_histories(self):
         requested = []

@@ -2072,7 +2072,7 @@
             <!-- 3. Sizing Progress Bar & Interactive Action Buttons -->
             <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
               <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; font-weight: 700; color: #475569;">
-                <span>Tranche Capacity Utilization (Max 10 Units / ~8x Gross Leverage):</span>
+                <span>Live Capital Utilization (Current Futures Equity / 8x Gross Cap):</span>
                 <span id="lblTranchePct">0%</span>
               </div>
               <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden;">
@@ -9017,7 +9017,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("lblHedgedSyncBadge")) {
           $("lblHedgedSyncBadge").textContent = `Live Binance Futures | Sync ${formatKstTime()}`;
         }
-        const tranches = data.tranches_active || 0;
+        const tranches = data.speculative_tranches_active ?? data.tranches_active ?? 0;
+        const trancheMax = data.auto_tranche_criteria?.tranches_max || 10;
+        const excessTranches = Math.max(0, tranches - trancheMax);
         const lev = data.gross_leverage || 0.0;
         const notional = data.total_notional_usd || 0.0;
         const delta = data.net_delta_imbalance_usd || 0.0;
@@ -9034,7 +9036,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const stockKrx = data.stock_krx_shares != null ? data.stock_krx_shares : (stockShares * 0.1);
         const netKrx = data.net_krx_shares != null ? data.net_krx_shares : (netShares * 0.1);
 
-        if ($("valHedgedTranches")) $("valHedgedTranches").textContent = `${tranches} / 10 Units`;
+        if ($("valHedgedTranches")) {
+          $("valHedgedTranches").textContent = excessTranches > 0
+            ? `${tranches} Active · Cap ${trancheMax} (+${excessTranches} Legacy Excess)`
+            : `${tranches} / ${trancheMax} Active Units`;
+        }
         if ($("valHedgedQuantities")) {
           const adrQty = data.adr_qty ? data.adr_qty.toFixed(2) : "0.00";
           const stockQty = data.stock_qty ? data.stock_qty.toFixed(2) : "0.00";
@@ -9080,8 +9086,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("pillNetShares").textContent = `Net Delta: ${sign}${netShares.toFixed(4)} SKHY (${sign}${netKrx.toFixed(5)} KR)`;
         }
 
-        const pct = Math.min(100, Math.round((tranches / 10) * 100));
-        if ($("lblTranchePct")) $("lblTranchePct").textContent = `${pct}% (${tranches} / 10 Units)`;
+        const capitalPct = Number.isFinite(data.auto_tranche_criteria?.capital_utilization_pct)
+          ? data.auto_tranche_criteria.capital_utilization_pct
+          : Math.min(100, (lev / 8) * 100);
+        const pct = Math.max(0, Math.min(100, capitalPct));
+        if ($("lblTranchePct")) {
+          const slotText = excessTranches > 0
+            ? `${trancheMax}/${trancheMax} slots +${excessTranches} excess`
+            : `${tranches}/${trancheMax} slots`;
+          $("lblTranchePct").textContent = `${pct.toFixed(1)}% (${lev.toFixed(2)}x / 8.00x) · ${slotText}`;
+        }
         if ($("barTrancheProgress")) $("barTrancheProgress").style.width = `${pct}%`;
 
         const btnReduce = $("btnReduceTranche");

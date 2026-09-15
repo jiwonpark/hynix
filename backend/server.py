@@ -425,7 +425,10 @@ async def get_hedged_status() -> Dict[str, Any]:
 
         stock_qty = abs(float(stock_pos.get("position_amt", 0.0))) if stock_pos else 0.0
         adr_qty = abs(float(adr_pos.get("position_amt", 0.0))) if adr_pos else 0.0
-        tranches_active = round(stock_qty / 1.20) if stock_qty > 0 else 0
+        # Position quantity includes retained core from prior asymmetric trims.
+        # It must not be presented as the number of active speculative tranches.
+        position_equivalent_units = round(stock_qty / 1.20) if stock_qty > 0 else 0
+        tranches_active = position_equivalent_units
 
         loss_on_10pct = adr_notional * 0.10
         free_buffer = max(0.0, equity - maint_margin)
@@ -589,14 +592,36 @@ async def get_hedged_status() -> Dict[str, Any]:
         # Once all entries are exited, remaining position is accumulated core inventory and CANNOT be trimmed.
         if adr_qty == 0 or stock_qty == 0:
             active_tranches_queue = []
-        elif len(active_tranches_queue) > tranches_active:
-            active_tranches_queue = active_tranches_queue[-tranches_active:]
+        elif len(active_tranches_queue) > position_equivalent_units:
+            active_tranches_queue = active_tranches_queue[-position_equivalent_units:]
         # DO NOT prepend missing tranches! If len(active_tranches_queue) < tranches_active,
         # the difference represents accumulated core inventory that must remain protected.
 
         speculative_tranches_active = len(active_tranches_queue)
         core_accumulated_skhy = round(max(0.0, adr_qty - (speculative_tranches_active * 0.08)), 4)
         core_accumulated_csop = round(max(0.0, stock_qty - (speculative_tranches_active * 1.40)), 4)
+
+        # Capacity is defined by the live speculative stack, not by total inventory.
+        # Recompute it only after reconstructing the LIFO queue so retained core does
+        # not consume slots or produce impossible values such as 16 / 10.
+        tranches_active = speculative_tranches_active
+        tranches_remaining = max(0, 10 - tranches_active)
+        has_scale_in_capacity = tranches_remaining > 0
+        next_tranche_notional = (0.08 * adr_mark) + (1.40 * stock_mark)
+        required_margin_buffer = max(2.50, (next_tranche_notional / 10.0) * 1.25)
+        projected_gross_leverage = (
+            (total_notional + next_tranche_notional) / equity if equity > 0 else float("inf"))
+        leverage_cap = 8.0
+        has_scale_in_margin = free_buffer >= required_margin_buffer
+        has_scale_in_leverage = projected_gross_leverage <= leverage_cap
+        can_scale_in = bool(
+            has_scale_in_capacity and has_scale_in_margin and has_scale_in_leverage)
+        scale_in_armed = bool(can_scale_in and scale_in_setup)
+        scale_in_blocked_reason = (
+            "POSITION_CAPACITY" if not has_scale_in_capacity
+            else ("GROSS_LEVERAGE_CAP" if not has_scale_in_leverage
+            else ("INSUFFICIENT_MARGIN" if not has_scale_in_margin else None))
+        )
 
         auto_state = load_auto_tranche_state()
         for stack_index, tranche in enumerate(active_tranches_queue):
@@ -697,11 +722,17 @@ async def get_hedged_status() -> Dict[str, Any]:
             "scale_in_setup": scale_in_setup,
             "scale_in_blocked_reason": scale_in_blocked_reason,
             "tranches_active": tranches_active,
+            "position_equivalent_units": position_equivalent_units,
             "speculative_tranches_active": speculative_tranches_active,
             "core_accumulated_skhy": core_accumulated_skhy,
             "core_accumulated_csop": core_accumulated_csop,
             "tranches_max": 10,
             "tranches_remaining": tranches_remaining,
+            "gross_leverage_cap": leverage_cap,
+            "capital_utilization_pct": round(min(100.0, current_leverage / leverage_cap * 100.0), 2),
+            "projected_gross_leverage": round(projected_gross_leverage, 2),
+            "projected_capital_utilization_pct": round(min(100.0, projected_gross_leverage / leverage_cap * 100.0), 2),
+            "required_margin_buffer_usd": round(required_margin_buffer, 2),
             "can_scale_in": can_scale_in,
             "status_scale_in": status_scale_in,
 
@@ -747,6 +778,7 @@ async def get_hedged_status() -> Dict[str, Any]:
             "maintenance_margin_usd": maint_margin,
             "margin_ratio_percent": margin_ratio,
             "tranches_active": tranches_active,
+            "position_equivalent_units": position_equivalent_units,
             "adr_position": adr_pos,
             "stock_position": stock_pos,
             "adr_qty": adr_qty,
@@ -1037,13 +1069,53 @@ async def execute_scale_in() -> Dict[str, Any]:
         state = load_auto_tranche_state()
         if state.get("execution_recovery"):
             return {"success": False, "error": "Scale-in paused: reconcile the previous order outcomes before resuming.", "recovery_required": True, "execution_recovery": state["execution_recovery"]}
+        live_status = await get_hedged_status()
+        live_tranches = int(live_status.get("tranches_active", 0))
+        tranche_cap = int((live_status.get("auto_tranche_criteria") or {}).get("tranches_max", 10))
+        if live_tranches >= tranche_cap:
+            return {
+                "success": False,
+                "error": f"Speculative tranche capacity: {live_tranches} active >= {tranche_cap} cap"
+            }
         overview = await binance_client.get_detailed_account_overview()
         if not overview.get("authenticated"):
             return {"success": False, "error": "Binance client not authenticated"}
 
-        avail = float(overview.get("summary", {}).get("available_margin_usd", 0.0))
-        if avail < 2.50:
-            return {"success": False, "error": f"Insufficient available margin: ${avail:.2f} < $2.50 required"}
+        summary = overview.get("summary", {})
+        avail = float(summary.get("available_margin_usd", 0.0))
+        equity = float(summary.get("total_equity_usd", 0.0))
+        positions = overview.get("positions", [])
+        adr_pos = next((p for p in positions if p.get("symbol") == "SKHYUSDT"), None)
+        stock_pos = next((p for p in positions if p.get("symbol") == "CSOPSKHYNIX2LUSDT"), None)
+        current_notional = sum(
+            float(p.get("notional", 0.0)) for p in (adr_pos, stock_pos) if p)
+        adr_mark = float(adr_pos.get("mark_price", 0.0)) if adr_pos else 0.0
+        stock_mark = float(stock_pos.get("mark_price", 0.0)) if stock_pos else 0.0
+        if adr_mark <= 0 or stock_mark <= 0:
+            adr_ticker, stock_ticker = await asyncio.gather(
+                binance_client.request(
+                    "GET", "/fapi/v1/ticker/price", {"symbol": "SKHYUSDT"}),
+                binance_client.request(
+                    "GET", "/fapi/v1/ticker/price", {"symbol": "CSOPSKHYNIX2LUSDT"}),
+            )
+            adr_mark = float(adr_ticker.get("price", 0.0))
+            stock_mark = float(stock_ticker.get("price", 0.0))
+        if adr_mark <= 0 or stock_mark <= 0 or equity <= 0:
+            return {"success": False, "error": "Cannot verify live equity and both leg mark prices"}
+
+        next_notional = (0.08 * adr_mark) + (1.40 * stock_mark)
+        required_margin = max(2.50, (next_notional / 10.0) * 1.25)
+        projected_leverage = (current_notional + next_notional) / equity
+        if projected_leverage > 8.0:
+            return {
+                "success": False,
+                "error": f"Gross leverage cap: projected {projected_leverage:.2f}x > 8.00x"
+            }
+        if avail < required_margin:
+            return {
+                "success": False,
+                "error": f"Insufficient available margin: ${avail:.2f} < ${required_margin:.2f} buffered requirement"
+            }
 
         # Configure leverage & margin type
         await asyncio.gather(
