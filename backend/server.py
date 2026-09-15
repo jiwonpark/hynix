@@ -510,8 +510,8 @@ async def get_hedged_status() -> Dict[str, Any]:
         # Real-time criteria for speculative trend-reversal auto-tranching & anti-churn LIFO ratchet
         base_entry = entry_spread if entry_spread else 139.30
         curr_spread = current_spread if current_spread else 139.30
-        tranches_remaining = max(0, 10 - tranches_active)
-        has_scale_in_capacity = tranches_remaining > 0
+        tranches_remaining = 0
+        has_scale_in_capacity = True
         has_scale_in_margin = free_buffer >= 2.50
         can_scale_in = bool(has_scale_in_capacity and has_scale_in_margin)
 
@@ -610,17 +610,24 @@ async def get_hedged_status() -> Dict[str, Any]:
         core_accumulated_skhy = round(max(0.0, adr_qty - (speculative_tranches_active * 0.08)), 4)
         core_accumulated_csop = round(max(0.0, stock_qty - (speculative_tranches_active * 1.40)), 4)
 
-        # Capacity is defined by the live speculative stack, not by total inventory.
-        # Recompute it only after reconstructing the LIFO queue so retained core does
-        # not consume slots or produce impossible values such as 16 / 10.
+        # Capacity is recalculated from live equity and gross exposure. Retained core
+        # consumes leverage headroom, but is not mislabeled as a speculative tranche.
         tranches_active = speculative_tranches_active
-        tranches_remaining = max(0, 10 - tranches_active)
-        has_scale_in_capacity = tranches_remaining > 0
         next_tranche_notional = (0.08 * adr_mark) + (1.40 * stock_mark)
+        leverage_cap = 8.0
+        gross_capacity_usd = max(0.0, equity * leverage_cap)
+        gross_headroom_usd = max(0.0, gross_capacity_usd - total_notional)
+        if next_tranche_notional > 0:
+            tranches_remaining = math.floor(gross_headroom_usd / next_tranche_notional)
+            tranches_max = tranches_active + tranches_remaining
+            has_scale_in_capacity = tranches_remaining > 0
+        else:
+            tranches_remaining = 0
+            tranches_max = None
+            has_scale_in_capacity = True
         required_margin_buffer = max(2.50, (next_tranche_notional / 10.0) * 1.25)
         projected_gross_leverage = (
             (total_notional + next_tranche_notional) / equity if equity > 0 else float("inf"))
-        leverage_cap = 8.0
         has_scale_in_margin = free_buffer >= required_margin_buffer
         has_scale_in_leverage = projected_gross_leverage <= leverage_cap
         can_scale_in = bool(
@@ -738,9 +745,11 @@ async def get_hedged_status() -> Dict[str, Any]:
             "speculative_tranches_active": speculative_tranches_active,
             "core_accumulated_skhy": core_accumulated_skhy,
             "core_accumulated_csop": core_accumulated_csop,
-            "tranches_max": 10,
+            "tranches_max": tranches_max,
             "tranches_remaining": tranches_remaining,
             "gross_leverage_cap": leverage_cap,
+            "gross_capacity_usd": round(gross_capacity_usd, 2),
+            "gross_headroom_usd": round(gross_headroom_usd, 2),
             "capital_utilization_pct": round(min(100.0, current_leverage / leverage_cap * 100.0), 2),
             "projected_gross_leverage": round(projected_gross_leverage, 2),
             "projected_capital_utilization_pct": round(min(100.0, projected_gross_leverage / leverage_cap * 100.0), 2),
@@ -1083,8 +1092,10 @@ async def execute_scale_in() -> Dict[str, Any]:
             return {"success": False, "error": "Scale-in paused: reconcile the previous order outcomes before resuming.", "recovery_required": True, "execution_recovery": state["execution_recovery"]}
         live_status = await get_hedged_status()
         live_tranches = int(live_status.get("tranches_active", 0))
-        tranche_cap = int((live_status.get("auto_tranche_criteria") or {}).get("tranches_max", 10))
-        if live_tranches >= tranche_cap:
+        criteria = live_status.get("auto_tranche_criteria") or {}
+        tranche_cap_raw = criteria.get("tranches_max")
+        tranche_cap = int(tranche_cap_raw) if tranche_cap_raw is not None else None
+        if tranche_cap is not None and live_tranches >= tranche_cap:
             return {
                 "success": False,
                 "error": f"Speculative tranche capacity: {live_tranches} active >= {tranche_cap} cap"
@@ -1367,7 +1378,10 @@ async def auto_tranche_worker():
                             save_auto_tranche_state(state)
 
                     # 2. Speculative Scale-In (Peak-Out / MA Stretch Filter)
-                    elif scale_in_armed and tranches_active < 10:
+                    elif scale_in_armed and (
+                        criteria.get("tranches_max") is None
+                        or tranches_active < int(criteria["tranches_max"])
+                    ):
                         if now - last_step >= 60:
                             logger.info("[Auto-Tranche Worker] Executing autonomous speculative scale-in step...")
                             res = await step_tranche()

@@ -220,6 +220,10 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.client.request.side_effect = request
         criteria = (await server.get_hedged_status())['auto_tranche_criteria']
         self.assertTrue(criteria['can_take_profit'])
+        self.assertGreater(criteria['tranches_max'], 10)
+        self.assertEqual(
+            criteria['tranches_max'],
+            criteria['tranches_active'] + criteria['tranches_remaining'])
         self.assertIs(criteria['active_tranche_stack'], criteria['active_tranches_queue'])
         self.assertEqual(len(criteria['active_tranche_stack']), 1)
         stack_top = criteria['active_tranche_stack'][-1]

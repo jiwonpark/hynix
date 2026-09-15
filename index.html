@@ -2025,7 +2025,7 @@
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 12px;">
               <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
                 <span style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase; display: block;">Active Tranches</span>
-                <strong id="valHedgedTranches" style="font-size: 16px; color: #0f172a;">0 / 10 Units</strong>
+                <strong id="valHedgedTranches" style="font-size: 16px; color: #0f172a;">0 / — Units</strong>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px;" id="valHedgedQuantities">Short 0.00 SKHY | Long 0.00 CSOP</div>
                 <div style="font-size: 11px; color: #0284c7; font-weight: 700; margin-top: 2px;" id="valHedgedShares">Exposure: — SKHY eq.</div>
               </div>
@@ -9043,7 +9043,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("lblHedgedSyncBadge").textContent = `Live Binance Futures | Sync ${formatKstTime()}`;
         }
         const tranches = data.speculative_tranches_active ?? data.tranches_active ?? 0;
-        const trancheMax = data.auto_tranche_criteria?.tranches_max || 10;
+        const trancheMax = data.auto_tranche_criteria?.tranches_max ?? tranches;
         const excessTranches = Math.max(0, tranches - trancheMax);
         const lev = data.gross_leverage || 0.0;
         const notional = data.total_notional_usd || 0.0;
@@ -9979,7 +9979,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // - AND Upward divergence is showing peak-out / momentum exhaustion
         const canScaleIn = criteria 
           ? Boolean(criteria.scale_in_armed) 
-          : (tranches < 10);
+          : false;
 
         if (canScaleIn) {
           const now = Date.now();
