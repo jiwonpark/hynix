@@ -331,16 +331,18 @@ async def get_cached_parity_bars(interval: str = "5m", limit: int = 60) -> List[
 
     return _parity_cache.get("data", [])
 
-def exit_ma_alignment(bars: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Exit filter on the strategy's fixed 5-minute spread bars."""
-    result = {"interval": "5m", "ma7": None, "ma24": None, "ma60": None,
+def exit_ma_alignment(
+    bars: List[Dict[str, Any]], interval: str = "5m", max_age_sec: int = 600
+) -> Dict[str, Any]:
+    """Bearish MA-stack filter for spread bars on the requested timeframe."""
+    result = {"interval": interval, "ma7": None, "ma24": None, "ma60": None,
               "ready": False, "downward": False}
     if len(bars) < 60:
         return result
     values = [float(b["value"]) for b in bars[-60:]]
     if not all(math.isfinite(v) for v in values):
         return result
-    if time.time() - bars[-1]["time"] > 600:
+    if time.time() - bars[-1]["time"] > max_age_sec:
         return result
     result.update(ready=True, ma7=sum(values[-7:]) / 7,
                   ma24=sum(values[-24:]) / 24, ma60=sum(values) / 60)
@@ -514,8 +516,15 @@ async def get_hedged_status() -> Dict[str, Any]:
         can_scale_in = bool(has_scale_in_capacity and has_scale_in_margin)
 
         # 1. Moving Average & Speculative Peak-Out Metrics
-        parity_bars = await get_cached_parity_bars("5m", 60)
-        exit_alignment = exit_ma_alignment(parity_bars)
+        parity_bars, parity_bars_1h = await asyncio.gather(
+            get_cached_parity_bars("5m", 60),
+            get_cached_parity_bars("1h", 60),
+        )
+        exit_alignment_5m = exit_ma_alignment(parity_bars, "5m", 600)
+        exit_alignment_1h = exit_ma_alignment(parity_bars_1h, "1h", 7200)
+        is_exit_ma_aligned = bool(
+            exit_alignment_5m["downward"] and exit_alignment_1h["downward"]
+        )
         if parity_bars and len(parity_bars) >= 6:
             ma_subset = parity_bars[-24:] if len(parity_bars) >= 24 else parity_bars
             ma24 = sum(b["value"] for b in ma_subset) / len(ma_subset)
@@ -668,7 +677,7 @@ async def get_hedged_status() -> Dict[str, Any]:
             and is_out_profitable_relative_to_latest 
             and is_dwell_satisfied
             and is_bottoming_out
-            and exit_alignment["downward"]
+            and is_exit_ma_aligned
             and adr_qty >= 0.07
             and stock_qty >= 1.20
             and adr_amt < 0 and stock_amt > 0
@@ -694,9 +703,9 @@ async def get_hedged_status() -> Dict[str, Any]:
         )
 
         if not can_take_profit and speculative_tranches_active > 0 and eligible_for_take_profit and is_dwell_satisfied:
-            if not exit_alignment["ready"]:
+            if not exit_alignment_5m["ready"] or not exit_alignment_1h["ready"]:
                 status_take_profit = "AWAITING_MA_HISTORY"
-            elif not exit_alignment["downward"]:
+            elif not is_exit_ma_aligned:
                 status_take_profit = "AWAITING_DOWNWARD_MA_STACK"
 
         if current_target_tranche and not tranche_profit["available"]:
@@ -712,8 +721,11 @@ async def get_hedged_status() -> Dict[str, Any]:
             "is_stretched_above_ma": is_stretched_above_ma,
             "is_peaking_out": is_peaking_out,
             "is_bottoming_out": is_bottoming_out,
-            "exit_ma_alignment": exit_alignment,
-            "is_exit_ma_aligned": exit_alignment["downward"],
+            # Preserve the original field as the 5m detail for older clients.
+            "exit_ma_alignment": exit_alignment_5m,
+            "exit_ma_alignment_5m": exit_alignment_5m,
+            "exit_ma_alignment_1h": exit_alignment_1h,
+            "is_exit_ma_aligned": is_exit_ma_aligned,
             "spread_velocity_1bar": spread_velocity,
             "scale_in_trigger_spread": scale_in_trigger,
             "gap_to_scale_in_pts": round(scale_in_trigger - curr_spread, 2),

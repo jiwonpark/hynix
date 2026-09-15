@@ -2012,7 +2012,7 @@
                 <span style="background: #16a34a; color: #fff; font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px;">ENFORCED BY ENGINE</span>
               </div>
               <p style="margin: 0; font-size: 12px; color: #1e293b; line-height: 1.55; font-weight: 500;">
-                Normal take-profit closes the <strong>latest matched entry first (LIFO)</strong>. The exact 0.07 ADR / 1.20 ETF trim must show <strong>estimated net profit above $0.02</strong>, after recorded entry fees and reserves for closing fees, slippage, and funding. Spread convergence, holding time, bottoming-out, and downward MA alignment must also pass. <strong>Actual execution PnL may differ from the estimate.</strong> Emergency exits bypass these strategy checks.
+                Normal take-profit closes the <strong>latest matched entry first (LIFO)</strong>. The exact 0.07 ADR / 1.20 ETF trim must show <strong>estimated net profit above $0.02</strong>, after recorded entry fees and reserves for closing fees, slippage, and funding. Spread convergence, holding time, bottoming-out, and downward MA alignment on both 5-minute and 1-hour charts must also pass. <strong>Actual execution PnL may differ from the estimate.</strong> Emergency exits bypass these strategy checks.
               </p>
             </div>
 
@@ -2315,7 +2315,7 @@
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
                   <span>Current Parity: <strong id="valCritTpCurrentSpread">139.30%</strong></span>
-                  <span>Exit MA Stack (5m): <strong id="valCritExitMaStack" style="color: #d97706;">MA7 &lt; MA24 &lt; MA60 required</strong></span>
+                  <span>Exit MA Stack (5m + 1h): <strong id="valCritExitMaStack" style="color: #d97706;">Both timeframes required</strong></span>
                   <span>Bottoming Out: <strong id="valCritBottomingOut" style="color: #16a34a;">TROUGH REBOUND / MA</strong></span>
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
@@ -9151,7 +9151,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             } else if (criteria && !criteria.is_out_profitable_relative_to_latest) {
               lblReduce.textContent = `🔒 Anti-Churn Locked: Awaiting Convergence (Target <= ${criteria.out_target_spread}%)`;
             } else if (!criteria?.is_exit_ma_aligned) {
-              lblReduce.textContent = "🔒 Awaiting downward MA stack (5m: MA7 < MA24 < MA60)";
+              lblReduce.textContent = "🔒 Awaiting downward MA stacks (5m AND 1h: MA7 < MA24 < MA60)";
             } else if (criteria && !criteria.is_bottoming_out) {
               lblReduce.textContent = "🌊 Riding Convergence (Waiting for Trough / MA Touch)";
             } else {
@@ -9746,12 +9746,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const isOutProfitable = Boolean(criteria.is_out_profitable_relative_to_latest);
 
         const isBottomingOut = Boolean(criteria.is_bottoming_out);
-        const exitMa = criteria.exit_ma_alignment;
+        const exitMa5m = criteria.exit_ma_alignment_5m || criteria.exit_ma_alignment;
+        const exitMa1h = criteria.exit_ma_alignment_1h;
         if ($("valCritExitMaStack")) {
           const label = $("valCritExitMaStack");
-          label.textContent = !exitMa?.ready ? "Waiting for 60 fresh bars" : (exitMa.downward ? "DOWNWARD — ALIGNED" : "WAITING: MA7 < MA24 < MA60");
-          label.style.color = exitMa?.downward ? "#16a34a" : "#d97706";
-          label.title = exitMa?.ready ? `MA7 ${exitMa.ma7.toFixed(3)} / MA24 ${exitMa.ma24.toFixed(3)} / MA60 ${exitMa.ma60.toFixed(3)} (5m)` : "";
+          const bothReady = Boolean(exitMa5m?.ready && exitMa1h?.ready);
+          const bothDown = Boolean(exitMa5m?.downward && exitMa1h?.downward);
+          const state5m = exitMa5m?.downward ? "✓" : "✗";
+          const state1h = exitMa1h?.downward ? "✓" : "✗";
+          label.textContent = !bothReady ? "Waiting for 60 fresh bars on both" : (bothDown ? "5m ✓ AND 1h ✓ — ALIGNED" : `5m ${state5m} AND 1h ${state1h}`);
+          label.style.color = bothDown ? "#16a34a" : "#d97706";
+          label.title = bothReady ? `5m: ${exitMa5m.ma7.toFixed(3)} / ${exitMa5m.ma24.toFixed(3)} / ${exitMa5m.ma60.toFixed(3)} · 1h: ${exitMa1h.ma7.toFixed(3)} / ${exitMa1h.ma24.toFixed(3)} / ${exitMa1h.ma60.toFixed(3)}` : "MA7 < MA24 < MA60 is required on both 5m and 1h charts";
         }
 
         if ($("valCritLatestInSpread")) $("valCritLatestInSpread").textContent = `${latestIn.toFixed(2)}%`;
@@ -9797,7 +9802,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("badgeCriteriaTP").style.background = "#eff6ff";
             $("badgeCriteriaTP").style.color = "#1d4ed8";
           } else if (!criteria.is_exit_ma_aligned) {
-            $("badgeCriteriaTP").textContent = isKo ? "5분봉 MA 역배열 대기" : "AWAITING DOWNWARD MA STACK (5m)";
+            $("badgeCriteriaTP").textContent = isKo ? "5분봉 + 1시간봉 MA 역배열 대기" : "AWAITING MA STACKS (5m AND 1h)";
             $("badgeCriteriaTP").style.background = "#fef3c7";
             $("badgeCriteriaTP").style.color = "#b45309";
           } else if (isOutProfitable && !isBottomingOut) {

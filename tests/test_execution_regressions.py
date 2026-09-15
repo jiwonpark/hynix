@@ -3,7 +3,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 from backend import server
 
@@ -227,7 +227,17 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stack_top['minimum_net_profit_usd'], .02)
         self.assertTrue(stack_top['profit_estimate_available'])
         self.assertIsNotNone(stack_top['estimated_net_pnl_usd'])
-        server.get_cached_parity_bars.assert_awaited_with('5m', 60)
+        self.assertIn(call('5m', 60), server.get_cached_parity_bars.await_args_list)
+        self.assertIn(call('1h', 60), server.get_cached_parity_bars.await_args_list)
+        flat_bars = self.ma_bars([141] * 60)
+        server.get_cached_parity_bars.side_effect = (
+            lambda interval, limit: bars if interval == '5m' else flat_bars)
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertTrue(criteria['exit_ma_alignment_5m']['downward'])
+        self.assertFalse(criteria['exit_ma_alignment_1h']['downward'])
+        self.assertFalse(criteria['is_exit_ma_aligned'])
+        self.assertFalse(criteria['can_take_profit'])
+        server.get_cached_parity_bars.side_effect = None
         server.get_cached_parity_bars.return_value = self.ma_bars([141] * 60)
         criteria = (await server.get_hedged_status())['auto_tranche_criteria']
         self.assertFalse(criteria['can_take_profit'])
