@@ -33,6 +33,13 @@ from .upbit_client import UpbitClient
 STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
 scale_in_lock = asyncio.Lock()
 
+# These switches may relax a backtest, but cannot relax live execution guards.
+MANDATORY_LIVE_CONDITIONS = frozenset({
+    "entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state",
+    "exit_speculative_tranche", "exit_net_profit", "exit_position_qty",
+})
+
+
 def load_auto_tranche_state() -> Dict[str, Any]:
     try:
         if STATE_FILE.exists():
@@ -290,18 +297,14 @@ async def get_positions() -> Dict[str, Any]:
     except Exception as e:
         return {"error": str(e), "positions": []}
 
-_parity_cache: Dict[str, Any] = {
-    "key": "",
-    "timestamp": 0.0,
-    "data": []
-}
+_parity_cache: Dict[str, Any] = {}
 
 async def get_cached_parity_bars(interval: str = "5m", limit: int = 60) -> List[Dict[str, Any]]:
-    global _parity_cache
     now = time.time()
     cache_key = f"{interval}_{limit}"
-    if _parity_cache["key"] == cache_key and (now - _parity_cache["timestamp"]) < 4.0:
-        return _parity_cache["data"]
+    cached = _parity_cache.get(cache_key)
+    if cached and 0 <= now - cached["timestamp"] < 4.0:
+        return cached["data"]
 
     try:
         k1, k2 = await asyncio.gather(
@@ -325,12 +328,13 @@ async def get_cached_parity_bars(interval: str = "5m", limit: int = 60) -> List[
                         "domestic": round(p2, 2)
                     })
             if bars:
-                _parity_cache = {"key": cache_key, "timestamp": now, "data": bars}
+                _parity_cache[cache_key] = {"timestamp": now, "data": bars}
                 return bars
     except Exception as e:
         logger.warning(f"Error fetching parity bars: {e}")
 
-    return _parity_cache.get("data", [])
+    # Failed refreshes cannot substitute another timeframe or stale signals.
+    return []
 
 def exit_ma_alignment(
     bars: List[Dict[str, Any]], interval: str = "5m", max_age_sec: int = 600
@@ -527,6 +531,10 @@ async def get_hedged_status() -> Dict[str, Any]:
         auto_state = load_auto_tranche_state()
         cond_toggles = auto_state.get("condition_toggles", {})
         def is_cond_enabled(k: str, default: bool = True) -> bool:
+            if k in MANDATORY_LIVE_CONDITIONS:
+                return True
+            if k in {"exit_ma_stack_5m", "exit_ma_stack_1h"}:
+                return bool(cond_toggles.get(k, cond_toggles.get("exit_ma_stack", default)))
             return bool(cond_toggles.get(k, default))
 
         base_entry = entry_spread if entry_spread else 139.30
@@ -663,7 +671,7 @@ async def get_hedged_status() -> Dict[str, Any]:
         required_margin_buffer = max(2.50, (next_tranche_notional / 10.0) * 1.25)
         projected_gross_leverage = (
             (total_notional + next_tranche_notional) / equity if equity > 0 else float("inf"))
-        has_scale_in_margin = free_buffer >= required_margin_buffer
+        has_scale_in_margin = avail_margin >= required_margin_buffer
         has_scale_in_leverage = projected_gross_leverage <= leverage_cap
         eff_capacity = has_scale_in_capacity if is_cond_enabled("entry_capacity") else True
         eff_margin = has_scale_in_margin if is_cond_enabled("entry_margin_buffer") else True
@@ -719,8 +727,8 @@ async def get_hedged_status() -> Dict[str, Any]:
         eff_convergence = is_out_profitable_relative_to_latest if is_cond_enabled("exit_convergence") else True
         eff_dwell = is_dwell_satisfied if is_cond_enabled("exit_dwell_time") else True
         eff_bottoming = is_bottoming_out if is_cond_enabled("exit_bottoming_out") else True
-        eff_exit_ma_5m = is_exit_ma_aligned_5m if (is_cond_enabled("exit_ma_stack_5m") and is_cond_enabled("exit_ma_stack", True)) else True
-        eff_exit_ma_1h = is_exit_ma_aligned_1h if (is_cond_enabled("exit_ma_stack_1h") and is_cond_enabled("exit_ma_stack", True)) else True
+        eff_exit_ma_5m = is_exit_ma_aligned_5m if is_cond_enabled("exit_ma_stack_5m") else True
+        eff_exit_ma_1h = is_exit_ma_aligned_1h if is_cond_enabled("exit_ma_stack_1h") else True
         eff_ma_aligned = bool(eff_exit_ma_5m and eff_exit_ma_1h)
         eff_pos_qty = (adr_qty >= 0.07 and stock_qty >= 1.20 and adr_amt < 0 and stock_amt > 0) if is_cond_enabled("exit_position_qty") else True
         eff_no_recovery = not auto_state.get("execution_recovery")
@@ -745,29 +753,37 @@ async def get_hedged_status() -> Dict[str, Any]:
             else "WAITING_DIVERGENCE"))))
         )
 
-        status_take_profit = (
-            "TRIM_READY" if can_take_profit
-            else ("NO_ACTIVE_TRANCHES" if adr_qty == 0
-            else ("CORE_INVENTORY_RETAINED" if speculative_tranches_active == 0
-            else ("LOCKED_AWAITING_PROFIT" if not eligible_for_take_profit
-            else (f"ANTI_CHURN_DWELL ({120 - dwell_time_sec}s)" if not is_dwell_satisfied
-            else ("RIDING_CONVERGENCE (Awaiting Trough Rebound / MA Touch)" if (is_out_profitable_relative_to_latest and not is_bottoming_out)
-            else f"ANTI_CHURN_WAITING_CONVERGENCE (Target <={out_target_spread}%)")))))
-        )
-
-        if not can_take_profit and speculative_tranches_active > 0 and eligible_for_take_profit and is_dwell_satisfied:
-            if (is_cond_enabled("exit_ma_stack_5m") and not exit_alignment_5m["ready"]) or (is_cond_enabled("exit_ma_stack_1h") and not exit_alignment_1h["ready"]):
-                status_take_profit = "AWAITING_MA_HISTORY"
-            elif not eff_ma_aligned:
-                status_take_profit = "AWAITING_DOWNWARD_MA_STACK"
-
-        if current_target_tranche and not tranche_profit["available"]:
+        if not eff_no_recovery:
+            status_take_profit = "EXECUTION_RECONCILIATION_REQUIRED"
+        elif not eff_spec_tranche:
+            status_take_profit = "CORE_INVENTORY_RETAINED" if adr_qty else "NO_ACTIVE_TRANCHES"
+        elif not tranche_profit["available"]:
             status_take_profit = tranche_profit["reason"]
+        elif not eff_profitable:
+            status_take_profit = "LOCKED_AWAITING_PROFIT"
+        elif not eff_pos_qty:
+            status_take_profit = "EXIT_POSITION_INSUFFICIENT_OR_WRONG_DIRECTION"
+        elif not eff_dwell:
+            status_take_profit = f"ANTI_CHURN_DWELL ({max(0, 120-dwell_time_sec)}s)"
+        elif not eff_convergence:
+            status_take_profit = f"ANTI_CHURN_WAITING_CONVERGENCE (Target <={out_target_spread}%)"
+        elif not eff_ma_aligned:
+            missing_ma = ((is_cond_enabled("exit_ma_stack_5m") and not exit_alignment_5m["ready"])
+                          or (is_cond_enabled("exit_ma_stack_1h") and not exit_alignment_1h["ready"]))
+            status_take_profit = "AWAITING_MA_HISTORY" if missing_ma else "AWAITING_DOWNWARD_MA_STACK"
+        elif not eff_bottoming:
+            status_take_profit = "RIDING_CONVERGENCE (Awaiting Trough Rebound / MA Touch)"
+        else:
+            status_take_profit = "TRIM_READY"
 
         auto_criteria = {
             "backend_auto_tranche_enabled": bool(auto_state.get("enabled", False)),
             "backend_auto_tranche_state": auto_state,
             "condition_toggles": cond_toggles,
+            "mandatory_live_conditions": sorted(MANDATORY_LIVE_CONDITIONS),
+            "live_condition_toggles": {k: is_cond_enabled(k) for k in
+                set(cond_toggles) | MANDATORY_LIVE_CONDITIONS | {"exit_ma_stack_5m", "exit_ma_stack_1h"}},
+            "effective_exit_ma_aligned": eff_ma_aligned,
             "entry_baseline_spread": round(base_entry, 2),
             "current_spread": round(curr_spread, 2),
             "rolling_ma_24": round(ma24, 2),
@@ -798,7 +814,7 @@ async def get_hedged_status() -> Dict[str, Any]:
             "has_scale_in_capacity": has_scale_in_capacity,
             "has_scale_in_margin": has_scale_in_margin,
             "has_scale_in_leverage": has_scale_in_leverage,
-            "free_margin_buffer_usd": round(free_buffer, 2),
+            "free_margin_buffer_usd": round(avail_margin, 2),
             "tranches_active": tranches_active,
             "position_equivalent_units": position_equivalent_units,
             "speculative_tranches_active": speculative_tranches_active,
@@ -1341,8 +1357,12 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
             return {"success": False, "error": "No active hedged positions found to reduce"}
 
         stock_sym = stock_pos.get("symbol", "CSOPSKHYNIX2LUSDT")
-        adr_pos_amt = abs(float(adr_pos.get("position_amt", 0.0)))
-        stock_pos_amt = abs(float(stock_pos.get("position_amt", 0.0)))
+        adr_signed = float(adr_pos.get("position_amt", 0.0))
+        stock_signed = float(stock_pos.get("position_amt", 0.0))
+        if not (math.isfinite(adr_signed) and math.isfinite(stock_signed)
+                and adr_signed < 0 and stock_signed > 0):
+            return {"success": False, "error": "Reduction requires a short ADR and long hedge position."}
+        adr_pos_amt, stock_pos_amt = abs(adr_signed), abs(stock_signed)
 
         # 1-to-1 Entry-to-Exit Matching Guard:
         # Require position to have at least 1 full tranche size (0.07 SKHY / 1.20 CSOP)
@@ -1354,9 +1374,9 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
                     "error": f"CORE INVENTORY PROTECTED: Position size ({adr_pos_amt} SKHY / {stock_pos_amt} CSOP) is below 1 full tranche (0.07 / 1.20). Remaining inventory is retained core accumulation."
                 }
 
-        adr_reduce_qty = 0.07 if (adr_pos_amt >= 0.07 or force) else adr_pos_amt
+        adr_reduce_qty = min(0.07, adr_pos_amt)
         stock_target = 1.20 if stock_sym == "CSOPSKHYNIX2LUSDT" else 0.01
-        stock_reduce_qty = stock_target if (stock_pos_amt >= stock_target or force) else stock_pos_amt
+        stock_reduce_qty = min(stock_target, stock_pos_amt)
 
         if adr_reduce_qty <= 0 or stock_reduce_qty <= 0:
             return {"success": False, "error": f"Position sizes too small to reduce: ADR {adr_pos_amt}, Stock {stock_pos_amt}"}

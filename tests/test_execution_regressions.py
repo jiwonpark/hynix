@@ -256,6 +256,79 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['eligible_for_take_profit'])
         self.assertFalse(result['auto_tranche_criteria']['can_take_profit'])
 
+        # Backtest profit switches cannot authorize a losing live exit.
+        server.save_auto_tranche_state({'condition_toggles': {
+            key: False for key in server.MANDATORY_LIVE_CONDITIONS}})
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertFalse(criteria['can_take_profit'])
+        self.assertEqual(criteria['status_take_profit'], 'LOCKED_AWAITING_PROFIT')
+        self.assertTrue(criteria['live_condition_toggles']['exit_net_profit'])
+        self.assertFalse((await server.reduce_tranche())['success'])
+        self.client.create_order.assert_not_awaited()
+
+        # Explicit timeframe switches override the legacy combined switch.
+        overview['positions'][0]['mark_price'] = 193.2
+        server.get_cached_parity_bars.return_value = flat_bars
+        server.save_auto_tranche_state({'condition_toggles': {
+            'exit_ma_stack': False, 'exit_ma_stack_5m': True,
+            'exit_ma_stack_1h': False, 'exit_bottoming_out': False}})
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertFalse(criteria['can_take_profit'])
+        self.assertEqual(criteria['status_take_profit'], 'AWAITING_DOWNWARD_MA_STACK')
+        state = server.load_auto_tranche_state()
+        state['condition_toggles']['exit_ma_stack_5m'] = False
+        server.save_auto_tranche_state(state)
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertFalse(criteria['is_exit_ma_aligned'])
+        self.assertTrue(criteria['effective_exit_ma_aligned'])
+        self.assertTrue(criteria['can_take_profit'])
+        self.assertEqual(criteria['status_take_profit'], 'TRIM_READY')
+
+    async def test_disabled_live_guards_still_protect_core_and_available_margin(self):
+        server.save_auto_tranche_state({'condition_toggles': {
+            key: False for key in server.MANDATORY_LIVE_CONDITIONS}})
+        overview = self.client.get_detailed_account_overview.return_value
+        overview['summary'] = {'available_margin_usd': 1, 'total_equity_usd': 500}
+        overview['positions'] = [
+            {'symbol': 'SKHYUSDT', 'position_amt': -.03, 'mark_price': 195},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': .4, 'mark_price': 5.6}]
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertFalse(criteria['can_take_profit'])
+        self.assertEqual(criteria['status_take_profit'], 'CORE_INVENTORY_RETAINED')
+        self.assertFalse(criteria['can_scale_in'])
+        self.assertFalse(criteria['has_scale_in_margin'])
+        self.assertEqual(criteria['free_margin_buffer_usd'], 1)
+        self.assertFalse((await server.step_tranche())['success'])
+        self.assertFalse((await server.reduce_tranche())['success'])
+        self.client.create_order.assert_not_awaited()
+
+    async def test_forced_reduction_clamps_each_remaining_leg(self):
+        async def filled_order(symbol, side, quantity, order_type, **kwargs):
+            self.assertTrue(kwargs['reduce_only'])
+            return {'status': 'FILLED', 'executedQty': str(quantity)}
+        self.client.create_order.side_effect = filled_order
+        for adr, stock in [(.03, .4), (.08, .4), (.03, 1.4)]:
+            with self.subTest(adr=adr, stock=stock):
+                self.client.create_order.reset_mock()
+                self.client.get_detailed_account_overview.return_value['positions'] = [
+                    {'symbol': 'SKHYUSDT', 'position_amt': -adr},
+                    {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': stock}]
+                self.assertTrue((await server.reduce_tranche(force=True))['success'])
+                self.assertEqual(self.client.create_order.await_args_list, [
+                    call('SKHYUSDT', 'BUY', min(.07, adr), 'MARKET', reduce_only=True),
+                    call('CSOPSKHYNIX2LUSDT', 'SELL', min(1.2, stock), 'MARKET', reduce_only=True)])
+
+    async def test_forced_reduction_rejects_invalid_directions_and_quantities(self):
+        for adr, stock in [(.08, 1.4), (-.08, -1.4), (0, 1.4),
+                           (float('nan'), 1.4), (-.08, float('inf'))]:
+            with self.subTest(adr=adr, stock=stock):
+                self.client.get_detailed_account_overview.return_value['positions'] = [
+                    {'symbol': 'SKHYUSDT', 'position_amt': adr},
+                    {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': stock}]
+                self.assertFalse((await server.reduce_tranche(force=True))['success'])
+        self.client.create_order.assert_not_awaited()
+        self.assertNotIn('execution_recovery', server.load_auto_tranche_state())
+
     async def test_manual_exit_uses_shared_criteria_and_emergency_bypasses(self):
         positions = [
             {'symbol': 'SKHYUSDT', 'position_amt': -.08, 'unrealized_pnl': 1},

@@ -2376,7 +2376,7 @@
                 <button type="button" style="width: auto; height: 28px; padding: 0 10px;" onclick="tradingEngine.scheduleDynamicBacktest(true)">Rerun</button>
                 <span id="dynamicBacktestStatus" role="status">Loading backtest…</span>
               </div>
-              <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">Starts flat at the beginning of loaded history · 5m closes / completed 1h MAs · fees, slippage and estimated funding included · switches also apply to the live engine</div>
+              <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">Starts flat at the beginning of loaded history · 5m closes / completed 1h MAs · fees, slippage and estimated funding included · strategy switches apply to live and backtest; switches marked BACKTEST ONLY cannot disable live safeguards</div>
               <div id="shortTermSpreadChartHost" style="width: 100%; height: 420px;"></div>
               <!-- Chart Legend (Interactive MA Toggles) -->
               <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #475569;">
@@ -2474,7 +2474,7 @@
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
                       <input type="checkbox" id="chkCondEntryCapacity" checked onchange="tradingEngine.toggleCondition('entry_capacity', this.checked)">
                       <span class="toggleSlider"></span>
-                    </label>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">BACKTEST ONLY</span>
                     <span class="condLabel" title="Active speculative tranches must not exceed live equity-based capacity limit">6. Dynamic Tranche Capacity</span>
                     <span class="condValue" id="valCondEntryCapacity">-- / --</span>
                     <span class="condBadge pass" id="badgeCondEntryCapacity">PASS</span>
@@ -2483,7 +2483,7 @@
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
                       <input type="checkbox" id="chkCondEntryLeverage" checked onchange="tradingEngine.toggleCondition('entry_gross_leverage', this.checked)">
                       <span class="toggleSlider"></span>
-                    </label>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">BACKTEST ONLY</span>
                     <span class="condLabel" title="Projected gross portfolio leverage after new tranche must remain ≤ 8.00x">7. Gross Leverage Cap (≤ 8.0x)</span>
                     <span class="condValue" id="valCondEntryLeverage">-- / 8.0x</span>
                     <span class="condBadge pass" id="badgeCondEntryLeverage">PASS</span>
@@ -2492,7 +2492,7 @@
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
                       <input type="checkbox" id="chkCondEntryMargin" checked onchange="tradingEngine.toggleCondition('entry_margin_buffer', this.checked)">
                       <span class="toggleSlider"></span>
-                    </label>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">BACKTEST ONLY</span>
                     <span class="condLabel" title="Free margin must satisfy 125% buffered requirement (min $2.50)">8. Buffered Margin Check</span>
                     <span class="condValue" id="valCondEntryMargin">-- ≥ $2.50</span>
                     <span class="condBadge pass" id="badgeCondEntryMargin">PASS</span>
@@ -2501,7 +2501,7 @@
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
                       <input type="checkbox" id="chkCondEntryEngine" checked onchange="tradingEngine.toggleCondition('entry_worker_state', this.checked)">
                       <span class="toggleSlider"></span>
-                    </label>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">BACKTEST ONLY</span>
                     <span class="condLabel" title="Auto-tranche daemon must be enabled, cooldown expired (60s), and no recovery lock">9. Worker State & Cooldown</span>
                     <span class="condValue" id="valCondEntryEngine">READY</span>
                     <span class="condBadge pass" id="badgeCondEntryEngine">READY</span>
@@ -2531,9 +2531,9 @@
                 <div class="condChecklist" id="exitConditionsChecklist">
                   <div class="condRow" id="rowCondExitActive">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
-                      <input type="checkbox" id="chkCondExitActive" checked onchange="tradingEngine.toggleCondition('exit_speculative_tranche', this.checked)">
+                      <input type="checkbox" id="chkCondExitActive" checked disabled onchange="tradingEngine.toggleCondition('exit_speculative_tranche', this.checked)">
                       <span class="toggleSlider"></span>
-                    </label>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">REQUIRED</span>
                     <span class="condLabel" title="Must have at least 1 open speculative tranche (core accumulated inventory is permanently protected)">1. Active Speculative Tranche</span>
                     <span class="condValue" id="valCondExitActive">--</span>
                     <span class="condBadge wait" id="badgeCondExitActive">WAIT</span>
@@ -2551,7 +2551,7 @@
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
                       <input type="checkbox" id="chkCondExitNetPnl" checked onchange="tradingEngine.toggleCondition('exit_net_profit', this.checked)">
                       <span class="toggleSlider"></span>
-                    </label>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">BACKTEST ONLY</span>
                     <span class="condLabel" title="Zero-loss invariant: Est. Net PnL must exceed +$0.02 USD after deducting all fees, slippage, and carry funding">3. Net Profit (> +$0.02 USD)</span>
                     <span class="condValue" id="valCondExitNetPnl"><strong id="valCritCombinedPnl">—</strong></span>
                     <span class="condBadge wait" id="badgeCondExitNetPnl">LOCKED</span>
@@ -2594,9 +2594,9 @@
                   </div>
                   <div class="condRow" id="rowCondExitPosition">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
-                      <input type="checkbox" id="chkCondExitPosition" checked onchange="tradingEngine.toggleCondition('exit_position_qty', this.checked)">
+                      <input type="checkbox" id="chkCondExitPosition" checked disabled onchange="tradingEngine.toggleCondition('exit_position_qty', this.checked)">
                       <span class="toggleSlider"></span>
-                    </label>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">REQUIRED</span>
                     <span class="condLabel" title="Open futures positions must have at least 0.07 short SKHY and 1.20 long CSOP">8. Position Sufficiency Check</span>
                     <span class="condValue" id="valCondExitPosition">--</span>
                     <span class="condBadge pass" id="badgeCondExitPosition">PASS</span>
@@ -8672,6 +8672,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       isConditionEnabled(key, backendToggles) {
+        if (["exit_speculative_tranche", "exit_position_qty"].includes(key)) return true;
         if (this.state.conditionToggles && typeof this.state.conditionToggles[key] === "boolean") {
           return this.state.conditionToggles[key];
         }
@@ -8681,6 +8682,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ((key === "exit_ma_stack_5m" || key === "exit_ma_stack_1h") && this.state.conditionToggles && typeof this.state.conditionToggles["exit_ma_stack"] === "boolean") {
           return this.state.conditionToggles["exit_ma_stack"];
         }
+        if ((key === "exit_ma_stack_5m" || key === "exit_ma_stack_1h") && typeof backendToggles?.exit_ma_stack === "boolean") return backendToggles.exit_ma_stack;
         return true;
       },
 
@@ -8939,11 +8941,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             let html = "";
             if (adrPos && stockPos) {
               const h = this.state.hedgedStatus || {};
-              const tranches = h.tranches_active || 0;
+              const tranches = h.tranches_active ?? "—";
+              const trancheMax = h.auto_tranche_criteria?.tranches_max ?? "—";
               const combinedPnl = h.combined_unrealized_pnl_usd != null ? h.combined_unrealized_pnl_usd : (adrPos.unrealized_pnl + stockPos.unrealized_pnl);
               const combinedPnlPct = h.combined_unrealized_pnl_pct != null ? h.combined_unrealized_pnl_pct : 0.0;
-              const entrySpread = h.entry_spread_pct || 0.0;
-              const currentSpread = h.current_spread_pct || 0.0;
+              const entrySpread = h.entry_spread_pct ?? null;
+              const currentSpread = h.current_spread_pct ?? null;
               const capturedSpread = (entrySpread > 0 && currentSpread > 0) ? (entrySpread - currentSpread) : 0.0;
               const isProfit = combinedPnl > 0;
               const pnlSign = combinedPnl >= 0 ? "+" : "";
@@ -8957,7 +8960,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <td rowspan="2" style="font-weight: 700; color: #0f172a; vertical-align: middle; background: #f8fafc; border-right: 2px solid #e2e8f0; min-width: 250px; padding: 14px 16px;">
                   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                     <span style="font-size: 13.5px; font-weight: 800; color: #0284c7;">⚡ SK Hynix Dual-Leg Arb</span>
-                    <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">${tranches} / 10 UNITS</span>
+                    <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">${tranches} / ${trancheMax} UNITS</span>
                   </div>
                   <div style="font-size: 11px; color: #64748b; font-weight: 600; margin-bottom: 8px;">
                     SKHYUSDT (ADR) + ${stockDisplayName}
@@ -8972,10 +8975,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                       ${pnlSign}$${combinedPnl.toFixed(2)} (${pnlSign}${combinedPnlPct.toFixed(2)}%)
                     </div>
                     <div style="font-size: 10.5px; color: ${isProfit ? '#065f46' : '#9f1239'}; margin-top: 3px; font-family: monospace;">
-                      Entry Parity: <strong>${entrySpread.toFixed(2)}%</strong> ➔ Mark: <strong>${currentSpread.toFixed(2)}%</strong>
+                      Entry Parity: <strong>${entrySpread == null ? "—" : entrySpread.toFixed(2) + "%"}</strong> ➔ Mark: <strong>${currentSpread == null ? "—" : currentSpread.toFixed(2) + "%"}</strong>
                     </div>
                     <div style="font-size: 10px; color: #64748b; margin-top: 3px;">
-                      ADR Premium: <strong style="color: #0284c7;">+${(currentSpread - 100.0).toFixed(2)}%</strong> over KRX Domestic
+                      ADR Premium: <strong style="color: #0284c7;">${currentSpread == null ? "—" : ((currentSpread >= 100 ? "+" : "") + (currentSpread - 100).toFixed(2) + "%")}</strong> over KRX Domestic
                     </div>
                   </div>
 
@@ -9394,6 +9397,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 this.state.conditionToggles = {...data.auto_tranche_criteria.condition_toggles};
               }
               this.renderHedgedController(data);
+              this.renderPositionsAndLogs();
               this.scheduleDynamicBacktest();
               break;
             }
@@ -9490,7 +9494,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const btnReduce = $("btnReduceTranche");
         const lblReduce = $("lblReduceTrancheText");
         const criteria = data.auto_tranche_criteria;
-        const canTakeProfit = Boolean(criteria?.can_take_profit && criteria?.is_exit_ma_aligned);
+        const canTakeProfit = Boolean(criteria?.can_take_profit);
         if (btnReduce && lblReduce) {
           const pnlSign = pnl >= 0 ? "+" : "";
           if (tranches > 0 && canTakeProfit) {
@@ -9510,13 +9514,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               lblReduce.textContent = "🔒 Cannot verify latest tranche entry legs and costs";
             } else if (!eligible) {
               lblReduce.textContent = "🔒 Latest tranche estimated net profit must exceed $0.02";
-            } else if (criteria && !criteria.is_dwell_satisfied) {
+            } else if (criteria && this.isConditionEnabled("exit_dwell_time", criteria.condition_toggles) && !criteria.is_dwell_satisfied) {
               lblReduce.textContent = `⏳ Anti-Churn Dwell (${Math.max(0, 120 - criteria.dwell_time_sec)}s left)`;
-            } else if (criteria && !criteria.is_out_profitable_relative_to_latest) {
+            } else if (criteria && this.isConditionEnabled("exit_convergence", criteria.condition_toggles) && !criteria.is_out_profitable_relative_to_latest) {
               lblReduce.textContent = `🔒 Anti-Churn Locked: Awaiting Convergence (Target <= ${criteria.out_target_spread}%)`;
-            } else if (!criteria?.is_exit_ma_aligned) {
+            } else if (!(criteria?.effective_exit_ma_aligned ?? criteria?.is_exit_ma_aligned)) {
               lblReduce.textContent = "🔒 Awaiting downward MA stacks (5m AND 1h: MA7 < MA24 < MA60)";
-            } else if (criteria && !criteria.is_bottoming_out) {
+            } else if (criteria && this.isConditionEnabled("exit_bottoming_out", criteria.condition_toggles) && !criteria.is_bottoming_out) {
               lblReduce.textContent = "🌊 Riding Convergence (Waiting for Trough / MA Touch)";
             } else {
               lblReduce.textContent = "🔒 Locked (Awaiting Convergence)";
@@ -10121,16 +10125,18 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const syncCondRow = (key, rowId, chkId, badgeId, isMet, passText, notMetText, badgeTypeIfNotMet = "wait") => {
           const on = this.isConditionEnabled(key, criteria.condition_toggles);
+          const mandatory = (criteria.mandatory_live_conditions || ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state", "exit_speculative_tranche", "exit_net_profit", "exit_position_qty"]).includes(key);
+          const liveOn = mandatory || on;
           const chk = $(chkId);
           if (chk && chk.checked !== on) chk.checked = on;
           const row = $(rowId);
-          if (row) row.classList.toggle("disabled-cond", !on);
-          if (!on) {
+          if (row) row.classList.toggle("disabled-cond", !liveOn);
+          if (!liveOn) {
             setBadge(badgeId, isKo ? "해제" : "OFF", "neutral");
           } else {
             setBadge(badgeId, isMet ? passText : notMetText, isMet ? "pass" : badgeTypeIfNotMet);
           }
-          return on;
+          return liveOn;
         };
 
         // 1. Scale-in Rule (Speculative MA Stretch + Peak-Out Momentum Exhaustion)
@@ -10145,7 +10151,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const scaleInArmed = Boolean(criteria.scale_in_armed);
         const isStretchedAboveMa = criteria.is_stretched_above_ma != null ? Boolean(criteria.is_stretched_above_ma) : (maStretch >= 0.10);
         const isAboveEntry = criteria.is_above_entry != null ? Boolean(criteria.is_above_entry) : ((criteria.tranches_active || 0) > 0 ? (currSpread >= baseEntry + 0.10) : true);
-        const tranchesMax = criteria.tranches_max != null ? criteria.tranches_max : 10;
+        const tranchesMax = criteria.tranches_max ?? "—";
         const tranchesActive = criteria.tranches_active || 0;
         const tranchesRemaining = criteria.tranches_remaining != null ? criteria.tranches_remaining : Math.max(0, tranchesMax - tranchesActive);
         const hasCapacity = criteria.has_scale_in_capacity != null ? Boolean(criteria.has_scale_in_capacity) : (tranchesRemaining > 0);
@@ -10368,42 +10374,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
         syncCondRow("exit_position_qty", "rowCondExitPosition", "chkCondExitPosition", "badgeCondExitPosition", hasExitPos, isKo ? "충족" : "PASS", isKo ? "물량부족" : "DEFICIT", "fail");
 
-        // Take-Profit Top Badge
+        // One decision and reason are shared by the worker, button, and checklist.
         if ($("badgeCriteriaTP")) {
-          if (canTP) {
-            $("badgeCriteriaTP").textContent = isKo ? "수렴 익절 가능" : "TRIM READY";
-            $("badgeCriteriaTP").style.background = "#dcfce7";
-            $("badgeCriteriaTP").style.color = "#166534";
-          } else if (specActive === 0 && ((hedgedData && hedgedData.adr_qty > 0) || criteria.active_tranches_queue?.length === 0)) {
-            $("badgeCriteriaTP").textContent = isKo ? "코어 물량 보존 (신규 진입 대기)" : "CORE INVENTORY RETAINED";
-            $("badgeCriteriaTP").style.background = "#eff6ff";
-            $("badgeCriteriaTP").style.color = "#1d4ed8";
-          } else if (!criteria.is_exit_ma_aligned) {
-            $("badgeCriteriaTP").textContent = isKo ? "5분봉 + 1시간봉 MA 역배열 대기" : "AWAITING MA STACKS (5m AND 1h)";
-            $("badgeCriteriaTP").style.background = "#fef3c7";
-            $("badgeCriteriaTP").style.color = "#b45309";
-          } else if (isOutProfitable && !isBottomingOut) {
-            $("badgeCriteriaTP").textContent = isKo ? "수렴 파동 타기 (바닥 확인 대기)" : "RIDING DOWNWARD CASCADE";
-            $("badgeCriteriaTP").style.background = "#e0f2fe";
-            $("badgeCriteriaTP").style.color = "#0369a1";
-          } else if (pnl == null || pnl <= 0.02) {
-            $("badgeCriteriaTP").textContent = isKo ? "최근 트랜치 수익 대기" : "LATEST TRANCHE PROFIT LOCKED";
-            $("badgeCriteriaTP").style.background = "#f1f5f9";
-            $("badgeCriteriaTP").style.color = "#475569";
-          } else if (!isDwellOk) {
-            const rem = Math.max(0, 120 - dwellSec);
-            $("badgeCriteriaTP").textContent = isKo ? `쿨다운 대기 (${rem}초)` : `DWELL COOLDOWN (${rem}s)`;
-            $("badgeCriteriaTP").style.background = "#fef3c7";
-            $("badgeCriteriaTP").style.color = "#b45309";
-          } else if (!isOutProfitable) {
-            $("badgeCriteriaTP").textContent = isKo ? "단기 수렴 대기" : "AWAITING CONVERGENCE";
-            $("badgeCriteriaTP").style.background = "#fef3c7";
-            $("badgeCriteriaTP").style.color = "#b45309";
-          } else {
-            $("badgeCriteriaTP").textContent = isKo ? "대기 중" : "HOLDING";
-            $("badgeCriteriaTP").style.background = "#f1f5f9";
-            $("badgeCriteriaTP").style.color = "#475569";
-          }
+          $("badgeCriteriaTP").textContent = canTP ? (isKo ? "수렴 익절 가능" : "TRIM READY") : (criteria.status_take_profit || "HOLDING");
+          $("badgeCriteriaTP").style.background = canTP ? "#dcfce7" : "#f1f5f9";
+          $("badgeCriteriaTP").style.color = canTP ? "#166534" : "#475569";
         }
 
         // LIFO Tranche Stack
@@ -10549,7 +10524,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // - Latest matched tranche estimated net profit > $0.02
         // - AND spread has converged relative to the latest entry fill (S_curr <= S_latest - 0.08% pts)
         // - AND minimum dwell time elapsed (>= 120s)
-        const canTakeProfit = Boolean(criteria?.can_take_profit && criteria?.is_exit_ma_aligned);
+        const canTakeProfit = Boolean(criteria?.can_take_profit);
 
         if (tranches > 0 && canTakeProfit) {
           const now = Date.now();
