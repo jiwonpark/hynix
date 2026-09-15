@@ -1952,7 +1952,7 @@
       <section class="realAccountStrip" id="realAccountStrip">
         <div class="realAccountStat">
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span id="lblAccountEquity">Account Total Equity</span>
+            <span id="lblAccountEquity">Binance Total Equity</span>
             <span id="badgeEquitySource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">PAPER SIM</span>
           </div>
           <strong id="valAccountEquity" style="color: #0284c7; font-size: 16px;">$10,000.00</strong>
@@ -1974,7 +1974,7 @@
           <strong id="valMarginRisk" style="color: #16a34a; font-size: 15px;">0.0% (Safe)</strong>
         </div>
         <div class="realAccountStat" id="statCollateralSummary" style="min-width: 170px;">
-          <span id="lblCollateralSummary">Collateral Breakdown</span>
+          <span id="lblCollateralSummary">Binance Wallet Split</span>
           <div id="valCollateralPills" style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px;">
             <span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $10,000</span>
           </div>
@@ -6950,7 +6950,7 @@
         titleExecutionTerminal: "⚡ 1-Click Pair Execution Terminal & Live Orders",
         lblExecutionSlippage: "Slippage Guard: <strong>5 BPS</strong>",
         btnResetPaper: "↺ Reset $10k",
-        lblAccountEquity: "Account Equity",
+        lblAccountEquity: "Binance Total Equity",
         lblAvailMargin: "Available Margin",
         lblUnrealizedPnl: "Unrealized PnL",
         lblActivePairs: "Active Pairs",
@@ -6970,7 +6970,7 @@
         tabUpbit: "Upbit Spot",
         tabDaemonActivity: "Daemon Activity",
         tabOrderLog: "Execution History",
-        lblCollateralSummary: "Collateral Breakdown",
+        lblCollateralSummary: "Binance Wallet Split",
         lblUpbitEquity: "Upbit KRW Equity",
         lblNavBacktest: "Backtest & Strategy Research",
         subNavBacktest: "Parameter Tuning & Historical Simulation",
@@ -7093,7 +7093,7 @@
         titleExecutionTerminal: "⚡ 1-Click 페어 주문 실행 터미널 및 실시간 포지션",
         lblExecutionSlippage: "슬리피지 방지선: <strong>5 BPS</strong>",
         btnResetPaper: "↺ 잔고 초기화 ($10k)",
-        lblAccountEquity: "계좌 총 자산",
+        lblAccountEquity: "바이낸스 총 자산",
         lblAvailMargin: "가용 증거금",
         lblUnrealizedPnl: "실시간 평가손익",
         lblActivePairs: "보유 페어 포지션",
@@ -7114,7 +7114,7 @@
         tabUpbit: "업비트 현물 잔고",
         tabDaemonActivity: "데몬 실시간 활동",
         tabOrderLog: "주문 체결 내역",
-        lblCollateralSummary: "담보 자산 구성",
+        lblCollateralSummary: "바이낸스 지갑 구분",
         lblUpbitEquity: "업비트 원화 총평가"
       }
     };
@@ -8139,6 +8139,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         positions: [],
         backendPositions: [],
         backendAssets: [],
+        binanceSpotUsdt: 0.0,
+        binanceSpotStablecoinUsd: 0.0,
+        binanceSpotAuthenticated: false,
         upbitConnected: false,
         upbitAuthenticated: false,
         upbitAuthSource: "none",
@@ -8374,14 +8377,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       renderAccountStrip() {
         const isKo = window.currentLang === "ko";
-        const eq = this.state.equity + this.state.unrealizedPnl;
+        const eq = this.state.equity + this.state.binanceSpotStablecoinUsd;
         if ($("valAccountEquity")) $("valAccountEquity").textContent = `$${eq.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         if ($("valAvailMargin")) $("valAvailMargin").textContent = `$${Math.max(0, this.state.availableMargin).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
         // Equity Source Badge
         if ($("badgeEquitySource")) {
           if (this.state.backendAuthenticated) {
-            $("badgeEquitySource").textContent = "LIVE BINANCE";
+            $("badgeEquitySource").textContent = this.state.binanceSpotAuthenticated ? "SPOT + FUTURES" : "FUTURES";
             $("badgeEquitySource").style.background = "#dcfce7";
             $("badgeEquitySource").style.color = "#166534";
           } else {
@@ -8420,10 +8423,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // Render Collateral Quick Pills
         const pillsHost = $("valCollateralPills");
         if (pillsHost) {
-          if (this.state.backendAssets && this.state.backendAssets.length > 0) {
-            pillsHost.innerHTML = this.state.backendAssets.slice(0, 3).map(a => {
-              return `<span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 700;">${a.asset}: $${a.margin_balance.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>`;
-            }).join("");
+          if (this.state.backendAuthenticated) {
+            const futuresUsdt = (this.state.backendAssets || []).find(a => a.asset === "USDT")?.margin_balance || this.state.equity;
+            pillsHost.innerHTML = [
+              `<span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 700;">Futures USDT: $${futuresUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`,
+              `<span style="font-size: 10px; background: #dcfce7; color: #166534; padding: 1px 5px; border-radius: 3px; font-weight: 700;">Spot USDT: $${this.state.binanceSpotUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
+            ].join("");
           } else {
             pillsHost.innerHTML = `<span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $${this.state.equity.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>`;
           }
@@ -8810,11 +8815,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               if (latencyLbl) latencyLbl.textContent = `Ping: ${latency}ms`;
 
               const bDetails = data.details?.binance || {};
+              const bSpotDetails = data.details?.binance_spot || {};
               const uDetails = data.details?.upbit || {};
               const bAuth = data.binance?.authenticated || bDetails.authenticated || false;
               const uAuth = data.upbit?.authenticated || uDetails.authenticated || false;
 
               this.state.backendAuthenticated = bAuth;
+              this.state.binanceSpotAuthenticated = bSpotDetails.authenticated || false;
               this.state.upbitAuthenticated = uAuth;
               this.state.backendAuthSource = data.binance?.auth_source || bDetails.auth_source || "none";
               this.state.upbitAuthSource = data.upbit?.auth_source || uDetails.auth_source || "none";
@@ -8868,6 +8875,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 this.state.unrealizedPnl = bDetails.summary.total_unrealized_pnl_usd || 0.0;
                 this.state.marginRatio = bDetails.summary.margin_ratio_percent || 0.0;
               }
+              this.state.binanceSpotUsdt = bSpotDetails.summary?.usdt_balance || data.binance?.spot_usdt || 0.0;
+              this.state.binanceSpotStablecoinUsd = bSpotDetails.summary?.stablecoin_equity_usd || data.binance?.spot_stablecoin_equity_usd || 0.0;
 
               // Sync Upbit equity & balances
               if (uDetails.summary) {
@@ -8938,6 +8947,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                     this.state.unrealizedPnl = data.summary.total_unrealized_pnl_usd;
                     this.state.marginRatio = data.summary.margin_ratio_percent;
                   }
+                  this.state.binanceSpotAuthenticated = data.spot?.authenticated || false;
+                  this.state.binanceSpotUsdt = data.spot?.summary?.usdt_balance || 0.0;
+                  this.state.binanceSpotStablecoinUsd = data.spot?.summary?.stablecoin_equity_usd || 0.0;
                   this.state.backendPositions = data.positions || [];
                   this.state.backendAssets = data.assets || [];
                   this.renderAssetsTable(data.assets || []);

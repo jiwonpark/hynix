@@ -174,11 +174,23 @@ async def health_check() -> Dict[str, Any]:
 
 @app.get("/api/account")
 async def get_account() -> Dict[str, Any]:
-    """Returns Binance total equity, balances, margin metrics, and active positions."""
+    """Returns Binance Futures account details plus a read-only Spot wallet summary."""
     try:
-        data = await binance_client.get_detailed_account_overview()
+        data, spot_data = await asyncio.gather(
+            binance_client.get_detailed_account_overview(),
+            binance_client.get_spot_account_overview(),
+            return_exceptions=True,
+        )
+        if isinstance(data, Exception):
+            raise data
+        if isinstance(spot_data, Exception):
+            spot_data = {"authenticated": False, "error": str(spot_data), "summary": {}, "assets": []}
         data["auth_source"] = config.AUTH_SOURCE
         data["use_testnet"] = config.USE_TESTNET
+        data["spot"] = spot_data
+        futures_equity = float(data.get("summary", {}).get("total_equity_usd", 0.0))
+        spot_stablecoins = float(spot_data.get("summary", {}).get("stablecoin_equity_usd", 0.0))
+        data["summary"]["binance_total_equity_usd"] = round(futures_equity + spot_stablecoins, 8)
         return data
     except Exception as e:
         logger.exception("Error fetching Binance account overview")
@@ -208,24 +220,30 @@ async def get_upbit_account() -> Dict[str, Any]:
 
 @app.get("/api/portfolio/overview")
 async def get_portfolio_overview() -> Dict[str, Any]:
-    """Combined multi-exchange portfolio overview across Binance Futures and Upbit Spot."""
+    """Combined portfolio overview across Binance Futures, Binance Spot, and Upbit."""
     try:
-        b_data, u_data = await asyncio.gather(
+        b_data, b_spot_data, u_data = await asyncio.gather(
             binance_client.get_detailed_account_overview(),
+            binance_client.get_spot_account_overview(),
             upbit_client.get_detailed_account_overview(),
             return_exceptions=True
         )
         if isinstance(b_data, Exception):
             b_data = {"authenticated": False, "error": str(b_data), "summary": {}, "assets": [], "positions": []}
+        if isinstance(b_spot_data, Exception):
+            b_spot_data = {"authenticated": False, "error": str(b_spot_data), "summary": {}, "assets": []}
         if isinstance(u_data, Exception):
             u_data = {"authenticated": False, "error": str(u_data), "summary": {}, "assets": []}
 
         b_eq_usd = float(b_data.get("summary", {}).get("total_equity_usd", 0.0))
+        b_spot_usdt = float(b_spot_data.get("summary", {}).get("usdt_balance", 0.0))
+        b_spot_stablecoins = float(b_spot_data.get("summary", {}).get("stablecoin_equity_usd", 0.0))
+        b_total_usd = b_eq_usd + b_spot_stablecoins
         u_eq_usd = float(u_data.get("summary", {}).get("total_equity_usd", 0.0))
         u_eq_krw = float(u_data.get("summary", {}).get("total_equity_krw", 0.0))
         rate = float(u_data.get("summary", {}).get("usdt_krw_rate", 1400.0))
 
-        total_combined_usd = b_eq_usd + u_eq_usd
+        total_combined_usd = b_total_usd + u_eq_usd
 
         return {
             "combined_equity_usd": round(total_combined_usd, 2),
@@ -235,6 +253,10 @@ async def get_portfolio_overview() -> Dict[str, Any]:
                 "authenticated": b_data.get("authenticated", False),
                 "auth_source": config.AUTH_SOURCE,
                 "equity_usd": b_eq_usd,
+                "futures_equity_usd": b_eq_usd,
+                "spot_usdt": b_spot_usdt,
+                "spot_stablecoin_equity_usd": b_spot_stablecoins,
+                "total_equity_usd": round(b_total_usd, 8),
                 "open_positions": len(b_data.get("positions", [])),
                 "assets_count": len(b_data.get("assets", []))
             },
@@ -247,6 +269,7 @@ async def get_portfolio_overview() -> Dict[str, Any]:
             },
             "details": {
                 "binance": b_data,
+                "binance_spot": b_spot_data,
                 "upbit": u_data
             }
         }

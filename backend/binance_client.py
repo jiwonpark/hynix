@@ -35,7 +35,7 @@ class BinanceFuturesClient:
         ).hexdigest()
         return f"{query_string}&signature={signature}"
 
-    async def request(self, method: str, endpoint: str, params: Optional[Dict[str, Any]] = None, signed: bool = False) -> Any:
+    async def request(self, method: str, endpoint: str, params: Optional[Dict[str, Any]] = None, signed: bool = False, base_url: Optional[str] = None) -> Any:
         session = await self.get_session()
         params = params or {}
         headers = {
@@ -48,12 +48,12 @@ class BinanceFuturesClient:
                 raise ValueError("Binance API Key and Secret are required for signed endpoints.")
             headers["X-MBX-APIKEY"] = self.api_key
             query_str = self._sign_params(params)
-            url = f"{self.base_url}{endpoint}?{query_str}"
+            url = f"{base_url or self.base_url}{endpoint}?{query_str}"
         else:
             if params:
-                url = f"{self.base_url}{endpoint}?{urllib.parse.urlencode(params)}"
+                url = f"{base_url or self.base_url}{endpoint}?{urllib.parse.urlencode(params)}"
             else:
-                url = f"{self.base_url}{endpoint}"
+                url = f"{base_url or self.base_url}{endpoint}"
 
         async with session.request(method, url, headers=headers) as resp:
             text = await resp.text()
@@ -87,6 +87,54 @@ class BinanceFuturesClient:
     async def get_raw_positions(self) -> List[Dict[str, Any]]:
         """Fetch raw position risk endpoint /fapi/v2/positionRisk."""
         return await self.request("GET", "/fapi/v2/positionRisk", signed=True)
+
+    async def get_spot_account_overview(self) -> Dict[str, Any]:
+        """Fetch non-zero Binance Spot balances without treating them as Futures margin."""
+        if not self.api_key or not self.api_secret:
+            return {
+                "authenticated": False,
+                "summary": {"usdt_balance": 0.0, "stablecoin_equity_usd": 0.0},
+                "assets": [],
+            }
+        if config.USE_TESTNET:
+            return {
+                "authenticated": False,
+                "error": "Spot wallet reporting is unavailable in Futures testnet mode.",
+                "summary": {"usdt_balance": 0.0, "stablecoin_equity_usd": 0.0},
+                "assets": [],
+            }
+
+        account = await self.request(
+            "GET", "/api/v3/account", signed=True, base_url="https://api.binance.com"
+        )
+        assets = []
+        stablecoin_equity = 0.0
+        usdt_balance = 0.0
+        stablecoins = {"USDT", "USDC", "FDUSD", "TUSD"}
+        for raw in account.get("balances", []):
+            free = float(raw.get("free", 0.0))
+            locked = float(raw.get("locked", 0.0))
+            total = free + locked
+            if total <= 0.00000001:
+                continue
+            asset = str(raw.get("asset", ""))
+            assets.append({"asset": asset, "free": free, "locked": locked, "total": total})
+            if asset in stablecoins:
+                stablecoin_equity += total
+            if asset == "USDT":
+                usdt_balance = total
+
+        assets.sort(key=lambda item: (item["asset"] != "USDT", -item["total"]))
+        return {
+            "authenticated": True,
+            "summary": {
+                "usdt_balance": usdt_balance,
+                "stablecoin_equity_usd": stablecoin_equity,
+            },
+            "assets": assets,
+            "asset_count": len(assets),
+            "timestamp": int(time.time() * 1000),
+        }
 
     async def set_leverage(self, symbol: str, leverage: int) -> Dict[str, Any]:
         """Set initial leverage for a symbol (e.g. 10x)."""
