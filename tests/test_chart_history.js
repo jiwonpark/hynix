@@ -20,6 +20,7 @@ assert.ok(html.includes('class="shortTermCriteriaGrid"'),
 let range = { from: 0, to: 1 }, rendered;
 engine.shortTermChart = { timeScale: () => ({getVisibleLogicalRange: () => range, setVisibleLogicalRange: r => {range = r;}}) };
 engine.renderShortTermChart = data => { rendered = data; };
+engine.scheduleDynamicBacktest = () => {};
 const bars = times => times.map(time => ({time, value: 139}));
 const response = (times, more = true) => ({ok: true, json: async () => ({success: true, bars: bars(times), markers: [], has_more: more})});
 (async () => {

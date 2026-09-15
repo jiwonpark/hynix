@@ -39,8 +39,8 @@ assert.ok(html.includes('shape: isShort ? "arrowDown" : "arrowUp"'),
 assert.ok(html.includes('rgba(220, 38, 38, 0.35)'),
   'hypothetical markers must be styled with subtle dimmed transparency');
 assert.ok(html.includes('if (m.hypothetical)'),
-  'only persisted counterfactual trades should use dimmed paper arrows');
-assert.ok(html.includes('Missed: capacity/margin'));
+  'simulated trades should use dimmed arrows');
+assert.ok(html.includes('Dynamic backtest'));
 assert.ok(!html.includes('positionImpliedMarker'),
   'current inventory must never be presented as a missed trade');
 

@@ -7,6 +7,9 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
+from collections import OrderedDict
+from .dynamic_backtest import replay, replay_markers
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -20,8 +23,6 @@ from .tranche_accounting import (
     infer_entry_pairs,
 )
 from .counterfactual_trades import (
-    backfill_historical_paper_trades,
-    chart_markers as counterfactual_chart_markers,
     reconcile_counterfactual_trades,
     update_counterfactual_trades,
 )
@@ -898,6 +899,78 @@ async def get_hedged_status() -> Dict[str, Any]:
         logger.exception("Error in get_hedged_status")
         return {"error": str(e)}
 
+class DynamicBacktestRequest(BaseModel):
+    start_time: int = Field(ge=1577836800)
+    end_time: int = Field(ge=1577836800)
+    initial_equity: float = Field(default=500.0, gt=0, le=100000000, allow_inf_nan=False)
+    interval: str = "5m"
+    toggles: Dict[str, bool] = Field(default_factory=dict)
+
+
+_backtest_market_cache = OrderedDict()
+_backtest_market_lock = asyncio.Lock()
+
+
+async def backtest_market_bars(start, end):
+    """Cache closed, aligned market bars only; never cache strategy results/state."""
+    chunk_seconds = 5 * 86400
+    bars = []
+    async with _backtest_market_lock:
+        chunk = start // chunk_seconds * chunk_seconds
+        while chunk < end:
+            chunk_end = min(chunk + chunk_seconds, int(time.time()) // 300 * 300)
+            needed_end = min(end, chunk_end)
+            cached = _backtest_market_cache.get(chunk)
+            if cached is None or cached['end'] < needed_end:
+                responses = await asyncio.gather(*[
+                    binance_client.request("GET", "/fapi/v1/klines", {
+                        "symbol": symbol, "interval": "5m", "limit": 1500,
+                        "startTime": chunk * 1000, "endTime": chunk_end * 1000 - 1,
+                    }) for symbol in ("SKHYUSDT", "SKHYNIXUSDT", "CSOPSKHYNIX2LUSDT")
+                ])
+                if not all(isinstance(r, list) for r in responses):
+                    raise ValueError("Historical prices unavailable; retry the backtest.")
+                legs = [{int(b[0])//1000: float(b[4]) for b in r} for r in responses]
+                aligned = []
+                for t in sorted(legs[0]):
+                    adr, domestic, stock = legs[0][t], legs[1].get(t, 0)/10, legs[2].get(t, 0)
+                    if t+300 <= chunk_end:
+                        aligned.append({'time': t, 'adr': adr, 'domestic': domestic, 'csop': stock,
+                                        'value': round(adr/domestic*100, 3) if domestic > 0 else 0})
+                cached = {'end': chunk_end, 'bars': aligned}
+                _backtest_market_cache[chunk] = cached
+                while len(_backtest_market_cache) > 80:
+                    _backtest_market_cache.popitem(last=False)
+            _backtest_market_cache.move_to_end(chunk)
+            bars.extend(b for b in cached['bars'] if start <= b['time'] and b['time']+300 <= end)
+            chunk += chunk_seconds
+    return bars
+
+
+@app.post("/api/trade/dynamic_backtest")
+async def dynamic_backtest(request: DynamicBacktestRequest) -> Dict[str, Any]:
+    """A read-only simulation: no orders, account state, or toggle writes."""
+    intervals = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
+    if request.interval not in intervals:
+        return {"success": False, "error": "Unsupported chart interval"}
+    end = min(request.end_time, int(time.time())//300*300)
+    start = (request.start_time + 299)//300*300
+    if not 0 < end-start <= 366*86400:
+        return {"success": False, "error": "Select a completed range of up to 366 days."}
+    try:
+        bars = await backtest_market_bars(start-61*3600, end)
+        result = await asyncio.to_thread(replay, bars, start, end, request.initial_equity, request.toggles)
+        if not result['summary']['evaluated_bars']:
+            return {"success": False, "error": "No complete paired price history for this range."}
+        result['summary']['first_available_time'] = next((b['time'] for b in bars if b['time'] >= start), None)
+        result['summary']['expected_bars'] = (end-start)//300
+        return {"success": True, "markers": replay_markers(result, intervals[request.interval]),
+                "summary": result['summary'], "toggles": request.toggles}
+    except Exception:
+        logger.exception("Dynamic backtest failed")
+        return {"success": False, "error": "Could not load historical prices. Retry the backtest."}
+
+
 @app.get("/api/trade/short_term_parity")
 async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time: Optional[int] = None) -> Dict[str, Any]:
     """
@@ -1100,25 +1173,6 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
         except Exception:
             logger.exception("Error loading trade markers")
 
-        state = load_auto_tranche_state()
-        if reconcile_counterfactual_trades(state, executions, interval_ms):
-            save_auto_tranche_state(state)
-
-        live_records = state.get("counterfactual_trades", [])
-        current_tranches = int(state.get("latest_tranches_active", 10))
-        current_capacity = state.get("latest_tranches_max")
-        backfilled_records = backfill_historical_paper_trades(
-            bars,
-            executions=executions,
-            interval_ms=interval_ms,
-            current_tranches=current_tranches,
-            existing_records=live_records,
-            tranche_capacity=current_capacity,
-        )
-        combined_records = list(live_records) + backfilled_records
-
-        markers.extend(counterfactual_chart_markers(
-            combined_records, bars, interval_ms, confirmed_markers=markers))
         markers.sort(key=lambda marker: marker["time"])
 
         return {

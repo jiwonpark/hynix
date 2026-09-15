@@ -2345,7 +2345,7 @@
                 <span style="font-size: 10.5px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">LIVE BINANCE EXECUTION</span>
               </div>
               <div style="font-size: 11.5px; color: #64748b; margin-top: 2px;" id="lblShortTermSubtitle">
-                Solid ▼/▲ marks executed shorts/covers. Outline ⇩/⇧ marks paper entries blocked by capacity or margin and their simulated exits.
+                Solid arrows show actual fills. Faded arrows show the dynamic backtest using the condition switches below.
               </div>
             </div>
 
@@ -2369,6 +2369,14 @@
           <div class="shortTermGrid">
             <!-- Full-Width Short-Term Lightweight Chart -->
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
+              <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; margin-bottom: 8px;">
+                <label>Backtest starting capital $
+                  <input id="inputDynamicBacktestEquity" type="number" min="1" max="100000000" step="1" value="500" style="width: 90px; height: 28px;" onchange="tradingEngine.scheduleDynamicBacktest(true)">
+                </label>
+                <button type="button" style="width: auto; height: 28px; padding: 0 10px;" onclick="tradingEngine.scheduleDynamicBacktest(true)">Rerun</button>
+                <span id="dynamicBacktestStatus" role="status">Loading backtest…</span>
+              </div>
+              <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">Starts flat at the beginning of loaded history · 5m closes / completed 1h MAs · fees, slippage and estimated funding included · switches also apply to the live engine</div>
               <div id="shortTermSpreadChartHost" style="width: 100%; height: 420px;"></div>
               <!-- Chart Legend (Interactive MA Toggles) -->
               <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #475569;">
@@ -2385,7 +2393,7 @@
                   </span>
                   <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;"><strong style="color: #dc2626;">▼</strong> Short</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #16a34a;">▲</strong> Cover</span>
-                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #dc2626;">⇩</strong>/<strong style="color: #16a34a;">⇧</strong> Missed: capacity/margin</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #dc2626;">⇩</strong>/<strong style="color: #16a34a;">⇧</strong> Dynamic backtest</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px; color: #0f766e;"><span style="display: inline-block; width: 10px; height: 2px; background: #0f766e;"></span> Selected net PnL: <strong id="valShortTermNetPnl">--</strong> · Exit &gt; +$0.02</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #0284c7;"></span> Base</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #dc2626; border-top: 1px dashed #dc2626;"></span> Scale-In</span>
@@ -8643,7 +8651,20 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           `${origin}/api/trade/toggle_condition?key=${encodeURIComponent(key)}&enabled=${enabled}`,
           `http://localhost:8000/api/trade/toggle_condition?key=${encodeURIComponent(key)}&enabled=${enabled}`
         ];
-        endpoints.forEach(url => fetch(url, { method: "POST" }).catch(() => {}));
+        this.pendingConditionWrites = (this.pendingConditionWrites || 0) + 1;
+        this.scheduleDynamicBacktest(true);
+        this.conditionWriteQueue = (this.conditionWriteQueue || Promise.resolve()).catch(() => {}).then(async () => {
+          for (const url of endpoints) {
+            try {
+              const res = await fetch(url, { method: "POST", signal: AbortSignal.timeout(5000) });
+              if (res.ok && (await res.json()).success) return;
+            } catch (e) {}
+          }
+          showToast("Could not save live condition. Reloading server settings.", "error");
+        }).finally(async () => {
+          this.pendingConditionWrites -= 1;
+          if (!this.pendingConditionWrites) await this.fetchHedgedStatus();
+        });
 
         if (this.state.hedgedStatus && this.state.hedgedStatus.auto_tranche_criteria) {
           this.renderAutoTrancheCriteria(this.state.hedgedStatus.auto_tranche_criteria, this.state.hedgedStatus);
@@ -9369,7 +9390,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             if (res.ok) {
               const data = await res.json();
               this.state.hedgedStatus = data;
+              if (!this.pendingConditionWrites && data.auto_tranche_criteria) {
+                this.state.conditionToggles = {...data.auto_tranche_criteria.condition_toggles};
+              }
               this.renderHedgedController(data);
+              this.scheduleDynamicBacktest();
               break;
             }
           } catch (e) {}
@@ -9679,8 +9704,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         );
         const seenKeys = new Set();
         const markersToRender = this.rawExecutionMarkers.filter((m) => {
-          const key = `${m.time}_${m.is_entry ? 1 : 0}`;
-          if (m.hypothetical && confirmedKeys.has(key)) {
+          const key = `${m.time}_${m.is_entry ? 1 : 0}_${m.backtest ? "backtest" : "actual"}`;
+          if (m.hypothetical && !m.backtest && confirmedKeys.has(key)) {
             return false;
           }
           if (seenKeys.has(key)) {
@@ -9854,6 +9879,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       setShortTermInterval(interval) {
         if (interval === this.state.shortTermInterval) return;
+        clearTimeout(this.dynamicBacktestTimer);
+        this.dynamicBacktestController?.abort();
+        this.dynamicBacktestController = null;
+        this.dynamicBacktestKey = null;
+        this.dynamicBacktestMarkers = [];
         this.state.shortTermInterval = interval;
         this.shortTermHistory = null;
         ["1m", "5m", "15m", "1h", "4h", "1d"].forEach(i => {
@@ -9901,8 +9931,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               if (older || !previous.length) history.hasMore = data.has_more !== false && page.length > 0 && (!older || added > 0);
               const min = page[0]?.time, max = page.at(-1)?.time;
               const markers = new Map(history.markers.filter(m => !(m.time >= min && m.time <= max)).map(m => [`${m.time}:${m.is_entry}`, m]));
-              (data.markers || []).forEach(m => markers.set(`${m.time}:${m.is_entry}`, m));
-              history.markers = [...markers.values()].sort((a, b) => a.time - b.time);
+              (data.markers || []).filter(m => !m.hypothetical).forEach(m => markers.set(`${m.time}:${m.is_entry}`, m));
+              history.markers = [...markers.values()].filter(m => !m.hypothetical).sort((a, b) => a.time - b.time);
               this.shortTermRendering = true;
               try {
                 this.renderShortTermChart({ ...data, bars: history.bars, markers: history.markers });
@@ -9914,6 +9944,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   this.shortTermChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, history.bars.length - 120), to: history.bars.length + 2 });
                 }
               } finally { this.shortTermRendering = false; }
+              this.scheduleDynamicBacktest();
               if (older && !history.hasMore && $("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Start of available history";
               return;
             } catch (e) { console.warn("Parity page request failed", e); }
@@ -9923,6 +9954,69 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             if ($("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Data unavailable — scroll to retry";
           }
         } finally { history[flag] = false; }
+      },
+
+      scheduleDynamicBacktest(force = false) {
+        const history = this.shortTermHistory;
+        if (!history?.bars?.length) return;
+        const seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400};
+        const payload = {
+          start_time: history.bars[0].time,
+          end_time: Math.min(history.bars.at(-1).time + seconds[history.interval], Math.floor(Date.now()/300000)*300),
+          interval: history.interval,
+          initial_equity: Number($("inputDynamicBacktestEquity")?.value || 500),
+          toggles: Object.fromEntries(Object.entries(this.state.conditionToggles || {}).sort(([a], [b]) => a.localeCompare(b)))
+        };
+        const key = JSON.stringify(payload);
+        if (!force && key === this.dynamicBacktestKey) return;
+        this.dynamicBacktestKey = key;
+        this.dynamicBacktestController?.abort();
+        this.dynamicBacktestController = null;
+        clearTimeout(this.dynamicBacktestTimer);
+        this.dynamicBacktestMarkers = [];
+        this.redrawDynamicBacktest();
+        if ($("dynamicBacktestStatus")) $("dynamicBacktestStatus").textContent = "Running backtest…";
+        this.dynamicBacktestTimer = setTimeout(() => this.runDynamicBacktest(payload, key, history), 200);
+      },
+
+      redrawDynamicBacktest() {
+        const history = this.shortTermHistory;
+        if (!history?.bars?.length || !this.shortTermChart) return;
+        const range = this.shortTermChart.timeScale().getVisibleLogicalRange();
+        this.shortTermRendering = true;
+        try {
+          this.renderShortTermChart({bars: history.bars, markers: history.markers});
+          if (range) this.shortTermChart.timeScale().setVisibleLogicalRange(range);
+        } finally { this.shortTermRendering = false; }
+      },
+
+      async runDynamicBacktest(payload, key, history) {
+        const controller = new AbortController();
+        this.dynamicBacktestController = controller;
+        const timeout = setTimeout(() => controller.abort(), 120000);
+        try {
+          const res = await fetch(`${window.location.origin}/skhynix/api/trade/dynamic_backtest`, {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload), signal: controller.signal
+          });
+          if (!res.ok) throw new Error("Backtest request failed. Check the starting capital and retry.");
+          const data = await res.json();
+          if (controller !== this.dynamicBacktestController || key !== this.dynamicBacktestKey || history !== this.shortTermHistory) return;
+          if (!data.success) throw new Error(data.error || "Backtest unavailable");
+          const chartTimes = new Set(history.bars.map(b => b.time));
+          this.dynamicBacktestMarkers = (data.markers || []).filter(m => chartTimes.has(m.time));
+          this.redrawDynamicBacktest();
+          const s = data.summary;
+          const coverage = s.evaluated_bars < s.expected_bars ? ` · ${s.evaluated_bars}/${s.expected_bars} candles available` : "";
+          if ($("dynamicBacktestStatus")) {
+            $("dynamicBacktestStatus").textContent = `${s.entries} entries · ${s.exits} exits · ${s.open_tranches} open · Net $${s.net_pnl_usd.toFixed(2)} (${s.return_pct.toFixed(2)}%) · Max drawdown ${s.max_drawdown_pct.toFixed(2)}%${s.halted ? " · Capital exhausted" : ""}${coverage}`;
+          }
+        } catch (e) {
+          if (controller === this.dynamicBacktestController && key === this.dynamicBacktestKey && history === this.shortTermHistory) {
+            if ($("dynamicBacktestStatus")) $("dynamicBacktestStatus").textContent = controller.signal.aborted
+              ? "Backtest timed out. Press Rerun." : e.message;
+          }
+        } finally { clearTimeout(timeout); }
       },
 
       renderShortTermChart(data) {
@@ -9949,12 +10043,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("valShortTermMa60").textContent = ma60Data.length ? `${ma60Data[ma60Data.length - 1].value.toFixed(2)}%` : "--%";
         }
 
-        const rawMarkers = Array.isArray(data.markers) ? [...data.markers] : [];
+        const rawMarkers = [...(data.markers || []).filter(m => !m.hypothetical), ...(this.dynamicBacktestMarkers || [])];
         const confirmedKeys = new Set(
           rawMarkers.filter((m) => !m.hypothetical).map((m) => `${m.time}_${m.is_entry ? 1 : 0}`)
         );
         const markers = rawMarkers
-          .filter((m) => !(m.hypothetical && confirmedKeys.has(`${m.time}_${m.is_entry ? 1 : 0}`)))
+          .filter((m) => !(m.hypothetical && !m.backtest && confirmedKeys.has(`${m.time}_${m.is_entry ? 1 : 0}`)))
           .sort((a, b) => a.time - b.time);
         this.rawExecutionMarkers = markers;
         if (!markers.some((marker) => marker.time === this.activeHoveredExecutionMarkerTime)) {
