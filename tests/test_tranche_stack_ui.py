@@ -46,7 +46,7 @@ class TrancheStackUITests(unittest.TestCase):
         self.assertIn('id="exitConditionsChecklist"', self.html)
         self.assertIn('1. Active Speculative Tranche', self.html)
         self.assertIn('2. Spread Convergence Target', self.html)
-        self.assertIn('3. Net Profit (> +$0.02 USD)', self.html)
+        self.assertIn('3. Net Profit (entry threshold)', self.html)
         self.assertIn('4. Anti-Churn Dwell (≥ 120s)', self.html)
         self.assertIn('5. 5m Bearish MA Stack', self.html)
         self.assertIn('6. 1h Bearish MA Stack', self.html)

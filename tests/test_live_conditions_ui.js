@@ -10,6 +10,7 @@ function method(name) {
 }
 const elements = {
   activePositionsBody: {}, btnReduceTranche: {style: {}}, lblReduceTrancheText: {},
+  lblStepTrancheSize: {}, valCritCycleCore: {}, macroPolicyStatus: {},
 };
 const context = vm.createContext({window: {location: {origin: 'https://test'}},
   $: id => elements[id], AbortSignal, console});
@@ -38,6 +39,14 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
     'hedged status polling must refresh table capacity');
   assert.equal(elements.btnReduceTranche.disabled, false,
     'disabled MA gate must not override the backend exit decision');
+  data.auto_tranche_criteria.asymmetric_sizing = {scale_in_skhy:.12, scale_in_csop:2.1,
+    residual_retained_skhy:.05,residual_retained_csop:.9,scale_in_notional_usd:34};
+  data.auto_tranche_criteria.macro_policy = {regime:'TOPPING',score:100,entry_multiplier:1.5};
+  data.auto_tranche_criteria.exit_policy = {convergence_pts:.16,minimum_net_profit_usd:.04,require_confirmed_rebound:true};
+  await engine.fetchHedgedStatus();
+  assert.match(elements.lblStepTrancheSize.textContent, /0.12 ADR \/ 2.10 ETF/);
+  assert.match(elements.valCritCycleCore.textContent, /0.05 ADR \/ 0.90 ETF/);
+  assert.match(elements.macroPolicyStatus.textContent, /net > \$0.04, two rising 5m closes/);
   data.auto_tranche_criteria.can_take_profit = false;
   await engine.fetchHedgedStatus();
   assert.equal(elements.btnReduceTranche.disabled, true);

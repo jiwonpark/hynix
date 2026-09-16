@@ -10,6 +10,7 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from collections import OrderedDict
 from .dynamic_backtest import replay, replay_markers
+from .macro_policy import macro_policy, policy_for_level, closed_values, confirmed_rebound
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -21,6 +22,8 @@ from .tranche_accounting import (
     aggregate_orders,
     estimate_tranche_exit,
     infer_entry_pairs,
+    entry_profiles,
+    reconstruct_leg_stack,
 )
 from .counterfactual_trades import (
     reconcile_counterfactual_trades,
@@ -33,7 +36,7 @@ from .upbit_client import UpbitClient
 STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
 scale_in_lock = asyncio.Lock()
 
-# These switches may relax a backtest, but cannot relax live execution guards.
+# Live safeguards are independent of selectable price-replay conditions.
 MANDATORY_LIVE_CONDITIONS = frozenset({
     "entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state",
     "exit_speculative_tranche", "exit_net_profit", "exit_position_qty",
@@ -547,8 +550,14 @@ async def get_hedged_status() -> Dict[str, Any]:
         # 1. Moving Average & Speculative Peak-Out Metrics
         parity_bars, parity_bars_1h = await asyncio.gather(
             get_cached_parity_bars("5m", 60),
-            get_cached_parity_bars("1h", 60),
+            get_cached_parity_bars("1h", 61),
         )
+        macro = macro_policy(closed_values(parity_bars_1h, 3600, time.time()))
+        entry_adr_qty, entry_stock_qty = macro["adr_entry_qty"], macro["stock_entry_qty"]
+        if current_spread is None and parity_bars:
+            curr_spread = parity_bars[-1]["value"]
+            if entry_spread is None:
+                base_entry = curr_spread
         alignment_5m = exit_ma_alignment(parity_bars, "5m", 600)
         alignment_1h = exit_ma_alignment(parity_bars_1h, "1h", 7200)
         exit_alignment_5m = alignment_5m
@@ -603,41 +612,27 @@ async def get_hedged_status() -> Dict[str, Any]:
         now_sec = time.time()
         active_tranches_queue = []
 
-        # A market order may produce many fills. Attribute by order and consume
-        # trim quantities, retaining the 0.01 ADR core from each full entry.
-        orders = {}
-        for tr in executions:
-            if tr["symbol"] != "SKHYUSDT":
-                continue
-            key = (tr["order_id"], tr["side"])
-            order = orders.setdefault(key, {**tr, "qty": 0.0, "cost": 0.0})
-            order["qty"] += tr["qty"]
-            order["cost"] += tr["qty"] * tr["price"]
-            order["time"] = max(order["time"], tr["time"])
-        for tr in sorted(orders.values(), key=lambda t: t["time"]):
-            qty = round(tr["qty"], 8)
-            if tr["action_type"] == "ENTRY_SHORT":
-                t_sec = tr["time"] / 1000
-                matched_bar = min(parity_bars, key=lambda b: abs(b["time"] - t_sec)) if parity_bars else None
+        # Larger adaptive entries are one fixed exit unit plus retained core.
+        # Restore their policy from recorded pairs or recognized paired fill sizes.
+        orders = aggregate_orders(executions)
+        profiles = entry_profiles(orders, stock_sym, auto_state.get("entry_order_pairs", []))
+        adr_stack = reconstruct_leg_stack(orders, "SKHYUSDT", "SELL", .08, .07, profiles)
+        for item in adr_stack:
+            tr = item["order"]
+            profile = profiles.get(tr["order_id"], {})
+            policy = profile.get("policy", policy_for_level())
+            t_sec = tr["time"] / 1000
+            matched_bar = min(parity_bars, key=lambda b: abs(b["time"] - t_sec)) if parity_bars else None
+            bar_spread = profile.get("entry_spread")
+            if bar_spread is None:
                 bar_spread = matched_bar["value"] if matched_bar else base_entry
-                while qty > 1e-8:
-                    entry_qty = min(0.08, qty)
-                    active_tranches_queue.append({
-                        "trade_id": tr["order_id"], "time": t_sec,
-                        "qty": entry_qty, "trim_qty": min(0.07, entry_qty),
-                        "entry_spread": round(bar_spread, 2),
-                        "entry_price": tr["cost"] / tr["qty"],
-                        "target_out_spread": round(bar_spread - 0.08, 2)
-                    })
-                    qty = round(qty - entry_qty, 8)
-            else:
-                while qty > 1e-8 and active_tranches_queue:
-                    tranche = active_tranches_queue[-1]
-                    consumed = min(qty, tranche["trim_qty"])
-                    tranche["trim_qty"] = round(tranche["trim_qty"] - consumed, 8)
-                    qty = round(qty - consumed, 8)
-                    if tranche["trim_qty"] <= 1e-8:
-                        active_tranches_queue.pop()
+            active_tranches_queue.append({
+                "trade_id": tr["order_id"], "time": t_sec,
+                "qty": item["qty"], "stock_qty": policy["stock_entry_qty"],
+                "trim_qty": item["trim_qty"], "entry_spread": round(bar_spread, 2),
+                "entry_price": tr["cost"] / tr["qty"], "exit_policy": policy,
+                "target_out_spread": round(bar_spread - policy["convergence_pts"], 2),
+            })
 
         # 1-to-1 Entry-to-Exit Matching Invariant:
         # Each scale-out requires a corresponding un-exited scale-in entry.
@@ -650,13 +645,13 @@ async def get_hedged_status() -> Dict[str, Any]:
         # the difference represents accumulated core inventory that must remain protected.
 
         speculative_tranches_active = len(active_tranches_queue)
-        core_accumulated_skhy = round(max(0.0, adr_qty - (speculative_tranches_active * 0.08)), 4)
-        core_accumulated_csop = round(max(0.0, stock_qty - (speculative_tranches_active * 1.40)), 4)
+        core_accumulated_skhy = round(max(0.0, adr_qty - sum(t["qty"] for t in active_tranches_queue)), 4)
+        core_accumulated_csop = round(max(0.0, stock_qty - sum(t["stock_qty"] for t in active_tranches_queue)), 4)
 
         # Capacity is recalculated from live equity and gross exposure. Retained core
         # consumes leverage headroom, but is not mislabeled as a speculative tranche.
         tranches_active = speculative_tranches_active
-        next_tranche_notional = (0.08 * adr_mark) + (1.40 * stock_mark)
+        next_tranche_notional = (entry_adr_qty * adr_mark) + (entry_stock_qty * stock_mark)
         leverage_cap = 8.0
         gross_capacity_usd = max(0.0, equity * leverage_cap)
         gross_headroom_usd = max(0.0, gross_capacity_usd - total_notional)
@@ -713,6 +708,10 @@ async def get_hedged_status() -> Dict[str, Any]:
             latest_in_spread = base_entry
             dwell_time_sec = 999
             out_target_spread = round(base_entry - 0.08, 2)
+
+        exit_policy = current_target_tranche["exit_policy"] if current_target_tranche else policy_for_level()
+        if exit_policy["require_confirmed_rebound"]:
+            is_bottoming_out = confirmed_rebound(closed_values(parity_bars, 300, now_sec, 3))
 
         tranche_profit = estimate_tranche_exit(
             current_target_tranche, executions, adr_mark, stock_mark, stock_sym,
@@ -784,6 +783,8 @@ async def get_hedged_status() -> Dict[str, Any]:
             "live_condition_toggles": {k: is_cond_enabled(k) for k in
                 set(cond_toggles) | MANDATORY_LIVE_CONDITIONS | {"exit_ma_stack_5m", "exit_ma_stack_1h"}},
             "effective_exit_ma_aligned": eff_ma_aligned,
+            "macro_policy": macro,
+            "exit_policy": exit_policy,
             "entry_baseline_spread": round(base_entry, 2),
             "current_spread": round(curr_spread, 2),
             "rolling_ma_24": round(ma24, 2),
@@ -854,20 +855,20 @@ async def get_hedged_status() -> Dict[str, Any]:
             "status_take_profit": status_take_profit,
 
             "asymmetric_sizing": {
-                "scale_in_skhy": 0.08,
-                "scale_in_csop": 1.40,
-                "scale_in_notional_usd": 23.40,
+                "scale_in_skhy": entry_adr_qty,
+                "scale_in_csop": entry_stock_qty,
+                "scale_in_notional_usd": round(next_tranche_notional, 2),
                 "scale_out_skhy": 0.07,
                 "scale_out_csop": 1.20,
-                "scale_out_notional_usd": 20.41,
-                "residual_retained_skhy": 0.01,
-                "residual_retained_csop": 0.20
+                "scale_out_notional_usd": round(.07*adr_mark + 1.2*stock_mark, 2),
+                "residual_retained_skhy": round(entry_adr_qty-.07, 2),
+                "residual_retained_csop": round(entry_stock_qty-1.2, 2)
             },
             "next_tranche_size": {
-                "skhy_qty": 0.08,
-                "csop_qty": 1.40,
-                "notional_usd": 23.40,
-                "leverage_add": 0.67
+                "skhy_qty": entry_adr_qty,
+                "csop_qty": entry_stock_qty,
+                "notional_usd": round(next_tranche_notional, 2),
+                "leverage_add": round(next_tranche_notional / equity, 2) if equity > 0 else None
             }
         }
 
@@ -918,7 +919,8 @@ async def get_hedged_status() -> Dict[str, Any]:
 class DynamicBacktestRequest(BaseModel):
     start_time: int = Field(ge=1577836800)
     end_time: int = Field(ge=1577836800)
-    initial_equity: float = Field(default=500.0, gt=0, le=100000000, allow_inf_nan=False)
+    # Accepted for older clients; price-signal replay ignores starting capital.
+    initial_equity: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     interval: str = "5m"
     toggles: Dict[str, bool] = Field(default_factory=dict)
 
@@ -975,7 +977,7 @@ async def dynamic_backtest(request: DynamicBacktestRequest) -> Dict[str, Any]:
         return {"success": False, "error": "Select a completed range of up to 366 days."}
     try:
         bars = await backtest_market_bars(start-61*3600, end)
-        result = await asyncio.to_thread(replay, bars, start, end, request.initial_equity, request.toggles)
+        result = await asyncio.to_thread(replay, bars, start, end, toggles=request.toggles)
         if not result['summary']['evaluated_bars']:
             return {"success": False, "error": "No complete paired price history for this range."}
         result['summary']['first_available_time'] = next((b['time'] for b in bars if b['time'] >= start), None)
@@ -1074,7 +1076,9 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         })
                 pair_orders = aggregate_orders(pair_executions)
                 inferred_pairs = infer_entry_pairs(pair_orders, "CSOPSKHYNIX2LUSDT")
-                for pair in load_auto_tranche_state().get("entry_order_pairs", []):
+                saved_pairs = load_auto_tranche_state().get("entry_order_pairs", [])
+                marker_profiles = entry_profiles(pair_orders, "CSOPSKHYNIX2LUSDT", saved_pairs)
+                for pair in saved_pairs:
                     inferred_pairs[str(pair["adr_order_id"])] = str(pair["stock_order_id"])
                 stock_entries = {
                     order["order_id"]: order for order in pair_orders
@@ -1100,6 +1104,9 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                                 adr_order["fee"] * 0.07 / adr_order["qty"]
                                 + stock_order["fee"] * 1.2 / stock_order["qty"]),
                             "entry_time_ms": min(adr_order["time"], stock_order["time"]),
+                            "threshold_usd": marker_profiles.get(adr_order_id, {}).get("policy", policy_for_level())["minimum_net_profit_usd"],
+                            "convergence_pts": marker_profiles.get(adr_order_id, {}).get("policy", policy_for_level())["convergence_pts"],
+                            "entry_spread": marker_profiles.get(adr_order_id, {}).get("entry_spread"),
                         }
 
                 min_time_sec = bars[0]["time"]
@@ -1168,7 +1175,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                             "exit_fee_bps": EXIT_FEE_BPS,
                             "slippage_bps": EXIT_SLIPPAGE_BPS,
                             "funding_reserve_bps_day": FUNDING_RESERVE_BPS_DAY,
-                            "threshold_usd": MIN_NET_PROFIT_USD,
+                            "threshold_usd": sum(m["threshold_usd"] for m in pnl_models) / count,
                             "paired_entries": count,
                         }
                     markers.append({
@@ -1182,8 +1189,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         "is_entry": is_entry,
                         "avg_price": round(avg_px, 2),
                         "qty": round(m_data["total_qty"], 2),
-                        "minimum_net_profit_usd": MIN_NET_PROFIT_USD if is_entry else None,
-                        "convergence_target_spread": round(m_data["entry_spread"] - 0.08, 2) if is_entry else None,
+                        "minimum_net_profit_usd": pnl_model["threshold_usd"] if pnl_model else (MIN_NET_PROFIT_USD if is_entry else None),
+                        "convergence_target_spread": (round(sum((m["entry_spread"] if m["entry_spread"] is not None else m_data["entry_spread"]) - m["convergence_pts"] for m in pnl_models) / len(pnl_models), 2) if pnl_models else round(m_data["entry_spread"] - .08, 2)) if is_entry else None,
                         "pnl_model": pnl_model,
                     })
         except Exception:
@@ -1212,12 +1219,10 @@ async def step_tranche() -> Dict[str, Any]:
 
 
 async def execute_scale_in() -> Dict[str, Any]:
-    """
-    Executes Asymmetric Scale-In Tranche:
-    - Sets 10x leverage and CROSSED margin on SKHYUSDT and CSOPSKHYNIX2LUSDT
-    - SELL MARKET 0.08 SKHYUSDT (Short ADR)
-    - BUY MARKET 1.40 CSOPSKHYNIX2LUSDT (Long CSOP 2x ETF Perp)
-    - Leaves +0.01 SKHY / +0.20 CSOP residual core inventory upon GCD trim!
+    """Execute the current macro-sized pair; retain one fixed trim per entry.
+
+    Full requested size is checked against live margin and gross leverage before
+    either order. Pair IDs, sizing and exit policy are persisted for restart.
     """
     recovery = None
     try:
@@ -1260,7 +1265,9 @@ async def execute_scale_in() -> Dict[str, Any]:
         if adr_mark <= 0 or stock_mark <= 0 or equity <= 0:
             return {"success": False, "error": "Cannot verify live equity and both leg mark prices"}
 
-        next_notional = (0.08 * adr_mark) + (1.40 * stock_mark)
+        entry_policy = criteria.get("macro_policy") or policy_for_level()
+        adr_qty, stock_qty = entry_policy["adr_entry_qty"], entry_policy["stock_entry_qty"]
+        next_notional = (adr_qty * adr_mark) + (stock_qty * stock_mark)
         required_margin = max(2.50, (next_notional / 10.0) * 1.25)
         projected_leverage = (current_notional + next_notional) / equity
         if projected_leverage > 8.0:
@@ -1282,32 +1289,36 @@ async def execute_scale_in() -> Dict[str, Any]:
             binance_client.set_margin_type("CSOPSKHYNIX2LUSDT", "CROSSED"),
         )
 
-        recovery = {"started_at": time.time(), "phase": "ADR_SUBMITTING", "order_adr": None, "order_stock": None}
+        recovery = {"started_at": time.time(), "phase": "ADR_SUBMITTING", "order_adr": None, "order_stock": None,
+                    "entry_policy": entry_policy, "entry_spread": criteria.get("current_spread"),
+                    "adr_quantity": adr_qty, "stock_quantity": stock_qty}
         state["execution_recovery"] = recovery
         save_auto_tranche_state(state)  # Persist before any order can reach the exchange.
-        order_adr = await binance_client.create_order("SKHYUSDT", "SELL", 0.08, "MARKET")
+        order_adr = await binance_client.create_order("SKHYUSDT", "SELL", adr_qty, "MARKET")
         recovery["order_adr"] = order_adr
-        if order_adr.get("status") != "FILLED" or float(order_adr.get("executedQty", 0)) < 0.08:
+        if order_adr.get("status") != "FILLED" or float(order_adr.get("executedQty", 0)) < adr_qty:
             raise RuntimeError("ADR fill is incomplete or unconfirmed")
         recovery["phase"] = "ETF_SUBMITTING"
         save_auto_tranche_state(state)
-        order_stock = await binance_client.create_order("CSOPSKHYNIX2LUSDT", "BUY", 1.40, "MARKET")
+        order_stock = await binance_client.create_order("CSOPSKHYNIX2LUSDT", "BUY", stock_qty, "MARKET")
 
         recovery["order_stock"] = order_stock
-        if order_stock.get("status") != "FILLED" or float(order_stock.get("executedQty", 0)) < 1.40:
+        if order_stock.get("status") != "FILLED" or float(order_stock.get("executedQty", 0)) < stock_qty:
             raise RuntimeError("ETF fill is incomplete or unconfirmed")
         state = load_auto_tranche_state()
         if order_adr.get("orderId") is not None and order_stock.get("orderId") is not None:
             state.setdefault("entry_order_pairs", []).append({
                 "adr_order_id": str(order_adr["orderId"]),
-                "stock_order_id": str(order_stock["orderId"])})
+                "stock_order_id": str(order_stock["orderId"]),
+                "entry_spread": criteria.get("current_spread"),
+                "entry_policy": entry_policy, "adr_quantity": adr_qty, "stock_quantity": stock_qty})
         state.pop("execution_recovery", None)
         save_auto_tranche_state(state)
         return {
             "success": True,
-            "message": "Asymmetric Scale-in filled: Short 0.08 SKHYUSDT + Long 1.40 CSOPSKHYNIX2LUSDT",
-            "scale_in_adr_qty": 0.08,
-            "scale_in_stock_qty": 1.40,
+            "message": f"Asymmetric Scale-in filled: Short {adr_qty:.2f} SKHYUSDT + Long {stock_qty:.2f} CSOPSKHYNIX2LUSDT",
+            "scale_in_adr_qty": adr_qty,
+            "scale_in_stock_qty": stock_qty,
             "order_adr": order_adr,
             "order_stock": order_stock
         }

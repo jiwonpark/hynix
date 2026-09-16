@@ -17,7 +17,9 @@ class BacktestAPITests(unittest.IsolatedAsyncioTestCase):
             result = await server.dynamic_backtest(request)
             self.assertTrue(result['success'])
             self.assertGreater(result['summary']['entries'],0)
-            self.assertEqual(result['summary']['initial_equity'],500)
+            self.assertEqual(result['summary']['mode'], 'price_signals')
+            request.initial_equity = .01
+            self.assertEqual(await server.dynamic_backtest(request), result)
             client.create_order.assert_not_awaited()
             client.get_detailed_account_overview.assert_not_awaited()
             request.toggles['entry_ma_stretch'] = True

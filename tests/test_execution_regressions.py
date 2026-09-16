@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, call, patch
 
 from backend import server
+from backend.macro_policy import policy_for_level
 
 
 class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
@@ -232,7 +233,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(stack_top['profit_estimate_available'])
         self.assertIsNotNone(stack_top['estimated_net_pnl_usd'])
         self.assertIn(call('5m', 60), server.get_cached_parity_bars.await_args_list)
-        self.assertIn(call('1h', 60), server.get_cached_parity_bars.await_args_list)
+        self.assertIn(call('1h', 61), server.get_cached_parity_bars.await_args_list)
         flat_bars = self.ma_bars([141] * 60)
         server.get_cached_parity_bars.side_effect = (
             lambda interval, limit: bars if interval == '5m' else flat_bars)
@@ -399,5 +400,78 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             {'status': 'FILLED', 'executedQty': '0.08', 'orderId': 101},
             {'status': 'FILLED', 'executedQty': '1.40', 'orderId': 202}]
         self.assertTrue((await server.step_tranche())['success'])
-        self.assertEqual(server.load_auto_tranche_state()['entry_order_pairs'],
-                         [{'adr_order_id': '101', 'stock_order_id': '202'}])
+        pair = server.load_auto_tranche_state()['entry_order_pairs'][0]
+        self.assertEqual(pair['adr_order_id'], '101')
+        self.assertEqual(pair['stock_order_id'], '202')
+        self.assertEqual(pair['entry_policy']['level'], 0)
+
+    async def test_macro_size_is_used_in_orders_and_recorded_for_restart(self):
+        policy = policy_for_level(2)
+        status = {'tranches_active': 0, 'auto_tranche_criteria': {
+            'tranches_max': 10, 'current_spread': 140, 'macro_policy': policy}}
+        self.client.create_order.side_effect = [
+            {'status': 'FILLED', 'executedQty': '.12', 'orderId': 501},
+            {'status': 'FILLED', 'executedQty': '2.10', 'orderId': 502}]
+        with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
+            result = await server.step_tranche()
+        self.assertTrue(result['success'])
+        self.assertEqual(self.client.create_order.await_args_list, [
+            call('SKHYUSDT', 'SELL', .12, 'MARKET'),
+            call('CSOPSKHYNIX2LUSDT', 'BUY', 2.1, 'MARKET')])
+        pair = server.load_auto_tranche_state()['entry_order_pairs'][0]
+        self.assertEqual(pair['entry_policy'], policy)
+        self.assertEqual(pair['entry_spread'], 140)
+        self.assertEqual(pair['adr_quantity'], .12)
+
+    async def test_boosted_entry_margin_is_checked_for_the_full_larger_size(self):
+        self.client.get_detailed_account_overview.return_value['summary'] = {
+            'total_equity_usd': 500, 'available_margin_usd': 3.0}
+        status = {'tranches_active': 0, 'auto_tranche_criteria': {
+            'tranches_max': 10, 'macro_policy': policy_for_level(2)}}
+        with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
+            result = await server.step_tranche()
+        self.assertFalse(result['success'])
+        self.assertIn('Insufficient available margin', result['error'])
+        self.client.create_order.assert_not_awaited()
+
+    async def test_live_history_restores_boosted_lot_and_protects_residual(self):
+        overview = self.client.get_detailed_account_overview.return_value
+        overview['positions'] = [
+            {'symbol': 'SKHYUSDT', 'position_amt': -.12, 'mark_price': 193.2, 'entry_price': 196},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 2.1, 'mark_price': 5.7, 'entry_price': 5.6}]
+        bars = self.ma_bars([141-i*.01 for i in range(60)])
+        server.get_cached_parity_bars.return_value = bars
+        trimmed = False
+        async def request(method, path, params, **kwargs):
+            if 'ticker' in path:
+                return {'price': '1400'}
+            adr = params['symbol'] == 'SKHYUSDT'
+            result = [{'id': 1, 'orderId': 1, 'side': 'SELL' if adr else 'BUY',
+                       'qty': .12 if adr else 2.1, 'price': 196 if adr else 5.6,
+                       'commission': .001, 'time': bars[0]['time']*1000 + (0 if adr else 1)}]
+            if trimmed:
+                result.append({'id': 2, 'orderId': 2, 'side': 'BUY' if adr else 'SELL',
+                    'qty': .07 if adr else 1.2, 'price': 193.2 if adr else 5.7,
+                    'commission': .001, 'time': bars[-2]['time']*1000 + (0 if adr else 1)})
+            return result
+        self.client.request.side_effect = request
+        server.save_auto_tranche_state({'condition_toggles': {'exit_ma_stack_5m': False,
+                                       'exit_ma_stack_1h': False, 'exit_convergence': False}})
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertEqual(criteria['speculative_tranches_active'], 1)
+        self.assertEqual(criteria['current_target_tranche']['qty'], .12)
+        self.assertEqual(criteria['current_target_tranche']['stock_qty'], 2.1)
+        self.assertEqual(criteria['exit_policy']['level'], 2)
+        self.assertEqual(criteria['target_tranche_profit']['threshold_usd'], .04)
+        self.assertFalse(criteria['can_take_profit'], 'boosted entry must wait for actual rebound')
+        bars[-3]['value'], bars[-2]['value'] = bars[-4]['value']+.01, bars[-4]['value']+.02
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertTrue(criteria['can_take_profit'])
+        trimmed = True
+        overview['positions'][0]['position_amt'] = -.05
+        overview['positions'][1]['position_amt'] = .9
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertEqual(criteria['speculative_tranches_active'], 0)
+        self.assertEqual(criteria['core_accumulated_skhy'], .05)
+        self.assertEqual(criteria['core_accumulated_csop'], .9)
+        self.assertFalse(criteria['can_take_profit'])

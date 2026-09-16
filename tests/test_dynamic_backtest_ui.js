@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync(require('node:path').join(__dirname,'../index.html'),'utf8');
 const methods = html.slice(html.indexOf('      scheduleDynamicBacktest(force = false)'), html.indexOf('      renderShortTermChart(data)'));
-const elements = {inputDynamicBacktestEquity: {value: '500'}, dynamicBacktestStatus: {textContent: ''}};
+const elements = {dynamicBacktestStatus: {textContent: ''}};
 const context = vm.createContext({AbortController, JSON, Number, Math, Object, Set,
   Date: {now: () => 1704070800000}, window: {location:{origin:'https://test'}},
   $: id => elements[id], setTimeout: () => 1, clearTimeout: () => {}});
@@ -17,6 +17,9 @@ engine.scheduleDynamicBacktest();
 assert.notEqual(engine.dynamicBacktestKey, firstKey);
 assert.equal(JSON.parse(engine.dynamicBacktestKey).toggles.entry_ma_stretch, false);
 const newKey=engine.dynamicBacktestKey;
+engine.state.conditionToggles.entry_margin_buffer = false;
+engine.scheduleDynamicBacktest();
+assert.equal(engine.dynamicBacktestKey,newKey, 'live-only guards must not change replay');
 engine.dynamicBacktestMarkers = [{time: 1}];
 engine.scheduleDynamicBacktest();
 assert.equal(engine.dynamicBacktestMarkers.length, 1, 'unchanged polling must retain result');
@@ -36,13 +39,16 @@ assert.equal(engine.dynamicBacktestMarkers.length,0,'old results clear while new
   await pending;
   assert.equal(engine.dynamicBacktestMarkers.length,0);
   context.fetch = async (_url, options) => {
-    assert.equal(JSON.parse(options.body).initial_equity,500);
+    assert.equal(JSON.parse(options.body).initial_equity, undefined);
     return {ok:true,json:async()=>({success:true,markers:[{time:1704067200,backtest:true}],summary:{
-      entries:2,exits:1,open_tranches:1,net_pnl_usd:.2,return_pct:.04,max_drawdown_pct:.01,
+      entries:2,exits:1,open_tranches:1,boosted_entries:1,net_pnl_usd:.2,max_drawdown_usd:.01,
+      peak_gross_exposure_usd:42,adr_short_qty:.11,stock_long_qty:1.95,core_adr_qty:.01,core_stock_qty:.2,
       evaluated_bars:13,expected_bars:13}})};
   };
   await engine.runDynamicBacktest(JSON.parse(key),key,history);
   assert.equal(engine.dynamicBacktestMarkers.length,1);
-  assert.match(elements.dynamicBacktestStatus.textContent,/2 entries · 1 exits/);
+  assert.match(elements.dynamicBacktestStatus.textContent,/2 entries \(1 boosted\) · 1 exits/);
+  assert.match(elements.dynamicBacktestStatus.textContent, /Peak exposure \$42.00/);
+  assert.doesNotMatch(elements.dynamicBacktestStatus.textContent, /%|Capital exhausted/);
   console.log('Dynamic backtest UI checks passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});

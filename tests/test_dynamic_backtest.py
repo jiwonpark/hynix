@@ -37,7 +37,7 @@ class ReplayTests(unittest.TestCase):
         self.assertAlmostEqual(s['core_adr_qty'], .02)
         self.assertAlmostEqual(s['core_stock_qty'], .4)
         # Marked equity includes all .16 short during the price drop, then costs.
-        self.assertAlmostEqual(s['ending_equity'], 500+.16*5-s['fees_usd']-s['slippage_usd']-s['funding_reserve_usd'], places=5)
+        self.assertAlmostEqual(s['net_pnl_usd'], .16*5-s['fees_usd']-s['slippage_usd']-s['funding_reserve_usd'], places=5)
 
     def test_disabling_profit_allows_simulated_losing_exit(self):
         data = bars([140]*10)
@@ -47,15 +47,26 @@ class ReplayTests(unittest.TestCase):
         self.assertGreater(loose['summary']['exits'], 0)
         self.assertLess(loose['trades'][0]['estimated_net_pnl_usd'], 0)
 
-    def test_simulated_capital_is_recomputed_after_each_entry(self):
+    def test_capital_and_live_risk_switches_never_change_price_replay(self):
         data = bars([140]*40)
-        result = self.run_replay(data, capital=5)
-        self.assertGreater(result['summary']['entries'], 0)
-        self.assertGreater(result['summary']['capital_blocked_signals'], 0)
-        self.assertLess(result['summary']['entries'], 10)
-        unrestricted = self.run_replay(data, {**LOOSE, 'entry_capacity': False,
-            'entry_gross_leverage': False, 'entry_margin_buffer': False}, capital=5)
-        self.assertGreater(unrestricted['summary']['entries'], result['summary']['entries'])
+        baseline = self.run_replay(data, capital=500)
+        for capital in (0, .01, 5, 100000):
+            result = self.run_replay(data, capital=capital)
+            self.assertEqual(result, baseline)
+        result = self.run_replay(data, {**LOOSE, 'entry_capacity': False,
+            'entry_gross_leverage': False, 'entry_margin_buffer': False}, capital=0)
+        self.assertEqual(result, baseline)
+        self.assertEqual(result['summary']['entries'], 34)
+        self.assertFalse(result['summary']['halted'])
+        self.assertGreater(result['summary']['max_drawdown_usd'], 0)
+        self.assertAlmostEqual(result['summary']['peak_gross_exposure_usd'], 34*(.08*100+1.4*5))
+
+    def test_large_losses_do_not_stop_remaining_signals(self):
+        result = self.run_replay(bars([140]*40, [100]*8+[10000]*32), capital=.01)
+        self.assertEqual(result['summary']['evaluated_bars'], 34)
+        self.assertEqual(result['summary']['entries'], 34)
+        self.assertLess(result['summary']['net_pnl_usd'], -1000)
+        self.assertFalse(result['summary']['halted'])
 
     def test_future_candles_cannot_change_prior_decisions(self):
         original = bars([140]*8+[139]*8, [100]*8+[95]*8)
