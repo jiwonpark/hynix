@@ -41,5 +41,11 @@ console.log("ALL_SCRIPTS_VALID");
             self.fail(f"Syntax validation failed in index.html:\n{res.stderr}")
         self.assertIn("ALL_SCRIPTS_VALID", res.stdout)
 
+        self.assertIn("if (this.backendSyncInFlight)", html_content)
+        self.assertIn("if (this.hedgedStatusInFlight)", html_content)
+        self.assertNotIn('setInterval(() => this.syncWithBackend(), 3000)', html_content)
+        self.assertEqual(html_content.count('`${apiPrefix}/api/portfolio/overview`'), 1)
+        self.assertEqual(html_content.count('`${apiPrefix}/api/trade/hedged_status`'), 1)
+
 if __name__ == "__main__":
     unittest.main()

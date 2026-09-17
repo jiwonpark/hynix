@@ -9165,20 +9165,26 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       async syncWithBackend() {
-        const origin = window.location.origin;
+        if (this.backendSyncInFlight) return this.backendSyncInFlight;
+        this.backendSyncInFlight = this.syncWithBackendOnce();
+        try {
+          return await this.backendSyncInFlight;
+        } finally {
+          this.backendSyncInFlight = null;
+        }
+      },
+
+      async syncWithBackendOnce() {
+        const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
         const endpoints = [
-          `${origin}/skhynix/api/portfolio/overview`,
-          "/skhynix/api/portfolio/overview",
-          `${origin}/api/portfolio/overview`,
-          "/api/portfolio/overview",
-          "http://localhost:8000/api/portfolio/overview"
+          `${apiPrefix}/api/portfolio/overview`
         ];
         let success = false;
         const tStart = performance.now();
 
         for (const url of endpoints) {
           try {
-            const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+            const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
             if (res.ok) {
               const data = await res.json();
               const latency = Math.round(performance.now() - tStart);
@@ -9288,15 +9294,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // Fallback to legacy single /api/account endpoint
         if (!success) {
           const fallbackEndpoints = [
-            `${origin}/skhynix/api/account`,
-            "/skhynix/api/account",
-            `${origin}/api/account`,
-            "/api/account",
-            "http://localhost:8000/api/account"
+            `${apiPrefix}/api/account`
           ];
           for (const url of fallbackEndpoints) {
             try {
-              const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+              const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
               if (res.ok) {
                 const data = await res.json();
                 const latency = Math.round(performance.now() - tStart);
@@ -9378,17 +9380,23 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       async fetchHedgedStatus() {
-        const origin = window.location.origin;
+        if (this.hedgedStatusInFlight) return this.hedgedStatusInFlight;
+        this.hedgedStatusInFlight = this.fetchHedgedStatusOnce();
+        try {
+          return await this.hedgedStatusInFlight;
+        } finally {
+          this.hedgedStatusInFlight = null;
+        }
+      },
+
+      async fetchHedgedStatusOnce() {
+        const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
         const endpoints = [
-          `${origin}/skhynix/api/trade/hedged_status`,
-          "/skhynix/api/trade/hedged_status",
-          `${origin}/api/trade/hedged_status`,
-          "/api/trade/hedged_status",
-          "http://localhost:8000/api/trade/hedged_status"
+          `${apiPrefix}/api/trade/hedged_status`
         ];
         for (const url of endpoints) {
           try {
-            const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+            const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
             if (res.ok) {
               const data = await res.json();
               this.state.hedgedStatus = data;
@@ -10834,8 +10842,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("tabOrderLog")) $("tabOrderLog").addEventListener("click", () => switchPosTab("tabOrderLog"));
 
         // Periodically sync with backend daemon
-        this.syncWithBackend();
-        setInterval(() => this.syncWithBackend(), 3000);
+        const pollBackend = async () => {
+          await this.syncWithBackend();
+          this.backendSyncTimer = setTimeout(pollBackend, 3000);
+        };
+        pollBackend();
 
         // Hedged Tranche Controller buttons & polling
         if ($("btnStepTranche")) $("btnStepTranche").addEventListener("click", () => this.stepTrancheLive());
@@ -10872,13 +10883,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           });
         }
 
-        this.fetchHedgedStatus();
-        setInterval(() => {
-          this.fetchHedgedStatus();
+        const pollHedgedStatus = async () => {
+          await this.fetchHedgedStatus();
           if ($("chkAutoPeriodic48h")?.checked) {
             this.checkAutoPeriodicTranche();
           }
-        }, 3000);
+          this.hedgedStatusTimer = setTimeout(pollHedgedStatus, 3000);
+        };
+        pollHedgedStatus();
 
         // Kill Switch Modal
         $("btnKillSwitch").addEventListener("click", () => $("killSwitchModal").classList.add("open"));

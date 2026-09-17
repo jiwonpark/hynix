@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -6,6 +7,22 @@ from backend.binance_client import BinanceFuturesClient
 
 
 class BinanceSpotOverviewTests(unittest.IsolatedAsyncioTestCase):
+    async def test_futures_overview_coalesces_concurrent_callers_and_copies_cache(self):
+        client = BinanceFuturesClient(api_key="key", api_secret="secret")
+
+        async def fetch_once():
+            await asyncio.sleep(0)
+            return {"authenticated": True, "summary": {"total_equity_usd": 499.0}, "positions": []}
+
+        client._fetch_detailed_account_overview = AsyncMock(side_effect=fetch_once)
+        results = await asyncio.gather(*(client.get_detailed_account_overview() for _ in range(6)))
+
+        self.assertEqual(client._fetch_detailed_account_overview.await_count, 1)
+        results[0]["summary"]["total_equity_usd"] = 0
+        cached = await client.get_detailed_account_overview()
+        self.assertEqual(cached["summary"]["total_equity_usd"], 499.0)
+        self.assertEqual(client._fetch_detailed_account_overview.await_count, 1)
+
     async def test_spot_overview_reports_usdt_and_stablecoins(self):
         client = BinanceFuturesClient(api_key="key", api_secret="secret")
         client.request = AsyncMock(return_value={

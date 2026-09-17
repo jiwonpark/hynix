@@ -2,6 +2,8 @@ import time
 import hmac
 import hashlib
 import urllib.parse
+import asyncio
+import copy
 from typing import Dict, Any, List, Optional
 import aiohttp
 from .config import config
@@ -12,6 +14,10 @@ class BinanceFuturesClient:
         self.api_secret = api_secret or config.BINANCE_API_SECRET
         self.base_url = base_url or config.BASE_URL
         self._session: Optional[aiohttp.ClientSession] = None
+        self._overview_task: Optional[asyncio.Task] = None
+        self._overview_cache: Optional[Dict[str, Any]] = None
+        self._overview_cache_time = 0.0
+        self._overview_cache_ttl = 2.5
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -169,6 +175,26 @@ class BinanceFuturesClient:
         return await self.request("POST", "/fapi/v1/order", params, signed=True)
 
     async def get_detailed_account_overview(self) -> Dict[str, Any]:
+        """Return one shared, briefly cached account snapshot to all callers."""
+        now = time.monotonic()
+        if (self._overview_cache is not None
+                and now - self._overview_cache_time < self._overview_cache_ttl):
+            return copy.deepcopy(self._overview_cache)
+
+        task = self._overview_task
+        if task is None or task.done():
+            task = asyncio.create_task(self._fetch_detailed_account_overview())
+            self._overview_task = task
+        try:
+            result = await asyncio.shield(task)
+            self._overview_cache = result
+            self._overview_cache_time = time.monotonic()
+            return copy.deepcopy(result)
+        finally:
+            if task.done() and self._overview_task is task:
+                self._overview_task = None
+
+    async def _fetch_detailed_account_overview(self) -> Dict[str, Any]:
         """
         Fetch and synthesize all account balances, margin stats, and open positions
         into a clean, structured payload for UI & execution monitoring.
