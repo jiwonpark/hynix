@@ -1594,6 +1594,158 @@
       to { transform: translateY(0); opacity: 1; }
     }
 
+    /* Hedge-Worthy Pairs Explorer Styles */
+    .pairsFilterGroup {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .pairFilterBtn {
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .pairFilterBtn:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+    .pairFilterBtn.active {
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #0284c7;
+      box-shadow: 0 1px 4px rgba(2, 132, 199, 0.25);
+    }
+    .pairsKpiGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .pairKpiCard {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+    .pairKpiLabel {
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .pairKpiValue {
+      font-size: 20px;
+      font-weight: 900;
+      color: #0f172a;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .pairKpiSub {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .pairsTable {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    .pairsTable th {
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 800;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      font-size: 11.5px;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    .pairsTable th:hover {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+    .pairsTable td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #f1f5f9;
+      color: #1e293b;
+      vertical-align: middle;
+    }
+    .pairsTable tr:hover td {
+      background: #f8fafc;
+    }
+    .pairsTable tr.selected td {
+      background: #f0f9ff;
+    }
+    .signalBadge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .signalBadge.shortA { background: #fee2e2; color: #b91c1c; }
+    .signalBadge.longA { background: #dcfce7; color: #15803d; }
+    .signalBadge.neutral { background: #f1f5f9; color: #64748b; }
+    .signalBadge.watch { background: #fef3c7; color: #b45309; }
+    .zscoreBarWrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 110px;
+    }
+    .zscoreTrack {
+      flex: 1;
+      height: 6px;
+      background: #e2e8f0;
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+    .zscoreFill {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-radius: 3px;
+      transition: all 0.2s ease;
+    }
+    .cointBadge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-weight: 700;
+    }
+    .cointBadge.strong { background: #dcfce7; color: #166534; }
+    .cointBadge.mod { background: #fef9c3; color: #854d0e; }
+    .cointBadge.weak { background: #f1f5f9; color: #64748b; }
+    .deepDiveGrid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+    @media (max-width: 1024px) {
+      .deepDiveGrid { grid-template-columns: 1fr; }
+    }
+
     @media (max-width: 860px) {
       main { width: min(100vw - 20px, 1280px); padding-top: 18px; }
       .top, .chartHeader, .tableHead { flex-direction: column; }
@@ -1643,6 +1795,14 @@
           <small id="subNavTrading">Autonomous Bot, Active Positions & Orders</small>
         </div>
         <span id="navLivePill" class="navLivePill">BOT READY</span>
+      </button>
+      <button id="navTabPairs" class="mainNavBtn" type="button">
+        <span class="navBtnIcon">⚖️</span>
+        <div class="navBtnText">
+          <strong id="lblNavPairs">Hedge-Worthy Pairs Explorer</strong>
+          <small id="subNavPairs">Cross-Market Cointegration & Statistical Arbitrage Screener</small>
+        </div>
+        <span id="navPairsPill" class="navLivePill" style="background:#0284c7;color:#fff;">SCANNER</span>
       </button>
     </nav>
 
@@ -2762,9 +2922,260 @@
             </div>
           </div>
         </div>
+    </div><!-- End #tabContentTrading -->
+
+    <!-- ======================================================= -->
+    <!-- TAB 3: HEDGE-WORTHY PAIRS EXPLORER (CROSS-MARKET ARB)   -->
+    <!-- ======================================================= -->
+    <div id="tabContentPairs" style="display: none;">
+      <!-- Overview & Controls Section -->
+      <section class="controls" aria-label="Pairs screener controls">
+        <div class="controlSection">
+          <div class="controlSectionHeader">
+            <div>
+              <h3 id="lblPairsTitle">🌐 Cross-Market Cointegration & Statistical Arbitrage Screener</h3>
+              <span id="lblPairsSub">Screening real-time Z-score dislocations, Ornstein-Uhlenbeck mean-reversion half-lives, and risk-neutral hedge ratios across curated pairs & custom inputs</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button id="btnPairsRefresh" type="button" style="width: auto; height: 32px; padding: 0 14px; font-size: 12px; background: #0284c7; color: #fff; font-weight: 700; border-radius: 6px; cursor: pointer;">🔄 Refresh Scanner</button>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 8px;">
+            <div class="pairsFilterGroup">
+              <span style="font-size: 11.5px; font-weight: 800; color: #475569; margin-right: 4px;" id="lblSectorFilter">Universe:</span>
+              <button class="pairFilterBtn active" data-sector="all" id="btnFilterAll">All Pairs (<span id="cntAllPairs">10</span>)</button>
+              <button class="pairFilterBtn" data-sector="l1" id="btnFilterL1">L1 Macro & Beta</button>
+              <button class="pairFilterBtn" data-sector="l2" id="btnFilterL2">L2 Duopolies</button>
+              <button class="pairFilterBtn" data-sector="move" id="btnFilterMove">Move-VM Rivals</button>
+              <button class="pairFilterBtn" data-sector="defi" id="btnFilterDefi">DeFi & Infra</button>
+              <button class="pairFilterBtn" data-sector="sov" id="btnFilterSov">Store of Value</button>
+              <button class="pairFilterBtn" data-sector="dislocated" id="btnFilterDislocated" style="border-color: #f59e0b; color: #b45309;">⚡ High Dislocation (|Z| ≥ 1.5σ)</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #475569;">
+                <span id="lblPairsInterval">Candle:</span>
+                <select id="pairsInterval" style="height: 28px; padding: 0 8px; font-size: 11.5px; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1;">
+                  <option value="15m">15m</option>
+                  <option value="1h" selected>1h</option>
+                  <option value="4h">4h</option>
+                  <option value="1d">1d</option>
+                </select>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #475569;">
+                <span id="lblPairsLookback">Bars:</span>
+                <select id="pairsLookback" style="height: 28px; padding: 0 8px; font-size: 11.5px; font-weight: 700; border-radius: 5px; border: 1px solid #cbd5e1;">
+                  <option value="120">120 Bars (Fast)</option>
+                  <option value="250" selected>250 Bars (Standard)</option>
+                  <option value="500">500 Bars (Robust)</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
       </section>
 
-    </div><!-- End #tabContentTrading -->
+      <!-- Screener KPI Cards -->
+      <section class="pairsKpiGrid">
+        <div class="pairKpiCard">
+          <span class="pairKpiLabel" id="lblKpiDislocated">⚡ Active Dislocated Pairs</span>
+          <div class="pairKpiValue"><span id="valKpiDislocated">--</span> <span style="font-size: 12px; font-weight: 600; color: #64748b;">opportunities</span></div>
+          <span class="pairKpiSub" id="subKpiDislocated">Pairs with |Z-score| ≥ 1.5σ</span>
+        </div>
+        <div class="pairKpiCard">
+          <span class="pairKpiLabel" id="lblKpiTopOppo">🎯 Top Dislocation Disparity</span>
+          <div class="pairKpiValue" style="color: #0284c7;"><span id="valKpiTopOppo">--</span></div>
+          <span class="pairKpiSub" id="subKpiTopOppo">Highest mean-reversion stretch</span>
+        </div>
+        <div class="pairKpiCard">
+          <span class="pairKpiLabel" id="lblKpiStrongestCoint">🔬 Strongest Cointegration</span>
+          <div class="pairKpiValue" style="color: #16a34a;"><span id="valKpiStrongestCoint">--</span></div>
+          <span class="pairKpiSub" id="subKpiStrongestCoint">Lowest ADF stationarity p-value</span>
+        </div>
+        <div class="pairKpiCard">
+          <span class="pairKpiLabel" id="lblKpiFastestRev">⏱️ Fastest Half-Life (τ₁/₂)</span>
+          <div class="pairKpiValue" style="color: #8b5cf6;"><span id="valKpiFastestRev">--</span></div>
+          <span class="pairKpiSub" id="subKpiFastestRev">Fastest Ornstein-Uhlenbeck cycle</span>
+        </div>
+      </section>
+
+      <!-- Screener Matrix Panel -->
+      <section class="panel tablePanel" style="margin-bottom: 14px;">
+        <div class="tableHead" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); background: #f8fafc;">
+          <div>
+            <h3 style="margin: 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.02em;" id="lblMatrixTitle">📊 Hedge-Worthy Opportunity Screener Matrix</h3>
+            <span style="font-size: 11.5px; color: #64748b;" id="lblMatrixSub">Click any row or 'Analyze' button to load the full statistical arbitrage deep-dive and interactive chart below</span>
+          </div>
+          <span id="pairsScanStatus" style="font-size: 11px; font-weight: 700; color: #0284c7; background: #e0f2fe; padding: 3px 8px; border-radius: 4px;">LIVE DATA ACTIVE</span>
+        </div>
+        <div class="tableWrap" style="overflow-x: auto;">
+          <table class="pairsTable" id="tblPairsScreener">
+            <thead>
+              <tr>
+                <th onclick="pairsExplorer.sortTable('name')">Pair & Sector <span id="sort_pair_name"></span></th>
+                <th onclick="pairsExplorer.sortTable('priceA')">Leg A Price <span id="sort_pair_priceA"></span></th>
+                <th onclick="pairsExplorer.sortTable('priceB')">Leg B Price <span id="sort_pair_priceB"></span></th>
+                <th onclick="pairsExplorer.sortTable('ratio')">Ratio Spread <span id="sort_pair_ratio"></span></th>
+                <th onclick="pairsExplorer.sortTable('ratio24hChange')">24h Spread Δ <span id="sort_pair_ratio24hChange"></span></th>
+                <th onclick="pairsExplorer.sortTable('zscore')">Z-Score Dislocation <span id="sort_pair_zscore"></span></th>
+                <th onclick="pairsExplorer.sortTable('adfPVal')">Cointegration (ADF) <span id="sort_pair_adfPVal"></span></th>
+                <th onclick="pairsExplorer.sortTable('halfLife')">Half-Life (τ₁/₂) <span id="sort_pair_halfLife"></span></th>
+                <th onclick="pairsExplorer.sortTable('beta')">Hedge Beta (β) <span id="sort_pair_beta"></span></th>
+                <th onclick="pairsExplorer.sortTable('correlation')">30D Corr (r) <span id="sort_pair_correlation"></span></th>
+                <th onclick="pairsExplorer.sortTable('signal')">Signal <span id="sort_pair_signal"></span></th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyPairsScreener">
+              <!-- Dynamically populated rows -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Custom Pair Scanner Form -->
+      <section class="controlSection" style="margin-bottom: 14px; background: #ffffff;">
+        <div class="controlSectionHeader">
+          <div>
+            <h3 style="margin: 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase;" id="lblCustScanTitle">🔍 On-Demand Arbitrage Diagnostic for Custom Pair</h3>
+            <span style="font-size: 11.5px; color: #64748b;" id="lblCustScanSub">Analyze any two Binance Futures contracts to evaluate real-time cointegration, beta, Z-score, and mean-reversion speed</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 8px;">
+          <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 700; color: #475569;">
+            <span>Leg A Symbol (e.g. NEARUSDT):</span>
+            <input type="text" id="custSymbolA" value="NEARUSDT" style="height: 32px; padding: 0 10px; font-size: 12px; font-weight: 700; border: 1px solid #cbd5e1; border-radius: 6px; text-transform: uppercase; width: 140px;">
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 700; color: #475569;">
+            <span>Leg B Symbol (e.g. FTMUSDT):</span>
+            <input type="text" id="custSymbolB" value="FTMUSDT" style="height: 32px; padding: 0 10px; font-size: 12px; font-weight: 700; border: 1px solid #cbd5e1; border-radius: 6px; text-transform: uppercase; width: 140px;">
+          </label>
+          <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 700; color: #475569;">
+            <span>Pair Label (Optional):</span>
+            <input type="text" id="custPairName" value="NEAR / FTM" style="height: 32px; padding: 0 10px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 6px; width: 140px;">
+          </label>
+          <button id="btnAnalyzeCustom" type="button" style="height: 32px; padding: 0 16px; background: #0f172a; color: #ffffff; font-weight: 700; font-size: 12px; border-radius: 6px; cursor: pointer;">⚡ Run Custom Pair Scan</button>
+        </div>
+      </section>
+
+      <!-- Selected Pair Deep Dive Panel -->
+      <section class="panel" style="padding: 16px; margin-bottom: 14px; background: #ffffff;" id="secPairDeepDive">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <h2 id="deepDivePairTitle" style="margin: 0; font-size: 18px; font-weight: 900; color: #0f172a;">ETH / BTC Ratio Spread</h2>
+              <span id="deepDivePairSector" style="background: #e0f2fe; color: #0369a1; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">L1 Macro Reserve</span>
+              <span id="deepDiveSignalBadge" class="signalBadge neutral">⚪ NEUTRAL</span>
+            </div>
+            <p id="deepDivePairThesis" style="margin: 4px 0 0 0; font-size: 12px; color: #64748b;">Canonical crypto macro ratio & relative store-of-value pair.</p>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="text-align: right;">
+              <div style="font-size: 11px; font-weight: 700; color: #64748b;">CURRENT SPREAD RATIO</div>
+              <div style="font-size: 18px; font-weight: 900; color: #0f172a;" id="deepDiveCurrentRatio">--</div>
+            </div>
+            <div style="text-align: right; margin-left: 12px;">
+              <div style="font-size: 11px; font-weight: 700; color: #64748b;">CURRENT Z-SCORE</div>
+              <div style="font-size: 18px; font-weight: 900;" id="deepDiveCurrentZScore">--</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="deepDiveGrid">
+          <!-- Left: Interactive Charts (Spread + Z-Score) -->
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 12px; font-weight: 800; color: #334155;">📈 SPREAD RATIO & BOLLINGER BANDS (±1.5σ / ±2.0σ)</span>
+              <div style="display: flex; gap: 12px; font-size: 11px; font-weight: 700;">
+                <span style="color: #0284c7;">— Ratio Spread</span>
+                <span style="color: #64748b;">--- Rolling Mean</span>
+                <span style="color: #ef4444;">··· ±1.5σ Trigger</span>
+                <span style="color: #06b6d4;">··· 24h OU Forecast</span>
+              </div>
+            </div>
+            <div id="pairSpreadChartHost" style="width: 100%; height: 260px; background: #ffffff; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; position: relative;"></div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 12px; font-weight: 800; color: #334155;">⚡ Z-SCORE OSCILLATOR & ENTRY / EXIT THRESHOLDS</span>
+              <div style="display: flex; gap: 12px; font-size: 11px; font-weight: 700;">
+                <span style="color: #ef4444;">▲ Overbought (+1.5σ)</span>
+                <span style="color: #10b981;">▼ Oversold (-1.5σ)</span>
+              </div>
+            </div>
+            <div id="pairZScoreChartHost" style="width: 100%; height: 160px; background: #ffffff; border: 1px solid var(--line); border-radius: 6px; position: relative;"></div>
+          </div>
+
+          <!-- Right: Execution Blueprint & Sizing Matrix -->
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Hedge Sizing Card -->
+            <div style="background: #f8fafc; border: 1px solid var(--line); border-radius: 7px; padding: 12px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 12.5px; font-weight: 800; color: #0f172a; text-transform: uppercase;">⚖️ Risk-Neutral Position Sizing Blueprint</h4>
+              <p style="margin: 0 0 10px 0; font-size: 11px; color: #64748b;">Balanced notional amounts based on OLS Optimal Hedge Ratio <strong id="bpBetaVal">β = --</strong></p>
+              
+              <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                <thead>
+                  <tr style="border-bottom: 1px solid #cbd5e1; text-align: left; color: #475569;">
+                    <th style="padding: 4px 6px;">Capital</th>
+                    <th style="padding: 4px 6px;" id="bpColLegA">Leg A Notional</th>
+                    <th style="padding: 4px 6px;" id="bpColLegB">Leg B Notional</th>
+                    <th style="padding: 4px 6px;">Net Delta</th>
+                  </tr>
+                </thead>
+                <tbody id="bpSizingRows">
+                  <!-- Dynamically populated -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Execution Guardrails & Targets -->
+            <div style="background: #f8fafc; border: 1px solid var(--line); border-radius: 7px; padding: 12px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 12.5px; font-weight: 800; color: #0f172a; text-transform: uppercase;">🎯 Execution Triggers & Targets</h4>
+              <div style="display: flex; flex-direction: column; gap: 6px; font-size: 11.5px;">
+                <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #e2e8f0;">
+                  <span style="color: #64748b;">Short Spread Trigger:</span>
+                  <strong style="color: #b91c1c;" id="bpTriggerShort">Z > +1.50σ</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #e2e8f0;">
+                  <span style="color: #64748b;">Long Spread Trigger:</span>
+                  <strong style="color: #15803d;" id="bpTriggerLong">Z < -1.50σ</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #e2e8f0;">
+                  <span style="color: #64748b;">Take-Profit Target (Mean):</span>
+                  <strong style="color: #0284c7;" id="bpTargetTP">Z = 0.00σ</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                  <span style="color: #64748b;">Structural Divergence Stop:</span>
+                  <strong style="color: #64748b;" id="bpStopDivergence">|Z| > 3.00σ</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Historical Simulation Stats -->
+            <div style="background: #f8fafc; border: 1px solid var(--line); border-radius: 7px; padding: 12px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 12.5px; font-weight: 800; color: #0f172a; text-transform: uppercase;">📊 Empirical Mean-Reversion Backtest</h4>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11.5px;">
+                <div style="background: #fff; padding: 6px 8px; border-radius: 5px; border: 1px solid #e2e8f0;">
+                  <span style="color: #64748b; font-size: 10.5px; display: block;">Simulated Trades</span>
+                  <strong id="simTrades" style="font-size: 13px; color: #0f172a;">--</strong>
+                </div>
+                <div style="background: #fff; padding: 6px 8px; border-radius: 5px; border: 1px solid #e2e8f0;">
+                  <span style="color: #64748b; font-size: 10.5px; display: block;">Historical Win Rate</span>
+                  <strong id="simWinRate" style="font-size: 13px; color: #16a34a;">--</strong>
+                </div>
+                <div style="background: #fff; padding: 6px 8px; border-radius: 5px; border: 1px solid #e2e8f0;">
+                  <span style="color: #64748b; font-size: 10.5px; display: block;">Profit Factor</span>
+                  <strong id="simProfitFactor" style="font-size: 13px; color: #0284c7;">--</strong>
+                </div>
+                <div style="background: #fff; padding: 6px 8px; border-radius: 5px; border: 1px solid #e2e8f0;">
+                  <span style="color: #64748b; font-size: 10.5px; display: block;">Avg Hold Time</span>
+                  <strong id="simHoldTime" style="font-size: 13px; color: #64748b;">--</strong>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+    </div><!-- End #tabContentPairs -->
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">HYPERION &middot; Quantitative Trading System &middot; Dual-Leg Parity Engine</span>
@@ -7256,6 +7667,8 @@
         subNavBacktest: "Parameter Tuning & Historical Simulation",
         lblNavTrading: "Live & Paper Execution Terminal",
         subNavTrading: "Autonomous Bot, Active Positions & Orders",
+        lblNavPairs: "Hedge-Worthy Pairs Explorer",
+        subNavPairs: "Cross-Market Cointegration & Statistical Arbitrage Screener",
         btnDeployToBot: "🚀 Deploy Strategy to Trading Bot",
         badgeDeployedStrategy: "ACTIVE DEPLOYED STRATEGY",
         lblChangeInBacktest: "Change in Backtest",
@@ -7270,6 +7683,8 @@
         subNavBacktest: "알고리즘 파라미터 최적화 및 시뮬레이션",
         lblNavTrading: "실전 및 모의 매매 실행 터미널",
         subNavTrading: "자율운용 봇, 실시간 포지션 및 주문 관리",
+        lblNavPairs: "헤지 유망 페어 차익거래 스크리너",
+        subNavPairs: "교차 시장 공적분 & 통계적 차익거래 탐색기",
         btnDeployToBot: "🚀 실전 봇에 전략 배포",
         badgeDeployedStrategy: "현재 배포된 실전 봇 전략",
         lblChangeInBacktest: "백테스트에서 변경",
@@ -7980,6 +8395,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("subNavBacktest")) $("subNavBacktest").textContent = dict.subNavBacktest;
       if ($("lblNavTrading")) $("lblNavTrading").textContent = dict.lblNavTrading;
       if ($("subNavTrading")) $("subNavTrading").textContent = dict.subNavTrading;
+      if ($("lblNavPairs")) $("lblNavPairs").textContent = dict.lblNavPairs;
+      if ($("subNavPairs")) $("subNavPairs").textContent = dict.subNavPairs;
 
       // Stage 1 Trading Terminal Translations
       if ($("titleExecutionTerminal")) $("titleExecutionTerminal").textContent = dict.titleExecutionTerminal;
@@ -8302,14 +8719,18 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("langKo").addEventListener("click", () => { setLanguage("ko"); saveSettings(); });
     $("langEn").addEventListener("click", () => { setLanguage("en"); saveSettings(); });
 
-    // Primary Navigation Tab Switcher (Backtest vs Trading)
+    // Primary Navigation Tab Switcher (Backtest vs Trading vs Pairs)
     function switchMainTab(tab) {
       window.activeMainTab = tab;
       const isBacktest = tab === "backtest";
+      const isTrading = tab === "trading";
+      const isPairs = tab === "pairs";
       if ($("navTabBacktest")) $("navTabBacktest").classList.toggle("active", isBacktest);
-      if ($("navTabTrading")) $("navTabTrading").classList.toggle("active", !isBacktest);
+      if ($("navTabTrading")) $("navTabTrading").classList.toggle("active", isTrading);
+      if ($("navTabPairs")) $("navTabPairs").classList.toggle("active", isPairs);
       if ($("tabContentBacktest")) $("tabContentBacktest").style.display = isBacktest ? "block" : "none";
-      if ($("tabContentTrading")) $("tabContentTrading").style.display = !isBacktest ? "block" : "none";
+      if ($("tabContentTrading")) $("tabContentTrading").style.display = isTrading ? "block" : "none";
+      if ($("tabContentPairs")) $("tabContentPairs").style.display = isPairs ? "block" : "none";
       try {
         localStorage.setItem("skhynix_active_tab", tab);
       } catch (e) {}
@@ -8323,20 +8744,25 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const posHost = $("positionPane");
           if (posHost) window.positionChart.applyOptions({ width: posHost.clientWidth });
         }
-        if (typeof tradingEngine !== "undefined" && tradingEngine.shortTermChart && !isBacktest) {
+        if (typeof tradingEngine !== "undefined" && tradingEngine.shortTermChart && isTrading) {
           const stHost = $("shortTermSpreadChartHost");
           if (stHost) tradingEngine.shortTermChart.applyOptions({ width: stHost.clientWidth });
         }
+        if (typeof pairsExplorer !== "undefined" && isPairs) {
+          pairsExplorer.onTabActivated();
+        }
       }, 60);
     }
+    window.switchMainTab = switchMainTab;
 
     if ($("navTabBacktest")) $("navTabBacktest").addEventListener("click", () => switchMainTab("backtest"));
     if ($("navTabTrading")) $("navTabTrading").addEventListener("click", () => switchMainTab("trading"));
+    if ($("navTabPairs")) $("navTabPairs").addEventListener("click", () => switchMainTab("pairs"));
 
     // Restore saved tab on load
     try {
       const savedTab = localStorage.getItem("skhynix_active_tab");
-      if (savedTab === "trading" || savedTab === "backtest") {
+      if (savedTab === "trading" || savedTab === "backtest" || savedTab === "pairs") {
         switchMainTab(savedTab);
       }
     } catch (e) {}
@@ -10918,6 +11344,797 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       }
     };
 
+    // =========================================================
+    // HEDGE-WORTHY PAIRS ARBITRAGE & COINTEGRATION EXPLORER
+    // =========================================================
+    const PAIRS_UNIVERSE = [
+      { id: "eth_btc", sector: "l1", sectorName: "L1 Macro Reserve", name: "ETH / BTC", symbolA: "ETHUSDT", symbolB: "BTCUSDT", thesis: "Canonical crypto macro ratio & relative store-of-value pair." },
+      { id: "sol_eth", sector: "l1", sectorName: "L1 High Beta", name: "SOL / ETH", symbolA: "SOLUSDT", symbolB: "ETHUSDT", thesis: "High-beta Layer-1 rotation & execution speed spread." },
+      { id: "sui_apt", sector: "move", sectorName: "Move-VM Rivals", name: "SUI / APT", symbolA: "SUIUSDT", symbolB: "APTUSDT", thesis: "Move-language parallel execution twin duopoly." },
+      { id: "arb_op", sector: "l2", sectorName: "L2 Duopolies", name: "ARB / OP", symbolA: "ARBUSDT", symbolB: "OPUSDT", thesis: "Ethereum optimistic rollup scaling duopoly." },
+      { id: "avax_sol", sector: "l1", sectorName: "Alt-L1 Platform", name: "AVAX / SOL", symbolA: "AVAXUSDT", symbolB: "SOLUSDT", thesis: "High-throughput monolithic L1 relative valuation." },
+      { id: "link_eth", sector: "defi", sectorName: "DeFi Infra", name: "LINK / ETH", symbolA: "LINKUSDT", symbolB: "ETHUSDT", thesis: "Cross-chain oracle infrastructure benchmarked to base chain." },
+      { id: "bnb_btc", sector: "defi", sectorName: "Exchange Utility", name: "BNB / BTC", symbolA: "BNBUSDT", symbolB: "BTCUSDT", thesis: "Exchange platform cashflow vs crypto reserve asset." },
+      { id: "uni_aave", sector: "defi", sectorName: "DeFi Blue-Chip", name: "UNI / AAVE", symbolA: "UNIUSDT", symbolB: "AAVEUSDT", thesis: "Decentralized AMM exchange vs collateral lending market." },
+      { id: "paxg_btc", sector: "sov", sectorName: "Store of Value", name: "PAXG / BTC", symbolA: "PAXGUSDT", symbolB: "BTCUSDT", thesis: "Physical gold vs digital gold relative valuation hedge." },
+      { id: "skhynix_arb", sector: "l1", sectorName: "Dual-Listed ADR", name: "SK Hynix Arb", symbolA: "SKHYUSDT", symbolB: "CSOPSKHYNIX2LUSDT", ratioMultiplier: 34.0, thesis: "US OTC ADR vs Hong Kong listed 2x Leveraged Daily ETF perp." }
+    ];
+
+    const pairsExplorer = {
+      activeSector: "all",
+      selectedPairId: "eth_btc",
+      pairs: [],
+      pairsById: new Map(),
+      cachedStats: new Map(),
+      sortCol: "zscoreAbs",
+      sortAsc: false,
+      hasLoaded: false,
+      isScanning: false,
+
+      // Lightweight Charts instances
+      spreadChart: null,
+      zscoreChart: null,
+      spreadLine: null,
+      meanLine: null,
+      upper15Line: null,
+      upper20Line: null,
+      lower15Line: null,
+      lower20Line: null,
+      forecastLine: null,
+      zscoreLine: null,
+      zUpperLine: null,
+      zLowerLine: null,
+      zZeroLine: null,
+
+      init() {
+        this.pairs = PAIRS_UNIVERSE.map(p => ({
+          ...p,
+          priceA: null,
+          priceB: null,
+          ratio: null,
+          ratio24hChange: null,
+          zscore: null,
+          zscoreAbs: 0,
+          adfPVal: null,
+          halfLife: null,
+          beta: null,
+          correlation: null,
+          signal: "neutral"
+        }));
+        this.pairs.forEach(p => this.pairsById.set(p.id, p));
+
+        // Filter chips
+        document.querySelectorAll(".pairFilterBtn").forEach(btn => {
+          btn.addEventListener("click", (e) => {
+            document.querySelectorAll(".pairFilterBtn").forEach(b => b.classList.remove("active"));
+            e.currentTarget.classList.add("active");
+            this.activeSector = e.currentTarget.dataset.sector || "all";
+            this.renderTable();
+          });
+        });
+
+        // Interval & Lookback change
+        if ($("pairsInterval")) $("pairsInterval").addEventListener("change", () => this.refreshData());
+        if ($("pairsLookback")) $("pairsLookback").addEventListener("change", () => this.refreshData());
+        if ($("btnPairsRefresh")) $("btnPairsRefresh").addEventListener("click", () => this.refreshData());
+
+        // Custom Pair Scanner
+        if ($("btnAnalyzeCustom")) {
+          $("btnAnalyzeCustom").addEventListener("click", () => this.analyzeCustomPair());
+        }
+
+        this.renderTable();
+      },
+
+      onTabActivated() {
+        if (!this.hasLoaded) {
+          this.hasLoaded = true;
+          this.refreshData();
+        } else {
+          this.resizeCharts();
+        }
+      },
+
+      resizeCharts() {
+        setTimeout(() => {
+          const sHost = $("pairSpreadChartHost");
+          if (sHost && this.spreadChart) {
+            this.spreadChart.applyOptions({ width: sHost.clientWidth });
+          }
+          const zHost = $("pairZScoreChartHost");
+          if (zHost && this.zscoreChart) {
+            this.zscoreChart.applyOptions({ width: zHost.clientWidth });
+          }
+        }, 80);
+      },
+
+      async refreshData() {
+        if (this.isScanning) return;
+        this.isScanning = true;
+        if ($("pairsScanStatus")) {
+          $("pairsScanStatus").textContent = "SCANNING...";
+          $("pairsScanStatus").style.background = "#fef3c7";
+          $("pairsScanStatus").style.color = "#b45309";
+        }
+
+        try {
+          // 1. Fetch 24hr overview from backend if available
+          const origin = window.location.origin;
+          const isControlDomain = window.location.hostname.includes("jiwonova.com") || window.location.hostname.includes("localhost") || window.location.port === "8000";
+          const overviewPath = window.location.pathname.startsWith("/skhynix") ? "/skhynix/api/pairs/overview" : "/api/pairs/overview";
+          let tickerOverview = null;
+
+          if (isControlDomain) {
+            try {
+              const res = await fetch(`${origin}${overviewPath}`, { signal: AbortSignal.timeout(3000) });
+              if (res.ok) {
+                const data = await res.json();
+                if (data && Array.isArray(data.pairs)) {
+                  tickerOverview = data.pairs;
+                }
+              }
+            } catch (e) {}
+          }
+
+          // Fallback direct fetch if server endpoint is unavailable
+          if (!tickerOverview) {
+            try {
+              const res = await fetch("https://fapi.binance.com/fapi/v1/ticker/24hr", { signal: AbortSignal.timeout(3500) });
+              if (res.ok) {
+                const allTickers = await res.json();
+                const tickerMap = new Map();
+                allTickers.forEach(t => tickerMap.set(t.symbol, t));
+                tickerOverview = this.pairs.map(p => {
+                  const tA = tickerMap.get(p.symbolA) || {};
+                  const tB = tickerMap.get(p.symbolB) || {};
+                  const priceA = parseFloat(tA.lastPrice) || 0;
+                  const priceB = parseFloat(tB.lastPrice) || 0;
+                  const chgA = parseFloat(tA.priceChangePercent) || 0;
+                  const chgB = parseFloat(tB.priceChangePercent) || 0;
+                  const mult = p.ratioMultiplier || 1.0;
+                  const ratio = priceB > 0 ? (priceA / priceB) * mult : 0;
+                  return {
+                    id: p.id,
+                    priceA,
+                    priceB,
+                    ratio,
+                    ratio24hChange: chgA - chgB
+                  };
+                });
+              }
+            } catch (e) {}
+          }
+
+          // Update pairs with ticker overview
+          if (tickerOverview && Array.isArray(tickerOverview)) {
+            const overviewMap = new Map(tickerOverview.map(item => [item.id, item]));
+            this.pairs.forEach(p => {
+              const o = overviewMap.get(p.id);
+              if (o) {
+                if (o.priceA) p.priceA = o.priceA;
+                if (o.priceB) p.priceB = o.priceB;
+                if (o.ratio) p.ratio = o.ratio;
+                if (o.ratio24hChange !== undefined) p.ratio24hChange = o.ratio24hChange;
+              }
+            });
+          }
+
+          // 2. Perform deep quantitative analysis on the selected pair (and fast stats for others)
+          await this.selectPair(this.selectedPairId);
+
+          // Fast analyze 2-3 most dislocated pairs to populate matrix
+          const pairsToScan = this.pairs.filter(p => p.id !== this.selectedPairId).slice(0, 4);
+          const interval = $("pairsInterval")?.value || "1h";
+          const lookback = parseInt($("pairsLookback")?.value || "250", 10);
+
+          for (const p of pairsToScan) {
+            try {
+              const [klineA, klineB] = await Promise.all([
+                fetchKlines(p.symbolA, interval, null, lookback),
+                fetchKlines(p.symbolB, interval, null, lookback)
+              ]);
+              if (klineA.length > 20 && klineB.length > 20) {
+                const stats = this.calcPairStats(klineA, klineB, p.ratioMultiplier || 1.0, interval);
+                this.cachedStats.set(p.id, stats);
+                p.zscore = stats.zscore;
+                p.zscoreAbs = Math.abs(stats.zscore);
+                p.adfPVal = stats.adfPVal;
+                p.halfLife = stats.halfLifeHours;
+                p.beta = stats.beta;
+                p.correlation = stats.correlation;
+                p.signal = stats.signal;
+                p.ratio = stats.lastRatio;
+              }
+            } catch (e) {}
+          }
+
+          this.updateKpiSummary();
+          this.renderTable();
+
+          if ($("pairsScanStatus")) {
+            $("pairsScanStatus").textContent = "LIVE DATA ACTIVE";
+            $("pairsScanStatus").style.background = "#e0f2fe";
+            $("pairsScanStatus").style.color = "#0284c7";
+          }
+        } catch (err) {
+          console.error("Pairs refresh error:", err);
+          if ($("pairsScanStatus")) {
+            $("pairsScanStatus").textContent = "SCAN ERROR";
+            $("pairsScanStatus").style.background = "#fee2e2";
+            $("pairsScanStatus").style.color = "#b91c1c";
+          }
+        } finally {
+          this.isScanning = false;
+        }
+      },
+
+      calcPairStats(klineA, klineB, ratioMultiplier = 1.0, interval = "1h") {
+        const mapB = new Map(klineB.map(b => [b.time, b.close]));
+        const paired = [];
+
+        klineA.forEach(a => {
+          const closeB = mapB.get(a.time);
+          if (closeB !== undefined && closeB > 0 && a.close > 0) {
+            paired.push({
+              time: a.time,
+              priceA: a.close,
+              priceB: closeB,
+              ratio: (a.close / closeB) * ratioMultiplier,
+              logA: Math.log(a.close),
+              logB: Math.log(closeB)
+            });
+          }
+        });
+
+        if (paired.length < 15) {
+          return {
+            zscore: 0,
+            adfPVal: 0.5,
+            halfLifeHours: 24,
+            beta: 1.0,
+            correlation: 0.5,
+            signal: "neutral",
+            lastRatio: 1.0,
+            series: []
+          };
+        }
+
+        const N = paired.length;
+        const meanLogA = paired.reduce((s, d) => s + d.logA, 0) / N;
+        const meanLogB = paired.reduce((s, d) => s + d.logB, 0) / N;
+
+        let cov = 0;
+        let varB = 0;
+        let varA = 0;
+        for (let i = 0; i < N; i++) {
+          const da = paired[i].logA - meanLogA;
+          const db = paired[i].logB - meanLogB;
+          cov += da * db;
+          varB += db * db;
+          varA += da * da;
+        }
+
+        const beta = varB > 0 ? cov / varB : 1.0;
+        const alpha = meanLogA - beta * meanLogB;
+        const corr = (varA > 0 && varB > 0) ? cov / (Math.sqrt(varA) * Math.sqrt(varB)) : 0.5;
+
+        // Residual spread series e_t = logA - (alpha + beta * logB)
+        const residuals = [];
+        paired.forEach(d => {
+          const e = d.logA - (alpha + beta * d.logB);
+          residuals.push(e);
+          d.residual = e;
+        });
+
+        // Rolling mean & std for spread Z-score (window = 30 bars or N/3)
+        const windowSize = Math.min(30, Math.floor(N / 2));
+        const zscores = [];
+        for (let i = 0; i < N; i++) {
+          const start = Math.max(0, i - windowSize + 1);
+          const slice = residuals.slice(start, i + 1);
+          const m = slice.reduce((a, b) => a + b, 0) / slice.length;
+          const variance = slice.reduce((a, b) => a + Math.pow(b - m, 2), 0) / Math.max(1, slice.length - 1);
+          const s = Math.sqrt(variance) || 0.0001;
+          const z = (residuals[i] - m) / s;
+          zscores.push(z);
+          paired[i].zscore = z;
+          paired[i].meanRatio = paired.slice(start, i + 1).reduce((sum, item) => sum + item.ratio, 0) / (i - start + 1);
+          const ratioStd = Math.sqrt(paired.slice(start, i + 1).reduce((sum, item) => sum + Math.pow(item.ratio - paired[i].meanRatio, 2), 0) / Math.max(1, i - start)) || 0.0001;
+          paired[i].upper15 = paired[i].meanRatio + 1.5 * ratioStd;
+          paired[i].upper20 = paired[i].meanRatio + 2.0 * ratioStd;
+          paired[i].lower15 = paired[i].meanRatio - 1.5 * ratioStd;
+          paired[i].lower20 = paired[i].meanRatio - 2.0 * ratioStd;
+        }
+
+        const latestZ = zscores[zscores.length - 1];
+
+        // Augmented Dickey-Fuller AR(1) Test on Residuals: Δe_t = γ * e_{t-1} + u_t
+        let sum_e_prev_sq = 0;
+        let sum_e_prev_delta = 0;
+        for (let i = 1; i < N; i++) {
+          const delta = residuals[i] - residuals[i - 1];
+          const prev = residuals[i - 1];
+          sum_e_prev_sq += prev * prev;
+          sum_e_prev_delta += prev * delta;
+        }
+
+        let gamma = sum_e_prev_sq > 0 ? sum_e_prev_delta / sum_e_prev_sq : 0;
+        let s2 = 0;
+        for (let i = 1; i < N; i++) {
+          const delta = residuals[i] - residuals[i - 1];
+          const fit = gamma * residuals[i - 1];
+          s2 += Math.pow(delta - fit, 2);
+        }
+        s2 = s2 / Math.max(1, N - 2);
+        const seGamma = Math.sqrt(s2 / Math.max(1e-9, sum_e_prev_sq));
+        const tStat = seGamma > 0 ? gamma / seGamma : 0;
+
+        // Approximate ADF p-value based on MacKinnon critical values
+        let adfPVal = 0.5;
+        if (tStat < -3.45) adfPVal = 0.008;
+        else if (tStat < -2.88) adfPVal = 0.035;
+        else if (tStat < -2.57) adfPVal = 0.085;
+        else if (tStat < -2.0) adfPVal = 0.22;
+        else adfPVal = 0.65;
+
+        // Ornstein-Uhlenbeck Mean-Reversion Half-Life
+        let halfLifeHours = 24;
+        const intervalHours = interval === "15m" ? 0.25 : (interval === "1h" ? 1 : (interval === "4h" ? 4 : 24));
+        if (gamma < 0 && gamma > -1.0) {
+          const theta = -Math.log(1 + gamma);
+          if (theta > 0) {
+            const halfLifeCandles = Math.log(2) / theta;
+            halfLifeHours = Math.max(0.5, halfLifeCandles * intervalHours);
+          }
+        }
+
+        // Forward 24h Predictive Wave Projection (OU Mean-Reversion Trajectory)
+        const lastCandle = paired[paired.length - 1];
+        const forecastCandles = Math.round(24 / intervalHours);
+        const forecastSeries = [];
+        const theta = gamma < 0 ? -Math.log(1 + gamma) : 0.08;
+        const lastE = residuals[residuals.length - 1];
+        const meanRatio = lastCandle.meanRatio;
+
+        for (let step = 1; step <= forecastCandles; step++) {
+          const fTime = lastCandle.time + step * (intervalHours * 3600 * 1000);
+          const decay = Math.exp(-theta * step);
+          // Projected residual decays exponentially back to 0
+          const projE = lastE * decay;
+          // Approximate projected ratio
+          const projRatio = meanRatio + (lastCandle.ratio - meanRatio) * decay;
+          forecastSeries.push({
+            time: Math.floor(fTime / 1000),
+            value: projRatio
+          });
+        }
+
+        // Determine Signal
+        let signal = "neutral";
+        if (latestZ > 1.8) signal = "shortA";
+        else if (latestZ < -1.8) signal = "longA";
+        else if (Math.abs(latestZ) >= 1.2) signal = "watch";
+
+        // Simple Mean-Reversion Backtest on Historical Lookback
+        let trades = 0;
+        let wins = 0;
+        let grossProfit = 0;
+        let grossLoss = 0;
+        let inTrade = false;
+        let tradeType = null;
+        let entryRatio = 0;
+        let entryIndex = 0;
+        let totalHoldBars = 0;
+
+        for (let i = 1; i < N; i++) {
+          const z = zscores[i];
+          const r = paired[i].ratio;
+
+          if (!inTrade) {
+            if (z >= 1.5) {
+              inTrade = true;
+              tradeType = "shortA";
+              entryRatio = r;
+              entryIndex = i;
+            } else if (z <= -1.5) {
+              inTrade = true;
+              tradeType = "longA";
+              entryRatio = r;
+              entryIndex = i;
+            }
+          } else {
+            // Exit condition: mean cross (z near 0) or stop divergence (|z| > 3.0)
+            const hold = i - entryIndex;
+            if ((tradeType === "shortA" && z <= 0.1) || (tradeType === "longA" && z >= -0.1) || Math.abs(z) >= 3.0 || i === N - 1) {
+              trades++;
+              totalHoldBars += hold;
+              const pnlPct = tradeType === "shortA" ? ((entryRatio - r) / entryRatio) * 100 : ((r - entryRatio) / entryRatio) * 100;
+              if (pnlPct > 0) {
+                wins++;
+                grossProfit += pnlPct;
+              } else {
+                grossLoss += Math.abs(pnlPct);
+              }
+              inTrade = false;
+            }
+          }
+        }
+
+        const winRate = trades > 0 ? (wins / trades) * 100 : 0;
+        const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 3.5 : 1.0);
+        const avgHoldTime = trades > 0 ? (totalHoldBars / trades) * intervalHours : 0;
+
+        return {
+          zscore: latestZ,
+          adfPVal,
+          halfLifeHours,
+          beta,
+          correlation: corr,
+          signal,
+          lastRatio: lastCandle.ratio,
+          paired,
+          forecastSeries,
+          backtest: {
+            trades,
+            winRate,
+            profitFactor,
+            avgHoldTime
+          }
+        };
+      },
+
+      async selectPair(pairId, customConfig = null) {
+        this.selectedPairId = pairId;
+        const pair = customConfig || this.pairsById.get(pairId) || this.pairs[0];
+        const interval = $("pairsInterval")?.value || "1h";
+        const lookback = parseInt($("pairsLookback")?.value || "250", 10);
+
+        // Fetch klines for Leg A and Leg B
+        try {
+          const [klineA, klineB] = await Promise.all([
+            fetchKlines(pair.symbolA, interval, null, lookback),
+            fetchKlines(pair.symbolB, interval, null, lookback)
+          ]);
+
+          if (klineA.length < 10 || klineB.length < 10) {
+            showToast(`Insufficient data for ${pair.name}`, "error");
+            return;
+          }
+
+          const stats = this.calcPairStats(klineA, klineB, pair.ratioMultiplier || 1.0, interval);
+          this.cachedStats.set(pairId, stats);
+
+          // Update pair object
+          pair.priceA = klineA[klineA.length - 1].close;
+          pair.priceB = klineB[klineB.length - 1].close;
+          pair.ratio = stats.lastRatio;
+          pair.zscore = stats.zscore;
+          pair.zscoreAbs = Math.abs(stats.zscore);
+          pair.adfPVal = stats.adfPVal;
+          pair.halfLife = stats.halfLifeHours;
+          pair.beta = stats.beta;
+          pair.correlation = stats.correlation;
+          pair.signal = stats.signal;
+
+          // Render Deep Dive Panel
+          this.renderDeepDive(pair, stats);
+          this.renderTable();
+          this.updateKpiSummary();
+        } catch (err) {
+          console.error(`Error analyzing pair ${pair.name}:`, err);
+          showToast(`Error analyzing pair: ${err.message}`, "error");
+        }
+      },
+
+      renderDeepDive(pair, stats) {
+        if ($("deepDivePairTitle")) $("deepDivePairTitle").textContent = `${pair.name} (${pair.symbolA} / ${pair.symbolB})`;
+        if ($("deepDivePairSector")) $("deepDivePairSector").textContent = pair.sectorName || pair.sector;
+        if ($("deepDivePairThesis")) $("deepDivePairThesis").textContent = pair.thesis || "Quantitative cointegration & statistical arbitrage opportunity.";
+        if ($("deepDiveCurrentRatio")) $("deepDiveCurrentRatio").textContent = this.formatPrice(stats.lastRatio);
+
+        const zEl = $("deepDiveCurrentZScore");
+        if (zEl) {
+          const z = stats.zscore;
+          const sign = z >= 0 ? "+" : "";
+          zEl.textContent = `${sign}${z.toFixed(2)}σ`;
+          zEl.style.color = z > 1.5 ? "#b91c1c" : (z < -1.5 ? "#15803d" : "#0f172a");
+        }
+
+        const badgeEl = $("deepDiveSignalBadge");
+        if (badgeEl) {
+          badgeEl.className = "signalBadge";
+          if (stats.signal === "shortA") {
+            badgeEl.classList.add("shortA");
+            badgeEl.textContent = `🔴 SHORT ${pair.symbolA} / LONG ${pair.symbolB} (Overvalued)`;
+          } else if (stats.signal === "longA") {
+            badgeEl.classList.add("longA");
+            badgeEl.textContent = `🟢 LONG ${pair.symbolA} / SHORT ${pair.symbolB} (Undervalued)`;
+          } else if (stats.signal === "watch") {
+            badgeEl.classList.add("watch");
+            badgeEl.textContent = `🟡 WATCH ZONE (${stats.zscore.toFixed(1)}σ)`;
+          } else {
+            badgeEl.classList.add("neutral");
+            badgeEl.textContent = `⚪ NEUTRAL / BALANCED (${stats.zscore.toFixed(1)}σ)`;
+          }
+        }
+
+        // Render Sizing Blueprint
+        if ($("bpBetaVal")) $("bpBetaVal").textContent = `β = ${stats.beta.toFixed(3)}`;
+        if ($("bpColLegA")) $("bpColLegA").textContent = `${pair.symbolA} Notional`;
+        if ($("bpColLegB")) $("bpColLegB").textContent = `${pair.symbolB} Notional`;
+
+        const sizingTbody = $("bpSizingRows");
+        if (sizingTbody) {
+          const capitals = [1000, 5000, 10000];
+          const rowsHtml = capitals.map(cap => {
+            const legANot = cap / (1 + stats.beta);
+            const legBNot = cap - legANot;
+            const delta = Math.abs(legANot * stats.beta - legBNot);
+            return `
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 5px 6px; font-weight: 800; color: #0f172a;">$${cap.toLocaleString()}</td>
+                <td style="padding: 5px 6px; color: #0284c7; font-weight: 700;">$${legANot.toFixed(2)}</td>
+                <td style="padding: 5px 6px; color: #7c3aed; font-weight: 700;">$${legBNot.toFixed(2)}</td>
+                <td style="padding: 5px 6px; color: #16a34a; font-weight: 700;">&lt; $${delta.toFixed(2)} (Delta Neutral)</td>
+              </tr>
+            `;
+          }).join("");
+          sizingTbody.innerHTML = rowsHtml;
+        }
+
+        // Render Execution Guardrails
+        const lastCandle = stats.paired[stats.paired.length - 1];
+        if ($("bpTriggerShort")) $("bpTriggerShort").textContent = `Z > +1.50σ (Ratio ≥ ${this.formatPrice(lastCandle.upper15)})`;
+        if ($("bpTriggerLong")) $("bpTriggerLong").textContent = `Z < -1.50σ (Ratio ≤ ${this.formatPrice(lastCandle.lower15)})`;
+        if ($("bpTargetTP")) $("bpTargetTP").textContent = `Z = 0.00σ (Ratio: ${this.formatPrice(lastCandle.meanRatio)})`;
+        if ($("bpStopDivergence")) $("bpStopDivergence").textContent = `|Z| > 3.00σ (Extreme Tail Event)`;
+
+        // Render Backtest Stats
+        if (stats.backtest) {
+          if ($("simTrades")) $("simTrades").textContent = `${stats.backtest.trades} round-trips`;
+          if ($("simWinRate")) $("simWinRate").textContent = `${stats.backtest.winRate.toFixed(1)}%`;
+          if ($("simProfitFactor")) $("simProfitFactor").textContent = `${stats.backtest.profitFactor.toFixed(2)}x`;
+          if ($("simHoldTime")) $("simHoldTime").textContent = `${stats.backtest.avgHoldTime.toFixed(1)} hrs`;
+        }
+
+        // Render Interactive Lightweight Charts
+        this.renderCharts(stats);
+      },
+
+      renderCharts(stats) {
+        if (typeof LightweightCharts === "undefined") return;
+        const spreadHost = $("pairSpreadChartHost");
+        const zHost = $("pairZScoreChartHost");
+        if (!spreadHost || !zHost) return;
+
+        const paired = stats.paired;
+        if (!paired || paired.length === 0) return;
+
+        // Initialize or clean Spread Chart
+        if (!this.spreadChart) {
+          this.spreadChart = LightweightCharts.createChart(spreadHost, {
+            height: 260,
+            layout: { background: { color: "#ffffff" }, textColor: "#475569" },
+            grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
+            rightPriceScale: { borderVisible: false, autoScale: true },
+            timeScale: { visible: true, borderVisible: false, secondsVisible: false }
+          });
+
+          this.spreadLine = this.spreadChart.addLineSeries({ color: "#0284c7", lineWidth: 2, title: "Spread Ratio" });
+          this.meanLine = this.spreadChart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: 2, title: "Mean" });
+          this.upper15Line = this.spreadChart.addLineSeries({ color: "#ef4444", lineWidth: 1, lineStyle: 1, title: "+1.5σ" });
+          this.lower15Line = this.spreadChart.addLineSeries({ color: "#10b981", lineWidth: 1, lineStyle: 1, title: "-1.5σ" });
+          this.forecastLine = this.spreadChart.addLineSeries({ color: "#06b6d4", lineWidth: 2, lineStyle: 3, title: "24h OU Forecast" });
+        }
+
+        // Initialize or clean Z-Score Chart
+        if (!this.zscoreChart) {
+          this.zscoreChart = LightweightCharts.createChart(zHost, {
+            height: 160,
+            layout: { background: { color: "#ffffff" }, textColor: "#475569" },
+            grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
+            rightPriceScale: { borderVisible: false, autoScale: true },
+            timeScale: { visible: true, borderVisible: false, secondsVisible: false }
+          });
+
+          this.zscoreLine = this.zscoreChart.addLineSeries({ color: "#0f172a", lineWidth: 2, title: "Z-Score" });
+          this.zUpperLine = this.zscoreChart.addLineSeries({ color: "#ef4444", lineWidth: 1, lineStyle: 2, title: "+1.5σ Threshold" });
+          this.zLowerLine = this.zscoreChart.addLineSeries({ color: "#10b981", lineWidth: 1, lineStyle: 2, title: "-1.5σ Threshold" });
+          this.zZeroLine = this.zscoreChart.addLineSeries({ color: "#94a3b8", lineWidth: 1, lineStyle: 1, title: "0 Baseline" });
+        }
+
+        // Format data with timestamps in seconds
+        const spreadData = paired.map(d => ({ time: Math.floor(d.time / 1000), value: d.ratio }));
+        const meanData = paired.map(d => ({ time: Math.floor(d.time / 1000), value: d.meanRatio }));
+        const upperData = paired.map(d => ({ time: Math.floor(d.time / 1000), value: d.upper15 }));
+        const lowerData = paired.map(d => ({ time: Math.floor(d.time / 1000), value: d.lower15 }));
+        const zData = paired.map(d => ({ time: Math.floor(d.time / 1000), value: d.zscore }));
+        const zUpperData = paired.map(d => ({ time: Math.floor(d.time / 1000), value: 1.5 }));
+        const zLowerData = paired.map(d => ({ time: Math.floor(d.time / 1000), value: -1.5 }));
+        const zZeroData = paired.map(d => ({ time: Math.floor(d.time / 1000), value: 0 }));
+
+        this.spreadLine.setData(spreadData);
+        this.meanLine.setData(meanData);
+        this.upper15Line.setData(upperData);
+        this.lower15Line.setData(lowerData);
+        if (stats.forecastSeries && stats.forecastSeries.length > 0) {
+          // Connect forecast from the last point
+          const combinedForecast = [spreadData[spreadData.length - 1], ...stats.forecastSeries];
+          this.forecastLine.setData(combinedForecast);
+        }
+
+        this.zscoreLine.setData(zData);
+        this.zUpperLine.setData(zUpperData);
+        this.zLowerLine.setData(zLowerData);
+        this.zZeroLine.setData(zZeroData);
+
+        this.resizeCharts();
+      },
+
+      async analyzeCustomPair() {
+        const symA = $("custSymbolA")?.value?.trim().toUpperCase();
+        const symB = $("custSymbolB")?.value?.trim().toUpperCase();
+        const name = $("custPairName")?.value?.trim() || `${symA} / ${symB}`;
+
+        if (!symA || !symB) {
+          showToast("Please enter both Leg A and Leg B symbols", "error");
+          return;
+        }
+
+        const customId = `custom_${symA}_${symB}`.toLowerCase();
+        const customPair = {
+          id: customId,
+          sector: "custom",
+          sectorName: "Custom Arbitrage",
+          name,
+          symbolA: symA,
+          symbolB: symB,
+          thesis: `User-defined custom pair diagnostic for ${symA} vs ${symB}.`
+        };
+
+        // Add or update in list
+        const existingIdx = this.pairs.findIndex(p => p.id === customId);
+        if (existingIdx >= 0) {
+          this.pairs[existingIdx] = customPair;
+        } else {
+          this.pairs.unshift(customPair);
+        }
+        this.pairsById.set(customId, customPair);
+
+        showToast(`Analyzing custom pair ${name}...`, "info");
+        await this.selectPair(customId, customPair);
+      },
+
+      updateKpiSummary() {
+        const dislocated = this.pairs.filter(p => p.zscoreAbs >= 1.5);
+        if ($("valKpiDislocated")) $("valKpiDislocated").textContent = String(dislocated.length);
+        if ($("cntAllPairs")) $("cntAllPairs").textContent = String(this.pairs.length);
+
+        // Top dislocation
+        const sortedByZ = [...this.pairs].filter(p => p.zscore !== null).sort((a, b) => b.zscoreAbs - a.zscoreAbs);
+        if (sortedByZ.length > 0 && $("valKpiTopOppo")) {
+          const top = sortedByZ[0];
+          $("valKpiTopOppo").textContent = `${top.name} (${top.zscore >= 0 ? "+" : ""}${top.zscore.toFixed(1)}σ)`;
+        }
+
+        // Strongest cointegration (lowest p-value)
+        const sortedByCoint = [...this.pairs].filter(p => p.adfPVal !== null).sort((a, b) => a.adfPVal - b.adfPVal);
+        if (sortedByCoint.length > 0 && $("valKpiStrongestCoint")) {
+          const best = sortedByCoint[0];
+          $("valKpiStrongestCoint").textContent = `${best.name} (p=${best.adfPVal.toFixed(3)})`;
+        }
+
+        // Fastest half-life
+        const sortedByHalfLife = [...this.pairs].filter(p => p.halfLife !== null).sort((a, b) => a.halfLife - b.halfLife);
+        if (sortedByHalfLife.length > 0 && $("valKpiFastestRev")) {
+          const fast = sortedByHalfLife[0];
+          $("valKpiFastestRev").textContent = `${fast.name} (${fast.halfLife.toFixed(1)}h)`;
+        }
+      },
+
+      sortTable(col) {
+        if (this.sortCol === col) {
+          this.sortAsc = !this.sortAsc;
+        } else {
+          this.sortCol = col;
+          this.sortAsc = false;
+        }
+        this.renderTable();
+      },
+
+      renderTable() {
+        const tbody = $("tbodyPairsScreener");
+        if (!tbody) return;
+
+        // Filter
+        let filtered = this.pairs;
+        if (this.activeSector === "dislocated") {
+          filtered = this.pairs.filter(p => p.zscoreAbs >= 1.5);
+        } else if (this.activeSector !== "all") {
+          filtered = this.pairs.filter(p => p.sector === this.activeSector);
+        }
+
+        // Sort
+        filtered.sort((a, b) => {
+          let valA = a[this.sortCol];
+          let valB = b[this.sortCol];
+          if (valA === null || valA === undefined) return 1;
+          if (valB === null || valB === undefined) return -1;
+          if (typeof valA === "string") return this.sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+          return this.sortAsc ? valA - valB : valB - valA;
+        });
+
+        const rowsHtml = filtered.map(p => {
+          const isSelected = p.id === this.selectedPairId;
+          const z = p.zscore;
+          const zText = z !== null ? `${z >= 0 ? "+" : ""}${z.toFixed(2)}σ` : "--";
+          const zColor = z > 1.5 ? "#b91c1c" : (z < -1.5 ? "#15803d" : "#475569");
+          
+          // Z-Score track bar
+          const zClamped = z !== null ? Math.max(-3, Math.min(3, z)) : 0;
+          const zPct = ((zClamped + 3) / 6) * 100;
+          const barColor = z > 1.5 ? "#ef4444" : (z < -1.5 ? "#10b981" : "#94a3b8");
+
+          // Cointegration badge
+          let cointHtml = `<span class="cointBadge weak">--</span>`;
+          if (p.adfPVal !== null) {
+            if (p.adfPVal < 0.02) cointHtml = `<span class="cointBadge strong">Strong (p=${p.adfPVal.toFixed(3)})</span>`;
+            else if (p.adfPVal < 0.05) cointHtml = `<span class="cointBadge mod">Moderate (p=${p.adfPVal.toFixed(3)})</span>`;
+            else cointHtml = `<span class="cointBadge weak">p=${p.adfPVal.toFixed(2)}</span>`;
+          }
+
+          // Signal badge
+          let signalHtml = `<span class="signalBadge neutral">⚪ Neutral</span>`;
+          if (p.signal === "shortA") signalHtml = `<span class="signalBadge shortA">🔴 Short ${p.symbolA}</span>`;
+          else if (p.signal === "longA") signalHtml = `<span class="signalBadge longA">🟢 Long ${p.symbolA}</span>`;
+          else if (p.signal === "watch") signalHtml = `<span class="signalBadge watch">🟡 Watch</span>`;
+
+          const chg = p.ratio24hChange;
+          const chgText = chg !== null ? `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%` : "--";
+          const chgColor = chg > 0 ? "#16a34a" : (chg < 0 ? "#dc2626" : "#64748b");
+
+          return `
+            <tr class="${isSelected ? 'selected' : ''}" onclick="pairsExplorer.selectPair('${p.id}')" style="cursor: pointer;">
+              <td>
+                <strong style="color: #0f172a; font-size: 13px;">${p.name}</strong>
+                <span style="display: block; font-size: 10.5px; color: #64748b;">${p.sectorName || p.sector}</span>
+              </td>
+              <td>${p.priceA ? '$' + this.formatPrice(p.priceA) : '--'}</td>
+              <td>${p.priceB ? '$' + this.formatPrice(p.priceB) : '--'}</td>
+              <td style="font-weight: 700; color: #0f172a;">${p.ratio ? this.formatPrice(p.ratio) : '--'}</td>
+              <td style="font-weight: 700; color: ${chgColor};">${chgText}</td>
+              <td>
+                <div class="zscoreBarWrap">
+                  <span style="font-weight: 800; color: ${zColor}; font-size: 12px; width: 44px;">${zText}</span>
+                  <div class="zscoreTrack">
+                    <div class="zscoreFill" style="left: ${Math.min(50, zPct)}%; width: ${Math.abs(zPct - 50)}%; background: ${barColor};"></div>
+                  </div>
+                </div>
+              </td>
+              <td>${cointHtml}</td>
+              <td style="font-weight: 700; color: #475569;">${p.halfLife ? p.halfLife.toFixed(1) + 'h' : '--'}</td>
+              <td style="color: #475569;">${p.beta ? p.beta.toFixed(2) : '--'}</td>
+              <td style="color: #475569;">${p.correlation ? p.correlation.toFixed(2) : '--'}</td>
+              <td>${signalHtml}</td>
+              <td style="text-align: right;">
+                <button type="button" onclick="event.stopPropagation(); pairsExplorer.selectPair('${p.id}')" style="height: 26px; padding: 0 10px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #0284c7; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer;">Analyze ➔</button>
+              </td>
+            </tr>
+          `;
+        }).join("");
+
+        tbody.innerHTML = rowsHtml || `<tr><td colspan="12" style="text-align: center; padding: 24px; color: #94a3b8;">No pairs matching current filter.</td></tr>`;
+      },
+
+      formatPrice(val) {
+        if (val === null || val === undefined || isNaN(val)) return "--";
+        if (val >= 1000) return val.toFixed(2);
+        if (val >= 10) return val.toFixed(3);
+        if (val >= 0.01) return val.toFixed(4);
+        return val.toFixed(6);
+      }
+    };
+
     function showToast(msg, type = "info") {
       const container = $("toastContainer");
       if (!container) return;
@@ -10933,6 +12150,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
     loadSettings();
     tradingEngine.init();
+    pairsExplorer.init();
     refresh();
   </script>
 </body>

@@ -170,6 +170,69 @@ async def get_klines(symbol: str, interval: str = "15m", limit: int = 1000, endT
         logger.error(f"Error fetching klines for {symbol}: {e}")
         return []
 
+_PAIRS_CACHE: Dict[str, Any] = {
+    "timestamp": 0,
+    "data": None
+}
+
+CURATED_HEDGE_PAIRS: List[Dict[str, Any]] = [
+    {"id": "eth_btc", "sector": "L1 Macro", "name": "ETH / BTC Ratio", "symbolA": "ETHUSDT", "symbolB": "BTCUSDT", "thesis": "Canonical crypto macro ratio & relative store-of-value."},
+    {"id": "sol_eth", "sector": "L1 High Beta", "name": "SOL / ETH Spread", "symbolA": "SOLUSDT", "symbolB": "ETHUSDT", "thesis": "High-beta Layer-1 rotation & smart-contract execution speed spread."},
+    {"id": "sui_apt", "sector": "Move-VM Rivals", "name": "SUI / APT Spread", "symbolA": "SUIUSDT", "symbolB": "APTUSDT", "thesis": "Move-language high-throughput rival duopoly from Diem pedigree."},
+    {"id": "arb_op", "sector": "L2 Duopolies", "name": "ARB / OP Spread", "symbolA": "ARBUSDT", "symbolB": "OPUSDT", "thesis": "Ethereum optimistic rollup scaling duopoly."},
+    {"id": "avax_sol", "sector": "Alt-L1 Platform", "name": "AVAX / SOL Spread", "symbolA": "AVAXUSDT", "symbolB": "SOLUSDT", "thesis": "High-throughput monolithic L1 relative valuation."},
+    {"id": "link_eth", "sector": "DeFi Infra", "name": "LINK / ETH Ratio", "symbolA": "LINKUSDT", "symbolB": "ETHUSDT", "thesis": "Cross-chain oracle infrastructure benchmarked to base chain."},
+    {"id": "bnb_btc", "sector": "Exchange Utility", "name": "BNB / BTC Ratio", "symbolA": "BNBUSDT", "symbolB": "BTCUSDT", "thesis": "Exchange platform token cashflow vs crypto reserve asset."},
+    {"id": "uni_aave", "sector": "DeFi Blue-Chip", "name": "UNI / AAVE Spread", "symbolA": "UNIUSDT", "symbolB": "AAVEUSDT", "thesis": "Decentralized AMM exchange vs collateral lending market."},
+    {"id": "paxg_btc", "sector": "Store of Value", "name": "PAXG / BTC Ratio", "symbolA": "PAXGUSDT", "symbolB": "BTCUSDT", "thesis": "Physical gold vs digital gold relative valuation hedge."}
+]
+
+@app.get("/api/pairs/overview")
+async def get_pairs_overview() -> Dict[str, Any]:
+    """Provides fast snapshot of prices, 24h changes, and ratios for curated hedge-worthy pairs."""
+    global _PAIRS_CACHE
+    now = time.time()
+    if _PAIRS_CACHE["data"] and (now - _PAIRS_CACHE["timestamp"]) < 15:
+        return _PAIRS_CACHE["data"]
+
+    try:
+        tickers = await binance_client.request("GET", "/fapi/v1/ticker/24hr")
+        if not isinstance(tickers, list):
+            tickers = []
+    except Exception as e:
+        logger.warning(f"Failed to fetch 24hr tickers for pairs overview: {e}")
+        tickers = []
+
+    ticker_map = {t["symbol"]: t for t in tickers if isinstance(t, dict) and "symbol" in t}
+    results = []
+    for pair in CURATED_HEDGE_PAIRS:
+        tA = ticker_map.get(pair["symbolA"], {})
+        tB = ticker_map.get(pair["symbolB"], {})
+        pA = float(tA.get("lastPrice", 0) or 0)
+        pB = float(tB.get("lastPrice", 0) or 0)
+        chgA = float(tA.get("priceChangePercent", 0) or 0)
+        chgB = float(tB.get("priceChangePercent", 0) or 0)
+        ratio = (pA / pB) if pB > 0 else 0
+        ratio_24h_chg = (chgA - chgB)
+        results.append({
+            **pair,
+            "priceA": pA,
+            "priceB": pB,
+            "changeA": chgA,
+            "changeB": chgB,
+            "ratio": ratio,
+            "ratio24hChange": ratio_24h_chg
+        })
+
+    response = {
+        "status": "ok",
+        "timestamp": int(now * 1000),
+        "pairs": results
+    }
+    _PAIRS_CACHE = {"timestamp": now, "data": response}
+    return response
+
+
 @app.get("/api/health")
 async def health_check() -> Dict[str, Any]:
     ping_ok = await binance_client.ping()
