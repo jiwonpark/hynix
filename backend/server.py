@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import logging
 import math
@@ -373,7 +374,35 @@ def exit_ma_alignment(
     return result
 
 
+_hedged_status_task: Optional[asyncio.Task] = None
+_hedged_status_cache: Optional[Dict[str, Any]] = None
+_hedged_status_cache_time = 0.0
+HEDGED_STATUS_CACHE_TTL = 2.5
+
+
 @app.get("/api/trade/hedged_status")
+async def get_hedged_status_endpoint() -> Dict[str, Any]:
+    """Coalesce browser polls while keeping execution paths on fresh status reads."""
+    global _hedged_status_task, _hedged_status_cache, _hedged_status_cache_time
+    now = time.monotonic()
+    if (_hedged_status_cache is not None
+            and now - _hedged_status_cache_time < HEDGED_STATUS_CACHE_TTL):
+        return copy.deepcopy(_hedged_status_cache)
+
+    task = _hedged_status_task
+    if task is None or task.done():
+        task = asyncio.create_task(get_hedged_status())
+        _hedged_status_task = task
+    try:
+        result = await asyncio.shield(task)
+        _hedged_status_cache = result
+        _hedged_status_cache_time = time.monotonic()
+        return copy.deepcopy(result)
+    finally:
+        if task.done() and _hedged_status_task is task:
+            _hedged_status_task = None
+
+
 async def get_hedged_status() -> Dict[str, Any]:
     """Calculates real-time live metrics for the hedged SK Hynix arbitrage position."""
     try:

@@ -33,6 +33,28 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.bars_patch.start()
         self.addCleanup(self.bars_patch.stop)
 
+    async def test_public_hedged_status_coalesces_concurrent_polls(self):
+        server._hedged_status_task = None
+        server._hedged_status_cache = None
+        server._hedged_status_cache_time = 0.0
+
+        async def compute_once():
+            await asyncio.sleep(0)
+            return {"authenticated": True, "tranches_active": 3}
+
+        with patch.object(server, "get_hedged_status", AsyncMock(side_effect=compute_once)) as compute:
+            results = await asyncio.gather(
+                *(server.get_hedged_status_endpoint() for _ in range(6)))
+            self.assertEqual(compute.await_count, 1)
+            results[0]["tranches_active"] = 0
+            cached = await server.get_hedged_status_endpoint()
+            self.assertEqual(cached["tranches_active"], 3)
+            self.assertEqual(compute.await_count, 1)
+
+        server._hedged_status_task = None
+        server._hedged_status_cache = None
+        server._hedged_status_cache_time = 0.0
+
     async def test_failed_second_leg_records_fill_and_blocks_retry(self):
         self.client.create_order.side_effect = [
             {'status': 'FILLED', 'executedQty': '0.08', 'orderId': 42}, RuntimeError('ETF rejected')]
