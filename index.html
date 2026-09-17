@@ -9662,7 +9662,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   binanceBadge.textContent = srcName;
                   binanceBadge.className = "authBadge authActive";
                 } else {
-                  binanceBadge.textContent = "NO BINANCE KEY";
+                  binanceBadge.textContent = bDetails.status === "unavailable" ? "BINANCE: DATA UNAVAILABLE" : "NO BINANCE KEY";
+                  binanceBadge.title = bDetails.error || "";
                   binanceBadge.className = "authBadge authWarn";
                 }
               }
@@ -9686,7 +9687,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               if (statsLbl) statsLbl.textContent = `${posCount} Pos • ${bAssetsCount} Bin • ${uAssetsCount} Upbit`;
 
               // Sync Binance equity & balances
-              if (bDetails.summary) {
+              if (bAuth && bDetails.summary) {
                 this.state.equity = bDetails.summary.total_equity_usd || 0.0;
                 this.state.availableMargin = bDetails.summary.available_margin_usd || 0.0;
                 this.state.unrealizedPnl = bDetails.summary.total_unrealized_pnl_usd || 0.0;
@@ -9702,8 +9703,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 this.state.upbitCashKrw = uDetails.summary.cash_krw || 0.0;
               }
 
-              this.state.backendPositions = bDetails.positions || [];
-              this.state.backendAssets = bDetails.assets || [];
+              if (bAuth) {
+                this.state.backendPositions = bDetails.positions || [];
+                this.state.backendAssets = bDetails.assets || [];
+              }
               this.state.upbitAssets = uDetails.assets || [];
 
               this.renderAssetsTable(this.state.backendAssets);
@@ -9832,14 +9835,25 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               this.renderHedgedController(data);
               this.renderPositionsAndLogs();
               this.scheduleDynamicBacktest();
-              break;
+              return;
             }
           } catch (e) {}
         }
+        this.state.hedgedStatus = {authenticated: false, status: "unavailable", error: "Status request failed"};
+        this.renderHedgedController(this.state.hedgedStatus);
       },
 
       renderHedgedController(data) {
-        if (!data || !data.authenticated) return;
+        if (!data || !data.authenticated) {
+          if ($("lblHedgedSyncBadge")) $("lblHedgedSyncBadge").textContent = "DATA UNAVAILABLE · displayed values are from the last successful update";
+          for (const id of ["btnStepTranche", "btnReduceTranche"]) {
+            if ($(id)) $(id).disabled = true;
+          }
+          if ($("lblReduceTrancheText")) $("lblReduceTrancheText").textContent = "Waiting for fresh exchange data";
+          if ($("badgeCriteriaTP")) $("badgeCriteriaTP").textContent = "DATA UNAVAILABLE";
+          return;
+        }
+        if ($("btnStepTranche")) $("btnStepTranche").disabled = !data.auto_tranche_criteria?.can_scale_in;
         if ($("lblHedgedSyncBadge")) {
           $("lblHedgedSyncBadge").textContent = `Live Binance Futures | Sync ${formatKstTime()}`;
         }

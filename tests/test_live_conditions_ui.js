@@ -10,12 +10,12 @@ function method(name) {
 }
 const elements = {
   activePositionsBody: {}, btnReduceTranche: {style: {}}, lblReduceTrancheText: {},
-  lblStepTrancheSize: {}, valCritCycleCore: {}, macroPolicyStatus: {},
+  btnStepTranche: {}, lblHedgedSyncBadge: {}, lblStepTrancheSize: {}, valCritCycleCore: {}, macroPolicyStatus: {},
 };
-const context = vm.createContext({window: {location: {origin: 'https://test'}},
-  $: id => elements[id], AbortSignal, console});
+const context = vm.createContext({window: {location: {origin: 'https://test', pathname: '/skhynix/'}},
+  $: id => elements[id], AbortSignal, console, formatKstTime: () => 'now'});
 const engine = vm.runInContext(`({state: {positions: [], orderLog: [], conditionToggles: {}},
-  ${['isConditionEnabled', 'renderPositionsAndLogs', 'fetchHedgedStatus', 'renderHedgedController'].map(method).join('\n')}
+  ${['isConditionEnabled', 'renderPositionsAndLogs', 'fetchHedgedStatus', 'fetchHedgedStatusOnce', 'renderHedgedController'].map(method).join('\n')}
 })`, context);
 engine.renderAutoTrancheCriteria = () => {};
 engine.fetchShortTermParity = () => {};
@@ -29,7 +29,7 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
 
 (async () => {
   const data = {authenticated: true, tranches_active: 12, eligible_for_take_profit: true,
-    auto_tranche_criteria: {tranches_max: 189, can_take_profit: true,
+    auto_tranche_criteria: {tranches_max: 189, can_scale_in: true, can_take_profit: true,
       is_exit_ma_aligned: false, effective_exit_ma_aligned: true,
       target_tranche_profit: {net_pnl_usd: .1, available: true},
       condition_toggles: {exit_ma_stack_5m: false}}};
@@ -50,6 +50,16 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
   data.auto_tranche_criteria.can_take_profit = false;
   await engine.fetchHedgedStatus();
   assert.equal(elements.btnReduceTranche.disabled, true);
+
+  context.fetch = async () => ({ok: true, json: async () => ({authenticated:false,status:'unavailable'})});
+  await engine.fetchHedgedStatus();
+  assert.equal(elements.btnStepTranche.disabled, true);
+  assert.equal(elements.btnReduceTranche.disabled, true);
+  assert.match(elements.lblHedgedSyncBadge.textContent, /DATA UNAVAILABLE/);
+  context.fetch = async () => ({ok:true,json:async()=>data});
+  await engine.fetchHedgedStatus();
+  assert.equal(elements.btnStepTranche.disabled, false);
+  assert.match(elements.lblHedgedSyncBadge.textContent, /Sync/);
 
   engine.state.conditionToggles = {exit_net_profit: false, exit_ma_stack: false,
     exit_ma_stack_5m: true, exit_speculative_tranche: false};

@@ -67,6 +67,17 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.create_order.await_count, 2)
         self.assertFalse((await server.toggle_auto_tranche(True))['success'])
 
+    async def test_status_deadline_fails_closed_and_blocks_scale_in(self):
+        async def hung():
+            await asyncio.Event().wait()
+        with patch.object(server, '_compute_hedged_status', AsyncMock(side_effect=hung)), \
+             patch.object(server, 'HEDGED_STATUS_TIMEOUT', .01):
+            result = await server.get_hedged_status()
+            self.assertFalse(result['authenticated'])
+            self.assertEqual(result['status'], 'unavailable')
+            self.assertFalse((await server.step_tranche())['success'])
+        self.client.create_order.assert_not_awaited()
+
     async def test_unknown_first_leg_does_not_submit_etf_or_retry(self):
         self.client.create_order.side_effect = TimeoutError('unknown outcome')
         self.assertTrue((await server.step_tranche())['recovery_required'])
@@ -81,7 +92,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('execution_recovery', server.load_auto_tranche_state())
 
     async def test_scale_in_rejects_speculative_stack_at_capacity(self):
-        status = {'tranches_active': 10, 'auto_tranche_criteria': {'tranches_max': 10}}
+        status = {'authenticated': True, 'tranches_active': 10, 'auto_tranche_criteria': {'tranches_max': 10}}
         with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
             result = await server.step_tranche()
         self.assertFalse(result['success'])
@@ -429,7 +440,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
 
     async def test_macro_size_is_used_in_orders_and_recorded_for_restart(self):
         policy = policy_for_level(2)
-        status = {'tranches_active': 0, 'auto_tranche_criteria': {
+        status = {'authenticated': True, 'tranches_active': 0, 'auto_tranche_criteria': {
             'tranches_max': 10, 'current_spread': 140, 'macro_policy': policy}}
         self.client.create_order.side_effect = [
             {'status': 'FILLED', 'executedQty': '.12', 'orderId': 501},
@@ -448,7 +459,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
     async def test_boosted_entry_margin_is_checked_for_the_full_larger_size(self):
         self.client.get_detailed_account_overview.return_value['summary'] = {
             'total_equity_usd': 500, 'available_margin_usd': 3.0}
-        status = {'tranches_active': 0, 'auto_tranche_criteria': {
+        status = {'authenticated': True, 'tranches_active': 0, 'auto_tranche_criteria': {
             'tranches_max': 10, 'macro_policy': policy_for_level(2)}}
         with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
             result = await server.step_tranche()

@@ -8,6 +8,9 @@ from typing import Dict, Any, List, Optional
 import aiohttp
 from .config import config
 
+READ_TIMEOUT = aiohttp.ClientTimeout(total=4, connect=2, sock_read=3)
+ACCOUNT_REFRESH_TIMEOUT = 4.5
+
 class BinanceFuturesClient:
     def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None, base_url: Optional[str] = None):
         self.api_key = api_key or config.BINANCE_API_KEY
@@ -26,6 +29,9 @@ class BinanceFuturesClient:
         return self._session
 
     async def close(self):
+        if self._overview_task and not self._overview_task.done():
+            self._overview_task.cancel()
+            await asyncio.gather(self._overview_task, return_exceptions=True)
         if self._session and not self._session.closed:
             await self._session.close()
 
@@ -61,18 +67,24 @@ class BinanceFuturesClient:
             else:
                 url = f"{base_url or self.base_url}{endpoint}"
 
-        async with session.request(method, url, headers=headers) as resp:
-            text = await resp.text()
-            try:
-                import json
-                data = json.loads(text)
-            except Exception:
-                data = text
-            if resp.status != 200:
-                msg = data.get("msg", str(data)) if isinstance(data, dict) else str(data)
-                code = data.get("code", resp.status) if isinstance(data, dict) else resp.status
-                raise Exception(f"Binance API Error [{code}]: {msg}")
-            return data
+        # Only reads get the shorter deadline. Never automatically retry orders.
+        options = {"timeout": READ_TIMEOUT} if method.upper() == "GET" else {}
+        try:
+            async with session.request(method, url, headers=headers, **options) as resp:
+                text = await resp.text()
+                try:
+                    import json
+                    data = json.loads(text)
+                except Exception:
+                    data = text
+                if resp.status != 200:
+                    msg = data.get("msg", str(data)) if isinstance(data, dict) else str(data)
+                    code = data.get("code", resp.status) if isinstance(data, dict) else resp.status
+                    raise Exception(f"Binance API Error [{code}]: {msg}")
+                return data
+        except asyncio.TimeoutError:
+            # Do not include signed URLs, headers or credentials in error text.
+            raise TimeoutError(f"Binance {method.upper()} {endpoint} timed out") from None
 
     async def sign_tradfi_agreement(self) -> Any:
         """Sign TradFi-Perps agreement contract to enable stock perpetual trading."""
@@ -183,16 +195,27 @@ class BinanceFuturesClient:
 
         task = self._overview_task
         if task is None or task.done():
-            task = asyncio.create_task(self._fetch_detailed_account_overview())
+            task = asyncio.create_task(self._refresh_account_overview())
             self._overview_task = task
         try:
             result = await asyncio.shield(task)
-            self._overview_cache = result
-            self._overview_cache_time = time.monotonic()
             return copy.deepcopy(result)
         finally:
             if task.done() and self._overview_task is task:
                 self._overview_task = None
+
+    async def _refresh_account_overview(self):
+        try:
+            result = await asyncio.wait_for(self._fetch_detailed_account_overview(), ACCOUNT_REFRESH_TIMEOUT)
+        except Exception as error:
+            result = {"authenticated": False, "status": "unavailable",
+                      "error": str(error) or "Binance account refresh timed out",
+                      "summary": {}, "assets": [], "positions": []}
+        # Cache failures briefly too, so concurrent clients cannot cause a retry storm.
+        # No stale account balances or positions are returned to execution paths.
+        self._overview_cache = result
+        self._overview_cache_time = time.monotonic()
+        return result
 
     async def _fetch_detailed_account_overview(self) -> Dict[str, Any]:
         """

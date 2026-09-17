@@ -1,12 +1,68 @@
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from backend import server
 from backend.binance_client import BinanceFuturesClient
 
 
 class BinanceSpotOverviewTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_account_refresh_is_bounded_shared_and_recovers(self):
+        client = BinanceFuturesClient(api_key="key", api_secret="secret")
+        client._overview_cache = {"authenticated": True, "positions": [{"symbol": "old"}]}
+        client._overview_cache_time = -100
+        async def hung():
+            await asyncio.Event().wait()
+        client._fetch_detailed_account_overview = AsyncMock(side_effect=hung)
+        with patch('backend.binance_client.ACCOUNT_REFRESH_TIMEOUT', .01):
+            results = await asyncio.gather(*(client.get_detailed_account_overview() for _ in range(8)))
+        self.assertEqual(client._fetch_detailed_account_overview.await_count, 1)
+        self.assertTrue(all(not r['authenticated'] and r['status'] == 'unavailable' for r in results))
+        self.assertEqual(results[0]['positions'], [], 'expired balances cannot authorize trading')
+        self.assertIn('timed out', results[0]['error'])
+        await client.get_detailed_account_overview()
+        self.assertEqual(client._fetch_detailed_account_overview.await_count, 1, 'brief backoff prevents retry storms')
+        client._overview_cache_time = -100
+        client._fetch_detailed_account_overview = AsyncMock(return_value={'authenticated': True, 'positions': []})
+        self.assertTrue((await client.get_detailed_account_overview())['authenticated'])
+
+    async def test_cancelled_browser_does_not_cancel_shared_refresh(self):
+        client = BinanceFuturesClient(api_key="key", api_secret="secret")
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def fetch():
+            entered.set()
+            await release.wait()
+            return {'authenticated': True, 'positions': []}
+        client._fetch_detailed_account_overview = AsyncMock(side_effect=fetch)
+        waiter = asyncio.create_task(client.get_detailed_account_overview())
+        await entered.wait()
+        waiter.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await waiter
+        release.set()
+        await client._overview_task
+        self.assertTrue((await client.get_detailed_account_overview())['authenticated'])
+        self.assertEqual(client._fetch_detailed_account_overview.await_count, 1)
+
+    async def test_read_timeout_is_explicit_and_order_is_never_retried(self):
+        client = BinanceFuturesClient(api_key="private-key", api_secret="private-secret")
+        class TimeoutResponse:
+            async def __aenter__(self):
+                raise asyncio.TimeoutError()
+            async def __aexit__(self, *args):
+                return False
+        session = Mock()
+        session.request.return_value = TimeoutResponse()
+        client.get_session = AsyncMock(return_value=session)
+        with self.assertRaisesRegex(TimeoutError, 'Binance GET /fapi/v2/account timed out'):
+            await client.get_raw_account()
+        self.assertEqual(session.request.call_args.kwargs['timeout'].total, 4)
+        session.request.reset_mock()
+        with self.assertRaisesRegex(TimeoutError, 'Binance POST /fapi/v1/order timed out'):
+            await client.create_order('SKHYUSDT', 'SELL', .08)
+        self.assertEqual(session.request.call_count, 1)
+        self.assertNotIn('timeout', session.request.call_args.kwargs)
+
     async def test_futures_overview_coalesces_concurrent_callers_and_copies_cache(self):
         client = BinanceFuturesClient(api_key="key", api_secret="secret")
 

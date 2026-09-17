@@ -25,6 +25,7 @@ from .tranche_accounting import (
     infer_entry_pairs,
     entry_profiles,
     reconstruct_leg_stack,
+    prepare_exit_context,
 )
 from .counterfactual_trades import (
     reconcile_counterfactual_trades,
@@ -441,6 +442,7 @@ _hedged_status_task: Optional[asyncio.Task] = None
 _hedged_status_cache: Optional[Dict[str, Any]] = None
 _hedged_status_cache_time = 0.0
 HEDGED_STATUS_CACHE_TTL = 2.5
+HEDGED_STATUS_TIMEOUT = 8.0
 
 
 @app.get("/api/trade/hedged_status")
@@ -467,6 +469,16 @@ async def get_hedged_status_endpoint() -> Dict[str, Any]:
 
 
 async def get_hedged_status() -> Dict[str, Any]:
+    """Bound the full status calculation, including all upstream reads."""
+    try:
+        return await asyncio.wait_for(_compute_hedged_status(), HEDGED_STATUS_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.warning("Hedged status refresh exceeded its deadline")
+        return {"authenticated": False, "status": "unavailable",
+                "error": "Live status timed out; waiting for fresh exchange data"}
+
+
+async def _compute_hedged_status() -> Dict[str, Any]:
     """Calculates real-time live metrics for the hedged SK Hynix arbitrage position."""
     try:
         overview = await binance_client.get_detailed_account_overview()
@@ -474,7 +486,7 @@ async def get_hedged_status() -> Dict[str, Any]:
             return {
                 "authenticated": False,
                 "error": overview.get("error", "Not authenticated"),
-                "status": "unauthenticated"
+                "status": overview.get("status", "unauthenticated")
             }
 
         positions = overview.get("positions", [])
@@ -771,10 +783,12 @@ async def get_hedged_status() -> Dict[str, Any]:
             else ("INSUFFICIENT_MARGIN" if not has_scale_in_margin else None))
         )
 
+        exit_context = prepare_exit_context(executions, stock_sym, auto_state.get("entry_order_pairs", []),
+                                            orders=orders, profiles=profiles)
         for stack_index, tranche in enumerate(active_tranches_queue):
             profit = estimate_tranche_exit(
                 tranche, executions, adr_mark, stock_mark, stock_sym,
-                auto_state.get("entry_order_pairs", []), now_sec)
+                auto_state.get("entry_order_pairs", []), now_sec, context=exit_context)
             tranche["stack_index"] = stack_index
             tranche["paired_stock_order_id"] = profit.get("stock_order_id")
             tranche["pairing"] = profit.get("pairing")
@@ -807,7 +821,7 @@ async def get_hedged_status() -> Dict[str, Any]:
 
         tranche_profit = estimate_tranche_exit(
             current_target_tranche, executions, adr_mark, stock_mark, stock_sym,
-            auto_state.get("entry_order_pairs", []), now_sec)
+            auto_state.get("entry_order_pairs", []), now_sec, context=exit_context)
         eligible_for_take_profit = bool(tranche_profit["profitable"])
 
         is_out_profitable_relative_to_latest = bool(current_target_tranche and curr_spread <= out_target_spread)
@@ -1006,7 +1020,7 @@ async def get_hedged_status() -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception("Error in get_hedged_status")
-        return {"error": str(e)}
+        return {"authenticated": False, "status": "unavailable", "error": str(e) or type(e).__name__}
 
 class DynamicBacktestRequest(BaseModel):
     start_time: int = Field(ge=1577836800)
@@ -1322,6 +1336,8 @@ async def execute_scale_in() -> Dict[str, Any]:
         if state.get("execution_recovery"):
             return {"success": False, "error": "Scale-in paused: reconcile the previous order outcomes before resuming.", "recovery_required": True, "execution_recovery": state["execution_recovery"]}
         live_status = await get_hedged_status()
+        if not live_status.get("authenticated"):
+            return {"success": False, "error": "Scale-in paused: fresh account and strategy data unavailable"}
         live_tranches = int(live_status.get("tranches_active", 0))
         criteria = live_status.get("auto_tranche_criteria") or {}
         tranche_cap_raw = criteria.get("tranches_max")

@@ -43,8 +43,8 @@ def infer_entry_pairs(orders, stock_symbol):
                if ((order['symbol'] == 'SKHYUSDT' and order['side'] == 'SELL')
                    or (order['symbol'] == stock_symbol and order['side'] == 'BUY'))]
     pairs = {}
+    sizes = {p['adr_entry_qty']: p['stock_entry_qty'] for p in map(policy_for_level, range(3))}
     for index, adr in enumerate(entries):
-        sizes = {p['adr_entry_qty']: p['stock_entry_qty'] for p in map(policy_for_level, range(3))}
         expected_stock = next((stock for qty, stock in sizes.items() if abs(adr['qty']-qty) < 1e-8), None)
         if adr['symbol'] != 'SKHYUSDT' or expected_stock is None:
             continue
@@ -109,7 +109,23 @@ def reconstruct_leg_stack(orders, symbol, entry_side, entry_unit, exit_unit, ada
     return stack
 
 
-def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol, pairs, now):
+def prepare_exit_context(executions, stock_symbol, pairs, *, orders=None, profiles=None):
+    """Build history attribution once for all tranches in a single snapshot."""
+    if orders is None:
+        orders = aggregate_orders(executions)
+    if profiles is None:
+        profiles = entry_profiles(orders, stock_symbol, pairs)
+    stock_stack = reconstruct_leg_stack(orders, stock_symbol, 'BUY', 1.4, 1.2,
+                                        {p['stock_order_id'] for p in profiles.values()})
+    return {
+        'adr_entries': {o['order_id']: o for o in orders if o['symbol'] == 'SKHYUSDT' and o['side'] == 'SELL'},
+        'active_stock': {item['order']['order_id']: item for item in stock_stack},
+        'saved_pairs': {str(p['adr_order_id']): p for p in pairs},
+        'inferred_pairs': infer_entry_pairs(orders, stock_symbol),
+    }
+
+
+def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol, pairs, now, *, context=None):
     result = {'available': False, 'net_pnl_usd': None, 'profitable': False,
               'reason': 'NO_TARGET_TRANCHE', 'threshold_usd': MIN_NET_PROFIT_USD,
               'valuation': 'mark_prices_with_cost_reserves',
@@ -124,23 +140,18 @@ def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol
         return {**result, 'reason': 'UNSUPPORTED_HEDGE_SYMBOL'}
     if not all(math.isfinite(p) and p > 0 for p in (adr_mark, stock_mark)):
         return {**result, 'reason': 'MISSING_MARK_PRICES'}
-    orders = aggregate_orders(executions)
-    adr_entries = [o for o in orders if o['symbol'] == 'SKHYUSDT' and o['side'] == 'SELL']
-    adr = next((o for o in adr_entries if o['order_id'] == target['trade_id']), None)
-    # Reconstruct the hedge stack independently; an unmatched hedge exit must
-    # not cause an unrelated ETF lot to be attributed to the selected ADR lot.
-    profiles = entry_profiles(orders, stock_symbol, pairs)
-    stock_stack = reconstruct_leg_stack(orders, stock_symbol, 'BUY', 1.4, 1.2,
-                                        {p['stock_order_id'] for p in profiles.values()})
-    if not adr or not stock_stack:
+    if context is None:
+        context = prepare_exit_context(executions, stock_symbol, pairs)
+    adr = context['adr_entries'].get(target['trade_id'])
+    active_stock = context['active_stock']
+    if not adr or not active_stock:
         return {**result, 'reason': 'MISSING_ENTRY_LEG'}
-    active_stock = {item['order']['order_id']: item for item in stock_stack}
-    saved_pair = next((p for p in reversed(pairs) if str(p['adr_order_id']) == adr['order_id']), None)
+    saved_pair = context['saved_pairs'].get(adr['order_id'])
     if saved_pair:
         stock_item = active_stock.get(str(saved_pair['stock_order_id']))
         pairing = 'recorded_order_ids'
     else:
-        inferred_order_id = infer_entry_pairs(orders, stock_symbol).get(adr['order_id'])
+        inferred_order_id = context['inferred_pairs'].get(adr['order_id'])
         stock_item = active_stock.get(inferred_order_id)
         pairing = 'restored_from_account_history_sequence'
     if not stock_item:

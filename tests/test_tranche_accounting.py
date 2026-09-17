@@ -1,8 +1,24 @@
 import unittest
-from backend.tranche_accounting import estimate_tranche_exit
+from backend.tranche_accounting import estimate_tranche_exit, prepare_exit_context
 
 
 class TrancheAccountingTests(unittest.TestCase):
+    def test_many_tranches_share_one_history_reconstruction_without_changing_profit(self):
+        from unittest.mock import patch
+        from backend import tranche_accounting as accounting
+        trades = []
+        for i in range(200):
+            trades += self.entries(order=i, time=1000000+i*60000)
+        with patch.object(accounting, 'aggregate_orders', wraps=accounting.aggregate_orders) as aggregate:
+            context = prepare_exit_context(trades, 'CSOPSKHYNIX2LUSDT', [])
+            results = [estimate_tranche_exit({'trade_id': str(i), 'trim_qty': .07}, trades,
+                195, 5.7, 'CSOPSKHYNIX2LUSDT', [], 20000, context=context) for i in range(200)]
+            self.assertEqual(aggregate.call_count, 1)
+        for i in (0, 100, 199):
+            standalone = estimate_tranche_exit({'trade_id': str(i), 'trim_qty': .07}, trades,
+                195, 5.7, 'CSOPSKHYNIX2LUSDT', [], 20000)
+            self.assertEqual(results[i], standalone)
+
     def trade(self, symbol, order, side, qty, price, time, fee=.001, fill=None):
         return dict(symbol=symbol, order_id=str(order), id=str(fill if fill is not None else order),
                     side=side, qty=qty, price=price, time=time, commission=fee, commission_asset='USDT')
