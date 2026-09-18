@@ -80,5 +80,23 @@ class TestTerminalLock(unittest.TestCase):
         self.assertIn('terminalLockManager.isLocked', self.html)
         self.assertIn('terminalLockManager.init();', self.html)
 
+    def test_read_only_mode_preserves_hover_events_for_tooltips(self):
+        """Read-only disables form controls without suppressing label hover events."""
+        action_rule = re.search(
+            r'\.terminal-read-only \.terminal-action-control \{([^}]*)\}',
+            self.html,
+            re.S,
+        )
+        descendant_rule = re.search(
+            r'\.terminal-read-only \.terminal-action-control \* \{([^}]*)\}',
+            self.html,
+            re.S,
+        )
+        self.assertIsNotNone(action_rule)
+        self.assertIsNotNone(descendant_rule)
+        self.assertNotIn('pointer-events: none', action_rule.group(1))
+        self.assertNotIn('pointer-events: none', descendant_rule.group(1))
+        self.assertIn('el.disabled = locked;', self.html)
+
 if __name__ == "__main__":
     unittest.main()
