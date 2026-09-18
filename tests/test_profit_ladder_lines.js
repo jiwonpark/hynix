@@ -11,14 +11,18 @@ const method = html.slice(start, end);
 const engine = vm.runInNewContext(`({${method}})`, { Number, Array });
 
 const levels = engine.shortSpreadProfitLadder(140, 5);
-assert.equal(levels.length, 6, 'ladder should include break-even and net +1% through +5%');
+assert.equal(levels.length, 8, 'ladder should include break-even, +0.2%, +0.5%, and +1% through +5%');
 assert.equal(levels[0].title, 'B/E');
-assert.equal(levels[1].title, 'NET +1%');
-assert.equal(levels[5].title, 'NET +5%');
+assert.equal(levels[1].title, 'NET +0.2%');
+assert.equal(levels[2].title, 'NET +0.5%');
+assert.equal(levels[3].title, 'NET +1%');
+assert.equal(levels[7].title, 'NET +5%');
 assert.ok(levels[0].price < 140, 'break-even must recover estimated round-trip costs');
 assert.ok(levels[1].price < levels[0].price, 'higher short-spread profit requires more convergence');
 assert.ok(Math.abs(levels[0].price - (140 / 1.0016)) < 1e-10);
-assert.ok(Math.abs(levels[3].price - (140 / 1.0316)) < 1e-10);
+assert.ok(Math.abs(levels[1].price - (140 / 1.0036)) < 1e-10);
+assert.ok(Math.abs(levels[2].price - (140 / 1.0066)) < 1e-10);
+assert.ok(Math.abs(levels[5].price - (140 / 1.0316)) < 1e-10);
 assert.equal(engine.shortSpreadProfitLadder(0).length, 0);
 
 assert.ok(html.includes('rgba(22, 163, 74, 0.18)'), 'net-profit lines must remain visually subtle');

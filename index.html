@@ -11391,7 +11391,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // slippage + 5 bps exit fee + 3 bps exit slippage. Funding remains
         // time-dependent and therefore is intentionally not presented as fixed.
         const roundTripCostRate = 16 / 10000;
-        return Array.from({ length: maxNetProfitPct + 1 }, (_, netProfitPct) => ({
+        const netProfitTargets = [0, 0.2, 0.5, ...Array.from(
+          { length: Math.max(0, Math.floor(maxNetProfitPct)) },
+          (_, index) => index + 1
+        )].filter((target, index, values) => target <= maxNetProfitPct && values.indexOf(target) === index);
+        return netProfitTargets.map((netProfitPct) => ({
           netProfitPct,
           title: netProfitPct === 0 ? "B/E" : `NET +${netProfitPct}%`,
           price: entry / (1 + roundTripCostRate + (netProfitPct / 100))
