@@ -3781,7 +3781,273 @@
       </section>
     </div><!-- End #tabContentCompound -->
 
-    <div id="tabContentStrategyLab" style="display:none;"></div>
+    <div id="tabContentStrategyLab" style="display:none;">\n        <div class="shortTermExecutionSection" id="lab_shortTermExecutionSection">
+          <!-- Section Header -->
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 16px;">📈</span>
+                <strong style="font-size: 13.5px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;" id="lab_lblShortTermTitle">BTC/KRW Tracker & Auto-Backtest Criteria</strong>
+                <span style="font-size: 10.5px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">UPBIT STRATEGY LAB</span>
+              </div>
+              <div style="font-size: 11.5px; color: #64748b; margin-top: 2px;" id="lab_lblShortTermSubtitle">
+                Independent source fork · Upbit public candles · virtual fills only.
+              </div>
+            </div>
+
+            <!-- Controls & Live Status -->
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <div class="pillGroup" style="display: inline-flex; background: #f1f5f9; padding: 2px; border-radius: 6px;">
+                <button id="lab_btnShortInterval1m" class="btnShortInterval" type="button">1m</button>
+                <button id="lab_btnShortInterval5m" class="btnShortInterval active" type="button">5m</button>
+                <button id="lab_btnShortInterval15m" class="btnShortInterval" type="button">15m</button>
+                <button id="lab_btnShortInterval1h" class="btnShortInterval" type="button">1h</button>
+                <button id="lab_btnShortInterval4h" class="btnShortInterval" type="button">4h</button>
+                <button id="lab_btnShortInterval1d" class="btnShortInterval" type="button">1d</button>
+              </div>
+              <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a;">
+                Parity: <strong id="lab_valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Full-width chart with the live criteria grid below it. -->
+          <div class="shortTermGrid">
+            <!-- Full-Width Short-Term Lightweight Chart -->
+            <div id="lab_shortTermExecutionChartFrame"></div>
+
+            <!-- Real-Time Auto-Tranche Criteria Panel (실시간 자동 트랜치 판단 기준) -->
+            <div class="shortTermCriteriaGrid">
+              <!-- 1. Scale-in Criteria Card -->
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lab_lblCritScaleInTitle">➕ Speculative Scale-In (+0.08 SKHY / +1.40 CSOP)</span>
+                  <span id="lab_badgeCriteriaScaleIn" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #b45309;">WAITING</span>
+                </div>
+                <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="lab_txtCritScaleInDesc">
+                  Trigger: Parity <strong>≥ <span id="lab_valCritScaleInThreshold">139.42%</span></strong> (MA-24: <span id="lab_valCritMa24">139.25%</span> + 0.10%)
+                </div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
+                  <span>Current Parity: <strong id="lab_valCritCurrentSpread">139.30%</strong></span>
+                  <span>Gap to Trigger: <strong id="lab_valCritGapScaleIn" style="color: #d97706;">+0.12% pts</strong></span>
+                </div>
+                <!-- Progress bar towards scale-in -->
+                <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
+                  <div id="lab_barCritScaleInProgress" style="width: 25%; height: 100%; background: #f59e0b;"></div>
+                </div>
+
+                <!-- 7 Entry Conditions Checklist -->
+                <div class="condChecklist terminal-action-control" id="lab_entryConditionsChecklist">
+                  <div class="condRow" id="lab_rowCondEntryMaStretch">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondEntryMaStretch" checked>
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="Current spread must exceed 24-period MA by at least +0.10% points">1. MA-24 Stretch (≥ +0.10%)</span>
+                    <span class="condValue" id="lab_valCondEntryMaStretch"><strong id="lab_valCritMaStretch" style="color: #d97706;">+0.00% pts</strong></span>
+                    <span class="condBadge wait" id="lab_badgeCondEntryMaStretch">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondEntryBase">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondEntryBase" checked>
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="Current spread must exceed base entry by +0.10% points if tranches are active">2. Base Entry Spread (+0.10%)</span>
+                    <span class="condValue" id="lab_valCondEntryBase">--</span>
+                    <span class="condBadge wait" id="lab_badgeCondEntryBase">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondEntryPeak">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondEntryPeak" checked>
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="5-minute bar momentum must be exhausted (current bar ≤ prev bar or lower than local high)">3. 5m Peak Rollover Filter</span>
+                    <span class="condValue" id="lab_valCondEntryPeak"><strong id="lab_valCritPeakOut" style="color: #64748b;">WAITING</strong></span>
+                    <span class="condBadge wait" id="lab_badgeCondEntryPeak">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondEntryMaStack5m">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondEntryMaStack5m" checked>
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="5m upward trend confirmation: Price > MA7 > MA24 > MA60 required on 5m timeframe">4. 5m Bullish MA Stack (Price > MA7 > MA24 > MA60)</span>
+                    <span class="condValue" id="lab_valCondEntryMaStack5m"><strong id="lab_valCritEntryMaStack5m" style="color: #d97706;">5m WAITING</strong></span>
+                    <span class="condBadge wait" id="lab_badgeCondEntryMaStack5m">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondEntryMaStack1h">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondEntryMaStack1h" checked>
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="1h macro upward trend confirmation: Price > MA7 > MA24 > MA60 required on 1h timeframe">5. 1h Bullish MA Stack (Price > MA7 > MA24 > MA60)</span>
+                    <span class="condValue" id="lab_valCondEntryMaStack1h"><strong id="lab_valCritEntryMaStack1h" style="color: #d97706;">1h WAITING</strong></span>
+                    <span class="condBadge wait" id="lab_badgeCondEntryMaStack1h">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondEntryCapacity">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondEntryCapacity" checked disabled>
+                      <span class="toggleSlider"></span>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
+                    <span class="condLabel" title="Active speculative tranches must not exceed live equity-based capacity limit">6. Dynamic Tranche Capacity</span>
+                    <span class="condValue" id="lab_valCondEntryCapacity">-- / --</span>
+                    <span class="condBadge pass" id="lab_badgeCondEntryCapacity">PASS</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondEntryLeverage">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondEntryLeverage" checked disabled>
+                      <span class="toggleSlider"></span>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
+                    <span class="condLabel" title="Projected gross portfolio leverage after new tranche must remain ≤ 8.00x">7. Gross Leverage Cap (≤ 8.0x)</span>
+                    <span class="condValue" id="lab_valCondEntryLeverage">-- / 8.0x</span>
+                    <span class="condBadge pass" id="lab_badgeCondEntryLeverage">PASS</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondEntryMargin">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondEntryMargin" checked disabled>
+                      <span class="toggleSlider"></span>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
+                    <span class="condLabel" title="Free margin must satisfy 125% buffered requirement (min $2.50)">8. Buffered Margin Check</span>
+                    <span class="condValue" id="lab_valCondEntryMargin">-- ≥ $2.50</span>
+                    <span class="condBadge pass" id="lab_badgeCondEntryMargin">PASS</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondEntryEngine">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondEntryEngine" checked disabled>
+                      <span class="toggleSlider"></span>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
+                    <span class="condLabel" title="Auto-tranche daemon must be enabled, cooldown expired (60s), and no recovery lock">9. Worker State & Cooldown</span>
+                    <span class="condValue" id="lab_valCondEntryEngine">READY</span>
+                    <span class="condBadge pass" id="lab_badgeCondEntryEngine">READY</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. Convergence Take-Profit Criteria Card -->
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lab_lblCritTPTitle">🎯 Anti-Churn Take-Profit (0.07 SKHY / 1.20 CSOP)</span>
+                  <span id="lab_badgeCriteriaTP" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #166534;">ZERO-LOSS LOCKED</span>
+                </div>
+                <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="lab_txtCritTPDesc">
+                  Convergence ref: Parity <strong>≤ <span id="lab_valCritOutTargetSpread">139.22%</span></strong> (<span id="lab_valCritLatestInSpread">139.30%</span> - <span id="lab_valCritConvergencePts">0.08</span> pts)
+                </div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
+                  <span>Current Parity: <strong id="lab_valCritTpCurrentSpread">139.30%</strong></span>
+                  <span>Gap to Target: <strong id="lab_valCritGapTP" style="color: #0284c7;">+0.08% pts</strong></span>
+                </div>
+                <!-- Progress bar towards TP -->
+                <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
+                  <div id="lab_barCritTPProgress" style="width: 10%; height: 100%; background: #10b981;"></div>
+                </div>
+
+                <!-- 8 Exit Conditions Checklist -->
+                <div class="condChecklist terminal-action-control" id="lab_exitConditionsChecklist">
+                  <div class="condRow" id="lab_rowCondExitActive">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondExitActive" checked disabled>
+                      <span class="toggleSlider"></span>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">REQUIRED</span>
+                    <span class="condLabel" title="Must have at least 1 open speculative tranche (core accumulated inventory is permanently protected)">1. Active Speculative Tranche</span>
+                    <span class="condValue" id="lab_valCondExitActive">--</span>
+                    <span class="condBadge wait" id="lab_badgeCondExitActive">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondExitConvergence">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondExitConvergence" checked>
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="Entry spread minus the saved convergence requirement: 0.08–0.16 percentage points">2. Spread Convergence Target</span>
+                    <span class="condValue" id="lab_valCondExitConvergence">--</span>
+                    <span class="condBadge wait" id="lab_badgeCondExitConvergence">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondExitNetPnl">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondExitNetPnl" checked>
+                      <span class="toggleSlider"></span>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">BACKTEST ONLY</span>
+                    <span class="condLabel" title="Net PnL must exceed the entry’s saved $0.02–$0.04 threshold after fees, slippage and funding">3. Net Profit (entry threshold)</span>
+                    <span class="condValue" id="lab_valCondExitNetPnl"><strong id="lab_valCritCombinedPnl">—</strong></span>
+                    <span class="condBadge wait" id="lab_badgeCondExitNetPnl">LOCKED</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondExitDwell">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondExitDwell" checked>
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="Anti-churn dwell cooldown: Must hold tranche for at least 120 seconds before taking profit">4. Anti-Churn Dwell (≥ 120s)</span>
+                    <span class="condValue" id="lab_valCondExitDwell"><strong id="lab_valCritDwell" style="color: #64748b;">0s / 120s</strong></span>
+                    <span class="condBadge wait" id="lab_badgeCondExitDwell">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondExitMaStack5m">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondExitMaStack5m" checked>
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="5m downward trend confirmation: Price < MA7 < MA24 < MA60 required on 5m timeframe">5. 5m Bearish MA Stack (Price < MA7 < MA24 < MA60)</span>
+                    <span class="condValue" id="lab_valCondExitMaStack5m"><strong id="lab_valCritExitMaStack5m" style="color: #d97706;">5m WAITING</strong></span>
+                    <span class="condBadge wait" id="lab_badgeCondExitMaStack5m">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondExitMaStack1h">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondExitMaStack1h" checked>
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="1h macro downward trend confirmation: Price < MA7 < MA24 < MA60 required on 1h timeframe">6. 1h Bearish MA Stack (Price < MA7 < MA24 < MA60)</span>
+                    <span class="condValue" id="lab_valCondExitMaStack1h"><strong id="lab_valCritExitMaStack1h" style="color: #d97706;">1h WAITING</strong></span>
+                    <span class="condBadge wait" id="lab_badgeCondExitMaStack1h">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondExitBottoming">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondExitBottoming" checked>
+                      <span class="toggleSlider"></span>
+                    </label>
+                    <span class="condLabel" title="Downward cascade exhaustion: Trough rebound off low, bounce, or spread crossed below 24-period MA">7. Bottoming-Out Filter</span>
+                    <span class="condValue" id="lab_valCondExitBottoming"><strong id="lab_valCritBottomingOut" style="color: #16a34a;">TROUGH REBOUND / MA</strong></span>
+                    <span class="condBadge wait" id="lab_badgeCondExitBottoming">WAIT</span>
+                  </div>
+                  <div class="condRow" id="lab_rowCondExitPosition">
+                    <label class="toggleSwitch" title="Turn condition ON/OFF">
+                      <input type="checkbox" id="lab_chkCondExitPosition" checked disabled>
+                      <span class="toggleSlider"></span>
+                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">REQUIRED</span>
+                    <span class="condLabel" title="Open futures positions must have at least 0.07 short SKHY and 1.20 long CSOP">8. Position Sufficiency Check</span>
+                    <span class="condValue" id="lab_valCondExitPosition">--</span>
+                    <span class="condBadge pass" id="lab_badgeCondExitPosition">PASS</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. Sizing, Risk Gate & LIFO Tranche Stack Card -->
+              <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #0284c7; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <span style="font-size: 11px; font-weight: 800; color: #0369a1; text-transform: uppercase;" id="lab_lblCritGateTitle">⚙️ Inventory Ratchet &amp; Headroom</span>
+                  <span id="lab_valCritRemainingTranches" style="font-size: 10px; font-weight: 800; color: #0284c7;">3 UNITS LEFT</span>
+                </div>
+                <div style="font-size: 11px; color: #475569; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 2px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9;">
+                  <div>Scale In: <strong id="lab_valCritEntrySize">—</strong></div>
+                  <div>Trim Unit: <strong>0.07 SKHY / 1.20 CSOP</strong></div>
+                  <div>Ratchet/Cycle: <strong id="lab_valCritCycleCore" style="color: #16a34a;">—</strong></div>
+                  <div>Current Lev: <strong id="lab_valCritGrossLev">4.08x / 8.0x</strong></div>
+                  <div>Dynamic Cap: <strong id="lab_valCritGrossCap">$0.00 (8.0x)</strong></div>
+                  <div>Headroom: <strong id="lab_valCritGrossHeadroom">$0.00 free</strong></div>
+                  <div style="grid-column: span 2;">Protected Core: <strong id="lab_valCritRetainedCore" style="color: #0369a1;">0.00 SKHY / 0.00 CSOP</strong></div>
+                </div>
+
+                <!-- LIFO Tranche Stack (Newest-first exit queue) -->
+                <div style="font-size: 10px; color: #64748b; margin-top: 6px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
+                    <strong style="color: #0f172a; font-size: 10.5px;">LIFO TRANCHE STACK</strong>
+                    <span id="lab_valCritStackCount">0 unmatched · newest exits first</span>
+                  </div>
+                  <div id="lab_lifoTrancheStack" style="display: flex; flex-direction: column; gap: 5px; max-height: 240px; overflow-y: auto; padding-right: 2px;" aria-live="polite">
+                    <div style="padding: 8px; text-align: center; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 5px;">Stack empty</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+    </div>
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">HYPERION &middot; Quantitative Trading System &middot; Dual-Leg Parity Engine</span>
@@ -3836,7 +4102,7 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="strategy-execution-chart.js?v=20260918b"></script>
-  <script src="strategy-lab.js?v=20260918d"></script>
+  <script src="strategy-lab.js?v=20260918e"></script>
   <script>
     const ASSET_STRATEGIES = {
       skhynix_arb: {

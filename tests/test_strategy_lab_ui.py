@@ -20,8 +20,9 @@ class StrategyLabUiTests(unittest.TestCase):
         for control in ("chkCondEntryMaStack5m", "chkCondEntryMaStack1h", "chkCondExitMaStack5m", "chkCondExitMaStack1h"):
             self.assertIn(control, self.js)
         self.assertIn("new StrategyExecutionChartController", self.js)
-        self.assertIn('source.cloneNode(true)', self.js)
-        self.assertIn('document.getElementById("shortTermExecutionSection")', self.js)
+        self.assertNotIn('cloneNode(', self.js)
+        self.assertIn('id="lab_shortTermExecutionSection"', self.html)
+        self.assertIn('id="lab_chkCondEntryMaStack5m"', self.html)
         self.assertIn("api/strategy-lab/upbit-ma-stack", self.js)
         self.assertNotIn("fetch(`/api/strategy-lab", self.js)
         self.assertIn("NET +${target}%", self.js)

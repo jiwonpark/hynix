@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const rootId = (id) => `labFork_${id}`;
+  const rootId = (id) => `lab_${id}`;
   const el = (id) => document.getElementById(rootId(id));
   const pct = (value) => `${Number(value || 0) >= 0 ? "+" : ""}${Number(value || 0).toFixed(2)}%`;
   const krw = (value) => `₩${Math.round(Number(value || 0)).toLocaleString()}`;
@@ -15,26 +15,30 @@
     data: null,
     loaded: false,
 
-    forkOriginalSection() {
+    bindForkedSection() {
       if (this.forked) return;
-      const source = document.getElementById("shortTermExecutionSection");
-      const destination = document.getElementById("tabContentStrategyLab");
-      if (!source || !destination) return;
-      const clone = source.cloneNode(true);
-      clone.id = "strategyLabExecutionSection";
-      clone.querySelectorAll("[id]").forEach((node) => { node.id = rootId(node.id); });
-      clone.querySelectorAll("*").forEach((node) => {
-        [...node.attributes].forEach((attr) => {
-          if (attr.name.startsWith("on")) node.removeAttribute(attr.name);
-        });
+      const section = el("shortTermExecutionSection");
+      if (!section) return;
+      StrategyExecutionChartFrame.mount({
+        container: rootId("shortTermExecutionChartFrame"),
+        id: "labShortTermChart",
+        ids: {
+          action: rootId("btnRerunDynamicBacktest"), actual: rootId("legendActualTrades"), virtual: rootId("legendVirtualTrades"),
+          status: rootId("dynamicBacktestStatus"), secondaryStatus: rootId("macroPolicyStatus"),
+          host: rootId("shortTermSpreadChartHost"), legend: rootId("shortTermChartLegend"), sync: rootId("lblShortTermChartSync"),
+        },
+        title: "PRICE-SIGNAL REPLAY · UNCONSTRAINED CAPITAL",
+        action: { label: "Rerun", onClick: () => this.run() },
+        actual: { label: "Actual", enabled: false, visible: false },
+        virtual: { label: "Virtual", onToggle: () => this.toggleVirtual() },
+        status: "Loading backtest…",
+        description: "Starts flat at the beginning of loaded history · completed 5m and 1h candles · next-open execution · entry and exit fees included.",
+        secondaryStatus: "Completed 1h MA stack: waiting for data…",
+        height: 420,
+        legend: '<span style="color:#0284c7">━ BTC/KRW</span><span style="color:#b45309">— 7-MA: <strong id="lab_valShortTermMa7">--</strong></span><span style="color:#6d28d9">— 24-MA: <strong id="lab_valShortTermMa24">--</strong></span><span style="color:#0891b2">— 60-MA: <strong id="lab_valShortTermMa60">--</strong></span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Virtual</span>',
+        syncText: "Upbit public candles",
       });
-      destination.replaceChildren(clone);
       this.forked = true;
-
-      el("lblShortTermTitle").textContent = "BTC/KRW Tracker & Auto-Backtest Criteria";
-      el("lblShortTermSubtitle").textContent = "Direct fork of the execution tracker · Upbit public candles · virtual fills only.";
-      const headerBadge = el("lblShortTermTitle").nextElementSibling;
-      if (headerBadge) headerBadge.textContent = "UPBIT STRATEGY LAB";
 
       const controls = el("valShortTermCurrentParity").parentElement.parentElement;
       controls.innerHTML = `
@@ -45,22 +49,12 @@
         <label style="font-size:11px;font-weight:700;color:#475569;">Fee/side <input id="strategyLabFee" type="number" value="5" min="0" max="100" step=".5" style="width:62px;height:28px;"> bp</label>
         <div style="font-size:11.5px;font-weight:700;background:#f8fafc;border:1px solid #e2e8f0;padding:4px 10px;border-radius:6px;">BTC/KRW: <strong id="${rootId("valShortTermCurrentParity")}" style="color:#0284c7;">--</strong></div>`;
 
-      const host = el("shortTermSpreadChartHost");
-      host.replaceChildren();
-      const rerun = el("btnRerunDynamicBacktest");
-      rerun.classList.remove("terminal-action-control");
-      rerun.disabled = false;
-      rerun.addEventListener("click", () => this.run());
-      el("legendActualTrades").disabled = true;
-      el("legendActualTrades").textContent = "○ Actual";
-      el("legendVirtualTrades").addEventListener("click", () => this.toggleVirtual());
-
       const supported = new Set([
         "chkCondEntryMaStack5m", "chkCondEntryMaStack1h",
         "chkCondExitMaStack5m", "chkCondExitMaStack1h",
       ]);
-      clone.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-        const original = input.id.replace(/^labFork_/, "");
+      section.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+        const original = input.id.replace(/^lab_/, "");
         if (!supported.has(original)) {
           input.checked = false;
           input.disabled = true;
@@ -78,7 +72,7 @@
     },
 
     initChart() {
-      this.forkOriginalSection();
+      this.bindForkedSection();
       const host = el("shortTermSpreadChartHost");
       if (this.chart || !host || !window.LightweightCharts) return;
       this.chart = LightweightCharts.createChart(host, {
