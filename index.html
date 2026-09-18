@@ -902,6 +902,26 @@
       font-weight: 700;
     }
     .strategyLabCondition input { width: auto; margin: 0; accent-color: #7c3aed; }
+    .strategyLabKpis {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .strategyLabKpi {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      padding: 11px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    }
+    .strategyLabKpi span { color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+    .strategyLabKpi strong { color: #0f172a; font-size: 17px; font-variant-numeric: tabular-nums; }
+    @media (max-width: 900px) { .strategyLabKpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (max-width: 520px) { .strategyLabKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
     /* --- Stage 1 Real / Paper Trading Terminal & Execution Styles --- */
     .tradingModeSwitch {
@@ -3828,13 +3848,13 @@
           <div style="font-size:11px;color:#64748b;margin-top:8px;">Bullish: close &gt; MA7 &gt; MA24 &gt; MA60 · Bearish: close &lt; MA7 &lt; MA24 &lt; MA60</div>
         </div>
       </section>
-      <section class="pairsKpiGrid" id="strategyLabStats">
-        <div class="pairsKpiCard"><span class="pairsKpiLabel">Net Return</span><strong id="labNetReturn">--</strong></div>
-        <div class="pairsKpiCard"><span class="pairsKpiLabel">Buy & Hold</span><strong id="labBuyHold">--</strong></div>
-        <div class="pairsKpiCard"><span class="pairsKpiLabel">Max Drawdown</span><strong id="labDrawdown">--</strong></div>
-        <div class="pairsKpiCard"><span class="pairsKpiLabel">Completed Trades</span><strong id="labTrades">--</strong></div>
-        <div class="pairsKpiCard"><span class="pairsKpiLabel">Win Rate</span><strong id="labWinRate">--</strong></div>
-        <div class="pairsKpiCard"><span class="pairsKpiLabel">Ending Equity</span><strong id="labEquity">--</strong></div>
+      <section class="strategyLabKpis" id="strategyLabStats">
+        <div class="strategyLabKpi"><span>Net Return</span><strong id="labNetReturn">--</strong></div>
+        <div class="strategyLabKpi"><span>Buy & Hold</span><strong id="labBuyHold">--</strong></div>
+        <div class="strategyLabKpi"><span>Max Drawdown</span><strong id="labDrawdown">--</strong></div>
+        <div class="strategyLabKpi"><span>Completed Trades</span><strong id="labTrades">--</strong></div>
+        <div class="strategyLabKpi"><span>Win Rate</span><strong id="labWinRate">--</strong></div>
+        <div class="strategyLabKpi"><span>Ending Equity</span><strong id="labEquity">--</strong></div>
       </section>
       <section class="card" style="padding:12px;margin-top:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;">
