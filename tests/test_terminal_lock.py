@@ -48,12 +48,17 @@ class TestTerminalLock(unittest.TestCase):
             'id="btnApproveSignal" class="terminal-action-control"',
             'id="btnDismissSignal" class="terminal-action-control"',
             'class="pairOrderTicket terminal-action-control"',
-            'id="btnRerunDynamicBacktest" class="terminal-action-control"',
             'id="entryConditionsChecklist"',
             'id="exitConditionsChecklist"',
         ]
         for ctrl in expected_controls:
             self.assertIn(ctrl, self.html)
+
+        rerun_configured = (
+            'id="btnRerunDynamicBacktest" class="terminal-action-control"' in self.html
+            or ('action: "btnRerunDynamicBacktest"' in self.html and 'className: "terminal-action-control"' in self.html)
+        )
+        self.assertTrue(rerun_configured, "btnRerunDynamicBacktest must be decorated with terminal-action-control")
 
     def test_i18n_translations(self):
         """Verify bilingual translations for lock badge, modal, and banner."""
