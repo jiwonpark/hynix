@@ -2058,6 +2058,46 @@
       line-height: 1.5;
     }
 
+    /* --- Universal Ellipsis Hover Tooltip --- */
+    .ellipsisTooltip {
+      position: fixed;
+      z-index: 1000000;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.96);
+      color: #f8fafc;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 7px 11px;
+      font-size: 11.5px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.45;
+      max-width: 480px;
+      word-break: break-word;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      transition: opacity 0.1s ease;
+      opacity: 0;
+      white-space: normal;
+    }
+    .ellipsisTooltip.visible {
+      display: block !important;
+      opacity: 1;
+    }
+    .ellipsisTooltip .tipTitle {
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 2px;
+    }
+    .ellipsisTooltip .tipDesc {
+      font-size: 10.5px;
+      color: #94a3b8;
+      border-top: 1px solid #334155;
+      padding-top: 3px;
+      margin-top: 3px;
+      line-height: 1.35;
+    }
+
     @media (max-width: 860px) {
       main { width: min(100vw - 20px, 1280px); padding-top: 18px; }
       .top, .chartHeader, .tableHead { flex-direction: column; }
@@ -3790,6 +3830,8 @@
   </div>
 
   <div id="toastContainer"></div>
+  <!-- Universal Floating Tooltip for Truncated & Ellipsized Texts -->
+  <div id="ellipsisHoverTooltip" class="ellipsisTooltip" style="display: none;" role="tooltip"></div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script>
@@ -13796,10 +13838,197 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       }
     };
 
+    // =========================================================================
+    // Universal Ellipsis & Truncated Text Hover Tooltip Manager
+    // =========================================================================
+    const ellipsisTooltipManager = {
+      tooltipEl: null,
+      currentTarget: null,
+      originalTitle: null,
+
+      init() {
+        this.tooltipEl = $("ellipsisHoverTooltip");
+        if (!this.tooltipEl) {
+          this.tooltipEl = document.createElement("div");
+          this.tooltipEl.id = "ellipsisHoverTooltip";
+          this.tooltipEl.className = "ellipsisTooltip";
+          this.tooltipEl.setAttribute("role", "tooltip");
+          document.body.appendChild(this.tooltipEl);
+        }
+
+        document.addEventListener("mouseover", (e) => this.handleMouseOver(e), { passive: true });
+        document.addEventListener("mousemove", (e) => this.handleMouseMove(e), { passive: true });
+        document.addEventListener("mouseout", (e) => this.handleMouseOut(e), { passive: true });
+        window.addEventListener("scroll", () => this.hide(), { passive: true });
+        window.addEventListener("blur", () => this.hide());
+      },
+
+      isElementTruncated(el) {
+        if (!el || el.nodeType !== 1) return false;
+        const tag = el.tagName;
+        if (["INPUT", "TEXTAREA", "SCRIPT", "STYLE", "NOSCRIPT"].includes(tag)) return false;
+        if (el.id === "ellipsisHoverTooltip" || el.closest("#ellipsisHoverTooltip")) return false;
+        if (el.classList.contains("fieldTip") || el.closest(".fieldTip") || el.closest("#pairsHelpPopup")) return false;
+
+        // 1. Text literally ends with "..." or "…"
+        const text = (el.innerText || el.textContent || "").trim();
+        if (text.length > 3 && (text.endsWith("...") || text.endsWith("…"))) {
+          if (el.childElementCount <= 1) return true;
+        }
+
+        // 2. CSS text-overflow: ellipsis or overflow: hidden with content clipping
+        const style = (typeof window !== "undefined" && window.getComputedStyle) ? window.getComputedStyle(el) : null;
+        if (!style) return false;
+        const hasEllipsis = style.textOverflow === "ellipsis";
+        const isOverflowHidden = style.overflow === "hidden" || style.overflowX === "hidden";
+
+        if (hasEllipsis || isOverflowHidden) {
+          if (el.scrollWidth > el.clientWidth + 1) {
+            return true;
+          }
+          if (el.scrollHeight > el.clientHeight + 1 && style.whiteSpace !== "nowrap") {
+            return true;
+          }
+        }
+
+        return false;
+      },
+
+      findTarget(startEl) {
+        let curr = startEl;
+        while (curr && curr !== document.body && curr !== document.documentElement) {
+          if (this.isElementTruncated(curr)) {
+            return curr;
+          }
+          curr = curr.parentElement;
+        }
+        return null;
+      },
+
+      getFullTextData(el) {
+        if (!el) return null;
+        if (el.dataset && el.dataset.fullText) {
+          return { text: el.dataset.fullText.trim(), desc: null };
+        }
+
+        if (el.tagName === "SELECT" && el.selectedOptions && el.selectedOptions[0]) {
+          return { text: el.selectedOptions[0].textContent.trim(), desc: null };
+        }
+
+        const inner = (el.innerText || el.textContent || "").trim();
+        const title = (el.getAttribute("title") || "").trim();
+
+        if (!inner && !title) return null;
+        if (inner === "..." || inner === "…" || inner === "--" || inner === "—") return null;
+
+        // If inner literally ends with ... and title has full text
+        if (title && (inner.endsWith("...") || inner.endsWith("…"))) {
+          return { text: title, desc: null };
+        }
+
+        // If inner is clipped by CSS ellipsis, inner contains the full DOM text
+        if (inner) {
+          const hasExtraDesc = title && title !== inner && !title.startsWith(inner) && title.length > 5;
+          return { text: inner, desc: hasExtraDesc ? title : null };
+        }
+
+        return title ? { text: title, desc: null } : null;
+      },
+
+      position(e) {
+        if (!this.tooltipEl || !this.tooltipEl.classList.contains("visible")) return;
+        const pad = 12;
+        const rect = this.tooltipEl.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        let left = e.clientX + 14;
+        let top = e.clientY + 14;
+
+        if (left + rect.width > vw - pad) {
+          left = Math.max(pad, e.clientX - rect.width - 12);
+        }
+        if (top + rect.height > vh - pad) {
+          top = Math.max(pad, e.clientY - rect.height - 12);
+        }
+
+        this.tooltipEl.style.left = `${Math.round(left)}px`;
+        this.tooltipEl.style.top = `${Math.round(top)}px`;
+      },
+
+      show(el, e) {
+        const data = this.getFullTextData(el);
+        if (!data || !data.text) return;
+
+        const tip = this.tooltipEl;
+        if (!tip) return;
+
+        const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        if (data.desc) {
+          tip.innerHTML = `<div class="tipTitle">${esc(data.text)}</div><div class="tipDesc">${esc(data.desc)}</div>`;
+        } else {
+          tip.textContent = data.text;
+        }
+
+        tip.style.display = "block";
+        tip.classList.add("visible");
+
+        if (el.hasAttribute("title")) {
+          this.originalTitle = el.getAttribute("title");
+          el.removeAttribute("title");
+        } else {
+          this.originalTitle = null;
+        }
+
+        this.currentTarget = el;
+        this.position(e);
+      },
+
+      hide() {
+        if (this.tooltipEl) {
+          this.tooltipEl.classList.remove("visible");
+          this.tooltipEl.style.display = "none";
+        }
+        if (this.currentTarget && this.originalTitle !== null) {
+          this.currentTarget.setAttribute("title", this.originalTitle);
+        }
+        this.currentTarget = null;
+        this.originalTitle = null;
+      },
+
+      handleMouseOver(e) {
+        const target = this.findTarget(e.target);
+        if (target) {
+          if (target !== this.currentTarget) {
+            this.hide();
+            this.show(target, e);
+          }
+        } else if (this.currentTarget) {
+          this.hide();
+        }
+      },
+
+      handleMouseMove(e) {
+        if (this.currentTarget) {
+          this.position(e);
+        }
+      },
+
+      handleMouseOut(e) {
+        if (this.currentTarget) {
+          if (!e.relatedTarget || !this.currentTarget.contains(e.relatedTarget)) {
+            this.hide();
+          }
+        }
+      }
+    };
+    window.ellipsisTooltipManager = ellipsisTooltipManager;
+
     loadSettings();
     tradingEngine.init();
     pairsExplorer.init();
     compoundingEngine.init();
+    ellipsisTooltipManager.init();
     refresh();
   </script>
 </body>
