@@ -5432,7 +5432,7 @@
             rightOffset: 0,
             barSpacing: 8,
             minBarSpacing: 0.5,
-            fixLeftEdge: true,
+            fixLeftEdge: false,
             fixRightEdge: true,
             lockVisibleTimeRangeOnResize: true,
             shiftVisibleRangeOnNewBar: false,
@@ -5571,7 +5571,7 @@
             rightOffset: 0,
             barSpacing: 8,
             minBarSpacing: 0.5,
-            fixLeftEdge: true,
+            fixLeftEdge: false,
             fixRightEdge: true,
             lockVisibleTimeRangeOnResize: true,
             shiftVisibleRangeOnNewBar: false,
@@ -5701,7 +5701,7 @@
           }
 
           if (loadingOlder) return;
-          if (from < 10) {
+          if (from < 25) {
             window.pendingLogicalRangeBeforePrepend = { from, to };
             prependOlderBars();
           }
@@ -6175,7 +6175,7 @@
         } catch (e) {}
       }
 
-      if (!window.userInteracting && window.spreadChart) {
+      if (!window.userInteracting && !window.isPrependingOlderBars && window.spreadChart) {
         if (vp && Number.isFinite(vp.barSpan) && Number.isFinite(vp.barsFromRight)) {
           const to = totalBars - vp.barsFromRight;
           const from = to - vp.barSpan;
@@ -7095,20 +7095,32 @@
         rebuildFromCache();
         const added = Math.max(0, cachedRows.length - before);
         olderHistoryExhausted = !olderAdr.length || (assetConfig.symbolB && !olderKorean.length);
-        if (added) invalidateOptimizationForHistoryChange(before, cachedRows.length);
+        if (added) {
+          invalidateOptimizationForHistoryChange(before, cachedRows.length);
+          if (window.userViewport && Number.isFinite(window.userViewport.barsFromRight)) {
+            window.userViewport.barsFromRight += added;
+            try {
+              localStorage.setItem("skhynix_viewport", JSON.stringify(window.userViewport));
+            } catch (e) {}
+          }
+        }
         if (window.viewEndFloat !== null && window.viewEndFloat !== undefined) {
           window.viewEndFloat += added;
         }
         if (window.viewEndIndex !== null && window.viewEndIndex !== undefined) {
           window.viewEndIndex += added;
         }
-        renderCached(cachedRows);
-        if (added && window.spreadChart && currentRange) {
-          const range = currentRange;
-          window.spreadChart.timeScale().setVisibleLogicalRange({
-            from: range.from + added,
-            to: range.to + added
-          });
+        window.isPrependingOlderBars = true;
+        try {
+          renderCached(cachedRows);
+          if (added && window.spreadChart && currentRange) {
+            window.spreadChart.timeScale().setVisibleLogicalRange({
+              from: currentRange.from + added,
+              to: currentRange.to + added
+            });
+          }
+        } finally {
+          window.isPrependingOlderBars = false;
         }
         window.pendingLogicalRangeBeforePrepend = null;
         $("status").textContent = added ? `Prepended ${added} older bars` : "No older aligned bars returned";
@@ -11321,7 +11333,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
 
         this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          if (range && range.from < 20 && !this.shortTermRendering) this.fetchShortTermParity(true);
+          if (range && range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
+            this.fetchShortTermParity(true);
+          }
         });
         this.maVisibility = { ma7: true, ma24: true, ma60: true };
 
@@ -11552,7 +11566,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const endTime = older ? history.bars[0].time * 1000 - 1 : null;
         const query = `interval=${interval}&limit=120${older ? `&end_time=${endTime}` : ""}`;
         const origin = window.location.origin;
+        const proxyPrefix = (window.location && window.location.pathname && window.location.pathname.startsWith("/skhynix")) ? "/skhynix" : "";
         const endpoints = [...new Set([
+          `${origin}${proxyPrefix}/api/trade/short_term_parity?${query}`,
           `${origin}/skhynix/api/trade/short_term_parity?${query}`,
           `${origin}/api/trade/short_term_parity?${query}`,
           `http://localhost:8000/api/trade/short_term_parity?${query}`
@@ -11562,8 +11578,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           for (const url of endpoints) {
             if (this.shortTermHistory !== history) return;
             try {
-              const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-              if (!res.ok) continue;
+              const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+              const contentType = res.headers && typeof res.headers.get === "function" ? (res.headers.get("content-type") || "") : "application/json";
+              if (!res.ok || (contentType && !contentType.includes("application/json") && !contentType.includes("text/json"))) continue;
               const data = await res.json();
               if (this.shortTermHistory !== history) return;
               if (!data.success || !Array.isArray(data.bars)) continue;
@@ -11793,6 +11810,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const showScaleInLine = this.isConditionEnabled("entry_base_spread", criteria.condition_toggles);
         const scaleInLegend = $("legendScaleInLine");
         if (scaleInLegend) scaleInLegend.style.display = showScaleInLine ? "inline-flex" : "none";
+        const activeTime = this.selectedExecutionMarkerTime !== null ? this.selectedExecutionMarkerTime : this.activeHoveredExecutionMarkerTime;
         if (activeTime !== null) {
           this.syncHoveredTrancheAnalytics(activeTime);
         } else {
