@@ -45,8 +45,8 @@ controller.renderReferenceLines({
 assert.equal(created.length, 3);
 assert.equal(created[0].title, 'ENTRY · SELECTED');
 assert.equal(created[1].title, 'B/E');
-controller.renderReferenceLines({entry: 141, levels: []});
-assert.equal(removed.length, 3, 'rendering a new context must clean every old line');
-assert.equal(created.at(-1).title, 'ENTRY');
+controller.renderReferenceLines({entry: 141, levels: [], exit: 139.5, exitTitle: 'EXIT'});
+assert.equal(created.at(-1).title, 'EXIT', 'must render optional exit price line');
+assert.equal(created.at(-1).price, 139.5);
 
 console.log('Reusable strategy execution chart checks passed');

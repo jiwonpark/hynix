@@ -155,9 +155,9 @@
       if (data.open_position?.price) {
         this.renderEntryReferenceLines(data.open_position.price, false);
       } else {
-        const lastEntry = (data.markers || []).filter(m => m.is_entry).at(-1);
-        if (lastEntry?.entry_price) {
-          this.renderEntryReferenceLines(lastEntry.entry_price, false);
+        const lastMarker = (data.markers || []).filter(m => m.entry_price).at(-1);
+        if (lastMarker?.entry_price) {
+          this.renderEntryReferenceLines(lastMarker.entry_price, false, lastMarker.exit_price || null);
         }
       }
       this.chart.timeScale().fitContent();
@@ -197,7 +197,7 @@
       this.candles.setMarkers(this.chartInterval === "5m" ? this.controller.markersForRender(hoveredTime) : []);
     },
 
-    renderEntryReferenceLines(entryPrice, selected = false) {
+    renderEntryReferenceLines(entryPrice, selected = false, exitPrice = null) {
       const price = Number(entryPrice);
       if (!(price > 0)) {
         this.controller.clearReferenceLines();
@@ -208,23 +208,31 @@
         netProfitPct: target, price: price * (1 + fee) * (1 + target / 100) / (1 - fee),
         title: target === 0 ? "B/E NET" : `NET +${target}%`,
       }));
-      this.controller.renderReferenceLines({ entry: price, selected, levels });
+      this.controller.renderReferenceLines({
+        entry: price,
+        selected,
+        levels,
+        exit: exitPrice,
+        exitTitle: exitPrice ? `EXIT ₩${Math.round(exitPrice).toLocaleString()}` : "EXIT",
+      });
     },
 
     onCrosshair(param) {
       if (!param?.point || !this.chart || this.chartInterval !== "5m") return;
       const host = el("shortTermSpreadChartHost");
-      const time = this.controller.executionTimeAtX(param.point.x, { timeScale: this.chart.timeScale(), hostWidth: host.clientWidth });
+      const time = this.controller.executionTimeAtX(param.point.x, { timeScale: this.chart.timeScale(), hostWidth: host.clientWidth })
+        || (this.data?.markers || []).find((m) => m.time === param.time)?.time
+        || null;
       this.renderMarkers(time);
-      const entry = (this.data?.markers || []).find((marker) => marker.time === time && marker.is_entry);
-      if (entry) {
-        this.renderEntryReferenceLines(entry.entry_price, true);
+      const marker = (this.data?.markers || []).find((m) => m.time === time);
+      if (marker && marker.entry_price) {
+        this.renderEntryReferenceLines(marker.entry_price, true, marker.exit_price || null);
       } else if (this.data?.open_position?.price) {
         this.renderEntryReferenceLines(this.data.open_position.price, false);
       } else {
-        const lastEntry = (this.data?.markers || []).filter(m => m.is_entry).at(-1);
-        if (lastEntry?.entry_price) {
-          this.renderEntryReferenceLines(lastEntry.entry_price, false);
+        const lastMarker = (this.data?.markers || []).filter(m => m.entry_price).at(-1);
+        if (lastMarker?.entry_price) {
+          this.renderEntryReferenceLines(lastMarker.entry_price, false, lastMarker.exit_price || null);
         } else {
           this.controller.clearReferenceLines();
         }

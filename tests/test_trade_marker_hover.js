@@ -98,6 +98,11 @@ lineEngine.syncHoveredTrancheAnalytics(null);
 assert.equal(referenceRenders[1].current, true, 'leaving the entry column must restore current position lines');
 assert.equal(pnlData.at(-1).length, 0, 'leaving the entry column must clear selected PnL');
 
+lineEngine.rawExecutionMarkers.push({time: 3000, is_entry: false, hypothetical: true, backtest: true, entry_spread: 140.20, exit_spread: 139.80});
+lineEngine.syncHoveredTrancheAnalytics(3000);
+assert.equal(referenceRenders.at(-1).entry, 140.20, 'exit x-hover must use its entry spread');
+assert.equal(referenceRenders.at(-1).options.exitSpread, 139.80, 'exit x-hover must pass its exit spread');
+
 for (const redundantTitle of ['title: `ENTRY (${criteria.entry_baseline_spread.toFixed(2)}%)`',
                               'title: `SCALE-IN SHORT (${criteria.scale_in_trigger_spread.toFixed(2)}%)`',
                               'title: `TP COVER (${tpLinePrice.toFixed(2)}%)`']) {

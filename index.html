@@ -11406,13 +11406,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       syncHoveredTrancheAnalytics(hoveredTime = null) {
         if (!this.shortTermSeries) return;
-        const marker = this.rawExecutionMarkers?.find((m) =>
-          hoveredTime !== null && this.isTradeMarkerVisible(m) && m.time === hoveredTime && m.is_entry && !m.hypothetical && m.pnl_model)
-          || this.rawExecutionMarkers?.find((m) =>
-          hoveredTime !== null && this.isTradeMarkerVisible(m) && m.time === hoveredTime && m.is_entry && m.pnl_model);
+        const visible = this.rawExecutionMarkers?.filter((m) =>
+          hoveredTime !== null && this.isTradeMarkerVisible(m) && m.time === hoveredTime);
+        const marker = visible?.find((m) => !m.hypothetical && (m.pnl_model || m.entry_spread))
+          || visible?.find((m) => m.pnl_model || m.entry_spread);
         const selectedEntrySpread = Number(marker?.entry_spread);
         if (Number.isFinite(selectedEntrySpread) && selectedEntrySpread > 0) {
-          this.renderShortTermReferenceLines(selectedEntrySpread, { selected: true });
+          this.renderShortTermReferenceLines(selectedEntrySpread, {
+            selected: true,
+            exitSpread: marker.exit_spread || null
+          });
         } else {
           this.renderCurrentPositionReferenceLines();
         }
@@ -11659,11 +11662,24 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           selected: Boolean(options.selected),
           levels: this.shortSpreadProfitLadder(entry),
           showScaleIn: Boolean(options.showScaleIn),
-          scaleInSpread: options.scaleInSpread
+          scaleInSpread: options.scaleInSpread,
+          exit: options.exitSpread,
+          exitTitle: options.exitSpread ? `EXIT (${Number(options.exitSpread).toFixed(2)}%)` : "EXIT"
         });
       },
 
       renderCurrentPositionReferenceLines() {
+        const isActualVisible = this.executionChartController ? this.executionChartController.visibility.actual !== false : true;
+        if (!isActualVisible) {
+          const lastVirtual = (this.dynamicBacktestMarkers || []).filter(m => m.entry_spread).at(-1);
+          if (lastVirtual?.entry_spread) {
+            this.renderShortTermReferenceLines(lastVirtual.entry_spread, {
+              selected: false,
+              exitSpread: lastVirtual.exit_spread || null
+            });
+            return;
+          }
+        }
         const criteria = this.shortTermReferenceCriteria || {};
         const entry = Number(criteria.entry_baseline_spread);
         if (!(entry > 0)) {

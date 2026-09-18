@@ -117,7 +117,7 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None):
                 fees += exit_fee; slippage += exit_slip
                 aq = round(aq - .07, 8); sq = round(sq - 1.2, 8)
                 stack.pop()
-                target.update(status='CLOSED', exit_time_ms=close*1000, estimated_net_pnl_usd=net)
+                target.update(status='CLOSED', exit_time_ms=close*1000, estimated_net_pnl_usd=net, exit_spread=spread)
                 events.append({'time': t, 'is_entry': False, 'trade_id': target['id'], 'net_pnl_usd': net})
                 last_exit = close
                 sold = True
@@ -180,18 +180,19 @@ def replay_markers(result, interval_seconds):
             markers[key] = {'time': t, 'is_entry': entry, 'hypothetical': True, 'backtest': True,
                 'position': 'aboveBar' if entry else 'belowBar', 'shape': 'arrowDown' if entry else 'arrowUp',
                 'color': '#dc2626' if entry else '#16a34a', 'text': '', 'count': 0, 'qty': 0,
-                'estimated_net_pnl_usd': 0.0}
-            if entry:
-                markers[key]['entry_spread'] = trade['entry_spread']
-                markers[key]['convergence_target_spread'] = trade['entry_spread']-policy['convergence_pts']
-                markers[key]['pnl_model'] = {
+                'estimated_net_pnl_usd': 0.0,
+                'entry_spread': trade['entry_spread'],
+                'convergence_target_spread': trade['entry_spread']-policy['convergence_pts'],
+                'pnl_model': {
                     'adr_entry_price': trade['adr_entry_price'], 'stock_entry_price': trade['stock_entry_price'],
                     'entry_time_ms': trade['entry_time_ms'], 'adr_exit_qty': .07, 'stock_exit_qty': 1.2,
                     'entry_fees_usd': (.07*trade['adr_entry_price']+1.2*trade['stock_entry_price'])*(ENTRY_FEE_BPS+EXIT_SLIPPAGE_BPS)/10000,
                     'exit_fee_bps': EXIT_FEE_BPS, 'slippage_bps': EXIT_SLIPPAGE_BPS,
-                    'funding_reserve_bps_day': FUNDING_RESERVE_BPS_DAY, 'threshold_usd': policy['minimum_net_profit_usd']}
+                    'funding_reserve_bps_day': FUNDING_RESERVE_BPS_DAY, 'threshold_usd': policy['minimum_net_profit_usd']}}
+            if 'exit_spread' in trade:
+                markers[key]['exit_spread'] = trade['exit_spread']
         m = markers[key]
-        if entry and m['count']:
+        if m['count']:
             model = m['pnl_model']
             n = m['count']
             for field, value in (
@@ -204,6 +205,8 @@ def replay_markers(result, interval_seconds):
                 model[field] = (model[field]*n+value)/(n+1)
             m['convergence_target_spread'] = (m['convergence_target_spread']*n + trade['entry_spread']-policy['convergence_pts'])/(n+1)
             m['entry_spread'] = (m['entry_spread']*n + trade['entry_spread'])/(n+1)
+            if 'exit_spread' in trade:
+                m['exit_spread'] = ((m.get('exit_spread') or trade['exit_spread'])*n + trade['exit_spread'])/(n+1)
         m['count'] += 1
         m['qty'] = round(m['qty']+(trade['adr_entry_qty'] if entry else .07), 2)
         m['estimated_net_pnl_usd'] += event.get('net_pnl_usd', 0)

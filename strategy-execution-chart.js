@@ -211,6 +211,16 @@
           title: "SCALE-IN SHORT"
         }));
       }
+      if (Number(config.exit) > 0) {
+        this.referenceLines.push(this.series.createPriceLine({
+          price: Number(config.exit),
+          color: "#dc2626",
+          lineWidth: 1.5,
+          lineStyle: this.lineStyle.Dashed,
+          axisLabelVisible: true,
+          title: config.exitTitle || "EXIT"
+        }));
+      }
       return this.referenceLines;
     }
   }
