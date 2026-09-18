@@ -65,6 +65,9 @@
           input.checked = false;
           input.disabled = true;
           input.closest(".condRow")?.classList.add("disabled-cond");
+        } else {
+          input.disabled = false;
+          input.closest(".condRow")?.classList.remove("disabled-cond");
         }
       });
       el("chkCondEntryMaStack5m").addEventListener("change", () => this.run());
