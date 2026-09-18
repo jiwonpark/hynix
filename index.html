@@ -11387,6 +11387,20 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         } finally { clearTimeout(timeout); }
       },
 
+      shortSpreadProfitLadder(entrySpread, maxNetProfitPct = 5) {
+        const entry = Number(entrySpread);
+        if (!(entry > 0)) return [];
+        // Estimated fixed round-trip friction: 5 bps entry fee + 3 bps entry
+        // slippage + 5 bps exit fee + 3 bps exit slippage. Funding remains
+        // time-dependent and therefore is intentionally not presented as fixed.
+        const roundTripCostRate = 16 / 10000;
+        return Array.from({ length: maxNetProfitPct + 1 }, (_, netProfitPct) => ({
+          netProfitPct,
+          title: netProfitPct === 0 ? "B/E" : `NET +${netProfitPct}%`,
+          price: entry / (1 + roundTripCostRate + (netProfitPct / 100))
+        }));
+      },
+
       renderShortTermChart(data) {
         this.initShortTermChart();
         if (!this.shortTermSeries || !data.bars || !data.bars.length) return;
@@ -11451,6 +11465,18 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             axisLabelVisible: true,
             title: "ENTRY"
           }));
+
+          this.shortSpreadProfitLadder(criteria.entry_baseline_spread).forEach((level) => {
+            const isBreakEven = level.netProfitPct === 0;
+            this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
+              price: level.price,
+              color: isBreakEven ? "rgba(71, 85, 105, 0.34)" : "rgba(22, 163, 74, 0.18)",
+              lineWidth: 1,
+              lineStyle: LightweightCharts.LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: level.title
+            }));
+          });
 
           if (criteria.scale_in_trigger_spread) {
             this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
