@@ -308,10 +308,8 @@ async def get_upbit_ma_stack_backtest(
     try:
         count_5m = days * 24 * 12 + 2
         count_1h = max(days * 24 + 62, 200)
-        candles_5m, candles_1h = await asyncio.gather(
-            upbit_client.get_minute_candles("KRW-BTC", 5, count_5m),
-            upbit_client.get_minute_candles("KRW-BTC", 60, count_1h),
-        )
+        candles_5m = await upbit_client.get_minute_candles("KRW-BTC", 5, count_5m)
+        candles_1h = await upbit_client.get_minute_candles("KRW-BTC", 60, count_1h)
         result = run_ma_stack_backtest(
             candles_5m, candles_1h, fee_bps=fee_bps,
             entry_5m=entry_5m, entry_1h=entry_1h,

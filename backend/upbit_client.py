@@ -4,11 +4,14 @@ import uuid
 import hmac
 import hashlib
 import urllib.parse
+import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import aiohttp
 import jwt
 from .config import config
+
+logger = logging.getLogger("skhynix-daemon")
 
 class UpbitClient:
     """
@@ -20,6 +23,9 @@ class UpbitClient:
         self.secret_key = secret_key or config.UPBIT_SECRET_KEY
         self.base_url = (base_url or config.UPBIT_BASE_URL).rstrip("/")
         self._session: Optional[aiohttp.ClientSession] = None
+        self._rate_limiter_lock = asyncio.Lock()
+        self._last_request_time = 0.0
+        self._candle_cache: Dict[tuple, Dict[int, Dict[str, Any]]] = {}
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -50,7 +56,16 @@ class UpbitClient:
             return token.decode("utf-8")
         return str(token)
 
-    async def request(self, method: str, endpoint: str, params: Optional[Dict[str, Any]] = None, signed: bool = False) -> Any:
+    async def _throttle(self, min_interval: float = 0.15):
+        """Ensure requests are spaced by at least min_interval seconds (safely below Upbit's 10 req/sec rate limit)."""
+        async with self._rate_limiter_lock:
+            now = time.monotonic()
+            elapsed = now - self._last_request_time
+            if elapsed < min_interval:
+                await asyncio.sleep(min_interval - elapsed)
+            self._last_request_time = time.monotonic()
+
+    async def request(self, method: str, endpoint: str, params: Optional[Dict[str, Any]] = None, signed: bool = False, max_retries: int = 4) -> Any:
         session = await self.get_session()
         headers = {
             "Accept": "application/json",
@@ -67,17 +82,47 @@ class UpbitClient:
         if params and method.upper() == "GET":
             url = f"{url}?{urllib.parse.urlencode(params, doseq=True)}"
 
-        async with session.request(method, url, headers=headers) as resp:
-            data = await resp.json()
-            if resp.status not in (200, 201):
-                msg = ""
-                if isinstance(data, dict):
-                    err = data.get("error", {})
-                    msg = err.get("message", str(data)) if isinstance(err, dict) else str(data)
-                else:
-                    msg = str(data)
-                raise Exception(f"Upbit API Error [{resp.status}]: {msg}")
-            return data
+        for attempt in range(max_retries + 1):
+            await self._throttle(min_interval=0.15)
+            try:
+                async with session.request(method, url, headers=headers) as resp:
+                    if resp.status == 429:
+                        if attempt < max_retries:
+                            backoff = (0.6 * (2 ** attempt)) + (0.1 * (attempt + 1))
+                            logger.warning(
+                                f"[Upbit] HTTP 429 Too Many Requests on {endpoint}. "
+                                f"Backing off for {backoff:.2f}s (attempt {attempt + 1}/{max_retries})."
+                            )
+                            await asyncio.sleep(backoff)
+                            continue
+
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        data = await resp.text()
+
+                    if resp.status not in (200, 201):
+                        if resp.status in (502, 503, 504) and attempt < max_retries:
+                            backoff = 0.5 * (attempt + 1)
+                            logger.warning(f"[Upbit] Server error {resp.status} on {endpoint}, retrying in {backoff:.2f}s...")
+                            await asyncio.sleep(backoff)
+                            continue
+
+                        msg = ""
+                        if isinstance(data, dict):
+                            err = data.get("error", {})
+                            msg = err.get("message", str(data)) if isinstance(err, dict) else str(data)
+                        else:
+                            msg = str(data)
+                        raise Exception(f"Upbit API Error [{resp.status}]: {msg}")
+                    return data
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < max_retries:
+                    backoff = 0.5 * (attempt + 1)
+                    logger.warning(f"[Upbit] Connection error on {endpoint} ({e}), retrying in {backoff:.2f}s...")
+                    await asyncio.sleep(backoff)
+                    continue
+                raise
 
     async def ping(self) -> bool:
         """Test connectivity to Upbit API."""
@@ -109,12 +154,26 @@ class UpbitClient:
         return all_tickers
 
     async def get_minute_candles(self, market: str, unit: int, count: int) -> List[Dict[str, Any]]:
-        """Fetch public minute candles, paginating beyond Upbit's 200-row limit."""
+        """Fetch public minute candles with caching, deduplication, and rate-limiting."""
+        cache_key = (market, unit)
+        cached = self._candle_cache.setdefault(cache_key, {})
+        interval_seconds = int(unit) * 60
+        now = int(time.time())
+
+        # Fast path: check if cache already satisfies the count and has fresh recent data
+        sorted_times = sorted(cached.keys())
+        if sorted_times and len(sorted_times) >= count:
+            newest = sorted_times[-1]
+            if now - newest < interval_seconds:
+                return [cached[t] for t in sorted_times if t <= now][-count:]
+
         remaining = max(1, int(count))
         raw_rows: List[Dict[str, Any]] = []
         to: Optional[str] = None
+
         while remaining > 0:
-            params: Dict[str, Any] = {"market": market, "count": min(200, remaining)}
+            batch_size = min(200, remaining)
+            params: Dict[str, Any] = {"market": market, "count": batch_size}
             if to:
                 params["to"] = to
             page = await self.request("GET", f"/v1/candles/minutes/{int(unit)}", params=params)
@@ -122,19 +181,27 @@ class UpbitClient:
                 break
             raw_rows.extend(page)
             remaining -= len(page)
-            oldest = page[-1].get("candle_date_time_utc")
-            if not oldest or len(page) < params["count"]:
+
+            # Check if oldest candle in this page bridges into existing cache
+            oldest_row = page[-1]
+            oldest_utc = str(oldest_row.get("candle_date_time_utc", ""))
+            if oldest_utc:
+                oldest_open = int(datetime.fromisoformat(oldest_utc).replace(tzinfo=timezone.utc).timestamp())
+                oldest_close = oldest_open + interval_seconds
+                earlier_cached = [t for t in cached if t <= oldest_close]
+                if len(earlier_cached) >= remaining:
+                    break
+
+            oldest = oldest_row.get("candle_date_time_utc")
+            if not oldest or len(page) < batch_size:
                 break
             to = f"{oldest}Z"
-            await asyncio.sleep(0.11)
 
-        by_time: Dict[int, Dict[str, Any]] = {}
-        interval_seconds = int(unit) * 60
         for row in raw_rows:
             candle_utc = str(row.get("candle_date_time_utc", ""))
             open_time = int(datetime.fromisoformat(candle_utc).replace(tzinfo=timezone.utc).timestamp())
             close_time = open_time + interval_seconds
-            by_time[close_time] = {
+            cached[close_time] = {
                 "time": close_time,
                 "open": float(row["opening_price"]),
                 "high": float(row["high_price"]),
@@ -142,8 +209,15 @@ class UpbitClient:
                 "close": float(row["trade_price"]),
                 "volume": float(row.get("candle_acc_trade_volume", 0.0)),
             }
+
+        # Keep cache bounded to last 6000 candles per timeframe
+        if len(cached) > 6000:
+            excess = len(cached) - 5000
+            for old_t in sorted(cached.keys())[:excess]:
+                cached.pop(old_t, None)
+
         now = int(time.time())
-        return [by_time[key] for key in sorted(by_time) if key <= now][-count:]
+        return [cached[key] for key in sorted(cached) if key <= now][-count:]
 
     async def get_detailed_account_overview(self) -> Dict[str, Any]:
         """
