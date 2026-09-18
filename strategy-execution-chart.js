@@ -194,8 +194,8 @@
       (config.levels || []).forEach((level) => {
         this.referenceLines.push(this.series.createPriceLine({
           price: level.price,
-          color: level.netProfitPct === 0 ? "rgba(71, 85, 105, 0.34)" : "rgba(22, 163, 74, 0.18)",
-          lineWidth: 1,
+          color: level.color || (level.netProfitPct === 0 ? "rgba(71, 85, 105, 0.34)" : "rgba(22, 163, 74, 0.18)"),
+          lineWidth: level.lineWidth || 1,
           lineStyle: this.lineStyle.Dashed,
           axisLabelVisible: true,
           title: level.title

@@ -95,6 +95,7 @@
       });
       this.controller = new StrategyExecutionChartController({ series: this.candles, lineStyle: LightweightCharts.LineStyle });
       this.chart.subscribeCrosshairMove((param) => this.onCrosshair(param));
+      this.chart.subscribeClick((param) => this.onClick(param));
       new ResizeObserver(() => { if (host.clientWidth) this.chart.applyOptions({ width: host.clientWidth }); }).observe(host);
     },
 
@@ -139,6 +140,7 @@
     render(data) {
       this.data = data;
       this.loaded = true;
+      this.selectedMarkerTime = null;
       this.controller.setExecutions(data.markers || []);
       this.renderChartData();
       const stats = data.stats || {};
@@ -152,14 +154,7 @@
       el("valShortTermMa60").textContent = latest ? krw(latest.ma60) : "--";
       el("lblShortTermChartSync").textContent = `${data.days}d · ${data.bars.length.toLocaleString()} closed 5m bars`;
       this.syncConditionBadges(latest, latestHour);
-      if (data.open_position?.price) {
-        this.renderEntryReferenceLines(data.open_position.price, false);
-      } else {
-        const lastMarker = (data.markers || []).filter(m => m.entry_price).at(-1);
-        if (lastMarker?.entry_price) {
-          this.renderEntryReferenceLines(lastMarker.entry_price, false, lastMarker.exit_price || null);
-        }
-      }
+      this.syncActiveReferenceLines();
       this.chart.timeScale().fitContent();
     },
 
@@ -174,7 +169,7 @@
       const rows = this.chartInterval === "1h" ? (this.data?.hourly || []) : (this.data?.bars || []);
       this.candles.setData(rows.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
       this.maSeries.forEach(({ key, series }) => series.setData(rows.filter((bar) => Number.isFinite(bar[key])).map((bar) => ({ time: bar.time, value: bar[key] }))));
-      this.renderMarkers();
+      this.renderMarkers(this.selectedMarkerTime);
       this.chart.timeScale().fitContent();
     },
 
@@ -197,7 +192,64 @@
       this.candles.setMarkers(this.chartInterval === "5m" ? this.controller.markersForRender(hoveredTime) : []);
     },
 
-    renderEntryReferenceLines(entryPrice, selected = false, exitPrice = null) {
+    markerTimeAtParam(param, host) {
+      if (!param) return null;
+      if (param.time) {
+        const direct = (this.data?.markers || []).find((m) => m.time === param.time);
+        if (direct) return direct.time;
+      }
+      if (param.point && host && this.controller) {
+        return this.controller.executionTimeAtX(param.point.x, {
+          timeScale: this.chart.timeScale(),
+          hostWidth: host.clientWidth,
+        });
+      }
+      return null;
+    },
+
+    onClick(param) {
+      if (!this.chart || this.chartInterval !== "5m") return;
+      const host = el("shortTermSpreadChartHost");
+      const time = this.markerTimeAtParam(param, host);
+      const marker = (this.data?.markers || []).find((m) => m.time === time);
+      if (marker && marker.entry_price) {
+        this.selectedMarkerTime = (this.selectedMarkerTime === marker.time) ? null : marker.time;
+      } else {
+        this.selectedMarkerTime = null;
+      }
+      this.syncActiveReferenceLines();
+      this.renderMarkers(this.selectedMarkerTime);
+    },
+
+    onCrosshair(param) {
+      if (!param?.point || !this.chart || this.chartInterval !== "5m") return;
+      const host = el("shortTermSpreadChartHost");
+      const time = this.markerTimeAtParam(param, host);
+      const activeTime = time || this.selectedMarkerTime;
+      this.renderMarkers(activeTime);
+      if (this.selectedMarkerTime === null) {
+        this.syncActiveReferenceLines(time);
+      }
+    },
+
+    syncActiveReferenceLines(hoverTime = null) {
+      const targetTime = this.selectedMarkerTime !== null ? this.selectedMarkerTime : hoverTime;
+      const marker = (this.data?.markers || []).find((m) => m.time === targetTime);
+      if (marker && marker.entry_price) {
+        this.renderEntryReferenceLines(marker.entry_price, true, marker.exit_price || null, marker);
+      } else if (this.data?.open_position?.price) {
+        this.renderEntryReferenceLines(this.data.open_position.price, false);
+      } else {
+        const lastMarker = (this.data?.markers || []).filter(m => m.entry_price).at(-1);
+        if (lastMarker?.entry_price) {
+          this.renderEntryReferenceLines(lastMarker.entry_price, false, lastMarker.exit_price || null, lastMarker);
+        } else {
+          this.controller.clearReferenceLines();
+        }
+      }
+    },
+
+    renderEntryReferenceLines(entryPrice, selected = false, exitPrice = null, marker = null) {
       const price = Number(entryPrice);
       if (!(price > 0)) {
         this.controller.clearReferenceLines();
@@ -205,38 +257,25 @@
       }
       const fee = Number(this.data?.fee_bps || 0) / 10000;
       const levels = [0, .2, .5, 1, 2, 3].map((target) => ({
-        netProfitPct: target, price: price * (1 + fee) * (1 + target / 100) / (1 - fee),
+        netProfitPct: target,
+        price: price * (1 + fee) * (1 + target / 100) / (1 - fee),
         title: target === 0 ? "B/E NET" : `NET +${target}%`,
+        color: target === 0 ? "rgba(71, 85, 105, 0.70)" : "rgba(22, 163, 74, 0.70)",
+        lineWidth: 1.5,
       }));
+      let exitTitle = "EXIT";
+      if (exitPrice) {
+        const ret = marker?.net_return_pct;
+        const retStr = typeof ret === "number" ? ` (${ret >= 0 ? "+" : ""}${ret.toFixed(2)}% net)` : "";
+        exitTitle = `EXIT ₩${Math.round(exitPrice).toLocaleString()}${retStr}`;
+      }
       this.controller.renderReferenceLines({
         entry: price,
         selected,
         levels,
         exit: exitPrice,
-        exitTitle: exitPrice ? `EXIT ₩${Math.round(exitPrice).toLocaleString()}` : "EXIT",
+        exitTitle,
       });
-    },
-
-    onCrosshair(param) {
-      if (!param?.point || !this.chart || this.chartInterval !== "5m") return;
-      const host = el("shortTermSpreadChartHost");
-      const time = this.controller.executionTimeAtX(param.point.x, { timeScale: this.chart.timeScale(), hostWidth: host.clientWidth })
-        || (this.data?.markers || []).find((m) => m.time === param.time)?.time
-        || null;
-      this.renderMarkers(time);
-      const marker = (this.data?.markers || []).find((m) => m.time === time);
-      if (marker && marker.entry_price) {
-        this.renderEntryReferenceLines(marker.entry_price, true, marker.exit_price || null);
-      } else if (this.data?.open_position?.price) {
-        this.renderEntryReferenceLines(this.data.open_position.price, false);
-      } else {
-        const lastMarker = (this.data?.markers || []).filter(m => m.entry_price).at(-1);
-        if (lastMarker?.entry_price) {
-          this.renderEntryReferenceLines(lastMarker.entry_price, false, lastMarker.exit_price || null);
-        } else {
-          this.controller.clearReferenceLines();
-        }
-      }
     },
 
     toggleVirtual() {

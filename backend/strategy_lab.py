@@ -56,6 +56,7 @@ def run_ma_stack_backtest(
     cash = float(initial_capital_krw)
     quantity = 0.0
     entry: Optional[Dict[str, Any]] = None
+    entry_marker: Optional[Dict[str, Any]] = None
     trades: List[Dict[str, Any]] = []
     markers: List[Dict[str, Any]] = []
     equity_curve: List[Dict[str, float]] = []
@@ -96,12 +97,13 @@ def run_ma_stack_backtest(
                     "fee": entry_fee,
                     "capital_before": spendable + entry_fee,
                 }
-                markers.append({
+                entry_marker = {
                     "time": int(next_bar["time"]), "source": "virtual", "hypothetical": True,
                     "backtest": True, "is_entry": True, "action": "entry", "direction": "long",
                     "position": "belowBar", "shape": "arrowUp", "color": "#16a34a",
                     "entry_price": fill_price, "hoverText": f"BUY ₩{fill_price:,.0f}",
-                })
+                }
+                markers.append(entry_marker)
         else:
             enabled_exits = []
             if exit_5m:
@@ -122,6 +124,10 @@ def run_ma_stack_backtest(
                     "fees_krw": entry["fee"] + exit_fee,
                 }
                 trades.append(trade)
+                if entry_marker:
+                    entry_marker["exit_price"] = fill_price
+                    entry_marker["exit_time"] = int(next_bar["time"])
+                    entry_marker["net_return_pct"] = net_return
                 markers.append({
                     "time": int(next_bar["time"]), "source": "virtual", "hypothetical": True,
                     "backtest": True, "is_entry": False, "action": "exit", "direction": "long",
@@ -132,6 +138,7 @@ def run_ma_stack_backtest(
                 })
                 quantity = 0.0
                 entry = None
+                entry_marker = None
 
     last_close = float(bars[-1]["close"]) if bars else 0.0
     ending_equity = cash + quantity * last_close
