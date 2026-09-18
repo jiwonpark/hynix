@@ -14,6 +14,7 @@
     controller: null,
     data: null,
     loaded: false,
+    chartInterval: "5m",
 
     bindForkedSection() {
       if (this.forked) return;
@@ -41,13 +42,14 @@
       this.forked = true;
 
       const controls = el("valShortTermCurrentParity").parentElement.parentElement;
-      controls.innerHTML = `
-        <div class="pillGroup" style="display:inline-flex;background:#f1f5f9;padding:2px;border-radius:6px;">
-          <button type="button" disabled>1m</button><button type="button" class="active">5m</button><button type="button" disabled>15m</button><button type="button">1h</button><button type="button" disabled>4h</button><button type="button" disabled>1d</button>
-        </div>
+      const parityBox = el("valShortTermCurrentParity").parentElement;
+      parityBox.firstChild.textContent = "BTC/KRW: ";
+      parityBox.insertAdjacentHTML("beforebegin", `
         <select id="strategyLabDays" style="height:28px;width:auto;"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
-        <label style="font-size:11px;font-weight:700;color:#475569;">Fee/side <input id="strategyLabFee" type="number" value="5" min="0" max="100" step=".5" style="width:62px;height:28px;"> bp</label>
-        <div style="font-size:11.5px;font-weight:700;background:#f8fafc;border:1px solid #e2e8f0;padding:4px 10px;border-radius:6px;">BTC/KRW: <strong id="${rootId("valShortTermCurrentParity")}" style="color:#0284c7;">--</strong></div>`;
+        <label style="font-size:11px;font-weight:700;color:#475569;">Fee/side <input id="strategyLabFee" type="number" value="5" min="0" max="100" step=".5" style="width:62px;height:28px;"> bp</label>`);
+      ["1m", "15m", "4h", "1d"].forEach((interval) => { el(`btnShortInterval${interval}`).disabled = true; });
+      el("btnShortInterval5m").addEventListener("click", () => this.setChartInterval("5m"));
+      el("btnShortInterval1h").addEventListener("click", () => this.setChartInterval("1h"));
 
       const supported = new Set([
         "chkCondEntryMaStack5m", "chkCondEntryMaStack1h",
@@ -137,10 +139,8 @@
     render(data) {
       this.data = data;
       this.loaded = true;
-      this.candles.setData(data.bars.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
-      this.maSeries.forEach(({ key, series }) => series.setData(data.bars.filter((bar) => Number.isFinite(bar[key])).map((bar) => ({ time: bar.time, value: bar[key] }))));
       this.controller.setExecutions(data.markers || []);
-      this.renderMarkers();
+      this.renderChartData();
       const stats = data.stats || {};
       el("dynamicBacktestStatus").textContent = `${stats.completed_trades || 0} trades · Net ${pct(stats.net_return_pct)} · Buy & Hold ${pct(stats.buy_hold_pct)} · Max drawdown ${pct(stats.max_drawdown_pct)} · Win rate ${pct(stats.win_rate_pct)} · Ending ${krw(stats.ending_equity_krw)}`;
       const latest = data.bars.at(-1);
@@ -152,6 +152,21 @@
       el("valShortTermMa60").textContent = latest ? krw(latest.ma60) : "--";
       el("lblShortTermChartSync").textContent = `${data.days}d · ${data.bars.length.toLocaleString()} closed 5m bars`;
       this.syncConditionBadges(latest, latestHour);
+      this.chart.timeScale().fitContent();
+    },
+
+    setChartInterval(interval) {
+      if (interval !== "5m" && interval !== "1h") return;
+      this.chartInterval = interval;
+      ["5m", "1h"].forEach((value) => el(`btnShortInterval${value}`).classList.toggle("active", value === interval));
+      if (this.data) this.renderChartData();
+    },
+
+    renderChartData() {
+      const rows = this.chartInterval === "1h" ? (this.data?.hourly || []) : (this.data?.bars || []);
+      this.candles.setData(rows.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
+      this.maSeries.forEach(({ key, series }) => series.setData(rows.filter((bar) => Number.isFinite(bar[key])).map((bar) => ({ time: bar.time, value: bar[key] }))));
+      this.renderMarkers();
       this.chart.timeScale().fitContent();
     },
 
@@ -170,10 +185,12 @@
       el("badgeCriteriaTP").textContent = latest?.bearish || hourly?.bearish ? "EXIT ARMED" : "AWAITING BEARISH STACK";
     },
 
-    renderMarkers(hoveredTime = null) { this.candles.setMarkers(this.controller.markersForRender(hoveredTime)); },
+    renderMarkers(hoveredTime = null) {
+      this.candles.setMarkers(this.chartInterval === "5m" ? this.controller.markersForRender(hoveredTime) : []);
+    },
 
     onCrosshair(param) {
-      if (!param?.point || !this.chart) return;
+      if (!param?.point || !this.chart || this.chartInterval !== "5m") return;
       const host = el("shortTermSpreadChartHost");
       const time = this.controller.executionTimeAtX(param.point.x, { timeScale: this.chart.timeScale(), hostWidth: host.clientWidth });
       this.renderMarkers(time);
