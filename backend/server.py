@@ -34,6 +34,7 @@ from .counterfactual_trades import (
 from .config import config
 from .binance_client import BinanceFuturesClient
 from .upbit_client import UpbitClient
+from .strategy_lab import run_ma_stack_backtest
 
 STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
 scale_in_lock = asyncio.Lock()
@@ -293,6 +294,36 @@ async def get_upbit_account() -> Dict[str, Any]:
             "summary": {},
             "assets": []
         }
+
+@app.get("/api/strategy-lab/upbit-ma-stack")
+async def get_upbit_ma_stack_backtest(
+    days: int = Query(7, ge=3, le=14),
+    fee_bps: float = Query(5.0, ge=0.0, le=100.0),
+    entry_5m: bool = True,
+    entry_1h: bool = True,
+    exit_5m: bool = True,
+    exit_1h: bool = True,
+) -> Dict[str, Any]:
+    """Read-only BTC/KRW dual-timeframe MA-stack research backtest."""
+    try:
+        count_5m = days * 24 * 12 + 2
+        count_1h = max(days * 24 + 62, 200)
+        candles_5m, candles_1h = await asyncio.gather(
+            upbit_client.get_minute_candles("KRW-BTC", 5, count_5m),
+            upbit_client.get_minute_candles("KRW-BTC", 60, count_1h),
+        )
+        result = run_ma_stack_backtest(
+            candles_5m, candles_1h, fee_bps=fee_bps,
+            entry_5m=entry_5m, entry_1h=entry_1h,
+            exit_5m=exit_5m, exit_1h=exit_1h,
+        )
+        result["market"] = "KRW-BTC"
+        result["days"] = days
+        result["fee_bps"] = fee_bps
+        return result
+    except Exception as e:
+        logger.exception("Error running Upbit MA-stack strategy lab")
+        return {"error": str(e), "market": "KRW-BTC"}
 
 @app.get("/api/portfolio/overview")
 async def get_portfolio_overview() -> Dict[str, Any]:

@@ -78,8 +78,10 @@
         return true;
       }).map((m) => {
         const isMatch = hoveredTime !== null && m.time === hoveredTime;
-        const isShort = m.shape === "arrowDown" || m.is_entry || m.color === "#dc2626"
-          || (typeof m.color === "string" && m.color.includes("220"));
+        const isShort = m.shape
+          ? m.shape === "arrowDown"
+          : (m.direction ? m.direction === "short" : (m.is_entry || m.color === "#dc2626"
+            || (typeof m.color === "string" && m.color.includes("220"))));
         const dimAlpha = m.hypothetical ? "0.35" : "0.70";
         return {
           time: m.time,

@@ -1,8 +1,10 @@
+import asyncio
 import time
 import uuid
 import hmac
 import hashlib
 import urllib.parse
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import aiohttp
 import jwt
@@ -105,6 +107,43 @@ class UpbitClient:
             except Exception:
                 pass
         return all_tickers
+
+    async def get_minute_candles(self, market: str, unit: int, count: int) -> List[Dict[str, Any]]:
+        """Fetch public minute candles, paginating beyond Upbit's 200-row limit."""
+        remaining = max(1, int(count))
+        raw_rows: List[Dict[str, Any]] = []
+        to: Optional[str] = None
+        while remaining > 0:
+            params: Dict[str, Any] = {"market": market, "count": min(200, remaining)}
+            if to:
+                params["to"] = to
+            page = await self.request("GET", f"/v1/candles/minutes/{int(unit)}", params=params)
+            if not isinstance(page, list) or not page:
+                break
+            raw_rows.extend(page)
+            remaining -= len(page)
+            oldest = page[-1].get("candle_date_time_utc")
+            if not oldest or len(page) < params["count"]:
+                break
+            to = f"{oldest}Z"
+            await asyncio.sleep(0.11)
+
+        by_time: Dict[int, Dict[str, Any]] = {}
+        interval_seconds = int(unit) * 60
+        for row in raw_rows:
+            candle_utc = str(row.get("candle_date_time_utc", ""))
+            open_time = int(datetime.fromisoformat(candle_utc).replace(tzinfo=timezone.utc).timestamp())
+            close_time = open_time + interval_seconds
+            by_time[close_time] = {
+                "time": close_time,
+                "open": float(row["opening_price"]),
+                "high": float(row["high_price"]),
+                "low": float(row["low_price"]),
+                "close": float(row["trade_price"]),
+                "volume": float(row.get("candle_acc_trade_volume", 0.0)),
+            }
+        now = int(time.time())
+        return [by_time[key] for key in sorted(by_time) if key <= now][-count:]
 
     async def get_detailed_account_overview(self) -> Dict[str, Any]:
         """

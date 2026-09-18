@@ -776,10 +776,10 @@
     }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
-    /* --- Top-Level Navigation Tabs (4 Primary Tabs) --- */
+    /* --- Top-Level Navigation Tabs --- */
     .mainNavTabs {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 6px;
       margin: 14px 0 16px 0;
       border-bottom: 2px solid #cbd5e1;
@@ -889,6 +889,19 @@
         display: none;
       }
     }
+    .strategyLabCondition {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 11.5px;
+      font-weight: 700;
+    }
+    .strategyLabCondition input { width: auto; margin: 0; accent-color: #7c3aed; }
 
     /* --- Stage 1 Real / Paper Trading Terminal & Execution Styles --- */
     .tradingModeSwitch {
@@ -2171,6 +2184,14 @@
           <small id="subNavCompound">Safe Geometric Compounding</small>
         </div>
         <span id="navCompoundPill" class="navLivePill" style="background:#10b981;color:#fff;">COMPOUND</span>
+      </button>
+      <button id="navTabStrategyLab" class="mainNavBtn" type="button">
+        <span class="navBtnIcon">🧪</span>
+        <div class="navBtnText">
+          <strong>Strategy Lab</strong>
+          <small>Multi-market Backtesting</small>
+        </div>
+        <span class="navLivePill" style="background:#7c3aed;color:#fff;">NEW</span>
       </button>
     </nav>
 
@@ -3783,6 +3804,47 @@
       </section>
     </div><!-- End #tabContentCompound -->
 
+    <div id="tabContentStrategyLab" style="display:none;">
+      <section class="controls" aria-label="Strategy Lab controls">
+        <div class="controlSection">
+          <div class="controlSectionHeader">
+            <div>
+              <h3>🧪 Strategy Lab · Upbit BTC/KRW</h3>
+              <span>Reusable, causal backtests. Signals use closed bars; orders fill at the next 5-minute open.</span>
+            </div>
+            <button id="strategyLabRun" type="button" style="width:auto;height:34px;padding:0 16px;background:#7c3aed;font-weight:800;">▶ Run Backtest</button>
+          </div>
+          <div class="controlGrid environment">
+            <label><span class="controlTitle">Strategy</span><select disabled><option>BTC/KRW · 5m + 1h MA Stack</option></select></label>
+            <label><span class="controlTitle">Lookback</span><select id="strategyLabDays"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select></label>
+            <label><span class="controlTitle">Upbit fee / side</span><input id="strategyLabFee" type="number" value="5" min="0" max="100" step="0.5"><span class="controlHint">basis points</span></label>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+            <label class="strategyLabCondition"><input id="labEntry5m" type="checkbox" checked> Entry · 5m bullish stack</label>
+            <label class="strategyLabCondition"><input id="labEntry1h" type="checkbox" checked> AND Entry · 1h bullish stack</label>
+            <label class="strategyLabCondition"><input id="labExit5m" type="checkbox" checked> Exit · 5m bearish stack</label>
+            <label class="strategyLabCondition"><input id="labExit1h" type="checkbox" checked> OR Exit · 1h bearish stack</label>
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-top:8px;">Bullish: close &gt; MA7 &gt; MA24 &gt; MA60 · Bearish: close &lt; MA7 &lt; MA24 &lt; MA60</div>
+        </div>
+      </section>
+      <section class="pairsKpiGrid" id="strategyLabStats">
+        <div class="pairsKpiCard"><span class="pairsKpiLabel">Net Return</span><strong id="labNetReturn">--</strong></div>
+        <div class="pairsKpiCard"><span class="pairsKpiLabel">Buy & Hold</span><strong id="labBuyHold">--</strong></div>
+        <div class="pairsKpiCard"><span class="pairsKpiLabel">Max Drawdown</span><strong id="labDrawdown">--</strong></div>
+        <div class="pairsKpiCard"><span class="pairsKpiLabel">Completed Trades</span><strong id="labTrades">--</strong></div>
+        <div class="pairsKpiCard"><span class="pairsKpiLabel">Win Rate</span><strong id="labWinRate">--</strong></div>
+        <div class="pairsKpiCard"><span class="pairsKpiLabel">Ending Equity</span><strong id="labEquity">--</strong></div>
+      </section>
+      <section class="card" style="padding:12px;margin-top:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;">
+          <div><strong>BTC/KRW · 5-minute execution chart</strong><div id="strategyLabStatus" style="font-size:11px;color:#64748b;margin-top:3px;">Run the backtest to load Upbit candles.</div></div>
+          <button id="strategyLabVirtualToggle" type="button" class="tradeVisibilityBtn active" style="width:auto;">✓ Virtual Trades</button>
+        </div>
+        <div id="strategyLabChartHost" style="height:560px;width:100%;position:relative;"></div>
+      </section>
+    </div>
+
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">HYPERION &middot; Quantitative Trading System &middot; Dual-Leg Parity Engine</span>
       <span>Build: <strong id="footerVersion">v1.7.1</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-09 15:43 KST</strong> (AWS EC2)</span></span>
@@ -3836,6 +3898,7 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="strategy-execution-chart.js"></script>
+  <script src="strategy-lab.js"></script>
   <script>
     const ASSET_STRATEGIES = {
       skhynix_arb: {
@@ -9390,21 +9453,24 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("langKo").addEventListener("click", () => { setLanguage("ko"); saveSettings(); });
     $("langEn").addEventListener("click", () => { setLanguage("en"); saveSettings(); });
 
-    // Primary Navigation Tab Switcher (Backtest vs Trading vs Pairs vs Compound)
+    // Primary Navigation Tab Switcher
     function switchMainTab(tab) {
       window.activeMainTab = tab;
       const isBacktest = tab === "backtest";
       const isTrading = tab === "trading";
       const isPairs = tab === "pairs";
       const isCompound = tab === "compound";
+      const isStrategyLab = tab === "strategyLab";
       if ($("navTabBacktest")) $("navTabBacktest").classList.toggle("active", isBacktest);
       if ($("navTabTrading")) $("navTabTrading").classList.toggle("active", isTrading);
       if ($("navTabPairs")) $("navTabPairs").classList.toggle("active", isPairs);
       if ($("navTabCompound")) $("navTabCompound").classList.toggle("active", isCompound);
+      if ($("navTabStrategyLab")) $("navTabStrategyLab").classList.toggle("active", isStrategyLab);
       if ($("tabContentBacktest")) $("tabContentBacktest").style.display = isBacktest ? "block" : "none";
       if ($("tabContentTrading")) $("tabContentTrading").style.display = isTrading ? "block" : "none";
       if ($("tabContentPairs")) $("tabContentPairs").style.display = isPairs ? "block" : "none";
       if ($("tabContentCompound")) $("tabContentCompound").style.display = isCompound ? "block" : "none";
+      if ($("tabContentStrategyLab")) $("tabContentStrategyLab").style.display = isStrategyLab ? "block" : "none";
       try {
         localStorage.setItem("skhynix_active_tab", tab);
       } catch (e) {}
@@ -9428,6 +9494,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (typeof compoundingEngine !== "undefined" && isCompound) {
           compoundingEngine.onTabActivated();
         }
+        if (window.strategyLab && isStrategyLab) window.strategyLab.onTabActivated();
       }, 60);
     }
     window.switchMainTab = switchMainTab;
@@ -9436,11 +9503,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     if ($("navTabTrading")) $("navTabTrading").addEventListener("click", () => switchMainTab("trading"));
     if ($("navTabPairs")) $("navTabPairs").addEventListener("click", () => switchMainTab("pairs"));
     if ($("navTabCompound")) $("navTabCompound").addEventListener("click", () => switchMainTab("compound"));
+    if ($("navTabStrategyLab")) $("navTabStrategyLab").addEventListener("click", () => switchMainTab("strategyLab"));
 
     // Restore saved tab on load
     try {
       const savedTab = localStorage.getItem("skhynix_active_tab");
-      if (savedTab === "trading" || savedTab === "backtest" || savedTab === "pairs" || savedTab === "compound") {
+      if (savedTab === "trading" || savedTab === "backtest" || savedTab === "pairs" || savedTab === "compound" || savedTab === "strategyLab") {
         switchMainTab(savedTab);
       }
     } catch (e) {}

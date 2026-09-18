@@ -19,6 +19,17 @@ assert.equal(controller.markersForRender().length, 1);
 assert.equal(controller.markersForRender()[0].text, '');
 assert.equal(controller.markersForRender(2000)[0].text, 'virtual');
 
+controller.setVisibility('actual', true);
+controller.setExecutions([
+  {time: 3000, source: 'virtual', hypothetical: true, backtest: true, is_entry: true, direction: 'long', position: 'belowBar', shape: 'arrowUp'},
+]);
+assert.equal(controller.markersForRender()[0].shape, 'arrowUp', 'generic component must preserve long-entry direction');
+controller.setExecutions([
+  {time: 1000, source: 'actual', is_entry: true, position: 'aboveBar', shape: 'arrowDown', hoverText: 'actual'},
+  {time: 2000, source: 'virtual', hypothetical: true, backtest: true, is_entry: true, position: 'aboveBar', shape: 'arrowDown', hoverText: 'virtual'},
+]);
+controller.setVisibility('actual', false);
+
 const timeScale = {
   getVisibleLogicalRange: () => ({from: 0, to: 60}),
   timeToCoordinate: time => time / 10,
