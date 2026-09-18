@@ -30,7 +30,7 @@ assert.ok(html.includes('lineStyle: LightweightCharts.LineStyle.Dashed'), 'profi
 assert.ok(html.includes('this.shortTermPriceLines.push'), 'ladder lines must share the existing cleanup lifecycle');
 assert.ok(html.includes('this.isConditionEnabled("entry_base_spread", criteria.condition_toggles)'),
   'scale-in line visibility must follow entry condition #2');
-assert.ok(html.includes('showScaleInLine && criteria.scale_in_trigger_spread'),
+assert.ok(html.includes('if (options.showScaleIn && Number(options.scaleInSpread) > 0)'),
   'scale-in line must not render while entry condition #2 is off');
 assert.ok(!html.includes('title: "CONVERGENCE REF"'),
   'obsolete global convergence reference line must be removed');

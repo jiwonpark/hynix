@@ -182,6 +182,7 @@ def replay_markers(result, interval_seconds):
                 'color': '#dc2626' if entry else '#16a34a', 'text': '', 'count': 0, 'qty': 0,
                 'estimated_net_pnl_usd': 0.0}
             if entry:
+                markers[key]['entry_spread'] = trade['entry_spread']
                 markers[key]['convergence_target_spread'] = trade['entry_spread']-policy['convergence_pts']
                 markers[key]['pnl_model'] = {
                     'adr_entry_price': trade['adr_entry_price'], 'stock_entry_price': trade['stock_entry_price'],
@@ -202,6 +203,7 @@ def replay_markers(result, interval_seconds):
             ):
                 model[field] = (model[field]*n+value)/(n+1)
             m['convergence_target_spread'] = (m['convergence_target_spread']*n + trade['entry_spread']-policy['convergence_pts'])/(n+1)
+            m['entry_spread'] = (m['entry_spread']*n + trade['entry_spread'])/(n+1)
         m['count'] += 1
         m['qty'] = round(m['qty']+(trade['adr_entry_qty'] if entry else .07), 2)
         m['estimated_net_pnl_usd'] += event.get('net_pnl_usd', 0)

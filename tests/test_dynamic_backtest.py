@@ -101,6 +101,8 @@ class ReplayTests(unittest.TestCase):
         hourly = replay_markers(result, 3600)
         self.assertEqual(sum(m['count'] for m in five), sum(m['count'] for m in hourly))
         self.assertTrue(all(m['backtest'] and 'BACKTEST' in m['hoverText'] for m in five))
+        self.assertTrue(all(m.get('entry_spread', 0) > 0 for m in five if m['is_entry']))
+
     def test_ma_stack_requires_current_price_in_order(self):
         # 60 bars of rising spread
         rising = [140 + i * 0.01 for i in range(60)]

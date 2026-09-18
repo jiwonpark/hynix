@@ -49,7 +49,7 @@ const lineStart = html.indexOf('      syncHoveredTrancheAnalytics(hoveredTime = 
 const lineEnd = html.indexOf('      calcMovingAverage(bars, period)', lineStart);
 const pnlMethod = html.slice(pnlStart, lineStart);
 const lineMethod = html.slice(lineStart, lineEnd);
-const created = [], removed = [], pnlData = [], pnlCreated = [], pnlRemoved = [];
+const created = [], removed = [], pnlData = [], pnlCreated = [], pnlRemoved = [], referenceRenders = [];
 const lineSeries = {
   createPriceLine: options => { created.push(options); return options; },
   removePriceLine: line => removed.push(line),
@@ -64,22 +64,24 @@ const lineEngine = vm.runInContext(`({
   shortTermSeries: lineSeries,
   shortTermPnlSeries: pnlSeries,
   shortTermHistory: {bars: [{time: 2, adr: 99, csop: 11}]},
-  rawExecutionMarkers: [{time: 1000, is_entry: true, convergence_target_spread: 139.26,
+  rawExecutionMarkers: [{time: 1000, is_entry: true, entry_spread: 139.34,
     pnl_model: {adr_exit_qty: .07, stock_exit_qty: 1.2, adr_entry_price: 100,
       stock_entry_price: 10, entry_fees_usd: 0, entry_time_ms: 1000,
       exit_fee_bps: 0, slippage_bps: 0, funding_reserve_bps_day: 0, threshold_usd: .02}}],
+  renderShortTermReferenceLines(entry, options) { referenceRenders.push({entry, options}); },
+  renderCurrentPositionReferenceLines() { referenceRenders.push({current: true}); },
   ${pnlMethod}
   ${lineMethod}
 })`, vm.createContext({lineSeries, pnlSeries, Number, LightweightCharts: {LineStyle: {Dashed: 2}},
-  $: id => id === 'valShortTermNetPnl' ? pnlLabel : null}));
+  referenceRenders, $: id => id === 'valShortTermNetPnl' ? pnlLabel : null}));
 lineEngine.syncHoveredTrancheAnalytics(1000);
-assert.equal(created[0].price, 139.26, 'entry x-hover must draw its convergence reference');
-assert.equal(created[0].title, 'SELECTED REF', 'the spread line must not claim exact profitability');
+assert.equal(referenceRenders[0].entry, 139.34, 'entry x-hover must use that execution instance spread');
+assert.equal(referenceRenders[0].options.selected, true, 'hovered entry must replace position reference lines');
 assert.equal(pnlData[0][0].value, 1.27, 'net PnL must use both paired legs');
 assert.equal(pnlCreated[0].price, .02, 'the PnL pane must show the actual exit threshold');
 assert.equal(pnlLabel.textContent, '+$1.270');
 lineEngine.syncHoveredTrancheAnalytics(null);
-assert.equal(removed.length, 1, 'leaving the entry column must remove the convergence reference');
+assert.equal(referenceRenders[1].current, true, 'leaving the entry column must restore current position lines');
 assert.equal(pnlData.at(-1).length, 0, 'leaving the entry column must clear selected PnL');
 
 for (const redundantTitle of ['title: `ENTRY (${criteria.entry_baseline_spread.toFixed(2)}%)`',

@@ -11156,21 +11156,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           hoveredTime !== null && m.time === hoveredTime && m.is_entry && !m.hypothetical && m.pnl_model)
           || this.rawExecutionMarkers?.find((m) =>
           hoveredTime !== null && m.time === hoveredTime && m.is_entry && m.pnl_model);
-        const targetSpread = Number(marker?.convergence_target_spread);
-        const nextSpread = Number.isFinite(targetSpread) ? targetSpread : null;
-        if (this.shortTermHoverReferenceLine) {
-          try { this.shortTermSeries.removePriceLine(this.shortTermHoverReferenceLine); } catch (e) {}
-          this.shortTermHoverReferenceLine = null;
-        }
-        if (nextSpread !== null) {
-          this.shortTermHoverReferenceLine = this.shortTermSeries.createPriceLine({
-            price: nextSpread,
-            color: "#16a34a",
-            lineWidth: 2,
-            lineStyle: LightweightCharts.LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: "SELECTED REF"
-          });
+        const selectedEntrySpread = Number(marker?.entry_spread);
+        if (Number.isFinite(selectedEntrySpread) && selectedEntrySpread > 0) {
+          this.renderShortTermReferenceLines(selectedEntrySpread, { selected: true });
+        } else {
+          this.renderCurrentPositionReferenceLines();
         }
         const pnlData = this.tranchePnlSeries(marker);
         if (this.shortTermPnlSeries) this.shortTermPnlSeries.setData(pnlData);
@@ -11402,6 +11392,64 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }));
       },
 
+      clearShortTermReferenceLines() {
+        if (this.shortTermPriceLines && this.shortTermPriceLines.length) {
+          this.shortTermPriceLines.forEach((line) => {
+            try { this.shortTermSeries.removePriceLine(line); } catch (e) {}
+          });
+        }
+        this.shortTermPriceLines = [];
+      },
+
+      renderShortTermReferenceLines(entrySpread, options = {}) {
+        const entry = Number(entrySpread);
+        if (!(entry > 0) || !this.shortTermSeries) return;
+        this.clearShortTermReferenceLines();
+        this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
+          price: entry,
+          color: options.selected ? "#7c3aed" : "#0284c7",
+          lineWidth: options.selected ? 2 : 1.5,
+          lineStyle: LightweightCharts.LineStyle.Solid,
+          axisLabelVisible: true,
+          title: options.selected ? "ENTRY · SELECTED" : "ENTRY"
+        }));
+        this.shortSpreadProfitLadder(entry).forEach((level) => {
+          const isBreakEven = level.netProfitPct === 0;
+          this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
+            price: level.price,
+            color: isBreakEven ? "rgba(71, 85, 105, 0.34)" : "rgba(22, 163, 74, 0.18)",
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: level.title
+          }));
+        });
+        if (options.showScaleIn && Number(options.scaleInSpread) > 0) {
+          this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
+            price: Number(options.scaleInSpread),
+            color: "#dc2626",
+            lineWidth: 1.5,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: "SCALE-IN SHORT"
+          }));
+        }
+      },
+
+      renderCurrentPositionReferenceLines() {
+        const criteria = this.shortTermReferenceCriteria || {};
+        const entry = Number(criteria.entry_baseline_spread);
+        if (!(entry > 0)) {
+          this.clearShortTermReferenceLines();
+          return;
+        }
+        const showScaleIn = this.isConditionEnabled("entry_base_spread", criteria.condition_toggles);
+        this.renderShortTermReferenceLines(entry, {
+          showScaleIn,
+          scaleInSpread: criteria.scale_in_trigger_spread
+        });
+      },
+
       renderShortTermChart(data) {
         this.initShortTermChart();
         if (!this.shortTermSeries || !data.bars || !data.bars.length) return;
@@ -11450,48 +11498,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
 
         const criteria = (this.state.hedgedStatus && this.state.hedgedStatus.auto_tranche_criteria) || {};
-        if (criteria.entry_baseline_spread) {
-          if (this.shortTermPriceLines && this.shortTermPriceLines.length) {
-            this.shortTermPriceLines.forEach(l => {
-              try { this.shortTermSeries.removePriceLine(l); } catch (e) {}
-            });
-          }
-          this.shortTermPriceLines = [];
-
-          this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
-            price: criteria.entry_baseline_spread,
-            color: "#0284c7",
-            lineWidth: 1.5,
-            lineStyle: LightweightCharts.LineStyle.Solid,
-            axisLabelVisible: true,
-            title: "ENTRY"
-          }));
-
-          this.shortSpreadProfitLadder(criteria.entry_baseline_spread).forEach((level) => {
-            const isBreakEven = level.netProfitPct === 0;
-            this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
-              price: level.price,
-              color: isBreakEven ? "rgba(71, 85, 105, 0.34)" : "rgba(22, 163, 74, 0.18)",
-              lineWidth: 1,
-              lineStyle: LightweightCharts.LineStyle.Dashed,
-              axisLabelVisible: true,
-              title: level.title
-            }));
-          });
-
-          const showScaleInLine = this.isConditionEnabled("entry_base_spread", criteria.condition_toggles);
-          const scaleInLegend = $("legendScaleInLine");
-          if (scaleInLegend) scaleInLegend.style.display = showScaleInLine ? "inline-flex" : "none";
-          if (showScaleInLine && criteria.scale_in_trigger_spread) {
-            this.shortTermPriceLines.push(this.shortTermSeries.createPriceLine({
-              price: criteria.scale_in_trigger_spread,
-              color: "#dc2626",
-              lineWidth: 1.5,
-              lineStyle: LightweightCharts.LineStyle.Dashed,
-              axisLabelVisible: true,
-              title: "SCALE-IN SHORT"
-            }));
-          }
+        this.shortTermReferenceCriteria = criteria;
+        const showScaleInLine = this.isConditionEnabled("entry_base_spread", criteria.condition_toggles);
+        const scaleInLegend = $("legendScaleInLine");
+        if (scaleInLegend) scaleInLegend.style.display = showScaleInLine ? "inline-flex" : "none";
+        if (this.activeHoveredExecutionMarkerTime !== null) {
+          this.syncHoveredTrancheAnalytics(this.activeHoveredExecutionMarkerTime);
+        } else {
+          this.renderCurrentPositionReferenceLines();
         }
       },
 

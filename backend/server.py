@@ -1365,6 +1365,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         "is_entry": is_entry,
                         "avg_price": round(avg_px, 2),
                         "qty": round(m_data["total_qty"], 2),
+                        "entry_spread": round(m_data["entry_spread"], 4) if is_entry else None,
                         "minimum_net_profit_usd": pnl_model["threshold_usd"] if pnl_model else (MIN_NET_PROFIT_USD if is_entry else None),
                         "convergence_target_spread": (round(sum((m["entry_spread"] if m["entry_spread"] is not None else m_data["entry_spread"]) - m["convergence_pts"] for m in pnl_models) / len(pnl_models), 2) if pnl_models else round(m_data["entry_spread"] - .08, 2)) if is_entry else None,
                         "pnl_model": pnl_model,
