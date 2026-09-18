@@ -676,19 +676,21 @@
     }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
-    /* --- Top-Level Navigation Tabs (Backtest vs Trading) --- */
+    /* --- Top-Level Navigation Tabs (4 Primary Tabs) --- */
     .mainNavTabs {
-      display: flex;
-      gap: 8px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
       margin: 14px 0 16px 0;
       border-bottom: 2px solid #cbd5e1;
       padding-bottom: 0;
+      width: 100%;
     }
     .mainNavBtn {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 10px 18px;
+      gap: 8px;
+      padding: 9px 12px;
       border-radius: 8px 8px 0 0;
       background: #f1f5f9;
       border: 1.5px solid #cbd5e1;
@@ -700,6 +702,8 @@
       transition: all 0.15s ease;
       height: auto;
       text-align: left;
+      min-width: 0;
+      overflow: hidden;
     }
     .mainNavBtn:hover {
       background: #e2e8f0;
@@ -715,38 +719,75 @@
       font-weight: 800;
     }
     .navBtnIcon {
-      font-size: 18px;
+      font-size: 16px;
       line-height: 1;
+      flex-shrink: 0;
     }
     .navBtnText {
       display: flex;
       flex-direction: column;
       gap: 1px;
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
     }
     .navBtnText strong {
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 800;
       color: inherit;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
     }
     .navBtnText small {
-      font-size: 10.5px;
+      font-size: 10px;
       color: #64748b;
       font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
     }
     .navLivePill {
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 800;
       background: #e0f2fe;
       color: #0369a1;
-      padding: 2px 6px;
+      padding: 2px 5px;
       border-radius: 4px;
-      margin-left: 6px;
+      margin-left: auto;
       border: 1px solid #bae6fd;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .mainNavBtn.active .navLivePill {
       background: #0284c7;
       color: #ffffff;
       border-color: #0284c7;
+    }
+
+    @media (max-width: 1024px) {
+      .mainNavTabs {
+        display: flex;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        gap: 6px;
+      }
+      .mainNavBtn {
+        flex: 0 0 auto;
+        min-width: 210px;
+      }
+    }
+    @media (max-width: 640px) {
+      .mainNavBtn {
+        min-width: 160px;
+        padding: 8px 10px;
+      }
+      .navBtnText small {
+        display: none;
+      }
     }
 
     /* --- Stage 1 Real / Paper Trading Terminal & Execution Styles --- */
@@ -1885,14 +1926,14 @@
         <span class="navBtnIcon">📊</span>
         <div class="navBtnText">
           <strong id="lblNavBacktest">Backtest & Strategy Research</strong>
-          <small id="subNavBacktest">Parameter Tuning & Historical Simulation</small>
+          <small id="subNavBacktest">Tuning & Simulation</small>
         </div>
       </button>
       <button id="navTabTrading" class="mainNavBtn" type="button">
         <span class="navBtnIcon">⚡</span>
         <div class="navBtnText">
           <strong id="lblNavTrading">Live & Paper Execution Terminal</strong>
-          <small id="subNavTrading">Autonomous Bot, Active Positions & Orders</small>
+          <small id="subNavTrading">Autonomous Bot & Orders</small>
         </div>
         <span id="navLivePill" class="navLivePill">BOT READY</span>
       </button>
@@ -1900,7 +1941,7 @@
         <span class="navBtnIcon">⚖️</span>
         <div class="navBtnText">
           <strong id="lblNavPairs">Hedge-Worthy Pairs Explorer</strong>
-          <small id="subNavPairs">Cross-Market Cointegration & Statistical Arbitrage Screener</small>
+          <small id="subNavPairs">Cointegration Screener</small>
         </div>
         <span id="navPairsPill" class="navLivePill" style="background:#0284c7;color:#fff;">SCANNER</span>
       </button>
@@ -1908,9 +1949,9 @@
         <span class="navBtnIcon">🔁</span>
         <div class="navBtnText">
           <strong id="lblNavCompound">Micro-Compounding Engine</strong>
-          <small id="subNavCompound">Ultra-Frequent Safe Arbitrage & Geometric Compounding</small>
+          <small id="subNavCompound">Safe Geometric Compounding</small>
         </div>
-        <span id="navCompoundPill" class="navLivePill" style="background:#10b981;color:#fff;">ZERO-LOSS COMPOUND</span>
+        <span id="navCompoundPill" class="navLivePill" style="background:#10b981;color:#fff;">COMPOUND</span>
       </button>
     </nav>
 
@@ -7989,13 +8030,13 @@
         lblCollateralSummary: "Binance Wallet Split",
         lblUpbitEquity: "Upbit KRW Equity",
         lblNavBacktest: "Backtest & Strategy Research",
-        subNavBacktest: "Parameter Tuning & Historical Simulation",
+        subNavBacktest: "Tuning & Simulation",
         lblNavTrading: "Live & Paper Execution Terminal",
-        subNavTrading: "Autonomous Bot, Active Positions & Orders",
+        subNavTrading: "Autonomous Bot & Orders",
         lblNavPairs: "Hedge-Worthy Pairs Explorer",
-        subNavPairs: "Cross-Market Cointegration & Statistical Arbitrage Screener",
+        subNavPairs: "Cointegration Screener",
         lblNavCompound: "Micro-Compounding Engine",
-        subNavCompound: "Ultra-Frequent Safe Arbitrage & Geometric Compounding",
+        subNavCompound: "Safe Geometric Compounding",
         btnDeployToBot: "🚀 Deploy Strategy to Trading Bot",
         badgeDeployedStrategy: "ACTIVE DEPLOYED STRATEGY",
         lblChangeInBacktest: "Change in Backtest",
@@ -8007,13 +8048,13 @@
         topEyebrow: "HYPERION // 자율 상대가치 차익거래 엔진",
         topTitle: "HYPERION · 듀얼렉 퀀트 트레이딩 터미널",
         lblNavBacktest: "백테스트 및 계량 전략 분석",
-        subNavBacktest: "알고리즘 파라미터 최적화 및 시뮬레이션",
+        subNavBacktest: "파라미터 튜닝 & 시뮬레이션",
         lblNavTrading: "실전 및 모의 매매 실행 터미널",
-        subNavTrading: "자율운용 봇, 실시간 포지션 및 주문 관리",
+        subNavTrading: "자율운용 봇 & 실시간 주문",
         lblNavPairs: "헤지 유망 페어 차익거래 스크리너",
-        subNavPairs: "교차 시장 공적분 & 통계적 차익거래 탐색기",
+        subNavPairs: "공적분 차익거래 스크리너",
         lblNavCompound: "마이크로 복리 엔진",
-        subNavCompound: "초고빈도 무손실 차익거래 & 기하급수적 복리 증식",
+        subNavCompound: "무손실 기하급수적 복리 증식",
         btnDeployToBot: "🚀 실전 봇에 전략 배포",
         badgeDeployedStrategy: "현재 배포된 실전 봇 전략",
         lblChangeInBacktest: "백테스트에서 변경",
