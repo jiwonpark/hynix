@@ -24,5 +24,13 @@ assert.equal(engine.shortSpreadProfitLadder(0).length, 0);
 assert.ok(html.includes('rgba(22, 163, 74, 0.18)'), 'net-profit lines must remain visually subtle');
 assert.ok(html.includes('lineStyle: LightweightCharts.LineStyle.Dashed'), 'profit ladder must use dashed lines');
 assert.ok(html.includes('this.shortTermPriceLines.push'), 'ladder lines must share the existing cleanup lifecycle');
+assert.ok(html.includes('this.isConditionEnabled("entry_base_spread", criteria.condition_toggles)'),
+  'scale-in line visibility must follow entry condition #2');
+assert.ok(html.includes('showScaleInLine && criteria.scale_in_trigger_spread'),
+  'scale-in line must not render while entry condition #2 is off');
+assert.ok(!html.includes('title: "CONVERGENCE REF"'),
+  'obsolete global convergence reference line must be removed');
+assert.ok(!html.includes('> Convergence ref</span>'),
+  'obsolete convergence reference legend must be removed');
 
 console.log('Profit ladder line regression checks passed');
