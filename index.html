@@ -2911,6 +2911,11 @@
               <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; margin-bottom: 8px;">
                 <strong style="color: #475569;">PRICE-SIGNAL REPLAY · UNCONSTRAINED CAPITAL</strong>
                 <button id="btnRerunDynamicBacktest" class="terminal-action-control" type="button" style="width: auto; height: 28px; padding: 0 10px;" onclick="tradingEngine.scheduleDynamicBacktest(true)">Rerun</button>
+                <div aria-label="Trade marker visibility" style="display: inline-flex; align-items: center; gap: 4px; padding: 2px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px;">
+                  <span style="padding: 0 4px; color: #64748b; font-size: 9.5px; font-weight: 800;">SHOW</span>
+                  <button id="legendActualTrades" type="button" aria-pressed="true" onclick="tradingEngine.toggleTradeMarkers('actual')" title="Show or hide actual entry and exit fills" style="width: auto; height: 24px; padding: 0 8px; border: 1px solid #0284c7; border-radius: 4px; background: #e0f2fe; color: #0369a1; font-size: 10px; font-weight: 800;">✓ Actual</button>
+                  <button id="legendVirtualTrades" type="button" aria-pressed="true" onclick="tradingEngine.toggleTradeMarkers('virtual')" title="Show or hide virtual dynamic-backtest entries and exits" style="width: auto; height: 24px; padding: 0 8px; border: 1px solid #8b5cf6; border-radius: 4px; background: #f5f3ff; color: #6d28d9; font-size: 10px; font-weight: 800;">✓ Virtual</button>
+                </div>
                 <span id="dynamicBacktestStatus" role="status">Loading backtest…</span>
               </div>
               <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">Starts flat at the beginning of loaded history · 5m closes / completed 1h macro sizing · capital, margin and leverage do not suppress simulated trades · fees, slippage and estimated funding included. LIVE ONLY checks protect real orders; BACKTEST ONLY switches affect the simulation.</div>
@@ -2929,8 +2934,8 @@
                   <span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA('ma60')" title="Click to toggle 60-MA" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; color: #0891b2; transition: opacity 0.15s ease;">
                     <span style="display: inline-block; width: 10px; height: 1px; background: #06b6d4; border-radius: 1px;"></span> 60-MA: <strong id="valShortTermMa60">--%</strong>
                   </span>
-                  <span id="legendActualTrades" role="button" tabindex="0" aria-pressed="true" onclick="tradingEngine.toggleTradeMarkers('actual')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();tradingEngine.toggleTradeMarkers('actual')}" title="Toggle actual entry and exit fills" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; transition: opacity 0.15s ease;"><strong style="color: #dc2626;">▼</strong>/<strong style="color: #16a34a;">▲</strong> Actual trades</span>
-                  <span id="legendVirtualTrades" role="button" tabindex="0" aria-pressed="true" onclick="tradingEngine.toggleTradeMarkers('virtual')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();tradingEngine.toggleTradeMarkers('virtual')}" title="Toggle virtual dynamic-backtest entries and exits" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 3px; transition: opacity 0.15s ease;"><strong style="color: #dc2626;">⇩</strong>/<strong style="color: #16a34a;">⇧</strong> Virtual trades</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;"><strong style="color: #dc2626;">▼</strong>/<strong style="color: #16a34a;">▲</strong> Actual</span>
+                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #dc2626; opacity: .45;">⇩</strong>/<strong style="color: #16a34a; opacity: .45;">⇧</strong> Virtual</span>
                   <span style="display: inline-flex; align-items: center; gap: 3px; color: #0f766e;"><span style="display: inline-block; width: 10px; height: 2px; background: #0f766e;"></span> Selected net PnL: <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>
                   <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #0284c7;"></span> Base</span>
                   <span id="legendScaleInLine" style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #dc2626; border-top: 1px dashed #dc2626;"></span> Scale-In</span>
@@ -11061,8 +11066,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const visible = this.executionChartController.toggleVisibility(kind);
         const legend = $(kind === "actual" ? "legendActualTrades" : "legendVirtualTrades");
         if (legend) {
-          legend.style.opacity = visible ? "1" : "0.32";
           legend.setAttribute("aria-pressed", visible ? "true" : "false");
+          legend.textContent = `${visible ? "✓" : "○"} ${kind === "actual" ? "Actual" : "Virtual"}`;
+          legend.style.opacity = visible ? "1" : "0.58";
+          legend.style.background = visible ? (kind === "actual" ? "#e0f2fe" : "#f5f3ff") : "#ffffff";
+          legend.style.color = visible ? (kind === "actual" ? "#0369a1" : "#6d28d9") : "#64748b";
         }
         this.activeHoveredExecutionMarkerTime = null;
         this.updateMarkerState(null);

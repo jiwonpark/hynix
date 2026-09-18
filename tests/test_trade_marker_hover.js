@@ -49,7 +49,7 @@ assert.ok(componentSource.includes('shape: isShort ? "arrowDown" : "arrowUp"'),
   'hypothetical markers must use arrow shapes instead of colored circle dots');
 assert.ok(componentSource.includes('m.hypothetical ? "0.35" : "0.70"'),
   'simulated trades should use dimmed arrows');
-assert.ok(html.includes('Virtual trades'));
+assert.ok(html.includes('✓ Virtual'));
 assert.ok(html.includes('id="legendActualTrades"'));
 assert.ok(html.includes('id="legendVirtualTrades"'));
 assert.ok(html.includes('toggleTradeMarkers(kind)'));
