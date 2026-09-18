@@ -88,7 +88,9 @@ global.window = {
     textOverflow: el.style.textOverflow || "clip",
     overflow: el.style.overflow || "visible",
     overflowX: el.style.overflowX || "visible",
-    whiteSpace: el.style.whiteSpace || "normal"
+    whiteSpace: el.style.whiteSpace || "normal",
+    webkitLineClamp: el.style.webkitLineClamp || "none",
+    getPropertyValue: (name) => name === "-webkit-line-clamp" ? (el.style.webkitLineClamp || "none") : ""
   })
 };
 global.document = mockDoc;
@@ -110,10 +112,21 @@ if (!managerDefMatch) {
 const manager = eval("({" + managerDefMatch[1] + "})");
 manager.tooltipEl = tooltipEl;
 
-// Test 1: Literal ellipsis detection
+// Test 1: Literal ellipsis is detected only when its complete source is available
 const elLiteral = new MockElement("span", "", "", "4. 5m Bullish MA Stack...");
+elLiteral.dataset.fullText = "4. 5m Bullish MA Stack (Price > MA7 > MA24 > MA60)";
 if (!manager.isElementTruncated(elLiteral)) {
   console.error("FAIL: literal ellipsis not detected");
+  process.exit(1);
+}
+const literalData = manager.getFullTextData(elLiteral);
+if (!literalData || literalData.text !== "4. 5m Bullish MA Stack (Price > MA7 > MA24 > MA60)") {
+  console.error("FAIL: literal ellipsis did not resolve to complete source text");
+  process.exit(1);
+}
+const loadingStatus = new MockElement("span", "", "", "Loading Binance Futures data...");
+if (manager.isElementTruncated(loadingStatus)) {
+  console.error("FAIL: ordinary trailing punctuation was treated as truncation");
   process.exit(1);
 }
 
@@ -140,14 +153,35 @@ if (!manager.isElementTruncated(elClipped)) {
   process.exit(1);
 }
 
-// Test 4: Full text data extraction
+// Test 4: Generic layout overflow must not create a tooltip for whole containers
+const layoutPanel = new MockElement("div", "", "tablePanel", "Every cell and control inside the panel");
+layoutPanel.style.overflow = "hidden";
+layoutPanel.scrollWidth = 500;
+layoutPanel.clientWidth = 150;
+if (manager.isElementTruncated(layoutPanel)) {
+  console.error("FAIL: generic overflow:hidden layout container treated as text truncation");
+  process.exit(1);
+}
+
+// Test 5: Multi-line clamp remains a valid text truncation signal
+const lineClamped = new MockElement("div", "", "controlHint", "A complete multi-line description that is clipped after two lines");
+lineClamped.style.overflow = "hidden";
+lineClamped.style.webkitLineClamp = "2";
+lineClamped.scrollHeight = 60;
+lineClamped.clientHeight = 20;
+if (!manager.isElementTruncated(lineClamped)) {
+  console.error("FAIL: line-clamped text was not detected");
+  process.exit(1);
+}
+
+// Test 6: Full text data extraction
 const data = manager.getFullTextData(elClipped);
 if (!data || data.text !== "4. 5m Bullish MA Stack (Price > MA7 > MA24 > MA60)") {
   console.error("FAIL: getFullTextData did not extract full text: " + JSON.stringify(data));
   process.exit(1);
 }
 
-// Test 5: Dataset fullText override
+// Test 7: Dataset fullText override
 const elData = new MockElement("span", "", "", "Short...");
 elData.dataset.fullText = "Detailed Complete Arbitrage Position Spec";
 const data2 = manager.getFullTextData(elData);
@@ -156,7 +190,7 @@ if (!data2 || data2.text !== "Detailed Complete Arbitrage Position Spec") {
   process.exit(1);
 }
 
-// Test 6: Title stashing and restoring on show/hide
+// Test 8: Title stashing and restoring on show/hide
 elClipped.setAttribute("title", "Hover Explanation");
 manager.show(elClipped, { clientX: 100, clientY: 100 });
 if (elClipped.hasAttribute("title")) {

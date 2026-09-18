@@ -13870,19 +13870,31 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (el.id === "ellipsisHoverTooltip" || el.closest("#ellipsisHoverTooltip")) return false;
         if (el.classList.contains("fieldTip") || el.closest(".fieldTip") || el.closest("#pairsHelpPopup")) return false;
 
-        // 1. Text literally ends with "..." or "…"
+        // 1. Text literally ends with "..." or "…" only when the full source
+        // is explicitly available. An ellipsis can also be ordinary punctuation
+        // (for example "Loading...") and must not invent a duplicate tooltip.
         const text = (el.innerText || el.textContent || "").trim();
-        if (text.length > 3 && (text.endsWith("...") || text.endsWith("…"))) {
+        const explicitFullText = (
+          (el.dataset && el.dataset.fullText) || el.getAttribute("title") || ""
+        ).trim();
+        if (
+          text.length > 3
+          && (text.endsWith("...") || text.endsWith("…"))
+          && explicitFullText
+          && explicitFullText !== text
+        ) {
           if (el.childElementCount <= 1) return true;
         }
 
-        // 2. CSS text-overflow: ellipsis or overflow: hidden with content clipping
+        // 2. Only text-specific clipping qualifies. Generic overflow:hidden is
+        // widely used by cards, tables, charts, and progress bars for layout.
         const style = (typeof window !== "undefined" && window.getComputedStyle) ? window.getComputedStyle(el) : null;
         if (!style) return false;
         const hasEllipsis = style.textOverflow === "ellipsis";
-        const isOverflowHidden = style.overflow === "hidden" || style.overflowX === "hidden";
+        const lineClamp = parseInt(style.webkitLineClamp || style.getPropertyValue?.("-webkit-line-clamp") || "0", 10);
+        const hasLineClamp = Number.isFinite(lineClamp) && lineClamp > 0;
 
-        if (hasEllipsis || isOverflowHidden) {
+        if (hasEllipsis || hasLineClamp) {
           if (el.scrollWidth > el.clientWidth + 1) {
             return true;
           }
