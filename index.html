@@ -14069,19 +14069,32 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       async fetchQueue() {
         try {
-          const [resStatus, resComp] = await Promise.allSettled([
-            fetch("/api/trade/hedged_status"),
-            fetch("/api/trade/compounding_stats")
-          ]);
+          const fetchWithPrefix = async (path) => {
+            const origin = window.location.origin;
+            const candidates = [
+              `${origin}/skhynix${path}`,
+              `/skhynix${path}`,
+              `${origin}${path}`,
+              path
+            ];
+            for (const url of candidates) {
+              try {
+                const res = await fetch(url, { signal: AbortSignal.timeout(2500) });
+                if (res.ok) {
+                  const contentType = res.headers.get("content-type") || "";
+                  if (contentType.includes("application/json")) {
+                    return await res.json();
+                  }
+                }
+              } catch (e) {}
+            }
+            return null;
+          };
 
-          let statusData = null;
-          let compData = null;
-          if (resStatus.status === "fulfilled" && resStatus.value.ok) {
-            statusData = await resStatus.value.json();
-          }
-          if (resComp.status === "fulfilled" && resComp.value.ok) {
-            compData = await resComp.value.json();
-          }
+          const [statusData, compData] = await Promise.all([
+            fetchWithPrefix("/api/trade/hedged_status"),
+            fetchWithPrefix("/api/trade/compounding_stats")
+          ]);
 
           this.renderQueue(statusData, compData);
         } catch (err) {
