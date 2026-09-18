@@ -11186,7 +11186,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
 
         if (data.auto_tranche_criteria) {
+          this.shortTermReferenceCriteria = data.auto_tranche_criteria;
           this.renderAutoTrancheCriteria(data.auto_tranche_criteria, data);
+          if (this.activeHoveredExecutionMarkerTime === null) {
+            this.renderCurrentPositionReferenceLines();
+          }
           if ($("chkAutoPeriodic48h")) {
             const isDaemonOn = Boolean(data.auto_tranche_criteria.backend_auto_tranche_enabled);
             $("chkAutoPeriodic48h").checked = isDaemonOn;

@@ -152,6 +152,14 @@
       el("valShortTermMa60").textContent = latest ? krw(latest.ma60) : "--";
       el("lblShortTermChartSync").textContent = `${data.days}d · ${data.bars.length.toLocaleString()} closed 5m bars`;
       this.syncConditionBadges(latest, latestHour);
+      if (data.open_position?.price) {
+        this.renderEntryReferenceLines(data.open_position.price, false);
+      } else {
+        const lastEntry = (data.markers || []).filter(m => m.is_entry).at(-1);
+        if (lastEntry?.entry_price) {
+          this.renderEntryReferenceLines(lastEntry.entry_price, false);
+        }
+      }
       this.chart.timeScale().fitContent();
     },
 
@@ -189,20 +197,38 @@
       this.candles.setMarkers(this.chartInterval === "5m" ? this.controller.markersForRender(hoveredTime) : []);
     },
 
+    renderEntryReferenceLines(entryPrice, selected = false) {
+      const price = Number(entryPrice);
+      if (!(price > 0)) {
+        this.controller.clearReferenceLines();
+        return;
+      }
+      const fee = Number(this.data?.fee_bps || 0) / 10000;
+      const levels = [0, .2, .5, 1, 2, 3].map((target) => ({
+        netProfitPct: target, price: price * (1 + fee) * (1 + target / 100) / (1 - fee),
+        title: target === 0 ? "B/E NET" : `NET +${target}%`,
+      }));
+      this.controller.renderReferenceLines({ entry: price, selected, levels });
+    },
+
     onCrosshair(param) {
       if (!param?.point || !this.chart || this.chartInterval !== "5m") return;
       const host = el("shortTermSpreadChartHost");
       const time = this.controller.executionTimeAtX(param.point.x, { timeScale: this.chart.timeScale(), hostWidth: host.clientWidth });
       this.renderMarkers(time);
       const entry = (this.data?.markers || []).find((marker) => marker.time === time && marker.is_entry);
-      if (!entry) return this.controller.clearReferenceLines();
-      const fee = Number(this.data.fee_bps || 0) / 10000;
-      const price = Number(entry.entry_price);
-      const levels = [0, .2, .5, 1, 2, 3].map((target) => ({
-        netProfitPct: target, price: price * (1 + fee) * (1 + target / 100) / (1 - fee),
-        title: target === 0 ? "B/E NET" : `NET +${target}%`,
-      }));
-      this.controller.renderReferenceLines({ entry: price, selected: true, levels });
+      if (entry) {
+        this.renderEntryReferenceLines(entry.entry_price, true);
+      } else if (this.data?.open_position?.price) {
+        this.renderEntryReferenceLines(this.data.open_position.price, false);
+      } else {
+        const lastEntry = (this.data?.markers || []).filter(m => m.is_entry).at(-1);
+        if (lastEntry?.entry_price) {
+          this.renderEntryReferenceLines(lastEntry.entry_price, false);
+        } else {
+          this.controller.clearReferenceLines();
+        }
+      }
     },
 
     toggleVirtual() {
