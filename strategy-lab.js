@@ -15,6 +15,9 @@
     data: null,
     loaded: false,
     chartInterval: "5m",
+    selectedMarkerTime: null,
+    hoveredMarkerTime: null,
+    syncingMarkerState: false,
 
     bindForkedSection() {
       if (this.forked) return;
@@ -141,6 +144,7 @@
       this.data = data;
       this.loaded = true;
       this.selectedMarkerTime = null;
+      this.hoveredMarkerTime = null;
       this.controller.setExecutions(data.markers || []);
       this.renderChartData();
       const stats = data.stats || {};
@@ -154,7 +158,6 @@
       el("valShortTermMa60").textContent = latest ? krw(latest.ma60) : "--";
       el("lblShortTermChartSync").textContent = `${data.days}d · ${data.bars.length.toLocaleString()} closed 5m bars`;
       this.syncConditionBadges(latest, latestHour);
-      this.syncActiveReferenceLines();
       this.chart.timeScale().fitContent();
     },
 
@@ -169,7 +172,7 @@
       const rows = this.chartInterval === "1h" ? (this.data?.hourly || []) : (this.data?.bars || []);
       this.candles.setData(rows.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
       this.maSeries.forEach(({ key, series }) => series.setData(rows.filter((bar) => Number.isFinite(bar[key])).map((bar) => ({ time: bar.time, value: bar[key] }))));
-      this.renderMarkers(this.selectedMarkerTime);
+      this.syncMarkerState();
       this.chart.timeScale().fitContent();
     },
 
@@ -195,7 +198,7 @@
     markerTimeAtParam(param, host) {
       if (!param) return null;
       if (param.time) {
-        const direct = (this.data?.markers || []).find((m) => m.time === param.time);
+        const direct = (this.data?.markers || []).find((m) => m.time === param.time && this.controller.isVisible(m));
         if (direct) return direct.time;
       }
       if (param.point && host && this.controller) {
@@ -217,22 +220,38 @@
       } else {
         this.selectedMarkerTime = null;
       }
-      this.syncActiveReferenceLines();
-      this.renderMarkers(this.selectedMarkerTime);
+      this.hoveredMarkerTime = time;
+      this.syncMarkerState();
     },
 
     onCrosshair(param) {
-      if (!param?.point || !this.chart || this.chartInterval !== "5m") return;
+      if (this.syncingMarkerState || !this.chart || this.chartInterval !== "5m") return;
       const host = el("shortTermSpreadChartHost");
-      const time = this.markerTimeAtParam(param, host);
-      const activeTime = time || this.selectedMarkerTime;
-      this.renderMarkers(activeTime);
-      if (this.selectedMarkerTime === null) {
-        this.syncActiveReferenceLines(time);
+      const time = param?.point ? this.markerTimeAtParam(param, host) : null;
+      if (time === this.hoveredMarkerTime) return;
+      this.hoveredMarkerTime = time;
+      this.syncMarkerState();
+    },
+
+    syncMarkerState() {
+      if (this.syncingMarkerState || !this.controller) return;
+      // setMarkers recalculates the crosshair synchronously in Lightweight Charts.
+      // Ignore that notification while updating markers and their price lines.
+      this.syncingMarkerState = true;
+      try {
+        const activeTime = this.selectedMarkerTime ?? this.hoveredMarkerTime;
+        this.renderMarkers(activeTime);
+        this.syncActiveReferenceLines(this.hoveredMarkerTime);
+      } finally {
+        this.syncingMarkerState = false;
       }
     },
 
     syncActiveReferenceLines(hoverTime = null) {
+      if (this.controller.visibility.virtual === false) {
+        this.controller.clearReferenceLines();
+        return;
+      }
       const targetTime = this.selectedMarkerTime !== null ? this.selectedMarkerTime : hoverTime;
       const marker = (this.data?.markers || []).find((m) => m.time === targetTime);
       if (marker && marker.entry_price) {
@@ -283,8 +302,9 @@
       const button = el("legendVirtualTrades");
       button.textContent = `${visible ? "✓" : "○"} Virtual`;
       button.setAttribute("aria-pressed", String(visible));
-      if (!visible) this.controller.clearReferenceLines();
-      this.renderMarkers();
+      this.selectedMarkerTime = null;
+      this.hoveredMarkerTime = null;
+      this.syncMarkerState();
     },
 
     onTabActivated() {
