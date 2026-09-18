@@ -889,39 +889,6 @@
         display: none;
       }
     }
-    .strategyLabCondition {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 7px 10px;
-      border: 1px solid #cbd5e1;
-      border-radius: 7px;
-      background: #f8fafc;
-      color: #334155;
-      font-size: 11.5px;
-      font-weight: 700;
-    }
-    .strategyLabCondition input { width: auto; margin: 0; accent-color: #7c3aed; }
-    .strategyLabKpis {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .strategyLabKpi {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      padding: 11px 12px;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      background: #fff;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
-    }
-    .strategyLabKpi span { color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; }
-    .strategyLabKpi strong { color: #0f172a; font-size: 17px; font-variant-numeric: tabular-nums; }
-    @media (max-width: 900px) { .strategyLabKpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-    @media (max-width: 520px) { .strategyLabKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
     /* --- Stage 1 Real / Paper Trading Terminal & Execution Styles --- */
     .tradingModeSwitch {
@@ -1232,15 +1199,6 @@
     .executionChartFooter { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:10.5px;color:#475569; }
     .executionChartLegend { display:flex;gap:8px;flex-wrap:wrap;font-weight:600;align-items:center; }
     .executionChartSync { font-size:10px;color:#94a3b8; }
-    #strategyLabExecutionSection .condRow input[type="checkbox"] {
-      width: 14px;
-      height: 14px;
-      margin: 0;
-      flex: 0 0 auto;
-      accent-color: #7c3aed;
-    }
-    #strategyLabExecutionSection .condRow > span { flex: 1; }
-    #strategyLabExecutionSection .condRow > strong { text-align: right; font-size: 10.5px; }
     .shortTermCriteriaGrid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3823,55 +3781,7 @@
       </section>
     </div><!-- End #tabContentCompound -->
 
-    <div id="tabContentStrategyLab" style="display:none;">
-      <div class="shortTermExecutionSection" id="strategyLabExecutionSection">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-          <div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-size:16px;">📈</span>
-              <strong style="font-size:13.5px;color:#0f172a;text-transform:uppercase;letter-spacing:.5px;">BTC/KRW Tracker & MA-Stack Criteria</strong>
-              <span style="font-size:10.5px;background:#f3e8ff;color:#6d28d9;padding:2px 7px;border-radius:4px;font-weight:800;">UPBIT STRATEGY LAB</span>
-            </div>
-            <div style="font-size:11.5px;color:#64748b;margin-top:2px;">Virtual entries and exits use closed bars and execute at the next 5-minute open.</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <select id="strategyLabDays" style="height:28px;width:auto;"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
-            <label style="font-size:11px;font-weight:700;color:#475569;">Fee/side <input id="strategyLabFee" type="number" value="5" min="0" max="100" step=".5" style="width:62px;height:28px;"> bp</label>
-          </div>
-        </div>
-        <div class="shortTermGrid">
-          <div id="strategyLabExecutionChartFrame"></div>
-          <div class="shortTermCriteriaGrid">
-            <div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #16a34a;border-radius:6px;padding:10px 12px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><strong style="font-size:11px;color:#166534;text-transform:uppercase;">▲ Long Entry Criteria</strong><span style="font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:4px;background:#dcfce7;color:#166534;">ALL ENABLED · AND</span></div>
-              <div class="condChecklist">
-                <label class="condRow"><input id="labEntry5m" type="checkbox" checked> <span>1. 5m Bullish MA Stack</span><strong>Price &gt; MA7 &gt; MA24 &gt; MA60</strong></label>
-                <label class="condRow"><input id="labEntry1h" type="checkbox" checked> <span>2. 1h Bullish MA Stack</span><strong>Price &gt; MA7 &gt; MA24 &gt; MA60</strong></label>
-                <div style="font-size:10.5px;color:#64748b;margin-top:5px;">Signal at close · fill at next 5m open</div>
-              </div>
-            </div>
-            <div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #dc2626;border-radius:6px;padding:10px 12px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><strong style="font-size:11px;color:#991b1b;text-transform:uppercase;">▼ Long Exit Criteria</strong><span style="font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:4px;background:#fee2e2;color:#991b1b;">ANY ENABLED · OR</span></div>
-              <div class="condChecklist">
-                <label class="condRow"><input id="labExit5m" type="checkbox" checked> <span>1. 5m Bearish MA Stack</span><strong>Price &lt; MA7 &lt; MA24 &lt; MA60</strong></label>
-                <label class="condRow"><input id="labExit1h" type="checkbox" checked> <span>2. 1h Bearish MA Stack</span><strong>Price &lt; MA7 &lt; MA24 &lt; MA60</strong></label>
-                <div style="font-size:10.5px;color:#64748b;margin-top:5px;">Fees deducted on entry and exit</div>
-              </div>
-            </div>
-            <div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:6px;padding:10px 12px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><strong style="font-size:11px;color:#5b21b6;text-transform:uppercase;">Backtest Results</strong><span id="labTrades" style="font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:4px;background:#f3e8ff;color:#6d28d9;">-- TRADES</span></div>
-              <div class="condChecklist">
-                <div class="condRow"><span>Net Return</span><strong id="labNetReturn">--</strong></div>
-                <div class="condRow"><span>Buy &amp; Hold</span><strong id="labBuyHold">--</strong></div>
-                <div class="condRow"><span>Max Drawdown</span><strong id="labDrawdown">--</strong></div>
-                <div class="condRow"><span>Win Rate</span><strong id="labWinRate">--</strong></div>
-                <div class="condRow"><span>Ending Equity</span><strong id="labEquity">--</strong></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div id="tabContentStrategyLab" style="display:none;"></div>
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">HYPERION &middot; Quantitative Trading System &middot; Dual-Leg Parity Engine</span>
@@ -3926,7 +3836,7 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="strategy-execution-chart.js?v=20260918b"></script>
-  <script src="strategy-lab.js?v=20260918b"></script>
+  <script src="strategy-lab.js?v=20260918c"></script>
   <script>
     const ASSET_STRATEGIES = {
       skhynix_arb: {

@@ -17,12 +17,11 @@ class StrategyLabUiTests(unittest.TestCase):
         self.assertIn('switchMainTab("strategyLab")', self.html)
 
     def test_dual_timeframe_conditions_and_common_chart(self):
-        for control in ("labEntry5m", "labEntry1h", "labExit5m", "labExit1h"):
-            self.assertIn(f'id="{control}"', self.html)
+        for control in ("chkCondEntryMaStack5m", "chkCondEntryMaStack1h", "chkCondExitMaStack5m", "chkCondExitMaStack1h"):
+            self.assertIn(control, self.js)
         self.assertIn("new StrategyExecutionChartController", self.js)
-        self.assertIn("StrategyExecutionChartFrame.mount", self.js)
-        self.assertIn('class="shortTermExecutionSection" id="strategyLabExecutionSection"', self.html)
-        self.assertIn('class="shortTermCriteriaGrid"', self.html)
+        self.assertIn('source.cloneNode(true)', self.js)
+        self.assertIn('document.getElementById("shortTermExecutionSection")', self.js)
         self.assertIn("api/strategy-lab/upbit-ma-stack", self.js)
         self.assertNotIn("fetch(`/api/strategy-lab", self.js)
         self.assertIn("NET +${target}%", self.js)

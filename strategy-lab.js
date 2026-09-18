@@ -1,102 +1,127 @@
 (function () {
   "use strict";
 
-  const byId = (id) => document.getElementById(id);
+  const rootId = (id) => `labFork_${id}`;
+  const el = (id) => document.getElementById(rootId(id));
   const pct = (value) => `${Number(value || 0) >= 0 ? "+" : ""}${Number(value || 0).toFixed(2)}%`;
   const krw = (value) => `₩${Math.round(Number(value || 0)).toLocaleString()}`;
 
   const lab = {
+    forked: false,
     chart: null,
     candles: null,
     maSeries: [],
     controller: null,
-    frame: null,
     data: null,
     loaded: false,
 
-    initFrame() {
-      if (this.frame || !window.StrategyExecutionChartFrame) return;
-      this.frame = StrategyExecutionChartFrame.mount({
-        container: "strategyLabExecutionChartFrame",
-        id: "strategyLabChart",
-        ids: {
-          action: "strategyLabRun", actual: "strategyLabActualToggle", virtual: "strategyLabVirtualToggle",
-          status: "strategyLabStatus", secondaryStatus: "strategyLabMacroStatus",
-          host: "strategyLabChartHost", legend: "strategyLabChartLegend", sync: "strategyLabChartSync",
-        },
-        title: "PRICE-SIGNAL REPLAY · UNCONSTRAINED CAPITAL",
-        action: { label: "Rerun", onClick: () => this.run() },
-        actual: { label: "Actual", enabled: false, visible: false },
-        virtual: { label: "Virtual", onToggle: () => this.toggleVirtual() },
-        status: "Run the backtest to load Upbit candles.",
-        description: "Starts flat at the beginning of loaded history · completed 5m and 1h candles · next-open execution · entry and exit fees included.",
-        secondaryStatus: "1h MA-stack state: waiting for completed hourly prices…",
-        height: 420,
-        legend: '<span style="color:#0f172a"><span style="display:inline-block;width:10px;height:3px;background:#0f172a"></span> BTC/KRW</span><span style="color:#7c3aed">— MA7</span><span style="color:#0284c7">— MA24</span><span style="color:#f59e0b">— MA60</span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Virtual</span><span style="color:#0f766e">Dashed: B/E and net-profit levels on entry hover</span>',
-        syncText: "Upbit public candles",
+    forkOriginalSection() {
+      if (this.forked) return;
+      const source = document.getElementById("shortTermExecutionSection");
+      const destination = document.getElementById("tabContentStrategyLab");
+      if (!source || !destination) return;
+      const clone = source.cloneNode(true);
+      clone.id = "strategyLabExecutionSection";
+      clone.querySelectorAll("[id]").forEach((node) => { node.id = rootId(node.id); });
+      clone.querySelectorAll("*").forEach((node) => {
+        [...node.attributes].forEach((attr) => {
+          if (attr.name.startsWith("on")) node.removeAttribute(attr.name);
+        });
       });
+      destination.replaceChildren(clone);
+      this.forked = true;
+
+      el("lblShortTermTitle").textContent = "BTC/KRW Tracker & Auto-Backtest Criteria";
+      el("lblShortTermSubtitle").textContent = "Direct fork of the execution tracker · Upbit public candles · virtual fills only.";
+      const headerBadge = el("lblShortTermTitle").nextElementSibling;
+      if (headerBadge) headerBadge.textContent = "UPBIT STRATEGY LAB";
+
+      const controls = el("valShortTermCurrentParity").parentElement.parentElement;
+      controls.innerHTML = `
+        <div class="pillGroup" style="display:inline-flex;background:#f1f5f9;padding:2px;border-radius:6px;">
+          <button type="button" disabled>1m</button><button type="button" class="active">5m</button><button type="button" disabled>15m</button><button type="button">1h</button><button type="button" disabled>4h</button><button type="button" disabled>1d</button>
+        </div>
+        <select id="strategyLabDays" style="height:28px;width:auto;"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
+        <label style="font-size:11px;font-weight:700;color:#475569;">Fee/side <input id="strategyLabFee" type="number" value="5" min="0" max="100" step=".5" style="width:62px;height:28px;"> bp</label>
+        <div style="font-size:11.5px;font-weight:700;background:#f8fafc;border:1px solid #e2e8f0;padding:4px 10px;border-radius:6px;">BTC/KRW: <strong id="${rootId("valShortTermCurrentParity")}" style="color:#0284c7;">--</strong></div>`;
+
+      const host = el("shortTermSpreadChartHost");
+      host.replaceChildren();
+      const rerun = el("btnRerunDynamicBacktest");
+      rerun.classList.remove("terminal-action-control");
+      rerun.disabled = false;
+      rerun.addEventListener("click", () => this.run());
+      el("legendActualTrades").disabled = true;
+      el("legendActualTrades").textContent = "○ Actual";
+      el("legendVirtualTrades").addEventListener("click", () => this.toggleVirtual());
+
+      const supported = new Set([
+        "chkCondEntryMaStack5m", "chkCondEntryMaStack1h",
+        "chkCondExitMaStack5m", "chkCondExitMaStack1h",
+      ]);
+      clone.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+        const original = input.id.replace(/^labFork_/, "");
+        if (!supported.has(original)) {
+          input.checked = false;
+          input.disabled = true;
+          input.closest(".condRow")?.classList.add("disabled-cond");
+        }
+      });
+      el("chkCondEntryMaStack5m").addEventListener("change", () => this.run());
+      el("chkCondEntryMaStack1h").addEventListener("change", () => this.run());
+      el("chkCondExitMaStack5m").addEventListener("change", () => this.run());
+      el("chkCondExitMaStack1h").addEventListener("change", () => this.run());
+      document.getElementById("strategyLabDays").addEventListener("change", () => this.run());
     },
 
     initChart() {
-      this.initFrame();
-      if (this.chart || !byId("strategyLabChartHost") || !window.LightweightCharts) return;
-      const host = byId("strategyLabChartHost");
+      this.forkOriginalSection();
+      const host = el("shortTermSpreadChartHost");
+      if (this.chart || !host || !window.LightweightCharts) return;
       this.chart = LightweightCharts.createChart(host, {
-        width: host.clientWidth,
-        height: 560,
+        width: host.clientWidth, height: 420,
         layout: { background: { color: "#ffffff" }, textColor: "#475569" },
         grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
         timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#cbd5e1" },
         rightPriceScale: { borderColor: "#cbd5e1" },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        localization: { priceFormatter: (price) => `₩${Math.round(price).toLocaleString()}` },
+        localization: { priceFormatter: (price) => krw(price) },
       });
       this.candles = this.chart.addCandlestickSeries({
         upColor: "#16a34a", downColor: "#dc2626", borderVisible: false,
         wickUpColor: "#16a34a", wickDownColor: "#dc2626",
       });
-      [
-        ["ma7", "#7c3aed", 2], ["ma24", "#0284c7", 2], ["ma60", "#f59e0b", 2],
-      ].forEach(([key, color, lineWidth]) => {
-        this.maSeries.push({ key, series: this.chart.addLineSeries({ color, lineWidth, priceLineVisible: false, lastValueVisible: false }) });
+      [["ma7", "#f59e0b"], ["ma24", "#8b5cf6"], ["ma60", "#06b6d4"]].forEach(([key, color]) => {
+        this.maSeries.push({ key, series: this.chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false }) });
       });
-      this.controller = new StrategyExecutionChartController({
-        series: this.candles,
-        lineStyle: LightweightCharts.LineStyle,
-      });
+      this.controller = new StrategyExecutionChartController({ series: this.candles, lineStyle: LightweightCharts.LineStyle });
       this.chart.subscribeCrosshairMove((param) => this.onCrosshair(param));
-      new ResizeObserver(() => {
-        if (host.clientWidth) this.chart.applyOptions({ width: host.clientWidth });
-      }).observe(host);
+      new ResizeObserver(() => { if (host.clientWidth) this.chart.applyOptions({ width: host.clientWidth }); }).observe(host);
     },
 
     conditions() {
       return {
-        entry_5m: byId("labEntry5m").checked,
-        entry_1h: byId("labEntry1h").checked,
-        exit_5m: byId("labExit5m").checked,
-        exit_1h: byId("labExit1h").checked,
+        entry_5m: el("chkCondEntryMaStack5m").checked,
+        entry_1h: el("chkCondEntryMaStack1h").checked,
+        exit_5m: el("chkCondExitMaStack5m").checked,
+        exit_1h: el("chkCondExitMaStack1h").checked,
       };
     },
 
     async run() {
       this.initChart();
       const conditions = this.conditions();
-      if (!conditions.entry_5m && !conditions.entry_1h) {
-        byId("strategyLabStatus").textContent = "Enable at least one entry condition.";
+      if ((!conditions.entry_5m && !conditions.entry_1h) || (!conditions.exit_5m && !conditions.exit_1h)) {
+        el("dynamicBacktestStatus").textContent = "Enable at least one entry and one exit condition.";
         return;
       }
-      if (!conditions.exit_5m && !conditions.exit_1h) {
-        byId("strategyLabStatus").textContent = "Enable at least one exit condition.";
-        return;
-      }
-      const button = byId("strategyLabRun");
+      const button = el("btnRerunDynamicBacktest");
       button.disabled = true;
       button.textContent = "Loading Upbit…";
-      byId("strategyLabStatus").textContent = "Fetching public candles and replaying closed-bar signals…";
+      el("dynamicBacktestStatus").textContent = "Fetching public candles and replaying closed-bar signals…";
       const params = new URLSearchParams({
-        days: byId("strategyLabDays").value,
-        fee_bps: byId("strategyLabFee").value,
+        days: document.getElementById("strategyLabDays").value,
+        fee_bps: document.getElementById("strategyLabFee").value,
         ...Object.fromEntries(Object.entries(conditions).map(([key, value]) => [key, String(value)])),
       });
       try {
@@ -105,78 +130,80 @@
         if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
         this.render(data);
       } catch (error) {
-        byId("strategyLabStatus").textContent = `Backtest failed: ${error.message}`;
+        el("dynamicBacktestStatus").textContent = `Backtest failed: ${error.message}`;
       } finally {
         button.disabled = false;
-        button.textContent = "▶ Run Backtest";
+        button.textContent = "Rerun";
       }
     },
 
     render(data) {
       this.data = data;
       this.loaded = true;
-      this.candles.setData(data.bars.map((bar) => ({
-        time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close,
-      })));
-      this.maSeries.forEach(({ key, series }) => series.setData(
-        data.bars.filter((bar) => Number.isFinite(bar[key])).map((bar) => ({ time: bar.time, value: bar[key] }))
-      ));
+      this.candles.setData(data.bars.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
+      this.maSeries.forEach(({ key, series }) => series.setData(data.bars.filter((bar) => Number.isFinite(bar[key])).map((bar) => ({ time: bar.time, value: bar[key] }))));
       this.controller.setExecutions(data.markers || []);
       this.renderMarkers();
       const stats = data.stats || {};
-      byId("labNetReturn").textContent = pct(stats.net_return_pct);
-      byId("labBuyHold").textContent = pct(stats.buy_hold_pct);
-      byId("labDrawdown").textContent = pct(stats.max_drawdown_pct);
-      byId("labTrades").textContent = `${stats.completed_trades || 0} TRADES`;
-      byId("labWinRate").textContent = pct(stats.win_rate_pct);
-      byId("labEquity").textContent = krw(stats.ending_equity_krw);
-      byId("strategyLabStatus").textContent = `${data.days}d · ${(data.bars || []).length.toLocaleString()} closed 5m bars · fee ${data.fee_bps}bp/side · next-open fills`;
-      const latestHour = (data.hourly || []).at(-1);
-      if (byId("strategyLabMacroStatus")) byId("strategyLabMacroStatus").textContent = latestHour
-        ? `Completed 1h MA stack: ${latestHour.bullish ? "BULLISH" : latestHour.bearish ? "BEARISH" : "NOT ALIGNED"} · Close ${krw(latestHour.close)} · MA7 ${krw(latestHour.ma7)} · MA24 ${krw(latestHour.ma24)} · MA60 ${krw(latestHour.ma60)}`
-        : "Completed 1h MA stack unavailable";
+      el("dynamicBacktestStatus").textContent = `${stats.completed_trades || 0} trades · Net ${pct(stats.net_return_pct)} · Buy & Hold ${pct(stats.buy_hold_pct)} · Max drawdown ${pct(stats.max_drawdown_pct)} · Win rate ${pct(stats.win_rate_pct)} · Ending ${krw(stats.ending_equity_krw)}`;
+      const latest = data.bars.at(-1);
+      const latestHour = data.hourly.at(-1);
+      el("macroPolicyStatus").textContent = `Completed 1h: ${latestHour?.bullish ? "BULLISH STACK" : latestHour?.bearish ? "BEARISH STACK" : "NOT ALIGNED"} · next-open fills · ${data.fee_bps}bp/side`;
+      el("valShortTermCurrentParity").textContent = latest ? krw(latest.close) : "--";
+      el("valShortTermMa7").textContent = latest ? krw(latest.ma7) : "--";
+      el("valShortTermMa24").textContent = latest ? krw(latest.ma24) : "--";
+      el("valShortTermMa60").textContent = latest ? krw(latest.ma60) : "--";
+      el("lblShortTermChartSync").textContent = `${data.days}d · ${data.bars.length.toLocaleString()} closed 5m bars`;
+      this.syncConditionBadges(latest, latestHour);
       this.chart.timeScale().fitContent();
     },
 
-    renderMarkers(hoveredTime = null) {
-      if (this.candles && this.controller) this.candles.setMarkers(this.controller.markersForRender(hoveredTime));
+    syncConditionBadges(latest, hourly) {
+      const states = [
+        ["badgeCondEntryMaStack5m", latest?.bullish], ["badgeCondEntryMaStack1h", hourly?.bullish],
+        ["badgeCondExitMaStack5m", latest?.bearish], ["badgeCondExitMaStack1h", hourly?.bearish],
+      ];
+      states.forEach(([id, pass]) => {
+        const badge = el(id);
+        if (!badge) return;
+        badge.textContent = pass ? "PASS" : "WAIT";
+        badge.className = `condBadge ${pass ? "pass" : "wait"}`;
+      });
+      el("badgeCriteriaScaleIn").textContent = latest?.bullish && hourly?.bullish ? "ENTRY ARMED" : "AWAITING MA STACKS (5m/1h)";
+      el("badgeCriteriaTP").textContent = latest?.bearish || hourly?.bearish ? "EXIT ARMED" : "AWAITING BEARISH STACK";
     },
 
+    renderMarkers(hoveredTime = null) { this.candles.setMarkers(this.controller.markersForRender(hoveredTime)); },
+
     onCrosshair(param) {
-      if (!this.controller || !param || !param.point || !this.chart) return;
-      const host = byId("strategyLabChartHost");
-      const time = this.controller.executionTimeAtX(param.point.x, {
-        timeScale: this.chart.timeScale(), hostWidth: host.clientWidth,
-      });
+      if (!param?.point || !this.chart) return;
+      const host = el("shortTermSpreadChartHost");
+      const time = this.controller.executionTimeAtX(param.point.x, { timeScale: this.chart.timeScale(), hostWidth: host.clientWidth });
       this.renderMarkers(time);
       const entry = (this.data?.markers || []).find((marker) => marker.time === time && marker.is_entry);
-      if (!entry) {
-        this.controller.clearReferenceLines();
-        return;
-      }
-      const feeRate = Number(this.data.fee_bps || 0) / 10000;
-      const entryPrice = Number(entry.entry_price);
-      const levels = [0, 0.2, 0.5, 1, 2, 3].map((target) => ({
-        netProfitPct: target,
-        price: entryPrice * (1 + feeRate) * (1 + target / 100) / (1 - feeRate),
+      if (!entry) return this.controller.clearReferenceLines();
+      const fee = Number(this.data.fee_bps || 0) / 10000;
+      const price = Number(entry.entry_price);
+      const levels = [0, .2, .5, 1, 2, 3].map((target) => ({
+        netProfitPct: target, price: price * (1 + fee) * (1 + target / 100) / (1 - fee),
         title: target === 0 ? "B/E NET" : `NET +${target}%`,
       }));
-      this.controller.renderReferenceLines({ entry: entryPrice, selected: true, levels });
+      this.controller.renderReferenceLines({ entry: price, selected: true, levels });
     },
 
     toggleVirtual() {
       const visible = this.controller.toggleVisibility("virtual");
-      const button = byId("strategyLabVirtualToggle");
-      button.classList.toggle("active", visible);
-      if (this.frame) this.frame.setVisibility("virtual", visible);
+      const button = el("legendVirtualTrades");
+      button.textContent = `${visible ? "✓" : "○"} Virtual`;
+      button.setAttribute("aria-pressed", String(visible));
       if (!visible) this.controller.clearReferenceLines();
       this.renderMarkers();
     },
 
     onTabActivated() {
       this.initChart();
-      const host = byId("strategyLabChartHost");
-      if (this.chart && host.clientWidth) this.chart.applyOptions({ width: host.clientWidth });
+      const host = el("shortTermSpreadChartHost");
+      if (this.chart && host?.clientWidth) this.chart.applyOptions({ width: host.clientWidth });
       if (!this.loaded) this.run();
     },
   };
