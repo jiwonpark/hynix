@@ -27,6 +27,12 @@ class StrategyLabUiTests(unittest.TestCase):
         self.assertNotIn("fetch(`/api/strategy-lab", self.js)
         self.assertIn("NET +${target}%", self.js)
 
+    def test_no_literal_escape_characters_in_markup(self):
+        # Ensure no raw literal \n or \t outside script and style blocks
+        markup = self.html.split("<script")[0]
+        self.assertNotIn(r"\n", markup)
+        self.assertNotIn(r"\t", markup)
+
 
 if __name__ == "__main__":
     unittest.main()
