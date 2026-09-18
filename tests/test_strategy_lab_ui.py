@@ -20,7 +20,8 @@ class StrategyLabUiTests(unittest.TestCase):
         for control in ("labEntry5m", "labEntry1h", "labExit5m", "labExit1h"):
             self.assertIn(f'id="{control}"', self.html)
         self.assertIn("new StrategyExecutionChartController", self.js)
-        self.assertIn("/api/strategy-lab/upbit-ma-stack", self.js)
+        self.assertIn("api/strategy-lab/upbit-ma-stack", self.js)
+        self.assertNotIn("fetch(`/api/strategy-lab", self.js)
         self.assertIn("NET +${target}%", self.js)
 
 

@@ -75,7 +75,7 @@
         ...Object.fromEntries(Object.entries(conditions).map(([key, value]) => [key, String(value)])),
       });
       try {
-        const response = await fetch(`/api/strategy-lab/upbit-ma-stack?${params}`);
+        const response = await fetch(`api/strategy-lab/upbit-ma-stack?${params}`);
         const data = await response.json();
         if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
         this.render(data);
