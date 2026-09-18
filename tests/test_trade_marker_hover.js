@@ -29,6 +29,12 @@ assert.equal(engine.executionMarkerTimeAtX(150), null,
   'unrelated chart columns must not activate a marker');
 assert.equal(engine.executionMarkerTimeAtX(196), 2000,
   'the closest visible marker should activate by x-coordinate');
+engine.tradeMarkerVisibility = {actual: false, virtual: true};
+assert.equal(engine.executionMarkerTimeAtX(105), null,
+  'hidden actual trades must not remain hover targets');
+engine.rawExecutionMarkers.push({time: 1000, hypothetical: true});
+assert.equal(engine.executionMarkerTimeAtX(105), 1000,
+  'visible virtual trades must remain independently hoverable');
 
 assert.ok(html.includes('this.updateMarkerState(this.activeHoveredExecutionMarkerTime);'),
   'live chart redraws must preserve the active trade price label');
@@ -40,7 +46,11 @@ assert.ok(html.includes('rgba(220, 38, 38, 0.35)'),
   'hypothetical markers must be styled with subtle dimmed transparency');
 assert.ok(html.includes('if (m.hypothetical)'),
   'simulated trades should use dimmed arrows');
-assert.ok(html.includes('Dynamic backtest'));
+assert.ok(html.includes('Virtual trades'));
+assert.ok(html.includes('id="legendActualTrades"'));
+assert.ok(html.includes('id="legendVirtualTrades"'));
+assert.ok(html.includes('toggleTradeMarkers(kind)'));
+assert.ok(html.includes('visibleMarkers = this.rawExecutionMarkers.filter'));
 assert.ok(!html.includes('positionImpliedMarker'),
   'current inventory must never be presented as a missed trade');
 
@@ -68,6 +78,7 @@ const lineEngine = vm.runInContext(`({
     pnl_model: {adr_exit_qty: .07, stock_exit_qty: 1.2, adr_entry_price: 100,
       stock_entry_price: 10, entry_fees_usd: 0, entry_time_ms: 1000,
       exit_fee_bps: 0, slippage_bps: 0, funding_reserve_bps_day: 0, threshold_usd: .02}}],
+  isTradeMarkerVisible() { return true; },
   renderShortTermReferenceLines(entry, options) { referenceRenders.push({entry, options}); },
   renderCurrentPositionReferenceLines() { referenceRenders.push({current: true}); },
   ${pnlMethod}
