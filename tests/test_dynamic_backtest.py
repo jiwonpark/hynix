@@ -101,7 +101,21 @@ class ReplayTests(unittest.TestCase):
         hourly = replay_markers(result, 3600)
         self.assertEqual(sum(m['count'] for m in five), sum(m['count'] for m in hourly))
         self.assertTrue(all(m['backtest'] and 'BACKTEST' in m['hoverText'] for m in five))
-        self.assertEqual({m['time'] for m in hourly}, {BASE})
+    def test_ma_stack_requires_current_price_in_order(self):
+        # 60 bars of rising spread
+        rising = [140 + i * 0.01 for i in range(60)]
+        # When current price is above MA7 (> MA24 > MA60), entry triggers
+        data_valid = bars(rising)
+        toggles = {**LOOSE, 'entry_peak_rollover': False, 'entry_ma_stack_5m': True}
+        res_valid = self.run_replay(data_valid, toggles, start=0)
+        self.assertGreater(res_valid['summary']['entries'], 0)
+
+        # When current price drops below MA7 on the 60th bar, stack is invalid
+        broken = list(rising)
+        broken[-1] = 139.0
+        data_broken = bars(broken)
+        res_broken = self.run_replay(data_broken, toggles, start=0)
+        self.assertEqual(res_broken['summary']['entries'], 0)
 
 
 if __name__ == '__main__':

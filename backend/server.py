@@ -405,11 +405,16 @@ async def get_cached_parity_bars(interval: str = "5m", limit: int = 60) -> List[
     return []
 
 def exit_ma_alignment(
-    bars: List[Dict[str, Any]], interval: str = "5m", max_age_sec: int = 600
+    bars: List[Dict[str, Any]], interval: str = "5m", max_age_sec: int = 600, current_value: Optional[float] = None
 ) -> Dict[str, Any]:
-    """MA-stack filter for spread bars on requested timeframe (upward/bullish and downward/bearish)."""
+    """MA-stack filter for spread bars on requested timeframe (upward/bullish and downward/bearish).
+    Requires current price and moving averages to be strictly in order:
+      - Bullish/Upward: current_price > ma7 > ma24 > ma60
+      - Bearish/Downward: current_price < ma7 < ma24 < ma60
+    """
     result = {
         "interval": interval,
+        "current": None,
         "ma7": None,
         "ma24": None,
         "ma60": None,
@@ -424,16 +429,18 @@ def exit_ma_alignment(
         return result
     if time.time() - bars[-1]["time"] > max_age_sec:
         return result
+    curr = float(current_value) if (current_value is not None and math.isfinite(current_value)) else values[-1]
     ma7 = sum(values[-7:]) / 7
     ma24 = sum(values[-24:]) / 24
     ma60 = sum(values) / 60
     result.update(
         ready=True,
+        current=curr,
         ma7=ma7,
         ma24=ma24,
         ma60=ma60,
-        upward=bool(ma7 > ma24 > ma60),
-        downward=bool(ma7 < ma24 < ma60),
+        upward=bool(curr > ma7 > ma24 > ma60),
+        downward=bool(curr < ma7 < ma24 < ma60),
     )
     return result
 
@@ -662,8 +669,8 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             curr_spread = parity_bars[-1]["value"]
             if entry_spread is None:
                 base_entry = curr_spread
-        alignment_5m = exit_ma_alignment(parity_bars, "5m", 600)
-        alignment_1h = exit_ma_alignment(parity_bars_1h, "1h", 7200)
+        alignment_5m = exit_ma_alignment(parity_bars, "5m", 600, current_value=curr_spread)
+        alignment_1h = exit_ma_alignment(parity_bars_1h, "1h", 7200, current_value=curr_spread)
         exit_alignment_5m = alignment_5m
         exit_alignment_1h = alignment_1h
         entry_alignment_5m = alignment_5m

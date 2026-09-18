@@ -20,16 +20,17 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None):
     toggles = toggles or {}
     def passes(key, value):
         return not toggles.get(key, True) or bool(value)
-    def aligned(values, upward):
+    def aligned(values, upward, current_val=None):
         if len(values) < 60:
             return False
         v = list(values)
+        curr = current_val if (current_val is not None and math.isfinite(current_val)) else v[-1]
         a, b, c = sum(v[-7:])/7, sum(v[-24:])/24, sum(v[-60:])/60
-        return a > b > c if upward else a < b < c
-    def ma_pass(key, values, upward):
+        return curr > a > b > c if upward else curr < a < b < c
+    def ma_pass(key, values, upward, current_val=None):
         # Explicit timeframe switches override the former combined switch.
         enabled = toggles.get(key, toggles.get('exit_ma_stack', True) if key.startswith('exit_') else True)
-        return not enabled or aligned(values, upward)
+        return not enabled or aligned(values, upward, current_val)
 
     pnl = peak = peak_notional = current_notional = 0.0
     drawdown = fees = slippage = funding = 0.0
@@ -103,8 +104,8 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None):
                 passes('exit_convergence', spread <= target['entry_spread'] - exit_policy['convergence_pts']),
                 passes('exit_dwell_time', close - target['entry_time_ms']/1000 >= 120),
                 passes('exit_bottoming_out', bottoming),
-                ma_pass('exit_ma_stack_5m', five, False),
-                ma_pass('exit_ma_stack_1h', hourly, False),
+                ma_pass('exit_ma_stack_5m', five, False, spread),
+                ma_pass('exit_ma_stack_1h', hourly, False, spread),
                 passes('exit_position_qty', aq + 1e-8 >= .07 and sq + 1e-8 >= 1.2),
                 close - last_exit >= 30,
             ))
@@ -129,8 +130,8 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None):
                 passes('entry_ma_stretch', len(vals) >= 6 and spread-ma24 >= .10),
                 passes('entry_base_spread', not aq or spread >= baseline + .10),
                 passes('entry_peak_rollover', peak_out),
-                ma_pass('entry_ma_stack_5m', five, True),
-                ma_pass('entry_ma_stack_1h', hourly, True),
+                ma_pass('entry_ma_stack_5m', five, True, spread),
+                ma_pass('entry_ma_stack_1h', hourly, True, spread),
                 close-last_entry >= 60,
             ))
             if setup:

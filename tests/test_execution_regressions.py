@@ -226,6 +226,18 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
     async def test_exit_alignment_strict_order_and_data_requirements(self):
         downward = self.ma_bars([141 - i * .01 for i in range(60)])
         self.assertTrue(server.exit_ma_alignment(downward)['downward'])
+        # Current price must be strictly in downward order (< MA7 < MA24 < MA60)
+        self.assertTrue(server.exit_ma_alignment(downward, current_value=140.40)['downward'])
+        self.assertFalse(server.exit_ma_alignment(downward, current_value=140.50)['downward'])
+        self.assertFalse(server.exit_ma_alignment(downward, current_value=141.0)['downward'])
+
+        upward = self.ma_bars([140 + i * .01 for i in range(60)])
+        self.assertTrue(server.exit_ma_alignment(upward)['upward'])
+        # Current price must be strictly in upward order (> MA7 > MA24 > MA60)
+        self.assertTrue(server.exit_ma_alignment(upward, current_value=140.65)['upward'])
+        self.assertFalse(server.exit_ma_alignment(upward, current_value=140.50)['upward'])
+        self.assertFalse(server.exit_ma_alignment(upward, current_value=139.0)['upward'])
+
         for values in ([140 + i * .01 for i in range(60)], [140] * 60,
                        [140] * 36 + [142] * 17 + [139] * 7):
             self.assertFalse(server.exit_ma_alignment(self.ma_bars(values))['downward'])

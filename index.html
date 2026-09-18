@@ -2957,7 +2957,7 @@
                       <input type="checkbox" id="chkCondEntryMaStack5m" checked onchange="tradingEngine.toggleCondition('entry_ma_stack_5m', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="5m upward trend confirmation: MA7 > MA24 > MA60 required on 5m timeframe">4. 5m Bullish MA Stack (MA7 > MA24 > MA60)</span>
+                    <span class="condLabel" title="5m upward trend confirmation: Price > MA7 > MA24 > MA60 required on 5m timeframe">4. 5m Bullish MA Stack (Price > MA7 > MA24 > MA60)</span>
                     <span class="condValue" id="valCondEntryMaStack5m"><strong id="valCritEntryMaStack5m" style="color: #d97706;">5m WAITING</strong></span>
                     <span class="condBadge wait" id="badgeCondEntryMaStack5m">WAIT</span>
                   </div>
@@ -2966,7 +2966,7 @@
                       <input type="checkbox" id="chkCondEntryMaStack1h" checked onchange="tradingEngine.toggleCondition('entry_ma_stack_1h', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="1h macro upward trend confirmation: MA7 > MA24 > MA60 required on 1h timeframe">5. 1h Bullish MA Stack (MA7 > MA24 > MA60)</span>
+                    <span class="condLabel" title="1h macro upward trend confirmation: Price > MA7 > MA24 > MA60 required on 1h timeframe">5. 1h Bullish MA Stack (Price > MA7 > MA24 > MA60)</span>
                     <span class="condValue" id="valCondEntryMaStack1h"><strong id="valCritEntryMaStack1h" style="color: #d97706;">1h WAITING</strong></span>
                     <span class="condBadge wait" id="badgeCondEntryMaStack1h">WAIT</span>
                   </div>
@@ -3070,7 +3070,7 @@
                       <input type="checkbox" id="chkCondExitMaStack5m" checked onchange="tradingEngine.toggleCondition('exit_ma_stack_5m', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="5m downward trend confirmation: MA7 < MA24 < MA60 required on 5m timeframe">5. 5m Bearish MA Stack (MA7 < MA24 < MA60)</span>
+                    <span class="condLabel" title="5m downward trend confirmation: Price < MA7 < MA24 < MA60 required on 5m timeframe">5. 5m Bearish MA Stack (Price < MA7 < MA24 < MA60)</span>
                     <span class="condValue" id="valCondExitMaStack5m"><strong id="valCritExitMaStack5m" style="color: #d97706;">5m WAITING</strong></span>
                     <span class="condBadge wait" id="badgeCondExitMaStack5m">WAIT</span>
                   </div>
@@ -3079,7 +3079,7 @@
                       <input type="checkbox" id="chkCondExitMaStack1h" checked onchange="tradingEngine.toggleCondition('exit_ma_stack_1h', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="1h macro downward trend confirmation: MA7 < MA24 < MA60 required on 1h timeframe">6. 1h Bearish MA Stack (MA7 < MA24 < MA60)</span>
+                    <span class="condLabel" title="1h macro downward trend confirmation: Price < MA7 < MA24 < MA60 required on 1h timeframe">6. 1h Bearish MA Stack (Price < MA7 < MA24 < MA60)</span>
                     <span class="condValue" id="valCondExitMaStack1h"><strong id="valCritExitMaStack1h" style="color: #d97706;">1h WAITING</strong></span>
                     <span class="condBadge wait" id="badgeCondExitMaStack1h">WAIT</span>
                   </div>
@@ -10835,7 +10835,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             } else if (criteria && this.isConditionEnabled("exit_convergence", criteria.condition_toggles) && !criteria.is_out_profitable_relative_to_latest) {
               lblReduce.textContent = `🔒 Anti-Churn Locked: Awaiting Convergence (Target <= ${criteria.out_target_spread}%)`;
             } else if (!(criteria?.effective_exit_ma_aligned ?? criteria?.is_exit_ma_aligned)) {
-              lblReduce.textContent = "🔒 Awaiting downward MA stacks (5m AND 1h: MA7 < MA24 < MA60)";
+              lblReduce.textContent = "🔒 Awaiting downward MA stacks (5m AND 1h: Price < MA7 < MA24 < MA60)";
             } else if (criteria && this.isConditionEnabled("exit_bottoming_out", criteria.condition_toggles) && !criteria.is_bottoming_out) {
               lblReduce.textContent = "🌊 Riding Convergence (Waiting for Trough / MA Touch)";
             } else {
@@ -11532,9 +11532,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const entry5mReady = Boolean(entryMa5m?.ready);
         const entry5mUp = Boolean(entryMa5m?.upward);
         if ($("valCritEntryMaStack5m")) {
-          $("valCritEntryMaStack5m").textContent = !entry5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry5mUp ? "5m ✓ (MA7 > MA24 > MA60)" : "5m ✗ (NOT ALIGNED)");
+          $("valCritEntryMaStack5m").textContent = !entry5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry5mUp ? "5m ✓ (Price > MA7 > MA24 > MA60)" : "5m ✗ (NOT ALIGNED)");
           $("valCritEntryMaStack5m").style.color = entry5mUp ? "#16a34a" : "#d97706";
-          $("valCritEntryMaStack5m").title = entry5mReady ? `5m: ${entryMa5m.ma7.toFixed(3)} / ${entryMa5m.ma24.toFixed(3)} / ${entryMa5m.ma60.toFixed(3)} (MA7 > MA24 > MA60)` : "Requires 60 bars on 5m chart";
+          $("valCritEntryMaStack5m").title = entry5mReady ? `5m: P ${currSpread.toFixed(2)}% / MA7 ${entryMa5m.ma7.toFixed(3)}% / MA24 ${entryMa5m.ma24.toFixed(3)}% / MA60 ${entryMa5m.ma60.toFixed(3)}% (Price > MA7 > MA24 > MA60)` : "Requires 60 bars on 5m chart";
         }
         syncCondRow("entry_ma_stack_5m", "rowCondEntryMaStack5m", "chkCondEntryMaStack5m", "badgeCondEntryMaStack5m", entry5mUp, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
@@ -11542,9 +11542,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const entry1hReady = Boolean(entryMa1h?.ready);
         const entry1hUp = Boolean(entryMa1h?.upward);
         if ($("valCritEntryMaStack1h")) {
-          $("valCritEntryMaStack1h").textContent = !entry1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry1hUp ? "1h ✓ (MA7 > MA24 > MA60)" : "1h ✗ (NOT ALIGNED)");
+          $("valCritEntryMaStack1h").textContent = !entry1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry1hUp ? "1h ✓ (Price > MA7 > MA24 > MA60)" : "1h ✗ (NOT ALIGNED)");
           $("valCritEntryMaStack1h").style.color = entry1hUp ? "#16a34a" : "#d97706";
-          $("valCritEntryMaStack1h").title = entry1hReady ? `1h: ${entryMa1h.ma7.toFixed(3)} / ${entryMa1h.ma24.toFixed(3)} / ${entryMa1h.ma60.toFixed(3)} (MA7 > MA24 > MA60)` : "Requires 60 bars on 1h chart";
+          $("valCritEntryMaStack1h").title = entry1hReady ? `1h: P ${currSpread.toFixed(2)}% / MA7 ${entryMa1h.ma7.toFixed(3)}% / MA24 ${entryMa1h.ma24.toFixed(3)}% / MA60 ${entryMa1h.ma60.toFixed(3)}% (Price > MA7 > MA24 > MA60)` : "Requires 60 bars on 1h chart";
         }
         syncCondRow("entry_ma_stack_1h", "rowCondEntryMaStack1h", "chkCondEntryMaStack1h", "badgeCondEntryMaStack1h", entry1hUp, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
@@ -11670,16 +11670,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         syncCondRow("exit_dwell_time", "rowCondExitDwell", "chkCondExitDwell", "badgeCondExitDwell", isDwellOk, isKo ? "충족" : "PASS", isKo ? "쿨다운" : "WAIT", "wait");
 
         if ($("valCritExitMaStack5m")) {
-          $("valCritExitMaStack5m").textContent = !exit5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (exit5mDown ? "5m ✓ (MA7 < MA24 < MA60)" : "5m ✗ (NOT ALIGNED)");
+          $("valCritExitMaStack5m").textContent = !exit5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (exit5mDown ? "5m ✓ (Price < MA7 < MA24 < MA60)" : "5m ✗ (NOT ALIGNED)");
           $("valCritExitMaStack5m").style.color = exit5mDown ? "#16a34a" : "#d97706";
-          $("valCritExitMaStack5m").title = exit5mReady ? `5m: ${exitMa5m.ma7.toFixed(3)} / ${exitMa5m.ma24.toFixed(3)} / ${exitMa5m.ma60.toFixed(3)} (MA7 < MA24 < MA60)` : "Requires 60 bars on 5m chart";
+          $("valCritExitMaStack5m").title = exit5mReady ? `5m: P ${currSpread.toFixed(2)}% / MA7 ${exitMa5m.ma7.toFixed(3)}% / MA24 ${exitMa5m.ma24.toFixed(3)}% / MA60 ${exitMa5m.ma60.toFixed(3)}% (Price < MA7 < MA24 < MA60)` : "Requires 60 bars on 5m chart";
         }
         syncCondRow("exit_ma_stack_5m", "rowCondExitMaStack5m", "chkCondExitMaStack5m", "badgeCondExitMaStack5m", exit5mDown, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
         if ($("valCritExitMaStack1h")) {
-          $("valCritExitMaStack1h").textContent = !exit1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (exit1hDown ? "1h ✓ (MA7 < MA24 < MA60)" : "1h ✗ (NOT ALIGNED)");
+          $("valCritExitMaStack1h").textContent = !exit1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (exit1hDown ? "1h ✓ (Price < MA7 < MA24 < MA60)" : "1h ✗ (NOT ALIGNED)");
           $("valCritExitMaStack1h").style.color = exit1hDown ? "#16a34a" : "#d97706";
-          $("valCritExitMaStack1h").title = exit1hReady ? `1h: ${exitMa1h.ma7.toFixed(3)} / ${exitMa1h.ma24.toFixed(3)} / ${exitMa1h.ma60.toFixed(3)} (MA7 < MA24 < MA60)` : "Requires 60 bars on 1h chart";
+          $("valCritExitMaStack1h").title = exit1hReady ? `1h: P ${currSpread.toFixed(2)}% / MA7 ${exitMa1h.ma7.toFixed(3)}% / MA24 ${exitMa1h.ma24.toFixed(3)}% / MA60 ${exitMa1h.ma60.toFixed(3)}% (Price < MA7 < MA24 < MA60)` : "Requires 60 bars on 1h chart";
         }
         syncCondRow("exit_ma_stack_1h", "rowCondExitMaStack1h", "chkCondExitMaStack1h", "badgeCondExitMaStack1h", exit1hDown, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
@@ -11688,7 +11688,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const state1h = exitMa1h?.downward ? "✓" : "✗";
           $("valCritExitMaStack").textContent = !bothReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (bothDown ? "5m ✓ AND 1h ✓ (ALIGNED)" : `5m ${state5m} · 1h ${state1h}`);
           $("valCritExitMaStack").style.color = bothDown ? "#16a34a" : "#d97706";
-          $("valCritExitMaStack").title = bothReady ? `5m: ${exitMa5m.ma7.toFixed(3)} / ${exitMa5m.ma24.toFixed(3)} / ${exitMa5m.ma60.toFixed(3)} · 1h: ${exitMa1h.ma7.toFixed(3)} / ${exitMa1h.ma24.toFixed(3)} / ${exitMa1h.ma60.toFixed(3)}` : "MA7 < MA24 < MA60 is required on both 5m and 1h charts";
+          $("valCritExitMaStack").title = bothReady ? `5m: P ${currSpread.toFixed(2)}% / ${exitMa5m.ma7.toFixed(3)}% / ${exitMa5m.ma24.toFixed(3)}% / ${exitMa5m.ma60.toFixed(3)}% · 1h: P ${currSpread.toFixed(2)}% / ${exitMa1h.ma7.toFixed(3)}% / ${exitMa1h.ma24.toFixed(3)}% / ${exitMa1h.ma60.toFixed(3)}%` : "Price < MA7 < MA24 < MA60 is required on both 5m and 1h charts";
         }
         if ($("rowCondExitMaStack")) {
           syncCondRow("exit_ma_stack", "rowCondExitMaStack", "chkCondExitMaStack", "badgeCondExitMaStack", bothDown, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
