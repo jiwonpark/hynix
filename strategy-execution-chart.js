@@ -1,9 +1,84 @@
 (function (root, factory) {
   const Controller = factory();
   if (typeof module === "object" && module.exports) module.exports = Controller;
-  if (root) root.StrategyExecutionChartController = Controller;
+  if (root) {
+    root.StrategyExecutionChartController = Controller;
+    root.StrategyExecutionChartFrame = Controller.Frame;
+  }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
+
+  class StrategyExecutionChartFrame {
+    static mount(options = {}) {
+      const container = typeof options.container === "string"
+        ? document.getElementById(options.container)
+        : options.container;
+      if (!container) throw new Error("Execution chart frame container not found");
+      const id = options.id || "executionChart";
+      const ids = Object.assign({
+        action: `${id}Action`, actual: `${id}Actual`, virtual: `${id}Virtual`,
+        status: `${id}Status`, secondaryStatus: `${id}SecondaryStatus`,
+        host: `${id}Host`, legend: `${id}Legend`, sync: `${id}Sync`,
+      }, options.ids || {});
+      const actual = options.actual || {};
+      const virtual = options.virtual || {};
+      const action = options.action || {};
+      container.classList.add("executionChartFrame");
+      container.innerHTML = `
+        <div class="executionChartToolbar">
+          <strong class="executionChartTitle">${options.title || "PRICE-SIGNAL REPLAY"}</strong>
+          ${action.label ? `<button id="${ids.action}" class="executionChartAction ${action.className || ""}" type="button">${action.label}</button>` : ""}
+          <div class="executionChartVisibility" aria-label="Trade marker visibility">
+            <span>SHOW</span>
+            <button id="${ids.actual}" type="button" aria-pressed="true" title="Show or hide actual entry and exit fills">✓ ${actual.label || "Actual"}</button>
+            <button id="${ids.virtual}" type="button" aria-pressed="true" title="Show or hide virtual backtest entries and exits">✓ ${virtual.label || "Virtual"}</button>
+          </div>
+          <span id="${ids.status}" class="executionChartStatus" role="status">${options.status || "Loading…"}</span>
+        </div>
+        ${options.description ? `<div class="executionChartDescription">${options.description}</div>` : ""}
+        ${options.secondaryStatus ? `<div id="${ids.secondaryStatus}" class="executionChartSecondaryStatus">${options.secondaryStatus}</div>` : ""}
+        <div id="${ids.host}" class="executionChartHost" style="height:${Number(options.height) || 420}px"></div>
+        <div class="executionChartFooter">
+          <div id="${ids.legend}" class="executionChartLegend">${options.legend || ""}</div>
+          <span id="${ids.sync}" class="executionChartSync">${options.syncText || ""}</span>
+        </div>`;
+
+      const elements = {
+        action: document.getElementById(ids.action),
+        actual: document.getElementById(ids.actual),
+        virtual: document.getElementById(ids.virtual),
+        status: document.getElementById(ids.status),
+        secondaryStatus: document.getElementById(ids.secondaryStatus),
+        host: document.getElementById(ids.host),
+        legend: document.getElementById(ids.legend),
+        sync: document.getElementById(ids.sync),
+      };
+      if (elements.action && typeof action.onClick === "function") elements.action.addEventListener("click", action.onClick);
+      if (typeof actual.onToggle === "function") elements.actual.addEventListener("click", actual.onToggle);
+      if (typeof virtual.onToggle === "function") elements.virtual.addEventListener("click", virtual.onToggle);
+      if (actual.enabled === false) elements.actual.disabled = true;
+      if (virtual.enabled === false) elements.virtual.disabled = true;
+
+      const frame = {
+        container,
+        elements,
+        setVisibility(kind, visible) {
+          const button = elements[kind];
+          if (!button) return;
+          const label = kind === "actual" ? (actual.label || "Actual") : (virtual.label || "Virtual");
+          button.setAttribute("aria-pressed", visible ? "true" : "false");
+          button.classList.toggle("isHidden", !visible);
+          button.textContent = `${visible ? "✓" : "○"} ${label}`;
+        },
+        setStatus(text) { if (elements.status) elements.status.textContent = text; },
+        setSecondaryStatus(text) { if (elements.secondaryStatus) elements.secondaryStatus.textContent = text; },
+        setSync(text) { if (elements.sync) elements.sync.textContent = text; },
+      };
+      frame.setVisibility("actual", actual.visible !== false);
+      frame.setVisibility("virtual", virtual.visible !== false);
+      return frame;
+    }
+  }
 
   class StrategyExecutionChartController {
     constructor(options = {}) {
@@ -139,6 +214,8 @@
       return this.referenceLines;
     }
   }
+
+  StrategyExecutionChartController.Frame = StrategyExecutionChartFrame;
 
   return StrategyExecutionChartController;
 });

@@ -10,10 +10,35 @@
     candles: null,
     maSeries: [],
     controller: null,
+    frame: null,
     data: null,
     loaded: false,
 
+    initFrame() {
+      if (this.frame || !window.StrategyExecutionChartFrame) return;
+      this.frame = StrategyExecutionChartFrame.mount({
+        container: "strategyLabExecutionChartFrame",
+        id: "strategyLabChart",
+        ids: {
+          action: "strategyLabRun", actual: "strategyLabActualToggle", virtual: "strategyLabVirtualToggle",
+          status: "strategyLabStatus", secondaryStatus: "strategyLabMacroStatus",
+          host: "strategyLabChartHost", legend: "strategyLabChartLegend", sync: "strategyLabChartSync",
+        },
+        title: "PRICE-SIGNAL REPLAY · UNCONSTRAINED CAPITAL",
+        action: { label: "Rerun", onClick: () => this.run() },
+        actual: { label: "Actual", enabled: false, visible: false },
+        virtual: { label: "Virtual", onToggle: () => this.toggleVirtual() },
+        status: "Run the backtest to load Upbit candles.",
+        description: "Starts flat at the beginning of loaded history · completed 5m and 1h candles · next-open execution · entry and exit fees included.",
+        secondaryStatus: "1h MA-stack state: waiting for completed hourly prices…",
+        height: 420,
+        legend: '<span style="color:#0f172a"><span style="display:inline-block;width:10px;height:3px;background:#0f172a"></span> BTC/KRW</span><span style="color:#7c3aed">— MA7</span><span style="color:#0284c7">— MA24</span><span style="color:#f59e0b">— MA60</span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Virtual</span><span style="color:#0f766e">Dashed: B/E and net-profit levels on entry hover</span>',
+        syncText: "Upbit public candles",
+      });
+    },
+
     initChart() {
+      this.initFrame();
       if (this.chart || !byId("strategyLabChartHost") || !window.LightweightCharts) return;
       const host = byId("strategyLabChartHost");
       this.chart = LightweightCharts.createChart(host, {
@@ -102,10 +127,14 @@
       byId("labNetReturn").textContent = pct(stats.net_return_pct);
       byId("labBuyHold").textContent = pct(stats.buy_hold_pct);
       byId("labDrawdown").textContent = pct(stats.max_drawdown_pct);
-      byId("labTrades").textContent = String(stats.completed_trades || 0);
+      byId("labTrades").textContent = `${stats.completed_trades || 0} TRADES`;
       byId("labWinRate").textContent = pct(stats.win_rate_pct);
       byId("labEquity").textContent = krw(stats.ending_equity_krw);
       byId("strategyLabStatus").textContent = `${data.days}d · ${(data.bars || []).length.toLocaleString()} closed 5m bars · fee ${data.fee_bps}bp/side · next-open fills`;
+      const latestHour = (data.hourly || []).at(-1);
+      if (byId("strategyLabMacroStatus")) byId("strategyLabMacroStatus").textContent = latestHour
+        ? `Completed 1h MA stack: ${latestHour.bullish ? "BULLISH" : latestHour.bearish ? "BEARISH" : "NOT ALIGNED"} · Close ${krw(latestHour.close)} · MA7 ${krw(latestHour.ma7)} · MA24 ${krw(latestHour.ma24)} · MA60 ${krw(latestHour.ma60)}`
+        : "Completed 1h MA stack unavailable";
       this.chart.timeScale().fitContent();
     },
 
@@ -139,7 +168,7 @@
       const visible = this.controller.toggleVisibility("virtual");
       const button = byId("strategyLabVirtualToggle");
       button.classList.toggle("active", visible);
-      button.textContent = `${visible ? "✓" : "○"} Virtual Trades`;
+      if (this.frame) this.frame.setVisibility("virtual", visible);
       if (!visible) this.controller.clearReferenceLines();
       this.renderMarkers();
     },
@@ -153,8 +182,4 @@
   };
 
   window.strategyLab = lab;
-  document.addEventListener("DOMContentLoaded", () => {
-    byId("strategyLabRun")?.addEventListener("click", () => lab.run());
-    byId("strategyLabVirtualToggle")?.addEventListener("click", () => lab.toggleVirtual());
-  });
 })();

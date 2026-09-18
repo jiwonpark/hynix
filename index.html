@@ -1207,6 +1207,31 @@
       grid-template-columns: minmax(0, 1fr);
       gap: 14px;
     }
+    .executionChartFrame {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .executionChartToolbar { display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:12px;margin-bottom:8px; }
+    .executionChartTitle { color:#475569; }
+    .executionChartAction { width:auto;height:28px;padding:0 10px; }
+    .executionChartVisibility { display:inline-flex;align-items:center;gap:4px;padding:2px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px; }
+    .executionChartVisibility > span { padding:0 4px;color:#64748b;font-size:9.5px;font-weight:800; }
+    .executionChartVisibility button { width:auto;height:24px;padding:0 8px;border:1px solid #0284c7;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:800; }
+    .executionChartVisibility button + button { border-color:#8b5cf6;background:#f5f3ff;color:#6d28d9; }
+    .executionChartVisibility button.isHidden { opacity:.58;background:#fff;color:#64748b; }
+    .executionChartVisibility button:disabled { opacity:.38;cursor:not-allowed; }
+    .executionChartStatus { color:#475569; }
+    .executionChartDescription { font-size:11px;color:#64748b;margin-bottom:6px; }
+    .executionChartSecondaryStatus { font-size:12px;color:#475569;margin-bottom:8px; }
+    .executionChartHost { width:100%;position:relative; }
+    .executionChartFooter { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:10.5px;color:#475569; }
+    .executionChartLegend { display:flex;gap:8px;flex-wrap:wrap;font-weight:600;align-items:center; }
+    .executionChartSync { font-size:10px;color:#94a3b8; }
     .shortTermCriteriaGrid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2948,42 +2973,7 @@
           <!-- Full-width chart with the live criteria grid below it. -->
           <div class="shortTermGrid">
             <!-- Full-Width Short-Term Lightweight Chart -->
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
-              <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; margin-bottom: 8px;">
-                <strong style="color: #475569;">PRICE-SIGNAL REPLAY · UNCONSTRAINED CAPITAL</strong>
-                <button id="btnRerunDynamicBacktest" class="terminal-action-control" type="button" style="width: auto; height: 28px; padding: 0 10px;" onclick="tradingEngine.scheduleDynamicBacktest(true)">Rerun</button>
-                <div aria-label="Trade marker visibility" style="display: inline-flex; align-items: center; gap: 4px; padding: 2px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px;">
-                  <span style="padding: 0 4px; color: #64748b; font-size: 9.5px; font-weight: 800;">SHOW</span>
-                  <button id="legendActualTrades" type="button" aria-pressed="true" onclick="tradingEngine.toggleTradeMarkers('actual')" title="Show or hide actual entry and exit fills" style="width: auto; height: 24px; padding: 0 8px; border: 1px solid #0284c7; border-radius: 4px; background: #e0f2fe; color: #0369a1; font-size: 10px; font-weight: 800;">✓ Actual</button>
-                  <button id="legendVirtualTrades" type="button" aria-pressed="true" onclick="tradingEngine.toggleTradeMarkers('virtual')" title="Show or hide virtual dynamic-backtest entries and exits" style="width: auto; height: 24px; padding: 0 8px; border: 1px solid #8b5cf6; border-radius: 4px; background: #f5f3ff; color: #6d28d9; font-size: 10px; font-weight: 800;">✓ Virtual</button>
-                </div>
-                <span id="dynamicBacktestStatus" role="status">Loading backtest…</span>
-              </div>
-              <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">Starts flat at the beginning of loaded history · 5m closes / completed 1h macro sizing · capital, margin and leverage do not suppress simulated trades · fees, slippage and estimated funding included. LIVE ONLY checks protect real orders; BACKTEST ONLY switches affect the simulation.</div>
-              <div id="macroPolicyStatus" style="font-size: 12px; color: #475569; margin-bottom: 8px;">Macro sizing: waiting for completed hourly prices…</div>
-              <div id="shortTermSpreadChartHost" style="width: 100%; height: 420px;"></div>
-              <!-- Chart Legend (Interactive MA Toggles) -->
-              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #475569;">
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; font-weight: 600; align-items: center;">
-                  <span style="display: inline-flex; align-items: center; gap: 4px; color: #0284c7;"><span style="display: inline-block; width: 10px; height: 3px; background: #0284c7; border-radius: 1px;"></span> Parity</span>
-                  <span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA('ma7')" title="Click to toggle 7-MA" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; color: #b45309; transition: opacity 0.15s ease;">
-                    <span style="display: inline-block; width: 10px; height: 1px; background: #f59e0b; border-radius: 1px;"></span> 7-MA: <strong id="valShortTermMa7">--%</strong>
-                  </span>
-                  <span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA('ma24')" title="Click to toggle 24-MA" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; color: #6d28d9; transition: opacity 0.15s ease;">
-                    <span style="display: inline-block; width: 10px; height: 1px; background: #8b5cf6; border-radius: 1px;"></span> 24-MA: <strong id="valShortTermMa24">--%</strong>
-                  </span>
-                  <span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA('ma60')" title="Click to toggle 60-MA" style="cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; color: #0891b2; transition: opacity 0.15s ease;">
-                    <span style="display: inline-block; width: 10px; height: 1px; background: #06b6d4; border-radius: 1px;"></span> 60-MA: <strong id="valShortTermMa60">--%</strong>
-                  </span>
-                  <span style="display: inline-flex; align-items: center; gap: 3px; margin-left: 4px;"><strong style="color: #dc2626;">▼</strong>/<strong style="color: #16a34a;">▲</strong> Actual</span>
-                  <span style="display: inline-flex; align-items: center; gap: 3px;"><strong style="color: #dc2626; opacity: .45;">⇩</strong>/<strong style="color: #16a34a; opacity: .45;">⇧</strong> Virtual</span>
-                  <span style="display: inline-flex; align-items: center; gap: 3px; color: #0f766e;"><span style="display: inline-block; width: 10px; height: 2px; background: #0f766e;"></span> Selected net PnL: <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>
-                  <span style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #0284c7;"></span> Base</span>
-                  <span id="legendScaleInLine" style="display: inline-flex; align-items: center; gap: 3px;"><span style="display: inline-block; width: 8px; height: 2px; background: #dc2626; border-top: 1px dashed #dc2626;"></span> Scale-In</span>
-                </div>
-                <span id="lblShortTermChartSync" style="font-size: 10px; color: #94a3b8;">Updated 0s ago</span>
-              </div>
-            </div>
+            <div id="shortTermExecutionChartFrame"></div>
 
             <!-- Real-Time Auto-Tranche Criteria Panel (실시간 자동 트랜치 판단 기준) -->
             <div class="shortTermCriteriaGrid">
@@ -3825,44 +3815,53 @@
     </div><!-- End #tabContentCompound -->
 
     <div id="tabContentStrategyLab" style="display:none;">
-      <section class="controls" aria-label="Strategy Lab controls">
-        <div class="controlSection">
-          <div class="controlSectionHeader">
-            <div>
-              <h3>🧪 Strategy Lab · Upbit BTC/KRW</h3>
-              <span>Reusable, causal backtests. Signals use closed bars; orders fill at the next 5-minute open.</span>
+      <div class="shortTermExecutionSection" id="strategyLabExecutionSection">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:16px;">📈</span>
+              <strong style="font-size:13.5px;color:#0f172a;text-transform:uppercase;letter-spacing:.5px;">BTC/KRW Tracker & MA-Stack Criteria</strong>
+              <span style="font-size:10.5px;background:#f3e8ff;color:#6d28d9;padding:2px 7px;border-radius:4px;font-weight:800;">UPBIT STRATEGY LAB</span>
             </div>
-            <button id="strategyLabRun" type="button" style="width:auto;height:34px;padding:0 16px;background:#7c3aed;font-weight:800;">▶ Run Backtest</button>
+            <div style="font-size:11.5px;color:#64748b;margin-top:2px;">Virtual entries and exits use closed bars and execute at the next 5-minute open.</div>
           </div>
-          <div class="controlGrid environment">
-            <label><span class="controlTitle">Strategy</span><select disabled><option>BTC/KRW · 5m + 1h MA Stack</option></select></label>
-            <label><span class="controlTitle">Lookback</span><select id="strategyLabDays"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select></label>
-            <label><span class="controlTitle">Upbit fee / side</span><input id="strategyLabFee" type="number" value="5" min="0" max="100" step="0.5"><span class="controlHint">basis points</span></label>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <select id="strategyLabDays" style="height:28px;width:auto;"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
+            <label style="font-size:11px;font-weight:700;color:#475569;">Fee/side <input id="strategyLabFee" type="number" value="5" min="0" max="100" step=".5" style="width:62px;height:28px;"> bp</label>
           </div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
-            <label class="strategyLabCondition"><input id="labEntry5m" type="checkbox" checked> Entry · 5m bullish stack</label>
-            <label class="strategyLabCondition"><input id="labEntry1h" type="checkbox" checked> AND Entry · 1h bullish stack</label>
-            <label class="strategyLabCondition"><input id="labExit5m" type="checkbox" checked> Exit · 5m bearish stack</label>
-            <label class="strategyLabCondition"><input id="labExit1h" type="checkbox" checked> OR Exit · 1h bearish stack</label>
-          </div>
-          <div style="font-size:11px;color:#64748b;margin-top:8px;">Bullish: close &gt; MA7 &gt; MA24 &gt; MA60 · Bearish: close &lt; MA7 &lt; MA24 &lt; MA60</div>
         </div>
-      </section>
-      <section class="strategyLabKpis" id="strategyLabStats">
-        <div class="strategyLabKpi"><span>Net Return</span><strong id="labNetReturn">--</strong></div>
-        <div class="strategyLabKpi"><span>Buy & Hold</span><strong id="labBuyHold">--</strong></div>
-        <div class="strategyLabKpi"><span>Max Drawdown</span><strong id="labDrawdown">--</strong></div>
-        <div class="strategyLabKpi"><span>Completed Trades</span><strong id="labTrades">--</strong></div>
-        <div class="strategyLabKpi"><span>Win Rate</span><strong id="labWinRate">--</strong></div>
-        <div class="strategyLabKpi"><span>Ending Equity</span><strong id="labEquity">--</strong></div>
-      </section>
-      <section class="card" style="padding:12px;margin-top:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;">
-          <div><strong>BTC/KRW · 5-minute execution chart</strong><div id="strategyLabStatus" style="font-size:11px;color:#64748b;margin-top:3px;">Run the backtest to load Upbit candles.</div></div>
-          <button id="strategyLabVirtualToggle" type="button" class="tradeVisibilityBtn active" style="width:auto;">✓ Virtual Trades</button>
+        <div class="shortTermGrid">
+          <div id="strategyLabExecutionChartFrame"></div>
+          <div class="shortTermCriteriaGrid">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #16a34a;border-radius:6px;padding:10px 12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><strong style="font-size:11px;color:#166534;text-transform:uppercase;">▲ Long Entry Criteria</strong><span style="font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:4px;background:#dcfce7;color:#166534;">ALL ENABLED · AND</span></div>
+              <div class="condChecklist">
+                <label class="condRow"><input id="labEntry5m" type="checkbox" checked> <span>1. 5m Bullish MA Stack</span><strong>Price &gt; MA7 &gt; MA24 &gt; MA60</strong></label>
+                <label class="condRow"><input id="labEntry1h" type="checkbox" checked> <span>2. 1h Bullish MA Stack</span><strong>Price &gt; MA7 &gt; MA24 &gt; MA60</strong></label>
+                <div style="font-size:10.5px;color:#64748b;margin-top:5px;">Signal at close · fill at next 5m open</div>
+              </div>
+            </div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #dc2626;border-radius:6px;padding:10px 12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><strong style="font-size:11px;color:#991b1b;text-transform:uppercase;">▼ Long Exit Criteria</strong><span style="font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:4px;background:#fee2e2;color:#991b1b;">ANY ENABLED · OR</span></div>
+              <div class="condChecklist">
+                <label class="condRow"><input id="labExit5m" type="checkbox" checked> <span>1. 5m Bearish MA Stack</span><strong>Price &lt; MA7 &lt; MA24 &lt; MA60</strong></label>
+                <label class="condRow"><input id="labExit1h" type="checkbox" checked> <span>2. 1h Bearish MA Stack</span><strong>Price &lt; MA7 &lt; MA24 &lt; MA60</strong></label>
+                <div style="font-size:10.5px;color:#64748b;margin-top:5px;">Fees deducted on entry and exit</div>
+              </div>
+            </div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:6px;padding:10px 12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><strong style="font-size:11px;color:#5b21b6;text-transform:uppercase;">Backtest Results</strong><span id="labTrades" style="font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:4px;background:#f3e8ff;color:#6d28d9;">-- TRADES</span></div>
+              <div class="condChecklist">
+                <div class="condRow"><span>Net Return</span><strong id="labNetReturn">--</strong></div>
+                <div class="condRow"><span>Buy &amp; Hold</span><strong id="labBuyHold">--</strong></div>
+                <div class="condRow"><span>Max Drawdown</span><strong id="labDrawdown">--</strong></div>
+                <div class="condRow"><span>Win Rate</span><strong id="labWinRate">--</strong></div>
+                <div class="condRow"><span>Ending Equity</span><strong id="labEquity">--</strong></div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div id="strategyLabChartHost" style="height:560px;width:100%;position:relative;"></div>
-      </section>
+      </div>
     </div>
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
@@ -3917,8 +3916,8 @@
   <div id="ellipsisHoverTooltip" class="ellipsisTooltip" style="display: none;" role="tooltip"></div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="strategy-execution-chart.js"></script>
-  <script src="strategy-lab.js?v=45fe9e7"></script>
+  <script src="strategy-execution-chart.js?v=20260918b"></script>
+  <script src="strategy-lab.js?v=20260918b"></script>
   <script>
     const ASSET_STRATEGIES = {
       skhynix_arb: {
@@ -9848,7 +9847,31 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
       deployedStrategy: null,
 
+      mountExecutionChartFrame() {
+        if (this.executionChartFrame || !window.StrategyExecutionChartFrame) return;
+        this.executionChartFrame = StrategyExecutionChartFrame.mount({
+          container: "shortTermExecutionChartFrame",
+          id: "shortTermSpreadChart",
+          ids: {
+            action: "btnRerunDynamicBacktest", actual: "legendActualTrades", virtual: "legendVirtualTrades",
+            status: "dynamicBacktestStatus", secondaryStatus: "macroPolicyStatus",
+            host: "shortTermSpreadChartHost", legend: "shortTermChartLegend", sync: "lblShortTermChartSync",
+          },
+          title: "PRICE-SIGNAL REPLAY · UNCONSTRAINED CAPITAL",
+          action: { label: "Rerun", className: "terminal-action-control", onClick: () => this.scheduleDynamicBacktest(true) },
+          actual: { label: "Actual", onToggle: () => this.toggleTradeMarkers("actual") },
+          virtual: { label: "Virtual", onToggle: () => this.toggleTradeMarkers("virtual") },
+          status: "Loading backtest…",
+          description: "Starts flat at the beginning of loaded history · 5m closes / completed 1h macro sizing · capital, margin and leverage do not suppress simulated trades · fees, slippage and estimated funding included. LIVE ONLY checks protect real orders; BACKTEST ONLY switches affect the simulation.",
+          secondaryStatus: "Macro sizing: waiting for completed hourly prices…",
+          height: 420,
+          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">--%</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">--%</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">--%</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected net PnL: <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span><span id="legendScaleInLine">Scale-In</span>',
+          syncText: "Updated 0s ago",
+        });
+      },
+
       init() {
+        this.mountExecutionChartFrame();
         terminalLockManager.init();
         this.loadStorage();
         this.loadDeployedStrategy();
@@ -11152,14 +11175,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (kind !== "actual" && kind !== "virtual") return;
         if (!this.executionChartController) return;
         const visible = this.executionChartController.toggleVisibility(kind);
-        const legend = $(kind === "actual" ? "legendActualTrades" : "legendVirtualTrades");
-        if (legend) {
-          legend.setAttribute("aria-pressed", visible ? "true" : "false");
-          legend.textContent = `${visible ? "✓" : "○"} ${kind === "actual" ? "Actual" : "Virtual"}`;
-          legend.style.opacity = visible ? "1" : "0.58";
-          legend.style.background = visible ? (kind === "actual" ? "#e0f2fe" : "#f5f3ff") : "#ffffff";
-          legend.style.color = visible ? (kind === "actual" ? "#0369a1" : "#6d28d9") : "#64748b";
-        }
+        if (this.executionChartFrame) this.executionChartFrame.setVisibility(kind, visible);
         this.activeHoveredExecutionMarkerTime = null;
         this.updateMarkerState(null);
       },
