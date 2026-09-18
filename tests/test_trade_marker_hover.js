@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
+const StrategyExecutionChartController = require('../strategy-execution-chart.js');
 
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const start = html.indexOf('      executionMarkerTimeAtX(mouseX)');
@@ -15,11 +16,14 @@ const chart = {
     timeToCoordinate: time => time / 10,
   }),
 };
+const markerController = new StrategyExecutionChartController();
+markerController.setExecutions([{time: 1000, source: 'actual'}, {time: 2000, source: 'actual'}]);
 const engine = vm.runInContext(`({
   shortTermChart: chart,
+  executionChartController: markerController,
   rawExecutionMarkers: [{time: 1000}, {time: 2000}],
   ${method}
-})`, vm.createContext({...context, chart}));
+})`, vm.createContext({...context, chart, markerController}));
 
 assert.equal(engine.executionMarkerTimeAtX(105), 1000,
   'the entire x-column should activate a marker');
@@ -29,10 +33,10 @@ assert.equal(engine.executionMarkerTimeAtX(150), null,
   'unrelated chart columns must not activate a marker');
 assert.equal(engine.executionMarkerTimeAtX(196), 2000,
   'the closest visible marker should activate by x-coordinate');
-engine.tradeMarkerVisibility = {actual: false, virtual: true};
+markerController.setVisibility('actual', false);
 assert.equal(engine.executionMarkerTimeAtX(105), null,
   'hidden actual trades must not remain hover targets');
-engine.rawExecutionMarkers.push({time: 1000, hypothetical: true});
+markerController.setExecutions([...markerController.executions, {time: 1000, source: 'virtual', hypothetical: true}]);
 assert.equal(engine.executionMarkerTimeAtX(105), 1000,
   'visible virtual trades must remain independently hoverable');
 
@@ -40,17 +44,16 @@ assert.ok(html.includes('this.updateMarkerState(this.activeHoveredExecutionMarke
   'live chart redraws must preserve the active trade price label');
 assert.ok(!html.includes('let activeHoveredMarkerTime = null;'),
   'hover state must survive beyond the chart initialization closure');
-assert.ok(html.includes('shape: isShort ? "arrowDown" : "arrowUp"'),
+const componentSource = fs.readFileSync(path.join(__dirname, '../strategy-execution-chart.js'), 'utf8');
+assert.ok(componentSource.includes('shape: isShort ? "arrowDown" : "arrowUp"'),
   'hypothetical markers must use arrow shapes instead of colored circle dots');
-assert.ok(html.includes('rgba(220, 38, 38, 0.35)'),
-  'hypothetical markers must be styled with subtle dimmed transparency');
-assert.ok(html.includes('if (m.hypothetical)'),
+assert.ok(componentSource.includes('m.hypothetical ? "0.35" : "0.70"'),
   'simulated trades should use dimmed arrows');
 assert.ok(html.includes('Virtual trades'));
 assert.ok(html.includes('id="legendActualTrades"'));
 assert.ok(html.includes('id="legendVirtualTrades"'));
 assert.ok(html.includes('toggleTradeMarkers(kind)'));
-assert.ok(html.includes('visibleMarkers = this.rawExecutionMarkers.filter'));
+assert.ok(componentSource.includes('visibleExecutions()'));
 assert.ok(!html.includes('positionImpliedMarker'),
   'current inventory must never be presented as a missed trade');
 
