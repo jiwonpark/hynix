@@ -9660,12 +9660,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
     // Primary Navigation Tab Switcher
     function switchMainTab(tab) {
-      window.activeMainTab = tab;
-      const isBacktest = tab === "backtest";
-      const isTrading = tab === "trading";
-      const isPairs = tab === "pairs";
-      const isCompound = tab === "compound";
-      const isStrategyLab = tab === "strategyLab";
+      const normalized = (tab || "backtest").toLowerCase();
+      window.activeMainTab = normalized;
+      const isBacktest = normalized === "backtest";
+      const isTrading = normalized === "trading";
+      const isPairs = normalized === "pairs";
+      const isCompound = normalized === "compound";
+      const isStrategyLab = normalized === "strategylab";
       if ($("navTabBacktest")) $("navTabBacktest").classList.toggle("active", isBacktest);
       if ($("navTabTrading")) $("navTabTrading").classList.toggle("active", isTrading);
       if ($("navTabPairs")) $("navTabPairs").classList.toggle("active", isPairs);
