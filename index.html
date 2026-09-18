@@ -4102,8 +4102,8 @@
   <div id="ellipsisHoverTooltip" class="ellipsisTooltip" style="display: none;" role="tooltip"></div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="strategy-execution-chart.js?v=20260918_i"></script>
-  <script src="strategy-lab.js?v=20260918_i"></script>
+  <script src="strategy-execution-chart.js?v=20260918_j"></script>
+  <script src="strategy-lab.js?v=20260918_j"></script>
   <script>
     const ASSET_STRATEGIES = {
       skhynix_arb: {
@@ -11325,28 +11325,59 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.maVisibility = { ma7: true, ma24: true, ma60: true };
 
         this.activeHoveredExecutionMarkerTime = null;
+        this.selectedExecutionMarkerTime = null;
         this.shortTermChart.subscribeCrosshairMove((param) => {
-          if (!param || !param.time || !param.point) {
+          if (!param || !param.point) {
             if (this.activeHoveredExecutionMarkerTime !== null) {
               this.activeHoveredExecutionMarkerTime = null;
-              this.updateMarkerState(null);
+              if (this.selectedExecutionMarkerTime === null) {
+                this.updateMarkerState(null);
+              }
             }
             return;
           }
           // Treat the full vertical candle column as the marker hover target.
           // Marker details therefore depend only on mouse X, never mouse Y.
-          const nextHover = this.executionMarkerTimeAtX(param.point.x);
+          const nextHover = this.markerTimeAtParam(param);
           if (nextHover !== this.activeHoveredExecutionMarkerTime) {
             this.activeHoveredExecutionMarkerTime = nextHover;
-            this.updateMarkerState(nextHover);
+            if (this.selectedExecutionMarkerTime === null) {
+              this.updateMarkerState(nextHover);
+            }
           }
         });
+        this.shortTermChart.subscribeClick((param) => this.onChartClick(param));
 
         window.addEventListener("resize", () => {
           if (this.shortTermChart && host) {
             this.shortTermChart.applyOptions({ width: host.clientWidth });
           }
         });
+      },
+
+      markerTimeAtParam(param) {
+        if (!param) return null;
+        if (param.time) {
+          const direct = (this.rawExecutionMarkers || []).find((m) => m.time === param.time && this.isTradeMarkerVisible(m));
+          if (direct) return direct.time;
+        }
+        if (param.point) {
+          return this.executionMarkerTimeAtX(param.point.x);
+        }
+        return null;
+      },
+
+      onChartClick(param) {
+        if (!this.shortTermChart || !this.shortTermSeries) return;
+        const time = this.markerTimeAtParam(param);
+        const marker = (this.rawExecutionMarkers || []).find((m) => m.time === time && this.isTradeMarkerVisible(m));
+        if (marker && (marker.entry_spread || marker.pnl_model)) {
+          this.selectedExecutionMarkerTime = (this.selectedExecutionMarkerTime === marker.time) ? null : marker.time;
+        } else {
+          this.selectedExecutionMarkerTime = null;
+        }
+        const activeTime = this.selectedExecutionMarkerTime !== null ? this.selectedExecutionMarkerTime : this.activeHoveredExecutionMarkerTime;
+        this.updateMarkerState(activeTime);
       },
 
       executionMarkerTimeAtX(mouseX) {
@@ -11366,14 +11397,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!this.executionChartController) return;
         const visible = this.executionChartController.toggleVisibility(kind);
         if (this.executionChartFrame) this.executionChartFrame.setVisibility(kind, visible);
+        this.selectedExecutionMarkerTime = null;
         this.activeHoveredExecutionMarkerTime = null;
         this.updateMarkerState(null);
       },
 
       updateMarkerState(hoveredTime = null) {
         if (!this.shortTermSeries || !this.executionChartController) return;
-        this.shortTermSeries.setMarkers(this.executionChartController.markersForRender(hoveredTime));
-        this.syncHoveredTrancheAnalytics(hoveredTime);
+        const activeTime = this.selectedExecutionMarkerTime !== null ? this.selectedExecutionMarkerTime : hoveredTime;
+        this.shortTermSeries.setMarkers(this.executionChartController.markersForRender(activeTime));
+        this.syncHoveredTrancheAnalytics(activeTime);
       },
 
       tranchePnlSeries(marker) {
@@ -11645,7 +11678,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         return netProfitTargets.map((netProfitPct) => ({
           netProfitPct,
           title: netProfitPct === 0 ? "B/E" : `NET +${netProfitPct}%`,
-          price: entry / (1 + roundTripCostRate + (netProfitPct / 100))
+          price: entry / (1 + roundTripCostRate + (netProfitPct / 100)),
+          color: netProfitPct === 0 ? "rgba(71, 85, 105, 0.70)" : "rgba(22, 163, 74, 0.70)",
+          lineWidth: 1.5,
         }));
       },
 
@@ -11683,6 +11718,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const criteria = this.shortTermReferenceCriteria || {};
         const entry = Number(criteria.entry_baseline_spread);
         if (!(entry > 0)) {
+          const lastVirtual = (this.dynamicBacktestMarkers || []).filter(m => m.entry_spread).at(-1);
+          if (lastVirtual?.entry_spread) {
+            this.renderShortTermReferenceLines(lastVirtual.entry_spread, {
+              selected: false,
+              exitSpread: lastVirtual.exit_spread || null
+            });
+            return;
+          }
           this.clearShortTermReferenceLines();
           return;
         }
@@ -11729,6 +11772,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!markers.some((marker) => marker.time === this.activeHoveredExecutionMarkerTime)) {
           this.activeHoveredExecutionMarkerTime = null;
         }
+        if (!markers.some((marker) => marker.time === this.selectedExecutionMarkerTime)) {
+          this.selectedExecutionMarkerTime = null;
+        }
         this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
         window.latestExecutionMarkers = markers;
 
@@ -11746,8 +11792,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const showScaleInLine = this.isConditionEnabled("entry_base_spread", criteria.condition_toggles);
         const scaleInLegend = $("legendScaleInLine");
         if (scaleInLegend) scaleInLegend.style.display = showScaleInLine ? "inline-flex" : "none";
-        if (this.activeHoveredExecutionMarkerTime !== null) {
-          this.syncHoveredTrancheAnalytics(this.activeHoveredExecutionMarkerTime);
+        if (activeTime !== null) {
+          this.syncHoveredTrancheAnalytics(activeTime);
         } else {
           this.renderCurrentPositionReferenceLines();
         }
