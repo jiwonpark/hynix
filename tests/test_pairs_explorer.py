@@ -105,5 +105,23 @@ class TestPairsExplorer(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(half_life_periods, 0)
         self.assertAlmostEqual(half_life_periods, 6.58, delta=0.1)
 
+    def test_field_tooltips_and_popup(self):
+        """Verify field explanation popups and tooltips for Tab 3 exist."""
+        self.assertIn('id="pairsHelpPopup"', self.html)
+        self.assertIn('id="pairsPopupTitle"', self.html)
+        self.assertIn('id="pairsPopupBody"', self.html)
+        self.assertIn('class="fieldTip"', self.html)
+        self.assertIn('data-tip-key="zscore"', self.html)
+        self.assertIn('data-tip-key="adfPVal"', self.html)
+        self.assertIn('data-tip-key="halfLife"', self.html)
+        self.assertIn('data-tip-key="beta"', self.html)
+        self.assertIn('data-tip-key="correlation"', self.html)
+        self.assertIn('data-tip-key="bpCapital"', self.html)
+        self.assertIn('data-tip-key="trigShort"', self.html)
+        self.assertIn('const PAIR_TOOLTIPS =', self.html)
+        self.assertIn('const pairsTooltipManager =', self.html)
+        self.assertIn('pairsTooltipManager.init()', self.html)
+
 if __name__ == "__main__":
     unittest.main()
+

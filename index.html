@@ -1783,7 +1783,76 @@
       gap: 14px;
       align-items: start;
     }
-    /* Micro-Compounding Engine Styles */
+
+    /* --- Tab 3 Field Title Help Tooltips & Explanation Popup --- */
+    .fieldTip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: help;
+      border-bottom: 1px dotted #94a3b8;
+      transition: color 0.15s ease, border-color 0.15s ease;
+    }
+    .fieldTip:hover {
+      color: #0284c7 !important;
+      border-bottom-color: #0284c7;
+    }
+    .fieldTip .tipIcon {
+      font-size: 10px;
+      color: #94a3b8;
+      font-weight: 700;
+      opacity: 0.8;
+      display: inline-block;
+      line-height: 1;
+    }
+    .fieldTip:hover .tipIcon {
+      color: #0284c7;
+      opacity: 1;
+    }
+    #pairsHelpPopup {
+      position: fixed;
+      z-index: 99999;
+      background: #0f172a;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 11px 14px;
+      max-width: 320px;
+      min-width: 220px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+      pointer-events: none;
+      display: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      font-size: 11.5px;
+      line-height: 1.45;
+    }
+    #pairsHelpPopup.visible {
+      display: block;
+      opacity: 1;
+    }
+    #pairsHelpPopup .popupTitle {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #38bdf8;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #pairsHelpPopup .popupBody {
+      color: #cbd5e1;
+      margin-bottom: 6px;
+    }
+    #pairsHelpPopup .popupRule {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.12);
+      padding: 4px 7px;
+      border-radius: 4px;
+      border-left: 2px solid #10b981;
+    }
     .compSliderCard {
       background: #ffffff;
       border: 1px solid var(--line);
@@ -3126,22 +3195,22 @@
       <!-- Screener KPI Cards -->
       <section class="pairsKpiGrid">
         <div class="pairKpiCard">
-          <span class="pairKpiLabel" id="lblKpiDislocated">⚡ Active Dislocated Pairs</span>
+          <span class="pairKpiLabel fieldTip" data-tip-key="kpiDislocated" id="lblKpiDislocated">⚡ Active Dislocated Pairs <span class="tipIcon">ⓘ</span></span>
           <div class="pairKpiValue"><span id="valKpiDislocated">--</span> <span style="font-size: 12px; font-weight: 600; color: #64748b;">opportunities</span></div>
           <span class="pairKpiSub" id="subKpiDislocated">Pairs with |Z-score| ≥ 1.5σ</span>
         </div>
         <div class="pairKpiCard">
-          <span class="pairKpiLabel" id="lblKpiTopOppo">🎯 Top Dislocation Disparity</span>
+          <span class="pairKpiLabel fieldTip" data-tip-key="kpiTopOppo" id="lblKpiTopOppo">🎯 Top Dislocation Disparity <span class="tipIcon">ⓘ</span></span>
           <div class="pairKpiValue" style="color: #0284c7;"><span id="valKpiTopOppo">--</span></div>
           <span class="pairKpiSub" id="subKpiTopOppo">Highest mean-reversion stretch</span>
         </div>
         <div class="pairKpiCard">
-          <span class="pairKpiLabel" id="lblKpiStrongestCoint">🔬 Strongest Cointegration</span>
+          <span class="pairKpiLabel fieldTip" data-tip-key="kpiStrongestCoint" id="lblKpiStrongestCoint">🔬 Strongest Cointegration <span class="tipIcon">ⓘ</span></span>
           <div class="pairKpiValue" style="color: #16a34a;"><span id="valKpiStrongestCoint">--</span></div>
           <span class="pairKpiSub" id="subKpiStrongestCoint">Lowest ADF stationarity p-value</span>
         </div>
         <div class="pairKpiCard">
-          <span class="pairKpiLabel" id="lblKpiFastestRev">⏱️ Fastest Half-Life (τ₁/₂)</span>
+          <span class="pairKpiLabel fieldTip" data-tip-key="kpiFastestRev" id="lblKpiFastestRev">⏱️ Fastest Half-Life (τ₁/₂) <span class="tipIcon">ⓘ</span></span>
           <div class="pairKpiValue" style="color: #8b5cf6;"><span id="valKpiFastestRev">--</span></div>
           <span class="pairKpiSub" id="subKpiFastestRev">Fastest Ornstein-Uhlenbeck cycle</span>
         </div>
@@ -3160,18 +3229,18 @@
           <table class="pairsTable" id="tblPairsScreener">
             <thead>
               <tr>
-                <th onclick="pairsExplorer.sortTable('name')">Pair & Sector <span id="sort_pair_name"></span></th>
-                <th onclick="pairsExplorer.sortTable('priceA')">Leg A Price <span id="sort_pair_priceA"></span></th>
-                <th onclick="pairsExplorer.sortTable('priceB')">Leg B Price <span id="sort_pair_priceB"></span></th>
-                <th onclick="pairsExplorer.sortTable('ratio')">Ratio Spread <span id="sort_pair_ratio"></span></th>
-                <th onclick="pairsExplorer.sortTable('ratio24hChange')">24h Spread Δ <span id="sort_pair_ratio24hChange"></span></th>
-                <th onclick="pairsExplorer.sortTable('zscore')">Z-Score Dislocation <span id="sort_pair_zscore"></span></th>
-                <th onclick="pairsExplorer.sortTable('adfPVal')">Cointegration (ADF) <span id="sort_pair_adfPVal"></span></th>
-                <th onclick="pairsExplorer.sortTable('halfLife')">Half-Life (τ₁/₂) <span id="sort_pair_halfLife"></span></th>
-                <th onclick="pairsExplorer.sortTable('beta')">Hedge Beta (β) <span id="sort_pair_beta"></span></th>
-                <th onclick="pairsExplorer.sortTable('correlation')">30D Corr (r) <span id="sort_pair_correlation"></span></th>
-                <th onclick="pairsExplorer.sortTable('signal')">Signal <span id="sort_pair_signal"></span></th>
-                <th style="text-align: right;">Action</th>
+                <th onclick="pairsExplorer.sortTable('name')"><span class="fieldTip" data-tip-key="name">Pair & Sector <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_name"></span></th>
+                <th onclick="pairsExplorer.sortTable('priceA')"><span class="fieldTip" data-tip-key="priceA">Leg A Price <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_priceA"></span></th>
+                <th onclick="pairsExplorer.sortTable('priceB')"><span class="fieldTip" data-tip-key="priceB">Leg B Price <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_priceB"></span></th>
+                <th onclick="pairsExplorer.sortTable('ratio')"><span class="fieldTip" data-tip-key="ratio">Ratio Spread <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_ratio"></span></th>
+                <th onclick="pairsExplorer.sortTable('ratio24hChange')"><span class="fieldTip" data-tip-key="ratio24hChange">24h Spread Δ <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_ratio24hChange"></span></th>
+                <th onclick="pairsExplorer.sortTable('zscore')"><span class="fieldTip" data-tip-key="zscore">Z-Score Dislocation <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_zscore"></span></th>
+                <th onclick="pairsExplorer.sortTable('adfPVal')"><span class="fieldTip" data-tip-key="adfPVal">Cointegration (ADF) <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_adfPVal"></span></th>
+                <th onclick="pairsExplorer.sortTable('halfLife')"><span class="fieldTip" data-tip-key="halfLife">Half-Life (τ₁/₂) <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_halfLife"></span></th>
+                <th onclick="pairsExplorer.sortTable('beta')"><span class="fieldTip" data-tip-key="beta">Hedge Beta (β) <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_beta"></span></th>
+                <th onclick="pairsExplorer.sortTable('correlation')"><span class="fieldTip" data-tip-key="correlation">30D Corr (r) <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_correlation"></span></th>
+                <th onclick="pairsExplorer.sortTable('signal')"><span class="fieldTip" data-tip-key="signal">Signal <span class="tipIcon">ⓘ</span></span> <span id="sort_pair_signal"></span></th>
+                <th style="text-align: right;"><span class="fieldTip" data-tip-key="action">Action <span class="tipIcon">ⓘ</span></span></th>
               </tr>
             </thead>
             <tbody id="tbodyPairsScreener">
@@ -3219,11 +3288,11 @@
           </div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <div style="text-align: right;">
-              <div style="font-size: 11px; font-weight: 700; color: #64748b;">CURRENT SPREAD RATIO</div>
+              <div style="font-size: 11px; font-weight: 700; color: #64748b;" class="fieldTip" data-tip-key="deepRatio">CURRENT SPREAD RATIO <span class="tipIcon">ⓘ</span></div>
               <div style="font-size: 18px; font-weight: 900; color: #0f172a;" id="deepDiveCurrentRatio">--</div>
             </div>
             <div style="text-align: right; margin-left: 12px;">
-              <div style="font-size: 11px; font-weight: 700; color: #64748b;">CURRENT Z-SCORE</div>
+              <div style="font-size: 11px; font-weight: 700; color: #64748b;" class="fieldTip" data-tip-key="deepZScore">CURRENT Z-SCORE <span class="tipIcon">ⓘ</span></div>
               <div style="font-size: 18px; font-weight: 900;" id="deepDiveCurrentZScore">--</div>
             </div>
           </div>
@@ -3263,10 +3332,10 @@
               <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
                 <thead>
                   <tr style="border-bottom: 1px solid #cbd5e1; text-align: left; color: #475569;">
-                    <th style="padding: 4px 6px;">Capital</th>
-                    <th style="padding: 4px 6px;" id="bpColLegA">Leg A Notional</th>
-                    <th style="padding: 4px 6px;" id="bpColLegB">Leg B Notional</th>
-                    <th style="padding: 4px 6px;">Net Delta</th>
+                    <th style="padding: 4px 6px;"><span class="fieldTip" data-tip-key="bpCapital">Capital <span class="tipIcon">ⓘ</span></span></th>
+                    <th style="padding: 4px 6px;" id="bpColLegA"><span class="fieldTip" data-tip-key="bpLegA">Leg A Notional <span class="tipIcon">ⓘ</span></span></th>
+                    <th style="padding: 4px 6px;" id="bpColLegB"><span class="fieldTip" data-tip-key="bpLegB">Leg B Notional <span class="tipIcon">ⓘ</span></span></th>
+                    <th style="padding: 4px 6px;"><span class="fieldTip" data-tip-key="bpNetDelta">Net Delta <span class="tipIcon">ⓘ</span></span></th>
                   </tr>
                 </thead>
                 <tbody id="bpSizingRows">
@@ -3280,19 +3349,19 @@
               <h4 style="margin: 0 0 8px 0; font-size: 12.5px; font-weight: 800; color: #0f172a; text-transform: uppercase;">🎯 Execution Triggers & Targets</h4>
               <div style="display: flex; flex-direction: column; gap: 6px; font-size: 11.5px;">
                 <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #e2e8f0;">
-                  <span style="color: #64748b;">Short Spread Trigger:</span>
+                  <span style="color: #64748b;"><span class="fieldTip" data-tip-key="trigShort">Short Spread Trigger <span class="tipIcon">ⓘ</span></span>:</span>
                   <strong style="color: #b91c1c;" id="bpTriggerShort">Z > +1.50σ</strong>
                 </div>
                 <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #e2e8f0;">
-                  <span style="color: #64748b;">Long Spread Trigger:</span>
+                  <span style="color: #64748b;"><span class="fieldTip" data-tip-key="trigLong">Long Spread Trigger <span class="tipIcon">ⓘ</span></span>:</span>
                   <strong style="color: #15803d;" id="bpTriggerLong">Z < -1.50σ</strong>
                 </div>
                 <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #e2e8f0;">
-                  <span style="color: #64748b;">Take-Profit Target (Mean):</span>
+                  <span style="color: #64748b;"><span class="fieldTip" data-tip-key="trigTP">Take-Profit Target (Mean) <span class="tipIcon">ⓘ</span></span>:</span>
                   <strong style="color: #0284c7;" id="bpTargetTP">Z = 0.00σ</strong>
                 </div>
                 <div style="display: flex; justify-content: space-between; padding: 4px 0;">
-                  <span style="color: #64748b;">Structural Divergence Stop:</span>
+                  <span style="color: #64748b;"><span class="fieldTip" data-tip-key="trigStop">Structural Divergence Stop <span class="tipIcon">ⓘ</span></span>:</span>
                   <strong style="color: #64748b;" id="bpStopDivergence">|Z| > 3.00σ</strong>
                 </div>
               </div>
@@ -3303,19 +3372,19 @@
               <h4 style="margin: 0 0 8px 0; font-size: 12.5px; font-weight: 800; color: #0f172a; text-transform: uppercase;">📊 Empirical Mean-Reversion Backtest</h4>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11.5px;">
                 <div style="background: #fff; padding: 6px 8px; border-radius: 5px; border: 1px solid #e2e8f0;">
-                  <span style="color: #64748b; font-size: 10.5px; display: block;">Simulated Trades</span>
+                  <span style="color: #64748b; font-size: 10.5px; display: block;" class="fieldTip" data-tip-key="simTrades">Simulated Trades <span class="tipIcon">ⓘ</span></span>
                   <strong id="simTrades" style="font-size: 13px; color: #0f172a;">--</strong>
                 </div>
                 <div style="background: #fff; padding: 6px 8px; border-radius: 5px; border: 1px solid #e2e8f0;">
-                  <span style="color: #64748b; font-size: 10.5px; display: block;">Historical Win Rate</span>
+                  <span style="color: #64748b; font-size: 10.5px; display: block;" class="fieldTip" data-tip-key="simWinRate">Historical Win Rate <span class="tipIcon">ⓘ</span></span>
                   <strong id="simWinRate" style="font-size: 13px; color: #16a34a;">--</strong>
                 </div>
                 <div style="background: #fff; padding: 6px 8px; border-radius: 5px; border: 1px solid #e2e8f0;">
-                  <span style="color: #64748b; font-size: 10.5px; display: block;">Profit Factor</span>
+                  <span style="color: #64748b; font-size: 10.5px; display: block;" class="fieldTip" data-tip-key="simProfitFactor">Profit Factor <span class="tipIcon">ⓘ</span></span>
                   <strong id="simProfitFactor" style="font-size: 13px; color: #0284c7;">--</strong>
                 </div>
                 <div style="background: #fff; padding: 6px 8px; border-radius: 5px; border: 1px solid #e2e8f0;">
-                  <span style="color: #64748b; font-size: 10.5px; display: block;">Avg Hold Time</span>
+                  <span style="color: #64748b; font-size: 10.5px; display: block;" class="fieldTip" data-tip-key="simHoldTime">Avg Hold Time <span class="tipIcon">ⓘ</span></span>
                   <strong id="simHoldTime" style="font-size: 13px; color: #64748b;">--</strong>
                 </div>
               </div>
@@ -3324,6 +3393,13 @@
           </div>
         </div>
       </section>
+
+      <!-- Tab 3 Interactive Field Help Popup Element -->
+      <div id="pairsHelpPopup">
+        <div class="popupTitle" id="pairsPopupTitle">💡 Field Explanation</div>
+        <div class="popupBody" id="pairsPopupBody">Details...</div>
+        <div class="popupRule" id="pairsPopupRule" style="display: none;"></div>
+      </div>
     </div><!-- End #tabContentPairs -->
 
     <!-- ======================================================= -->
@@ -11753,6 +11829,404 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       { id: "skhynix_arb", sector: "l1", sectorName: "Dual-Listed ADR", name: "SK Hynix Arb", symbolA: "SKHYUSDT", symbolB: "CSOPSKHYNIX2LUSDT", ratioMultiplier: 34.0, thesis: "US OTC ADR vs Hong Kong listed 2x Leveraged Daily ETF perp." }
     ];
 
+    const PAIR_TOOLTIPS = {
+      en: {
+        name: {
+          title: "Pair & Sector Classification",
+          body: "Two correlated or cointegrated crypto assets grouped by sector or architecture.",
+          rule: "Shared economic drivers ensure price deviations are temporary rather than permanent drift."
+        },
+        priceA: {
+          title: "Leg A Price (Numerator)",
+          body: "Real-time mark price of the first leg on Binance USDT-M Futures.",
+          rule: "Numerator in the relative spread ratio (Price A / Price B)."
+        },
+        priceB: {
+          title: "Leg B Price (Denominator)",
+          body: "Real-time mark price of the second hedge leg on Binance USDT-M Futures.",
+          rule: "Denominator asset. Scaled by Beta (β) when executing the hedge."
+        },
+        ratio: {
+          title: "Spread Ratio (P_A / P_B)",
+          body: "Normalized relative price ratio tracking how expensive Leg A is relative to Leg B.",
+          rule: "Statistical arbitrage models the mean-reversion of this ratio around its historical rolling mean."
+        },
+        ratio24hChange: {
+          title: "24h Spread Velocity (Δ)",
+          body: "Percentage change in the spread ratio over the last 24 hours.",
+          rule: "Sharp spikes indicate rapid momentum dislocations suitable for mean-reversion positioning."
+        },
+        zscore: {
+          title: "Z-Score Dislocation Gauge",
+          body: "Standard deviations (σ) the spread has stretched from its rolling moving average.",
+          rule: "|Z| ≥ 1.5σ signals statistical entry. |Z| ≥ 3.0σ triggers safety stop-loss."
+        },
+        adfPVal: {
+          title: "Cointegration (ADF Stationarity)",
+          body: "Augmented Dickey-Fuller test p-value. Mathematically proves the spread is stationary and non-wandering.",
+          rule: "p < 0.05 (🟢 Strong) confirms stationary equilibrium with strong mean-reverting pull."
+        },
+        halfLife: {
+          title: "Mean-Reversion Half-Life (τ₁/₂)",
+          body: "Expected time in hours for a spread dislocation to revert 50% back to fair value via Ornstein-Uhlenbeck process.",
+          rule: "Shorter half-life = faster trade turnaround and higher capital compounding velocity."
+        },
+        beta: {
+          title: "OLS Optimal Hedge Ratio (β)",
+          body: "Sensitivity of Leg A returns relative to Leg B returns derived from Ordinary Least Squares regression.",
+          rule: "Determines exact hedge sizing: Enter $1.00 of Leg A against $β of Leg B for 0 market beta."
+        },
+        correlation: {
+          title: "30-Day Pearson Correlation (r)",
+          body: "Measures how consistently Leg A and Leg B move in the same direction (-1.0 to +1.0).",
+          rule: "Values r > 0.80 indicate strong co-movement, reducing directional drawdown risk."
+        },
+        signal: {
+          title: "Quantitative Action Signal",
+          body: "Algorithmic recommendation generated from real-time Z-score and cointegration status.",
+          rule: "🔴 Short A / Long B (overbought), 🟢 Long A / Short B (oversold), ⚪ Neutral (fair value)."
+        },
+        action: {
+          title: "Detailed Diagnostic Action",
+          body: "Click to load interactive spread charts, Z-score oscillator, and position sizing blueprint.",
+          rule: "Opens the deep-dive quantitative analytics workbench below."
+        },
+        kpiDislocated: {
+          title: "Active Dislocated Pairs",
+          body: "Total count of universe pairs currently stretched beyond ±1.5σ from their equilibrium mean.",
+          rule: "Represents the active opportunity set ready for immediate statistical arbitrage entry."
+        },
+        kpiTopOppo: {
+          title: "Top Dislocation Disparity",
+          body: "The single pair exhibiting the largest absolute Z-score dislocation across the screener.",
+          rule: "Highest theoretical statistical edge and mean-reversion profit potential."
+        },
+        kpiStrongestCoint: {
+          title: "Strongest Cointegration",
+          body: "The pair with the lowest ADF stationarity p-value in the monitored universe.",
+          rule: "Highest mathematical confidence that the price spread will reliably revert to mean."
+        },
+        kpiFastestRev: {
+          title: "Fastest Mean-Reversion Half-Life",
+          body: "The pair with the shortest Ornstein-Uhlenbeck half-life (τ₁/₂).",
+          rule: "Offers the quickest trade resolution, lowest capital lockup time, and lowest funding drag."
+        },
+        deepRatio: {
+          title: "Live Spread Ratio",
+          body: "Real-time price ratio for the selected pair (Price A / Price B).",
+          rule: "Compared against the rolling Bollinger mean and ±1.5σ / ±2.0σ trigger bands."
+        },
+        deepZScore: {
+          title: "Live Normalized Z-Score",
+          body: "Instantaneous statistical dislocation of the selected pair in standard deviations.",
+          rule: "Monitored against overbought (+1.5σ) and oversold (-1.5σ) trigger thresholds."
+        },
+        bpCapital: {
+          title: "Total Portfolio Allocation",
+          body: "Total capital allocated across both legs of this statistical arbitrage trade.",
+          rule: "Split into Leg A and Leg B according to the optimal hedge ratio β."
+        },
+        bpLegA: {
+          title: "Leg A Notional Allocation",
+          body: "Total dollar value to trade in the primary asset contract.",
+          rule: "Balanced against Leg B so net directional market exposure is eliminated."
+        },
+        bpLegB: {
+          title: "Leg B Notional Allocation",
+          body: "Total dollar value to trade in the hedge contract (Notional_A × β).",
+          rule: "Neutralizes the systematic market beta of Leg A."
+        },
+        bpNetDelta: {
+          title: "Net Market Delta Risk",
+          body: "Residual directional dollar exposure between Leg A and Leg B.",
+          rule: "Strictly kept < $0.50 so market crashes or surges generate zero directional loss."
+        },
+        trigShort: {
+          title: "Short Spread Entry Trigger",
+          body: "Threshold (Z ≥ +1.50σ) where Leg A is statistically expensive relative to Leg B.",
+          rule: "Execution: Sell Leg A short and buy Leg B long to capture downward spread convergence."
+        },
+        trigLong: {
+          title: "Long Spread Entry Trigger",
+          body: "Threshold (Z ≤ -1.50σ) where Leg A is statistically cheap relative to Leg B.",
+          rule: "Execution: Buy Leg A long and sell Leg B short to capture upward spread convergence."
+        },
+        trigTP: {
+          title: "Take-Profit Target (Fair Value)",
+          body: "Equilibrium exit point (Z = 0.00σ) where the ratio spread returns to historical mean.",
+          rule: "Both legs are simultaneously closed at market to lock in the arbitrage profit."
+        },
+        trigStop: {
+          title: "Structural Divergence Stop-Loss",
+          body: "Safety circuit-breaker (|Z| ≥ 3.00σ) to protect capital against fundamental regime changes.",
+          rule: "If a spread diverges past 3.0σ, cointegration may be breaking; positions are cut immediately."
+        },
+        simTrades: {
+          title: "Completed Backtest Trades",
+          body: "Number of simulated round-trip entries and exits executed across historical candle bars.",
+          rule: "High trade count ensures statistical validity and low sample variance."
+        },
+        simWinRate: {
+          title: "Historical Win Rate (%)",
+          body: "Percentage of simulated round-trip trades that closed with positive net profit.",
+          rule: "Institutional statistical arbitrage typically achieves 70%–88% win rates at ±1.5σ."
+        },
+        simProfitFactor: {
+          title: "Simulation Profit Factor",
+          body: "Ratio of gross winning dollars to gross losing dollars (Gross Profit / Gross Loss).",
+          rule: "Values above 2.0 indicate an asymmetric, highly robust trading edge."
+        },
+        simHoldTime: {
+          title: "Average Position Dwell Time",
+          body: "Average duration in hours from trade entry (|Z| ≥ 1.5σ) to mean-reversion exit (Z = 0.00σ).",
+          rule: "Shorter hold times reduce borrowing/funding fees and increase annual compounding turnover."
+        }
+      },
+      ko: {
+        name: {
+          title: "페어 및 섹터 분류",
+          body: "동일한 블록체인 생태계 또는 경제적 섹터로 묶인 두 개의 공적분 가상자산 페어입니다.",
+          rule: "동일 섹터 자산은 펀더멘털을 공유하므로 가격 괴리가 발생해도 정상 범위로 회귀할 확률이 높습니다."
+        },
+        priceA: {
+          title: "Leg A 시장 가격 (분자)",
+          body: "바이낸스 USDT 무기한 선물 기준 첫 번째 자산(Leg A)의 실시간 시장가입니다.",
+          rule: "스프레드 비율(가격 A / 가격 B) 계산 시 분자 자산으로 사용됩니다."
+        },
+        priceB: {
+          title: "Leg B 시장 가격 (분모)",
+          body: "바이낸스 USDT 무기한 선물 기준 두 번째 헤지 자산(Leg B)의 실시간 시장가입니다.",
+          rule: "헤지 주문 시 베타(β) 비율만큼 스케일링되어 체결됩니다."
+        },
+        ratio: {
+          title: "스프레드 가격 비율 (P_A / P_B)",
+          body: "두 자산 간의 상대 가격 비율입니다. Leg A가 Leg B 대비 얼마나 고평가/저평가되었는지 추적합니다.",
+          rule: "통계적 차익거래는 이 비율이 역사적 평균에서 벗어났을 때 회귀를 이용해 수익을 창출합니다."
+        },
+        ratio24hChange: {
+          title: "24시간 스프레드 변동률 (Δ)",
+          body: "최근 24시간 동안 두 자산 간의 가격 비율 변동률(%)입니다.",
+          rule: "단기 모멘텀 이격이 급격히 발생한 유망 진입 페어를 신속하게 포착합니다."
+        },
+        zscore: {
+          title: "Z-Score 괴리도 (표준편차 배수)",
+          body: "현재 스프레드가 이동평균선에서 몇 표준편차(σ)만큼 벗어났는지를 나타내는 핵심 계량 지표입니다.",
+          rule: "|Z| ≥ 1.5σ 이상이면 차익거래 진입 기회, |Z| ≥ 3.0σ 이상이면 손절선입니다."
+        },
+        adfPVal: {
+          title: "공적분 정상성 검정 (ADF p-value)",
+          body: "두 자산의 스프레드가 무작위로 발산하지 않고 평균으로 회귀한다는 통계적 수학 검정입니다.",
+          rule: "p < 0.05(🟢 강력)일 때 두 가격이 장기 균형으로 회귀하는 통계적 보증을 가집니다."
+        },
+        halfLife: {
+          title: "오른슈타인-울렌벡 반감기 (τ₁/₂)",
+          body: "벌어진 스프레드 괴리가 평균으로 절반(50%) 회귀하는 데 걸리는 예상 시간(시간 단위)입니다.",
+          rule: "반감기가 짧을수록 포지션 보유 기간이 짧고 자금 회전율(복리 효과)이 극대화됩니다."
+        },
+        beta: {
+          title: "OLS 최적 헤지 비율 (베타 β)",
+          body: "최소자승법(OLS) 선형회귀를 통해 산출한 두 자산 간의 상대적 가격 민감도 계수입니다.",
+          rule: "Leg A 1달러 매매 시 Leg B를 몇 달러 매매해야 시장 위험(Beta=0)을 완전 제거할 수 있는지 결정합니다."
+        },
+        correlation: {
+          title: "30일 피어슨 상관계수 (r)",
+          body: "최근 30일간 두 자산의 가격이 얼마나 동일한 방향으로 움직였는지를 나타냅니다 (-1.0 ~ +1.0).",
+          rule: "r > 0.80 이상이면 높은 동조성을 보여 단방향 시장 급락 위험을 안전하게 방어합니다."
+        },
+        signal: {
+          title: "계량 알고리즘 매매 신호",
+          body: "실시간 Z-score 및 공적분 상태를 바탕으로 산출된 자동 추천 신호입니다.",
+          rule: "🔴 A매도/B매수(고평가), 🟢 A매수/B매도(저평가), ⚪ 중립(적정가치)."
+        },
+        action: {
+          title: "정밀 진단 분석 실행",
+          body: "해당 페어의 실시간 스프레드 차트, Z-Score 오실레이터, 포지션 사이징 매트릭스를 로드합니다.",
+          rule: "클릭 시 하단의 정밀 계량 분석 워크벤치가 활성화됩니다."
+        },
+        kpiDislocated: {
+          title: "현재 괴리 발생 페어 수",
+          body: "현재 Z-score가 ±1.5σ 이상 벌어져 즉시 차익거래 진입이 가능한 페어의 개수입니다.",
+          rule: "즉시 실행 가능한 알파 기회의 시장 유효성을 한눈에 보여줍니다."
+        },
+        kpiTopOppo: {
+          title: "최대 괴리율 페어",
+          body: "모니터링 유니버스 중 역사적 평균 대비 가장 크게 이격된 통계적 왜곡 페어입니다.",
+          rule: "이론상 가장 큰 평균회귀 수익 폭을 제공하는 최우선 공략 대상입니다."
+        },
+        kpiStrongestCoint: {
+          title: "최고 통계적 공적분 페어",
+          body: "ADF 정상성 검정 p-value가 가장 낮은, 수학적으로 가장 결속력이 강한 페어입니다.",
+          rule: "스프레드가 영구 이탈하지 않고 제자리로 돌아올 확률이 가장 높습니다."
+        },
+        kpiFastestRev: {
+          title: "가장 빠른 평균회귀 속도",
+          body: "오른슈타인-울렌벡 회귀 반감기(τ₁/₂)가 가장 짧은 페어입니다.",
+          rule: "가장 빠른 포지션 청산과 자본 회전을 가능하게 하여 펀딩비 부담을 최소화합니다."
+        },
+        deepRatio: {
+          title: "실시간 스프레드 비율",
+          body: "선택된 페어의 현재 실시간 가격 비율(Price A / Price B)입니다.",
+          rule: "차트의 볼린저 밴드(±1.5σ / ±2.0σ) 및 중심 이동평균선과 비교하여 위치를 파악합니다."
+        },
+        deepZScore: {
+          title: "실시간 정규화 Z-Score",
+          body: "선택된 페어의 현재 가격 괴리도를 표준편차 단위로 환산한 실시간 값입니다.",
+          rule: "과매수(+1.5σ) 및 과매도(-1.5σ) 진입 기준선 도달 여부를 감시합니다."
+        },
+        bpCapital: {
+          title: "포지션 투입 자본금",
+          body: "이 페어 차익거래에 배정되는 총 명목 자본금 규모입니다.",
+          rule: "최적 헤지 베타(β) 비율에 따라 Leg A와 Leg B로 최적 배분됩니다."
+        },
+        bpLegA: {
+          title: "Leg A 명목 주문금액",
+          body: "첫 번째 주요 자산에 진입할 실제 달러(USD) 명목 가치입니다.",
+          rule: "Leg B의 명목 금액과 상쇄되어 전체 포트폴리오의 시장 델타를 0으로 유지합니다."
+        },
+        bpLegB: {
+          title: "Leg B 명목 주문금액",
+          body: "헤지 자산에 진입할 달러 명목 가치로, [Leg A 금액 × β]로 정밀 계산됩니다.",
+          rule: "Leg A의 체계적 시장 변동 위험(Market Beta)을 완벽하게 중화합니다."
+        },
+        bpNetDelta: {
+          title: "순 방향성 델타 노출 위험",
+          body: "두 레그 간의 실질적인 순 포지션 불균형 금액입니다.",
+          rule: "엄격하게 $0.50 미만으로 통제되어 비트코인 급락이나 시장 폭락 시에도 순손실이 0입니다."
+        },
+        trigShort: {
+          title: "스프레드 매도(Short) 진입선",
+          body: "Leg A가 Leg B 대비 과도하게 고평가된 상태(Z ≥ +1.50σ)입니다.",
+          rule: "실행: Leg A 매도 + Leg B 매수를 동시 체결하여 스프레드 축소 시 차익을 실현합니다."
+        },
+        trigLong: {
+          title: "스프레드 매수(Long) 진입선",
+          body: "Leg A가 Leg B 대비 과도하게 저평가된 상태(Z ≤ -1.50σ)입니다.",
+          rule: "실행: Leg A 매수 + Leg B 매도를 동시 체결하여 스프레드 확대 시 차익을 실현합니다."
+        },
+        trigTP: {
+          title: "목표 익절 청산선 (평균 회귀)",
+          body: "스프레드가 역사적 평균(Z = 0.00σ)으로 완전히 복귀하는 지점입니다.",
+          rule: "두 레그를 동시에 시장가 청산하여 확정 차익을 안전하게 실현합니다."
+        },
+        trigStop: {
+          title: "구조적 이탈 방어 손절선",
+          body: "스프레드가 비정상적으로 추가 발산(|Z| ≥ 3.00σ)할 때 발동하는 리스크 차단 장치입니다.",
+          rule: "두 자산의 공적분 펀더멘털이 깨졌을 가능성에 대비하여 포지션을 즉각 정리합니다."
+        },
+        simTrades: {
+          title: "백테스트 총 거래 횟수",
+          body: "과거 캔들 데이터에서 알고리즘 규칙에 따라 완결된 총 매매 사이클 수입니다.",
+          rule: "충분한 표본 횟수는 통계적 유의성과 전략의 안정성을 입증합니다."
+        },
+        simWinRate: {
+          title: "과거 시뮬레이션 승률 (%)",
+          body: "평균 회귀 청산에 도달하여 순이익으로 마감된 거래의 비율입니다.",
+          rule: "기관 통계적 차익거래는 ±1.5σ 진입 시 70%~88% 수준의 높은 승률을 기록합니다."
+        },
+        simProfitFactor: {
+          title: "프로핏 팩터 (손익비율)",
+          body: "총 총수익을 총 총손실로 나눈 수치입니다 (Gross Profit / Gross Loss).",
+          rule: "2.0 이상이면 비대칭적이고 강력한 통계적 우위를 가진 전략임을 의미합니다."
+        },
+        simHoldTime: {
+          title: "평균 포지션 보유 시간",
+          body: "진입(|Z| ≥ 1.5σ)부터 평균 회귀 익절(Z = 0.00σ)까지 걸린 평균 시간(h)입니다.",
+          rule: "보유 기간이 짧을수록 펀딩 수수료 부담이 줄어들고 자본 회전율이 극대화됩니다."
+        }
+      }
+    };
+
+    const pairsTooltipManager = {
+      popup: null,
+      titleEl: null,
+      bodyEl: null,
+      ruleEl: null,
+      activeKey: null,
+
+      init() {
+        this.popup = $("pairsHelpPopup");
+        if (!this.popup) return;
+        this.titleEl = $("pairsPopupTitle");
+        this.bodyEl = $("pairsPopupBody");
+        this.ruleEl = $("pairsPopupRule");
+
+        document.addEventListener("mouseover", (e) => {
+          const target = e.target.closest(".fieldTip");
+          const tab = $("tabContentPairs");
+          if (!target || !tab || !tab.contains(target)) return;
+          const key = target.getAttribute("data-tip-key");
+          if (!key) return;
+          this.show(key, e);
+        });
+
+        document.addEventListener("mousemove", (e) => {
+          if (this.activeKey) {
+            this.position(e.clientX, e.clientY);
+          }
+        });
+
+        document.addEventListener("mouseout", (e) => {
+          const target = e.target.closest(".fieldTip");
+          if (target) {
+            this.hide();
+          }
+        });
+      },
+
+      show(key, e) {
+        if (!this.popup) return;
+        const lang = (window.currentLang === "ko") ? "ko" : "en";
+        const dict = (PAIR_TOOLTIPS[lang] && PAIR_TOOLTIPS[lang][key]) || PAIR_TOOLTIPS.en[key];
+        if (!dict) return;
+
+        this.activeKey = key;
+        if (this.titleEl) this.titleEl.innerHTML = `💡 ${dict.title}`;
+        if (this.bodyEl) this.bodyEl.textContent = dict.body;
+        if (this.ruleEl) {
+          if (dict.rule) {
+            this.ruleEl.textContent = `🎯 ${dict.rule}`;
+            this.ruleEl.style.display = "block";
+          } else {
+            this.ruleEl.style.display = "none";
+          }
+        }
+
+        this.popup.classList.add("visible");
+        this.position(e.clientX, e.clientY);
+      },
+
+      position(clientX, clientY) {
+        if (!this.popup) return;
+        const pad = 14;
+        const popW = this.popup.offsetWidth || 280;
+        const popH = this.popup.offsetHeight || 100;
+        const winW = window.innerWidth;
+        const winH = window.innerHeight;
+
+        let x = clientX + 16;
+        if (x + popW > winW - pad) {
+          x = clientX - popW - 16;
+        }
+        if (x < pad) x = pad;
+
+        let y = clientY + 16;
+        if (y + popH > winH - pad) {
+          y = clientY - popH - 16;
+        }
+        if (y < pad) y = pad;
+
+        this.popup.style.left = `${x}px`;
+        this.popup.style.top = `${y}px`;
+      },
+
+      hide() {
+        this.activeKey = null;
+        if (this.popup) {
+          this.popup.classList.remove("visible");
+        }
+      }
+    };
+
     const pairsExplorer = {
       activeSector: "all",
       selectedPairId: "eth_btc",
@@ -11780,6 +12254,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       zZeroLine: null,
 
       init() {
+        pairsTooltipManager.init();
         this.pairs = PAIRS_UNIVERSE.map(p => ({
           ...p,
           priceA: null,
