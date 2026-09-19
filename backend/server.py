@@ -299,6 +299,7 @@ async def get_upbit_account() -> Dict[str, Any]:
 async def get_upbit_ma_stack_backtest(
     days: int = Query(7, ge=3, le=14),
     fee_bps: float = Query(5.0, ge=0.0, le=100.0),
+    max_tranches: int = Query(5, ge=1, le=20),
     entry_5m: bool = True,
     entry_1h: bool = True,
     exit_5m: bool = True,
@@ -311,13 +312,14 @@ async def get_upbit_ma_stack_backtest(
         candles_5m = await upbit_client.get_minute_candles("KRW-BTC", 5, count_5m)
         candles_1h = await upbit_client.get_minute_candles("KRW-BTC", 60, count_1h)
         result = run_ma_stack_backtest(
-            candles_5m, candles_1h, fee_bps=fee_bps,
+            candles_5m, candles_1h, fee_bps=fee_bps, max_tranches=max_tranches,
             entry_5m=entry_5m, entry_1h=entry_1h,
             exit_5m=exit_5m, exit_1h=exit_1h,
         )
         result["market"] = "KRW-BTC"
         result["days"] = days
         result["fee_bps"] = fee_bps
+        result["max_tranches"] = max_tranches
         return result
     except Exception as e:
         logger.exception("Error running Upbit MA-stack strategy lab")

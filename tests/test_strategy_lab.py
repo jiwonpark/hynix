@@ -51,6 +51,23 @@ class StrategyLabTests(unittest.TestCase):
         self.assertTrue(exits)
         self.assertEqual(exits[0]["shape"], "arrowDown")
 
+    def test_multi_tranche_lifo_queue(self):
+        # 100 bars falling (multiple dip entries up to capacity 3), then 100 bars rising (LIFO exits)
+        five_prices = list(range(200, 100, -1)) + list(range(100, 200))
+        hour_prices = list(range(200, 100, -1)) + list(range(100, 200))
+        five = candles(0, len(five_prices), 300, five_prices)
+        hourly = candles(-60 * 3600, len(hour_prices), 3600, hour_prices)
+        result = run_ma_stack_backtest(five, hourly, max_tranches=3, fee_bps=5)
+        entries = [m for m in result["markers"] if m["is_entry"]]
+        exits = [m for m in result["markers"] if not m["is_entry"]]
+        self.assertEqual(len(entries), 3)
+        self.assertEqual(len(exits), 3)
+        self.assertEqual(len(result["trades"]), 3)
+        # Verify LIFO: newest entry was T3, so first exit should close T3
+        self.assertEqual(result["trades"][0]["id"], "T3")
+        self.assertEqual(result["trades"][1]["id"], "T2")
+        self.assertEqual(result["trades"][2]["id"], "T1")
+
 
 if __name__ == "__main__":
     unittest.main()

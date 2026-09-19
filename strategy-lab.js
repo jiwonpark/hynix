@@ -49,7 +49,8 @@
       parityBox.firstChild.textContent = "BTC/KRW: ";
       parityBox.insertAdjacentHTML("beforebegin", `
         <select id="strategyLabDays" style="height:28px;width:auto;"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
-        <label style="font-size:11px;font-weight:700;color:#475569;">Fee/side <input id="strategyLabFee" type="number" value="5" min="0" max="100" step=".5" style="width:62px;height:28px;"> bp</label>`);
+        <label style="font-size:11px;font-weight:700;color:#475569;">Fee/side <input id="strategyLabFee" type="number" value="5" min="0" max="100" step=".5" style="width:52px;height:28px;"> bp</label>
+        <label style="font-size:11px;font-weight:700;color:#475569;">Tranches <input id="strategyLabTranches" type="number" value="5" min="1" max="20" step="1" style="width:44px;height:28px;"></label>`);
       ["1m", "15m", "4h", "1d"].forEach((interval) => { el(`btnShortInterval${interval}`).disabled = true; });
       el("btnShortInterval5m").addEventListener("click", () => this.setChartInterval("5m"));
       el("btnShortInterval1h").addEventListener("click", () => this.setChartInterval("1h"));
@@ -74,6 +75,7 @@
       el("chkCondExitMaStack5m").addEventListener("change", () => this.run());
       el("chkCondExitMaStack1h").addEventListener("change", () => this.run());
       document.getElementById("strategyLabDays").addEventListener("change", () => this.run());
+      document.getElementById("strategyLabTranches")?.addEventListener("change", () => this.run());
     },
 
     initChart() {
@@ -123,8 +125,9 @@
       button.textContent = "Loading Upbit…";
       el("dynamicBacktestStatus").textContent = "Fetching public candles and replaying closed-bar signals…";
       const params = new URLSearchParams({
-        days: document.getElementById("strategyLabDays").value,
-        fee_bps: document.getElementById("strategyLabFee").value,
+        days: document.getElementById("strategyLabDays")?.value || "7",
+        fee_bps: document.getElementById("strategyLabFee")?.value || "5",
+        max_tranches: document.getElementById("strategyLabTranches")?.value || "5",
         ...Object.fromEntries(Object.entries(conditions).map(([key, value]) => [key, String(value)])),
       });
       try {
@@ -158,6 +161,7 @@
       el("valShortTermMa60").textContent = latest ? krw(latest.ma60) : "--";
       el("lblShortTermChartSync").textContent = `${data.days}d · ${data.bars.length.toLocaleString()} closed 5m bars`;
       this.syncConditionBadges(latest, latestHour);
+      this.syncCriteriaPanels(latest, latestHour);
       this.chart.timeScale().fitContent();
     },
 
@@ -177,9 +181,18 @@
     },
 
     syncConditionBadges(latest, hourly) {
+      const data = this.data || {};
+      const cap = data.capacity || {};
+      const stack = Array.isArray(data.active_tranche_stack) ? data.active_tranche_stack : [];
+      const top = stack[0] || null;
+
       const states = [
         ["badgeCondEntryMaStack5m", latest?.bearish], ["badgeCondEntryMaStack1h", hourly?.bearish],
+        ["badgeCondEntryCapacity", (cap.remaining_tranches ?? 5) > 0],
+        ["badgeCondEntryMargin", (cap.free_cash_krw ?? 10000000) >= (cap.tranche_capital_krw ?? 2000000) * 0.95],
+        ["badgeCondExitActive", stack.length > 0],
         ["badgeCondExitMaStack5m", latest?.bullish], ["badgeCondExitMaStack1h", hourly?.bullish],
+        ["badgeCondExitNetPnl", top ? top.unrealized_return_pct > 0 : false],
       ];
       states.forEach(([id, pass]) => {
         const badge = el(id);
@@ -187,8 +200,108 @@
         badge.textContent = pass ? "PASS" : "WAIT";
         badge.className = `condBadge ${pass ? "pass" : "wait"}`;
       });
+      if (el("valCondEntryCapacity")) el("valCondEntryCapacity").textContent = `${cap.active_tranches ?? 0} / ${cap.max_tranches ?? 5}`;
+      if (el("valCondEntryMargin")) el("valCondEntryMargin").textContent = `${krw(cap.free_cash_krw ?? 10000000)} free`;
+      if (el("valCondExitActive")) el("valCondExitActive").textContent = `${stack.length} open`;
+      if (el("valCondExitNetPnl")) el("valCondExitNetPnl").textContent = top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}%` : "—";
+
       el("badgeCriteriaScaleIn").textContent = latest?.bearish && hourly?.bearish ? "ENTRY ARMED (DIP)" : "AWAITING BEARISH STACK (5m/1h)";
-      el("badgeCriteriaTP").textContent = latest?.bullish || hourly?.bullish ? "EXIT ARMED (RALLY)" : "AWAITING BULLISH STACK";
+      el("badgeCriteriaTP").textContent = latest?.bullish || hourly?.bullish ? "EXIT ARMED (RALLY)" : (stack.length ? "HOLDING TRANCHES" : "AWAITING BULLISH STACK");
+    },
+
+    syncCriteriaPanels(latest, hourly) {
+      const data = this.data || {};
+      const cap = data.capacity || {};
+      const stack = Array.isArray(data.active_tranche_stack) ? data.active_tranche_stack : [];
+      const top = stack[0] || null;
+
+      // Card 1: Scale-in Criteria Card
+      const scaleInTitle = el("lblCritScaleInTitle");
+      if (scaleInTitle) scaleInTitle.textContent = "➕ Speculative Scale-In (KRW-BTC Dip Entry)";
+      const scaleInDesc = el("txtCritScaleInDesc");
+      if (scaleInDesc) scaleInDesc.innerHTML = `Trigger: 5m &amp; 1h Bearish MA Stack (<strong>Price &lt; MA7 &lt; MA24 &lt; MA60</strong>)`;
+      const currentPrice = el("valCritCurrentSpread");
+      if (currentPrice && latest) currentPrice.textContent = krw(latest.close);
+      const gapScaleIn = el("valCritGapScaleIn");
+      const dipArmed = latest?.bearish && hourly?.bearish;
+      if (gapScaleIn) {
+        gapScaleIn.textContent = dipArmed ? "DIP ARMED" : (latest?.bearish ? "5m ARMED (WAIT 1h)" : "AWAITING DIP");
+        gapScaleIn.style.color = dipArmed ? "#16a34a" : "#d97706";
+      }
+      const scaleInProgress = el("barCritScaleInProgress");
+      if (scaleInProgress) {
+        scaleInProgress.style.width = dipArmed ? "100%" : (latest?.bearish ? "50%" : "20%");
+      }
+
+      // Card 2: Take-Profit Criteria Card
+      const tpTitle = el("lblCritTPTitle");
+      if (tpTitle) tpTitle.textContent = "🎯 LIFO Take-Profit (KRW-BTC Rally Exit)";
+      const tpDesc = el("txtCritTPDesc");
+      if (tpDesc) {
+        tpDesc.innerHTML = top
+          ? `Top tranche ref: <strong>${top.id} @ ${krw(top.entry_price)}</strong> (${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net)`
+          : `Top tranche ref: <strong>No active tranches</strong> (Awaiting entry dip)`;
+      }
+      const tpCurrentPrice = el("valCritTpCurrentSpread");
+      if (tpCurrentPrice && latest) tpCurrentPrice.textContent = krw(latest.close);
+      const gapTP = el("valCritGapTP");
+      const rallyArmed = latest?.bullish || hourly?.bullish;
+      if (gapTP) {
+        gapTP.textContent = top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "Flat";
+        gapTP.style.color = top ? (top.unrealized_return_pct >= 0 ? "#16a34a" : "#dc2626") : "#64748b";
+      }
+      const tpProgress = el("barCritTPProgress");
+      if (tpProgress) {
+        tpProgress.style.width = rallyArmed ? "100%" : (top && top.unrealized_return_pct > 0 ? "60%" : "15%");
+      }
+
+      // Card 3: Sizing, Risk Gate & Headroom
+      const gateTitle = el("lblCritGateTitle");
+      if (gateTitle) gateTitle.textContent = "⚙️ Tranche Sizing & Capital Headroom";
+      const remainingTranches = el("valCritRemainingTranches");
+      if (remainingTranches) remainingTranches.textContent = `${cap.remaining_tranches ?? 5} / ${cap.max_tranches ?? 5} UNITS LEFT`;
+      const entrySize = el("valCritEntrySize");
+      if (entrySize) entrySize.textContent = `${krw(cap.tranche_capital_krw ?? 2000000)} / tranche`;
+      const cycleCore = el("valCritCycleCore");
+      if (cycleCore) cycleCore.textContent = "1 Tranche (LIFO Top)";
+      const grossLev = el("valCritGrossLev");
+      if (grossLev) grossLev.textContent = "1.00x Spot";
+      const grossCap = el("valCritGrossCap");
+      if (grossCap) grossCap.textContent = krw(data.stats?.initial_capital_krw ?? 10000000);
+      const grossHeadroom = el("valCritGrossHeadroom");
+      if (grossHeadroom) grossHeadroom.textContent = `${krw(cap.free_cash_krw ?? 10000000)} free`;
+      const retainedCore = el("valCritRetainedCore");
+      if (retainedCore) retainedCore.textContent = `${(cap.open_quantity_btc || 0).toFixed(6)} BTC open`;
+
+      // LIFO Tranche Stack Render
+      const stackCount = el("valCritStackCount");
+      if (stackCount) stackCount.textContent = `${stack.length} unmatched · newest exits first`;
+      const stackContainer = el("lifoTrancheStack");
+      if (stackContainer) {
+        if (!stack.length) {
+          stackContainer.innerHTML = `<div style="padding: 8px; text-align: center; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 5px;">Stack empty · awaiting dip entry signals</div>`;
+        } else {
+          stackContainer.innerHTML = stack.map((t, visualIndex) => {
+            const isTop = visualIndex === 0;
+            const net = Number(t.unrealized_pnl_krw || 0);
+            const ret = Number(t.unrealized_return_pct || 0);
+            const pnlColor = ret >= 0 ? "#16a34a" : "#dc2626";
+            const retText = `${ret >= 0 ? "+" : ""}${ret.toFixed(2)}%`;
+            const pnlText = `${net >= 0 ? "+" : ""}${krw(net)}`;
+            return `<div style="padding: 7px 8px; border: ${isTop ? "1.5px solid #16a34a" : "1px solid #cbd5e1"}; border-radius: 6px; background: ${isTop ? "#f0fdf4" : "#fff"}; box-shadow: ${isTop ? "0 1px 3px rgba(22,163,74,.12)" : "none"}; cursor: pointer;" onclick="if(window.strategyLab) window.strategyLab.onTrancheClick(${t.time})">
+              <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
+                <strong style="color:${isTop ? "#166534" : "#334155"}; font-size:10.5px;">${isTop ? "TOP · NEXT EXIT" : `STACK ${visualIndex + 1}`} <span style="color:#64748b;">${t.id}</span></strong>
+                <strong style="color:${pnlColor}; font-size:10px;">Est. net ${retText} (${pnlText})</strong>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:2px 8px; margin-top:4px; color:#64748b; font-size:9.5px;">
+                <span>Entry <strong style="color:#334155;">${krw(t.entry_price)}</strong></span>
+                <span>Qty <strong style="color:#334155;">${Number(t.quantity).toFixed(6)} BTC</strong></span>
+                <span>Alloc <strong style="color:#334155;">${krw(t.capital_before)}</strong></span>
+              </div>
+            </div>`;
+          }).join("");
+        }
+      }
     },
 
     renderMarkers(hoveredTime = null) {
@@ -304,6 +417,13 @@
       button.setAttribute("aria-pressed", String(visible));
       this.selectedMarkerTime = null;
       this.hoveredMarkerTime = null;
+      this.syncMarkerState();
+    },
+
+    onTrancheClick(time) {
+      if (!this.chart || this.chartInterval !== "5m") return;
+      this.selectedMarkerTime = (this.selectedMarkerTime === time) ? null : time;
+      this.hoveredMarkerTime = time;
       this.syncMarkerState();
     },
 
