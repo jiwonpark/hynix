@@ -3822,15 +3822,15 @@
               <!-- 1. Scale-in Criteria Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lab_lblCritScaleInTitle">➕ Speculative Scale-In (+0.08 SKHY / +1.40 CSOP)</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lab_lblCritScaleInTitle">➕ Speculative Scale-In (KRW-BTC Dip Entry)</span>
                   <span id="lab_badgeCriteriaScaleIn" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #b45309;">WAITING</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="lab_txtCritScaleInDesc">
-                  Trigger: Parity <strong>≥ <span id="lab_valCritScaleInThreshold">139.42%</span></strong> (MA-24: <span id="lab_valCritMa24">139.25%</span> + 0.10%)
+                  Trigger: 5m &amp; 1h Bearish MA Stack (<strong>Price &lt; MA7 &lt; MA24 &lt; MA60</strong>)
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
-                  <span>Current Parity: <strong id="lab_valCritCurrentSpread">139.30%</strong></span>
-                  <span>Gap to Trigger: <strong id="lab_valCritGapScaleIn" style="color: #d97706;">+0.12% pts</strong></span>
+                  <span>Current Price: <strong id="lab_valCritCurrentSpread">--</strong></span>
+                  <span>Signal Status: <strong id="lab_valCritGapScaleIn" style="color: #d97706;">AWAITING DIP</strong></span>
                 </div>
                 <!-- Progress bar towards scale-in -->
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
@@ -3889,7 +3889,7 @@
                       <input type="checkbox" id="lab_chkCondEntryCapacity" checked disabled>
                       <span class="toggleSlider"></span>
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
-                    <span class="condLabel" title="Active speculative tranches must not exceed live equity-based capacity limit">6. Dynamic Tranche Capacity</span>
+                    <span class="condLabel" title="Active speculative tranches must not exceed capacity limit">6. Dynamic Tranche Capacity</span>
                     <span class="condValue" id="lab_valCondEntryCapacity">-- / --</span>
                     <span class="condBadge pass" id="lab_badgeCondEntryCapacity">PASS</span>
                   </div>
@@ -3907,8 +3907,8 @@
                       <input type="checkbox" id="lab_chkCondEntryMargin" checked disabled>
                       <span class="toggleSlider"></span>
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
-                    <span class="condLabel" title="Free margin must satisfy 125% buffered requirement (min $2.50)">8. Buffered Margin Check</span>
-                    <span class="condValue" id="lab_valCondEntryMargin">-- ≥ $2.50</span>
+                    <span class="condLabel" title="Free cash must satisfy tranche capital allocation requirement">8. Capital &amp; Headroom Check</span>
+                    <span class="condValue" id="lab_valCondEntryMargin">-- free</span>
                     <span class="condBadge pass" id="lab_badgeCondEntryMargin">PASS</span>
                   </div>
                   <div class="condRow" id="lab_rowCondEntryEngine">
@@ -3926,15 +3926,15 @@
               <!-- 2. Convergence Take-Profit Criteria Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lab_lblCritTPTitle">🎯 Anti-Churn Take-Profit (0.07 SKHY / 1.20 CSOP)</span>
-                  <span id="lab_badgeCriteriaTP" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #166534;">ZERO-LOSS LOCKED</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lab_lblCritTPTitle">🎯 LIFO Take-Profit (KRW-BTC Rally Exit)</span>
+                  <span id="lab_badgeCriteriaTP" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #166534;">AWAITING BULLISH STACK</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="lab_txtCritTPDesc">
-                  Convergence ref: Parity <strong>≤ <span id="lab_valCritOutTargetSpread">139.22%</span></strong> (<span id="lab_valCritLatestInSpread">139.30%</span> - <span id="lab_valCritConvergencePts">0.08</span> pts)
+                  Top tranche ref: <strong>No active tranches</strong> (Awaiting entry dip)
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
-                  <span>Current Parity: <strong id="lab_valCritTpCurrentSpread">139.30%</strong></span>
-                  <span>Gap to Target: <strong id="lab_valCritGapTP" style="color: #0284c7;">+0.08% pts</strong></span>
+                  <span>Current Price: <strong id="lab_valCritTpCurrentSpread">--</strong></span>
+                  <span>Top Tranche Return: <strong id="lab_valCritGapTP" style="color: #0284c7;">Flat</strong></span>
                 </div>
                 <!-- Progress bar towards TP -->
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
@@ -3948,7 +3948,7 @@
                       <input type="checkbox" id="lab_chkCondExitActive" checked disabled>
                       <span class="toggleSlider"></span>
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">REQUIRED</span>
-                    <span class="condLabel" title="Must have at least 1 open speculative tranche (core accumulated inventory is permanently protected)">1. Active Speculative Tranche</span>
+                    <span class="condLabel" title="Must have at least 1 open speculative tranche">1. Active Speculative Tranche</span>
                     <span class="condValue" id="lab_valCondExitActive">--</span>
                     <span class="condBadge wait" id="lab_badgeCondExitActive">WAIT</span>
                   </div>
@@ -3966,7 +3966,7 @@
                       <input type="checkbox" id="lab_chkCondExitNetPnl" checked>
                       <span class="toggleSlider"></span>
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">BACKTEST ONLY</span>
-                    <span class="condLabel" title="Net PnL must exceed the entry’s saved $0.02–$0.04 threshold after fees, slippage and funding">3. Net Profit (entry threshold)</span>
+                    <span class="condLabel" title="Net return of top tranche must be positive">3. Net Profit (> 0.00% net)</span>
                     <span class="condValue" id="lab_valCondExitNetPnl"><strong id="lab_valCritCombinedPnl">—</strong></span>
                     <span class="condBadge wait" id="lab_badgeCondExitNetPnl">LOCKED</span>
                   </div>
@@ -4011,7 +4011,7 @@
                       <input type="checkbox" id="lab_chkCondExitPosition" checked disabled>
                       <span class="toggleSlider"></span>
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">REQUIRED</span>
-                    <span class="condLabel" title="Open futures positions must have at least 0.07 short SKHY and 1.20 long CSOP">8. Position Sufficiency Check</span>
+                    <span class="condLabel" title="Open BTC inventory check">8. Position Sufficiency Check</span>
                     <span class="condValue" id="lab_valCondExitPosition">--</span>
                     <span class="condBadge pass" id="lab_badgeCondExitPosition">PASS</span>
                   </div>
@@ -4021,17 +4021,17 @@
               <!-- 3. Sizing, Risk Gate & LIFO Tranche Stack Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #0284c7; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #0369a1; text-transform: uppercase;" id="lab_lblCritGateTitle">⚙️ Inventory Ratchet &amp; Headroom</span>
-                  <span id="lab_valCritRemainingTranches" style="font-size: 10px; font-weight: 800; color: #0284c7;">3 UNITS LEFT</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #0369a1; text-transform: uppercase;" id="lab_lblCritGateTitle">⚙️ Tranche Sizing &amp; Capital Headroom</span>
+                  <span id="lab_valCritRemainingTranches" style="font-size: 10px; font-weight: 800; color: #0284c7;">5 / 5 UNITS LEFT</span>
                 </div>
                 <div style="font-size: 11px; color: #475569; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 2px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9;">
-                  <div>Scale In: <strong id="lab_valCritEntrySize">—</strong></div>
-                  <div>Trim Unit: <strong>0.07 SKHY / 1.20 CSOP</strong></div>
-                  <div>Ratchet/Cycle: <strong id="lab_valCritCycleCore" style="color: #16a34a;">—</strong></div>
-                  <div>Current Lev: <strong id="lab_valCritGrossLev">4.08x / 8.0x</strong></div>
-                  <div>Dynamic Cap: <strong id="lab_valCritGrossCap">$0.00 (8.0x)</strong></div>
-                  <div>Headroom: <strong id="lab_valCritGrossHeadroom">$0.00 free</strong></div>
-                  <div style="grid-column: span 2;">Protected Core: <strong id="lab_valCritRetainedCore" style="color: #0369a1;">0.00 SKHY / 0.00 CSOP</strong></div>
+                  <div>Scale In: <strong id="lab_valCritEntrySize">₩2,000,000 / tranche</strong></div>
+                  <div>Trim Unit: <strong>1 Tranche (LIFO Top)</strong></div>
+                  <div>Ratchet/Cycle: <strong id="lab_valCritCycleCore" style="color: #16a34a;">LIFO Harvest</strong></div>
+                  <div>Leverage: <strong id="lab_valCritGrossLev">1.00x Spot</strong></div>
+                  <div>Total Capital: <strong id="lab_valCritGrossCap">₩10,000,000</strong></div>
+                  <div>Cash Headroom: <strong id="lab_valCritGrossHeadroom">₩10,000,000 free</strong></div>
+                  <div style="grid-column: span 2;">Open Inventory: <strong id="lab_valCritRetainedCore" style="color: #0369a1;">0.000000 BTC open</strong></div>
                 </div>
 
                 <!-- LIFO Tranche Stack (Newest-first exit queue) -->
@@ -4041,7 +4041,7 @@
                     <span id="lab_valCritStackCount">0 unmatched · newest exits first</span>
                   </div>
                   <div id="lab_lifoTrancheStack" style="display: flex; flex-direction: column; gap: 5px; max-height: 240px; overflow-y: auto; padding-right: 2px;" aria-live="polite">
-                    <div style="padding: 8px; text-align: center; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 5px;">Stack empty</div>
+                    <div style="padding: 8px; text-align: center; color: #94a3b8; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 5px;">Stack empty · awaiting dip entry signals</div>
                   </div>
                 </div>
               </div>
