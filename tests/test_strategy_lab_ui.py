@@ -27,6 +27,13 @@ class StrategyLabUiTests(unittest.TestCase):
         self.assertNotIn("fetch(`/api/strategy-lab", self.js)
         self.assertIn("NET +${target}%", self.js)
 
+    def test_actual_trade_indicators_enabled(self):
+        self.assertIn('actual: { label: "Actual", onToggle: () => this.toggleActual() }', self.js)
+        self.assertIn("toggleActual()", self.js)
+        self.assertIn("getActualTradeMarkers()", self.js)
+        self.assertIn("Actual</span>", self.js)
+        self.assertNotIn('actual: { label: "Actual", enabled: false, visible: false }', self.js)
+
     def test_no_literal_escape_characters_in_markup(self):
         # Ensure no raw literal \n or \t outside script and style blocks
         markup = self.html.split("<script")[0]

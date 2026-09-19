@@ -37,13 +37,13 @@
         },
         title: "PRICE-SIGNAL REPLAY · UNCONSTRAINED CAPITAL",
         action: { label: "Rerun", onClick: () => this.run() },
-        actual: { label: "Actual", enabled: false, visible: false },
+        actual: { label: "Actual", onToggle: () => this.toggleActual() },
         virtual: { label: "Virtual", onToggle: () => this.toggleVirtual() },
         status: "Loading backtest…",
         description: "Starts flat at the beginning of loaded history · completed 5m and 1h candles · next-open execution · entry and exit fees included.",
         secondaryStatus: "Completed 1h MA stack: waiting for data…",
         height: 420,
-        legend: '<span style="color:#0284c7">━ BTC/KRW</span><span style="color:#b45309">— 7-MA: <strong id="lab_valShortTermMa7">--</strong></span><span style="color:#6d28d9">— 24-MA: <strong id="lab_valShortTermMa24">--</strong></span><span style="color:#0891b2">— 60-MA: <strong id="lab_valShortTermMa60">--</strong></span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Virtual</span>',
+        legend: '<span style="color:#0284c7">━ BTC/KRW</span><span style="color:#b45309">— 7-MA: <strong id="lab_valShortTermMa7">--</strong></span><span style="color:#6d28d9">— 24-MA: <strong id="lab_valShortTermMa24">--</strong></span><span style="color:#0891b2">— 60-MA: <strong id="lab_valShortTermMa60">--</strong></span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Actual</span><span><strong style="color:#16a34a;opacity:.45">⇧</strong>/<strong style="color:#dc2626;opacity:.45">⇩</strong> Virtual</span>',
         syncText: "Upbit public candles",
       });
       this.forked = true;
@@ -217,14 +217,88 @@
       }
     },
 
+    getActualTradeMarkers() {
+      const markers = [];
+      const s = this.botState;
+      if (!s) return markers;
+
+      const trades = s.recent_trades || s.trade_history || [];
+      const tranches = s.active_tranches || [];
+
+      // Closed trades
+      trades.forEach((t) => {
+        const modeStr = (t.mode || s.mode || "live").toUpperCase();
+        if (t.entry_time && Number(t.entry_price) > 0) {
+          markers.push({
+            time: Number(t.entry_time),
+            source: "actual",
+            hypothetical: false,
+            backtest: false,
+            is_entry: true,
+            action: "entry",
+            direction: "long",
+            position: "belowBar",
+            shape: "arrowUp",
+            color: "#16a34a",
+            entry_price: Number(t.entry_price),
+            hoverText: `ACTUAL BUY ${t.id || "Tranche"} ₩${Math.round(t.entry_price).toLocaleString()} (${modeStr})`,
+          });
+        }
+        if (t.exit_time && Number(t.exit_price) > 0) {
+          const ret = Number(t.net_return_pct || 0);
+          markers.push({
+            time: Number(t.exit_time),
+            source: "actual",
+            hypothetical: false,
+            backtest: false,
+            is_entry: false,
+            action: "exit",
+            direction: "long",
+            position: "aboveBar",
+            shape: "arrowDown",
+            color: "#dc2626",
+            entry_price: Number(t.entry_price),
+            exit_price: Number(t.exit_price),
+            net_return_pct: ret,
+            hoverText: `ACTUAL SELL ${t.id || "Tranche"} ₩${Math.round(t.exit_price).toLocaleString()} · ${ret >= 0 ? "+" : ""}${ret.toFixed(2)}% net (${modeStr})`,
+          });
+        }
+      });
+
+      // Active open tranches
+      tranches.forEach((t) => {
+        const modeStr = (t.mode || s.mode || "live").toUpperCase();
+        if (t.entry_time && Number(t.entry_price) > 0) {
+          markers.push({
+            time: Number(t.entry_time),
+            source: "actual",
+            hypothetical: false,
+            backtest: false,
+            is_entry: true,
+            action: "entry",
+            direction: "long",
+            position: "belowBar",
+            shape: "arrowUp",
+            color: "#16a34a",
+            entry_price: Number(t.entry_price),
+            hoverText: `ACTUAL OPEN ${t.id || "Tranche"} ₩${Math.round(t.entry_price).toLocaleString()} (${modeStr})`,
+          });
+        }
+      });
+
+      return markers;
+    },
+
     executionsForInterval() {
-      const markers = this.data?.markers || [];
+      const virtualMarkers = this.data?.markers || [];
+      const actualMarkers = this.getActualTradeMarkers();
+      const allMarkers = [...virtualMarkers, ...actualMarkers];
       if (this.chartInterval === "5m") {
-        return markers;
+        return allMarkers;
       }
       const hourlyBars = this.data?.hourly || [];
       const hourlyTimes = hourlyBars.map((b) => b.time);
-      return markers.map((m) => {
+      return allMarkers.map((m) => {
         let hourTime = Math.floor(m.time / 3600) * 3600;
         if (hourlyTimes.length) {
           const match = hourlyBars.find((b) => b.time <= m.time && m.time < b.time + 3600);
@@ -240,7 +314,7 @@
 
     findMarkerForTime(targetTime) {
       if (targetTime === null || targetTime === undefined) return null;
-      const markers = this.data?.markers || [];
+      const markers = this.controller ? this.controller.visibleExecutions() : (this.data?.markers || []);
       const direct = markers.find((m) => m.time === targetTime || m.rawTime === targetTime);
       if (direct) return direct;
       if (this.chartInterval === "1h") {
@@ -709,7 +783,8 @@
     },
 
     syncActiveReferenceLines(hoverTime = null) {
-      if (this.controller.visibility.virtual === false) {
+      if (!this.controller) return;
+      if (this.controller.visibility.virtual === false && (this.controller.visibility.actual === false || this.controller.visibleExecutions().length === 0)) {
         this.controller.clearReferenceLines();
         return;
       }
@@ -717,10 +792,11 @@
       const marker = this.findMarkerForTime(targetTime);
       if (marker && marker.entry_price) {
         this.renderEntryReferenceLines(marker.entry_price, true, marker.exit_price || null, marker);
-      } else if (this.data?.open_position?.price) {
+      } else if (this.data?.open_position?.price && this.controller.visibility.virtual !== false) {
         this.renderEntryReferenceLines(this.data.open_position.price, false);
       } else {
-        const lastMarker = (this.data?.markers || []).filter(m => m.entry_price).at(-1);
+        const visibleMarkers = this.controller.visibleExecutions();
+        const lastMarker = visibleMarkers.filter(m => m.entry_price).at(-1);
         if (lastMarker?.entry_price) {
           this.renderEntryReferenceLines(lastMarker.entry_price, false, lastMarker.exit_price || null, lastMarker);
         } else {
@@ -758,11 +834,29 @@
       });
     },
 
+    toggleActual() {
+      if (!this.controller) return;
+      const visible = this.controller.toggleVisibility("actual");
+      const button = el("legendActualTrades");
+      if (button) {
+        button.textContent = `${visible ? "✓" : "○"} Actual`;
+        button.setAttribute("aria-pressed", String(visible));
+        button.classList.toggle("isHidden", !visible);
+      }
+      this.selectedMarkerTime = null;
+      this.hoveredMarkerTime = null;
+      this.syncMarkerState();
+    },
+
     toggleVirtual() {
+      if (!this.controller) return;
       const visible = this.controller.toggleVisibility("virtual");
       const button = el("legendVirtualTrades");
-      button.textContent = `${visible ? "✓" : "○"} Virtual`;
-      button.setAttribute("aria-pressed", String(visible));
+      if (button) {
+        button.textContent = `${visible ? "✓" : "○"} Virtual`;
+        button.setAttribute("aria-pressed", String(visible));
+        button.classList.toggle("isHidden", !visible);
+      }
       this.selectedMarkerTime = null;
       this.hoveredMarkerTime = null;
       this.syncMarkerState();
@@ -991,6 +1085,11 @@
           const modeTag = s.mode === "live" ? "REAL UPBIT" : "PAPER";
           stackCount.innerHTML = `<span style="color:#0284c7; font-weight:700;">${s.active_tranches.length} ${modeTag} ACTIVE</span>`;
         }
+      }
+
+      if (this.controller && this.data) {
+        this.controller.setExecutions(this.executionsForInterval());
+        this.syncMarkerState();
       }
     },
   };

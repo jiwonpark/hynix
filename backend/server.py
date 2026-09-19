@@ -328,6 +328,10 @@ async def get_upbit_ma_stack_backtest(
         result["days"] = days
         result["fee_bps"] = fee_bps
         result["max_tranches"] = max_tranches
+        bot_status = strategy_execution_engine.get_status()
+        result["bot_status"] = bot_status
+        result["actual_trades"] = bot_status.get("recent_trades", [])
+        result["active_tranches"] = bot_status.get("active_tranches", [])
         return result
     except Exception as e:
         logger.exception("Error running Upbit quantitative strategy lab")

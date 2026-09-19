@@ -164,6 +164,35 @@ assert.equal(defOU.entryRows[0].key, 'entry_ou_spread');
 assert.equal(defOU.entryRows[1].key, 'entry_p_reversion');
 assert.equal(defOU.exitRows[2].key, 'exit_ou_mean');
 
+// Actual Trade Marker Ingestion and Toggle Tests
+lab.botState = {
+  mode: 'live',
+  recent_trades: [
+    { id: 'T1', entry_time: 150, exit_time: 250, entry_price: 1000, exit_price: 1050, net_return_pct: 4.85, mode: 'live' }
+  ],
+  active_tranches: [
+    { id: 'T2', entry_time: 350, entry_price: 1020, coin_qty: 0.01, mode: 'live' }
+  ]
+};
+
+const actualMarkers = lab.getActualTradeMarkers();
+assert.equal(actualMarkers.length, 3, 'Must generate 2 markers for closed trade (buy+sell) and 1 for open tranche');
+assert.equal(actualMarkers[0].source, 'actual');
+assert.equal(actualMarkers[0].hypothetical, false);
+assert.equal(actualMarkers[0].is_entry, true);
+assert.equal(actualMarkers[0].time, 150);
+assert.equal(actualMarkers[1].source, 'actual');
+assert.equal(actualMarkers[1].is_entry, false);
+assert.equal(actualMarkers[1].time, 250);
+assert.equal(actualMarkers[2].source, 'actual');
+assert.equal(actualMarkers[2].is_entry, true);
+assert.equal(actualMarkers[2].time, 350);
+
+lab.toggleActual();
+assert.equal(lab.controller.visibility.actual, false, 'toggleActual must toggle actual visibility to false');
+lab.toggleActual();
+assert.equal(lab.controller.visibility.actual, true, 'toggleActual must restore actual visibility to true');
+
 console.log('Strategy Lab real crosshair callback regression checks passed');
 
 
