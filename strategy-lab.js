@@ -315,21 +315,37 @@
       const virtualMarkers = this.data?.markers || [];
       const actualMarkers = this.getActualTradeMarkers();
       const allMarkers = [...virtualMarkers, ...actualMarkers];
-      if (this.chartInterval === "5m") {
-        return allMarkers;
-      }
-      const hourlyBars = this.data?.hourly || [];
-      const hourlyTimes = hourlyBars.map((b) => b.time);
+      const bars = this.chartInterval === "1h" ? (this.data?.hourly || []) : (this.data?.bars || []);
+      const barTimes = bars.map((b) => b.time);
+
       return allMarkers.map((m) => {
-        let hourTime = Math.floor(m.time / 3600) * 3600;
-        if (hourlyTimes.length) {
-          const match = hourlyBars.find((b) => b.time <= m.time && m.time < b.time + 3600);
-          if (match) hourTime = match.time;
+        let snappedTime = m.time;
+        if (this.chartInterval === "1h") {
+          snappedTime = Math.floor(m.time / 3600) * 3600;
+          if (barTimes.length) {
+            const match = bars.find((b) => b.time <= m.time && m.time < b.time + 3600);
+            if (match) snappedTime = match.time;
+          }
+        } else if (bars.length) {
+          const exact = barTimes.includes(m.time);
+          if (!exact) {
+            const match = bars.find((b) => b.time <= m.time && m.time < b.time + 300);
+            if (match) snappedTime = match.time;
+            else snappedTime = Math.floor(m.time / 300) * 300;
+          }
         }
+
+        let hoverText = m.hoverText || "";
+        const kstTimeStr = formatKst(m.rawTime || m.time);
+        if (hoverText && !hoverText.includes("KST")) {
+          hoverText = `${hoverText} · ${kstTimeStr}`;
+        }
+
         return {
           ...m,
-          time: hourTime,
+          time: snappedTime,
           rawTime: m.time,
+          hoverText: hoverText,
         };
       });
     },
