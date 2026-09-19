@@ -81,7 +81,7 @@
     },
 
     setStrategyMode(mode) {
-      if (!mode) return;
+      if (!mode) return Promise.resolve();
       this.strategyMode = mode;
       const modes = ["ma_stack", "bollinger_zscore", "rsi_momentum", "multi_factor", "ou_quant"];
       const ids = {
@@ -95,7 +95,7 @@
         const btn = document.getElementById(ids[m]);
         if (btn) btn.classList.toggle("active", m === mode);
       });
-      this.run();
+      return this.run();
     },
 
     initChart() {
