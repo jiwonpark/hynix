@@ -4169,7 +4169,7 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="strategy-execution-chart.js?v=20260918_j"></script>
-  <script src="strategy-lab.js?v=20260919_actualtrades"></script>
+  <script src="strategy-lab.js?v=20260919_kst"></script>
   <script>
     const ASSET_STRATEGIES = {
       skhynix_arb: {
@@ -13699,6 +13699,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           this.spreadChart = LightweightCharts.createChart(spreadHost, {
             height: 260,
             layout: { background: { color: "#ffffff" }, textColor: "#475569" },
+            localization: {
+              locale: "ko-KR",
+              timeFormatter: (time) => formatKstDateTime(typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time))
+            },
             grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
             rightPriceScale: { borderVisible: false, autoScale: true },
             timeScale: { visible: true, borderVisible: false, secondsVisible: false }
@@ -13716,6 +13720,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           this.zscoreChart = LightweightCharts.createChart(zHost, {
             height: 160,
             layout: { background: { color: "#ffffff" }, textColor: "#475569" },
+            localization: {
+              locale: "ko-KR",
+              timeFormatter: (time) => formatKstDateTime(typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time))
+            },
             grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
             rightPriceScale: { borderVisible: false, autoScale: true },
             timeScale: { visible: true, borderVisible: false, secondsVisible: false }

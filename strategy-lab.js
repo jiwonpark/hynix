@@ -5,6 +5,21 @@
   const el = (id) => document.getElementById(rootId(id));
   const pct = (value) => `${Number(value || 0) >= 0 ? "+" : ""}${Number(value || 0).toFixed(2)}%`;
   const krw = (value) => `₩${Math.round(Number(value || 0)).toLocaleString()}`;
+  const formatKst = (dateOrMs, options = {}) => {
+    if (!dateOrMs && dateOrMs !== 0) return "";
+    const t = typeof dateOrMs === "number" ? (dateOrMs < 1e11 ? dateOrMs * 1000 : dateOrMs) : Number(dateOrMs);
+    const d = new Date(t);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleString("ko-KR", {
+      timeZone: "Asia/Seoul",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      ...options
+    }) + " KST";
+  };
 
   const lab = {
     forked: false,
@@ -44,7 +59,7 @@
         secondaryStatus: "Completed 1h MA stack: waiting for data…",
         height: 420,
         legend: '<span style="color:#0284c7">━ BTC/KRW</span><span style="color:#b45309">— 7-MA: <strong id="lab_valShortTermMa7">--</strong></span><span style="color:#6d28d9">— 24-MA: <strong id="lab_valShortTermMa24">--</strong></span><span style="color:#0891b2">— 60-MA: <strong id="lab_valShortTermMa60">--</strong></span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Actual</span><span><strong style="color:#16a34a;opacity:.45">⇧</strong>/<strong style="color:#dc2626;opacity:.45">⇩</strong> Virtual</span>',
-        syncText: "Upbit public candles",
+        syncText: "Upbit public candles (KST)",
       });
       this.forked = true;
 
@@ -103,7 +118,11 @@
         timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#cbd5e1" },
         rightPriceScale: { borderColor: "#cbd5e1" },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        localization: { priceFormatter: (price) => krw(price) },
+        localization: {
+          locale: "ko-KR",
+          priceFormatter: (price) => krw(price),
+          timeFormatter: (time) => formatKst(time),
+        },
       });
       this.candles = this.chart.addCandlestickSeries({
         upColor: "#16a34a", downColor: "#dc2626", borderVisible: false,
@@ -193,7 +212,7 @@
       el("valShortTermMa7").textContent = latest ? krw(latest.ma7) : "--";
       el("valShortTermMa24").textContent = latest ? krw(latest.ma24) : "--";
       el("valShortTermMa60").textContent = latest ? krw(latest.ma60) : "--";
-      el("lblShortTermChartSync").textContent = `${data.days}d · ${data.bars.length.toLocaleString()} closed 5m bars`;
+      el("lblShortTermChartSync").textContent = `${data.days}d · ${data.bars.length.toLocaleString()} closed 5m bars · Sync ${formatKst(Date.now())}`;
       this.syncConditionBadges(latest, latestHour);
       this.syncCriteriaPanels(latest, latestHour);
       this.chart.timeScale().fitContent();
@@ -229,6 +248,7 @@
       trades.forEach((t) => {
         const modeStr = (t.mode || s.mode || "live").toUpperCase();
         if (t.entry_time && Number(t.entry_price) > 0) {
+          const timeStr = formatKst(t.entry_time);
           markers.push({
             time: Number(t.entry_time),
             source: "actual",
@@ -241,11 +261,12 @@
             shape: "arrowUp",
             color: "#16a34a",
             entry_price: Number(t.entry_price),
-            hoverText: `ACTUAL BUY ${t.id || "Tranche"} ₩${Math.round(t.entry_price).toLocaleString()} (${modeStr})`,
+            hoverText: `ACTUAL BUY ${t.id || "Tranche"} ₩${Math.round(t.entry_price).toLocaleString()} · ${timeStr} (${modeStr})`,
           });
         }
         if (t.exit_time && Number(t.exit_price) > 0) {
           const ret = Number(t.net_return_pct || 0);
+          const timeStr = formatKst(t.exit_time);
           markers.push({
             time: Number(t.exit_time),
             source: "actual",
@@ -260,7 +281,7 @@
             entry_price: Number(t.entry_price),
             exit_price: Number(t.exit_price),
             net_return_pct: ret,
-            hoverText: `ACTUAL SELL ${t.id || "Tranche"} ₩${Math.round(t.exit_price).toLocaleString()} · ${ret >= 0 ? "+" : ""}${ret.toFixed(2)}% net (${modeStr})`,
+            hoverText: `ACTUAL SELL ${t.id || "Tranche"} ₩${Math.round(t.exit_price).toLocaleString()} · ${ret >= 0 ? "+" : ""}${ret.toFixed(2)}% net · ${timeStr} (${modeStr})`,
           });
         }
       });
@@ -269,6 +290,7 @@
       tranches.forEach((t) => {
         const modeStr = (t.mode || s.mode || "live").toUpperCase();
         if (t.entry_time && Number(t.entry_price) > 0) {
+          const timeStr = formatKst(t.entry_time);
           markers.push({
             time: Number(t.entry_time),
             source: "actual",
@@ -281,7 +303,7 @@
             shape: "arrowUp",
             color: "#16a34a",
             entry_price: Number(t.entry_price),
-            hoverText: `ACTUAL OPEN ${t.id || "Tranche"} ₩${Math.round(t.entry_price).toLocaleString()} (${modeStr})`,
+            hoverText: `ACTUAL OPEN ${t.id || "Tranche"} ₩${Math.round(t.entry_price).toLocaleString()} · ${timeStr} (${modeStr})`,
           });
         }
       });
@@ -719,6 +741,7 @@
                 <span>Entry <strong style="color:#334155;">${krw(t.entry_price)}</strong></span>
                 <span>Qty <strong style="color:#334155;">${Number(t.quantity).toFixed(6)} BTC</strong></span>
                 <span>Alloc <strong style="color:#334155;">${krw(t.capital_before)}</strong></span>
+                <span>Time <strong style="color:#334155;">${formatKst(t.time || t.entry_time)}</strong></span>
               </div>
             </div>`;
           }).join("");
