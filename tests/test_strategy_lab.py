@@ -68,6 +68,45 @@ class StrategyLabTests(unittest.TestCase):
         self.assertEqual(result["trades"][1]["id"], "T2")
         self.assertEqual(result["trades"][2]["id"], "T1")
 
+    def test_bollinger_zscore_framework(self):
+        # Generate range-bound price with a sharp dip below lower band
+        prices = [100.0] * 30 + [92.0, 90.0, 88.0, 91.0] + [100.0] * 30
+        five = candles(0, len(prices), 300, prices)
+        hourly = candles(-60 * 3600, 60, 3600, [100.0] * 60)
+        result = run_ma_stack_backtest(five, hourly, strategy_mode="bollinger_zscore")
+        self.assertEqual(result["strategy"], "bollinger_zscore")
+        self.assertIn("BOLLINGER", result["strategy_badge"])
+        self.assertTrue(any(m["is_entry"] for m in result["markers"]))
+
+    def test_rsi_momentum_framework(self):
+        # Generate selloff dropping RSI < 30
+        prices = [150.0] * 20 + list(range(150, 90, -2)) + list(range(90, 150, 2))
+        five = candles(0, len(prices), 300, prices)
+        hourly_prices = [150.0] * 20 + [140, 130, 120, 110, 100, 90, 95, 110, 130]
+        hourly = candles(-20 * 3600, len(hourly_prices), 3600, hourly_prices)
+        result = run_ma_stack_backtest(five, hourly, strategy_mode="rsi_momentum")
+        self.assertEqual(result["strategy"], "rsi_momentum")
+        self.assertIn("RSI", result["strategy_badge"])
+        self.assertTrue(any(m["is_entry"] for m in result["markers"]))
+
+    def test_multi_factor_voting_framework(self):
+        prices = list(range(160, 100, -1)) + list(range(100, 160))
+        five = candles(0, len(prices), 300, prices)
+        hourly = candles(-60 * 3600, 60, 3600, list(range(100, 160)))
+        result = run_ma_stack_backtest(five, hourly, strategy_mode="multi_factor")
+        self.assertEqual(result["strategy"], "multi_factor")
+        self.assertIn("VOTING", result["strategy_badge"])
+        self.assertTrue("presets" in result)
+        self.assertEqual(len(result["presets"]), 5)
+
+    def test_ou_quant_framework(self):
+        prices = [100.0] * 50 + [85.0, 84.0, 83.0] + [100.0] * 40
+        five = candles(0, len(prices), 300, prices)
+        hourly = candles(-60 * 3600, 60, 3600, [100.0] * 60)
+        result = run_ma_stack_backtest(five, hourly, strategy_mode="ou_quant")
+        self.assertEqual(result["strategy"], "ou_quant")
+        self.assertIn("OU", result["strategy_badge"])
+
 
 if __name__ == "__main__":
     unittest.main()

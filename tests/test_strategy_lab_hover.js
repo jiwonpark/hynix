@@ -98,4 +98,41 @@ assert.equal(lab.chartInterval, '5m');
 assert.equal(rendered[0].time, 100, '5m marker time restored on 5m interval');
 assert.equal(rendered[1].time, 200, '5m marker time restored on 5m interval');
 
+// 5-Framework Strategy Sub-Tabs & Bollinger Band Tests
+let bbRenderedData = {};
+lab.bbSeries = [
+  { key: 'bb_upper', series: { setData: (d) => { bbRenderedData.bb_upper = d; } } },
+  { key: 'bb_middle', series: { setData: (d) => { bbRenderedData.bb_middle = d; } } },
+  { key: 'bb_lower', series: { setData: (d) => { bbRenderedData.bb_lower = d; } } },
+];
+lab.data.bars = [
+  { time: 100, open: 1000, high: 1050, low: 950, close: 1000, bb_upper: 1080, bb_middle: 1000, bb_lower: 920, z_score: -2.1, rsi: 25, stoch_k: 15, ou_z: -1.8, p_reversion: 0.65 },
+  { time: 200, open: 1100, high: 1150, low: 1050, close: 1100, bb_upper: 1120, bb_middle: 1050, bb_lower: 980, z_score: 1.2, rsi: 70, stoch_k: 85, ou_z: 0.5, p_reversion: 0.45 },
+];
+
+let runTriggered = 0;
+lab.run = () => { runTriggered++; };
+
+lab.setStrategyMode('bollinger_zscore');
+assert.equal(lab.strategyMode, 'bollinger_zscore');
+assert.equal(runTriggered, 1);
+lab.renderChartData();
+assert.equal(bbRenderedData.bb_upper?.length, 2, 'Bollinger upper band must be plotted in bollinger_zscore mode');
+assert.equal(bbRenderedData.bb_lower?.length, 2, 'Bollinger lower band must be plotted in bollinger_zscore mode');
+
+lab.setStrategyMode('rsi_momentum');
+assert.equal(lab.strategyMode, 'rsi_momentum');
+assert.equal(runTriggered, 2);
+lab.renderChartData();
+assert.equal(bbRenderedData.bb_upper?.length, 0, 'Bollinger bands must be cleared in non-Bollinger modes');
+
+lab.setStrategyMode('multi_factor');
+assert.equal(lab.strategyMode, 'multi_factor');
+assert.equal(runTriggered, 3);
+
+lab.setStrategyMode('ou_quant');
+assert.equal(lab.strategyMode, 'ou_quant');
+assert.equal(runTriggered, 4);
+
 console.log('Strategy Lab real crosshair callback regression checks passed');
+

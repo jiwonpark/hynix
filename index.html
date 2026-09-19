@@ -1345,6 +1345,32 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.08);
       font-weight: 800;
     }
+    .btnStrategyTab {
+      padding: 4px 11px;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #334155;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btnStrategyTab:hover {
+      background: #f1f5f9;
+      border-color: #94a3b8;
+      color: #0f172a;
+    }
+    .btnStrategyTab.active {
+      background: #0284c7;
+      border-color: #0284c7;
+      color: #ffffff;
+      box-shadow: 0 1px 3px rgba(2,132,199,0.25);
+      font-weight: 800;
+    }
 
     /* AI Signal Approver Card */
     .aiSignalApprover {
@@ -3810,6 +3836,16 @@
                 Parity: <strong id="lab_valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
               </div>
             </div>
+          </div>
+
+          <!-- Strategy Framework Mode Selector (5 Quantitative Engines) -->
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; background: #f8fafc; border: 1px solid #e2e8f0; padding: 6px 8px; border-radius: 8px;">
+            <span style="font-size: 11px; font-weight: 800; color: #475569; margin-right: 4px; text-transform: uppercase; letter-spacing: 0.5px;">🎯 QUANT ENGINE:</span>
+            <button id="lab_tabModeMaStack" class="btnStrategyTab active" type="button" onclick="if(window.strategyLab) window.strategyLab.setStrategyMode('ma_stack')">📈 Dual MA Stack</button>
+            <button id="lab_tabModeBollinger" class="btnStrategyTab" type="button" onclick="if(window.strategyLab) window.strategyLab.setStrategyMode('bollinger_zscore')">📊 Bollinger &amp; Z-Score</button>
+            <button id="lab_tabModeRsi" class="btnStrategyTab" type="button" onclick="if(window.strategyLab) window.strategyLab.setStrategyMode('rsi_momentum')">⚡ RSI Momentum</button>
+            <button id="lab_tabModeMultiFactor" class="btnStrategyTab" type="button" onclick="if(window.strategyLab) window.strategyLab.setStrategyMode('multi_factor')">⚖️ Multi-Factor Gate</button>
+            <button id="lab_tabModeOuQuant" class="btnStrategyTab" type="button" onclick="if(window.strategyLab) window.strategyLab.setStrategyMode('ou_quant')">🔬 Quant OU SDE</button>
           </div>
 
           <!-- Full-width chart with the live criteria grid below it. -->

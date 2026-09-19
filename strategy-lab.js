@@ -11,10 +11,12 @@
     chart: null,
     candles: null,
     maSeries: [],
+    bbSeries: [],
     controller: null,
     data: null,
     loaded: false,
     chartInterval: "5m",
+    strategyMode: "ma_stack",
     selectedMarkerTime: null,
     hoveredMarkerTime: null,
     syncingMarkerState: false,
@@ -78,6 +80,24 @@
       document.getElementById("strategyLabTranches")?.addEventListener("change", () => this.run());
     },
 
+    setStrategyMode(mode) {
+      if (!mode) return;
+      this.strategyMode = mode;
+      const modes = ["ma_stack", "bollinger_zscore", "rsi_momentum", "multi_factor", "ou_quant"];
+      const ids = {
+        ma_stack: "lab_tabModeMaStack",
+        bollinger_zscore: "lab_tabModeBollinger",
+        rsi_momentum: "lab_tabModeRsi",
+        multi_factor: "lab_tabModeMultiFactor",
+        ou_quant: "lab_tabModeOuQuant",
+      };
+      modes.forEach((m) => {
+        const btn = document.getElementById(ids[m]);
+        if (btn) btn.classList.toggle("active", m === mode);
+      });
+      this.run();
+    },
+
     initChart() {
       this.bindForkedSection();
       const host = el("shortTermSpreadChartHost");
@@ -98,6 +118,9 @@
       [["ma7", "#f59e0b"], ["ma24", "#8b5cf6"], ["ma60", "#06b6d4"]].forEach(([key, color]) => {
         this.maSeries.push({ key, series: this.chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false }) });
       });
+      [["bb_upper", "rgba(14, 165, 233, 0.75)"], ["bb_middle", "rgba(100, 116, 139, 0.60)"], ["bb_lower", "rgba(14, 165, 233, 0.75)"]].forEach(([key, color]) => {
+        this.bbSeries.push({ key, series: this.chart.addLineSeries({ color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false }) });
+      });
       this.controller = new StrategyExecutionChartController({ series: this.candles, lineStyle: LightweightCharts.LineStyle });
       this.chart.subscribeCrosshairMove((param) => this.onCrosshair(param));
       this.chart.subscribeClick((param) => this.onClick(param));
@@ -106,25 +129,24 @@
 
     conditions() {
       return {
-        entry_5m: el("chkCondEntryMaStack5m").checked,
-        entry_1h: el("chkCondEntryMaStack1h").checked,
-        exit_5m: el("chkCondExitMaStack5m").checked,
-        exit_1h: el("chkCondExitMaStack1h").checked,
+        entry_5m: el("chkCondEntryMaStack5m")?.checked ?? true,
+        entry_1h: el("chkCondEntryMaStack1h")?.checked ?? true,
+        exit_5m: el("chkCondExitMaStack5m")?.checked ?? true,
+        exit_1h: el("chkCondExitMaStack1h")?.checked ?? true,
       };
     },
 
     async run() {
       this.initChart();
       const conditions = this.conditions();
-      if ((!conditions.entry_5m && !conditions.entry_1h) || (!conditions.exit_5m && !conditions.exit_1h)) {
-        el("dynamicBacktestStatus").textContent = "Enable at least one entry and one exit condition.";
-        return;
-      }
       const button = el("btnRerunDynamicBacktest");
-      button.disabled = true;
-      button.textContent = "Loading Upbit…";
-      el("dynamicBacktestStatus").textContent = "Fetching public candles and replaying closed-bar signals…";
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Loading Upbit…";
+      }
+      el("dynamicBacktestStatus").textContent = "Fetching public candles and replaying quantitative signals…";
       const params = new URLSearchParams({
+        strategy_mode: this.strategyMode || "ma_stack",
         days: document.getElementById("strategyLabDays")?.value || "7",
         fee_bps: document.getElementById("strategyLabFee")?.value || "5",
         max_tranches: document.getElementById("strategyLabTranches")?.value || "5",
@@ -138,8 +160,10 @@
       } catch (error) {
         el("dynamicBacktestStatus").textContent = `Backtest failed: ${error.message}`;
       } finally {
-        button.disabled = false;
-        button.textContent = "Rerun";
+        if (button) {
+          button.disabled = false;
+          button.textContent = "Rerun";
+        }
       }
     },
 
@@ -153,7 +177,7 @@
       el("dynamicBacktestStatus").textContent = `${stats.completed_trades || 0} trades · Net ${pct(stats.net_return_pct)} · Buy & Hold ${pct(stats.buy_hold_pct)} · Max drawdown ${pct(stats.max_drawdown_pct)} · Win rate ${pct(stats.win_rate_pct)} · Ending ${krw(stats.ending_equity_krw)}`;
       const latest = data.bars.at(-1);
       const latestHour = data.hourly.at(-1);
-      el("macroPolicyStatus").textContent = `Completed 1h: ${latestHour?.bearish ? "BEARISH STACK (DIP ENTRY)" : latestHour?.bullish ? "BULLISH STACK (RALLY EXIT)" : "NOT ALIGNED"} · next-open fills · ${data.fee_bps}bp/side`;
+      el("macroPolicyStatus").textContent = `[${data.strategy_badge || "QUANT"}] ${data.strategy_desc || ""} · next-open fills · ${data.fee_bps}bp/side`;
       el("valShortTermCurrentParity").textContent = latest ? krw(latest.close) : "--";
       el("valShortTermMa7").textContent = latest ? krw(latest.ma7) : "--";
       el("valShortTermMa24").textContent = latest ? krw(latest.ma24) : "--";
@@ -221,6 +245,13 @@
       const rows = this.chartInterval === "1h" ? (this.data?.hourly || []) : (this.data?.bars || []);
       this.candles.setData(rows.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
       this.maSeries.forEach(({ key, series }) => series.setData(rows.filter((bar) => Number.isFinite(bar[key])).map((bar) => ({ time: bar.time, value: bar[key] }))));
+      this.bbSeries.forEach(({ key, series }) => {
+        if (this.strategyMode === "bollinger_zscore") {
+          series.setData(rows.filter((bar) => Number.isFinite(bar[key])).map((bar) => ({ time: bar.time, value: bar[key] })));
+        } else {
+          series.setData([]);
+        }
+      });
       this.controller.setExecutions(this.executionsForInterval());
       this.syncMarkerState();
       this.chart.timeScale().fitContent();
@@ -231,13 +262,78 @@
       const cap = data.capacity || {};
       const stack = Array.isArray(data.active_tranche_stack) ? data.active_tranche_stack : [];
       const top = stack[0] || null;
+      const mode = this.strategyMode || "ma_stack";
+
+      let entryPass5m = false;
+      let entryPass1h = false;
+      let exitPass5m = false;
+      let exitPass1h = false;
+      let armedEntry = false;
+      let armedExit = false;
+
+      const z = Number(latest?.z_score ?? 0);
+      const rsi5 = Number(latest?.rsi ?? 50);
+      const rsi1 = Number(hourly?.rsi ?? 50);
+      const stochK = Number(latest?.stoch_k ?? 50);
+      const ouZ = Number(latest?.ou_z ?? 0);
+      const pRev = Number(latest?.p_reversion ?? 0.5);
+      const volRatio = Number(latest?.vol_ratio ?? 1);
+      const bbLow = latest?.bb_lower;
+      const bbMid = latest?.bb_middle;
+      const bbUp = latest?.bb_upper;
+      const close = Number(latest?.close ?? 0);
+
+      if (mode === "bollinger_zscore") {
+        entryPass5m = z <= -1.8;
+        entryPass1h = bbLow != null && latest?.low <= bbLow && close > bbLow;
+        armedEntry = entryPass5m || entryPass1h;
+        exitPass5m = bbMid != null && close >= bbMid;
+        exitPass1h = z >= 0.5 || Boolean(latest?.bullish) || Boolean(hourly?.bullish);
+        armedExit = exitPass5m || exitPass1h;
+      } else if (mode === "rsi_momentum") {
+        entryPass5m = rsi5 < 30.0 && rsi1 < 45.0;
+        entryPass1h = stochK < 20.0 && rsi5 < 35.0;
+        armedEntry = entryPass5m || entryPass1h;
+        exitPass5m = rsi5 >= 60.0;
+        exitPass1h = stochK >= 80.0 || Boolean(latest?.bullish) || Boolean(hourly?.bullish);
+        armedExit = exitPass5m || exitPass1h;
+      } else if (mode === "multi_factor") {
+        const macroPass = rsi1 >= 35.0 || (hourly?.ma24 != null && close >= Number(hourly.ma24));
+        const vStretch = z <= -1.4 || (bbLow != null && close <= bbLow * 1.002);
+        const vVol = volRatio >= 1.3;
+        const vRsi = rsi5 <= 35.0 || stochK <= 25.0;
+        const votes = (vStretch ? 1 : 0) + (vVol ? 1 : 0) + (vRsi ? 1 : 0);
+        entryPass5m = macroPass;
+        entryPass1h = votes >= 2;
+        armedEntry = entryPass5m && entryPass1h;
+        exitPass5m = rsi5 >= 65.0;
+        exitPass1h = (bbUp != null && close >= bbUp) || Boolean(latest?.bullish);
+        armedExit = exitPass5m || exitPass1h;
+      } else if (mode === "ou_quant") {
+        entryPass5m = ouZ <= -1.5;
+        entryPass1h = pRev >= 0.55;
+        armedEntry = entryPass5m && entryPass1h;
+        exitPass5m = ouZ >= 0.0;
+        exitPass1h = Boolean(latest?.bullish) || Boolean(hourly?.bullish);
+        armedExit = exitPass5m || exitPass1h;
+      } else {
+        // ma_stack
+        entryPass5m = Boolean(latest?.bearish);
+        entryPass1h = Boolean(hourly?.bearish);
+        armedEntry = entryPass5m && entryPass1h;
+        exitPass5m = Boolean(latest?.bullish);
+        exitPass1h = Boolean(hourly?.bullish);
+        armedExit = exitPass5m || exitPass1h;
+      }
 
       const states = [
-        ["badgeCondEntryMaStack5m", latest?.bearish], ["badgeCondEntryMaStack1h", hourly?.bearish],
+        ["badgeCondEntryMaStack5m", entryPass5m],
+        ["badgeCondEntryMaStack1h", entryPass1h],
         ["badgeCondEntryCapacity", (cap.remaining_tranches ?? 5) > 0],
         ["badgeCondEntryMargin", (cap.free_cash_krw ?? 10000000) >= (cap.tranche_capital_krw ?? 2000000) * 0.95],
         ["badgeCondExitActive", stack.length > 0],
-        ["badgeCondExitMaStack5m", latest?.bullish], ["badgeCondExitMaStack1h", hourly?.bullish],
+        ["badgeCondExitMaStack5m", exitPass5m],
+        ["badgeCondExitMaStack1h", exitPass1h],
         ["badgeCondExitNetPnl", top ? top.unrealized_return_pct > 0 : false],
       ];
       states.forEach(([id, pass]) => {
@@ -251,8 +347,8 @@
       if (el("valCondExitActive")) el("valCondExitActive").textContent = `${stack.length} open`;
       if (el("valCondExitNetPnl")) el("valCondExitNetPnl").textContent = top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}%` : "—";
 
-      el("badgeCriteriaScaleIn").textContent = latest?.bearish && hourly?.bearish ? "ENTRY ARMED (DIP)" : "AWAITING BEARISH STACK (5m/1h)";
-      el("badgeCriteriaTP").textContent = latest?.bullish || hourly?.bullish ? "EXIT ARMED (RALLY)" : (stack.length ? "HOLDING TRANCHES" : "AWAITING BULLISH STACK");
+      el("badgeCriteriaScaleIn").textContent = armedEntry ? "ENTRY ARMED (DIP)" : "AWAITING DIP CONDITIONS";
+      el("badgeCriteriaTP").textContent = armedExit ? "EXIT ARMED (RALLY)" : (stack.length ? "HOLDING TRANCHES" : "AWAITING EXIT CRITERIA");
     },
 
     syncCriteriaPanels(latest, hourly) {
@@ -260,29 +356,100 @@
       const cap = data.capacity || {};
       const stack = Array.isArray(data.active_tranche_stack) ? data.active_tranche_stack : [];
       const top = stack[0] || null;
+      const mode = this.strategyMode || "ma_stack";
+
+      const z = Number(latest?.z_score ?? 0);
+      const rsi5 = Number(latest?.rsi ?? 50);
+      const rsi1 = Number(hourly?.rsi ?? 50);
+      const stochK = Number(latest?.stoch_k ?? 50);
+      const ouZ = Number(latest?.ou_z ?? 0);
+      const pRev = Number(latest?.p_reversion ?? 0.5);
+      const volRatio = Number(latest?.vol_ratio ?? 1);
+      const bbLow = latest?.bb_lower;
+      const bbMid = latest?.bb_middle;
+      const bbUp = latest?.bb_upper;
+      const close = Number(latest?.close ?? 0);
 
       // Card 1: Scale-in Criteria Card
       const scaleInTitle = el("lblCritScaleInTitle");
-      if (scaleInTitle) scaleInTitle.textContent = "➕ Speculative Scale-In (KRW-BTC Dip Entry)";
       const scaleInDesc = el("txtCritScaleInDesc");
-      if (scaleInDesc) scaleInDesc.innerHTML = `Trigger: 5m &amp; 1h Bearish MA Stack (<strong>Price &lt; MA7 &lt; MA24 &lt; MA60</strong>)`;
+      const gapScaleIn = el("valCritGapScaleIn");
+      const scaleInProgress = el("barCritScaleInProgress");
+
+      if (mode === "bollinger_zscore") {
+        if (scaleInTitle) scaleInTitle.textContent = "📊 Bollinger & Z-Score Dip Entry";
+        if (scaleInDesc) scaleInDesc.innerHTML = `Trigger: <strong>Z-Score ≤ -1.8σ OR Lower BB Pierce</strong> (VWAP: ${latest?.vwap ? krw(latest.vwap) : "--"})`;
+        const armed = z <= -1.8 || (bbLow != null && latest?.low <= bbLow && close > bbLow);
+        if (gapScaleIn) {
+          gapScaleIn.textContent = armed ? "OVERSOLD ARMED" : `Z: ${z.toFixed(2)}σ · BB Low: ${bbLow ? krw(bbLow) : "--"}`;
+          gapScaleIn.style.color = armed ? "#16a34a" : "#d97706";
+        }
+        if (scaleInProgress) scaleInProgress.style.width = armed ? "100%" : `${Math.min(90, Math.max(15, Math.abs(z) / 1.8 * 100))}%`;
+      } else if (mode === "rsi_momentum") {
+        if (scaleInTitle) scaleInTitle.textContent = "⚡ RSI Momentum Deceleration Entry";
+        if (scaleInDesc) scaleInDesc.innerHTML = `Trigger: <strong>5m RSI < 30 &amp; 1h RSI < 45</strong> OR <strong>StochRSI < 20 &amp; 5m RSI < 35</strong>`;
+        const armed = (rsi5 < 30.0 && rsi1 < 45.0) || (stochK < 20.0 && rsi5 < 35.0);
+        if (gapScaleIn) {
+          gapScaleIn.textContent = armed ? "RSI DIP ARMED" : `5m RSI ${rsi5.toFixed(1)} · 1h ${rsi1.toFixed(1)} · %K ${stochK.toFixed(1)}`;
+          gapScaleIn.style.color = armed ? "#16a34a" : "#d97706";
+        }
+        if (scaleInProgress) scaleInProgress.style.width = armed ? "100%" : `${Math.min(90, Math.max(15, (50 - rsi5) * 3))}%`;
+      } else if (mode === "multi_factor") {
+        if (scaleInTitle) scaleInTitle.textContent = "⚖️ Multi-Factor Voting Gate Entry";
+        if (scaleInDesc) scaleInDesc.innerHTML = `Trigger: <strong>Macro 1h Filter + ≥ 2-of-3 Micro Dip Votes</strong> (Stretch, Vol Spike ≥ 1.3x, RSI ≤ 35)`;
+        const macroPass = rsi1 >= 35.0 || (hourly?.ma24 != null && close >= Number(hourly.ma24));
+        const vStretch = z <= -1.4 || (bbLow != null && close <= bbLow * 1.002);
+        const vVol = volRatio >= 1.3;
+        const vRsi = rsi5 <= 35.0 || stochK <= 25.0;
+        const votes = (vStretch ? 1 : 0) + (vVol ? 1 : 0) + (vRsi ? 1 : 0);
+        const armed = macroPass && votes >= 2;
+        if (gapScaleIn) {
+          gapScaleIn.textContent = armed ? `VOTING ARMED (${votes}/3 votes)` : `Macro: ${macroPass ? "OK" : "WAIT"} · Micro: ${votes}/3 votes`;
+          gapScaleIn.style.color = armed ? "#16a34a" : "#d97706";
+        }
+        if (scaleInProgress) scaleInProgress.style.width = armed ? "100%" : `${(votes / 3) * 75 + 15}%`;
+      } else if (mode === "ou_quant") {
+        if (scaleInTitle) scaleInTitle.textContent = "🔬 Quant Ornstein-Uhlenbeck SDE Entry";
+        if (scaleInDesc) scaleInDesc.innerHTML = `Trigger: <strong>OU Equilibrium Spread ≤ -1.5σ &amp; P(Reversion) ≥ 55%</strong>`;
+        const armed = ouZ <= -1.5 && pRev >= 0.55;
+        if (gapScaleIn) {
+          gapScaleIn.textContent = armed ? "OU VALUE ARMED" : `Spread: ${ouZ.toFixed(2)}σ · P(Rev): ${(pRev * 100).toFixed(0)}%`;
+          gapScaleIn.style.color = armed ? "#16a34a" : "#d97706";
+        }
+        if (scaleInProgress) scaleInProgress.style.width = armed ? "100%" : `${Math.min(90, Math.max(15, Math.abs(ouZ) / 1.5 * 70))}%`;
+      } else {
+        // ma_stack
+        if (scaleInTitle) scaleInTitle.textContent = "➕ Speculative Scale-In (KRW-BTC Dip Entry)";
+        if (scaleInDesc) scaleInDesc.innerHTML = `Trigger: 5m &amp; 1h Bearish MA Stack (<strong>Price &lt; MA7 &lt; MA24 &lt; MA60</strong>)`;
+        const dipArmed = latest?.bearish && hourly?.bearish;
+        if (gapScaleIn) {
+          gapScaleIn.textContent = dipArmed ? "DIP ARMED" : (latest?.bearish ? "5m ARMED (WAIT 1h)" : "AWAITING DIP");
+          gapScaleIn.style.color = dipArmed ? "#16a34a" : "#d97706";
+        }
+        if (scaleInProgress) scaleInProgress.style.width = dipArmed ? "100%" : (latest?.bearish ? "50%" : "20%");
+      }
+
       const currentPrice = el("valCritCurrentSpread");
       if (currentPrice && latest) currentPrice.textContent = krw(latest.close);
-      const gapScaleIn = el("valCritGapScaleIn");
-      const dipArmed = latest?.bearish && hourly?.bearish;
-      if (gapScaleIn) {
-        gapScaleIn.textContent = dipArmed ? "DIP ARMED" : (latest?.bearish ? "5m ARMED (WAIT 1h)" : "AWAITING DIP");
-        gapScaleIn.style.color = dipArmed ? "#16a34a" : "#d97706";
-      }
-      const scaleInProgress = el("barCritScaleInProgress");
-      if (scaleInProgress) {
-        scaleInProgress.style.width = dipArmed ? "100%" : (latest?.bearish ? "50%" : "20%");
-      }
 
       // Card 2: Take-Profit Criteria Card
       const tpTitle = el("lblCritTPTitle");
-      if (tpTitle) tpTitle.textContent = "🎯 LIFO Take-Profit (KRW-BTC Rally Exit)";
       const tpDesc = el("txtCritTPDesc");
+      const gapTP = el("valCritGapTP");
+      const tpProgress = el("barCritTPProgress");
+
+      if (mode === "bollinger_zscore") {
+        if (tpTitle) tpTitle.textContent = "🎯 Bollinger Mean-Reversion Exit";
+      } else if (mode === "rsi_momentum") {
+        if (tpTitle) tpTitle.textContent = "🎯 RSI Momentum Exhaustion Exit";
+      } else if (mode === "multi_factor") {
+        if (tpTitle) tpTitle.textContent = "🎯 Multi-Factor Target Exit";
+      } else if (mode === "ou_quant") {
+        if (tpTitle) tpTitle.textContent = "🎯 OU Equilibrium Mean Exit";
+      } else {
+        if (tpTitle) tpTitle.textContent = "🎯 LIFO Take-Profit (KRW-BTC Rally Exit)";
+      }
+
       if (tpDesc) {
         tpDesc.innerHTML = top
           ? `Top tranche ref: <strong>${top.id} @ ${krw(top.entry_price)}</strong> (${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net)`
@@ -290,15 +457,12 @@
       }
       const tpCurrentPrice = el("valCritTpCurrentSpread");
       if (tpCurrentPrice && latest) tpCurrentPrice.textContent = krw(latest.close);
-      const gapTP = el("valCritGapTP");
-      const rallyArmed = latest?.bullish || hourly?.bullish;
       if (gapTP) {
         gapTP.textContent = top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "Flat";
         gapTP.style.color = top ? (top.unrealized_return_pct >= 0 ? "#16a34a" : "#dc2626") : "#64748b";
       }
-      const tpProgress = el("barCritTPProgress");
       if (tpProgress) {
-        tpProgress.style.width = rallyArmed ? "100%" : (top && top.unrealized_return_pct > 0 ? "60%" : "15%");
+        tpProgress.style.width = top && top.unrealized_return_pct > 0 ? "75%" : (top ? "40%" : "15%");
       }
 
       // Card 3: Sizing, Risk Gate & Headroom

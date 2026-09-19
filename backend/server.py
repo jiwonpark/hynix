@@ -297,6 +297,7 @@ async def get_upbit_account() -> Dict[str, Any]:
 
 @app.get("/api/strategy-lab/upbit-ma-stack")
 async def get_upbit_ma_stack_backtest(
+    strategy_mode: str = Query("ma_stack"),
     days: int = Query(7, ge=3, le=14),
     fee_bps: float = Query(5.0, ge=0.0, le=100.0),
     max_tranches: int = Query(5, ge=1, le=20),
@@ -305,14 +306,16 @@ async def get_upbit_ma_stack_backtest(
     exit_5m: bool = True,
     exit_1h: bool = True,
 ) -> Dict[str, Any]:
-    """Read-only BTC/KRW dual-timeframe MA-stack research backtest."""
+    """Read-only BTC/KRW quantitative strategy research backtest."""
     try:
         count_5m = days * 24 * 12 + 2
         count_1h = max(days * 24 + 62, 200)
         candles_5m = await upbit_client.get_minute_candles("KRW-BTC", 5, count_5m)
         candles_1h = await upbit_client.get_minute_candles("KRW-BTC", 60, count_1h)
         result = run_ma_stack_backtest(
-            candles_5m, candles_1h, fee_bps=fee_bps, max_tranches=max_tranches,
+            candles_5m, candles_1h,
+            strategy_mode=strategy_mode,
+            fee_bps=fee_bps, max_tranches=max_tranches,
             entry_5m=entry_5m, entry_1h=entry_1h,
             exit_5m=exit_5m, exit_1h=exit_1h,
         )
@@ -322,7 +325,7 @@ async def get_upbit_ma_stack_backtest(
         result["max_tranches"] = max_tranches
         return result
     except Exception as e:
-        logger.exception("Error running Upbit MA-stack strategy lab")
+        logger.exception("Error running Upbit quantitative strategy lab")
         return {"error": str(e), "market": "KRW-BTC"}
 
 @app.get("/api/portfolio/overview")
