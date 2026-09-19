@@ -86,7 +86,10 @@
       this.startBotPolling();
 
       document.getElementById("strategyLabDays").addEventListener("change", () => this.run());
-      document.getElementById("strategyLabTranches")?.addEventListener("change", () => this.run());
+      document.getElementById("strategyLabTranches")?.addEventListener("change", () => {
+        this.updateBotSizing();
+        this.run();
+      });
     },
 
     setStrategyMode(mode) {
@@ -1029,12 +1032,14 @@
     async updateBotSizing() {
       const input = el("inpBotTrancheSize");
       const trancheSize = input ? Number(input.value) : 2000000;
+      const tranchesInput = document.getElementById("strategyLabTranches");
+      const maxTranches = tranchesInput ? Number(tranchesInput.value) : 5;
       if (trancheSize >= 5000) {
         try {
           const res = await fetch("api/strategy-lab/set-sizing", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tranche_size_krw: trancheSize }),
+            body: JSON.stringify({ tranche_size_krw: trancheSize, max_tranches: maxTranches }),
           });
           const json = await res.json();
           if (json && json.success && json.status) {
@@ -1135,6 +1140,10 @@
       const inpSize = el("inpBotTrancheSize");
       if (inpSize && document.activeElement !== inpSize) {
         inpSize.value = s.tranche_size_krw || 2000000;
+      }
+      const inpTranches = document.getElementById("strategyLabTranches");
+      if (inpTranches && s.max_tranches && document.activeElement !== inpTranches) {
+        inpTranches.value = s.max_tranches;
       }
 
       if (s.active_tranches && s.active_tranches.length > 0) {
