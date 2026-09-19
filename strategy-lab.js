@@ -148,7 +148,6 @@
       this.loaded = true;
       this.selectedMarkerTime = null;
       this.hoveredMarkerTime = null;
-      this.controller.setExecutions(data.markers || []);
       this.renderChartData();
       const stats = data.stats || {};
       el("dynamicBacktestStatus").textContent = `${stats.completed_trades || 0} trades · Net ${pct(stats.net_return_pct)} · Buy & Hold ${pct(stats.buy_hold_pct)} · Max drawdown ${pct(stats.max_drawdown_pct)} · Win rate ${pct(stats.win_rate_pct)} · Ending ${krw(stats.ending_equity_krw)}`;
@@ -167,15 +166,62 @@
 
     setChartInterval(interval) {
       if (interval !== "5m" && interval !== "1h") return;
+      const prevInterval = this.chartInterval;
       this.chartInterval = interval;
-      ["5m", "1h"].forEach((value) => el(`btnShortInterval${value}`).classList.toggle("active", value === interval));
-      if (this.data) this.renderChartData();
+      ["5m", "1h"].forEach((value) => el(`btnShortInterval${value}`)?.classList.toggle("active", value === interval));
+      if (this.data) {
+        if (this.selectedMarkerTime !== null) {
+          if (prevInterval === "5m" && interval === "1h") {
+            this.selectedMarkerTime = Math.floor(this.selectedMarkerTime / 3600) * 3600;
+          } else if (prevInterval === "1h" && interval === "5m") {
+            const match = (this.data.markers || []).find(m => Math.floor(m.time / 3600) * 3600 === this.selectedMarkerTime);
+            this.selectedMarkerTime = match ? match.time : null;
+          }
+        }
+        this.renderChartData();
+      }
+    },
+
+    executionsForInterval() {
+      const markers = this.data?.markers || [];
+      if (this.chartInterval === "5m") {
+        return markers;
+      }
+      const hourlyBars = this.data?.hourly || [];
+      const hourlyTimes = hourlyBars.map(b => b.time);
+      return markers.map(m => {
+        let hourTime = Math.floor(m.time / 3600) * 3600;
+        if (hourlyTimes.length) {
+          const match = hourlyBars.find(b => b.time <= m.time && m.time < b.time + 3600);
+          if (match) hourTime = match.time;
+        }
+        return {
+          ...m,
+          time: hourTime,
+          rawTime: m.time,
+        };
+      });
+    },
+
+    findMarkerForTime(targetTime) {
+      if (targetTime === null || targetTime === undefined) return null;
+      const markers = this.data?.markers || [];
+      const direct = markers.find(m => m.time === targetTime || m.rawTime === targetTime);
+      if (direct) return direct;
+      if (this.chartInterval === "1h") {
+        const inHour = markers.filter(m => Math.floor(m.time / 3600) * 3600 === targetTime);
+        if (inHour.length) {
+          return inHour.find(m => !m.is_entry && m.exit_price) || inHour.at(-1);
+        }
+      }
+      return null;
     },
 
     renderChartData() {
       const rows = this.chartInterval === "1h" ? (this.data?.hourly || []) : (this.data?.bars || []);
       this.candles.setData(rows.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
       this.maSeries.forEach(({ key, series }) => series.setData(rows.filter((bar) => Number.isFinite(bar[key])).map((bar) => ({ time: bar.time, value: bar[key] }))));
+      this.controller.setExecutions(this.executionsForInterval());
       this.syncMarkerState();
       this.chart.timeScale().fitContent();
     },
@@ -305,13 +351,13 @@
     },
 
     renderMarkers(hoveredTime = null) {
-      this.candles.setMarkers(this.chartInterval === "5m" ? this.controller.markersForRender(hoveredTime) : []);
+      this.candles.setMarkers(this.controller.markersForRender(hoveredTime));
     },
 
     markerTimeAtParam(param, host) {
       if (!param) return null;
       if (param.time) {
-        const direct = (this.data?.markers || []).find((m) => m.time === param.time && this.controller.isVisible(m));
+        const direct = (this.controller?.visibleExecutions() || []).find((m) => m.time === param.time);
         if (direct) return direct.time;
       }
       if (param.point && host && this.controller) {
@@ -324,12 +370,12 @@
     },
 
     onClick(param) {
-      if (!this.chart || this.chartInterval !== "5m") return;
+      if (!this.chart) return;
       const host = el("shortTermSpreadChartHost");
       const time = this.markerTimeAtParam(param, host);
-      const marker = (this.data?.markers || []).find((m) => m.time === time);
+      const marker = this.findMarkerForTime(time);
       if (marker && marker.entry_price) {
-        this.selectedMarkerTime = (this.selectedMarkerTime === marker.time) ? null : marker.time;
+        this.selectedMarkerTime = (this.selectedMarkerTime === time) ? null : time;
       } else {
         this.selectedMarkerTime = null;
       }
@@ -338,7 +384,7 @@
     },
 
     onCrosshair(param) {
-      if (this.syncingMarkerState || !this.chart || this.chartInterval !== "5m") return;
+      if (this.syncingMarkerState || !this.chart) return;
       const host = el("shortTermSpreadChartHost");
       const time = param?.point ? this.markerTimeAtParam(param, host) : null;
       if (time === this.hoveredMarkerTime) return;
@@ -366,7 +412,7 @@
         return;
       }
       const targetTime = this.selectedMarkerTime !== null ? this.selectedMarkerTime : hoverTime;
-      const marker = (this.data?.markers || []).find((m) => m.time === targetTime);
+      const marker = this.findMarkerForTime(targetTime);
       if (marker && marker.entry_price) {
         this.renderEntryReferenceLines(marker.entry_price, true, marker.exit_price || null, marker);
       } else if (this.data?.open_position?.price) {
@@ -421,9 +467,10 @@
     },
 
     onTrancheClick(time) {
-      if (!this.chart || this.chartInterval !== "5m") return;
-      this.selectedMarkerTime = (this.selectedMarkerTime === time) ? null : time;
-      this.hoveredMarkerTime = time;
+      if (!this.chart) return;
+      const mappedTime = (this.chartInterval === "1h") ? Math.floor(time / 3600) * 3600 : time;
+      this.selectedMarkerTime = (this.selectedMarkerTime === mappedTime) ? null : mappedTime;
+      this.hoveredMarkerTime = mappedTime;
       this.syncMarkerState();
     },
 

@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const Controller = require('../strategy-execution-chart.js');
 
-const host = { clientWidth: 600, setAttribute() {} };
+const host = { clientWidth: 600, setAttribute() {}, classList: { toggle() {}, add() {}, remove() {} } };
 const context = { window: {}, document: { getElementById: () => host } };
 vm.runInNewContext(fs.readFileSync(require.resolve('../strategy-lab.js'), 'utf8'), context);
 const lab = context.window.strategyLab;
@@ -61,4 +61,41 @@ lab.toggleVirtual();
 lab.onCrosshair(cursor);
 assert.equal(lines.size, 8, 'hover recovers after showing virtual trades again');
 assert.equal(lab.syncingMarkerState, false);
+
+// 1h interval marker rendering and interaction tests
+lab.data.hourly = [{ time: 0, open: 1000, high: 1100, low: 900, close: 1050, ma7: 1020, ma24: 1010, ma60: 1000 }];
+lab.data.bars = [
+  { time: 100, open: 1000, high: 1050, low: 950, close: 1000, ma7: 1000, ma24: 1000, ma60: 1000 },
+  { time: 200, open: 1100, high: 1150, low: 1050, close: 1100, ma7: 1050, ma24: 1020, ma60: 1000 },
+];
+lab.candles.setData = () => {};
+lab.maSeries = [];
+lab.chart = {
+  timeScale: () => ({
+    getVisibleLogicalRange: () => ({ from: 0, to: 60 }),
+    timeToCoordinate: (time) => time,
+    fitContent: () => {},
+  }),
+};
+
+lab.setChartInterval('1h');
+assert.equal(lab.chartInterval, '1h');
+assert.equal(rendered.length, 2, 'markers must render on 1h interval');
+assert.equal(rendered[0].time, 0, 'marker timestamp must be mapped to 1h candle timestamp');
+assert.equal(rendered[1].time, 0, 'marker timestamp must be mapped to 1h candle timestamp');
+
+cursor = { time: 0, point: { x: 0, y: 10 } };
+lab.onCrosshair(cursor);
+assert.equal(lines.size, 8, 'hovering 1h candle must draw reference lines');
+assert.equal([...lines][0].price, buy.entry_price);
+
+lab.onTrancheClick(100);
+assert.equal(lab.selectedMarkerTime, 0, 'clicking tranche on 1h must select the 1h mapped time');
+assert.equal([...lines][0].price, buy.entry_price, 'tranche click on 1h must draw entry and profit lines');
+
+lab.setChartInterval('5m');
+assert.equal(lab.chartInterval, '5m');
+assert.equal(rendered[0].time, 100, '5m marker time restored on 5m interval');
+assert.equal(rendered[1].time, 200, '5m marker time restored on 5m interval');
+
 console.log('Strategy Lab real crosshair callback regression checks passed');
