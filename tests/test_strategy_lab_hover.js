@@ -134,5 +134,36 @@ lab.setStrategyMode('ou_quant');
 assert.equal(lab.strategyMode, 'ou_quant');
 assert.equal(runTriggered, 4);
 
+// Verify that getConditionDefinitions produces unique full sets of entry and exit conditions for each strategy
+const cap = { remaining_tranches: 5, max_tranches: 5, free_cash_krw: 10000000, open_quantity_btc: 0 };
+const latest = lab.data.bars[0];
+const hourly = { rsi: 40, ma24: 1000, bullish: false, bearish: true };
+
+const defMa = lab.getConditionDefinitions('ma_stack', latest, hourly, cap, [], null);
+assert.equal(defMa.entryRows[0].key, 'entry_5m');
+assert.equal(defMa.exitRows[2].key, 'exit_5m');
+
+const defBB = lab.getConditionDefinitions('bollinger_zscore', latest, hourly, cap, [], null);
+assert.equal(defBB.entryRows[0].key, 'entry_zscore');
+assert.equal(defBB.entryRows[1].key, 'entry_bb_pierce');
+assert.equal(defBB.exitRows[2].key, 'exit_bb_middle');
+
+const defRsi = lab.getConditionDefinitions('rsi_momentum', latest, hourly, cap, [], null);
+assert.equal(defRsi.entryRows[0].key, 'entry_rsi_dual');
+assert.equal(defRsi.entryRows[1].key, 'entry_stoch_hook');
+assert.equal(defRsi.exitRows[2].key, 'exit_rsi_5m');
+
+const defMF = lab.getConditionDefinitions('multi_factor', latest, hourly, cap, [], null);
+assert.equal(defMF.entryRows[0].key, 'entry_macro_1h');
+assert.equal(defMF.entryRows[1].key, 'entry_micro_stretch');
+assert.equal(defMF.entryRows[4].key, 'entry_consensus');
+assert.equal(defMF.exitRows[2].key, 'exit_rsi_65');
+
+const defOU = lab.getConditionDefinitions('ou_quant', latest, hourly, cap, [], null);
+assert.equal(defOU.entryRows[0].key, 'entry_ou_spread');
+assert.equal(defOU.entryRows[1].key, 'entry_p_reversion');
+assert.equal(defOU.exitRows[2].key, 'exit_ou_mean');
+
 console.log('Strategy Lab real crosshair callback regression checks passed');
+
 

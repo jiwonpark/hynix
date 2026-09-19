@@ -57,25 +57,7 @@
       el("btnShortInterval5m").addEventListener("click", () => this.setChartInterval("5m"));
       el("btnShortInterval1h").addEventListener("click", () => this.setChartInterval("1h"));
 
-      const supported = new Set([
-        "chkCondEntryMaStack5m", "chkCondEntryMaStack1h",
-        "chkCondExitMaStack5m", "chkCondExitMaStack1h",
-      ]);
-      section.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-        const original = input.id.replace(/^lab_/, "");
-        if (!supported.has(original)) {
-          input.checked = false;
-          input.disabled = true;
-          input.closest(".condRow")?.classList.add("disabled-cond");
-        } else {
-          input.disabled = false;
-          input.closest(".condRow")?.classList.remove("disabled-cond");
-        }
-      });
-      el("chkCondEntryMaStack5m").addEventListener("change", () => this.run());
-      el("chkCondEntryMaStack1h").addEventListener("change", () => this.run());
-      el("chkCondExitMaStack5m").addEventListener("change", () => this.run());
-      el("chkCondExitMaStack1h").addEventListener("change", () => this.run());
+      this.renderConditionsChecklists(null, null);
       document.getElementById("strategyLabDays").addEventListener("change", () => this.run());
       document.getElementById("strategyLabTranches")?.addEventListener("change", () => this.run());
     },
@@ -128,12 +110,29 @@
     },
 
     conditions() {
-      return {
-        entry_5m: el("chkCondEntryMaStack5m")?.checked ?? true,
-        entry_1h: el("chkCondEntryMaStack1h")?.checked ?? true,
-        exit_5m: el("chkCondExitMaStack5m")?.checked ?? true,
-        exit_1h: el("chkCondExitMaStack1h")?.checked ?? true,
-      };
+      const result = {};
+      const entryContainer = el("entryConditionsChecklist");
+      if (entryContainer) {
+        entryContainer.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+          const key = input.dataset.key || input.id.replace(/^lab_chk_/, "").replace(/^chk_/, "");
+          result[key] = input.checked;
+        });
+      }
+      const exitContainer = el("exitConditionsChecklist");
+      if (exitContainer) {
+        exitContainer.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+          const key = input.dataset.key || input.id.replace(/^lab_chk_/, "").replace(/^chk_/, "");
+          result[key] = input.checked;
+        });
+      }
+      if (Object.keys(result).length === 0) {
+        return {
+          entry_5m: true, entry_1h: true, exit_5m: true, exit_1h: true,
+          entry_zscore: true, entry_bb_pierce: true, entry_atr_filter: true,
+          exit_bb_middle: true, exit_z_extreme: true, exit_bullish_stack: true,
+        };
+      }
+      return result;
     },
 
     async run() {
@@ -198,7 +197,7 @@
           if (prevInterval === "5m" && interval === "1h") {
             this.selectedMarkerTime = Math.floor(this.selectedMarkerTime / 3600) * 3600;
           } else if (prevInterval === "1h" && interval === "5m") {
-            const match = (this.data.markers || []).find(m => Math.floor(m.time / 3600) * 3600 === this.selectedMarkerTime);
+            const match = (this.data.markers || []).find((m) => Math.floor(m.time / 3600) * 3600 === this.selectedMarkerTime);
             this.selectedMarkerTime = match ? match.time : null;
           }
         }
@@ -212,11 +211,11 @@
         return markers;
       }
       const hourlyBars = this.data?.hourly || [];
-      const hourlyTimes = hourlyBars.map(b => b.time);
-      return markers.map(m => {
+      const hourlyTimes = hourlyBars.map((b) => b.time);
+      return markers.map((m) => {
         let hourTime = Math.floor(m.time / 3600) * 3600;
         if (hourlyTimes.length) {
-          const match = hourlyBars.find(b => b.time <= m.time && m.time < b.time + 3600);
+          const match = hourlyBars.find((b) => b.time <= m.time && m.time < b.time + 3600);
           if (match) hourTime = match.time;
         }
         return {
@@ -230,12 +229,12 @@
     findMarkerForTime(targetTime) {
       if (targetTime === null || targetTime === undefined) return null;
       const markers = this.data?.markers || [];
-      const direct = markers.find(m => m.time === targetTime || m.rawTime === targetTime);
+      const direct = markers.find((m) => m.time === targetTime || m.rawTime === targetTime);
       if (direct) return direct;
       if (this.chartInterval === "1h") {
-        const inHour = markers.filter(m => Math.floor(m.time / 3600) * 3600 === targetTime);
+        const inHour = markers.filter((m) => Math.floor(m.time / 3600) * 3600 === targetTime);
         if (inHour.length) {
-          return inHour.find(m => !m.is_entry && m.exit_price) || inHour.at(-1);
+          return inHour.find((m) => !m.is_entry && m.exit_price) || inHour.at(-1);
         }
       }
       return null;
@@ -257,6 +256,175 @@
       this.chart.timeScale().fitContent();
     },
 
+    getConditionDefinitions(mode, latest, hourly, cap, stack, top) {
+      const z = Number(latest?.z_score ?? 0);
+      const rsi5 = Number(latest?.rsi ?? 50);
+      const rsi1 = Number(hourly?.rsi ?? 50);
+      const stochK = Number(latest?.stoch_k ?? 50);
+      const ouZ = Number(latest?.ou_z ?? 0);
+      const pRev = Number(latest?.p_reversion ?? 0.5);
+      const volRatio = Number(latest?.vol_ratio ?? 1);
+      const bbLow = latest?.bb_lower;
+      const bbMid = latest?.bb_middle;
+      const bbUp = latest?.bb_upper;
+      const close = Number(latest?.close ?? 0);
+      const range = latest ? (latest.high - latest.low) : 0;
+      const atr = Number(latest?.atr ?? 0);
+      const remaining = cap.remaining_tranches ?? 5;
+      const maxTranches = cap.max_tranches ?? 5;
+      const freeCash = cap.free_cash_krw ?? 10000000;
+      const openBtc = cap.open_quantity_btc ?? 0;
+
+      let entryRows = [];
+      let exitRows = [];
+
+      if (mode === "bollinger_zscore") {
+        const isBB = bbLow != null && latest?.low <= bbLow && close > bbLow;
+        const isZ = z <= -1.8;
+        const hasVol = atr > 0 ? (range >= 0.6 * atr) : true;
+        entryRows = [
+          { key: "entry_zscore", label: "1. 24h VWAP Z-Score (Z ≤ -1.80σ)", value: `${z.toFixed(2)}σ (VWAP ${latest?.vwap ? krw(latest.vwap) : "--"})`, pass: isZ, toggleable: true },
+          { key: "entry_bb_pierce", label: "2. Lower BB Pierce (Low ≤ BB_low & Close > BB_low)", value: `Low ${latest ? krw(latest.low) : "--"} / BB ${bbLow ? krw(bbLow) : "--"}`, pass: isBB, toggleable: true },
+          { key: "entry_atr_filter", label: "3. Volatility Expansion Filter (Range ≥ 0.60x ATR)", value: `Range ${krw(range)} / ATR ${krw(atr * 0.6)}`, pass: hasVol, toggleable: true },
+          { key: "entry_capacity", label: "4. Dynamic Tranche Capacity", value: `${cap.active_tranches ?? 0} / ${maxTranches}`, pass: remaining > 0, liveOnly: true },
+          { key: "entry_margin", label: "5. Capital & Headroom Check", value: `${krw(freeCash)} free`, pass: freeCash >= 1900000, liveOnly: true },
+          { key: "entry_engine", label: "6. Worker State & Cooldown", value: "READY", pass: true, liveOnly: true },
+        ];
+        exitRows = [
+          { key: "exit_active", label: "1. Active Speculative Tranche (≥ 1 open)", value: `${stack.length} open`, pass: stack.length > 0, required: true },
+          { key: "exit_net_pnl", label: "2. Net Profit (> 0.00% net)", value: top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "—", pass: top && top.unrealized_return_pct > 0, backtestOnly: true },
+          { key: "exit_bb_middle", label: "3. BB Middle Band Reversion (Close ≥ SMA20)", value: `Close ${krw(close)} / Mid ${bbMid ? krw(bbMid) : "--"}`, pass: bbMid != null && close >= bbMid, toggleable: true },
+          { key: "exit_z_extreme", label: "4. Volatility Upper Target (Z-Score ≥ +0.50σ)", value: `${z.toFixed(2)}σ`, pass: z >= 0.5, toggleable: true },
+          { key: "exit_bullish_stack", label: "5. Bullish Trend Overlay (Price > MA Stacks)", value: latest?.bullish || hourly?.bullish ? "BULLISH RALLY" : "WAIT", pass: Boolean(latest?.bullish || hourly?.bullish), toggleable: true },
+          { key: "exit_position", label: "6. Position Sufficiency Check", value: `${openBtc.toFixed(6)} BTC`, pass: true, required: true },
+        ];
+      } else if (mode === "rsi_momentum") {
+        const isDual = rsi5 < 30.0 && rsi1 < 45.0;
+        const isHook = stochK < 20.0 && rsi5 < 35.0;
+        entryRows = [
+          { key: "entry_rsi_dual", label: "1. Dual-Timeframe RSI Oversold (5m < 30 & 1h < 45)", value: `5m: ${rsi5.toFixed(1)} / 1h: ${rsi1.toFixed(1)}`, pass: isDual, toggleable: true },
+          { key: "entry_stoch_hook", label: "2. Stochastic RSI Rebound Hook (%K < 20 & RSI < 35)", value: `%K ${stochK.toFixed(1)} / RSI ${rsi5.toFixed(1)}`, pass: isHook, toggleable: true },
+          { key: "entry_capacity", label: "3. Dynamic Tranche Capacity", value: `${cap.active_tranches ?? 0} / ${maxTranches}`, pass: remaining > 0, liveOnly: true },
+          { key: "entry_margin", label: "4. Capital & Headroom Check", value: `${krw(freeCash)} free`, pass: freeCash >= 1900000, liveOnly: true },
+          { key: "entry_engine", label: "5. Worker State & Cooldown", value: "READY", pass: true, liveOnly: true },
+        ];
+        exitRows = [
+          { key: "exit_active", label: "1. Active Speculative Tranche (≥ 1 open)", value: `${stack.length} open`, pass: stack.length > 0, required: true },
+          { key: "exit_net_pnl", label: "2. Net Profit (> 0.00% net)", value: top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "—", pass: top && top.unrealized_return_pct > 0, backtestOnly: true },
+          { key: "exit_rsi_5m", label: "3. 5m RSI Momentum Exhaustion (RSI ≥ 60.0)", value: `5m RSI ${rsi5.toFixed(1)}`, pass: rsi5 >= 60.0, toggleable: true },
+          { key: "exit_stoch_k", label: "4. Stochastic RSI Overbought (Stoch %K ≥ 80.0)", value: `Stoch %K ${stochK.toFixed(1)}`, pass: stochK >= 80.0, toggleable: true },
+          { key: "exit_bullish_stack", label: "5. Bullish Trend Overlay (Price > MA Stacks)", value: latest?.bullish || hourly?.bullish ? "BULLISH RALLY" : "WAIT", pass: Boolean(latest?.bullish || hourly?.bullish), toggleable: true },
+          { key: "exit_position", label: "6. Position Sufficiency Check", value: `${openBtc.toFixed(6)} BTC`, pass: true, required: true },
+        ];
+      } else if (mode === "multi_factor") {
+        const macroPass = rsi1 >= 35.0 || (hourly?.ma24 != null && close >= Number(hourly.ma24));
+        const vStretch = z <= -1.4 || (bbLow != null && close <= bbLow * 1.002);
+        const vVol = volRatio >= 1.3;
+        const vRsi = rsi5 <= 35.0 || stochK <= 25.0;
+        const votes = (vStretch ? 1 : 0) + (vVol ? 1 : 0) + (vRsi ? 1 : 0);
+        entryRows = [
+          { key: "entry_macro_1h", label: "1. Macro 1h Baseline Trend (1h RSI ≥ 35 OR Close ≥ 1h MA24)", value: `1h RSI ${rsi1.toFixed(1)} / MA24 ${hourly?.ma24 ? krw(hourly.ma24) : "--"}`, pass: macroPass, toggleable: true },
+          { key: "entry_micro_stretch", label: "2. Micro Vote A: Volatility Stretch (Z ≤ -1.40σ / BB Low)", value: `Z: ${z.toFixed(2)}σ / BB: ${bbLow ? krw(bbLow) : "--"}`, pass: vStretch, badgeLabel: vStretch ? "VOTE PASS" : "WAIT", toggleable: true },
+          { key: "entry_micro_volume", label: "3. Micro Vote B: Volume Absorption Spike (Vol ≥ 1.30x SMA20)", value: `${volRatio.toFixed(2)}x SMA20 vol`, pass: vVol, badgeLabel: vVol ? "VOTE PASS" : "WAIT", toggleable: true },
+          { key: "entry_micro_rsi", label: "4. Micro Vote C: Momentum Dip (5m RSI ≤ 35 OR %K ≤ 25)", value: `5m RSI ${rsi5.toFixed(1)} / %K ${stochK.toFixed(1)}`, pass: vRsi, badgeLabel: vRsi ? "VOTE PASS" : "WAIT", toggleable: true },
+          { key: "entry_consensus", label: "5. Micro Consensus Gate (≥ 2-of-3 Micro Dip Votes Required)", value: `${votes} / 3 micro votes`, pass: votes >= 2, badgeLabel: votes >= 2 ? "GATE PASS" : "WAIT", toggleable: false },
+          { key: "entry_capacity", label: "6. Dynamic Tranche Capacity & Headroom", value: `${cap.active_tranches ?? 0} / ${maxTranches}`, pass: remaining > 0, liveOnly: true },
+        ];
+        exitRows = [
+          { key: "exit_active", label: "1. Active Speculative Tranche (≥ 1 open)", value: `${stack.length} open`, pass: stack.length > 0, required: true },
+          { key: "exit_net_pnl", label: "2. Net Profit (> 0.00% net)", value: top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "—", pass: top && top.unrealized_return_pct > 0, backtestOnly: true },
+          { key: "exit_rsi_65", label: "3. 5m RSI Extended Exit (5m RSI ≥ 65.0)", value: `5m RSI ${rsi5.toFixed(1)}`, pass: rsi5 >= 65.0, toggleable: true },
+          { key: "exit_bb_upper", label: "4. Upper Bollinger Band Touch (Close ≥ Upper BB)", value: `Close ${krw(close)} / BB Up ${bbUp ? krw(bbUp) : "--"}`, pass: bbUp != null && close >= bbUp, toggleable: true },
+          { key: "exit_bullish_stack", label: "5. Bullish Trend Overlay (Price > MA Stacks)", value: latest?.bullish ? "5m BULLISH" : "WAIT", pass: Boolean(latest?.bullish), toggleable: true },
+          { key: "exit_position", label: "6. Position Sufficiency Check", value: `${openBtc.toFixed(6)} BTC`, pass: true, required: true },
+        ];
+      } else if (mode === "ou_quant") {
+        const isOU = ouZ <= -1.5;
+        const isPrev = pRev >= 0.55;
+        entryRows = [
+          { key: "entry_ou_spread", label: "1. Continuous OU SDE Equilibrium Discount (OU Spread ≤ -1.50σ)", value: `${ouZ.toFixed(2)}σ (OU Mean: ${latest?.ou_mu ? krw(latest.ou_mu) : "--"})`, pass: isOU, toggleable: true },
+          { key: "entry_p_reversion", label: "2. HMM Reversion Regime Probability (P(Reversion) ≥ 55%)", value: `${(pRev * 100).toFixed(1)}% reversion prob`, pass: isPrev, toggleable: true },
+          { key: "entry_capacity", label: "3. Dynamic Tranche Capacity", value: `${cap.active_tranches ?? 0} / ${maxTranches}`, pass: remaining > 0, liveOnly: true },
+          { key: "entry_margin", label: "4. Capital & Headroom Check", value: `${krw(freeCash)} free`, pass: freeCash >= 1900000, liveOnly: true },
+          { key: "entry_engine", label: "5. Worker State & Cooldown", value: "READY", pass: true, liveOnly: true },
+        ];
+        exitRows = [
+          { key: "exit_active", label: "1. Active Speculative Tranche (≥ 1 open)", value: `${stack.length} open`, pass: stack.length > 0, required: true },
+          { key: "exit_net_pnl", label: "2. Net Profit (> 0.00% net)", value: top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "—", pass: top && top.unrealized_return_pct > 0, backtestOnly: true },
+          { key: "exit_ou_mean", label: "3. Continuous OU Equilibrium Target (OU Spread ≥ 0.00σ)", value: `Spread ${ouZ.toFixed(2)}σ`, pass: ouZ >= 0.0, toggleable: true },
+          { key: "exit_bullish_stack", label: "4. Bullish Trend Overlay (Price > MA Stacks)", value: latest?.bullish || hourly?.bullish ? "BULLISH RALLY" : "WAIT", pass: Boolean(latest?.bullish || hourly?.bullish), toggleable: true },
+          { key: "exit_position", label: "5. Position Sufficiency Check", value: `${openBtc.toFixed(6)} BTC`, pass: true, required: true },
+        ];
+      } else {
+        // ma_stack
+        entryRows = [
+          { key: "entry_5m", id: "chkCondEntryMaStack5m", label: "1. 5m Bearish MA Stack (Price < MA7 < MA24 < MA60)", value: latest?.bearish ? "5m BEARISH DIP" : "5m WAITING", pass: Boolean(latest?.bearish), toggleable: true },
+          { key: "entry_1h", id: "chkCondEntryMaStack1h", label: "2. 1h Bearish MA Stack (Price < MA7 < MA24 < MA60)", value: hourly?.bearish ? "1h BEARISH DIP" : "1h WAITING", pass: Boolean(hourly?.bearish), toggleable: true },
+          { key: "entry_capacity", label: "3. Dynamic Tranche Capacity", value: `${cap.active_tranches ?? 0} / ${maxTranches}`, pass: remaining > 0, liveOnly: true },
+          { key: "entry_margin", label: "4. Capital & Headroom Check", value: `${krw(freeCash)} free`, pass: freeCash >= 1900000, liveOnly: true },
+          { key: "entry_engine", label: "5. Worker State & Cooldown", value: "READY", pass: true, liveOnly: true },
+        ];
+        exitRows = [
+          { key: "exit_active", label: "1. Active Speculative Tranche (≥ 1 open)", value: `${stack.length} open`, pass: stack.length > 0, required: true },
+          { key: "exit_net_pnl", label: "2. Net Profit (> 0.00% net)", value: top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "—", pass: top && top.unrealized_return_pct > 0, backtestOnly: true },
+          { key: "exit_5m", id: "chkCondExitMaStack5m", label: "3. 5m Bullish MA Stack (Price > MA7 > MA24 > MA60)", value: latest?.bullish ? "5m BULLISH RALLY" : "5m WAITING", pass: Boolean(latest?.bullish), toggleable: true },
+          { key: "exit_1h", id: "chkCondExitMaStack1h", label: "4. 1h Bullish MA Stack (Price > MA7 > MA24 > MA60)", value: hourly?.bullish ? "1h BULLISH RALLY" : "1h WAITING", pass: Boolean(hourly?.bullish), toggleable: true },
+          { key: "exit_position", label: "5. Position Sufficiency Check", value: `${openBtc.toFixed(6)} BTC`, pass: true, required: true },
+        ];
+      }
+
+      return { entryRows, exitRows };
+    },
+
+    renderConditionsChecklists(latest, hourly) {
+      const data = this.data || {};
+      const cap = data.capacity || {};
+      const stack = Array.isArray(data.active_tranche_stack) ? data.active_tranche_stack : [];
+      const top = stack[0] || null;
+      const mode = this.strategyMode || "ma_stack";
+
+      const { entryRows, exitRows } = this.getConditionDefinitions(mode, latest, hourly, cap, stack, top);
+
+      const renderList = (containerId, rows) => {
+        const container = el(containerId);
+        if (!container) return;
+
+        const previousStates = {};
+        container.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+          const k = input.dataset.key || input.id.replace(/^lab_chk_/, "").replace(/^lab_/, "");
+          previousStates[k] = input.checked;
+        });
+
+        container.innerHTML = rows.map((r) => {
+          const isChecked = previousStates[r.key] !== undefined ? previousStates[r.key] : true;
+          const badgeText = r.badgeLabel || (r.pass ? "PASS" : "WAIT");
+          const badgeClass = r.pass ? "pass" : "wait";
+          const tag = r.liveOnly ? '<span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>' : (r.backtestOnly ? '<span style="font-size: 8px; color: #64748b;" title="Always enforced for backtest orders">BACKTEST ONLY</span>' : (r.required ? '<span style="font-size: 8px; color: #64748b;" title="Always required">REQUIRED</span>' : ''));
+          const disabledAttr = r.toggleable ? "" : "disabled";
+          const inputId = r.id ? `lab_${r.id}` : `lab_chk_${r.key}`;
+
+          return `<div class="condRow ${!r.toggleable ? "disabled-cond" : ""}" id="lab_row_${r.key}">
+            <label class="toggleSwitch" title="Turn condition ON/OFF">
+              <input type="checkbox" id="${inputId}" data-key="${r.key}" ${isChecked ? "checked" : ""} ${disabledAttr}>
+              <span class="toggleSlider"></span>
+            </label>${tag}
+            <span class="condLabel">${r.label}</span>
+            <span class="condValue">${r.value}</span>
+            <span class="condBadge ${badgeClass}">${badgeText}</span>
+          </div>`;
+        }).join("");
+
+        container.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+          if (!input.disabled) {
+            input.addEventListener("change", () => this.run());
+          }
+        });
+      };
+
+      renderList("entryConditionsChecklist", entryRows);
+      renderList("exitConditionsChecklist", exitRows);
+    },
+
     syncConditionBadges(latest, hourly) {
       const data = this.data || {};
       const cap = data.capacity || {};
@@ -264,10 +432,6 @@
       const top = stack[0] || null;
       const mode = this.strategyMode || "ma_stack";
 
-      let entryPass5m = false;
-      let entryPass1h = false;
-      let exitPass5m = false;
-      let exitPass1h = false;
       let armedEntry = false;
       let armedExit = false;
 
@@ -284,68 +448,27 @@
       const close = Number(latest?.close ?? 0);
 
       if (mode === "bollinger_zscore") {
-        entryPass5m = z <= -1.8;
-        entryPass1h = bbLow != null && latest?.low <= bbLow && close > bbLow;
-        armedEntry = entryPass5m || entryPass1h;
-        exitPass5m = bbMid != null && close >= bbMid;
-        exitPass1h = z >= 0.5 || Boolean(latest?.bullish) || Boolean(hourly?.bullish);
-        armedExit = exitPass5m || exitPass1h;
+        armedEntry = z <= -1.8 || (bbLow != null && latest?.low <= bbLow && close > bbLow);
+        armedExit = (bbMid != null && close >= bbMid) || z >= 0.5 || Boolean(latest?.bullish) || Boolean(hourly?.bullish);
       } else if (mode === "rsi_momentum") {
-        entryPass5m = rsi5 < 30.0 && rsi1 < 45.0;
-        entryPass1h = stochK < 20.0 && rsi5 < 35.0;
-        armedEntry = entryPass5m || entryPass1h;
-        exitPass5m = rsi5 >= 60.0;
-        exitPass1h = stochK >= 80.0 || Boolean(latest?.bullish) || Boolean(hourly?.bullish);
-        armedExit = exitPass5m || exitPass1h;
+        armedEntry = (rsi5 < 30.0 && rsi1 < 45.0) || (stochK < 20.0 && rsi5 < 35.0);
+        armedExit = rsi5 >= 60.0 || stochK >= 80.0 || Boolean(latest?.bullish) || Boolean(hourly?.bullish);
       } else if (mode === "multi_factor") {
         const macroPass = rsi1 >= 35.0 || (hourly?.ma24 != null && close >= Number(hourly.ma24));
         const vStretch = z <= -1.4 || (bbLow != null && close <= bbLow * 1.002);
         const vVol = volRatio >= 1.3;
         const vRsi = rsi5 <= 35.0 || stochK <= 25.0;
         const votes = (vStretch ? 1 : 0) + (vVol ? 1 : 0) + (vRsi ? 1 : 0);
-        entryPass5m = macroPass;
-        entryPass1h = votes >= 2;
-        armedEntry = entryPass5m && entryPass1h;
-        exitPass5m = rsi5 >= 65.0;
-        exitPass1h = (bbUp != null && close >= bbUp) || Boolean(latest?.bullish);
-        armedExit = exitPass5m || exitPass1h;
+        armedEntry = macroPass && votes >= 2;
+        armedExit = rsi5 >= 65.0 || (bbUp != null && close >= bbUp) || Boolean(latest?.bullish);
       } else if (mode === "ou_quant") {
-        entryPass5m = ouZ <= -1.5;
-        entryPass1h = pRev >= 0.55;
-        armedEntry = entryPass5m && entryPass1h;
-        exitPass5m = ouZ >= 0.0;
-        exitPass1h = Boolean(latest?.bullish) || Boolean(hourly?.bullish);
-        armedExit = exitPass5m || exitPass1h;
+        armedEntry = ouZ <= -1.5 && pRev >= 0.55;
+        armedExit = ouZ >= 0.0 || Boolean(latest?.bullish) || Boolean(hourly?.bullish);
       } else {
         // ma_stack
-        entryPass5m = Boolean(latest?.bearish);
-        entryPass1h = Boolean(hourly?.bearish);
-        armedEntry = entryPass5m && entryPass1h;
-        exitPass5m = Boolean(latest?.bullish);
-        exitPass1h = Boolean(hourly?.bullish);
-        armedExit = exitPass5m || exitPass1h;
+        armedEntry = Boolean(latest?.bearish && hourly?.bearish);
+        armedExit = Boolean(latest?.bullish || hourly?.bullish);
       }
-
-      const states = [
-        ["badgeCondEntryMaStack5m", entryPass5m],
-        ["badgeCondEntryMaStack1h", entryPass1h],
-        ["badgeCondEntryCapacity", (cap.remaining_tranches ?? 5) > 0],
-        ["badgeCondEntryMargin", (cap.free_cash_krw ?? 10000000) >= (cap.tranche_capital_krw ?? 2000000) * 0.95],
-        ["badgeCondExitActive", stack.length > 0],
-        ["badgeCondExitMaStack5m", exitPass5m],
-        ["badgeCondExitMaStack1h", exitPass1h],
-        ["badgeCondExitNetPnl", top ? top.unrealized_return_pct > 0 : false],
-      ];
-      states.forEach(([id, pass]) => {
-        const badge = el(id);
-        if (!badge) return;
-        badge.textContent = pass ? "PASS" : "WAIT";
-        badge.className = `condBadge ${pass ? "pass" : "wait"}`;
-      });
-      if (el("valCondEntryCapacity")) el("valCondEntryCapacity").textContent = `${cap.active_tranches ?? 0} / ${cap.max_tranches ?? 5}`;
-      if (el("valCondEntryMargin")) el("valCondEntryMargin").textContent = `${krw(cap.free_cash_krw ?? 10000000)} free`;
-      if (el("valCondExitActive")) el("valCondExitActive").textContent = `${stack.length} open`;
-      if (el("valCondExitNetPnl")) el("valCondExitNetPnl").textContent = top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}%` : "—";
 
       el("badgeCriteriaScaleIn").textContent = armedEntry ? "ENTRY ARMED (DIP)" : "AWAITING DIP CONDITIONS";
       el("badgeCriteriaTP").textContent = armedExit ? "EXIT ARMED (RALLY)" : (stack.length ? "HOLDING TRANCHES" : "AWAITING EXIT CRITERIA");
@@ -482,6 +605,9 @@
       if (grossHeadroom) grossHeadroom.textContent = `${krw(cap.free_cash_krw ?? 10000000)} free`;
       const retainedCore = el("valCritRetainedCore");
       if (retainedCore) retainedCore.textContent = `${(cap.open_quantity_btc || 0).toFixed(6)} BTC open`;
+
+      // Dynamically re-render full condition checklist sections for selected strategy
+      this.renderConditionsChecklists(latest, hourly);
 
       // LIFO Tranche Stack Render
       const stackCount = el("valCritStackCount");

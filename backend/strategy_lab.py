@@ -248,11 +248,7 @@ def evaluate_strategy_signals(
     strategy_mode: str,
     bar: Dict[str, Any],
     hourly: Dict[str, Any],
-    *,
-    entry_5m: bool = True,
-    entry_1h: bool = True,
-    exit_5m: bool = True,
-    exit_1h: bool = True,
+    **options: Any,
 ) -> tuple[bool, bool, str]:
     """Evaluate entry and exit conditions causally for the given strategy mode."""
     close = float(bar["close"])
@@ -271,46 +267,121 @@ def evaluate_strategy_signals(
 
     if strategy_mode == "bollinger_zscore":
         # Framework 1: Statistical Mean-Reversion & Volatility Bands
+        use_z = options.get("entry_zscore", options.get("entry_z_extreme", True))
+        use_bb = options.get("entry_bb_pierce", options.get("entry_bb_lower", True))
+        use_atr = options.get("entry_atr_filter", True)
+
         is_bb_pierce = (bb_lower is not None) and (float(bar.get("low", close)) <= bb_lower) and (close > bb_lower)
         is_z_extreme = z_score <= -1.8
-        has_volatility = candle_range >= (0.6 * atr) if atr > 0 else True
-        should_enter = (is_z_extreme or is_bb_pierce) and has_volatility
+        has_volatility = (candle_range >= (0.6 * atr)) if (use_atr and atr > 0) else True
 
-        should_exit = (bb_mid is not None and close >= bb_mid) or z_score >= 0.5 or bool(bar.get("bullish")) or bool(hourly.get("bullish"))
+        entry_candidates = []
+        if use_z and is_z_extreme:
+            entry_candidates.append(True)
+        if use_bb and is_bb_pierce:
+            entry_candidates.append(True)
+        should_enter = bool(entry_candidates) and has_volatility
+
+        use_exit_mid = options.get("exit_bb_middle", True)
+        use_exit_z = options.get("exit_z_extreme", options.get("exit_z_score", True))
+        use_exit_stack = options.get("exit_bullish_stack", True)
+
+        exit_candidates = []
+        if use_exit_mid and bb_mid is not None and close >= bb_mid:
+            exit_candidates.append(True)
+        if use_exit_z and z_score >= 0.5:
+            exit_candidates.append(True)
+        if use_exit_stack and (bool(bar.get("bullish")) or bool(hourly.get("bullish"))):
+            exit_candidates.append(True)
+        should_exit = bool(exit_candidates)
         reason = "Z-Score <= -1.8 / Lower BB Pierce" if should_enter else ("BB Mean / Upper Reversion" if should_exit else "")
 
     elif strategy_mode == "rsi_momentum":
         # Framework 2: Momentum Deceleration & Exhaustion
+        use_rsi_dual = options.get("entry_rsi_dual", options.get("entry_5m", True))
+        use_stoch_hook = options.get("entry_stoch_hook", True)
+
         is_rsi_oversold = (rsi_5m < 30.0) and (rsi_1h < 45.0)
         is_stoch_hook = (stoch_k < 20.0) and (rsi_5m < 35.0)
-        should_enter = is_rsi_oversold or is_stoch_hook
 
-        should_exit = (rsi_5m >= 60.0) or (stoch_k >= 80.0) or bool(bar.get("bullish")) or bool(hourly.get("bullish"))
+        entry_candidates = []
+        if use_rsi_dual and is_rsi_oversold:
+            entry_candidates.append(True)
+        if use_stoch_hook and is_stoch_hook:
+            entry_candidates.append(True)
+        should_enter = bool(entry_candidates)
+
+        use_exit_rsi = options.get("exit_rsi_5m", True)
+        use_exit_stoch = options.get("exit_stoch_k", True)
+        use_exit_stack = options.get("exit_bullish_stack", True)
+
+        exit_candidates = []
+        if use_exit_rsi and rsi_5m >= 60.0:
+            exit_candidates.append(True)
+        if use_exit_stoch and stoch_k >= 80.0:
+            exit_candidates.append(True)
+        if use_exit_stack and (bool(bar.get("bullish")) or bool(hourly.get("bullish"))):
+            exit_candidates.append(True)
+        should_exit = bool(exit_candidates)
         reason = "5m/1h RSI Oversold (<30/45)" if should_enter else ("RSI Overbought (>60)" if should_exit else "")
 
     elif strategy_mode == "multi_factor":
         # Framework 3: Multi-Factor Voting Gate (Macro + 2-of-3 Micro)
-        macro_pass = (rsi_1h >= 35.0) or (hourly.get("ma24") is not None and close >= float(hourly["ma24"]))
-        vote_stretch = z_score <= -1.4 or (bb_lower is not None and close <= bb_lower * 1.002)
-        vote_vol = vol_ratio >= 1.3
-        vote_rsi = rsi_5m <= 35.0 or stoch_k <= 25.0
+        use_macro = options.get("entry_macro_1h", True)
+        macro_pass = ((rsi_1h >= 35.0) or (hourly.get("ma24") is not None and close >= float(hourly["ma24"]))) if use_macro else True
+
+        use_v_stretch = options.get("entry_micro_stretch", True)
+        use_v_vol = options.get("entry_micro_volume", True)
+        use_v_rsi = options.get("entry_micro_rsi", True)
+
+        vote_stretch = (z_score <= -1.4 or (bb_lower is not None and close <= bb_lower * 1.002)) if use_v_stretch else False
+        vote_vol = (vol_ratio >= 1.3) if use_v_vol else False
+        vote_rsi = (rsi_5m <= 35.0 or stoch_k <= 25.0) if use_v_rsi else False
         micro_votes = sum([vote_stretch, vote_vol, vote_rsi])
 
         should_enter = macro_pass and (micro_votes >= 2)
-        should_exit = (rsi_5m >= 65.0) or (bb_upper is not None and close >= bb_upper) or bool(bar.get("bullish"))
+
+        use_exit_rsi = options.get("exit_rsi_65", True)
+        use_exit_bb = options.get("exit_bb_upper", True)
+        use_exit_stack = options.get("exit_bullish_stack", True)
+
+        exit_candidates = []
+        if use_exit_rsi and rsi_5m >= 65.0:
+            exit_candidates.append(True)
+        if use_exit_bb and bb_upper is not None and close >= bb_upper:
+            exit_candidates.append(True)
+        if use_exit_stack and bool(bar.get("bullish")):
+            exit_candidates.append(True)
+        should_exit = bool(exit_candidates)
         reason = f"Voting Gate PASS ({micro_votes}/3 votes)" if should_enter else ("Multi-Factor Exit" if should_exit else "")
 
     elif strategy_mode == "ou_quant":
         # Framework 4: Quantitative Ornstein-Uhlenbeck SDE
-        is_ou_discount = ou_z <= -1.5
-        is_rev_regime = p_rev >= 0.55
+        use_ou = options.get("entry_ou_spread", True)
+        use_prev = options.get("entry_p_reversion", True)
+
+        is_ou_discount = (ou_z <= -1.5) if use_ou else True
+        is_rev_regime = (p_rev >= 0.55) if use_prev else True
         should_enter = is_ou_discount and is_rev_regime
 
-        should_exit = ou_z >= 0.0 or bool(bar.get("bullish")) or bool(hourly.get("bullish"))
+        use_exit_mean = options.get("exit_ou_mean", True)
+        use_exit_stack = options.get("exit_bullish_stack", True)
+
+        exit_candidates = []
+        if use_exit_mean and ou_z >= 0.0:
+            exit_candidates.append(True)
+        if use_exit_stack and (bool(bar.get("bullish")) or bool(hourly.get("bullish"))):
+            exit_candidates.append(True)
+        should_exit = bool(exit_candidates)
         reason = f"OU Discount ({ou_z:.2f}σ, P_rev {p_rev:.2f})" if should_enter else ("OU Mean Target" if should_exit else "")
 
     else:
         # Framework 5: Dual MA Stack (or Custom Checkboxes)
+        entry_5m = options.get("entry_5m", options.get("entry_ma_stack_5m", True))
+        entry_1h = options.get("entry_1h", options.get("entry_ma_stack_1h", True))
+        exit_5m = options.get("exit_5m", options.get("exit_ma_stack_5m", True))
+        exit_1h = options.get("exit_1h", options.get("exit_ma_stack_1h", True))
+
         enabled_entries = []
         if entry_5m:
             enabled_entries.append(bool(bar.get("bearish")))
@@ -337,10 +408,7 @@ def run_ma_stack_backtest(
     fee_bps: float = 5.0,
     initial_capital_krw: float = 10_000_000.0,
     max_tranches: int = 5,
-    entry_5m: bool = True,
-    entry_1h: bool = True,
-    exit_5m: bool = True,
-    exit_1h: bool = True,
+    **options: Any,
 ) -> Dict[str, Any]:
     """Backtest quantitative strategy framework with multi-tranche LIFO queue.
 
@@ -395,8 +463,7 @@ def run_ma_stack_backtest(
 
         should_enter, should_exit, reason = evaluate_strategy_signals(
             mode, bar, hourly,
-            entry_5m=entry_5m, entry_1h=entry_1h,
-            exit_5m=exit_5m, exit_1h=exit_1h,
+            **options,
         )
 
         if should_exit and tranche_stack:

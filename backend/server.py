@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
-from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from collections import OrderedDict
 from .dynamic_backtest import replay, replay_markers
@@ -297,14 +297,11 @@ async def get_upbit_account() -> Dict[str, Any]:
 
 @app.get("/api/strategy-lab/upbit-ma-stack")
 async def get_upbit_ma_stack_backtest(
+    request: Request,
     strategy_mode: str = Query("ma_stack"),
     days: int = Query(7, ge=3, le=14),
     fee_bps: float = Query(5.0, ge=0.0, le=100.0),
     max_tranches: int = Query(5, ge=1, le=20),
-    entry_5m: bool = True,
-    entry_1h: bool = True,
-    exit_5m: bool = True,
-    exit_1h: bool = True,
 ) -> Dict[str, Any]:
     """Read-only BTC/KRW quantitative strategy research backtest."""
     try:
@@ -312,12 +309,18 @@ async def get_upbit_ma_stack_backtest(
         count_1h = max(days * 24 + 62, 200)
         candles_5m = await upbit_client.get_minute_candles("KRW-BTC", 5, count_5m)
         candles_1h = await upbit_client.get_minute_candles("KRW-BTC", 60, count_1h)
+
+        options: Dict[str, Any] = {}
+        for k, v in request.query_params.items():
+            if k in ("strategy_mode", "days", "fee_bps", "max_tranches"):
+                continue
+            options[k] = v.lower() in ("true", "1", "yes") if isinstance(v, str) else bool(v)
+
         result = run_ma_stack_backtest(
             candles_5m, candles_1h,
             strategy_mode=strategy_mode,
             fee_bps=fee_bps, max_tranches=max_tranches,
-            entry_5m=entry_5m, entry_1h=entry_1h,
-            exit_5m=exit_5m, exit_1h=exit_1h,
+            **options,
         )
         result["market"] = "KRW-BTC"
         result["days"] = days
