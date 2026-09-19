@@ -1841,7 +1841,8 @@ async def set_strategy_lab_bot_strategy(request: Request) -> Dict[str, Any]:
         body = await request.json()
         strategy = body.get("strategy", "multi_factor")
         options = body.get("options")
-        status = await strategy_execution_engine.set_strategy(strategy, options)
+        enable = body.get("enable")
+        status = await strategy_execution_engine.set_strategy(strategy, options, enable=enable)
         return {"success": True, "status": status}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -1867,7 +1868,8 @@ async def set_strategy_lab_mode(request: Request) -> Dict[str, Any]:
     try:
         body = await request.json()
         mode = body.get("mode", "paper")
-        status = await strategy_execution_engine.set_mode(mode)
+        enable = body.get("enable")
+        status = await strategy_execution_engine.set_mode(mode, enable=enable)
         return {"success": True, "status": status}
     except Exception as e:
         return {"success": False, "error": str(e)}

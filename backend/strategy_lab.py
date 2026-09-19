@@ -757,21 +757,25 @@ class UpbitStrategyExecutionEngine:
             },
         }
 
-    async def set_strategy(self, strategy: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def set_strategy(self, strategy: str, options: Optional[Dict[str, Any]] = None, enable: Optional[bool] = None) -> Dict[str, Any]:
         async with self.lock:
             state = self.load_state()
             if strategy in STRATEGY_PRESETS:
                 state["active_strategy"] = strategy
             if options is not None:
                 state["strategy_options"] = options
+            if enable is not None:
+                state["enabled"] = bool(enable)
             self.save_state(state)
             return self.get_status()
 
-    async def set_mode(self, mode: str) -> Dict[str, Any]:
+    async def set_mode(self, mode: str, enable: Optional[bool] = None) -> Dict[str, Any]:
         async with self.lock:
             state = self.load_state()
             if mode in ("paper", "live"):
                 state["mode"] = mode
+            if enable is not None:
+                state["enabled"] = bool(enable)
             self.save_state(state)
             return self.get_status()
 

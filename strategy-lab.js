@@ -805,7 +805,7 @@
 
     async fetchBotStatus() {
       try {
-        const res = await fetch("/api/strategy-lab/bot-status?market=KRW-BTC");
+        const res = await fetch("api/strategy-lab/bot-status?market=KRW-BTC");
         if (!res.ok) return;
         const json = await res.json();
         if (json && json.success && json.status) {
@@ -817,13 +817,15 @@
       }
     },
 
-    async bindActiveStrategyToBot() {
+    async bindActiveStrategyToBot(autoStart = null) {
       try {
         const opts = this.conditions();
-        const res = await fetch("/api/strategy-lab/set-bot-strategy", {
+        const payload = { strategy: this.strategyMode, options: opts };
+        if (autoStart !== null) payload.enable = Boolean(autoStart);
+        const res = await fetch("api/strategy-lab/set-bot-strategy", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ strategy: this.strategyMode, options: opts }),
+          body: JSON.stringify(payload),
         });
         const json = await res.json();
         if (json && json.success && json.status) {
@@ -836,20 +838,19 @@
     },
 
     async setBotMode(mode) {
-      if (mode === "live") {
-        const ok = window.confirm("⚠️ Enable REAL Upbit Spot Orders?\n\nThis will send real buy/sell orders to Upbit for KRW-BTC spot trading using configured tranche size.");
-        if (!ok) return;
-      }
       try {
-        const res = await fetch("/api/strategy-lab/set-mode", {
+        // When clicking Live or Paper, switch mode, auto-bind current strategy, and activate immediately
+        const opts = this.conditions();
+        const res = await fetch("api/strategy-lab/set-mode", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode }),
+          body: JSON.stringify({ mode, enable: true }),
         });
         const json = await res.json();
         if (json && json.success && json.status) {
           this.botState = json.status;
-          this.renderBotUI();
+          // Also bind current strategy tab
+          await this.bindActiveStrategyToBot(true);
         }
       } catch (err) {
         console.error("[StrategyLab] Error setting bot mode:", err);
@@ -858,7 +859,7 @@
 
     async toggleBotPower() {
       try {
-        const res = await fetch("/api/strategy-lab/toggle-bot", {
+        const res = await fetch("api/strategy-lab/toggle-bot", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
@@ -878,7 +879,7 @@
       const trancheSize = input ? Number(input.value) : 2000000;
       if (trancheSize >= 5000) {
         try {
-          const res = await fetch("/api/strategy-lab/set-sizing", {
+          const res = await fetch("api/strategy-lab/set-sizing", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ tranche_size_krw: trancheSize }),
@@ -898,7 +899,7 @@
       const ok = window.confirm("🚨 EMERGENCY FLATTEN ALL:\n\nImmediately pause the bot and market sell ALL open bot tranches back to 100% KRW cash?");
       if (!ok) return;
       try {
-        const res = await fetch("/api/strategy-lab/emergency-flatten", {
+        const res = await fetch("api/strategy-lab/emergency-flatten", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });
@@ -918,28 +919,63 @@
 
       const lblStrategy = el("lblLiveBotStrategy");
       if (lblStrategy) {
-        const name = s.strategy_name || s.active_strategy;
-        lblStrategy.textContent = name;
+        const stratName = s.strategy_name || s.active_strategy;
+        if (s.enabled && s.mode === "live") {
+          lblStrategy.innerHTML = `<span style="color:#b91c1c; font-weight:800; display:inline-flex; align-items:center; gap:5px;"><span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#ef4444;"></span> REAL UPBIT: ${stratName}</span>`;
+          lblStrategy.style.background = "#fee2e2";
+          lblStrategy.style.borderColor = "#f87171";
+        } else if (s.enabled && s.mode === "paper") {
+          lblStrategy.innerHTML = `<span style="color:#1d4ed8; font-weight:800; display:inline-flex; align-items:center; gap:5px;"><span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#3b82f6;"></span> PAPER: ${stratName}</span>`;
+          lblStrategy.style.background = "#eff6ff";
+          lblStrategy.style.borderColor = "#93c5fd";
+        } else {
+          lblStrategy.innerHTML = `<span style="color:#64748b; font-weight:700;">${stratName} <small style="color:#94a3b8;">(PAUSED)</small></span>`;
+          lblStrategy.style.background = "#f8fafc";
+          lblStrategy.style.borderColor = "#e2e8f0";
+        }
       }
 
       const btnPaper = el("btnModePaper");
       const btnLive = el("btnModeLive");
       if (btnPaper && btnLive) {
-        btnPaper.classList.toggle("active", s.mode === "paper");
-        btnLive.classList.toggle("active", s.mode === "live");
+        if (s.mode === "live") {
+          btnLive.classList.add("active");
+          btnLive.style.background = "#dc2626";
+          btnLive.style.color = "#ffffff";
+          btnLive.style.fontWeight = "800";
+          btnLive.textContent = s.enabled ? "🔴 Real Live (ACTIVE)" : "🔴 Real Upbit Live";
+
+          btnPaper.classList.remove("active");
+          btnPaper.style.background = "#ffffff";
+          btnPaper.style.color = "#475569";
+          btnPaper.style.fontWeight = "700";
+          btnPaper.textContent = "🧪 Paper Trading";
+        } else {
+          btnPaper.classList.add("active");
+          btnPaper.style.background = "#0284c7";
+          btnPaper.style.color = "#ffffff";
+          btnPaper.style.fontWeight = "800";
+          btnPaper.textContent = s.enabled ? "🧪 Paper (ACTIVE)" : "🧪 Paper Trading";
+
+          btnLive.classList.remove("active");
+          btnLive.style.background = "#ffffff";
+          btnLive.style.color = "#dc2626";
+          btnLive.style.fontWeight = "700";
+          btnLive.textContent = "🔴 Real Upbit Live";
+        }
       }
 
       const btnPower = el("btnToggleBotPower");
       if (btnPower) {
         if (s.enabled) {
-          btnPower.textContent = "⏸️ Pause Bot";
-          btnPower.style.background = "#d97706";
-          btnPower.style.borderColor = "#b45309";
+          btnPower.textContent = s.mode === "live" ? "⏸️ Pause Real Bot" : "⏸️ Pause Paper Bot";
+          btnPower.style.background = s.mode === "live" ? "#b91c1c" : "#d97706";
+          btnPower.style.borderColor = s.mode === "live" ? "#991b1b" : "#b45309";
           btnPower.style.color = "#ffffff";
         } else {
-          btnPower.textContent = "▶️ Start Bot";
-          btnPower.style.background = "#16a34a";
-          btnPower.style.borderColor = "#15803d";
+          btnPower.textContent = s.mode === "live" ? "▶️ Start Real Trading" : "▶️ Start Paper Trading";
+          btnPower.style.background = s.mode === "live" ? "#dc2626" : "#16a34a";
+          btnPower.style.borderColor = s.mode === "live" ? "#b91c1c" : "#15803d";
           btnPower.style.color = "#ffffff";
         }
       }
