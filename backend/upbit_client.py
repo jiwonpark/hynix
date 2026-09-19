@@ -253,8 +253,7 @@ class UpbitClient:
             oldest_utc = str(oldest_row.get("candle_date_time_utc", ""))
             if oldest_utc:
                 oldest_open = int(datetime.fromisoformat(oldest_utc).replace(tzinfo=timezone.utc).timestamp())
-                oldest_close = oldest_open + interval_seconds
-                earlier_cached = [t for t in cached if t <= oldest_close]
+                earlier_cached = [t for t in cached if t <= oldest_open]
                 if len(earlier_cached) >= remaining:
                     break
 
@@ -266,9 +265,8 @@ class UpbitClient:
         for row in raw_rows:
             candle_utc = str(row.get("candle_date_time_utc", ""))
             open_time = int(datetime.fromisoformat(candle_utc).replace(tzinfo=timezone.utc).timestamp())
-            close_time = open_time + interval_seconds
-            cached[close_time] = {
-                "time": close_time,
+            cached[open_time] = {
+                "time": open_time,
                 "open": float(row["opening_price"]),
                 "high": float(row["high_price"]),
                 "low": float(row["low_price"]),

@@ -123,7 +123,13 @@
             const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
             const d = new Date(t);
             if (isNaN(d.getTime())) return "";
-            if (tickMarkType <= 2) {
+            if (tickMarkType === 0) {
+              return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric" }).format(d);
+            }
+            if (tickMarkType === 1) {
+              return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "short" }).format(d);
+            }
+            if (tickMarkType === 2) {
               return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(d);
             }
             return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
