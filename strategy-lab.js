@@ -20,6 +20,8 @@
     selectedMarkerTime: null,
     hoveredMarkerTime: null,
     syncingMarkerState: false,
+    botState: null,
+    botPollInterval: null,
 
     bindForkedSection() {
       if (this.forked) return;
@@ -57,7 +59,17 @@
       el("btnShortInterval5m").addEventListener("click", () => this.setChartInterval("5m"));
       el("btnShortInterval1h").addEventListener("click", () => this.setChartInterval("1h"));
 
+      // Live Bot Controls
+      el("btnBindStrategy")?.addEventListener("click", () => this.bindActiveStrategyToBot());
+      el("btnModePaper")?.addEventListener("click", () => this.setBotMode("paper"));
+      el("btnModeLive")?.addEventListener("click", () => this.setBotMode("live"));
+      el("btnToggleBotPower")?.addEventListener("click", () => this.toggleBotPower());
+      el("btnEmergencyFlatten")?.addEventListener("click", () => this.emergencyFlatten());
+      el("inpBotTrancheSize")?.addEventListener("change", () => this.updateBotSizing());
+
       this.renderConditionsChecklists(null, null);
+      this.startBotPolling();
+
       document.getElementById("strategyLabDays").addEventListener("change", () => this.run());
       document.getElementById("strategyLabTranches")?.addEventListener("change", () => this.run());
     },
@@ -769,6 +781,181 @@
       const host = el("shortTermSpreadChartHost");
       if (this.chart && host?.clientWidth) this.chart.applyOptions({ width: host.clientWidth });
       if (!this.loaded) this.run();
+      this.fetchBotStatus();
+      this.startBotPolling();
+    },
+
+    startBotPolling() {
+      if (this.botPollInterval) return;
+      this.fetchBotStatus();
+      this.botPollInterval = setInterval(() => {
+        const sec = document.getElementById("tab-content-strategylab");
+        if (sec && sec.style.display !== "none") {
+          this.fetchBotStatus();
+        }
+      }, 3500);
+    },
+
+    stopBotPolling() {
+      if (this.botPollInterval) {
+        clearInterval(this.botPollInterval);
+        this.botPollInterval = null;
+      }
+    },
+
+    async fetchBotStatus() {
+      try {
+        const res = await fetch("/api/strategy-lab/bot-status?market=KRW-BTC");
+        if (!res.ok) return;
+        const json = await res.json();
+        if (json && json.success && json.status) {
+          this.botState = json.status;
+          this.renderBotUI();
+        }
+      } catch (err) {
+        // silent fail on network hiccups
+      }
+    },
+
+    async bindActiveStrategyToBot() {
+      try {
+        const opts = this.conditions();
+        const res = await fetch("/api/strategy-lab/set-bot-strategy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ strategy: this.strategyMode, options: opts }),
+        });
+        const json = await res.json();
+        if (json && json.success && json.status) {
+          this.botState = json.status;
+          this.renderBotUI();
+        }
+      } catch (err) {
+        console.error("[StrategyLab] Error binding strategy to bot:", err);
+      }
+    },
+
+    async setBotMode(mode) {
+      if (mode === "live") {
+        const ok = window.confirm("⚠️ Enable REAL Upbit Spot Orders?\n\nThis will send real buy/sell orders to Upbit for KRW-BTC spot trading using configured tranche size.");
+        if (!ok) return;
+      }
+      try {
+        const res = await fetch("/api/strategy-lab/set-mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        });
+        const json = await res.json();
+        if (json && json.success && json.status) {
+          this.botState = json.status;
+          this.renderBotUI();
+        }
+      } catch (err) {
+        console.error("[StrategyLab] Error setting bot mode:", err);
+      }
+    },
+
+    async toggleBotPower() {
+      try {
+        const res = await fetch("/api/strategy-lab/toggle-bot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        const json = await res.json();
+        if (json && json.success && json.status) {
+          this.botState = json.status;
+          this.renderBotUI();
+        }
+      } catch (err) {
+        console.error("[StrategyLab] Error toggling bot power:", err);
+      }
+    },
+
+    async updateBotSizing() {
+      const input = el("inpBotTrancheSize");
+      const trancheSize = input ? Number(input.value) : 2000000;
+      if (trancheSize >= 5000) {
+        try {
+          const res = await fetch("/api/strategy-lab/set-sizing", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tranche_size_krw: trancheSize }),
+          });
+          const json = await res.json();
+          if (json && json.success && json.status) {
+            this.botState = json.status;
+            this.renderBotUI();
+          }
+        } catch (err) {
+          console.error("[StrategyLab] Error setting sizing:", err);
+        }
+      }
+    },
+
+    async emergencyFlatten() {
+      const ok = window.confirm("🚨 EMERGENCY FLATTEN ALL:\n\nImmediately pause the bot and market sell ALL open bot tranches back to 100% KRW cash?");
+      if (!ok) return;
+      try {
+        const res = await fetch("/api/strategy-lab/emergency-flatten", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        const json = await res.json();
+        if (json && json.success && json.status) {
+          this.botState = json.status;
+          this.renderBotUI();
+        }
+      } catch (err) {
+        console.error("[StrategyLab] Error flattening bot tranches:", err);
+      }
+    },
+
+    renderBotUI() {
+      const s = this.botState;
+      if (!s) return;
+
+      const lblStrategy = el("lblLiveBotStrategy");
+      if (lblStrategy) {
+        const name = s.strategy_name || s.active_strategy;
+        lblStrategy.textContent = name;
+      }
+
+      const btnPaper = el("btnModePaper");
+      const btnLive = el("btnModeLive");
+      if (btnPaper && btnLive) {
+        btnPaper.classList.toggle("active", s.mode === "paper");
+        btnLive.classList.toggle("active", s.mode === "live");
+      }
+
+      const btnPower = el("btnToggleBotPower");
+      if (btnPower) {
+        if (s.enabled) {
+          btnPower.textContent = "⏸️ Pause Bot";
+          btnPower.style.background = "#d97706";
+          btnPower.style.borderColor = "#b45309";
+          btnPower.style.color = "#ffffff";
+        } else {
+          btnPower.textContent = "▶️ Start Bot";
+          btnPower.style.background = "#16a34a";
+          btnPower.style.borderColor = "#15803d";
+          btnPower.style.color = "#ffffff";
+        }
+      }
+
+      const inpSize = el("inpBotTrancheSize");
+      if (inpSize && document.activeElement !== inpSize) {
+        inpSize.value = s.tranche_size_krw || 2000000;
+      }
+
+      if (s.active_tranches && s.active_tranches.length > 0) {
+        const stackCount = el("valCritStackCount");
+        if (stackCount) {
+          const modeTag = s.mode === "live" ? "REAL UPBIT" : "PAPER";
+          stackCount.innerHTML = `<span style="color:#0284c7; font-weight:700;">${s.active_tranches.length} ${modeTag} ACTIVE</span>`;
+        }
+      }
     },
   };
 

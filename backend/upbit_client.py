@@ -79,13 +79,18 @@ class UpbitClient:
             headers["Authorization"] = f"Bearer {jwt_token}"
 
         url = f"{self.base_url}{endpoint}"
-        if params and method.upper() == "GET":
-            url = f"{url}?{urllib.parse.urlencode(params, doseq=True)}"
+        req_kwargs: Dict[str, Any] = {"headers": headers}
+        if params:
+            if method.upper() == "GET":
+                url = f"{url}?{urllib.parse.urlencode(params, doseq=True)}"
+            else:
+                headers["Content-Type"] = "application/json"
+                req_kwargs["json"] = params
 
         for attempt in range(max_retries + 1):
             await self._throttle(min_interval=0.15)
             try:
-                async with session.request(method, url, headers=headers) as resp:
+                async with session.request(method, url, **req_kwargs) as resp:
                     if resp.status == 429:
                         if attempt < max_retries:
                             backoff = (0.6 * (2 ** attempt)) + (0.1 * (attempt + 1))
@@ -131,6 +136,67 @@ class UpbitClient:
             return isinstance(res, list) and len(res) > 0
         except Exception:
             return False
+
+    async def create_order(
+        self,
+        market: str,
+        side: str,
+        volume: Optional[str] = None,
+        price: Optional[str] = None,
+        ord_type: str = "limit",
+        identifier: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Submit a new order to Upbit.
+        - side: 'bid' (buy) or 'ask' (sell)
+        - ord_type: 'limit' (지정가), 'price' (시장가 매수 - price required), 'market' (시장가 매도 - volume required)
+        """
+        params: Dict[str, Any] = {
+            "market": market,
+            "side": side.lower(),
+            "ord_type": ord_type.lower()
+        }
+        if volume is not None:
+            params["volume"] = str(volume)
+        if price is not None:
+            params["price"] = str(price)
+        if identifier is not None:
+            params["identifier"] = str(identifier)
+        return await self.request("POST", "/v1/orders", params=params, signed=True)
+
+    async def get_order(
+        self,
+        uuid: Optional[str] = None,
+        identifier: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Query individual order detail and execution state."""
+        params: Dict[str, Any] = {}
+        if uuid:
+            params["uuid"] = uuid
+        if identifier:
+            params["identifier"] = identifier
+        if not params:
+            raise ValueError("Either uuid or identifier must be provided to get_order")
+        return await self.request("GET", "/v1/order", params=params, signed=True)
+
+    async def cancel_order(
+        self,
+        uuid: Optional[str] = None,
+        identifier: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Cancel an active open order."""
+        params: Dict[str, Any] = {}
+        if uuid:
+            params["uuid"] = uuid
+        if identifier:
+            params["identifier"] = identifier
+        if not params:
+            raise ValueError("Either uuid or identifier must be provided to cancel_order")
+        return await self.request("DELETE", "/v1/order", params=params, signed=True)
+
+    async def get_orders_chance(self, market: str) -> Dict[str, Any]:
+        """Query market order constraints, commission fee rates, and minimum order values."""
+        return await self.request("GET", "/v1/orders_chance", params={"market": market}, signed=True)
 
     async def get_raw_accounts(self) -> List[Dict[str, Any]]:
         """Fetch raw account balances from /v1/accounts."""

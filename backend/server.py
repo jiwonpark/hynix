@@ -34,7 +34,7 @@ from .counterfactual_trades import (
 from .config import config
 from .binance_client import BinanceFuturesClient
 from .upbit_client import UpbitClient
-from .strategy_lab import run_ma_stack_backtest
+from .strategy_lab import run_ma_stack_backtest, strategy_execution_engine
 
 STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
 scale_in_lock = asyncio.Lock()
@@ -138,9 +138,11 @@ async def lifespan(app: FastAPI):
 
     broadcaster_task = asyncio.create_task(account_broadcaster())
     auto_tranche_task = asyncio.create_task(auto_tranche_worker())
+    upbit_strategy_task = asyncio.create_task(upbit_strategy_worker())
     yield
     broadcaster_task.cancel()
     auto_tranche_task.cancel()
+    upbit_strategy_task.cancel()
     await asyncio.gather(binance_client.close(), upbit_client.close(), return_exceptions=True)
     logger.info("HYPERION Trading Daemon shutdown complete.")
 
@@ -1790,6 +1792,119 @@ async def auto_tranche_worker():
         except Exception as e:
             logger.exception(f"Error in auto_tranche_worker: {e}")
         await asyncio.sleep(3)
+
+
+async def upbit_strategy_worker():
+    """
+    Background daemon for Strategy Lab automated spot trading.
+    Periodically checks 5m and 1h candles, monitors strategy triggers,
+    and executes entry/exit tranche orders (paper or live).
+    """
+    logger.info("Starting Upbit Strategy Lab Execution Worker...")
+    while True:
+        try:
+            state = strategy_execution_engine.load_state()
+            if state.get("enabled"):
+                market = state.get("market", "KRW-BTC")
+                five_m_candles, one_h_candles = await asyncio.gather(
+                    upbit_client.get_minute_candles(market, 5, 200),
+                    upbit_client.get_minute_candles(market, 60, 200),
+                    return_exceptions=True
+                )
+                if isinstance(five_m_candles, list) and isinstance(one_h_candles, list) and len(five_m_candles) >= 60:
+                    await strategy_execution_engine.execute_step(
+                        upbit_client=upbit_client,
+                        five_m_candles=five_m_candles,
+                        one_h_candles=one_h_candles
+                    )
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.exception(f"Error in upbit_strategy_worker: {e}")
+        await asyncio.sleep(4)
+
+
+@app.get("/api/strategy-lab/bot-status")
+async def get_strategy_lab_bot_status(market: str = "KRW-BTC") -> Dict[str, Any]:
+    try:
+        tickers = await upbit_client.get_tickers([market])
+        cur_price = float(tickers[0].get("trade_price", 0.0)) if tickers else 0.0
+        status = strategy_execution_engine.get_status(current_price=cur_price)
+        return {"success": True, "status": status}
+    except Exception as e:
+        return {"success": False, "error": str(e), "status": strategy_execution_engine.get_status()}
+
+
+@app.post("/api/strategy-lab/set-bot-strategy")
+async def set_strategy_lab_bot_strategy(request: Request) -> Dict[str, Any]:
+    try:
+        body = await request.json()
+        strategy = body.get("strategy", "multi_factor")
+        options = body.get("options")
+        status = await strategy_execution_engine.set_strategy(strategy, options)
+        return {"success": True, "status": status}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/strategy-lab/toggle-bot")
+async def toggle_strategy_lab_bot(request: Request) -> Dict[str, Any]:
+    try:
+        body = {}
+        try:
+            body = await request.json()
+        except Exception:
+            pass
+        enabled = body.get("enabled")
+        status = await strategy_execution_engine.toggle_enabled(enabled)
+        return {"success": True, "status": status}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/strategy-lab/set-mode")
+async def set_strategy_lab_mode(request: Request) -> Dict[str, Any]:
+    try:
+        body = await request.json()
+        mode = body.get("mode", "paper")
+        status = await strategy_execution_engine.set_mode(mode)
+        return {"success": True, "status": status}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/strategy-lab/set-sizing")
+async def set_strategy_lab_sizing(request: Request) -> Dict[str, Any]:
+    try:
+        body = await request.json()
+        tranche_size = body.get("tranche_size_krw")
+        max_tranches = body.get("max_tranches")
+        min_profit = body.get("min_profit_pct")
+        status = await strategy_execution_engine.set_sizing(tranche_size, max_tranches, min_profit)
+        return {"success": True, "status": status}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/strategy-lab/clear-history")
+async def clear_strategy_lab_history() -> Dict[str, Any]:
+    try:
+        status = await strategy_execution_engine.clear_history()
+        return {"success": True, "status": status}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/strategy-lab/emergency-flatten")
+async def emergency_flatten_strategy_lab(market: str = "KRW-BTC") -> Dict[str, Any]:
+    try:
+        tickers = await upbit_client.get_tickers([market])
+        cur_price = float(tickers[0].get("trade_price", 0.0)) if tickers else 0.0
+        status = await strategy_execution_engine.emergency_flatten(upbit_client, current_price=cur_price)
+        return {"success": True, "status": status}
+    except Exception as e:
+        logger.exception("Error in emergency_flatten_strategy_lab")
+        return {"success": False, "error": str(e)}
 
 @app.post("/api/trade/flatten")
 async def flatten_positions(emergency: bool = False) -> Dict[str, Any]:
