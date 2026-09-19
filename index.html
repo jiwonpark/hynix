@@ -3855,26 +3855,26 @@
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; background: #ffffff; border: 1px solid #cbd5e1; border-left: 4px solid #0284c7; padding: 7px 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
               <span style="font-size: 11px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.5px;">🤖 LIVE BOT:</span>
-              <span id="lab_lblLiveBotStrategy" style="font-size: 11.5px; font-weight: 700; color: #0284c7; background: #f0f9ff; border: 1px solid #bae6fd; padding: 2px 8px; border-radius: 4px;">⚖️ Multi-Factor Gate</span>
-              <button id="lab_btnBindStrategy" type="button" class="terminal-btn secondary" style="height: 26px; padding: 0 8px; font-size: 11px; font-weight: 700; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer;" title="Bind the currently selected strategy tab to the live execution bot">🎯 Bind Selected Tab</button>
+              <span id="lab_lblLiveBotStrategy" style="font-size: 11.5px; font-weight: 700; color: #0284c7; background: #f0f9ff; border: 1px solid #bae6fd; padding: 2px 8px; border-radius: 4px; display: inline-flex; align-items: center;">⚖️ Multi-Factor Gate</span>
+              <button id="lab_btnBindStrategy" type="button" style="width: auto !important; height: 26px; padding: 0 10px; font-size: 11px; font-weight: 700; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; color: #1e293b; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Bind the currently selected strategy tab to the live execution bot">🎯 Bind Selected Tab</button>
 
-              <div style="height: 16px; width: 1px; background: #cbd5e1; margin: 0 4px;"></div>
+              <div style="height: 16px; width: 1px; background: #cbd5e1; margin: 0 2px;"></div>
 
               <!-- Mode: Paper vs Live -->
               <div style="display: inline-flex; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden;">
-                <button id="lab_btnModePaper" type="button" class="btnStrategyTab active" style="height: 24px; padding: 0 8px; font-size: 10.5px; border: none; border-radius: 0;" title="Virtual simulation without real exchange orders">🧪 Paper Trading</button>
-                <button id="lab_btnModeLive" type="button" class="btnStrategyTab" style="height: 24px; padding: 0 8px; font-size: 10.5px; border: none; border-radius: 0; color: #dc2626;" title="Real spot orders executed on Upbit">🔴 Real Upbit Live</button>
+                <button id="lab_btnModePaper" type="button" class="btnStrategyTab active" style="width: auto !important; height: 24px; padding: 0 8px; font-size: 10.5px; border: none; border-radius: 0;" title="Virtual simulation without real exchange orders">🧪 Paper Trading</button>
+                <button id="lab_btnModeLive" type="button" class="btnStrategyTab" style="width: auto !important; height: 24px; padding: 0 8px; font-size: 10.5px; border: none; border-radius: 0; color: #dc2626;" title="Real spot orders executed on Upbit">🔴 Real Upbit Live</button>
               </div>
             </div>
 
             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
               <label style="font-size: 11px; font-weight: 700; color: #475569; display: flex; align-items: center; gap: 4px;">
                 ₩/Tranche:
-                <input id="lab_inpBotTrancheSize" type="number" value="2000000" step="500000" min="5000" style="width: 90px; height: 26px; font-size: 11px; font-weight: 700; padding: 0 4px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                <input id="lab_inpBotTrancheSize" type="number" value="2000000" step="500000" min="5000" style="width: 85px; height: 26px; font-size: 11px; font-weight: 700; padding: 0 4px; border: 1px solid #cbd5e1; border-radius: 4px;">
               </label>
 
-              <button id="lab_btnToggleBotPower" type="button" class="terminal-btn primary" style="height: 26px; padding: 0 10px; font-size: 11px; font-weight: 700; background: #16a34a; border-color: #15803d; color: #fff; border-radius: 4px; cursor: pointer;">▶️ Start Bot</button>
-              <button id="lab_btnEmergencyFlatten" type="button" class="terminal-btn" style="height: 26px; padding: 0 8px; font-size: 11px; font-weight: 700; background: #fee2e2; border: 1px solid #f87171; color: #dc2626; border-radius: 4px; cursor: pointer;" title="Emergency market sell of all active bot tranches back to 100% KRW">🚨 Flatten All</button>
+              <button id="lab_btnToggleBotPower" type="button" style="width: auto !important; height: 26px; padding: 0 12px; font-size: 11px; font-weight: 700; background: #16a34a; border: 1px solid #15803d; color: #fff; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center;" title="Start or pause automated strategy bot">▶️ Start Bot</button>
+              <button id="lab_btnEmergencyFlatten" type="button" style="width: auto !important; height: 26px; padding: 0 10px; font-size: 11px; font-weight: 700; background: #fee2e2; border: 1px solid #f87171; color: #dc2626; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center;" title="Emergency market sell of all active bot tranches back to 100% KRW">🚨 Flatten All</button>
             </div>
           </div>
 
