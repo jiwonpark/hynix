@@ -151,7 +151,7 @@
       el("dynamicBacktestStatus").textContent = `${stats.completed_trades || 0} trades · Net ${pct(stats.net_return_pct)} · Buy & Hold ${pct(stats.buy_hold_pct)} · Max drawdown ${pct(stats.max_drawdown_pct)} · Win rate ${pct(stats.win_rate_pct)} · Ending ${krw(stats.ending_equity_krw)}`;
       const latest = data.bars.at(-1);
       const latestHour = data.hourly.at(-1);
-      el("macroPolicyStatus").textContent = `Completed 1h: ${latestHour?.bullish ? "BULLISH STACK" : latestHour?.bearish ? "BEARISH STACK" : "NOT ALIGNED"} · next-open fills · ${data.fee_bps}bp/side`;
+      el("macroPolicyStatus").textContent = `Completed 1h: ${latestHour?.bearish ? "BEARISH STACK (DIP ENTRY)" : latestHour?.bullish ? "BULLISH STACK (RALLY EXIT)" : "NOT ALIGNED"} · next-open fills · ${data.fee_bps}bp/side`;
       el("valShortTermCurrentParity").textContent = latest ? krw(latest.close) : "--";
       el("valShortTermMa7").textContent = latest ? krw(latest.ma7) : "--";
       el("valShortTermMa24").textContent = latest ? krw(latest.ma24) : "--";
@@ -178,8 +178,8 @@
 
     syncConditionBadges(latest, hourly) {
       const states = [
-        ["badgeCondEntryMaStack5m", latest?.bullish], ["badgeCondEntryMaStack1h", hourly?.bullish],
-        ["badgeCondExitMaStack5m", latest?.bearish], ["badgeCondExitMaStack1h", hourly?.bearish],
+        ["badgeCondEntryMaStack5m", latest?.bearish], ["badgeCondEntryMaStack1h", hourly?.bearish],
+        ["badgeCondExitMaStack5m", latest?.bullish], ["badgeCondExitMaStack1h", hourly?.bullish],
       ];
       states.forEach(([id, pass]) => {
         const badge = el(id);
@@ -187,8 +187,8 @@
         badge.textContent = pass ? "PASS" : "WAIT";
         badge.className = `condBadge ${pass ? "pass" : "wait"}`;
       });
-      el("badgeCriteriaScaleIn").textContent = latest?.bullish && hourly?.bullish ? "ENTRY ARMED" : "AWAITING MA STACKS (5m/1h)";
-      el("badgeCriteriaTP").textContent = latest?.bearish || hourly?.bearish ? "EXIT ARMED" : "AWAITING BEARISH STACK";
+      el("badgeCriteriaScaleIn").textContent = latest?.bearish && hourly?.bearish ? "ENTRY ARMED (DIP)" : "AWAITING BEARISH STACK (5m/1h)";
+      el("badgeCriteriaTP").textContent = latest?.bullish || hourly?.bullish ? "EXIT ARMED (RALLY)" : "AWAITING BULLISH STACK";
     },
 
     renderMarkers(hoveredTime = null) {

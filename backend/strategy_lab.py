@@ -80,9 +80,9 @@ def run_ma_stack_backtest(
         if quantity <= 0:
             enabled_entries = []
             if entry_5m:
-                enabled_entries.append(bool(bar["bullish"]))
+                enabled_entries.append(bool(bar["bearish"]))
             if entry_1h:
-                enabled_entries.append(bool(hourly["bullish"]))
+                enabled_entries.append(bool(hourly["bearish"]))
             should_enter = bool(enabled_entries) and all(enabled_entries)
             if should_enter and fill_price > 0:
                 entry_fee = cash * fee_rate
@@ -107,9 +107,9 @@ def run_ma_stack_backtest(
         else:
             enabled_exits = []
             if exit_5m:
-                enabled_exits.append(bool(bar["bearish"]))
+                enabled_exits.append(bool(bar["bullish"]))
             if exit_1h:
-                enabled_exits.append(bool(hourly["bearish"]))
+                enabled_exits.append(bool(hourly["bullish"]))
             should_exit = bool(enabled_exits) and any(enabled_exits)
             if should_exit and entry:
                 gross = quantity * fill_price
