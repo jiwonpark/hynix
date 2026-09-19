@@ -115,7 +115,20 @@
         width: host.clientWidth, height: 420,
         layout: { background: { color: "#ffffff" }, textColor: "#475569" },
         grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
-        timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#cbd5e1" },
+        timeScale: {
+          timeVisible: true,
+          secondsVisible: false,
+          borderColor: "#cbd5e1",
+          tickMarkFormatter: (time, tickMarkType) => {
+            const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+            const d = new Date(t);
+            if (isNaN(d.getTime())) return "";
+            if (tickMarkType <= 2) {
+              return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(d);
+            }
+            return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+          },
+        },
         rightPriceScale: { borderColor: "#cbd5e1" },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
         localization: {

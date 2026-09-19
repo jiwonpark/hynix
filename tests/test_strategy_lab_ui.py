@@ -34,6 +34,11 @@ class StrategyLabUiTests(unittest.TestCase):
         self.assertIn("Actual</span>", self.js)
         self.assertNotIn('actual: { label: "Actual", enabled: false, visible: false }', self.js)
 
+    def test_x_axis_kst_formatting(self):
+        self.assertIn("tickMarkFormatter:", self.js)
+        self.assertIn('timeZone: "Asia/Seoul"', self.js)
+        self.assertIn('locale: "ko-KR"', self.js)
+
     def test_no_literal_escape_characters_in_markup(self):
         # Ensure no raw literal \n or \t outside script and style blocks
         markup = self.html.split("<script")[0]

@@ -13705,7 +13705,19 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             },
             grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
             rightPriceScale: { borderVisible: false, autoScale: true },
-            timeScale: { visible: true, borderVisible: false, secondsVisible: false }
+            timeScale: {
+              visible: true,
+              borderVisible: false,
+              secondsVisible: false,
+              tickMarkFormatter: (time, tickMarkType) => {
+                const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+                const d = new Date(t);
+                if (tickMarkType <= 2) {
+                  return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(d);
+                }
+                return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+              }
+            }
           });
 
           this.spreadLine = this.spreadChart.addLineSeries({ color: "#0284c7", lineWidth: 2, title: "Spread Ratio" });
@@ -13726,7 +13738,19 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             },
             grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
             rightPriceScale: { borderVisible: false, autoScale: true },
-            timeScale: { visible: true, borderVisible: false, secondsVisible: false }
+            timeScale: {
+              visible: true,
+              borderVisible: false,
+              secondsVisible: false,
+              tickMarkFormatter: (time, tickMarkType) => {
+                const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+                const d = new Date(t);
+                if (tickMarkType <= 2) {
+                  return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(d);
+                }
+                return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+              }
+            }
           });
 
           this.zscoreLine = this.zscoreChart.addLineSeries({ color: "#0f172a", lineWidth: 2, title: "Z-Score" });
