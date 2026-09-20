@@ -34,7 +34,7 @@ class TestPairsExplorer(unittest.IsolatedAsyncioTestCase):
 
     def test_navigation_switch_pairs_support(self):
         """Verify switchMainTab and savedTab logic handles 'pairs'."""
-        self.assertIn('const isPairs = tab === "pairs";', self.html)
+        self.assertIn('const isPairs = normalized === "pairs";', self.html)
         self.assertIn('$("tabContentPairs").style.display = isPairs ? "block" : "none"', self.html)
         self.assertIn('switchMainTab("pairs")', self.html)
         self.assertIn('savedTab === "pairs"', self.html)

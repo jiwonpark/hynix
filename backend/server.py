@@ -34,6 +34,8 @@ from .counterfactual_trades import (
 from .config import config
 from .binance_client import BinanceFuturesClient
 from .upbit_client import UpbitClient
+from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
+from starlette.responses import JSONResponse
 from .strategy_lab import run_ma_stack_backtest, strategy_execution_engine
 
 STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
@@ -152,6 +154,18 @@ app = FastAPI(
     description="HYPERION autonomous execution daemon and multi-exchange account telemetry engine (Binance & Upbit).",
     lifespan=lifespan
 )
+
+app.include_router(terminal_auth_router)
+
+
+@app.middleware("http")
+async def authorize_strategy_lab(request: Request, call_next):
+    if (request.url.path.startswith("/api/strategy-lab/")
+            and request.method not in ("GET", "HEAD", "OPTIONS")
+            and not terminal_authorized(request)):
+        return JSONResponse({"success": False, "error": "Unlock the terminal to change Strategy Lab execution"}, status_code=401)
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -1808,7 +1822,9 @@ async def upbit_strategy_worker():
     while True:
         try:
             state = strategy_execution_engine.load_state()
-            if state.get("enabled"):
+            if state.get("pending_order"):
+                await strategy_execution_engine.reconcile_pending(upbit_client)
+            elif state.get("enabled"):
                 market = state.get("market", "KRW-BTC")
                 five_m_candles, one_h_candles = await asyncio.gather(
                     upbit_client.get_minute_candles(market, 5, 200),
@@ -1873,7 +1889,8 @@ async def set_strategy_lab_mode(request: Request) -> Dict[str, Any]:
         body = await request.json()
         mode = body.get("mode", "paper")
         enable = body.get("enable")
-        status = await strategy_execution_engine.set_mode(mode, enable=enable)
+        status = await strategy_execution_engine.set_mode(mode, enable=enable,
+                                                          strategy=body.get("strategy"), options=body.get("options"))
         return {"success": True, "status": status}
     except Exception as e:
         return {"success": False, "error": str(e)}

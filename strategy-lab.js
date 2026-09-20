@@ -90,14 +90,15 @@
       el("btnModeLive")?.addEventListener("click", () => this.setBotMode("live"));
       el("btnToggleBotPower")?.addEventListener("click", () => this.toggleBotPower());
       el("btnEmergencyFlatten")?.addEventListener("click", () => this.emergencyFlatten());
-      el("inpBotTrancheSize")?.addEventListener("change", () => this.updateBotSizing());
+      ["inpBotTrancheSize", "inpBotMaxTranches", "inpBotMinProfit"].forEach(id => el(id)?.addEventListener("change", () => this.updateBotSizing()));
 
+      this.renderStrategyTabs();
+      this.applyExecutionLock();
       this.renderConditionsChecklists(null, null);
       this.startBotPolling();
 
       document.getElementById("strategyLabDays").addEventListener("change", () => this.run());
       document.getElementById("strategyLabTranches")?.addEventListener("change", () => {
-        this.updateBotSizing();
         this.run();
       });
     },
@@ -110,6 +111,12 @@
       } catch (_) {
         // Private browsing or storage restrictions must not block strategy selection.
       }
+      this.renderStrategyTabs();
+      return this.run();
+    },
+
+    renderStrategyTabs() {
+      const mode = this.strategyMode;
       const ids = {
         ma_stack: "lab_tabModeMaStack",
         bollinger_zscore: "lab_tabModeBollinger",
@@ -121,7 +128,6 @@
         const btn = document.getElementById(ids[m]);
         if (btn) btn.classList.toggle("active", m === mode);
       });
-      return this.run();
     },
 
     initChart() {
@@ -958,7 +964,7 @@
       if (this.botPollInterval) return;
       this.fetchBotStatus();
       this.botPollInterval = setInterval(() => {
-        const sec = document.getElementById("tab-content-strategylab");
+        const sec = document.getElementById("tabContentStrategyLab");
         if (sec && sec.style.display !== "none") {
           this.fetchBotStatus();
         }
@@ -973,6 +979,8 @@
     },
 
     async fetchBotStatus() {
+      if (this.fetchingBotStatus) return;
+      this.fetchingBotStatus = true;
       try {
         const res = await fetch("api/strategy-lab/bot-status?market=KRW-BTC");
         if (!res.ok) return;
@@ -982,112 +990,86 @@
           this.renderBotUI();
         }
       } catch (err) {
-        // silent fail on network hiccups
+        // Keep the last known status on transient network errors.
+      } finally {
+        this.fetchingBotStatus = false;
+      }
+    },
+
+    applyExecutionLock() {
+      const locked = !window.terminalLockManager || window.terminalLockManager.isLocked;
+      ["btnBindStrategy", "btnModePaper", "btnModeLive", "btnToggleBotPower", "btnEmergencyFlatten", "inpBotTrancheSize", "inpBotMaxTranches", "inpBotMinProfit"].forEach((id) => {
+        const control = el(id);
+        if (control) { control.disabled = locked; control.title = locked ? "Unlock the terminal to change execution" : ""; }
+      });
+    },
+
+    async mutateBot(action, payload = {}) {
+      const lock = window.terminalLockManager;
+      if (!lock || lock.isLocked || !lock.token) {
+        lock?.openPasswordModal();
+        return false;
+      }
+      try {
+        const res = await fetch(`api/strategy-lab/${action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${lock.token}` },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (res.status === 401) lock.setLocked(true);
+        if (!res.ok || !json.success) throw new Error(json.error || json.detail || "Execution update failed");
+        this.botState = json.status;
+        this.renderBotUI();
+        return true;
+      } catch (err) {
+        window.alert(`Strategy Lab: ${err.message}`);
+        return false;
       }
     },
 
     async bindActiveStrategyToBot(autoStart = null) {
-      try {
-        const opts = this.conditions();
-        const payload = { strategy: this.strategyMode, options: opts };
-        if (autoStart !== null) payload.enable = Boolean(autoStart);
-        const res = await fetch("api/strategy-lab/set-bot-strategy", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const json = await res.json();
-        if (json && json.success && json.status) {
-          this.botState = json.status;
-          this.renderBotUI();
-        }
-      } catch (err) {
-        console.error("[StrategyLab] Error binding strategy to bot:", err);
-      }
+      const payload = { strategy: this.strategyMode, options: this.conditions() };
+      if (autoStart !== null) payload.enable = Boolean(autoStart);
+      return this.mutateBot("set-bot-strategy", payload);
     },
 
     async setBotMode(mode) {
-      try {
-        // When clicking Live or Paper, switch mode, auto-bind current strategy, and activate immediately
-        const opts = this.conditions();
-        const res = await fetch("api/strategy-lab/set-mode", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode, enable: true }),
-        });
-        const json = await res.json();
-        if (json && json.success && json.status) {
-          this.botState = json.status;
-          // Also bind current strategy tab
-          await this.bindActiveStrategyToBot(true);
-        }
-      } catch (err) {
-        console.error("[StrategyLab] Error setting bot mode:", err);
-      }
+      // Bind and activate in one locked server update, before the worker can run.
+      return this.mutateBot("set-mode", { mode, enable: true, strategy: this.strategyMode, options: this.conditions() });
     },
 
     async toggleBotPower() {
-      try {
-        const res = await fetch("api/strategy-lab/toggle-bot", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
-        const json = await res.json();
-        if (json && json.success && json.status) {
-          this.botState = json.status;
-          this.renderBotUI();
-        }
-      } catch (err) {
-        console.error("[StrategyLab] Error toggling bot power:", err);
-      }
+      return this.mutateBot("toggle-bot");
     },
 
     async updateBotSizing() {
-      const input = el("inpBotTrancheSize");
-      const trancheSize = input ? Number(input.value) : 2000000;
-      const tranchesInput = document.getElementById("strategyLabTranches");
-      const maxTranches = tranchesInput ? Number(tranchesInput.value) : 5;
-      if (trancheSize >= 5000) {
-        try {
-          const res = await fetch("api/strategy-lab/set-sizing", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tranche_size_krw: trancheSize, max_tranches: maxTranches }),
-          });
-          const json = await res.json();
-          if (json && json.success && json.status) {
-            this.botState = json.status;
-            this.renderBotUI();
-          }
-        } catch (err) {
-          console.error("[StrategyLab] Error setting sizing:", err);
-        }
-      }
+      const trancheSize = Number(el("inpBotTrancheSize")?.value || 2000000);
+      const maxTranches = Number(el("inpBotMaxTranches")?.value || 5);
+      const minProfit = Number(el("inpBotMinProfit")?.value ?? 0.20);
+      if (trancheSize >= 5000) return this.mutateBot("set-sizing", { tranche_size_krw: trancheSize, max_tranches: maxTranches, min_profit_pct: minProfit });
     },
 
     async emergencyFlatten() {
-      const ok = window.confirm("🚨 EMERGENCY FLATTEN ALL:\n\nImmediately pause the bot and market sell ALL open bot tranches back to 100% KRW cash?");
-      if (!ok) return;
-      try {
-        const res = await fetch("api/strategy-lab/emergency-flatten", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
-        const json = await res.json();
-        if (json && json.success && json.status) {
-          this.botState = json.status;
-          this.renderBotUI();
-        }
-      } catch (err) {
-        console.error("[StrategyLab] Error flattening bot tranches:", err);
-      }
+      if (window.terminalLockManager?.isLocked) return this.mutateBot("emergency-flatten");
+      if (!window.confirm("Pause the bot and market sell all tracked tranches? Pending orders must reconcile first; any unsold quantity remains tracked.")) return;
+      return this.mutateBot("emergency-flatten");
     },
 
     renderBotUI() {
       const s = this.botState;
+      this.applyExecutionLock();
       if (!s) return;
 
+      let notice = el("botExecutionNotice");
+      const strategyLabel = el("lblLiveBotStrategy");
+      if (!notice && strategyLabel) {
+        notice = document.createElement("div");
+        notice.id = rootId("botExecutionNotice");
+        notice.style.cssText = "font-size:12px;color:#b45309;margin-top:6px;";
+        strategyLabel.parentElement.appendChild(notice);
+      }
+      if (notice) notice.textContent = s.last_error || (s.pending_order ? "Order pending reconciliation" : "");
       const lblStrategy = el("lblLiveBotStrategy");
       if (lblStrategy) {
         const stratName = s.strategy_name || s.active_strategy;
@@ -1155,12 +1137,15 @@
       if (inpSize && document.activeElement !== inpSize) {
         inpSize.value = s.tranche_size_krw || 2000000;
       }
-      const inpTranches = document.getElementById("strategyLabTranches");
+      const inpTranches = el("inpBotMaxTranches");
       if (inpTranches && s.max_tranches && document.activeElement !== inpTranches) {
         inpTranches.value = s.max_tranches;
       }
 
-      if (s.active_tranches && s.active_tranches.length > 0) {
+      const inpMinProfit = el("inpBotMinProfit");
+      if (inpMinProfit && document.activeElement !== inpMinProfit) inpMinProfit.value = s.min_profit_pct ?? 0.20;
+
+      if (s.active_tranches) {
         const stackCount = el("valCritStackCount");
         if (stackCount) {
           const modeTag = s.mode === "live" ? "REAL UPBIT" : "PAPER";

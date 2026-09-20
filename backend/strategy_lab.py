@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import uuid
+from decimal import Decimal, ROUND_DOWN
 from bisect import bisect_right
 import json
 import logging
@@ -423,7 +426,7 @@ def run_ma_stack_backtest(
     """
     bars = _with_indicators(candles_5m)
     hours = _with_indicators(candles_1h)
-    hour_times = [int(row["time"]) for row in hours]
+    hour_times = [int(row["time"]) + 3600 for row in hours]
     fee_rate = max(0.0, float(fee_bps)) / 10_000.0
     cash = float(initial_capital_krw)
     tranche_capital = initial_capital_krw / float(max(1, max_tranches))
@@ -459,7 +462,7 @@ def run_ma_stack_backtest(
         equity_curve.append({"time": int(bar["time"]), "value": current_equity})
         if index + 1 >= len(bars):
             continue
-        hourly = hour_at(int(bar["time"]))
+        hourly = hour_at(int(bar["time"]) + 300)
         if hourly is None or not is_warmed_up(bar, hourly):
             continue
         next_bar = bars[index + 1]
@@ -646,6 +649,7 @@ class UpbitStrategyExecutionEngine:
             "min_profit_pct": 0.20,
             "active_tranches": [],
             "trade_history": [],
+            "pending_order": None,
             "last_entry_bar_time": 0,
             "last_exit_bar_time": 0,
             "last_eval_time": 0,
@@ -664,7 +668,7 @@ class UpbitStrategyExecutionEngine:
             with open(self.state_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if not isinstance(data, dict):
-                    data = self._default_state()
+                    raise ValueError("Strategy Lab state must be an object")
                 defaults = self._default_state()
                 for k, v in defaults.items():
                     if k not in data:
@@ -672,17 +676,25 @@ class UpbitStrategyExecutionEngine:
                 return data
         except Exception as e:
             logger.error(f"Error loading strategy_lab_state: {e}")
-            return self._default_state()
+            raise RuntimeError("Cannot read Strategy Lab state; execution blocked") from e
 
     def save_state(self, state: Dict[str, Any]) -> None:
         state["updated_at"] = time.time()
         try:
             tmp_file = self.state_file.with_suffix(".tmp")
             with open(tmp_file, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2, ensure_ascii=False)
+                json.dump(state, f, indent=2, ensure_ascii=False, allow_nan=False)
+                f.flush()
+                os.fsync(f.fileno())
             tmp_file.replace(self.state_file)
+            directory_fd = os.open(str(self.state_file.parent), os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
         except Exception as e:
             logger.error(f"Error saving strategy_lab_state: {e}")
+            raise
 
     def get_status(self, current_price: Optional[float] = None) -> Dict[str, Any]:
         state = self.load_state()
@@ -748,6 +760,8 @@ class UpbitStrategyExecutionEngine:
             "last_signal": state.get("last_signal"),
             "last_error": state.get("last_error"),
             "last_eval_time": state.get("last_eval_time", 0),
+            "pending_order": ({k: v for k, v in state["pending_order"].items()
+                               if k != "original_tranches"} if state.get("pending_order") else None),
             "stats": {
                 "total_trades": total_trades,
                 "winning_trades": win_trades,
@@ -764,16 +778,43 @@ class UpbitStrategyExecutionEngine:
                 state["active_strategy"] = strategy
             if options is not None:
                 state["strategy_options"] = options
+            if enable and state.get("pending_order"):
+                raise ValueError("Resolve pending order before enabling trading")
+            if enable:
+                self._validate_inventory(state)
             if enable is not None:
                 state["enabled"] = bool(enable)
             self.save_state(state)
             return self.get_status()
 
-    async def set_mode(self, mode: str, enable: Optional[bool] = None) -> Dict[str, Any]:
+    @staticmethod
+    def _validate_inventory(state: Dict[str, Any]) -> None:
+        if state.get("mode") not in ("paper", "live"):
+            raise ValueError("Invalid execution mode")
+        if any(t.get("mode") != state["mode"] or t.get("market") != state["market"]
+               for t in state["active_tranches"]):
+            raise ValueError("Position mode/market mismatch; reconcile inventory before trading")
+
+    async def set_mode(self, mode: str, enable: Optional[bool] = None,
+                       strategy: Optional[str] = None, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         async with self.lock:
             state = self.load_state()
-            if mode in ("paper", "live"):
-                state["mode"] = mode
+            if mode not in ("paper", "live"):
+                raise ValueError("Mode must be paper or live")
+            if mode != state["mode"] and (state["active_tranches"] or state.get("pending_order")):
+                raise ValueError("Close positions and resolve pending orders before switching modes")
+            state["mode"] = mode
+            self._validate_inventory(state)
+            if strategy is not None:
+                if strategy not in STRATEGY_PRESETS:
+                    raise ValueError("Unknown strategy")
+                state["active_strategy"] = strategy
+            if options is not None:
+                state["strategy_options"] = options
+            if enable and state.get("pending_order"):
+                raise ValueError("Resolve pending order before enabling trading")
+            if enable:
+                self._validate_inventory(state)
             if enable is not None:
                 state["enabled"] = bool(enable)
             self.save_state(state)
@@ -787,11 +828,17 @@ class UpbitStrategyExecutionEngine:
     ) -> Dict[str, Any]:
         async with self.lock:
             state = self.load_state()
-            if tranche_size_krw is not None and tranche_size_krw >= 5000:
+            if tranche_size_krw is not None:
+                if not math.isfinite(float(tranche_size_krw)) or float(tranche_size_krw) < 5000:
+                    raise ValueError("Tranche size must be at least 5000 KRW")
                 state["tranche_size_krw"] = float(tranche_size_krw)
-            if max_tranches is not None and 1 <= max_tranches <= 20:
+            if max_tranches is not None:
+                if int(max_tranches) != max_tranches or not 1 <= max_tranches <= 20:
+                    raise ValueError("Max tranches must be an integer between 1 and 20")
                 state["max_tranches"] = int(max_tranches)
             if min_profit_pct is not None:
+                if not math.isfinite(float(min_profit_pct)) or float(min_profit_pct) < 0:
+                    raise ValueError("Minimum net profit must be nonnegative")
                 state["min_profit_pct"] = float(min_profit_pct)
             self.save_state(state)
             return self.get_status()
@@ -803,289 +850,254 @@ class UpbitStrategyExecutionEngine:
                 state["enabled"] = not bool(state.get("enabled", False))
             else:
                 state["enabled"] = bool(enabled)
+            if state["enabled"]:
+                self._validate_inventory(state)
+                if state.get("pending_order"):
+                    raise ValueError("Resolve pending order before enabling trading")
             self.save_state(state)
             return self.get_status()
 
     async def clear_history(self) -> Dict[str, Any]:
         async with self.lock:
             state = self.load_state()
+            if state.get("pending_order"):
+                raise ValueError("Resolve pending order before clearing history")
             state["trade_history"] = []
             self.save_state(state)
             return self.get_status()
 
-    async def execute_step(
-        self,
-        upbit_client: Any,
-        five_m_candles: List[Dict[str, Any]],
-        one_h_candles: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+    @staticmethod
+    def _volume(quantity: float) -> str:
+        # Never round up a sell beyond the tracked holding.
+        return str(Decimal(str(quantity)).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN))
+
+    @staticmethod
+    def _exit_record(tranche, qty, funds, fee, pending):
+        cost = float(tranche["entry_notional_krw"]) * qty / float(tranche["coin_qty"])
+        net = funds - fee - cost
+        return {
+            "id": tranche["id"], "strategy": tranche["strategy"], "mode": tranche["mode"],
+            "entry_time": tranche["entry_time"], "exit_time": pending["time"],
+            "entry_price": tranche["entry_price"], "exit_price": funds / qty,
+            "coin_qty": qty, "entry_notional_krw": cost, "exit_notional_krw": funds - fee,
+            "gross_pnl_krw": funds - cost, "net_pnl_krw": net,
+            "net_return_pct": net / cost * 100 if cost else 0,
+            "hold_seconds": pending["time"] - tranche["entry_time"],
+            "exit_reason": pending["kind"], "upbit_uuid": tranche.get("upbit_uuid"),
+            "exit_upbit_uuid": pending.get("uuid"), "order_identifier": pending["identifier"],
+        }
+
+    def _apply_fill(self, state, pending, fill):
+        """Rebuild this order's accounting from its durable pre-order snapshot.
+
+        Upbit reports cumulative fills. Repeated reads, partial fills and restart
+        recovery therefore cannot double-count a fill or discard unsold quantity.
         """
-        Periodically invoked on closed bars to evaluate active strategy criteria
-        and execute entry or exit tranche orders (live or paper).
-        """
+        qty = float(fill["executed_volume"])
+        trades = fill.get("trades", [])
+        trade_qty = sum(float(t["volume"]) for t in trades)
+        funds = sum(float(t.get("funds", float(t["price"]) * float(t["volume"]))) for t in trades)
+        fee = float(fill["paid_fee"])
+        if not all(math.isfinite(v) and v >= 0 for v in (qty, funds, fee)):
+            raise ValueError("Invalid exchange fill values")
+        if not math.isclose(trade_qty, qty, rel_tol=1e-8, abs_tol=1e-12) or (qty > 0 and funds <= 0):
+            raise ValueError("Incomplete exchange fill details; awaiting reconciliation")
+        if qty < pending.get("executed_volume", 0):
+            raise ValueError("Exchange fill regressed; awaiting reconciliation")
+        stack = copy.deepcopy(pending["original_tranches"])
+        records = []
+        if pending["kind"] == "ENTRY":
+            if qty > 0:
+                stack.append({
+                    "id": pending["identifier"], "market": pending["market"],
+                    "strategy": pending["strategy"], "mode": "live", "entry_time": pending["time"],
+                    "entry_price": funds / qty, "coin_qty": qty,
+                    "entry_notional_krw": funds + fee, "fee_krw": fee,
+                    "upbit_uuid": pending.get("uuid"),
+                })
+        elif qty > 0:
+            available = sum(float(t["coin_qty"]) for t in stack)
+            if qty > available + 1e-12 or qty > float(pending["volume"]) + 1e-12:
+                raise ValueError("Exchange fill exceeds tracked sell quantity")
+            remaining = qty
+            while remaining > 1e-12 and stack:
+                tranche = stack[-1]
+                original_qty = float(tranche["coin_qty"])
+                sold = min(remaining, original_qty)
+                records.append(self._exit_record(tranche, sold, funds * sold / qty, fee * sold / qty, pending))
+                left = original_qty - sold
+                if left <= 1e-12:
+                    stack.pop()
+                else:
+                    tranche["coin_qty"] = left
+                    tranche["entry_notional_krw"] *= left / original_qty
+                    tranche["fee_krw"] = float(tranche.get("fee_krw", 0)) * left / original_qty
+                remaining -= sold
+        state["active_tranches"] = stack
+        state["trade_history"] = [r for r in state["trade_history"]
+                                  if r.get("order_identifier") != pending["identifier"]] + records
+        pending["executed_volume"] = qty
+        pending["exchange_state"] = fill.get("state")
+        if qty > 0:
+            state["last_signal"] = {"type": pending["kind"], "time": pending["time"],
+                                    "price": funds / qty, "mode": "live", "strategy": pending["strategy"]}
+
+    async def _reconcile(self, client, state):
+        pending = state.get("pending_order")
+        if not pending:
+            return
+        try:
+            lookup = {"uuid": pending["uuid"]} if pending.get("uuid") else {"identifier": pending["identifier"]}
+            fill = await client.get_order(**lookup)
+            if fill.get("uuid"):
+                pending["uuid"] = fill["uuid"]
+            self._apply_fill(state, pending, fill)
+            if fill.get("state") in ("done", "cancel", "prevented"):
+                state["pending_order"] = None
+                state["last_error"] = (None if float(fill["executed_volume"]) > 0
+                                       else "Order ended without a fill")
+            else:
+                state["last_error"] = "Order pending; new orders blocked until reconciliation"
+        except Exception as e:
+            state["last_error"] = f"Order reconciliation required: {e}"
+        # A failed write must escape; a restart will retry from the persisted snapshot.
+        self.save_state(state)
+
+    async def reconcile_pending(self, client):
+        async with self.lock:
+            state = self.load_state()
+            await self._reconcile(client, state)
+            return self.get_status()
+
+    async def _submit(self, client, state, kind, timestamp, volume=None, price=None):
+        pending = {
+            "identifier": "lab-" + uuid.uuid4().hex, "uuid": None, "kind": kind,
+            "time": timestamp, "market": state["market"], "strategy": state["active_strategy"],
+            "volume": volume, "price": price, "executed_volume": 0,
+            "original_tranches": copy.deepcopy(state["active_tranches"]),
+        }
+        state["pending_order"] = pending
+        state["last_entry_bar_time" if kind == "ENTRY" else "last_exit_bar_time"] = timestamp
+        self.save_state(state)  # Must succeed BEFORE any request reaches the exchange.
+        try:
+            args = {"market": pending["market"], "identifier": pending["identifier"]}
+            if kind == "ENTRY":
+                args.update(side="bid", price=price, ord_type="price")
+            else:
+                args.update(side="ask", volume=volume, ord_type="market")
+            result = await client.create_order(**args)
+        except Exception as e:
+            # Unknown outcomes are never resubmitted, even across process restarts.
+            # Definitive API rejections can release the pending intent, but pause the bot.
+            if getattr(e, "definitive_rejection", False):
+                state["pending_order"] = None
+            state["enabled"] = False
+            state["last_error"] = f"Order submission failed; bot paused: {e}"
+            self.save_state(state)
+            return
+        pending["uuid"] = result.get("uuid")
+        self.save_state(state)
+        await self._reconcile(client, state)
+
+    async def execute_step(self, upbit_client, five_m_candles, one_h_candles):
         async with self.lock:
             state = self.load_state()
             state["last_eval_time"] = time.time()
-
-            if not five_m_candles or len(five_m_candles) < 60:
+            if state.get("pending_order"):
+                await self._reconcile(upbit_client, state)
                 return self.get_status()
-
-            bars = _with_indicators(five_m_candles)
-            hours = _with_indicators(one_h_candles) if one_h_candles else []
-            hour_times = [int(h["time"]) for h in hours]
-
-            active_strategy = state.get("active_strategy", "multi_factor")
-            options = state.get("strategy_options", {})
-
-            # Evaluate on the last completed closed bar (index -2) to prevent mid-candle repainting
-            eval_idx = len(bars) - 2 if len(bars) >= 2 else 0
-            closed_bar = bars[eval_idx]
-            bar_time = int(closed_bar["time"])
-
-            hour_idx = bisect_right(hour_times, bar_time) - 1
-            hourly = hours[hour_idx] if (hours and hour_idx >= 0) else closed_bar
-
-            entry_triggered, exit_triggered, reason = evaluate_strategy_signals(
-                active_strategy,
-                closed_bar,
-                hourly,
-                **options,
-            )
-            current_price = float(bars[-1]["close"])
-            market = state.get("market", "KRW-BTC")
-            mode = state.get("mode", "paper")
-            is_enabled = bool(state.get("enabled", False))
-
-            active_tranches = state.get("active_tranches", [])
-            tranche_size = float(state.get("tranche_size_krw", 2000000.0))
-            max_tranches = int(state.get("max_tranches", 5))
-
-            # 1. SCALE-IN ENTRY CHECK
-            if is_enabled and entry_triggered and len(active_tranches) < max_tranches:
-                if bar_time > int(state.get("last_entry_bar_time", 0)):
-                    try:
-                        if mode == "live":
-                            # Pre-trade capital check
-                            account = await upbit_client.get_detailed_account_overview()
-                            cash_krw = float(account.get("summary", {}).get("cash_krw", 0.0))
-                            if cash_krw < tranche_size:
-                                state["last_error"] = f"Insufficient KRW: ₩{cash_krw:,.0f} < ₩{tranche_size:,.0f} required"
-                                self.save_state(state)
-                                return self.get_status(current_price)
-
-                            # Submit real market buy order on Upbit
-                            order_res = await upbit_client.create_order(
-                                market=market,
-                                side="bid",
-                                price=str(int(tranche_size)),
-                                ord_type="price",
-                            )
-                            uuid = order_res.get("uuid")
-                            await asyncio.sleep(0.6)
-                            fill = await upbit_client.get_order(uuid=uuid) if uuid else {}
-                            paid_fee = float(fill.get("paid_fee", tranche_size * 0.0005))
-                            exec_vol = float(fill.get("executed_volume", 0.0))
-                            trades = fill.get("trades", [])
-                            exec_price = float(trades[0].get("price", current_price)) if trades else current_price
-                            if exec_vol <= 0:
-                                exec_vol = (tranche_size - paid_fee) / (exec_price or current_price)
-
-                            new_tranche = {
-                                "id": f"T{len(active_tranches)+1}_{bar_time}",
-                                "market": market,
-                                "strategy": active_strategy,
-                                "mode": "live",
-                                "entry_time": bar_time,
-                                "entry_price": exec_price,
-                                "coin_qty": exec_vol,
-                                "entry_notional_krw": tranche_size,
-                                "fee_krw": paid_fee,
-                                "upbit_uuid": uuid,
-                            }
-                        else:
-                            # Simulated Paper Order Fill
-                            fee = tranche_size * 0.0005
-                            coin_qty = (tranche_size - fee) / current_price
-                            new_tranche = {
-                                "id": f"T{len(active_tranches)+1}_{bar_time}",
-                                "market": market,
-                                "strategy": active_strategy,
-                                "mode": "paper",
-                                "entry_time": bar_time,
-                                "entry_price": current_price,
-                                "coin_qty": coin_qty,
-                                "entry_notional_krw": tranche_size,
-                                "fee_krw": fee,
-                                "upbit_uuid": None,
-                            }
-
-                        active_tranches.append(new_tranche)
-                        state["active_tranches"] = active_tranches
-                        state["last_entry_bar_time"] = bar_time
-                        state["last_signal"] = {
-                            "type": "ENTRY",
-                            "strategy": active_strategy,
-                            "time": bar_time,
-                            "price": current_price,
-                            "mode": mode,
-                            "tranche_id": new_tranche["id"],
-                        }
+            if not state["enabled"]:
+                return self.get_status()
+            try:
+                self._validate_inventory(state)
+            except ValueError as e:
+                state.update(enabled=False, last_error=str(e))
+                self.save_state(state)
+                return self.get_status()
+            now = time.time()
+            bars = _with_indicators([b for b in five_m_candles if int(b["time"]) + 300 <= now])
+            if len(bars) < 60:
+                return self.get_status()
+            closed_bar = bars[-1]
+            decision_time = int(closed_bar["time"]) + 300
+            # Do not trade old signals after a data outage or weekend-style gap.
+            if now - decision_time >= 300:
+                return self.get_status()
+            hours = _with_indicators([h for h in one_h_candles if int(h["time"]) + 3600 <= decision_time])
+            if not hours:
+                return self.get_status()
+            entry, exit_, _ = evaluate_strategy_signals(
+                state["active_strategy"], closed_bar, hours[-1], **state["strategy_options"])
+            tickers = await upbit_client.get_tickers([state["market"]])
+            price = float(tickers[0]["trade_price"]) if tickers else 0
+            if not math.isfinite(price) or price <= 0:
+                return self.get_status()
+            stack = state["active_tranches"]
+            # Exit existing inventory first; at most one order per evaluation.
+            if exit_ and stack and decision_time > state["last_exit_bar_time"]:
+                top = stack[-1]
+                qty, cost = float(top["coin_qty"]), float(top["entry_notional_krw"])
+                net_return = ((price * qty * .9995) / cost - 1) * 100 if cost else -math.inf
+                if net_return >= float(state["min_profit_pct"]):
+                    if state["mode"] == "live":
+                        await self._submit(upbit_client, state, "EXIT", decision_time, volume=self._volume(qty))
+                    else:
+                        pending = {"identifier": "paper-" + uuid.uuid4().hex, "kind": "EXIT", "time": decision_time}
+                        state["trade_history"].append(self._exit_record(top, qty, price * qty, price * qty * .0005, pending))
+                        stack.pop()
+                        state["last_exit_bar_time"] = decision_time
+                        state["last_signal"] = {"type": "EXIT", "time": decision_time, "price": price, "mode": "paper"}
                         state["last_error"] = None
                         self.save_state(state)
-                    except Exception as e:
-                        logger.exception(f"Error executing entry order: {e}")
-                        state["last_error"] = f"Entry failed: {e}"
+                    return self.get_status(price)
+            if entry and len(stack) < state["max_tranches"] and decision_time > state["last_entry_bar_time"]:
+                capital = float(state["tranche_size_krw"])
+                if state["mode"] == "live":
+                    account = await upbit_client.get_detailed_account_overview()
+                    cash = float(account.get("summary", {}).get("cash_krw", 0))
+                    if cash < capital * 1.0005:
+                        state["last_error"] = "Insufficient KRW including entry fee"
                         self.save_state(state)
+                        return self.get_status(price)
+                    await self._submit(upbit_client, state, "ENTRY", decision_time, price=str(int(capital)))
+                else:
+                    stack.append({"id": "paper-" + uuid.uuid4().hex, "market": state["market"],
+                                  "strategy": state["active_strategy"], "mode": "paper", "entry_time": decision_time,
+                                  "entry_price": price, "coin_qty": capital * .9995 / price,
+                                  "entry_notional_krw": capital, "fee_krw": capital * .0005, "upbit_uuid": None})
+                    state["last_entry_bar_time"] = decision_time
+                    state["last_signal"] = {"type": "ENTRY", "time": decision_time, "price": price, "mode": "paper"}
+                    state["last_error"] = None
+                    self.save_state(state)
+            return self.get_status(price)
 
-            # 2. SCALE-OUT EXIT CHECK (LIFO Queue)
-            if is_enabled and exit_triggered and active_tranches:
-                if bar_time > int(state.get("last_exit_bar_time", 0)):
-                    top_tranche = active_tranches[-1]
-                    entry_p = float(top_tranche["entry_price"])
-                    qty = float(top_tranche["coin_qty"])
-                    entry_notional = float(top_tranche["entry_notional_krw"])
-
-                    gross_ret = ((current_price / entry_p) - 1.0) * 100.0 if entry_p > 0 else 0.0
-                    net_ret = gross_ret - 0.10  # 10 bps roundtrip fee buffer
-                    min_req = float(state.get("min_profit_pct", 0.0))
-
-                    if net_ret >= min_req or exit_triggered:
-                        try:
-                            if mode == "live":
-                                order_res = await upbit_client.create_order(
-                                    market=market,
-                                    side="ask",
-                                    volume=f"{qty:.8f}",
-                                    ord_type="market",
-                                )
-                                uuid = order_res.get("uuid")
-                                await asyncio.sleep(0.6)
-                                fill = await upbit_client.get_order(uuid=uuid) if uuid else {}
-                                paid_fee = float(fill.get("paid_fee", (current_price * qty) * 0.0005))
-                                trades = fill.get("trades", [])
-                                exec_price = float(trades[0].get("price", current_price)) if trades else current_price
-                                exit_notional = (exec_price * qty) - paid_fee
-                            else:
-                                fee = current_price * qty * 0.0005
-                                exit_notional = (current_price * qty) - fee
-                                exec_price = current_price
-                                paid_fee = fee
-
-                            gross_pnl = (exec_price * qty) - entry_notional
-                            net_pnl = exit_notional - entry_notional
-
-                            trade_record = {
-                                "id": top_tranche["id"],
-                                "strategy": top_tranche.get("strategy", active_strategy),
-                                "mode": mode,
-                                "entry_time": top_tranche["entry_time"],
-                                "exit_time": bar_time,
-                                "entry_price": entry_p,
-                                "exit_price": exec_price,
-                                "coin_qty": qty,
-                                "entry_notional_krw": entry_notional,
-                                "exit_notional_krw": round(exit_notional, 2),
-                                "gross_pnl_krw": round(gross_pnl, 2),
-                                "net_pnl_krw": round(net_pnl, 2),
-                                "net_return_pct": round((net_pnl / entry_notional) * 100.0, 2) if entry_notional else 0.0,
-                                "hold_seconds": bar_time - top_tranche["entry_time"],
-                                "exit_reason": f"Signal Exit ({active_strategy})",
-                                "upbit_uuid": top_tranche.get("upbit_uuid"),
-                            }
-
-                            active_tranches.pop()
-                            state["active_tranches"] = active_tranches
-                            trade_history = state.get("trade_history", [])
-                            trade_history.append(trade_record)
-                            state["trade_history"] = trade_history
-                            state["last_exit_bar_time"] = bar_time
-                            state["last_signal"] = {
-                                "type": "EXIT",
-                                "strategy": active_strategy,
-                                "time": bar_time,
-                                "price": exec_price,
-                                "net_pnl": round(net_pnl, 2),
-                                "mode": mode,
-                            }
-                            state["last_error"] = None
-                            self.save_state(state)
-                        except Exception as e:
-                            logger.exception(f"Error executing exit order: {e}")
-                            state["last_error"] = f"Exit failed: {e}"
-                            self.save_state(state)
-
-            self.save_state(state)
-            return self.get_status(current_price)
-
-    async def emergency_flatten(self, upbit_client: Any, current_price: Optional[float] = None) -> Dict[str, Any]:
-        """
-        Emergency kill switch: pauses the bot and immediately sells all active tranches
-        at market price back to 100% KRW cash.
-        """
+    async def emergency_flatten(self, upbit_client, current_price=None):
         async with self.lock:
             state = self.load_state()
             state["enabled"] = False
-            active_tranches = state.get("active_tranches", [])
-            if not active_tranches:
-                self.save_state(state)
+            self.save_state(state)  # Paused even if the exchange or process fails below.
+            if state.get("pending_order"):
+                await self._reconcile(upbit_client, state)
+                if state.get("pending_order"):
+                    return self.get_status(current_price)
+            self._validate_inventory(state)
+            if not state["active_tranches"]:
                 return self.get_status(current_price)
-
-            market = state.get("market", "KRW-BTC")
-            mode = state.get("mode", "paper")
-            now_ts = int(time.time())
-
-            total_qty_to_sell = sum(float(t.get("coin_qty", 0.0)) for t in active_tranches)
-            exec_price = current_price or float(active_tranches[0].get("entry_price", 0.0))
-
-            if mode == "live" and total_qty_to_sell > 0:
-                try:
-                    order_res = await upbit_client.create_order(
-                        market=market,
-                        side="ask",
-                        volume=f"{total_qty_to_sell:.8f}",
-                        ord_type="market",
-                    )
-                    uuid = order_res.get("uuid")
-                    await asyncio.sleep(0.6)
-                    fill = await upbit_client.get_order(uuid=uuid) if uuid else {}
-                    trades = fill.get("trades", [])
-                    if trades:
-                        exec_price = float(trades[0].get("price", exec_price))
-                except Exception as e:
-                    logger.exception(f"Emergency market sell error on Upbit: {e}")
-                    state["last_error"] = f"Emergency sell error: {e}"
-
-            for t in active_tranches:
-                qty = float(t.get("coin_qty", 0.0))
-                entry_notional = float(t.get("entry_notional_krw", 0.0))
-                fee = (exec_price * qty) * 0.0005
-                exit_notional = (exec_price * qty) - fee
-                net_pnl = exit_notional - entry_notional
-
-                trade_record = {
-                    "id": t["id"],
-                    "strategy": t.get("strategy", state.get("active_strategy")),
-                    "mode": mode,
-                    "entry_time": t["entry_time"],
-                    "exit_time": now_ts,
-                    "entry_price": float(t["entry_price"]),
-                    "exit_price": exec_price,
-                    "coin_qty": qty,
-                    "entry_notional_krw": entry_notional,
-                    "exit_notional_krw": round(exit_notional, 2),
-                    "gross_pnl_krw": round((exec_price * qty) - entry_notional, 2),
-                    "net_pnl_krw": round(net_pnl, 2),
-                    "net_return_pct": round((net_pnl / entry_notional) * 100.0, 2) if entry_notional else 0.0,
-                    "hold_seconds": now_ts - t["entry_time"],
-                    "exit_reason": "EMERGENCY_FLATTEN",
-                    "upbit_uuid": t.get("upbit_uuid"),
-                }
-                state.setdefault("trade_history", []).append(trade_record)
-
-            state["active_tranches"] = []
-            state["last_signal"] = {"type": "EMERGENCY_FLATTEN", "time": now_ts, "price": exec_price}
-            self.save_state(state)
-            return self.get_status(exec_price)
+            now = int(time.time())
+            if state["mode"] == "live":
+                qty = sum(float(t["coin_qty"]) for t in state["active_tranches"])
+                await self._submit(upbit_client, state, "EMERGENCY_FLATTEN", now, volume=self._volume(qty))
+            else:
+                if not current_price or not math.isfinite(current_price) or current_price <= 0:
+                    raise ValueError("A current price is required for paper flattening")
+                pending = {"identifier": "paper-" + uuid.uuid4().hex, "kind": "EMERGENCY_FLATTEN", "time": now}
+                for t in reversed(state["active_tranches"]):
+                    qty = float(t["coin_qty"])
+                    state["trade_history"].append(self._exit_record(t, qty, current_price * qty, current_price * qty * .0005, pending))
+                state["active_tranches"] = []
+                state["last_signal"] = {"type": "EMERGENCY_FLATTEN", "time": now, "price": current_price}
+                self.save_state(state)
+            return self.get_status(current_price)
 
 
 # Global singleton engine instance

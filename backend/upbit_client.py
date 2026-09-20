@@ -13,6 +13,13 @@ from .config import config
 
 logger = logging.getLogger("skhynix-daemon")
 
+class UpbitAPIError(RuntimeError):
+    def __init__(self, status, message):
+        super().__init__(f"Upbit API Error [{status}]: {message}")
+        # A response rejecting a request is distinct from a lost/ambiguous response.
+        self.definitive_rejection = 400 <= status < 500 and status not in (408, 429)
+
+
 class UpbitClient:
     """
     Upbit Open API Client with JWT authorization.
@@ -66,6 +73,9 @@ class UpbitClient:
             self._last_request_time = time.monotonic()
 
     async def request(self, method: str, endpoint: str, params: Optional[Dict[str, Any]] = None, signed: bool = False, max_retries: int = 4) -> Any:
+        # Retrying a mutation after a timeout/5xx can create duplicate orders.
+        if method.upper() != "GET":
+            max_retries = 0
         session = await self.get_session()
         headers = {
             "Accept": "application/json",
@@ -75,8 +85,6 @@ class UpbitClient:
         if signed:
             if not self.access_key or not self.secret_key:
                 raise ValueError("Upbit Access Key and Secret Key are required for signed endpoints.")
-            jwt_token = self._generate_jwt_token(params)
-            headers["Authorization"] = f"Bearer {jwt_token}"
 
         url = f"{self.base_url}{endpoint}"
         req_kwargs: Dict[str, Any] = {"headers": headers}
@@ -89,6 +97,8 @@ class UpbitClient:
 
         for attempt in range(max_retries + 1):
             await self._throttle(min_interval=0.15)
+            if signed:
+                headers["Authorization"] = f"Bearer {self._generate_jwt_token(params)}"
             try:
                 async with session.request(method, url, **req_kwargs) as resp:
                     if resp.status == 429:
@@ -119,7 +129,7 @@ class UpbitClient:
                             msg = err.get("message", str(data)) if isinstance(err, dict) else str(data)
                         else:
                             msg = str(data)
-                        raise Exception(f"Upbit API Error [{resp.status}]: {msg}")
+                        raise UpbitAPIError(resp.status, msg)
                     return data
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 if attempt < max_retries:
@@ -220,22 +230,24 @@ class UpbitClient:
         return all_tickers
 
     async def get_minute_candles(self, market: str, unit: int, count: int) -> List[Dict[str, Any]]:
-        """Fetch public minute candles with caching, deduplication, and rate-limiting."""
+        """Return completed candles, timestamped by OPEN time; never cache a partial bar."""
         cache_key = (market, unit)
         cached = self._candle_cache.setdefault(cache_key, {})
         interval_seconds = int(unit) * 60
         now = int(time.time())
 
-        # Fast path: check if cache already satisfies the count and has fresh recent data
+        boundary = now // interval_seconds * interval_seconds
+
+        # Reuse only finalized candles through the latest completed interval.
         sorted_times = sorted(cached.keys())
         if sorted_times and len(sorted_times) >= count:
             newest = sorted_times[-1]
-            if now - newest < interval_seconds:
-                return [cached[t] for t in sorted_times if t <= now][-count:]
+            if newest == boundary - interval_seconds:
+                return [cached[t] for t in sorted_times if t + interval_seconds <= boundary][-count:]
 
         remaining = max(1, int(count))
         raw_rows: List[Dict[str, Any]] = []
-        to: Optional[str] = None
+        to: Optional[str] = datetime.fromtimestamp(boundary, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         while remaining > 0:
             batch_size = min(200, remaining)
@@ -253,7 +265,7 @@ class UpbitClient:
             oldest_utc = str(oldest_row.get("candle_date_time_utc", ""))
             if oldest_utc:
                 oldest_open = int(datetime.fromisoformat(oldest_utc).replace(tzinfo=timezone.utc).timestamp())
-                earlier_cached = [t for t in cached if t <= oldest_open]
+                earlier_cached = [t for t in cached if t < oldest_open]
                 if len(earlier_cached) >= remaining:
                     break
 
@@ -265,6 +277,8 @@ class UpbitClient:
         for row in raw_rows:
             candle_utc = str(row.get("candle_date_time_utc", ""))
             open_time = int(datetime.fromisoformat(candle_utc).replace(tzinfo=timezone.utc).timestamp())
+            if open_time + interval_seconds > boundary:
+                continue
             cached[open_time] = {
                 "time": open_time,
                 "open": float(row["opening_price"]),
@@ -280,8 +294,7 @@ class UpbitClient:
             for old_t in sorted(cached.keys())[:excess]:
                 cached.pop(old_t, None)
 
-        now = int(time.time())
-        return [cached[key] for key in sorted(cached) if key <= now][-count:]
+        return [cached[key] for key in sorted(cached) if key + interval_seconds <= boundary][-count:]
 
     async def get_detailed_account_overview(self) -> Dict[str, Any]:
         """

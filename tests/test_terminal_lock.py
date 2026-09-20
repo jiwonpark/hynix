@@ -31,9 +31,10 @@ class TestTerminalLock(unittest.TestCase):
         self.assertIn('id="btnCancelUnlock"', self.html)
         self.assertIn('id="btnConfirmUnlock"', self.html)
 
-    def test_password_is_fidelio0(self):
-        """Verify the password required is strictly fidelio0!."""
-        self.assertIn('correctPassword: "fidelio0!"', self.html)
+    def test_password_verification_is_server_side(self):
+        self.assertNotIn('correctPassword:', self.html)
+        self.assertIn('api/terminal-auth/unlock', self.html)
+        self.assertIn('this.token = auth.token', self.html)
 
     def test_terminal_action_controls_decorated(self):
         """Verify mutating controls in Tab 2 are marked with terminal-action-control."""

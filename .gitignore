@@ -40,3 +40,6 @@ backend/data/
 Thumbs.db
 .vscode/
 .idea/
+
+# Server-only terminal authorization configuration
+backend/terminal_auth.json

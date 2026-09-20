@@ -33,7 +33,7 @@ class TestCompoundingEngine(unittest.IsolatedAsyncioTestCase):
 
     def test_navigation_switch_compound_support(self):
         """Verify switchMainTab and savedTab logic handles 'compound'."""
-        self.assertIn('const isCompound = tab === "compound";', self.html)
+        self.assertIn('const isCompound = normalized === "compound";', self.html)
         self.assertIn('$("tabContentCompound").style.display = isCompound ? "block" : "none"', self.html)
         self.assertIn('switchMainTab("compound")', self.html)
         self.assertIn('savedTab === "compound"', self.html)

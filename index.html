@@ -3873,6 +3873,12 @@
                 <input id="lab_inpBotTrancheSize" type="number" value="2000000" step="500000" min="5000" style="width: 85px; height: 26px; font-size: 11px; font-weight: 700; padding: 0 4px; border: 1px solid #cbd5e1; border-radius: 4px;">
               </label>
 
+              <label style="font-size:11px;font-weight:700;color:#475569;">Bot max tranches:
+                <input id="lab_inpBotMaxTranches" type="number" value="5" min="1" max="20" step="1" style="width:44px;height:26px;">
+              </label>
+              <label style="font-size:11px;font-weight:700;color:#475569;">Min net exit %:
+                <input id="lab_inpBotMinProfit" type="number" value="0.20" min="0" step="0.05" style="width:60px;height:26px;">
+              </label>
               <button id="lab_btnToggleBotPower" type="button" style="width: auto !important; height: 26px; padding: 0 12px; font-size: 11px; font-weight: 700; background: #16a34a; border: 1px solid #15803d; color: #fff; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center;" title="Start or pause automated strategy bot">▶️ Start Bot</button>
               <button id="lab_btnEmergencyFlatten" type="button" style="width: auto !important; height: 26px; padding: 0 10px; font-size: 11px; font-weight: 700; background: #fee2e2; border: 1px solid #f87171; color: #dc2626; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center;" title="Emergency market sell of all active bot tranches back to 100% KRW">🚨 Flatten All</button>
             </div>
@@ -4169,7 +4175,7 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="strategy-execution-chart.js?v=20260918_j"></script>
-  <script src="strategy-lab.js?v=20260919_kst_axis_fix"></script>
+  <script src="strategy-lab.js?v=20260920_execution_safety"></script>
   <script>
     const ASSET_STRATEGIES = {
       skhynix_arb: {
@@ -9880,7 +9886,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     // ==========================================
     const terminalLockManager = {
       isLocked: true,
-      correctPassword: "fidelio0!",
+      token: null,
+      expiryTimer: null,
 
       init() {
         this.bindUI();
@@ -9966,13 +9973,28 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (switchEl) switchEl.checked = !this.isLocked;
       },
 
-      verifyPassword() {
+      async verifyPassword() {
         const passInput = $("terminalPasswordInput");
         const errEl = $("terminalPasswordError");
         const entered = (passInput ? passInput.value : "").trim();
         const isKo = window.currentLang === "ko";
 
-        if (entered === this.correctPassword) {
+        let auth;
+        try {
+          const response = await fetch("api/terminal-auth/unlock", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: entered }),
+          });
+          auth = await response.json();
+          if (!response.ok) throw new Error(auth.detail || "Unlock failed");
+        } catch (error) {
+          if (errEl) { errEl.textContent = error.message; errEl.style.display = "block"; }
+          return;
+        }
+        if (auth.success && auth.token) {
+          this.token = auth.token;
+          clearTimeout(this.expiryTimer);
+          this.expiryTimer = setTimeout(() => this.setLocked(true), auth.expires_in * 1000);
           this.closePasswordModal();
           this.setLocked(false);
           showToast(isKo ? "🔓 거래 터미널이 잠금 해제되었습니다." : "🔓 Execution terminal unlocked.", "success");
@@ -9991,6 +10013,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       setLocked(locked) {
+        if (locked && this.token) {
+          fetch("api/terminal-auth/lock", { method: "POST", headers: { Authorization: `Bearer ${this.token}` } }).catch(() => {});
+          this.token = null;
+          clearTimeout(this.expiryTimer);
+        }
         this.isLocked = Boolean(locked);
         this.applyState();
       },
@@ -10054,6 +10081,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             }
           }
         }
+
+        window.strategyLab?.applyExecutionLock();
 
         // Apply disabled state to action controls
         const actionControls = document.querySelectorAll("#tabContentTrading .terminal-action-control");
