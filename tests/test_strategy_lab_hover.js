@@ -4,9 +4,22 @@ const vm = require('node:vm');
 const Controller = require('../strategy-execution-chart.js');
 
 const host = { clientWidth: 600, setAttribute() {}, classList: { toggle() {}, add() {}, remove() {} } };
-const context = { window: {}, document: { getElementById: () => host } };
+const savedSettings = new Map([['hyperion_strategy_lab_selected_strategy', 'rsi_momentum']]);
+const context = {
+  window: {
+    localStorage: {
+      getItem: key => savedSettings.get(key) || null,
+      setItem: (key, value) => savedSettings.set(key, value),
+    },
+  },
+  document: { getElementById: () => host },
+};
 vm.runInNewContext(fs.readFileSync(require.resolve('../strategy-lab.js'), 'utf8'), context);
 const lab = context.window.strategyLab;
+assert.equal(lab.strategyMode, 'rsi_momentum', 'saved strategy must be restored after reload');
+lab.run = () => {};
+lab.setStrategyMode('ou_quant');
+assert.equal(savedSettings.get('hyperion_strategy_lab_selected_strategy'), 'ou_quant', 'selected strategy must be persisted');
 const buy = { time: 100, entry_price: 1000, exit_price: 1100, net_return_pct: 9.89,
   hypothetical: true, backtest: true, is_entry: true, shape: 'arrowUp', hoverText: 'BUY' };
 const sell = { ...buy, time: 200, is_entry: false, shape: 'arrowDown', hoverText: 'SELL' };

@@ -3,6 +3,16 @@
 
   const rootId = (id) => `lab_${id}`;
   const el = (id) => document.getElementById(rootId(id));
+  const STRATEGY_MODES = ["ma_stack", "bollinger_zscore", "rsi_momentum", "multi_factor", "ou_quant"];
+  const STRATEGY_MODE_STORAGE_KEY = "hyperion_strategy_lab_selected_strategy";
+  const savedStrategyMode = () => {
+    try {
+      const saved = window.localStorage?.getItem(STRATEGY_MODE_STORAGE_KEY);
+      return STRATEGY_MODES.includes(saved) ? saved : "ma_stack";
+    } catch (_) {
+      return "ma_stack";
+    }
+  };
   const pct = (value) => `${Number(value || 0) >= 0 ? "+" : ""}${Number(value || 0).toFixed(2)}%`;
   const krw = (value) => `₩${Math.round(Number(value || 0)).toLocaleString()}`;
   const formatKst = (dateOrMs, options = {}) => {
@@ -31,7 +41,7 @@
     data: null,
     loaded: false,
     chartInterval: "5m",
-    strategyMode: "ma_stack",
+    strategyMode: savedStrategyMode(),
     selectedMarkerTime: null,
     hoveredMarkerTime: null,
     syncingMarkerState: false,
@@ -93,9 +103,13 @@
     },
 
     setStrategyMode(mode) {
-      if (!mode) return Promise.resolve();
+      if (!STRATEGY_MODES.includes(mode)) return Promise.resolve();
       this.strategyMode = mode;
-      const modes = ["ma_stack", "bollinger_zscore", "rsi_momentum", "multi_factor", "ou_quant"];
+      try {
+        window.localStorage?.setItem(STRATEGY_MODE_STORAGE_KEY, mode);
+      } catch (_) {
+        // Private browsing or storage restrictions must not block strategy selection.
+      }
       const ids = {
         ma_stack: "lab_tabModeMaStack",
         bollinger_zscore: "lab_tabModeBollinger",
@@ -103,7 +117,7 @@
         multi_factor: "lab_tabModeMultiFactor",
         ou_quant: "lab_tabModeOuQuant",
       };
-      modes.forEach((m) => {
+      STRATEGY_MODES.forEach((m) => {
         const btn = document.getElementById(ids[m]);
         if (btn) btn.classList.toggle("active", m === mode);
       });
