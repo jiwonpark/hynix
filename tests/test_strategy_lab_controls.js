@@ -25,6 +25,15 @@ lab.renderStrategyTabs();
 assert.equal(elements.get('lab_tabModeOuQuant').classList.contains('active'), true);
 assert.equal(elements.get('lab_tabModeMaStack').classList.contains('active'), false);
 lab.renderBotUI = () => {};
+lab.botState = {min_profit_pct: 0.35, active_tranches:[{unrealized_return_pct:0.30}]};
+for (const mode of ['ma_stack','bollinger_zscore','rsi_momentum','multi_factor','ou_quant']) {
+  const row = lab.getConditionDefinitions(mode, null, null, {}, [], null).exitRows.find(r => r.key === 'exit_net_pnl');
+  assert.equal(row.liveOnly, true, 'minimum profit is a bot execution gate');
+  assert.equal(row.backtestOnly, undefined);
+  assert.ok(row.label.includes('0.35%'));
+  assert.equal(row.pass, false, 'use bot threshold and bot LIFO entry, not replay inventory');
+}
+lab.botState = null;
 const flush = () => new Promise(resolve => setImmediate(resolve));
 (async () => {
   lab.startBotPolling(); await flush();

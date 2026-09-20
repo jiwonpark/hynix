@@ -440,6 +440,14 @@
       const maxTranches = cap.max_tranches ?? 5;
       const freeCash = cap.free_cash_krw ?? 10000000;
       const openBtc = cap.open_quantity_btc ?? 0;
+      const botTop = this.botState?.active_tranches?.[0];
+      const minNet = Number(this.botState?.min_profit_pct ?? 0.20);
+      const botNet = Number(botTop?.unrealized_return_pct ?? 0);
+      const botProfitRule = {
+        key: "exit_net_pnl", label: `2. Bot Minimum Net Profit (≥ ${minNet.toFixed(2)}%)`,
+        value: botTop ? `${pct(botNet)} net` : "No bot position",
+        pass: Boolean(botTop && botNet >= minNet), liveOnly: true,
+      };
 
       let entryRows = [];
       let exitRows = [];
@@ -458,7 +466,7 @@
         ];
         exitRows = [
           { key: "exit_active", label: "1. Active Speculative Tranche (≥ 1 open)", value: `${stack.length} open`, pass: stack.length > 0, required: true },
-          { key: "exit_net_pnl", label: "2. Net Profit (> 0.00% net)", value: top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "—", pass: top && top.unrealized_return_pct > 0, backtestOnly: true },
+          botProfitRule,
           { key: "exit_bb_middle", label: "3. BB Middle Band Reversion (Close ≥ SMA20)", value: `Close ${krw(close)} / Mid ${bbMid ? krw(bbMid) : "--"}`, pass: bbMid != null && close >= bbMid, toggleable: true },
           { key: "exit_z_extreme", label: "4. Volatility Upper Target (Z-Score ≥ +0.50σ)", value: `${z.toFixed(2)}σ`, pass: z >= 0.5, toggleable: true },
           { key: "exit_bullish_stack", label: "5. Bullish Trend Overlay (Price > MA Stacks)", value: latest?.bullish || hourly?.bullish ? "BULLISH RALLY" : "WAIT", pass: Boolean(latest?.bullish || hourly?.bullish), toggleable: true },
@@ -476,7 +484,7 @@
         ];
         exitRows = [
           { key: "exit_active", label: "1. Active Speculative Tranche (≥ 1 open)", value: `${stack.length} open`, pass: stack.length > 0, required: true },
-          { key: "exit_net_pnl", label: "2. Net Profit (> 0.00% net)", value: top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "—", pass: top && top.unrealized_return_pct > 0, backtestOnly: true },
+          botProfitRule,
           { key: "exit_rsi_5m", label: "3. 5m RSI Momentum Exhaustion (RSI ≥ 60.0)", value: `5m RSI ${rsi5.toFixed(1)}`, pass: rsi5 >= 60.0, toggleable: true },
           { key: "exit_stoch_k", label: "4. Stochastic RSI Overbought (Stoch %K ≥ 80.0)", value: `Stoch %K ${stochK.toFixed(1)}`, pass: stochK >= 80.0, toggleable: true },
           { key: "exit_bullish_stack", label: "5. Bullish Trend Overlay (Price > MA Stacks)", value: latest?.bullish || hourly?.bullish ? "BULLISH RALLY" : "WAIT", pass: Boolean(latest?.bullish || hourly?.bullish), toggleable: true },
@@ -498,7 +506,7 @@
         ];
         exitRows = [
           { key: "exit_active", label: "1. Active Speculative Tranche (≥ 1 open)", value: `${stack.length} open`, pass: stack.length > 0, required: true },
-          { key: "exit_net_pnl", label: "2. Net Profit (> 0.00% net)", value: top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "—", pass: top && top.unrealized_return_pct > 0, backtestOnly: true },
+          botProfitRule,
           { key: "exit_rsi_65", label: "3. 5m RSI Extended Exit (5m RSI ≥ 65.0)", value: `5m RSI ${rsi5.toFixed(1)}`, pass: rsi5 >= 65.0, toggleable: true },
           { key: "exit_bb_upper", label: "4. Upper Bollinger Band Touch (Close ≥ Upper BB)", value: `Close ${krw(close)} / BB Up ${bbUp ? krw(bbUp) : "--"}`, pass: bbUp != null && close >= bbUp, toggleable: true },
           { key: "exit_bullish_stack", label: "5. Bullish Trend Overlay (Price > MA Stacks)", value: latest?.bullish ? "5m BULLISH" : "WAIT", pass: Boolean(latest?.bullish), toggleable: true },
@@ -516,7 +524,7 @@
         ];
         exitRows = [
           { key: "exit_active", label: "1. Active Speculative Tranche (≥ 1 open)", value: `${stack.length} open`, pass: stack.length > 0, required: true },
-          { key: "exit_net_pnl", label: "2. Net Profit (> 0.00% net)", value: top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "—", pass: top && top.unrealized_return_pct > 0, backtestOnly: true },
+          botProfitRule,
           { key: "exit_ou_mean", label: "3. Continuous OU Equilibrium Target (OU Spread ≥ 0.00σ)", value: `Spread ${ouZ.toFixed(2)}σ`, pass: ouZ >= 0.0, toggleable: true },
           { key: "exit_bullish_stack", label: "4. Bullish Trend Overlay (Price > MA Stacks)", value: latest?.bullish || hourly?.bullish ? "BULLISH RALLY" : "WAIT", pass: Boolean(latest?.bullish || hourly?.bullish), toggleable: true },
           { key: "exit_position", label: "5. Position Sufficiency Check", value: `${openBtc.toFixed(6)} BTC`, pass: true, required: true },
@@ -532,7 +540,7 @@
         ];
         exitRows = [
           { key: "exit_active", label: "1. Active Speculative Tranche (≥ 1 open)", value: `${stack.length} open`, pass: stack.length > 0, required: true },
-          { key: "exit_net_pnl", label: "2. Net Profit (> 0.00% net)", value: top ? `${top.unrealized_return_pct >= 0 ? "+" : ""}${top.unrealized_return_pct.toFixed(2)}% net` : "—", pass: top && top.unrealized_return_pct > 0, backtestOnly: true },
+          botProfitRule,
           { key: "exit_5m", id: "chkCondExitMaStack5m", label: "3. 5m Bullish MA Stack (Price > MA7 > MA24 > MA60)", value: latest?.bullish ? "5m BULLISH RALLY" : "5m WAITING", pass: Boolean(latest?.bullish), toggleable: true },
           { key: "exit_1h", id: "chkCondExitMaStack1h", label: "4. 1h Bullish MA Stack (Price > MA7 > MA24 > MA60)", value: hourly?.bullish ? "1h BULLISH RALLY" : "1h WAITING", pass: Boolean(hourly?.bullish), toggleable: true },
           { key: "exit_position", label: "5. Position Sufficiency Check", value: `${openBtc.toFixed(6)} BTC`, pass: true, required: true },
@@ -1152,6 +1160,8 @@
           stackCount.innerHTML = `<span style="color:#0284c7; font-weight:700;">${s.active_tranches.length} ${modeTag} ACTIVE</span>`;
         }
       }
+
+      if (this.data) this.renderConditionsChecklists(this.data.bars?.at(-1), this.data.hourly?.at(-1));
 
       if (this.controller && this.data) {
         this.controller.setExecutions(this.executionsForInterval());
