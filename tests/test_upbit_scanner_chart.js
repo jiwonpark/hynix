@@ -9,6 +9,9 @@ assert.match(html, /this\.openChart\(row\.dataset\.market\)/);
 assert.match(html, /api\/upbit\/coin-chart\?\$\{params\}/);
 assert.match(html, /addCandlestickSeries/);
 assert.match(html, /movingAverage\(candles, 24\)/);
+assert.match(html, /Purged Walk-Forward Backtest/);
+assert.match(html, /renderBacktest\(row\?\.backtest\)/);
+assert.match(html, /upbitBtBrier/);
 assert.match(html, /data-interval="15"/);
 assert.match(html, /data-interval="240"/);
 

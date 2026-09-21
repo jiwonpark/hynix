@@ -24,6 +24,9 @@ class UpbitScannerTests(unittest.TestCase):
         self.assertEqual(result["analogue_samples"], 25)
         self.assertGreater(result["volume_acceleration"], 1.7)
         self.assertEqual(result["trade_value_24h_krw"], 123)
+        self.assertGreater(result["backtest"]["predictions"], 0)
+        self.assertGreaterEqual(result["backtest"]["brier_score"], 0)
+        self.assertLessEqual(result["backtest"]["brier_score"], 1)
 
     def test_ranking_prefers_confidence_adjusted_probability(self):
         rows = [

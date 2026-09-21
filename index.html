@@ -4175,6 +4175,19 @@
         <div id="upbitChartLegend" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:11px;font-weight:700;color:#64748b;">
           <span style="color:#0284c7;">— MA 7</span><span style="color:#8b5cf6;">— MA 24</span><span>Green/red: hourly candles</span><span id="upbitChartStatus"></span>
         </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+            <strong style="font-size:12px;color:#0f172a;">🧪 Purged Walk-Forward Backtest</strong>
+            <span style="font-size:10.5px;color:#64748b;">Expanding training window · six-hour purge · historical predictions every two hours</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;">
+            <div class="pairKpiCard"><span class="pairKpiLabel">Signal Hit Rate</span><div class="pairKpiValue" id="upbitBtHit">--</div><span class="pairKpiSub" id="upbitBtSignalCount">No coin selected</span></div>
+            <div class="pairKpiCard"><span class="pairKpiLabel">Unfiltered Baseline</span><div class="pairKpiValue" id="upbitBtBaseline">--</div><span class="pairKpiSub">All evaluated periods</span></div>
+            <div class="pairKpiCard"><span class="pairKpiLabel">Predictive Lift</span><div class="pairKpiValue" id="upbitBtLift">--</div><span class="pairKpiSub">Hit rate minus baseline</span></div>
+            <div class="pairKpiCard"><span class="pairKpiLabel">Avg Signal Return</span><div class="pairKpiValue" id="upbitBtReturn">--</div><span class="pairKpiSub">Realized six-hour return</span></div>
+            <div class="pairKpiCard"><span class="pairKpiLabel">Brier Score</span><div class="pairKpiValue" id="upbitBtBrier">--</div><span class="pairKpiSub">Lower is better</span></div>
+          </div>
+        </div>
       </section>
       <section class="panel tablePanel">
         <div class="tableHead" style="padding:12px 16px;border-bottom:1px solid var(--line);background:#f8fafc;">
@@ -14536,9 +14549,24 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("upbitChartTitle")) $("upbitChartTitle").textContent = `${row?.symbol || market} / KRW`;
         if ($("upbitChartSubtitle")) $("upbitChartSubtitle").textContent = `${row?.korean_name || row?.english_name || ""} · Rank #${row?.rank || "--"} · click-and-drag to inspect`;
         if ($("upbitChartScore")) $("upbitChartScore").textContent = row ? `${row.forecast_probability_pct.toFixed(1)}% P(+2% first) · ${row.signal}` : "";
+        this.renderBacktest(row?.backtest);
         this.styleIntervalButtons();
         await this.loadChart();
         panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+      },
+
+      renderBacktest(backtest) {
+        const bt = backtest || {};
+        const set = (id, value, color) => { const node = $(id); if (node) { node.textContent = value; if (color) node.style.color = color; } };
+        const hit = Number(bt.signal_hit_rate_pct || 0);
+        const lift = Number(bt.lift_pct_points || 0);
+        const ret = Number(bt.average_signal_return_pct || 0);
+        set("upbitBtHit", bt.signals ? `${hit.toFixed(1)}%` : "N/A", hit >= 50 ? "#16a34a" : "#dc2626");
+        set("upbitBtBaseline", `${Number(bt.baseline_hit_rate_pct || 0).toFixed(1)}%`);
+        set("upbitBtLift", `${lift >= 0 ? "+" : ""}${lift.toFixed(1)} pp`, lift > 0 ? "#16a34a" : "#dc2626");
+        set("upbitBtReturn", `${ret >= 0 ? "+" : ""}${ret.toFixed(2)}%`, ret > 0 ? "#16a34a" : "#dc2626");
+        set("upbitBtBrier", Number(bt.brier_score ?? 1).toFixed(3));
+        if ($("upbitBtSignalCount")) $("upbitBtSignalCount").textContent = `${bt.signals || 0} signals / ${bt.predictions || 0} forecasts`;
       },
 
       closeChart() {

@@ -62,24 +62,7 @@ def _outcome(candles: List[Dict[str, Any]], index: int) -> Tuple[int, float]:
     return label, realized
 
 
-def forecast_coin(ticker: Dict[str, Any], candles: List[Dict[str, Any]]) -> Dict[str, float]:
-    """Estimate a six-hour upside probability from causal nearest historical analogues."""
-    if len(candles) < 60:
-        raise ValueError("At least 60 completed hourly candles are required")
-    current = _feature_at(candles, len(candles) - 1)
-    if current is None:
-        raise ValueError("Insufficient feature history")
-    feature_keys = ("momentum_1h_pct", "momentum_3h_pct", "momentum_6h_pct",
-                    "momentum_acceleration", "volume_acceleration",
-                    "volatility_compression", "range_position_pct", "rsi_14")
-    samples = []
-    for index in range(30, len(candles) - HORIZON_HOURS):
-        features = _feature_at(candles, index)
-        if features is not None:
-            label, realized = _outcome(candles, index)
-            samples.append((features, label, realized))
-    if not samples:
-        raise ValueError("No historical forecast samples")
+def _analogue_prediction(current: Dict[str, float], samples, feature_keys) -> Tuple[float, float, float, int]:
     scales = {}
     for key in feature_keys:
         values = [sample[0][key] for sample in samples]
@@ -90,11 +73,62 @@ def forecast_coin(ticker: Dict[str, Any], candles: List[Dict[str, Any]]) -> Dict
         distances.append((distance, label, realized))
     neighbors = sorted(distances, key=lambda item: item[0])[:min(25, len(distances))]
     weights = [1.0 / (0.25 + item[0]) for item in neighbors]
-    weighted_wins = sum(weight * item[1] for weight, item in zip(weights, neighbors))
-    probability = (weighted_wins + 2.0) / (sum(weights) + 4.0) * 100.0
+    probability = (sum(weight * item[1] for weight, item in zip(weights, neighbors)) + 2.0) / (sum(weights) + 4.0) * 100.0
     expected_return = sum(weight * item[2] for weight, item in zip(weights, neighbors)) / sum(weights)
     mean_distance = statistics.fmean(item[0] for item in neighbors)
     confidence = min(1.0, len(neighbors) / 25.0) * (1.0 / (1.0 + mean_distance)) * 100.0
+    return probability, expected_return, confidence, len(neighbors)
+
+
+def _walk_forward_backtest(candles, feature_keys, samples_by_index) -> Dict[str, float]:
+    """Purged expanding-window test; each forecast only sees resolved earlier outcomes."""
+    evaluations = []
+    start = max(75, len(candles) - 60)
+    for test_index in range(start, len(candles) - HORIZON_HOURS, 2):
+        # Purge the full outcome horizon between the last training label and test features.
+        training = [sample for index, sample in samples_by_index.items()
+                    if index < test_index - HORIZON_HOURS]
+        if len(training) < 25:
+            continue
+        current = samples_by_index[test_index][0]
+        probability, _, confidence, _ = _analogue_prediction(current, training, feature_keys)
+        label, realized = _outcome(candles, test_index)
+        evaluations.append((probability, confidence, label, realized))
+    if not evaluations:
+        return {"predictions": 0, "signals": 0, "signal_hit_rate_pct": 0.0,
+                "baseline_hit_rate_pct": 0.0, "brier_score": 1.0,
+                "average_signal_return_pct": 0.0, "lift_pct_points": 0.0}
+    signals = [row for row in evaluations if row[0] >= 60.0 and row[1] >= 40.0]
+    baseline = sum(row[2] for row in evaluations) / len(evaluations) * 100.0
+    hit_rate = sum(row[2] for row in signals) / len(signals) * 100.0 if signals else 0.0
+    brier = statistics.fmean((row[0] / 100.0 - row[2]) ** 2 for row in evaluations)
+    average_return = statistics.fmean(row[3] for row in signals) if signals else 0.0
+    return {"predictions": len(evaluations), "signals": len(signals),
+            "signal_hit_rate_pct": round(hit_rate, 2), "baseline_hit_rate_pct": round(baseline, 2),
+            "brier_score": round(brier, 4), "average_signal_return_pct": round(average_return, 2),
+            "lift_pct_points": round(hit_rate - baseline, 2) if signals else 0.0}
+
+
+def forecast_coin(ticker: Dict[str, Any], candles: List[Dict[str, Any]]) -> Dict[str, float]:
+    """Estimate a six-hour upside probability from causal nearest historical analogues."""
+    if len(candles) < 60:
+        raise ValueError("At least 60 completed hourly candles are required")
+    current = _feature_at(candles, len(candles) - 1)
+    if current is None:
+        raise ValueError("Insufficient feature history")
+    feature_keys = ("momentum_1h_pct", "momentum_3h_pct", "momentum_6h_pct",
+                    "momentum_acceleration", "volume_acceleration",
+                    "volatility_compression", "range_position_pct", "rsi_14")
+    samples_by_index = {}
+    for index in range(30, len(candles) - HORIZON_HOURS):
+        features = _feature_at(candles, index)
+        if features is not None:
+            label, realized = _outcome(candles, index)
+            samples_by_index[index] = (features, label, realized)
+    samples = list(samples_by_index.values())
+    if not samples:
+        raise ValueError("No historical forecast samples")
+    probability, expected_return, confidence, neighbor_count = _analogue_prediction(current, samples, feature_keys)
     calibrated_score = 50.0 + (probability - 50.0) * confidence / 100.0
     closes = [float(row["close"]) for row in candles]
     returns = [math.log(b / a) for a, b in zip(closes[:-1], closes[1:])]
@@ -104,11 +138,12 @@ def forecast_coin(ticker: Dict[str, Any], candles: List[Dict[str, Any]]) -> Dict
         "expected_return_6h_pct": round(expected_return, 2),
         "forecast_confidence_pct": round(confidence, 2),
         "historical_samples": len(samples),
-        "analogue_samples": len(neighbors),
+        "analogue_samples": neighbor_count,
         "score": round(max(0.0, min(100.0, calibrated_score)), 2),
         "volatility_24h_pct": statistics.pstdev(returns[-24:]) * math.sqrt(24) * 100,
         "trade_value_24h_krw": float(ticker.get("acc_trade_price_24h", 0.0)),
     }
+    result["backtest"] = _walk_forward_backtest(candles, feature_keys, samples_by_index)
     result["signal"] = "HIGH" if result["score"] >= 60 and expected_return > 0 else "WATCH" if result["score"] >= 53 else "NO EDGE"
     return result
 
