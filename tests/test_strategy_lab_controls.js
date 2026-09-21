@@ -19,7 +19,11 @@ const context = {
   setInterval: fn => {tick = fn; return 1;}, clearInterval: () => {},
   fetch: async (...args) => {calls.push(args); return {ok:true, json: async () => ({success:true, status:{mode:'paper'}})}},
 };
-vm.runInNewContext(fs.readFileSync(require.resolve('../strategy-lab.js'), 'utf8'), context);
+const source = fs.readFileSync(require.resolve('../strategy-lab.js'), 'utf8');
+assert.match(source, /The .* bot is still running/);
+assert.match(source, /Apply \$\{selectedName\} to Bot/);
+assert.match(source, /Research view and bot strategy match/);
+vm.runInNewContext(source, context);
 const lab = context.window.strategyLab;
 lab.renderStrategyTabs();
 assert.equal(elements.get('lab_tabModeOuQuant').classList.contains('active'), true);

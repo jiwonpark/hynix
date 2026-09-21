@@ -4,6 +4,10 @@
   const rootId = (id) => `lab_${id}`;
   const el = (id) => document.getElementById(rootId(id));
   const STRATEGY_MODES = ["ma_stack", "bollinger_zscore", "rsi_momentum", "multi_factor", "ou_quant"];
+  const STRATEGY_LABELS = {
+    ma_stack: "Dual MA Stack", bollinger_zscore: "Bollinger & Z-Score",
+    rsi_momentum: "RSI Momentum", multi_factor: "Multi-Factor Gate", ou_quant: "Quant OU SDE",
+  };
   const STRATEGY_MODE_STORAGE_KEY = "hyperion_strategy_lab_selected_strategy";
   const savedStrategyMode = () => {
     try {
@@ -103,7 +107,7 @@
       });
     },
 
-    setStrategyMode(mode) {
+    async setStrategyMode(mode) {
       if (!STRATEGY_MODES.includes(mode)) return Promise.resolve();
       this.strategyMode = mode;
       try {
@@ -112,7 +116,18 @@
         // Private browsing or storage restrictions must not block strategy selection.
       }
       this.renderStrategyTabs();
-      return this.run();
+      const runPromise = this.run();
+      this.renderBotUI();
+      const mismatch = this.botState?.enabled && this.botState.active_strategy !== mode;
+      const unlocked = window.terminalLockManager && !window.terminalLockManager.isLocked;
+      if (mismatch && unlocked) {
+        const running = STRATEGY_LABELS[this.botState.active_strategy] || this.botState.active_strategy;
+        const selected = STRATEGY_LABELS[mode] || mode;
+        if (window.confirm(`Research view changed to ${selected}.\n\nThe ${this.botState.mode.toUpperCase()} bot is still running ${running}. Switch the running bot to ${selected} now?`)) {
+          await this.bindActiveStrategyToBot(true);
+        }
+      }
+      await runPromise;
     },
 
     renderStrategyTabs() {
@@ -1077,7 +1092,21 @@
         notice.style.cssText = "font-size:12px;color:#b45309;margin-top:6px;";
         strategyLabel.parentElement.appendChild(notice);
       }
-      if (notice) notice.textContent = s.last_error || (s.pending_order ? "Order pending reconciliation" : "");
+      const mismatch = s.active_strategy !== this.strategyMode;
+      const selectedName = STRATEGY_LABELS[this.strategyMode] || this.strategyMode;
+      const runningName = STRATEGY_LABELS[s.active_strategy] || s.active_strategy;
+      if (notice) {
+        notice.textContent = s.last_error || (s.pending_order ? "Order pending reconciliation" : mismatch ? `⚠ Viewing ${selectedName}; ${s.mode.toUpperCase()} bot still runs ${runningName}. Apply the selected strategy before expecting matching trades.` : "✓ Research view and bot strategy match.");
+        notice.style.color = (s.last_error || s.pending_order || mismatch) ? "#b45309" : "#15803d";
+        notice.style.fontWeight = mismatch ? "800" : "600";
+      }
+      const bindButton = el("btnBindStrategy");
+      if (bindButton) {
+        bindButton.textContent = mismatch ? `⚠ Apply ${selectedName} to Bot` : `✓ Bot Uses ${selectedName}`;
+        bindButton.style.background = mismatch ? "#fff7ed" : "#f0fdf4";
+        bindButton.style.borderColor = mismatch ? "#f59e0b" : "#86efac";
+        bindButton.style.color = mismatch ? "#9a3412" : "#166534";
+      }
       const lblStrategy = el("lblLiveBotStrategy");
       if (lblStrategy) {
         const stratName = s.strategy_name || s.active_strategy;
