@@ -4135,15 +4135,15 @@
         <div class="controlSection">
           <div class="controlSectionHeader">
             <div>
-              <h3 style="margin:0;">🚀 Upbit KRW Coin Momentum Radar</h3>
-              <span>Every active KRW market ranked from completed hourly data. Higher scores indicate stronger current quantitative conditions—not guaranteed future returns.</span>
+              <h3 style="margin:0;">🔮 Upbit KRW Pre-Move Forecast Radar</h3>
+              <span>Causal forecast of which coin may hit +2% before −1% during the next six hours, based on similar historical setups.</span>
             </div>
             <button id="btnUpbitScannerRefresh" type="button" style="width:auto;height:32px;padding:0 14px;font-size:12px;background:#059669;color:#fff;font-weight:800;border-radius:6px;">🔄 Rescan All Coins</button>
           </div>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;">
             <input id="upbitScannerSearch" type="search" placeholder="Search symbol or coin name…" style="height:32px;min-width:240px;padding:0 10px;border:1px solid #cbd5e1;border-radius:6px;">
             <select id="upbitScannerSignal" style="height:32px;padding:0 10px;border:1px solid #cbd5e1;border-radius:6px;font-weight:700;">
-              <option value="all">All signals</option><option value="STRONG">Strong only</option><option value="POSITIVE">Positive</option><option value="NEUTRAL">Neutral</option><option value="WEAK">Weak</option>
+              <option value="all">All forecasts</option><option value="HIGH">High probability</option><option value="WATCH">Watch</option><option value="NO EDGE">No edge</option>
             </select>
             <span id="upbitScannerStatus" style="font-size:11.5px;color:#64748b;font-weight:700;">Open this tab to scan.</span>
           </div>
@@ -4152,7 +4152,7 @@
       <section style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px;">
         <div class="pairKpiCard"><span class="pairKpiLabel">Markets inspected</span><div class="pairKpiValue" id="upbitKpiCount">--</div><span class="pairKpiSub">Active KRW markets</span></div>
         <div class="pairKpiCard"><span class="pairKpiLabel">Top-ranked coin</span><div class="pairKpiValue" id="upbitKpiTop" style="color:#059669;">--</div><span class="pairKpiSub" id="upbitKpiTopScore">Awaiting scan</span></div>
-        <div class="pairKpiCard"><span class="pairKpiLabel">Strong signals</span><div class="pairKpiValue" id="upbitKpiStrong">--</div><span class="pairKpiSub">Score ≥ 70</span></div>
+        <div class="pairKpiCard"><span class="pairKpiLabel">High forecasts</span><div class="pairKpiValue" id="upbitKpiStrong">--</div><span class="pairKpiSub">Confidence-adjusted score ≥ 60</span></div>
         <div class="pairKpiCard"><span class="pairKpiLabel">Last completed scan</span><div class="pairKpiValue" id="upbitKpiTime" style="font-size:15px;">--</div><span class="pairKpiSub">Five-minute server cache</span></div>
       </section>
       <section id="upbitCoinChartPanel" class="panel" style="display:none;margin-bottom:14px;padding:14px;">
@@ -4179,12 +4179,12 @@
       <section class="panel tablePanel">
         <div class="tableHead" style="padding:12px 16px;border-bottom:1px solid var(--line);background:#f8fafc;">
           <strong>Quantitative Ranking Matrix</strong>
-          <div style="font-size:11px;color:#64748b;margin-top:3px;">Click a coin row to open its chart. Score weights: momentum 70% · trend consistency 12% · range position 8% · liquidity 10% · volatility penalty 10%.</div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">Click a coin to chart it. Forecasts use only pre-outcome data and nearest historical analogues; same-bar target/stop ambiguity is counted as a loss.</div>
         </div>
         <div class="tableWrap" style="overflow:auto;max-height:680px;">
           <table class="pairsTable" id="tblUpbitScanner">
             <thead style="position:sticky;top:0;background:#f8fafc;z-index:2;"><tr>
-              <th data-sort="rank">Rank</th><th data-sort="symbol">Coin</th><th data-sort="score">Score</th><th data-sort="signal">Signal</th><th data-sort="price_krw">Price</th><th data-sort="momentum_1h_pct">1h</th><th data-sort="momentum_6h_pct">6h</th><th data-sort="momentum_24h_pct">24h</th><th data-sort="trend_consistency_pct">Trend</th><th data-sort="rsi_14">RSI</th><th data-sort="range_position_pct">24h Range</th><th data-sort="volatility_24h_pct">Volatility</th><th data-sort="trade_value_24h_krw">Value 24h</th>
+              <th data-sort="rank">Rank</th><th data-sort="symbol">Coin</th><th data-sort="forecast_probability_pct">P(+2% first)</th><th data-sort="score">Adj. Score</th><th data-sort="signal">Forecast</th><th data-sort="expected_return_6h_pct">Expected 6h</th><th data-sort="forecast_confidence_pct">Confidence</th><th data-sort="volume_acceleration">Volume Build</th><th data-sort="volatility_compression">Compression</th><th data-sort="momentum_acceleration">Acceleration</th><th data-sort="rsi_14">RSI</th><th data-sort="historical_samples">History</th><th data-sort="trade_value_24h_krw">Value 24h</th>
             </tr></thead>
             <tbody id="tbodyUpbitScanner"><tr><td colspan="13" style="padding:28px;text-align:center;color:#94a3b8;">Scanner has not run yet.</td></tr></tbody>
           </table>
@@ -14499,7 +14499,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           this.loaded = true;
           this.renderKpis(data);
           this.render();
-          if (status) status.textContent = `${data.ranked_count} of ${data.universe_count} KRW markets ranked · completed candles only`;
+          if (status) status.textContent = `${data.ranked_count} of ${data.universe_count} markets forecast · +2% target / −1% barrier / 6h horizon`;
         } catch (error) {
           if (status) status.textContent = `Scan failed: ${error.message}`;
         } finally {
@@ -14512,8 +14512,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const top = this.rows[0];
         if ($("upbitKpiCount")) $("upbitKpiCount").textContent = String(data.ranked_count || 0);
         if ($("upbitKpiTop")) $("upbitKpiTop").textContent = top?.symbol || "--";
-        if ($("upbitKpiTopScore")) $("upbitKpiTopScore").textContent = top ? `${top.score.toFixed(1)} score · ${top.signal}` : "No result";
-        if ($("upbitKpiStrong")) $("upbitKpiStrong").textContent = String(this.rows.filter((row) => row.score >= 70).length);
+        if ($("upbitKpiTopScore")) $("upbitKpiTopScore").textContent = top ? `${top.forecast_probability_pct.toFixed(1)}% raw probability · ${top.signal}` : "No result";
+        if ($("upbitKpiStrong")) $("upbitKpiStrong").textContent = String(this.rows.filter((row) => row.signal === "HIGH").length);
         if ($("upbitKpiTime")) $("upbitKpiTime").textContent = data.generated_at ? new Date(data.generated_at * 1000).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }) + " KST" : "--";
       },
 
@@ -14535,7 +14535,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (panel) panel.style.display = "block";
         if ($("upbitChartTitle")) $("upbitChartTitle").textContent = `${row?.symbol || market} / KRW`;
         if ($("upbitChartSubtitle")) $("upbitChartSubtitle").textContent = `${row?.korean_name || row?.english_name || ""} · Rank #${row?.rank || "--"} · click-and-drag to inspect`;
-        if ($("upbitChartScore")) $("upbitChartScore").textContent = row ? `${row.score.toFixed(1)} · ${row.signal}` : "";
+        if ($("upbitChartScore")) $("upbitChartScore").textContent = row ? `${row.forecast_probability_pct.toFixed(1)}% P(+2% first) · ${row.signal}` : "";
         this.styleIntervalButtons();
         await this.loadChart();
         panel?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -14616,9 +14616,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const pct = (value) => `<span style="color:${value >= 0 ? "#16a34a" : "#dc2626"};font-weight:700;">${value >= 0 ? "+" : ""}${Number(value).toFixed(2)}%</span>`;
         const price = (value) => Number(value).toLocaleString("ko-KR", { maximumFractionDigits: Number(value) < 100 ? 4 : 0 });
         tbody.innerHTML = rows.map((row) => {
-          const signalColor = row.signal === "STRONG" ? "#047857" : row.signal === "POSITIVE" ? "#0284c7" : row.signal === "WEAK" ? "#dc2626" : "#64748b";
+          const signalColor = row.signal === "HIGH" ? "#047857" : row.signal === "WATCH" ? "#0284c7" : "#64748b";
           const selected = row.market === this.selectedMarket;
-          return `<tr data-market="${esc(row.market)}" style="cursor:pointer;${selected ? "background:#eff6ff;box-shadow:inset 3px 0 #0284c7;" : ""}" title="Open ${esc(row.symbol)} chart"><td style="font-weight:900;">#${row.rank}</td><td><strong>${esc(row.symbol)}</strong><div style="font-size:10px;color:#64748b;">${esc(row.korean_name || row.english_name)}</div></td><td><strong style="font-size:14px;color:${signalColor};">${Number(row.score).toFixed(1)}</strong></td><td><span style="color:${signalColor};font-weight:800;">${esc(row.signal)}</span></td><td style="font-weight:700;">₩${price(row.price_krw)}</td><td>${pct(row.momentum_1h_pct)}</td><td>${pct(row.momentum_6h_pct)}</td><td>${pct(row.momentum_24h_pct)}</td><td>${Number(row.trend_consistency_pct).toFixed(0)}%</td><td>${Number(row.rsi_14).toFixed(1)}</td><td>${Number(row.range_position_pct).toFixed(0)}%</td><td>${Number(row.volatility_24h_pct).toFixed(2)}%</td><td>₩${(Number(row.trade_value_24h_krw) / 1e9).toFixed(1)}B</td></tr>`;
+          return `<tr data-market="${esc(row.market)}" style="cursor:pointer;${selected ? "background:#eff6ff;box-shadow:inset 3px 0 #0284c7;" : ""}" title="Open ${esc(row.symbol)} chart"><td style="font-weight:900;">#${row.rank}</td><td><strong>${esc(row.symbol)}</strong><div style="font-size:10px;color:#64748b;">${esc(row.korean_name || row.english_name)}</div></td><td><strong style="font-size:14px;color:${signalColor};">${Number(row.forecast_probability_pct).toFixed(1)}%</strong></td><td style="font-weight:800;">${Number(row.score).toFixed(1)}</td><td><span style="color:${signalColor};font-weight:800;">${esc(row.signal)}</span></td><td>${pct(row.expected_return_6h_pct)}</td><td>${Number(row.forecast_confidence_pct).toFixed(1)}%</td><td>${Number(row.volume_acceleration).toFixed(2)}×</td><td>${Number(row.volatility_compression).toFixed(2)}×</td><td>${pct(row.momentum_acceleration)}</td><td>${Number(row.rsi_14).toFixed(1)}</td><td>${row.analogue_samples}/${row.historical_samples}</td><td>₩${(Number(row.trade_value_24h_krw) / 1e9).toFixed(1)}B</td></tr>`;
         }).join("");
       }
     };

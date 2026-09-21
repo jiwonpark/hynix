@@ -37,7 +37,7 @@ from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
 from starlette.responses import JSONResponse
 from .strategy_lab import run_ma_stack_backtest, strategy_execution_engine
-from .upbit_scanner import coin_factors, rank_universe
+from .upbit_scanner import forecast_coin, rank_universe
 
 STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
 scale_in_lock = asyncio.Lock()
@@ -317,7 +317,7 @@ async def get_upbit_account() -> Dict[str, Any]:
 
 @app.get("/api/upbit/coin-rankings")
 async def get_upbit_coin_rankings(refresh: bool = False) -> Dict[str, Any]:
-    """Rank every active KRW market from completed 1h candles and 24h liquidity."""
+    """Rank every active KRW market by causal six-hour pre-move forecasts."""
     now = time.time()
     cached = upbit_scanner_cache.get("payload")
     if cached and not refresh and now - float(upbit_scanner_cache["timestamp"]) < 300:
@@ -338,8 +338,8 @@ async def get_upbit_coin_rankings(refresh: bool = False) -> Dict[str, Any]:
 
         async def inspect(market: str):
             try:
-                candles = await upbit_client.get_minute_candles(market, 60, 49)
-                factors = coin_factors(tickers.get(market, {}), candles)
+                candles = await upbit_client.get_minute_candles(market, 60, 200)
+                factors = forecast_coin(tickers.get(market, {}), candles)
                 ticker = tickers.get(market, {})
                 return {"market": market, "symbol": market.removeprefix("KRW-"),
                         **names[market], "price_krw": float(ticker.get("trade_price", 0.0)), **factors}
@@ -354,7 +354,10 @@ async def get_upbit_coin_rankings(refresh: bool = False) -> Dict[str, Any]:
             "generated_at": int(time.time()),
             "universe_count": len(symbols),
             "ranked_count": len(rows),
-            "methodology": "1h/6h/24h momentum + trend consistency + 24h range position + liquidity - volatility penalty",
+            "methodology": "causal nearest-analogue forecast: probability of +2% before -1% within 6 completed hourly bars",
+            "forecast_horizon_hours": 6,
+            "upside_target_pct": 2.0,
+            "downside_barrier_pct": 1.0,
             "rows": rows,
         }
         upbit_scanner_cache.update(timestamp=time.time(), payload=payload)
