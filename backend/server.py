@@ -380,7 +380,7 @@ async def get_upbit_coin_chart(
         return {"success": False, "error": "Unknown Upbit KRW market"}
     candles = await upbit_client.get_minute_candles(market, interval, count)
     # Virtual markers are generated on completed hourly bars, independent of the display timeframe.
-    hourly = candles if interval == 60 and len(candles) >= 100 else await upbit_client.get_minute_candles(market, 60, 200)
+    hourly = candles if interval == 60 and len(candles) >= 200 else await upbit_client.get_minute_candles(market, 60, 200)
     virtual_trades = walk_forward_trades(hourly)
     actual_trades = []
     actual_error = None
