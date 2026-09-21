@@ -1021,7 +1021,16 @@
 
     applyExecutionLock() {
       const locked = !window.terminalLockManager || window.terminalLockManager.isLocked;
-      ["btnBindStrategy", "btnModePaper", "btnModeLive", "btnToggleBotPower", "btnEmergencyFlatten", "inpBotTrancheSize", "inpBotMaxTranches", "inpBotMinProfit"].forEach((id) => {
+      ["btnBindStrategy", "btnModePaper", "btnModeLive", "btnToggleBotPower", "btnEmergencyFlatten"].forEach((id) => {
+        const control = el(id);
+        if (control) {
+          // Keep action buttons clickable while read-only so their guarded handlers
+          // can open the unlock dialog instead of appearing broken.
+          control.disabled = false;
+          control.title = locked ? "Click to unlock the terminal and change execution" : "";
+        }
+      });
+      ["inpBotTrancheSize", "inpBotMaxTranches", "inpBotMinProfit"].forEach((id) => {
         const control = el(id);
         if (control) { control.disabled = locked; control.title = locked ? "Unlock the terminal to change execution" : ""; }
       });
