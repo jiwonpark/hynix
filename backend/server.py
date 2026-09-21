@@ -360,6 +360,30 @@ async def get_upbit_coin_rankings(refresh: bool = False) -> Dict[str, Any]:
         upbit_scanner_cache.update(timestamp=time.time(), payload=payload)
         return payload
 
+
+@app.get("/api/upbit/coin-chart")
+async def get_upbit_coin_chart(
+    market: str = Query(..., pattern=r"^KRW-[A-Z0-9]+$"),
+    interval: int = Query(60),
+    count: int = Query(168, ge=50, le=500),
+) -> Dict[str, Any]:
+    """Return completed candles for a selected KRW market chart."""
+    if interval not in (15, 60, 240):
+        return {"success": False, "error": "Interval must be 15, 60, or 240 minutes"}
+    markets = await upbit_client.get_markets()
+    metadata = next((row for row in markets if row.get("market") == market), None)
+    if metadata is None:
+        return {"success": False, "error": "Unknown Upbit KRW market"}
+    candles = await upbit_client.get_minute_candles(market, interval, count)
+    return {
+        "success": True,
+        "market": market,
+        "interval": interval,
+        "korean_name": metadata.get("korean_name", ""),
+        "english_name": metadata.get("english_name", ""),
+        "candles": candles,
+    }
+
 @app.get("/api/strategy-lab/upbit-ma-stack")
 async def get_upbit_ma_stack_backtest(
     request: Request,

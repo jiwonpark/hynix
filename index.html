@@ -4155,10 +4155,31 @@
         <div class="pairKpiCard"><span class="pairKpiLabel">Strong signals</span><div class="pairKpiValue" id="upbitKpiStrong">--</div><span class="pairKpiSub">Score ≥ 70</span></div>
         <div class="pairKpiCard"><span class="pairKpiLabel">Last completed scan</span><div class="pairKpiValue" id="upbitKpiTime" style="font-size:15px;">--</div><span class="pairKpiSub">Five-minute server cache</span></div>
       </section>
+      <section id="upbitCoinChartPanel" class="panel" style="display:none;margin-bottom:14px;padding:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <h3 id="upbitChartTitle" style="margin:0;font-size:16px;color:#0f172a;">Coin Chart</h3>
+              <span id="upbitChartScore" style="padding:3px 8px;border-radius:5px;background:#ecfdf5;color:#047857;font-size:11px;font-weight:800;"></span>
+            </div>
+            <span id="upbitChartSubtitle" style="font-size:11px;color:#64748b;">Click a ranked coin to inspect its price action.</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button class="upbitChartInterval" data-interval="15" type="button" style="height:28px;padding:0 10px;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:5px;">15m</button>
+            <button class="upbitChartInterval active" data-interval="60" type="button" style="height:28px;padding:0 10px;background:#0284c7;color:#fff;border:1px solid #0284c7;border-radius:5px;">1h</button>
+            <button class="upbitChartInterval" data-interval="240" type="button" style="height:28px;padding:0 10px;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:5px;">4h</button>
+            <button id="btnCloseUpbitChart" type="button" style="height:28px;padding:0 10px;background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;border-radius:5px;">✕</button>
+          </div>
+        </div>
+        <div id="upbitCoinChartHost" style="width:100%;height:420px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;position:relative;"></div>
+        <div id="upbitChartLegend" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:11px;font-weight:700;color:#64748b;">
+          <span style="color:#0284c7;">— MA 7</span><span style="color:#8b5cf6;">— MA 24</span><span>Green/red: hourly candles</span><span id="upbitChartStatus"></span>
+        </div>
+      </section>
       <section class="panel tablePanel">
         <div class="tableHead" style="padding:12px 16px;border-bottom:1px solid var(--line);background:#f8fafc;">
           <strong>Quantitative Ranking Matrix</strong>
-          <div style="font-size:11px;color:#64748b;margin-top:3px;">Score weights: momentum 70% · trend consistency 12% · range position 8% · liquidity 10% · volatility penalty 10%. Click a heading to sort.</div>
+          <div style="font-size:11px;color:#64748b;margin-top:3px;">Click a coin row to open its chart. Score weights: momentum 70% · trend consistency 12% · range position 8% · liquidity 10% · volatility penalty 10%.</div>
         </div>
         <div class="tableWrap" style="overflow:auto;max-height:680px;">
           <table class="pairsTable" id="tblUpbitScanner">
@@ -14426,11 +14447,28 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       loading: false,
       sortKey: "rank",
       sortDirection: 1,
+      selectedMarket: null,
+      selectedInterval: 60,
+      chart: null,
+      candleSeries: null,
+      ma7Series: null,
+      ma24Series: null,
+      resizeObserver: null,
 
       init() {
         $("btnUpbitScannerRefresh")?.addEventListener("click", () => this.load(true));
         $("upbitScannerSearch")?.addEventListener("input", () => this.render());
         $("upbitScannerSignal")?.addEventListener("change", () => this.render());
+        $("tbodyUpbitScanner")?.addEventListener("click", (event) => {
+          const row = event.target.closest("tr[data-market]");
+          if (row) this.openChart(row.dataset.market);
+        });
+        $("btnCloseUpbitChart")?.addEventListener("click", () => this.closeChart());
+        document.querySelectorAll(".upbitChartInterval").forEach((button) => button.addEventListener("click", () => {
+          this.selectedInterval = Number(button.dataset.interval);
+          this.styleIntervalButtons();
+          if (this.selectedMarket) this.loadChart();
+        }));
         document.querySelectorAll("#tblUpbitScanner th[data-sort]").forEach((header) => {
           header.style.cursor = "pointer";
           header.addEventListener("click", () => {
@@ -14479,6 +14517,84 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("upbitKpiTime")) $("upbitKpiTime").textContent = data.generated_at ? new Date(data.generated_at * 1000).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }) + " KST" : "--";
       },
 
+      styleIntervalButtons() {
+        document.querySelectorAll(".upbitChartInterval").forEach((button) => {
+          const active = Number(button.dataset.interval) === this.selectedInterval;
+          button.classList.toggle("active", active);
+          button.style.background = active ? "#0284c7" : "#fff";
+          button.style.color = active ? "#fff" : "#475569";
+          button.style.borderColor = active ? "#0284c7" : "#cbd5e1";
+        });
+      },
+
+      async openChart(market) {
+        this.selectedMarket = market;
+        this.render();
+        const row = this.rows.find((item) => item.market === market);
+        const panel = $("upbitCoinChartPanel");
+        if (panel) panel.style.display = "block";
+        if ($("upbitChartTitle")) $("upbitChartTitle").textContent = `${row?.symbol || market} / KRW`;
+        if ($("upbitChartSubtitle")) $("upbitChartSubtitle").textContent = `${row?.korean_name || row?.english_name || ""} · Rank #${row?.rank || "--"} · click-and-drag to inspect`;
+        if ($("upbitChartScore")) $("upbitChartScore").textContent = row ? `${row.score.toFixed(1)} · ${row.signal}` : "";
+        this.styleIntervalButtons();
+        await this.loadChart();
+        panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+      },
+
+      closeChart() {
+        if ($("upbitCoinChartPanel")) $("upbitCoinChartPanel").style.display = "none";
+        this.selectedMarket = null;
+      },
+
+      movingAverage(candles, period) {
+        return candles.map((bar, index) => {
+          if (index < period - 1) return null;
+          const slice = candles.slice(index - period + 1, index + 1);
+          return { time: bar.time, value: slice.reduce((sum, item) => sum + Number(item.close), 0) / period };
+        }).filter(Boolean);
+      },
+
+      ensureChart() {
+        const host = $("upbitCoinChartHost");
+        if (!host || this.chart || !window.LightweightCharts) return;
+        this.chart = LightweightCharts.createChart(host, {
+          width: host.clientWidth, height: 420,
+          layout: { background: { color: "#ffffff" }, textColor: "#475569" },
+          grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
+          rightPriceScale: { borderColor: "#cbd5e1" },
+          timeScale: { borderColor: "#cbd5e1", timeVisible: true, secondsVisible: false },
+          crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        });
+        this.candleSeries = this.chart.addCandlestickSeries({ upColor: "#16a34a", downColor: "#dc2626", borderVisible: false, wickUpColor: "#16a34a", wickDownColor: "#dc2626" });
+        this.ma7Series = this.chart.addLineSeries({ color: "#0284c7", lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+        this.ma24Series = this.chart.addLineSeries({ color: "#8b5cf6", lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+        this.resizeObserver = new ResizeObserver(() => {
+          if (host.clientWidth) this.chart.applyOptions({ width: host.clientWidth });
+        });
+        this.resizeObserver.observe(host);
+      },
+
+      async loadChart() {
+        const status = $("upbitChartStatus");
+        if (status) status.textContent = "Loading completed candles…";
+        try {
+          const params = new URLSearchParams({ market: this.selectedMarket, interval: String(this.selectedInterval), count: "168" });
+          const response = await fetch(`api/upbit/coin-chart?${params}`, { signal: AbortSignal.timeout(30000) });
+          const data = await response.json();
+          if (!response.ok || !data.success) throw new Error(data.error || "Chart request failed");
+          if (data.market !== this.selectedMarket || Number(data.interval) !== this.selectedInterval) return;
+          this.ensureChart();
+          const candles = data.candles || [];
+          this.candleSeries?.setData(candles.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
+          this.ma7Series?.setData(this.movingAverage(candles, 7));
+          this.ma24Series?.setData(this.movingAverage(candles, 24));
+          this.chart?.timeScale().fitContent();
+          if (status) status.textContent = `${candles.length} completed ${this.selectedInterval}m candles · KST`;
+        } catch (error) {
+          if (status) status.textContent = `Chart failed: ${error.message}`;
+        }
+      },
+
       render() {
         const tbody = $("tbodyUpbitScanner");
         if (!tbody) return;
@@ -14501,7 +14617,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const price = (value) => Number(value).toLocaleString("ko-KR", { maximumFractionDigits: Number(value) < 100 ? 4 : 0 });
         tbody.innerHTML = rows.map((row) => {
           const signalColor = row.signal === "STRONG" ? "#047857" : row.signal === "POSITIVE" ? "#0284c7" : row.signal === "WEAK" ? "#dc2626" : "#64748b";
-          return `<tr><td style="font-weight:900;">#${row.rank}</td><td><strong>${esc(row.symbol)}</strong><div style="font-size:10px;color:#64748b;">${esc(row.korean_name || row.english_name)}</div></td><td><strong style="font-size:14px;color:${signalColor};">${Number(row.score).toFixed(1)}</strong></td><td><span style="color:${signalColor};font-weight:800;">${esc(row.signal)}</span></td><td style="font-weight:700;">₩${price(row.price_krw)}</td><td>${pct(row.momentum_1h_pct)}</td><td>${pct(row.momentum_6h_pct)}</td><td>${pct(row.momentum_24h_pct)}</td><td>${Number(row.trend_consistency_pct).toFixed(0)}%</td><td>${Number(row.rsi_14).toFixed(1)}</td><td>${Number(row.range_position_pct).toFixed(0)}%</td><td>${Number(row.volatility_24h_pct).toFixed(2)}%</td><td>₩${(Number(row.trade_value_24h_krw) / 1e9).toFixed(1)}B</td></tr>`;
+          const selected = row.market === this.selectedMarket;
+          return `<tr data-market="${esc(row.market)}" style="cursor:pointer;${selected ? "background:#eff6ff;box-shadow:inset 3px 0 #0284c7;" : ""}" title="Open ${esc(row.symbol)} chart"><td style="font-weight:900;">#${row.rank}</td><td><strong>${esc(row.symbol)}</strong><div style="font-size:10px;color:#64748b;">${esc(row.korean_name || row.english_name)}</div></td><td><strong style="font-size:14px;color:${signalColor};">${Number(row.score).toFixed(1)}</strong></td><td><span style="color:${signalColor};font-weight:800;">${esc(row.signal)}</span></td><td style="font-weight:700;">₩${price(row.price_krw)}</td><td>${pct(row.momentum_1h_pct)}</td><td>${pct(row.momentum_6h_pct)}</td><td>${pct(row.momentum_24h_pct)}</td><td>${Number(row.trend_consistency_pct).toFixed(0)}%</td><td>${Number(row.rsi_14).toFixed(1)}</td><td>${Number(row.range_position_pct).toFixed(0)}%</td><td>${Number(row.volatility_24h_pct).toFixed(2)}%</td><td>₩${(Number(row.trade_value_24h_krw) / 1e9).toFixed(1)}B</td></tr>`;
         }).join("");
       }
     };
