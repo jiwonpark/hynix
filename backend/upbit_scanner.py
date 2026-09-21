@@ -131,7 +131,7 @@ def walk_forward_trades(candles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
         probability, expected, confidence, _ = _analogue_prediction(
             samples_by_index[test_index][0], training, feature_keys)
-        if probability < 60.0 or confidence < 40.0 or expected <= 0:
+        if probability < 60.0 or confidence < 40.0:
             continue
         entry = float(candles[test_index]["close"])
         exit_index = test_index + HORIZON_HOURS
