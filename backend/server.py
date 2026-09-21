@@ -37,9 +37,12 @@ from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
 from starlette.responses import JSONResponse
 from .strategy_lab import run_ma_stack_backtest, strategy_execution_engine
+from .upbit_scanner import coin_factors, rank_universe
 
 STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
 scale_in_lock = asyncio.Lock()
+upbit_scanner_lock = asyncio.Lock()
+upbit_scanner_cache: Dict[str, Any] = {"timestamp": 0.0, "payload": None}
 
 # Live safeguards are independent of selectable price-replay conditions.
 MANDATORY_LIVE_CONDITIONS = frozenset({
@@ -310,6 +313,52 @@ async def get_upbit_account() -> Dict[str, Any]:
             "summary": {},
             "assets": []
         }
+
+
+@app.get("/api/upbit/coin-rankings")
+async def get_upbit_coin_rankings(refresh: bool = False) -> Dict[str, Any]:
+    """Rank every active KRW market from completed 1h candles and 24h liquidity."""
+    now = time.time()
+    cached = upbit_scanner_cache.get("payload")
+    if cached and not refresh and now - float(upbit_scanner_cache["timestamp"]) < 300:
+        return cached
+    async with upbit_scanner_lock:
+        now = time.time()
+        cached = upbit_scanner_cache.get("payload")
+        if cached and not refresh and now - float(upbit_scanner_cache["timestamp"]) < 300:
+            return cached
+        markets = await upbit_client.get_markets()
+        krw_markets = [row for row in markets if str(row.get("market", "")).startswith("KRW-")
+                       and not row.get("market_event", {}).get("warning", False)]
+        symbols = [row["market"] for row in krw_markets]
+        names = {row["market"]: {"korean_name": row.get("korean_name", ""),
+                                  "english_name": row.get("english_name", "")} for row in krw_markets}
+        ticker_rows = await upbit_client.get_tickers(symbols)
+        tickers = {row.get("market"): row for row in ticker_rows}
+
+        async def inspect(market: str):
+            try:
+                candles = await upbit_client.get_minute_candles(market, 60, 49)
+                factors = coin_factors(tickers.get(market, {}), candles)
+                ticker = tickers.get(market, {})
+                return {"market": market, "symbol": market.removeprefix("KRW-"),
+                        **names[market], "price_krw": float(ticker.get("trade_price", 0.0)), **factors}
+            except Exception as exc:
+                logger.debug("Upbit scanner skipped %s: %s", market, exc)
+                return None
+
+        inspected = await asyncio.gather(*(inspect(market) for market in symbols))
+        rows = rank_universe([row for row in inspected if row is not None])
+        payload = {
+            "success": True,
+            "generated_at": int(time.time()),
+            "universe_count": len(symbols),
+            "ranked_count": len(rows),
+            "methodology": "1h/6h/24h momentum + trend consistency + 24h range position + liquidity - volatility penalty",
+            "rows": rows,
+        }
+        upbit_scanner_cache.update(timestamp=time.time(), payload=payload)
+        return payload
 
 @app.get("/api/strategy-lab/upbit-ma-stack")
 async def get_upbit_ma_stack_backtest(

@@ -212,6 +212,11 @@ class UpbitClient:
         """Fetch raw account balances from /v1/accounts."""
         return await self.request("GET", "/v1/accounts", signed=True)
 
+    async def get_markets(self) -> List[Dict[str, Any]]:
+        """Fetch all currently supported Upbit markets and display names."""
+        data = await self.request("GET", "/v1/market/all", params={"is_details": "true"})
+        return data if isinstance(data, list) else []
+
     async def get_tickers(self, markets: List[str]) -> List[Dict[str, Any]]:
         """Fetch current prices for given markets (e.g. ['KRW-BTC', 'KRW-USDT'])."""
         if not markets:
