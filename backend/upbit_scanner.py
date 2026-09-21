@@ -109,6 +109,55 @@ def _walk_forward_backtest(candles, feature_keys, samples_by_index) -> Dict[str,
             "lift_pct_points": round(hit_rate - baseline, 2) if signals else 0.0}
 
 
+def walk_forward_trades(candles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return non-overlapping causal virtual entries/exits for chart rendering."""
+    feature_keys = ("momentum_1h_pct", "momentum_3h_pct", "momentum_6h_pct",
+                    "momentum_acceleration", "volume_acceleration",
+                    "volatility_compression", "range_position_pct", "rsi_14")
+    samples_by_index = {}
+    for index in range(30, len(candles) - HORIZON_HOURS):
+        features = _feature_at(candles, index)
+        if features is not None:
+            label, realized = _outcome(candles, index)
+            samples_by_index[index] = (features, label, realized)
+    trades = []
+    next_free_index = 0
+    for test_index in range(max(75, len(candles) - 90), len(candles) - HORIZON_HOURS):
+        if test_index < next_free_index:
+            continue
+        training = [sample for index, sample in samples_by_index.items()
+                    if index < test_index - HORIZON_HOURS]
+        if len(training) < 25:
+            continue
+        probability, expected, confidence, _ = _analogue_prediction(
+            samples_by_index[test_index][0], training, feature_keys)
+        if probability < 60.0 or confidence < 40.0 or expected <= 0:
+            continue
+        entry = float(candles[test_index]["close"])
+        exit_index = test_index + HORIZON_HOURS
+        exit_price = float(candles[exit_index]["close"])
+        reason = "HORIZON"
+        for index in range(test_index + 1, test_index + 1 + HORIZON_HOURS):
+            bar = candles[index]
+            hit_up = float(bar["high"]) >= entry * (1 + UPSIDE_TARGET_PCT / 100)
+            hit_down = float(bar["low"]) <= entry * (1 - DOWNSIDE_BARRIER_PCT / 100)
+            if hit_up or hit_down:
+                exit_index = index
+                if hit_up and not hit_down:
+                    exit_price, reason = entry * (1 + UPSIDE_TARGET_PCT / 100), "TARGET"
+                else:
+                    exit_price, reason = entry * (1 - DOWNSIDE_BARRIER_PCT / 100), "STOP"
+                break
+        trades.append({"entry_time": int(candles[test_index]["time"]),
+                       "exit_time": int(candles[exit_index]["time"]),
+                       "entry_price": entry, "exit_price": exit_price,
+                       "return_pct": round(_pct_change(exit_price, entry), 2),
+                       "probability_pct": round(probability, 2),
+                       "confidence_pct": round(confidence, 2), "exit_reason": reason})
+        next_free_index = exit_index + 1
+    return trades
+
+
 def forecast_coin(ticker: Dict[str, Any], candles: List[Dict[str, Any]]) -> Dict[str, float]:
     """Estimate a six-hour upside probability from causal nearest historical analogues."""
     if len(candles) < 60:

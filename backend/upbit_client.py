@@ -208,6 +208,13 @@ class UpbitClient:
         """Query market order constraints, commission fee rates, and minimum order values."""
         return await self.request("GET", "/v1/orders_chance", params={"market": market}, signed=True)
 
+    async def get_closed_orders(self, market: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Retrieve recent completed/cancelled orders for a market (requires View Orders permission)."""
+        data = await self.request("GET", "/v1/orders/closed",
+                                  params={"market": market, "limit": min(max(limit, 1), 1000), "order_by": "asc"},
+                                  signed=True)
+        return data if isinstance(data, list) else []
+
     async def get_raw_accounts(self) -> List[Dict[str, Any]]:
         """Fetch raw account balances from /v1/accounts."""
         return await self.request("GET", "/v1/accounts", signed=True)

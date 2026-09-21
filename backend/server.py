@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import time
+from datetime import datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
@@ -37,7 +38,7 @@ from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
 from starlette.responses import JSONResponse
 from .strategy_lab import run_ma_stack_backtest, strategy_execution_engine
-from .upbit_scanner import forecast_coin, rank_universe
+from .upbit_scanner import forecast_coin, rank_universe, walk_forward_trades
 
 STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
 scale_in_lock = asyncio.Lock()
@@ -378,6 +379,25 @@ async def get_upbit_coin_chart(
     if metadata is None:
         return {"success": False, "error": "Unknown Upbit KRW market"}
     candles = await upbit_client.get_minute_candles(market, interval, count)
+    # Virtual markers are generated on completed hourly bars, independent of the display timeframe.
+    hourly = candles if interval == 60 and len(candles) >= 100 else await upbit_client.get_minute_candles(market, 60, 200)
+    virtual_trades = walk_forward_trades(hourly)
+    actual_trades = []
+    actual_error = None
+    try:
+        orders = await upbit_client.get_closed_orders(market, 100)
+        for order in orders:
+            qty = float(order.get("executed_volume") or 0)
+            funds = float(order.get("executed_funds") or order.get("executed_fund") or 0)
+            price = funds / qty if qty > 0 and funds > 0 else float(order.get("price") or 0)
+            created_at = str(order.get("created_at") or "")
+            if qty <= 0 or price <= 0 or not created_at:
+                continue
+            timestamp = int(datetime.fromisoformat(created_at.replace("Z", "+00:00")).timestamp())
+            actual_trades.append({"time": timestamp, "side": order.get("side"), "price": price,
+                                  "volume": qty, "state": order.get("state"), "uuid": order.get("uuid")})
+    except Exception as exc:
+        actual_error = str(exc)
     return {
         "success": True,
         "market": market,
@@ -385,6 +405,9 @@ async def get_upbit_coin_chart(
         "korean_name": metadata.get("korean_name", ""),
         "english_name": metadata.get("english_name", ""),
         "candles": candles,
+        "virtual_trades": virtual_trades,
+        "actual_trades": actual_trades,
+        "actual_trades_error": actual_error,
     }
 
 @app.get("/api/strategy-lab/upbit-ma-stack")

@@ -12,6 +12,10 @@ assert.match(html, /movingAverage\(candles, 24\)/);
 assert.match(html, /Purged Walk-Forward Backtest/);
 assert.match(html, /renderBacktest\(row\?\.backtest\)/);
 assert.match(html, /upbitBtBrier/);
+assert.match(html, /btnToggleUpbitVirtual/);
+assert.match(html, /btnToggleUpbitActual/);
+assert.match(html, /renderExecutionMarkers/);
+assert.match(html, /ACTUAL \$\{buy \? "BUY" : "SELL"\}/);
 assert.match(html, /data-interval="15"/);
 assert.match(html, /data-interval="240"/);
 

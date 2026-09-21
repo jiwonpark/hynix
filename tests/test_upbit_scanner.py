@@ -1,6 +1,6 @@
 import unittest
 
-from backend.upbit_scanner import forecast_coin, rank_universe
+from backend.upbit_scanner import forecast_coin, rank_universe, walk_forward_trades
 
 
 def candles(count=200, drift=0.001, volume_boost=False):
@@ -43,6 +43,14 @@ class UpbitScannerTests(unittest.TestCase):
         extended = base + [{"time": 100 * 3600, "open": 100, "high": 1000, "low": 1, "close": 500, "volume": 99999}]
         second = forecast_coin({}, extended[:-1])
         self.assertEqual(first["momentum_1h_pct"], second["momentum_1h_pct"])
+
+    def test_virtual_trades_are_non_overlapping_and_causal(self):
+        trades = walk_forward_trades(candles())
+        for previous, current in zip(trades, trades[1:]):
+            self.assertLess(previous["exit_time"], current["entry_time"])
+        for trade in trades:
+            self.assertIn(trade["exit_reason"], {"TARGET", "STOP", "HORIZON"})
+            self.assertGreaterEqual(trade["exit_time"], trade["entry_time"])
 
 
 if __name__ == "__main__":

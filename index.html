@@ -4165,6 +4165,8 @@
             <span id="upbitChartSubtitle" style="font-size:11px;color:#64748b;">Click a ranked coin to inspect its price action.</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
+            <button id="btnToggleUpbitVirtual" type="button" aria-pressed="true" style="height:28px;padding:0 10px;background:#ecfdf5;color:#047857;border:1px solid #86efac;border-radius:5px;font-weight:700;">✓ Virtual</button>
+            <button id="btnToggleUpbitActual" type="button" aria-pressed="true" style="height:28px;padding:0 10px;background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd;border-radius:5px;font-weight:700;">✓ Actual</button>
             <button class="upbitChartInterval" data-interval="15" type="button" style="height:28px;padding:0 10px;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:5px;">15m</button>
             <button class="upbitChartInterval active" data-interval="60" type="button" style="height:28px;padding:0 10px;background:#0284c7;color:#fff;border:1px solid #0284c7;border-radius:5px;">1h</button>
             <button class="upbitChartInterval" data-interval="240" type="button" style="height:28px;padding:0 10px;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:5px;">4h</button>
@@ -4173,7 +4175,7 @@
         </div>
         <div id="upbitCoinChartHost" style="width:100%;height:420px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;position:relative;"></div>
         <div id="upbitChartLegend" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:11px;font-weight:700;color:#64748b;">
-          <span style="color:#0284c7;">— MA 7</span><span style="color:#8b5cf6;">— MA 24</span><span>Green/red: hourly candles</span><span id="upbitChartStatus"></span>
+          <span style="color:#0284c7;">— MA 7</span><span style="color:#8b5cf6;">— MA 24</span><span style="color:#16a34a;">▲ Virtual/actual entry</span><span style="color:#dc2626;">▼ Exit</span><span id="upbitChartStatus"></span>
         </div>
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;">
           <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
@@ -14467,6 +14469,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       ma7Series: null,
       ma24Series: null,
       resizeObserver: null,
+      chartExecutions: { virtual: [], actual: [] },
+      executionVisibility: { virtual: true, actual: true },
+      chartTimeBounds: null,
 
       init() {
         $("btnUpbitScannerRefresh")?.addEventListener("click", () => this.load(true));
@@ -14477,6 +14482,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (row) this.openChart(row.dataset.market);
         });
         $("btnCloseUpbitChart")?.addEventListener("click", () => this.closeChart());
+        $("btnToggleUpbitVirtual")?.addEventListener("click", () => this.toggleExecutions("virtual"));
+        $("btnToggleUpbitActual")?.addEventListener("click", () => this.toggleExecutions("actual"));
         document.querySelectorAll(".upbitChartInterval").forEach((button) => button.addEventListener("click", () => {
           this.selectedInterval = Number(button.dataset.interval);
           this.styleIntervalButtons();
@@ -14582,6 +14589,35 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }).filter(Boolean);
       },
 
+      toggleExecutions(kind) {
+        this.executionVisibility[kind] = !this.executionVisibility[kind];
+        const button = $(kind === "virtual" ? "btnToggleUpbitVirtual" : "btnToggleUpbitActual");
+        if (button) {
+          button.textContent = `${this.executionVisibility[kind] ? "✓" : "○"} ${kind === "virtual" ? "Virtual" : "Actual"}`;
+          button.setAttribute("aria-pressed", String(this.executionVisibility[kind]));
+          button.style.opacity = this.executionVisibility[kind] ? "1" : ".55";
+        }
+        this.renderExecutionMarkers();
+      },
+
+      renderExecutionMarkers() {
+        if (!this.candleSeries) return;
+        const intervalSeconds = this.selectedInterval * 60;
+        const snap = (time) => Math.floor(Number(time) / intervalSeconds) * intervalSeconds;
+        const markers = [];
+        if (this.executionVisibility.virtual) this.chartExecutions.virtual.forEach((trade) => {
+          markers.push({ time: snap(trade.entry_time), position: "belowBar", color: "#16a34a", shape: "arrowUp", text: `V BUY ${trade.probability_pct.toFixed(0)}%` });
+          markers.push({ time: snap(trade.exit_time), position: "aboveBar", color: trade.return_pct >= 0 ? "#16a34a" : "#dc2626", shape: "arrowDown", text: `V ${trade.exit_reason} ${trade.return_pct >= 0 ? "+" : ""}${trade.return_pct.toFixed(1)}%` });
+        });
+        if (this.executionVisibility.actual) this.chartExecutions.actual.forEach((order) => {
+          const buy = order.side === "bid";
+          markers.push({ time: snap(order.time), position: buy ? "belowBar" : "aboveBar", color: buy ? "#0284c7" : "#dc2626", shape: buy ? "arrowUp" : "arrowDown", text: `ACTUAL ${buy ? "BUY" : "SELL"}` });
+        });
+        const visible = this.chartTimeBounds ? markers.filter((marker) => marker.time >= this.chartTimeBounds[0] && marker.time <= this.chartTimeBounds[1]) : markers;
+        visible.sort((a, b) => a.time - b.time);
+        this.candleSeries.setMarkers(visible);
+      },
+
       ensureChart() {
         const host = $("upbitCoinChartHost");
         if (!host || this.chart || !window.LightweightCharts) return;
@@ -14613,11 +14649,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (data.market !== this.selectedMarket || Number(data.interval) !== this.selectedInterval) return;
           this.ensureChart();
           const candles = data.candles || [];
+          this.chartTimeBounds = candles.length ? [Number(candles[0].time), Number(candles.at(-1).time)] : null;
           this.candleSeries?.setData(candles.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
           this.ma7Series?.setData(this.movingAverage(candles, 7));
           this.ma24Series?.setData(this.movingAverage(candles, 24));
+          this.chartExecutions = { virtual: data.virtual_trades || [], actual: data.actual_trades || [] };
+          this.renderExecutionMarkers();
           this.chart?.timeScale().fitContent();
-          if (status) status.textContent = `${candles.length} completed ${this.selectedInterval}m candles · KST`;
+          if (status) {
+            const actualNote = data.actual_trades_error ? "actual history unavailable" : `${this.chartExecutions.actual.length} actual orders`;
+            status.textContent = `${candles.length} completed ${this.selectedInterval}m candles · ${this.chartExecutions.virtual.length} virtual trades · ${actualNote}`;
+          }
         } catch (error) {
           if (status) status.textContent = `Chart failed: ${error.message}`;
         }
