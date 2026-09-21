@@ -43,3 +43,4 @@ Thumbs.db
 
 # Server-only terminal authorization configuration
 backend/terminal_auth.json
+backend/upbit_forecast_validation.json

@@ -81,10 +81,10 @@ def _analogue_prediction(current: Dict[str, float], samples, feature_keys) -> Tu
 
 
 def _walk_forward_backtest(candles, feature_keys, samples_by_index) -> Dict[str, float]:
-    """Purged expanding-window test; each forecast only sees resolved earlier outcomes."""
+    """Untouched final-quarter holdout with purged, non-overlapping forecasts."""
     evaluations = []
-    start = max(75, len(candles) - 60)
-    for test_index in range(start, len(candles) - HORIZON_HOURS, 2):
+    start = max(75, int(len(candles) * 0.75))
+    for test_index in range(start, len(candles) - HORIZON_HOURS, HORIZON_HOURS):
         # Purge the full outcome horizon between the last training label and test features.
         training = [sample for index, sample in samples_by_index.items()
                     if index < test_index - HORIZON_HOURS]
@@ -102,11 +102,13 @@ def _walk_forward_backtest(candles, feature_keys, samples_by_index) -> Dict[str,
     baseline = sum(row[2] for row in evaluations) / len(evaluations) * 100.0
     hit_rate = sum(row[2] for row in signals) / len(signals) * 100.0 if signals else 0.0
     brier = statistics.fmean((row[0] / 100.0 - row[2]) ** 2 for row in evaluations)
-    average_return = statistics.fmean(row[3] for row in signals) if signals else 0.0
+    average_return = statistics.fmean(row[3] - 0.20 for row in signals) if signals else 0.0
     return {"predictions": len(evaluations), "signals": len(signals),
             "signal_hit_rate_pct": round(hit_rate, 2), "baseline_hit_rate_pct": round(baseline, 2),
             "brier_score": round(brier, 4), "average_signal_return_pct": round(average_return, 2),
-            "lift_pct_points": round(hit_rate - baseline, 2) if signals else 0.0}
+            "lift_pct_points": round(hit_rate - baseline, 2) if signals else 0.0,
+            "round_trip_cost_pct": 0.20, "holdout_fraction": 0.25,
+            "non_overlapping": True}
 
 
 def walk_forward_trades(candles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

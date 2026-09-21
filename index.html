@@ -4155,6 +4155,13 @@
         <div class="pairKpiCard"><span class="pairKpiLabel">High forecasts</span><div class="pairKpiValue" id="upbitKpiStrong">--</div><span class="pairKpiSub">Confidence-adjusted score ≥ 60</span></div>
         <div class="pairKpiCard"><span class="pairKpiLabel">Last completed scan</span><div class="pairKpiValue" id="upbitKpiTime" style="font-size:15px;">--</div><span class="pairKpiSub">Five-minute server cache</span></div>
       </section>
+      <section style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:14px;padding:10px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;">
+        <div class="pairKpiCard"><span class="pairKpiLabel">Forward Gate</span><div class="pairKpiValue" id="upbitFwdGate">COLLECTING</div><span class="pairKpiSub">Live execution remains blocked</span></div>
+        <div class="pairKpiCard"><span class="pairKpiLabel">Resolved / Pending</span><div class="pairKpiValue" id="upbitFwdCounts">0 / 0</div><span class="pairKpiSub">Persisted after prediction</span></div>
+        <div class="pairKpiCard"><span class="pairKpiLabel">Forward Hit / Lift</span><div class="pairKpiValue" id="upbitFwdHit">--</div><span class="pairKpiSub">Qualified vs baseline</span></div>
+        <div class="pairKpiCard"><span class="pairKpiLabel">Net Return</span><div class="pairKpiValue" id="upbitFwdReturn">--</div><span class="pairKpiSub">After 0.20% costs</span></div>
+        <div class="pairKpiCard"><span class="pairKpiLabel">Forward Brier</span><div class="pairKpiValue" id="upbitFwdBrier">--</div><span class="pairKpiSub">Requires ≥200 signals</span></div>
+      </section>
       <section id="upbitCoinChartPanel" class="panel" style="display:none;margin-bottom:14px;padding:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
           <div>
@@ -4180,7 +4187,7 @@
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0;">
           <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
             <strong style="font-size:12px;color:#0f172a;">🧪 Purged Walk-Forward Backtest</strong>
-            <span style="font-size:10.5px;color:#64748b;">Expanding training window · six-hour purge · historical predictions every two hours</span>
+            <span style="font-size:10.5px;color:#64748b;">Untouched final-quarter holdout · expanding training · six-hour purge · non-overlapping · 0.20% costs</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;">
             <div class="pairKpiCard"><span class="pairKpiLabel">Signal Hit Rate</span><div class="pairKpiValue" id="upbitBtHit">--</div><span class="pairKpiSub" id="upbitBtSignalCount">No coin selected</span></div>
@@ -14535,6 +14542,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("upbitKpiTopScore")) $("upbitKpiTopScore").textContent = top ? `${top.forecast_probability_pct.toFixed(1)}% raw probability · ${top.signal}` : "No result";
         if ($("upbitKpiStrong")) $("upbitKpiStrong").textContent = String(this.rows.filter((row) => row.signal === "HIGH").length);
         if ($("upbitKpiTime")) $("upbitKpiTime").textContent = data.generated_at ? new Date(data.generated_at * 1000).toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }) + " KST" : "--";
+        const fwd = data.forward_validation || {};
+        const gate = $("upbitFwdGate");
+        if (gate) { gate.textContent = fwd.live_ready ? "VALIDATED" : "COLLECTING"; gate.style.color = fwd.live_ready ? "#16a34a" : "#d97706"; }
+        if ($("upbitFwdCounts")) $("upbitFwdCounts").textContent = `${fwd.resolved_forecasts || 0} / ${fwd.pending_forecasts || 0}`;
+        if ($("upbitFwdHit")) $("upbitFwdHit").textContent = fwd.qualified_signals ? `${Number(fwd.signal_hit_rate_pct).toFixed(1)}% / ${Number(fwd.lift_pct_points) >= 0 ? "+" : ""}${Number(fwd.lift_pct_points).toFixed(1)}pp` : "AWAITING";
+        if ($("upbitFwdReturn")) $("upbitFwdReturn").textContent = fwd.qualified_signals ? `${Number(fwd.average_net_return_pct) >= 0 ? "+" : ""}${Number(fwd.average_net_return_pct).toFixed(2)}%` : "AWAITING";
+        if ($("upbitFwdBrier")) $("upbitFwdBrier").textContent = fwd.resolved_forecasts ? Number(fwd.brier_score).toFixed(3) : "AWAITING";
       },
 
       styleIntervalButtons() {

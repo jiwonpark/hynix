@@ -39,6 +39,7 @@ from .terminal_auth import router as terminal_auth_router, authorized as termina
 from starlette.responses import JSONResponse
 from .strategy_lab import run_ma_stack_backtest, strategy_execution_engine
 from .upbit_scanner import forecast_coin, rank_universe, walk_forward_trades
+from .forecast_validation import update_forward_validation
 
 STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
 scale_in_lock = asyncio.Lock()
@@ -145,10 +146,12 @@ async def lifespan(app: FastAPI):
     broadcaster_task = asyncio.create_task(account_broadcaster())
     auto_tranche_task = asyncio.create_task(auto_tranche_worker())
     upbit_strategy_task = asyncio.create_task(upbit_strategy_worker())
+    upbit_forecast_validation_task = asyncio.create_task(upbit_forecast_validation_worker())
     yield
     broadcaster_task.cancel()
     auto_tranche_task.cancel()
     upbit_strategy_task.cancel()
+    upbit_forecast_validation_task.cancel()
     await asyncio.gather(binance_client.close(), upbit_client.close(), return_exceptions=True)
     logger.info("HYPERION Trading Daemon shutdown complete.")
 
@@ -336,10 +339,12 @@ async def get_upbit_coin_rankings(refresh: bool = False) -> Dict[str, Any]:
                                   "english_name": row.get("english_name", "")} for row in krw_markets}
         ticker_rows = await upbit_client.get_tickers(symbols)
         tickers = {row.get("market"): row for row in ticker_rows}
+        candles_by_market = {}
 
         async def inspect(market: str):
             try:
                 candles = await upbit_client.get_minute_candles(market, 60, 200)
+                candles_by_market[market] = candles
                 factors = forecast_coin(tickers.get(market, {}), candles)
                 ticker = tickers.get(market, {})
                 return {"market": market, "symbol": market.removeprefix("KRW-"),
@@ -350,6 +355,8 @@ async def get_upbit_coin_rankings(refresh: bool = False) -> Dict[str, Any]:
 
         inspected = await asyncio.gather(*(inspect(market) for market in symbols))
         rows = rank_universe([row for row in inspected if row is not None])
+        forward_validation = update_forward_validation(rows, candles_by_market)
+        rows = rank_universe(rows)
         payload = {
             "success": True,
             "generated_at": int(time.time()),
@@ -360,9 +367,23 @@ async def get_upbit_coin_rankings(refresh: bool = False) -> Dict[str, Any]:
             "upside_target_pct": 2.0,
             "downside_barrier_pct": 1.0,
             "rows": rows,
+            "forward_validation": forward_validation,
         }
         upbit_scanner_cache.update(timestamp=time.time(), payload=payload)
         return payload
+
+
+async def upbit_forecast_validation_worker():
+    """Persist one genuinely forward, non-overlapping forecast snapshot each hour."""
+    await asyncio.sleep(300)
+    while True:
+        try:
+            await get_upbit_coin_rankings(refresh=True)
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            logger.exception("Upbit forward-validation scan failed")
+        await asyncio.sleep(3600)
 
 
 @app.get("/api/upbit/coin-chart")
