@@ -24,6 +24,7 @@ class TestLighterTab(unittest.TestCase):
             '/api/lighter/backtest',
             'lighterToggleActual', 'lighterToggleVirtual', 'movingAverage',
             'bindResearchConditions', 'use_ma_stretch', 'use_bottoming',
+            'removeAttribute("onchange")',
         ):
             self.assertIn(required, html + script)
 

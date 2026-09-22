@@ -44,6 +44,11 @@
       target.querySelectorAll("[for]").forEach((element) => {
         element.setAttribute("for", `lighter_${element.getAttribute("for")}`);
       });
+      target.querySelectorAll("[onclick],[onchange],[oninput]").forEach((element) => {
+        element.removeAttribute("onclick");
+        element.removeAttribute("onchange");
+        element.removeAttribute("oninput");
+      });
       target.querySelectorAll("canvas, a[href*='tradingview.com']").forEach((element) => element.remove());
       target.querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
       target.querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
@@ -236,6 +241,7 @@
       researchIds.forEach((id) => {
         const input = lid(id);
         if (!input) return;
+        input.onchange = null;
         input.disabled = false;
         input.closest(".terminal-action-control")?.classList.remove("terminal-action-control");
         input.addEventListener("change", () => this.runBacktest());
