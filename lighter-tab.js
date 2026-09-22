@@ -21,10 +21,15 @@
     initialized: false,
     chart: null,
     series: null,
+    maSeries: {},
     currentRatio: null,
     entries: [],
     ledger: [],
     bars: [],
+    actualMarkers: [],
+    backtestMarkers: [],
+    showActualMarkers: true,
+    showVirtualMarkers: true,
     interval: "15m",
 
     cloneTradingTerminal() {
@@ -86,10 +91,17 @@
       const frame = lid("shortTermExecutionChartFrame");
       if (frame) {
         frame.innerHTML = ""; frame.style.height = "420px";
+        const chartTools = document.createElement("div");
+        chartTools.id = "lighterChartTools";
+        chartTools.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0;font-size:11px;color:#475569";
+        chartTools.innerHTML = '<div style="display:flex;gap:10px;flex-wrap:wrap"><span><b style="color:#0284c7">Parity</b></span><span><b style="color:#f59e0b">MA7</b></span><span><b style="color:#8b5cf6">MA24</b></span><span><b style="color:#64748b">MA60</b></span></div><div style="display:flex;gap:6px;align-items:center"><b>SHOW</b><button id="lighterToggleActual" type="button" style="border:1px solid #cbd5e1;background:#fff;border-radius:5px;padding:4px 8px;font-weight:700;cursor:pointer">✓ Actual</button><button id="lighterToggleVirtual" type="button" style="border:1px solid #cbd5e1;background:#fff;border-radius:5px;padding:4px 8px;font-weight:700;cursor:pointer">✓ Virtual</button></div>';
+        frame.insertAdjacentElement("beforebegin", chartTools);
+        $("lighterToggleActual").addEventListener("click", () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); });
+        $("lighterToggleVirtual").addEventListener("click", () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); });
         const replay = document.createElement("div");
         replay.id = "lighterReplayControls";
         replay.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 0;padding:9px 11px;border:1px solid #dbeafe;border-radius:7px;background:#f8fafc;font-size:11px;color:#475569";
-        replay.innerHTML = '<strong>PRICE-SIGNAL REPLAY</strong><label>Entry Z <input id="lighterEntryZ" type="number" value="1.5" min="0.5" step="0.1" style="width:58px"></label><label>Exit Z <input id="lighterExitZ" type="number" value="0.25" min="0" step="0.05" style="width:58px"></label><button id="lighterRunBacktest" type="button" style="border:1px solid #0284c7;background:#fff;color:#0369a1;border-radius:5px;padding:5px 9px;font-weight:800;cursor:pointer">Rerun</button><span id="lighterBacktestSummary">Ready</span>';
+        replay.innerHTML = '<strong>PRICE-SIGNAL REPLAY</strong><label>Entry Z <input id="lighterEntryZ" type="number" value="1.5" min="0.5" step="0.1" style="width:58px"></label><label>Exit Z <input id="lighterExitZ" type="number" value="0.25" min="0" step="0.05" style="width:58px"></label><button id="lighterRunBacktest" type="button" style="border:1px solid #0284c7;background:#fff;color:#0369a1;border-radius:5px;padding:5px 9px;font-weight:800;cursor:pointer">Rerun</button><span id="lighterBacktestSummary">Ready · Actual fills unavailable until Lighter account is configured</span>';
         frame.insertAdjacentElement("afterend", replay);
         $("lighterRunBacktest").addEventListener("click", () => this.runBacktest());
       }
@@ -143,6 +155,11 @@
       });
       this.series = this.chart.addLineSeries({ color: "#0284c7", lineWidth: 2,
         priceFormat: { type: "custom", formatter: (value) => `${value.toFixed(2)}%` } });
+      this.maSeries = {
+        7: this.chart.addLineSeries({ color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+        24: this.chart.addLineSeries({ color: "#8b5cf6", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
+        60: this.chart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false }),
+      };
       window.addEventListener("resize", () => this.resize());
     },
 
@@ -184,6 +201,11 @@
       this.currentRatio = Number(data.bars[data.bars.length - 1].value);
       this.bars = data.bars;
       this.series.setData(data.bars.map((bar) => ({ time: bar.time, value: bar.value })));
+      [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(this.movingAverage(data.bars, windowSize)));
+      this.actualMarkers = Array.isArray(data.markers) ? data.markers.map((marker) => ({
+        time: marker.time, position: marker.position || "aboveBar", color: marker.color || "#0f172a",
+        shape: marker.shape || "arrowDown", text: marker.text || "Actual",
+      })) : [];
       this.renderMarkers();
       this.chart.timeScale().fitContent();
       this.setText("valShortTermCurrentParity", `${this.currentRatio.toFixed(3)}%`);
@@ -196,6 +218,14 @@
     orderNotional() { return Math.max(10, Number(lid("inputOrderNotional")?.value || 1000)); },
     virtualPnl() { return this.entries.reduce((sum, entry) => sum + (this.currentRatio == null ? 0 : entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio), 0); },
     virtualPnlText() { const pnl = this.virtualPnl(); return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`; },
+
+    movingAverage(bars, windowSize) {
+      return bars.map((bar, index) => {
+        if (index < windowSize - 1) return null;
+        const sample = bars.slice(index - windowSize + 1, index + 1);
+        return { time: bar.time, value: sample.reduce((sum, item) => sum + item.value, 0) / windowSize };
+      }).filter(Boolean);
+    },
 
     addVirtualEntry() {
       if (!Number.isFinite(this.currentRatio)) return;
@@ -215,14 +245,24 @@
     renderMarkers() {
       if (!this.series || typeof this.series.setMarkers !== "function") return;
       if (!this.bars.length) return;
-      const markers = this.ledger.slice(0, 40).map((row) => ({
+      const paperMarkers = this.ledger.slice(0, 40).map((row) => ({
         time: this.bars.reduce((best, bar) => Math.abs(bar.time - row.time / 1000) < Math.abs(best.time - row.time / 1000) ? bar : best).time,
         position: row.action === "EXIT" ? "belowBar" : "aboveBar",
         color: row.action === "EXIT" ? "#10b981" : "#7c3aed",
         shape: row.action === "EXIT" ? "arrowUp" : "arrowDown",
-        text: row.action === "EXIT" ? "Virtual Exit" : "Virtual Entry",
-      })).sort((a, b) => a.time - b.time);
+        text: row.action === "EXIT" ? "Paper Exit" : "Paper Entry",
+      }));
+      const markers = [
+        ...(this.showActualMarkers ? this.actualMarkers : []),
+        ...(this.showVirtualMarkers ? [...paperMarkers, ...this.backtestMarkers] : []),
+      ].sort((a, b) => a.time - b.time);
       this.series.setMarkers(markers);
+    },
+
+    updateMarkerButtons() {
+      const actual = $("lighterToggleActual"); const virtual = $("lighterToggleVirtual");
+      if (actual) { actual.textContent = `${this.showActualMarkers ? "✓" : "○"} Actual`; actual.style.opacity = this.showActualMarkers ? "1" : ".55"; }
+      if (virtual) { virtual.textContent = `${this.showVirtualMarkers ? "✓" : "○"} Virtual`; virtual.style.opacity = this.showVirtualMarkers ? "1" : ".55"; }
     },
 
     async runBacktest() {
@@ -234,6 +274,11 @@
         const entry = Number($("lighterEntryZ")?.value || 1.5);
         const exit = Number($("lighterExitZ")?.value || 0.25);
         const data = await api(`/api/lighter/backtest?interval=${this.interval}&limit=500&entry_z=${entry}&exit_z=${exit}`);
+        this.backtestMarkers = data.trades.flatMap((trade) => [
+          { time: trade.entry_time, position: trade.side < 0 ? "aboveBar" : "belowBar", color: "rgba(124,58,237,.55)", shape: trade.side < 0 ? "arrowDown" : "arrowUp", text: "Virtual Entry" },
+          { time: trade.exit_time, position: trade.side < 0 ? "belowBar" : "aboveBar", color: "rgba(16,185,129,.55)", shape: trade.side < 0 ? "arrowUp" : "arrowDown", text: `Virtual Exit ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}%` },
+        ]);
+        this.renderMarkers();
         if (summary) summary.innerHTML = `<strong>${data.summary.trades}</strong> trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · net <strong>${data.summary.net_pct >= 0 ? "+" : ""}${data.summary.net_pct.toFixed(3)}%</strong>`;
       } catch (error) {
         if (summary) summary.textContent = error.message;
