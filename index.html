@@ -2799,6 +2799,7 @@
     <!-- TAB 2: LIVE & PAPER TRADING EXECUTION TERMINAL          -->
     <!-- ======================================================= -->
     <div id="tabContentTrading" class="terminal-read-only" style="display: none;">
+      <template id="tradingTerminalTemplate">
       
       <!-- Terminal Read-Only Safety Banner -->
       <div id="terminalLockBanner" class="terminalLockBanner">
@@ -3537,6 +3538,7 @@
             </div>
           </div>
         </div>
+      </template>
     </div><!-- End #tabContentTrading -->
 
     <div id="tabContentLighter" class="terminal-read-only" style="display:none;">
@@ -4494,7 +4496,8 @@
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="strategy-execution-chart.js?v=20260918_j"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
-  <script src="lighter-tab.js?v=20260922_5"></script>
+  <script src="terminal-common.js?v=20260922_1"></script>
+  <script src="lighter-tab.js?v=20260922_6"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.

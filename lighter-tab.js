@@ -32,28 +32,6 @@
     showVirtualMarkers: true,
     interval: "15m",
 
-    cloneTradingTerminal() {
-      const source = $("tabContentTrading");
-      const target = $("tabContentLighter");
-      if (!source || !target || target.dataset.cloned === "true") return;
-      const fragment = document.createDocumentFragment();
-      Array.from(source.children).forEach((child) => fragment.appendChild(child.cloneNode(true)));
-      target.replaceChildren(fragment);
-      target.dataset.cloned = "true";
-      target.querySelectorAll("[id]").forEach((element) => { element.id = `lighter_${element.id}`; });
-      target.querySelectorAll("[for]").forEach((element) => {
-        element.setAttribute("for", `lighter_${element.getAttribute("for")}`);
-      });
-      target.querySelectorAll("[onclick],[onchange],[oninput]").forEach((element) => {
-        element.removeAttribute("onclick");
-        element.removeAttribute("onchange");
-        element.removeAttribute("oninput");
-      });
-      target.querySelectorAll("canvas, a[href*='tradingview.com']").forEach((element) => element.remove());
-      target.querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
-      target.querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
-    },
-
     setText(id, text) { const element = lid(id); if (element) element.textContent = text; },
 
     labelTerminal() {
@@ -137,7 +115,11 @@
 
     init() {
       if (this.initialized || !$("tabContentLighter")) return;
-      this.cloneTradingTerminal();
+      if (!window.TerminalCommon || $("tabContentLighter").dataset.terminalInstance !== "lighter") {
+        throw new Error("Shared terminal module did not initialize the Lighter instance");
+      }
+      $("tabContentLighter").querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
+      $("tabContentLighter").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
       this.labelTerminal();
       try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
@@ -207,7 +189,7 @@
       this.currentRatio = Number(data.bars[data.bars.length - 1].value);
       this.bars = data.bars;
       this.series.setData(data.bars.map((bar) => ({ time: bar.time, value: bar.value })));
-      [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(this.movingAverage(data.bars, windowSize)));
+      [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(TerminalCommon.movingAverage(data.bars, windowSize)));
       this.actualMarkers = Array.isArray(data.markers) ? data.markers.map((marker) => ({
         time: marker.time, position: marker.position || "aboveBar", color: marker.color || "#0f172a",
         shape: marker.shape || "arrowDown", text: marker.text || "Actual",
@@ -224,14 +206,6 @@
     orderNotional() { return Math.max(10, Number(lid("inputOrderNotional")?.value || 1000)); },
     virtualPnl() { return this.entries.reduce((sum, entry) => sum + (this.currentRatio == null ? 0 : entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio), 0); },
     virtualPnlText() { const pnl = this.virtualPnl(); return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`; },
-
-    movingAverage(bars, windowSize) {
-      return bars.map((bar, index) => {
-        if (index < windowSize - 1) return null;
-        const sample = bars.slice(index - windowSize + 1, index + 1);
-        return { time: bar.time, value: sample.reduce((sum, item) => sum + item.value, 0) / windowSize };
-      }).filter(Boolean);
-    },
 
     bindResearchConditions() {
       const researchIds = [
@@ -281,7 +255,7 @@
       if (!this.series || typeof this.series.setMarkers !== "function") return;
       if (!this.bars.length) return;
       const paperMarkers = this.ledger.slice(0, 40).map((row) => ({
-        time: this.bars.reduce((best, bar) => Math.abs(bar.time - row.time / 1000) < Math.abs(best.time - row.time / 1000) ? bar : best).time,
+        time: TerminalCommon.alignTime(this.bars, row.time / 1000),
         position: row.action === "EXIT" ? "belowBar" : "aboveBar",
         color: row.action === "EXIT" ? "#10b981" : "#7c3aed",
         shape: row.action === "EXIT" ? "arrowUp" : "arrowDown",

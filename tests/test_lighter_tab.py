@@ -17,16 +17,17 @@ class TestLighterTab(unittest.TestCase):
     def test_tab_has_unique_execution_surface_and_navigation(self):
         html = (ROOT / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        common = (ROOT / "terminal-common.js").read_text(encoding="utf-8")
         for required in (
-            'id="tabContentLighter"', 'cloneTradingTerminal', 'lighterRunBacktest',
+            'id="tabContentLighter"', 'id="tradingTerminalTemplate"', 'lighterRunBacktest',
             'addVirtualEntry', 'exitVirtual',
             'switchMainTab("lighter")', '/api/lighter/status', '/api/lighter/parity',
             '/api/lighter/backtest',
             'lighterToggleActual', 'lighterToggleVirtual', 'movingAverage',
             'bindResearchConditions', 'use_ma_stretch', 'use_bottoming',
-            'removeAttribute("onchange")',
+            'element.removeAttribute(attribute)',
         ):
-            self.assertIn(required, html + script)
+            self.assertIn(required, html + script + common)
 
     def test_live_mode_is_fail_closed(self):
         html = (ROOT / "index.html").read_text(encoding="utf-8")
@@ -37,8 +38,11 @@ class TestLighterTab(unittest.TestCase):
 
     def test_lighter_uses_tab_two_structure_without_duplicate_ids(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
-        self.assertIn('source.children', script)
-        self.assertIn('element.id = `lighter_${element.id}`', script)
+        common = (ROOT / "terminal-common.js").read_text(encoding="utf-8")
+        self.assertIn('template.content.cloneNode(true)', common)
+        self.assertIn('namespaceFragment', common)
+        self.assertIn('venue: "lighter"', common)
+        self.assertNotIn('source.children', script)
 
 
 if __name__ == "__main__":
