@@ -19,11 +19,11 @@ class TestLighterTab(unittest.TestCase):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
         common = (ROOT / "terminal-common.js").read_text(encoding="utf-8")
         for required in (
-            'id="tabContentLighter"', 'id="tradingTerminalTemplate"', 'lighterRunBacktest',
+            'id="tabContentLighter"', 'id="tradingTerminalTemplate"', 'lighter_btnRerunDynamicBacktest',
             'addVirtualEntry', 'exitVirtual',
             'switchMainTab("lighter")', '/api/lighter/status', '/api/lighter/parity',
             '/api/lighter/backtest',
-            'lighterToggleActual', 'lighterToggleVirtual', 'movingAverage',
+            'lighter_legendActualTrades', 'lighter_legendVirtualTrades', 'movingAverage',
             'bindResearchConditions', 'use_ma_stretch', 'use_bottoming',
             'element.removeAttribute(attribute)',
         ):

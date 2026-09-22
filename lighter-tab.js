@@ -22,6 +22,8 @@
     chart: null,
     series: null,
     maSeries: {},
+    maVisibility: { 7: true, 24: true, 60: true },
+    executionChartFrame: null,
     currentRatio: null,
     entries: [],
     ledger: [],
@@ -73,20 +75,27 @@
       const auto = lid("lblAutoPeriodicText"); if (auto) auto.textContent = "Lighter auto-tranche requires signer configuration";
       const frame = lid("shortTermExecutionChartFrame");
       if (frame) {
-        frame.innerHTML = ""; frame.style.height = "420px";
-        const chartTools = document.createElement("div");
-        chartTools.id = "lighterChartTools";
-        chartTools.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0;font-size:11px;color:#475569";
-        chartTools.innerHTML = '<div style="display:flex;gap:10px;flex-wrap:wrap"><span><b style="color:#0284c7">Parity</b></span><span><b style="color:#f59e0b">MA7</b></span><span><b style="color:#8b5cf6">MA24</b></span><span><b style="color:#64748b">MA60</b></span></div><div style="display:flex;gap:6px;align-items:center"><b>SHOW</b><button id="lighterToggleActual" type="button" style="border:1px solid #cbd5e1;background:#fff;border-radius:5px;padding:4px 8px;font-weight:700;cursor:pointer">✓ Actual</button><button id="lighterToggleVirtual" type="button" style="border:1px solid #cbd5e1;background:#fff;border-radius:5px;padding:4px 8px;font-weight:700;cursor:pointer">✓ Virtual</button></div>';
-        frame.insertAdjacentElement("beforebegin", chartTools);
-        $("lighterToggleActual").addEventListener("click", () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); });
-        $("lighterToggleVirtual").addEventListener("click", () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); });
-        const replay = document.createElement("div");
-        replay.id = "lighterReplayControls";
-        replay.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 0;padding:9px 11px;border:1px solid #dbeafe;border-radius:7px;background:#f8fafc;font-size:11px;color:#475569";
-        replay.innerHTML = '<strong>PRICE-SIGNAL REPLAY</strong><label>Entry Z <input id="lighterEntryZ" type="number" value="1.5" min="0.5" step="0.1" style="width:58px"></label><label>Exit Z <input id="lighterExitZ" type="number" value="0.25" min="0" step="0.05" style="width:58px"></label><button id="lighterRunBacktest" type="button" style="border:1px solid #0284c7;background:#fff;color:#0369a1;border-radius:5px;padding:5px 9px;font-weight:800;cursor:pointer">Rerun</button><span id="lighterBacktestSummary">Ready · Actual fills unavailable until Lighter account is configured</span>';
-        frame.insertAdjacentElement("afterend", replay);
-        $("lighterRunBacktest").addEventListener("click", () => this.runBacktest());
+        frame.innerHTML = "";
+        this.executionChartFrame = StrategyExecutionChartFrame.mount({
+          container: frame,
+          id: "lighterShortTermSpreadChart",
+          ids: {
+            action: "lighter_btnRerunDynamicBacktest", actual: "lighter_legendActualTrades", virtual: "lighter_legendVirtualTrades",
+            status: "lighter_dynamicBacktestStatus", secondaryStatus: "lighter_macroPolicyStatus",
+            host: "lighter_shortTermSpreadChartHost", legend: "lighter_shortTermChartLegend", sync: "lighter_lblShortTermChartSync",
+          },
+          title: "PRICE-SIGNAL REPLAY · UNCONSTRAINED CAPITAL",
+          action: { label: "Rerun", onClick: () => this.runBacktest() },
+          actual: { label: "Actual", onToggle: () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
+          virtual: { label: "Virtual", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
+          status: "Ready · Actual fills require a configured Lighter account",
+          description: "Starts flat at the beginning of loaded history · completed candles · capital, margin and leverage do not suppress simulated trades · advertised fees included. LIVE ONLY checks protect real orders; BACKTEST ONLY switches affect the simulation.",
+          secondaryStatus: "Lighter replay uses public SKHY / SKHYNIXUSD candles.",
+          height: 420,
+          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
+          syncText: "Updated 0s ago",
+        });
+        [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
       }
       const entry = lid("btnStepTranche");
       const exit = lid("btnReduceTranche");
@@ -131,22 +140,22 @@
     },
 
     ensureChart() {
-      const host = lid("shortTermExecutionChartFrame");
+      const host = lid("shortTermSpreadChartHost");
       if (this.chart || !host || !window.LightweightCharts) return;
       this.chart = LightweightCharts.createChart(host, {
         width: host.clientWidth, height: 420,
-        layout: { background: { color: "#fff" }, textColor: "#475569" },
+        layout: { background: { color: "#f8fafc" }, textColor: "#475569" },
         grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
         rightPriceScale: { borderColor: "#e2e8f0" },
         timeScale: { borderColor: "#e2e8f0", timeVisible: true },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       });
-      this.series = this.chart.addLineSeries({ color: "#0284c7", lineWidth: 2,
-        priceFormat: { type: "custom", formatter: (value) => `${value.toFixed(2)}%` } });
+      this.series = this.chart.addAreaSeries({ topColor: "rgba(2,132,199,.25)", bottomColor: "rgba(2,132,199,.02)", lineColor: "#0284c7", lineWidth: 2,
+        priceFormat: { type: "price", precision: 2, minMove: .01 } });
       this.maSeries = {
         7: this.chart.addLineSeries({ color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
         24: this.chart.addLineSeries({ color: "#8b5cf6", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
-        60: this.chart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false }),
+        60: this.chart.addLineSeries({ color: "#06b6d4", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
       };
       window.addEventListener("resize", () => this.resize());
     },
@@ -157,7 +166,7 @@
     },
 
     resize() {
-      const host = lid("shortTermExecutionChartFrame");
+      const host = lid("shortTermSpreadChartHost");
       if (host && this.chart) this.chart.applyOptions({ width: host.clientWidth });
     },
 
@@ -190,6 +199,10 @@
       this.bars = data.bars;
       this.series.setData(data.bars.map((bar) => ({ time: bar.time, value: bar.value })));
       [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(TerminalCommon.movingAverage(data.bars, windowSize)));
+      [7, 24, 60].forEach((windowSize) => {
+        const value = TerminalCommon.movingAverage(data.bars, windowSize).at(-1)?.value;
+        this.setText(`valShortTermMa${windowSize}`, Number.isFinite(value) ? `${value.toFixed(2)}%` : "--%");
+      });
       this.actualMarkers = Array.isArray(data.markers) ? data.markers.map((marker) => ({
         time: marker.time, position: marker.position || "aboveBar", color: marker.color || "#0f172a",
         shape: marker.shape || "arrowDown", text: marker.text || "Actual",
@@ -269,19 +282,25 @@
     },
 
     updateMarkerButtons() {
-      const actual = $("lighterToggleActual"); const virtual = $("lighterToggleVirtual");
-      if (actual) { actual.textContent = `${this.showActualMarkers ? "✓" : "○"} Actual`; actual.style.opacity = this.showActualMarkers ? "1" : ".55"; }
-      if (virtual) { virtual.textContent = `${this.showVirtualMarkers ? "✓" : "○"} Virtual`; virtual.style.opacity = this.showVirtualMarkers ? "1" : ".55"; }
+      this.executionChartFrame?.setVisibility("actual", this.showActualMarkers);
+      this.executionChartFrame?.setVisibility("virtual", this.showVirtualMarkers);
+    },
+
+    toggleMA(period) {
+      this.maVisibility[period] = !this.maVisibility[period];
+      this.maSeries[period]?.applyOptions({ visible: this.maVisibility[period] });
+      const legend = lid(`legendShortMa${period}`);
+      if (legend) { legend.style.opacity = this.maVisibility[period] ? "1" : ".35"; legend.style.textDecoration = this.maVisibility[period] ? "none" : "line-through"; }
     },
 
     async runBacktest() {
-      const summary = $("lighterBacktestSummary");
-      const button = $("lighterRunBacktest");
+      const summary = lid("dynamicBacktestStatus");
+      const button = lid("btnRerunDynamicBacktest");
       if (button) button.disabled = true;
       if (summary) summary.textContent = "Running…";
       try {
-        const entry = Number($("lighterEntryZ")?.value || 1.5);
-        const exit = Number($("lighterExitZ")?.value || 0.25);
+        const entry = 1.5;
+        const exit = 0.25;
         const toggles = new URLSearchParams({
           interval: this.interval, limit: "500", entry_z: String(entry), exit_z: String(exit),
           use_ma_stretch: String(lid("chkCondEntryMaStretch")?.checked !== false),
