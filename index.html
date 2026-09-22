@@ -2157,6 +2157,187 @@
       .stat { border-right: 0; border-bottom: 1px solid var(--line); }
       .stat:last-child { border-bottom: 0; }
     }
+
+    /* Phone layout: contain wide desktop modules and keep primary actions thumb-friendly. */
+    @media (max-width: 640px) {
+      body { word-break: normal; }
+      main {
+        width: 100%;
+        max-width: 100%;
+        padding: 12px 8px 28px;
+        overflow: hidden;
+      }
+      .top {
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .top > div:first-child,
+      .topRight,
+      [id^="tabContent"] {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+      }
+      #topEyebrow {
+        font-size: 10px;
+        line-height: 1.35;
+      }
+      #topTitle {
+        width: 100%;
+        max-width: 100%;
+        font-size: clamp(21px, 6.2vw, 27px);
+        line-height: 1.08;
+        overflow-wrap: anywhere;
+      }
+      .deployBadge {
+        width: 100%;
+        max-width: 100%;
+        flex-wrap: wrap;
+        white-space: normal;
+        line-height: 1.35;
+        padding: 6px 8px;
+      }
+      #deployTime {
+        flex: 1 0 100%;
+        padding-left: 13px;
+      }
+      .topRight {
+        align-items: stretch !important;
+      }
+      .terminalLockToggleWrap,
+      .langSwitch {
+        min-height: 44px;
+        flex: 1 1 auto;
+        justify-content: center;
+      }
+      .langSwitch button { min-height: 36px; }
+      .pill {
+        min-width: 0;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .mainNavTabs {
+        width: 100%;
+        max-width: 100%;
+        gap: 6px;
+        margin: 10px 0 12px;
+        padding: 0 0 3px;
+        overscroll-behavior-inline: contain;
+        scroll-snap-type: inline proximity;
+      }
+      .mainNavBtn {
+        width: 150px;
+        min-width: 150px;
+        max-width: none;
+        flex: 0 0 150px;
+        min-height: 50px;
+        padding: 8px 9px;
+        scroll-snap-align: start;
+      }
+      .navBtnText strong { font-size: 11.5px; }
+      .navLivePill { font-size: 8px; padding: 2px 4px; }
+
+      .controls,
+      .controlSection,
+      .panel,
+      .tablePanel,
+      .shortTermExecutionSection,
+      .pairOrderTicket,
+      .posTableShell,
+      .compSliderCard {
+        min-width: 0;
+        max-width: 100%;
+      }
+      .controls,
+      .controlSection,
+      .shortTermExecutionSection,
+      .pairOrderTicket,
+      .compSliderCard { padding: 10px; }
+      .controlSectionHeader,
+      .chartHeader,
+      .tableHead,
+      .executionChartToolbar,
+      .executionChartFooter {
+        align-items: flex-start !important;
+        gap: 8px;
+      }
+      .controlGrid.environment,
+      .controlGrid.optimizableGrid,
+      .modelCard,
+      .shortTermCriteriaGrid,
+      .deepDiveGrid,
+      #tabContentUpbitScanner > section[style*="grid-template-columns"] {
+        grid-template-columns: minmax(0, 1fr) !important;
+      }
+      #evaluationCards { grid-template-columns: minmax(0, 1fr) !important; }
+      #tabContentUpbitScanner [style*="grid-template-columns:repeat(5"] {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      }
+      #upbitScannerSearch {
+        width: 100%;
+        min-width: 0 !important;
+      }
+      .tradingModeSwitch,
+      .posTableTabs {
+        width: 100%;
+        overflow-x: auto;
+      }
+      .tradingModeSwitch button,
+      .posTabBtn {
+        width: auto;
+        max-width: none;
+        min-width: max-content;
+        min-height: 40px;
+      }
+      .dualActionButtons { grid-template-columns: minmax(0, 1fr); }
+      .btnPairFlat { grid-column: auto; }
+      .executionChartFrame { padding: 7px; }
+      .executionChartToolbar > * { max-width: 100%; }
+      .chartHeader .legend {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+      }
+      .chartHeader .legend > span { white-space: normal; }
+      #simulationPeriodBadge {
+        width: 100% !important;
+        max-width: 100%;
+        flex: 1 0 100%;
+        line-height: 1.4;
+      }
+      .chartModeSwitch,
+      .newsFilterSwitch {
+        position: relative;
+        inset: auto;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        justify-content: flex-start;
+        margin-bottom: 6px;
+      }
+      .chartModeSwitch button,
+      .newsFilterSwitch button {
+        width: auto;
+        max-width: none;
+        min-width: max-content;
+      }
+      .mobileTableScroll {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .modalBackdrop { padding: 8px; }
+      .modalDialog { max-height: calc(100dvh - 16px); overflow-y: auto; }
+      .modalHeader, .modalBody, .modalFooter { padding-left: 12px !important; padding-right: 12px !important; }
+      footer {
+        align-items: flex-start !important;
+        flex-direction: column;
+        line-height: 1.45;
+      }
+    }
   </style>
 </head>
 <body>
@@ -3722,7 +3903,7 @@
             </div>
 
             <!-- Milestones Table -->
-            <div style="margin-top: 8px;">
+            <div class="mobileTableScroll" style="margin-top: 8px;">
               <span style="font-size: 11.5px; font-weight: 800; color: #475569; text-transform: uppercase;">Compounding Milestones:</span>
               <table class="compMilestoneTable" id="tblCompMilestones">
                 <thead>
@@ -9880,6 +10061,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("tabContentCompound")) $("tabContentCompound").style.display = isCompound ? "block" : "none";
       if ($("tabContentStrategyLab")) $("tabContentStrategyLab").style.display = isStrategyLab ? "block" : "none";
       if ($("tabContentUpbitScanner")) $("tabContentUpbitScanner").style.display = isUpbitScanner ? "block" : "none";
+      const activeNav = isBacktest ? $("navTabBacktest")
+        : isTrading ? $("navTabTrading")
+        : isPairs ? $("navTabPairs")
+        : isCompound ? $("navTabCompound")
+        : isStrategyLab ? $("navTabStrategyLab")
+        : $("navTabUpbitScanner");
+      if (activeNav && window.matchMedia("(max-width: 1024px)").matches) {
+        requestAnimationFrame(() => activeNav.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }));
+      }
       try {
         localStorage.setItem("skhynix_active_tab", tab);
       } catch (e) {}
