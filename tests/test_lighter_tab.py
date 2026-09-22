@@ -18,8 +18,8 @@ class TestLighterTab(unittest.TestCase):
         html = (ROOT / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
         for required in (
-            'id="tabContentLighter"', 'id="lighterChart"', 'id="lighterRunBacktest"',
-            'id="lighterVirtualEntry"', 'id="lighterVirtualExit"',
+            'id="tabContentLighter"', 'cloneTradingTerminal', 'lighterRunBacktest',
+            'addVirtualEntry', 'exitVirtual',
             'switchMainTab("lighter")', '/api/lighter/status', '/api/lighter/parity',
             '/api/lighter/backtest',
         ):
@@ -27,8 +27,15 @@ class TestLighterTab(unittest.TestCase):
 
     def test_live_mode_is_fail_closed(self):
         html = (ROOT / "index.html").read_text(encoding="utf-8")
-        self.assertIn('id="lighterLiveMode"', html)
-        self.assertIn('lighterBtn secondary terminal-action-control" type="button" disabled', html)
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn('button,input,select', script)
+        self.assertIn('element.disabled = true', script)
+        self.assertIn('Live execution is fail-closed', script)
+
+    def test_lighter_uses_tab_two_structure_without_duplicate_ids(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn('source.children', script)
+        self.assertIn('element.id = `lighter_${element.id}`', script)
 
 
 if __name__ == "__main__":
