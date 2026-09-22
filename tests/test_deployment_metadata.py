@@ -23,6 +23,7 @@ class DeploymentMetadataTests(unittest.TestCase):
         self.assertIn("DEPLOYED_AT=", script)
         self.assertIn("curl -fsSI", script)
         self.assertIn('grep -Fq "$BUILD_VERSION"', script)
+        self.assertIn('"$STAGE_DIR/live-index.html"', script)
 
     def test_stamper_updates_only_the_metadata_source(self):
         with tempfile.TemporaryDirectory() as directory:
