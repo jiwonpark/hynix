@@ -23,6 +23,7 @@ class TestLighterTab(unittest.TestCase):
             'switchMainTab("lighter")', '/api/lighter/status', '/api/lighter/parity',
             '/api/lighter/backtest',
             'lighterToggleActual', 'lighterToggleVirtual', 'movingAverage',
+            'bindResearchConditions', 'use_ma_stretch', 'use_bottoming',
         ):
             self.assertIn(required, html + script)
 

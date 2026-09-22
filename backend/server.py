@@ -267,13 +267,17 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
 
 @app.get("/api/lighter/backtest")
 async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
-                               entry_z: float = 1.5, exit_z: float = 0.25) -> Dict[str, Any]:
+                               entry_z: float = 1.5, exit_z: float = 0.25,
+                               use_ma_stretch: bool = True, use_peak: bool = True,
+                               use_ma_stack: bool = False, use_convergence: bool = True,
+                               use_dwell: bool = True, use_bottoming: bool = False) -> Dict[str, Any]:
     data = await get_lighter_parity(interval, min(500, limit))
     bars = data.get("bars", [])
     window = 24
     trades = []
     position = None
     series = []
+    previous_zscore = None
     for index, bar in enumerate(bars):
         if index < window:
             continue
@@ -283,13 +287,31 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
         std = math.sqrt(variance)
         zscore = (bar["value"] - mean) / std if std else 0.0
         series.append({"time": bar["time"], "value": bar["value"], "mean": round(mean, 4), "z": round(zscore, 3)})
-        if position is None and abs(zscore) >= max(0.5, entry_z):
+        ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
+        stack_pass = ((zscore > 0 and bar["value"] > ma7 > mean)
+                      or (zscore < 0 and bar["value"] < ma7 < mean))
+        peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
+        entry_threshold = max(0.5, entry_z) if use_ma_stretch else 0.5
+        entry_signal = (abs(zscore) >= entry_threshold
+                        and (not use_peak or peak_pass)
+                        and (not use_ma_stack or stack_pass))
+        if position is None and entry_signal:
             position = {"side": -1 if zscore > 0 else 1, "entry": bar["value"], "entry_time": bar["time"]}
-        elif position is not None and (abs(zscore) <= max(0.0, exit_z) or index == len(bars) - 1):
+            position["entry_index"] = index
+        elif position is not None:
+            held_bars = index - position["entry_index"]
+            convergence_pass = abs(zscore) <= max(0.0, exit_z) if use_convergence else position["side"] * (bar["value"] - position["entry"]) > 0
+            dwell_pass = not use_dwell or held_bars >= 4
+            bottoming_pass = not use_bottoming or (previous_zscore is not None and abs(zscore) >= abs(previous_zscore))
+            if not ((convergence_pass and dwell_pass and bottoming_pass) or index == len(bars) - 1):
+                previous_zscore = zscore
+                continue
             pnl_pct = position["side"] * (bar["value"] - position["entry"])
+            position.pop("entry_index", None)
             trades.append({**position, "exit": bar["value"], "exit_time": bar["time"],
                            "pnl_pct": round(pnl_pct, 4)})
             position = None
+        previous_zscore = zscore
     wins = sum(1 for trade in trades if trade["pnl_pct"] > 0)
     return {"success": data.get("success", False), "series": series, "trades": trades,
             "summary": {"trades": len(trades), "wins": wins,

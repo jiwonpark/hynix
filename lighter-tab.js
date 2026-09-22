@@ -127,6 +127,7 @@
       if (notionalInput) notionalInput.disabled = false;
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner p");
       if (guard) guard.innerHTML = 'Virtual take-profit closes the <strong>latest matched entry first (LIFO)</strong>. PnL is marked from the captured Lighter parity ratio using the selected virtual notional. <strong>Live orders remain impossible until signer configuration is complete.</strong>';
+      this.bindResearchConditions();
     },
 
     init() {
@@ -227,6 +228,34 @@
       }).filter(Boolean);
     },
 
+    bindResearchConditions() {
+      const researchIds = [
+        "chkCondEntryMaStretch", "chkCondEntryPeak", "chkCondEntryMaStack5m",
+        "chkCondExitConvergence", "chkCondExitDwell", "chkCondExitBottoming",
+      ];
+      researchIds.forEach((id) => {
+        const input = lid(id);
+        if (!input) return;
+        input.disabled = false;
+        input.closest(".terminal-action-control")?.classList.remove("terminal-action-control");
+        input.addEventListener("change", () => this.runBacktest());
+      });
+      const labels = {
+        valCondEntryMaStretch: "Replay: require selected Entry Z",
+        valCondEntryPeak: "Replay: require z-score rollover",
+        valCondEntryMaStack5m: "Replay: require MA7 / MA24 alignment",
+        valCondExitConvergence: "Replay: require selected Exit Z",
+        valCondExitDwell: "Replay: minimum four bars held",
+        valCondExitBottoming: "Replay: require convergence rollover",
+      };
+      Object.entries(labels).forEach(([id, text]) => this.setText(id, text));
+      ["chkCondEntryBase", "chkCondEntryMaStack1h", "chkCondEntryCapacity", "chkCondEntryLeverage",
+       "chkCondEntryMargin", "chkCondEntryEngine", "chkCondEntryGuard", "chkCondExitActive",
+       "chkCondExitNetPnl", "chkCondExitMaStack5m", "chkCondExitMaStack1h", "chkCondExitPosition"].forEach((id) => {
+        const input = lid(id); if (input) { input.disabled = true; input.title = "Available when Lighter live account execution is configured"; }
+      });
+    },
+
     addVirtualEntry() {
       if (!Number.isFinite(this.currentRatio)) return;
       const entry = { time: Date.now(), ratio: this.currentRatio, notional: this.orderNotional(), side: this.currentRatio >= 100 ? -1 : 1 };
@@ -273,7 +302,16 @@
       try {
         const entry = Number($("lighterEntryZ")?.value || 1.5);
         const exit = Number($("lighterExitZ")?.value || 0.25);
-        const data = await api(`/api/lighter/backtest?interval=${this.interval}&limit=500&entry_z=${entry}&exit_z=${exit}`);
+        const toggles = new URLSearchParams({
+          interval: this.interval, limit: "500", entry_z: String(entry), exit_z: String(exit),
+          use_ma_stretch: String(lid("chkCondEntryMaStretch")?.checked !== false),
+          use_peak: String(lid("chkCondEntryPeak")?.checked !== false),
+          use_ma_stack: String(lid("chkCondEntryMaStack5m")?.checked === true),
+          use_convergence: String(lid("chkCondExitConvergence")?.checked !== false),
+          use_dwell: String(lid("chkCondExitDwell")?.checked !== false),
+          use_bottoming: String(lid("chkCondExitBottoming")?.checked === true),
+        });
+        const data = await api(`/api/lighter/backtest?${toggles}`);
         this.backtestMarkers = data.trades.flatMap((trade) => [
           { time: trade.entry_time, position: trade.side < 0 ? "aboveBar" : "belowBar", color: "rgba(124,58,237,.55)", shape: trade.side < 0 ? "arrowDown" : "arrowUp", text: "Virtual Entry" },
           { time: trade.exit_time, position: trade.side < 0 ? "belowBar" : "aboveBar", color: "rgba(16,185,129,.55)", shape: trade.side < 0 ? "arrowUp" : "arrowDown", text: `Virtual Exit ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}%` },
