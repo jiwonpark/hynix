@@ -222,7 +222,7 @@
 
     bindResearchConditions() {
       const researchIds = [
-        "chkCondEntryMaStretch", "chkCondEntryPeak", "chkCondEntryMaStack5m",
+        "chkCondEntryMaStretch", "chkCondEntryBase", "chkCondEntryPeak", "chkCondEntryMaStack5m",
         "chkCondExitConvergence", "chkCondExitDwell", "chkCondExitBottoming",
       ];
       researchIds.forEach((id) => {
@@ -235,6 +235,7 @@
       });
       const labels = {
         valCondEntryMaStretch: "Replay: require selected Entry Z",
+        valCondEntryBase: "Replay: require +0.10pt spacing from prior same-side entry",
         valCondEntryPeak: "Replay: require z-score rollover",
         valCondEntryMaStack5m: "Replay: require MA7 / MA24 alignment",
         valCondExitConvergence: "Replay: require selected Exit Z",
@@ -242,7 +243,7 @@
         valCondExitBottoming: "Replay: require convergence rollover",
       };
       Object.entries(labels).forEach(([id, text]) => this.setText(id, text));
-      ["chkCondEntryBase", "chkCondEntryMaStack1h", "chkCondEntryCapacity", "chkCondEntryLeverage",
+      ["chkCondEntryMaStack1h", "chkCondEntryCapacity", "chkCondEntryLeverage",
        "chkCondEntryMargin", "chkCondEntryEngine", "chkCondEntryGuard", "chkCondExitActive",
        "chkCondExitNetPnl", "chkCondExitMaStack5m", "chkCondExitMaStack1h", "chkCondExitPosition"].forEach((id) => {
         const input = lid(id); if (input) { input.disabled = true; input.title = "Available when Lighter live account execution is configured"; }
@@ -304,6 +305,7 @@
         const toggles = new URLSearchParams({
           interval: this.interval, limit: "500", entry_z: String(entry), exit_z: String(exit),
           use_ma_stretch: String(lid("chkCondEntryMaStretch")?.checked !== false),
+          use_base_spacing: String(lid("chkCondEntryBase")?.checked !== false),
           use_peak: String(lid("chkCondEntryPeak")?.checked !== false),
           use_ma_stack: String(lid("chkCondEntryMaStack5m")?.checked === true),
           use_convergence: String(lid("chkCondExitConvergence")?.checked !== false),

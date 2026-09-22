@@ -269,7 +269,7 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
 async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                                entry_z: float = 1.5, exit_z: float = 0.25,
                                use_ma_stretch: bool = True, use_peak: bool = True,
-                               use_ma_stack: bool = False, use_convergence: bool = True,
+                               use_base_spacing: bool = True, use_ma_stack: bool = False, use_convergence: bool = True,
                                use_dwell: bool = True, use_bottoming: bool = False) -> Dict[str, Any]:
     data = await get_lighter_parity(interval, min(500, limit))
     bars = data.get("bars", [])
@@ -278,6 +278,8 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
     position = None
     series = []
     previous_zscore = None
+    last_entry_value = None
+    last_entry_side = None
     for index, bar in enumerate(bars):
         if index < window:
             continue
@@ -292,12 +294,19 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                       or (zscore < 0 and bar["value"] < ma7 < mean))
         peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
         entry_threshold = max(0.5, entry_z) if use_ma_stretch else 0.5
+        candidate_side = -1 if zscore > 0 else 1
+        base_spacing_pass = (not use_base_spacing or last_entry_value is None or candidate_side != last_entry_side
+                             or (candidate_side < 0 and bar["value"] >= last_entry_value + 0.10)
+                             or (candidate_side > 0 and bar["value"] <= last_entry_value - 0.10))
         entry_signal = (abs(zscore) >= entry_threshold
+                        and base_spacing_pass
                         and (not use_peak or peak_pass)
                         and (not use_ma_stack or stack_pass))
         if position is None and entry_signal:
-            position = {"side": -1 if zscore > 0 else 1, "entry": bar["value"], "entry_time": bar["time"]}
+            position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"]}
             position["entry_index"] = index
+            last_entry_value = bar["value"]
+            last_entry_side = candidate_side
         elif position is not None:
             held_bars = index - position["entry_index"]
             convergence_pass = abs(zscore) <= max(0.0, exit_z) if use_convergence else position["side"] * (bar["value"] - position["entry"]) > 0

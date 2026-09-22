@@ -25,6 +25,7 @@ class TestLighterTab(unittest.TestCase):
             '/api/lighter/backtest',
             'lighter_legendActualTrades', 'lighter_legendVirtualTrades', 'movingAverage',
             'bindResearchConditions', 'use_ma_stretch', 'use_bottoming',
+            'use_base_spacing', 'chkCondEntryBase',
             'element.removeAttribute(attribute)',
         ):
             self.assertIn(required, html + script + common)
