@@ -2167,9 +2167,9 @@
           <p id="topEyebrow" class="eyebrow" style="margin: 0; font-weight: 800; letter-spacing: 0.5px; color: #0284c7;">HYPERION // AUTONOMOUS RELATIVE VALUE ENGINE</p>
           <div class="deployBadge" title="Deployment Status">
             <span class="deployDot"></span>
-            <span id="deployVersion">v1.7.1</span>
+            <span id="deployVersion">v1.7.1+local</span>
             <span style="color: #cbd5e1;">&bull;</span>
-            <span id="deployTime">Deployed: 2026-09-09 15:43 KST</span>
+            <span id="deployTime">Development build</span>
           </div>
         </div>
         <h1 id="topTitle" style="letter-spacing: -0.5px; font-weight: 900;">HYPERION · Dual-Leg Quant Terminal</h1>
@@ -4217,7 +4217,7 @@
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">HYPERION &middot; Quantitative Trading System &middot; Dual-Leg Parity Engine</span>
-      <span>Build: <strong id="footerVersion">v1.7.1</strong> &middot; <span id="footerDeploy">Deployed: <strong>2026-09-09 15:43 KST</strong> (AWS EC2)</span></span>
+      <span>Build: <strong id="footerVersion">v1.7.1+local</strong> &middot; <span id="footerDeploy">Development build</span></span>
     </footer>
 
   <!-- Security Unlock Modal for Execution Terminal -->
@@ -4270,6 +4270,13 @@
   <script src="strategy-execution-chart.js?v=20260918_j"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script>
+    // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
+    // Keep one metadata source so the header, footer, and translations cannot drift.
+    const DEPLOYMENT_META = Object.freeze({
+      buildVersion: "v1.7.1+local",
+      deployedAt: "Development build",
+    });
+
     const ASSET_STRATEGIES = {
       skhynix_arb: {
         id: "skhynix_arb",
@@ -8726,8 +8733,8 @@
         tblColPostSpread: "Post-24h Spread",
         tblColDislocation: "Spread Dislocation",
         tblColModelAdapt: "Model Adaptation",
-        deployTime: "Deployed: 2026-09-09 15:43 KST",
-        footerDeploy: "Deployed: <strong>2026-09-09 15:43 KST</strong> (AWS EC2)",
+        deployTime: `Deployed: ${DEPLOYMENT_META.deployedAt}`,
+        footerDeploy: `Deployed: <strong>${DEPLOYMENT_META.deployedAt}</strong> (AWS EC2)`,
         titleExecutionTerminal: "⚡ 1-Click Pair Execution Terminal & Live Orders",
         lblExecutionSlippage: "Slippage Guard: <strong>5 BPS</strong>",
         btnResetPaper: "↺ Reset $10k",
@@ -8903,8 +8910,8 @@
         tblColPostSpread: "24h 후 스프레드",
         tblColDislocation: "스프레드 괴리 변화",
         tblColModelAdapt: "모델 적응 목표치",
-        deployTime: "배포 일시: 2026-09-09 15:43 KST",
-        footerDeploy: "배포 일시: <strong>2026-09-09 15:43 KST</strong> (AWS EC2)",
+        deployTime: `배포 일시: ${DEPLOYMENT_META.deployedAt}`,
+        footerDeploy: `배포 일시: <strong>${DEPLOYMENT_META.deployedAt}</strong> (AWS EC2)`,
         titleExecutionTerminal: "⚡ 1-Click 페어 주문 실행 터미널 및 실시간 포지션",
         lblExecutionSlippage: "슬리피지 방지선: <strong>5 BPS</strong>",
         btnResetPaper: "↺ 잔고 초기화 ($10k)",
@@ -9509,6 +9516,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("thModelAdapt")) $("thModelAdapt").textContent = dict.tblColModelAdapt;
       if ($("deployTime")) $("deployTime").textContent = dict.deployTime;
       if ($("footerDeploy")) $("footerDeploy").innerHTML = dict.footerDeploy;
+      if ($("deployVersion")) $("deployVersion").textContent = DEPLOYMENT_META.buildVersion;
+      if ($("footerVersion")) $("footerVersion").textContent = DEPLOYMENT_META.buildVersion;
 
       // Primary Navigation Tabs
       if ($("lblNavBacktest")) $("lblNavBacktest").textContent = dict.lblNavBacktest;

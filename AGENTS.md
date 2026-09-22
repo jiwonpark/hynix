@@ -16,3 +16,9 @@ runtime state (especially backend/auto_tranche_state.json), and unrelated change
 Restart the backend service when backend code changes. Verify HTTP 200 text/html
 for the frontend and check affected read-only API endpoints after deployment.
 Never place test orders as part of deployment verification.
+
+Deploy frontend changes with `scripts/deploy_frontend.sh`, passing any changed
+root-level frontend assets as arguments (for example, `strategy-lab.js`). The
+script always stages `index.html`, stamps a unique Git SHA + KST build version
+and deployment time, inspects production, uploads the files, and verifies the
+live metadata. Do not copy `index.html` directly because that bypasses stamping.

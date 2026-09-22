@@ -111,18 +111,18 @@ When making modifications or adding new features to `/Users/jiwon/Documents/hyni
 # 1. Verify working directory
 cd /Users/jiwon/Documents/hynix
 
-# 2. Deploy updated single-file bundle to EC2
-scp /Users/jiwon/Documents/hynix/index.html thejiwon2025:/tmp/index.html && \
-ssh thejiwon2025 "sudo cp /tmp/index.html /var/www/skhynix/index.html"
-
-# 3. Commit and push to GitHub repository
+# 2. Commit and push to GitHub repository
 git add index.html
 git commit -m "Describe updates"
 git push origin main
 
-# 4. Mandatory Post-Deployment Verification (ALWAYS TEST)
-# MUST verify live URL returns HTTP 200 text/html (not 502 or fallback plain text):
-curl -sI https://control.jiwonova.com/skhynix/ | grep -E "(HTTP/|content-type|last-modified)"
+# 3. Deploy through the metadata-stamping frontend workflow.
+# Pass any other changed root-level frontend assets as arguments.
+scripts/deploy_frontend.sh strategy-lab.js
+
+# The script inspects production first, stamps a unique Git SHA + KST build and
+# deployment time, uploads the files, and verifies HTTP 200 text/html plus the
+# live build marker. Do not copy index.html directly; that bypasses stamping.
 ```
 
 **Production URL**: `https://control.jiwonova.com/skhynix/` (Always test in browser / curl after any deploy)
