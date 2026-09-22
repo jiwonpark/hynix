@@ -3165,11 +3165,11 @@
               <!-- 1. Scale-in Criteria Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Speculative Scale-In (+0.08 SKHY / +1.40 CSOP)</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Guarded Scale-In <span style="display:inline-block;background:#7c3aed;color:#fff;border-radius:999px;padding:1px 6px;font-size:8px;vertical-align:1px;">NEW</span> (+0.08 SKHY / +1.40 CSOP)</span>
                   <span id="badgeCriteriaScaleIn" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #b45309;">WAITING</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritScaleInDesc">
-                  Trigger: Parity <strong>≥ <span id="valCritScaleInThreshold">139.42%</span></strong> (MA-24: <span id="valCritMa24">139.25%</span> + 0.10%)
+                  Adaptive trigger: Parity <strong>≥ <span id="valCritScaleInThreshold">139.50%</span></strong> (rolling mean: <span id="valCritMa24">139.25%</span>; volatility + reset guard)
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
                   <span>Current Parity: <strong id="valCritCurrentSpread">139.30%</strong></span>
@@ -3187,7 +3187,7 @@
                       <input type="checkbox" id="chkCondEntryMaStretch" checked onchange="tradingEngine.toggleCondition('entry_ma_stretch', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Current spread must exceed 24-period MA by at least +0.10% points">1. MA-24 Stretch (≥ +0.10%)</span>
+                    <span class="condLabel" title="Current spread must exceed the rolling mean by at least +0.25 percentage points">1. Rolling MA Stretch (≥ +0.25%)</span>
                     <span class="condValue" id="valCondEntryMaStretch"><strong id="valCritMaStretch" style="color: #d97706;">+0.00% pts</strong></span>
                     <span class="condBadge wait" id="badgeCondEntryMaStretch">WAIT</span>
                   </div>
@@ -3259,9 +3259,18 @@
                       <input type="checkbox" id="chkCondEntryEngine" checked disabled onchange="tradingEngine.toggleCondition('entry_worker_state', this.checked)">
                       <span class="toggleSlider"></span>
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
-                    <span class="condLabel" title="Auto-tranche daemon must be enabled, cooldown expired (60s), and no recovery lock">9. Worker State & Cooldown</span>
+                    <span class="condLabel" title="Auto-tranche daemon must be enabled, five-minute cooldown expired, and no recovery lock">9. Worker State & 5m Cooldown</span>
                     <span class="condValue" id="valCondEntryEngine">READY</span>
                     <span class="condBadge pass" id="badgeCondEntryEngine">READY</span>
+                  </div>
+                  <div class="condRow" id="rowCondEntryGuard">
+                    <label class="toggleSwitch" title="Always enforced for live orders">
+                      <input type="checkbox" id="chkCondEntryGuard" checked disabled>
+                      <span class="toggleSlider"></span>
+                    </label><span style="font-size: 8px; color: #7c3aed; font-weight: 800;" title="New mandatory live protection">NEW</span>
+                    <span class="condLabel" title="One completed 5m candle per entry, maximum four entries/hour and twelve entries/campaign">10. Closed-Bar Cadence · 4/hour · 12/campaign</span>
+                    <span class="condValue" id="valCondEntryGuard">--</span>
+                    <span class="condBadge wait" id="badgeCondEntryGuard">WAIT</span>
                   </div>
                 </div>
               </div>
@@ -12254,10 +12263,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const syncCondRow = (key, rowId, chkId, badgeId, isMet, passText, notMetText, badgeTypeIfNotMet = "wait") => {
           const on = this.isConditionEnabled(key, criteria.condition_toggles);
-          const mandatory = (criteria.mandatory_live_conditions || ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state", "exit_speculative_tranche", "exit_net_profit", "exit_position_qty"]).includes(key);
+          const mandatory = (criteria.mandatory_live_conditions || ["entry_ma_stretch", "entry_base_spread", "entry_peak_rollover", "entry_ma_stack_5m", "entry_ma_stack_1h", "entry_adaptive_guard", "entry_closed_bar", "entry_rate_limit", "entry_campaign_cap", "entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state", "exit_speculative_tranche", "exit_net_profit", "exit_position_qty"]).includes(key);
           const liveOn = mandatory || on;
           const chk = $(chkId);
-          if (chk && chk.checked !== on) chk.checked = on;
+          const checkedState = mandatory && key.startsWith("entry_") ? true : on;
+          if (chk && chk.checked !== checkedState) chk.checked = checkedState;
           if (chk) {
             if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
               chk.disabled = true;
@@ -12285,8 +12295,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const maStretch = criteria.ma_stretch_pts != null ? criteria.ma_stretch_pts : (currSpread - ma24);
         const isPeakingOut = Boolean(criteria.is_peaking_out);
         const scaleInArmed = Boolean(criteria.scale_in_armed);
-        const isStretchedAboveMa = criteria.is_stretched_above_ma != null ? Boolean(criteria.is_stretched_above_ma) : (maStretch >= 0.10);
-        const isAboveEntry = criteria.is_above_entry != null ? Boolean(criteria.is_above_entry) : ((criteria.tranches_active || 0) > 0 ? (currSpread >= baseEntry + 0.10) : true);
+        const isStretchedAboveMa = criteria.is_stretched_above_ma != null ? Boolean(criteria.is_stretched_above_ma) : (maStretch >= 0.25);
+        const isAboveEntry = criteria.is_above_entry != null ? Boolean(criteria.is_above_entry) : (currSpread >= scaleInThreshold);
         const tranchesMax = criteria.tranches_max ?? "—";
         const tranchesActive = criteria.tranches_active || 0;
         const tranchesRemaining = criteria.tranches_remaining != null ? criteria.tranches_remaining : Math.max(0, tranchesMax - tranchesActive);
@@ -12319,13 +12329,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // 7 Scale-In Conditions Checklist
         if ($("valCritMaStretch")) {
           const sign = maStretch >= 0 ? "+" : "";
-          $("valCritMaStretch").textContent = `${sign}${maStretch.toFixed(2)}% pts (≥ +0.10%)`;
+          $("valCritMaStretch").textContent = `${sign}${maStretch.toFixed(2)}% pts (≥ +0.25%)`;
           $("valCritMaStretch").style.color = isStretchedAboveMa ? "#16a34a" : "#d97706";
         }
         syncCondRow("entry_ma_stretch", "rowCondEntryMaStretch", "chkCondEntryMaStretch", "badgeCondEntryMaStretch", isStretchedAboveMa, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
         if ($("valCondEntryBase")) {
-          $("valCondEntryBase").textContent = tranchesActive > 0 ? `${currSpread.toFixed(2)}% vs ${(baseEntry + 0.10).toFixed(2)}%` : (isKo ? "초기 상태" : "FIRST TRANCHE");
+          $("valCondEntryBase").textContent = `${currSpread.toFixed(2)}% vs ${scaleInThreshold.toFixed(2)}%`;
         }
         syncCondRow("entry_base_spread", "rowCondEntryBase", "chkCondEntryBase", "badgeCondEntryBase", isAboveEntry, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
@@ -12375,6 +12385,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
         syncCondRow("entry_worker_state", "rowCondEntryEngine", "chkCondEntryEngine", "badgeCondEntryEngine", isEngineReady, isKo ? "가동" : "READY", isKo ? "대기" : "PAUSED", "wait");
 
+        const newClosedBar = Boolean(criteria.is_new_closed_entry_bar);
+        const rateOk = Boolean(criteria.has_entry_rate_capacity);
+        const campaignOk = Boolean(criteria.has_entry_campaign_capacity);
+        const cadenceOk = newClosedBar && rateOk && campaignOk;
+        if ($("valCondEntryGuard")) {
+          $("valCondEntryGuard").textContent = `${criteria.entry_hourly_count ?? 0}/${criteria.entry_hourly_limit ?? 4} hr · ${criteria.entry_campaign_count ?? 0}/${criteria.entry_campaign_limit ?? 12}`;
+        }
+        syncCondRow("entry_adaptive_guard", "rowCondEntryGuard", "chkCondEntryGuard", "badgeCondEntryGuard", cadenceOk, isKo ? "충족" : "PASS", !campaignOk ? (isKo ? "캠페인한도" : "CAMPAIGN CAP") : (!rateOk ? (isKo ? "시간당한도" : "RATE LIMIT") : (isKo ? "5분봉대기" : "WAIT 5m CLOSE")), "wait");
+
         // Scale-In Top Badge
         if ($("badgeCriteriaScaleIn")) {
           if (scaleInArmed) {
@@ -12385,7 +12404,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("badgeCriteriaScaleIn").textContent = isKo ? "최대 한도 도달" : "MAX CAPACITY";
             $("badgeCriteriaScaleIn").style.background = "#fee2e2";
             $("badgeCriteriaScaleIn").style.color = "#991b1b";
-          } else if (maStretch < 0.10 && this.isConditionEnabled("entry_ma_stretch", criteria.condition_toggles)) {
+          } else if (maStretch < 0.25 && this.isConditionEnabled("entry_ma_stretch", criteria.condition_toggles)) {
             $("badgeCriteriaScaleIn").textContent = isKo ? "MA 이격 부족" : "WAITING MA STRETCH";
             $("badgeCriteriaScaleIn").style.background = "#fef3c7";
             $("badgeCriteriaScaleIn").style.color = "#b45309";

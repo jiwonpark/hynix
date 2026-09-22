@@ -48,9 +48,19 @@ upbit_scanner_cache: Dict[str, Any] = {"timestamp": 0.0, "payload": None}
 
 # Live safeguards are independent of selectable price-replay conditions.
 MANDATORY_LIVE_CONDITIONS = frozenset({
+    "entry_ma_stretch", "entry_base_spread", "entry_peak_rollover",
+    "entry_ma_stack_5m", "entry_ma_stack_1h", "entry_adaptive_guard",
+    "entry_closed_bar", "entry_rate_limit", "entry_campaign_cap",
     "entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state",
     "exit_speculative_tranche", "exit_net_profit", "exit_position_qty",
 })
+
+ENTRY_MIN_MA_STRETCH_PTS = 0.25
+ENTRY_MIN_SPACING_PTS = 0.10
+ENTRY_REENTRY_RESET_PTS = 0.50
+ENTRY_COOLDOWN_SEC = 300
+ENTRY_MAX_PER_HOUR = 4
+ENTRY_MAX_CAMPAIGN = 12
 
 
 def load_auto_tranche_state() -> Dict[str, Any]:
@@ -860,15 +870,19 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         is_exit_ma_aligned_5m = bool(exit_alignment_5m.get("downward"))
         is_exit_ma_aligned_1h = bool(exit_alignment_1h.get("downward"))
         is_exit_ma_aligned = bool(is_exit_ma_aligned_5m and is_exit_ma_aligned_1h)
-        if parity_bars and len(parity_bars) >= 6:
-            ma_subset = parity_bars[-24:] if len(parity_bars) >= 24 else parity_bars
+        now_sec = time.time()
+        closed_5m_bars = [b for b in parity_bars if b["time"] + 300 <= now_sec]
+        signal_bar_time = closed_5m_bars[-1]["time"] if closed_5m_bars else None
+        if closed_5m_bars and len(closed_5m_bars) >= 6:
+            ma_subset = closed_5m_bars[-24:] if len(closed_5m_bars) >= 24 else closed_5m_bars
             ma24 = sum(b["value"] for b in ma_subset) / len(ma_subset)
-            last_val = parity_bars[-1]["value"]
-            prev_val = parity_bars[-2]["value"] if len(parity_bars) > 1 else last_val
-            prev2_val = parity_bars[-3]["value"] if len(parity_bars) > 2 else prev_val
-            local_high_3 = max(prev_val, prev2_val)
+            last_val = closed_5m_bars[-1]["value"]
+            prev_val = closed_5m_bars[-2]["value"] if len(closed_5m_bars) > 1 else last_val
+            prev2_val = closed_5m_bars[-3]["value"] if len(closed_5m_bars) > 2 else prev_val
             local_low_3 = min(prev_val, prev2_val)
-            is_peaking_out = bool(last_val <= prev_val or last_val < local_high_3)
+            # A real crest transition on completed candles, not a condition that
+            # remains true throughout a long decline.
+            is_peaking_out = bool(prev_val >= prev2_val and last_val < prev_val)
             # Conservative Scale-Out: Bottoming-out occurs when downward cascade stops / bounces
             # (last_val >= prev_val or last_val > local_low_3) OR spread has fully pierced 24-MA (last_val <= ma24)
             is_bottoming_out = bool(last_val >= prev_val or last_val > local_low_3 or last_val <= ma24)
@@ -880,24 +894,63 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             spread_velocity = 0.0
 
         ma_stretch_pts = round(curr_spread - ma24, 2)
-        is_stretched_above_ma = bool(ma_stretch_pts >= 0.10)
-        is_above_entry = bool(curr_spread >= base_entry + 0.10) if tranches_active > 0 else True
+        is_stretched_above_ma = bool(ma_stretch_pts >= ENTRY_MIN_MA_STRETCH_PTS)
+        entry_pairs = auto_state.get("entry_order_pairs", [])
+        latest_entry_raw = entry_pairs[-1].get("entry_spread") if entry_pairs else None
+        latest_recorded_entry = (
+            float(latest_entry_raw) if latest_entry_raw is not None else None)
+        campaign_count = int(auto_state.get(
+            "entries_since_last_exit", min(len(entry_pairs), ENTRY_MAX_CAMPAIGN)))
+        recent_entry_times = [
+            float(t) for t in auto_state.get("recent_entry_times", [])
+            if now_sec - float(t) < 3600
+        ]
+        rolling_values = [float(b["value"]) for b in closed_5m_bars[-60:]]
+        rolling_mean = sum(rolling_values) / len(rolling_values) if rolling_values else ma24
+        rolling_variance = (
+            sum((v - rolling_mean) ** 2 for v in rolling_values) / len(rolling_values)
+            if rolling_values else 0.0
+        )
+        rolling_sigma = math.sqrt(rolling_variance)
+        adaptive_floor = rolling_mean + max(
+            ENTRY_MIN_MA_STRETCH_PTS, 1.25 * rolling_sigma)
+        last_exit_spread = auto_state.get("last_exit_spread")
+        if campaign_count <= 0:
+            scale_in_trigger = max(
+                adaptive_floor,
+                float(last_exit_spread) + ENTRY_REENTRY_RESET_PTS
+                if last_exit_spread is not None else adaptive_floor,
+            )
+        else:
+            scale_in_trigger = max(
+                adaptive_floor,
+                (latest_recorded_entry if latest_recorded_entry is not None else base_entry)
+                + ENTRY_MIN_SPACING_PTS,
+            )
+        scale_in_trigger = round(scale_in_trigger, 2)
+        is_above_entry = bool(curr_spread >= scale_in_trigger)
+        is_new_closed_entry_bar = bool(
+            signal_bar_time is not None
+            and signal_bar_time > float(auto_state.get("last_entry_bar_time", 0)))
+        has_entry_rate_capacity = len(recent_entry_times) < ENTRY_MAX_PER_HOUR
+        has_entry_campaign_capacity = campaign_count < ENTRY_MAX_CAMPAIGN
         eff_stretched = is_stretched_above_ma if is_cond_enabled("entry_ma_stretch") else True
         eff_above_entry = is_above_entry if is_cond_enabled("entry_base_spread") else True
         eff_peaking_out = is_peaking_out if is_cond_enabled("entry_peak_rollover") else True
         eff_entry_ma_5m = is_entry_ma_aligned_5m if is_cond_enabled("entry_ma_stack_5m") else True
         eff_entry_ma_1h = is_entry_ma_aligned_1h if is_cond_enabled("entry_ma_stack_1h") else True
-        scale_in_setup = bool(eff_stretched and eff_above_entry and eff_peaking_out and eff_entry_ma_5m and eff_entry_ma_1h)
+        scale_in_setup = bool(
+            eff_stretched and eff_above_entry and eff_peaking_out
+            and eff_entry_ma_5m and eff_entry_ma_1h
+            and is_new_closed_entry_bar and has_entry_rate_capacity
+            and has_entry_campaign_capacity)
         scale_in_armed = bool(can_scale_in and scale_in_setup)
         scale_in_blocked_reason = (
             "POSITION_CAPACITY" if not has_scale_in_capacity
             else ("INSUFFICIENT_MARGIN" if not has_scale_in_margin else None)
         )
-        scale_in_trigger = round(max(ma24 + 0.10, base_entry + 0.10), 2)
-
         # 2. Multi-Tranche Entry Tracking (Anti-Churn LIFO Stack Queue)
         # Reconstruct the active open tranche stack from chronological trade history
-        now_sec = time.time()
         active_tranches_queue = []
 
         # Larger adaptive entries are one fixed exit unit plus retained core.
@@ -1036,10 +1089,13 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         status_scale_in = (
             "PEAK_REVERSAL_ARMED" if scale_in_armed
             else ("MAX_CAPACITY" if not can_scale_in
+            else ("ENTRY_CAMPAIGN_CAP" if not has_entry_campaign_capacity
+            else ("ENTRY_RATE_LIMIT" if not has_entry_rate_capacity
+            else ("WAITING_NEW_5M_CLOSE" if not is_new_closed_entry_bar
             else ("AWAITING_MA_STRETCH" if (is_cond_enabled("entry_ma_stretch") and not is_stretched_above_ma)
             else ("AWAITING_UPWARD_MA_STACK" if not (eff_entry_ma_5m and eff_entry_ma_1h)
             else ("WAITING_PEAK_EXHAUSTION" if (is_cond_enabled("entry_peak_rollover") and not is_peaking_out)
-            else "WAITING_DIVERGENCE"))))
+            else "WAITING_DIVERGENCE")))))))
         )
 
         if not eff_no_recovery:
@@ -1098,6 +1154,21 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             "scale_in_trigger_spread": scale_in_trigger,
             "gap_to_scale_in_pts": round(scale_in_trigger - curr_spread, 2),
             "scale_in_threshold_pts": 0.10,
+            "entry_strategy_version": "guarded-entry-v2",
+            "entry_strategy_new": True,
+            "adaptive_entry_floor": round(adaptive_floor, 2),
+            "rolling_entry_sigma": round(rolling_sigma, 4),
+            "latest_recorded_entry_spread": round(latest_recorded_entry, 2) if latest_recorded_entry is not None else None,
+            "last_exit_spread": last_exit_spread,
+            "entry_signal_bar_time": signal_bar_time,
+            "is_new_closed_entry_bar": is_new_closed_entry_bar,
+            "entry_cooldown_sec": ENTRY_COOLDOWN_SEC,
+            "entry_hourly_count": len(recent_entry_times),
+            "entry_hourly_limit": ENTRY_MAX_PER_HOUR,
+            "has_entry_rate_capacity": has_entry_rate_capacity,
+            "entry_campaign_count": campaign_count,
+            "entry_campaign_limit": ENTRY_MAX_CAMPAIGN,
+            "has_entry_campaign_capacity": has_entry_campaign_capacity,
             "scale_in_armed": scale_in_armed,
             "scale_in_setup": scale_in_setup,
             "scale_in_blocked_reason": scale_in_blocked_reason,
@@ -1668,6 +1739,13 @@ async def execute_scale_in() -> Dict[str, Any]:
                 "stock_order_id": str(order_stock["orderId"]),
                 "entry_spread": criteria.get("current_spread"),
                 "entry_policy": entry_policy, "adr_quantity": adr_qty, "stock_quantity": stock_qty})
+        now = time.time()
+        state["last_entry_bar_time"] = criteria.get("entry_signal_bar_time") or now
+        state["entries_since_last_exit"] = int(state.get("entries_since_last_exit", 0)) + 1
+        state["recent_entry_times"] = [
+            float(t) for t in state.get("recent_entry_times", [])
+            if now - float(t) < 3600
+        ] + [now]
         state.pop("execution_recovery", None)
         save_auto_tranche_state(state)
         return {
@@ -1780,6 +1858,10 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
 
         state = load_auto_tranche_state()
         state.pop("execution_recovery", None)
+        if status:
+            state["last_exit_spread"] = status.get("auto_tranche_criteria", {}).get("current_spread")
+        state["entries_since_last_exit"] = 0
+        state["recent_entry_times"] = []
         save_auto_tranche_state(state)
 
         return {
@@ -1911,7 +1993,7 @@ async def auto_tranche_worker():
                         criteria.get("tranches_max") is None
                         or tranches_active < int(criteria["tranches_max"])
                     ):
-                        if now - last_step >= 60:
+                        if now - last_step >= ENTRY_COOLDOWN_SEC:
                             logger.info("[Auto-Tranche Worker] Executing autonomous speculative scale-in step...")
                             res = await step_tranche()
                             state = load_auto_tranche_state()
