@@ -2391,6 +2391,14 @@
         </div>
         <span id="navLivePill" class="navLivePill">BOT READY</span>
       </button>
+      <button id="navTabLighter" class="mainNavBtn" type="button">
+        <span class="navBtnIcon">◈</span>
+        <div class="navBtnText">
+          <strong>Lighter Execution Terminal</strong>
+          <small>SKHY / SKHYNIXUSD</small>
+        </div>
+        <span class="navLivePill" style="background:#7c3aed;color:#fff;">NEW</span>
+      </button>
       <button id="navTabPairs" class="mainNavBtn" type="button">
         <span class="navBtnIcon">⚖️</span>
         <div class="navBtnText">
@@ -3531,6 +3539,33 @@
         </div>
     </div><!-- End #tabContentTrading -->
 
+    <div id="tabContentLighter" class="terminal-read-only" style="display:none;">
+      <style>
+        .lighterHero{padding:16px;border:1px solid #ddd6fe;border-radius:12px;background:linear-gradient(135deg,#faf5ff,#fff);margin-bottom:14px}.lighterGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.lighterCard{background:#fff;border:1px solid #e2e8f0;border-radius:9px;padding:13px;min-width:0}.lighterCard small{display:block;color:#64748b;font-weight:700;margin-bottom:5px}.lighterCard strong{font-size:18px;color:#0f172a}.lighterPanelGrid{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:14px}.lighterPanel{background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:14px}.lighterControls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.lighterBtn{border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:8px 12px;font-weight:800;cursor:pointer}.lighterBtn.secondary{background:#fff;color:#6d28d9}.lighterBtn:disabled{opacity:.45;cursor:not-allowed}.lighterTable{width:100%;border-collapse:collapse;font-size:12px}.lighterTable th,.lighterTable td{padding:7px;border-bottom:1px solid #e2e8f0;text-align:right}.lighterTable th:first-child,.lighterTable td:first-child{text-align:left}.lighterStatus{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;background:#f1f5f9;color:#475569}.lighterDot{width:7px;height:7px;border-radius:50%;background:#94a3b8}.lighterDot.ok{background:#10b981}.lighterMetricUp{color:#059669!important}.lighterMetricDown{color:#dc2626!important}@media(max-width:760px){.lighterGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.lighterPanelGrid{grid-template-columns:1fr}.lighterHero{padding:12px}.lighterCard strong{font-size:15px}#lighterChart{height:300px!important}}
+      </style>
+      <div class="lighterHero">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:13px;">
+          <div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><h2 style="margin:0;font-size:18px;color:#0f172a;">◈ Lighter SK Hynix Arbitrage</h2><span class="lighterStatus"><span id="lighterStatusDot" class="lighterDot"></span><span id="lighterStatusText">Connecting</span></span></div><p style="margin:5px 0 0;color:#64748b;font-size:12px;">Tab 2 workflow on Lighter: live parity, charts, backtest, virtual tranches, and guarded execution.</p></div>
+          <div class="lighterControls"><select id="lighterInterval" style="height:34px;border:1px solid #cbd5e1;border-radius:6px;padding:0 8px;"><option>5m</option><option selected>15m</option><option>1h</option><option>4h</option><option>1d</option></select><button id="lighterRefresh" class="lighterBtn secondary" type="button">↻ Refresh</button></div>
+        </div>
+        <div class="lighterGrid">
+          <div class="lighterCard"><small>SKHY MID</small><strong id="lighterAdrPrice">—</strong><div id="lighterAdrBook" style="font-size:10px;color:#64748b;margin-top:3px;">Bid / Ask —</div></div>
+          <div class="lighterCard"><small>SKHYNIXUSD MID</small><strong id="lighterDomesticPrice">—</strong><div id="lighterDomesticBook" style="font-size:10px;color:#64748b;margin-top:3px;">Bid / Ask —</div></div>
+          <div class="lighterCard"><small>PARITY RATIO</small><strong id="lighterParity">—</strong><div style="font-size:10px;color:#64748b;margin-top:3px;">SKHY ÷ (domestic / 10)</div></div>
+          <div class="lighterCard"><small>VENUE FEES</small><strong id="lighterFees">—</strong><div style="font-size:10px;color:#64748b;margin-top:3px;">Maker / taker advertised</div></div>
+        </div>
+      </div>
+      <div class="lighterPanelGrid">
+        <section class="lighterPanel"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;"><div><strong>Parity chart</strong><div style="font-size:11px;color:#64748b;">Same normalized premium view as Tab 2</div></div><span id="lighterChartInfo" style="font-size:11px;color:#64748b;">—</span></div><div id="lighterChart" style="height:390px;margin-top:10px;"></div></section>
+        <div style="display:grid;gap:14px;align-content:start;">
+          <section class="lighterPanel"><strong>Execution mode</strong><div class="lighterControls" style="margin-top:10px;"><button id="lighterPaperMode" class="lighterBtn" type="button">Virtual / Paper</button><button id="lighterLiveMode" class="lighterBtn secondary terminal-action-control" type="button" disabled>Live Locked</button></div><p id="lighterExecutionMessage" style="font-size:11px;line-height:1.45;color:#64748b;margin:9px 0 0;">Checking signer status…</p></section>
+          <section class="lighterPanel"><strong>Virtual tranche</strong><div class="lighterControls" style="margin-top:10px;"><input id="lighterNotional" type="number" min="10" step="10" value="1000" style="width:105px;height:34px;border:1px solid #cbd5e1;border-radius:6px;padding:0 8px;" aria-label="Notional USDT"><button id="lighterVirtualEntry" class="lighterBtn" type="button">Add Entry</button><button id="lighterVirtualExit" class="lighterBtn secondary" type="button">Exit All</button></div><div id="lighterVirtualSummary" style="font-size:12px;color:#475569;margin-top:9px;">No virtual position</div></section>
+          <section class="lighterPanel"><strong>Strategy backtest</strong><div class="lighterControls" style="margin-top:10px;"><label style="font-size:11px;color:#64748b;">Entry Z <input id="lighterEntryZ" type="number" value="1.5" min="0.5" step="0.1" style="width:60px;"></label><label style="font-size:11px;color:#64748b;">Exit Z <input id="lighterExitZ" type="number" value="0.25" min="0" step="0.05" style="width:60px;"></label><button id="lighterRunBacktest" class="lighterBtn" type="button">Run</button></div><div id="lighterBacktestSummary" style="font-size:12px;color:#475569;margin-top:9px;">Ready</div></section>
+        </div>
+      </div>
+      <section class="lighterPanel" style="margin-top:14px;"><div style="display:flex;justify-content:space-between;align-items:center;"><strong>Virtual entry / exit ledger</strong><button id="lighterClearLedger" class="lighterBtn secondary" type="button">Clear</button></div><div style="overflow-x:auto;margin-top:8px;"><table class="lighterTable"><thead><tr><th>Time</th><th>Action</th><th>Ratio</th><th>Notional</th><th>PnL</th></tr></thead><tbody id="lighterLedger"><tr><td colspan="5" style="text-align:center;color:#94a3b8;">No virtual trades</td></tr></tbody></table></div></section>
+    </div><!-- End #tabContentLighter -->
+
     <!-- ======================================================= -->
     <!-- TAB 3: HEDGE-WORTHY PAIRS EXPLORER (CROSS-MARKET ARB)   -->
     <!-- ======================================================= -->
@@ -4459,6 +4494,7 @@
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="strategy-execution-chart.js?v=20260918_j"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
+  <script src="lighter-tab.js?v=20260922_1"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -10054,24 +10090,28 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       window.activeMainTab = normalized;
       const isBacktest = normalized === "backtest";
       const isTrading = normalized === "trading";
+      const isLighter = normalized === "lighter";
       const isPairs = normalized === "pairs";
       const isCompound = normalized === "compound";
       const isStrategyLab = normalized === "strategylab";
       const isUpbitScanner = normalized === "upbitscanner";
       if ($("navTabBacktest")) $("navTabBacktest").classList.toggle("active", isBacktest);
       if ($("navTabTrading")) $("navTabTrading").classList.toggle("active", isTrading);
+      if ($("navTabLighter")) $("navTabLighter").classList.toggle("active", isLighter);
       if ($("navTabPairs")) $("navTabPairs").classList.toggle("active", isPairs);
       if ($("navTabCompound")) $("navTabCompound").classList.toggle("active", isCompound);
       if ($("navTabStrategyLab")) $("navTabStrategyLab").classList.toggle("active", isStrategyLab);
       if ($("navTabUpbitScanner")) $("navTabUpbitScanner").classList.toggle("active", isUpbitScanner);
       if ($("tabContentBacktest")) $("tabContentBacktest").style.display = isBacktest ? "block" : "none";
       if ($("tabContentTrading")) $("tabContentTrading").style.display = isTrading ? "block" : "none";
+      if ($("tabContentLighter")) $("tabContentLighter").style.display = isLighter ? "block" : "none";
       if ($("tabContentPairs")) $("tabContentPairs").style.display = isPairs ? "block" : "none";
       if ($("tabContentCompound")) $("tabContentCompound").style.display = isCompound ? "block" : "none";
       if ($("tabContentStrategyLab")) $("tabContentStrategyLab").style.display = isStrategyLab ? "block" : "none";
       if ($("tabContentUpbitScanner")) $("tabContentUpbitScanner").style.display = isUpbitScanner ? "block" : "none";
       const activeNav = isBacktest ? $("navTabBacktest")
         : isTrading ? $("navTabTrading")
+        : isLighter ? $("navTabLighter")
         : isPairs ? $("navTabPairs")
         : isCompound ? $("navTabCompound")
         : isStrategyLab ? $("navTabStrategyLab")
@@ -10095,6 +10135,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (typeof tradingEngine !== "undefined" && isTrading) {
           tradingEngine.onTabActivated();
         }
+        if (window.lighterEngine && isLighter) window.lighterEngine.onTabActivated();
         if (typeof pairsExplorer !== "undefined" && isPairs) {
           pairsExplorer.onTabActivated();
         }
@@ -10109,6 +10150,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
     if ($("navTabBacktest")) $("navTabBacktest").addEventListener("click", () => switchMainTab("backtest"));
     if ($("navTabTrading")) $("navTabTrading").addEventListener("click", () => switchMainTab("trading"));
+    if ($("navTabLighter")) $("navTabLighter").addEventListener("click", () => switchMainTab("lighter"));
     if ($("navTabPairs")) $("navTabPairs").addEventListener("click", () => switchMainTab("pairs"));
     if ($("navTabCompound")) $("navTabCompound").addEventListener("click", () => switchMainTab("compound"));
     if ($("navTabStrategyLab")) $("navTabStrategyLab").addEventListener("click", () => switchMainTab("strategyLab"));
@@ -10117,7 +10159,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     // Restore saved tab on load
     try {
       const savedTab = localStorage.getItem("skhynix_active_tab");
-      if (savedTab === "trading" || savedTab === "backtest" || savedTab === "pairs" || savedTab === "compound" || savedTab === "strategyLab" || savedTab === "upbitScanner") {
+      if (savedTab === "trading" || savedTab === "lighter" || savedTab === "backtest" || savedTab === "pairs" || savedTab === "compound" || savedTab === "strategyLab" || savedTab === "upbitScanner") {
         switchMainTab(savedTab);
       }
     } catch (e) {}
@@ -10348,6 +10390,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (tradingTab) {
           tradingTab.classList.toggle("terminal-read-only", locked);
         }
+        const lighterTab = $("tabContentLighter");
+        if (lighterTab) lighterTab.classList.toggle("terminal-read-only", locked);
 
         const banner = $("terminalLockBanner");
         const bannerText = $("lblTerminalLockBannerText");
@@ -10391,9 +10435,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         window.strategyLab?.applyExecutionLock();
 
         // Apply disabled state to action controls
-        const actionControls = document.querySelectorAll("#tabContentTrading .terminal-action-control");
+        const actionControls = document.querySelectorAll("#tabContentTrading .terminal-action-control, #tabContentLighter .terminal-action-control");
         actionControls.forEach(ctrl => {
           const updateElem = (el) => {
+            if (el.id === "lighterLiveMode") {
+              el.disabled = true;
+              return;
+            }
             if (el.id === "btnReduceTranche" && !locked) {
               return;
             }

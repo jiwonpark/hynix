@@ -34,6 +34,7 @@ from .counterfactual_trades import (
 )
 from .config import config
 from .binance_client import BinanceFuturesClient
+from .lighter_client import LighterClient
 from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
 from starlette.responses import JSONResponse
@@ -98,6 +99,7 @@ logger = logging.getLogger("skhynix-daemon")
 
 binance_client = BinanceFuturesClient()
 upbit_client = UpbitClient()
+lighter_client = LighterClient()
 
 # Active WebSocket connections for live push
 active_connections: List[WebSocket] = []
@@ -162,7 +164,7 @@ async def lifespan(app: FastAPI):
     auto_tranche_task.cancel()
     upbit_strategy_task.cancel()
     upbit_forecast_validation_task.cancel()
-    await asyncio.gather(binance_client.close(), upbit_client.close(), return_exceptions=True)
+    await asyncio.gather(binance_client.close(), upbit_client.close(), lighter_client.close(), return_exceptions=True)
     logger.info("HYPERION Trading Daemon shutdown complete.")
 
 app = FastAPI(
@@ -191,6 +193,118 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _lighter_book_summary(book: Dict[str, Any]) -> Dict[str, Any]:
+    asks = book.get("asks") or []
+    bids = book.get("bids") or []
+    best_ask = min((float(row["price"]) for row in asks), default=0.0)
+    best_bid = max((float(row["price"]) for row in bids), default=0.0)
+    mid = (best_ask + best_bid) / 2 if best_ask and best_bid else best_ask or best_bid
+    return {"bid": best_bid, "ask": best_ask, "mid": mid, "spread_bps":
+            round((best_ask - best_bid) / mid * 10_000, 2) if mid else None}
+
+
+@app.get("/api/lighter/status")
+async def get_lighter_status() -> Dict[str, Any]:
+    """Public Lighter quotes and execution readiness for the parallel terminal."""
+    try:
+        adr_detail, domestic_detail, adr_book, domestic_book = await asyncio.gather(
+            lighter_client.market_detail(LighterClient.ADR_MARKET_ID),
+            lighter_client.market_detail(LighterClient.DOMESTIC_MARKET_ID),
+            lighter_client.order_book(LighterClient.ADR_MARKET_ID, 20),
+            lighter_client.order_book(LighterClient.DOMESTIC_MARKET_ID, 20),
+        )
+        adr = _lighter_book_summary(adr_book)
+        domestic = _lighter_book_summary(domestic_book)
+        ratio = adr["mid"] / (domestic["mid"] / 10.0) * 100 if adr["mid"] and domestic["mid"] else None
+        return {
+            "success": True,
+            "venue": "Lighter",
+            "authenticated": False,
+            "execution_enabled": False,
+            "execution_message": "Read-only: configure an official Lighter signer and account before live orders.",
+            "adr": {"symbol": "SKHY", "market_id": 216, **adr, "mark": float(adr_detail["mark_price"]),
+                    "maker_fee": float(adr_detail["maker_fee"]), "taker_fee": float(adr_detail["taker_fee"])},
+            "domestic": {"symbol": "SKHYNIXUSD", "market_id": 161, **domestic,
+                         "mark": float(domestic_detail["mark_price"]),
+                         "maker_fee": float(domestic_detail["maker_fee"]),
+                         "taker_fee": float(domestic_detail["taker_fee"])},
+            "parity_ratio": round(ratio, 4) if ratio is not None else None,
+            "server_time_ms": int(time.time() * 1000),
+        }
+    except Exception as error:
+        logger.warning("Lighter status unavailable: %s", error)
+        return {"success": False, "authenticated": False, "execution_enabled": False,
+                "error": str(error), "server_time_ms": int(time.time() * 1000)}
+
+
+@app.get("/api/lighter/parity")
+async def get_lighter_parity(interval: str = "15m", limit: int = 200,
+                             end_time: Optional[int] = None) -> Dict[str, Any]:
+    interval = interval if interval in {"1m", "5m", "15m", "1h", "4h", "1d"} else "15m"
+    limit = min(500, max(20, limit))
+    try:
+        adr_raw, domestic_raw = await asyncio.gather(
+            lighter_client.candles(216, interval, limit, end_time),
+            lighter_client.candles(161, interval, limit, end_time),
+        )
+        domestic = {int(row["t"]): float(row["c"]) for row in domestic_raw if float(row.get("c", 0)) > 0}
+        bars = []
+        for row in adr_raw:
+            timestamp = int(row["t"])
+            if timestamp not in domestic:
+                continue
+            adr_close = float(row["c"])
+            domestic_close = domestic[timestamp]
+            bars.append({"time": timestamp // 1000, "value": round(adr_close / (domestic_close / 10) * 100, 4),
+                         "adr": adr_close, "domestic": domestic_close})
+        return {"success": True, "interval": interval, "bars": bars[-limit:], "markers": []}
+    except Exception as error:
+        logger.warning("Lighter parity unavailable: %s", error)
+        return {"success": False, "interval": interval, "bars": [], "markers": [], "error": str(error)}
+
+
+@app.get("/api/lighter/backtest")
+async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
+                               entry_z: float = 1.5, exit_z: float = 0.25) -> Dict[str, Any]:
+    data = await get_lighter_parity(interval, min(500, limit))
+    bars = data.get("bars", [])
+    window = 24
+    trades = []
+    position = None
+    series = []
+    for index, bar in enumerate(bars):
+        if index < window:
+            continue
+        sample = [item["value"] for item in bars[index-window:index]]
+        mean = sum(sample) / len(sample)
+        variance = sum((value - mean) ** 2 for value in sample) / len(sample)
+        std = math.sqrt(variance)
+        zscore = (bar["value"] - mean) / std if std else 0.0
+        series.append({"time": bar["time"], "value": bar["value"], "mean": round(mean, 4), "z": round(zscore, 3)})
+        if position is None and abs(zscore) >= max(0.5, entry_z):
+            position = {"side": -1 if zscore > 0 else 1, "entry": bar["value"], "entry_time": bar["time"]}
+        elif position is not None and (abs(zscore) <= max(0.0, exit_z) or index == len(bars) - 1):
+            pnl_pct = position["side"] * (bar["value"] - position["entry"])
+            trades.append({**position, "exit": bar["value"], "exit_time": bar["time"],
+                           "pnl_pct": round(pnl_pct, 4)})
+            position = None
+    wins = sum(1 for trade in trades if trade["pnl_pct"] > 0)
+    return {"success": data.get("success", False), "series": series, "trades": trades,
+            "summary": {"trades": len(trades), "wins": wins,
+                        "win_rate": round(wins / len(trades) * 100, 1) if trades else 0,
+                        "net_pct": round(sum(trade["pnl_pct"] for trade in trades), 4)},
+            "assumptions": "Public Lighter candles; zero advertised venue fees; slippage and funding excluded."}
+
+
+@app.post("/api/lighter/order")
+async def create_lighter_order(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    return JSONResponse({"success": False,
+                         "error": "Lighter live execution is disabled until the official signer and account are configured."},
+                        status_code=503)
 
 @app.get("/api/klines")
 async def get_klines(symbol: str, interval: str = "15m", limit: int = 1000, endTime: Optional[int] = None):
