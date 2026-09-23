@@ -248,6 +248,48 @@
         },
         defaultParams: { entry_z: 1.5, exit_z: 0.25 }
       },
+      trend_pullback: {
+        id: "trend_pullback",
+        name: "Macro Trend Reversion",
+        icon: "🌊",
+        badge: "DUAL-TIMEFRAME · TRENDLINE PULLBACK",
+        title: "➕ Macro Trendline Pullback Dip-Buy (or Rip-Sell)",
+        desc: "Hierarchical Trigger: Macro trendline (OLS slope) uptrend + Price pulls below trendline by ≥ 0.15% + Micro reversal hook inflects upward (and vice-versa for downtrend)",
+        tpTitle: "🎯 Trendline Equilibrium Reversion & Exhaustion Exit",
+        tpDesc: "Exit: Price recovers past the dynamic trendline (+0.05% offset), opposite micro-reversal exhausts, or macro trend invalidates",
+        entryLabels: {
+          rowCondEntryMaStretch: "1. Macro Trend Slope Filter (|β| ≥ 0.002)",
+          rowCondEntryBase: "2. Trendline Distance Barrier (Δ ≥ 0.15%)",
+          rowCondEntryPeak: "3. Micro-Trend Reversal Hook (3-bar inflection)",
+          rowCondEntryMaStack5m: "4. Multi-Timeframe Alignment Confirmation",
+          rowCondEntryMaStack1h: "5. Higher-Timeframe Trend Continuity",
+          rowCondEntryCapacity: "6. Trend Pullback Sizing Allowance",
+          rowCondEntryLeverage: "7. Trend Volatility Adjusted Leverage",
+          rowCondEntryMargin: "8. Directional Reserve Margin Buffer",
+          rowCondEntryEngine: "9. Trend Tracker Engine Synchronization",
+          rowCondEntryGuard: "10. Anti-Breakout Trap Filter",
+        },
+        exitLabels: {
+          rowCondExitConvergence: "1. Dynamic Trendline Crossing (Target Reversion)",
+          rowCondExitDwell: "2. Minimum Dip Absorption Dwell (≥ 3 bars)",
+          rowCondExitBottoming: "3. Opposite Micro-Exhaustion Rollover",
+          rowCondExitNetPnl: "4. Zero-Loss Hurdle Rule (> +$0.02 / tranche)",
+          rowCondExitActive: "5. Trend Inventory Retention Ratchet",
+          rowCondExitMaStack5m: "6. Fast Micro Trend Envelope Exit",
+          rowCondExitMaStack1h: "7. Macro Trend Invalidation Stop",
+          rowCondExitPosition: "8. Directional Delta Balance Gate",
+        },
+        researchLabels: {
+          valCondEntryMaStretch: "Replay: require Macro Trend slope",
+          valCondEntryBase: "Replay: require Trendline distance gap",
+          valCondEntryPeak: "Replay: require micro reversal hook",
+          valCondEntryMaStack5m: "Replay: require MTF confirmation",
+          valCondExitConvergence: "Replay: exit on trendline crossing",
+          valCondExitDwell: "Replay: minimum dip hold dwell",
+          valCondExitBottoming: "Replay: opposite micro exhaustion exit",
+        },
+        defaultParams: { entry_z: 1.5, exit_z: 0.25 }
+      },
       custom: {
         id: "custom",
         name: "Rule Composer",
@@ -531,6 +573,7 @@
             <button id="lighter_tabParadigm_ou_quant" class="lighterParadigmBtn" type="button" data-mode="ou_quant" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🔬 Ornstein-Uhlenbeck SDE</button>
             <button id="lighter_tabParadigm_ma_stack" class="lighterParadigmBtn" type="button" data-mode="ma_stack" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">📈 Trend MA Stack</button>
             <button id="lighter_tabParadigm_multi_factor" class="lighterParadigmBtn" type="button" data-mode="multi_factor" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚖️ Multi-Factor Gate</button>
+            <button id="lighter_tabParadigm_trend_pullback" class="lighterParadigmBtn" type="button" data-mode="trend_pullback" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🌊 Macro Trend Reversion</button>
             <button id="lighter_tabParadigm_custom" class="lighterParadigmBtn" type="button" data-mode="custom" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🛠️ Rule Composer</button>
           </div>
           <div id="lighter_paradigmBadge" style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;">
@@ -538,7 +581,7 @@
           </div>
         `;
         criteriaGrid.parentNode.insertBefore(nav, criteriaGrid);
-        ["grid", "ou_quant", "ma_stack", "multi_factor", "custom"].forEach((mode) => {
+        ["grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom"].forEach((mode) => {
           const btn = $(`lighter_tabParadigm_${mode}`);
           if (btn) btn.addEventListener("click", () => this.setParadigm(mode));
         });
@@ -734,6 +777,47 @@
           </div>
         `;
       }
+      if (mode === "trend_pullback") {
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:18px;">🌊</span>
+                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Macro Trendline Pullback & Micro-Reversion Engine</strong>
+                <span id="lighter_valTrendRegimeBadge" style="background:#dcfce7;color:#166534;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #bbf7d0;">REGIME: ACTIVE</span>
+              </div>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Buys dips under rising macro trendlines when short-term hooks up · Sells rips above falling trendlines when short-term hooks down.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Pullback Δ:</span>
+              <input id="lighter_inpTrendPullbackDist" type="number" step="0.05" value="0.15" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">TP Offset:</span>
+              <input id="lighter_inpTrendTpDist" type="number" step="0.05" value="0.05" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Macro Win:</span>
+              <input id="lighter_inpTrendMacroWindow" type="number" step="4" value="24" style="width:52px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <button id="lighter_btnTrendReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Macro Trend Slope (β)</small>
+              <strong id="lighter_valTrendSlope" style="font-size:15px;color:#0f172a;">+0.0034 / bar</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Current Trendline Level</small>
+              <strong id="lighter_valTrendlinePrice" style="font-size:15px;color:#0284c7;">139.24%</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Distance to Trendline (Δ)</small>
+              <strong id="lighter_valTrendDistance" style="font-size:15px;color:#16a34a;">-0.18% (Dip Active)</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Micro-Reversal Hook</small>
+              <strong id="lighter_valTrendMicroState" style="font-size:15px;color:#7c3aed;">Armed (Hook Detected)</strong>
+            </div>
+          </div>
+        `;
+      }
       return `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
           <div>
@@ -773,6 +857,8 @@
         $("lighter_btnMaReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "multi_factor") {
         $("lighter_btnFactorReplay")?.addEventListener("click", () => this.runBacktest());
+      } else if (mode === "trend_pullback") {
+        $("lighter_btnTrendReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "custom") {
         $("lighter_btnCustomSave")?.addEventListener("click", () => {
           const ez = $("lighter_inpCustomEntryZ")?.value || "1.5";
@@ -1369,6 +1455,10 @@
         let ouHalfLife = 8.0;
         let maStretch = 0.30;
         let quorum = 3;
+        let trendPullback = 0.15;
+        let trendTp = 0.05;
+        let trendMacroWin = 24;
+        let trendSlope = 0.002;
 
         if (this.currentParadigm === "ou_quant") {
           entry = Number($("lighter_inpOuEntryZ")?.value || 1.8);
@@ -1377,6 +1467,10 @@
           maStretch = Number($("lighter_inpMaStretchMin")?.value || 0.30);
         } else if (this.currentParadigm === "multi_factor") {
           quorum = Number($("lighter_selFactorQuorum")?.value || 3);
+        } else if (this.currentParadigm === "trend_pullback") {
+          trendPullback = Number($("lighter_inpTrendPullbackDist")?.value || 0.15);
+          trendTp = Number($("lighter_inpTrendTpDist")?.value || 0.05);
+          trendMacroWin = Number($("lighter_inpTrendMacroWindow")?.value || 24);
         } else if (this.currentParadigm === "custom") {
           entry = Number($("lighter_inpCustomEntryZ")?.value || 1.5);
           exit = Number($("lighter_inpCustomExitZ")?.value || 0.25);
@@ -1389,6 +1483,10 @@
           ou_halflife_max: String(ouHalfLife),
           ma_stretch_min: String(maStretch),
           min_consensus_votes: String(quorum),
+          trend_pullback_dist: String(trendPullback),
+          trend_tp_dist: String(trendTp),
+          trend_macro_window: String(trendMacroWin),
+          trend_slope_min: String(trendSlope),
           use_ma_stretch: String(lid("chkCondEntryMaStretch")?.checked !== false),
           use_base_spacing: String(lid("chkCondEntryBase")?.checked !== false),
           use_peak: String(lid("chkCondEntryPeak")?.checked !== false),
@@ -1440,6 +1538,25 @@
           if (thetaEl && data.metrics.avg_theta) thetaEl.textContent = `${data.metrics.avg_theta.toFixed(4)} / bar`;
           const hlEl = $("lighter_valOuHalfLife");
           if (hlEl && data.metrics.avg_half_life_bars) hlEl.textContent = `${data.metrics.avg_half_life_bars} bars (${data.metrics.half_life_mins}m)`;
+        } else if (data.metrics && this.currentParadigm === "trend_pullback") {
+          const slopeEl = $("lighter_valTrendSlope");
+          if (slopeEl && data.metrics.latest_slope != null) {
+            slopeEl.textContent = `${data.metrics.latest_slope >= 0 ? "+" : ""}${data.metrics.latest_slope.toFixed(5)} / bar`;
+            slopeEl.style.color = data.metrics.latest_slope >= trendSlope ? "#16a34a" : (data.metrics.latest_slope <= -trendSlope ? "#dc2626" : "#475569");
+          }
+          const tlEl = $("lighter_valTrendlinePrice");
+          if (tlEl && data.metrics.latest_trendline != null) tlEl.textContent = `${data.metrics.latest_trendline.toFixed(3)}%`;
+          const distEl = $("lighter_valTrendDistance");
+          if (distEl && data.metrics.latest_distance != null) {
+            distEl.textContent = `${data.metrics.latest_distance >= 0 ? "+" : ""}${data.metrics.latest_distance.toFixed(3)}%`;
+            distEl.style.color = Math.abs(data.metrics.latest_distance) >= trendPullback ? "#7c3aed" : "#0f172a";
+          }
+          const badgeEl = $("lighter_valTrendRegimeBadge");
+          if (badgeEl && data.metrics.macro_regime) {
+            badgeEl.textContent = `REGIME: ${data.metrics.macro_regime}`;
+            badgeEl.style.background = data.metrics.macro_regime === "UPTREND" ? "#dcfce7" : (data.metrics.macro_regime === "DOWNTREND" ? "#fee2e2" : "#f1f5f9");
+            badgeEl.style.color = data.metrics.macro_regime === "UPTREND" ? "#166534" : (data.metrics.macro_regime === "DOWNTREND" ? "#991b1b" : "#475569");
+          }
         }
       } catch (error) {
         if (summary) summary.textContent = error.message;

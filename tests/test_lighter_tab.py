@@ -26,6 +26,7 @@ class TestLighterTab(unittest.TestCase):
             'lighter_legendActualTrades', 'lighter_legendVirtualTrades', 'movingAverage',
             'bindResearchConditions', 'use_ma_stretch', 'use_bottoming',
             'use_base_spacing', 'chkCondEntryBase',
+            'lighter_tabParadigm_trend_pullback', 'trend_pullback',
             'element.removeAttribute(attribute)',
         ):
             self.assertIn(required, html + script + common)
@@ -58,12 +59,15 @@ class TestLighterTab(unittest.TestCase):
         async def _run():
             with patch("backend.server.get_lighter_parity") as mock_parity:
                 mock_parity.return_value = {"success": True, "bars": fake_bars}
-                for mode in ("grid", "ou_quant", "ma_stack", "multi_factor"):
+                for mode in ("grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback"):
                     res = await get_lighter_backtest(interval="15m", limit=120, strategy_mode=mode)
                     self.assertTrue(res.get("success"))
                     self.assertEqual(res.get("strategy_mode"), mode)
                     self.assertIn("summary", res)
                     self.assertIn("trades", res)
+                    if mode == "trend_pullback":
+                        self.assertIn("macro_regime", res.get("metrics", {}))
+                        self.assertIn("latest_slope", res.get("metrics", {}))
 
         asyncio.run(_run())
 

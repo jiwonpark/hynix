@@ -274,7 +274,9 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                                use_dwell: bool = True, use_bottoming: bool = False,
                                ou_halflife_max: float = 8.0, ou_stop_z: float = 3.5,
                                ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
-                               min_consensus_votes: int = 3) -> Dict[str, Any]:
+                               min_consensus_votes: int = 3,
+                               trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
+                               trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002) -> Dict[str, Any]:
     data = await get_lighter_parity(interval, min(500, limit))
     bars = data.get("bars", [])
     window = 24
@@ -427,6 +429,97 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                         "reason": "convergence" if convergence else "consensus_demotion"
                     })
                     position = None
+
+    elif strategy_mode == "trend_pullback":
+        # Multi-Timeframe Macro Trendline Pullback & Reversion
+        # Macro (e.g. 24-bar window): Linear regression trendline Y = alpha + beta * x
+        # Uptrend (beta >= slope_min): Buy dips when price < trendline - pullback_dist & micro turns up
+        # Downtrend (beta <= -slope_min): Sell rips when price > trendline + pullback_dist & micro turns down
+        slopes = []
+        trend_window = max(12, min(60, int(trend_macro_window)))
+        for index, bar in enumerate(bars):
+            if index < trend_window:
+                continue
+            sample = [item["value"] for item in bars[index-trend_window:index]]
+            n = len(sample)
+            x_bar = (n - 1) / 2.0
+            y_bar = sum(sample) / n
+            var_x = sum((k - x_bar) ** 2 for k in range(n))
+            cov_xy = sum((k - x_bar) * (sample[k] - y_bar) for k in range(n))
+            beta = cov_xy / var_x if var_x > 1e-12 else 0.0
+            alpha = y_bar - beta * x_bar
+            trendline_val = alpha + beta * (n - 1)
+            slopes.append(beta)
+
+            residuals = [sample[k] - (alpha + beta * k) for k in range(n)]
+            std_res = math.sqrt(sum(r ** 2 for r in residuals) / n) if n else 0.1
+            z_trend = (bar["value"] - trendline_val) / std_res if std_res > 1e-6 else 0.0
+            series.append({"time": bar["time"], "value": bar["value"], "mean": round(trendline_val, 4), "z": round(z_trend, 3)})
+
+            is_uptrend = beta >= trend_slope_min
+            is_downtrend = beta <= -trend_slope_min
+
+            prev_val = bars[index-1]["value"]
+            prev_prev_val = bars[index-2]["value"] if index >= 2 else prev_val
+            micro_reverting_up = (bar["value"] > prev_val) and (prev_val <= prev_prev_val)
+            micro_reverting_down = (bar["value"] < prev_val) and (prev_val >= prev_prev_val)
+
+            buy_signal = is_uptrend and (trendline_val - bar["value"] >= trend_pullback_dist) and micro_reverting_up
+            short_signal = is_downtrend and (bar["value"] - trendline_val >= trend_pullback_dist) and micro_reverting_down
+
+            if position is None:
+                if buy_signal:
+                    position = {
+                        "side": 1, "entry": bar["value"], "entry_time": bar["time"],
+                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta
+                    }
+                elif short_signal:
+                    position = {
+                        "side": -1, "entry": bar["value"], "entry_time": bar["time"],
+                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta
+                    }
+            elif position is not None:
+                held = index - position["entry_index"]
+                current_pnl = position["side"] * (bar["value"] - position["entry"])
+
+                if position["side"] > 0:
+                    tp_reached = bar["value"] >= (trendline_val + trend_tp_dist)
+                    opposite_reversal = (bar["value"] > trendline_val) and micro_reverting_down
+                    trend_invalidated = beta < -trend_slope_min
+                else:
+                    tp_reached = bar["value"] <= (trendline_val - trend_tp_dist)
+                    opposite_reversal = (bar["value"] < trendline_val) and micro_reverting_up
+                    trend_invalidated = beta > trend_slope_min
+
+                stop_loss = current_pnl <= -0.45 or held >= 32 or index == len(bars) - 1
+
+                if tp_reached or (opposite_reversal and current_pnl > 0) or trend_invalidated or stop_loss:
+                    trades.append({
+                        "side": position["side"],
+                        "entry": position["entry"],
+                        "entry_time": position["entry_time"],
+                        "exit": bar["value"],
+                        "exit_time": bar["time"],
+                        "pnl_pct": round(current_pnl, 4),
+                        "reason": "tp_reached" if tp_reached else ("opposite_reversal" if opposite_reversal else ("trend_invalidation" if trend_invalidated else "stop_loss"))
+                    })
+                    position = None
+
+        if slopes:
+            avg_slope = sum(slopes) / len(slopes)
+            latest_slope = slopes[-1]
+            last_bar = bars[-1] if bars else None
+            last_tl = series[-1]["mean"] if series else 0.0
+            last_dist = (last_bar["value"] - last_tl) if last_bar else 0.0
+            mode_metrics = {
+                "avg_slope": round(avg_slope, 5),
+                "latest_slope": round(latest_slope, 5),
+                "latest_trendline": round(last_tl, 4),
+                "latest_distance": round(last_dist, 4),
+                "macro_regime": "UPTREND" if latest_slope >= trend_slope_min else ("DOWNTREND" if latest_slope <= -trend_slope_min else "NEUTRAL"),
+                "trend_window_bars": trend_window,
+                "pullback_dist_target": trend_pullback_dist
+            }
 
     else:
         # Default "grid" and "custom"
