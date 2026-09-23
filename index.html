@@ -486,22 +486,53 @@
     #chartSvg {
       position: relative;
       z-index: 1;
-      height: 470px;
-      min-height: 360px;
+      height: 430px;
+      min-height: 330px;
+    }
+    .assetPricePaneShell {
+      position: relative;
+      height: 175px;
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .assetPriceLegendBar {
+      position: absolute;
+      top: 6px;
+      left: 12px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+      pointer-events: none;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(4px);
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+    }
+    :root[data-theme="dark"] .assetPriceLegendBar,
+    body.dark .assetPriceLegendBar {
+      background: rgba(15, 23, 42, 0.85);
+    }
+    #assetPricePane {
+      height: 175px;
+      min-height: 140px;
     }
     .positionPaneShell {
       position: relative;
-      height: 160px;
+      height: 150px;
       border-top: 1px solid var(--line);
       background: var(--panel);
     }
     #positionPane {
-      height: 160px;
-      min-height: 140px;
+      height: 150px;
+      min-height: 130px;
     }
     @media (max-width: 720px) {
-      #chartSvg { height: 420px; }
-      .positionPaneShell, #positionPane { height: 145px; min-height: 130px; }
+      #chartSvg { height: 380px; }
+      .assetPricePaneShell, #assetPricePane { height: 150px; min-height: 125px; }
+      .positionPaneShell, #positionPane { height: 135px; min-height: 120px; }
     }
     .exposureOverlay {
       position: absolute;
@@ -2478,7 +2509,8 @@
           <label id="lblEngine">
             <span class="controlTitle">Prediction Engine</span>
             <select id="predictionEngine">
-              <option id="optHMM" value="medallion_hmm" selected>Autocorrelation Regime Filter + OU</option>
+              <option id="optECM" value="vecm_kalman" selected>Dual-Asset ECM + Kalman (Lead-Lag Momentum)</option>
+              <option id="optHMM" value="medallion_hmm">Autocorrelation Regime Filter + OU</option>
               <option id="optMultiMA" value="multi_ma">Multi-Scale MA Cascade (Momentum)</option>
               <option id="optOU" value="ou_hybrid">OU + Adaptive Harmonic Hybrid</option>
               <option id="optMultiHorizon" value="multi_horizon">Multi-Horizon Ensemble (6h/12h/24h)</option>
@@ -2692,6 +2724,14 @@
           <button id="modeMa" type="button">MA</button>
         </div>
         <div id="chartSvg"></div>
+        <div class="assetPricePaneShell">
+          <div class="assetPriceLegendBar">
+            <span id="legAdrPrice" style="color: #2563eb; font-weight: 700;">● SKHYUSDT (ADR)</span>
+            <span id="legStockPrice" style="color: #d97706; font-weight: 700;">● CSOPSKHYNIX2LUSDT (2x ETF)</span>
+            <span id="assetPriceDetails" style="color: #64748b; font-family: monospace; font-size: 11px;"></span>
+          </div>
+          <div id="assetPricePane"></div>
+        </div>
         <div class="positionPaneShell">
           <div id="positionPane"></div>
         </div>
@@ -4860,6 +4900,73 @@
       }
     }
 
+    // --- Quantitative Prediction Engine 0: Dual-Asset Cointegration & Momentum ECM (VECM + Kalman Filter) ---
+    function fitDualAssetECM(slice, sliceAdr, sliceKorean, stepAhead) {
+      const len = slice ? slice.length : 0;
+      if (len < 16) return slice && len > 0 ? slice[len - 1] : 0;
+
+      // 1. Dynamic Kalman Equilibrium Tracking for the Spread
+      let x_est = slice[0];
+      let p_est = 1.0;
+      const q_proc = 0.04;
+      const r_meas = 0.35;
+      for (let i = 1; i < len; i++) {
+        p_est += q_proc;
+        const k_gain = p_est / (p_est + r_meas);
+        x_est += k_gain * (slice[i] - x_est);
+        p_est *= (1 - k_gain);
+      }
+      const equilibrium = x_est;
+      const currentSpread = slice[len - 1];
+
+      // 2. Dual-Asset Relative Momentum & Velocity
+      let vAdr = 0;
+      let vKor = 0;
+      const mLookback = Math.min(len - 1, 8);
+      if (sliceAdr && sliceKorean && sliceAdr.length === len && sliceKorean.length === len && mLookback >= 2) {
+        let wSum = 0;
+        for (let k = 0; k < mLookback; k++) {
+          const idx = len - 1 - k;
+          const w = Math.exp(-k / 3.0);
+          wSum += w;
+          const rAdr = Math.log(Math.max(1e-4, sliceAdr[idx]) / Math.max(1e-4, sliceAdr[idx - 1]));
+          const rKor = Math.log(Math.max(1e-4, sliceKorean[idx]) / Math.max(1e-4, sliceKorean[idx - 1]));
+          vAdr += w * rAdr;
+          vKor += w * rKor;
+        }
+        vAdr /= Math.max(1e-6, wSum);
+        vKor /= Math.max(1e-6, wSum);
+      } else {
+        const d1 = slice[len - 1] - slice[len - 2];
+        const d2 = len > 2 ? slice[len - 2] - slice[len - 3] : d1;
+        vAdr = (d1 + d2) / (2 * Math.max(1e-4, currentSpread));
+        vKor = 0;
+      }
+
+      // Relative velocity difference (scaled to spread point units)
+      const relVel = (vAdr - vKor) * currentSpread;
+
+      // 3. Estimate Error-Correction Cointegration Speed (lambda)
+      let sumCross = 0;
+      let sumDevSq = 0;
+      for (let i = 1; i < len; i++) {
+        const dS = slice[i] - slice[i - 1];
+        const dev = slice[i - 1] - equilibrium;
+        sumCross += dS * (-dev);
+        sumDevSq += dev * dev;
+      }
+      let lambda = sumDevSq > 1e-9 ? sumCross / sumDevSq : 0.08;
+      lambda = Math.max(0.02, Math.min(0.25, lambda));
+
+      // 4. Bounded Forward Simulation with Momentum Inertia
+      const tauMom = 6.0;
+      const momentumImpact = relVel * tauMom * (1 - Math.exp(-stepAhead / tauMom));
+      const reversionImpact = (equilibrium - currentSpread) * (1 - Math.exp(-lambda * stepAhead));
+
+      const target = currentSpread + momentumImpact + reversionImpact;
+      return Number.isFinite(target) ? target : currentSpread;
+    }
+
     function buildRows(adr, korean, meanBars, minEdgePct, fullEdgePct, maxSizePct, scaleCurve, tradeSpeedPct, exitSpeedPct, minProfitPct, tradingFeeBps, fundingBpsDay, strategyMode = "wave", tradeDirection = "bidirectional", predictionEngine = "ou_hybrid", slippageBps = 0) {
       const assetKey = $("assetStrategy")?.value || "skhynix_arb";
       const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
@@ -5115,13 +5222,12 @@
         // Strong negative autocorrelation = high confidence in cycle reversion
         const pReversion = Math.max(0.15, Math.min(0.95, 0.5 - incrementAutoCorr * 1.2));
 
-        // 3. Regime-conditioned OU Target
+        // 3. Regime-conditioned OU Target with Breakout Trend Projection
         const baseOU = fitOUHybrid(slice, stepAhead);
         const currentPrice = slice[len - 1];
-        
-        // In mean-reversion regime: trust the full OU + Harmonic target
-        // In breakout regime: shrink toward current price (momentum defense)
-        const hmmTarget = currentPrice + (baseOU - currentPrice) * pReversion;
+        const trendSlope = (slice[len - 1] - slice[Math.max(0, len - 7)]) / Math.min(len - 1, 6);
+        const trendTarget = currentPrice + trendSlope * Math.min(stepAhead, 16);
+        const hmmTarget = currentPrice + (baseOU - currentPrice) * pReversion + (trendTarget - currentPrice) * (1 - pReversion);
 
         return hmmTarget;
       }
@@ -5240,7 +5346,8 @@
         return currentBase + fittedDeviation;
       }
 
-      function getPredictor(slice, stepAhead) {
+      function getPredictor(slice, stepAhead, sliceAdr, sliceKorean) {
+        if (predictionEngine === "vecm_kalman") return fitDualAssetECM(slice, sliceAdr, sliceKorean, stepAhead);
         if (predictionEngine === "medallion_hmm") return fitMedallionHMM(slice, stepAhead);
         if (predictionEngine === "multi_ma") return fitMultiMACascade(slice, stepAhead);
         if (predictionEngine === "ou_hybrid") return fitOUHybrid(slice, stepAhead);
@@ -5249,7 +5356,7 @@
         return fitFourierFast(slice, stepAhead);
       }
 
-      const engineKeys = ["medallion_hmm", "multi_ma", "ou_hybrid", "burg_mem", "multi_horizon", "fourier"];
+      const engineKeys = ["vecm_kalman", "medallion_hmm", "multi_ma", "ou_hybrid", "burg_mem", "multi_horizon", "fourier"];
       const enginePredictions = Object.fromEntries(engineKeys.map((key) => [key, []]));
       const engineErrors = Object.fromEntries(engineKeys.map((key) => [key, []]));
       const selectedPredictions = [];
@@ -5260,7 +5367,8 @@
       const adrReturns = [];
       const koreanReturns = [];
 
-      function predictEngine(key, slice, stepAhead) {
+      function predictEngine(key, slice, stepAhead, sliceAdr, sliceKorean) {
+        if (key === "vecm_kalman") return fitDualAssetECM(slice, sliceAdr, sliceKorean, stepAhead);
         if (key === "medallion_hmm") return fitMedallionHMM(slice, stepAhead);
         if (key === "multi_ma") return fitMultiMACascade(slice, stepAhead);
         if (key === "ou_hybrid") return fitOUHybrid(slice, stepAhead);
@@ -5336,10 +5444,12 @@
         }
         if (index >= lookback) {
           const slice = prices.slice(index - lookback + 1, index + 1);
+          const sliceAdr = aligned.slice(index - lookback + 1, index + 1).map((x) => x.adr);
+          const sliceKorean = aligned.slice(index - lookback + 1, index + 1).map((x) => x.korean);
           if (predictionEngine === "adaptive_ensemble") {
             const fallbackError = Math.max(0.15, deviation / Math.max(avg, 0.0001) * 100);
             const forecasts = engineKeys.map((key) => {
-              const value = predictEngine(key, slice, forecastBars);
+              const value = predictEngine(key, slice, forecastBars, sliceAdr, sliceKorean);
               enginePredictions[key][index] = value;
               const reliability = 1 / Math.max(0.05, recentMae(engineErrors[key], fallbackError));
               return { key, value, reliability };
@@ -5352,7 +5462,7 @@
             const projectedMove = Math.abs(pred24hVal - row.normalized);
             modelAgreement = Math.max(0.15, Math.min(1, 1 - dispersion / Math.max(0.1, projectedMove * 2)));
           } else {
-            pred24hVal = getPredictor(slice, forecastBars);
+            pred24hVal = getPredictor(slice, forecastBars, sliceAdr, sliceKorean);
             if (enginePredictions[predictionEngine]) enginePredictions[predictionEngine][index] = pred24hVal;
           }
           rawPred24hVal = pred24hVal;
@@ -5938,9 +6048,96 @@
             priceFormat: lineFormat
           })
         };
+        const assetPriceHost = $("assetPricePane");
+        window.assetPriceChart = LightweightCharts.createChart(assetPriceHost, {
+          height: Math.max(140, assetPriceHost.clientHeight || 175),
+          layout: { background: { color: background }, textColor: foreground },
+          localization: {
+            locale: "ko-KR",
+            timeFormatter: (time) => {
+              const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+              return new Date(t).toLocaleString("ko-KR", {
+                timeZone: "Asia/Seoul",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false
+              }) + " KST";
+            }
+          },
+          grid: {
+            vertLines: { color: grid },
+            horzLines: { color: "rgba(203, 213, 225, 0.55)" }
+          },
+          leftPriceScale: {
+            visible: true,
+            borderVisible: false,
+            minimumWidth: 70,
+            scaleMargins: { top: 0.12, bottom: 0.12 },
+            textColor: '#d97706',
+            autoScale: true
+          },
+          rightPriceScale: {
+            visible: true,
+            borderVisible: false,
+            minimumWidth: 88,
+            scaleMargins: { top: 0.12, bottom: 0.12 },
+            textColor: '#2563eb',
+            autoScale: true
+          },
+          timeScale: {
+            visible: false,
+            ignoreWhitespaceIndices: false,
+            borderVisible: false,
+            rightOffset: 0,
+            barSpacing: 8,
+            minBarSpacing: 0.5,
+            fixLeftEdge: false,
+            fixRightEdge: true,
+            lockVisibleTimeRangeOnResize: true,
+            shiftVisibleRangeOnNewBar: false,
+            timeVisible: interval !== "1d",
+            secondsVisible: false
+          },
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+            horzTouchDrag: true,
+            vertTouchDrag: false
+          },
+          handleScale: {
+            axisPressedMouseMove: true,
+            mouseWheel: true,
+            pinch: true
+          },
+          crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+        });
+        window.assetPriceSeries = {
+          adr: window.assetPriceChart.addLineSeries({
+            priceScaleId: 'right',
+            color: '#2563eb',
+            lineWidth: 2,
+            title: 'SKHY (ADR)',
+            priceLineVisible: true,
+            priceLineColor: '#2563eb',
+            priceLineStyle: LightweightCharts.LineStyle.Dotted,
+            priceFormat: { type: 'price', precision: 2, minMove: 0.01 }
+          }),
+          stock: window.assetPriceChart.addLineSeries({
+            priceScaleId: 'left',
+            color: '#d97706',
+            lineWidth: 2,
+            title: 'CSOP 2L',
+            priceLineVisible: true,
+            priceLineColor: '#d97706',
+            priceLineStyle: LightweightCharts.LineStyle.Dotted,
+            priceFormat: { type: 'price', precision: 3, minMove: 0.001 }
+          })
+        };
         const positionHost = $("positionPane");
         window.positionChart = LightweightCharts.createChart(positionHost, {
-          height: Math.max(140, positionHost.clientHeight || 160),
+          height: Math.max(130, positionHost.clientHeight || 150),
           layout: { background: { color: background }, textColor: foreground },
           localization: {
             locale: "ko-KR",
@@ -6071,17 +6268,25 @@
         let saveRangeTimer = 0;
         let overlayScrollTimer = 0;
         let allocScrollTimer = 0;
+        let isSyncingRange = false;
+
+        const syncRangeToTargets = (sourceChart, range) => {
+          if (isSyncingRange || !range) return;
+          isSyncingRange = true;
+          const allCharts = [window.spreadChart, window.assetPriceChart, window.positionChart];
+          allCharts.forEach((c) => {
+            if (c && c !== sourceChart) {
+              c.timeScale().setVisibleLogicalRange(range);
+            }
+          });
+          window.requestAnimationFrame(() => {
+            isSyncingRange = false;
+          });
+        };
 
         window.spreadChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
           if (!range) return;
-          if (!window.syncingFromPosition && window.positionChart) {
-            window.syncingFromPrice = true;
-            window.positionChart.timeScale().setVisibleLogicalRange(range);
-            window.cancelAnimationFrame(window.clearPriceSyncFrame);
-            window.clearPriceSyncFrame = window.requestAnimationFrame(() => {
-              window.syncingFromPrice = false;
-            });
-          }
+          syncRangeToTargets(window.spreadChart, range);
           if (!cachedRows.length) return;
 
           window.spreadVisibleRange = range;
@@ -6121,29 +6326,52 @@
             prependOlderBars();
           }
         });
-        window.positionChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          if (!range || window.syncingFromPrice || !window.spreadChart) return;
-          window.syncingFromPosition = true;
-          window.spreadChart.timeScale().setVisibleLogicalRange(range);
-          window.cancelAnimationFrame(window.clearPositionSyncFrame);
-          window.clearPositionSyncFrame = window.requestAnimationFrame(() => {
-            window.syncingFromPosition = false;
+
+        if (window.assetPriceChart) {
+          window.assetPriceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+            if (!range) return;
+            syncRangeToTargets(window.assetPriceChart, range);
           });
+        }
+
+        window.positionChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          if (!range) return;
+          syncRangeToTargets(window.positionChart, range);
         });
-        // Track user interaction flags on chart element
-        host.addEventListener("mousedown", () => { window.userInteracting = true; });
-        positionHost.addEventListener("mousedown", () => { window.userInteracting = true; });
-        window.addEventListener("mouseup", () => { window.userInteracting = false; });
-        host.addEventListener("touchstart", () => { window.userInteracting = true; }, { passive: true });
-        positionHost.addEventListener("touchstart", () => { window.userInteracting = true; }, { passive: true });
-        window.addEventListener("touchend", () => { window.userInteracting = false; }, { passive: true });
+
+        // Track user interaction flags on all chart elements
         const markWheelInteraction = () => {
           window.userInteracting = true;
           window.clearTimeout(window.wheelInteractingTimer);
           window.wheelInteractingTimer = window.setTimeout(() => { window.userInteracting = false; }, 300);
         };
-        host.addEventListener("wheel", markWheelInteraction, { passive: true });
-        positionHost.addEventListener("wheel", markWheelInteraction, { passive: true });
+        [host, assetPriceHost, positionHost].filter(Boolean).forEach((el) => {
+          el.addEventListener("mousedown", () => { window.userInteracting = true; });
+          el.addEventListener("touchstart", () => { window.userInteracting = true; }, { passive: true });
+          el.addEventListener("wheel", markWheelInteraction, { passive: true });
+        });
+        window.addEventListener("mouseup", () => { window.userInteracting = false; });
+        window.addEventListener("touchend", () => { window.userInteracting = false; });
+
+        const updateAssetPriceHover = (param) => {
+          const details = $("assetPriceDetails");
+          if (!param || !param.time || !cachedRows || !cachedRows.length) {
+            if (details) details.textContent = "";
+            return;
+          }
+          const tSec = typeof param.time === "number" ? param.time : param.time.timestamp || param.time;
+          const match = cachedRows.find((r) => Math.floor(r.time / 1000) === tSec);
+          if (details && match) {
+            const adrStr = Number(match.adr).toFixed(2);
+            const csopStr = Number(match.korean).toFixed(3);
+            const parityStr = Number(match.normalized).toFixed(2);
+            details.textContent = `| ADR: $${adrStr} | ETF: $${csopStr} | Parity: ${parityStr}`;
+          }
+        };
+        window.spreadChart.subscribeCrosshairMove(updateAssetPriceHover);
+        if (window.assetPriceChart) window.assetPriceChart.subscribeCrosshairMove(updateAssetPriceHover);
+        window.positionChart.subscribeCrosshairMove(updateAssetPriceHover);
+
         window.spreadChart.subscribeCrosshairMove((param) => {
           const tooltip = $("newsTooltip");
           if (!param || !param.time) {
@@ -6216,32 +6444,51 @@
         if (window.ResizeObserver) {
           window.spreadResizeObserver = new ResizeObserver(() => {
             if (window.spreadChart) {
-              window.spreadChart.applyOptions({ width: host.clientWidth, height: Math.max(360, host.clientHeight || 540) });
+              window.spreadChart.applyOptions({ width: host.clientWidth, height: Math.max(320, host.clientHeight || 430) });
               requestExposureOverlayDraw();
             }
-            if (window.positionChart) {
+            if (window.assetPriceChart && assetPriceHost) {
+              window.assetPriceChart.applyOptions({
+                width: assetPriceHost.clientWidth,
+                height: Math.max(140, assetPriceHost.clientHeight || 175)
+              });
+            }
+            if (window.positionChart && positionHost) {
               window.positionChart.applyOptions({
                 width: positionHost.clientWidth,
-                height: Math.max(140, positionHost.clientHeight || 160)
+                height: Math.max(130, positionHost.clientHeight || 150)
               });
             }
           });
           window.spreadResizeObserver.observe(host);
+          if (assetPriceHost) window.spreadResizeObserver.observe(assetPriceHost);
           window.spreadResizeObserver.observe(positionHost);
         }
       }
       window.spreadChart.applyOptions({
         width: host.clientWidth,
-        height: Math.max(360, host.clientHeight || 540),
+        height: Math.max(320, host.clientHeight || 430),
         leftPriceScale: { minimumWidth: 70 },
         rightPriceScale: { minimumWidth: 88 },
         timeScale: { timeVisible: interval !== "1d" }
       });
+      const assetPriceHost = $("assetPricePane");
+      if (window.assetPriceChart && assetPriceHost) {
+        window.assetPriceChart.applyOptions({
+          width: assetPriceHost.clientWidth,
+          height: Math.max(140, assetPriceHost.clientHeight || 175),
+          leftPriceScale: { minimumWidth: 70 },
+          rightPriceScale: { minimumWidth: 88 },
+          timeScale: { timeVisible: interval !== "1d" }
+        });
+      }
       const positionHost = $("positionPane");
       if (window.positionChart && positionHost) {
         window.positionChart.applyOptions({
           width: positionHost.clientWidth,
-          height: Math.max(140, positionHost.clientHeight || 160),
+          height: Math.max(130, positionHost.clientHeight || 150),
+          leftPriceScale: { minimumWidth: 70 },
+          rightPriceScale: { minimumWidth: 88 },
           timeScale: { timeVisible: interval !== "1d" }
         });
       }
@@ -6381,13 +6628,17 @@
           { time: lastTime, value: rows.at(-1).normalized }
         ];
         const latestSlice = prices.slice(N - lookback, N);
-        const engine = $("predictionEngine")?.value || "medallion_hmm";
+        const latestSliceAdr = rows.slice(N - lookback, N).map(r => r.adr);
+        const latestSliceKorean = rows.slice(N - lookback, N).map(r => r.korean);
+        const engine = $("predictionEngine")?.value || "vecm_kalman";
         const final24hTarget = rows.at(-1).pred24hVal;
 
         for (let s = 1; s <= forecastBars; s++) {
           let predFutureVal = rows.at(-1).normalized;
           if (s === forecastBars) {
             predFutureVal = final24hTarget;
+          } else if (engine === "vecm_kalman") {
+            predFutureVal = fitDualAssetECM(latestSlice, latestSliceAdr, latestSliceKorean, s);
           } else if (engine === "adaptive_ensemble" || engine === "multi_ma") {
             const progress = s / forecastBars;
             predFutureVal = rows.at(-1).normalized + (final24hTarget - rows.at(-1).normalized) * progress;
@@ -6532,6 +6783,24 @@
       }
       window.spreadSeries.avgEntry.setData(continuousAvgEntry);
       
+      // Populate the synchronized 2-asset price pane.
+      if (window.assetPriceSeries?.adr) {
+        window.assetPriceSeries.adr.setData(
+          rows.map((row) => ({
+            time: Math.floor(row.time / 1000),
+            value: Number(row.adr)
+          }))
+        );
+      }
+      if (window.assetPriceSeries?.stock) {
+        window.assetPriceSeries.stock.setData(
+          rows.map((row) => ({
+            time: Math.floor(row.time / 1000),
+            value: Number(row.korean)
+          }))
+        );
+      }
+
       // Populate the synchronized lower indicator pane.
       if (window.positionSeries?.pnl) {
         window.positionSeries.pnl.setData(
@@ -6844,6 +7113,8 @@
       if (window.positionSeries?.pnl) window.positionSeries.pnl.setData([]);
       if (window.positionSeries?.amount) window.positionSeries.amount.setData([]);
       if (window.positionSeries?.timeline) window.positionSeries.timeline.setData([]);
+      if (window.assetPriceSeries?.adr) window.assetPriceSeries.adr.setData([]);
+      if (window.assetPriceSeries?.stock) window.assetPriceSeries.stock.setData([]);
 
       // 3. Clear exposure overlay
       window.exposureOverlayRows = [];
@@ -10130,6 +10401,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (window.spreadChart && isBacktest) {
           const host = $("chartSvg");
           if (host) window.spreadChart.applyOptions({ width: host.clientWidth });
+        }
+        if (window.assetPriceChart && isBacktest) {
+          const apHost = $("assetPricePane");
+          if (apHost) window.assetPriceChart.applyOptions({ width: apHost.clientWidth });
         }
         if (window.positionChart && isBacktest) {
           const posHost = $("positionPane");

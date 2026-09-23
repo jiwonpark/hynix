@@ -28,9 +28,17 @@ $$\text{Normalized Spread} = \left( \frac{\text{SKHYUSDT}}{\text{CSOPSKHYNIX2LUS
 
 ---
 
-## 2. The 6 Quantitative Prediction Engines
+## 2. The 7 Quantitative Prediction Engines
 
 All models operate strictly **causally** (zero lookahead / hindsight bias). The prediction plotted at historical timestamp $T$ represents $\hat{y}_{T|T-24\text{h}}$ calculated using data strictly up to $T - 24\text{h}$.
+
+### Engine 0: Dual-Asset Cointegration & Momentum ECM (VECM + Kalman Filter)
+- Ingests both underlying asset prices: `SKHYUSDT` (ADR) and `CSOPSKHYNIX2LUSDT` (2x ETF).
+- Dynamically tracks spread equilibrium via a 1D Kalman Filter state estimator.
+- Measures relative momentum velocity $\Delta v_t = \text{EMA}(\Delta \ln P_{\text{adr}}, 3) - \text{EMA}(\Delta \ln P_{\text{korean}}, 3)$.
+- Projects forward trajectory with momentum inertia before cointegration error-correction:
+  $$\hat{S}(t+s) = S_t + \Delta v_t \cdot \tau_{\text{mom}} (1 - e^{-s/\tau_{\text{mom}}}) + (S_{\text{eq}} - S_t)(1 - e^{-\lambda s})$$
+- Eliminates premature mean-reversion shorting during one-sided parabolic rallies.
 
 ### Engine 1: Medallion Regime-Switching HMM
 - Computes return volatility and autocorrelation of spread increments $\rho_1 = \text{Corr}(\Delta x_t, \Delta x_{t-1})$.
