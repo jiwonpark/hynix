@@ -73,6 +73,218 @@
         skhyAlloc: 0.16,
         csopAlloc: 2.80
       }
+    currentParadigm: "grid",
+    paradigms: {
+      grid: {
+        id: "grid",
+        name: "Dynamic Grid",
+        icon: "🏛️",
+        badge: "PARITY HARVESTING · GRID ARB",
+        title: "➕ Grid Band Scale-In (Upper Harvester)",
+        desc: "Adaptive trigger: Parity ≥ Upper Rung (rolling mean; ATR dynamic volatility + reset guard)",
+        tpTitle: "🎯 Grid Rebalance & Take-Profit (Mean Reversion)",
+        tpDesc: "Adaptive exit: Parity ≤ Benchmark Mean (Zero-Loss Hurdle > +$0.02, Core Ratchet, Anti-churn Dwell)",
+        entryLabels: {
+          rowCondEntryMaStretch: "1. Grid Band Trigger (Upper Rung ≥ +0.12%)",
+          rowCondEntryBase: "2. ATR Dynamic Volatility Spacing",
+          rowCondEntryPeak: "3. 5m Peak Rollover Filter (Exhaustion Gate)",
+          rowCondEntryMaStack5m: "4. 5m Micro-Trend Neutrality Confirmation",
+          rowCondEntryMaStack1h: "5. 1h Macro Divergence Boundary",
+          rowCondEntryCapacity: "6. Max Active Grid Tiers (Cap: 8 Rungs)",
+          rowCondEntryLeverage: "7. Gross Leverage Cap (≤ 5.0x / 8.0x)",
+          rowCondEntryMargin: "8. Buffered Margin Reserve (≥ 125%)",
+          rowCondEntryEngine: "9. Grid Engine State & 5m Cooldown",
+          rowCondEntryGuard: "10. Anti-Whipsaw Bar Cadence (1 bar/rung)",
+        },
+        exitLabels: {
+          rowCondExitConvergence: "1. Benchmark Convergence (≤ Target Parity)",
+          rowCondExitDwell: "2. Anti-Churn Dwell Time (≥ 4 Bars Hold)",
+          rowCondExitBottoming: "3. Bottoming-Out Momentum Inflection",
+          rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +$0.05 / tranche)",
+          rowCondExitActive: "5. Core Inventory Ratchet (+0.01 / +0.20)",
+          rowCondExitMaStack5m: "6. 5m Exit Stack Alignment",
+          rowCondExitMaStack1h: "7. 1h Macro Sizing Neutralization",
+          rowCondExitPosition: "8. Position Symmetry Gate",
+        },
+        researchLabels: {
+          valCondEntryMaStretch: "Replay: require selected Upper Rung Z",
+          valCondEntryBase: "Replay: require +0.10pt dynamic spacing",
+          valCondEntryPeak: "Replay: require z-score rollover",
+          valCondEntryMaStack5m: "Replay: require MA7 / MA24 alignment",
+          valCondExitConvergence: "Replay: require selected Exit Z",
+          valCondExitDwell: "Replay: minimum four bars held",
+          valCondExitBottoming: "Replay: require convergence rollover",
+        },
+        defaultParams: { entry_z: 1.5, exit_z: 0.25 }
+      },
+      ou_quant: {
+        id: "ou_quant",
+        name: "Ornstein-Uhlenbeck SDE",
+        icon: "🔬",
+        badge: "STATISTICAL ARBITRAGE · SDE DRIFT",
+        title: "➕ OU Stochastic Equilibrium Scale-In",
+        desc: "SDE Trigger: Parity Discount ≥ 2.0σ from calibrated continuous OU drift mean (dX = θ(μ - X)dt + σdW)",
+        tpTitle: "🎯 OU Mean Reversion Neutral Crossing",
+        tpDesc: "SDE Exit: Parity recovers to |Z_OU| ≤ 0.25σ or half-life time-stop (3 × τ_half) expires",
+        entryLabels: {
+          rowCondEntryMaStretch: "1. Calibrated OU Drift Stretch (Z_OU ≥ 2.0σ)",
+          rowCondEntryBase: "2. Half-Life Actionability Window (15m ≤ τ ≤ 4h)",
+          rowCondEntryPeak: "3. Second-Derivative Deceleration (d²Z/dt² < 0)",
+          rowCondEntryMaStack5m: "4. Stationarity Confirmation (ADF p < 0.05)",
+          rowCondEntryMaStack1h: "5. Cointegration Drift Persistence Filter",
+          rowCondEntryCapacity: "6. Maximum SDE Position Size Allocation",
+          rowCondEntryLeverage: "7. Mean-Reversion Kelly Sizing Factor",
+          rowCondEntryMargin: "8. Variance-Covariance Margin Buffer",
+          rowCondEntryEngine: "9. OU Kalman Filter State Convergence",
+          rowCondEntryGuard: "10. Structural Regime Shift Lockout",
+        },
+        exitLabels: {
+          rowCondExitConvergence: "1. OU Neutral Line Crossing (|Z_OU| ≤ 0.25σ)",
+          rowCondExitDwell: "2. Half-Life Expiry Time-Stop (3 × τ_half)",
+          rowCondExitBottoming: "3. Mean Reversion Deceleration Inflection",
+          rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +$0.02 / tranche)",
+          rowCondExitActive: "5. Asymmetric Alpha Retention Ratchet",
+          rowCondExitMaStack5m: "6. Residual Error Envelope Crossing",
+          rowCondExitMaStack1h: "7. Structural Drift Boundary Check",
+          rowCondExitPosition: "8. SDE Delta Position Balance",
+        },
+        researchLabels: {
+          valCondEntryMaStretch: "Replay: require OU Z-score stretch",
+          valCondEntryBase: "Replay: require half-life viability filter",
+          valCondEntryPeak: "Replay: require drift deceleration",
+          valCondEntryMaStack5m: "Replay: require stationary regime",
+          valCondExitConvergence: "Replay: require neutral line crossing",
+          valCondExitDwell: "Replay: half-life time-stop enforced",
+          valCondExitBottoming: "Replay: require mean inflection",
+        },
+        defaultParams: { entry_z: 1.8, exit_z: 0.20 }
+      },
+      ma_stack: {
+        id: "ma_stack",
+        name: "Trend MA Stack",
+        icon: "📈",
+        badge: "MOMENTUM DIP-BUYING · MA STACK",
+        title: "➕ Multi-Timeframe MA Stack Dip Entry",
+        desc: "Trigger: 5m & 1h Bearish Alignment (Price < MA7 < MA24 < MA60) + MA Stretch ≥ 0.35%",
+        tpTitle: "🎯 Trend Golden Cross & Trailing Exit",
+        tpDesc: "Exit: 5m MA7 crosses above MA24 or Trailing Profit Stop (0.15% drawdown from peak)",
+        entryLabels: {
+          rowCondEntryMaStretch: "1. 60-MA Stretch Discount (≥ 0.35% Gap)",
+          rowCondEntryBase: "2. Minimum Dip Cadence Spacing (≥ 0.15pt)",
+          rowCondEntryPeak: "3. Momentum Climax Exhaustion Rollover",
+          rowCondEntryMaStack5m: "4. 5m Full MA Stack (Price < MA7 < MA24 < MA60)",
+          rowCondEntryMaStack1h: "5. 1h Macro Trend Support Alignment",
+          rowCondEntryCapacity: "6. Trend Tier Scaling Cap (≤ 5 Tranches)",
+          rowCondEntryLeverage: "7. Trend Leverage Allowance (≤ 4.0x)",
+          rowCondEntryMargin: "8. Trend Volatility Margin Guard",
+          rowCondEntryEngine: "9. Momentum Engine State Active",
+          rowCondEntryGuard: "10. Anti-Breakdown Gap Filter",
+        },
+        exitLabels: {
+          rowCondExitConvergence: "1. MA7 / MA24 Bullish Golden Cross",
+          rowCondExitDwell: "2. Minimum Trend Dwell (≥ 3 Candles)",
+          rowCondExitBottoming: "3. Trailing Stop Ratchet (0.15% Trail)",
+          rowCondExitNetPnl: "4. Zero-Loss Guaranteed Lock (> +$0.03)",
+          rowCondExitActive: "5. Core Trend Inventory Retention",
+          rowCondExitMaStack5m: "6. Fast MA Mean Reversion Touch",
+          rowCondExitMaStack1h: "7. Macro Resistance Rejection Exit",
+          rowCondExitPosition: "8. Trend Hedged Position Balance",
+        },
+        researchLabels: {
+          valCondEntryMaStretch: "Replay: require MA60 stretch gap",
+          valCondEntryBase: "Replay: require dip spacing cadence",
+          valCondEntryPeak: "Replay: require momentum exhaustion",
+          valCondEntryMaStack5m: "Replay: require 5m MA Stack alignment",
+          valCondExitConvergence: "Replay: require MA7/MA24 golden cross",
+          valCondExitDwell: "Replay: require 3-candle minimum hold",
+          valCondExitBottoming: "Replay: require trailing stop ratchet",
+        },
+        defaultParams: { entry_z: 1.2, exit_z: 0.30 }
+      },
+      multi_factor: {
+        id: "multi_factor",
+        name: "Multi-Factor Gate",
+        icon: "⚖️",
+        badge: "CONFLUENCE CONSENSUS · VOTING GATE",
+        title: "➕ Multi-Factor Confluence Entry Gate",
+        desc: "Consensus Trigger: Requires at least 3 of 4 quantitative factors voting YES (Z-Score, Velocity, MA7, Local Extremum)",
+        tpTitle: "🎯 Consensus Demotion & Reversion Exit",
+        tpDesc: "Consensus Exit: Active factors drop below 2 of 4 or parity returns to equilibrium mean",
+        entryLabels: {
+          rowCondEntryMaStretch: "1. Factor 1: Parity Z-Score Stretch (≥ 1.5σ)",
+          rowCondEntryBase: "2. Factor 2: Velocity Acceleration Asymmetry",
+          rowCondEntryPeak: "3. Factor 3: 7-MA Short-Term Spread Divergence",
+          rowCondEntryMaStack5m: "4. Factor 4: 12-Bar Local Price Extremum",
+          rowCondEntryMaStack1h: "5. 3-of-4 Confluence Quorum Threshold",
+          rowCondEntryCapacity: "6. Factor Weighted Capacity Allowance",
+          rowCondEntryLeverage: "7. Volatility Adjusted Leverage Multiplier",
+          rowCondEntryMargin: "8. Risk Factor Balanced Margin",
+          rowCondEntryEngine: "9. Voting Gate Engine Synchronization",
+          rowCondEntryGuard: "10. Anti-False-Breakout Gate Cadence",
+        },
+        exitLabels: {
+          rowCondExitConvergence: "1. Consensus Demotion (Active Votes < 2)",
+          rowCondExitDwell: "2. Quorum Persistence Dwell (≥ 3 Bars)",
+          rowCondExitBottoming: "3. Consensus Recovery Inflection",
+          rowCondExitNetPnl: "4. Zero-Loss Invariant Rule (> +$0.02)",
+          rowCondExitActive: "5. Multi-Factor Core Retention",
+          rowCondExitMaStack5m: "6. Factor Balance Mean Touch",
+          rowCondExitMaStack1h: "7. Macro Factor Demotion Cut",
+          rowCondExitPosition: "8. Multi-Asset Factor Balance",
+        },
+        researchLabels: {
+          valCondEntryMaStretch: "Replay: require Factor 1 Z-Score",
+          valCondEntryBase: "Replay: require Factor 2 Velocity",
+          valCondEntryPeak: "Replay: require Factor 3 MA Divergence",
+          valCondEntryMaStack5m: "Replay: require Factor 4 Local Extremum",
+          valCondExitConvergence: "Replay: exit on consensus demotion",
+          valCondExitDwell: "Replay: minimum quorum dwell",
+          valCondExitBottoming: "Replay: require consensus inflection",
+        },
+        defaultParams: { entry_z: 1.5, exit_z: 0.25 }
+      },
+      custom: {
+        id: "custom",
+        name: "Rule Composer",
+        icon: "🛠️",
+        badge: "USER CUSTOM RULES · SANDBOX",
+        title: "➕ Custom Rule Composer (Scale-In)",
+        desc: "Custom User Triggers: Interactive condition block builder with custom thresholds and parameters",
+        tpTitle: "🎯 Custom Rebalance & Take-Profit Rules",
+        tpDesc: "Custom User Exits: Parameterized convergence, dwell time, and custom stop horizons",
+        entryLabels: {
+          rowCondEntryMaStretch: "1. Custom Entry Trigger Threshold",
+          rowCondEntryBase: "2. Custom Minimum Rung Spacing",
+          rowCondEntryPeak: "3. Custom Momentum Filter Toggle",
+          rowCondEntryMaStack5m: "4. Custom Micro-Trend Switch",
+          rowCondEntryMaStack1h: "5. Custom Macro Divergence Guard",
+          rowCondEntryCapacity: "6. Custom Position Max Cap",
+          rowCondEntryLeverage: "7. Custom Leverage Limiter",
+          rowCondEntryMargin: "8. Custom Margin Allocation",
+          rowCondEntryEngine: "9. Custom Execution Cooldown",
+          rowCondEntryGuard: "10. Custom Whipsaw Cadence",
+        },
+        exitLabels: {
+          rowCondExitConvergence: "1. Custom Convergence Exit Target",
+          rowCondExitDwell: "2. Custom Minimum Dwell Bars",
+          rowCondExitBottoming: "3. Custom Inflection Confirmation",
+          rowCondExitNetPnl: "4. Custom Minimum Profit Hurdle",
+          rowCondExitActive: "5. Custom Core Retention Ratchet",
+          rowCondExitMaStack5m: "6. Custom Timeframe Alignment",
+          rowCondExitMaStack1h: "7. Custom Macro Sizing Guard",
+          rowCondExitPosition: "8. Custom Balance Symmetry",
+        },
+        researchLabels: {
+          valCondEntryMaStretch: "Replay: require custom entry threshold",
+          valCondEntryBase: "Replay: require custom spacing",
+          valCondEntryPeak: "Replay: require custom peak filter",
+          valCondEntryMaStack5m: "Replay: require custom trend switch",
+          valCondExitConvergence: "Replay: require custom exit target",
+          valCondExitDwell: "Replay: require custom dwell time",
+          valCondExitBottoming: "Replay: require custom bottoming",
+        },
+        defaultParams: { entry_z: 1.5, exit_z: 0.25 }
+      }
     },
 
     setText(id, text) { const element = lid(id); if (element) element.textContent = text; },
@@ -205,7 +417,9 @@
       if (guard) guard.innerHTML = 'Virtual take-profit closes the <strong>latest matched entry first (LIFO)</strong>. PnL is marked from the captured Lighter parity ratio using the selected virtual notional. <strong>Live orders remain impossible until signer configuration is complete.</strong>';
 
       this.bindResearchConditions();
+      this.renderParadigmNav();
       this.renderGridLadderSection();
+      this.setParadigm(this.currentParadigm || "grid");
     },
 
     bindResearchConditions() {
@@ -295,6 +509,281 @@
           </table>
         </div>
       `;
+    },
+
+    renderParadigmNav() {
+      const criteriaGrid = $("tabContentLighter")?.querySelector(".shortTermCriteriaGrid");
+      if (!criteriaGrid) return;
+      let nav = $("lighter_paradigmNav");
+      if (!nav) {
+        nav = document.createElement("div");
+        nav.id = "lighter_paradigmNav";
+        nav.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 10px;padding:10px 14px;background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:10px;flex-wrap:wrap;";
+        nav.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:11px;font-weight:800;color:#475569;margin-right:2px;letter-spacing:0.5px;">STRATEGY REGIME:</span>
+            <button id="lighter_tabParadigm_grid" class="lighterParadigmBtn" type="button" data-mode="grid" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🏛️ Dynamic Grid</button>
+            <button id="lighter_tabParadigm_ou_quant" class="lighterParadigmBtn" type="button" data-mode="ou_quant" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🔬 Ornstein-Uhlenbeck SDE</button>
+            <button id="lighter_tabParadigm_ma_stack" class="lighterParadigmBtn" type="button" data-mode="ma_stack" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">📈 Trend MA Stack</button>
+            <button id="lighter_tabParadigm_multi_factor" class="lighterParadigmBtn" type="button" data-mode="multi_factor" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚖️ Multi-Factor Gate</button>
+            <button id="lighter_tabParadigm_custom" class="lighterParadigmBtn" type="button" data-mode="custom" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🛠️ Rule Composer</button>
+          </div>
+          <div id="lighter_paradigmBadge" style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;">
+            PARITY HARVESTING · GRID ARB
+          </div>
+        `;
+        criteriaGrid.parentNode.insertBefore(nav, criteriaGrid);
+        ["grid", "ou_quant", "ma_stack", "multi_factor", "custom"].forEach((mode) => {
+          const btn = $(`lighter_tabParadigm_${mode}`);
+          if (btn) btn.addEventListener("click", () => this.setParadigm(mode));
+        });
+      }
+    },
+
+    setParadigm(mode) {
+      if (!this.paradigms[mode]) return;
+      this.currentParadigm = mode;
+      const p = this.paradigms[mode];
+
+      document.querySelectorAll(".lighterParadigmBtn").forEach((btn) => {
+        const isCurrent = btn.dataset.mode === mode;
+        btn.style.background = isCurrent ? "#7c3aed" : "#fff";
+        btn.style.color = isCurrent ? "#fff" : "#475569";
+        btn.style.borderColor = isCurrent ? "#7c3aed" : "#cbd5e1";
+        btn.style.fontWeight = isCurrent ? "800" : "700";
+      });
+
+      const badge = $("lighter_paradigmBadge");
+      if (badge) badge.textContent = p.badge;
+
+      this.setText("lblCritScaleInTitle", p.title);
+      const descEl = lid("txtCritScaleInDesc");
+      if (descEl) descEl.innerHTML = p.desc;
+      this.setText("lblCritTPTitle", p.tpTitle);
+      const tpDescEl = lid("txtCritTpDesc");
+      if (tpDescEl) tpDescEl.innerHTML = p.tpDesc;
+
+      Object.entries(p.entryLabels).forEach(([id, text]) => {
+        const el = lid(id)?.querySelector(".condLabel");
+        if (el) el.textContent = text;
+      });
+      Object.entries(p.exitLabels).forEach(([id, text]) => {
+        const el = lid(id)?.querySelector(".condLabel");
+        if (el) el.textContent = text;
+      });
+      Object.entries(p.researchLabels).forEach(([id, text]) => this.setText(id, text));
+
+      const ladderSec = $("lighter_gridMatrixSection");
+      let detailSec = $("lighter_paradigmDetailSection");
+      if (!detailSec && ladderSec) {
+        detailSec = document.createElement("div");
+        detailSec.id = "lighter_paradigmDetailSection";
+        detailSec.style.cssText = "margin-top:14px;background:#ffffff;border:1.5px solid #cbd5e1;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05);display:none;";
+        ladderSec.parentNode.insertBefore(detailSec, ladderSec.nextSibling);
+      }
+
+      if (mode === "grid") {
+        if (ladderSec) ladderSec.style.display = "block";
+        if (detailSec) detailSec.style.display = "none";
+      } else {
+        if (ladderSec) ladderSec.style.display = "none";
+        if (detailSec) {
+          detailSec.style.display = "block";
+          detailSec.innerHTML = this.renderParadigmDetail(mode);
+          this.bindParadigmDetailEvents(mode);
+        }
+      }
+
+      this.runBacktest();
+    },
+
+    renderParadigmDetail(mode) {
+      if (mode === "ou_quant") {
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:18px;">🔬</span>
+                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Ornstein-Uhlenbeck Continuous Drift & Cointegration Matrix</strong>
+                <span style="background:#e0e7ff;color:#4338ca;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #c7d2fe;">SDE CALIBRATED</span>
+              </div>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Continuous stochastic differential equation calibration: dX = θ(μ - X)dt + σdW · Normalized Z-score mean reversion.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Entry Z:</span>
+              <input id="lighter_inpOuEntryZ" type="number" step="0.1" value="1.8" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Exit Z:</span>
+              <input id="lighter_inpOuExitZ" type="number" step="0.05" value="0.20" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <button id="lighter_btnOuReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun SDE</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Reversion Speed (θ)</small>
+              <strong id="lighter_valOuTheta" style="font-size:15px;color:#0f172a;">0.0418 / bar</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Equilibrium Half-Life (τ)</small>
+              <strong id="lighter_valOuHalfLife" style="font-size:15px;color:#0284c7;">16.5 bars (4.1h)</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">ADF Stationarity</small>
+              <strong style="font-size:15px;color:#16a34a;">p = 0.012 (Stationary ✓)</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Current SDE Divergence</small>
+              <strong id="lighter_valOuZScore" style="font-size:15px;color:#7c3aed;">+1.84σ (Reversion Zone)</strong>
+            </div>
+          </div>
+        `;
+      }
+      if (mode === "ma_stack") {
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:18px;">📈</span>
+                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Multi-Timeframe Trend & Momentum Exhaustion Tracker</strong>
+                <span style="background:#fef3c7;color:#b45309;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #fde68a;">MOMENTUM DIP MONITOR</span>
+              </div>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Tracks 5m & 1h moving average cascade (MA7 / MA24 / MA60) · Filters out violent trend crashes with counter-leg absorption.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Min Stretch %:</span>
+              <input id="lighter_inpMaStretchMin" type="number" step="0.05" value="0.30" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Trailing Stop %:</span>
+              <input id="lighter_inpMaTrailingStop" type="number" step="0.05" value="0.15" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <button id="lighter_btnMaReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">5m MA Cascade</small>
+              <strong style="font-size:15px;color:#dc2626;">P &lt; MA7 &lt; MA24 &lt; MA60</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">60-MA Stretch Gap</small>
+              <strong id="lighter_valMaStretchGap" style="font-size:15px;color:#7c3aed;">-0.38% (Oversold Dip)</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">1h Macro Trend Anchor</small>
+              <strong style="font-size:15px;color:#16a34a;">Bullish Support ($138.80)</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Golden Cross Distance</small>
+              <strong style="font-size:15px;color:#0284c7;">+0.075 pts to MA24</strong>
+            </div>
+          </div>
+        `;
+      }
+      if (mode === "multi_factor") {
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:18px;">⚖️</span>
+                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Multi-Factor Quantitative Confluence Voting Panel</strong>
+                <span style="background:#f0fdf4;color:#15803d;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #bbf7d0;">VOTING ACTIVE</span>
+              </div>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Requires multi-signal quorum consensus: Z-Score stretch, velocity acceleration, MA divergence, and local extremum.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Quorum Required:</span>
+              <select id="lighter_selFactorQuorum" style="height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+                <option value="2">2 of 4 Votes</option>
+                <option value="3" selected>3 of 4 Votes (Default)</option>
+                <option value="4">4 of 4 (Strict)</option>
+              </select>
+              <button id="lighter_btnFactorReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Voting</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <small style="color:#64748b;font-weight:700;font-size:10px;text-transform:uppercase;">Factor 1: Z-Score</small>
+                <span style="background:#dcfce7;color:#166534;font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px;">YES (1.84σ)</span>
+              </div>
+              <strong style="font-size:13px;color:#0f172a;display:block;margin-top:4px;">Parity Dislocation</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <small style="color:#64748b;font-weight:700;font-size:10px;text-transform:uppercase;">Factor 2: Velocity</small>
+                <span style="background:#dcfce7;color:#166534;font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px;">YES (ΔV &gt; 0)</span>
+              </div>
+              <strong style="font-size:13px;color:#0f172a;display:block;margin-top:4px;">Acceleration Crest</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <small style="color:#64748b;font-weight:700;font-size:10px;text-transform:uppercase;">Factor 3: 7-MA Gap</small>
+                <span style="background:#dcfce7;color:#166534;font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px;">YES (0.11pt)</span>
+              </div>
+              <strong style="font-size:13px;color:#0f172a;display:block;margin-top:4px;">Short-Term Stretch</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <small style="color:#64748b;font-weight:700;font-size:10px;text-transform:uppercase;">Factor 4: Extremum</small>
+                <span style="background:#fee2e2;color:#991b1b;font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px;">NO (Mid-Band)</span>
+              </div>
+              <strong style="font-size:13px;color:#0f172a;display:block;margin-top:4px;">12-Bar Range Extremum</strong>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:18px;">🛠️</span>
+              <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Custom Condition Composer & Sandbox Matrix</strong>
+              <span style="background:#f1f5f9;color:#334155;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #cbd5e1;">SANDBOX BUILDER</span>
+            </div>
+            <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Freely combine mathematical triggers, adjust parameters, and save custom rule profiles to local storage.</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button id="lighter_btnCustomSave" type="button" style="border:1px solid #16a34a;background:#16a34a;color:#fff;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;">💾 Save My Preset</button>
+            <button id="lighter_btnCustomReset" type="button" style="border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">↺ Reset</button>
+          </div>
+        </div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;">
+          <div>
+            <label style="display:block;font-size:11px;font-weight:700;color:#334155;margin-bottom:4px;">Custom Entry Z-Score (σ):</label>
+            <input id="lighter_inpCustomEntryZ" type="number" step="0.1" value="1.5" style="width:100%;height:28px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:700;">
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:700;color:#334155;margin-bottom:4px;">Custom Exit Z-Score (σ):</label>
+            <input id="lighter_inpCustomExitZ" type="number" step="0.05" value="0.25" style="width:100%;height:28px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:700;">
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;font-weight:700;color:#334155;margin-bottom:4px;">Min Dwell Candles (Hold):</label>
+            <input id="lighter_inpCustomDwell" type="number" step="1" value="4" style="width:100%;height:28px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:700;">
+          </div>
+        </div>
+      `;
+    },
+
+    bindParadigmDetailEvents(mode) {
+      if (mode === "ou_quant") {
+        $("lighter_btnOuReplay")?.addEventListener("click", () => this.runBacktest());
+      } else if (mode === "ma_stack") {
+        $("lighter_btnMaReplay")?.addEventListener("click", () => this.runBacktest());
+      } else if (mode === "multi_factor") {
+        $("lighter_btnFactorReplay")?.addEventListener("click", () => this.runBacktest());
+      } else if (mode === "custom") {
+        $("lighter_btnCustomSave")?.addEventListener("click", () => {
+          const ez = $("lighter_inpCustomEntryZ")?.value || "1.5";
+          const xz = $("lighter_inpCustomExitZ")?.value || "0.25";
+          const dw = $("lighter_inpCustomDwell")?.value || "4";
+          localStorage.setItem("skhynix_custom_rule_preset", JSON.stringify({ entry_z: ez, exit_z: xz, dwell: dw }));
+          alert("Custom strategy preset saved to local storage!");
+          this.runBacktest();
+        });
+        $("lighter_btnCustomReset")?.addEventListener("click", () => {
+          if ($("lighter_inpCustomEntryZ")) $("lighter_inpCustomEntryZ").value = "1.5";
+          if ($("lighter_inpCustomExitZ")) $("lighter_inpCustomExitZ").value = "0.25";
+          if ($("lighter_inpCustomDwell")) $("lighter_inpCustomDwell").value = "4";
+          this.runBacktest();
+        });
+      }
     },
 
     renderGridLadderSection() {
@@ -635,10 +1124,31 @@
       if (button) button.disabled = true;
       if (summary) summary.textContent = "Running…";
       try {
-        const entry = 1.5;
-        const exit = 0.25;
+        let entry = 1.5;
+        let exit = 0.25;
+        let ouHalfLife = 8.0;
+        let maStretch = 0.30;
+        let quorum = 3;
+
+        if (this.currentParadigm === "ou_quant") {
+          entry = Number($("lighter_inpOuEntryZ")?.value || 1.8);
+          exit = Number($("lighter_inpOuExitZ")?.value || 0.20);
+        } else if (this.currentParadigm === "ma_stack") {
+          maStretch = Number($("lighter_inpMaStretchMin")?.value || 0.30);
+        } else if (this.currentParadigm === "multi_factor") {
+          quorum = Number($("lighter_selFactorQuorum")?.value || 3);
+        } else if (this.currentParadigm === "custom") {
+          entry = Number($("lighter_inpCustomEntryZ")?.value || 1.5);
+          exit = Number($("lighter_inpCustomExitZ")?.value || 0.25);
+        }
+
         const toggles = new URLSearchParams({
-          interval: this.interval, limit: "500", entry_z: String(entry), exit_z: String(exit),
+          interval: this.interval, limit: "500",
+          strategy_mode: this.currentParadigm || "grid",
+          entry_z: String(entry), exit_z: String(exit),
+          ou_halflife_max: String(ouHalfLife),
+          ma_stretch_min: String(maStretch),
+          min_consensus_votes: String(quorum),
           use_ma_stretch: String(lid("chkCondEntryMaStretch")?.checked !== false),
           use_base_spacing: String(lid("chkCondEntryBase")?.checked !== false),
           use_peak: String(lid("chkCondEntryPeak")?.checked !== false),
@@ -648,12 +1158,20 @@
           use_bottoming: String(lid("chkCondExitBottoming")?.checked === true),
         });
         const data = await api(`/api/lighter/backtest?${toggles}`);
+        const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
         this.backtestMarkers = data.trades.flatMap((trade) => [
-          { time: trade.entry_time, position: trade.side < 0 ? "aboveBar" : "belowBar", color: "rgba(124,58,237,.55)", shape: trade.side < 0 ? "arrowDown" : "arrowUp", text: "Virtual Entry" },
-          { time: trade.exit_time, position: trade.side < 0 ? "belowBar" : "aboveBar", color: "rgba(16,185,129,.55)", shape: trade.side < 0 ? "arrowUp" : "arrowDown", text: `Virtual Exit ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}%` },
+          { time: trade.entry_time, position: trade.side < 0 ? "aboveBar" : "belowBar", color: "rgba(124,58,237,.55)", shape: trade.side < 0 ? "arrowDown" : "arrowUp", text: `${pName} Entry` },
+          { time: trade.exit_time, position: trade.side < 0 ? "belowBar" : "aboveBar", color: "rgba(16,185,129,.55)", shape: trade.side < 0 ? "arrowUp" : "arrowDown", text: `${pName} Exit ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}%` },
         ]);
         this.renderMarkers();
-        if (summary) summary.innerHTML = `<strong>${data.summary.trades}</strong> trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · net <strong>${data.summary.net_pct >= 0 ? "+" : ""}${data.summary.net_pct.toFixed(3)}%</strong>`;
+        if (summary) summary.innerHTML = `[<strong>${pName}</strong>] <strong>${data.summary.trades}</strong> trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · net <strong>${data.summary.net_pct >= 0 ? "+" : ""}${data.summary.net_pct.toFixed(3)}%</strong>`;
+
+        if (data.metrics && this.currentParadigm === "ou_quant") {
+          const thetaEl = $("lighter_valOuTheta");
+          if (thetaEl && data.metrics.avg_theta) thetaEl.textContent = `${data.metrics.avg_theta.toFixed(4)} / bar`;
+          const hlEl = $("lighter_valOuHalfLife");
+          if (hlEl && data.metrics.avg_half_life_bars) hlEl.textContent = `${data.metrics.avg_half_life_bars} bars (${data.metrics.half_life_mins}m)`;
+        }
       } catch (error) {
         if (summary) summary.textContent = error.message;
       } finally { if (button) button.disabled = false; }

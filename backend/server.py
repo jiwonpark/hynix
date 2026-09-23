@@ -267,10 +267,14 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
 
 @app.get("/api/lighter/backtest")
 async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
+                               strategy_mode: str = "grid",
                                entry_z: float = 1.5, exit_z: float = 0.25,
                                use_ma_stretch: bool = True, use_peak: bool = True,
                                use_base_spacing: bool = True, use_ma_stack: bool = False, use_convergence: bool = True,
-                               use_dwell: bool = True, use_bottoming: bool = False) -> Dict[str, Any]:
+                               use_dwell: bool = True, use_bottoming: bool = False,
+                               ou_halflife_max: float = 8.0, ou_stop_z: float = 3.5,
+                               ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
+                               min_consensus_votes: int = 3) -> Dict[str, Any]:
     data = await get_lighter_parity(interval, min(500, limit))
     bars = data.get("bars", [])
     window = 24
@@ -280,53 +284,209 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
     previous_zscore = None
     last_entry_value = None
     last_entry_side = None
-    for index, bar in enumerate(bars):
-        if index < window:
-            continue
-        sample = [item["value"] for item in bars[index-window:index]]
-        mean = sum(sample) / len(sample)
-        variance = sum((value - mean) ** 2 for value in sample) / len(sample)
-        std = math.sqrt(variance)
-        zscore = (bar["value"] - mean) / std if std else 0.0
-        series.append({"time": bar["time"], "value": bar["value"], "mean": round(mean, 4), "z": round(zscore, 3)})
-        ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
-        stack_pass = ((zscore > 0 and bar["value"] > ma7 > mean)
-                      or (zscore < 0 and bar["value"] < ma7 < mean))
-        peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
-        entry_threshold = max(0.5, entry_z) if use_ma_stretch else 0.5
-        candidate_side = -1 if zscore > 0 else 1
-        base_spacing_pass = (not use_base_spacing or last_entry_value is None or candidate_side != last_entry_side
-                             or (candidate_side < 0 and bar["value"] >= last_entry_value + 0.10)
-                             or (candidate_side > 0 and bar["value"] <= last_entry_value - 0.10))
-        entry_signal = (abs(zscore) >= entry_threshold
-                        and base_spacing_pass
-                        and (not use_peak or peak_pass)
-                        and (not use_ma_stack or stack_pass))
-        if position is None and entry_signal:
-            position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"]}
-            position["entry_index"] = index
-            last_entry_value = bar["value"]
-            last_entry_side = candidate_side
-        elif position is not None:
-            held_bars = index - position["entry_index"]
-            convergence_pass = abs(zscore) <= max(0.0, exit_z) if use_convergence else position["side"] * (bar["value"] - position["entry"]) > 0
-            dwell_pass = not use_dwell or held_bars >= 4
-            bottoming_pass = not use_bottoming or (previous_zscore is not None and abs(zscore) >= abs(previous_zscore))
-            if not ((convergence_pass and dwell_pass and bottoming_pass) or index == len(bars) - 1):
-                previous_zscore = zscore
+    mode_metrics: Dict[str, Any] = {}
+
+    if strategy_mode == "ou_quant":
+        # Ornstein-Uhlenbeck SDE Calibration & Trading
+        # dX = theta * (mu - X) dt + sigma * dW
+        # Discrete AR(1): X_t = a * X_{t-1} + b + eps
+        ou_thetas = []
+        ou_halflives = []
+        for index, bar in enumerate(bars):
+            if index < window:
                 continue
-            pnl_pct = position["side"] * (bar["value"] - position["entry"])
-            position.pop("entry_index", None)
-            trades.append({**position, "exit": bar["value"], "exit_time": bar["time"],
-                           "pnl_pct": round(pnl_pct, 4)})
-            position = None
-        previous_zscore = zscore
+            sample = [item["value"] for item in bars[index-window:index]]
+            mean = sum(sample) / len(sample)
+            x_prev = sample[:-1]
+            x_curr = sample[1:]
+            n = len(x_prev)
+            mean_prev = sum(x_prev) / n
+            mean_curr = sum(x_curr) / n
+            var_prev = sum((x - mean_prev)**2 for x in x_prev)
+            cov = sum((x_prev[i] - mean_prev) * (x_curr[i] - mean_curr) for i in range(n))
+            a = cov / var_prev if var_prev > 1e-12 else 0.95
+            a = max(0.01, min(0.999, a))
+            b = mean_curr - a * mean_prev
+            mu_ou = b / (1.0 - a) if abs(1.0 - a) > 1e-6 else mean
+            theta = -math.log(a)
+            half_life_bars = math.log(2.0) / theta if theta > 1e-6 else 24.0
+            residuals = [(x_curr[i] - (a * x_prev[i] + b)) for i in range(n)]
+            sigma_ou = math.sqrt(sum(r**2 for r in residuals) / n) if n else 0.05
+            z_ou = (bar["value"] - mu_ou) / (sigma_ou / math.sqrt(2 * theta)) if theta > 0 and sigma_ou > 0 else (bar["value"] - mean) / 0.1
+
+            series.append({"time": bar["time"], "value": bar["value"], "mean": round(mu_ou, 4), "z": round(z_ou, 3)})
+            ou_thetas.append(theta)
+            ou_halflives.append(half_life_bars)
+
+            candidate_side = -1 if z_ou > 0 else 1
+            entry_signal = (abs(z_ou) >= entry_z and half_life_bars <= ou_halflife_max * 4)
+
+            if position is None and entry_signal:
+                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "half_life": half_life_bars}
+            elif position is not None:
+                held = index - position["entry_index"]
+                convergence_exit = abs(z_ou) <= exit_z
+                time_stop = held >= max(6, int(position["half_life"] * 2.5))
+                structural_stop = abs(z_ou) >= ou_stop_z and (candidate_side == position["side"])
+                if convergence_exit or time_stop or structural_stop or index == len(bars) - 1:
+                    pnl_pct = position["side"] * (bar["value"] - position["entry"])
+                    trades.append({
+                        "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],
+                        "exit": bar["value"], "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "reason": "convergence" if convergence_exit else ("time_stop" if time_stop else "stop_loss")
+                    })
+                    position = None
+
+        if ou_thetas:
+            mode_metrics = {
+                "avg_theta": round(sum(ou_thetas) / len(ou_thetas), 4),
+                "avg_half_life_bars": round(sum(ou_halflives) / len(ou_halflives), 1),
+                "half_life_mins": round((sum(ou_halflives) / len(ou_halflives)) * 15, 1)
+            }
+
+    elif strategy_mode == "ma_stack":
+        # Dual MA Stack & Trend Reversal
+        for index, bar in enumerate(bars):
+            if index < 60:
+                continue
+            ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
+            ma24 = sum(item["value"] for item in bars[index-24:index]) / 24
+            ma60 = sum(item["value"] for item in bars[index-60:index]) / 60
+            sample = [item["value"] for item in bars[index-24:index]]
+            mean = sum(sample) / len(sample)
+            variance = sum((v - mean) ** 2 for v in sample) / len(sample)
+            std = math.sqrt(variance)
+            zscore = (bar["value"] - mean) / std if std else 0.0
+            series.append({"time": bar["time"], "value": bar["value"], "mean": round(ma24, 4), "z": round(zscore, 3)})
+
+            stretch_pct = abs(bar["value"] - ma60) / ma60 * 100
+            bearish_stack = bar["value"] < ma7 < ma24 < ma60
+            bullish_stack = bar["value"] > ma7 > ma24 > ma60
+            entry_signal = (bearish_stack or bullish_stack) and stretch_pct >= ma_stretch_min
+            candidate_side = 1 if bearish_stack else -1
+
+            if position is None and entry_signal:
+                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "max_favorable": 0.0}
+            elif position is not None:
+                held = index - position["entry_index"]
+                current_pnl = position["side"] * (bar["value"] - position["entry"])
+                position["max_favorable"] = max(position.get("max_favorable", 0.0), current_pnl)
+                golden_cross = (position["side"] > 0 and ma7 >= ma24) or (position["side"] < 0 and ma7 <= ma24)
+                trailing_stop = position["max_favorable"] >= 0.20 and (position["max_favorable"] - current_pnl) >= ma_trailing_stop
+                if golden_cross or trailing_stop or held >= 16 or index == len(bars) - 1:
+                    pnl_pct = current_pnl
+                    trades.append({
+                        "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],
+                        "exit": bar["value"], "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "reason": "golden_cross" if golden_cross else ("trailing_stop" if trailing_stop else "max_dwell")
+                    })
+                    position = None
+
+    elif strategy_mode == "multi_factor":
+        # Multi-Factor Confluence Voting Gate
+        for index, bar in enumerate(bars):
+            if index < window:
+                continue
+            sample = [item["value"] for item in bars[index-window:index]]
+            mean = sum(sample) / len(sample)
+            variance = sum((v - mean) ** 2 for v in sample) / len(sample)
+            std = math.sqrt(variance)
+            zscore = (bar["value"] - mean) / std if std else 0.0
+            series.append({"time": bar["time"], "value": bar["value"], "mean": round(mean, 4), "z": round(zscore, 3)})
+
+            f1 = abs(zscore) >= entry_z
+            v_curr = abs(bar["value"] - bars[index-1]["value"])
+            v_prev = abs(bars[index-1]["value"] - bars[index-2]["value"]) if index >= 2 else 0.01
+            f2 = v_curr >= v_prev
+            ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
+            f3 = abs(bar["value"] - ma7) >= 0.08
+            local_vals = [item["value"] for item in bars[index-12:index]]
+            f4 = (bar["value"] >= max(local_vals) * 0.9995) or (bar["value"] <= min(local_vals) * 1.0005)
+
+            votes = sum([f1, f2, f3, f4])
+            candidate_side = -1 if zscore > 0 else 1
+            entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8)
+
+            if position is None and entry_signal:
+                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index}
+            elif position is not None:
+                held = index - position["entry_index"]
+                current_votes = sum([
+                    abs(zscore) >= entry_z * 0.5,
+                    abs(bar["value"] - bars[index-1]["value"]) > 0.02,
+                    abs(bar["value"] - mean) > 0.05,
+                    held < 8
+                ])
+                consensus_drop = current_votes < 2
+                convergence = abs(zscore) <= exit_z
+                if (consensus_drop and held >= 3) or convergence or held >= 20 or index == len(bars) - 1:
+                    pnl_pct = position["side"] * (bar["value"] - position["entry"])
+                    trades.append({
+                        "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],
+                        "exit": bar["value"], "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "reason": "convergence" if convergence else "consensus_demotion"
+                    })
+                    position = None
+
+    else:
+        # Default "grid" and "custom"
+        for index, bar in enumerate(bars):
+            if index < window:
+                continue
+            sample = [item["value"] for item in bars[index-window:index]]
+            mean = sum(sample) / len(sample)
+            variance = sum((value - mean) ** 2 for value in sample) / len(sample)
+            std = math.sqrt(variance)
+            zscore = (bar["value"] - mean) / std if std else 0.0
+            series.append({"time": bar["time"], "value": bar["value"], "mean": round(mean, 4), "z": round(zscore, 3)})
+            ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
+            stack_pass = ((zscore > 0 and bar["value"] > ma7 > mean)
+                          or (zscore < 0 and bar["value"] < ma7 < mean))
+            peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
+            entry_threshold = max(0.5, entry_z) if use_ma_stretch else 0.5
+            candidate_side = -1 if zscore > 0 else 1
+            base_spacing_pass = (not use_base_spacing or last_entry_value is None or candidate_side != last_entry_side
+                                 or (candidate_side < 0 and bar["value"] >= last_entry_value + 0.10)
+                                 or (candidate_side > 0 and bar["value"] <= last_entry_value - 0.10))
+            entry_signal = (abs(zscore) >= entry_threshold
+                            and base_spacing_pass
+                            and (not use_peak or peak_pass)
+                            and (not use_ma_stack or stack_pass))
+            if position is None and entry_signal:
+                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"]}
+                position["entry_index"] = index
+                last_entry_value = bar["value"]
+                last_entry_side = candidate_side
+            elif position is not None:
+                held_bars = index - position["entry_index"]
+                convergence_pass = abs(zscore) <= max(0.0, exit_z) if use_convergence else position["side"] * (bar["value"] - position["entry"]) > 0
+                dwell_pass = not use_dwell or held_bars >= 4
+                bottoming_pass = not use_bottoming or (previous_zscore is not None and abs(zscore) >= abs(previous_zscore))
+                if not ((convergence_pass and dwell_pass and bottoming_pass) or index == len(bars) - 1):
+                    previous_zscore = zscore
+                    continue
+                pnl_pct = position["side"] * (bar["value"] - position["entry"])
+                position.pop("entry_index", None)
+                trades.append({**position, "exit": bar["value"], "exit_time": bar["time"],
+                               "pnl_pct": round(pnl_pct, 4)})
+                position = None
+            previous_zscore = zscore
+
     wins = sum(1 for trade in trades if trade["pnl_pct"] > 0)
-    return {"success": data.get("success", False), "series": series, "trades": trades,
-            "summary": {"trades": len(trades), "wins": wins,
-                        "win_rate": round(wins / len(trades) * 100, 1) if trades else 0,
-                        "net_pct": round(sum(trade["pnl_pct"] for trade in trades), 4)},
-            "assumptions": "Public Lighter candles; zero advertised venue fees; slippage and funding excluded."}
+    return {
+        "success": data.get("success", False),
+        "strategy_mode": strategy_mode,
+        "series": series,
+        "trades": trades,
+        "metrics": mode_metrics,
+        "summary": {
+            "trades": len(trades),
+            "wins": wins,
+            "win_rate": round(wins / len(trades) * 100, 1) if trades else 0,
+            "net_pct": round(sum(trade["pnl_pct"] for trade in trades), 4)
+        },
+        "assumptions": "Public Lighter candles; zero advertised venue fees; slippage and funding excluded."
+    }
 
 
 @app.post("/api/lighter/order")

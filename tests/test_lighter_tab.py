@@ -45,6 +45,28 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('venue: "lighter"', common)
         self.assertNotIn('source.children', script)
 
+    def test_lighter_backtest_strategy_modes(self):
+        import asyncio
+        from unittest.mock import patch
+        from backend.server import get_lighter_backtest
+
+        fake_bars = [
+            {"time": 1000 + i * 900, "value": 140.0 + (0.5 if i % 10 > 5 else -0.5) + (i * 0.01)}
+            for i in range(120)
+        ]
+
+        async def _run():
+            with patch("backend.server.get_lighter_parity") as mock_parity:
+                mock_parity.return_value = {"success": True, "bars": fake_bars}
+                for mode in ("grid", "ou_quant", "ma_stack", "multi_factor"):
+                    res = await get_lighter_backtest(interval="15m", limit=120, strategy_mode=mode)
+                    self.assertTrue(res.get("success"))
+                    self.assertEqual(res.get("strategy_mode"), mode)
+                    self.assertIn("summary", res)
+                    self.assertIn("trades", res)
+
+        asyncio.run(_run())
+
 
 if __name__ == "__main__":
     unittest.main()
