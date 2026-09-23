@@ -26,6 +26,10 @@
     maSeries: {},
     maVisibility: { 7: true, 24: true, 60: true },
     executionChartFrame: null,
+    executionChartController: null,
+    activeHoveredExecutionMarkerTime: null,
+    selectedExecutionMarkerTime: null,
+    rawExecutionMarkers: [],
     currentRatio: 140.09,
     currentAdrPrice: null,
     currentDomesticPrice: null,
@@ -940,6 +944,41 @@
       });
       this.series = this.chart.addAreaSeries({ topColor: "rgba(2,132,199,.25)", bottomColor: "rgba(2,132,199,.02)", lineColor: "#0284c7", lineWidth: 2,
         priceFormat: { type: "price", precision: 2, minMove: .01 } });
+
+      const ControllerClass = window.StrategyExecutionChartController || (typeof StrategyExecutionChartController !== "undefined" ? StrategyExecutionChartController : null);
+      if (ControllerClass) {
+        this.executionChartController = new ControllerClass({
+          series: this.series,
+          lineStyle: LightweightCharts.LineStyle,
+        });
+        this.executionChartController.setVisibility("actual", this.showActualMarkers);
+        this.executionChartController.setVisibility("virtual", this.showVirtualMarkers);
+      }
+
+      this.activeHoveredExecutionMarkerTime = null;
+      this.selectedExecutionMarkerTime = null;
+
+      this.chart.subscribeCrosshairMove((param) => {
+        if (!param || !param.point) {
+          if (this.activeHoveredExecutionMarkerTime !== null) {
+            this.activeHoveredExecutionMarkerTime = null;
+            if (this.selectedExecutionMarkerTime === null) {
+              this.updateMarkerState(null);
+            }
+          }
+          return;
+        }
+        const nextHover = this.markerTimeAtParam(param);
+        if (nextHover !== this.activeHoveredExecutionMarkerTime) {
+          this.activeHoveredExecutionMarkerTime = nextHover;
+          if (this.selectedExecutionMarkerTime === null) {
+            this.updateMarkerState(nextHover);
+          }
+        }
+      });
+
+      this.chart.subscribeClick((param) => this.onChartClick(param));
+
       this.maSeries = {
         7: this.chart.addLineSeries({ color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
         24: this.chart.addLineSeries({ color: "#8b5cf6", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
@@ -1059,7 +1098,9 @@
 
       this.actualMarkers = Array.isArray(data.markers) ? data.markers.map((marker) => ({
         time: marker.time, position: marker.position || "aboveBar", color: marker.color || "#0f172a",
-        shape: marker.shape || "arrowDown", text: marker.text || "Actual",
+        shape: marker.shape || "arrowDown", text: "",
+        hoverText: marker.hoverText || marker.text || "Actual",
+        source: "actual", hypothetical: false, is_entry: marker.is_entry ?? (marker.shape !== "arrowUp"),
       })) : [];
       this.renderMarkers();
       this.chart.timeScale().fitContent();
@@ -1069,6 +1110,86 @@
         if (button) button.classList.toggle("active", value === this.interval);
       });
       this.updateGridLadderData();
+    },
+
+    markerTimeAtParam(param) {
+      if (!param) return null;
+      if (param.time) {
+        const direct = (this.rawExecutionMarkers || []).find((m) => m.time === param.time && this.isTradeMarkerVisible(m));
+        if (direct) return direct.time;
+      }
+      if (param.point) {
+        return this.executionMarkerTimeAtX(param.point.x);
+      }
+      return null;
+    },
+
+    executionMarkerTimeAtX(mouseX) {
+      if (!this.executionChartController || !this.chart) return null;
+      return this.executionChartController.executionTimeAtX(mouseX, {
+        timeScale: this.chart.timeScale(),
+        hostWidth: lid("shortTermSpreadChartHost")?.clientWidth || 0,
+      });
+    },
+
+    isTradeMarkerVisible(marker) {
+      return this.executionChartController ? this.executionChartController.isVisible(marker) : true;
+    },
+
+    onChartClick(param) {
+      if (!this.chart || !this.series) return;
+      const time = this.markerTimeAtParam(param);
+      const marker = (this.rawExecutionMarkers || []).find((m) => m.time === time && this.isTradeMarkerVisible(m));
+      if (marker) {
+        this.selectedExecutionMarkerTime = (this.selectedExecutionMarkerTime === marker.time) ? null : marker.time;
+      } else {
+        this.selectedExecutionMarkerTime = null;
+      }
+      const activeTime = this.selectedExecutionMarkerTime !== null ? this.selectedExecutionMarkerTime : this.activeHoveredExecutionMarkerTime;
+      this.updateMarkerState(activeTime);
+    },
+
+    updateMarkerState(hoveredTime = null) {
+      if (!this.series) return;
+      if (this.executionChartController) {
+        const activeTime = this.selectedExecutionMarkerTime !== null ? this.selectedExecutionMarkerTime : hoveredTime;
+        this.series.setMarkers(this.executionChartController.markersForRender(activeTime));
+        this.syncHoveredMarkerDetails(activeTime);
+      } else {
+        this.series.setMarkers(this.rawExecutionMarkers || []);
+      }
+    },
+
+    syncHoveredMarkerDetails(activeTime = null) {
+      const pnlEl = lid("valShortTermNetPnl");
+      const profitEl = lid("valSelectedMinProfit");
+      if (!activeTime) {
+        if (pnlEl) pnlEl.textContent = "--";
+        if (profitEl) profitEl.textContent = "—";
+        return;
+      }
+      const marker = (this.rawExecutionMarkers || []).find((m) => m.time === activeTime && this.isTradeMarkerVisible(m));
+      if (!marker) {
+        if (pnlEl) pnlEl.textContent = "--";
+        if (profitEl) profitEl.textContent = "—";
+        return;
+      }
+      if (pnlEl) {
+        if (marker.pnl_pct != null) {
+          pnlEl.textContent = `${marker.pnl_pct >= 0 ? "+" : ""}${marker.pnl_pct.toFixed(2)}%`;
+          pnlEl.style.color = marker.pnl_pct >= 0 ? "#16a34a" : "#dc2626";
+        } else if (marker.pnl != null) {
+          pnlEl.textContent = `${marker.pnl >= 0 ? "+" : ""}$${marker.pnl.toFixed(2)}`;
+          pnlEl.style.color = marker.pnl >= 0 ? "#16a34a" : "#dc2626";
+        } else {
+          pnlEl.textContent = marker.is_entry ? "Entry Open" : "--";
+          pnlEl.style.color = "";
+        }
+      }
+      if (profitEl) {
+        const val = marker.ratio != null ? marker.ratio : (marker.entry_price != null ? marker.entry_price : marker.exit_price);
+        profitEl.textContent = Number.isFinite(val) ? `${Number(val).toFixed(2)}%` : "—";
+      }
     },
 
     orderNotional() { return Math.max(10, Number(lid("inputOrderNotional")?.value || 1000)); },
@@ -1098,18 +1219,37 @@
         position: row.action === "EXIT" ? "belowBar" : "aboveBar",
         color: row.action === "EXIT" ? "#10b981" : "#7c3aed",
         shape: row.action === "EXIT" ? "arrowUp" : "arrowDown",
-        text: row.action === "EXIT" ? "Grid Rebalance" : "Grid Scale-In",
+        text: "",
+        hoverText: row.action === "EXIT"
+          ? `COVER ${row.ratio ? row.ratio.toFixed(2) + "%" : ""}${row.pnl != null ? " · " + (row.pnl >= 0 ? "+" : "") + "$" + row.pnl.toFixed(2) : ""}`
+          : `${row.action === "LONG RATIO" ? "BUY" : "SHORT"} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""} ($${(row.notional || 0).toFixed(0)})`,
+        source: "virtual",
+        hypothetical: true,
+        is_paper: true,
+        is_entry: row.action !== "EXIT",
+        ratio: row.ratio,
+        pnl: row.pnl,
       }));
-      const markers = [
-        ...(this.showActualMarkers ? this.actualMarkers : []),
-        ...(this.showVirtualMarkers ? [...paperMarkers, ...this.backtestMarkers] : []),
+      const rawMarkers = [
+        ...(this.actualMarkers || []),
+        ...paperMarkers,
+        ...(this.backtestMarkers || []),
       ].sort((a, b) => a.time - b.time);
-      this.series.setMarkers(markers);
+
+      this.rawExecutionMarkers = rawMarkers;
+      this.executionChartController?.setExecutions(rawMarkers);
+
+      const activeTime = this.selectedExecutionMarkerTime !== null ? this.selectedExecutionMarkerTime : this.activeHoveredExecutionMarkerTime;
+      this.updateMarkerState(activeTime);
     },
 
     updateMarkerButtons() {
+      this.executionChartController?.setVisibility("actual", this.showActualMarkers);
+      this.executionChartController?.setVisibility("virtual", this.showVirtualMarkers);
       this.executionChartFrame?.setVisibility("actual", this.showActualMarkers);
       this.executionChartFrame?.setVisibility("virtual", this.showVirtualMarkers);
+      const activeTime = this.selectedExecutionMarkerTime !== null ? this.selectedExecutionMarkerTime : this.activeHoveredExecutionMarkerTime;
+      this.updateMarkerState(activeTime);
     },
 
     toggleMA(period) {
@@ -1161,8 +1301,36 @@
         const data = await api(`/api/lighter/backtest?${toggles}`);
         const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
         this.backtestMarkers = data.trades.flatMap((trade) => [
-          { time: trade.entry_time, position: trade.side < 0 ? "aboveBar" : "belowBar", color: "rgba(124,58,237,.55)", shape: trade.side < 0 ? "arrowDown" : "arrowUp", text: `${pName} Entry` },
-          { time: trade.exit_time, position: trade.side < 0 ? "belowBar" : "aboveBar", color: "rgba(16,185,129,.55)", shape: trade.side < 0 ? "arrowUp" : "arrowDown", text: `${pName} Exit ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}%` },
+          {
+            time: trade.entry_time,
+            position: trade.side < 0 ? "aboveBar" : "belowBar",
+            color: trade.side < 0 ? "rgba(220,38,38,.55)" : "rgba(22,163,74,.55)",
+            shape: trade.side < 0 ? "arrowDown" : "arrowUp",
+            text: "",
+            hoverText: `${trade.side < 0 ? "SHORT" : "BUY"} ${trade.entry ? trade.entry.toFixed(2) + "%" : ""}`,
+            source: "virtual",
+            hypothetical: true,
+            backtest: true,
+            is_entry: true,
+            entry_price: trade.entry,
+            ratio: trade.entry,
+          },
+          {
+            time: trade.exit_time,
+            position: trade.side < 0 ? "belowBar" : "aboveBar",
+            color: trade.side < 0 ? "rgba(22,163,74,.55)" : "rgba(220,38,38,.55)",
+            shape: trade.side < 0 ? "arrowUp" : "arrowDown",
+            text: "",
+            hoverText: `${trade.side < 0 ? "COVER" : "SELL"} ${trade.exit ? trade.exit.toFixed(2) + "%" : ""} · ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}% net`,
+            source: "virtual",
+            hypothetical: true,
+            backtest: true,
+            is_entry: false,
+            entry_price: trade.entry,
+            exit_price: trade.exit,
+            ratio: trade.exit,
+            pnl_pct: trade.pnl_pct,
+          },
         ]);
         this.renderMarkers();
         if (summary) summary.innerHTML = `[<strong>${pName}</strong>] <strong>${data.summary.trades}</strong> trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · net <strong>${data.summary.net_pct >= 0 ? "+" : ""}${data.summary.net_pct.toFixed(3)}%</strong>`;

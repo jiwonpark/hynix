@@ -67,6 +67,17 @@ class TestLighterTab(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_marker_labels_clean_and_hover_controlled(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn("StrategyExecutionChartController", script)
+        self.assertIn("subscribeCrosshairMove", script)
+        self.assertIn("markerTimeAtParam", script)
+        self.assertIn("updateMarkerState", script)
+        self.assertNotIn("text: `${pName} Entry`", script)
+        self.assertNotIn('text: row.action === "EXIT" ? "Grid Rebalance" : "Grid Scale-In"', script)
+        self.assertIn('hoverText: `${trade.side < 0 ? "SHORT" : "BUY"}', script)
+        self.assertIn('hoverText: `${trade.side < 0 ? "COVER" : "SELL"}', script)
+
 
 if __name__ == "__main__":
     unittest.main()
