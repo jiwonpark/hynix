@@ -298,7 +298,7 @@
     },
 
     renderGridLadderSection() {
-      const criteriaGrid = lid("shortTermCriteriaGrid");
+      const criteriaGrid = $("tabContentLighter")?.querySelector(".shortTermCriteriaGrid");
       if (!criteriaGrid) return;
       let section = $("lighter_gridMatrixSection");
       if (!section) {
@@ -676,5 +676,9 @@
   };
 
   window.lighterEngine = lighterEngine;
-  document.addEventListener("DOMContentLoaded", () => lighterEngine.init());
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => lighterEngine.init());
+  } else {
+    lighterEngine.init();
+  }
 })();
