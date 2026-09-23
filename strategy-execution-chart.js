@@ -40,14 +40,14 @@
         ${options.secondaryStatus ? `<div id="${ids.secondaryStatus}" class="executionChartSecondaryStatus">${options.secondaryStatus}</div>` : ""}
         <div id="${ids.host}" class="executionChartHost" style="height:${Number(options.height) || 420}px"></div>
         ${options.showAssetPane ? `
-        <div id="${ids.assetPaneShell}" class="assetPricePaneShell" style="position:relative;height:165px;border-top:2px solid #cbd5e1;background:#fff;width:100%;display:block;">
+        <div id="${ids.assetPaneShell}" class="assetPricePaneShell" style="position:relative;height:${Number(options.assetHeight) || 185}px;border-top:2px solid #cbd5e1;background:#fff;width:100%;display:block;">
           <div class="assetPriceLegendBar" style="position:absolute;top:6px;left:12px;z-index:10;display:flex;align-items:center;gap:10px;font-size:11px;background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);padding:3px 8px;border-radius:4px;border:1px solid #cbd5e1;pointer-events:none;">
             <span style="font-weight:800;color:#0f172a;">📊 2-ASSET PRICES:</span>
             <span style="color:#2563eb;font-weight:700;">● SKHYUSDT (ADR, Right Scale)</span>
             <span style="color:#d97706;font-weight:700;">● CSOP 2L ETF / Domestic (Left Scale)</span>
             <span id="${ids.assetDetails}" style="color:#475569;font-family:monospace;font-size:11px;"></span>
           </div>
-          <div id="${ids.assetHost}" style="height:165px;min-height:140px;width:100%;"></div>
+          <div id="${ids.assetHost}" style="height:${Number(options.assetHeight) || 185}px;min-height:150px;width:100%;display:block;"></div>
         </div>` : ""}
         <div class="executionChartFooter">
           <div id="${ids.legend}" class="executionChartLegend">${options.legend || ""}</div>

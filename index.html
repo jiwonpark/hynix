@@ -521,7 +521,8 @@
     body.dark .assetPriceLegendBar {
       background: rgba(15, 23, 42, 0.90);
     }
-    #assetPricePane {
+    #assetPricePane,
+    #shortTermAssetHost {
       height: 185px;
       min-height: 150px;
       width: 100%;
@@ -4569,7 +4570,7 @@
   <div id="ellipsisHoverTooltip" class="ellipsisTooltip" style="display: none;" role="tooltip"></div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="strategy-execution-chart.js?v=20260918_j"></script>
+  <script src="strategy-execution-chart.js?v=20260923_sync_5"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
   <script src="lighter-tab.js?v=20260922_8"></script>
@@ -12031,153 +12032,154 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       initShortTermChart() {
-        const host = $("shortTermSpreadChartHost");
-        if (!host || this.shortTermChart) return;
         if (typeof LightweightCharts === "undefined") return;
 
-        this.shortTermChart = LightweightCharts.createChart(host, {
-          height: 420,
-          layout: { background: { color: "#f8fafc" }, textColor: "#475569" },
-          localization: {
-            locale: "ko-KR",
-            priceFormatter: (p) => Number(p).toFixed(2) + "%",
-            timeFormatter: (time) => {
-              const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
-              return new Date(t).toLocaleString("ko-KR", {
-                timeZone: "Asia/Seoul",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false
-              }) + " KST";
+        const host = $("shortTermSpreadChartHost");
+        if (host && !this.shortTermChart) {
+          this.shortTermChart = LightweightCharts.createChart(host, {
+            height: 420,
+            layout: { background: { color: "#f8fafc" }, textColor: "#475569" },
+            localization: {
+              locale: "ko-KR",
+              priceFormatter: (p) => Number(p).toFixed(2) + "%",
+              timeFormatter: (time) => {
+                const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+                return new Date(t).toLocaleString("ko-KR", {
+                  timeZone: "Asia/Seoul",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false
+                }) + " KST";
+              }
+            },
+            grid: { vertLines: { color: "#e2e8f0" }, horzLines: { color: "#e2e8f0" } },
+            rightPriceScale: {
+              visible: true,
+              borderVisible: false,
+              autoScale: true,
+              scaleMargins: { top: 0.05, bottom: 0.30 }
+            },
+            timeScale: {
+              visible: true,
+              timeVisible: true,
+              secondsVisible: false,
+              borderVisible: false,
+              tickMarkFormatter: (time, tickMarkType) => {
+                const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+                const d = new Date(t);
+                if (isNaN(d.getTime())) return "";
+                if (tickMarkType === 0) {
+                  return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric" }).format(d);
+                }
+                if (tickMarkType === 1) {
+                  return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "short" }).format(d);
+                }
+                if (tickMarkType === 2) {
+                  return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(d);
+                }
+                return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+              }
+            },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+          });
+
+          this.shortTermSeries = this.shortTermChart.addAreaSeries({
+            topColor: "rgba(2, 132, 199, 0.25)",
+            bottomColor: "rgba(2, 132, 199, 0.02)",
+            lineColor: "#0284c7",
+            lineWidth: 2,
+            priceFormat: { type: "price", precision: 2, minMove: 0.01 }
+          });
+
+          this.shortTermPnlSeries = this.shortTermChart.addLineSeries({
+            priceScaleId: "pnl",
+            color: "#0f766e",
+            lineWidth: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: true,
+            priceFormat: {
+              type: "custom",
+              minMove: 0.001,
+              formatter: (p) => `${p >= 0 ? "+" : ""}$${Number(p).toFixed(3)}`
             }
-          },
-          grid: { vertLines: { color: "#e2e8f0" }, horzLines: { color: "#e2e8f0" } },
-          rightPriceScale: {
-            visible: true,
+          });
+          this.shortTermChart.priceScale("pnl").applyOptions({
+            visible: false,
             borderVisible: false,
-            autoScale: true,
-            scaleMargins: { top: 0.05, bottom: 0.30 }
-          },
-          timeScale: {
-            visible: true,
-            timeVisible: true,
-            secondsVisible: false,
-            borderVisible: false,
-            tickMarkFormatter: (time, tickMarkType) => {
-              const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
-              const d = new Date(t);
-              if (isNaN(d.getTime())) return "";
-              if (tickMarkType === 0) {
-                return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", year: "numeric" }).format(d);
-              }
-              if (tickMarkType === 1) {
-                return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "short" }).format(d);
-              }
-              if (tickMarkType === 2) {
-                return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).format(d);
-              }
-              return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+            scaleMargins: { top: 0.78, bottom: 0.03 }
+          });
+
+          this.shortTermMa7Series = this.shortTermChart.addLineSeries({
+            color: "#f59e0b",
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: true,
+            priceFormat: { type: "price", precision: 2, minMove: 0.01 }
+          });
+
+          this.shortTermMa24Series = this.shortTermChart.addLineSeries({
+            color: "#8b5cf6",
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: true,
+            priceFormat: { type: "price", precision: 2, minMove: 0.01 }
+          });
+
+          this.shortTermMa60Series = this.shortTermChart.addLineSeries({
+            color: "#06b6d4",
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: true,
+            priceFormat: { type: "price", precision: 2, minMove: 0.01 }
+          });
+
+          this.executionChartController = new StrategyExecutionChartController({
+            series: this.shortTermSeries,
+            lineStyle: LightweightCharts.LineStyle
+          });
+
+          this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+            if (range && range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
+              this.fetchShortTermParity(true);
             }
-          },
-          crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
-        });
+          });
+          this.maVisibility = { ma7: true, ma24: true, ma60: true };
 
-        this.shortTermSeries = this.shortTermChart.addAreaSeries({
-          topColor: "rgba(2, 132, 199, 0.25)",
-          bottomColor: "rgba(2, 132, 199, 0.02)",
-          lineColor: "#0284c7",
-          lineWidth: 2,
-          priceFormat: { type: "price", precision: 2, minMove: 0.01 }
-        });
-
-        this.shortTermPnlSeries = this.shortTermChart.addLineSeries({
-          priceScaleId: "pnl",
-          color: "#0f766e",
-          lineWidth: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: true,
-          priceFormat: {
-            type: "custom",
-            minMove: 0.001,
-            formatter: (p) => `${p >= 0 ? "+" : ""}$${Number(p).toFixed(3)}`
-          }
-        });
-        this.shortTermChart.priceScale("pnl").applyOptions({
-          visible: false,
-          borderVisible: false,
-          scaleMargins: { top: 0.78, bottom: 0.03 }
-        });
-
-        this.shortTermMa7Series = this.shortTermChart.addLineSeries({
-          color: "#f59e0b",
-          lineWidth: 1,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: true,
-          priceFormat: { type: "price", precision: 2, minMove: 0.01 }
-        });
-
-        this.shortTermMa24Series = this.shortTermChart.addLineSeries({
-          color: "#8b5cf6",
-          lineWidth: 1,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: true,
-          priceFormat: { type: "price", precision: 2, minMove: 0.01 }
-        });
-
-        this.shortTermMa60Series = this.shortTermChart.addLineSeries({
-          color: "#06b6d4",
-          lineWidth: 1,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: true,
-          priceFormat: { type: "price", precision: 2, minMove: 0.01 }
-        });
-
-        this.executionChartController = new StrategyExecutionChartController({
-          series: this.shortTermSeries,
-          lineStyle: LightweightCharts.LineStyle
-        });
-
-        this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          if (range && range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
-            this.fetchShortTermParity(true);
-          }
-        });
-        this.maVisibility = { ma7: true, ma24: true, ma60: true };
-
-        this.activeHoveredExecutionMarkerTime = null;
-        this.selectedExecutionMarkerTime = null;
-        this.shortTermChart.subscribeCrosshairMove((param) => {
-          if (!param || !param.point) {
-            if (this.activeHoveredExecutionMarkerTime !== null) {
-              this.activeHoveredExecutionMarkerTime = null;
+          this.activeHoveredExecutionMarkerTime = null;
+          this.selectedExecutionMarkerTime = null;
+          this.shortTermChart.subscribeCrosshairMove((param) => {
+            if (!param || !param.point) {
+              if (this.activeHoveredExecutionMarkerTime !== null) {
+                this.activeHoveredExecutionMarkerTime = null;
+                if (this.selectedExecutionMarkerTime === null) {
+                  this.updateMarkerState(null);
+                }
+              }
+              return;
+            }
+            // Treat the full vertical candle column as the marker hover target.
+            // Marker details therefore depend only on mouse X, never mouse Y.
+            const nextHover = this.markerTimeAtParam(param);
+            if (nextHover !== this.activeHoveredExecutionMarkerTime) {
+              this.activeHoveredExecutionMarkerTime = nextHover;
               if (this.selectedExecutionMarkerTime === null) {
-                this.updateMarkerState(null);
+                this.updateMarkerState(nextHover);
               }
             }
-            return;
-          }
-          // Treat the full vertical candle column as the marker hover target.
-          // Marker details therefore depend only on mouse X, never mouse Y.
-          const nextHover = this.markerTimeAtParam(param);
-          if (nextHover !== this.activeHoveredExecutionMarkerTime) {
-            this.activeHoveredExecutionMarkerTime = nextHover;
-            if (this.selectedExecutionMarkerTime === null) {
-              this.updateMarkerState(nextHover);
-            }
-          }
-        });
-        this.shortTermChart.subscribeClick((param) => this.onChartClick(param));
+          });
+          this.shortTermChart.subscribeClick((param) => this.onChartClick(param));
+        }
 
         const assetHost = $("shortTermAssetHost");
-        if (assetHost && !this.shortTermAssetChart && typeof LightweightCharts !== "undefined") {
+        if (assetHost && !this.shortTermAssetChart) {
           this.shortTermAssetChart = LightweightCharts.createChart(assetHost, {
-            height: 165,
+            height: 185,
             layout: { background: { color: "#ffffff" }, textColor: "#475569" },
             localization: {
               locale: "ko-KR",
@@ -12238,52 +12240,68 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               priceFormat: { type: 'price', precision: 3, minMove: 0.001 }
             })
           };
-
-          // 2-way range sync between shortTermChart and shortTermAssetChart
-          let isSyncingShortTerm = false;
-          this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-            if (isSyncingShortTerm || !range || !this.shortTermAssetChart) return;
-            isSyncingShortTerm = true;
-            this.shortTermAssetChart.timeScale().setVisibleLogicalRange(range);
-            window.requestAnimationFrame(() => { isSyncingShortTerm = false; });
-          });
-          this.shortTermAssetChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-            if (isSyncingShortTerm || !range || !this.shortTermChart) return;
-            isSyncingShortTerm = true;
-            this.shortTermChart.timeScale().setVisibleLogicalRange(range);
-            window.requestAnimationFrame(() => { isSyncingShortTerm = false; });
-          });
-
-          // Crosshair sync to update detail string
-          const updateShortTermAssetHover = (param) => {
-            const details = $("shortTermAssetDetails");
-            if (!details) return;
-            if (!param || !param.time || !this.shortTermHistory?.bars?.length) {
-              details.textContent = "";
-              return;
-            }
-            const tSec = typeof param.time === "number" ? param.time : param.time.timestamp || param.time;
-            const bar = this.shortTermHistory.bars.find((b) => b.time === tSec);
-            if (bar) {
-              const adrStr = bar.adr != null ? `$${Number(bar.adr).toFixed(2)}` : "--";
-              const csopVal = bar.csop != null ? bar.csop : (bar.domestic ? bar.domestic * 10 : null);
-              const csopStr = csopVal != null ? `$${Number(csopVal).toFixed(3)}` : "--";
-              const parStr = bar.value != null ? `${Number(bar.value).toFixed(2)}%` : "--";
-              details.textContent = `| ADR: ${adrStr} | ETF: ${csopStr} | Parity: ${parStr}`;
-            }
-          };
-          this.shortTermChart.subscribeCrosshairMove(updateShortTermAssetHover);
-          this.shortTermAssetChart.subscribeCrosshairMove(updateShortTermAssetHover);
         }
 
-        window.addEventListener("resize", () => {
-          if (this.shortTermChart && host) {
-            this.shortTermChart.applyOptions({ width: host.clientWidth });
-          }
-          if (this.shortTermAssetChart && assetHost) {
-            this.shortTermAssetChart.applyOptions({ width: assetHost.clientWidth });
-          }
+        if (this.shortTermChart && this.shortTermAssetChart && !this._shortTermChartsSynced) {
+          this.setupShortTermChartSync();
+        }
+
+        if (!this._shortTermResizeBound) {
+          this._shortTermResizeBound = true;
+          window.addEventListener("resize", () => {
+            const h = $("shortTermSpreadChartHost");
+            if (this.shortTermChart && h && h.clientWidth > 0) {
+              this.shortTermChart.applyOptions({ width: h.clientWidth });
+            }
+            const ah = $("shortTermAssetHost");
+            if (this.shortTermAssetChart && ah && ah.clientWidth > 0) {
+              this.shortTermAssetChart.applyOptions({ width: ah.clientWidth });
+            }
+          });
+        }
+      },
+
+      setupShortTermChartSync() {
+        if (!this.shortTermChart || !this.shortTermAssetChart || this._shortTermChartsSynced) return;
+        this._shortTermChartsSynced = true;
+
+        let isSyncingShortTerm = false;
+        this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          if (isSyncingShortTerm || !range || !this.shortTermAssetChart) return;
+          isSyncingShortTerm = true;
+          this.shortTermAssetChart.timeScale().setVisibleLogicalRange(range);
+          window.requestAnimationFrame(() => { isSyncingShortTerm = false; });
         });
+        this.shortTermAssetChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+          if (isSyncingShortTerm || !range || !this.shortTermChart) return;
+          isSyncingShortTerm = true;
+          this.shortTermChart.timeScale().setVisibleLogicalRange(range);
+          window.requestAnimationFrame(() => { isSyncingShortTerm = false; });
+        });
+
+        const updateShortTermAssetHover = (param) => {
+          const details = $("shortTermAssetDetails");
+          if (!details) return;
+          if (!param || !param.time || !this.shortTermHistory?.bars?.length) {
+            details.textContent = "";
+            return;
+          }
+          const tSec = typeof param.time === "number" ? param.time : param.time.timestamp || param.time;
+          const bar = this.shortTermHistory.bars.find((b) => b.time === tSec);
+          if (bar) {
+            const adrStr = bar.adr != null ? `$${Number(bar.adr).toFixed(2)}` : "--";
+            const csopVal = bar.csop != null ? bar.csop : (bar.domestic ? bar.domestic * 10 : null);
+            const csopStr = csopVal != null ? `$${Number(csopVal).toFixed(3)}` : "--";
+            const parStr = bar.value != null ? `${Number(bar.value).toFixed(2)}%` : "--";
+            details.textContent = `| ADR: ${adrStr} | ETF: ${csopStr} | Parity: ${parStr}`;
+          }
+        };
+        this.shortTermChart.subscribeCrosshairMove(updateShortTermAssetHover);
+        this.shortTermAssetChart.subscribeCrosshairMove(updateShortTermAssetHover);
+
+        if (this.shortTermHistory && this.shortTermHistory.bars && this.shortTermHistory.bars.length) {
+          this.renderShortTermChart(this.shortTermHistory);
+        }
       },
 
       markerTimeAtParam(param) {
