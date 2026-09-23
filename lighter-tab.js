@@ -1101,8 +1101,14 @@
         shape: marker.shape || "arrowDown", text: "",
         hoverText: marker.hoverText || marker.text || "Actual",
         source: "actual", hypothetical: false, is_entry: marker.is_entry ?? (marker.shape !== "arrowUp"),
+        entry_price: marker.entry_price || marker.ratio || marker.value,
+        exit_price: marker.exit_price || (marker.is_entry ? null : (marker.ratio || marker.value)),
+        ratio: marker.ratio || marker.value,
+        pnl: marker.pnl,
+        pnl_pct: marker.pnl_pct,
       })) : [];
       this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
       this.chart.timeScale().fitContent();
       this.setText("valShortTermCurrentParity", `${this.currentRatio.toFixed(3)}%`);
       ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((value) => {
@@ -1160,19 +1166,107 @@
       }
     },
 
+    shortSpreadProfitLadder(entrySpread, maxNetProfitPct = 5, isLong = false) {
+      const entry = Number(entrySpread);
+      if (!(entry > 0)) return [];
+      const roundTripCostRate = 16 / 10000;
+      const netProfitTargets = [0, 0.2, 0.5, ...Array.from(
+        { length: Math.max(0, Math.floor(maxNetProfitPct)) },
+        (_, index) => index + 1
+      )].filter((target, index, values) => target <= maxNetProfitPct && values.indexOf(target) === index);
+      return netProfitTargets.map((netProfitPct) => ({
+        netProfitPct,
+        title: netProfitPct === 0 ? "B/E" : `NET +${netProfitPct}%`,
+        price: isLong
+          ? entry * (1 + roundTripCostRate + (netProfitPct / 100))
+          : entry / (1 + roundTripCostRate + (netProfitPct / 100)),
+        color: netProfitPct === 0 ? "rgba(71, 85, 105, 0.70)" : "rgba(22, 163, 74, 0.70)",
+        lineWidth: 1.5,
+      }));
+    },
+
+    clearReferenceLines() {
+      if (this.executionChartController) this.executionChartController.clearReferenceLines();
+    },
+
+    renderShortTermReferenceLines(entrySpread, options = {}) {
+      const entry = Number(entrySpread);
+      if (!(entry > 0) || !this.executionChartController) return;
+      this.executionChartController.renderReferenceLines({
+        entry,
+        selected: Boolean(options.selected),
+        levels: this.shortSpreadProfitLadder(entry, 5, options.isLong),
+        showScaleIn: Boolean(options.showScaleIn),
+        scaleInSpread: options.scaleInSpread,
+        exit: options.exitSpread,
+        exitTitle: options.exitSpread ? `EXIT (${Number(options.exitSpread).toFixed(2)}%)` : "EXIT"
+      });
+    },
+
+    renderCurrentPositionReferenceLines() {
+      if (!this.executionChartController) return;
+      const isVirtualVisible = this.executionChartController.visibility.virtual !== false;
+
+      // 1. Open entry in virtual ledger
+      const openEntry = isVirtualVisible && this.entries.length ? this.entries.at(-1) : null;
+      if (openEntry && Number(openEntry.ratio) > 0) {
+        this.renderShortTermReferenceLines(openEntry.ratio, {
+          selected: false,
+          isLong: openEntry.side > 0
+        });
+        return;
+      }
+
+      // 2. Visible markers with entry price
+      const visibleMarkers = (this.rawExecutionMarkers || []).filter(m => this.isTradeMarkerVisible(m) && (m.entry_price || m.ratio));
+      const lastMarker = visibleMarkers.at(-1);
+      if (lastMarker) {
+        const lastEntry = Number(lastMarker.entry_price || lastMarker.ratio);
+        if (lastEntry > 0) {
+          this.renderShortTermReferenceLines(lastEntry, {
+            selected: false,
+            exitSpread: lastMarker.exit_price || (lastMarker.is_entry ? null : lastMarker.ratio),
+            isLong: lastMarker.shape === "arrowUp"
+          });
+          return;
+        }
+      }
+
+      // 3. Fallback to current ratio
+      if (Number(this.currentRatio) > 0) {
+        this.renderShortTermReferenceLines(this.currentRatio, {
+          selected: false,
+        });
+        return;
+      }
+      this.clearReferenceLines();
+    },
+
     syncHoveredMarkerDetails(activeTime = null) {
       const pnlEl = lid("valShortTermNetPnl");
       const profitEl = lid("valSelectedMinProfit");
       if (!activeTime) {
         if (pnlEl) pnlEl.textContent = "--";
         if (profitEl) profitEl.textContent = "—";
+        this.renderCurrentPositionReferenceLines();
         return;
       }
       const marker = (this.rawExecutionMarkers || []).find((m) => m.time === activeTime && this.isTradeMarkerVisible(m));
       if (!marker) {
         if (pnlEl) pnlEl.textContent = "--";
         if (profitEl) profitEl.textContent = "—";
+        this.renderCurrentPositionReferenceLines();
         return;
+      }
+      const entrySpread = Number(marker.entry_price || marker.ratio);
+      if (entrySpread > 0) {
+        this.renderShortTermReferenceLines(entrySpread, {
+          selected: true,
+          exitSpread: marker.exit_price || (marker.is_entry ? null : marker.ratio),
+          isLong: marker.shape === "arrowUp"
+        });
+      } else {
+        this.renderCurrentPositionReferenceLines();
       }
       if (pnlEl) {
         if (marker.pnl_pct != null) {
@@ -1201,14 +1295,14 @@
       const entry = { time: Date.now(), ratio: this.currentRatio, notional: this.orderNotional(), side: this.currentRatio >= 100 ? -1 : 1 };
       this.entries.push(entry);
       this.ledger.unshift({ ...entry, action: entry.side < 0 ? "SHORT RATIO" : "LONG RATIO", pnl: null });
-      this.save(); this.renderVirtualState(); this.renderMarkers(); this.updateGridLadderData();
+      this.save(); this.renderVirtualState(); this.renderMarkers(); this.renderCurrentPositionReferenceLines(); this.updateGridLadderData();
     },
 
     exitVirtual() {
       if (!this.entries.length || !Number.isFinite(this.currentRatio)) return;
       this.entries.forEach((entry) => this.ledger.unshift({ time: Date.now(), ratio: this.currentRatio,
         notional: entry.notional, action: "EXIT", pnl: entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio }));
-      this.entries = []; this.save(); this.renderVirtualState(); this.renderMarkers(); this.updateGridLadderData();
+      this.entries = []; this.save(); this.renderVirtualState(); this.renderMarkers(); this.renderCurrentPositionReferenceLines(); this.updateGridLadderData();
     },
 
     renderMarkers() {
@@ -1228,6 +1322,8 @@
         is_paper: true,
         is_entry: row.action !== "EXIT",
         ratio: row.ratio,
+        entry_price: row.ratio,
+        exit_price: row.action === "EXIT" ? row.ratio : null,
         pnl: row.pnl,
       }));
       const rawMarkers = [
@@ -1250,6 +1346,9 @@
       this.executionChartFrame?.setVisibility("virtual", this.showVirtualMarkers);
       const activeTime = this.selectedExecutionMarkerTime !== null ? this.selectedExecutionMarkerTime : this.activeHoveredExecutionMarkerTime;
       this.updateMarkerState(activeTime);
+      if (activeTime === null) {
+        this.renderCurrentPositionReferenceLines();
+      }
     },
 
     toggleMA(period) {
@@ -1333,6 +1432,7 @@
           },
         ]);
         this.renderMarkers();
+        this.renderCurrentPositionReferenceLines();
         if (summary) summary.innerHTML = `[<strong>${pName}</strong>] <strong>${data.summary.trades}</strong> trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · net <strong>${data.summary.net_pct >= 0 ? "+" : ""}${data.summary.net_pct.toFixed(3)}%</strong>`;
 
         if (data.metrics && this.currentParadigm === "ou_quant") {
