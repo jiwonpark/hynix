@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>HYPERION // Dual-Leg Quant Terminal</title>
   <style>
     :root {
@@ -491,9 +494,11 @@
     }
     .assetPricePaneShell {
       position: relative;
-      height: 175px;
-      border-top: 1px solid var(--line);
+      height: 185px;
+      border-top: 2px solid var(--line);
       background: var(--panel);
+      width: 100%;
+      display: block;
     }
     .assetPriceLegendBar {
       position: absolute;
@@ -505,33 +510,59 @@
       gap: 10px;
       font-size: 11px;
       pointer-events: none;
-      background: rgba(255, 255, 255, 0.85);
+      background: rgba(255, 255, 255, 0.92);
       backdrop-filter: blur(4px);
-      padding: 3px 8px;
+      padding: 3px 10px;
       border-radius: 4px;
       border: 1px solid var(--line);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
     :root[data-theme="dark"] .assetPriceLegendBar,
     body.dark .assetPriceLegendBar {
-      background: rgba(15, 23, 42, 0.85);
+      background: rgba(15, 23, 42, 0.90);
     }
     #assetPricePane {
-      height: 175px;
-      min-height: 140px;
+      height: 185px;
+      min-height: 150px;
+      width: 100%;
+      display: block;
+    }
+    .btnPriceChartPill {
+      text-decoration: none;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btnPriceChartPill:hover {
+      background: #dbeafe;
+      border-color: #93c5fd;
     }
     .positionPaneShell {
       position: relative;
       height: 150px;
       border-top: 1px solid var(--line);
       background: var(--panel);
+      width: 100%;
+      display: block;
     }
     #positionPane {
       height: 150px;
       min-height: 130px;
+      width: 100%;
+      display: block;
     }
     @media (max-width: 720px) {
       #chartSvg { height: 380px; }
-      .assetPricePaneShell, #assetPricePane { height: 150px; min-height: 125px; }
+      .assetPricePaneShell, #assetPricePane { height: 160px; min-height: 135px; }
       .positionPaneShell, #positionPane { height: 135px; min-height: 120px; }
     }
     .exposureOverlay {
@@ -2707,6 +2738,9 @@
           <span id="legLongAdr" class="green" style="color: #16a34a; font-weight: 700;">Long ADR (▲)</span>
           <span id="legShortAdr" class="red" style="color: #dc2626; font-weight: 700;">Short ADR (▼)</span>
           <span id="legPnl" style="color: #10b981; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; border-left: 1px solid #cbd5e1; padding-left: 8px;"><span style="display:inline-block;width:10px;height:3px;background:#10b981;border-radius:1px;"></span> 누적 손익 (Acc PnL %)</span>
+          <button id="btnJumpToPriceChart" type="button" class="btnPriceChartPill" onclick="document.getElementById('assetPricePaneShell')?.scrollIntoView({behavior:'smooth',block:'center'});" title="Scroll directly to the synchronized 2-asset price pane">
+            <span>📈 2-Asset Prices (ADR vs ETF)</span>
+          </button>
           <span id="simulationPeriodBadge" style="background: #f1f5f9; color: #1e293b; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; border: 1px solid #cbd5e1; font-family: monospace;">📅 --</span>
         </div>
         <p id="status">Loading Binance Futures data...</p>
@@ -2724,11 +2758,12 @@
           <button id="modeMa" type="button">MA</button>
         </div>
         <div id="chartSvg"></div>
-        <div class="assetPricePaneShell">
+        <div class="assetPricePaneShell" id="assetPricePaneShell">
           <div class="assetPriceLegendBar">
-            <span id="legAdrPrice" style="color: #2563eb; font-weight: 700;">● SKHYUSDT (ADR)</span>
-            <span id="legStockPrice" style="color: #d97706; font-weight: 700;">● CSOPSKHYNIX2LUSDT (2x ETF)</span>
-            <span id="assetPriceDetails" style="color: #64748b; font-family: monospace; font-size: 11px;"></span>
+            <span style="font-weight: 800; color: #0f172a; margin-right: 4px;">📊 2-ASSET PRICES:</span>
+            <span id="legAdrPrice" style="color: #2563eb; font-weight: 700;">● SKHYUSDT (ADR, Right Scale)</span>
+            <span id="legStockPrice" style="color: #d97706; font-weight: 700;">● CSOPSKHYNIX2LUSDT (2x ETF, Left Scale)</span>
+            <span id="assetPriceDetails" style="color: #475569; font-family: monospace; font-size: 11.5px; font-weight: 600;"></span>
           </div>
           <div id="assetPricePane"></div>
         </div>
@@ -6075,7 +6110,6 @@
             borderVisible: false,
             minimumWidth: 70,
             scaleMargins: { top: 0.12, bottom: 0.12 },
-            textColor: '#d97706',
             autoScale: true
           },
           rightPriceScale: {
@@ -6083,7 +6117,6 @@
             borderVisible: false,
             minimumWidth: 88,
             scaleMargins: { top: 0.12, bottom: 0.12 },
-            textColor: '#2563eb',
             autoScale: true
           },
           timeScale: {
@@ -6784,21 +6817,28 @@
       window.spreadSeries.avgEntry.setData(continuousAvgEntry);
       
       // Populate the synchronized 2-asset price pane.
-      if (window.assetPriceSeries?.adr) {
-        window.assetPriceSeries.adr.setData(
-          rows.map((row) => ({
-            time: Math.floor(row.time / 1000),
-            value: Number(row.adr)
-          }))
-        );
-      }
-      if (window.assetPriceSeries?.stock) {
-        window.assetPriceSeries.stock.setData(
-          rows.map((row) => ({
-            time: Math.floor(row.time / 1000),
-            value: Number(row.korean)
-          }))
-        );
+      if (window.assetPriceSeries?.adr && rows && rows.length) {
+        const adrPoints = [];
+        const stockPoints = [];
+        let lastTimeSec = -1;
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const tSec = Math.floor(row.time / 1000);
+          if (tSec <= lastTimeSec) continue;
+          lastTimeSec = tSec;
+          const adrVal = Number(row.adr);
+          const stockVal = Number(row.korean);
+          if (Number.isFinite(adrVal) && adrVal > 0) {
+            adrPoints.push({ time: tSec, value: adrVal });
+          }
+          if (Number.isFinite(stockVal) && stockVal > 0) {
+            stockPoints.push({ time: tSec, value: stockVal });
+          }
+        }
+        window.assetPriceSeries.adr.setData(adrPoints);
+        if (window.assetPriceSeries?.stock) {
+          window.assetPriceSeries.stock.setData(stockPoints);
+        }
       }
 
       // Populate the synchronized lower indicator pane.
@@ -6860,15 +6900,21 @@
       }
 
       if (!window.userInteracting && !window.isPrependingOlderBars && window.spreadChart) {
+        let targetRange = null;
         if (vp && Number.isFinite(vp.barSpan) && Number.isFinite(vp.barsFromRight)) {
           const to = totalBars - vp.barsFromRight;
           const from = to - vp.barSpan;
-          window.spreadChart.timeScale().setVisibleLogicalRange({ from, to });
+          targetRange = { from, to };
         } else if (!window.spreadChartInitialized) {
-          window.spreadChart.timeScale().setVisibleLogicalRange({
+          targetRange = {
             from: Math.max(0, totalBars - 60),
             to: totalBars + Math.max(1, Math.round(86400000 / Math.max(60000, rows.length > 1 ? rows.at(-1).time - rows.at(-2).time : 15 * 60000)))
-          });
+          };
+        }
+        if (targetRange) {
+          window.spreadChart.timeScale().setVisibleLogicalRange(targetRange);
+          if (window.assetPriceChart) window.assetPriceChart.timeScale().setVisibleLogicalRange(targetRange);
+          if (window.positionChart) window.positionChart.timeScale().setVisibleLogicalRange(targetRange);
         }
         window.spreadChartInitialized = true;
       }
@@ -10791,10 +10837,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.executionChartFrame = StrategyExecutionChartFrame.mount({
           container: "shortTermExecutionChartFrame",
           id: "shortTermSpreadChart",
+          showAssetPane: true,
           ids: {
             action: "btnRerunDynamicBacktest", actual: "legendActualTrades", virtual: "legendVirtualTrades",
             status: "dynamicBacktestStatus", secondaryStatus: "macroPolicyStatus",
             host: "shortTermSpreadChartHost", legend: "shortTermChartLegend", sync: "lblShortTermChartSync",
+            assetPaneShell: "shortTermAssetPaneShell", assetHost: "shortTermAssetHost", assetDetails: "shortTermAssetDetails"
           },
           title: "PRICE-SIGNAL REPLAY · UNCONSTRAINED CAPITAL",
           action: { label: "Rerun", className: "terminal-action-control", onClick: () => this.scheduleDynamicBacktest(true) },
@@ -10815,6 +10863,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const host = $("shortTermSpreadChartHost");
         if (host && this.shortTermChart && host.clientWidth > 0) {
           this.shortTermChart.applyOptions({ width: host.clientWidth });
+        }
+        const assetHost = $("shortTermAssetHost");
+        if (assetHost && this.shortTermAssetChart && assetHost.clientWidth > 0) {
+          this.shortTermAssetChart.applyOptions({ width: assetHost.clientWidth });
         }
         if (!this.shortTermHistory || !this.shortTermHistory.bars || !this.shortTermHistory.bars.length) {
           this.fetchShortTermParity();
@@ -12122,9 +12174,114 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
         this.shortTermChart.subscribeClick((param) => this.onChartClick(param));
 
+        const assetHost = $("shortTermAssetHost");
+        if (assetHost && !this.shortTermAssetChart && typeof LightweightCharts !== "undefined") {
+          this.shortTermAssetChart = LightweightCharts.createChart(assetHost, {
+            height: 165,
+            layout: { background: { color: "#ffffff" }, textColor: "#475569" },
+            localization: {
+              locale: "ko-KR",
+              timeFormatter: (time) => {
+                const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+                return new Date(t).toLocaleString("ko-KR", {
+                  timeZone: "Asia/Seoul",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false
+                }) + " KST";
+              }
+            },
+            grid: { vertLines: { color: "#e2e8f0" }, horzLines: { color: "#e2e8f0" } },
+            leftPriceScale: {
+              visible: true,
+              borderVisible: false,
+              autoScale: true,
+              scaleMargins: { top: 0.1, bottom: 0.1 }
+            },
+            rightPriceScale: {
+              visible: true,
+              borderVisible: false,
+              autoScale: true,
+              scaleMargins: { top: 0.1, bottom: 0.1 }
+            },
+            timeScale: {
+              visible: false,
+              borderVisible: false,
+              rightOffset: 0,
+              barSpacing: 8,
+              minBarSpacing: 0.5,
+              lockVisibleTimeRangeOnResize: true
+            },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+          });
+          this.shortTermAssetSeries = {
+            adr: this.shortTermAssetChart.addLineSeries({
+              priceScaleId: 'right',
+              color: '#2563eb',
+              lineWidth: 2,
+              title: 'SKHY (ADR)',
+              priceLineVisible: true,
+              priceLineColor: '#2563eb',
+              priceLineStyle: LightweightCharts.LineStyle.Dotted,
+              priceFormat: { type: 'price', precision: 2, minMove: 0.01 }
+            }),
+            stock: this.shortTermAssetChart.addLineSeries({
+              priceScaleId: 'left',
+              color: '#d97706',
+              lineWidth: 2,
+              title: 'CSOP 2L',
+              priceLineVisible: true,
+              priceLineColor: '#d97706',
+              priceLineStyle: LightweightCharts.LineStyle.Dotted,
+              priceFormat: { type: 'price', precision: 3, minMove: 0.001 }
+            })
+          };
+
+          // 2-way range sync between shortTermChart and shortTermAssetChart
+          let isSyncingShortTerm = false;
+          this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+            if (isSyncingShortTerm || !range || !this.shortTermAssetChart) return;
+            isSyncingShortTerm = true;
+            this.shortTermAssetChart.timeScale().setVisibleLogicalRange(range);
+            window.requestAnimationFrame(() => { isSyncingShortTerm = false; });
+          });
+          this.shortTermAssetChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+            if (isSyncingShortTerm || !range || !this.shortTermChart) return;
+            isSyncingShortTerm = true;
+            this.shortTermChart.timeScale().setVisibleLogicalRange(range);
+            window.requestAnimationFrame(() => { isSyncingShortTerm = false; });
+          });
+
+          // Crosshair sync to update detail string
+          const updateShortTermAssetHover = (param) => {
+            const details = $("shortTermAssetDetails");
+            if (!details) return;
+            if (!param || !param.time || !this.shortTermHistory?.bars?.length) {
+              details.textContent = "";
+              return;
+            }
+            const tSec = typeof param.time === "number" ? param.time : param.time.timestamp || param.time;
+            const bar = this.shortTermHistory.bars.find((b) => b.time === tSec);
+            if (bar) {
+              const adrStr = bar.adr != null ? `$${Number(bar.adr).toFixed(2)}` : "--";
+              const csopVal = bar.csop != null ? bar.csop : (bar.domestic ? bar.domestic * 10 : null);
+              const csopStr = csopVal != null ? `$${Number(csopVal).toFixed(3)}` : "--";
+              const parStr = bar.value != null ? `${Number(bar.value).toFixed(2)}%` : "--";
+              details.textContent = `| ADR: ${adrStr} | ETF: ${csopStr} | Parity: ${parStr}`;
+            }
+          };
+          this.shortTermChart.subscribeCrosshairMove(updateShortTermAssetHover);
+          this.shortTermAssetChart.subscribeCrosshairMove(updateShortTermAssetHover);
+        }
+
         window.addEventListener("resize", () => {
           if (this.shortTermChart && host) {
             this.shortTermChart.applyOptions({ width: host.clientWidth });
+          }
+          if (this.shortTermAssetChart && assetHost) {
+            this.shortTermAssetChart.applyOptions({ width: assetHost.clientWidth });
           }
         });
       },
@@ -12518,6 +12675,29 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!this.shortTermSeries || !data.bars || !data.bars.length) return;
 
         this.shortTermSeries.setData(data.bars.map(b => ({ time: b.time, value: b.value })));
+
+        if (this.shortTermAssetSeries?.adr && data.bars?.length) {
+          const adrPoints = [];
+          const stockPoints = [];
+          let lastT = -1;
+          for (let i = 0; i < data.bars.length; i++) {
+            const b = data.bars[i];
+            const t = b.time;
+            if (t <= lastT) continue;
+            lastT = t;
+            if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) {
+              adrPoints.push({ time: t, value: Number(b.adr) });
+            }
+            const sVal = b.csop != null ? b.csop : (b.domestic ? b.domestic * 10 : null);
+            if (sVal != null && Number.isFinite(sVal) && sVal > 0) {
+              stockPoints.push({ time: t, value: Number(sVal) });
+            }
+          }
+          this.shortTermAssetSeries.adr.setData(adrPoints);
+          if (this.shortTermAssetSeries?.stock) {
+            this.shortTermAssetSeries.stock.setData(stockPoints);
+          }
+        }
 
         const ma7Data = this.calcMovingAverage(data.bars, 7);
         const ma24Data = this.calcMovingAverage(data.bars, 24);

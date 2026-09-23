@@ -19,6 +19,7 @@
         action: `${id}Action`, actual: `${id}Actual`, virtual: `${id}Virtual`,
         status: `${id}Status`, secondaryStatus: `${id}SecondaryStatus`,
         host: `${id}Host`, legend: `${id}Legend`, sync: `${id}Sync`,
+        assetPaneShell: `${id}AssetPaneShell`, assetHost: `${id}AssetHost`, assetDetails: `${id}AssetDetails`,
       }, options.ids || {});
       const actual = options.actual || {};
       const virtual = options.virtual || {};
@@ -38,6 +39,16 @@
         ${options.description ? `<div class="executionChartDescription">${options.description}</div>` : ""}
         ${options.secondaryStatus ? `<div id="${ids.secondaryStatus}" class="executionChartSecondaryStatus">${options.secondaryStatus}</div>` : ""}
         <div id="${ids.host}" class="executionChartHost" style="height:${Number(options.height) || 420}px"></div>
+        ${options.showAssetPane ? `
+        <div id="${ids.assetPaneShell}" class="assetPricePaneShell" style="position:relative;height:165px;border-top:2px solid #cbd5e1;background:#fff;width:100%;display:block;">
+          <div class="assetPriceLegendBar" style="position:absolute;top:6px;left:12px;z-index:10;display:flex;align-items:center;gap:10px;font-size:11px;background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);padding:3px 8px;border-radius:4px;border:1px solid #cbd5e1;pointer-events:none;">
+            <span style="font-weight:800;color:#0f172a;">📊 2-ASSET PRICES:</span>
+            <span style="color:#2563eb;font-weight:700;">● SKHYUSDT (ADR, Right Scale)</span>
+            <span style="color:#d97706;font-weight:700;">● CSOP 2L ETF / Domestic (Left Scale)</span>
+            <span id="${ids.assetDetails}" style="color:#475569;font-family:monospace;font-size:11px;"></span>
+          </div>
+          <div id="${ids.assetHost}" style="height:165px;min-height:140px;width:100%;"></div>
+        </div>` : ""}
         <div class="executionChartFooter">
           <div id="${ids.legend}" class="executionChartLegend">${options.legend || ""}</div>
           <span id="${ids.sync}" class="executionChartSync">${options.syncText || ""}</span>
@@ -52,6 +63,9 @@
         host: document.getElementById(ids.host),
         legend: document.getElementById(ids.legend),
         sync: document.getElementById(ids.sync),
+        assetPaneShell: document.getElementById(ids.assetPaneShell),
+        assetHost: document.getElementById(ids.assetHost),
+        assetDetails: document.getElementById(ids.assetDetails),
       };
       if (elements.action && typeof action.onClick === "function") elements.action.addEventListener("click", action.onClick);
       if (typeof actual.onToggle === "function") elements.actual.addEventListener("click", actual.onToggle);
