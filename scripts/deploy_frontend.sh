@@ -45,6 +45,6 @@ done
 
 headers="$(curl -fsSI https://control.jiwonova.com/skhynix/)"
 grep -qi '^content-type: text/html' <<<"$headers"
-curl -fsS "https://control.jiwonova.com/skhynix/?build=$BUILD_STAMP" -o "$STAGE_DIR/live-index.html"
+curl -fsS --compressed "https://control.jiwonova.com/skhynix/?build=$BUILD_STAMP" -o "$STAGE_DIR/live-index.html"
 grep -Fq "$BUILD_VERSION" "$STAGE_DIR/live-index.html"
 echo "Verified HTTP 200 text/html and live build $BUILD_VERSION"
