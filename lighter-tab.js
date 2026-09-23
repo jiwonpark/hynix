@@ -73,6 +73,7 @@
         skhyAlloc: 0.16,
         csopAlloc: 2.80
       }
+    },
     currentParadigm: "grid",
     paradigms: {
       grid: {
