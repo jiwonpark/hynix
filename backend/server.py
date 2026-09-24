@@ -218,12 +218,16 @@ async def get_lighter_status() -> Dict[str, Any]:
         adr = _lighter_book_summary(adr_book)
         domestic = _lighter_book_summary(domestic_book)
         ratio = adr["mid"] / (domestic["mid"] / 10.0) * 100 if adr["mid"] and domestic["mid"] else None
+        acc_info = await lighter_client.account_status()
         return {
             "success": True,
             "venue": "Lighter",
-            "authenticated": False,
-            "execution_enabled": False,
-            "execution_message": "Read-only: configure an official Lighter signer and account before live orders.",
+            "authenticated": acc_info.get("authenticated", False),
+            "execution_enabled": acc_info.get("execution_enabled", False),
+            "execution_message": acc_info.get("message", "Read-only: configure an official Lighter signer and account before live orders."),
+            "l1_address": acc_info.get("l1_address"),
+            "account_index": acc_info.get("account_index"),
+            "collateral": acc_info.get("collateral", 0.0),
             "adr": {"symbol": "SKHY", "market_id": 216, **adr, "mark": float(adr_detail["mark_price"]),
                     "maker_fee": float(adr_detail["maker_fee"]), "taker_fee": float(adr_detail["taker_fee"])},
             "domestic": {"symbol": "SKHYNIXUSD", "market_id": 161, **domestic,

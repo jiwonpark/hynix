@@ -1134,6 +1134,19 @@
         this.setText("lblDaemonLatency", "Grid Engine: Active");
         this.setText("lblDaemonStats", "Multi-Tier Grid · Live Telemetry");
         this.setText("lblHedgedSyncBadge", "INSTITUTIONAL GRID ACTIVE");
+        if (status && status.l1_address) {
+          const shortAddr = `${status.l1_address.slice(0, 6)}...${status.l1_address.slice(-4)}`;
+          if (status.authenticated && status.account_index) {
+            this.setText("lblDaemonMainStatus", `Daemon: Lighter Account #${status.account_index} Active`);
+            this.setText("lblDaemonAuthBadge", `LIVE: $${(status.collateral || 0).toFixed(2)} USDC`);
+            this.setText("valAccountEquity", `$${(status.collateral || 0).toFixed(2)}`);
+            this.setText("badgeEquitySource", "LIGHTER L2");
+          } else {
+            this.setText("lblDaemonMainStatus", `Daemon: Bot Wallet ${shortAddr}`);
+            this.setText("lblDaemonAuthBadge", "BOT WALLET READY");
+            this.setText("badgeEquitySource", shortAddr);
+          }
+        }
         this.setText("valShortTermCurrentParity", `${this.currentRatio.toFixed(3)}%`);
         this.setText("valHedgedCombinedPnl", this.virtualPnlText());
         this.setText("valCollateralPills", `Tier ${this.currentTier} · 0.00% Maker · Dynamic Volatility Grid`);
