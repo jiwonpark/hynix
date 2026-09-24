@@ -11700,27 +11700,30 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               if (statsLbl) statsLbl.textContent = `${posCount} Pos • ${bAssetsCount} Bin • ${uAssetsCount} Upbit`;
 
               // Sync Binance equity & balances
-              if (bAuth && bDetails.summary) {
-                this.state.equity = bDetails.summary.total_equity_usd || 0.0;
-                this.state.availableMargin = bDetails.summary.available_margin_usd || 0.0;
-                this.state.unrealizedPnl = bDetails.summary.total_unrealized_pnl_usd || 0.0;
-                this.state.marginRatio = bDetails.summary.margin_ratio_percent || 0.0;
+              const binanceEq = bDetails.summary?.total_equity_usd ?? data.binance?.equity_usd ?? data.binance?.total_equity_usd;
+              if (bAuth && binanceEq !== undefined && binanceEq !== null) {
+                this.state.equity = Number(binanceEq);
+                this.state.availableMargin = Number(bDetails.summary?.available_margin_usd ?? data.binance?.available_margin_usd ?? this.state.availableMargin);
+                this.state.unrealizedPnl = Number(bDetails.summary?.total_unrealized_pnl_usd ?? this.state.unrealizedPnl);
+                this.state.marginRatio = Number(bDetails.summary?.margin_ratio_percent ?? this.state.marginRatio);
               }
-              this.state.binanceSpotUsdt = bSpotDetails.summary?.usdt_balance || data.binance?.spot_usdt || 0.0;
-              this.state.binanceSpotStablecoinUsd = bSpotDetails.summary?.stablecoin_equity_usd || data.binance?.spot_stablecoin_equity_usd || 0.0;
+              this.state.binanceSpotUsdt = Number(bSpotDetails.summary?.usdt_balance ?? data.binance?.spot_usdt ?? this.state.binanceSpotUsdt);
+              this.state.binanceSpotStablecoinUsd = Number(bSpotDetails.summary?.stablecoin_equity_usd ?? data.binance?.spot_stablecoin_equity_usd ?? this.state.binanceSpotStablecoinUsd);
 
               // Sync Upbit equity & balances
               if (uDetails.summary) {
-                this.state.upbitEquityKrw = uDetails.summary.total_equity_krw || 0.0;
-                this.state.upbitEquityUsd = uDetails.summary.total_equity_usd || 0.0;
-                this.state.upbitCashKrw = uDetails.summary.cash_krw || 0.0;
+                this.state.upbitEquityKrw = Number(uDetails.summary.total_equity_krw ?? this.state.upbitEquityKrw);
+                this.state.upbitEquityUsd = Number(uDetails.summary.total_equity_usd ?? this.state.upbitEquityUsd);
+                this.state.upbitCashKrw = Number(uDetails.summary.cash_krw ?? this.state.upbitCashKrw);
               }
 
               if (bAuth) {
-                this.state.backendPositions = bDetails.positions || [];
-                this.state.backendAssets = bDetails.assets || [];
+                if (bDetails.positions) this.state.backendPositions = bDetails.positions;
+                if (bDetails.assets) this.state.backendAssets = bDetails.assets;
               }
-              this.state.upbitAssets = uDetails.assets || [];
+              if (uDetails.assets) {
+                this.state.upbitAssets = uDetails.assets;
+              }
 
               this.renderAssetsTable(this.state.backendAssets);
               this.renderUpbitTable(this.state.upbitAssets, uDetails.summary || {});
@@ -11772,17 +11775,25 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   if (statsLbl) statsLbl.textContent = `${(data.positions || []).length} Pos, ${(data.assets || []).length} Assets`;
 
                   if (data.summary) {
-                    this.state.equity = data.summary.total_equity_usd;
-                    this.state.availableMargin = data.summary.available_margin_usd;
-                    this.state.unrealizedPnl = data.summary.total_unrealized_pnl_usd;
-                    this.state.marginRatio = data.summary.margin_ratio_percent;
+                    if (data.summary.total_equity_usd !== undefined && data.summary.total_equity_usd !== null) {
+                      this.state.equity = Number(data.summary.total_equity_usd);
+                    }
+                    if (data.summary.available_margin_usd !== undefined && data.summary.available_margin_usd !== null) {
+                      this.state.availableMargin = Number(data.summary.available_margin_usd);
+                    }
+                    if (data.summary.total_unrealized_pnl_usd !== undefined && data.summary.total_unrealized_pnl_usd !== null) {
+                      this.state.unrealizedPnl = Number(data.summary.total_unrealized_pnl_usd);
+                    }
+                    if (data.summary.margin_ratio_percent !== undefined && data.summary.margin_ratio_percent !== null) {
+                      this.state.marginRatio = Number(data.summary.margin_ratio_percent);
+                    }
                   }
                   this.state.binanceSpotAuthenticated = data.spot?.authenticated || false;
-                  this.state.binanceSpotUsdt = data.spot?.summary?.usdt_balance || 0.0;
-                  this.state.binanceSpotStablecoinUsd = data.spot?.summary?.stablecoin_equity_usd || 0.0;
-                  this.state.backendPositions = data.positions || [];
-                  this.state.backendAssets = data.assets || [];
-                  this.renderAssetsTable(data.assets || []);
+                  this.state.binanceSpotUsdt = Number(data.spot?.summary?.usdt_balance ?? this.state.binanceSpotUsdt);
+                  this.state.binanceSpotStablecoinUsd = Number(data.spot?.summary?.stablecoin_equity_usd ?? this.state.binanceSpotStablecoinUsd);
+                  if (data.positions) this.state.backendPositions = data.positions;
+                  if (data.assets) this.state.backendAssets = data.assets;
+                  this.renderAssetsTable(this.state.backendAssets);
                   this.renderAccountStrip();
                   this.renderPositionsAndLogs();
                 }

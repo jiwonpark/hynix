@@ -9,7 +9,7 @@ import aiohttp
 from .config import config
 
 READ_TIMEOUT = aiohttp.ClientTimeout(total=4, connect=2, sock_read=3)
-ACCOUNT_REFRESH_TIMEOUT = 4.5
+ACCOUNT_REFRESH_TIMEOUT = 6.0
 
 class BinanceFuturesClient:
     def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None, base_url: Optional[str] = None):
@@ -21,6 +21,7 @@ class BinanceFuturesClient:
         self._overview_cache: Optional[Dict[str, Any]] = None
         self._overview_cache_time = 0.0
         self._overview_cache_ttl = 2.5
+        self._overview_fail_ttl = 1.0
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -189,9 +190,10 @@ class BinanceFuturesClient:
     async def get_detailed_account_overview(self) -> Dict[str, Any]:
         """Return one shared, briefly cached account snapshot to all callers."""
         now = time.monotonic()
-        if (self._overview_cache is not None
-                and now - self._overview_cache_time < self._overview_cache_ttl):
-            return copy.deepcopy(self._overview_cache)
+        if self._overview_cache is not None:
+            ttl = self._overview_cache_ttl if self._overview_cache.get("authenticated") else self._overview_fail_ttl
+            if now - self._overview_cache_time < ttl:
+                return copy.deepcopy(self._overview_cache)
 
         task = self._overview_task
         if task is None or task.done():
