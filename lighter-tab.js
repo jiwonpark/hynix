@@ -3,6 +3,7 @@
 
   const $ = (id) => document.getElementById(id);
   const STORAGE_KEY = "skhynix_lighter_virtual_ledger_v2";
+  const STRATEGY_STORAGE_KEY = "skhynix_lighter_selected_strategy";
   const lid = (id) => $(`lighter_${id}`);
 
   async function api(path) {
@@ -12,6 +13,25 @@
         const response = await fetch(`${prefix}${path}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return await response.json();
+      } catch (error) { lastError = error; }
+    }
+    throw lastError || new Error("API unavailable");
+  }
+
+  async function apiPost(path, body) {
+    const token = window.terminalLockManager?.token;
+    if (!token) throw new Error("Unlock the terminal first");
+    let lastError;
+    for (const prefix of ["/skhynix", ""]) {
+      try {
+        const response = await fetch(`${prefix}${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(body),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+        return payload;
       } catch (error) { lastError = error; }
     }
     throw lastError || new Error("API unavailable");
@@ -42,40 +62,41 @@
     showVirtualMarkers: true,
     interval: "15m",
     currentTier: 2,
+    botState: null,
 
     tiers: {
       1: {
-        name: "Tier 1: Conservative (2.0x)",
-        badge: "CONSERVATIVE · 2.0x",
-        leverage: 2.0,
+        name: "Tier 1: Conservative (1.0x)",
+        badge: "CONSERVATIVE · 1.0x",
+        leverage: 1.0,
         spacingPct: 0.20,
         rungCount: 5,
         notional: 500,
         minProfit: 0.03,
         skhyAlloc: 0.04,
-        csopAlloc: 0.70
+        csopAlloc: 0.004
       },
       2: {
-        name: "Tier 2: Delta-Neutral (5.0x)",
-        badge: "DELTA-NEUTRAL · 5.0x",
-        leverage: 5.0,
+        name: "Tier 2: Delta-Neutral (1.0x)",
+        badge: "DELTA-NEUTRAL · 1.0x",
+        leverage: 1.0,
         spacingPct: 0.12,
         rungCount: 8,
         notional: 1000,
         minProfit: 0.05,
         skhyAlloc: 0.08,
-        csopAlloc: 1.40
+        csopAlloc: 0.008
       },
       3: {
-        name: "Tier 3: Aggressive (8.0x)",
-        badge: "OPPORTUNISTIC · 8.0x",
-        leverage: 8.0,
+        name: "Tier 3: Opportunistic (1.0x)",
+        badge: "OPPORTUNISTIC · 1.0x",
+        leverage: 1.0,
         spacingPct: 0.08,
         rungCount: 12,
         notional: 2000,
         minProfit: 0.08,
         skhyAlloc: 0.16,
-        csopAlloc: 2.80
+        csopAlloc: 0.016
       }
     },
     currentParadigm: "grid",
@@ -96,7 +117,7 @@
           rowCondEntryMaStack5m: "4. 5m Micro-Trend Neutrality Confirmation",
           rowCondEntryMaStack1h: "5. 1h Macro Divergence Boundary",
           rowCondEntryCapacity: "6. Max Active Grid Tiers (Cap: 8 Rungs)",
-          rowCondEntryLeverage: "7. Gross Leverage Cap (≤ 5.0x / 8.0x)",
+          rowCondEntryLeverage: "7. Fixed 1.0x Position Sizing",
           rowCondEntryMargin: "8. Buffered Margin Reserve (≥ 125%)",
           rowCondEntryEngine: "9. Grid Engine State & 5m Cooldown",
           rowCondEntryGuard: "10. Anti-Whipsaw Bar Cadence (1 bar/rung)",
@@ -339,7 +360,7 @@
     labelTerminal() {
       this.setText("lblDaemonMainStatus", "Daemon: Institutional Grid Engine Active");
       this.setText("lblDaemonAuthBadge", "GRID ARB: READY");
-      this.setText("lblDaemonUpbitBadge", "RISK TIER: TIER 2 (5x NEUTRAL)");
+      this.setText("lblDaemonUpbitBadge", "RISK TIER: TIER 2 (1x NEUTRAL)");
       this.setText("valDeployedStrategyName", "🏛️ Institutional Grid Engine (Multi-Tier Parity Bands)");
       this.setText("valDeployedEngine", "Asymmetric Delta-Neutral Parity Grid Harvester");
       this.setText("valDeployedInterval", "15m Dynamic Bands");
@@ -352,11 +373,11 @@
       this.setText("lblUnrealizedPnl", "Grid Harvested PnL");
       this.setText("lblActivePairs", "Active Grid Rungs");
       this.setText("lblMarginRisk", "Target Leverage");
-      this.setText("valMarginRisk", "5.0x");
+      this.setText("valMarginRisk", "1.0x");
       this.setText("lblCollateralSummary", "Grid Mode");
       this.setText("lblUpbitEquity", "Grid Underlying Pair");
       this.setText("badgeUpbitSource", "DUAL-LEG");
-      this.setText("valUpbitEquity", "SKHY (ADR) ↔ CSOP 2L (ETF)");
+      this.setText("valUpbitEquity", "SKHY (ADR) ↔ SKHYNIXUSD (Korean underlying)");
       this.setText("titleExecutionTerminal", "🏛️ 1-Click Institutional Grid Execution & Virtual Orders");
       this.setText("badgeExecMode", "INSTITUTIONAL GRID REBALANCING · DUAL-LEG ARB");
       this.setText("lblHedgedSyncBadge", "GRID ENGINE ACTIVE");
@@ -366,7 +387,7 @@
       this.setText("lblCritTPTitle", "🎯 Grid Rebalance & Take-Profit (Mean Reversion)");
       this.setText("lblOrderNotional", "Grid Order Notional (USDT)");
       this.setText("lblStepTrancheSize", "Add Grid Tranche");
-      this.setText("lblStepTrancheSub", "SKHY / CSOP 2L");
+      this.setText("lblStepTrancheSub", "SKHY / SKHYNIXUSD");
       this.setText("lblReduceTrancheText", "Rebalance All to Benchmark");
 
       // Custom-labeled Scale-In Checklist for Grid Bands
@@ -377,7 +398,7 @@
         rowCondEntryMaStack5m: "4. 5m Micro-Trend Neutrality Confirmation",
         rowCondEntryMaStack1h: "5. 1h Macro Divergence Boundary",
         rowCondEntryCapacity: "6. Max Active Grid Tiers (Cap: 8 Rungs)",
-        rowCondEntryLeverage: "7. Gross Leverage Cap (≤ 5.0x / 8.0x)",
+        rowCondEntryLeverage: "7. Fixed 1.0x Position Sizing",
         rowCondEntryMargin: "8. Buffered Margin Reserve (≥ 125%)",
         rowCondEntryEngine: "9. Grid Engine State & 5m Cooldown",
         rowCondEntryGuard: "10. Anti-Whipsaw Bar Cadence (1 bar/rung)",
@@ -407,7 +428,7 @@
       const semi = lid("modeSemiAuto"); if (semi) semi.textContent = "◈ Grid Read-Only";
       const paper = lid("modePaper"); if (paper) paper.textContent = "✋ Virtual / Paper";
       const kill = lid("btnKillSwitch"); if (kill) kill.textContent = "🚨 Live Disabled";
-      const auto = lid("lblAutoPeriodicText"); if (auto) auto.textContent = "Lighter auto-tranche requires signer configuration";
+      const auto = lid("lblAutoPeriodicText"); if (auto) auto.textContent = "24/7 EC2 Lighter bot (continues when this browser closes)";
 
       const frame = lid("shortTermExecutionChartFrame");
       if (frame) {
@@ -435,6 +456,15 @@
           syncText: "Updated 0s ago",
         });
         [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
+        const chartHost = lid("shortTermSpreadChartHost");
+        if (chartHost && !$("lighterTrendOverlay")) {
+          chartHost.style.position = "relative";
+          const overlay = document.createElement("div");
+          overlay.id = "lighterTrendOverlay";
+          overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;gap:6px;pointer-events:none";
+          overlay.innerHTML = '<span id="lighterTrend5m" class="lighterTrendBadge">5m —</span><span id="lighterTrend1h" class="lighterTrendBadge">1h —</span>';
+          chartHost.appendChild(overlay);
+        }
       }
 
       const entry = lid("btnStepTranche");
@@ -454,14 +484,16 @@
         const warning = document.createElement("div");
         warning.id = "lighter_failClosedWarning";
         warning.style.cssText = "grid-column:1/-1;padding:9px 11px;border-radius:6px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;margin-bottom:8px";
-        warning.textContent = "Live execution is fail-closed until the official Lighter signer and account are configured. Paper controls remain available.";
+        warning.textContent = "Live execution is fail-closed and uses SKHY + SKHYNIXUSD only (no 2x ETF). Unlock the terminal and enable the EC2 bot explicitly; all failures pause it.";
         ticket.prepend(warning);
       }
 
       const notionalInput = lid("inputOrderNotional");
-      if (notionalInput) notionalInput.disabled = false;
+      if (notionalInput) { notionalInput.disabled = false; notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5"; notionalInput.value = "25"; }
+      const autoToggle = lid("chkAutoPeriodic48h");
+      if (autoToggle) autoToggle.addEventListener("change", () => this.toggleLiveBot(autoToggle.checked));
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner p");
-      if (guard) guard.innerHTML = 'Virtual take-profit closes the <strong>latest matched entry first (LIFO)</strong>. PnL is marked from the captured Lighter parity ratio using the selected virtual notional. <strong>Live orders remain impossible until signer configuration is complete.</strong>';
+      if (guard) guard.innerHTML = 'The server trades the unleveraged pair <strong>SKHY / SKHYNIXUSD</strong> at 1x sizing. It persists state on EC2, continues without the browser, and pauses on any unresolved leg.';
 
       this.bindResearchConditions();
       this.renderParadigmNav();
@@ -512,9 +544,9 @@
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span style="font-size:11px;font-weight:800;color:#475569;margin-right:2px;">RISK TIER:</span>
-            <button id="lighter_btnTier1" class="lighterTierBtn" type="button" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">Tier 1 (2x Conservative)</button>
-            <button id="lighter_btnTier2" class="lighterTierBtn" type="button" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;">Tier 2 (5x Neutral)</button>
-            <button id="lighter_btnTier3" class="lighterTierBtn" type="button" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">Tier 3 (8x Aggressive)</button>
+            <button id="lighter_btnTier1" class="lighterTierBtn" type="button" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">Tier 1 (1x Conservative)</button>
+            <button id="lighter_btnTier2" class="lighterTierBtn" type="button" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;">Tier 2 (1x Neutral)</button>
+            <button id="lighter_btnTier3" class="lighterTierBtn" type="button" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">Tier 3 (1x Opportunistic)</button>
           </div>
         </div>
 
@@ -544,7 +576,7 @@
                 <th style="padding:8px 12px;">Rung Tier</th>
                 <th style="padding:8px 12px;">Target Parity</th>
                 <th style="padding:8px 12px;">Distance</th>
-                <th style="padding:8px 12px;">Allocations (SKHY / CSOP)</th>
+                <th style="padding:8px 12px;">Allocations (SKHY / SKHYNIXUSD)</th>
                 <th style="padding:8px 12px;">Action Type</th>
                 <th style="padding:8px 12px;">Status</th>
                 <th style="padding:8px 12px;text-align:right;">Round-Trip Est. PnL</th>
@@ -591,6 +623,7 @@
     setParadigm(mode) {
       if (!this.paradigms[mode]) return;
       this.currentParadigm = mode;
+      localStorage.setItem(STRATEGY_STORAGE_KEY, mode);
       const p = this.paradigms[mode];
 
       document.querySelectorAll(".lighterParadigmBtn").forEach((btn) => {
@@ -955,7 +988,7 @@
             <td style="padding:7px 12px;font-weight:700;color:#92400e;">UPPER #${i}</td>
             <td style="padding:7px 12px;font-weight:700;color:#0f172a;font-family:monospace;">${target.toFixed(3)}%</td>
             <td style="padding:7px 12px;color:#d97706;font-weight:600;">+${dist.toFixed(3)} pts</td>
-            <td style="padding:7px 12px;font-family:monospace;color:#475569;">-${skhy} SKHY / +${csop} CSOP</td>
+            <td style="padding:7px 12px;font-family:monospace;color:#475569;">-${skhy} SKHY / +${csop} SKHYNIXUSD</td>
             <td style="padding:7px 12px;"><span style="background:#fef3c7;color:#b45309;padding:1px 6px;border-radius:4px;font-size:9.5px;font-weight:800;">SCALE-IN</span></td>
             <td style="padding:7px 12px;"><span style="color:${isTriggered ? "#b45309" : "#64748b"};font-weight:700;">${isTriggered ? "● TRIGGERED" : "○ ARMED"}</span></td>
             <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669;">+$${estPnl}</td>
@@ -989,7 +1022,7 @@
             <td style="padding:7px 12px;font-weight:700;color:#065f46;">LOWER #${i}</td>
             <td style="padding:7px 12px;font-weight:700;color:#0f172a;font-family:monospace;">${target.toFixed(3)}%</td>
             <td style="padding:7px 12px;color:#059669;font-weight:600;">-${dist.toFixed(3)} pts</td>
-            <td style="padding:7px 12px;font-family:monospace;color:#475569;">+${skhy} SKHY / -${csop} CSOP</td>
+            <td style="padding:7px 12px;font-family:monospace;color:#475569;">+${skhy} SKHY / -${csop} SKHYNIXUSD</td>
             <td style="padding:7px 12px;"><span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px;font-size:9.5px;font-weight:800;">REBALANCE</span></td>
             <td style="padding:7px 12px;"><span style="color:${isRebalancing ? "#16a34a" : "#64748b"};font-weight:700;">${isRebalancing ? "● REBALANCED" : "○ PENDING"}</span></td>
             <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669;">+$${estPnl}</td>
@@ -1007,12 +1040,14 @@
       }
       $("tabContentLighter").querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
       $("tabContentLighter").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
-      this.labelTerminal();
       try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
         this.entries = Array.isArray(saved.entries) ? saved.entries : [];
         this.ledger = Array.isArray(saved.ledger) ? saved.ledger : [];
       } catch (_) {}
+      const selectedStrategy = localStorage.getItem(STRATEGY_STORAGE_KEY);
+      if (this.paradigms[selectedStrategy]) this.currentParadigm = selectedStrategy;
+      this.labelTerminal();
       this.initialized = true;
       this.renderVirtualState();
     },
@@ -1084,7 +1119,7 @@
         });
         this.assetSeries = {
           adr: this.assetChart.addLineSeries({ priceScaleId: 'right', color: '#2563eb', lineWidth: 2, title: 'SKHY' }),
-          stock: this.assetChart.addLineSeries({ priceScaleId: 'left', color: '#d97706', lineWidth: 2, title: 'CSOP 2L' }),
+          stock: this.assetChart.addLineSeries({ priceScaleId: 'left', color: '#d97706', lineWidth: 2, title: 'SKHYNIXUSD' }),
         };
 
         // 2-way range sync
@@ -1120,9 +1155,13 @@
 
     async refresh() {
       try {
-        let status;
+        let status, botStatus, trendStatus;
         try {
           status = await api("/api/lighter/status");
+          [botStatus, trendStatus] = await Promise.all([
+            api("/api/lighter/bot/status").catch(() => null),
+            api("/api/lighter/trends").catch(() => null),
+          ]);
         } catch (_) {
           status = { success: true, parity_ratio: 140.09, server_time_ms: Date.now(), adr: { spread_bps: 12 }, domestic: { spread_bps: 15 } };
         }
@@ -1153,10 +1192,61 @@
         this.setText("valAutoCurrentEdge", `${this.currentRatio.toFixed(3)}%`);
         this.setText("valCritCurrentSpread", `${this.currentRatio.toFixed(3)}%`);
         this.setText("valCritTpCurrentSpread", `${this.currentRatio.toFixed(3)}%`);
+        if (botStatus?.bot) this.updateBotStatus(botStatus.bot, status);
+        if (trendStatus?.trends) this.renderTrends(trendStatus.trends);
         this.renderVirtualState();
         this.updateGridLadderData();
       } catch (error) {
         this.setText("lblHedgedSyncBadge", `GRID ENGINE: ${error.message}`);
+      }
+    },
+
+    renderTrends(trends) {
+      [["5m", "lighterTrend5m"], ["1h", "lighterTrend1h"]].forEach(([interval, id]) => {
+        const trend = trends?.[interval] || {};
+        const badge = $(id);
+        if (!badge) return;
+        const direction = trend.direction || "UNKNOWN";
+        const icon = direction === "UPTREND" ? "▲" : (direction === "DOWNTREND" ? "▼" : "◆");
+        badge.textContent = `${interval} ${icon} ${direction}`;
+        const up = direction === "UPTREND", down = direction === "DOWNTREND";
+        badge.style.cssText = `border:1px solid ${up ? "#86efac" : down ? "#fca5a5" : "#cbd5e1"};background:${up ? "#dcfce7" : down ? "#fee2e2" : "#f8fafc"};color:${up ? "#166534" : down ? "#991b1b" : "#475569"};border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900;box-shadow:0 1px 3px rgba(15,23,42,.1)`;
+      });
+    },
+
+    updateBotStatus(bot, venue) {
+      this.botState = bot;
+      const toggle = lid("chkAutoPeriodic48h");
+      if (toggle) {
+        toggle.checked = Boolean(bot.enabled);
+        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || !venue?.execution_enabled || Boolean(bot.recovery_required);
+      }
+      const badge = lid("badgeAutoPeriodicStatus");
+      if (badge) {
+        badge.style.display = "inline-block";
+        badge.textContent = bot.enabled ? "● EC2 LIVE BOT ACTIVE" : (bot.recovery_required ? "⚠ RECOVERY REQUIRED" : "○ EC2 BOT PAUSED");
+        badge.style.background = bot.enabled ? "#dcfce7" : (bot.recovery_required ? "#fef3c7" : "#f1f5f9");
+        badge.style.color = bot.enabled ? "#166534" : (bot.recovery_required ? "#92400e" : "#475569");
+      }
+      this.setText("lblDaemonLatency", bot.enabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused");
+      this.setText("lblDaemonStats", bot.last_evaluation ? `Z ${Number(bot.last_evaluation.z).toFixed(2)} · ${bot.tranches.length}/${bot.max_tranches} tranches` : "Awaiting first closed-bar evaluation");
+      if (bot.last_error) this.setText("lblHedgedSyncBadge", `BOT PAUSED: ${bot.last_error}`);
+    },
+
+    async toggleLiveBot(enabled) {
+      const toggle = lid("chkAutoPeriodic48h");
+      try {
+        if (enabled) {
+          const notional = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
+          const confirmed = window.confirm(`Enable REAL 24/7 Lighter trading on EC2?\n\nPair: SKHY / SKHYNIXUSD (no 2x ETF)\nSizing: $${notional.toFixed(0)} per SKHY leg, 1x\n\nThe bot may place orders after the next closed-bar signal.`);
+          if (!confirmed) { if (toggle) toggle.checked = false; return; }
+          await apiPost("/api/lighter/bot/config", { notional_usd: notional });
+        }
+        const data = await apiPost("/api/lighter/bot/toggle", { enabled, confirm_live_trading: enabled });
+        this.updateBotStatus(data.bot, { execution_enabled: true });
+      } catch (error) {
+        if (toggle) toggle.checked = Boolean(this.botState?.enabled);
+        window.alert(error.message);
       }
     },
 
@@ -1182,7 +1272,7 @@
           if (b.time <= lastT) continue;
           lastT = b.time;
           if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) adrPoints.push({ time: b.time, value: Number(b.adr) });
-          const sVal = b.csop != null ? b.csop : (b.domestic ? b.domestic * 10 : null);
+          const sVal = b.domestic != null ? b.domestic : b.csop;
           if (sVal != null && Number.isFinite(sVal) && sVal > 0) stockPoints.push({ time: b.time, value: Number(sVal) });
         }
         this.assetSeries.adr.setData(adrPoints);
@@ -1588,7 +1678,7 @@
       this.setText("valUnrealizedPnl", this.virtualPnlText());
       this.setText("countPositions", String(this.entries.length));
       const body = lid("activePositionsBody");
-      if (body) body.innerHTML = this.entries.length ? this.entries.map((entry, index) => `<tr><td>G-${index + 1}</td><td>SKHY / CSOP 2L</td><td>${entry.side < 0 ? "SHORT / LONG" : "LONG / SHORT"}</td><td>${entry.ratio.toFixed(3)}%</td><td>$${entry.notional.toFixed(0)}</td><td>${this.virtualPnlText()}</td></tr>`).join("") : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;">No active grid positions</td></tr>';
+      if (body) body.innerHTML = this.entries.length ? this.entries.map((entry, index) => `<tr><td>G-${index + 1}</td><td>SKHY / SKHYNIXUSD</td><td>${entry.side < 0 ? "SHORT / LONG" : "LONG / SHORT"}</td><td>${entry.ratio.toFixed(3)}%</td><td>$${entry.notional.toFixed(0)}</td><td>${this.virtualPnlText()}</td></tr>`).join("") : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;">No active grid positions</td></tr>';
     }
   };
 

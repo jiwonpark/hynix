@@ -11,7 +11,7 @@ logger = logging.getLogger("skhynix-daemon")
 
 
 class LighterClient:
-    """Client for Lighter's market-data API and live signer execution.
+    """Client for Lighter market data and guarded signer execution.
 
     Trading enables when credentials (l1_address, api_key_private, account_index)
     are configured in backend/lighter_credentials.json.
@@ -113,8 +113,62 @@ class LighterClient:
         return self._session
 
     async def close(self) -> None:
+        if self._signer is not None:
+            try:
+                await self._signer.close()
+            except Exception as error:
+                logger.warning("Could not close Lighter signer: %s", error)
+            self._signer = None
         if self._session and not self._session.closed:
             await self._session.close()
+
+    async def positions(self) -> List[Dict[str, Any]]:
+        """Return the configured account's open positions without exposing credentials."""
+        creds = self.get_credentials() or {}
+        address = creds.get("l1_address")
+        if not address:
+            return []
+        payload = await self.request("/api/v1/account", {"by": "l1_address", "value": address})
+        accounts = payload.get("accounts") or []
+        return list((accounts[0] if accounts else {}).get("positions") or [])
+
+    async def create_market_order(
+        self, market_id: int, base_amount: float, reference_price: float,
+        is_ask: bool, *, reduce_only: bool = False, max_slippage: float = 0.006,
+    ) -> Dict[str, Any]:
+        """Submit one IOC market order using explicit size/price precision guards."""
+        if base_amount <= 0 or reference_price <= 0:
+            raise ValueError("Lighter order size and reference price must be positive")
+        signer = self.get_signer()
+        if signer is None:
+            raise RuntimeError("Lighter signer is not configured")
+        check_error = signer.check_client()
+        if check_error:
+            raise RuntimeError(f"Lighter signer validation failed: {check_error}")
+        detail = await self.market_detail(market_id)
+        size_decimals = int(detail["supported_size_decimals"])
+        price_decimals = int(detail["supported_price_decimals"])
+        minimum = float(detail.get("min_base_amount") or 0)
+        quantized_size = int(base_amount * (10 ** size_decimals))
+        if quantized_size <= 0 or quantized_size < int(minimum * (10 ** size_decimals)):
+            raise ValueError(f"Lighter market {market_id} order is below its minimum size")
+        protected_price = reference_price * (1 - max_slippage if is_ask else 1 + max_slippage)
+        price_int = int(round(protected_price * (10 ** price_decimals)))
+        client_order_index = int(time.time_ns() % 9_000_000_000_000_000_000)
+        _, response, error = await signer.create_market_order(
+            market_id, client_order_index, quantized_size, price_int, is_ask,
+            reduce_only=reduce_only,
+        )
+        if error:
+            raise RuntimeError(f"Lighter order rejected: {error}")
+        return {
+            "market_id": market_id,
+            "client_order_index": client_order_index,
+            "base_amount": quantized_size / (10 ** size_decimals),
+            "is_ask": is_ask,
+            "reduce_only": reduce_only,
+            "tx_hash": getattr(response, "tx_hash", None),
+        }
 
     async def request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         session = await self.get_session()

@@ -23,6 +23,7 @@ class TestLighterTab(unittest.TestCase):
             'addVirtualEntry', 'exitVirtual',
             'switchMainTab("lighter")', '/api/lighter/status', '/api/lighter/parity',
             '/api/lighter/backtest',
+            '/api/lighter/bot/status', '/api/lighter/bot/toggle', '/api/lighter/trends',
             'lighter_legendActualTrades', 'lighter_legendVirtualTrades', 'movingAverage',
             'bindResearchConditions', 'use_ma_stretch', 'use_bottoming',
             'use_base_spacing', 'chkCondEntryBase',
@@ -37,6 +38,9 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('button,input,select', script)
         self.assertIn('element.disabled = true', script)
         self.assertIn('Live execution is fail-closed', script)
+        self.assertIn('confirm_live_trading', script)
+        self.assertIn('SKHY / SKHYNIXUSD (no 2x ETF)', script)
+        self.assertIn('skhynix_lighter_selected_strategy', script)
 
     def test_lighter_uses_tab_two_structure_without_duplicate_ids(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")

@@ -35,6 +35,7 @@ from .counterfactual_trades import (
 from .config import config
 from .binance_client import BinanceFuturesClient
 from .lighter_client import LighterClient
+from .lighter_bot import LighterPairBot
 from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
 from starlette.responses import JSONResponse
@@ -98,6 +99,7 @@ logger = logging.getLogger("skhynix-daemon")
 binance_client = BinanceFuturesClient()
 upbit_client = UpbitClient()
 lighter_client = LighterClient()
+lighter_pair_bot = LighterPairBot(lighter_client)
 
 # Active WebSocket connections for live push
 active_connections: List[WebSocket] = []
@@ -137,6 +139,13 @@ async def account_broadcaster():
             logger.error(f"Error in account broadcaster: {e}")
         await asyncio.sleep(3)  # Broadcast every 3 seconds
 
+
+async def lighter_pair_worker():
+    """Evaluate the persisted Lighter strategy independently of browser sessions."""
+    while True:
+        await lighter_pair_bot.run_once()
+        await asyncio.sleep(60)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting HYPERION Trading & Multi-Exchange Telemetry Daemon...")
@@ -157,11 +166,13 @@ async def lifespan(app: FastAPI):
     auto_tranche_task = asyncio.create_task(auto_tranche_worker())
     upbit_strategy_task = asyncio.create_task(upbit_strategy_worker())
     upbit_forecast_validation_task = asyncio.create_task(upbit_forecast_validation_worker())
+    lighter_pair_task = asyncio.create_task(lighter_pair_worker())
     yield
     broadcaster_task.cancel()
     auto_tranche_task.cancel()
     upbit_strategy_task.cancel()
     upbit_forecast_validation_task.cancel()
+    lighter_pair_task.cancel()
     await asyncio.gather(binance_client.close(), upbit_client.close(), lighter_client.close(), return_exceptions=True)
     logger.info("HYPERION Trading Daemon shutdown complete.")
 
@@ -177,10 +188,11 @@ app.include_router(terminal_auth_router)
 
 @app.middleware("http")
 async def authorize_strategy_lab(request: Request, call_next):
-    if (request.url.path.startswith("/api/strategy-lab/")
+    protected_prefixes = ("/api/strategy-lab/", "/api/lighter/bot/")
+    if (request.url.path.startswith(protected_prefixes)
             and request.method not in ("GET", "HEAD", "OPTIONS")
             and not terminal_authorized(request)):
-        return JSONResponse({"success": False, "error": "Unlock the terminal to change Strategy Lab execution"}, status_code=401)
+        return JSONResponse({"success": False, "error": "Unlock the terminal to change live execution"}, status_code=401)
     return await call_next(request)
 
 
@@ -265,6 +277,47 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
     except Exception as error:
         logger.warning("Lighter parity unavailable: %s", error)
         return {"success": False, "interval": interval, "bars": [], "markers": [], "error": str(error)}
+
+
+@app.get("/api/lighter/trends")
+async def get_lighter_trends() -> Dict[str, Any]:
+    try:
+        return {"success": True, "trends": await lighter_pair_bot.trends(),
+                "server_time_ms": int(time.time() * 1000)}
+    except Exception as error:
+        logger.warning("Lighter trends unavailable: %s", error)
+        return {"success": False, "trends": {}, "error": str(error)}
+
+
+@app.get("/api/lighter/bot/status")
+async def get_lighter_bot_status() -> Dict[str, Any]:
+    return {"success": True, "bot": lighter_pair_bot.public_state()}
+
+
+@app.post("/api/lighter/bot/config")
+async def configure_lighter_bot(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+        return JSONResponse({"success": True, "bot": await lighter_pair_bot.configure(body or {})})
+    except ValueError as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/lighter/bot/toggle")
+async def toggle_lighter_bot(request: Request) -> JSONResponse:
+    try:
+        body = await request.json()
+        enabled = body.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be true or false")
+        if enabled and body.get("confirm_live_trading") is not True:
+            raise ValueError("Explicit live-trading confirmation is required")
+        state = await lighter_pair_bot.set_enabled(enabled)
+        return JSONResponse({"success": True, "bot": state})
+    except ValueError as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+    except RuntimeError as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=409)
 
 
 @app.get("/api/lighter/backtest")
