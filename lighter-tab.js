@@ -2532,7 +2532,6 @@
         }).join("");
       }
     }
-    }
   };
 
   window.lighterEngine = lighterEngine;
