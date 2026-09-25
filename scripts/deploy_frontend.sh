@@ -17,7 +17,11 @@ cleanup() {
 trap cleanup EXIT
 
 cp "$ROOT_DIR/index.html" "$STAGE_DIR/index.html"
-python3 "$ROOT_DIR/scripts/stamp_deployment_metadata.py" \
+PYTHON_BIN="python3"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 || ! "$PYTHON_BIN" --version >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+fi
+"$PYTHON_BIN" "$ROOT_DIR/scripts/stamp_deployment_metadata.py" \
   "$STAGE_DIR/index.html" "$BUILD_VERSION" "$DEPLOYED_AT"
 
 FILES=("$STAGE_DIR/index.html")

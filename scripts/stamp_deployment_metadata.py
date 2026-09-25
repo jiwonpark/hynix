@@ -7,7 +7,7 @@ import sys
 
 
 def stamp(path: Path, build_version: str, deployed_at: str) -> None:
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     text, version_count = re.subn(
         r'(buildVersion:\s*")[^"]+("\s*,)',
         rf"\g<1>{build_version}\g<2>",
@@ -22,7 +22,7 @@ def stamp(path: Path, build_version: str, deployed_at: str) -> None:
     )
     if version_count != 1 or date_count != 1:
         raise ValueError("deployment metadata markers were not found exactly once")
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
 
 
 if __name__ == "__main__":
