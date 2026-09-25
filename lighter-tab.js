@@ -394,9 +394,9 @@
       this.setText("lblCritScaleInTitle", "➕ Grid Band Scale-In (Upper Harvester)");
       this.setText("lblCritTPTitle", "🎯 Grid Rebalance & Take-Profit (Mean Reversion)");
       this.setText("lblOrderNotional", "Grid Order Notional (USDT)");
-      this.setText("lblStepTrancheSize", "Add Grid Tranche");
-      this.setText("lblStepTrancheSub", "SKHY / SKHYNIXUSD");
-      this.setText("lblReduceTrancheText", "Rebalance All to Benchmark");
+      this.setText("lblStepTrancheSize", "➕ Add Paper Tranche");
+      this.setText("lblStepTrancheSub", "SIMULATED");
+      this.setText("lblReduceTrancheText", "Close All Paper Tranches");
 
       // Custom-labeled Scale-In Checklist for Grid Bands
       const entryLabelMap = {
@@ -490,9 +490,47 @@
 
       const entry = lid("btnStepTranche");
       const exit = lid("btnReduceTranche");
-      [entry, exit].forEach((button) => { if (button) { button.disabled = false; button.classList.remove("terminal-action-control"); button.style.cursor = "pointer"; } });
-      if (entry) entry.addEventListener("click", () => this.addVirtualEntry());
-      if (exit) exit.addEventListener("click", () => this.exitVirtual());
+      const flatten = lid("btnEmergencyFlatten");
+
+      // Inject Direction Dropdown & Paper Indicator if not already present
+      if (entry && !lid("selTrancheDirection") && entry.parentNode) {
+        const dirSelect = document.createElement("select");
+        dirSelect.id = "lighter_selTrancheDirection";
+        dirSelect.style.cssText = "height:38px;padding:0 10px;font-size:12px;font-weight:700;background:#fff;color:#0f172a;border:1.5px solid #0284c7;border-radius:6px;cursor:pointer;";
+        dirSelect.innerHTML = `
+          <option value="auto">⚡ Auto (Ratio Parity)</option>
+          <option value="short">▼ Short Parity (Short ADR / Long KR)</option>
+          <option value="long">▲ Long Parity (Long ADR / Short KR)</option>
+        `;
+        entry.parentNode.insertBefore(dirSelect, entry);
+
+        const paperBadge = document.createElement("span");
+        paperBadge.id = "lighter_paperBadge";
+        paperBadge.style.cssText = "display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:800;background:#fef3c7;color:#92400e;border:1px solid #fde68a;";
+        paperBadge.textContent = "PAPER SIMULATION ONLY";
+        entry.parentNode.appendChild(paperBadge);
+      }
+
+      [entry, exit, flatten].forEach((button) => {
+        if (button) {
+          button.disabled = false;
+          button.classList.remove("terminal-action-control");
+          button.style.cursor = "pointer";
+        }
+      });
+      if (flatten && !flatten._boundVirtual) {
+        flatten._boundVirtual = true;
+        flatten.textContent = "🚨 Reset Paper State";
+        flatten.addEventListener("click", () => this.exitVirtual());
+      }
+      if (entry && !entry._boundVirtual) {
+        entry._boundVirtual = true;
+        entry.addEventListener("click", () => this.addVirtualEntry());
+      }
+      if (exit && !exit._boundVirtual) {
+        exit._boundVirtual = true;
+        exit.addEventListener("click", () => this.exitVirtual());
+      }
       ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((value) => {
         const button = lid(`btnShortInterval${value}`);
         if (!button) return;
@@ -1718,41 +1756,108 @@
     virtualPnlText() { const pnl = this.virtualPnl(); return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`; },
 
     addVirtualEntry() {
-      if (!Number.isFinite(this.currentRatio)) return;
-      const entry = { time: Date.now(), ratio: this.currentRatio, notional: this.orderNotional(), side: this.currentRatio >= 100 ? -1 : 1 };
+      if (!Number.isFinite(this.currentRatio)) {
+        if (typeof window.showToast === "function") {
+          window.showToast("Parity ratio not available yet — awaiting market feed", "warning");
+        }
+        return;
+      }
+      const dirSelect = lid("selTrancheDirection");
+      let side = this.currentRatio >= 100 ? -1 : 1;
+      let dirLabel = side < 0 ? "SHORT RATIO" : "LONG RATIO";
+      let dirToast = side < 0 ? "⚡ Auto: Short Parity (ADR Premium)" : "⚡ Auto: Long Parity (ADR Discount)";
+
+      if (dirSelect) {
+        if (dirSelect.value === "short") {
+          side = -1;
+          dirLabel = "SHORT RATIO";
+          dirToast = "▼ Short Parity (Short ADR / Long KR)";
+        } else if (dirSelect.value === "long") {
+          side = 1;
+          dirLabel = "LONG RATIO";
+          dirToast = "▲ Long Parity (Long ADR / Short KR)";
+        }
+      }
+
+      const notional = this.orderNotional();
+      const entry = { time: Date.now(), ratio: this.currentRatio, notional, side };
       this.entries.push(entry);
-      this.ledger.unshift({ ...entry, action: entry.side < 0 ? "SHORT RATIO" : "LONG RATIO", pnl: null });
-      this.save(); this.renderVirtualState(); this.renderMarkers(); this.renderCurrentPositionReferenceLines(); this.updateGridLadderData();
+      this.ledger.unshift({ ...entry, action: dirLabel, pnl: null });
+      this.save();
+      this.renderVirtualState();
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
+      this.updateGridLadderData();
+
+      if (typeof window.showToast === "function") {
+        window.showToast(
+          `📄 Paper Tranche #${this.entries.length} Added: ${dirToast} @ ${this.currentRatio.toFixed(3)}% ($${notional} virtual)`,
+          "info"
+        );
+      }
     },
 
     exitVirtual() {
-      if (!this.entries.length || !Number.isFinite(this.currentRatio)) return;
-      this.entries.forEach((entry) => this.ledger.unshift({ time: Date.now(), ratio: this.currentRatio,
-        notional: entry.notional, action: "EXIT", pnl: entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio }));
-      this.entries = []; this.save(); this.renderVirtualState(); this.renderMarkers(); this.renderCurrentPositionReferenceLines(); this.updateGridLadderData();
+      if (!this.entries.length || !Number.isFinite(this.currentRatio)) {
+        if (typeof window.showToast === "function") {
+          window.showToast("No active paper tranches to exit", "warning");
+        }
+        return;
+      }
+      const count = this.entries.length;
+      let totalPnl = 0;
+      this.entries.forEach((entry) => {
+        const pnl = entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio;
+        totalPnl += pnl;
+        this.ledger.unshift({
+          time: Date.now(),
+          ratio: this.currentRatio,
+          notional: entry.notional,
+          action: "EXIT",
+          pnl,
+        });
+      });
+      this.entries = [];
+      this.save();
+      this.renderVirtualState();
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
+      this.updateGridLadderData();
+
+      if (typeof window.showToast === "function") {
+        const pnlText = `${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}`;
+        window.showToast(
+          `📄 Closed ${count} Paper Tranche${count > 1 ? "s" : ""}: Net PnL ${pnlText}`,
+          totalPnl >= 0 ? "success" : "warning"
+        );
+      }
     },
 
     renderMarkers() {
       if (!this.series || typeof this.series.setMarkers !== "function") return;
       if (!this.bars.length) return;
-      const paperMarkers = this.ledger.slice(0, 40).map((row) => ({
-        time: TerminalCommon.alignTime(this.bars, row.time / 1000),
-        position: row.action === "EXIT" ? "belowBar" : "aboveBar",
-        color: row.action === "EXIT" ? "#10b981" : "#7c3aed",
-        shape: row.action === "EXIT" ? "arrowUp" : "arrowDown",
-        text: "",
-        hoverText: row.action === "EXIT"
-          ? `COVER ${row.ratio ? row.ratio.toFixed(2) + "%" : ""}${row.pnl != null ? " · " + (row.pnl >= 0 ? "+" : "") + "$" + row.pnl.toFixed(2) : ""}`
-          : `${row.action === "LONG RATIO" ? "BUY" : "SHORT"} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""} ($${(row.notional || 0).toFixed(0)})`,
-        source: "virtual",
-        hypothetical: true,
-        is_paper: true,
-        is_entry: row.action !== "EXIT",
-        ratio: row.ratio,
-        entry_price: row.ratio,
-        exit_price: row.action === "EXIT" ? row.ratio : null,
-        pnl: row.pnl,
-      }));
+      const paperMarkers = this.ledger.slice(0, 40).map((row) => {
+        const isExit = row.action === "EXIT";
+        const isShort = row.side < 0 || row.action === "SHORT RATIO";
+        return {
+          time: TerminalCommon.alignTime(this.bars, row.time / 1000),
+          position: isExit ? (isShort ? "belowBar" : "aboveBar") : (isShort ? "aboveBar" : "belowBar"),
+          color: isExit ? "#10b981" : (isShort ? "#7c3aed" : "#2563eb"),
+          shape: isExit ? (isShort ? "arrowUp" : "arrowDown") : (isShort ? "arrowDown" : "arrowUp"),
+          text: "",
+          hoverText: isExit
+            ? `COVER ${row.ratio ? row.ratio.toFixed(2) + "%" : ""}${row.pnl != null ? " · " + (row.pnl >= 0 ? "+" : "") + "$" + row.pnl.toFixed(2) : ""}`
+            : `${isShort ? "SHORT" : "BUY"} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""} ($${(row.notional || 0).toFixed(0)})`,
+          source: "virtual",
+          hypothetical: true,
+          is_paper: true,
+          is_entry: !isExit,
+          ratio: row.ratio,
+          entry_price: row.ratio,
+          exit_price: isExit ? row.ratio : null,
+          pnl: row.pnl,
+        };
+      });
       const rawMarkers = [
         ...(this.actualMarkers || []),
         ...paperMarkers,
