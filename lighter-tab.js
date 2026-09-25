@@ -986,9 +986,6 @@
       const benchmark = Number.isFinite(this.currentRatio) ? this.currentRatio : 140.09;
       const step = tier.spacingPct;
       const count = tier.rungCount;
-      const notionalInput = lid("inputOrderNotional");
-      if (notionalInput) notionalInput.value = String(tier.notional);
-
       const spacingEl = $("lighter_valGridSpacing");
       if (spacingEl) spacingEl.textContent = `±${step.toFixed(3)}% (${tier.name.split(":")[1]?.trim() || "Dynamic"})`;
 
@@ -1510,7 +1507,7 @@
       }
     },
 
-    orderNotional() { return Math.max(10, Number(lid("inputOrderNotional")?.value || 1000)); },
+    orderNotional() { return Math.max(10, Number(lid("inputOrderNotional")?.value || 25)); },
     virtualPnl() { return this.entries.reduce((sum, entry) => sum + (this.currentRatio == null ? 0 : entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio), 0); },
     virtualPnlText() { const pnl = this.virtualPnl(); return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`; },
 
