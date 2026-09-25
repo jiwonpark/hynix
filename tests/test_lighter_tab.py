@@ -41,6 +41,9 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('confirm_live_trading', script)
         self.assertIn('SKHY / SKHYNIXUSD (no 2x ETF)', script)
         self.assertIn('skhynix_lighter_selected_strategy', script)
+        self.assertIn('REAL EC2 BOT — FIXED PRODUCTION RULES', script)
+        self.assertIn('Rerun Paper', script)
+        self.assertIn('live rules unchanged', script)
 
     def test_lighter_uses_tab_two_structure_without_duplicate_ids(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")

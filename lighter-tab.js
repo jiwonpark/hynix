@@ -363,9 +363,11 @@
       this.setText("lblDaemonUpbitBadge", "RISK TIER: TIER 2 (1x NEUTRAL)");
       this.setText("valDeployedStrategyName", "🏛️ Institutional Grid Engine (Multi-Tier Parity Bands)");
       this.setText("valDeployedEngine", "Asymmetric Delta-Neutral Parity Grid Harvester");
-      this.setText("valDeployedInterval", "15m Dynamic Bands");
+      this.setText("valDeployedInterval", "5m completed candles");
+      this.setText("valDeployedWindow", "24 completed bars");
+      this.setText("valDeployedEdge", "Entry |Z| ≥ 1.50");
       this.setText("valDeployedMaxLeverage", "100% (1.0x)");
-      this.setText("valDeployedSpeed", "Closed 5m bars");
+      this.setText("valDeployedSpeed", "5-minute order cooldown");
       this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.25");
       this.setText("valDeployedCost", "0 BPS advertised fee / slippage excluded");
       this.setText("lblAccountEquity", "Virtual Grid Capital");
@@ -384,8 +386,8 @@
       this.setText("titleExecutionTerminal", "🏛️ 1-Click Institutional Grid Execution & Virtual Orders");
       this.setText("badgeExecMode", "INSTITUTIONAL GRID REBALANCING · DUAL-LEG ARB");
       this.setText("lblHedgedSyncBadge", "GRID ENGINE ACTIVE");
-      this.setText("lblShortTermTitle", "Institutional Parity Grid & Automated Rebalancing Criteria");
-      this.setText("lblShortTermSubtitle", "Multi-tier parity bands with asymmetric profit ratchets and delta-neutral inventory guards.");
+      this.setText("lblShortTermTitle", "Paper Replay Conditions — Do Not Control the Real Bot");
+      this.setText("lblShortTermSubtitle", "Chart interval, strategy tabs, condition switches, and Rerun affect the historical paper simulation only.");
       this.setText("lblCritScaleInTitle", "➕ Grid Band Scale-In (Upper Harvester)");
       this.setText("lblCritTPTitle", "🎯 Grid Rebalance & Take-Profit (Mean Reversion)");
       this.setText("lblOrderNotional", "Grid Order Notional (USDT)");
@@ -447,13 +449,13 @@
             host: "lighter_shortTermSpreadChartHost", legend: "lighter_shortTermChartLegend", sync: "lighter_lblShortTermChartSync",
             assetPaneShell: "lighter_shortTermAssetPaneShell", assetHost: "lighter_shortTermAssetHost", assetDetails: "lighter_shortTermAssetDetails"
           },
-          title: "PRICE-SIGNAL REPLAY · UNCONSTRAINED CAPITAL",
-          action: { label: "Rerun", onClick: () => this.runBacktest() },
+          title: "PAPER REPLAY · INTERVAL-DEPENDENT · NOT LIVE EXECUTION",
+          action: { label: "Rerun Paper", onClick: () => this.runBacktest() },
           actual: { label: "Actual", onToggle: () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
           virtual: { label: "Virtual", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
-          status: "Ready · Actual fills require a configured Lighter account",
-          description: "Starts flat at the beginning of loaded history · completed candles · capital, margin and leverage do not suppress simulated trades · advertised fees included. LIVE ONLY checks protect real orders; BACKTEST ONLY switches affect the simulation.",
-          secondaryStatus: "Lighter replay uses public SKHY / SKHYNIXUSD candles.",
+          status: "PAPER ONLY · Select a strategy and interval, then rerun",
+          description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
+          secondaryStatus: "Historical replay only · Live bot remains fixed to Dynamic Grid on completed 5m candles.",
           height: 420,
           legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
           syncText: "Updated 0s ago",
@@ -505,6 +507,32 @@
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner p");
       if (guard) guard.innerHTML = 'The server trades the unleveraged pair <strong>SKHY / SKHYNIXUSD</strong> at 1x sizing. It persists state on EC2, continues without the browser, and pauses on any unresolved leg.';
 
+      const controllerCard = lid("hedgedControllerCard");
+      if (controllerCard && !$("lighterLiveRulesPanel")) {
+        const panel = document.createElement("section");
+        panel.id = "lighterLiveRulesPanel";
+        panel.style.cssText = "margin:12px 0;padding:13px 14px;border:2px solid #059669;border-radius:9px;background:#ecfdf5;color:#064e3b";
+        panel.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px">
+            <strong style="font-size:13px;letter-spacing:.35px">REAL EC2 BOT — FIXED PRODUCTION RULES</strong>
+            <span id="lighterLiveRulesState" style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#475569">LOADING</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px;font-size:11px;line-height:1.4">
+            <div><b>Engine</b><br>Dynamic Grid only</div>
+            <div><b>Data</b><br>Completed 5m candles · 24-bar mean/std</div>
+            <div><b>Entry</b><br>|Z| ≥ <span id="lighterLiveEntryZ">1.50</span></div>
+            <div><b>Direction</b><br>Z high: short SKHY / long KR<br>Z low: long SKHY / short KR</div>
+            <div><b>Exit</b><br>|Z| ≤ <span id="lighterLiveExitZ">0.25</span> · no separate PnL gate</div>
+            <div><b>Size / capacity</b><br>$<span id="lighterLiveNotional">25</span> · max <span id="lighterLiveMaxTranches">3</span> tranches · 1x</div>
+            <div><b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps · 5m cooldown</div>
+            <div><b>Current evaluation</b><br><span id="lighterLiveEvaluation">Awaiting completed bar</span></div>
+          </div>
+          <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800">The chart interval, selected paper strategy, condition switches, and “Rerun Paper” do not change any rule above.</div>`;
+        const telemetry = controllerCard.querySelector(".hedgedTelemetryCard");
+        if (telemetry) controllerCard.insertBefore(panel, telemetry);
+        else controllerCard.prepend(panel);
+      }
+
       const tab = $("tabContentLighter");
       if (tab) {
         const walker = document.createTreeWalker(tab, NodeFilter.SHOW_TEXT);
@@ -514,6 +542,10 @@
             .replace(/CSOP 2L/g, "SKHYNIXUSD")
             .replace(/\bCSOP\b/g, "SKHYNIXUSD");
         }
+        Array.from(tab.querySelectorAll("span")).forEach((element) => {
+          if (element.textContent.trim() === "LIVE BINANCE EXECUTION") element.textContent = "PAPER / BACKTEST ONLY";
+          if (element.textContent.trim() === "ARMED & LIVE") element.textContent = "PAPER LADDER";
+        });
         tab.querySelectorAll("[title]").forEach((element) => {
           element.title = element.title.replace(/CSOP/g, "SKHYNIXUSD").replace(/8\.00x/g, "1.00x");
         });
@@ -1251,6 +1283,26 @@
       }
       this.setText("lblDaemonLatency", bot.enabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused");
       this.setText("lblDaemonStats", bot.last_evaluation ? `Z ${Number(bot.last_evaluation.z).toFixed(2)} · ${bot.tranches.length}/${bot.max_tranches} tranches` : "Awaiting first closed-bar evaluation");
+      const rulesPanel = $("lighterLiveRulesPanel");
+      if (rulesPanel) {
+        rulesPanel.style.borderColor = bot.enabled ? "#059669" : "#94a3b8";
+        rulesPanel.style.background = bot.enabled ? "#ecfdf5" : "#f8fafc";
+      }
+      const rulesState = $("lighterLiveRulesState");
+      if (rulesState) {
+        rulesState.textContent = bot.enabled ? "● REAL BOT ACTIVE" : "○ REAL BOT PAUSED";
+        rulesState.style.background = bot.enabled ? "#dcfce7" : "#e2e8f0";
+        rulesState.style.color = bot.enabled ? "#166534" : "#475569";
+      }
+      const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
+      writeRule("lighterLiveEntryZ", Number(bot.entry_z).toFixed(2));
+      writeRule("lighterLiveExitZ", Number(bot.exit_z).toFixed(2));
+      writeRule("lighterLiveNotional", Number(bot.notional_usd).toFixed(0));
+      writeRule("lighterLiveMaxTranches", String(bot.max_tranches));
+      writeRule("lighterLiveMaxSpread", Number(bot.max_book_spread_bps).toFixed(0));
+      writeRule("lighterLiveEvaluation", bot.last_evaluation
+        ? `Z ${Number(bot.last_evaluation.z).toFixed(3)} · ratio ${Number(bot.last_evaluation.ratio).toFixed(3)}% · mean ${Number(bot.last_evaluation.mean).toFixed(3)}%`
+        : "Awaiting completed bar");
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput && document.activeElement !== notionalInput) {
         notionalInput.value = String(bot.notional_usd || 25);
@@ -1666,7 +1718,7 @@
         ]);
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
-        if (summary) summary.innerHTML = `[<strong>${pName}</strong>] <strong>${data.summary.trades}</strong> trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · net <strong>${data.summary.net_pct >= 0 ? "+" : ""}${data.summary.net_pct.toFixed(3)}%</strong>`;
+        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · net <strong>${data.summary.net_pct >= 0 ? "+" : ""}${data.summary.net_pct.toFixed(3)}%</strong> · <em>live rules unchanged</em>`;
 
         if (data.metrics && this.currentParadigm === "ou_quant") {
           const thetaEl = $("lighter_valOuTheta");
