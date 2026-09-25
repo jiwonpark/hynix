@@ -21,6 +21,7 @@ class LighterClient:
     ADR_MARKET_ID = 216
     DOMESTIC_MARKET_ID = 161
     CREDENTIALS_FILE = Path(__file__).with_name("lighter_credentials.json")
+    MAX_CLIENT_ORDER_INDEX = (1 << 48) - 1
 
     def __init__(self, base_url: Optional[str] = None):
         self.base_url = base_url or self.BASE_URL
@@ -154,7 +155,7 @@ class LighterClient:
             raise ValueError(f"Lighter market {market_id} order is below its minimum size")
         protected_price = reference_price * (1 - max_slippage if is_ask else 1 + max_slippage)
         price_int = int(round(protected_price * (10 ** price_decimals)))
-        client_order_index = int(time.time_ns() % 9_000_000_000_000_000_000)
+        client_order_index = int(time.time_ns() % self.MAX_CLIENT_ORDER_INDEX) or 1
         _, response, error = await signer.create_market_order(
             market_id, client_order_index, quantized_size, price_int, is_ask,
             reduce_only=reduce_only,

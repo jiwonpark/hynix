@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 from backend.lighter_bot import LighterPairBot, classify_trend
+from backend.lighter_client import LighterClient
 
 
 class TestLighterTrend(unittest.TestCase):
@@ -50,6 +51,26 @@ class TestLighterPairBot(unittest.TestCase):
                 self.assertTrue(result["enabled"])
                 saved = json.loads((Path(directory) / "state.json").read_text())
                 self.assertTrue(saved["enabled"])
+
+        asyncio.run(run())
+
+    def test_client_order_index_respects_lighter_48_bit_limit(self):
+        async def run():
+            client = LighterClient()
+            signer = Mock()
+            signer.check_client.return_value = None
+            signer.create_market_order = AsyncMock(return_value=(Mock(), Mock(tx_hash="ok"), None))
+            client.get_signer = Mock(return_value=signer)
+            client.market_detail = AsyncMock(return_value={
+                "supported_size_decimals": 4,
+                "supported_price_decimals": 2,
+                "min_base_amount": "0.0300",
+            })
+            result = await client.create_market_order(216, 0.04, 180.0, True)
+            order_index = signer.create_market_order.await_args.args[1]
+            self.assertGreater(order_index, 0)
+            self.assertLessEqual(order_index, LighterClient.MAX_CLIENT_ORDER_INDEX)
+            self.assertEqual(result["client_order_index"], order_index)
 
         asyncio.run(run())
 
