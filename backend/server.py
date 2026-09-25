@@ -48,10 +48,8 @@ upbit_scanner_lock = asyncio.Lock()
 upbit_scanner_cache: Dict[str, Any] = {"timestamp": 0.0, "payload": None}
 
 # Live safeguards are independent of selectable price-replay conditions.
+# Capital & solvency constraints remain mandatory for live execution safety.
 MANDATORY_LIVE_CONDITIONS = frozenset({
-    "entry_ma_stretch", "entry_base_spread", "entry_peak_rollover",
-    "entry_ma_stack_5m", "entry_ma_stack_1h", "entry_adaptive_guard",
-    "entry_closed_bar", "entry_rate_limit", "entry_campaign_cap",
     "entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state",
     "exit_speculative_tranche", "exit_net_profit", "exit_position_qty",
 })
@@ -1238,6 +1236,8 @@ async def _compute_hedged_status() -> Dict[str, Any]:
                 return True
             if k in {"exit_ma_stack_5m", "exit_ma_stack_1h"}:
                 return bool(cond_toggles.get(k, cond_toggles.get("exit_ma_stack", default)))
+            if k in {"entry_closed_bar", "entry_rate_limit", "entry_campaign_cap"}:
+                return bool(cond_toggles.get(k, cond_toggles.get("entry_adaptive_guard", default)))
             return bool(cond_toggles.get(k, default))
 
         base_entry = entry_spread if entry_spread else 139.30
@@ -1341,11 +1341,13 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         eff_peaking_out = is_peaking_out if is_cond_enabled("entry_peak_rollover") else True
         eff_entry_ma_5m = is_entry_ma_aligned_5m if is_cond_enabled("entry_ma_stack_5m") else True
         eff_entry_ma_1h = is_entry_ma_aligned_1h if is_cond_enabled("entry_ma_stack_1h") else True
+        eff_closed_bar = is_new_closed_entry_bar if is_cond_enabled("entry_closed_bar") else True
+        eff_rate_limit = has_entry_rate_capacity if is_cond_enabled("entry_rate_limit") else True
+        eff_campaign_cap = has_entry_campaign_capacity if is_cond_enabled("entry_campaign_cap") else True
         scale_in_setup = bool(
             eff_stretched and eff_above_entry and eff_peaking_out
             and eff_entry_ma_5m and eff_entry_ma_1h
-            and is_new_closed_entry_bar and has_entry_rate_capacity
-            and has_entry_campaign_capacity)
+            and eff_closed_bar and eff_rate_limit and eff_campaign_cap)
         scale_in_armed = bool(can_scale_in and scale_in_setup)
         scale_in_blocked_reason = (
             "POSITION_CAPACITY" if not has_scale_in_capacity
@@ -1491,9 +1493,9 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         status_scale_in = (
             "PEAK_REVERSAL_ARMED" if scale_in_armed
             else ("MAX_CAPACITY" if not can_scale_in
-            else ("ENTRY_CAMPAIGN_CAP" if not has_entry_campaign_capacity
-            else ("ENTRY_RATE_LIMIT" if not has_entry_rate_capacity
-            else ("WAITING_NEW_5M_CLOSE" if not is_new_closed_entry_bar
+            else ("ENTRY_CAMPAIGN_CAP" if (is_cond_enabled("entry_campaign_cap") and not has_entry_campaign_capacity)
+            else ("ENTRY_RATE_LIMIT" if (is_cond_enabled("entry_rate_limit") and not has_entry_rate_capacity)
+            else ("WAITING_NEW_5M_CLOSE" if (is_cond_enabled("entry_closed_bar") and not is_new_closed_entry_bar)
             else ("AWAITING_MA_STRETCH" if (is_cond_enabled("entry_ma_stretch") and not is_stretched_above_ma)
             else ("AWAITING_UPWARD_MA_STACK" if not (eff_entry_ma_5m and eff_entry_ma_1h)
             else ("WAITING_PEAK_EXHAUSTION" if (is_cond_enabled("entry_peak_rollover") and not is_peaking_out)
@@ -1529,7 +1531,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             "condition_toggles": cond_toggles,
             "mandatory_live_conditions": sorted(MANDATORY_LIVE_CONDITIONS),
             "live_condition_toggles": {k: is_cond_enabled(k) for k in
-                set(cond_toggles) | MANDATORY_LIVE_CONDITIONS | {"exit_ma_stack_5m", "exit_ma_stack_1h"}},
+                set(cond_toggles) | MANDATORY_LIVE_CONDITIONS | {"exit_ma_stack_5m", "exit_ma_stack_1h", "entry_adaptive_guard"}},
             "effective_exit_ma_aligned": eff_ma_aligned,
             "macro_policy": macro,
             "exit_policy": exit_policy,

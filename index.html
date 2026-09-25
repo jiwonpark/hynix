@@ -3349,10 +3349,10 @@
                     <span class="condBadge pass" id="badgeCondEntryEngine">READY</span>
                   </div>
                   <div class="condRow" id="rowCondEntryGuard">
-                    <label class="toggleSwitch" title="Always enforced for live orders">
-                      <input type="checkbox" id="chkCondEntryGuard" checked disabled>
+                    <label class="toggleSwitch" title="Closed-bar cadence and campaign limits (Click to toggle with warning)">
+                      <input type="checkbox" id="chkCondEntryGuard" checked onchange="tradingEngine.toggleConditionWithWarning('entry_adaptive_guard', this)">
                       <span class="toggleSlider"></span>
-                    </label><span style="font-size: 8px; color: #7c3aed; font-weight: 800;" title="New mandatory live protection">NEW</span>
+                    </label><span style="font-size: 8px; color: #7c3aed; font-weight: 800;" title="Guarded entry cadence">GUARD</span>
                     <span class="condLabel" title="One completed 5m candle per entry, maximum four entries/hour and twelve entries/campaign">10. Closed-Bar Cadence · 4/hour · 12/campaign</span>
                     <span class="condValue" id="valCondEntryGuard">--</span>
                     <span class="condBadge wait" id="badgeCondEntryGuard">WAIT</span>
@@ -4561,6 +4561,25 @@
       <div class="modalFooter">
         <button id="btnCancelKill" type="button" style="height: 32px; padding: 0 12px; font-size: 12px; background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; border-radius: 6px;">Cancel</button>
         <button id="btnConfirmKill" type="button" style="height: 32px; padding: 0 14px; font-size: 12px; background: #dc2626; color: #fff; font-weight: 800; border-radius: 6px; border: 0;">🚨 Close All Positions</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Condition Warning Confirmation Modal -->
+  <div id="conditionWarningModal" class="modalBackdrop">
+    <div class="modalDialog" style="max-width: 440px; border-color: #fde68a;">
+      <div class="modalHeader" style="background: #fffbeb;">
+        <h3 style="color: #b45309; font-size: 14px; margin: 0;" id="lblCondWarnTitle">⚠️ Disable Entry Safeguard?</h3>
+        <button id="btnCloseCondWarnModal" class="modalClose" type="button">✕</button>
+      </div>
+      <div class="modalBody" style="padding: 16px;">
+        <p style="font-size: 12.5px; color: #78350f; line-height: 1.5; margin: 0; white-space: pre-line;" id="lblCondWarnDesc">
+          Are you sure you want to disable this safeguard?
+        </p>
+      </div>
+      <div class="modalFooter" style="padding: 10px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 8px;">
+        <button id="btnCancelCondWarn" type="button" style="height: 32px; padding: 0 14px; font-size: 12px; background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
+        <button id="btnConfirmCondWarn" type="button" style="height: 32px; padding: 0 16px; font-size: 12px; background: #d97706; color: #fff; font-weight: 800; border-radius: 6px; border: 0; cursor: pointer;">Confirm & Disable</button>
       </div>
     </div>
   </div>
@@ -11064,6 +11083,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           entry_gross_leverage: "rowCondEntryLeverage",
           entry_margin_buffer: "rowCondEntryMargin",
           entry_worker_state: "rowCondEntryEngine",
+          entry_adaptive_guard: "rowCondEntryGuard",
           exit_speculative_tranche: "rowCondExitActive",
           exit_convergence: "rowCondExitConvergence",
           exit_net_profit: "rowCondExitNetPnl",
@@ -11104,6 +11124,74 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
       },
 
+      showConditionWarningModal(title, message) {
+        return new Promise((resolve) => {
+          const modal = $("conditionWarningModal");
+          if (!modal) {
+            resolve(window.confirm(message));
+            return;
+          }
+          if ($("lblCondWarnTitle")) $("lblCondWarnTitle").textContent = title;
+          if ($("lblCondWarnDesc")) $("lblCondWarnDesc").textContent = message;
+
+          const btnCancel = $("btnCancelCondWarn");
+          const btnConfirm = $("btnConfirmCondWarn");
+          const btnClose = $("btnCloseCondWarnModal");
+
+          const cleanup = (confirmed) => {
+            modal.classList.remove("open");
+            if (btnCancel) btnCancel.onclick = null;
+            if (btnConfirm) btnConfirm.onclick = null;
+            if (btnClose) btnClose.onclick = null;
+            modal.onclick = null;
+            resolve(confirmed);
+          };
+
+          if (btnCancel) btnCancel.onclick = () => cleanup(false);
+          if (btnConfirm) btnConfirm.onclick = () => cleanup(true);
+          if (btnClose) btnClose.onclick = () => cleanup(false);
+          modal.onclick = (e) => { if (e.target === modal) cleanup(false); };
+
+          modal.classList.add("open");
+        });
+      },
+
+      async toggleConditionWithWarning(key, checkboxEl) {
+        if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
+          const isKo = window.currentLang === "ko";
+          showToast(isKo ? "🔒 읽기 전용 모드에서는 전략 조건을 변경할 수 없습니다." : "🔒 Cannot modify strategy conditions in read-only mode.", "warn");
+          checkboxEl.checked = !checkboxEl.checked;
+          if (this.state.hedgedStatus?.auto_tranche_criteria) {
+            this.renderAutoTrancheCriteria(this.state.hedgedStatus.auto_tranche_criteria, this.state.hedgedStatus);
+          }
+          return;
+        }
+
+        // When turning OFF a high-risk condition, show confirmation modal
+        if (!checkboxEl.checked) {
+          const isKo = window.currentLang === "ko";
+          let title = "";
+          let msg = "";
+
+          if (key === "entry_adaptive_guard") {
+            title = isKo ? "⚠️ 진입 속도 제한 (Condition 10) 해제" : "⚠️ Disable Guarded Entry Cadence?";
+            msg = isKo
+              ? "Condition 10(5분봉 종가 대기, 시간당 4회 제한, 캠페인 12회 한도)을 해제하면 잔여 증거금 한도 내에서 빠른 추가 진입이 실행될 수 있습니다.\n\n역추세 확산 시 마진 소진 위험이 증가합니다. 정말 해제하시겠습니까?"
+              : "Disabling Condition 10 removes the 5m closed-bar cadence, 4/hour limit, and 12-entry campaign cap.\n\nThe daemon will be permitted to add tranches beyond the 12-order ceiling using available margin.\n\nDo you want to proceed?";
+          }
+
+          if (msg) {
+            const confirmed = await this.showConditionWarningModal(title, msg);
+            if (!confirmed) {
+              checkboxEl.checked = true;
+              return;
+            }
+          }
+        }
+
+        await this.toggleCondition(key, checkboxEl.checked);
+      },
+
       isConditionEnabled(key, backendToggles) {
         if (["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state", "exit_speculative_tranche", "exit_position_qty"].includes(key)) return true;
         if (this.state.conditionToggles && typeof this.state.conditionToggles[key] === "boolean") {
@@ -11116,6 +11204,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           return this.state.conditionToggles["exit_ma_stack"];
         }
         if ((key === "exit_ma_stack_5m" || key === "exit_ma_stack_1h") && typeof backendToggles?.exit_ma_stack === "boolean") return backendToggles.exit_ma_stack;
+        if ((key === "entry_closed_bar" || key === "entry_rate_limit" || key === "entry_campaign_cap") && this.state.conditionToggles && typeof this.state.conditionToggles["entry_adaptive_guard"] === "boolean") {
+          return this.state.conditionToggles["entry_adaptive_guard"];
+        }
+        if ((key === "entry_closed_bar" || key === "entry_rate_limit" || key === "entry_campaign_cap") && typeof backendToggles?.entry_adaptive_guard === "boolean") {
+          return backendToggles.entry_adaptive_guard;
+        }
         return true;
       },
 
@@ -12798,10 +12892,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const syncCondRow = (key, rowId, chkId, badgeId, isMet, passText, notMetText, badgeTypeIfNotMet = "wait") => {
           const on = this.isConditionEnabled(key, criteria.condition_toggles);
-          const mandatory = (criteria.mandatory_live_conditions || ["entry_ma_stretch", "entry_base_spread", "entry_peak_rollover", "entry_ma_stack_5m", "entry_ma_stack_1h", "entry_adaptive_guard", "entry_closed_bar", "entry_rate_limit", "entry_campaign_cap", "entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state", "exit_speculative_tranche", "exit_net_profit", "exit_position_qty"]).includes(key);
+          const mandatory = (criteria.mandatory_live_conditions || ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state", "exit_speculative_tranche", "exit_net_profit", "exit_position_qty"]).includes(key);
           const liveOn = mandatory || on;
           const chk = $(chkId);
-          const checkedState = mandatory && key.startsWith("entry_") ? true : on;
+          const checkedState = mandatory && ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state"].includes(key) ? true : on;
           if (chk && chk.checked !== checkedState) chk.checked = checkedState;
           if (chk) {
             if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {

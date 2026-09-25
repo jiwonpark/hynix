@@ -84,5 +84,21 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
   sync('exit_ma_stack_1h', 'row', 'check', 'badge', false, 'PASS', 'WAIT');
   assert.equal(elements.row.disabled, true);
   assert.equal(badges.badge.text, 'OFF');
+
+  // Condition 10 (entry_adaptive_guard) must be toggleable and disable sub-guards
+  engine.state.conditionToggles.entry_adaptive_guard = false;
+  assert.equal(engine.isConditionEnabled('entry_adaptive_guard'), false);
+  assert.equal(engine.isConditionEnabled('entry_campaign_cap'), false);
+  assert.equal(engine.isConditionEnabled('entry_rate_limit'), false);
+  assert.equal(engine.isConditionEnabled('entry_closed_bar'), false);
+  sync('entry_adaptive_guard', 'row', 'check', 'badge', false, 'PASS', 'WAIT');
+  assert.equal(elements.row.disabled, true);
+  assert.equal(badges.badge.text, 'OFF');
+
+  // Check HTML markup for Condition 10 toggle
+  assert.match(html, /id="chkCondEntryGuard"[^>]*onchange="tradingEngine\.toggleConditionWithWarning\('entry_adaptive_guard', this\)"/);
+  assert.doesNotMatch(html, /id="chkCondEntryGuard"[^>]*disabled/);
+  assert.match(html, /id="conditionWarningModal"/);
+
   console.log('Live condition and positions UI checks passed');
 })().catch(error => {console.error(error); process.exitCode = 1;});
