@@ -275,7 +275,88 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
             domestic_close = domestic[timestamp]
             bars.append({"time": timestamp // 1000, "value": round(adr_close / (domestic_close / 10) * 100, 4),
                          "adr": adr_close, "domestic": domestic_close})
-        return {"success": True, "interval": interval, "bars": bars[-limit:], "markers": []}
+        bars = bars[-limit:]
+
+        # Build trade markers for executed live tranches and history
+        markers = []
+        all_tranches = list(lighter_pair_bot.state.get("tranches", [])) + list(lighter_pair_bot.state.get("history", []))
+        if bars and all_tranches:
+            bar_times = [b["time"] for b in bars]
+            candle_markers: Dict[Any, Dict[str, Any]] = {}
+            for t in all_tranches:
+                t_time = int(t.get("time", 0))
+                if not t_time:
+                    continue
+                matched_time = min(bar_times, key=lambda bt: abs(bt - t_time))
+                is_exit = bool(t.get("is_exit", False))
+                side = int(t.get("side", -1))
+                is_short = (side < 0)
+                qty = float(t.get("adr_qty", 0.0))
+                ratio = float(t.get("entry_ratio", 0.0) or t.get("ratio", 0.0) or 0.0)
+                notional = float(t.get("notional_usd", 25.0))
+                if ratio <= 0:
+                    matched_bar = next((b for b in bars if b["time"] == matched_time), None)
+                    ratio = matched_bar["value"] if matched_bar else 141.0
+
+                key = (matched_time, not is_exit, is_short)
+                if key not in candle_markers:
+                    candle_markers[key] = {
+                        "time": matched_time,
+                        "is_entry": not is_exit,
+                        "is_short": is_short,
+                        "side": side,
+                        "count": 1,
+                        "total_qty": qty,
+                        "total_notional": notional,
+                        "weighted_ratio": ratio * notional,
+                        "pnl": t.get("pnl"),
+                    }
+                else:
+                    m = candle_markers[key]
+                    m["count"] += 1
+                    m["total_qty"] += qty
+                    m["total_notional"] += notional
+                    m["weighted_ratio"] += ratio * notional
+
+            for (m_time, is_entry, is_short), m_data in sorted(candle_markers.items(), key=lambda x: x[0][0]):
+                avg_ratio = m_data["weighted_ratio"] / max(1e-6, m_data["total_notional"])
+                cnt_str = f" ({m_data['count']}x)" if m_data["count"] > 1 else ""
+                if is_entry:
+                    position = "aboveBar" if is_short else "belowBar"
+                    color = "rgba(220, 38, 38, 0.70)" if is_short else "rgba(22, 163, 74, 0.70)"
+                    active_color = "#dc2626" if is_short else "#16a34a"
+                    shape = "arrowDown" if is_short else "arrowUp"
+                    hover_lbl = f"{'SHORT' if is_short else 'LONG'} {avg_ratio:.2f}% (${m_data['total_notional']:.0f}){cnt_str}"
+                else:
+                    position = "belowBar" if is_short else "aboveBar"
+                    color = "rgba(22, 163, 74, 0.70)"
+                    active_color = "#16a34a"
+                    shape = "arrowUp" if is_short else "arrowDown"
+                    pnl = m_data.get("pnl")
+                    pnl_str = f" · {'+' if pnl >= 0 else ''}${pnl:.2f}" if pnl is not None else ""
+                    hover_lbl = f"COVER {avg_ratio:.2f}%{pnl_str}{cnt_str}"
+
+                markers.append({
+                    "time": m_time,
+                    "position": position,
+                    "color": color,
+                    "activeColor": active_color,
+                    "shape": shape,
+                    "text": "",
+                    "hoverText": hover_lbl,
+                    "source": "actual",
+                    "hypothetical": False,
+                    "is_entry": is_entry,
+                    "side": m_data["side"],
+                    "ratio": round(avg_ratio, 4),
+                    "entry_price": round(avg_ratio, 4),
+                    "qty": round(m_data["total_qty"], 4),
+                    "notional": round(m_data["total_notional"], 2),
+                    "pnl": m_data.get("pnl"),
+                })
+        markers.sort(key=lambda m: m["time"])
+
+        return {"success": True, "interval": interval, "bars": bars, "markers": markers}
     except Exception as error:
         logger.warning("Lighter parity unavailable: %s", error)
         return {"success": False, "interval": interval, "bars": [], "markers": [], "error": str(error)}

@@ -392,6 +392,22 @@ class LighterPairBot:
             domestic_quote = _book_summary(domestic_book)
             await self._trade_pair(-int(tranche["side"]), float(tranche["adr_qty"]), float(tranche["domestic_qty"]),
                                    adr_quote, domestic_quote, reduce_only=True)
+            exit_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100
+            entry_ratio = float(tranche.get("entry_ratio", exit_ratio))
+            side = int(tranche.get("side", -1))
+            pnl_pct = (exit_ratio - entry_ratio) / entry_ratio if side > 0 else (entry_ratio - exit_ratio) / entry_ratio
+            pnl_usd = pnl_pct * float(tranche.get("notional_usd", 25.0))
+            self.state.setdefault("history", []).append({
+                "side": -int(tranche["side"]),
+                "adr_qty": tranche["adr_qty"],
+                "domestic_qty": tranche["domestic_qty"],
+                "entry_ratio": round(exit_ratio, 4),
+                "ratio": round(exit_ratio, 4),
+                "time": int(time.time()),
+                "is_exit": True,
+                "pnl": round(pnl_usd, 2),
+                "notional_usd": tranche.get("notional_usd", 25.0)
+            })
             self.state["pending_execution"] = None
             self.state["last_action"] = "MANUAL_REDUCE"
             self.state["last_action_time"] = int(time.time())
