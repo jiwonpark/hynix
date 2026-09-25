@@ -364,6 +364,9 @@
       this.setText("valDeployedStrategyName", "🏛️ Institutional Grid Engine (Multi-Tier Parity Bands)");
       this.setText("valDeployedEngine", "Asymmetric Delta-Neutral Parity Grid Harvester");
       this.setText("valDeployedInterval", "15m Dynamic Bands");
+      this.setText("valDeployedMaxLeverage", "100% (1.0x)");
+      this.setText("valDeployedSpeed", "Closed 5m bars");
+      this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.25");
       this.setText("valDeployedCost", "0 BPS advertised fee / slippage excluded");
       this.setText("lblAccountEquity", "Virtual Grid Capital");
       this.setText("badgeEquitySource", "SIMULATED");
@@ -487,6 +490,13 @@
         warning.textContent = "Live execution is fail-closed and uses SKHY + SKHYNIXUSD only (no 2x ETF). Unlock the terminal and enable the EC2 bot explicitly; all failures pause it.";
         ticket.prepend(warning);
       }
+      if (ticket) {
+        const rows = ticket.querySelectorAll(":scope > .ticketRow");
+        rows.forEach((row, index) => { if (index > 0) row.style.display = "none"; });
+        ticket.querySelector(".presetButtonGroup")?.setAttribute("style", "display:none");
+        ticket.querySelector(".dualActionButtons")?.setAttribute("style", "display:none");
+        this.setText("valCalculatedMargin", "1x pair sizing");
+      }
 
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput) { notionalInput.disabled = false; notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5"; notionalInput.value = "25"; }
@@ -494,6 +504,20 @@
       if (autoToggle) autoToggle.addEventListener("change", () => this.toggleLiveBot(autoToggle.checked));
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner p");
       if (guard) guard.innerHTML = 'The server trades the unleveraged pair <strong>SKHY / SKHYNIXUSD</strong> at 1x sizing. It persists state on EC2, continues without the browser, and pauses on any unresolved leg.';
+
+      const tab = $("tabContentLighter");
+      if (tab) {
+        const walker = document.createTreeWalker(tab, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          walker.currentNode.nodeValue = walker.currentNode.nodeValue
+            .replace(/CSOP 2L ETF \/ Domestic/g, "SKHYNIXUSD Korean underlying")
+            .replace(/CSOP 2L/g, "SKHYNIXUSD")
+            .replace(/\bCSOP\b/g, "SKHYNIXUSD");
+        }
+        tab.querySelectorAll("[title]").forEach((element) => {
+          element.title = element.title.replace(/CSOP/g, "SKHYNIXUSD").replace(/8\.00x/g, "1.00x");
+        });
+      }
 
       this.bindResearchConditions();
       this.renderParadigmNav();
@@ -1230,6 +1254,17 @@
       }
       this.setText("lblDaemonLatency", bot.enabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused");
       this.setText("lblDaemonStats", bot.last_evaluation ? `Z ${Number(bot.last_evaluation.z).toFixed(2)} · ${bot.tranches.length}/${bot.max_tranches} tranches` : "Awaiting first closed-bar evaluation");
+      const notionalInput = lid("inputOrderNotional");
+      if (notionalInput && document.activeElement !== notionalInput) {
+        notionalInput.value = String(bot.notional_usd || 25);
+        notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5";
+      }
+      this.setText("valAvailMargin", `$${Number(venue?.collateral || 0).toFixed(2)} free`);
+      this.setText("valCondEntryLeverage", "1.00x fixed");
+      this.setText("valCritGrossLev", "1.00x fixed");
+      this.setText("valCritGrossCap", `$${Number(venue?.collateral || 0).toFixed(2)} (1.0x)`);
+      this.setText("valCritGrossHeadroom", `$${Number(venue?.collateral || 0).toFixed(2)} free`);
+      this.setText("valCritRetainedCore", `${bot.tranches.length} tracked pair tranche${bot.tranches.length === 1 ? "" : "s"}`);
       if (bot.last_error) this.setText("lblHedgedSyncBadge", `BOT PAUSED: ${bot.last_error}`);
     },
 
