@@ -2,7 +2,7 @@ import pathlib
 import unittest
 
 
-HTML = (pathlib.Path(__file__).resolve().parents[1] / "index.html").read_text()
+HTML = (pathlib.Path(__file__).resolve().parents[1] / "index.html").read_text(encoding="utf-8")
 
 
 class MobileLayoutTests(unittest.TestCase):

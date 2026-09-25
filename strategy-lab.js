@@ -1116,14 +1116,15 @@
         bindButton.style.borderColor = mismatch ? "#f59e0b" : "#86efac";
         bindButton.style.color = mismatch ? "#9a3412" : "#166534";
       }
-      const lblStrategy = el("lblLiveBotStrategy");
+      const isEnabled = Boolean(s?.enabled);
+      const isLiveMode = s?.mode === "live";
       if (lblStrategy) {
-        const stratName = s.strategy_name || s.active_strategy;
-        if (s.enabled && s.mode === "live") {
+        const stratName = s?.strategy_name || s?.active_strategy;
+        if (isEnabled && isLiveMode) {
           lblStrategy.innerHTML = `<span style="color:#b91c1c; font-weight:800; display:inline-flex; align-items:center; gap:5px;"><span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#ef4444;"></span> REAL UPBIT: ${stratName}</span>`;
           lblStrategy.style.background = "#fee2e2";
           lblStrategy.style.borderColor = "#f87171";
-        } else if (s.enabled && s.mode === "paper") {
+        } else if (isEnabled && s?.mode === "paper") {
           lblStrategy.innerHTML = `<span style="color:#1d4ed8; font-weight:800; display:inline-flex; align-items:center; gap:5px;"><span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#3b82f6;"></span> PAPER: ${stratName}</span>`;
           lblStrategy.style.background = "#eff6ff";
           lblStrategy.style.borderColor = "#93c5fd";
@@ -1137,12 +1138,12 @@
       const btnPaper = el("btnModePaper");
       const btnLive = el("btnModeLive");
       if (btnPaper && btnLive) {
-        if (s.mode === "live") {
+        if (isLiveMode) {
           btnLive.classList.add("active");
           btnLive.style.background = "#dc2626";
           btnLive.style.color = "#ffffff";
           btnLive.style.fontWeight = "800";
-          btnLive.textContent = s.enabled ? "🔴 Real Live (ACTIVE)" : "🔴 Real Upbit Live";
+          btnLive.textContent = isEnabled ? "🔴 Real Live (ACTIVE)" : "🔴 Real Upbit Live";
 
           btnPaper.classList.remove("active");
           btnPaper.style.background = "#ffffff";
@@ -1154,7 +1155,7 @@
           btnPaper.style.background = "#0284c7";
           btnPaper.style.color = "#ffffff";
           btnPaper.style.fontWeight = "800";
-          btnPaper.textContent = s.enabled ? "🧪 Paper (ACTIVE)" : "🧪 Paper Trading";
+          btnPaper.textContent = isEnabled ? "🧪 Paper (ACTIVE)" : "🧪 Paper Trading";
 
           btnLive.classList.remove("active");
           btnLive.style.background = "#ffffff";
@@ -1166,13 +1167,13 @@
 
       const btnPower = el("btnToggleBotPower");
       if (btnPower) {
-        if (s.enabled) {
-          btnPower.textContent = s.mode === "live" ? "⏸️ Pause Real Bot" : "⏸️ Pause Paper Bot";
-          btnPower.style.background = s.mode === "live" ? "#b91c1c" : "#d97706";
-          btnPower.style.borderColor = s.mode === "live" ? "#991b1b" : "#b45309";
+        if (isEnabled) {
+          btnPower.textContent = isLiveMode ? "⏸️ Pause Real Bot" : "⏸️ Pause Paper Bot";
+          btnPower.style.background = isLiveMode ? "#b91c1c" : "#d97706";
+          btnPower.style.borderColor = isLiveMode ? "#991b1b" : "#b45309";
           btnPower.style.color = "#ffffff";
         } else {
-          btnPower.textContent = s.mode === "live" ? "▶️ Start Real Trading" : "▶️ Start Paper Trading";
+          btnPower.textContent = isLiveMode ? "▶️ Start Real Trading" : "▶️ Start Paper Trading";
           btnPower.style.background = s.mode === "live" ? "#dc2626" : "#16a34a";
           btnPower.style.borderColor = s.mode === "live" ? "#b91c1c" : "#15803d";
           btnPower.style.color = "#ffffff";

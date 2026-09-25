@@ -687,11 +687,14 @@ class UpbitStrategyExecutionEngine:
                 f.flush()
                 os.fsync(f.fileno())
             tmp_file.replace(self.state_file)
-            directory_fd = os.open(str(self.state_file.parent), os.O_RDONLY)
             try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+                directory_fd = os.open(str(self.state_file.parent), os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError:
+                pass
         except Exception as e:
             logger.error(f"Error saving strategy_lab_state: {e}")
             raise

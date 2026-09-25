@@ -70,8 +70,8 @@
       if (elements.action && typeof action.onClick === "function") elements.action.addEventListener("click", action.onClick);
       if (typeof actual.onToggle === "function") elements.actual.addEventListener("click", actual.onToggle);
       if (typeof virtual.onToggle === "function") elements.virtual.addEventListener("click", virtual.onToggle);
-      if (actual.enabled === false) elements.actual.disabled = true;
-      if (virtual.enabled === false) elements.virtual.disabled = true;
+      if (actual && actual.enabled === false) elements.actual.disabled = true;
+      if (virtual && virtual.enabled === false) elements.virtual.disabled = true;
 
       const frame = {
         container,

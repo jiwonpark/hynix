@@ -5,7 +5,7 @@ import unittest
 class TrancheStackUITests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.html = (pathlib.Path(__file__).parent.parent / 'index.html').read_text()
+        cls.html = (pathlib.Path(__file__).parent.parent / 'index.html').read_text(encoding="utf-8")
 
     def test_stack_panel_and_top_exit_are_visible(self):
         self.assertIn('id="lifoTrancheStack"', self.html)

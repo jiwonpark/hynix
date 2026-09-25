@@ -1413,44 +1413,48 @@
     },
 
     updateBotStatus(bot, venue) {
+      if (!bot) return;
       this.botState = bot;
+      const isEnabled = Boolean(bot?.enabled);
+      const isRecovery = Boolean(bot?.recovery_required);
+      const tranches = Array.isArray(bot?.tranches) ? bot.tranches : [];
       const toggle = lid("chkAutoPeriodic48h");
       if (toggle) {
-        toggle.checked = Boolean(bot.enabled);
-        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || !venue?.execution_enabled || Boolean(bot.recovery_required);
+        toggle.checked = isEnabled;
+        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || !venue?.execution_enabled || isRecovery;
       }
       const badge = lid("badgeAutoPeriodicStatus");
       if (badge) {
         badge.style.display = "inline-block";
-        badge.textContent = bot.enabled ? "● EC2 LIVE BOT ACTIVE" : (bot.recovery_required ? "⚠ RECOVERY REQUIRED" : "○ EC2 BOT PAUSED");
-        badge.style.background = bot.enabled ? "#dcfce7" : (bot.recovery_required ? "#fef3c7" : "#f1f5f9");
-        badge.style.color = bot.enabled ? "#166534" : (bot.recovery_required ? "#92400e" : "#475569");
+        badge.textContent = isEnabled ? "● EC2 LIVE BOT ACTIVE" : (isRecovery ? "⚠ RECOVERY REQUIRED" : "○ EC2 BOT PAUSED");
+        badge.style.background = isEnabled ? "#dcfce7" : (isRecovery ? "#fef3c7" : "#f1f5f9");
+        badge.style.color = isEnabled ? "#166534" : (isRecovery ? "#92400e" : "#475569");
       }
-      this.setText("lblDaemonLatency", bot.enabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused");
-      this.setText("lblDaemonStats", bot.last_evaluation ? `Z ${Number(bot.last_evaluation.z).toFixed(2)} · ${bot.tranches.length}/${bot.max_tranches} tranches` : "Awaiting first closed-bar evaluation");
+      this.setText("lblDaemonLatency", isEnabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused");
+      this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${bot?.max_tranches || 3} tranches` : "Awaiting first closed-bar evaluation");
       const rulesPanel = $("lighterLiveRulesPanel");
       if (rulesPanel) {
-        rulesPanel.style.borderColor = bot.enabled ? "#059669" : "#94a3b8";
-        rulesPanel.style.background = bot.enabled ? "#ecfdf5" : "#f8fafc";
+        rulesPanel.style.borderColor = isEnabled ? "#059669" : "#94a3b8";
+        rulesPanel.style.background = isEnabled ? "#ecfdf5" : "#f8fafc";
       }
       const rulesState = $("lighterLiveRulesState");
       if (rulesState) {
-        rulesState.textContent = bot.enabled ? "● REAL BOT ACTIVE" : "○ REAL BOT PAUSED";
-        rulesState.style.background = bot.enabled ? "#dcfce7" : "#e2e8f0";
-        rulesState.style.color = bot.enabled ? "#166534" : "#475569";
+        rulesState.textContent = isEnabled ? "● REAL BOT ACTIVE" : "○ REAL BOT PAUSED";
+        rulesState.style.background = isEnabled ? "#dcfce7" : "#e2e8f0";
+        rulesState.style.color = isEnabled ? "#166534" : "#475569";
       }
       const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
-      writeRule("lighterLiveEntryZ", Number(bot.entry_z).toFixed(2));
-      writeRule("lighterLiveExitZ", Number(bot.exit_z).toFixed(2));
-      writeRule("lighterLiveNotional", Number(bot.notional_usd).toFixed(0));
-      writeRule("lighterLiveMaxTranches", String(bot.max_tranches));
-      writeRule("lighterLiveMaxSpread", Number(bot.max_book_spread_bps).toFixed(0));
-      writeRule("lighterLiveEvaluation", bot.last_evaluation
-        ? `Z ${Number(bot.last_evaluation.z).toFixed(3)} · ratio ${Number(bot.last_evaluation.ratio).toFixed(3)}% · mean ${Number(bot.last_evaluation.mean).toFixed(3)}%`
+      writeRule("lighterLiveEntryZ", Number(bot?.entry_z ?? 1.5).toFixed(2));
+      writeRule("lighterLiveExitZ", Number(bot?.exit_z ?? 0.25).toFixed(2));
+      writeRule("lighterLiveNotional", Number(bot?.notional_usd ?? 25).toFixed(0));
+      writeRule("lighterLiveMaxTranches", String(bot?.max_tranches ?? 3));
+      writeRule("lighterLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
+      writeRule("lighterLiveEvaluation", bot?.last_evaluation
+        ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · ratio ${Number(bot.last_evaluation.ratio || 0).toFixed(3)}% · mean ${Number(bot.last_evaluation.mean || 0).toFixed(3)}%`
         : "Awaiting completed bar");
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput && document.activeElement !== notionalInput) {
-        notionalInput.value = String(bot.notional_usd || 25);
+        notionalInput.value = String(bot?.notional_usd || 25);
         notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5";
       }
       this.setText("valAvailMargin", `$${Number(venue?.collateral || 0).toFixed(2)} free`);
@@ -1458,8 +1462,8 @@
       this.setText("valCritGrossLev", "1.00x fixed");
       this.setText("valCritGrossCap", `$${Number(venue?.collateral || 0).toFixed(2)} (1.0x)`);
       this.setText("valCritGrossHeadroom", `$${Number(venue?.collateral || 0).toFixed(2)} free`);
-      this.setText("valCritRetainedCore", `${bot.tranches.length} tracked pair tranche${bot.tranches.length === 1 ? "" : "s"}`);
-      if (bot.last_error) this.setText("lblHedgedSyncBadge", `BOT PAUSED: ${bot.last_error}`);
+      this.setText("valCritRetainedCore", `${tranches.length} tracked pair tranche${tranches.length === 1 ? "" : "s"}`);
+      if (bot?.last_error) this.setText("lblHedgedSyncBadge", `BOT PAUSED: ${bot.last_error}`);
       this.updateRulesMatchStatus();
     },
 
@@ -1473,7 +1477,9 @@
           await apiPost("/api/lighter/bot/config", { notional_usd: notional });
         }
         const data = await apiPost("/api/lighter/bot/toggle", { enabled, confirm_live_trading: enabled });
-        this.updateBotStatus(data.bot, { execution_enabled: true });
+        if (data?.bot) {
+          this.updateBotStatus(data.bot, { execution_enabled: true });
+        }
       } catch (error) {
         if (toggle) toggle.checked = Boolean(this.botState?.enabled);
         window.alert(error.message);
