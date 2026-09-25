@@ -185,15 +185,16 @@ class LighterPairBot:
                     dom_pos = next((p for p in open_positions if int(p.get("market_id", 0)) == 161), None)
                     adr_size = float(adr_pos.get("position", 0.0) or adr_pos.get("size", 0.0)) if adr_pos else 0.0
                     dom_size = float(dom_pos.get("position", 0.0) or dom_pos.get("size", 0.0)) if dom_pos else 0.0
-                    side = -1 if adr_size < 0 else (1 if adr_size > 0 else 0)
-                    self.state["tranches"] = [{
-                        "side": side,
-                        "adr_qty": abs(adr_size),
-                        "domestic_qty": abs(dom_size),
-                        "entry_ratio": 140.0,
-                        "time": int(time.time()),
-                        "reconciled": True
-                    }]
+                    if abs(adr_size) > 1e-6 or abs(dom_size) > 1e-6:
+                        side = -1 if adr_size < 0 else (1 if adr_size > 0 else 0)
+                        self.state["tranches"] = [{
+                            "side": side,
+                            "adr_qty": abs(adr_size),
+                            "domestic_qty": abs(dom_size),
+                            "entry_ratio": 140.0,
+                            "time": int(time.time()),
+                            "reconciled": True
+                        }]
             self.state["enabled"] = bool(enabled)
             self.state["last_action"] = "ENABLED" if enabled else "PAUSED"
             self.state["last_action_time"] = int(time.time())
@@ -262,16 +263,17 @@ class LighterPairBot:
             dom_pos = next((p for p in open_pos if int(p.get("market_id", 0)) == 161), None)
             adr_size = float(adr_pos.get("position", 0.0) or adr_pos.get("size", 0.0)) if adr_pos else 0.0
             dom_size = float(dom_pos.get("position", 0.0) or dom_pos.get("size", 0.0)) if dom_pos else 0.0
-            side = -1 if adr_size < 0 else (1 if adr_size > 0 else 0)
-            self.state["tranches"] = [{
-                "side": side,
-                "adr_qty": abs(adr_size),
-                "domestic_qty": abs(dom_size),
-                "entry_ratio": 140.0,
-                "time": int(time.time()),
-                "reconciled": True
-            }]
-            self.save()
+            if abs(adr_size) > 1e-6 or abs(dom_size) > 1e-6:
+                side = -1 if adr_size < 0 else (1 if adr_size > 0 else 0)
+                self.state["tranches"] = [{
+                    "side": side,
+                    "adr_qty": abs(adr_size),
+                    "domestic_qty": abs(dom_size),
+                    "entry_ratio": 140.0,
+                    "time": int(time.time()),
+                    "reconciled": True
+                }]
+                self.save()
         adr_candles, domestic_candles, adr_book, domestic_book = await asyncio.gather(
             self.client.candles(216, "5m", 80), self.client.candles(161, "5m", 80),
             self.client.order_book(216, 20), self.client.order_book(161, 20),

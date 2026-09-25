@@ -2244,14 +2244,18 @@
     renderVirtualState() {
       if (this.mode === "live") {
         const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 187.55;
+        const validTranches = (this.botState?.tranches || []).filter(t => (t.adr_qty > 0 || t.domestic_qty > 0));
+        const liveUnrealized = (this.livePositions || []).reduce((acc, pos) => acc + Number(pos.unrealized_pnl || 0), 0);
+        const pnlText = `${liveUnrealized >= 0 ? "+" : ""}$${liveUnrealized.toFixed(2)}`;
         this.setText("valAccountEquity", `$${col.toFixed(2)}`);
         this.setText("badgeEquitySource", "LIGHTER L2");
         this.setText("valAvailMargin", `$${col.toFixed(2)} free`);
         this.setText("valActivePairs", `${(this.livePositions || []).length} Open on Exchange`);
-        this.setText("valHedgedTranches", `${(this.botState?.tranches || []).length} Live Tranches`);
-        this.setText("valHedgedNotional", `$${((this.botState?.tranches || []).length * (this.botState?.notional_usd || 25)).toFixed(2)} USDT`);
+        this.setText("valHedgedTranches", `${validTranches.length} Live Tranche${validTranches.length === 1 ? "" : "s"}`);
+        this.setText("valHedgedNotional", `$${(validTranches.length * (this.botState?.notional_usd || 25)).toFixed(2)} USDT`);
         this.setText("valHedgedQuantities", "SKHY / SKHYNIXUSD 1x Pair");
-        this.setText("valHedgedCombinedPnl", this.botState?.last_error ? `Error: ${this.botState.last_error}` : "0.00% Net");
+        this.setText("valHedgedCombinedPnl", this.botState?.last_error ? `Error: ${this.botState.last_error}` : pnlText);
+        this.setText("valUnrealizedPnl", pnlText);
         this.setText("countPositions", String((this.livePositions || []).length));
 
         const body = lid("activePositionsBody");
