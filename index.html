@@ -11062,7 +11062,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       async toggleCondition(key, enabled) {
         if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
           const isKo = window.currentLang === "ko";
-          showToast(isKo ? "🔒 읽기 전용 모드에서는 전략 조건을 변경할 수 없습니다." : "🔒 Cannot modify strategy conditions in read-only mode.", "warn");
+          showToast(isKo ? "🔒 거래 터미널이 읽기 전용 모드입니다. 상단 스위치로 잠금을 해제하세요." : "🔒 Execution terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
+          if (typeof terminalLockManager.openPasswordModal === "function") {
+            terminalLockManager.openPasswordModal();
+          }
           this.renderAutoTrancheCriteria(this.state.hedgedStatus?.auto_tranche_criteria, this.state.hedgedStatus);
           return;
         }
@@ -11159,7 +11162,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       async toggleConditionWithWarning(key, checkboxEl) {
         if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
           const isKo = window.currentLang === "ko";
-          showToast(isKo ? "🔒 읽기 전용 모드에서는 전략 조건을 변경할 수 없습니다." : "🔒 Cannot modify strategy conditions in read-only mode.", "warn");
+          showToast(isKo ? "🔒 거래 터미널이 읽기 전용 모드입니다. 상단 스위치로 잠금을 해제하세요." : "🔒 Execution terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
+          if (typeof terminalLockManager.openPasswordModal === "function") {
+            terminalLockManager.openPasswordModal();
+          }
           checkboxEl.checked = !checkboxEl.checked;
           if (this.state.hedgedStatus?.auto_tranche_criteria) {
             this.renderAutoTrancheCriteria(this.state.hedgedStatus.auto_tranche_criteria, this.state.hedgedStatus);
@@ -11167,8 +11173,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           return;
         }
 
+        const targetState = Boolean(checkboxEl.checked);
+        this.pendingWarningKey = key;
+        this.pendingWarningState = targetState;
+
         // When turning OFF a high-risk condition, show confirmation modal
-        if (!checkboxEl.checked) {
+        if (!targetState) {
           const isKo = window.currentLang === "ko";
           let title = "";
           let msg = "";
@@ -11183,32 +11193,45 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (msg) {
             const confirmed = await this.showConditionWarningModal(title, msg);
             if (!confirmed) {
+              this.pendingWarningKey = null;
+              this.pendingWarningState = null;
               checkboxEl.checked = true;
+              if (this.state.hedgedStatus?.auto_tranche_criteria) {
+                this.renderAutoTrancheCriteria(this.state.hedgedStatus.auto_tranche_criteria, this.state.hedgedStatus);
+              }
               return;
             }
           }
         }
 
-        await this.toggleCondition(key, checkboxEl.checked);
+        this.pendingWarningKey = null;
+        this.pendingWarningState = null;
+        await this.toggleCondition(key, targetState);
       },
 
       isConditionEnabled(key, backendToggles) {
         if (["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state", "exit_speculative_tranche", "exit_position_qty"].includes(key)) return true;
-        if (this.state.conditionToggles && typeof this.state.conditionToggles[key] === "boolean") {
+        if (this.pendingWarningKey === key && typeof this.pendingWarningState === "boolean") {
+          return this.pendingWarningState;
+        }
+        if (this.pendingConditionWrites && this.state.conditionToggles && typeof this.state.conditionToggles[key] === "boolean") {
           return this.state.conditionToggles[key];
         }
         if (backendToggles && typeof backendToggles[key] === "boolean") {
           return backendToggles[key];
         }
+        if (this.state.conditionToggles && typeof this.state.conditionToggles[key] === "boolean") {
+          return this.state.conditionToggles[key];
+        }
+        if ((key === "exit_ma_stack_5m" || key === "exit_ma_stack_1h") && typeof backendToggles?.exit_ma_stack === "boolean") return backendToggles.exit_ma_stack;
         if ((key === "exit_ma_stack_5m" || key === "exit_ma_stack_1h") && this.state.conditionToggles && typeof this.state.conditionToggles["exit_ma_stack"] === "boolean") {
           return this.state.conditionToggles["exit_ma_stack"];
         }
-        if ((key === "exit_ma_stack_5m" || key === "exit_ma_stack_1h") && typeof backendToggles?.exit_ma_stack === "boolean") return backendToggles.exit_ma_stack;
-        if ((key === "entry_closed_bar" || key === "entry_rate_limit" || key === "entry_campaign_cap") && this.state.conditionToggles && typeof this.state.conditionToggles["entry_adaptive_guard"] === "boolean") {
-          return this.state.conditionToggles["entry_adaptive_guard"];
-        }
         if ((key === "entry_closed_bar" || key === "entry_rate_limit" || key === "entry_campaign_cap") && typeof backendToggles?.entry_adaptive_guard === "boolean") {
           return backendToggles.entry_adaptive_guard;
+        }
+        if ((key === "entry_closed_bar" || key === "entry_rate_limit" || key === "entry_campaign_cap") && this.state.conditionToggles && typeof this.state.conditionToggles["entry_adaptive_guard"] === "boolean") {
+          return this.state.conditionToggles["entry_adaptive_guard"];
         }
         return true;
       },
@@ -12896,13 +12919,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const liveOn = mandatory || on;
           const chk = $(chkId);
           const checkedState = mandatory && ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state"].includes(key) ? true : on;
-          if (chk && chk.checked !== checkedState) chk.checked = checkedState;
           if (chk) {
-            if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
-              chk.disabled = true;
-            } else {
-              chk.disabled = mandatory;
+            if (this.pendingWarningKey !== key && chk.checked !== checkedState) {
+              chk.checked = checkedState;
             }
+            chk.disabled = mandatory;
           }
           const row = $(rowId);
           if (row) row.classList.toggle("disabled-cond", !liveOn);
