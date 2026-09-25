@@ -2263,10 +2263,16 @@
           if (this.livePositions && this.livePositions.length) {
             body.innerHTML = this.livePositions.map((pos, idx) => {
               const sym = Number(pos.market_id) === 216 ? "SKHY (ADR)" : "SKHYNIXUSD";
-              const size = Number(pos.position || pos.size || 0);
+              const rawSize = Number(pos.position || pos.size || 0);
+              const sign = pos.sign != null ? Number(pos.sign) : (rawSize < 0 ? -1 : 1);
+              const isLong = sign === 1;
+              const signedSize = sign === -1 ? -Math.abs(rawSize) : Math.abs(rawSize);
               const pnl = Number(pos.unrealized_pnl || 0);
-              const price = Number(pos.entry_price || pos.price || 0);
-              return `<tr><td>L-${idx + 1}</td><td>${sym}</td><td>${size >= 0 ? "LONG" : "SHORT"}</td><td>${price.toFixed(3)}</td><td>${size}</td><td style="color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}</td></tr>`;
+              const price = Number(pos.avg_entry_price || pos.entry_price || pos.price || 0);
+              const sideBadge = isLong
+                ? '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG</span>'
+                : '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">SHORT</span>';
+              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td>${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}</td></tr>`;
             }).join("");
           } else {
             body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;">No open positions on Lighter exchange (Flat)</td></tr>';

@@ -182,9 +182,10 @@ class LighterPairBot:
                 open_positions = await self.client.positions()
                 if open_positions and not self.state.get("tranches"):
                     adr_pos = next((p for p in open_positions if int(p.get("market_id", 0)) == 216), None)
-                    dom_pos = next((p for p in open_positions if int(p.get("market_id", 0)) == 161), None)
-                    adr_size = float(adr_pos.get("position", 0.0) or adr_pos.get("size", 0.0)) if adr_pos else 0.0
-                    dom_size = float(dom_pos.get("position", 0.0) or dom_pos.get("size", 0.0)) if dom_pos else 0.0
+                    adr_sign = int(adr_pos.get("sign", 1)) if adr_pos else 1
+                    dom_sign = int(dom_pos.get("sign", 1)) if dom_pos else 1
+                    adr_size = float(adr_pos.get("position", 0.0) or adr_pos.get("size", 0.0)) * adr_sign if adr_pos else 0.0
+                    dom_size = float(dom_pos.get("position", 0.0) or dom_pos.get("size", 0.0)) * dom_sign if dom_pos else 0.0
                     if abs(adr_size) > 1e-6 or abs(dom_size) > 1e-6:
                         side = -1 if adr_size < 0 else (1 if adr_size > 0 else 0)
                         self.state["tranches"] = [{
@@ -260,9 +261,10 @@ class LighterPairBot:
         open_pos = await self.client.positions()
         if not self.state.get("tranches") and open_pos:
             adr_pos = next((p for p in open_pos if int(p.get("market_id", 0)) == 216), None)
-            dom_pos = next((p for p in open_pos if int(p.get("market_id", 0)) == 161), None)
-            adr_size = float(adr_pos.get("position", 0.0) or adr_pos.get("size", 0.0)) if adr_pos else 0.0
-            dom_size = float(dom_pos.get("position", 0.0) or dom_pos.get("size", 0.0)) if dom_pos else 0.0
+            adr_sign = int(adr_pos.get("sign", 1)) if adr_pos else 1
+            dom_sign = int(dom_pos.get("sign", 1)) if dom_pos else 1
+            adr_size = float(adr_pos.get("position", 0.0) or adr_pos.get("size", 0.0)) * adr_sign if adr_pos else 0.0
+            dom_size = float(dom_pos.get("position", 0.0) or dom_pos.get("size", 0.0)) * dom_sign if dom_pos else 0.0
             if abs(adr_size) > 1e-6 or abs(dom_size) > 1e-6:
                 side = -1 if adr_size < 0 else (1 if adr_size > 0 else 0)
                 self.state["tranches"] = [{
@@ -408,11 +410,12 @@ class LighterPairBot:
             domestic_quote = _book_summary(domestic_book)
             for pos in positions:
                 market_id = int(pos.get("market_id", 0))
-                size = float(pos.get("position", 0.0) or pos.get("size", 0.0))
-                if size == 0:
+                raw_size = float(pos.get("position", 0.0) or pos.get("size", 0.0))
+                if raw_size == 0:
                     continue
-                is_ask = size > 0
-                abs_size = abs(size)
+                sign = int(pos.get("sign", 1 if raw_size > 0 else -1))
+                abs_size = abs(raw_size)
+                is_ask = (sign == 1)
                 ref = adr_quote["mid"] if market_id == 216 else domestic_quote["mid"]
                 if ref > 0:
                     res = await self.client.create_market_order(market_id, abs_size, ref, is_ask, reduce_only=True)
