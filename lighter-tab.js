@@ -605,7 +605,14 @@
       }
 
       const notionalInput = lid("inputOrderNotional");
-      if (notionalInput) { notionalInput.disabled = false; notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5"; notionalInput.value = "25"; }
+      if (notionalInput) {
+        notionalInput.disabled = false;
+        notionalInput.min = "10";
+        notionalInput.max = "500";
+        notionalInput.step = "5";
+        notionalInput.value = "25";
+        notionalInput.addEventListener("input", () => this.updateLeverageMetrics());
+      }
       const autoToggle = lid("chkAutoPeriodic48h");
       if (autoToggle) autoToggle.addEventListener("change", () => this.toggleLiveBot(autoToggle.checked));
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner p");
@@ -1127,7 +1134,10 @@
       if (spacingEl) spacingEl.textContent = `±${step.toFixed(3)}% (${tier.name.split(":")[1]?.trim() || "Dynamic"})`;
 
       const activeRungsEl = $("lighter_valActiveRungs");
-      if (activeRungsEl) activeRungsEl.textContent = `${this.entries.length} / ${count} Tiers Active`;
+      const activeCount = this.mode === "live"
+        ? ((this.botState?.tranches || []).filter(t => (t.adr_qty > 0 || t.domestic_qty > 0)).length)
+        : this.entries.length;
+      if (activeRungsEl) activeRungsEl.textContent = `${activeCount} / ${count} Tiers Active`;
 
       const tbody = $("lighter_gridLadderBody");
       if (!tbody) return;
@@ -1545,14 +1555,142 @@
         notionalInput.value = String(bot?.notional_usd || 25);
         notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5";
       }
-      this.setText("valAvailMargin", `$${Number(venue?.collateral || 0).toFixed(2)} free`);
-      this.setText("valCondEntryLeverage", "1.00x fixed");
-      this.setText("valCritGrossLev", "1.00x fixed");
-      this.setText("valCritGrossCap", `$${Number(venue?.collateral || 0).toFixed(2)} (1.0x)`);
-      this.setText("valCritGrossHeadroom", `$${Number(venue?.collateral || 0).toFixed(2)} free`);
       this.setText("valCritRetainedCore", `${tranches.length} tracked pair tranche${tranches.length === 1 ? "" : "s"}`);
       if (bot?.last_error) this.setText("lblHedgedSyncBadge", `BOT PAUSED: ${bot.last_error}`);
       this.updateRulesMatchStatus();
+      this.updateLeverageMetrics();
+    },
+
+    updateLeverageMetrics() {
+      const levCap = 8.0;
+      let grossNotional = 0;
+      let collateral = 187.55;
+      let adrQty = 0;
+      let domesticQty = 0;
+      let adrNotional = 0;
+      let domesticNotional = 0;
+      let tranchesCount = 0;
+      let maxTranches = 8;
+
+      if (this.mode === "live") {
+        collateral = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 187.55;
+        const positions = Array.isArray(this.livePositions) ? this.livePositions : [];
+        positions.forEach((pos) => {
+          const rawSize = Number(pos.position || pos.size || 0);
+          const size = Math.abs(rawSize);
+          const price = Number(pos.avg_entry_price || pos.entry_price || pos.price || 0);
+          const notional = Number(pos.position_value) > 0 ? Number(pos.position_value) : (size * price);
+          grossNotional += notional;
+
+          const sym = String(pos.symbol || "").toUpperCase();
+          const isAdr = Number(pos.market_id) === 216 || (sym.includes("SKHY") && !sym.includes("USD"));
+          if (isAdr) {
+            adrQty = size;
+            adrNotional = notional;
+          } else {
+            domesticQty = size;
+            domesticNotional = notional;
+          }
+        });
+
+        const validTranches = (this.botState?.tranches || []).filter((t) => (t.adr_qty > 0 || t.domestic_qty > 0));
+        tranchesCount = validTranches.length;
+        maxTranches = Number(this.botState?.max_tranches || 8);
+
+        // Fallback to tranche notional if livePositions hasn't returned yet or is zero
+        if (grossNotional === 0 && tranchesCount > 0) {
+          const singleLeg = Number(this.botState?.notional_usd || 25);
+          grossNotional = tranchesCount * singleLeg * 2;
+        }
+      } else {
+        collateral = 10000.0;
+        tranchesCount = this.entries.length;
+        maxTranches = 8;
+        grossNotional = this.entries.reduce((sum, entry) => sum + (Number(entry.notional) || 0) * 2, 0);
+      }
+
+      const grossLev = collateral > 0 ? (grossNotional / collateral) : 0;
+      const dynamicCapUsd = collateral * levCap;
+      const headroomUsd = Math.max(0, dynamicCapUsd - grossNotional);
+      const freeMarginUsd = Math.max(0, collateral - (grossNotional / levCap));
+      const hasLeverage = grossLev <= levCap;
+      const netDeltaUsd = adrNotional - domesticNotional;
+      const netShares = domesticQty - adrQty;
+      const loss10 = grossNotional * 0.10 * 0.5;
+      const maxDiv = grossNotional > 0 ? ((collateral / grossNotional) * 100) : 999;
+      const utilPct = Math.min(100, Math.max(0, (grossLev / levCap) * 100));
+
+      // 1. Gross Leverage Card
+      this.setText("valHedgedLeverage", `${grossLev.toFixed(2)}x`);
+      const levEl = lid("valHedgedLeverage");
+      if (levEl) {
+        levEl.style.color = grossLev > levCap ? "#dc2626" : (grossLev > levCap * 0.75 ? "#d97706" : "#0284c7");
+      }
+      this.setText("valHedgedNotional", `Notional: $${grossNotional.toFixed(2)} USDT`);
+
+      // 2. Telemetry Cards
+      this.setText("valHedgedDelta", `$${Math.abs(netDeltaUsd).toFixed(2)}`);
+      this.setText("valHedgedNetDeltaSubtitle", tranchesCount > 0
+        ? `Net: ${netShares >= 0 ? "+" : ""}${netShares.toFixed(4)} SKHY eq.`
+        : "Dollar Neutral 1:1 Hedge");
+      this.setText("valHedgedLoss10", `-$${loss10.toFixed(2)} USDT`);
+      this.setText("valHedgedMaxDiv", maxDiv >= 900 ? "+∞ % pts" : `+${maxDiv.toFixed(1)}% pts`);
+
+      // 3. SKHY Shares Exposure Bar
+      this.setText("pillAdrShares", `Short Leg: ${adrQty.toFixed(4)} SKHY`);
+      this.setText("pillStockShares", `Long Hedge: ${domesticQty.toFixed(4)} SKHY eq.`);
+      this.setText("pillNetShares", `Net Delta: ${netShares >= 0 ? "+" : ""}${netShares.toFixed(4)} shares`);
+
+      // 4. Sizing Progress Bar & Utilization
+      this.setText("lblTranchePct", `${utilPct.toFixed(1)}% (${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x)`);
+      const progressBar = lid("barTrancheProgress");
+      if (progressBar) {
+        progressBar.style.width = `${utilPct.toFixed(1)}%`;
+      }
+
+      // 5. Conditions & Criteria Checklist
+      this.setText("valCondEntryLeverage", `${grossLev.toFixed(2)}x ≤ ${levCap.toFixed(1)}x`);
+      const chkLev = lid("chkCondEntryLeverage");
+      if (chkLev) chkLev.checked = hasLeverage;
+      const badgeLev = lid("badgeCondEntryLeverage");
+      if (badgeLev) {
+        badgeLev.textContent = hasLeverage ? "PASS" : "LEV CAP";
+        badgeLev.className = hasLeverage ? "condBadge pass" : "condBadge fail";
+        badgeLev.style.background = hasLeverage ? "#dcfce7" : "#fee2e2";
+        badgeLev.style.color = hasLeverage ? "#166534" : "#dc2626";
+      }
+
+      const remCapacity = Math.max(0, maxTranches - tranchesCount);
+      const hasCapacity = tranchesCount < maxTranches;
+      this.setText("valCondEntryCapacity", `${tranchesCount} / ${maxTranches} (${remCapacity} Left)`);
+      const chkCap = lid("chkCondEntryCapacity");
+      if (chkCap) chkCap.checked = hasCapacity;
+      const badgeCap = lid("badgeCondEntryCapacity");
+      if (badgeCap) {
+        badgeCap.textContent = hasCapacity ? "PASS" : "MAX CAP";
+        badgeCap.className = hasCapacity ? "condBadge pass" : "condBadge fail";
+        badgeCap.style.background = hasCapacity ? "#dcfce7" : "#fee2e2";
+        badgeCap.style.color = hasCapacity ? "#166534" : "#dc2626";
+      }
+
+      const reqMarginPerTranche = Number(this.orderNotional() || 25) / levCap;
+      const hasMargin = freeMarginUsd >= reqMarginPerTranche;
+      this.setText("valCondEntryMargin", `$${freeMarginUsd.toFixed(2)} ≥ $${reqMarginPerTranche.toFixed(2)}`);
+      const chkMargin = lid("chkCondEntryMargin");
+      if (chkMargin) chkMargin.checked = hasMargin;
+      const badgeMargin = lid("badgeCondEntryMargin");
+      if (badgeMargin) {
+        badgeMargin.textContent = hasMargin ? "PASS" : "LOW MARGIN";
+        badgeMargin.className = hasMargin ? "condBadge pass" : "condBadge fail";
+        badgeMargin.style.background = hasMargin ? "#dcfce7" : "#fee2e2";
+        badgeMargin.style.color = hasMargin ? "#166534" : "#dc2626";
+      }
+
+      // 6. Leverage & Capacity Breakdown Section
+      this.setText("valCritGrossLev", `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x`);
+      this.setText("valCritGrossCap", `$${dynamicCapUsd.toFixed(2)} (${levCap.toFixed(1)}x)`);
+      this.setText("valCritGrossHeadroom", `$${headroomUsd.toFixed(2)} free`);
+      this.setText("valAvailMargin", `$${freeMarginUsd.toFixed(2)} free`);
     },
 
     async toggleLiveBot(enabled) {
@@ -2246,16 +2384,20 @@
         const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 187.55;
         const validTranches = (this.botState?.tranches || []).filter(t => (t.adr_qty > 0 || t.domestic_qty > 0));
         const liveUnrealized = (this.livePositions || []).reduce((acc, pos) => acc + Number(pos.unrealized_pnl || 0), 0);
-        const pnlText = `${liveUnrealized >= 0 ? "+" : ""}$${liveUnrealized.toFixed(2)}`;
+        const pnlPct = col > 0 ? (liveUnrealized / col) * 100 : 0;
+        const pnlSign = liveUnrealized >= 0 ? "+" : "";
+        const pnlText = `${pnlSign}$${liveUnrealized.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
         this.setText("valAccountEquity", `$${col.toFixed(2)}`);
         this.setText("badgeEquitySource", "LIGHTER L2");
-        this.setText("valAvailMargin", `$${col.toFixed(2)} free`);
         this.setText("valActivePairs", `${(this.livePositions || []).length} Open on Exchange`);
-        this.setText("valHedgedTranches", `${validTranches.length} Live Tranche${validTranches.length === 1 ? "" : "s"}`);
-        this.setText("valHedgedNotional", `$${(validTranches.length * (this.botState?.notional_usd || 25)).toFixed(2)} USDT`);
+        const maxTranches = Number(this.botState?.max_tranches || 8);
+        this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Active Units`);
         this.setText("valHedgedQuantities", "SKHY / SKHYNIXUSD 1x Pair");
         this.setText("valHedgedCombinedPnl", this.botState?.last_error ? `Error: ${this.botState.last_error}` : pnlText);
-        this.setText("valUnrealizedPnl", pnlText);
+        const pnlEl = lid("valHedgedCombinedPnl");
+        if (pnlEl) pnlEl.style.color = liveUnrealized > 0 ? "#16a34a" : (liveUnrealized < 0 ? "#dc2626" : "#0f172a");
+        this.setText("valHedgedPnlSubtitle", validTranches.length > 0 ? (liveUnrealized >= 0 ? "✅ Positive Net Return (Take-Profit Eligible)" : "Holding (Awaiting Convergence)") : "No active tranches");
+        this.setText("valUnrealizedPnl", `${pnlSign}$${liveUnrealized.toFixed(2)}`);
         this.setText("countPositions", String((this.livePositions || []).length));
 
         const body = lid("activePositionsBody");
@@ -2278,22 +2420,23 @@
             body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;">No open positions on Lighter exchange (Flat)</td></tr>';
           }
         }
+        this.updateLeverageMetrics();
         return;
       }
 
       const total = this.entries.reduce((sum, entry) => sum + entry.notional, 0);
       this.setText("valAccountEquity", "$10,000.00");
       this.setText("badgeEquitySource", "SIMULATED");
-      this.setText("valAvailMargin", "$8,240.00");
-      this.setText("valHedgedTranches", `${this.entries.length} Grid Tranche${this.entries.length === 1 ? "" : "s"}`);
+      this.setText("valHedgedTranches", `${this.entries.length} / 8 Grid Units`);
       this.setText("valHedgedQuantities", `$${total.toFixed(0)} notional · ${this.virtualPnlText()} unrealized`);
-      this.setText("valHedgedNotional", `$${total.toFixed(2)} USDT`);
       this.setText("valHedgedCombinedPnl", this.virtualPnlText());
+      this.setText("valHedgedPnlSubtitle", this.entries.length > 0 ? "Simulated Grid Position" : "No active paper tranches");
       this.setText("valActivePairs", this.entries.length ? `${this.entries.length} Active Rungs` : "0 Open (Flat)");
       this.setText("valUnrealizedPnl", this.virtualPnlText());
       this.setText("countPositions", String(this.entries.length));
       const body = lid("activePositionsBody");
       if (body) body.innerHTML = this.entries.length ? this.entries.map((entry, index) => `<tr><td>G-${index + 1}</td><td>SKHY / SKHYNIXUSD</td><td>${entry.side < 0 ? "SHORT / LONG" : "LONG / SHORT"}</td><td>${entry.ratio.toFixed(3)}%</td><td>$${entry.notional.toFixed(0)}</td><td>${this.virtualPnlText()}</td></tr>`).join("") : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;">No active grid positions</td></tr>';
+      this.updateLeverageMetrics();
     }
   };
 

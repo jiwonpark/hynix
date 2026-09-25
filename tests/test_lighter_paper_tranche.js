@@ -30,5 +30,10 @@ assert.ok(code.includes('btnResetPaperBalance'), 'must support reset paper balan
 assert.ok(code.includes('/api/lighter/step_tranche'), 'must call step tranche endpoint');
 assert.ok(code.includes('/api/lighter/reduce_tranche'), 'must call reduce tranche endpoint');
 assert.ok(code.includes('/api/lighter/flatten'), 'must call flatten endpoint');
+assert.ok(code.includes('updateLeverageMetrics'), 'must implement updateLeverageMetrics');
+assert.ok(code.includes('this.setText("valHedgedLeverage"'), 'must update valHedgedLeverage dynamically');
+assert.ok(code.includes('this.setText("valCondEntryLeverage"'), 'must update valCondEntryLeverage dynamically');
+assert.ok(code.includes('this.setText("valCritGrossLev"'), 'must update valCritGrossLev dynamically');
+assert.ok(!code.includes('"1.00x fixed"'), 'must not hardcode 1.00x fixed');
 
 console.log('Lighter Tab 2 UX & paper/live checks passed');
