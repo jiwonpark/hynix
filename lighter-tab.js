@@ -1768,10 +1768,17 @@
       });
 
       this.actualMarkers = Array.isArray(data.markers) ? data.markers.map((marker) => ({
-        time: marker.time, position: marker.position || "aboveBar", color: marker.color || "#0f172a",
-        shape: marker.shape || "arrowDown", text: "",
+        time: marker.time,
+        position: marker.position || (marker.is_entry ? "aboveBar" : "belowBar"),
+        color: marker.color || (marker.is_entry ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
+        activeColor: marker.activeColor || (marker.is_entry ? "#dc2626" : "#16a34a"),
+        shape: marker.shape || (marker.is_entry ? "arrowDown" : "arrowUp"),
+        text: marker.text || (marker.is_entry ? "" : "COVER"),
         hoverText: marker.hoverText || marker.text || "Actual",
-        source: "actual", hypothetical: false, is_entry: marker.is_entry ?? (marker.shape !== "arrowUp"),
+        source: "actual",
+        hypothetical: false,
+        is_entry: marker.is_entry !== false,
+        is_exit: Boolean(marker.is_exit || marker.is_entry === false),
         entry_price: marker.entry_price || marker.ratio || marker.value,
         exit_price: marker.exit_price || (marker.is_entry ? null : (marker.ratio || marker.value)),
         ratio: marker.ratio || marker.value,

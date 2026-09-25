@@ -297,7 +297,10 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                 matched_time = min(bar_times, key=lambda bt: abs(bt - t_time))
                 is_exit = bool(t.get("is_exit", False))
                 side = int(t.get("side", -1))
-                is_short = (side < 0)
+                # For entries: side < 0 is SHORT parity (selling ADR, buying domestic).
+                # For exits: in lighter_bot side is -original_side, so side > 0 is buying ADR (COVERING a short).
+                is_cover = (side > 0) if is_exit else False
+                is_short = (side < 0) if not is_exit else not is_cover
                 qty = float(t.get("adr_qty", 0.0))
                 ratio = float(t.get("entry_ratio", 0.0) or t.get("ratio", 0.0) or 0.0)
                 notional = float(t.get("notional_usd", 25.0))
@@ -334,14 +337,18 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                     active_color = "#dc2626" if is_short else "#16a34a"
                     shape = "arrowDown" if is_short else "arrowUp"
                     hover_lbl = f"{'SHORT' if is_short else 'LONG'} {avg_ratio:.2f}% (${m_data['total_notional']:.0f}){cnt_str}"
+                    marker_text = f"{'SHORT' if is_short else 'LONG'}{cnt_str}"
                 else:
-                    position = "belowBar" if is_short else "aboveBar"
-                    color = "rgba(22, 163, 74, 0.70)"
-                    active_color = "#16a34a"
-                    shape = "arrowUp" if is_short else "arrowDown"
+                    is_cover = (m_data["side"] > 0)
+                    position = "belowBar" if is_cover else "aboveBar"
+                    color = "rgba(22, 163, 74, 0.85)" if is_cover else "rgba(220, 38, 38, 0.85)"
+                    active_color = "#16a34a" if is_cover else "#dc2626"
+                    shape = "arrowUp" if is_cover else "arrowDown"
                     pnl = m_data.get("pnl")
                     pnl_str = f" · {'+' if pnl >= 0 else ''}${pnl:.2f}" if pnl is not None else ""
-                    hover_lbl = f"COVER {avg_ratio:.2f}%{pnl_str}{cnt_str}"
+                    action_name = "COVER" if is_cover else "EXIT"
+                    hover_lbl = f"{action_name} {avg_ratio:.2f}%{pnl_str}{cnt_str}"
+                    marker_text = f"{action_name}{cnt_str}"
 
                 markers.append({
                     "time": m_time,
@@ -349,11 +356,12 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                     "color": color,
                     "activeColor": active_color,
                     "shape": shape,
-                    "text": "",
+                    "text": marker_text,
                     "hoverText": hover_lbl,
                     "source": "actual",
                     "hypothetical": False,
                     "is_entry": is_entry,
+                    "is_exit": not is_entry,
                     "side": m_data["side"],
                     "ratio": round(avg_ratio, 4),
                     "entry_price": round(avg_ratio, 4),

@@ -180,7 +180,7 @@
             ? (isShort ? "#dc2626" : "#16a34a")
             : (isShort ? `rgba(220, 38, 38, ${dimAlpha})` : `rgba(22, 163, 74, ${dimAlpha})`),
           size: 1.2,
-          text: isMatch ? (m.hoverText || m.text || "") : ""
+          text: isMatch ? (m.hoverText || m.text || "") : (m.text || "")
         };
       });
     }
