@@ -188,7 +188,7 @@ app.include_router(terminal_auth_router)
 
 @app.middleware("http")
 async def authorize_strategy_lab(request: Request, call_next):
-    protected_prefixes = ("/api/strategy-lab/", "/api/lighter/bot/")
+    protected_prefixes = ("/api/strategy-lab/", "/api/lighter/bot/", "/api/lighter/step_tranche", "/api/lighter/reduce_tranche", "/api/lighter/flatten", "/api/lighter/order")
     if (request.url.path.startswith(protected_prefixes)
             and request.method not in ("GET", "HEAD", "OPTIONS")
             and not terminal_authorized(request)):
@@ -229,6 +229,7 @@ async def get_lighter_status() -> Dict[str, Any]:
         domestic = _lighter_book_summary(domestic_book)
         ratio = adr["mid"] / (domestic["mid"] / 10.0) * 100 if adr["mid"] and domestic["mid"] else None
         acc_info = await lighter_client.account_status()
+        positions = await lighter_client.positions() if acc_info.get("authenticated") else []
         return {
             "success": True,
             "venue": "Lighter",
@@ -238,6 +239,7 @@ async def get_lighter_status() -> Dict[str, Any]:
             "l1_address": acc_info.get("l1_address"),
             "account_index": acc_info.get("account_index"),
             "collateral": acc_info.get("collateral", 0.0),
+            "positions": positions,
             "adr": {"symbol": "SKHY", "market_id": 216, **adr, "mark": float(adr_detail["mark_price"]),
                     "maker_fee": float(adr_detail["maker_fee"]), "taker_fee": float(adr_detail["taker_fee"])},
             "domestic": {"symbol": "SKHYNIXUSD", "market_id": 161, **domestic,
@@ -637,13 +639,48 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
     }
 
 
-@app.post("/api/lighter/order")
-async def create_lighter_order(request: Request) -> JSONResponse:
+@app.post("/api/lighter/step_tranche")
+async def step_lighter_tranche(request: Request) -> JSONResponse:
     if not terminal_authorized(request):
         return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
-    return JSONResponse({"success": False,
-                         "error": "Lighter live execution is disabled until the official signer and account are configured."},
-                        status_code=503)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    notional = float(body.get("notional_usd") or lighter_pair_bot.state.get("notional_usd", 25.0))
+    side = int(body.get("side", -1))
+    try:
+        tranche = await lighter_pair_bot.execute_manual_tranche(side=side, notional_usd=notional)
+        return JSONResponse({"success": True, "message": f"Executed 1x pair tranche (${notional:.0f}) on Lighter DEX", "tranche": tranche})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/lighter/reduce_tranche")
+async def reduce_lighter_tranche(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        tranche = await lighter_pair_bot.execute_manual_reduce()
+        return JSONResponse({"success": True, "message": "Reduced 1x tranche on Lighter DEX", "tranche": tranche})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/lighter/flatten")
+async def flatten_lighter(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        res = await lighter_pair_bot.flatten_all()
+        return JSONResponse({"success": True, "message": "All Lighter positions flattened and bot paused", **res})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/lighter/order")
+async def create_lighter_order(request: Request) -> JSONResponse:
+    return await step_lighter_tranche(request)
 
 @app.get("/api/klines")
 async def get_klines(symbol: str, interval: str = "15m", limit: int = 1000, endTime: Optional[int] = None):

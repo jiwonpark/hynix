@@ -181,7 +181,19 @@ class LighterPairBot:
                     raise RuntimeError("Resolve the pending paired execution before enabling")
                 open_positions = await self.client.positions()
                 if open_positions and not self.state.get("tranches"):
-                    raise RuntimeError("Unreconciled Lighter positions exist; start with the pair account flat")
+                    adr_pos = next((p for p in open_positions if int(p.get("market_id", 0)) == 216), None)
+                    dom_pos = next((p for p in open_positions if int(p.get("market_id", 0)) == 161), None)
+                    adr_size = float(adr_pos.get("position", 0.0) or adr_pos.get("size", 0.0)) if adr_pos else 0.0
+                    dom_size = float(dom_pos.get("position", 0.0) or dom_pos.get("size", 0.0)) if dom_pos else 0.0
+                    side = -1 if adr_size < 0 else (1 if adr_size > 0 else 0)
+                    self.state["tranches"] = [{
+                        "side": side,
+                        "adr_qty": abs(adr_size),
+                        "domestic_qty": abs(dom_size),
+                        "entry_ratio": 140.0,
+                        "time": int(time.time()),
+                        "reconciled": True
+                    }]
             self.state["enabled"] = bool(enabled)
             self.state["last_action"] = "ENABLED" if enabled else "PAUSED"
             self.state["last_action_time"] = int(time.time())
@@ -244,8 +256,22 @@ class LighterPairBot:
         status = await self.client.account_status()
         if not status.get("execution_enabled"):
             raise RuntimeError("Lighter account is no longer execution-ready")
-        if not self.state.get("tranches") and await self.client.positions():
-            raise RuntimeError("Unreconciled Lighter positions detected")
+        open_pos = await self.client.positions()
+        if not self.state.get("tranches") and open_pos:
+            adr_pos = next((p for p in open_pos if int(p.get("market_id", 0)) == 216), None)
+            dom_pos = next((p for p in open_pos if int(p.get("market_id", 0)) == 161), None)
+            adr_size = float(adr_pos.get("position", 0.0) or adr_pos.get("size", 0.0)) if adr_pos else 0.0
+            dom_size = float(dom_pos.get("position", 0.0) or dom_pos.get("size", 0.0)) if dom_pos else 0.0
+            side = -1 if adr_size < 0 else (1 if adr_size > 0 else 0)
+            self.state["tranches"] = [{
+                "side": side,
+                "adr_qty": abs(adr_size),
+                "domestic_qty": abs(dom_size),
+                "entry_ratio": 140.0,
+                "time": int(time.time()),
+                "reconciled": True
+            }]
+            self.save()
         adr_candles, domestic_candles, adr_book, domestic_book = await asyncio.gather(
             self.client.candles(216, "5m", 80), self.client.candles(161, "5m", 80),
             self.client.order_book(216, 20), self.client.order_book(161, 20),
@@ -314,3 +340,87 @@ class LighterPairBot:
         intent["second_leg"] = second
         intent["completed"] = True
         self.save()
+
+    async def execute_manual_tranche(self, side: int, notional_usd: float) -> Dict[str, Any]:
+        async with self.lock:
+            status = await self.client.account_status()
+            if not status.get("execution_enabled"):
+                raise RuntimeError("Funded authenticated Lighter account is required")
+            adr_book, domestic_book = await asyncio.gather(
+                self.client.order_book(216, 20), self.client.order_book(161, 20)
+            )
+            adr_quote = _book_summary(adr_book)
+            domestic_quote = _book_summary(domestic_book)
+            if not adr_quote["mid"] or not domestic_quote["mid"]:
+                raise RuntimeError("Lighter book quotes unavailable")
+            adr_qty = max(0.04, math.floor(notional_usd / adr_quote["mid"] * 10_000) / 10_000)
+            domestic_qty = math.floor((adr_qty / 10.0) * 1_000) / 1_000
+            if domestic_qty < 0.004:
+                domestic_qty, adr_qty = 0.004, 0.04
+            await self._trade_pair(side, adr_qty, domestic_qty, adr_quote, domestic_quote, reduce_only=False)
+            entry_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100
+            tranche = {
+                "side": side, "adr_qty": adr_qty, "domestic_qty": domestic_qty,
+                "entry_ratio": round(entry_ratio, 4), "time": int(time.time()),
+                "notional_usd": notional_usd
+            }
+            self.state.setdefault("tranches", []).append(tranche)
+            self.state["pending_execution"] = None
+            self.state["last_action"] = "MANUAL_SCALE_IN_SHORT" if side < 0 else "MANUAL_SCALE_IN_LONG"
+            self.state["last_action_time"] = int(time.time())
+            self.state["last_error"] = None
+            self.save()
+            return tranche
+
+    async def execute_manual_reduce(self) -> Dict[str, Any]:
+        async with self.lock:
+            tranches = self.state.get("tranches") or []
+            if not tranches:
+                positions = await self.client.positions()
+                if not positions:
+                    raise RuntimeError("No active tranches or positions to reduce")
+                return await self.flatten_all()
+            tranche = tranches.pop(-1)
+            adr_book, domestic_book = await asyncio.gather(
+                self.client.order_book(216, 20), self.client.order_book(161, 20)
+            )
+            adr_quote = _book_summary(adr_book)
+            domestic_quote = _book_summary(domestic_book)
+            await self._trade_pair(-int(tranche["side"]), float(tranche["adr_qty"]), float(tranche["domestic_qty"]),
+                                   adr_quote, domestic_quote, reduce_only=True)
+            self.state["pending_execution"] = None
+            self.state["last_action"] = "MANUAL_REDUCE"
+            self.state["last_action_time"] = int(time.time())
+            self.state["last_error"] = None
+            self.save()
+            return tranche
+
+    async def flatten_all(self) -> Dict[str, Any]:
+        async with self.lock:
+            positions = await self.client.positions()
+            closed = []
+            adr_book, domestic_book = await asyncio.gather(
+                self.client.order_book(216, 20), self.client.order_book(161, 20)
+            )
+            adr_quote = _book_summary(adr_book)
+            domestic_quote = _book_summary(domestic_book)
+            for pos in positions:
+                market_id = int(pos.get("market_id", 0))
+                size = float(pos.get("position", 0.0) or pos.get("size", 0.0))
+                if size == 0:
+                    continue
+                is_ask = size > 0
+                abs_size = abs(size)
+                ref = adr_quote["mid"] if market_id == 216 else domestic_quote["mid"]
+                if ref > 0:
+                    res = await self.client.create_market_order(market_id, abs_size, ref, is_ask, reduce_only=True)
+                    closed.append(res)
+            self.state["tranches"] = []
+            self.state["enabled"] = False
+            self.state["pending_execution"] = None
+            self.state["last_action"] = "FLATTENED"
+            self.state["last_action_time"] = int(time.time())
+            self.state["last_error"] = None
+            self.save()
+            return {"closed": closed}
+

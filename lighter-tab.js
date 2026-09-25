@@ -432,11 +432,45 @@
         if (el) el.textContent = text;
       });
 
-      const live = lid("modeLive"); if (live) live.textContent = "🔒 Live Locked";
-      const semi = lid("modeSemiAuto"); if (semi) semi.textContent = "◈ Grid Read-Only";
-      const paper = lid("modePaper"); if (paper) paper.textContent = "✋ Virtual / Paper";
-      const kill = lid("btnKillSwitch"); if (kill) kill.textContent = "🚨 Live Disabled";
-      const auto = lid("lblAutoPeriodicText"); if (auto) auto.textContent = "24/7 EC2 Lighter bot (continues when this browser closes)";
+      const paper = lid("modePaper");
+      const semi = lid("modeSemiAuto");
+      const live = lid("modeLive");
+      const kill = lid("btnKillSwitch");
+      const resetPaper = lid("btnResetPaperBalance");
+      const auto = lid("lblAutoPeriodicText");
+      if (auto) auto.textContent = "24/7 EC2 Lighter bot (continues when this browser closes)";
+
+      [paper, semi, live, kill, resetPaper].forEach((btn) => {
+        if (btn) {
+          btn.disabled = false;
+          btn.classList.remove("terminal-action-control");
+          btn.style.cursor = "pointer";
+        }
+      });
+      if (paper && !paper._boundMode) {
+        paper._boundMode = true;
+        paper.textContent = "✋ Manual / Paper";
+        paper.addEventListener("click", () => this.setMode("paper"));
+      }
+      if (semi && !semi._boundMode) {
+        semi._boundMode = true;
+        semi.textContent = "⚡ Semi-Auto";
+        semi.addEventListener("click", () => this.setMode("semi_auto"));
+      }
+      if (live && !live._boundMode) {
+        live._boundMode = true;
+        live.textContent = "🤖 Full-Auto";
+        live.addEventListener("click", () => this.setMode("live"));
+      }
+      if (kill && !kill._boundKill) {
+        kill._boundKill = true;
+        kill.textContent = "🚨 Kill-Switch";
+        kill.addEventListener("click", () => this.emergencyFlatten());
+      }
+      if (resetPaper && !resetPaper._boundReset) {
+        resetPaper._boundReset = true;
+        resetPaper.addEventListener("click", () => this.resetPaperBalance());
+      }
 
       const frame = lid("shortTermExecutionChartFrame");
       if (frame) {
@@ -518,18 +552,30 @@
           button.style.cursor = "pointer";
         }
       });
-      if (flatten && !flatten._boundVirtual) {
-        flatten._boundVirtual = true;
+      if (flatten && !flatten._boundFlatten) {
+        flatten._boundFlatten = true;
         flatten.textContent = "🚨 Reset Paper State";
-        flatten.addEventListener("click", () => this.exitVirtual());
+        flatten.addEventListener("click", () => this.emergencyFlatten());
       }
-      if (entry && !entry._boundVirtual) {
-        entry._boundVirtual = true;
-        entry.addEventListener("click", () => this.addVirtualEntry());
+      if (entry && !entry._boundClick) {
+        entry._boundClick = true;
+        entry.addEventListener("click", () => {
+          if (this.mode === "live" || this.mode === "semi_auto") {
+            this.stepTrancheLive();
+          } else {
+            this.addVirtualEntry();
+          }
+        });
       }
-      if (exit && !exit._boundVirtual) {
-        exit._boundVirtual = true;
-        exit.addEventListener("click", () => this.exitVirtual());
+      if (exit && !exit._boundClick) {
+        exit._boundClick = true;
+        exit.addEventListener("click", () => {
+          if (this.mode === "live" || this.mode === "semi_auto") {
+            this.reduceTrancheLive();
+          } else {
+            this.exitVirtual();
+          }
+        });
       }
       ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((value) => {
         const button = lid(`btnShortInterval${value}`);
@@ -1159,7 +1205,9 @@
       } catch (_) {}
       const selectedStrategy = localStorage.getItem(STRATEGY_STORAGE_KEY);
       if (this.paradigms[selectedStrategy]) this.currentParadigm = selectedStrategy;
+      this.mode = localStorage.getItem("skhynix_lighter_mode") || "paper";
       this.labelTerminal();
+      this.applyMode(this.mode, false);
       this.initialized = true;
       this.renderVirtualState();
     },
@@ -1283,6 +1331,8 @@
         } catch (_) {
           status = { success: true, parity_ratio: 140.09, server_time_ms: Date.now(), adr: { spread_bps: 12 }, domestic: { spread_bps: 15 } };
         }
+        this.liveVenue = status;
+        this.livePositions = Array.isArray(status?.positions) ? status.positions : [];
         await this.refreshChart();
         if (status && status.parity_ratio) {
           this.currentRatio = Number(status.parity_ratio);
@@ -1755,6 +1805,186 @@
     virtualPnl() { return this.entries.reduce((sum, entry) => sum + (this.currentRatio == null ? 0 : entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio), 0); },
     virtualPnlText() { const pnl = this.virtualPnl(); return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`; },
 
+    setMode(mode) {
+      if ((mode === "live" || mode === "semi_auto") && window.terminalLockManager?.isLocked) {
+        const isKo = window.currentLang === "ko";
+        window.showToast?.(
+          isKo ? "🔒 거래 터미널이 읽기 전용 모드입니다. 상단 스위치로 잠금을 해제하세요." : "🔒 Execution terminal is in read-only mode. Unlock using the slide switch at the top.",
+          "warn"
+        );
+        return;
+      }
+      this.mode = mode;
+      localStorage.setItem("skhynix_lighter_mode", mode);
+      this.applyMode(mode, true);
+    },
+
+    applyMode(mode, showNotification = true) {
+      const paperBtn = lid("modePaper");
+      const semiBtn = lid("modeSemiAuto");
+      const liveBtn = lid("modeLive");
+      if (paperBtn) paperBtn.classList.toggle("active", mode === "paper");
+      if (semiBtn) semiBtn.classList.toggle("active", mode === "semi_auto");
+      if (liveBtn) liveBtn.classList.toggle("active", mode === "live");
+
+      const badge = lid("badgeExecMode");
+      const ticket = lid("pairOrderTicket");
+      const autoBox = lid("autoBotBox");
+      const paperBadge = lid("paperBadge");
+      const isKo = window.currentLang === "ko";
+
+      if (mode === "live") {
+        if (badge) {
+          badge.textContent = isKo ? "🤖 24H 전자동 알고리즘 가동" : "24H AUTONOMOUS ENGINE";
+          badge.style.background = "#fee2e2";
+          badge.style.color = "#991b1b";
+          badge.style.borderColor = "#fca5a5";
+        }
+        if (paperBadge) paperBadge.style.display = "none";
+        if (ticket) ticket.classList.add("locked");
+        if (autoBox) autoBox.style.display = "block";
+        if (lid("aiSignalBox")) lid("aiSignalBox").style.display = "none";
+        this.setText("lblAutoBotTitle", "🤖 24H Autonomous Lighter Engine Active");
+        this.setText("lblStepTrancheSize", "➕ Scale In (Live 1x Pair)");
+        this.setText("lblStepTrancheSub", "SKHY / SKHYNIXUSD");
+        this.setText("lblReduceTrancheText", "Trim 1 GCD Tranche (Take-Profit)");
+        const flatten = lid("btnEmergencyFlatten");
+        if (flatten) flatten.textContent = "🚨 Emergency Flatten";
+        if (this.botState && !this.botState.enabled && showNotification) {
+          this.toggleLiveBot(true);
+        }
+      } else if (mode === "semi_auto") {
+        if (badge) {
+          badge.textContent = isKo ? "⚡ AI 시그널 반자동 승인" : "AI SEMI-AUTO APPROVAL";
+          badge.style.background = "#f0fdf4";
+          badge.style.color = "#15803d";
+          badge.style.borderColor = "#86efac";
+        }
+        if (paperBadge) paperBadge.style.display = "none";
+        if (ticket) ticket.classList.add("locked");
+        if (autoBox) autoBox.style.display = "none";
+        if (lid("aiSignalBox")) lid("aiSignalBox").style.display = "block";
+        this.setText("lblStepTrancheSize", "➕ Scale In (Approve Signal)");
+        this.setText("lblStepTrancheSub", "1-CLICK APPROVAL");
+        this.setText("lblReduceTrancheText", "Trim 1 GCD Tranche (Take-Profit)");
+        const flatten = lid("btnEmergencyFlatten");
+        if (flatten) flatten.textContent = "🚨 Emergency Flatten";
+      } else {
+        if (badge) {
+          badge.textContent = isKo ? "✋ 수동 모의매매 / 테스트" : "MANUAL PAPER TRADING";
+          badge.style.background = "#e0f2fe";
+          badge.style.color = "#0369a1";
+          badge.style.borderColor = "#bae6fd";
+        }
+        if (paperBadge) paperBadge.style.display = "inline-flex";
+        if (ticket) ticket.classList.remove("locked");
+        if (autoBox) autoBox.style.display = "none";
+        if (lid("aiSignalBox")) lid("aiSignalBox").style.display = "none";
+        this.setText("lblStepTrancheSize", "➕ Add Paper Tranche");
+        this.setText("lblStepTrancheSub", "SIMULATED");
+        this.setText("lblReduceTrancheText", "Close All Paper Tranches");
+        const flatten = lid("btnEmergencyFlatten");
+        if (flatten) flatten.textContent = "🚨 Reset Paper State";
+      }
+
+      this.renderVirtualState();
+      if (showNotification) {
+        window.showToast?.(
+          isKo ? `매매 모드 전환: ${mode === "live" ? "전자동 봇" : mode === "semi_auto" ? "반자동 승인" : "수동 모의"}` : `Mode switched: ${mode.toUpperCase()}`,
+          mode === "live" ? "danger" : "info"
+        );
+      }
+    },
+
+    async stepTrancheLive() {
+      if (window.terminalLockManager?.isLocked) {
+        window.showToast?.("🔒 Terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
+        return;
+      }
+      const dirSelect = lid("selTrancheDirection");
+      let side = this.currentRatio >= 100 ? -1 : 1;
+      if (dirSelect) {
+        if (dirSelect.value === "short") side = -1;
+        else if (dirSelect.value === "long") side = 1;
+      }
+      const notional = this.orderNotional();
+      const btn = lid("btnStepTranche");
+      if (btn) btn.disabled = true;
+      window.showToast?.(`Submitting live 1x pair order ($${notional}) on Lighter DEX...`, "info");
+      try {
+        const res = await apiPost("/api/lighter/step_tranche", { side, notional_usd: notional });
+        if (res.success) {
+          window.showToast?.(`✅ ${res.message}`, "success");
+          await this.refresh();
+        } else {
+          window.showToast?.(`Execution Error: ${res.error}`, "danger");
+        }
+      } catch (e) {
+        window.showToast?.(`Error: ${e.message}`, "danger");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    },
+
+    async reduceTrancheLive() {
+      if (window.terminalLockManager?.isLocked) {
+        window.showToast?.("🔒 Terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
+        return;
+      }
+      const btn = lid("btnReduceTranche");
+      if (btn) btn.disabled = true;
+      window.showToast?.("Trimming 1x tranche on Lighter DEX...", "info");
+      try {
+        const res = await apiPost("/api/lighter/reduce_tranche", {});
+        if (res.success) {
+          window.showToast?.(`✅ ${res.message}`, "success");
+          await this.refresh();
+        } else {
+          window.showToast?.(`Reduce Error: ${res.error}`, "danger");
+        }
+      } catch (e) {
+        window.showToast?.(`Error: ${e.message}`, "danger");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    },
+
+    async emergencyFlatten() {
+      if (this.mode === "live") {
+        if (window.terminalLockManager?.isLocked) {
+          window.showToast?.("🔒 Terminal is in read-only mode. Unlock before emergency flatten.", "warn");
+          return;
+        }
+        const confirmed = window.confirm("🚨 EMERGENCY FLATTEN: Close all open positions on Lighter DEX and pause the EC2 bot at market?");
+        if (!confirmed) return;
+        window.showToast?.("Closing all Lighter positions and halting bot...", "info");
+        try {
+          const res = await apiPost("/api/lighter/flatten", {});
+          if (res.success) {
+            window.showToast?.("✅ All Lighter positions flattened and bot paused.", "success");
+            await this.refresh();
+          } else {
+            window.showToast?.(`Error: ${res.error}`, "danger");
+          }
+        } catch (e) {
+          window.showToast?.(`Flatten failed: ${e.message}`, "danger");
+        }
+      } else {
+        this.exitVirtual();
+      }
+    },
+
+    resetPaperBalance() {
+      this.entries = [];
+      this.ledger = [];
+      this.save();
+      this.renderVirtualState();
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
+      this.updateGridLadderData();
+      window.showToast?.("↺ Reset paper balance to $10,000", "info");
+    },
+
     addVirtualEntry() {
       if (!Number.isFinite(this.currentRatio)) {
         if (typeof window.showToast === "function") {
@@ -2012,7 +2242,39 @@
     save() { localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries: this.entries, ledger: this.ledger.slice(0, 100) })); },
 
     renderVirtualState() {
+      if (this.mode === "live") {
+        const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 187.55;
+        this.setText("valAccountEquity", `$${col.toFixed(2)}`);
+        this.setText("badgeEquitySource", "LIGHTER L2");
+        this.setText("valAvailMargin", `$${col.toFixed(2)} free`);
+        this.setText("valActivePairs", `${(this.livePositions || []).length} Open on Exchange`);
+        this.setText("valHedgedTranches", `${(this.botState?.tranches || []).length} Live Tranches`);
+        this.setText("valHedgedNotional", `$${((this.botState?.tranches || []).length * (this.botState?.notional_usd || 25)).toFixed(2)} USDT`);
+        this.setText("valHedgedQuantities", "SKHY / SKHYNIXUSD 1x Pair");
+        this.setText("valHedgedCombinedPnl", this.botState?.last_error ? `Error: ${this.botState.last_error}` : "0.00% Net");
+        this.setText("countPositions", String((this.livePositions || []).length));
+
+        const body = lid("activePositionsBody");
+        if (body) {
+          if (this.livePositions && this.livePositions.length) {
+            body.innerHTML = this.livePositions.map((pos, idx) => {
+              const sym = Number(pos.market_id) === 216 ? "SKHY (ADR)" : "SKHYNIXUSD";
+              const size = Number(pos.position || pos.size || 0);
+              const pnl = Number(pos.unrealized_pnl || 0);
+              const price = Number(pos.entry_price || pos.price || 0);
+              return `<tr><td>L-${idx + 1}</td><td>${sym}</td><td>${size >= 0 ? "LONG" : "SHORT"}</td><td>${price.toFixed(3)}</td><td>${size}</td><td style="color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}</td></tr>`;
+            }).join("");
+          } else {
+            body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;">No open positions on Lighter exchange (Flat)</td></tr>';
+          }
+        }
+        return;
+      }
+
       const total = this.entries.reduce((sum, entry) => sum + entry.notional, 0);
+      this.setText("valAccountEquity", "$10,000.00");
+      this.setText("badgeEquitySource", "SIMULATED");
+      this.setText("valAvailMargin", "$8,240.00");
       this.setText("valHedgedTranches", `${this.entries.length} Grid Tranche${this.entries.length === 1 ? "" : "s"}`);
       this.setText("valHedgedQuantities", `$${total.toFixed(0)} notional · ${this.virtualPnlText()} unrealized`);
       this.setText("valHedgedNotional", `$${total.toFixed(2)} USDT`);
