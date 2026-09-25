@@ -182,20 +182,24 @@ class LighterPairBot:
                 open_positions = await self.client.positions()
                 if open_positions and not self.state.get("tranches"):
                     adr_pos = next((p for p in open_positions if int(p.get("market_id", 0)) == 216), None)
+                    dom_pos = next((p for p in open_positions if int(p.get("market_id", 0)) == 161), None)
                     adr_sign = int(adr_pos.get("sign", 1)) if adr_pos else 1
                     dom_sign = int(dom_pos.get("sign", 1)) if dom_pos else 1
                     adr_size = float(adr_pos.get("position", 0.0) or adr_pos.get("size", 0.0)) * adr_sign if adr_pos else 0.0
                     dom_size = float(dom_pos.get("position", 0.0) or dom_pos.get("size", 0.0)) * dom_sign if dom_pos else 0.0
                     if abs(adr_size) > 1e-6 or abs(dom_size) > 1e-6:
                         side = -1 if adr_size < 0 else (1 if adr_size > 0 else 0)
-                        self.state["tranches"] = [{
+                        entry_ratio = float(self.state.get("last_evaluation", {}).get("ratio") or 141.0)
+                        reconciled_tranche = {
                             "side": side,
                             "adr_qty": abs(adr_size),
                             "domestic_qty": abs(dom_size),
-                            "entry_ratio": 140.0,
+                            "entry_ratio": round(entry_ratio, 4),
                             "time": int(time.time()),
                             "reconciled": True
-                        }]
+                        }
+                        self.state["tranches"] = [reconciled_tranche]
+                        self.state.setdefault("history", []).append(dict(reconciled_tranche))
             self.state["enabled"] = bool(enabled)
             self.state["last_action"] = "ENABLED" if enabled else "PAUSED"
             self.state["last_action_time"] = int(time.time())
@@ -261,20 +265,23 @@ class LighterPairBot:
         open_pos = await self.client.positions()
         if not self.state.get("tranches") and open_pos:
             adr_pos = next((p for p in open_pos if int(p.get("market_id", 0)) == 216), None)
+            dom_pos = next((p for p in open_pos if int(p.get("market_id", 0)) == 161), None)
             adr_sign = int(adr_pos.get("sign", 1)) if adr_pos else 1
             dom_sign = int(dom_pos.get("sign", 1)) if dom_pos else 1
             adr_size = float(adr_pos.get("position", 0.0) or adr_pos.get("size", 0.0)) * adr_sign if adr_pos else 0.0
             dom_size = float(dom_pos.get("position", 0.0) or dom_pos.get("size", 0.0)) * dom_sign if dom_pos else 0.0
             if abs(adr_size) > 1e-6 or abs(dom_size) > 1e-6:
                 side = -1 if adr_size < 0 else (1 if adr_size > 0 else 0)
-                self.state["tranches"] = [{
+                reconciled_tranche = {
                     "side": side,
                     "adr_qty": abs(adr_size),
                     "domestic_qty": abs(dom_size),
-                    "entry_ratio": 140.0,
+                    "entry_ratio": round(float(self.state.get("last_evaluation", {}).get("ratio") or 141.0), 4),
                     "time": int(time.time()),
                     "reconciled": True
-                }]
+                }
+                self.state["tranches"] = [reconciled_tranche]
+                self.state.setdefault("history", []).append(dict(reconciled_tranche))
                 self.save()
         adr_candles, domestic_candles, adr_book, domestic_book = await asyncio.gather(
             self.client.candles(216, "5m", 80), self.client.candles(161, "5m", 80),
@@ -301,9 +308,25 @@ class LighterPairBot:
             return
         tranches = self.state["tranches"]
         if tranches and abs(zscore) <= self.state["exit_z"]:
+            exit_ratio = ratios[-1]
             for tranche in list(tranches):
                 await self._trade_pair(-int(tranche["side"]), float(tranche["adr_qty"]), float(tranche["domestic_qty"]), adr_quote, domestic_quote, reduce_only=True)
                 tranches.remove(tranche)
+                entry_ratio = float(tranche.get("entry_ratio", exit_ratio))
+                side = int(tranche.get("side", -1))
+                pnl_pct = (exit_ratio - entry_ratio) / entry_ratio if side > 0 else (entry_ratio - exit_ratio) / entry_ratio
+                pnl_usd = pnl_pct * float(tranche.get("notional_usd", 25.0))
+                self.state.setdefault("history", []).append({
+                    "side": -side,
+                    "adr_qty": tranche["adr_qty"],
+                    "domestic_qty": tranche["domestic_qty"],
+                    "entry_ratio": round(exit_ratio, 4),
+                    "ratio": round(exit_ratio, 4),
+                    "time": int(time.time()),
+                    "is_exit": True,
+                    "pnl": round(pnl_usd, 2),
+                    "notional_usd": tranche.get("notional_usd", 25.0)
+                })
                 self.state["pending_execution"] = None
                 self.save()
             self.state["last_action"] = "EXITED_TO_MEAN"
@@ -315,8 +338,11 @@ class LighterPairBot:
             if domestic_qty < 0.004:
                 domestic_qty, adr_qty = 0.004, 0.04
             await self._trade_pair(side, adr_qty, domestic_qty, adr_quote, domestic_quote, reduce_only=False)
-            tranches.append({"side": side, "adr_qty": adr_qty, "domestic_qty": domestic_qty,
-                             "entry_ratio": ratios[-1], "entry_z": zscore, "time": int(time.time())})
+            new_tranche = {"side": side, "adr_qty": adr_qty, "domestic_qty": domestic_qty,
+                           "entry_ratio": ratios[-1], "entry_z": zscore, "time": int(time.time()),
+                           "notional_usd": self.state["notional_usd"]}
+            tranches.append(new_tranche)
+            self.state.setdefault("history", []).append(dict(new_tranche))
             self.state["pending_execution"] = None
             self.state["last_action"] = "ENTERED_LONG_RATIO" if side > 0 else "ENTERED_SHORT_RATIO"
             self.state["last_action_time"] = int(time.time())
@@ -366,9 +392,10 @@ class LighterPairBot:
             tranche = {
                 "side": side, "adr_qty": adr_qty, "domestic_qty": domestic_qty,
                 "entry_ratio": round(entry_ratio, 4), "time": int(time.time()),
-                "notional_usd": notional_usd
+                "notional_usd": notional_usd, "is_entry": True
             }
             self.state.setdefault("tranches", []).append(tranche)
+            self.state.setdefault("history", []).append(dict(tranche))
             self.state["pending_execution"] = None
             self.state["last_action"] = "MANUAL_SCALE_IN_SHORT" if side < 0 else "MANUAL_SCALE_IN_LONG"
             self.state["last_action_time"] = int(time.time())
@@ -436,6 +463,23 @@ class LighterPairBot:
                 if ref > 0:
                     res = await self.client.create_market_order(market_id, abs_size, ref, is_ask, reduce_only=True)
                     closed.append(res)
+            exit_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100 if domestic_quote.get("mid") else 141.0
+            for t in list(self.state.get("tranches", [])):
+                entry_ratio = float(t.get("entry_ratio", exit_ratio))
+                side = int(t.get("side", -1))
+                pnl_pct = (exit_ratio - entry_ratio) / entry_ratio if side > 0 else (entry_ratio - exit_ratio) / entry_ratio
+                pnl_usd = pnl_pct * float(t.get("notional_usd", 25.0))
+                self.state.setdefault("history", []).append({
+                    "side": -side,
+                    "adr_qty": t.get("adr_qty", 0.0),
+                    "domestic_qty": t.get("domestic_qty", 0.0),
+                    "entry_ratio": round(exit_ratio, 4),
+                    "ratio": round(exit_ratio, 4),
+                    "time": int(time.time()),
+                    "is_exit": True,
+                    "pnl": round(pnl_usd, 2),
+                    "notional_usd": t.get("notional_usd", 25.0)
+                })
             self.state["tranches"] = []
             self.state["enabled"] = False
             self.state["pending_execution"] = None

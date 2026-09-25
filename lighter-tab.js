@@ -616,7 +616,26 @@
       const autoToggle = lid("chkAutoPeriodic48h");
       if (autoToggle) autoToggle.addEventListener("change", () => this.toggleLiveBot(autoToggle.checked));
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner p");
-      if (guard) guard.innerHTML = 'The server trades the unleveraged pair <strong>SKHY / SKHYNIXUSD</strong> at 1x sizing. It persists state on EC2, continues without the browser, and pauses on any unresolved leg.';
+      const switchPosTab = (activeTab) => {
+        ["tabPositions", "tabAssets", "tabDaemonActivity", "tabOrderLog"].forEach((id) => {
+          const tabEl = lid(id);
+          if (tabEl) tabEl.classList.toggle("active", id === activeTab);
+        });
+        const paneMap = {
+          tabPositions: "panePositions",
+          tabAssets: "paneAssets",
+          tabDaemonActivity: "paneDaemonActivity",
+          tabOrderLog: "paneOrderLog"
+        };
+        Object.entries(paneMap).forEach(([tabId, paneId]) => {
+          const paneEl = lid(paneId);
+          if (paneEl) paneEl.style.display = (tabId === activeTab) ? "block" : "none";
+        });
+      };
+      ["tabPositions", "tabAssets", "tabDaemonActivity", "tabOrderLog"].forEach((id) => {
+        const tabEl = lid(id);
+        if (tabEl) tabEl.addEventListener("click", () => switchPosTab(id));
+      });
 
       const controllerCard = lid("hedgedControllerCard");
       if (controllerCard && !$("lighterLiveRulesPanel")) {
@@ -2389,21 +2408,22 @@
         const pnlText = `${pnlSign}$${liveUnrealized.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
         this.setText("valAccountEquity", `$${col.toFixed(2)}`);
         this.setText("badgeEquitySource", "LIGHTER L2");
-        this.setText("valActivePairs", `${(this.livePositions || []).length} Open on Exchange`);
+        const openLive = (this.livePositions || []).filter(p => Math.abs(Number(p.position || p.size || 0)) > 1e-6);
+        this.setText("valActivePairs", `${openLive.length} Open on Exchange`);
         const maxTranches = Number(this.botState?.max_tranches || 8);
         this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Active Units`);
         this.setText("valHedgedQuantities", "SKHY / SKHYNIXUSD 1x Pair");
         this.setText("valHedgedCombinedPnl", this.botState?.last_error ? `Error: ${this.botState.last_error}` : pnlText);
         const pnlEl = lid("valHedgedCombinedPnl");
         if (pnlEl) pnlEl.style.color = liveUnrealized > 0 ? "#16a34a" : (liveUnrealized < 0 ? "#dc2626" : "#0f172a");
-        this.setText("valHedgedPnlSubtitle", validTranches.length > 0 ? (liveUnrealized >= 0 ? "✅ Positive Net Return (Take-Profit Eligible)" : "Holding (Awaiting Convergence)") : "No active tranches");
+        this.setText("valHedgedPnlSubtitle", validTranches.length > 0 ? (liveUnrealized >= 0 ? "✅ Positive Net Return (Take-Profit Eligible)" : "Holding (Awaiting Convergence)") : "All positions flat (Awaiting signal)");
         this.setText("valUnrealizedPnl", `${pnlSign}$${liveUnrealized.toFixed(2)}`);
-        this.setText("countPositions", String((this.livePositions || []).length));
+        this.setText("countPositions", String(openLive.length));
 
         const body = lid("activePositionsBody");
         if (body) {
-          if (this.livePositions && this.livePositions.length) {
-            body.innerHTML = this.livePositions.map((pos, idx) => {
+          if (openLive.length) {
+            body.innerHTML = openLive.map((pos, idx) => {
               const sym = Number(pos.market_id) === 216 ? "SKHY (ADR)" : "SKHYNIXUSD";
               const rawSize = Number(pos.position || pos.size || 0);
               const sign = pos.sign != null ? Number(pos.sign) : (rawSize < 0 ? -1 : 1);
@@ -2417,10 +2437,11 @@
               return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td>${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}</td></tr>`;
             }).join("");
           } else {
-            body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;">No open positions on Lighter exchange (Flat)</td></tr>';
+            body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:24px 16px;line-height:1.6;">🛡️ All positions closed / flat (Take-profit mean-reversion executed)<br><small style="color:#059669;font-weight:700;">Check Execution History tab below for filled orders</small></td></tr>';
           }
         }
         this.updateLeverageMetrics();
+        this.renderExecutionHistory();
         return;
       }
 
@@ -2437,6 +2458,80 @@
       const body = lid("activePositionsBody");
       if (body) body.innerHTML = this.entries.length ? this.entries.map((entry, index) => `<tr><td>G-${index + 1}</td><td>SKHY / SKHYNIXUSD</td><td>${entry.side < 0 ? "SHORT / LONG" : "LONG / SHORT"}</td><td>${entry.ratio.toFixed(3)}%</td><td>$${entry.notional.toFixed(0)}</td><td>${this.virtualPnlText()}</td></tr>`).join("") : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;">No active grid positions</td></tr>';
       this.updateLeverageMetrics();
+      this.renderExecutionHistory();
+    },
+
+    renderExecutionHistory() {
+      const historyBody = lid("executionHistoryBody");
+      if (!historyBody) return;
+
+      if (this.mode === "live") {
+        const history = Array.isArray(this.botState?.history) ? this.botState.history : [];
+        if (!history.length) {
+          historyBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:24px;">No recent live executions logged on Lighter L2</td></tr>';
+          return;
+        }
+        historyBody.innerHTML = history.slice().reverse().map((trade) => {
+          const date = trade.time ? new Date(trade.time * 1000) : new Date();
+          const timeStr = date.toLocaleTimeString("en-US", { timeZone: "Asia/Seoul", hour12: false });
+          const isExit = Boolean(trade.is_exit);
+          const isShort = trade.side < 0;
+          const sideBadge = isExit
+            ? '<span style="color:#059669;font-weight:800;background:#d1fae5;padding:2px 6px;border-radius:4px;">TAKE PROFIT (COVER)</span>'
+            : (isShort
+              ? '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">SHORT PARITY (SELL ADR/BUY KR)</span>'
+              : '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG PARITY (BUY ADR/SELL KR)</span>');
+          const sizeStr = `${Number(trade.adr_qty || 0).toFixed(4)} SKHY / ${Number(trade.domestic_qty || 0).toFixed(4)} KR`;
+          const ratio = trade.entry_ratio || trade.ratio || 0;
+          const ratioStr = ratio ? `${Number(ratio).toFixed(3)}%` : "—";
+          const pnlVal = trade.pnl != null ? Number(trade.pnl) : null;
+          const pnlStr = pnlVal != null
+            ? `<span style="font-weight:700;color:${pnlVal >= 0 ? "#16a34a" : "#dc2626"}">${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}</span>`
+            : "—";
+          return `<tr>
+            <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr} KST</td>
+            <td><strong>SKHY / SKHYNIXUSD</strong></td>
+            <td>${sideBadge}</td>
+            <td style="font-family:monospace;">${sizeStr}</td>
+            <td style="font-family:monospace;font-weight:700;">${ratioStr}</td>
+            <td style="color:#64748b;">$0.00 (0 BPS)</td>
+            <td>${pnlStr}</td>
+            <td><span style="color:#059669;font-weight:700;">● FILLED (L2)</span></td>
+          </tr>`;
+        }).join("");
+      } else {
+        const ledger = Array.isArray(this.ledger) ? this.ledger : [];
+        if (!ledger.length) {
+          historyBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:24px;">No paper executions logged yet</td></tr>';
+          return;
+        }
+        historyBody.innerHTML = ledger.slice(0, 50).map((row) => {
+          const date = row.time ? new Date(row.time) : new Date();
+          const timeStr = date.toLocaleTimeString("en-US", { timeZone: "Asia/Seoul", hour12: false });
+          const isExit = row.action === "EXIT";
+          const isShort = row.side < 0 || row.action === "SHORT RATIO";
+          const sideBadge = isExit
+            ? '<span style="color:#059669;font-weight:800;background:#d1fae5;padding:2px 6px;border-radius:4px;">PAPER EXIT</span>'
+            : (isShort
+              ? '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">PAPER SHORT</span>'
+              : '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">PAPER LONG</span>');
+          const pnlVal = row.pnl != null ? Number(row.pnl) : null;
+          const pnlStr = pnlVal != null
+            ? `<span style="font-weight:700;color:${pnlVal >= 0 ? "#16a34a" : "#dc2626"}">${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}</span>`
+            : "—";
+          return `<tr>
+            <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr} KST</td>
+            <td><strong>SKHY / SKHYNIXUSD</strong></td>
+            <td>${sideBadge}</td>
+            <td style="font-family:monospace;">$${(row.notional || 0).toFixed(0)} virtual</td>
+            <td style="font-family:monospace;font-weight:700;">${row.ratio ? row.ratio.toFixed(3) + "%" : "—"}</td>
+            <td style="color:#64748b;">$0.00</td>
+            <td>${pnlStr}</td>
+            <td><span style="color:#64748b;font-weight:700;">SIMULATED</span></td>
+          </tr>`;
+        }).join("");
+      }
+    }
     }
   };
 

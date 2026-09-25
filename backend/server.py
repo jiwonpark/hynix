@@ -279,7 +279,14 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
 
         # Build trade markers for executed live tranches and history
         markers = []
-        all_tranches = list(lighter_pair_bot.state.get("tranches", [])) + list(lighter_pair_bot.state.get("history", []))
+        raw_tranches = list(lighter_pair_bot.state.get("tranches", [])) + list(lighter_pair_bot.state.get("history", []))
+        seen_keys = set()
+        all_tranches = []
+        for t in raw_tranches:
+            k = (int(t.get("time", 0)), bool(t.get("is_exit", False)), int(t.get("side", -1)))
+            if k not in seen_keys and t.get("time"):
+                seen_keys.add(k)
+                all_tranches.append(t)
         if bars and all_tranches:
             bar_times = [b["time"] for b in bars]
             candle_markers: Dict[Any, Dict[str, Any]] = {}
