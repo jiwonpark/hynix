@@ -3636,7 +3636,7 @@
       <div class="lighterPanelGrid">
         <section class="lighterPanel"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;"><div><strong>Parity chart</strong><div style="font-size:11px;color:#64748b;">Same normalized premium view as Tab 2</div></div><span id="lighterChartInfo" style="font-size:11px;color:#64748b;">—</span></div><div id="lighterChart" style="height:390px;margin-top:10px;"></div></section>
         <div style="display:grid;gap:14px;align-content:start;">
-          <section class="lighterPanel"><strong>Execution mode</strong><div class="lighterControls" style="margin-top:10px;"><button id="lighterPaperMode" class="lighterBtn" type="button">Virtual / Paper</button><button id="lighterLiveMode" class="lighterBtn secondary terminal-action-control" type="button" disabled>Live Locked</button></div><p id="lighterExecutionMessage" style="font-size:11px;line-height:1.45;color:#64748b;margin:9px 0 0;">Checking signer status…</p></section>
+          <section class="lighterPanel"><strong>Execution mode</strong><div class="lighterControls" style="margin-top:10px;"><button id="lighterPaperMode" class="lighterBtn" type="button">✋ Virtual / Paper</button><button id="lighterLiveMode" class="lighterBtn secondary terminal-action-control" type="button">🤖 Full-Auto</button></div><p id="lighterExecutionMessage" style="font-size:11px;line-height:1.45;color:#64748b;margin:9px 0 0;">Checking signer status…</p></section>
           <section class="lighterPanel"><strong>Virtual tranche</strong><div class="lighterControls" style="margin-top:10px;"><input id="lighterNotional" type="number" min="10" step="10" value="1000" style="width:105px;height:34px;border:1px solid #cbd5e1;border-radius:6px;padding:0 8px;" aria-label="Notional USDT"><button id="lighterVirtualEntry" class="lighterBtn" type="button">Add Entry</button><button id="lighterVirtualExit" class="lighterBtn secondary" type="button">Exit All</button></div><div id="lighterVirtualSummary" style="font-size:12px;color:#475569;margin-top:9px;">No virtual position</div></section>
           <section class="lighterPanel"><strong>Strategy backtest</strong><div class="lighterControls" style="margin-top:10px;"><label style="font-size:11px;color:#64748b;">Entry Z <input id="lighterEntryZ" type="number" value="1.5" min="0.5" step="0.1" style="width:60px;"></label><label style="font-size:11px;color:#64748b;">Exit Z <input id="lighterExitZ" type="number" value="0.25" min="0" step="0.05" style="width:60px;"></label><button id="lighterRunBacktest" class="lighterBtn" type="button">Run</button></div><div id="lighterBacktestSummary" style="font-size:12px;color:#475569;margin-top:9px;">Ready</div></section>
         </div>
@@ -4592,7 +4592,7 @@
   <script src="strategy-execution-chart.js?v=20260923_sync_5"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
-  <script src="lighter-tab.js?v=20260925_continuous_trend_1"></script>
+  <script src="lighter-tab.js?v=20260926_tab2_ux_live_1"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -10783,7 +10783,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         actionControls.forEach(ctrl => {
           const updateElem = (el) => {
             if (el.id === "lighterLiveMode") {
-              el.disabled = true;
+              el.disabled = locked;
               return;
             }
             if (el.id === "btnReduceTranche" && !locked) {
