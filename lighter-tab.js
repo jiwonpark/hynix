@@ -44,6 +44,7 @@
     assetChart: null,
     assetSeries: null,
     maSeries: {},
+    trendRanges: [],
     maVisibility: { 7: true, 24: true, 60: true },
     executionChartFrame: null,
     executionChartController: null,
@@ -464,10 +465,14 @@
         const chartHost = lid("shortTermSpreadChartHost");
         if (chartHost && !$("lighterTrendOverlay")) {
           chartHost.style.position = "relative";
+          const bands = document.createElement("div");
+          bands.id = "lighterTrendBandLayer";
+          bands.style.cssText = "position:absolute;z-index:2;inset:0 0 26px 0;overflow:hidden;pointer-events:none";
+          chartHost.appendChild(bands);
           const overlay = document.createElement("div");
           overlay.id = "lighterTrendOverlay";
           overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;gap:6px;pointer-events:none";
-          overlay.innerHTML = '<span id="lighterTrend5m" class="lighterTrendBadge">5m —</span><span id="lighterTrend1h" class="lighterTrendBadge">1h —</span>';
+          overlay.innerHTML = '<span style="border-radius:4px;padding:4px 7px;font-size:9px;font-weight:900;background:rgba(22,163,74,.14);color:#166534">GREEN = UPTREND RANGE</span><span style="border-radius:4px;padding:4px 7px;font-size:9px;font-weight:900;background:rgba(220,38,38,.12);color:#991b1b">RED = DOWNTREND RANGE</span><span id="lighterTrend5m" class="lighterTrendBadge">5m —</span><span id="lighterTrend1h" class="lighterTrendBadge">1h —</span>';
           chartHost.appendChild(overlay);
         }
       }
@@ -1152,6 +1157,7 @@
       });
 
       this.chart.subscribeClick((param) => this.onChartClick(param));
+      this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.renderTrendRanges());
 
       this.maSeries = {
         7: this.chart.addLineSeries({ color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
@@ -1201,7 +1207,10 @@
 
     resize() {
       const host = lid("shortTermSpreadChartHost");
-      if (host && this.chart && host.clientWidth > 0) this.chart.applyOptions({ width: host.clientWidth });
+      if (host && this.chart && host.clientWidth > 0) {
+        this.chart.applyOptions({ width: host.clientWidth });
+        this.renderTrendRanges();
+      }
       const assetHost = lid("shortTermAssetHost");
       if (assetHost && this.assetChart && assetHost.clientWidth > 0) this.assetChart.applyOptions({ width: assetHost.clientWidth });
     },
@@ -1265,6 +1274,62 @@
         const up = direction === "UPTREND", down = direction === "DOWNTREND";
         badge.style.cssText = `border:1px solid ${up ? "#86efac" : down ? "#fca5a5" : "#cbd5e1"};background:${up ? "#dcfce7" : down ? "#fee2e2" : "#f8fafc"};color:${up ? "#166534" : down ? "#991b1b" : "#475569"};border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900;box-shadow:0 1px 3px rgba(15,23,42,.1)`;
       });
+    },
+
+    calculateTrendRanges(bars) {
+      const ranges = [];
+      let active = null;
+      for (let index = 23; index < bars.length; index += 1) {
+        const values7 = bars.slice(index - 6, index + 1).map((bar) => Number(bar.value));
+        const values24 = bars.slice(index - 23, index + 1).map((bar) => Number(bar.value));
+        const previous7 = bars.slice(index - 7, index).map((bar) => Number(bar.value));
+        if ([...values7, ...values24, ...previous7].some((value) => !Number.isFinite(value))) continue;
+        const last = values7.at(-1);
+        const ma7 = values7.reduce((sum, value) => sum + value, 0) / 7;
+        const ma24 = values24.reduce((sum, value) => sum + value, 0) / 24;
+        const priorMa7 = previous7.reduce((sum, value) => sum + value, 0) / 7;
+        const slope = priorMa7 ? ma7 - priorMa7 : 0;
+        const direction = last > ma7 && ma7 > ma24 && slope > 0
+          ? "UPTREND"
+          : (last < ma7 && ma7 < ma24 && slope < 0 ? "DOWNTREND" : "SIDEWAYS");
+        if (!active || active.direction !== direction) {
+          active = { direction, start: bars[index].time, end: bars[index].time, endIndex: index };
+          ranges.push(active);
+        } else {
+          active.end = bars[index].time;
+          active.endIndex = index;
+        }
+      }
+      return ranges;
+    },
+
+    renderTrendRanges() {
+      const layer = $("lighterTrendBandLayer");
+      const host = lid("shortTermSpreadChartHost");
+      if (!layer || !host || !this.chart || !this.trendRanges.length) return;
+      const scale = this.chart.timeScale();
+      const width = host.clientWidth;
+      const html = [];
+      this.trendRanges.forEach((range) => {
+        let startX = scale.timeToCoordinate(range.start);
+        let endX = scale.timeToCoordinate(range.end);
+        if (startX == null || endX == null) return;
+        const nextBar = this.bars[range.endIndex + 1];
+        const nextX = nextBar ? scale.timeToCoordinate(nextBar.time) : null;
+        const barWidth = nextX != null ? Math.max(3, nextX - endX) : 7;
+        startX = Math.max(0, startX - barWidth / 2);
+        endX = Math.min(width, endX + barWidth / 2);
+        if (endX <= 0 || startX >= width || endX - startX < 1) return;
+        const up = range.direction === "UPTREND";
+        const down = range.direction === "DOWNTREND";
+        const background = up ? "rgba(22,163,74,.105)" : (down ? "rgba(220,38,38,.095)" : "rgba(100,116,139,.025)");
+        const border = up ? "rgba(22,163,74,.28)" : (down ? "rgba(220,38,38,.25)" : "transparent");
+        const label = endX - startX >= 72 && (up || down)
+          ? `<span style="position:absolute;top:40px;left:50%;transform:translateX(-50%);white-space:nowrap;border-radius:4px;padding:2px 5px;background:${up ? "rgba(220,252,231,.9)" : "rgba(254,226,226,.9)"};color:${up ? "#166534" : "#991b1b"};font-size:9px;font-weight:900">${up ? "▲" : "▼"} ${this.interval} ${up ? "UP" : "DOWN"}</span>`
+          : "";
+        html.push(`<div title="${this.interval} ${range.direction}" style="position:absolute;top:0;bottom:0;left:${startX.toFixed(1)}px;width:${Math.max(1, endX - startX).toFixed(1)}px;background:${background};border-left:1px solid ${border};border-right:1px solid ${border}">${label}</div>`);
+      });
+      layer.innerHTML = html.join("");
     },
 
     updateBotStatus(bot, venue) {
@@ -1345,6 +1410,7 @@
       if (!data || !data.success || !data.bars || !data.bars.length) return;
       this.currentRatio = Number(data.bars[data.bars.length - 1].value);
       this.bars = data.bars;
+      this.trendRanges = this.calculateTrendRanges(data.bars);
       this.series.setData(data.bars.map((bar) => ({ time: bar.time, value: bar.value })));
 
       if (this.assetSeries?.adr && data.bars.length) {
@@ -1383,6 +1449,7 @@
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       this.chart.timeScale().fitContent();
+      window.requestAnimationFrame(() => this.renderTrendRanges());
       this.setText("valShortTermCurrentParity", `${this.currentRatio.toFixed(3)}%`);
       ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((value) => {
         const button = lid(`btnShortInterval${value}`);

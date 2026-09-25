@@ -44,6 +44,9 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('REAL EC2 BOT — FIXED PRODUCTION RULES', script)
         self.assertIn('Rerun Paper', script)
         self.assertIn('live rules unchanged', script)
+        self.assertIn('calculateTrendRanges', script)
+        self.assertIn('lighterTrendBandLayer', script)
+        self.assertIn('GREEN = UPTREND RANGE', script)
 
     def test_lighter_uses_tab_two_structure_without_duplicate_ids(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
