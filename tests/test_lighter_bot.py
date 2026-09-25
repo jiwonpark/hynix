@@ -10,10 +10,21 @@ from backend.lighter_bot import LighterPairBot, classify_trend
 
 class TestLighterTrend(unittest.TestCase):
     def test_classifies_up_and_down_without_future_values(self):
-        self.assertEqual(classify_trend([100 + index for index in range(30)])["direction"], "UPTREND")
-        self.assertEqual(classify_trend([130 - index for index in range(30)])["direction"], "DOWNTREND")
+        up = classify_trend([100 + index for index in range(30)])
+        down = classify_trend([130 - index for index in range(30)])
+        self.assertEqual(up["direction"], "UPTREND")
+        self.assertGreater(up["score"], 0.35)
+        self.assertEqual(down["direction"], "DOWNTREND")
+        self.assertLess(down["score"], -0.35)
         self.assertEqual(classify_trend([100] * 30)["direction"], "SIDEWAYS")
         self.assertEqual(classify_trend([100] * 10)["direction"], "UNKNOWN")
+
+    def test_noise_stays_neutral_and_transitions_require_confirmation(self):
+        noisy = classify_trend([100 + (0.1 if index % 2 else -0.1) for index in range(40)])
+        two_bar_spike = classify_trend(([100] * 38) + [102, 103])
+        self.assertEqual(noisy["direction"], "SIDEWAYS")
+        self.assertLess(abs(noisy["score"]), 0.15)
+        self.assertEqual(two_bar_spike["direction"], "SIDEWAYS")
 
 
 class TestLighterPairBot(unittest.TestCase):

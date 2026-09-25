@@ -46,7 +46,8 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('live rules unchanged', script)
         self.assertIn('calculateTrendRanges', script)
         self.assertIn('lighterTrendBandLayer', script)
-        self.assertIn('GREEN = UPTREND RANGE', script)
+        self.assertIn('TREND SCORE −1 ← 0 → +1', script)
+        self.assertIn('pendingCount >= 3', script)
 
     def test_lighter_uses_tab_two_structure_without_duplicate_ids(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")

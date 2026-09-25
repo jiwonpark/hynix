@@ -472,7 +472,7 @@
           const overlay = document.createElement("div");
           overlay.id = "lighterTrendOverlay";
           overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;gap:6px;pointer-events:none";
-          overlay.innerHTML = '<span style="border-radius:4px;padding:4px 7px;font-size:9px;font-weight:900;background:rgba(22,163,74,.14);color:#166534">GREEN = UPTREND RANGE</span><span style="border-radius:4px;padding:4px 7px;font-size:9px;font-weight:900;background:rgba(220,38,38,.12);color:#991b1b">RED = DOWNTREND RANGE</span><span id="lighterTrend5m" class="lighterTrendBadge">5m —</span><span id="lighterTrend1h" class="lighterTrendBadge">1h —</span>';
+          overlay.innerHTML = '<span style="border-radius:4px;padding:4px 7px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1 · TOP STRIP = STABLE REGIME</span><span id="lighterTrend5m" class="lighterTrendBadge">5m —</span><span id="lighterTrend1h" class="lighterTrendBadge">1h —</span>';
           chartHost.appendChild(overlay);
         }
       }
@@ -1270,37 +1270,57 @@
         if (!badge) return;
         const direction = trend.direction || "UNKNOWN";
         const icon = direction === "UPTREND" ? "▲" : (direction === "DOWNTREND" ? "▼" : "◆");
-        badge.textContent = `${interval} ${icon} ${direction}`;
+        const score = Number(trend.score || 0);
+        badge.textContent = `${interval} ${icon} ${direction} ${score >= 0 ? "+" : ""}${score.toFixed(2)}`;
         const up = direction === "UPTREND", down = direction === "DOWNTREND";
         badge.style.cssText = `border:1px solid ${up ? "#86efac" : down ? "#fca5a5" : "#cbd5e1"};background:${up ? "#dcfce7" : down ? "#fee2e2" : "#f8fafc"};color:${up ? "#166534" : down ? "#991b1b" : "#475569"};border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900;box-shadow:0 1px 3px rgba(15,23,42,.1)`;
       });
     },
 
+    trendScore(values) {
+      const logs = values.map((value) => Math.log(Math.max(Number(value), 1e-12)));
+      const returns = logs.slice(1).map((value, index) => value - logs[index]);
+      const meanReturn = returns.reduce((sum, value) => sum + value, 0) / returns.length;
+      const returnStd = Math.sqrt(returns.reduce((sum, value) => sum + ((value - meanReturn) ** 2), 0) / returns.length);
+      const xMean = (logs.length - 1) / 2;
+      const yMean = logs.reduce((sum, value) => sum + value, 0) / logs.length;
+      let numerator = 0, denominator = 0;
+      logs.forEach((value, index) => {
+        numerator += (index - xMean) * (value - yMean);
+        denominator += (index - xMean) ** 2;
+      });
+      const slope = numerator / denominator;
+      const slopeScore = Math.tanh(2 * slope / Math.max(returnStd, 1e-9));
+      const ma7 = values.slice(-7).reduce((sum, value) => sum + value, 0) / 7;
+      const ma24 = values.reduce((sum, value) => sum + value, 0) / values.length;
+      const priceStd = Math.sqrt(values.reduce((sum, value) => sum + ((value - ma24) ** 2), 0) / values.length);
+      const maScore = Math.tanh((ma7 - ma24) / Math.max(priceStd, 1e-9));
+      const travel = values.slice(1).reduce((sum, value, index) => sum + Math.abs(value - values[index]), 0);
+      const efficiency = travel > 1e-12 ? (values.at(-1) - values[0]) / travel : 0;
+      return Math.max(-1, Math.min(1, 0.45 * slopeScore + 0.35 * maScore + 0.20 * efficiency));
+    },
+
     calculateTrendRanges(bars) {
-      const ranges = [];
-      let active = null;
+      const points = [];
+      let state = "SIDEWAYS", pending = null, pendingCount = 0;
       for (let index = 23; index < bars.length; index += 1) {
-        const values7 = bars.slice(index - 6, index + 1).map((bar) => Number(bar.value));
-        const values24 = bars.slice(index - 23, index + 1).map((bar) => Number(bar.value));
-        const previous7 = bars.slice(index - 7, index).map((bar) => Number(bar.value));
-        if ([...values7, ...values24, ...previous7].some((value) => !Number.isFinite(value))) continue;
-        const last = values7.at(-1);
-        const ma7 = values7.reduce((sum, value) => sum + value, 0) / 7;
-        const ma24 = values24.reduce((sum, value) => sum + value, 0) / 24;
-        const priorMa7 = previous7.reduce((sum, value) => sum + value, 0) / 7;
-        const slope = priorMa7 ? ma7 - priorMa7 : 0;
-        const direction = last > ma7 && ma7 > ma24 && slope > 0
-          ? "UPTREND"
-          : (last < ma7 && ma7 < ma24 && slope < 0 ? "DOWNTREND" : "SIDEWAYS");
-        if (!active || active.direction !== direction) {
-          active = { direction, start: bars[index].time, end: bars[index].time, endIndex: index };
-          ranges.push(active);
+        const values = bars.slice(index - 23, index + 1).map((bar) => Number(bar.value));
+        if (values.some((value) => !Number.isFinite(value))) continue;
+        const score = this.trendScore(values);
+        let target;
+        if (state === "UPTREND") target = score <= -0.35 ? "DOWNTREND" : (score < 0.15 ? "SIDEWAYS" : "UPTREND");
+        else if (state === "DOWNTREND") target = score >= 0.35 ? "UPTREND" : (score > -0.15 ? "SIDEWAYS" : "DOWNTREND");
+        else target = score >= 0.35 ? "UPTREND" : (score <= -0.35 ? "DOWNTREND" : "SIDEWAYS");
+        if (target === state) {
+          pending = null; pendingCount = 0;
         } else {
-          active.end = bars[index].time;
-          active.endIndex = index;
+          if (target === pending) pendingCount += 1;
+          else { pending = target; pendingCount = 1; }
+          if (pendingCount >= 3) { state = target; pending = null; pendingCount = 0; }
         }
+        points.push({ direction: state, score, time: bars[index].time, index });
       }
-      return ranges;
+      return points;
     },
 
     renderTrendRanges() {
@@ -1310,24 +1330,23 @@
       const scale = this.chart.timeScale();
       const width = host.clientWidth;
       const html = [];
-      this.trendRanges.forEach((range) => {
-        let startX = scale.timeToCoordinate(range.start);
-        let endX = scale.timeToCoordinate(range.end);
-        if (startX == null || endX == null) return;
-        const nextBar = this.bars[range.endIndex + 1];
-        const nextX = nextBar ? scale.timeToCoordinate(nextBar.time) : null;
-        const barWidth = nextX != null ? Math.max(3, nextX - endX) : 7;
-        startX = Math.max(0, startX - barWidth / 2);
-        endX = Math.min(width, endX + barWidth / 2);
-        if (endX <= 0 || startX >= width || endX - startX < 1) return;
-        const up = range.direction === "UPTREND";
-        const down = range.direction === "DOWNTREND";
-        const background = up ? "rgba(22,163,74,.105)" : (down ? "rgba(220,38,38,.095)" : "rgba(100,116,139,.025)");
-        const border = up ? "rgba(22,163,74,.28)" : (down ? "rgba(220,38,38,.25)" : "transparent");
-        const label = endX - startX >= 72 && (up || down)
-          ? `<span style="position:absolute;top:40px;left:50%;transform:translateX(-50%);white-space:nowrap;border-radius:4px;padding:2px 5px;background:${up ? "rgba(220,252,231,.9)" : "rgba(254,226,226,.9)"};color:${up ? "#166534" : "#991b1b"};font-size:9px;font-weight:900">${up ? "▲" : "▼"} ${this.interval} ${up ? "UP" : "DOWN"}</span>`
-          : "";
-        html.push(`<div title="${this.interval} ${range.direction}" style="position:absolute;top:0;bottom:0;left:${startX.toFixed(1)}px;width:${Math.max(1, endX - startX).toFixed(1)}px;background:${background};border-left:1px solid ${border};border-right:1px solid ${border}">${label}</div>`);
+      this.trendRanges.forEach((point) => {
+        const x = scale.timeToCoordinate(point.time);
+        if (x == null) return;
+        const nextBar = this.bars[point.index + 1];
+        const previousBar = this.bars[point.index - 1];
+        const adjacentX = nextBar ? scale.timeToCoordinate(nextBar.time) : (previousBar ? scale.timeToCoordinate(previousBar.time) : null);
+        const barWidth = adjacentX == null ? 7 : Math.max(2, Math.abs(adjacentX - x));
+        const left = Math.max(0, x - barWidth / 2);
+        const right = Math.min(width, x + barWidth / 2);
+        if (right <= 0 || left >= width || right - left < 1) return;
+        const magnitude = Math.min(1, Math.abs(point.score));
+        const alpha = 0.025 + magnitude * 0.17;
+        const background = point.score > 0.03
+          ? `rgba(22,163,74,${alpha.toFixed(3)})`
+          : (point.score < -0.03 ? `rgba(220,38,38,${alpha.toFixed(3)})` : "rgba(100,116,139,.025)");
+        const strip = point.direction === "UPTREND" ? "#16a34a" : (point.direction === "DOWNTREND" ? "#dc2626" : "#94a3b8");
+        html.push(`<div title="${this.interval} score ${point.score >= 0 ? "+" : ""}${point.score.toFixed(2)} · stable ${point.direction}" style="position:absolute;top:0;bottom:0;left:${left.toFixed(1)}px;width:${Math.max(1, right - left).toFixed(1)}px;background:${background};border-top:4px solid ${strip}"></div>`);
       });
       layer.innerHTML = html.join("");
     },

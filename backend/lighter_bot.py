@@ -24,27 +24,73 @@ def _book_summary(book: Dict[str, Any]) -> Dict[str, Any]:
             "spread_bps": (best_ask - best_bid) / mid * 10_000 if mid else None}
 
 
-def classify_trend(values: List[float]) -> Dict[str, Any]:
-    """Classify a causal MA stack; the last point is never compared with future data."""
+def _trend_score(window: List[float]) -> float:
+    """Continuous causal score combining normalized slope, MA separation and efficiency."""
+    logs = [math.log(max(value, 1e-12)) for value in window]
+    returns = [logs[index] - logs[index - 1] for index in range(1, len(logs))]
+    mean_return = sum(returns) / len(returns)
+    return_std = math.sqrt(sum((value - mean_return) ** 2 for value in returns) / len(returns))
+    x_mean = (len(logs) - 1) / 2
+    y_mean = sum(logs) / len(logs)
+    denominator = sum((index - x_mean) ** 2 for index in range(len(logs)))
+    slope = sum((index - x_mean) * (logs[index] - y_mean) for index in range(len(logs))) / denominator
+    slope_score = math.tanh(2.0 * slope / max(return_std, 1e-9))
+
+    ma7 = sum(window[-7:]) / 7
+    ma24 = sum(window) / len(window)
+    price_std = math.sqrt(sum((value - ma24) ** 2 for value in window) / len(window))
+    ma_score = math.tanh((ma7 - ma24) / max(price_std, 1e-9))
+
+    travel = sum(abs(window[index] - window[index - 1]) for index in range(1, len(window)))
+    efficiency = (window[-1] - window[0]) / travel if travel > 1e-12 else 0.0
+    return max(-1.0, min(1.0, 0.45 * slope_score + 0.35 * ma_score + 0.20 * efficiency))
+
+
+def trend_path(values: List[float]) -> List[Dict[str, Any]]:
+    """Return causal scores plus a three-bar-confirmed hysteretic regime path."""
     clean = [float(value) for value in values if math.isfinite(float(value))]
-    if len(clean) < 24:
-        return {"direction": "UNKNOWN", "strength": 0.0, "last": clean[-1] if clean else None}
-    ma7 = sum(clean[-7:]) / 7
-    ma24 = sum(clean[-24:]) / 24
-    previous7 = sum(clean[-8:-1]) / 7 if len(clean) >= 8 else ma7
-    slope = (ma7 - previous7) / previous7 * 100 if previous7 else 0.0
-    last = clean[-1]
-    if last > ma7 > ma24 and slope > 0:
-        direction = "UPTREND"
-    elif last < ma7 < ma24 and slope < 0:
-        direction = "DOWNTREND"
-    else:
-        direction = "SIDEWAYS"
-    separation = abs(ma7 - ma24) / ma24 * 100 if ma24 else 0.0
+    points: List[Dict[str, Any]] = []
+    state = "SIDEWAYS"
+    pending: Optional[str] = None
+    pending_count = 0
+    for index in range(23, len(clean)):
+        score = _trend_score(clean[index - 23:index + 1])
+        if state == "UPTREND":
+            target = "DOWNTREND" if score <= -0.35 else ("SIDEWAYS" if score < 0.15 else "UPTREND")
+        elif state == "DOWNTREND":
+            target = "UPTREND" if score >= 0.35 else ("SIDEWAYS" if score > -0.15 else "DOWNTREND")
+        else:
+            target = "UPTREND" if score >= 0.35 else ("DOWNTREND" if score <= -0.35 else "SIDEWAYS")
+        if target == state:
+            pending, pending_count = None, 0
+        else:
+            if target == pending:
+                pending_count += 1
+            else:
+                pending, pending_count = target, 1
+            if pending_count >= 3:
+                state, pending, pending_count = target, None, 0
+        points.append({"index": index, "score": score, "direction": state})
+    return points
+
+
+def classify_trend(values: List[float]) -> Dict[str, Any]:
+    """Classify the latest point without lookahead using a continuous stabilized score."""
+    clean = [float(value) for value in values if math.isfinite(float(value))]
+    points = trend_path(clean)
+    if not points:
+        return {"direction": "UNKNOWN", "score": 0.0, "strength": 0.0,
+                "last": clean[-1] if clean else None}
+    point = points[-1]
+    window = clean[-24:]
+    ma7 = sum(window[-7:]) / 7
+    ma24 = sum(window) / 24
+    score = float(point["score"])
     return {
-        "direction": direction, "strength": round(min(100.0, separation * 100), 1),
-        "last": round(last, 4), "ma7": round(ma7, 4), "ma24": round(ma24, 4),
-        "slope_pct": round(slope, 5),
+        "direction": point["direction"], "score": round(score, 4),
+        "strength": round(abs(score) * 100, 1), "last": round(clean[-1], 4),
+        "ma7": round(ma7, 4), "ma24": round(ma24, 4),
+        "method": "continuous_slope_ma_efficiency_hysteresis",
     }
 
 
