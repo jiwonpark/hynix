@@ -29,6 +29,7 @@ class TestLighterTab(unittest.TestCase):
             'use_base_spacing', 'chkCondEntryBase',
             'lighter_tabParadigm_trend_pullback', 'trend_pullback',
             'element.removeAttribute(attribute)',
+            'lighterSelSmallTrend', 'lighterSelBigTrend', 'lighterMatchPill',
         ):
             self.assertIn(required, html + script + common)
 

@@ -101,6 +101,22 @@ class TestLighterPairBot(unittest.TestCase):
                 self.assertEqual(saved["pending_execution"]["first_leg"]["client_order_index"], 1)
                 self.assertNotIn("second_leg", saved["pending_execution"])
 
+    def test_trends_supports_custom_small_and_big_intervals(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.candles = AsyncMock(return_value=[
+                    {"t": 1000 + i * 300_000, "c": 180 + i * 0.1} for i in range(40)
+                ])
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                trends = await bot.trends(small="1m", big="4h")
+                self.assertEqual(trends["small_interval"], "1m")
+                self.assertEqual(trends["big_interval"], "4h")
+                self.assertIn("1m", trends)
+                self.assertIn("4h", trends)
+                self.assertIn("small", trends)
+                self.assertIn("big", trends)
+
         asyncio.run(run())
 
 

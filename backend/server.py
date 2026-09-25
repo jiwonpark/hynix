@@ -280,9 +280,9 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
 
 
 @app.get("/api/lighter/trends")
-async def get_lighter_trends() -> Dict[str, Any]:
+async def get_lighter_trends(small: str = "5m", big: str = "1h") -> Dict[str, Any]:
     try:
-        return {"success": True, "trends": await lighter_pair_bot.trends(),
+        return {"success": True, "trends": await lighter_pair_bot.trends(small=small, big=big),
                 "server_time_ms": int(time.time() * 1000)}
     except Exception as error:
         logger.warning("Lighter trends unavailable: %s", error)

@@ -62,6 +62,8 @@
     showActualMarkers: true,
     showVirtualMarkers: true,
     interval: "15m",
+    smallTrendInterval: "5m",
+    bigTrendInterval: "1h",
     currentTier: 2,
     botState: null,
 
@@ -471,9 +473,18 @@
           chartHost.appendChild(bands);
           const overlay = document.createElement("div");
           overlay.id = "lighterTrendOverlay";
-          overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;gap:6px;pointer-events:none";
-          overlay.innerHTML = '<span style="border-radius:4px;padding:4px 7px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1 · TOP STRIP = STABLE REGIME</span><span id="lighterTrend5m" class="lighterTrendBadge">5m —</span><span id="lighterTrend1h" class="lighterTrendBadge">1h —</span>';
+          overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
+          overlay.innerHTML = '<span id="lighterMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="lighterSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="lighterSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
           chartHost.appendChild(overlay);
+
+          $("lighterSelSmallTrend")?.addEventListener("change", (e) => {
+            this.smallTrendInterval = e.target.value;
+            this.fetchAndRenderTrends();
+          });
+          $("lighterSelBigTrend")?.addEventListener("change", (e) => {
+            this.bigTrendInterval = e.target.value;
+            this.fetchAndRenderTrends();
+          });
         }
       }
 
@@ -486,7 +497,11 @@
         const button = lid(`btnShortInterval${value}`);
         if (!button) return;
         button.disabled = false;
-        button.addEventListener("click", () => { this.interval = value; this.refreshChart(); });
+        button.addEventListener("click", () => {
+          this.interval = value;
+          this.updateRulesMatchStatus();
+          this.refreshChart();
+        });
       });
 
       const ticket = lid("pairOrderTicket");
@@ -737,6 +752,7 @@
       }
 
       this.runBacktest();
+      this.updateRulesMatchStatus();
     },
 
     renderParadigmDetail(mode) {
@@ -1220,9 +1236,11 @@
         let status, botStatus, trendStatus;
         try {
           status = await api("/api/lighter/status");
+          const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
+          const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
           [botStatus, trendStatus] = await Promise.all([
             api("/api/lighter/bot/status").catch(() => null),
-            api("/api/lighter/trends").catch(() => null),
+            api(`/api/lighter/trends?small=${sParam}&big=${bParam}`).catch(() => null),
           ]);
         } catch (_) {
           status = { success: true, parity_ratio: 140.09, server_time_ms: Date.now(), adr: { spread_bps: 12 }, domestic: { spread_bps: 15 } };
@@ -1264,17 +1282,60 @@
     },
 
     renderTrends(trends) {
-      [["5m", "lighterTrend5m"], ["1h", "lighterTrend1h"]].forEach(([interval, id]) => {
-        const trend = trends?.[interval] || {};
-        const badge = $(id);
+      const sInt = this.smallTrendInterval || "5m";
+      const bInt = this.bigTrendInterval || "1h";
+      [[sInt, "lighterTrendSmall", "lighterTrend5m"], [bInt, "lighterTrendBig", "lighterTrend1h"]].forEach(([interval, id, fallbackId]) => {
+        const trend = trends?.[interval] || trends?.[id === "lighterTrendSmall" ? "small" : "big"] || {};
+        const badge = $(id) || $(fallbackId);
         if (!badge) return;
         const direction = trend.direction || "UNKNOWN";
         const icon = direction === "UPTREND" ? "▲" : (direction === "DOWNTREND" ? "▼" : "◆");
         const score = Number(trend.score || 0);
         badge.textContent = `${interval} ${icon} ${direction} ${score >= 0 ? "+" : ""}${score.toFixed(2)}`;
         const up = direction === "UPTREND", down = direction === "DOWNTREND";
-        badge.style.cssText = `border:1px solid ${up ? "#86efac" : down ? "#fca5a5" : "#cbd5e1"};background:${up ? "#dcfce7" : down ? "#fee2e2" : "#f8fafc"};color:${up ? "#166534" : down ? "#991b1b" : "#475569"};border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900;box-shadow:0 1px 3px rgba(15,23,42,.1)`;
+        badge.style.cssText = `border:1px solid ${up ? "#86efac" : down ? "#fca5a5" : "#cbd5e1"};background:${up ? "#dcfce7" : down ? "#fee2e2" : "#f8fafc"};color:${up ? "#166534" : down ? "#991b1b" : "#475569"};border-radius:999px;padding:3px 7px;font-size:10px;font-weight:900;box-shadow:0 1px 3px rgba(15,23,42,.1)`;
       });
+      this.updateRulesMatchStatus();
+    },
+
+    async fetchAndRenderTrends() {
+      try {
+        const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
+        const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
+        const res = await api(`/api/lighter/trends?small=${sParam}&big=${bParam}`);
+        if (res?.trends) this.renderTrends(res.trends);
+      } catch (_) {}
+    },
+
+    updateRulesMatchStatus() {
+      const isIntervalMatch = this.interval === "5m";
+      const isParadigmMatch = this.currentParadigm === "grid";
+      const isBotActive = Boolean(this.botState?.enabled);
+
+      const pill = $("lighterMatchPill");
+      if (!pill) return;
+
+      if (isIntervalMatch && isParadigmMatch) {
+        if (isBotActive) {
+          pill.textContent = "● LIVE-MATCHED (5m · Grid · Bot Active)";
+          pill.style.background = "#dcfce7";
+          pill.style.color = "#166534";
+          pill.style.borderColor = "#86efac";
+        } else {
+          pill.textContent = "○ LIVE-MATCHED (5m · Grid · Bot Paused)";
+          pill.style.background = "#fef3c7";
+          pill.style.color = "#92400e";
+          pill.style.borderColor = "#fcd34d";
+        }
+      } else {
+        const diffs = [];
+        if (!isIntervalMatch) diffs.push(`Interval ${this.interval} ≠ 5m`);
+        if (!isParadigmMatch) diffs.push(`Strategy ${this.paradigms[this.currentParadigm]?.name || this.currentParadigm} ≠ Grid`);
+        pill.textContent = `▲ PAPER DIVERGENT (${diffs.join(" · ")})`;
+        pill.style.background = "#fff7ed";
+        pill.style.color = "#c2410c";
+        pill.style.borderColor = "#fdba74";
+      }
     },
 
     trendScore(values) {
@@ -1399,6 +1460,7 @@
       this.setText("valCritGrossHeadroom", `$${Number(venue?.collateral || 0).toFixed(2)} free`);
       this.setText("valCritRetainedCore", `${bot.tranches.length} tracked pair tranche${bot.tranches.length === 1 ? "" : "s"}`);
       if (bot.last_error) this.setText("lblHedgedSyncBadge", `BOT PAUSED: ${bot.last_error}`);
+      this.updateRulesMatchStatus();
     },
 
     async toggleLiveBot(enabled) {

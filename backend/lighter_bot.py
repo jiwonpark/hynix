@@ -195,9 +195,22 @@ class LighterPairBot:
         return [float(row["c"]) / (domestic_close[int(row["t"])] / 10.0) * 100
                 for row in adr if int(row["t"]) in domestic_close and float(row.get("c", 0)) > 0]
 
-    async def trends(self) -> Dict[str, Any]:
-        result: Dict[str, Any] = {}
-        for interval, interval_ms in (("5m", 300_000), ("1h", 3_600_000)):
+    INTERVAL_MS = {
+        "1m": 60_000, "5m": 300_000, "15m": 900_000,
+        "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000,
+    }
+
+    async def trends(self, small: str = "5m", big: str = "1h") -> Dict[str, Any]:
+        small_res = small if small in self.INTERVAL_MS else "5m"
+        big_res = big if big in self.INTERVAL_MS else "1h"
+        target_intervals = list(dict.fromkeys([small_res, big_res]))
+
+        result: Dict[str, Any] = {
+            "small_interval": small_res,
+            "big_interval": big_res,
+        }
+        for interval in target_intervals:
+            interval_ms = self.INTERVAL_MS[interval]
             adr, domestic = await asyncio.gather(
                 self.client.candles(216, interval, 90), self.client.candles(161, interval, 90)
             )
@@ -205,6 +218,9 @@ class LighterPairBot:
             adr = [row for row in adr if int(row["t"]) + interval_ms <= now_ms]
             domestic = [row for row in domestic if int(row["t"]) + interval_ms <= now_ms]
             result[interval] = classify_trend(self._aligned_ratio(adr, domestic))
+
+        result["small"] = result[small_res]
+        result["big"] = result[big_res]
         return result
 
     async def run_once(self) -> None:
