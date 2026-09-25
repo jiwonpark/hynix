@@ -1,4 +1,4 @@
-﻿const assert = require('node:assert/strict');
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -18,4 +18,17 @@ assert.ok(code.includes('dirSelect.value === "long"'), 'must support manual long
 assert.ok(code.includes('side = -1'), 'must assign negative side for short parity');
 assert.ok(code.includes('side = 1'), 'must assign positive side for long parity');
 
-console.log('Lighter paper tranche UI & direction checks passed');
+// Tab 2 UX parity assertions
+assert.ok(code.includes('lid("modePaper")'), 'must support modePaper');
+assert.ok(code.includes('lid("modeSemiAuto")'), 'must support modeSemiAuto');
+assert.ok(code.includes('lid("modeLive")'), 'must support modeLive');
+assert.ok(code.includes('stepTrancheLive'), 'must support live step tranche');
+assert.ok(code.includes('reduceTrancheLive'), 'must support live reduce tranche');
+assert.ok(code.includes('emergencyFlatten'), 'must support emergency flatten');
+assert.ok(code.includes('btnKillSwitch'), 'must support kill switch');
+assert.ok(code.includes('btnResetPaperBalance'), 'must support reset paper balance');
+assert.ok(code.includes('/api/lighter/step_tranche'), 'must call step tranche endpoint');
+assert.ok(code.includes('/api/lighter/reduce_tranche'), 'must call reduce tranche endpoint');
+assert.ok(code.includes('/api/lighter/flatten'), 'must call flatten endpoint');
+
+console.log('Lighter Tab 2 UX & paper/live checks passed');
