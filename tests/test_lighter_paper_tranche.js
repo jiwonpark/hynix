@@ -37,5 +37,10 @@ assert.ok(code.includes('this.setText("valCritGrossLev"'), 'must update valCritG
 assert.ok(!code.includes('"1.00x fixed"'), 'must not hardcode 1.00x fixed');
 assert.ok(code.includes('await this.toggleLiveBot(false)'), 'leaving live mode must pause the backend bot');
 assert.ok(code.includes('Math.min(500'), 'manual live notional must be capped at $500 in the UI');
+assert.ok(code.includes('execution_history'), 'must render normalized persisted live execution history');
+assert.ok(code.includes('Entry → Exit Ratio'), 'must label linked entry and exit ratios');
+assert.ok(code.includes('Net P&L / Return'), 'must label net PnL and percentage return');
+assert.ok(code.includes('fee_bps'), 'must render execution fees in basis points');
+assert.ok(code.includes('countOrderLog'), 'must update the execution-history event count');
 
 console.log('Lighter Tab 2 UX & paper/live checks passed');

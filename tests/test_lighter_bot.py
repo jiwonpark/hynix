@@ -191,6 +191,29 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_execution_history_links_entries_and_exits_with_return_metrics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            bot.state["history"] = [
+                {"side": -1, "adr_qty": 0.13, "domestic_qty": 0.013,
+                 "entry_ratio": 141.0, "time": 100, "notional_usd": 25.0,
+                 "fee_usd": 0.01},
+                {"side": 1, "adr_qty": 0.13, "domestic_qty": 0.013,
+                 "ratio": 140.0, "time": 200, "notional_usd": 25.0,
+                 "is_exit": True, "pnl": 0.17, "fee_usd": 0.01},
+            ]
+            history = bot.public_state()["execution_history"]
+            self.assertEqual(len(history), 2)
+            self.assertEqual(history[0]["event"], "ENTRY")
+            self.assertEqual(history[0]["status"], "CLOSED")
+            self.assertEqual(history[1]["event"], "EXIT")
+            self.assertEqual(history[1]["original_side"], -1)
+            self.assertEqual(history[1]["entry_ratio"], 141.0)
+            self.assertEqual(history[1]["exit_ratio"], 140.0)
+            self.assertAlmostEqual(history[1]["fee_usd"], 0.02)
+            self.assertAlmostEqual(history[1]["net_pnl_usd"], 0.15)
+            self.assertAlmostEqual(history[1]["pnl_pct"], 0.6)
+
 
 if __name__ == "__main__":
     unittest.main()

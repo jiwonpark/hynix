@@ -636,6 +636,20 @@
         const tabEl = lid(id);
         if (tabEl) tabEl.addEventListener("click", () => switchPosTab(id));
       });
+      const orderPane = lid("paneOrderLog");
+      if (orderPane) {
+        const headers = ["Timestamp (KST)", "Event", "Direction", "Filled Size", "Entry → Exit Ratio", "Fees", "Net P&L / Return", "Status"];
+        orderPane.querySelectorAll("thead th").forEach((cell, index) => {
+          if (headers[index]) cell.textContent = headers[index];
+        });
+        if (!lid("executionHistorySummary")) {
+          const summary = document.createElement("div");
+          summary.id = "lighter_executionHistorySummary";
+          summary.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;padding:10px 13px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:11px;color:#475569";
+          summary.textContent = "Loading persisted Lighter executions…";
+          orderPane.prepend(summary);
+        }
+      }
 
       const controllerCard = lid("hedgedControllerCard");
       if (controllerCard && !$("lighterLiveRulesPanel")) {
@@ -2480,42 +2494,65 @@
       const historyBody = lid("executionHistoryBody");
       if (!historyBody) return;
 
-      if (this.mode === "live") {
-        const history = Array.isArray(this.botState?.history) ? this.botState.history : [];
-        if (!history.length) {
-          historyBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:24px;">No recent live executions logged on Lighter L2</td></tr>';
-          return;
+      const normalized = Array.isArray(this.botState?.execution_history) ? this.botState.execution_history : [];
+      const legacy = Array.isArray(this.botState?.history) ? this.botState.history : [];
+      const history = normalized.length ? normalized : legacy;
+      if (history.length) {
+        this.setText("countOrderLog", String(history.length));
+        const exits = history.filter((trade) => trade.event === "EXIT" || trade.is_exit);
+        const totalFees = history.reduce((sum, trade) => {
+          const isExit = trade.event === "EXIT" || trade.is_exit;
+          return sum + Number(isExit ? (trade.exit_fee_usd ?? trade.fee_usd ?? 0) : (trade.fee_usd || 0));
+        }, 0);
+        const totalNet = exits.reduce((sum, trade) => sum + Number(trade.net_pnl_usd ?? trade.pnl ?? 0), 0);
+        const wins = exits.filter((trade) => Number(trade.net_pnl_usd ?? trade.pnl ?? 0) > 0).length;
+        const summary = lid("executionHistorySummary");
+        if (summary) {
+          summary.innerHTML = `<span><b>${history.length}</b> persisted events</span><span><b>${exits.length}</b> completed exits</span><span>Fees <b>$${totalFees.toFixed(4)}</b></span><span>Net P&L <b style="color:${totalNet >= 0 ? '#16a34a' : '#dc2626'}">${totalNet >= 0 ? '+' : ''}$${totalNet.toFixed(4)}</b></span><span>Win rate <b>${exits.length ? (wins / exits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">EC2 durable ledger · fee-adjusted ratio P&L</span>`;
         }
         historyBody.innerHTML = history.slice().reverse().map((trade) => {
           const date = trade.time ? new Date(trade.time * 1000) : new Date();
-          const timeStr = date.toLocaleTimeString("en-US", { timeZone: "Asia/Seoul", hour12: false });
-          const isExit = Boolean(trade.is_exit);
-          const isShort = trade.side < 0;
-          const sideBadge = isExit
-            ? '<span style="color:#059669;font-weight:800;background:#d1fae5;padding:2px 6px;border-radius:4px;">TAKE PROFIT (COVER)</span>'
-            : (isShort
-              ? '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">SHORT PARITY (SELL ADR/BUY KR)</span>'
-              : '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG PARITY (BUY ADR/SELL KR)</span>');
+          const timeStr = date.toLocaleString("en-CA", { timeZone: "Asia/Seoul", hour12: false }).replace(",", "");
+          const isExit = trade.event === "EXIT" || Boolean(trade.is_exit);
+          const originalSide = isExit ? Number(trade.original_side ?? -Number(trade.side || 0)) : Number(trade.side || 0);
+          const isShort = originalSide < 0;
+          const eventBadge = isExit
+            ? '<span style="color:#0369a1;font-weight:900;background:#e0f2fe;padding:2px 7px;border-radius:4px;">EXIT</span>'
+            : '<span style="color:#7c3aed;font-weight:900;background:#ede9fe;padding:2px 7px;border-radius:4px;">ENTRY</span>';
+          const directionBadge = isShort
+            ? '<span style="color:#dc2626;font-weight:800;">SHORT ADR / LONG KR</span>'
+            : '<span style="color:#16a34a;font-weight:800;">LONG ADR / SHORT KR</span>';
           const sizeStr = `${Number(trade.adr_qty || 0).toFixed(4)} SKHY / ${Number(trade.domestic_qty || 0).toFixed(4)} KR`;
-          const ratio = trade.entry_ratio || trade.ratio || 0;
-          const ratioStr = ratio ? `${Number(ratio).toFixed(3)}%` : "—";
-          const pnlVal = trade.pnl != null ? Number(trade.pnl) : null;
-          const pnlStr = pnlVal != null
-            ? `<span style="font-weight:700;color:${pnlVal >= 0 ? "#16a34a" : "#dc2626"}">${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}</span>`
-            : "—";
+          const entryRatio = Number(trade.entry_ratio || 0);
+          const exitRatio = Number(trade.exit_ratio || (isExit ? trade.ratio : 0) || 0);
+          const ratioStr = isExit && exitRatio
+            ? `${entryRatio ? entryRatio.toFixed(4) + '% → ' : ''}${exitRatio.toFixed(4)}%`
+            : (entryRatio ? `${entryRatio.toFixed(4)}%` : "—");
+          const fee = Number(trade.fee_usd || 0);
+          const feeBps = Number(trade.fee_bps || 0);
+          const grossPnl = isExit ? Number(trade.gross_pnl_usd ?? trade.pnl ?? 0) : null;
+          const netPnl = isExit ? Number(trade.net_pnl_usd ?? trade.pnl ?? 0) : null;
+          const pnlPct = isExit ? Number(trade.pnl_pct ?? ((netPnl / Number(trade.notional_usd || 25)) * 100)) : null;
+          const pnlStr = isExit
+            ? `<div style="font-weight:800;color:${netPnl >= 0 ? '#16a34a' : '#dc2626'}">${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(4)} net (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(3)}%)</div><small style="color:#64748b">Gross ${grossPnl >= 0 ? '+' : ''}$${grossPnl.toFixed(4)}</small>`
+            : '<span style="color:#64748b">Open cost basis</span>';
+          const status = trade.status || (isExit ? "CLOSED" : "OPEN");
           return `<tr>
             <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr} KST</td>
-            <td><strong>SKHY / SKHYNIXUSD</strong></td>
-            <td>${sideBadge}</td>
+            <td>${eventBadge}</td>
+            <td>${directionBadge}</td>
             <td style="font-family:monospace;">${sizeStr}</td>
             <td style="font-family:monospace;font-weight:700;">${ratioStr}</td>
-            <td style="color:#64748b;">$0.00 (0 BPS)</td>
+            <td style="font-family:monospace;color:#64748b;">$${fee.toFixed(4)}<br><small>${feeBps.toFixed(2)} bps</small></td>
             <td>${pnlStr}</td>
-            <td><span style="color:#059669;font-weight:700;">● FILLED (L2)</span></td>
+            <td><span style="color:${status === 'CLOSED' ? '#059669' : '#0369a1'};font-weight:800;">● ${status}</span></td>
           </tr>`;
         }).join("");
       } else {
         const ledger = Array.isArray(this.ledger) ? this.ledger : [];
+        this.setText("countOrderLog", String(ledger.length));
+        const summary = lid("executionHistorySummary");
+        if (summary) summary.textContent = ledger.length ? `${ledger.length} paper execution events` : "No persisted live or paper executions";
         if (!ledger.length) {
           historyBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:24px;">No paper executions logged yet</td></tr>';
           return;

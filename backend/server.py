@@ -302,7 +302,8 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                 is_cover = (side > 0) if is_exit else False
                 is_short = (side < 0) if not is_exit else not is_cover
                 qty = float(t.get("adr_qty", 0.0))
-                ratio = float(t.get("entry_ratio", 0.0) or t.get("ratio", 0.0) or 0.0)
+                ratio = float((t.get("exit_ratio") if is_exit else t.get("entry_ratio"))
+                              or t.get("ratio", 0.0) or 0.0)
                 notional = float(t.get("notional_usd", 25.0))
                 if ratio <= 0:
                     matched_bar = next((b for b in bars if b["time"] == matched_time), None)

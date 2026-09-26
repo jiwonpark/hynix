@@ -169,6 +169,10 @@ class LighterClient:
             "is_ask": is_ask,
             "reduce_only": reduce_only,
             "tx_hash": getattr(response, "tx_hash", None),
+            "reference_price": reference_price,
+            "limit_price": protected_price,
+            "fee_rate": float(detail.get("taker_fee") or 0.0),
+            "fee_usd": quantized_size / (10 ** size_decimals) * reference_price * float(detail.get("taker_fee") or 0.0),
         }
 
     async def request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
