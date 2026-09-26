@@ -44,11 +44,11 @@ assert.ok(code.includes('fee_bps'), 'must render execution fees in basis points'
 assert.ok(code.includes('countOrderLog'), 'must update the execution-history event count');
 assert.ok(code.includes('tabEl.disabled = false'), 'bottom section tabs must be re-enabled after fail-closed initialization');
 assert.ok(code.includes('irrelevantUpbitTab.style.display = "none"'), 'irrelevant Upbit tab must be hidden on Lighter');
-assert.ok(code.includes('lighter_inputOrderIntervalMinutes'), 'must render a live order interval input');
-assert.ok(code.includes('lighter_inputLiveCooldownMinutes'), 'must expose an editable interval in the visible live-rules card');
+assert.ok(code.includes('lighter_inputLiveTradeRate'), 'must expose an N-per-minute slider in the visible live-rules card');
 assert.ok(code.includes('lighter_btnSaveLiveCooldown'), 'must expose a save button beside the live cooldown');
-assert.ok(code.includes('min_seconds_between_orders: minutes * 60'), 'must persist the selected interval in seconds');
-assert.ok(code.includes('min_seconds_between_orders: intervalMinutes * 60'), 'must apply the interval when enabling the live bot');
+assert.ok(code.includes('type="range" min="0.2" max="10" step="0.2"'), 'trade-rate slider must cover 0.2 through 10 paired trades per minute');
+assert.ok(code.includes('cooldownSecondsForTradeRate'), 'must convert the selected rate into a server-side cooldown');
+assert.ok(code.includes('min_seconds_between_orders: cooldownSeconds'), 'must persist the selected rate as a cooldown');
 assert.ok(code.includes('lighterLiveCooldown'), 'must show the configured cooldown in the live rules panel');
 assert.ok(code.includes('const KST_TIME_ZONE = "Asia/Seoul"'), 'must render Lighter times explicitly in KST');
 assert.ok(code.includes('Last Sync: ${formatKstDateTime'), 'last sync must use the explicit KST formatter');

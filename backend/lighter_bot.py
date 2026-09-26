@@ -271,7 +271,7 @@ class LighterPairBot:
         bounds = {
             "entry_z": (0.75, 4.0), "exit_z": (0.0, 1.0), "notional_usd": (10.0, 500.0),
             "max_tranches": (1, 8), "max_book_spread_bps": (1.0, 100.0),
-            "max_slippage": (0.001, 0.02), "min_seconds_between_orders": (60, 86400),
+            "max_slippage": (0.001, 0.02), "min_seconds_between_orders": (6, 86400),
         }
         async with self.lock:
             updated = dict(self.state)

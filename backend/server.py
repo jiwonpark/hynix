@@ -144,7 +144,8 @@ async def lighter_pair_worker():
     """Evaluate the persisted Lighter strategy independently of browser sessions."""
     while True:
         await lighter_pair_bot.run_once()
-        await asyncio.sleep(60)
+        cooldown = max(6.0, float(lighter_pair_bot.state.get("min_seconds_between_orders", 300)))
+        await asyncio.sleep(max(1.0, min(60.0, cooldown / 2.0)))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

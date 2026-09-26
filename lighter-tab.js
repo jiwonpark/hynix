@@ -138,7 +138,7 @@
           rowCondEntryCapacity: "6. Max Active Grid Tiers (Cap: 8 Rungs)",
           rowCondEntryLeverage: "7. Fixed 1.0x Position Sizing",
           rowCondEntryMargin: "8. Buffered Margin Reserve (≥ 125%)",
-          rowCondEntryEngine: "9. Grid Engine State & 5m Cooldown",
+          rowCondEntryEngine: "9. Grid Engine State & Configured Rate Limit",
           rowCondEntryGuard: "10. Anti-Whipsaw Bar Cadence (1 bar/rung)",
         },
         exitLabels: {
@@ -386,7 +386,7 @@
       this.setText("valDeployedWindow", "24 completed bars");
       this.setText("valDeployedEdge", "Entry |Z| ≥ 1.50");
       this.setText("valDeployedMaxLeverage", "100% (1.0x)");
-      this.setText("valDeployedSpeed", "Configurable order cooldown (1–1440m)");
+      this.setText("valDeployedSpeed", "Configurable paired trade rate (0.2–10/min)");
       this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.25");
       this.setText("valDeployedCost", "0 BPS advertised fee / slippage excluded");
       this.setText("lblAccountEquity", "Virtual Grid Capital");
@@ -424,7 +424,7 @@
         rowCondEntryCapacity: "6. Max Active Grid Tiers (Cap: 8 Rungs)",
         rowCondEntryLeverage: "7. Fixed 1.0x Position Sizing",
         rowCondEntryMargin: "8. Buffered Margin Reserve (≥ 125%)",
-        rowCondEntryEngine: "9. Grid Engine State & 5m Cooldown",
+        rowCondEntryEngine: "9. Grid Engine State & Configured Rate Limit",
         rowCondEntryGuard: "10. Anti-Whipsaw Bar Cadence (1 bar/rung)",
       };
       Object.entries(entryLabelMap).forEach(([id, text]) => {
@@ -618,20 +618,6 @@
         ticket.querySelector(".presetButtonGroup")?.setAttribute("style", "display:none");
         ticket.querySelector(".dualActionButtons")?.setAttribute("style", "display:none");
         this.setText("valCalculatedMargin", "1x pair sizing");
-        if (!lid("orderIntervalControl")) {
-          const intervalControl = document.createElement("div");
-          intervalControl.id = "lighter_orderIntervalControl";
-          intervalControl.className = "ticketRow";
-          intervalControl.style.cssText = "display:grid;grid-template-columns:minmax(150px,1fr) 110px auto;align-items:end;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0";
-          intervalControl.innerHTML = `
-            <label for="lighter_inputOrderIntervalMinutes" style="font-size:11px;font-weight:800;color:#475569;line-height:1.35">
-              Minimum order interval
-              <small style="display:block;color:#64748b;font-weight:600">Minutes between paired market-order actions</small>
-            </label>
-            <input id="lighter_inputOrderIntervalMinutes" type="number" min="1" max="1440" step="1" value="5" aria-label="Minimum order interval in minutes" style="height:34px;margin:0;font-weight:800">
-            <button id="lighter_btnSaveOrderInterval" type="button" style="height:34px;padding:0 12px;border:0;border-radius:6px;background:#0284c7;color:#fff;font-size:11px;font-weight:800;cursor:pointer">Save interval</button>`;
-          ticket.append(intervalControl);
-        }
       }
 
       const notionalInput = lid("inputOrderNotional");
@@ -645,8 +631,6 @@
       }
       const autoToggle = lid("chkAutoPeriodic48h");
       if (autoToggle) autoToggle.addEventListener("change", () => this.toggleLiveBot(autoToggle.checked));
-      const saveInterval = lid("btnSaveOrderInterval");
-      if (saveInterval) saveInterval.addEventListener("click", () => this.saveLiveBotInterval());
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner p");
       const switchPosTab = (activeTab) => {
         ["tabPositions", "tabAssets", "tabDaemonActivity", "tabOrderLog"].forEach((id) => {
@@ -698,7 +682,7 @@
         panel.style.cssText = "margin:12px 0;padding:13px 14px;border:2px solid #059669;border-radius:9px;background:#ecfdf5;color:#064e3b";
         panel.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px">
-            <strong style="font-size:13px;letter-spacing:.35px">REAL EC2 BOT — FIXED PRODUCTION RULES</strong>
+            <strong style="font-size:13px;letter-spacing:.35px">REAL EC2 BOT — PRODUCTION RULES</strong>
             <span id="lighterLiveRulesState" style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#475569">LOADING</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px;font-size:11px;line-height:1.4">
@@ -710,16 +694,16 @@
             <div><b>Size / capacity</b><br>$<span id="lighterLiveNotional">25</span> · max <span id="lighterLiveMaxTranches">3</span> tranches · 1x</div>
             <div>
               <b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps
-              <div style="display:flex;align-items:center;gap:5px;margin-top:5px">
-                <input id="lighter_inputLiveCooldownMinutes" type="number" min="1" max="1440" step="1" value="5" aria-label="Live minimum order interval in minutes" style="width:64px;height:28px;margin:0;padding:3px 6px;font-size:11px;font-weight:800;background:#fff;color:#0f172a;border:1px solid #86efac;border-radius:5px">
-                <span>minutes</span>
+              <div style="display:flex;align-items:center;gap:7px;margin-top:5px">
+                <input id="lighter_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Maximum paired trades per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
+                <output id="lighterLiveTradeRateValue" for="lighter_inputLiveTradeRate" style="min-width:48px;font-weight:900;color:#0369a1">0.2/min</output>
                 <button id="lighter_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
               </div>
-              <small id="lighterLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 5m · unlock required to save</small>
+              <small id="lighterLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 paired trades/min · 300s minimum · unlock required</small>
             </div>
             <div><b>Current evaluation</b><br><span id="lighterLiveEvaluation">Awaiting completed bar</span></div>
           </div>
-          <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800">The chart interval, selected paper strategy, condition switches, and “Rerun Paper” do not change any rule above.</div>`;
+          <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800">Only the rate slider above changes live execution pacing. Chart interval, paper strategy, condition switches, and “Rerun Paper” remain simulation-only.</div>`;
         const telemetry = controllerCard.querySelector(".hedgedTelemetryCard");
         if (telemetry) controllerCard.insertBefore(panel, telemetry);
         else controllerCard.prepend(panel);
@@ -727,7 +711,12 @@
       const saveLiveCooldown = lid("btnSaveLiveCooldown");
       if (saveLiveCooldown && !saveLiveCooldown._boundClick) {
         saveLiveCooldown._boundClick = true;
-        saveLiveCooldown.addEventListener("click", () => this.saveLiveBotInterval("inputLiveCooldownMinutes"));
+        saveLiveCooldown.addEventListener("click", () => this.saveLiveBotRate());
+      }
+      const liveTradeRate = lid("inputLiveTradeRate");
+      if (liveTradeRate && !liveTradeRate._boundInput) {
+        liveTradeRate._boundInput = true;
+        liveTradeRate.addEventListener("input", () => this.renderTradeRatePreview());
       }
 
       const tab = $("tabContentLighter");
@@ -1639,8 +1628,10 @@
       writeRule("lighterLiveNotional", Number(bot?.notional_usd ?? 25).toFixed(0));
       writeRule("lighterLiveMaxTranches", String(bot?.max_tranches ?? 3));
       writeRule("lighterLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
-      const cooldownMinutes = Math.max(1, Math.round(Number(bot?.min_seconds_between_orders ?? 300) / 60));
-      writeRule("lighterLiveCooldown", `Current: ${cooldownMinutes}m · unlock required to save`);
+      const cooldownSeconds = Math.max(6, Number(bot?.min_seconds_between_orders ?? 300));
+      const tradeRate = Math.max(0.2, Math.min(10, 60 / cooldownSeconds));
+      const tradeRateText = this.formatTradeRate(tradeRate);
+      writeRule("lighterLiveCooldown", `Current: ${tradeRateText} paired trades/min · ${Math.round(cooldownSeconds)}s minimum · unlock required`);
       writeRule("lighterLiveEvaluation", bot?.last_evaluation
         ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · ratio ${Number(bot.last_evaluation.ratio || 0).toFixed(3)}% · mean ${Number(bot.last_evaluation.mean || 0).toFixed(3)}%`
         : "Awaiting completed bar");
@@ -1649,17 +1640,14 @@
         notionalInput.value = String(bot?.notional_usd || 25);
         notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5";
       }
-      const intervalInput = lid("inputOrderIntervalMinutes");
-      if (intervalInput && document.activeElement !== intervalInput) {
-        intervalInput.value = String(cooldownMinutes);
+      const tradeRateInput = lid("inputLiveTradeRate");
+      if (tradeRateInput && document.activeElement !== tradeRateInput) {
+        tradeRateInput.value = String(Math.round(tradeRate * 5) / 5);
       }
-      const liveCooldownInput = lid("inputLiveCooldownMinutes");
-      if (liveCooldownInput && document.activeElement !== liveCooldownInput) {
-        liveCooldownInput.value = String(cooldownMinutes);
-      }
-      this.setText("valDeployedSpeed", `${cooldownMinutes}-minute order cooldown`);
+      this.renderTradeRatePreview();
+      this.setText("valDeployedSpeed", `${tradeRateText} paired trades/min (${Math.round(cooldownSeconds)}s minimum)`);
       const engineCondition = lid("rowCondEntryEngine")?.querySelector(".condLabel");
-      if (engineCondition) engineCondition.textContent = `9. Grid Engine State & ${cooldownMinutes}m Cooldown`;
+      if (engineCondition) engineCondition.textContent = `9. Grid Engine State & ${tradeRateText}/min Rate Limit`;
       this.setText("valCritRetainedCore", `${tranches.length} tracked pair tranche${tranches.length === 1 ? "" : "s"}`);
       if (bot?.last_error) this.setText("lblHedgedSyncBadge", `BOT PAUSED: ${bot.last_error}`);
       this.updateRulesMatchStatus();
@@ -1803,10 +1791,11 @@
       try {
         if (enabled) {
           const notional = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
-          const intervalMinutes = this.orderIntervalMinutes();
-          const confirmed = window.confirm(`Enable REAL 24/7 Lighter trading on EC2?\n\nPair: SKHY / SKHYNIXUSD (no 2x ETF)\nSizing: $${notional.toFixed(0)} per SKHY leg, 1x\nMinimum interval: ${intervalMinutes} minute${intervalMinutes === 1 ? "" : "s"}\n\nThe bot may place orders after the next closed-bar signal.`);
+          const tradeRate = this.tradeRatePerMinute();
+          const cooldownSeconds = this.cooldownSecondsForTradeRate(tradeRate);
+          const confirmed = window.confirm(`Enable REAL 24/7 Lighter trading on EC2?\n\nPair: SKHY / SKHYNIXUSD (no 2x ETF)\nSizing: $${notional.toFixed(0)} per SKHY leg, 1x\nMaximum rate: ${this.formatTradeRate(tradeRate)} paired trades/min (${cooldownSeconds}s minimum)\n\nThe bot may place orders after the next closed-bar signal.`);
           if (!confirmed) { if (toggle) toggle.checked = false; return false; }
-          await apiPost("/api/lighter/bot/config", { notional_usd: notional, min_seconds_between_orders: intervalMinutes * 60 });
+          await apiPost("/api/lighter/bot/config", { notional_usd: notional, min_seconds_between_orders: cooldownSeconds });
         }
         const data = await apiPost("/api/lighter/bot/toggle", { enabled, confirm_live_trading: enabled });
         if (data?.bot) {
@@ -1820,30 +1809,45 @@
       }
     },
 
-    orderIntervalMinutes(sourceInputId = "inputOrderIntervalMinutes") {
-      const input = lid(sourceInputId);
-      const raw = Number(input?.value || Math.round(Number(this.botState?.min_seconds_between_orders || 300) / 60));
-      const minutes = Math.max(1, Math.min(1440, Math.round(Number.isFinite(raw) ? raw : 5)));
-      [lid("inputOrderIntervalMinutes"), lid("inputLiveCooldownMinutes")].forEach((field) => {
-        if (field) field.value = String(minutes);
-      });
-      return minutes;
+    formatTradeRate(rate) {
+      const rounded = Math.round(Number(rate) * 5) / 5;
+      return Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1);
     },
 
-    async saveLiveBotInterval(sourceInputId = "inputOrderIntervalMinutes") {
-      const buttons = [lid("btnSaveOrderInterval"), lid("btnSaveLiveCooldown")].filter(Boolean);
-      const minutes = this.orderIntervalMinutes(sourceInputId);
-      buttons.forEach((button) => { button.disabled = true; });
+    tradeRatePerMinute() {
+      const input = lid("inputLiveTradeRate");
+      const fallback = 60 / Math.max(6, Number(this.botState?.min_seconds_between_orders || 300));
+      const raw = Number(input?.value || fallback);
+      const rate = Math.max(0.2, Math.min(10, Math.round((Number.isFinite(raw) ? raw : 0.2) * 5) / 5));
+      if (input) input.value = String(rate);
+      return rate;
+    },
+
+    cooldownSecondsForTradeRate(rate) {
+      return Math.max(6, Math.round(60 / Math.max(0.2, Number(rate) || 0.2)));
+    },
+
+    renderTradeRatePreview() {
+      const rate = this.tradeRatePerMinute();
+      const output = $("lighterLiveTradeRateValue");
+      if (output) output.textContent = `${this.formatTradeRate(rate)}/min`;
+    },
+
+    async saveLiveBotRate() {
+      const button = lid("btnSaveLiveCooldown");
+      const tradeRate = this.tradeRatePerMinute();
+      const cooldownSeconds = this.cooldownSecondsForTradeRate(tradeRate);
+      if (button) button.disabled = true;
       try {
-        const data = await apiPost("/api/lighter/bot/config", { min_seconds_between_orders: minutes * 60 });
+        const data = await apiPost("/api/lighter/bot/config", { min_seconds_between_orders: cooldownSeconds });
         if (data?.bot) this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
-        window.showToast?.(`Live bot minimum order interval saved: ${minutes} minute${minutes === 1 ? "" : "s"}.`, "success");
+        window.showToast?.(`Live bot rate saved: ${this.formatTradeRate(tradeRate)} paired trades/min (${cooldownSeconds}s minimum).`, "success");
         return true;
       } catch (error) {
         window.alert(error.message);
         return false;
       } finally {
-        buttons.forEach((button) => { button.disabled = false; });
+        if (button) button.disabled = false;
       }
     },
 
