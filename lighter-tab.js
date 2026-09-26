@@ -370,7 +370,7 @@
       this.setText("valDeployedWindow", "24 completed bars");
       this.setText("valDeployedEdge", "Entry |Z| ≥ 1.50");
       this.setText("valDeployedMaxLeverage", "100% (1.0x)");
-      this.setText("valDeployedSpeed", "5-minute order cooldown");
+      this.setText("valDeployedSpeed", "Configurable order cooldown (1–1440m)");
       this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.25");
       this.setText("valDeployedCost", "0 BPS advertised fee / slippage excluded");
       this.setText("lblAccountEquity", "Virtual Grid Capital");
@@ -602,6 +602,20 @@
         ticket.querySelector(".presetButtonGroup")?.setAttribute("style", "display:none");
         ticket.querySelector(".dualActionButtons")?.setAttribute("style", "display:none");
         this.setText("valCalculatedMargin", "1x pair sizing");
+        if (!lid("orderIntervalControl")) {
+          const intervalControl = document.createElement("div");
+          intervalControl.id = "lighter_orderIntervalControl";
+          intervalControl.className = "ticketRow";
+          intervalControl.style.cssText = "display:grid;grid-template-columns:minmax(150px,1fr) 110px auto;align-items:end;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0";
+          intervalControl.innerHTML = `
+            <label for="lighter_inputOrderIntervalMinutes" style="font-size:11px;font-weight:800;color:#475569;line-height:1.35">
+              Minimum order interval
+              <small style="display:block;color:#64748b;font-weight:600">Minutes between paired market-order actions</small>
+            </label>
+            <input id="lighter_inputOrderIntervalMinutes" type="number" min="1" max="1440" step="1" value="5" aria-label="Minimum order interval in minutes" style="height:34px;margin:0;font-weight:800">
+            <button id="lighter_btnSaveOrderInterval" type="button" style="height:34px;padding:0 12px;border:0;border-radius:6px;background:#0284c7;color:#fff;font-size:11px;font-weight:800;cursor:pointer">Save interval</button>`;
+          ticket.append(intervalControl);
+        }
       }
 
       const notionalInput = lid("inputOrderNotional");
@@ -615,6 +629,8 @@
       }
       const autoToggle = lid("chkAutoPeriodic48h");
       if (autoToggle) autoToggle.addEventListener("change", () => this.toggleLiveBot(autoToggle.checked));
+      const saveInterval = lid("btnSaveOrderInterval");
+      if (saveInterval) saveInterval.addEventListener("click", () => this.saveLiveBotInterval());
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner p");
       const switchPosTab = (activeTab) => {
         ["tabPositions", "tabAssets", "tabDaemonActivity", "tabOrderLog"].forEach((id) => {
@@ -676,7 +692,7 @@
             <div><b>Direction</b><br>Z high: short SKHY / long KR<br>Z low: long SKHY / short KR</div>
             <div><b>Exit</b><br>|Z| ≤ <span id="lighterLiveExitZ">0.25</span> · no separate PnL gate</div>
             <div><b>Size / capacity</b><br>$<span id="lighterLiveNotional">25</span> · max <span id="lighterLiveMaxTranches">3</span> tranches · 1x</div>
-            <div><b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps · 5m cooldown</div>
+            <div><b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps · <span id="lighterLiveCooldown">5m</span> cooldown</div>
             <div><b>Current evaluation</b><br><span id="lighterLiveEvaluation">Awaiting completed bar</span></div>
           </div>
           <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800">The chart interval, selected paper strategy, condition switches, and “Rerun Paper” do not change any rule above.</div>`;
@@ -1588,6 +1604,8 @@
       writeRule("lighterLiveNotional", Number(bot?.notional_usd ?? 25).toFixed(0));
       writeRule("lighterLiveMaxTranches", String(bot?.max_tranches ?? 3));
       writeRule("lighterLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
+      const cooldownMinutes = Math.max(1, Math.round(Number(bot?.min_seconds_between_orders ?? 300) / 60));
+      writeRule("lighterLiveCooldown", `${cooldownMinutes}m`);
       writeRule("lighterLiveEvaluation", bot?.last_evaluation
         ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · ratio ${Number(bot.last_evaluation.ratio || 0).toFixed(3)}% · mean ${Number(bot.last_evaluation.mean || 0).toFixed(3)}%`
         : "Awaiting completed bar");
@@ -1596,6 +1614,13 @@
         notionalInput.value = String(bot?.notional_usd || 25);
         notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5";
       }
+      const intervalInput = lid("inputOrderIntervalMinutes");
+      if (intervalInput && document.activeElement !== intervalInput) {
+        intervalInput.value = String(cooldownMinutes);
+      }
+      this.setText("valDeployedSpeed", `${cooldownMinutes}-minute order cooldown`);
+      const engineCondition = lid("rowCondEntryEngine")?.querySelector(".condLabel");
+      if (engineCondition) engineCondition.textContent = `9. Grid Engine State & ${cooldownMinutes}m Cooldown`;
       this.setText("valCritRetainedCore", `${tranches.length} tracked pair tranche${tranches.length === 1 ? "" : "s"}`);
       if (bot?.last_error) this.setText("lblHedgedSyncBadge", `BOT PAUSED: ${bot.last_error}`);
       this.updateRulesMatchStatus();
@@ -1739,9 +1764,10 @@
       try {
         if (enabled) {
           const notional = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
-          const confirmed = window.confirm(`Enable REAL 24/7 Lighter trading on EC2?\n\nPair: SKHY / SKHYNIXUSD (no 2x ETF)\nSizing: $${notional.toFixed(0)} per SKHY leg, 1x\n\nThe bot may place orders after the next closed-bar signal.`);
+          const intervalMinutes = this.orderIntervalMinutes();
+          const confirmed = window.confirm(`Enable REAL 24/7 Lighter trading on EC2?\n\nPair: SKHY / SKHYNIXUSD (no 2x ETF)\nSizing: $${notional.toFixed(0)} per SKHY leg, 1x\nMinimum interval: ${intervalMinutes} minute${intervalMinutes === 1 ? "" : "s"}\n\nThe bot may place orders after the next closed-bar signal.`);
           if (!confirmed) { if (toggle) toggle.checked = false; return false; }
-          await apiPost("/api/lighter/bot/config", { notional_usd: notional });
+          await apiPost("/api/lighter/bot/config", { notional_usd: notional, min_seconds_between_orders: intervalMinutes * 60 });
         }
         const data = await apiPost("/api/lighter/bot/toggle", { enabled, confirm_live_trading: enabled });
         if (data?.bot) {
@@ -1752,6 +1778,31 @@
         if (toggle) toggle.checked = Boolean(this.botState?.enabled);
         window.alert(error.message);
         return false;
+      }
+    },
+
+    orderIntervalMinutes() {
+      const input = lid("inputOrderIntervalMinutes");
+      const raw = Number(input?.value || Math.round(Number(this.botState?.min_seconds_between_orders || 300) / 60));
+      const minutes = Math.max(1, Math.min(1440, Math.round(Number.isFinite(raw) ? raw : 5)));
+      if (input) input.value = String(minutes);
+      return minutes;
+    },
+
+    async saveLiveBotInterval() {
+      const button = lid("btnSaveOrderInterval");
+      const minutes = this.orderIntervalMinutes();
+      if (button) button.disabled = true;
+      try {
+        const data = await apiPost("/api/lighter/bot/config", { min_seconds_between_orders: minutes * 60 });
+        if (data?.bot) this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
+        window.showToast?.(`Live bot minimum order interval saved: ${minutes} minute${minutes === 1 ? "" : "s"}.`, "success");
+        return true;
+      } catch (error) {
+        window.alert(error.message);
+        return false;
+      } finally {
+        if (button) button.disabled = false;
       }
     },
 

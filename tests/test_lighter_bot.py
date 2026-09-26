@@ -29,6 +29,19 @@ class TestLighterTrend(unittest.TestCase):
 
 
 class TestLighterPairBot(unittest.TestCase):
+    def test_configure_persists_one_minute_order_interval(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                state_file = Path(directory) / "state.json"
+                bot = LighterPairBot(Mock(), state_file)
+                result = await bot.configure({"min_seconds_between_orders": 60})
+                self.assertEqual(result["min_seconds_between_orders"], 60)
+                self.assertEqual(json.loads(state_file.read_text())["min_seconds_between_orders"], 60)
+                with self.assertRaisesRegex(ValueError, "min_seconds_between_orders"):
+                    await bot.configure({"min_seconds_between_orders": 59})
+
+        asyncio.run(run())
+
     def test_pending_execution_always_recovers_disabled(self):
         with tempfile.TemporaryDirectory() as directory:
             state_file = Path(directory) / "state.json"
