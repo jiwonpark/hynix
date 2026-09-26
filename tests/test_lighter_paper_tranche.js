@@ -45,6 +45,8 @@ assert.ok(code.includes('countOrderLog'), 'must update the execution-history eve
 assert.ok(code.includes('tabEl.disabled = false'), 'bottom section tabs must be re-enabled after fail-closed initialization');
 assert.ok(code.includes('irrelevantUpbitTab.style.display = "none"'), 'irrelevant Upbit tab must be hidden on Lighter');
 assert.ok(code.includes('lighter_inputOrderIntervalMinutes'), 'must render a live order interval input');
+assert.ok(code.includes('lighter_inputLiveCooldownMinutes'), 'must expose an editable interval in the visible live-rules card');
+assert.ok(code.includes('lighter_btnSaveLiveCooldown'), 'must expose a save button beside the live cooldown');
 assert.ok(code.includes('min_seconds_between_orders: minutes * 60'), 'must persist the selected interval in seconds');
 assert.ok(code.includes('min_seconds_between_orders: intervalMinutes * 60'), 'must apply the interval when enabling the live bot');
 assert.ok(code.includes('lighterLiveCooldown'), 'must show the configured cooldown in the live rules panel');

@@ -708,13 +708,26 @@
             <div><b>Direction</b><br>Z high: short SKHY / long KR<br>Z low: long SKHY / short KR</div>
             <div><b>Exit</b><br>|Z| ≤ <span id="lighterLiveExitZ">0.25</span> · no separate PnL gate</div>
             <div><b>Size / capacity</b><br>$<span id="lighterLiveNotional">25</span> · max <span id="lighterLiveMaxTranches">3</span> tranches · 1x</div>
-            <div><b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps · <span id="lighterLiveCooldown">5m</span> cooldown</div>
+            <div>
+              <b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps
+              <div style="display:flex;align-items:center;gap:5px;margin-top:5px">
+                <input id="lighter_inputLiveCooldownMinutes" type="number" min="1" max="1440" step="1" value="5" aria-label="Live minimum order interval in minutes" style="width:64px;height:28px;margin:0;padding:3px 6px;font-size:11px;font-weight:800;background:#fff;color:#0f172a;border:1px solid #86efac;border-radius:5px">
+                <span>minutes</span>
+                <button id="lighter_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
+              </div>
+              <small id="lighterLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 5m · unlock required to save</small>
+            </div>
             <div><b>Current evaluation</b><br><span id="lighterLiveEvaluation">Awaiting completed bar</span></div>
           </div>
           <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800">The chart interval, selected paper strategy, condition switches, and “Rerun Paper” do not change any rule above.</div>`;
         const telemetry = controllerCard.querySelector(".hedgedTelemetryCard");
         if (telemetry) controllerCard.insertBefore(panel, telemetry);
         else controllerCard.prepend(panel);
+      }
+      const saveLiveCooldown = lid("btnSaveLiveCooldown");
+      if (saveLiveCooldown && !saveLiveCooldown._boundClick) {
+        saveLiveCooldown._boundClick = true;
+        saveLiveCooldown.addEventListener("click", () => this.saveLiveBotInterval("inputLiveCooldownMinutes"));
       }
 
       const tab = $("tabContentLighter");
@@ -1627,7 +1640,7 @@
       writeRule("lighterLiveMaxTranches", String(bot?.max_tranches ?? 3));
       writeRule("lighterLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
       const cooldownMinutes = Math.max(1, Math.round(Number(bot?.min_seconds_between_orders ?? 300) / 60));
-      writeRule("lighterLiveCooldown", `${cooldownMinutes}m`);
+      writeRule("lighterLiveCooldown", `Current: ${cooldownMinutes}m · unlock required to save`);
       writeRule("lighterLiveEvaluation", bot?.last_evaluation
         ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · ratio ${Number(bot.last_evaluation.ratio || 0).toFixed(3)}% · mean ${Number(bot.last_evaluation.mean || 0).toFixed(3)}%`
         : "Awaiting completed bar");
@@ -1639,6 +1652,10 @@
       const intervalInput = lid("inputOrderIntervalMinutes");
       if (intervalInput && document.activeElement !== intervalInput) {
         intervalInput.value = String(cooldownMinutes);
+      }
+      const liveCooldownInput = lid("inputLiveCooldownMinutes");
+      if (liveCooldownInput && document.activeElement !== liveCooldownInput) {
+        liveCooldownInput.value = String(cooldownMinutes);
       }
       this.setText("valDeployedSpeed", `${cooldownMinutes}-minute order cooldown`);
       const engineCondition = lid("rowCondEntryEngine")?.querySelector(".condLabel");
@@ -1803,18 +1820,20 @@
       }
     },
 
-    orderIntervalMinutes() {
-      const input = lid("inputOrderIntervalMinutes");
+    orderIntervalMinutes(sourceInputId = "inputOrderIntervalMinutes") {
+      const input = lid(sourceInputId);
       const raw = Number(input?.value || Math.round(Number(this.botState?.min_seconds_between_orders || 300) / 60));
       const minutes = Math.max(1, Math.min(1440, Math.round(Number.isFinite(raw) ? raw : 5)));
-      if (input) input.value = String(minutes);
+      [lid("inputOrderIntervalMinutes"), lid("inputLiveCooldownMinutes")].forEach((field) => {
+        if (field) field.value = String(minutes);
+      });
       return minutes;
     },
 
-    async saveLiveBotInterval() {
-      const button = lid("btnSaveOrderInterval");
-      const minutes = this.orderIntervalMinutes();
-      if (button) button.disabled = true;
+    async saveLiveBotInterval(sourceInputId = "inputOrderIntervalMinutes") {
+      const buttons = [lid("btnSaveOrderInterval"), lid("btnSaveLiveCooldown")].filter(Boolean);
+      const minutes = this.orderIntervalMinutes(sourceInputId);
+      buttons.forEach((button) => { button.disabled = true; });
       try {
         const data = await apiPost("/api/lighter/bot/config", { min_seconds_between_orders: minutes * 60 });
         if (data?.bot) this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
@@ -1824,7 +1843,7 @@
         window.alert(error.message);
         return false;
       } finally {
-        if (button) button.disabled = false;
+        buttons.forEach((button) => { button.disabled = false; });
       }
     },
 
