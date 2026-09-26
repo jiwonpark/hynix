@@ -634,8 +634,16 @@
       };
       ["tabPositions", "tabAssets", "tabDaemonActivity", "tabOrderLog"].forEach((id) => {
         const tabEl = lid(id);
-        if (tabEl) tabEl.addEventListener("click", () => switchPosTab(id));
+        if (tabEl) {
+          tabEl.disabled = false;
+          tabEl.style.cursor = "pointer";
+          tabEl.addEventListener("click", () => switchPosTab(id));
+        }
       });
+      const irrelevantUpbitTab = lid("tabUpbit");
+      const irrelevantUpbitPane = lid("paneUpbit");
+      if (irrelevantUpbitTab) irrelevantUpbitTab.style.display = "none";
+      if (irrelevantUpbitPane) irrelevantUpbitPane.style.display = "none";
       const orderPane = lid("paneOrderLog");
       if (orderPane) {
         const headers = ["Timestamp (KST)", "Event", "Direction", "Filled Size", "Entry → Exit Ratio", "Fees", "Net P&L / Return", "Status"];

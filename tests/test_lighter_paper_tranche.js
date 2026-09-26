@@ -42,5 +42,7 @@ assert.ok(code.includes('Entry → Exit Ratio'), 'must label linked entry and ex
 assert.ok(code.includes('Net P&L / Return'), 'must label net PnL and percentage return');
 assert.ok(code.includes('fee_bps'), 'must render execution fees in basis points');
 assert.ok(code.includes('countOrderLog'), 'must update the execution-history event count');
+assert.ok(code.includes('tabEl.disabled = false'), 'bottom section tabs must be re-enabled after fail-closed initialization');
+assert.ok(code.includes('irrelevantUpbitTab.style.display = "none"'), 'irrelevant Upbit tab must be hidden on Lighter');
 
 console.log('Lighter Tab 2 UX & paper/live checks passed');
