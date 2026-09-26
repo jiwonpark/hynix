@@ -29,6 +29,19 @@ class TestLighterTrend(unittest.TestCase):
 
 
 class TestLighterPairBot(unittest.TestCase):
+    def test_event_exposure_reports_both_usdt_legs_and_one_x_margin(self):
+        exposure = LighterPairBot._event_exposure({
+            "adr_qty": 0.13,
+            "domestic_qty": 0.013,
+            "adr_price": 192.0,
+            "domestic_price": 1360.0,
+            "notional_usd": 25.0,
+        })
+        self.assertAlmostEqual(exposure["adr_notional_usd"], 24.96)
+        self.assertAlmostEqual(exposure["domestic_notional_usd"], 17.68)
+        self.assertAlmostEqual(exposure["gross_notional_usd"], 42.64)
+        self.assertAlmostEqual(exposure["margin_usd"], 42.64)
+
     def test_configure_persists_ten_per_minute_order_interval(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
@@ -225,7 +238,8 @@ class TestLighterPairBot(unittest.TestCase):
             self.assertEqual(history[1]["exit_ratio"], 140.0)
             self.assertAlmostEqual(history[1]["fee_usd"], 0.02)
             self.assertAlmostEqual(history[1]["net_pnl_usd"], 0.15)
-            self.assertAlmostEqual(history[1]["pnl_pct"], 0.6)
+            expected_margin = 25.0 + (25.0 * 100.0 / 140.0)
+            self.assertAlmostEqual(history[1]["pnl_pct"], 0.15 / expected_margin * 100)
 
     def test_execution_history_does_not_label_old_unmatched_entry_as_open(self):
         with tempfile.TemporaryDirectory() as directory:

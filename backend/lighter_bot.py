@@ -157,10 +157,13 @@ class LighterPairBot:
             side = int(event.get("side", -1))
             notional = float(event.get("notional_usd", 25.0) or 25.0)
             fee_usd = float(event.get("fee_usd", 0.0) or 0.0)
-            fee_bps = float(event.get("fee_bps", (fee_usd / notional * 10_000 if notional else 0.0)) or 0.0)
+            exposure = self._event_exposure(event)
+            margin_usd = float(exposure.get("margin_usd", 0.0) or 0.0)
+            fee_bps = fee_usd / margin_usd * 10_000 if margin_usd else 0.0
             if not event.get("is_exit"):
                 row = {
                     **event,
+                    **exposure,
                     "event": "ENTRY",
                     "is_entry": True,
                     "entry_ratio": float(event.get("entry_ratio", event.get("ratio", 0.0)) or 0.0),
@@ -200,6 +203,7 @@ class LighterPairBot:
             net_pnl = float(event.get("net_pnl_usd", gross_pnl - total_fee) or 0.0)
             normalized.append({
                 **event,
+                **exposure,
                 "event": "EXIT",
                 "is_entry": False,
                 "original_side": original_side,
@@ -207,10 +211,10 @@ class LighterPairBot:
                 "exit_ratio": exit_ratio,
                 "entry_time": (matched or {}).get("time"),
                 "fee_usd": total_fee,
-                "fee_bps": total_fee / notional * 10_000 if notional else 0.0,
+                "fee_bps": total_fee / margin_usd * 10_000 if margin_usd else 0.0,
                 "gross_pnl_usd": gross_pnl,
                 "net_pnl_usd": net_pnl,
-                "pnl_pct": net_pnl / notional * 100 if notional else 0.0,
+                "pnl_pct": net_pnl / margin_usd * 100 if margin_usd else 0.0,
                 "status": "CLOSED" if matched else "UNMATCHED EXIT",
                 "history_index": index,
             })
@@ -225,6 +229,31 @@ class LighterPairBot:
                 )
                 row["status"] = "OPEN" if is_active else "LEGACY — EXIT NOT RECORDED"
         return normalized
+
+    @staticmethod
+    def _event_exposure(event: Dict[str, Any]) -> Dict[str, float]:
+        """Return per-leg USDT size and estimated 1x margin for one pair action."""
+        orders = event.get("orders") or {}
+        first = orders.get("first_leg") or {}
+        second = orders.get("second_leg") or {}
+        adr_qty = abs(float(event.get("adr_qty", 0.0) or first.get("base_amount", 0.0) or 0.0))
+        domestic_qty = abs(float(event.get("domestic_qty", 0.0) or second.get("base_amount", 0.0) or 0.0))
+        adr_price = float(event.get("adr_price", 0.0) or first.get("reference_price", 0.0) or 0.0)
+        domestic_price = float(event.get("domestic_price", 0.0) or second.get("reference_price", 0.0) or 0.0)
+        configured_notional = abs(float(event.get("notional_usd", 0.0) or 0.0))
+        ratio = abs(float(event.get("exit_ratio", 0.0) or event.get("entry_ratio", 0.0)
+                          or event.get("ratio", 0.0) or 0.0))
+        adr_notional = adr_qty * adr_price if adr_qty and adr_price else configured_notional
+        domestic_notional = domestic_qty * domestic_price if domestic_qty and domestic_price else 0.0
+        if domestic_notional <= 0 and adr_notional > 0 and ratio > 0:
+            domestic_notional = adr_notional * 100.0 / ratio
+        gross_notional = adr_notional + domestic_notional
+        return {
+            "adr_notional_usd": round(adr_notional, 6),
+            "domestic_notional_usd": round(domestic_notional, 6),
+            "gross_notional_usd": round(gross_notional, 6),
+            "margin_usd": round(gross_notional, 6),
+        }
 
     @staticmethod
     def _execution_fees(execution: Dict[str, Any]) -> float:

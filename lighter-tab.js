@@ -662,7 +662,7 @@
       if (irrelevantUpbitPane) irrelevantUpbitPane.style.display = "none";
       const orderPane = lid("paneOrderLog");
       if (orderPane) {
-        const headers = ["Timestamp (KST)", "Event", "Direction", "Filled Size", "Entry → Exit Ratio", "Fees", "Net P&L / Return", "Status"];
+        const headers = ["Timestamp (KST)", "Event", "Direction", "Filled Qty / USDT Size", "Entry → Exit Ratio", "Fees", "Net P&L / Return", "Status"];
         orderPane.querySelectorAll("thead th").forEach((cell, index) => {
           if (headers[index]) cell.textContent = headers[index];
         });
@@ -674,6 +674,24 @@
           orderPane.prepend(summary);
         }
       }
+      const positionsPane = lid("panePositions");
+      if (positionsPane) {
+        const headers = ["Position", "Asset", "Side", "Quantity", "Entry Price", "USDT Size", "Est. 1x Margin", "Unrealized P&L / ROE"];
+        positionsPane.querySelectorAll("thead th").forEach((cell, index) => {
+          if (headers[index]) cell.textContent = headers[index];
+        });
+        if (!lid("activePositionsSummary")) {
+          const summary = document.createElement("div");
+          summary.id = "lighter_activePositionsSummary";
+          summary.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;padding:10px 13px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:11px;color:#475569";
+          summary.textContent = "Loading current Lighter position sizes…";
+          positionsPane.prepend(summary);
+        }
+      }
+
+      const progressBar = lid("barTrancheProgress");
+      const utilizationLabel = progressBar?.parentElement?.previousElementSibling?.querySelector("span");
+      if (utilizationLabel) utilizationLabel.textContent = "Estimated 1x Margin Utilization (Gross Pair Size / Collateral):";
 
       const controllerCard = lid("hedgedControllerCard");
       if (controllerCard && !$("lighterLiveRulesPanel")) {
@@ -691,7 +709,7 @@
             <div><b>Entry</b><br>|Z| ≥ <span id="lighterLiveEntryZ">1.50</span></div>
             <div><b>Direction</b><br>Z high: short SKHY / long KR<br>Z low: long SKHY / short KR</div>
             <div><b>Exit</b><br>|Z| ≤ <span id="lighterLiveExitZ">0.25</span> · no separate PnL gate</div>
-            <div><b>Size / capacity</b><br>$<span id="lighterLiveNotional">25</span> · max <span id="lighterLiveMaxTranches">3</span> tranches · 1x</div>
+            <div><b>Size / capacity</b><br>ADR target $<span id="lighterLiveNotional">25</span> · pair gross ≈ $<span id="lighterLivePairGross">—</span><br>max <span id="lighterLiveMaxTranches">3</span> tranches · 1x</div>
             <div>
               <b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps
               <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
@@ -1626,7 +1644,11 @@
       const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
       writeRule("lighterLiveEntryZ", Number(bot?.entry_z ?? 1.5).toFixed(2));
       writeRule("lighterLiveExitZ", Number(bot?.exit_z ?? 0.25).toFixed(2));
-      writeRule("lighterLiveNotional", Number(bot?.notional_usd ?? 25).toFixed(0));
+      const configuredAdrNotional = Number(bot?.notional_usd ?? 25);
+      const liveRatio = Number(bot?.last_evaluation?.ratio || this.currentRatio || 0);
+      const estimatedPairGross = configuredAdrNotional * (1 + (liveRatio > 0 ? 100 / liveRatio : 1));
+      writeRule("lighterLiveNotional", configuredAdrNotional.toFixed(0));
+      writeRule("lighterLivePairGross", estimatedPairGross.toFixed(2));
       writeRule("lighterLiveMaxTranches", String(bot?.max_tranches ?? 3));
       writeRule("lighterLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
       const cooldownSeconds = Math.max(6, Number(bot?.min_seconds_between_orders ?? 300));
@@ -1656,7 +1678,7 @@
     },
 
     updateLeverageMetrics() {
-      const levCap = 8.0;
+      const levCap = 1.0;
       let grossNotional = 0;
       let collateral = 187.55;
       let adrQty = 0;
@@ -1673,7 +1695,8 @@
           const rawSize = Number(pos.position || pos.size || 0);
           const size = Math.abs(rawSize);
           const price = Number(pos.avg_entry_price || pos.entry_price || pos.price || 0);
-          const notional = Number(pos.position_value) > 0 ? Number(pos.position_value) : (size * price);
+          const positionValue = Math.abs(Number(pos.position_value || 0));
+          const notional = positionValue > 0 ? positionValue : (size * price);
           grossNotional += notional;
 
           const sym = String(pos.symbol || "").toUpperCase();
@@ -1694,7 +1717,9 @@
         // Fallback to tranche notional if livePositions hasn't returned yet or is zero
         if (grossNotional === 0 && tranchesCount > 0) {
           const singleLeg = Number(this.botState?.notional_usd || 25);
-          grossNotional = tranchesCount * singleLeg * 2;
+          const ratio = Number(this.botState?.last_evaluation?.ratio || this.currentRatio || 0);
+          const pairFactor = 1 + (ratio > 0 ? 100 / ratio : 1);
+          grossNotional = tranchesCount * singleLeg * pairFactor;
         }
       } else {
         collateral = 10000.0;
@@ -1720,7 +1745,7 @@
       if (levEl) {
         levEl.style.color = grossLev > levCap ? "#dc2626" : (grossLev > levCap * 0.75 ? "#d97706" : "#0284c7");
       }
-      this.setText("valHedgedNotional", `Notional: $${grossNotional.toFixed(2)} USDT`);
+      this.setText("valHedgedNotional", `Gross Size: $${grossNotional.toFixed(2)} USDT · Est. 1x Margin: $${grossNotional.toFixed(2)}`);
 
       // 2. Telemetry Cards
       this.setText("valHedgedDelta", `$${Math.abs(netDeltaUsd).toFixed(2)}`);
@@ -1767,7 +1792,9 @@
         badgeCap.style.color = hasCapacity ? "#166534" : "#dc2626";
       }
 
-      const reqMarginPerTranche = Number(this.orderNotional() || 25) / levCap;
+      const sizingRatio = Number(this.botState?.last_evaluation?.ratio || this.currentRatio || 0);
+      const pairFactor = 1 + (sizingRatio > 0 ? 100 / sizingRatio : 1);
+      const reqMarginPerTranche = Number(this.orderNotional() || 25) * pairFactor;
       const hasMargin = freeMarginUsd >= reqMarginPerTranche;
       this.setText("valCondEntryMargin", `$${freeMarginUsd.toFixed(2)} ≥ $${reqMarginPerTranche.toFixed(2)}`);
       const chkMargin = lid("chkCondEntryMargin");
@@ -2537,6 +2564,20 @@
 
     save() { localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries: this.entries, ledger: this.ledger.slice(0, 100) })); },
 
+    tradeExposure(trade) {
+      const ratio = Math.abs(Number(trade.exit_ratio || trade.entry_ratio || trade.ratio || this.currentRatio || 0));
+      const configured = Math.abs(Number(trade.notional_usd || trade.notional || 0));
+      const adrQty = Math.abs(Number(trade.adr_qty || 0));
+      const domesticQty = Math.abs(Number(trade.domestic_qty || 0));
+      const adrPrice = Math.abs(Number(trade.adr_price || trade.orders?.first_leg?.reference_price || 0));
+      const domesticPrice = Math.abs(Number(trade.domestic_price || trade.orders?.second_leg?.reference_price || 0));
+      const adr = Math.abs(Number(trade.adr_notional_usd || 0)) || (adrQty && adrPrice ? adrQty * adrPrice : configured);
+      const domestic = Math.abs(Number(trade.domestic_notional_usd || 0)) || (domesticQty && domesticPrice ? domesticQty * domesticPrice : (adr && ratio ? adr * 100 / ratio : configured));
+      const gross = Math.abs(Number(trade.gross_notional_usd || 0)) || adr + domestic;
+      const margin = Math.abs(Number(trade.margin_usd || 0)) || gross;
+      return { adr, domestic, gross, margin };
+    },
+
     renderVirtualState() {
       if (this.mode === "live") {
         const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 187.55;
@@ -2548,10 +2589,16 @@
         this.setText("valAccountEquity", `$${col.toFixed(2)}`);
         this.setText("badgeEquitySource", "LIGHTER L2");
         const openLive = (this.livePositions || []).filter(p => Math.abs(Number(p.position || p.size || 0)) > 1e-6);
+        const liveGross = openLive.reduce((sum, pos) => {
+          const quantity = Math.abs(Number(pos.position || pos.size || 0));
+          const mark = Number(pos.mark_price || pos.avg_entry_price || pos.entry_price || pos.price || 0);
+          return sum + (Math.abs(Number(pos.position_value || 0)) || quantity * mark);
+        }, 0);
+        const estimatedFreeMargin = Math.max(0, col - liveGross);
         this.setText("valActivePairs", `${openLive.length} Open on Exchange`);
         const maxTranches = Number(this.botState?.max_tranches || 8);
         this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Active Units`);
-        this.setText("valHedgedQuantities", "SKHY / SKHYNIXUSD 1x Pair");
+        this.setText("valHedgedQuantities", `Gross $${liveGross.toFixed(2)} USDT · Est. 1x Margin $${liveGross.toFixed(2)}`);
         this.setText("valHedgedCombinedPnl", this.botState?.last_error ? `Error: ${this.botState.last_error}` : pnlText);
         const pnlEl = lid("valHedgedCombinedPnl");
         if (pnlEl) pnlEl.style.color = liveUnrealized > 0 ? "#16a34a" : (liveUnrealized < 0 ? "#dc2626" : "#0f172a");
@@ -2560,6 +2607,10 @@
         this.setText("countPositions", String(openLive.length));
 
         const body = lid("activePositionsBody");
+        const positionSummary = lid("activePositionsSummary");
+        if (positionSummary) {
+          positionSummary.innerHTML = `<span>Gross pair size <b>$${liveGross.toFixed(2)} USDT</b></span><span>Est. 1x margin <b>$${liveGross.toFixed(2)}</b></span><span>Collateral <b>$${col.toFixed(2)}</b></span><span>Est. free margin <b>$${estimatedFreeMargin.toFixed(2)}</b></span><span style="color:#64748b">Exchange position values · cross-margin estimate</span>`;
+        }
         if (body) {
           if (openLive.length) {
             body.innerHTML = openLive.map((pos, idx) => {
@@ -2570,13 +2621,17 @@
               const signedSize = sign === -1 ? -Math.abs(rawSize) : Math.abs(rawSize);
               const pnl = Number(pos.unrealized_pnl || 0);
               const price = Number(pos.avg_entry_price || pos.entry_price || pos.price || 0);
+              const mark = Number(pos.mark_price || pos.price || price);
+              const notional = Math.abs(Number(pos.position_value || 0)) || Math.abs(rawSize) * mark;
+              const margin = notional;
+              const roePct = margin > 0 ? pnl / margin * 100 : 0;
               const sideBadge = isLong
                 ? '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG</span>'
                 : '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">SHORT</span>';
-              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td>${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}</td></tr>`;
+              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td><b>$${notional.toFixed(2)}</b> USDT</td><td>$${margin.toFixed(2)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(4)}<br><small>${roePct >= 0 ? "+" : ""}${roePct.toFixed(3)}%</small></td></tr>`;
             }).join("");
           } else {
-            body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:24px 16px;line-height:1.6;">🛡️ All positions closed / flat (Take-profit mean-reversion executed)<br><small style="color:#059669;font-weight:700;">Check Execution History tab below for filled orders</small></td></tr>';
+            body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px 16px;line-height:1.6;">🛡️ All positions closed / flat (Take-profit mean-reversion executed)<br><small style="color:#059669;font-weight:700;">Check Execution History tab below for filled orders</small></td></tr>';
           }
         }
         this.updateLeverageMetrics();
@@ -2588,14 +2643,20 @@
       this.setText("valAccountEquity", "$10,000.00");
       this.setText("badgeEquitySource", "SIMULATED");
       this.setText("valHedgedTranches", `${this.entries.length} / 8 Grid Units`);
-      this.setText("valHedgedQuantities", `$${total.toFixed(0)} notional · ${this.virtualPnlText()} unrealized`);
+      const paperGross = total * 2;
+      this.setText("valHedgedQuantities", `Gross $${paperGross.toFixed(2)} virtual · Est. 1x Margin $${paperGross.toFixed(2)}`);
       this.setText("valHedgedCombinedPnl", this.virtualPnlText());
       this.setText("valHedgedPnlSubtitle", this.entries.length > 0 ? "Simulated Grid Position" : "No active paper tranches");
       this.setText("valActivePairs", this.entries.length ? `${this.entries.length} Active Rungs` : "0 Open (Flat)");
       this.setText("valUnrealizedPnl", this.virtualPnlText());
       this.setText("countPositions", String(this.entries.length));
       const body = lid("activePositionsBody");
-      if (body) body.innerHTML = this.entries.length ? this.entries.map((entry, index) => `<tr><td>G-${index + 1}</td><td>SKHY / SKHYNIXUSD</td><td>${entry.side < 0 ? "SHORT / LONG" : "LONG / SHORT"}</td><td>${entry.ratio.toFixed(3)}%</td><td>$${entry.notional.toFixed(0)}</td><td>${this.virtualPnlText()}</td></tr>`).join("") : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px;">No active grid positions</td></tr>';
+      const positionSummary = lid("activePositionsSummary");
+      if (positionSummary) positionSummary.innerHTML = `<span>Paper gross size <b>$${paperGross.toFixed(2)}</b></span><span>Est. 1x margin <b>$${paperGross.toFixed(2)}</b></span><span style="color:#64748b">Simulated, $${total.toFixed(2)} per-leg targets</span>`;
+      if (body) body.innerHTML = this.entries.length ? this.entries.map((entry, index) => {
+        const gross = Number(entry.notional || 0) * 2;
+        return `<tr><td>G-${index + 1}</td><td><strong>SKHY / SKHYNIXUSD</strong></td><td>${entry.side < 0 ? "SHORT / LONG" : "LONG / SHORT"}</td><td>Pair</td><td>${entry.ratio.toFixed(3)}%</td><td><b>$${gross.toFixed(2)}</b> virtual</td><td>$${gross.toFixed(2)}</td><td>${this.virtualPnlText()}</td></tr>`;
+      }).join("") : '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:20px;">No active grid positions</td></tr>';
       this.updateLeverageMetrics();
       this.renderExecutionHistory();
     },
@@ -2615,10 +2676,11 @@
           return sum + Number(isExit ? (trade.exit_fee_usd ?? trade.fee_usd ?? 0) : (trade.fee_usd || 0));
         }, 0);
         const totalNet = exits.reduce((sum, trade) => sum + Number(trade.net_pnl_usd ?? trade.pnl ?? 0), 0);
+        const totalGrossTurnover = history.reduce((sum, trade) => sum + this.tradeExposure(trade).gross, 0);
         const wins = exits.filter((trade) => Number(trade.net_pnl_usd ?? trade.pnl ?? 0) > 0).length;
         const summary = lid("executionHistorySummary");
         if (summary) {
-          summary.innerHTML = `<span><b>${history.length}</b> persisted events</span><span><b>${exits.length}</b> completed exits</span><span>Fees <b>$${totalFees.toFixed(4)}</b></span><span>Net P&L <b style="color:${totalNet >= 0 ? '#16a34a' : '#dc2626'}">${totalNet >= 0 ? '+' : ''}$${totalNet.toFixed(4)}</b></span><span>Win rate <b>${exits.length ? (wins / exits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">EC2 durable ledger · fee-adjusted ratio P&L</span>`;
+          summary.innerHTML = `<span><b>${history.length}</b> persisted events</span><span><b>${exits.length}</b> completed exits</span><span>Gross turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Fees <b>$${totalFees.toFixed(4)}</b></span><span>Net P&L <b style="color:${totalNet >= 0 ? '#16a34a' : '#dc2626'}">${totalNet >= 0 ? '+' : ''}$${totalNet.toFixed(4)}</b></span><span>Win rate <b>${exits.length ? (wins / exits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">EC2 durable ledger · fee-adjusted ratio P&L</span>`;
         }
         historyBody.innerHTML = history.slice().reverse().map((trade) => {
           const timeStr = formatKstDateTime(trade.time ? trade.time * 1000 : Date.now());
@@ -2632,6 +2694,8 @@
             ? '<span style="color:#dc2626;font-weight:800;">SHORT ADR / LONG KR</span>'
             : '<span style="color:#16a34a;font-weight:800;">LONG ADR / SHORT KR</span>';
           const sizeStr = `${Number(trade.adr_qty || 0).toFixed(4)} SKHY / ${Number(trade.domestic_qty || 0).toFixed(4)} KR`;
+          const exposure = this.tradeExposure(trade);
+          const exposureStr = `${sizeStr}<br><small>ADR $${exposure.adr.toFixed(2)} + KR $${exposure.domestic.toFixed(2)}<br><b>Gross $${exposure.gross.toFixed(2)} · est. 1x margin $${exposure.margin.toFixed(2)}</b></small>`;
           const entryRatio = Number(trade.entry_ratio || 0);
           const exitRatio = Number(trade.exit_ratio || (isExit ? trade.ratio : 0) || 0);
           const ratioStr = isExit && exitRatio
@@ -2650,7 +2714,7 @@
             <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr}</td>
             <td>${eventBadge}</td>
             <td>${directionBadge}</td>
-            <td style="font-family:monospace;">${sizeStr}</td>
+            <td style="font-family:monospace;line-height:1.45;">${exposureStr}</td>
             <td style="font-family:monospace;font-weight:700;">${ratioStr}</td>
             <td style="font-family:monospace;color:#64748b;">$${fee.toFixed(4)}<br><small>${feeBps.toFixed(2)} bps</small></td>
             <td>${pnlStr}</td>
@@ -2683,7 +2747,7 @@
             <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr}</td>
             <td><strong>SKHY / SKHYNIXUSD</strong></td>
             <td>${sideBadge}</td>
-            <td style="font-family:monospace;">$${(row.notional || 0).toFixed(0)} virtual</td>
+            <td style="font-family:monospace;line-height:1.45;">$${Number(row.notional || 0).toFixed(2)} / leg<br><small><b>Gross $${(Number(row.notional || 0) * 2).toFixed(2)} · est. 1x margin $${(Number(row.notional || 0) * 2).toFixed(2)}</b></small></td>
             <td style="font-family:monospace;font-weight:700;">${row.ratio ? row.ratio.toFixed(3) + "%" : "—"}</td>
             <td style="color:#64748b;">$0.00</td>
             <td>${pnlStr}</td>

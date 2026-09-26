@@ -306,6 +306,8 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                 ratio = float((t.get("exit_ratio") if is_exit else t.get("entry_ratio"))
                               or t.get("ratio", 0.0) or 0.0)
                 notional = float(t.get("notional_usd", 25.0))
+                exposure = lighter_pair_bot._event_exposure(t)
+                gross_notional = float(exposure.get("gross_notional_usd", notional) or notional)
                 if ratio <= 0:
                     matched_bar = next((b for b in bars if b["time"] == matched_time), None)
                     ratio = matched_bar["value"] if matched_bar else 141.0
@@ -319,16 +321,16 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                         "side": side,
                         "count": 1,
                         "total_qty": qty,
-                        "total_notional": notional,
-                        "weighted_ratio": ratio * notional,
+                        "total_notional": gross_notional,
+                        "weighted_ratio": ratio * gross_notional,
                         "pnl": t.get("pnl"),
                     }
                 else:
                     m = candle_markers[key]
                     m["count"] += 1
                     m["total_qty"] += qty
-                    m["total_notional"] += notional
-                    m["weighted_ratio"] += ratio * notional
+                    m["total_notional"] += gross_notional
+                    m["weighted_ratio"] += ratio * gross_notional
 
             for (m_time, is_entry, is_short), m_data in sorted(candle_markers.items(), key=lambda x: x[0][0]):
                 avg_ratio = m_data["weighted_ratio"] / max(1e-6, m_data["total_notional"])
@@ -338,7 +340,7 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                     color = "rgba(220, 38, 38, 0.70)" if is_short else "rgba(22, 163, 74, 0.70)"
                     active_color = "#dc2626" if is_short else "#16a34a"
                     shape = "arrowDown" if is_short else "arrowUp"
-                    hover_lbl = f"{'SHORT' if is_short else 'LONG'} {avg_ratio:.2f}% (${m_data['total_notional']:.0f}){cnt_str}"
+                    hover_lbl = f"{'SHORT' if is_short else 'LONG'} {avg_ratio:.2f}% · ${m_data['total_notional']:.2f} gross / 1x margin{cnt_str}"
                     marker_text = f"{'SHORT' if is_short else 'LONG'}{cnt_str}"
                 else:
                     is_cover = (m_data["side"] > 0)
@@ -349,7 +351,7 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                     pnl = m_data.get("pnl")
                     pnl_str = f" · {'+' if pnl >= 0 else ''}${pnl:.2f}" if pnl is not None else ""
                     action_name = "COVER" if is_cover else "EXIT"
-                    hover_lbl = f"{action_name} {avg_ratio:.2f}%{pnl_str}{cnt_str}"
+                    hover_lbl = f"{action_name} {avg_ratio:.2f}% · ${m_data['total_notional']:.2f} gross / 1x margin{pnl_str}{cnt_str}"
                     marker_text = f"{action_name}{cnt_str}"
 
                 markers.append({
