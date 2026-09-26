@@ -694,7 +694,7 @@
             <div><b>Size / capacity</b><br>$<span id="lighterLiveNotional">25</span> · max <span id="lighterLiveMaxTranches">3</span> tranches · 1x</div>
             <div>
               <b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps
-              <div style="display:flex;align-items:center;gap:7px;margin-top:5px">
+              <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
                 <input id="lighter_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Maximum paired trades per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
                 <output id="lighterLiveTradeRateValue" for="lighter_inputLiveTradeRate" style="min-width:48px;font-weight:900;color:#0369a1">0.2/min</output>
                 <button id="lighter_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
@@ -718,6 +718,7 @@
         liveTradeRate._boundInput = true;
         liveTradeRate.addEventListener("input", () => this.renderTradeRatePreview());
       }
+      window.terminalLockManager?.applyState?.();
 
       const tab = $("tabContentLighter");
       if (tab) {
@@ -1834,6 +1835,11 @@
     },
 
     async saveLiveBotRate() {
+      if (window.terminalLockManager?.isLocked) {
+        window.showToast?.("🔒 Terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
+        window.terminalLockManager?.openPasswordModal?.();
+        return false;
+      }
       const button = lid("btnSaveLiveCooldown");
       const tradeRate = this.tradeRatePerMinute();
       const cooldownSeconds = this.cooldownSecondsForTradeRate(tradeRate);
