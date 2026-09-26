@@ -46,6 +46,7 @@ assert.ok(code.includes('Filled Qty / USDT Size'), 'history must label USDT exec
 assert.ok(code.includes('Est. 1x Margin'), 'active positions must label estimated 1x margin');
 assert.ok(code.includes('gross_notional_usd'), 'history must consume persisted gross USDT exposure');
 assert.ok(code.includes('position_value'), 'active positions must use the exchange position value');
+assert.ok(code.includes('Boolean(this.botState?.enabled) || hasLiveExposure'), 'active positions must remain visible when the EC2 bot runs in the background');
 assert.ok(code.includes('const levCap = 1.0'), 'Lighter margin utilization must use the configured 1x cap');
 assert.ok(code.includes('tabEl.disabled = false'), 'bottom section tabs must be re-enabled after fail-closed initialization');
 assert.ok(code.includes('irrelevantUpbitTab.style.display = "none"'), 'irrelevant Upbit tab must be hidden on Lighter');

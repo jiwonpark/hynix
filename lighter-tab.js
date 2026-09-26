@@ -1228,7 +1228,7 @@
       if (spacingEl) spacingEl.textContent = `±${step.toFixed(3)}% (${tier.name.split(":")[1]?.trim() || "Dynamic"})`;
 
       const activeRungsEl = $("lighter_valActiveRungs");
-      const activeCount = this.mode === "live"
+      const activeCount = (this.mode === "live" || Boolean(this.botState?.enabled))
         ? ((this.botState?.tranches || []).filter(t => (t.adr_qty > 0 || t.domestic_qty > 0)).length)
         : this.entries.length;
       if (activeRungsEl) activeRungsEl.textContent = `${activeCount} / ${count} Tiers Active`;
@@ -1688,7 +1688,8 @@
       let tranchesCount = 0;
       let maxTranches = 8;
 
-      if (this.mode === "live") {
+      const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position || pos.size || 0)) > 1e-6);
+      if (this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure) {
         collateral = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 187.55;
         const positions = Array.isArray(this.livePositions) ? this.livePositions : [];
         positions.forEach((pos) => {
@@ -2579,7 +2580,9 @@
     },
 
     renderVirtualState() {
-      if (this.mode === "live") {
+      const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position || pos.size || 0)) > 1e-6);
+      const showExchangeState = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
+      if (showExchangeState) {
         const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 187.55;
         const validTranches = (this.botState?.tranches || []).filter(t => (t.adr_qty > 0 || t.domestic_qty > 0));
         const liveUnrealized = (this.livePositions || []).reduce((acc, pos) => acc + Number(pos.unrealized_pnl || 0), 0);
