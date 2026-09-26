@@ -5,6 +5,22 @@
   const STORAGE_KEY = "skhynix_lighter_virtual_ledger_v2";
   const STRATEGY_STORAGE_KEY = "skhynix_lighter_selected_strategy";
   const lid = (id) => $(`lighter_${id}`);
+  const KST_TIME_ZONE = "Asia/Seoul";
+
+  function formatKstDateTime(value, includeDate = true) {
+    const date = value instanceof Date ? value : new Date(value);
+    const options = includeDate
+      ? { timeZone: KST_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }
+      : { timeZone: KST_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
+    return `${date.toLocaleString("en-CA", options).replace(",", "")} KST`;
+  }
+
+  function formatKstChartTime(unixSeconds) {
+    return new Date(Number(unixSeconds) * 1000).toLocaleString("en-CA", {
+      timeZone: KST_TIME_ZONE, month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    }).replace(",", "");
+  }
 
   async function api(path) {
     let lastError;
@@ -1285,9 +1301,15 @@
       this.chart = LightweightCharts.createChart(host, {
         width: host.clientWidth, height: 420,
         layout: { background: { color: "#f8fafc" }, textColor: "#475569" },
+        localization: {
+          timeFormatter: (time) => formatKstDateTime(Number(time) * 1000, false),
+        },
         grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
         rightPriceScale: { borderColor: "#e2e8f0" },
-        timeScale: { borderColor: "#e2e8f0", timeVisible: true },
+        timeScale: {
+          borderColor: "#e2e8f0", timeVisible: true,
+          tickMarkFormatter: (time) => formatKstChartTime(time),
+        },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       });
       this.series = this.chart.addAreaSeries({ topColor: "rgba(2,132,199,.25)", bottomColor: "rgba(2,132,199,.02)", lineColor: "#0284c7", lineWidth: 2,
@@ -1404,7 +1426,7 @@
         if (status && status.parity_ratio) {
           this.currentRatio = Number(status.parity_ratio);
         }
-        this.setText("lblDaemonSyncTime", `Last Sync: ${new Date(status.server_time_ms || Date.now()).toLocaleTimeString()}`);
+        this.setText("lblDaemonSyncTime", `Last Sync: ${formatKstDateTime(status.server_time_ms || Date.now(), false)}`);
         this.setText("lblDaemonLatency", "Grid Engine: Active");
         this.setText("lblDaemonStats", "Multi-Tier Grid · Live Telemetry");
         this.setText("lblHedgedSyncBadge", "INSTITUTIONAL GRID ACTIVE");
@@ -2570,8 +2592,7 @@
           summary.innerHTML = `<span><b>${history.length}</b> persisted events</span><span><b>${exits.length}</b> completed exits</span><span>Fees <b>$${totalFees.toFixed(4)}</b></span><span>Net P&L <b style="color:${totalNet >= 0 ? '#16a34a' : '#dc2626'}">${totalNet >= 0 ? '+' : ''}$${totalNet.toFixed(4)}</b></span><span>Win rate <b>${exits.length ? (wins / exits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">EC2 durable ledger · fee-adjusted ratio P&L</span>`;
         }
         historyBody.innerHTML = history.slice().reverse().map((trade) => {
-          const date = trade.time ? new Date(trade.time * 1000) : new Date();
-          const timeStr = date.toLocaleString("en-CA", { timeZone: "Asia/Seoul", hour12: false }).replace(",", "");
+          const timeStr = formatKstDateTime(trade.time ? trade.time * 1000 : Date.now());
           const isExit = trade.event === "EXIT" || Boolean(trade.is_exit);
           const originalSide = isExit ? Number(trade.original_side ?? -Number(trade.side || 0)) : Number(trade.side || 0);
           const isShort = originalSide < 0;
@@ -2597,7 +2618,7 @@
             : '<span style="color:#64748b">Open cost basis</span>';
           const status = trade.status || (isExit ? "CLOSED" : "OPEN");
           return `<tr>
-            <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr} KST</td>
+            <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr}</td>
             <td>${eventBadge}</td>
             <td>${directionBadge}</td>
             <td style="font-family:monospace;">${sizeStr}</td>
@@ -2617,8 +2638,7 @@
           return;
         }
         historyBody.innerHTML = ledger.slice(0, 50).map((row) => {
-          const date = row.time ? new Date(row.time) : new Date();
-          const timeStr = date.toLocaleTimeString("en-US", { timeZone: "Asia/Seoul", hour12: false });
+          const timeStr = formatKstDateTime(row.time || Date.now(), false);
           const isExit = row.action === "EXIT";
           const isShort = row.side < 0 || row.action === "SHORT RATIO";
           const sideBadge = isExit
@@ -2631,7 +2651,7 @@
             ? `<span style="font-weight:700;color:${pnlVal >= 0 ? "#16a34a" : "#dc2626"}">${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}</span>`
             : "—";
           return `<tr>
-            <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr} KST</td>
+            <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr}</td>
             <td><strong>SKHY / SKHYNIXUSD</strong></td>
             <td>${sideBadge}</td>
             <td style="font-family:monospace;">$${(row.notional || 0).toFixed(0)} virtual</td>

@@ -48,5 +48,9 @@ assert.ok(code.includes('lighter_inputOrderIntervalMinutes'), 'must render a liv
 assert.ok(code.includes('min_seconds_between_orders: minutes * 60'), 'must persist the selected interval in seconds');
 assert.ok(code.includes('min_seconds_between_orders: intervalMinutes * 60'), 'must apply the interval when enabling the live bot');
 assert.ok(code.includes('lighterLiveCooldown'), 'must show the configured cooldown in the live rules panel');
+assert.ok(code.includes('const KST_TIME_ZONE = "Asia/Seoul"'), 'must render Lighter times explicitly in KST');
+assert.ok(code.includes('Last Sync: ${formatKstDateTime'), 'last sync must use the explicit KST formatter');
+assert.ok(code.includes('localization: {'), 'chart must use explicit time localization');
+assert.ok(code.includes('tickMarkFormatter: (time) => formatKstChartTime(time)'), 'chart axis ticks must use KST');
 
 console.log('Lighter Tab 2 UX & paper/live checks passed');
