@@ -214,6 +214,18 @@ class TestLighterPairBot(unittest.TestCase):
             self.assertAlmostEqual(history[1]["net_pnl_usd"], 0.15)
             self.assertAlmostEqual(history[1]["pnl_pct"], 0.6)
 
+    def test_execution_history_does_not_label_old_unmatched_entry_as_open(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            bot.state["history"] = [{
+                "side": 1, "adr_qty": 0.13, "domestic_qty": 0.013,
+                "entry_ratio": 140.0, "time": 100, "notional_usd": 25.0,
+            }]
+            self.assertEqual(
+                bot.public_state()["execution_history"][0]["status"],
+                "LEGACY — EXIT NOT RECORDED",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

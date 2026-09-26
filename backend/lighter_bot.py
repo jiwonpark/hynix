@@ -214,6 +214,16 @@ class LighterPairBot:
                 "status": "CLOSED" if matched else "UNMATCHED EXIT",
                 "history_index": index,
             })
+        active_tranches = list(self.state.get("tranches") or [])
+        for unmatched_entries in open_entries.values():
+            for row in unmatched_entries:
+                is_active = any(
+                    int(active.get("side", 0)) == int(row.get("side", 0))
+                    and abs(float(active.get("adr_qty", 0.0) or 0.0) - float(row.get("adr_qty", 0.0) or 0.0)) < 1e-6
+                    and abs(int(active.get("time", 0) or 0) - int(row.get("time", 0) or 0)) <= 1
+                    for active in active_tranches
+                )
+                row["status"] = "OPEN" if is_active else "LEGACY — EXIT NOT RECORDED"
         return normalized
 
     @staticmethod
