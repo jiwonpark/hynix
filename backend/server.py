@@ -394,6 +394,8 @@ async def get_lighter_bot_status() -> Dict[str, Any]:
 
 @app.post("/api/lighter/bot/config")
 async def configure_lighter_bot(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
     try:
         body = await request.json()
         return JSONResponse({"success": True, "bot": await lighter_pair_bot.configure(body or {})})
@@ -403,6 +405,8 @@ async def configure_lighter_bot(request: Request) -> JSONResponse:
 
 @app.post("/api/lighter/bot/toggle")
 async def toggle_lighter_bot(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
     try:
         body = await request.json()
         enabled = body.get("enabled")
@@ -743,9 +747,13 @@ async def step_lighter_tranche(request: Request) -> JSONResponse:
         body = await request.json()
     except Exception:
         body = {}
-    notional = float(body.get("notional_usd") or lighter_pair_bot.state.get("notional_usd", 25.0))
-    side = int(body.get("side", -1))
     try:
+        notional = float(body.get("notional_usd") or lighter_pair_bot.state.get("notional_usd", 25.0))
+        side = int(body.get("side", -1))
+        if not math.isfinite(notional) or not 10.0 <= notional <= 500.0:
+            raise ValueError("notional_usd must be between 10 and 500")
+        if side not in {-1, 1}:
+            raise ValueError("side must be -1 or 1")
         tranche = await lighter_pair_bot.execute_manual_tranche(side=side, notional_usd=notional)
         return JSONResponse({"success": True, "message": f"Executed 1x pair tranche (${notional:.0f}) on Lighter DEX", "tranche": tranche})
     except Exception as error:
@@ -769,7 +777,7 @@ async def flatten_lighter(request: Request) -> JSONResponse:
         return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
     try:
         res = await lighter_pair_bot.flatten_all()
-        return JSONResponse({"success": True, "message": "All Lighter positions flattened and bot paused", **res})
+        return JSONResponse({"success": True, "message": "SKHY pair positions flattened and bot paused", **res})
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error)}, status_code=400)
 

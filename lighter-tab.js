@@ -1718,16 +1718,18 @@
         if (enabled) {
           const notional = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
           const confirmed = window.confirm(`Enable REAL 24/7 Lighter trading on EC2?\n\nPair: SKHY / SKHYNIXUSD (no 2x ETF)\nSizing: $${notional.toFixed(0)} per SKHY leg, 1x\n\nThe bot may place orders after the next closed-bar signal.`);
-          if (!confirmed) { if (toggle) toggle.checked = false; return; }
+          if (!confirmed) { if (toggle) toggle.checked = false; return false; }
           await apiPost("/api/lighter/bot/config", { notional_usd: notional });
         }
         const data = await apiPost("/api/lighter/bot/toggle", { enabled, confirm_live_trading: enabled });
         if (data?.bot) {
           this.updateBotStatus(data.bot, { execution_enabled: true });
         }
+        return Boolean(data?.success);
       } catch (error) {
         if (toggle) toggle.checked = Boolean(this.botState?.enabled);
         window.alert(error.message);
+        return false;
       }
     },
 
@@ -1965,18 +1967,27 @@
       }
     },
 
-    orderNotional() { return Math.max(10, Number(lid("inputOrderNotional")?.value || 25)); },
+    orderNotional() { return Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25))); },
     virtualPnl() { return this.entries.reduce((sum, entry) => sum + (this.currentRatio == null ? 0 : entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio), 0); },
     virtualPnlText() { const pnl = this.virtualPnl(); return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`; },
 
-    setMode(mode) {
-      if ((mode === "live" || mode === "semi_auto") && window.terminalLockManager?.isLocked) {
+    async setMode(mode) {
+      if (!['paper', 'semi_auto', 'live'].includes(mode)) return;
+      const botEnabled = Boolean(this.botState?.enabled);
+      const needsBotWrite = (mode === "live" && !botEnabled)
+        || (mode !== "live" && (botEnabled || this.mode === "live"));
+      if (needsBotWrite && window.terminalLockManager?.isLocked) {
         const isKo = window.currentLang === "ko";
         window.showToast?.(
           isKo ? "🔒 거래 터미널이 읽기 전용 모드입니다. 상단 스위치로 잠금을 해제하세요." : "🔒 Execution terminal is in read-only mode. Unlock using the slide switch at the top.",
           "warn"
         );
         return;
+      }
+      if (mode === "live" && !botEnabled) {
+        if (!await this.toggleLiveBot(true)) return;
+      } else if (mode !== "live" && (botEnabled || this.mode === "live")) {
+        if (!await this.toggleLiveBot(false)) return;
       }
       this.mode = mode;
       localStorage.setItem("skhynix_lighter_mode", mode);
@@ -2014,9 +2025,6 @@
         this.setText("lblReduceTrancheText", "Trim 1 GCD Tranche (Take-Profit)");
         const flatten = lid("btnEmergencyFlatten");
         if (flatten) flatten.textContent = "🚨 Emergency Flatten";
-        if (this.botState && !this.botState.enabled && showNotification) {
-          this.toggleLiveBot(true);
-        }
       } else if (mode === "semi_auto") {
         if (badge) {
           badge.textContent = isKo ? "⚡ AI 시그널 반자동 승인" : "AI SEMI-AUTO APPROVAL";
@@ -2119,13 +2127,13 @@
           window.showToast?.("🔒 Terminal is in read-only mode. Unlock before emergency flatten.", "warn");
           return;
         }
-        const confirmed = window.confirm("🚨 EMERGENCY FLATTEN: Close all open positions on Lighter DEX and pause the EC2 bot at market?");
+        const confirmed = window.confirm("🚨 EMERGENCY FLATTEN: Close both SKHY pair legs on Lighter DEX and pause the EC2 bot at market?");
         if (!confirmed) return;
         window.showToast?.("Closing all Lighter positions and halting bot...", "info");
         try {
           const res = await apiPost("/api/lighter/flatten", {});
           if (res.success) {
-            window.showToast?.("✅ All Lighter positions flattened and bot paused.", "success");
+            window.showToast?.("✅ SKHY pair positions flattened and bot paused.", "success");
             await this.refresh();
           } else {
             window.showToast?.(`Error: ${res.error}`, "danger");

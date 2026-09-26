@@ -119,6 +119,78 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_enable_rejects_single_leg_or_same_direction_positions(self):
+        async def run(positions):
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.account_status = AsyncMock(return_value={"authenticated": True, "execution_enabled": True})
+                client.positions = AsyncMock(return_value=positions)
+                signer = Mock()
+                signer.check_client.return_value = None
+                client.get_signer.return_value = signer
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                with self.assertRaisesRegex(RuntimeError, "Unreconciled"):
+                    await bot.set_enabled(True)
+                self.assertFalse(bot.public_state()["enabled"])
+
+        asyncio.run(run([{"market_id": 216, "position": "0.04", "sign": -1}]))
+        asyncio.run(run([
+            {"market_id": 216, "position": "0.04", "sign": 1},
+            {"market_id": 161, "position": "0.004", "sign": 1},
+        ]))
+
+    def test_manual_order_rejects_unsafe_parameters_before_exchange_access(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                with self.assertRaisesRegex(ValueError, "side"):
+                    await bot.execute_manual_tranche(0, 25.0)
+                with self.assertRaisesRegex(ValueError, "notional_usd"):
+                    await bot.execute_manual_tranche(-1, 501.0)
+                client.account_status.assert_not_called()
+
+        asyncio.run(run())
+
+    def test_rejected_manual_reduce_keeps_tranche_tracked(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.order_book = AsyncMock(return_value={
+                    "asks": [{"price": "101"}], "bids": [{"price": "99"}],
+                })
+                client.create_market_order = AsyncMock(side_effect=RuntimeError("Lighter order rejected: test"))
+                state_file = Path(directory) / "state.json"
+                bot = LighterPairBot(client, state_file)
+                tranche = {"side": -1, "adr_qty": 0.04, "domestic_qty": 0.004, "entry_ratio": 141.0}
+                bot.state["tranches"] = [tranche]
+                bot.save()
+                with self.assertRaisesRegex(RuntimeError, "rejected"):
+                    await bot.execute_manual_reduce()
+                self.assertEqual(bot.state["tranches"], [tranche])
+                self.assertEqual(json.loads(state_file.read_text())["tranches"], [tranche])
+
+        asyncio.run(run())
+
+    def test_reduce_without_tranches_flattens_without_lock_deadlock(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                positions = [
+                    {"market_id": 216, "position": "0.04", "sign": -1},
+                    {"market_id": 161, "position": "0.004", "sign": 1},
+                ]
+                client.positions = AsyncMock(return_value=positions)
+                client.order_book = AsyncMock(return_value={
+                    "asks": [{"price": "101"}], "bids": [{"price": "99"}],
+                })
+                client.create_market_order = AsyncMock(return_value={"client_order_index": 1})
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                result = await asyncio.wait_for(bot.execute_manual_reduce(), timeout=0.5)
+                self.assertEqual(len(result["closed"]), 2)
+
+        asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

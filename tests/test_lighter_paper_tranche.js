@@ -35,5 +35,7 @@ assert.ok(code.includes('this.setText("valHedgedLeverage"'), 'must update valHed
 assert.ok(code.includes('this.setText("valCondEntryLeverage"'), 'must update valCondEntryLeverage dynamically');
 assert.ok(code.includes('this.setText("valCritGrossLev"'), 'must update valCritGrossLev dynamically');
 assert.ok(!code.includes('"1.00x fixed"'), 'must not hardcode 1.00x fixed');
+assert.ok(code.includes('await this.toggleLiveBot(false)'), 'leaving live mode must pause the backend bot');
+assert.ok(code.includes('Math.min(500'), 'manual live notional must be capped at $500 in the UI');
 
 console.log('Lighter Tab 2 UX & paper/live checks passed');

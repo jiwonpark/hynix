@@ -23,12 +23,24 @@ class TestLighterTab2Ux(unittest.TestCase):
         self.assertIn("/api/lighter/order", routes)
 
     def test_unauthorized_requests_rejected(self):
+        res = self.client.post("/api/lighter/bot/config", json={})
+        self.assertEqual(res.status_code, 401)
+        res = self.client.post("/api/lighter/bot/toggle", json={"enabled": False})
+        self.assertEqual(res.status_code, 401)
         res = self.client.post("/api/lighter/step_tranche", json={})
         self.assertEqual(res.status_code, 401)
         res = self.client.post("/api/lighter/reduce_tranche", json={})
         self.assertEqual(res.status_code, 401)
         res = self.client.post("/api/lighter/flatten", json={})
         self.assertEqual(res.status_code, 401)
+
+    @patch("backend.server.terminal_authorized", return_value=True)
+    def test_step_tranche_rejects_unsafe_parameters(self, mock_auth):
+        with patch.object(lighter_pair_bot, "execute_manual_tranche", new_callable=AsyncMock) as mock_step:
+            for payload in ({"side": 0, "notional_usd": 25}, {"side": -1, "notional_usd": 501}):
+                res = self.client.post("/api/lighter/step_tranche", json=payload)
+                self.assertEqual(res.status_code, 400)
+            mock_step.assert_not_awaited()
 
     @patch("backend.server.terminal_authorized", return_value=True)
     def test_authorized_step_tranche(self, mock_auth):
