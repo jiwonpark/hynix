@@ -95,6 +95,11 @@ def classify_trend(values: List[float]) -> Dict[str, Any]:
 
 
 class LighterPairBot:
+    TAB2_GROSS_LEVERAGE_CAP = 8.0
+    TAB2_MARGIN_LEVERAGE = 10.0
+    TAB2_MARGIN_BUFFER_MULTIPLIER = 1.25
+    TAB2_CAMPAIGN_CAP = 12
+
     DEFAULTS: Dict[str, Any] = {
         "enabled": False,
         "symbol_pair": ["SKHY", "SKHYNIXUSD"],
@@ -102,8 +107,8 @@ class LighterPairBot:
         "exit_z": 0.25,
         "notional_usd": 25.0,
         "capacity_mode": "DYNAMIC_SAFE_LEVERAGE",
-        "max_tranches": 20,
-        "gross_leverage_cap": 1.0,
+        "max_tranches": TAB2_CAMPAIGN_CAP,
+        "gross_leverage_cap": TAB2_GROSS_LEVERAGE_CAP,
         "risk_capacity": None,
         "max_book_spread_bps": 45.0,
         "max_slippage": 0.006,
@@ -137,7 +142,10 @@ class LighterPairBot:
                     # limit. Migrate that legacy state to dynamic risk capacity.
                     if "capacity_mode" not in raw:
                         state["capacity_mode"] = "DYNAMIC_SAFE_LEVERAGE"
-                        state["max_tranches"] = 20
+                    # These are the same mandatory portfolio limits as Tab 2,
+                    # independent of the selected (non-2x) Lighter instruments.
+                    state["max_tranches"] = self.TAB2_CAMPAIGN_CAP
+                    state["gross_leverage_cap"] = self.TAB2_GROSS_LEVERAGE_CAP
         except Exception as error:
             state["enabled"] = False
             state["last_error"] = f"State recovery failed: {error}"
@@ -158,7 +166,7 @@ class LighterPairBot:
             "recovery_required": bool(self.state.get("pending_execution")),
             "mode": "LIVE" if self.state.get("enabled") else "PAUSED",
             "max_tranches": public_max,
-            "hard_max_tranches": int(self.state.get("max_tranches", 20)),
+            "hard_max_tranches": int(self.state.get("max_tranches", self.TAB2_CAMPAIGN_CAP)),
             "execution_history": self._execution_history(),
         }
 
@@ -281,11 +289,12 @@ class LighterPairBot:
     ) -> Dict[str, Any]:
         """Tab-2-style capacity from live equity, gross exposure, and next-unit headroom."""
         collateral = max(0.0, float(account.get("collateral", 0.0) or 0.0))
-        leverage_cap = min(1.0, max(0.1, float(self.state.get("gross_leverage_cap", 1.0) or 1.0)))
-        hard_cap = max(1, min(20, int(self.state.get("max_tranches", 20) or 20)))
+        leverage_cap = self.TAB2_GROSS_LEVERAGE_CAP
+        hard_cap = self.TAB2_CAMPAIGN_CAP
         active = len(self.state.get("tranches") or [])
         quote_by_market = {216: adr_quote, 161: domestic_quote}
         current_gross = 0.0
+        allocated_margin = 0.0
         for position in positions:
             market_id = int(position.get("market_id", 0) or 0)
             raw_size = abs(float(position.get("position", 0.0) or position.get("size", 0.0) or 0.0))
@@ -293,6 +302,7 @@ class LighterPairBot:
             mark = float(position.get("mark_price", 0.0) or position.get("avg_entry_price", 0.0)
                          or (quote_by_market.get(market_id) or {}).get("mid", 0.0) or 0.0)
             current_gross += position_value if position_value > 0 else raw_size * mark
+            allocated_margin += abs(float(position.get("allocated_margin", 0.0) or 0.0))
 
         target_notional = float(notional_usd if notional_usd is not None else self.state.get("notional_usd", 25.0))
         adr_mid = float(adr_quote.get("mid", 0.0) or 0.0)
@@ -304,13 +314,18 @@ class LighterPairBot:
         next_gross = adr_qty * adr_mid + domestic_qty * domestic_mid
 
         gross_capacity = collateral * leverage_cap
-        required_buffer = max(2.50, next_gross * 0.25)
-        usable_capacity = max(0.0, gross_capacity - required_buffer)
-        gross_headroom = max(0.0, usable_capacity - current_gross)
+        gross_headroom = max(0.0, gross_capacity - current_gross)
+        available_margin = max(0.0, collateral - allocated_margin)
+        required_buffer = max(
+            2.50,
+            (next_gross / self.TAB2_MARGIN_LEVERAGE) * self.TAB2_MARGIN_BUFFER_MULTIPLIER,
+        )
         leverage_remaining = math.floor(gross_headroom / next_gross) if next_gross > 0 else 0
-        remaining = max(0, min(hard_cap - active, leverage_remaining))
         projected_leverage = ((current_gross + next_gross) / collateral
                               if collateral > 0 and next_gross > 0 else float("inf"))
+        has_margin = available_margin >= required_buffer
+        has_leverage = projected_leverage <= leverage_cap
+        remaining = max(0, min(hard_cap - active, leverage_remaining)) if has_margin and has_leverage else 0
         result = {
             "mode": "DYNAMIC_SAFE_LEVERAGE",
             "active_tranches": active,
@@ -322,12 +337,19 @@ class LighterPairBot:
             "next_tranche_gross_usd": round(next_gross, 6),
             "gross_capacity_usd": round(gross_capacity, 6),
             "gross_headroom_usd": round(gross_headroom, 6),
+            "allocated_margin_usd": round(allocated_margin, 6),
+            "available_margin_usd": round(available_margin, 6),
             "required_margin_buffer_usd": round(required_buffer, 6),
             "gross_leverage": round(current_gross / collateral, 6) if collateral > 0 else None,
             "projected_gross_leverage": round(projected_leverage, 6) if math.isfinite(projected_leverage) else None,
             "gross_leverage_cap": leverage_cap,
+            "margin_leverage_assumption": self.TAB2_MARGIN_LEVERAGE,
+            "margin_buffer_multiplier": self.TAB2_MARGIN_BUFFER_MULTIPLIER,
             "can_add_tranche": remaining > 0,
-            "blocked_reason": None if remaining > 0 else "SAFE_LEVERAGE_OR_MARGIN_CAP",
+            "blocked_reason": (None if remaining > 0 else
+                               "INSUFFICIENT_MARGIN" if not has_margin else
+                               "GROSS_LEVERAGE_CAP" if not has_leverage else
+                               "CAMPAIGN_CAPACITY"),
         }
         self.state["risk_capacity"] = result
         return result
@@ -371,7 +393,7 @@ class LighterPairBot:
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         bounds = {
             "entry_z": (0.75, 4.0), "exit_z": (0.0, 1.0), "notional_usd": (10.0, 500.0),
-            "max_tranches": (1, 8), "max_book_spread_bps": (1.0, 100.0),
+            "max_book_spread_bps": (1.0, 100.0),
             "max_slippage": (0.001, 0.02), "min_seconds_between_orders": (6, 86400),
         }
         async with self.lock:

@@ -42,36 +42,38 @@ class TestLighterPairBot(unittest.TestCase):
         self.assertAlmostEqual(exposure["gross_notional_usd"], 42.64)
         self.assertAlmostEqual(exposure["margin_usd"], 42.64)
 
-    def test_dynamic_capacity_uses_one_x_collateral_and_next_tranche_buffer(self):
+    def test_dynamic_capacity_uses_tab_two_leverage_and_margin_rules(self):
         with tempfile.TemporaryDirectory() as directory:
             bot = LighterPairBot(Mock(), Path(directory) / "state.json")
             bot.state["tranches"] = [{"side": 1}] * 3
             capacity = bot._risk_capacity(
                 {"collateral": 187.55},
                 [
-                    {"market_id": 216, "position_value": "75"},
-                    {"market_id": 161, "position_value": "54"},
+                    {"market_id": 216, "position_value": "75", "allocated_margin": "7.5"},
+                    {"market_id": 161, "position_value": "54", "allocated_margin": "5.4"},
                 ],
                 {"mid": 191.0}, {"mid": 1340.0}, 25.0,
             )
-            self.assertEqual(capacity["gross_leverage_cap"], 1.0)
+            self.assertEqual(capacity["gross_leverage_cap"], 8.0)
+            self.assertEqual(capacity["margin_leverage_assumption"], 10.0)
             self.assertEqual(capacity["active_tranches"], 3)
-            self.assertEqual(capacity["remaining_tranches"], 1)
-            self.assertEqual(capacity["max_tranches"], 4)
+            self.assertEqual(capacity["remaining_tranches"], 9)
+            self.assertEqual(capacity["max_tranches"], 12)
             self.assertTrue(capacity["can_add_tranche"])
-            self.assertGreater(capacity["required_margin_buffer_usd"], 10.0)
+            self.assertGreater(capacity["required_margin_buffer_usd"], 5.0)
+            self.assertLess(capacity["required_margin_buffer_usd"], 6.0)
 
     def test_dynamic_capacity_blocks_entry_before_exceeding_safe_headroom(self):
         with tempfile.TemporaryDirectory() as directory:
             bot = LighterPairBot(Mock(), Path(directory) / "state.json")
-            bot.state["tranches"] = [{"side": 1}] * 4
+            bot.state["tranches"] = [{"side": 1}] * 12
             capacity = bot._risk_capacity(
                 {"collateral": 187.55},
-                [{"market_id": 216, "position_value": "170"}],
+                [{"market_id": 216, "position_value": "1400", "allocated_margin": "140"}],
                 {"mid": 191.0}, {"mid": 1340.0}, 25.0,
             )
             self.assertEqual(capacity["remaining_tranches"], 0)
-            self.assertEqual(capacity["max_tranches"], 4)
+            self.assertEqual(capacity["max_tranches"], 12)
             self.assertFalse(capacity["can_add_tranche"])
 
     def test_legacy_fixed_three_tranche_state_migrates_to_dynamic_capacity(self):
@@ -80,7 +82,8 @@ class TestLighterPairBot(unittest.TestCase):
             state_file.write_text(json.dumps({"max_tranches": 3, "tranches": []}))
             bot = LighterPairBot(Mock(), state_file)
             self.assertEqual(bot.state["capacity_mode"], "DYNAMIC_SAFE_LEVERAGE")
-            self.assertEqual(bot.state["max_tranches"], 20)
+            self.assertEqual(bot.state["max_tranches"], 12)
+            self.assertEqual(bot.state["gross_leverage_cap"], 8.0)
 
     def test_configure_persists_ten_per_minute_order_interval(self):
         async def run():

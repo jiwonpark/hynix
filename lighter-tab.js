@@ -385,7 +385,7 @@
       this.setText("valDeployedInterval", "5m completed candles");
       this.setText("valDeployedWindow", "24 completed bars");
       this.setText("valDeployedEdge", "Entry |Z| ≥ 1.50");
-      this.setText("valDeployedMaxLeverage", "100% (1.0x)");
+      this.setText("valDeployedMaxLeverage", "800% (8.0x account cap)");
       this.setText("valDeployedSpeed", "Configurable paired trade rate (0.2–10/min)");
       this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.25");
       this.setText("valDeployedCost", "0 BPS advertised fee / slippage excluded");
@@ -397,7 +397,7 @@
       this.setText("lblUnrealizedPnl", "Grid Harvested PnL");
       this.setText("lblActivePairs", "Active Grid Rungs");
       this.setText("lblMarginRisk", "Target Leverage");
-      this.setText("valMarginRisk", "1.0x");
+      this.setText("valMarginRisk", "8.0x cap");
       this.setText("lblCollateralSummary", "Grid Mode");
       this.setText("lblUpbitEquity", "Grid Underlying Pair");
       this.setText("badgeUpbitSource", "DUAL-LEG");
@@ -422,7 +422,7 @@
         rowCondEntryMaStack5m: "4. 5m Micro-Trend Neutrality Confirmation",
         rowCondEntryMaStack1h: "5. 1h Macro Divergence Boundary",
         rowCondEntryCapacity: "6. Max Active Grid Tiers (Cap: 8 Rungs)",
-        rowCondEntryLeverage: "7. Fixed 1.0x Position Sizing",
+        rowCondEntryLeverage: "7. Account-Wide Gross Leverage (≤ 8.0x)",
         rowCondEntryMargin: "8. Buffered Margin Reserve (≥ 125%)",
         rowCondEntryEngine: "9. Grid Engine State & Configured Rate Limit",
         rowCondEntryGuard: "10. Anti-Whipsaw Bar Cadence (1 bar/rung)",
@@ -709,7 +709,7 @@
             <div><b>Entry</b><br>|Z| ≥ <span id="lighterLiveEntryZ">1.50</span></div>
             <div><b>Direction</b><br>Z high: short SKHY / long KR<br>Z low: long SKHY / short KR</div>
             <div><b>Exit</b><br>|Z| ≤ <span id="lighterLiveExitZ">0.25</span> · no separate PnL gate</div>
-            <div><b>Size / dynamic capacity</b><br>ADR target $<span id="lighterLiveNotional">25</span> · pair gross ≈ $<span id="lighterLivePairGross">—</span><br><span id="lighterLiveMaxTranches">—</span> safe tranches · ≤1x gross</div>
+            <div><b>Size / dynamic capacity</b><br>ADR target $<span id="lighterLiveNotional">25</span> · pair gross ≈ $<span id="lighterLivePairGross">—</span><br><span id="lighterLiveMaxTranches">—</span> safe tranches · ≤8x account gross</div>
             <div>
               <b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps
               <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
@@ -1712,7 +1712,8 @@
     },
 
     updateLeverageMetrics() {
-      const levCap = 1.0;
+      const riskCapacity = this.botState?.risk_capacity || {};
+      const levCap = Number(riskCapacity.gross_leverage_cap || 8.0);
       let grossNotional = 0;
       let collateral = 187.55;
       let adrQty = 0;
@@ -1766,7 +1767,7 @@
       const grossLev = collateral > 0 ? (grossNotional / collateral) : 0;
       const dynamicCapUsd = collateral * levCap;
       const headroomUsd = Math.max(0, dynamicCapUsd - grossNotional);
-      const freeMarginUsd = Math.max(0, collateral - (grossNotional / levCap));
+      const freeMarginUsd = Number(riskCapacity.available_margin_usd ?? Math.max(0, collateral - (grossNotional / levCap)));
       const hasLeverage = grossLev <= levCap;
       const netDeltaUsd = adrNotional - domesticNotional;
       const netShares = domesticQty - adrQty;
@@ -1780,7 +1781,9 @@
       if (levEl) {
         levEl.style.color = grossLev > levCap ? "#dc2626" : (grossLev > levCap * 0.75 ? "#d97706" : "#0284c7");
       }
-      this.setText("valHedgedNotional", `Gross Size: $${grossNotional.toFixed(2)} USDT · Est. 1x Margin: $${grossNotional.toFixed(2)}`);
+      this.setText("valHedgedNotional", `Gross Size: $${grossNotional.toFixed(2)} USDT · Est. ${levCap.toFixed(0)}x Margin: $${(grossNotional / levCap).toFixed(2)}`);
+      this.setText("valDeployedMaxLeverage", `${(levCap * 100).toFixed(0)}% (${levCap.toFixed(1)}x account cap)`);
+      this.setText("valMarginRisk", `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x cap`);
 
       // 2. Telemetry Cards
       this.setText("valHedgedDelta", `$${Math.abs(netDeltaUsd).toFixed(2)}`);
@@ -1829,7 +1832,8 @@
 
       const sizingRatio = Number(this.botState?.last_evaluation?.ratio || this.currentRatio || 0);
       const pairFactor = 1 + (sizingRatio > 0 ? 100 / sizingRatio : 1);
-      const reqMarginPerTranche = Number(this.orderNotional() || 25) * pairFactor;
+      const nextPairGross = Number(riskCapacity.next_tranche_gross_usd || (Number(this.orderNotional() || 25) * pairFactor));
+      const reqMarginPerTranche = Number(riskCapacity.required_margin_buffer_usd || Math.max(2.5, (nextPairGross / 10) * 1.25));
       const hasMargin = freeMarginUsd >= reqMarginPerTranche;
       this.setText("valCondEntryMargin", `$${freeMarginUsd.toFixed(2)} ≥ $${reqMarginPerTranche.toFixed(2)}`);
       const chkMargin = lid("chkCondEntryMargin");
@@ -2661,7 +2665,10 @@
         const body = lid("activePositionsBody");
         const positionSummary = lid("activePositionsSummary");
         if (positionSummary) {
-          positionSummary.innerHTML = `<span>Gross pair size <b>$${liveGross.toFixed(2)} USDT</b></span><span>Est. 1x margin <b>$${liveGross.toFixed(2)}</b></span><span>Collateral <b>$${col.toFixed(2)}</b></span><span>Est. free margin <b>$${estimatedFreeMargin.toFixed(2)}</b></span><span style="color:#64748b">Exchange position values · cross-margin estimate</span>`;
+          const liveRisk = this.botState?.risk_capacity || {};
+          const liveLevCap = Number(liveRisk.gross_leverage_cap || 8);
+          const displayedFreeMargin = Number(liveRisk.available_margin_usd ?? estimatedFreeMargin);
+          positionSummary.innerHTML = `<span>Gross pair size <b>$${liveGross.toFixed(2)} USDT</b></span><span>Est. margin at ${liveLevCap.toFixed(0)}x <b>$${(liveGross / liveLevCap).toFixed(2)}</b></span><span>Collateral <b>$${col.toFixed(2)}</b></span><span>Available margin <b>$${displayedFreeMargin.toFixed(2)}</b></span><span style="color:#64748b">Exchange position values · cross-margin estimate</span>`;
         }
         if (body) {
           if (openLive.length) {
@@ -2675,7 +2682,8 @@
               const price = Number(pos.avg_entry_price || pos.entry_price || pos.price || 0);
               const mark = Number(pos.mark_price || pos.price || price);
               const notional = Math.abs(Number(pos.position_value || 0)) || Math.abs(rawSize) * mark;
-              const margin = notional;
+              const liveLevCap = Number(this.botState?.risk_capacity?.gross_leverage_cap || 8);
+              const margin = Math.abs(Number(pos.allocated_margin || 0)) || notional / liveLevCap;
               const roePct = margin > 0 ? pnl / margin * 100 : 0;
               const sideBadge = isLong
                 ? '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG</span>'

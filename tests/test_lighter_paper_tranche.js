@@ -43,7 +43,7 @@ assert.ok(code.includes('Net P&L / Return'), 'must label net PnL and percentage 
 assert.ok(code.includes('fee_bps'), 'must render execution fees in basis points');
 assert.ok(code.includes('countOrderLog'), 'must update the execution-history event count');
 assert.ok(code.includes('Filled Qty / USDT Size'), 'history must label USDT execution size');
-assert.ok(code.includes('Est. 1x Margin'), 'active positions must label estimated 1x margin');
+assert.ok(code.includes('Est. margin at ${liveLevCap.toFixed(0)}x'), 'active positions must label estimated margin at the live account cap');
 assert.ok(code.includes('gross_notional_usd'), 'history must consume persisted gross USDT exposure');
 assert.ok(code.includes('position_value'), 'active positions must use the exchange position value');
 assert.ok(code.includes('Boolean(this.botState?.enabled) || hasLiveExposure'), 'active positions must remain visible when the EC2 bot runs in the background');
@@ -53,7 +53,8 @@ assert.ok(code.includes('BOT ACTIVE · AUTO-RETRYING'), 'transient data failures
 assert.ok(code.includes('lighter_tradeMarkerHover'), 'trade details must render in a dedicated chart-top hover overlay');
 assert.ok(code.includes('.map((marker) => ({ ...marker, text: "" }))'), 'chart markers must remain label-free when rendered');
 assert.ok(code.includes('Trade details are intentionally hover-only'), 'clicks must not pin trade labels');
-assert.ok(code.includes('const levCap = 1.0'), 'Lighter margin utilization must use the configured 1x cap');
+assert.ok(code.includes('riskCapacity.gross_leverage_cap || 8.0'), 'Lighter margin utilization must use the Tab 2 account-wide leverage cap');
+assert.ok(code.includes('≤8x account gross'), 'live rules must disclose the Tab 2 leverage ceiling');
 assert.ok(code.includes('tabEl.disabled = false'), 'bottom section tabs must be re-enabled after fail-closed initialization');
 assert.ok(code.includes('irrelevantUpbitTab.style.display = "none"'), 'irrelevant Upbit tab must be hidden on Lighter');
 assert.ok(code.includes('lighter_inputLiveTradeRate'), 'must expose an N-per-minute slider in the visible live-rules card');
