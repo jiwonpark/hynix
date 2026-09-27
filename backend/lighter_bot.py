@@ -101,7 +101,10 @@ class LighterPairBot:
         "entry_z": 1.5,
         "exit_z": 0.25,
         "notional_usd": 25.0,
-        "max_tranches": 3,
+        "capacity_mode": "DYNAMIC_SAFE_LEVERAGE",
+        "max_tranches": 20,
+        "gross_leverage_cap": 1.0,
+        "risk_capacity": None,
         "max_book_spread_bps": 45.0,
         "max_slippage": 0.006,
         "min_seconds_between_orders": 300,
@@ -130,6 +133,11 @@ class LighterPairBot:
                 raw = json.loads(self.state_file.read_text(encoding="utf-8"))
                 if isinstance(raw, dict):
                     state.update(raw)
+                    # The original implementation persisted a fixed three-unit
+                    # limit. Migrate that legacy state to dynamic risk capacity.
+                    if "capacity_mode" not in raw:
+                        state["capacity_mode"] = "DYNAMIC_SAFE_LEVERAGE"
+                        state["max_tranches"] = 20
         except Exception as error:
             state["enabled"] = False
             state["last_error"] = f"State recovery failed: {error}"
@@ -144,9 +152,13 @@ class LighterPairBot:
         temporary.replace(self.state_file)
 
     def public_state(self) -> Dict[str, Any]:
+        capacity = self.state.get("risk_capacity") or {}
+        public_max = int(capacity.get("max_tranches", len(self.state.get("tranches") or [])))
         return {key: value for key, value in self.state.items() if key != "pending_execution"} | {
             "recovery_required": bool(self.state.get("pending_execution")),
             "mode": "LIVE" if self.state.get("enabled") else "PAUSED",
+            "max_tranches": public_max,
+            "hard_max_tranches": int(self.state.get("max_tranches", 20)),
             "execution_history": self._execution_history(),
         }
 
@@ -261,6 +273,64 @@ class LighterPairBot:
     def _execution_fees(execution: Dict[str, Any]) -> float:
         return sum(float((execution.get(leg) or {}).get("fee_usd", 0.0) or 0.0)
                    for leg in ("first_leg", "second_leg"))
+
+    def _risk_capacity(
+        self, account: Dict[str, Any], positions: List[Dict[str, Any]],
+        adr_quote: Dict[str, Any], domestic_quote: Dict[str, Any],
+        notional_usd: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Tab-2-style capacity from live equity, gross exposure, and next-unit headroom."""
+        collateral = max(0.0, float(account.get("collateral", 0.0) or 0.0))
+        leverage_cap = min(1.0, max(0.1, float(self.state.get("gross_leverage_cap", 1.0) or 1.0)))
+        hard_cap = max(1, min(20, int(self.state.get("max_tranches", 20) or 20)))
+        active = len(self.state.get("tranches") or [])
+        quote_by_market = {216: adr_quote, 161: domestic_quote}
+        current_gross = 0.0
+        for position in positions:
+            market_id = int(position.get("market_id", 0) or 0)
+            raw_size = abs(float(position.get("position", 0.0) or position.get("size", 0.0) or 0.0))
+            position_value = abs(float(position.get("position_value", 0.0) or 0.0))
+            mark = float(position.get("mark_price", 0.0) or position.get("avg_entry_price", 0.0)
+                         or (quote_by_market.get(market_id) or {}).get("mid", 0.0) or 0.0)
+            current_gross += position_value if position_value > 0 else raw_size * mark
+
+        target_notional = float(notional_usd if notional_usd is not None else self.state.get("notional_usd", 25.0))
+        adr_mid = float(adr_quote.get("mid", 0.0) or 0.0)
+        domestic_mid = float(domestic_quote.get("mid", 0.0) or 0.0)
+        adr_qty = max(0.04, math.floor(target_notional / adr_mid * 10_000) / 10_000) if adr_mid > 0 else 0.0
+        domestic_qty = math.floor((adr_qty / 10.0) * 1_000) / 1_000 if adr_qty > 0 else 0.0
+        if adr_qty > 0 and domestic_qty < 0.004:
+            domestic_qty, adr_qty = 0.004, 0.04
+        next_gross = adr_qty * adr_mid + domestic_qty * domestic_mid
+
+        gross_capacity = collateral * leverage_cap
+        required_buffer = max(2.50, next_gross * 0.25)
+        usable_capacity = max(0.0, gross_capacity - required_buffer)
+        gross_headroom = max(0.0, usable_capacity - current_gross)
+        leverage_remaining = math.floor(gross_headroom / next_gross) if next_gross > 0 else 0
+        remaining = max(0, min(hard_cap - active, leverage_remaining))
+        projected_leverage = ((current_gross + next_gross) / collateral
+                              if collateral > 0 and next_gross > 0 else float("inf"))
+        result = {
+            "mode": "DYNAMIC_SAFE_LEVERAGE",
+            "active_tranches": active,
+            "remaining_tranches": remaining,
+            "max_tranches": active + remaining,
+            "hard_max_tranches": hard_cap,
+            "collateral_usd": round(collateral, 6),
+            "current_gross_usd": round(current_gross, 6),
+            "next_tranche_gross_usd": round(next_gross, 6),
+            "gross_capacity_usd": round(gross_capacity, 6),
+            "gross_headroom_usd": round(gross_headroom, 6),
+            "required_margin_buffer_usd": round(required_buffer, 6),
+            "gross_leverage": round(current_gross / collateral, 6) if collateral > 0 else None,
+            "projected_gross_leverage": round(projected_leverage, 6) if math.isfinite(projected_leverage) else None,
+            "gross_leverage_cap": leverage_cap,
+            "can_add_tranche": remaining > 0,
+            "blocked_reason": None if remaining > 0 else "SAFE_LEVERAGE_OR_MARGIN_CAP",
+        }
+        self.state["risk_capacity"] = result
+        return result
 
     def _reconcile_open_pair(self, positions: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Adopt only a complete, directionally valid SKHY/SKHYNIXUSD hedge."""
@@ -440,6 +510,7 @@ class LighterPairBot:
         zscore = (ratios[-1] - mean) / math.sqrt(variance) if variance > 1e-12 else 0.0
         adr_quote = _book_summary(adr_book)
         domestic_quote = _book_summary(domestic_book)
+        risk = self._risk_capacity(status, open_pos, adr_quote, domestic_quote)
         evaluation = {"time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(mean, 4), "z": round(zscore, 3)}
         self.state["last_evaluation"] = evaluation
         if any((quote.get("spread_bps") or 1e9) > self.state["max_book_spread_bps"] for quote in (adr_quote, domestic_quote)):
@@ -485,7 +556,7 @@ class LighterPairBot:
                 self.save()
             self.state["last_action"] = "EXITED_TO_MEAN"
             self.state["last_action_time"] = int(time.time())
-        elif abs(zscore) >= self.state["entry_z"] and len(tranches) < self.state["max_tranches"]:
+        elif abs(zscore) >= self.state["entry_z"] and risk["can_add_tranche"]:
             side = -1 if zscore > 0 else 1  # +1 long ratio, -1 short ratio
             adr_qty = max(0.04, math.floor(self.state["notional_usd"] / adr_quote["mid"] * 10_000) / 10_000)
             domestic_qty = math.floor((adr_qty / 10.0) * 1_000) / 1_000
@@ -539,18 +610,23 @@ class LighterPairBot:
                 raise ValueError("notional_usd must be between 10 and 500")
             if self.state.get("pending_execution"):
                 raise RuntimeError("Resolve the pending paired execution before placing another order")
-            if len(self.state.get("tranches") or []) >= int(self.state.get("max_tranches", 3)):
-                raise RuntimeError("Maximum live tranche count reached")
             status = await self.client.account_status()
             if not status.get("authenticated") or not status.get("execution_enabled"):
                 raise RuntimeError("Funded authenticated Lighter account is required")
-            adr_book, domestic_book = await asyncio.gather(
-                self.client.order_book(216, 20), self.client.order_book(161, 20)
+            adr_book, domestic_book, open_positions = await asyncio.gather(
+                self.client.order_book(216, 20), self.client.order_book(161, 20),
+                self.client.positions(),
             )
             adr_quote = _book_summary(adr_book)
             domestic_quote = _book_summary(domestic_book)
             if not adr_quote["mid"] or not domestic_quote["mid"]:
                 raise RuntimeError("Lighter book quotes unavailable")
+            risk = self._risk_capacity(status, open_positions, adr_quote, domestic_quote, notional_usd)
+            if not risk["can_add_tranche"]:
+                raise RuntimeError(
+                    f"Safe dynamic capacity reached: {risk['active_tranches']}/{risk['max_tranches']} "
+                    f"tranches at {risk['gross_leverage'] or 0:.2f}x gross leverage"
+                )
             adr_qty = max(0.04, math.floor(notional_usd / adr_quote["mid"] * 10_000) / 10_000)
             domestic_qty = math.floor((adr_qty / 10.0) * 1_000) / 1_000
             if domestic_qty < 0.004:

@@ -709,7 +709,7 @@
             <div><b>Entry</b><br>|Z| ≥ <span id="lighterLiveEntryZ">1.50</span></div>
             <div><b>Direction</b><br>Z high: short SKHY / long KR<br>Z low: long SKHY / short KR</div>
             <div><b>Exit</b><br>|Z| ≤ <span id="lighterLiveExitZ">0.25</span> · no separate PnL gate</div>
-            <div><b>Size / capacity</b><br>ADR target $<span id="lighterLiveNotional">25</span> · pair gross ≈ $<span id="lighterLivePairGross">—</span><br>max <span id="lighterLiveMaxTranches">3</span> tranches · 1x</div>
+            <div><b>Size / dynamic capacity</b><br>ADR target $<span id="lighterLiveNotional">25</span> · pair gross ≈ $<span id="lighterLivePairGross">—</span><br><span id="lighterLiveMaxTranches">—</span> safe tranches · ≤1x gross</div>
             <div>
               <b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps
               <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
@@ -1658,7 +1658,7 @@
         badge.style.color = isEnabled ? "#166534" : (isRecovery ? "#92400e" : "#475569");
       }
       this.setText("lblDaemonLatency", isEnabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused");
-      this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${bot?.max_tranches || 3} tranches` : "Awaiting first closed-bar evaluation");
+      this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${bot?.max_tranches ?? tranches.length} safe tranches` : "Awaiting first closed-bar evaluation");
       const rulesPanel = $("lighterLiveRulesPanel");
       if (rulesPanel) {
         rulesPanel.style.borderColor = isEnabled ? "#059669" : "#94a3b8";
@@ -1678,7 +1678,8 @@
       const estimatedPairGross = configuredAdrNotional * (1 + (liveRatio > 0 ? 100 / liveRatio : 1));
       writeRule("lighterLiveNotional", configuredAdrNotional.toFixed(0));
       writeRule("lighterLivePairGross", estimatedPairGross.toFixed(2));
-      writeRule("lighterLiveMaxTranches", String(bot?.max_tranches ?? 3));
+      const capacity = bot?.risk_capacity || {};
+      writeRule("lighterLiveMaxTranches", `${capacity.active_tranches ?? tranches.length}/${capacity.max_tranches ?? bot?.max_tranches ?? tranches.length}`);
       writeRule("lighterLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
       const cooldownSeconds = Math.max(6, Number(bot?.min_seconds_between_orders ?? 300));
       const tradeRate = Math.max(0.2, Math.min(10, 60 / cooldownSeconds));

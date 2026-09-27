@@ -42,6 +42,46 @@ class TestLighterPairBot(unittest.TestCase):
         self.assertAlmostEqual(exposure["gross_notional_usd"], 42.64)
         self.assertAlmostEqual(exposure["margin_usd"], 42.64)
 
+    def test_dynamic_capacity_uses_one_x_collateral_and_next_tranche_buffer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            bot.state["tranches"] = [{"side": 1}] * 3
+            capacity = bot._risk_capacity(
+                {"collateral": 187.55},
+                [
+                    {"market_id": 216, "position_value": "75"},
+                    {"market_id": 161, "position_value": "54"},
+                ],
+                {"mid": 191.0}, {"mid": 1340.0}, 25.0,
+            )
+            self.assertEqual(capacity["gross_leverage_cap"], 1.0)
+            self.assertEqual(capacity["active_tranches"], 3)
+            self.assertEqual(capacity["remaining_tranches"], 1)
+            self.assertEqual(capacity["max_tranches"], 4)
+            self.assertTrue(capacity["can_add_tranche"])
+            self.assertGreater(capacity["required_margin_buffer_usd"], 10.0)
+
+    def test_dynamic_capacity_blocks_entry_before_exceeding_safe_headroom(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            bot.state["tranches"] = [{"side": 1}] * 4
+            capacity = bot._risk_capacity(
+                {"collateral": 187.55},
+                [{"market_id": 216, "position_value": "170"}],
+                {"mid": 191.0}, {"mid": 1340.0}, 25.0,
+            )
+            self.assertEqual(capacity["remaining_tranches"], 0)
+            self.assertEqual(capacity["max_tranches"], 4)
+            self.assertFalse(capacity["can_add_tranche"])
+
+    def test_legacy_fixed_three_tranche_state_migrates_to_dynamic_capacity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "state.json"
+            state_file.write_text(json.dumps({"max_tranches": 3, "tranches": []}))
+            bot = LighterPairBot(Mock(), state_file)
+            self.assertEqual(bot.state["capacity_mode"], "DYNAMIC_SAFE_LEVERAGE")
+            self.assertEqual(bot.state["max_tranches"], 20)
+
     def test_configure_persists_ten_per_minute_order_interval(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
