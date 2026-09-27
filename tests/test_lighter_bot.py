@@ -136,6 +136,60 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_lighter_client_coalesces_live_candles_and_returns_requested_tail(self):
+        async def run():
+            client = LighterClient()
+            rows = [{"t": index * 300_000, "c": str(index)} for index in range(500)]
+            client.request = AsyncMock(return_value={"c": rows})
+            first, second = await asyncio.gather(
+                client.candles(216, "5m", 80),
+                client.candles(216, "5m", 90),
+            )
+            self.assertEqual(len(first), 80)
+            self.assertEqual(len(second), 90)
+            self.assertEqual(first[-1]["c"], "499")
+            client.request.assert_awaited_once()
+
+        asyncio.run(run())
+
+    def test_lighter_client_uses_and_merges_fresh_websocket_book(self):
+        async def run():
+            client = LighterClient()
+            client.request = AsyncMock()
+            client._handle_stream_message({
+                "type": "subscribed/order_book", "channel": "order_book:216",
+                "order_book": {
+                    "asks": [{"price": "101", "size": "2"}],
+                    "bids": [{"price": "99", "size": "3"}],
+                },
+            })
+            client._handle_stream_message({
+                "type": "update/order_book", "channel": "order_book:216",
+                "order_book": {
+                    "asks": [{"price": "101", "size": "0"}, {"price": "102", "size": "1"}],
+                    "bids": [{"price": "100", "size": "4"}],
+                },
+            })
+            book = await client.order_book(216, 20)
+            self.assertEqual(book["asks"], [{"price": "102", "size": "1"}])
+            self.assertEqual(book["bids"][0], {"price": "100", "size": "4"})
+            client.request.assert_not_awaited()
+
+        asyncio.run(run())
+
+    def test_lighter_client_returns_stale_candles_after_transient_failure(self):
+        async def run():
+            client = LighterClient()
+            client.request = AsyncMock(return_value={"c": [{"t": 1, "c": "100"}]})
+            await client.candles(216, "5m", 80)
+            cache = next(value for key, value in client._cache.items() if key.startswith("candles:"))
+            cache["expires"] = 0
+            client.request = AsyncMock(side_effect=RuntimeError("Lighter API error (429)"))
+            rows = await client.candles(216, "5m", 80)
+            self.assertEqual(rows, [{"t": 1, "c": "100"}])
+
+        asyncio.run(run())
+
     def test_disabled_worker_never_touches_exchange(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:

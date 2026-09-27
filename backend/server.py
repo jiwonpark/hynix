@@ -163,6 +163,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("No Upbit Access Key detected (checked .env, arbiter/keys.json, midas/keys.json).")
 
+    await lighter_client.start_streams()
     broadcaster_task = asyncio.create_task(account_broadcaster())
     auto_tranche_task = asyncio.create_task(auto_tranche_worker())
     upbit_strategy_task = asyncio.create_task(upbit_strategy_worker())
@@ -241,6 +242,7 @@ async def get_lighter_status() -> Dict[str, Any]:
             "account_index": acc_info.get("account_index"),
             "collateral": acc_info.get("collateral", 0.0),
             "positions": positions,
+            "market_stream": lighter_client.stream_status(),
             "adr": {"symbol": "SKHY", "market_id": 216, **adr, "mark": float(adr_detail["mark_price"]),
                     "maker_fee": float(adr_detail["maker_fee"]), "taker_fee": float(adr_detail["taker_fee"])},
             "domestic": {"symbol": "SKHYNIXUSD", "market_id": 161, **domestic,
@@ -253,7 +255,8 @@ async def get_lighter_status() -> Dict[str, Any]:
     except Exception as error:
         logger.warning("Lighter status unavailable: %s", error)
         return {"success": False, "authenticated": False, "execution_enabled": False,
-                "error": str(error), "server_time_ms": int(time.time() * 1000)}
+                "error": str(error), "market_stream": lighter_client.stream_status(),
+                "server_time_ms": int(time.time() * 1000)}
 
 
 @app.get("/api/lighter/parity")

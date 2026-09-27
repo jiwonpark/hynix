@@ -1475,7 +1475,10 @@
         this.setText("valCritCurrentSpread", `${this.currentRatio.toFixed(3)}%`);
         this.setText("valCritTpCurrentSpread", `${this.currentRatio.toFixed(3)}%`);
         if (botStatus?.bot) this.updateBotStatus(botStatus.bot, status);
-        if (trendStatus?.trends) this.renderTrends(trendStatus.trends);
+        if (trendStatus?.success && trendStatus?.trends && Object.keys(trendStatus.trends).length) {
+          if (this.trendRetryTimer) clearTimeout(this.trendRetryTimer);
+          this.renderTrends(trendStatus.trends);
+        } else this.scheduleTrendRetry();
         this.renderVirtualState();
         this.updateGridLadderData();
       } catch (error) {
@@ -1505,8 +1508,20 @@
         const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
         const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
         const res = await api(`/api/lighter/trends?small=${sParam}&big=${bParam}`);
-        if (res?.trends) this.renderTrends(res.trends);
-      } catch (_) {}
+        if (res?.success && res?.trends && Object.keys(res.trends).length) {
+          if (this.trendRetryTimer) clearTimeout(this.trendRetryTimer);
+          this.trendRetryTimer = null;
+          this.renderTrends(res.trends);
+        } else this.scheduleTrendRetry();
+      } catch (_) { this.scheduleTrendRetry(); }
+    },
+
+    scheduleTrendRetry() {
+      if (this.trendRetryTimer) return;
+      this.trendRetryTimer = setTimeout(() => {
+        this.trendRetryTimer = null;
+        this.fetchAndRenderTrends();
+      }, 5000);
     },
 
     updateRulesMatchStatus() {
