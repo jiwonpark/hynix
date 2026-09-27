@@ -70,7 +70,7 @@ class LighterClient:
         return {
             "connected": self._ws_connected,
             "fresh_order_books": sorted(fresh_books),
-            "account_live": bool(self._ws_account and now - self._ws_account_time <= 30.0),
+            "account_live": bool(self._ws_connected and self._ws_account),
             "last_error": self._ws_last_error,
         }
 
@@ -91,6 +91,8 @@ class LighterClient:
                 session = await self.get_session()
                 async with session.ws_connect(ws_url, heartbeat=20, receive_timeout=45) as ws:
                     self._ws_connected = True
+                    self._ws_account = None
+                    self._ws_account_time = 0.0
                     self._ws_last_error = None
                     delay = 1.0
                     subscribed = False
@@ -157,7 +159,7 @@ class LighterClient:
             self._ws_account_time = time.monotonic()
 
     def _stream_positions(self) -> Optional[List[Dict[str, Any]]]:
-        if not self._ws_account or time.monotonic() - self._ws_account_time > 30.0:
+        if not self._ws_connected or not self._ws_account:
             return None
         positions = self._ws_account.get("positions")
         if isinstance(positions, dict):

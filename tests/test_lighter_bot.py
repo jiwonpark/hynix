@@ -219,6 +219,7 @@ class TestLighterPairBot(unittest.TestCase):
 
     def test_lighter_client_reads_dictionary_positions_from_account_stream(self):
         client = LighterClient()
+        client._ws_connected = True
         client._handle_stream_message({
             "type": "subscribed/account_all", "channel": "account_all:42",
             "account": 42,
@@ -229,6 +230,14 @@ class TestLighterPairBot(unittest.TestCase):
         })
         positions = client._stream_positions()
         self.assertEqual({row["market_id"] for row in positions}, {161, 216})
+        self.assertTrue(client.stream_status()["account_live"])
+
+    def test_lighter_client_does_not_expire_quiet_connected_account_snapshot(self):
+        client = LighterClient()
+        client._ws_connected = True
+        client._ws_account_time = 1.0
+        client._ws_account = {"positions": {"216": {"market_id": 216, "position": "0.04"}}}
+        self.assertEqual(client._stream_positions()[0]["market_id"], 216)
         self.assertTrue(client.stream_status()["account_live"])
 
     def test_lighter_client_returns_stale_candles_after_transient_failure(self):
