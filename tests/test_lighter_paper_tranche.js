@@ -50,6 +50,9 @@ assert.ok(code.includes('Boolean(this.botState?.enabled) || hasLiveExposure'), '
 assert.ok(code.includes('const authoritativeMode = isEnabled ? "live"'), 'persisted EC2 bot state must override per-session browser mode');
 assert.ok(code.includes('this.applyMode(authoritativeMode, false)'), 'server mode reconciliation must update the visible controls without a mode-change toast');
 assert.ok(code.includes('BOT ACTIVE · AUTO-RETRYING'), 'transient data failures must not be presented as a paused bot');
+assert.ok(code.includes('lighter_tradeMarkerHover'), 'trade details must render in a dedicated chart-top hover overlay');
+assert.ok(code.includes('.map((marker) => ({ ...marker, text: "" }))'), 'chart markers must remain label-free when rendered');
+assert.ok(code.includes('Trade details are intentionally hover-only'), 'clicks must not pin trade labels');
 assert.ok(code.includes('const levCap = 1.0'), 'Lighter margin utilization must use the configured 1x cap');
 assert.ok(code.includes('tabEl.disabled = false'), 'bottom section tabs must be re-enabled after fail-closed initialization');
 assert.ok(code.includes('irrelevantUpbitTab.style.display = "none"'), 'irrelevant Upbit tab must be hidden on Lighter');
