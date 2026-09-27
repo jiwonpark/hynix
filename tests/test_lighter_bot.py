@@ -177,6 +177,20 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_lighter_client_reads_dictionary_positions_from_account_stream(self):
+        client = LighterClient()
+        client._handle_stream_message({
+            "type": "subscribed/account_all", "channel": "account_all:42",
+            "account": 42,
+            "positions": {
+                "216": {"market_id": 216, "position": "0.04", "sign": -1},
+                "161": {"market_id": 161, "position": "0.004", "sign": 1},
+            },
+        })
+        positions = client._stream_positions()
+        self.assertEqual({row["market_id"] for row in positions}, {161, 216})
+        self.assertTrue(client.stream_status()["account_live"])
+
     def test_lighter_client_returns_stale_candles_after_transient_failure(self):
         async def run():
             client = LighterClient()

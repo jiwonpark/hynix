@@ -76,6 +76,11 @@ class LighterClient:
 
     async def start_streams(self) -> None:
         if self._ws_task is None or self._ws_task.done():
+            # Resolve and persist a missing account index before constructing subscriptions.
+            try:
+                await self.account_status()
+            except Exception as error:
+                logger.warning("Lighter account bootstrap unavailable; starting public streams: %s", error)
             self._ws_task = asyncio.create_task(self._stream_loop(), name="lighter-market-stream")
 
     async def _stream_loop(self) -> None:
@@ -151,24 +156,15 @@ class LighterClient:
             self._ws_account = self._clone(payload)
             self._ws_account_time = time.monotonic()
 
-    def _stream_account(self) -> Optional[Dict[str, Any]]:
+    def _stream_positions(self) -> Optional[List[Dict[str, Any]]]:
         if not self._ws_account or time.monotonic() - self._ws_account_time > 30.0:
             return None
-        payload = self._ws_account
-        candidates = [payload.get("account"), payload.get("accounts")]
-        for candidate in candidates:
-            if isinstance(candidate, list) and candidate:
-                candidate = candidate[0]
-            if isinstance(candidate, dict) and "positions" in candidate and "collateral" in candidate:
-                return self._clone(candidate)
-        if "positions" in payload and "collateral" in payload:
-            return self._clone(payload)
-        return None
+        positions = self._ws_account.get("positions")
+        if isinstance(positions, dict):
+            positions = list(positions.values())
+        return self._clone(positions) if isinstance(positions, list) else None
 
     async def _account_snapshot(self) -> Optional[Dict[str, Any]]:
-        streamed = self._stream_account()
-        if streamed is not None:
-            return streamed
         creds = self.get_credentials() or {}
         address = creds.get("l1_address")
         if not address:
@@ -289,6 +285,9 @@ class LighterClient:
 
     async def positions(self) -> List[Dict[str, Any]]:
         """Return the configured account's open positions without exposing credentials."""
+        streamed = self._stream_positions()
+        if streamed is not None:
+            return streamed
         creds = self.get_credentials() or {}
         address = creds.get("l1_address")
         if not address:
