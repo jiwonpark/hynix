@@ -73,8 +73,17 @@ class LighterClient:
                     "execution_enabled": collateral > 0,
                     "message": f"Account #{acc_idx} active · ${collateral:.2f} Collateral"
                 }
-        except Exception:
-            pass
+        except Exception as error:
+            return {
+                "configured": True,
+                "l1_address": address,
+                "account_index": creds.get("account_index"),
+                "collateral": 0.0,
+                "authenticated": False,
+                "execution_enabled": False,
+                "message": "Lighter account status is temporarily unavailable.",
+                "error": str(error),
+            }
 
         return {
             "configured": True,
@@ -177,18 +186,29 @@ class LighterClient:
 
     async def request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         session = await self.get_session()
-        try:
-            async with session.get(
-                f"{self.base_url}{endpoint}",
-                params=params or {},
-                headers={"User-Agent": "SKHynix-QuantEngine/1.0"},
-            ) as response:
-                payload = await response.json(content_type=None)
-                if response.status != 200 or payload.get("code") != 200:
+        for attempt in range(3):
+            try:
+                async with session.get(
+                    f"{self.base_url}{endpoint}",
+                    params=params or {},
+                    headers={"User-Agent": "SKHynix-QuantEngine/1.0"},
+                ) as response:
+                    payload = await response.json(content_type=None)
+                    if response.status == 200 and payload.get("code") == 200:
+                        return payload
+                    retryable = response.status == 429 or response.status >= 500
+                    if retryable and attempt < 2:
+                        retry_after = response.headers.get("Retry-After")
+                        delay = float(retry_after) if retry_after and retry_after.replace(".", "", 1).isdigit() else 0.5 * (2 ** attempt)
+                        await asyncio.sleep(min(4.0, max(0.1, delay)))
+                        continue
                     raise RuntimeError(f"Lighter API error ({response.status})")
-                return payload
-        except asyncio.TimeoutError:
-            raise TimeoutError(f"Lighter GET {endpoint} timed out") from None
+            except asyncio.TimeoutError:
+                if attempt < 2:
+                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    continue
+                raise TimeoutError(f"Lighter GET {endpoint} timed out") from None
+        raise RuntimeError("Lighter API retry loop exhausted")
 
     async def market_detail(self, market_id: int) -> Dict[str, Any]:
         payload = await self.request("/api/v1/orderBookDetails", {"market_id": market_id})

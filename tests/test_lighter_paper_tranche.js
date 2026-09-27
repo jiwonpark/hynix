@@ -47,6 +47,9 @@ assert.ok(code.includes('Est. 1x Margin'), 'active positions must label estimate
 assert.ok(code.includes('gross_notional_usd'), 'history must consume persisted gross USDT exposure');
 assert.ok(code.includes('position_value'), 'active positions must use the exchange position value');
 assert.ok(code.includes('Boolean(this.botState?.enabled) || hasLiveExposure'), 'active positions must remain visible when the EC2 bot runs in the background');
+assert.ok(code.includes('const authoritativeMode = isEnabled ? "live"'), 'persisted EC2 bot state must override per-session browser mode');
+assert.ok(code.includes('this.applyMode(authoritativeMode, false)'), 'server mode reconciliation must update the visible controls without a mode-change toast');
+assert.ok(code.includes('BOT ACTIVE · AUTO-RETRYING'), 'transient data failures must not be presented as a paused bot');
 assert.ok(code.includes('const levCap = 1.0'), 'Lighter margin utilization must use the configured 1x cap');
 assert.ok(code.includes('tabEl.disabled = false'), 'bottom section tabs must be re-enabled after fail-closed initialization');
 assert.ok(code.includes('irrelevantUpbitTab.style.display = "none"'), 'irrelevant Upbit tab must be hidden on Lighter');

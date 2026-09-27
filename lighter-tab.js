@@ -1616,6 +1616,16 @@
       const isEnabled = Boolean(bot?.enabled);
       const isRecovery = Boolean(bot?.recovery_required);
       const tranches = Array.isArray(bot?.tranches) ? bot.tranches : [];
+      // The EC2 bot is shared across browsers; per-browser localStorage is not
+      // authoritative. Reconcile the visible execution mode to persisted server
+      // state so a fresh profile/session cannot look like paper mode while the
+      // real background bot is enabled (or vice versa).
+      const authoritativeMode = isEnabled ? "live" : (this.mode === "live" ? "paper" : this.mode);
+      if (authoritativeMode !== this.mode) {
+        this.mode = authoritativeMode;
+        localStorage.setItem("skhynix_lighter_mode", authoritativeMode);
+        this.applyMode(authoritativeMode, false);
+      }
       const toggle = lid("chkAutoPeriodic48h");
       if (toggle) {
         toggle.checked = isEnabled;
@@ -1672,7 +1682,11 @@
       const engineCondition = lid("rowCondEntryEngine")?.querySelector(".condLabel");
       if (engineCondition) engineCondition.textContent = `9. Grid Engine State & ${tradeRateText}/min Rate Limit`;
       this.setText("valCritRetainedCore", `${tranches.length} tracked pair tranche${tranches.length === 1 ? "" : "s"}`);
-      if (bot?.last_error) this.setText("lblHedgedSyncBadge", `BOT PAUSED: ${bot.last_error}`);
+      if (bot?.last_error) {
+        this.setText("lblHedgedSyncBadge", isEnabled
+          ? `BOT ACTIVE · AUTO-RETRYING: ${bot.last_error}`
+          : `BOT PAUSED: ${bot.last_error}`);
+      }
       this.updateRulesMatchStatus();
       this.updateLeverageMetrics();
     },
@@ -2602,10 +2616,13 @@
         const maxTranches = Number(this.botState?.max_tranches || 8);
         this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Active Units`);
         this.setText("valHedgedQuantities", `Gross $${liveGross.toFixed(2)} USDT · Est. 1x Margin $${liveGross.toFixed(2)}`);
-        this.setText("valHedgedCombinedPnl", this.botState?.last_error ? `Error: ${this.botState.last_error}` : pnlText);
+        const pausedError = this.botState?.last_error && !this.botState?.enabled;
+        this.setText("valHedgedCombinedPnl", pausedError ? `Error: ${this.botState.last_error}` : pnlText);
         const pnlEl = lid("valHedgedCombinedPnl");
         if (pnlEl) pnlEl.style.color = liveUnrealized > 0 ? "#16a34a" : (liveUnrealized < 0 ? "#dc2626" : "#0f172a");
-        this.setText("valHedgedPnlSubtitle", validTranches.length > 0 ? (liveUnrealized >= 0 ? "✅ Positive Net Return (Take-Profit Eligible)" : "Holding (Awaiting Convergence)") : "All positions flat (Awaiting signal)");
+        this.setText("valHedgedPnlSubtitle", this.botState?.enabled && this.botState?.last_error
+          ? "Transient Lighter data error · EC2 bot remains enabled and will retry"
+          : (validTranches.length > 0 ? (liveUnrealized >= 0 ? "✅ Positive Net Return (Take-Profit Eligible)" : "Holding (Awaiting Convergence)") : "All positions flat (Awaiting signal)"));
         this.setText("valUnrealizedPnl", `${pnlSign}$${liveUnrealized.toFixed(2)}`);
         this.setText("countPositions", String(openLive.length));
 

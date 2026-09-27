@@ -111,6 +111,8 @@ class LighterPairBot:
         "last_action_time": 0,
         "last_evaluation": None,
         "last_error": None,
+        "transient_error_count": 0,
+        "last_transient_error_time": 0,
     }
 
     def __init__(self, client: LighterClient, state_file: Optional[Path] = None):
@@ -382,19 +384,38 @@ class LighterPairBot:
             try:
                 await self._evaluate()
                 self.state["last_error"] = None
+                self.state["transient_error_count"] = 0
             except Exception as error:
-                self.state["enabled"] = False
-                self.state["last_action"] = "FAIL_CLOSED"
                 self.state["last_error"] = str(error)[:500]
-                logger.exception("Lighter pair bot paused: %s", error)
+                if self._is_transient_read_error(error) and not self.state.get("pending_execution"):
+                    self.state["transient_error_count"] = int(self.state.get("transient_error_count", 0) or 0) + 1
+                    self.state["last_transient_error_time"] = int(time.time())
+                    self.state["last_action"] = "RETRYING_TRANSIENT_ERROR"
+                    logger.warning("Lighter pair bot will retry transient read error: %s", error)
+                else:
+                    self.state["enabled"] = False
+                    self.state["last_action"] = "FAIL_CLOSED"
+                    logger.exception("Lighter pair bot paused: %s", error)
             finally:
                 self.save()
+
+    @staticmethod
+    def _is_transient_read_error(error: Exception) -> bool:
+        message = str(error).lower()
+        return any(token in message for token in (
+            "api error (429)", "api error (500)", "api error (502)",
+            "api error (503)", "api error (504)", "timed out",
+            "timeout", "temporarily unavailable", "connection reset",
+            "connection refused", "server disconnected",
+        ))
 
     async def _evaluate(self) -> None:
         if self.state.get("pending_execution"):
             raise RuntimeError("Pending execution requires reconciliation")
         status = await self.client.account_status()
         if not status.get("execution_enabled"):
+            if status.get("error"):
+                raise RuntimeError(str(status["error"]))
             raise RuntimeError("Lighter account is no longer execution-ready")
         open_pos = await self.client.positions()
         if not self.state.get("tranches") and open_pos:

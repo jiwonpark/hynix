@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from backend.lighter_bot import LighterPairBot, classify_trend
 from backend.lighter_client import LighterClient
@@ -100,6 +100,42 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_lighter_client_retries_rate_limit_before_succeeding(self):
+        class FakeResponse:
+            def __init__(self, status, payload):
+                self.status = status
+                self.payload = payload
+                self.headers = {}
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_):
+                return False
+
+            async def json(self, content_type=None):
+                return self.payload
+
+        class FakeSession:
+            def __init__(self):
+                self.responses = [
+                    FakeResponse(429, {"code": 429}),
+                    FakeResponse(200, {"code": 200, "ok": True}),
+                ]
+
+            def get(self, *_args, **_kwargs):
+                return self.responses.pop(0)
+
+        async def run():
+            client = LighterClient()
+            client.get_session = AsyncMock(return_value=FakeSession())
+            with patch("backend.lighter_client.asyncio.sleep", new=AsyncMock()) as sleep:
+                result = await client.request("/test")
+            self.assertTrue(result["ok"])
+            sleep.assert_awaited_once()
+
+        asyncio.run(run())
+
     def test_disabled_worker_never_touches_exchange(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
@@ -108,6 +144,62 @@ class TestLighterPairBot(unittest.TestCase):
                 await bot.run_once()
                 client.account_status.assert_not_called()
                 client.create_market_order.assert_not_called()
+
+        asyncio.run(run())
+
+    def test_transient_read_error_retries_without_disabling_persisted_bot(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                state_file = Path(directory) / "state.json"
+                bot = LighterPairBot(Mock(), state_file)
+                bot.state["enabled"] = True
+                bot._evaluate = AsyncMock(side_effect=RuntimeError("Lighter API error (429)"))
+                await bot.run_once()
+                self.assertTrue(bot.state["enabled"])
+                self.assertEqual(bot.state["last_action"], "RETRYING_TRANSIENT_ERROR")
+                self.assertEqual(bot.state["transient_error_count"], 1)
+                self.assertTrue(json.loads(state_file.read_text())["enabled"])
+
+        asyncio.run(run())
+
+    def test_transient_account_status_error_retries_without_disabling(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.account_status = AsyncMock(return_value={
+                    "execution_enabled": False,
+                    "error": "Lighter API error (429)",
+                })
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state["enabled"] = True
+                await bot.run_once()
+                self.assertTrue(bot.state["enabled"])
+                self.assertEqual(bot.state["last_action"], "RETRYING_TRANSIENT_ERROR")
+                client.positions.assert_not_called()
+
+        asyncio.run(run())
+
+    def test_transient_error_with_pending_execution_still_fails_closed(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+                bot.state.update(enabled=True, pending_execution={"first_leg": {"client_order_index": 1}})
+                bot._evaluate = AsyncMock(side_effect=RuntimeError("Lighter API error (429)"))
+                await bot.run_once()
+                self.assertFalse(bot.state["enabled"])
+                self.assertEqual(bot.state["last_action"], "FAIL_CLOSED")
+
+        asyncio.run(run())
+
+    def test_non_transient_evaluation_error_still_fails_closed(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+                bot.state["enabled"] = True
+                bot._evaluate = AsyncMock(side_effect=RuntimeError("Invalid account configuration"))
+                await bot.run_once()
+                self.assertFalse(bot.state["enabled"])
+                self.assertEqual(bot.state["last_action"], "FAIL_CLOSED")
 
         asyncio.run(run())
 
