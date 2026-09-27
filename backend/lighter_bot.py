@@ -390,6 +390,60 @@ class LighterPairBot:
             "reconciled": True,
         }
 
+    def _reconcile_mixed_campaign(self, positions: List[Dict[str, Any]]) -> bool:
+        """Collapse offsetting tracked entries to the exchange's actual net pair without trading."""
+        tranches = list(self.state.get("tranches") or [])
+        sides = {int(tranche.get("side", 0) or 0) for tranche in tranches}
+        sides.discard(0)
+        if len(sides) <= 1:
+            return False
+        net_pair = self._reconcile_open_pair(positions)
+        if not net_pair:
+            raise RuntimeError("Mixed-direction tranche stack cannot be reconciled to a flat account")
+        net_side = int(net_pair["side"])
+        target_adr = float(net_pair["adr_qty"])
+        target_domestic = float(net_pair["domestic_qty"])
+        selected_reversed: List[Dict[str, Any]] = []
+        adr_total = 0.0
+        domestic_total = 0.0
+        for tranche in reversed(tranches):
+            if int(tranche.get("side", 0) or 0) != net_side:
+                continue
+            selected_reversed.append(tranche)
+            adr_total += abs(float(tranche.get("adr_qty", 0.0) or 0.0))
+            domestic_total += abs(float(tranche.get("domestic_qty", 0.0) or 0.0))
+            if adr_total >= target_adr - 0.00011 and domestic_total >= target_domestic - 0.00011:
+                break
+        adr_tolerance = max(0.00011, target_adr * 0.01)
+        domestic_tolerance = max(0.00011, target_domestic * 0.01)
+        if (abs(adr_total - target_adr) > adr_tolerance
+                or abs(domestic_total - target_domestic) > domestic_tolerance):
+            raise RuntimeError("Mixed-direction tranche stack does not match the live net pair")
+        selected = list(reversed(selected_reversed))
+        removed = len(tranches) - len(selected)
+        self.state["tranches"] = selected
+        self.state["last_reconciliation"] = {
+            "time": int(time.time()),
+            "reason": "NETTED_OPPOSING_ENTRIES",
+            "net_side": net_side,
+            "removed_offset_records": removed,
+            "remaining_tranches": len(selected),
+            "adr_qty": target_adr,
+            "domestic_qty": target_domestic,
+        }
+        self.state["last_action"] = "RECONCILED_NETTED_CAMPAIGN"
+        self.state["last_action_time"] = int(time.time())
+        logger.warning(
+            "Reconciled mixed Lighter campaign to %s net tranches; removed %s offset records",
+            len(selected), removed,
+        )
+        return True
+
+    def _campaign_allows_side(self, side: int) -> bool:
+        tracked_sides = {int(tranche.get("side", 0) or 0) for tranche in self.state.get("tranches") or []}
+        tracked_sides.discard(0)
+        return not tracked_sides or tracked_sides == {int(side)}
+
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         bounds = {
             "entry_z": (0.75, 4.0), "exit_z": (0.0, 1.0), "notional_usd": (10.0, 500.0),
@@ -510,6 +564,8 @@ class LighterPairBot:
                 raise RuntimeError(str(status["error"]))
             raise RuntimeError("Lighter account is no longer execution-ready")
         open_pos = await self.client.positions()
+        if self._reconcile_mixed_campaign(open_pos):
+            self.save()
         if not self.state.get("tranches") and open_pos:
             reconciled_tranche = self._reconcile_open_pair(open_pos)
             if reconciled_tranche:
@@ -580,6 +636,9 @@ class LighterPairBot:
             self.state["last_action_time"] = int(time.time())
         elif abs(zscore) >= self.state["entry_z"] and risk["can_add_tranche"]:
             side = -1 if zscore > 0 else 1  # +1 long ratio, -1 short ratio
+            if not self._campaign_allows_side(side):
+                self.state["last_action"] = "WAITING_FOR_EXISTING_CAMPAIGN_EXIT"
+                return
             adr_qty = max(0.04, math.floor(self.state["notional_usd"] / adr_quote["mid"] * 10_000) / 10_000)
             domestic_qty = math.floor((adr_qty / 10.0) * 1_000) / 1_000
             if domestic_qty < 0.004:

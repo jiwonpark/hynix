@@ -85,6 +85,30 @@ class TestLighterPairBot(unittest.TestCase):
             self.assertEqual(bot.state["max_tranches"], 12)
             self.assertEqual(bot.state["gross_leverage_cap"], 8.0)
 
+    def test_mixed_campaign_reconciles_to_actual_net_position_without_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = Mock()
+            bot = LighterPairBot(client, Path(directory) / "state.json")
+            longs = [{"side": 1, "adr_qty": 0.1303, "domestic_qty": 0.013, "time": i} for i in range(3)]
+            shorts = [{"side": -1, "adr_qty": 0.1303, "domestic_qty": 0.013, "time": 10 + i} for i in range(9)]
+            bot.state["tranches"] = longs + shorts
+            changed = bot._reconcile_mixed_campaign([
+                {"market_id": 216, "position": "0.7818", "sign": -1},
+                {"market_id": 161, "position": "0.078", "sign": 1},
+            ])
+            self.assertTrue(changed)
+            self.assertEqual(len(bot.state["tranches"]), 6)
+            self.assertEqual({row["side"] for row in bot.state["tranches"]}, {-1})
+            self.assertEqual(bot.state["last_reconciliation"]["removed_offset_records"], 6)
+            client.create_market_order.assert_not_called()
+
+    def test_existing_campaign_blocks_opposite_direction_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            bot.state["tranches"] = [{"side": -1}]
+            self.assertTrue(bot._campaign_allows_side(-1))
+            self.assertFalse(bot._campaign_allows_side(1))
+
     def test_configure_persists_ten_per_minute_order_interval(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
