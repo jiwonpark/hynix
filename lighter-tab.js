@@ -2229,13 +2229,13 @@
           : null)
         || this.selectedExecutionMarker();
       if (this.executionChartController) {
-        const markers = this.executionChartController.markersForRender(hoveredTime)
-          .map((marker) => ({ ...marker, text: "" }));
-        this.series.setMarkers(markers);
+        // DOM markers are the single visual and interaction surface. Keeping a
+        // second canvas marker underneath makes per-trade hover impossible.
+        this.series.setMarkers([]);
         this.syncHoveredMarkerDetails(hoveredTime, activeMarker);
         this.updateTradeHoverOverlay(hoveredTime, activeMarker);
       } else {
-        this.series.setMarkers((this.rawExecutionMarkers || []).map((marker) => ({ ...marker, text: "" })));
+        this.series.setMarkers([]);
         this.updateTradeHoverOverlay(hoveredTime, activeMarker);
       }
     },
@@ -2283,17 +2283,13 @@
         target.type = "button";
         target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
         const markerColor = marker.shape === "arrowDown" ? "#dc2626" : "#16a34a";
-        target.style.cssText = `appearance:none;position:absolute;left:${x + fanX}px;top:${y}px;transform:translate(-50%,-50%);width:18px;height:24px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto`;
-        const blink = document.createElement("span");
-        blink.setAttribute("aria-hidden", "true");
-        blink.textContent = marker.shape === "arrowDown" ? "▼" : "▲";
-        blink.style.cssText = `position:absolute;left:${9 - fanX}px;top:12px;transform:translate(-50%,-50%);color:${markerColor};font-size:13px;font-weight:900;line-height:1;opacity:0;pointer-events:none`;
-        target.appendChild(blink);
+        const baseOpacity = marker.hypothetical ? 0.55 : 0.82;
+        target.textContent = marker.shape === "arrowDown" ? "▼" : "▲";
+        target.style.cssText = `appearance:none;position:absolute;left:${x + fanX}px;top:${y}px;transform:translate(-50%,-50%);width:18px;height:24px;padding:0;border:0;background:transparent;color:${markerColor};font-size:13px;font-weight:900;line-height:24px;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
         let blinkAnimation = null;
         target.addEventListener("mouseenter", () => {
-          blink.style.opacity = "1";
-          blinkAnimation = blink.animate(
-            [{ opacity: 1 }, { opacity: 0.15 }, { opacity: 1 }],
+          blinkAnimation = target.animate(
+            [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
             { duration: 650, iterations: Infinity, easing: "ease-in-out" }
           );
           this.activeHoveredExecutionMarkerTime = marker.time;
@@ -2303,7 +2299,7 @@
         target.addEventListener("mouseleave", () => {
           blinkAnimation?.cancel();
           blinkAnimation = null;
-          blink.style.opacity = "0";
+          target.style.opacity = String(baseOpacity);
           this.activeHoveredExecutionMarkerTime = null;
           this.activeHoveredExecutionMarkerKey = null;
           this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
