@@ -2284,18 +2284,26 @@
         target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
         const markerColor = marker.shape === "arrowDown" ? "#dc2626" : "#16a34a";
         target.style.cssText = `appearance:none;position:absolute;left:${x + fanX}px;top:${y}px;transform:translate(-50%,-50%);width:18px;height:24px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto`;
-        const glow = document.createElement("span");
-        glow.setAttribute("aria-hidden", "true");
-        glow.style.cssText = `position:absolute;left:${9 - fanX}px;top:12px;transform:translate(-50%,-50%);width:15px;height:15px;border-radius:50%;background:transparent;box-shadow:0 0 4px 2px #fff,0 0 9px 4px ${markerColor};opacity:0;pointer-events:none;transition:opacity .1s ease`;
-        target.appendChild(glow);
+        const blink = document.createElement("span");
+        blink.setAttribute("aria-hidden", "true");
+        blink.textContent = marker.shape === "arrowDown" ? "▼" : "▲";
+        blink.style.cssText = `position:absolute;left:${9 - fanX}px;top:12px;transform:translate(-50%,-50%);color:${markerColor};font-size:13px;font-weight:900;line-height:1;opacity:0;pointer-events:none`;
+        target.appendChild(blink);
+        let blinkAnimation = null;
         target.addEventListener("mouseenter", () => {
-          glow.style.opacity = "1";
+          blink.style.opacity = "1";
+          blinkAnimation = blink.animate(
+            [{ opacity: 1 }, { opacity: 0.15 }, { opacity: 1 }],
+            { duration: 650, iterations: Infinity, easing: "ease-in-out" }
+          );
           this.activeHoveredExecutionMarkerTime = marker.time;
           this.activeHoveredExecutionMarkerKey = marker.markerKey;
           this.updateMarkerState(marker.time, marker);
         });
         target.addEventListener("mouseleave", () => {
-          glow.style.opacity = "0";
+          blinkAnimation?.cancel();
+          blinkAnimation = null;
+          blink.style.opacity = "0";
           this.activeHoveredExecutionMarkerTime = null;
           this.activeHoveredExecutionMarkerKey = null;
           this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
