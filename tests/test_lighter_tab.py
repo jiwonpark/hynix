@@ -134,6 +134,16 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("The native crosshair owns x-axis/price inspection", script)
         self.assertNotIn("Trade details are intentionally hover-only", script)
 
+    def test_trade_marker_red_is_always_down_green_is_always_up(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn("isTradeDown(marker)", script)
+        self.assertIn('return this.isTradeDown(marker) ? "#dc2626" : "#16a34a"', script)
+        self.assertIn('? (isDown ? "▽" : "△")', script)
+        self.assertIn(': (isDown ? "▼" : "▲")', script)
+        self.assertIn('overlay.style.borderColor = isDown ? "#fca5a5" : "#86efac"', script)
+        self.assertIn('overlay.style.color = isDown ? "#991b1b" : "#166534"', script)
+
 
 if __name__ == "__main__":
     unittest.main()
+

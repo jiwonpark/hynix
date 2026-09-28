@@ -2141,25 +2141,30 @@
       const lastBarTime = Number(data.bars.at(-1)?.time);
       this.actualMarkers = Array.isArray(data.markers) ? data.markers
         .filter((marker) => Number(marker.time) >= firstBarTime && Number(marker.time) <= lastBarTime)
-        .map((marker) => ({
-        time: marker.time,
-        position: marker.position || (marker.is_entry ? "aboveBar" : "belowBar"),
-        color: marker.color || (marker.is_entry ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
-        activeColor: marker.activeColor || (marker.is_entry ? "#dc2626" : "#16a34a"),
-        shape: marker.shape || (marker.is_entry ? "arrowDown" : "arrowUp"),
-        text: "",
-        hoverText: marker.hoverText || marker.text || "Actual",
-        source: "actual",
-        hypothetical: false,
-        is_entry: marker.is_entry !== false,
-        is_exit: Boolean(marker.is_exit || marker.is_entry === false),
-        direction: marker.direction || (marker.shape === "arrowUp" ? "long" : "short"),
-        entry_price: marker.entry_price || marker.ratio || marker.value,
-        exit_price: marker.exit_price || (marker.is_entry ? null : (marker.ratio || marker.value)),
-        ratio: marker.ratio || marker.value,
-        pnl: marker.pnl,
-        pnl_pct: marker.pnl_pct,
-        })) : [];
+        .map((marker) => {
+          const isEntry = marker.is_entry !== false;
+          const isShort = marker.side < 0 || marker.direction === "short";
+          const isDown = marker.shape ? marker.shape === "arrowDown" : (isShort !== !isEntry);
+          return {
+            time: marker.time,
+            position: marker.position || (isDown ? "aboveBar" : "belowBar"),
+            color: marker.color || (isDown ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
+            activeColor: marker.activeColor || (isDown ? "#dc2626" : "#16a34a"),
+            shape: isDown ? "arrowDown" : "arrowUp",
+            text: "",
+            hoverText: marker.hoverText || marker.text || "Actual",
+            source: "actual",
+            hypothetical: false,
+            is_entry: isEntry,
+            is_exit: !isEntry,
+            direction: marker.direction || (isShort ? "short" : "long"),
+            entry_price: marker.entry_price || marker.ratio || marker.value,
+            exit_price: marker.exit_price || (isEntry ? null : (marker.ratio || marker.value)),
+            ratio: marker.ratio || marker.value,
+            pnl: marker.pnl,
+            pnl_pct: marker.pnl_pct,
+          };
+        }) : [];
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       this.chart.timeScale().fitContent();
@@ -2256,16 +2261,22 @@
       const position = siblings.length > 1 ? ` · trade ${ordinal}/${siblings.length}` : "";
       const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
       overlay.textContent = `${source}${position} · ${marker.hoverText || "Trade"} · ${timeText}`;
-      overlay.style.display = "block";
-      const markerColor = this.tradeMarkerColor(marker);
-      overlay.style.borderColor = markerColor === "#dc2626" ? "#fca5a5" : "#86efac";
-      overlay.style.color = markerColor === "#dc2626" ? "#991b1b" : "#166534";
+      const isDown = this.isTradeDown(marker);
+      const markerColor = isDown ? "#dc2626" : "#16a34a";
+      overlay.style.borderColor = isDown ? "#fca5a5" : "#86efac";
+      overlay.style.color = isDown ? "#991b1b" : "#166534";
+    },
+
+    isTradeDown(marker) {
+      if (marker?.shape === "arrowDown") return true;
+      if (marker?.shape === "arrowUp") return false;
+      const isShortDirection = marker?.direction === "short";
+      const isExit = marker?.is_entry === false;
+      return isShortDirection !== isExit;
     },
 
     tradeMarkerColor(marker) {
-      const isShortDirection = marker?.direction === "short";
-      const isExit = marker?.is_entry === false;
-      return (isShortDirection !== isExit) ? "#dc2626" : "#16a34a";
+      return this.isTradeDown(marker) ? "#dc2626" : "#16a34a";
     },
 
     renderTradeMarkerTargets() {
@@ -2291,12 +2302,12 @@
         const target = document.createElement("button");
         target.type = "button";
         target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
-        const isShortDirection = marker.direction === "short";
-        const markerColor = this.tradeMarkerColor(marker);
+        const isDown = this.isTradeDown(marker);
+        const markerColor = isDown ? "#dc2626" : "#16a34a";
         const baseOpacity = marker.hypothetical ? 0.55 : 0.82;
         target.textContent = marker.hypothetical
-          ? (isShortDirection ? "▽" : "△")
-          : (isShortDirection ? "▼" : "▲");
+          ? (isDown ? "▽" : "△")
+          : (isDown ? "▼" : "▲");
         target.style.cssText = `appearance:none;position:absolute;left:${x + fanX}px;top:${y}px;transform:translate(-50%,-50%);width:18px;height:24px;padding:0;border:0;background:transparent;color:${markerColor};font-size:13px;font-weight:900;line-height:24px;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
         const pairKey = marker.pairKey || marker.markerKey;
         const pairTargets = targetsByPair.get(pairKey) || [];
@@ -2391,7 +2402,7 @@
           this.renderShortTermReferenceLines(lastEntry, {
             selected: false,
             exitSpread: lastMarker.exit_price || (lastMarker.is_entry ? null : lastMarker.ratio),
-            isLong: lastMarker.shape === "arrowUp"
+            isLong: lastMarker.direction ? lastMarker.direction === "long" : lastMarker.shape === "arrowUp"
           });
           return;
         }
@@ -2731,14 +2742,16 @@
         .map((row) => {
         const isExit = row.action === "EXIT";
         const isShort = row.side < 0 || row.action === "SHORT RATIO";
+        const isDown = isShort !== isExit;
         return {
           time: TerminalCommon.alignTime(this.bars, row.time / 1000),
-          position: isExit ? (isShort ? "belowBar" : "aboveBar") : (isShort ? "aboveBar" : "belowBar"),
-          color: isExit ? "#10b981" : (isShort ? "#7c3aed" : "#2563eb"),
-          shape: isExit ? (isShort ? "arrowUp" : "arrowDown") : (isShort ? "arrowDown" : "arrowUp"),
+          position: isDown ? "aboveBar" : "belowBar",
+          color: isDown ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)",
+          activeColor: isDown ? "#dc2626" : "#16a34a",
+          shape: isDown ? "arrowDown" : "arrowUp",
           text: "",
           hoverText: isExit
-            ? `COVER ${row.ratio ? row.ratio.toFixed(2) + "%" : ""}${row.pnl != null ? " · " + (row.pnl >= 0 ? "+" : "") + "$" + row.pnl.toFixed(2) : ""}`
+            ? `${isShort ? "COVER" : "SELL"} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""}${row.pnl != null ? " · " + (row.pnl >= 0 ? "+" : "") + "$" + row.pnl.toFixed(2) : ""}`
             : `${isShort ? "SHORT" : "BUY"} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""} ($${(row.notional || 0).toFixed(0)})`,
           source: "virtual",
           hypothetical: true,
