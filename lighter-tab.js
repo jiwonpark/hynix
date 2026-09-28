@@ -2257,8 +2257,15 @@
       const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
       overlay.textContent = `${source}${position} · ${marker.hoverText || "Trade"} · ${timeText}`;
       overlay.style.display = "block";
-      overlay.style.borderColor = marker.direction === "short" ? "#fca5a5" : "#86efac";
-      overlay.style.color = marker.direction === "short" ? "#991b1b" : "#166534";
+      const markerColor = this.tradeMarkerColor(marker);
+      overlay.style.borderColor = markerColor === "#dc2626" ? "#fca5a5" : "#86efac";
+      overlay.style.color = markerColor === "#dc2626" ? "#991b1b" : "#166534";
+    },
+
+    tradeMarkerColor(marker) {
+      const isShortDirection = marker?.direction === "short";
+      const isExit = marker?.is_entry === false;
+      return (isShortDirection !== isExit) ? "#dc2626" : "#16a34a";
     },
 
     renderTradeMarkerTargets() {
@@ -2285,7 +2292,7 @@
         target.type = "button";
         target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
         const isShortDirection = marker.direction === "short";
-        const markerColor = isShortDirection ? "#dc2626" : "#16a34a";
+        const markerColor = this.tradeMarkerColor(marker);
         const baseOpacity = marker.hypothetical ? 0.55 : 0.82;
         target.textContent = marker.hypothetical
           ? (isShortDirection ? "▽" : "△")
