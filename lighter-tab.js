@@ -2310,12 +2310,20 @@
       });
       groups.forEach((markers) => markers.forEach((marker, index) => {
         const x = this.chart.timeScale().timeToCoordinate(marker.time);
-        if (!Number.isFinite(x)) return;
+        if (!Number.isFinite(x)) {
+          marker._targetX = null;
+          marker._targetY = null;
+          return;
+        }
         const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
         let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
         if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
         y += marker.position === "aboveBar" ? -13 : 13;
         const fanX = (index - (markers.length - 1) / 2) * 12;
+        const finalX = x + fanX;
+        const finalY = y;
+        marker._targetX = finalX;
+        marker._targetY = finalY;
         const target = document.createElement("button");
         target.type = "button";
         target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
@@ -2412,16 +2420,16 @@
         );
         if (!isHovered && !isSelected) return;
 
-        let x1 = this.chart.timeScale().timeToCoordinate(entry.time);
-        let x2 = this.chart.timeScale().timeToCoordinate(exit.time);
-        if (!Number.isFinite(x1) || !Number.isFinite(x2)) return;
-
         const p1 = Number(entry.ratio ?? entry.entry_price);
         const p2 = Number(exit.ratio ?? exit.exit_price);
         if (!Number.isFinite(p1) || !Number.isFinite(p2) || p1 <= 0 || p2 <= 0) return;
 
-        let y1 = this.series.priceToCoordinate(p1);
-        let y2 = this.series.priceToCoordinate(p2);
+        let x1 = entry._targetX ?? this.chart.timeScale().timeToCoordinate(entry.time);
+        let x2 = exit._targetX ?? this.chart.timeScale().timeToCoordinate(exit.time);
+        if (!Number.isFinite(x1) || !Number.isFinite(x2)) return;
+
+        let y1 = entry._targetY ?? this.series.priceToCoordinate(p1);
+        let y2 = exit._targetY ?? this.series.priceToCoordinate(p2);
         if (!Number.isFinite(y1) || !Number.isFinite(y2)) return;
 
         if (Math.abs(x1 - x2) < 1) return;

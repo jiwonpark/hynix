@@ -159,6 +159,9 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("Triangles and diagonal connectors should show ONLY on hover", script)
         self.assertIn("this.activeHoveredPairKey = pairKey;", script)
         self.assertIn("if (!isHovered && !isSelected) return;", script)
+        # Verify perfect alignment with trade marker targets
+        self.assertIn("entry._targetX", script)
+        self.assertIn("entry._targetY", script)
 
 
 if __name__ == "__main__":
