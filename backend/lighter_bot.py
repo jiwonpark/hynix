@@ -282,6 +282,17 @@ class LighterPairBot:
         return sum(float((execution.get(leg) or {}).get("fee_usd", 0.0) or 0.0)
                    for leg in ("first_leg", "second_leg"))
 
+    @staticmethod
+    def _execution_realized_pnl(execution: Dict[str, Any]) -> float:
+        return sum(float((execution.get(leg) or {}).get("realized_pnl_usd", 0.0) or 0.0)
+                   for leg in ("first_leg", "second_leg"))
+
+    @staticmethod
+    def _execution_ratio(execution: Dict[str, Any], fallback: float) -> float:
+        adr_price = float((execution.get("first_leg") or {}).get("fill_price", 0.0) or 0.0)
+        domestic_price = float((execution.get("second_leg") or {}).get("fill_price", 0.0) or 0.0)
+        return adr_price / (domestic_price / 10.0) * 100 if adr_price > 0 and domestic_price > 0 else fallback
+
     def _risk_capacity(
         self, account: Dict[str, Any], positions: List[Dict[str, Any]],
         adr_quote: Dict[str, Any], domestic_quote: Dict[str, Any],
@@ -357,6 +368,7 @@ class LighterPairBot:
     def _reconcile_open_pair(self, positions: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Adopt only a complete, directionally valid SKHY/SKHYNIXUSD hedge."""
         signed_sizes: Dict[int, float] = {}
+        entry_prices: Dict[int, float] = {}
         for position in positions:
             market_id = int(position.get("market_id", 0))
             if market_id not in {216, 161}:
@@ -364,6 +376,7 @@ class LighterPairBot:
             raw_size = float(position.get("position", 0.0) or position.get("size", 0.0))
             sign = int(position.get("sign", 1 if raw_size >= 0 else -1))
             signed_sizes[market_id] = abs(raw_size) * (1 if sign > 0 else -1)
+            entry_prices[market_id] = abs(float(position.get("avg_entry_price", 0.0) or 0.0))
 
         adr_size = signed_sizes.get(216, 0.0)
         domestic_size = signed_sizes.get(161, 0.0)
@@ -379,13 +392,21 @@ class LighterPairBot:
         if abs(abs(domestic_size) - expected_domestic) > tolerance:
             raise RuntimeError("Unreconciled Lighter positions do not match the 10:1 hedge ratio")
 
+        adr_entry = entry_prices.get(216, 0.0)
+        domestic_entry = entry_prices.get(161, 0.0)
         last_evaluation = self.state.get("last_evaluation") or {}
-        entry_ratio = float(last_evaluation.get("ratio") or 141.0)
+        entry_ratio = (adr_entry / (domestic_entry / 10.0) * 100
+                       if adr_entry > 0 and domestic_entry > 0
+                       else float(last_evaluation.get("ratio") or 141.0))
         return {
             "side": 1 if adr_size > 0 else -1,
             "adr_qty": abs(adr_size),
             "domestic_qty": abs(domestic_size),
             "entry_ratio": round(entry_ratio, 4),
+            "adr_price": adr_entry,
+            "domestic_price": domestic_entry,
+            "notional_usd": abs(adr_size) * adr_entry if adr_entry > 0 else 0.0,
+            "fee_usd": 0.0,
             "time": int(time.time()),
             "reconciled": True,
         }
@@ -399,28 +420,16 @@ class LighterPairBot:
             return False
         net_pair = self._reconcile_open_pair(positions)
         if not net_pair:
-            raise RuntimeError("Mixed-direction tranche stack cannot be reconciled to a flat account")
-        net_side = int(net_pair["side"])
-        target_adr = float(net_pair["adr_qty"])
-        target_domestic = float(net_pair["domestic_qty"])
-        selected_reversed: List[Dict[str, Any]] = []
-        adr_total = 0.0
-        domestic_total = 0.0
-        for tranche in reversed(tranches):
-            if int(tranche.get("side", 0) or 0) != net_side:
-                continue
-            selected_reversed.append(tranche)
-            adr_total += abs(float(tranche.get("adr_qty", 0.0) or 0.0))
-            domestic_total += abs(float(tranche.get("domestic_qty", 0.0) or 0.0))
-            if adr_total >= target_adr - 0.00011 and domestic_total >= target_domestic - 0.00011:
-                break
-        adr_tolerance = max(0.00011, target_adr * 0.01)
-        domestic_tolerance = max(0.00011, target_domestic * 0.01)
-        if (abs(adr_total - target_adr) > adr_tolerance
-                or abs(domestic_total - target_domestic) > domestic_tolerance):
-            raise RuntimeError("Mixed-direction tranche stack does not match the live net pair")
-        selected = list(reversed(selected_reversed))
-        removed = len(tranches) - len(selected)
+            net_side = 0
+            target_adr = 0.0
+            target_domestic = 0.0
+            selected: List[Dict[str, Any]] = []
+        else:
+            net_side = int(net_pair["side"])
+            target_adr = float(net_pair["adr_qty"])
+            target_domestic = float(net_pair["domestic_qty"])
+            selected = [net_pair]
+        removed = len(tranches)
         self.state["tranches"] = selected
         self.state["last_reconciliation"] = {
             "time": int(time.time()),
@@ -434,7 +443,7 @@ class LighterPairBot:
         self.state["last_action"] = "RECONCILED_NETTED_CAMPAIGN"
         self.state["last_action_time"] = int(time.time())
         logger.warning(
-            "Reconciled mixed Lighter campaign to %s net tranches; removed %s offset records",
+            "Reconciled mixed Lighter campaign to %s exchange-derived net tranche; archived %s offset records",
             len(selected), removed,
         )
         return True
@@ -443,6 +452,47 @@ class LighterPairBot:
         tracked_sides = {int(tranche.get("side", 0) or 0) for tranche in self.state.get("tranches") or []}
         tracked_sides.discard(0)
         return not tracked_sides or tracked_sides == {int(side)}
+
+    async def _hydrate_active_tranche_fills(self) -> bool:
+        """Upgrade legacy active tranches from submitted quotes to exchange fills."""
+        changed = False
+        for tranche in self.state.get("tranches") or []:
+            if tranche.get("execution_source") == "LIGHTER_FILLS":
+                continue
+            orders = tranche.get("orders") or {}
+            first = orders.get("first_leg") or {}
+            second = orders.get("second_leg") or {}
+            if not first.get("fill_confirmed") and first.get("client_order_index"):
+                first = {**first, **await self.client.execution_fill(
+                    int(first["client_order_index"]), 216, float(first.get("base_amount", tranche.get("adr_qty", 0.0)) or 0.0)
+                )}
+            if not second.get("fill_confirmed") and second.get("client_order_index"):
+                second = {**second, **await self.client.execution_fill(
+                    int(second["client_order_index"]), 161,
+                    float(second.get("base_amount", tranche.get("domestic_qty", 0.0)) or 0.0)
+                )}
+            if not first.get("fill_confirmed") or not second.get("fill_confirmed"):
+                continue
+            orders["first_leg"] = first
+            orders["second_leg"] = second
+            tranche["orders"] = orders
+            tranche["adr_qty"] = float(first["filled_size"])
+            tranche["domestic_qty"] = float(second["filled_size"])
+            tranche["adr_price"] = float(first["fill_price"])
+            tranche["domestic_price"] = float(second["fill_price"])
+            tranche["entry_ratio"] = self._execution_ratio(orders, float(tranche.get("entry_ratio", 0.0) or 0.0))
+            tranche["fee_usd"] = round(self._execution_fees(orders), 8)
+            notional = float(tranche.get("notional_usd", 0.0) or 0.0)
+            tranche["fee_bps"] = round(tranche["fee_usd"] / notional * 10_000, 4) if notional else 0.0
+            tranche["execution_source"] = "LIGHTER_FILLS"
+            first_client_id = str(first.get("client_order_index") or "")
+            for event in reversed(self.state.get("history") or []):
+                event_first = ((event.get("orders") or {}).get("first_leg") or {})
+                if first_client_id and str(event_first.get("client_order_index") or "") == first_client_id:
+                    event.update(dict(tranche))
+                    break
+            changed = True
+        return changed
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         bounds = {
@@ -572,6 +622,8 @@ class LighterPairBot:
                 self.state["tranches"] = [reconciled_tranche]
                 self.state.setdefault("history", []).append(dict(reconciled_tranche))
                 self.save()
+        if await self._hydrate_active_tranche_fills():
+            self.save()
         adr_candles, domestic_candles, adr_book, domestic_book = await asyncio.gather(
             self.client.candles(216, "5m", 80), self.client.candles(161, "5m", 80),
             self.client.order_book(216, 20), self.client.order_book(161, 20),
@@ -601,12 +653,13 @@ class LighterPairBot:
             exit_ratio = ratios[-1]
             for tranche in list(tranches):
                 execution = await self._trade_pair(-int(tranche["side"]), float(tranche["adr_qty"]), float(tranche["domestic_qty"]), adr_quote, domestic_quote, reduce_only=True)
+                exit_ratio = self._execution_ratio(execution, ratios[-1])
                 tranches.remove(tranche)
                 entry_ratio = float(tranche.get("entry_ratio", exit_ratio))
                 side = int(tranche.get("side", -1))
                 pnl_pct = (exit_ratio - entry_ratio) / entry_ratio if side > 0 else (entry_ratio - exit_ratio) / entry_ratio
                 notional = float(tranche.get("notional_usd", 25.0))
-                gross_pnl = pnl_pct * notional
+                gross_pnl = self._execution_realized_pnl(execution)
                 entry_fee = float(tranche.get("fee_usd", 0.0) or 0.0)
                 exit_fee = self._execution_fees(execution)
                 net_pnl = gross_pnl - entry_fee - exit_fee
@@ -628,6 +681,9 @@ class LighterPairBot:
                     "fee_bps": round((entry_fee + exit_fee) / notional * 10_000, 4) if notional else 0.0,
                     "pnl_pct": round(net_pnl / notional * 100, 6) if notional else 0.0,
                     "notional_usd": notional,
+                    "adr_price": execution["first_leg"]["fill_price"],
+                    "domestic_price": execution["second_leg"]["fill_price"],
+                    "pnl_source": "LIGHTER_REALIZED_PNL",
                     "orders": execution,
                 })
                 self.state["pending_execution"] = None
@@ -645,12 +701,17 @@ class LighterPairBot:
                 domestic_qty, adr_qty = 0.004, 0.04
             execution = await self._trade_pair(side, adr_qty, domestic_qty, adr_quote, domestic_quote, reduce_only=False)
             entry_fee = self._execution_fees(execution)
-            new_tranche = {"side": side, "adr_qty": adr_qty, "domestic_qty": domestic_qty,
-                           "entry_ratio": ratios[-1], "entry_z": zscore, "time": int(time.time()),
+            entry_ratio = self._execution_ratio(execution, ratios[-1])
+            actual_adr_qty = float(execution["first_leg"].get("filled_size", adr_qty))
+            actual_domestic_qty = float(execution["second_leg"].get("filled_size", domestic_qty))
+            new_tranche = {"side": side, "adr_qty": actual_adr_qty, "domestic_qty": actual_domestic_qty,
+                           "entry_ratio": entry_ratio, "entry_z": zscore, "time": int(time.time()),
                            "notional_usd": self.state["notional_usd"], "is_entry": True,
                            "fee_usd": round(entry_fee, 8),
                            "fee_bps": round(entry_fee / self.state["notional_usd"] * 10_000, 4),
-                           "adr_price": adr_quote["mid"], "domestic_price": domestic_quote["mid"],
+                           "adr_price": execution["first_leg"]["fill_price"],
+                           "domestic_price": execution["second_leg"]["fill_price"],
+                           "execution_source": "LIGHTER_FILLS",
                            "orders": execution}
             tranches.append(new_tranche)
             self.state.setdefault("history", []).append(dict(new_tranche))
@@ -681,6 +742,8 @@ class LighterPairBot:
         intent["second_leg"] = second
         intent["completed"] = True
         self.save()
+        if not first.get("fill_confirmed") or not second.get("fill_confirmed"):
+            raise RuntimeError("Paired execution accepted but authoritative fills are not yet confirmed")
         return {"first_leg": first, "second_leg": second}
 
     async def execute_manual_tranche(self, side: int, notional_usd: float) -> Dict[str, Any]:
@@ -708,20 +771,27 @@ class LighterPairBot:
                     f"Safe dynamic capacity reached: {risk['active_tranches']}/{risk['max_tranches']} "
                     f"tranches at {risk['gross_leverage'] or 0:.2f}x gross leverage"
                 )
+            if not self._campaign_allows_side(side):
+                raise RuntimeError("Requested side conflicts with the existing Lighter campaign")
             adr_qty = max(0.04, math.floor(notional_usd / adr_quote["mid"] * 10_000) / 10_000)
             domestic_qty = math.floor((adr_qty / 10.0) * 1_000) / 1_000
             if domestic_qty < 0.004:
                 domestic_qty, adr_qty = 0.004, 0.04
             execution = await self._trade_pair(side, adr_qty, domestic_qty, adr_quote, domestic_quote, reduce_only=False)
             entry_fee = self._execution_fees(execution)
-            entry_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100
+            midpoint_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100
+            entry_ratio = self._execution_ratio(execution, midpoint_ratio)
+            actual_adr_qty = float(execution["first_leg"].get("filled_size", adr_qty))
+            actual_domestic_qty = float(execution["second_leg"].get("filled_size", domestic_qty))
             tranche = {
-                "side": side, "adr_qty": adr_qty, "domestic_qty": domestic_qty,
+                "side": side, "adr_qty": actual_adr_qty, "domestic_qty": actual_domestic_qty,
                 "entry_ratio": round(entry_ratio, 4), "time": int(time.time()),
                 "notional_usd": notional_usd, "is_entry": True,
                 "fee_usd": round(entry_fee, 8),
                 "fee_bps": round(entry_fee / notional_usd * 10_000, 4),
-                "adr_price": adr_quote["mid"], "domestic_price": domestic_quote["mid"],
+                "adr_price": execution["first_leg"]["fill_price"],
+                "domestic_price": execution["second_leg"]["fill_price"],
+                "execution_source": "LIGHTER_FILLS",
                 "orders": execution,
             }
             self.state.setdefault("tranches", []).append(tranche)
@@ -750,12 +820,13 @@ class LighterPairBot:
             execution = await self._trade_pair(-int(tranche["side"]), float(tranche["adr_qty"]), float(tranche["domestic_qty"]),
                                                adr_quote, domestic_quote, reduce_only=True)
             tranches.pop()
-            exit_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100
+            midpoint_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100
+            exit_ratio = self._execution_ratio(execution, midpoint_ratio)
             entry_ratio = float(tranche.get("entry_ratio", exit_ratio))
             side = int(tranche.get("side", -1))
             pnl_pct = (exit_ratio - entry_ratio) / entry_ratio if side > 0 else (entry_ratio - exit_ratio) / entry_ratio
             notional = float(tranche.get("notional_usd", 25.0))
-            gross_pnl = pnl_pct * notional
+            gross_pnl = self._execution_realized_pnl(execution)
             entry_fee = float(tranche.get("fee_usd", 0.0) or 0.0)
             exit_fee = self._execution_fees(execution)
             net_pnl = gross_pnl - entry_fee - exit_fee
@@ -777,6 +848,9 @@ class LighterPairBot:
                 "fee_bps": round((entry_fee + exit_fee) / notional * 10_000, 4) if notional else 0.0,
                 "pnl_pct": round(net_pnl / notional * 100, 6) if notional else 0.0,
                 "notional_usd": notional,
+                "adr_price": execution["first_leg"]["fill_price"],
+                "domestic_price": execution["second_leg"]["fill_price"],
+                "pnl_source": "LIGHTER_REALIZED_PNL",
                 "orders": execution,
             })
             self.state["pending_execution"] = None
@@ -816,15 +890,21 @@ class LighterPairBot:
             if ref > 0:
                 res = await self.client.create_market_order(market_id, abs_size, ref, is_ask, reduce_only=True)
                 closed.append(res)
-        exit_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100 if domestic_quote.get("mid") else 141.0
+        adr_fill = next((float(order.get("fill_price", 0.0) or 0.0) for order in closed
+                         if int(order.get("market_id", 0) or 0) == 216), 0.0)
+        domestic_fill = next((float(order.get("fill_price", 0.0) or 0.0) for order in closed
+                              if int(order.get("market_id", 0) or 0) == 161), 0.0)
+        midpoint_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100 if domestic_quote.get("mid") else 141.0
+        exit_ratio = adr_fill / (domestic_fill / 10.0) * 100 if adr_fill > 0 and domestic_fill > 0 else midpoint_ratio
         total_exit_fee = sum(float(order.get("fee_usd", 0.0) or 0.0) for order in closed)
+        total_realized_pnl = sum(float(order.get("realized_pnl_usd", 0.0) or 0.0) for order in closed)
         total_notional = sum(float(t.get("notional_usd", 25.0) or 25.0) for t in self.state.get("tranches", []))
         for t in list(self.state.get("tranches", [])):
             entry_ratio = float(t.get("entry_ratio", exit_ratio))
             side = int(t.get("side", -1))
             pnl_pct = (exit_ratio - entry_ratio) / entry_ratio if side > 0 else (entry_ratio - exit_ratio) / entry_ratio
             notional = float(t.get("notional_usd", 25.0) or 25.0)
-            gross_pnl = pnl_pct * notional
+            gross_pnl = total_realized_pnl * notional / total_notional if total_notional else 0.0
             entry_fee = float(t.get("fee_usd", 0.0) or 0.0)
             exit_fee = total_exit_fee * notional / total_notional if total_notional else 0.0
             net_pnl = gross_pnl - entry_fee - exit_fee
@@ -846,6 +926,9 @@ class LighterPairBot:
                 "fee_bps": round((entry_fee + exit_fee) / notional * 10_000, 4) if notional else 0.0,
                 "pnl_pct": round(net_pnl / notional * 100, 6) if notional else 0.0,
                 "notional_usd": notional,
+                "adr_price": adr_fill,
+                "domestic_price": domestic_fill,
+                "pnl_source": "LIGHTER_REALIZED_PNL",
                 "orders": closed,
             })
         self.state["tranches"] = []

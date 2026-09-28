@@ -93,14 +93,37 @@ class TestLighterPairBot(unittest.TestCase):
             shorts = [{"side": -1, "adr_qty": 0.1303, "domestic_qty": 0.013, "time": 10 + i} for i in range(9)]
             bot.state["tranches"] = longs + shorts
             changed = bot._reconcile_mixed_campaign([
-                {"market_id": 216, "position": "0.7818", "sign": -1},
-                {"market_id": 161, "position": "0.078", "sign": 1},
+                {"market_id": 216, "position": "0.7818", "sign": -1, "avg_entry_price": "190"},
+                {"market_id": 161, "position": "0.078", "sign": 1, "avg_entry_price": "1340"},
             ])
             self.assertTrue(changed)
-            self.assertEqual(len(bot.state["tranches"]), 6)
+            self.assertEqual(len(bot.state["tranches"]), 1)
             self.assertEqual({row["side"] for row in bot.state["tranches"]}, {-1})
-            self.assertEqual(bot.state["last_reconciliation"]["removed_offset_records"], 6)
+            self.assertAlmostEqual(bot.state["tranches"][0]["adr_qty"], 0.7818)
+            self.assertEqual(bot.state["last_reconciliation"]["removed_offset_records"], 12)
             client.create_market_order.assert_not_called()
+
+    def test_mixed_campaign_reconciles_unequal_sizes_and_flat_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            bot.state["tranches"] = [
+                {"side": 1, "adr_qty": 0.10, "domestic_qty": 0.010},
+                {"side": -1, "adr_qty": 0.20, "domestic_qty": 0.020},
+            ]
+            self.assertTrue(bot._reconcile_mixed_campaign([
+                {"market_id": 216, "position": "0.10", "sign": -1, "avg_entry_price": "190"},
+                {"market_id": 161, "position": "0.010", "sign": 1, "avg_entry_price": "1340"},
+            ]))
+            self.assertEqual(len(bot.state["tranches"]), 1)
+            self.assertAlmostEqual(bot.state["tranches"][0]["adr_qty"], 0.10)
+
+            bot.state["tranches"] = [
+                {"side": 1, "adr_qty": 0.10, "domestic_qty": 0.010},
+                {"side": -1, "adr_qty": 0.10, "domestic_qty": 0.010},
+            ]
+            self.assertTrue(bot._reconcile_mixed_campaign([]))
+            self.assertEqual(bot.state["tranches"], [])
+            self.assertEqual(bot.state["last_reconciliation"]["net_side"], 0)
 
     def test_existing_campaign_blocks_opposite_direction_entry(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -108,6 +131,63 @@ class TestLighterPairBot(unittest.TestCase):
             bot.state["tranches"] = [{"side": -1}]
             self.assertTrue(bot._campaign_allows_side(-1))
             self.assertFalse(bot._campaign_allows_side(1))
+
+    def test_manual_entry_rejects_opposite_campaign_before_order(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.account_status = AsyncMock(return_value={
+                    "authenticated": True, "execution_enabled": True, "collateral": 200.0,
+                })
+                client.positions = AsyncMock(return_value=[])
+                client.order_book = AsyncMock(side_effect=[
+                    {"asks": [{"price": "190", "size": "1"}], "bids": [{"price": "189", "size": "1"}]},
+                    {"asks": [{"price": "1341", "size": "1"}], "bids": [{"price": "1340", "size": "1"}]},
+                ])
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state["tranches"] = [{"side": -1}]
+                bot._trade_pair = AsyncMock()
+                with self.assertRaisesRegex(RuntimeError, "conflicts with the existing"):
+                    await bot.execute_manual_tranche(1, 25.0)
+                bot._trade_pair.assert_not_awaited()
+
+        asyncio.run(run())
+
+    def test_execution_helpers_use_exchange_fill_values(self):
+        execution = {
+            "first_leg": {"fill_price": 190.0, "fee_usd": 0.007, "realized_pnl_usd": 0.12},
+            "second_leg": {"fill_price": 1340.0, "fee_usd": 0.005, "realized_pnl_usd": -0.08},
+        }
+        self.assertAlmostEqual(LighterPairBot._execution_ratio(execution, 0.0), 141.7910447761)
+        self.assertAlmostEqual(LighterPairBot._execution_fees(execution), 0.012)
+        self.assertAlmostEqual(LighterPairBot._execution_realized_pnl(execution), 0.04)
+
+    def test_legacy_active_tranche_is_hydrated_from_exchange_fills(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.execution_fill = AsyncMock(side_effect=[
+                    {"fill_confirmed": True, "filled_size": 0.13, "fill_price": 191.0,
+                     "fee_usd": 0.007, "realized_pnl_usd": 0.0},
+                    {"fill_confirmed": True, "filled_size": 0.013, "fill_price": 1350.0,
+                     "fee_usd": 0.005, "realized_pnl_usd": 0.0},
+                ])
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state["tranches"] = [{
+                    "side": -1, "adr_qty": 0.13, "domestic_qty": 0.013,
+                    "entry_ratio": 141.0, "notional_usd": 25.0, "fee_usd": 0.0,
+                    "orders": {
+                        "first_leg": {"client_order_index": 1, "base_amount": 0.13},
+                        "second_leg": {"client_order_index": 2, "base_amount": 0.013},
+                    },
+                }]
+                self.assertTrue(await bot._hydrate_active_tranche_fills())
+                tranche = bot.state["tranches"][0]
+                self.assertEqual(tranche["execution_source"], "LIGHTER_FILLS")
+                self.assertAlmostEqual(tranche["entry_ratio"], 141.4814814815)
+                self.assertAlmostEqual(tranche["fee_usd"], 0.012)
+
+        asyncio.run(run())
 
     def test_configure_persists_ten_per_minute_order_interval(self):
         async def run():
@@ -159,11 +239,43 @@ class TestLighterPairBot(unittest.TestCase):
                 "supported_price_decimals": 2,
                 "min_base_amount": "0.0300",
             })
+            client.execution_fill = AsyncMock(return_value={
+                "fill_confirmed": True, "filled_size": 0.04, "base_amount": 0.04,
+                "fill_price": 180.1, "filled_usd": 7.204, "fee_rate": 0.00028,
+                "fee_usd": 0.00201712, "realized_pnl_usd": 0.0,
+            })
             result = await client.create_market_order(216, 0.04, 180.0, True)
             order_index = signer.create_market_order.await_args.args[1]
             self.assertGreater(order_index, 0)
             self.assertLessEqual(order_index, LighterClient.MAX_CLIENT_ORDER_INDEX)
             self.assertEqual(result["client_order_index"], order_index)
+            self.assertEqual(result["fill_price"], 180.1)
+
+        asyncio.run(run())
+
+    def test_lighter_client_aggregates_actual_split_fills_fees_and_realized_pnl(self):
+        async def run():
+            client = LighterClient()
+            client.get_credentials = Mock(return_value={"account_index": 42, "api_key_index": 3})
+            signer = Mock()
+            signer.create_auth_token_with_expiry.return_value = ("token", None)
+            client.get_signer = Mock(return_value=signer)
+            client.request = AsyncMock(return_value={
+                "trades": [
+                    {"market_id": 216, "size": "0.02", "usd_amount": "3.60",
+                     "ask_account_id": 42, "ask_account_pnl": "0.04", "taker_fee": 280,
+                     "ask_client_id_str": "99", "timestamp": 1000},
+                    {"market_id": 216, "size": "0.02", "usd_amount": "3.64",
+                     "ask_account_id": 42, "ask_account_pnl": "0.03", "taker_fee": 280,
+                     "ask_client_id_str": "99", "timestamp": 1001},
+                ]
+            })
+            fill = await client.execution_fill(99, 216, 0.04)
+            self.assertTrue(fill["fill_confirmed"])
+            self.assertAlmostEqual(fill["fill_price"], 181.0)
+            self.assertAlmostEqual(fill["fee_usd"], 7.24 * 0.00028)
+            self.assertAlmostEqual(fill["realized_pnl_usd"], 0.07)
+            self.assertEqual(fill["fill_count"], 2)
 
         asyncio.run(run())
 

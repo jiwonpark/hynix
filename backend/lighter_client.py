@@ -326,7 +326,7 @@ class LighterClient:
         )
         if error:
             raise RuntimeError(f"Lighter order rejected: {error}")
-        return {
+        accepted = {
             "market_id": market_id,
             "client_order_index": client_order_index,
             "base_amount": quantized_size / (10 ** size_decimals),
@@ -338,15 +338,88 @@ class LighterClient:
             "fee_rate": float(detail.get("taker_fee") or 0.0),
             "fee_usd": quantized_size / (10 ** size_decimals) * reference_price * float(detail.get("taker_fee") or 0.0),
         }
+        fill = await self.execution_fill(client_order_index, market_id, accepted["base_amount"])
+        return {**accepted, **fill}
 
-    async def request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def execution_fill(
+        self, client_order_index: int, market_id: int, expected_size: float,
+    ) -> Dict[str, Any]:
+        """Return authoritative exchange fills for an accepted client order."""
+        creds = self.get_credentials() or {}
+        account_index = creds.get("account_index")
+        signer = self.get_signer()
+        if account_index is None or signer is None:
+            return {"fill_confirmed": False}
+        auth, error = signer.create_auth_token_with_expiry(
+            api_key_index=int(creds.get("api_key_index", 0))
+        )
+        if error:
+            logger.warning("Could not authenticate Lighter fill lookup: %s", error)
+            return {"fill_confirmed": False}
+
+        expected_key = str(client_order_index)
+        for attempt in range(12):
+            try:
+                payload = await self.request(
+                    "/api/v1/trades",
+                    {
+                        "account_index": int(account_index),
+                        "market_id": int(market_id),
+                        "sort_by": "timestamp",
+                        "sort_dir": "desc",
+                        "limit": 100,
+                    },
+                    headers={"authorization": auth},
+                )
+                matches = [
+                    trade for trade in (payload.get("trades") or [])
+                    if str(trade.get("ask_client_id_str") or trade.get("ask_client_id") or "") == expected_key
+                    or str(trade.get("bid_client_id_str") or trade.get("bid_client_id") or "") == expected_key
+                ]
+                filled_size = sum(abs(float(trade.get("size", 0.0) or 0.0)) for trade in matches)
+                if matches and filled_size >= expected_size - max(1e-8, expected_size * 1e-6):
+                    usd_amount = sum(abs(float(trade.get("usd_amount", 0.0) or 0.0)) for trade in matches)
+                    realized_pnl = 0.0
+                    fee_usd = 0.0
+                    latest_timestamp = 0
+                    for trade in matches:
+                        is_ask = int(trade.get("ask_account_id", -1) or -1) == int(account_index)
+                        pnl_field = "ask_account_pnl" if is_ask else "bid_account_pnl"
+                        realized_pnl += float(trade.get(pnl_field, 0.0) or 0.0)
+                        raw_fee = float(trade.get("taker_fee", 0.0) or 0.0)
+                        fee_rate = raw_fee / 1_000_000.0 if raw_fee >= 1.0 else raw_fee
+                        fee_usd += abs(float(trade.get("usd_amount", 0.0) or 0.0)) * fee_rate
+                        latest_timestamp = max(latest_timestamp, int(trade.get("timestamp", 0) or 0))
+                    return {
+                        "fill_confirmed": True,
+                        "base_amount": filled_size,
+                        "filled_size": filled_size,
+                        "fill_price": usd_amount / filled_size if filled_size else 0.0,
+                        "filled_usd": usd_amount,
+                        "fee_rate": fee_usd / usd_amount if usd_amount else 0.0,
+                        "fee_usd": fee_usd,
+                        "realized_pnl_usd": realized_pnl,
+                        "fill_time_ms": latest_timestamp,
+                        "fill_count": len(matches),
+                        "fills": matches,
+                    }
+            except Exception as lookup_error:
+                logger.warning("Lighter fill lookup attempt %s failed: %s", attempt + 1, lookup_error)
+            if attempt < 11:
+                await asyncio.sleep(0.25)
+        return {"fill_confirmed": False}
+
+    async def request(
+        self, endpoint: str, params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
         session = await self.get_session()
         for attempt in range(3):
             try:
                 async with session.get(
                     f"{self.base_url}{endpoint}",
                     params=params or {},
-                    headers={"User-Agent": "SKHynix-QuantEngine/1.0"},
+                    headers={"User-Agent": "SKHynix-QuantEngine/1.0", **(headers or {})},
                 ) as response:
                     payload = await response.json(content_type=None)
                     if response.status == 200 and payload.get("code") == 200:
@@ -424,4 +497,3 @@ class LighterClient:
             f"candles:{market_id}:{resolution}:{fetch_count}:{cache_suffix}", ttl, load
         )
         return rows[-bounded_count:]
-

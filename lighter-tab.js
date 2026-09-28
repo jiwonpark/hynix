@@ -2620,8 +2620,8 @@
       const configured = Math.abs(Number(trade.notional_usd || trade.notional || 0));
       const adrQty = Math.abs(Number(trade.adr_qty || 0));
       const domesticQty = Math.abs(Number(trade.domestic_qty || 0));
-      const adrPrice = Math.abs(Number(trade.adr_price || trade.orders?.first_leg?.reference_price || 0));
-      const domesticPrice = Math.abs(Number(trade.domestic_price || trade.orders?.second_leg?.reference_price || 0));
+      const adrPrice = Math.abs(Number(trade.adr_price || trade.orders?.first_leg?.fill_price || trade.orders?.first_leg?.reference_price || 0));
+      const domesticPrice = Math.abs(Number(trade.domestic_price || trade.orders?.second_leg?.fill_price || trade.orders?.second_leg?.reference_price || 0));
       const adr = Math.abs(Number(trade.adr_notional_usd || 0)) || (adrQty && adrPrice ? adrQty * adrPrice : configured);
       const domestic = Math.abs(Number(trade.domestic_notional_usd || 0)) || (domesticQty && domesticPrice ? domesticQty * domesticPrice : (adr && ratio ? adr * 100 / ratio : configured));
       const gross = Math.abs(Number(trade.gross_notional_usd || 0)) || adr + domestic;
