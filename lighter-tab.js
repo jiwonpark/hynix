@@ -696,7 +696,7 @@
 
       const progressBar = lid("barTrancheProgress");
       const utilizationLabel = progressBar?.parentElement?.previousElementSibling?.querySelector("span");
-      if (utilizationLabel) utilizationLabel.textContent = "Estimated 1x Margin Utilization (Gross Pair Size / Collateral):";
+      if (utilizationLabel) utilizationLabel.textContent = "Gross Leverage Utilization (separate from campaign slot cap):";
 
       const controllerCard = lid("hedgedControllerCard");
       if (controllerCard && !$("lighterLiveRulesPanel")) {
