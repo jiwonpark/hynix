@@ -2264,6 +2264,7 @@
       const layer = lid("tradeMarkerTargets");
       if (!layer || !this.chart || !this.series) return;
       layer.textContent = "";
+      const targetsByPair = new Map();
       const visible = (this.rawExecutionMarkers || []).filter((marker) => this.isTradeMarkerVisible(marker));
       const groups = new Map();
       visible.forEach((marker) => {
@@ -2286,20 +2287,27 @@
         const baseOpacity = marker.hypothetical ? 0.55 : 0.82;
         target.textContent = marker.shape === "arrowDown" ? "▼" : "▲";
         target.style.cssText = `appearance:none;position:absolute;left:${x + fanX}px;top:${y}px;transform:translate(-50%,-50%);width:18px;height:24px;padding:0;border:0;background:transparent;color:${markerColor};font-size:13px;font-weight:900;line-height:24px;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
-        let blinkAnimation = null;
+        const pairKey = marker.pairKey || marker.markerKey;
+        const pairTargets = targetsByPair.get(pairKey) || [];
+        pairTargets.push(target);
+        targetsByPair.set(pairKey, pairTargets);
         target.addEventListener("mouseenter", () => {
-          blinkAnimation = target.animate(
-            [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
-            { duration: 650, iterations: Infinity, easing: "ease-in-out" }
-          );
+          (targetsByPair.get(pairKey) || [target]).forEach((pairTarget) => {
+            pairTarget._blinkAnimation?.cancel();
+            pairTarget._blinkAnimation = pairTarget.animate(
+              [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
+              { duration: 650, iterations: Infinity, easing: "ease-in-out" }
+            );
+          });
           this.activeHoveredExecutionMarkerTime = marker.time;
           this.activeHoveredExecutionMarkerKey = marker.markerKey;
           this.updateMarkerState(marker.time, marker);
         });
         target.addEventListener("mouseleave", () => {
-          blinkAnimation?.cancel();
-          blinkAnimation = null;
-          target.style.opacity = String(baseOpacity);
+          (targetsByPair.get(pairKey) || [target]).forEach((pairTarget) => {
+            pairTarget._blinkAnimation?.cancel();
+            pairTarget._blinkAnimation = null;
+          });
           this.activeHoveredExecutionMarkerTime = null;
           this.activeHoveredExecutionMarkerKey = null;
           this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
@@ -2730,12 +2738,26 @@
           pnl: row.pnl,
         };
         });
-      const rawMarkers = [
+      let rawMarkers = [
         ...(this.actualMarkers || []),
         ...paperMarkers,
         ...(this.backtestMarkers || []),
-      ].sort((a, b) => a.time - b.time)
-        .map((marker, index) => ({ ...marker, markerKey: `${marker.source || "trade"}:${marker.backtest ? "backtest" : "live"}:${marker.time}:${index}` }));
+      ].sort((a, b) => a.time - b.time);
+      const openPairs = new Map();
+      rawMarkers.forEach((marker, index) => {
+        const stream = `${marker.source || "trade"}:${marker.backtest ? "backtest" : (marker.is_paper ? "paper" : "live")}`;
+        const stack = openPairs.get(stream) || [];
+        if (marker.pairKey) return;
+        if (marker.is_entry !== false) {
+          marker.pairKey = `${stream}:pair:${index}`;
+          stack.push(marker);
+          openPairs.set(stream, stack);
+        } else {
+          const entry = stack.pop();
+          marker.pairKey = entry?.pairKey || `${stream}:unmatched:${index}`;
+        }
+      });
+      rawMarkers = rawMarkers.map((marker, index) => ({ ...marker, markerKey: `${marker.source || "trade"}:${marker.backtest ? "backtest" : "live"}:${marker.time}:${index}` }));
 
       if (this.selectedExecutionMarkerKey && !rawMarkers.some((marker) => marker.markerKey === this.selectedExecutionMarkerKey)) {
         this.selectedExecutionMarkerKey = null;
@@ -2821,7 +2843,7 @@
         });
         const data = await api(`/api/lighter/backtest?${toggles}`);
         const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
-        this.backtestMarkers = data.trades.flatMap((trade) => [
+        this.backtestMarkers = data.trades.flatMap((trade, tradeIndex) => [
           {
             time: trade.entry_time,
             position: trade.side < 0 ? "aboveBar" : "belowBar",
@@ -2832,6 +2854,7 @@
             source: "virtual",
             hypothetical: true,
             backtest: true,
+            pairKey: `backtest:${tradeIndex}`,
             is_entry: true,
             entry_price: trade.entry,
             ratio: trade.entry,
@@ -2846,6 +2869,7 @@
             source: "virtual",
             hypothetical: true,
             backtest: true,
+            pairKey: `backtest:${tradeIndex}`,
             is_entry: false,
             entry_price: trade.entry,
             exit_price: trade.exit,
