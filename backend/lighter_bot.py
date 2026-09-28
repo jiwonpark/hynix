@@ -98,7 +98,6 @@ class LighterPairBot:
     TAB2_GROSS_LEVERAGE_CAP = 8.0
     TAB2_MARGIN_LEVERAGE = 10.0
     TAB2_MARGIN_BUFFER_MULTIPLIER = 1.25
-    TAB2_CAMPAIGN_CAP = 12
 
     DEFAULTS: Dict[str, Any] = {
         "enabled": False,
@@ -107,7 +106,7 @@ class LighterPairBot:
         "exit_z": 0.25,
         "notional_usd": 25.0,
         "capacity_mode": "DYNAMIC_SAFE_LEVERAGE",
-        "max_tranches": TAB2_CAMPAIGN_CAP,
+        "max_tranches": None,
         "gross_leverage_cap": TAB2_GROSS_LEVERAGE_CAP,
         "risk_capacity": None,
         "max_book_spread_bps": 45.0,
@@ -138,13 +137,11 @@ class LighterPairBot:
                 raw = json.loads(self.state_file.read_text(encoding="utf-8"))
                 if isinstance(raw, dict):
                     state.update(raw)
-                    # The original implementation persisted a fixed three-unit
-                    # limit. Migrate that legacy state to dynamic risk capacity.
+                    # Migrate legacy fixed-limit states (e.g. 3, 12, 20) to pure dynamic capacity matching Tab 2.
                     if "capacity_mode" not in raw:
                         state["capacity_mode"] = "DYNAMIC_SAFE_LEVERAGE"
-                    # These are the same mandatory portfolio limits as Tab 2,
-                    # independent of the selected (non-2x) Lighter instruments.
-                    state["max_tranches"] = self.TAB2_CAMPAIGN_CAP
+                    if raw.get("max_tranches") in (3, 12, 20):
+                        state["max_tranches"] = None
                     state["gross_leverage_cap"] = self.TAB2_GROSS_LEVERAGE_CAP
         except Exception as error:
             state["enabled"] = False
@@ -162,11 +159,12 @@ class LighterPairBot:
     def public_state(self) -> Dict[str, Any]:
         capacity = self.state.get("risk_capacity") or {}
         public_max = int(capacity.get("max_tranches", len(self.state.get("tranches") or [])))
+        configured_max = self.state.get("max_tranches")
         return {key: value for key, value in self.state.items() if key != "pending_execution"} | {
             "recovery_required": bool(self.state.get("pending_execution")),
             "mode": "LIVE" if self.state.get("enabled") else "PAUSED",
             "max_tranches": public_max,
-            "hard_max_tranches": int(self.state.get("max_tranches", self.TAB2_CAMPAIGN_CAP)),
+            "hard_max_tranches": int(configured_max) if configured_max is not None else None,
             "execution_history": self._execution_history(),
         }
 
@@ -319,7 +317,8 @@ class LighterPairBot:
         """Tab-2-style capacity from live equity, gross exposure, and next-unit headroom."""
         collateral = max(0.0, float(account.get("collateral", 0.0) or 0.0))
         leverage_cap = self.TAB2_GROSS_LEVERAGE_CAP
-        hard_cap = self.TAB2_CAMPAIGN_CAP
+        configured_cap = self.state.get("max_tranches")
+        user_hard_cap = int(configured_cap) if configured_cap is not None and int(configured_cap) > 0 else None
         active = len(self.state.get("tranches") or [])
         quote_by_market = {216: adr_quote, 161: domestic_quote}
         current_gross = 0.0
@@ -354,13 +353,17 @@ class LighterPairBot:
                               if collateral > 0 and next_gross > 0 else float("inf"))
         has_margin = available_margin >= required_buffer
         has_leverage = projected_leverage <= leverage_cap
-        remaining = max(0, min(hard_cap - active, leverage_remaining)) if has_margin and has_leverage else 0
+        remaining = leverage_remaining if has_margin and has_leverage else 0
+        if user_hard_cap is not None:
+            remaining = max(0, min(user_hard_cap - active, remaining))
+
+        total_max = active + remaining
         result = {
             "mode": "DYNAMIC_SAFE_LEVERAGE",
             "active_tranches": active,
             "remaining_tranches": remaining,
-            "max_tranches": active + remaining,
-            "hard_max_tranches": hard_cap,
+            "max_tranches": total_max,
+            "hard_max_tranches": user_hard_cap,
             "collateral_usd": round(collateral, 6),
             "current_gross_usd": round(current_gross, 6),
             "next_tranche_gross_usd": round(next_gross, 6),
@@ -375,10 +378,13 @@ class LighterPairBot:
             "margin_leverage_assumption": self.TAB2_MARGIN_LEVERAGE,
             "margin_buffer_multiplier": self.TAB2_MARGIN_BUFFER_MULTIPLIER,
             "can_add_tranche": remaining > 0,
-            "blocked_reason": (None if remaining > 0 else
-                               "INSUFFICIENT_MARGIN" if not has_margin else
-                               "GROSS_LEVERAGE_CAP" if not has_leverage else
-                               "CAMPAIGN_CAPACITY"),
+            "blocked_reason": (
+                None if remaining > 0 else
+                "INSUFFICIENT_MARGIN" if not has_margin else
+                "GROSS_LEVERAGE_CAP" if not has_leverage else
+                "CAMPAIGN_CAPACITY" if user_hard_cap is not None and active >= user_hard_cap else
+                "POSITION_CAPACITY"
+            ),
         }
         self.state["risk_capacity"] = result
         return result
