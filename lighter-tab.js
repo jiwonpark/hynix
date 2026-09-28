@@ -65,6 +65,7 @@
     executionChartFrame: null,
     executionChartController: null,
     activeHoveredExecutionMarkerTime: null,
+    activeHoveredExecutionMarkerKey: null,
     selectedExecutionMarkerTime: null,
     selectedExecutionMarkerKey: null,
     rawExecutionMarkers: [],
@@ -1506,6 +1507,7 @@
       }
 
       this.activeHoveredExecutionMarkerTime = null;
+      this.activeHoveredExecutionMarkerKey = null;
       this.selectedExecutionMarkerTime = null;
       this.selectedExecutionMarkerKey = null;
 
@@ -1518,23 +1520,21 @@
         hoverLabel.style.cssText = "display:none;position:absolute;z-index:8;top:8px;left:12px;max-width:min(420px,calc(100% - 24px));padding:6px 10px;border-radius:6px;border:1px solid #cbd5e1;background:rgba(255,255,255,.97);box-shadow:0 2px 8px rgba(15,23,42,.12);font-size:11px;font-weight:800;line-height:1.35;color:#0f172a;pointer-events:auto;white-space:normal";
         host.appendChild(hoverLabel);
       }
+      if (!lid("tradeMarkerTargets")) {
+        const targetLayer = document.createElement("div");
+        targetLayer.id = "lighter_tradeMarkerTargets";
+        targetLayer.setAttribute("aria-label", "Individual trade markers");
+        targetLayer.style.cssText = "position:absolute;inset:0;z-index:7;pointer-events:none;overflow:hidden";
+        host.appendChild(targetLayer);
+      }
 
-      this.chart.subscribeCrosshairMove((param) => {
-        if (!param || !param.point) {
-          if (this.activeHoveredExecutionMarkerTime !== null) {
-            this.activeHoveredExecutionMarkerTime = null;
-            this.updateMarkerState(this.selectedExecutionMarkerTime);
-          }
-          return;
-        }
-        const nextHover = this.markerTimeAtParam(param);
-        if (nextHover !== this.activeHoveredExecutionMarkerTime) {
-          this.activeHoveredExecutionMarkerTime = nextHover;
-          this.updateMarkerState(nextHover);
-        }
-      });
+      // The native crosshair owns x-axis/price inspection. Trade details are
+      // driven only by the individual DOM marker targets rendered above it.
       this.chart.subscribeClick((param) => this.onChartClick(param));
-      this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.renderTrendRanges());
+      this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+        this.renderTrendRanges();
+        this.renderTradeMarkerTargets();
+      });
 
       this.maSeries = {
         7: this.chart.addLineSeries({ color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
@@ -1587,6 +1587,7 @@
       if (host && this.chart && host.clientWidth > 0) {
         this.chart.applyOptions({ width: host.clientWidth });
         this.renderTrendRanges();
+        this.renderTradeMarkerTargets();
       }
       const assetHost = lid("shortTermAssetHost");
       if (assetHost && this.assetChart && assetHost.clientWidth > 0) this.assetChart.applyOptions({ width: assetHost.clientWidth });
@@ -2191,16 +2192,9 @@
     },
 
     onChartClick(param) {
-      const time = this.markerTimeAtParam(param);
-      const matches = this.executionMarkersAtTime(time);
-      if (!matches.length) {
-        this.selectedExecutionMarkerTime = null;
-        this.selectedExecutionMarkerKey = null;
-        this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
-        return;
-      }
-      const currentIndex = matches.findIndex((marker) => marker.markerKey === this.selectedExecutionMarkerKey);
-      this.selectExecutionMarker(matches[(currentIndex + 1) % matches.length]);
+      this.selectedExecutionMarkerTime = null;
+      this.selectedExecutionMarkerKey = null;
+      this.updateMarkerState(null);
     },
 
     executionMarkersAtTime(time) {
@@ -2220,56 +2214,89 @@
       this.selectedExecutionMarkerTime = marker.time;
       this.selectedExecutionMarkerKey = marker.markerKey;
       this.updateMarkerState(marker.time);
+      this.renderTradeMarkerTargets();
     },
 
-    updateMarkerState(hoveredTime = null) {
+    updateMarkerState(hoveredTime = null, exactMarker = null) {
       if (!this.series) return;
+      const activeMarker = exactMarker
+        || (this.activeHoveredExecutionMarkerKey
+          ? (this.rawExecutionMarkers || []).find((marker) => marker.markerKey === this.activeHoveredExecutionMarkerKey)
+          : null)
+        || this.selectedExecutionMarker();
       if (this.executionChartController) {
         const markers = this.executionChartController.markersForRender(hoveredTime)
           .map((marker) => ({ ...marker, text: "" }));
         this.series.setMarkers(markers);
-        this.syncHoveredMarkerDetails(hoveredTime, this.selectedExecutionMarker());
-        this.updateTradeHoverOverlay(hoveredTime);
+        this.syncHoveredMarkerDetails(hoveredTime, activeMarker);
+        this.updateTradeHoverOverlay(hoveredTime, activeMarker);
       } else {
         this.series.setMarkers((this.rawExecutionMarkers || []).map((marker) => ({ ...marker, text: "" })));
-        this.updateTradeHoverOverlay(hoveredTime);
+        this.updateTradeHoverOverlay(hoveredTime, activeMarker);
       }
     },
 
-    updateTradeHoverOverlay(hoveredTime = null) {
+    updateTradeHoverOverlay(hoveredTime = null, exactMarker = null) {
       const overlay = lid("tradeMarkerHover");
       if (!overlay) return;
-      const markers = this.executionMarkersAtTime(hoveredTime);
-      if (!markers.length) {
+      const marker = exactMarker || null;
+      if (!marker) {
         overlay.style.display = "none";
         overlay.textContent = "";
         return;
       }
-      overlay.textContent = "";
-      const timeText = formatKstDateTime(Number(hoveredTime) * 1000, false);
-      if (markers.length > 1) {
-        const heading = document.createElement("div");
-        heading.textContent = `${markers.length} trades · ${timeText} · click to inspect`;
-        heading.style.cssText = "margin-bottom:5px;color:#475569";
-        overlay.appendChild(heading);
-      }
-      markers.forEach((marker, index) => {
-        const source = marker.source === "actual" ? "ACTUAL" : (marker.backtest ? "BACKTEST" : "PAPER");
-        const item = document.createElement(markers.length > 1 ? "button" : "div");
-        item.textContent = `${markers.length > 1 ? `${index + 1}/${markers.length} · ` : ""}${source} · ${marker.hoverText || "Trade"}${markers.length === 1 ? ` · ${timeText}` : ""}`;
-        if (markers.length > 1) {
-          item.type = "button";
-          item.style.cssText = `display:block;width:100%;margin:3px 0;padding:5px 7px;text-align:left;border-radius:4px;border:1px solid ${marker.markerKey === this.selectedExecutionMarkerKey ? "#7c3aed" : "#e2e8f0"};background:${marker.markerKey === this.selectedExecutionMarkerKey ? "#f5f3ff" : "#fff"};color:#0f172a;font:inherit;cursor:pointer`;
-          item.addEventListener("click", (event) => {
-            event.stopPropagation();
-            this.selectExecutionMarker(marker);
-          });
-        }
-        overlay.appendChild(item);
-      });
+      const source = marker.source === "actual" ? "ACTUAL" : (marker.backtest ? "BACKTEST" : "PAPER");
+      const siblings = this.executionMarkersAtTime(marker.time);
+      const ordinal = siblings.findIndex((candidate) => candidate.markerKey === marker.markerKey) + 1;
+      const position = siblings.length > 1 ? ` · trade ${ordinal}/${siblings.length}` : "";
+      const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
+      overlay.textContent = `${source}${position} · ${marker.hoverText || "Trade"} · ${timeText}`;
       overlay.style.display = "block";
-      overlay.style.borderColor = markers.length > 1 ? "#c4b5fd" : (markers[0].shape === "arrowDown" ? "#fca5a5" : "#86efac");
-      overlay.style.color = markers.length > 1 ? "#0f172a" : (markers[0].shape === "arrowDown" ? "#991b1b" : "#166534");
+      overlay.style.borderColor = marker.shape === "arrowDown" ? "#fca5a5" : "#86efac";
+      overlay.style.color = marker.shape === "arrowDown" ? "#991b1b" : "#166534";
+    },
+
+    renderTradeMarkerTargets() {
+      const layer = lid("tradeMarkerTargets");
+      if (!layer || !this.chart || !this.series) return;
+      layer.textContent = "";
+      const visible = (this.rawExecutionMarkers || []).filter((marker) => this.isTradeMarkerVisible(marker));
+      const groups = new Map();
+      visible.forEach((marker) => {
+        const group = groups.get(marker.time) || [];
+        group.push(marker);
+        groups.set(marker.time, group);
+      });
+      groups.forEach((markers) => markers.forEach((marker, index) => {
+        const x = this.chart.timeScale().timeToCoordinate(marker.time);
+        if (!Number.isFinite(x)) return;
+        const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
+        let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
+        if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
+        const fanX = (index - (markers.length - 1) / 2) * 18;
+        const fanY = index % 2 === 0 ? -5 : 5;
+        const target = document.createElement("button");
+        target.type = "button";
+        target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
+        target.textContent = marker.shape === "arrowDown" ? "▼" : "▲";
+        const selected = marker.markerKey === this.selectedExecutionMarkerKey;
+        target.style.cssText = `position:absolute;left:${x + fanX}px;top:${y + fanY}px;transform:translate(-50%,-50%);width:22px;height:22px;padding:0;border-radius:50%;border:${selected ? "2px solid #7c3aed" : "1px solid rgba(255,255,255,.9)"};background:${marker.shape === "arrowDown" ? "#dc2626" : "#16a34a"};box-shadow:0 1px 4px rgba(15,23,42,.35);color:#fff;font-size:10px;line-height:18px;cursor:pointer;pointer-events:auto`;
+        target.addEventListener("mouseenter", () => {
+          this.activeHoveredExecutionMarkerTime = marker.time;
+          this.activeHoveredExecutionMarkerKey = marker.markerKey;
+          this.updateMarkerState(marker.time, marker);
+        });
+        target.addEventListener("mouseleave", () => {
+          this.activeHoveredExecutionMarkerTime = null;
+          this.activeHoveredExecutionMarkerKey = null;
+          this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
+        });
+        target.addEventListener("click", (event) => {
+          event.stopPropagation();
+          this.selectExecutionMarker(marker);
+        });
+        layer.appendChild(target);
+      }));
     },
 
     shortSpreadProfitLadder(entrySpread, maxNetProfitPct = 5, isLong = false) {
@@ -2351,15 +2378,13 @@
     syncHoveredMarkerDetails(activeTime = null, selectedMarker = null) {
       const pnlEl = lid("valShortTermNetPnl");
       const profitEl = lid("valSelectedMinProfit");
-      if (!activeTime) {
+      if (!activeTime || !selectedMarker) {
         if (pnlEl) pnlEl.textContent = "--";
         if (profitEl) profitEl.textContent = "—";
         this.renderCurrentPositionReferenceLines();
         return;
       }
-      const marker = selectedMarker && selectedMarker.time === activeTime
-        ? selectedMarker
-        : this.executionMarkersAtTime(activeTime)[0];
+      const marker = selectedMarker && selectedMarker.time === activeTime ? selectedMarker : null;
       if (!marker) {
         if (pnlEl) pnlEl.textContent = "--";
         if (profitEl) profitEl.textContent = "—";
@@ -2703,6 +2728,7 @@
       this.executionChartController?.setExecutions(rawMarkers);
 
       this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
+      window.requestAnimationFrame(() => this.renderTradeMarkerTargets());
     },
 
     updateMarkerButtons() {
@@ -2711,6 +2737,7 @@
       this.executionChartFrame?.setVisibility("actual", this.showActualMarkers);
       this.executionChartFrame?.setVisibility("virtual", this.showVirtualMarkers);
       this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
+      this.renderTradeMarkerTargets();
       if (this.activeHoveredExecutionMarkerTime === null) {
         this.renderCurrentPositionReferenceLines();
       }

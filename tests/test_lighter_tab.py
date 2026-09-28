@@ -114,7 +114,7 @@ class TestLighterTab(unittest.TestCase):
     def test_marker_labels_clean_and_hover_controlled(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
         self.assertIn("StrategyExecutionChartController", script)
-        self.assertIn("subscribeCrosshairMove", script)
+        self.assertIn("renderTradeMarkerTargets", script)
         self.assertIn("markerTimeAtParam", script)
         self.assertIn("updateMarkerState", script)
         self.assertNotIn("text: `${pName} Entry`", script)
@@ -127,8 +127,11 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("this.chart.subscribeClick((param) => this.onChartClick(param))", script)
         self.assertIn("executionMarkersAtTime(time)", script)
         self.assertIn("selectedExecutionMarkerKey", script)
-        self.assertIn("click to inspect", script)
-        self.assertIn('item.addEventListener("click"', script)
+        self.assertIn('target.addEventListener("mouseenter"', script)
+        self.assertIn('target.addEventListener("mouseleave"', script)
+        self.assertIn('target.addEventListener("click"', script)
+        self.assertIn("this.series.priceToCoordinate(price)", script)
+        self.assertIn("The native crosshair owns x-axis/price inspection", script)
         self.assertNotIn("Trade details are intentionally hover-only", script)
 
 
