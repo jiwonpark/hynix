@@ -2153,6 +2153,7 @@
         hypothetical: false,
         is_entry: marker.is_entry !== false,
         is_exit: Boolean(marker.is_exit || marker.is_entry === false),
+        direction: marker.direction || (marker.shape === "arrowUp" ? "long" : "short"),
         entry_price: marker.entry_price || marker.ratio || marker.value,
         exit_price: marker.exit_price || (marker.is_entry ? null : (marker.ratio || marker.value)),
         ratio: marker.ratio || marker.value,
@@ -2256,8 +2257,8 @@
       const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
       overlay.textContent = `${source}${position} · ${marker.hoverText || "Trade"} · ${timeText}`;
       overlay.style.display = "block";
-      overlay.style.borderColor = marker.shape === "arrowDown" ? "#fca5a5" : "#86efac";
-      overlay.style.color = marker.shape === "arrowDown" ? "#991b1b" : "#166534";
+      overlay.style.borderColor = marker.direction === "short" ? "#fca5a5" : "#86efac";
+      overlay.style.color = marker.direction === "short" ? "#991b1b" : "#166534";
     },
 
     renderTradeMarkerTargets() {
@@ -2283,9 +2284,12 @@
         const target = document.createElement("button");
         target.type = "button";
         target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
-        const markerColor = marker.shape === "arrowDown" ? "#dc2626" : "#16a34a";
+        const isShortDirection = marker.direction === "short";
+        const markerColor = isShortDirection ? "#dc2626" : "#16a34a";
         const baseOpacity = marker.hypothetical ? 0.55 : 0.82;
-        target.textContent = marker.shape === "arrowDown" ? "▼" : "▲";
+        target.textContent = marker.hypothetical
+          ? (isShortDirection ? "▽" : "△")
+          : (isShortDirection ? "▼" : "▲");
         target.style.cssText = `appearance:none;position:absolute;left:${x + fanX}px;top:${y}px;transform:translate(-50%,-50%);width:18px;height:24px;padding:0;border:0;background:transparent;color:${markerColor};font-size:13px;font-weight:900;line-height:24px;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
         const pairKey = marker.pairKey || marker.markerKey;
         const pairTargets = targetsByPair.get(pairKey) || [];
@@ -2417,7 +2421,7 @@
         this.renderShortTermReferenceLines(entrySpread, {
           selected: true,
           exitSpread: marker.exit_price || (marker.is_entry ? null : marker.ratio),
-          isLong: marker.shape === "arrowUp"
+          isLong: marker.direction === "long"
         });
       } else {
         this.renderCurrentPositionReferenceLines();
@@ -2689,6 +2693,7 @@
           ratio: this.currentRatio,
           notional: entry.notional,
           action: "EXIT",
+          side: entry.side,
           pnl,
         });
       });
@@ -2732,6 +2737,7 @@
           hypothetical: true,
           is_paper: true,
           is_entry: !isExit,
+          direction: isShort ? "short" : "long",
           ratio: row.ratio,
           entry_price: row.ratio,
           exit_price: isExit ? row.ratio : null,
@@ -2755,6 +2761,7 @@
         } else {
           const entry = stack.pop();
           marker.pairKey = entry?.pairKey || `${stream}:unmatched:${index}`;
+          if (entry?.direction) marker.direction = entry.direction;
         }
       });
       rawMarkers = rawMarkers.map((marker, index) => ({ ...marker, markerKey: `${marker.source || "trade"}:${marker.backtest ? "backtest" : "live"}:${marker.time}:${index}` }));
@@ -2855,6 +2862,7 @@
             hypothetical: true,
             backtest: true,
             pairKey: `backtest:${tradeIndex}`,
+            direction: trade.side < 0 ? "short" : "long",
             is_entry: true,
             entry_price: trade.entry,
             ratio: trade.entry,
@@ -2870,6 +2878,7 @@
             hypothetical: true,
             backtest: true,
             pairKey: `backtest:${tradeIndex}`,
+            direction: trade.side < 0 ? "short" : "long",
             is_entry: false,
             entry_price: trade.entry,
             exit_price: trade.exit,
