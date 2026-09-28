@@ -389,9 +389,9 @@
       this.setText("valDeployedSpeed", "Configurable paired trade rate (0.2–10/min)");
       this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.25");
       this.setText("valDeployedCost", "0 BPS advertised fee / slippage excluded");
-      this.setText("lblAccountEquity", "Virtual Grid Capital");
-      this.setText("badgeEquitySource", "SIMULATED");
-      this.setText("valAccountEquity", "$10,000.00");
+      this.setText("lblAccountEquity", "Lighter Account Collateral");
+      this.setText("badgeEquitySource", "SYNCING");
+      this.setText("valAccountEquity", "—");
       this.setText("lblAvailMargin", "Free Grid Margin");
       this.setText("valAvailMargin", "$8,240.00");
       this.setText("lblUnrealizedPnl", "Grid Harvested PnL");
@@ -455,6 +455,7 @@
       const resetPaper = lid("btnResetPaperBalance");
       const auto = lid("lblAutoPeriodicText");
       if (auto) auto.textContent = "24/7 EC2 Lighter bot (continues when this browser closes)";
+      if (resetPaper) resetPaper.textContent = "↺ Reset Paper $10k";
 
       [paper, semi, live, kill, resetPaper].forEach((btn) => {
         if (btn) {
@@ -2700,8 +2701,9 @@
       }
 
       const total = this.entries.reduce((sum, entry) => sum + entry.notional, 0);
-      this.setText("valAccountEquity", "$10,000.00");
-      this.setText("badgeEquitySource", "SIMULATED");
+      const accountCollateral = Number(this.liveVenue?.collateral);
+      this.setText("valAccountEquity", Number.isFinite(accountCollateral) ? `$${accountCollateral.toFixed(2)}` : "—");
+      this.setText("badgeEquitySource", Number.isFinite(accountCollateral) ? "LIGHTER L2" : "SYNCING");
       this.setText("valHedgedTranches", `${this.entries.length} / 8 Grid Units`);
       const paperGross = total * 2;
       this.setText("valHedgedQuantities", `Gross $${paperGross.toFixed(2)} virtual · Est. 1x Margin $${paperGross.toFixed(2)}`);

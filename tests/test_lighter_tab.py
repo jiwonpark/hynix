@@ -58,6 +58,13 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('venue: "lighter"', common)
         self.assertNotIn('source.children', script)
 
+    def test_paper_mode_does_not_replace_real_account_collateral(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn('"Lighter Account Collateral"', script)
+        self.assertIn('const accountCollateral = Number(this.liveVenue?.collateral)', script)
+        self.assertNotIn('this.setText("valAccountEquity", "$10,000.00")', script)
+        self.assertIn('resetPaper.textContent = "↺ Reset Paper $10k"', script)
+
     def test_lighter_backtest_strategy_modes(self):
         import asyncio
         from unittest.mock import patch
