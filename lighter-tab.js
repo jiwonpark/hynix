@@ -2428,8 +2428,10 @@
         let x2 = exit._targetX ?? this.chart.timeScale().timeToCoordinate(exit.time);
         if (!Number.isFinite(x1) || !Number.isFinite(x2)) return;
 
-        let y1 = entry._targetY ?? this.series.priceToCoordinate(p1);
-        let y2 = exit._targetY ?? this.series.priceToCoordinate(p2);
+        let y1 = this.series.priceToCoordinate(p1);
+        if (!Number.isFinite(y1)) y1 = entry._targetY;
+        let y2 = this.series.priceToCoordinate(p2);
+        if (!Number.isFinite(y2)) y2 = exit._targetY;
         if (!Number.isFinite(y1) || !Number.isFinite(y2)) return;
 
         if (Math.abs(x1 - x2) < 1) return;
