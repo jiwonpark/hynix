@@ -2336,11 +2336,11 @@
         const isHypo = Boolean(marker.hypothetical);
         const fill = isHypo ? "transparent" : markerColor;
         const arrowSvg = isDown
-          ? `<svg width="10" height="9" viewBox="0 0 10 9" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,0.5 9.5,0.5 5,8.5" fill="${fill}" stroke="${markerColor}" stroke-width="1" stroke-linejoin="round"/></svg>`
-          : `<svg width="10" height="9" viewBox="0 0 10 9" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,8.5 9.5,8.5 5,0.5" fill="${fill}" stroke="${markerColor}" stroke-width="1" stroke-linejoin="round"/></svg>`;
+          ? `<svg width="7" height="6" viewBox="0 0 7 6" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,0.5 6.5,0.5 3.5,5.5" fill="${fill}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/></svg>`
+          : `<svg width="7" height="6" viewBox="0 0 7 6" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,5.5 6.5,5.5 3.5,0.5" fill="${fill}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/></svg>`;
         target.innerHTML = arrowSvg;
         const transformY = isDown ? "-100%" : "0%";
-        target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${y}px;transform:translate(-50%,${transformY});width:16px;height:9px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
+        target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${y}px;transform:translate(-50%,${transformY});width:12px;height:6px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
         const pairKey = marker.pairKey || marker.markerKey;
         const pairTargets = targetsByPair.get(pairKey) || [];
         pairTargets.push(target);
@@ -2388,7 +2388,6 @@
       const hasActive = Boolean(
         this.activeHoveredPairKey
         || this.activeHoveredExecutionMarkerKey
-        || this.activeHoveredExecutionMarkerTime
         || this.selectedPairKey
         || this.selectedExecutionMarkerKey
       );
@@ -2419,7 +2418,6 @@
         const isHovered = Boolean(
           (this.activeHoveredPairKey && pairKey === this.activeHoveredPairKey)
           || (this.activeHoveredExecutionMarkerKey && (entry.markerKey === this.activeHoveredExecutionMarkerKey || exit.markerKey === this.activeHoveredExecutionMarkerKey))
-          || (this.activeHoveredExecutionMarkerTime && (entry.time === this.activeHoveredExecutionMarkerTime || exit.time === this.activeHoveredExecutionMarkerTime))
         );
         const isSelected = Boolean(
           (this.selectedPairKey && pairKey === this.selectedPairKey)
@@ -2940,10 +2938,11 @@
         ...(this.actualMarkers || []),
         ...paperMarkers,
         ...(this.backtestMarkers || []),
-      ].sort((a, b) => a.time - b.time);
+      ].sort((a, b) => (a.time - b.time) || (a.is_entry === false ? 1 : -1));
       const openPairs = new Map();
       rawMarkers.forEach((marker, index) => {
-        const stream = `${marker.source || "trade"}:${marker.backtest ? "backtest" : (marker.is_paper ? "paper" : "live")}`;
+        const dir = marker.direction || (marker.shape === "arrowDown" ? "short" : "long");
+        const stream = `${marker.source || "trade"}:${marker.backtest ? "backtest" : (marker.is_paper ? "paper" : "live")}:${dir}`;
         const stack = openPairs.get(stream) || [];
         if (marker.pairKey) return;
         if (marker.is_entry !== false) {
