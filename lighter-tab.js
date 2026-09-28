@@ -2273,24 +2273,25 @@
         const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
         let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
         if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
-        const fanX = (index - (markers.length - 1) / 2) * 18;
-        const fanY = index % 2 === 0 ? -5 : 5;
+        y += marker.position === "aboveBar" ? -13 : 13;
+        const fanX = (index - (markers.length - 1) / 2) * 12;
         const target = document.createElement("button");
         target.type = "button";
         target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
-        target.textContent = marker.shape === "arrowDown" ? "▼" : "▲";
         const markerColor = marker.shape === "arrowDown" ? "#dc2626" : "#16a34a";
-        target.style.cssText = `appearance:none;position:absolute;left:${x + fanX}px;top:${y + fanY}px;transform:translate(-50%,-50%);width:24px;height:24px;padding:0;border:0;background:transparent;color:${markerColor};font-size:17px;font-weight:900;line-height:24px;cursor:pointer;pointer-events:auto;filter:none;transition:filter .12s ease,transform .12s ease`;
+        target.style.cssText = `appearance:none;position:absolute;left:${x + fanX}px;top:${y}px;transform:translate(-50%,-50%);width:18px;height:24px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto`;
+        const glow = document.createElement("span");
+        glow.setAttribute("aria-hidden", "true");
+        glow.style.cssText = `position:absolute;left:${9 - fanX}px;top:12px;transform:translate(-50%,-50%);width:15px;height:15px;border-radius:50%;background:transparent;box-shadow:0 0 4px 2px #fff,0 0 9px 4px ${markerColor};opacity:0;pointer-events:none;transition:opacity .1s ease`;
+        target.appendChild(glow);
         target.addEventListener("mouseenter", () => {
-          target.style.filter = `drop-shadow(0 0 3px #fff) drop-shadow(0 0 6px ${markerColor})`;
-          target.style.transform = "translate(-50%,-50%) scale(1.12)";
+          glow.style.opacity = "1";
           this.activeHoveredExecutionMarkerTime = marker.time;
           this.activeHoveredExecutionMarkerKey = marker.markerKey;
           this.updateMarkerState(marker.time, marker);
         });
         target.addEventListener("mouseleave", () => {
-          target.style.filter = "none";
-          target.style.transform = "translate(-50%,-50%)";
+          glow.style.opacity = "0";
           this.activeHoveredExecutionMarkerTime = null;
           this.activeHoveredExecutionMarkerKey = null;
           this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
