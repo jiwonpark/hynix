@@ -2137,7 +2137,11 @@
         this.setText(`valShortTermMa${windowSize}`, Number.isFinite(value) ? `${value.toFixed(2)}%` : "--%");
       });
 
-      this.actualMarkers = Array.isArray(data.markers) ? data.markers.map((marker) => ({
+      const firstBarTime = Number(data.bars[0]?.time);
+      const lastBarTime = Number(data.bars.at(-1)?.time);
+      this.actualMarkers = Array.isArray(data.markers) ? data.markers
+        .filter((marker) => Number(marker.time) >= firstBarTime && Number(marker.time) <= lastBarTime)
+        .map((marker) => ({
         time: marker.time,
         position: marker.position || (marker.is_entry ? "aboveBar" : "belowBar"),
         color: marker.color || (marker.is_entry ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
@@ -2154,7 +2158,7 @@
         ratio: marker.ratio || marker.value,
         pnl: marker.pnl,
         pnl_pct: marker.pnl_pct,
-      })) : [];
+        })) : [];
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       this.chart.timeScale().fitContent();
@@ -2695,7 +2699,12 @@
     renderMarkers() {
       if (!this.series || typeof this.series.setMarkers !== "function") return;
       if (!this.bars.length) return;
-      const paperMarkers = this.ledger.slice(0, 40).map((row) => {
+      const firstBarTime = Number(this.bars[0]?.time);
+      const lastBarTime = Number(this.bars.at(-1)?.time);
+      const paperMarkers = this.ledger
+        .filter((row) => (row.time / 1000) >= firstBarTime && (row.time / 1000) <= lastBarTime)
+        .slice(0, 40)
+        .map((row) => {
         const isExit = row.action === "EXIT";
         const isShort = row.side < 0 || row.action === "SHORT RATIO";
         return {
@@ -2716,7 +2725,7 @@
           exit_price: isExit ? row.ratio : null,
           pnl: row.pnl,
         };
-      });
+        });
       const rawMarkers = [
         ...(this.actualMarkers || []),
         ...paperMarkers,
