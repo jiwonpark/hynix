@@ -155,6 +155,10 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("y1 <= y2", script)
         self.assertIn("rgba(34, 197, 94,", script)
         self.assertIn("rgba(239, 68, 68,", script)
+        # Verify triangles show only on hover / selection
+        self.assertIn("Triangles and diagonal connectors should show ONLY on hover", script)
+        self.assertIn("this.activeHoveredPairKey = pairKey;", script)
+        self.assertIn("if (!isHovered && !isSelected) return;", script)
 
 
 if __name__ == "__main__":

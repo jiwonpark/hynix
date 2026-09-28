@@ -66,8 +66,10 @@
     executionChartController: null,
     activeHoveredExecutionMarkerTime: null,
     activeHoveredExecutionMarkerKey: null,
+    activeHoveredPairKey: null,
     selectedExecutionMarkerTime: null,
     selectedExecutionMarkerKey: null,
+    selectedPairKey: null,
     rawExecutionMarkers: [],
     currentRatio: 140.09,
     currentAdrPrice: null,
@@ -1508,8 +1510,10 @@
 
       this.activeHoveredExecutionMarkerTime = null;
       this.activeHoveredExecutionMarkerKey = null;
+      this.activeHoveredPairKey = null;
       this.selectedExecutionMarkerTime = null;
       this.selectedExecutionMarkerKey = null;
+      this.selectedPairKey = null;
 
       host.style.position = "relative";
       if (!lid("tradeMarkerHover")) {
@@ -2213,7 +2217,9 @@
     onChartClick(param) {
       this.selectedExecutionMarkerTime = null;
       this.selectedExecutionMarkerKey = null;
+      this.selectedPairKey = null;
       this.updateMarkerState(null);
+      this.renderTradeTriangles();
     },
 
     executionMarkersAtTime(time) {
@@ -2232,8 +2238,10 @@
       if (!marker) return;
       this.selectedExecutionMarkerTime = marker.time;
       this.selectedExecutionMarkerKey = marker.markerKey;
+      this.selectedPairKey = marker.pairKey || null;
       this.updateMarkerState(marker.time);
       this.renderTradeMarkerTargets();
+      this.renderTradeTriangles();
     },
 
     updateMarkerState(hoveredTime = null, exactMarker = null) {
@@ -2332,6 +2340,7 @@
           });
           this.activeHoveredExecutionMarkerTime = marker.time;
           this.activeHoveredExecutionMarkerKey = marker.markerKey;
+          this.activeHoveredPairKey = pairKey;
           this.updateMarkerState(marker.time, marker);
           this.renderTradeTriangles();
         });
@@ -2342,13 +2351,13 @@
           });
           this.activeHoveredExecutionMarkerTime = null;
           this.activeHoveredExecutionMarkerKey = null;
+          this.activeHoveredPairKey = null;
           this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
           this.renderTradeTriangles();
         });
         target.addEventListener("click", (event) => {
           event.stopPropagation();
           this.selectExecutionMarker(marker);
-          this.renderTradeTriangles();
         });
         layer.appendChild(target);
       }));
@@ -2359,6 +2368,16 @@
       const svg = lid("tradeTrianglesLayer");
       if (!svg || !this.chart || !this.series) return;
       svg.innerHTML = "";
+
+      // Triangles and diagonal connectors should show ONLY on hover (or selection)
+      const hasActive = Boolean(
+        this.activeHoveredPairKey
+        || this.activeHoveredExecutionMarkerKey
+        || this.activeHoveredExecutionMarkerTime
+        || this.selectedPairKey
+        || this.selectedExecutionMarkerKey
+      );
+      if (!hasActive) return;
 
       const visible = (this.rawExecutionMarkers || []).filter((m) => this.isTradeMarkerVisible(m));
       if (!visible.length) return;
@@ -2378,9 +2397,20 @@
 
       const fragment = document.createDocumentFragment();
 
-      pairs.forEach((pair) => {
+      pairs.forEach((pair, pairKey) => {
         const { entry, exit } = pair;
         if (!entry || !exit) return;
+
+        const isHovered = Boolean(
+          (this.activeHoveredPairKey && pairKey === this.activeHoveredPairKey)
+          || (this.activeHoveredExecutionMarkerKey && (entry.markerKey === this.activeHoveredExecutionMarkerKey || exit.markerKey === this.activeHoveredExecutionMarkerKey))
+          || (this.activeHoveredExecutionMarkerTime && (entry.time === this.activeHoveredExecutionMarkerTime || exit.time === this.activeHoveredExecutionMarkerTime))
+        );
+        const isSelected = Boolean(
+          (this.selectedPairKey && pairKey === this.selectedPairKey)
+          || (this.selectedExecutionMarkerKey && (entry.markerKey === this.selectedExecutionMarkerKey || exit.markerKey === this.selectedExecutionMarkerKey))
+        );
+        if (!isHovered && !isSelected) return;
 
         let x1 = this.chart.timeScale().timeToCoordinate(entry.time);
         let x2 = this.chart.timeScale().timeToCoordinate(exit.time);
@@ -2412,11 +2442,6 @@
           isProfit = isShort ? (p1 >= p2) : (p2 >= p1);
         }
 
-        const isHovered = (this.activeHoveredExecutionMarkerKey && (entry.markerKey === this.activeHoveredExecutionMarkerKey || exit.markerKey === this.activeHoveredExecutionMarkerKey))
-          || (this.activeHoveredExecutionMarkerTime && (entry.time === this.activeHoveredExecutionMarkerTime || exit.time === this.activeHoveredExecutionMarkerTime));
-        const isSelected = (this.selectedExecutionMarkerKey && (entry.markerKey === this.selectedExecutionMarkerKey || exit.markerKey === this.selectedExecutionMarkerKey));
-        const isActive = isHovered || isSelected;
-
         let pts;
         if (isShort) {
           pts = y1 <= y2
@@ -2428,24 +2453,15 @@
             : `${x1.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y2.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
         }
 
-        const fillColor = isProfit
-          ? (isActive ? "rgba(34, 197, 94, 0.32)" : "rgba(34, 197, 94, 0.14)")
-          : (isActive ? "rgba(239, 68, 68, 0.32)" : "rgba(239, 68, 68, 0.14)");
-
-        const strokeColor = isProfit
-          ? (isActive ? "rgba(22, 163, 74, 0.85)" : "rgba(22, 163, 74, 0.40)")
-          : (isActive ? "rgba(220, 38, 38, 0.85)" : "rgba(220, 38, 38, 0.40)");
-
-        const diagStroke = isProfit
-          ? (isActive ? "#16a34a" : "rgba(22, 163, 74, 0.75)")
-          : (isActive ? "#dc2626" : "rgba(220, 38, 38, 0.75)");
+        const fillColor = isProfit ? "rgba(34, 197, 94, 0.28)" : "rgba(239, 68, 68, 0.28)";
+        const strokeColor = isProfit ? "rgba(22, 163, 74, 0.90)" : "rgba(220, 38, 38, 0.90)";
+        const diagStroke = isProfit ? "#16a34a" : "#dc2626";
 
         const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
         polygon.setAttribute("points", pts);
         polygon.setAttribute("fill", fillColor);
         polygon.setAttribute("stroke", strokeColor);
-        polygon.setAttribute("stroke-width", isActive ? "1.75" : "1");
-        polygon.setAttribute("stroke-dasharray", isActive ? "none" : "3,3");
+        polygon.setAttribute("stroke-width", "1.75");
         polygon.style.transition = "fill 0.15s ease, stroke 0.15s ease";
         fragment.appendChild(polygon);
 
@@ -2455,9 +2471,8 @@
         diag.setAttribute("x2", x2.toFixed(1));
         diag.setAttribute("y2", y2.toFixed(1));
         diag.setAttribute("stroke", diagStroke);
-        diag.setAttribute("stroke-width", isActive ? "2.5" : "1.5");
+        diag.setAttribute("stroke-width", "2");
         diag.setAttribute("stroke-linecap", "round");
-        if (!isActive) diag.setAttribute("stroke-dasharray", "4,3");
         diag.style.transition = "stroke-width 0.15s ease, stroke 0.15s ease";
         fragment.appendChild(diag);
       });
