@@ -413,6 +413,10 @@
       this.setText("lblStepTrancheSize", "➕ Add Paper Tranche");
       this.setText("lblStepTrancheSub", "SIMULATED");
       this.setText("lblReduceTrancheText", "Close All Paper Tranches");
+      const trancheHeading = lid("valHedgedTranches")?.previousElementSibling;
+      if (trancheHeading) trancheHeading.textContent = "Campaign Entry Slots";
+      const utilizationHeading = lid("lblTranchePct")?.previousElementSibling;
+      if (utilizationHeading) utilizationHeading.textContent = "Gross Leverage Utilization (separate from campaign slot cap):";
 
       // Custom-labeled Scale-In Checklist for Grid Bands
       const entryLabelMap = {
@@ -1680,7 +1684,7 @@
       writeRule("lighterLiveNotional", configuredAdrNotional.toFixed(0));
       writeRule("lighterLivePairGross", estimatedPairGross.toFixed(2));
       const capacity = bot?.risk_capacity || {};
-      writeRule("lighterLiveMaxTranches", `${capacity.active_tranches ?? tranches.length}/${capacity.max_tranches ?? bot?.max_tranches ?? tranches.length}`);
+      writeRule("lighterLiveMaxTranches", `${capacity.active_tranches ?? tranches.length}/${capacity.max_tranches ?? bot?.max_tranches ?? tranches.length} campaign slots`);
       writeRule("lighterLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
       const cooldownSeconds = Math.max(6, Number(bot?.min_seconds_between_orders ?? 300));
       const tradeRate = Math.max(0.2, Math.min(10, 60 / cooldownSeconds));
@@ -1800,7 +1804,10 @@
       this.setText("pillNetShares", `Net Delta: ${netShares >= 0 ? "+" : ""}${netShares.toFixed(4)} shares`);
 
       // 4. Sizing Progress Bar & Utilization
-      this.setText("lblTranchePct", `${utilPct.toFixed(1)}% (${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x)`);
+      const capacityBlock = riskCapacity.blocked_reason === "CAMPAIGN_CAPACITY"
+        ? ` · ENTRY BLOCKED: ${tranchesCount}/${maxTranches} slot hard cap`
+        : "";
+      this.setText("lblTranchePct", `${utilPct.toFixed(1)}% (${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x)${capacityBlock}`);
       const progressBar = lid("barTrancheProgress");
       if (progressBar) {
         progressBar.style.width = `${utilPct.toFixed(1)}%`;
@@ -2651,7 +2658,7 @@
         const estimatedFreeMargin = Math.max(0, col - liveGross);
         this.setText("valActivePairs", `${openLive.length} Open on Exchange`);
         const maxTranches = Number(this.botState?.max_tranches || 8);
-        this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Active Units`);
+        this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Campaign Slots`);
         this.setText("valHedgedQuantities", `Gross $${liveGross.toFixed(2)} USDT · Est. 1x Margin $${liveGross.toFixed(2)}`);
         const pausedError = this.botState?.last_error && !this.botState?.enabled;
         this.setText("valHedgedCombinedPnl", pausedError ? `Error: ${this.botState.last_error}` : pnlText);

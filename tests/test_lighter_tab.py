@@ -65,6 +65,13 @@ class TestLighterTab(unittest.TestCase):
         self.assertNotIn('this.setText("valAccountEquity", "$10,000.00")', script)
         self.assertIn('resetPaper.textContent = "↺ Reset Paper $10k"', script)
 
+    def test_campaign_slot_cap_is_distinguished_from_leverage_utilization(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn('"Campaign Entry Slots"', script)
+        self.assertIn('"Gross Leverage Utilization (separate from campaign slot cap):"', script)
+        self.assertIn('ENTRY BLOCKED: ${tranchesCount}/${maxTranches} slot hard cap', script)
+        self.assertIn('Campaign Slots`', script)
+
     def test_lighter_backtest_strategy_modes(self):
         import asyncio
         from unittest.mock import patch
