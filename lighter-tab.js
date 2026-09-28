@@ -2046,6 +2046,16 @@
 
     async toggleLiveBot(enabled) {
       const toggle = lid("chkAutoPeriodic48h");
+      if (window.terminalLockManager?.isLocked) {
+        if (toggle) toggle.checked = !enabled;
+        const isKo = window.currentLang === "ko";
+        window.showToast?.(
+          isKo ? "🔒 읽기 전용 모드에서는 자동 매매 설정을 변경할 수 없습니다." : "🔒 Cannot toggle auto-trading in read-only mode.",
+          "warn"
+        );
+        window.terminalLockManager?.openPasswordModal?.();
+        return false;
+      }
       try {
         if (enabled) {
           const notional = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));

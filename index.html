@@ -10897,6 +10897,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.mountExecutionChartFrame();
         terminalLockManager.init();
         this.loadStorage();
+        this.applyModeUI(this.state.mode);
         this.loadDeployedStrategy();
         this.bindEvents();
         this.renderDeployedStrategyCard();
@@ -11236,16 +11237,34 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         return true;
       },
 
-      setMode(mode) {
-        if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
-          const isKo = window.currentLang === "ko";
-          showToast(isKo ? "🔒 거래 터미널이 읽기 전용 모드입니다. 상단 스위치로 잠금을 해제하세요." : "🔒 Execution terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
-          return;
+      async setDaemonAutoTranche(enabled) {
+        const origin = window.location.origin;
+        const endpoints = [
+          `${origin}/skhynix/api/trade/toggle_auto_tranche?enabled=${enabled}`,
+          `/skhynix/api/trade/toggle_auto_tranche?enabled=${enabled}`,
+          `${origin}/api/trade/toggle_auto_tranche?enabled=${enabled}`,
+          `/api/trade/toggle_auto_tranche?enabled=${enabled}`,
+          `http://localhost:8000/api/trade/toggle_auto_tranche?enabled=${enabled}`
+        ];
+        let result = null;
+        for (const url of endpoints) {
+          try {
+            const res = await fetch(url, { method: "POST", signal: AbortSignal.timeout(3000) });
+            if (res.ok) { result = await res.json(); break; }
+          } catch (err) {}
         }
+        if (!result?.success) {
+          showToast(result?.error || "Could not update EC2 daemon status", "error");
+          return false;
+        }
+        return true;
+      },
+
+      applyModeUI(mode) {
         this.state.mode = mode;
-        $("modePaper").classList.toggle("active", mode === "paper");
-        $("modeSemiAuto").classList.toggle("active", mode === "semi_auto");
-        $("modeLive").classList.toggle("active", mode === "live");
+        if ($("modePaper")) $("modePaper").classList.toggle("active", mode === "paper");
+        if ($("modeSemiAuto")) $("modeSemiAuto").classList.toggle("active", mode === "semi_auto");
+        if ($("modeLive")) $("modeLive").classList.toggle("active", mode === "live");
 
         const badge = $("badgeExecMode");
         const ticket = $("pairOrderTicket");
@@ -11284,13 +11303,48 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if ($("aiSignalBox")) $("aiSignalBox").style.display = "none";
         }
 
+        if ($("chkAutoPeriodic48h")) {
+          $("chkAutoPeriodic48h").checked = (mode === "live");
+        }
+
         this.updateSignalApprover();
         this.saveStorage();
+      },
+
+      async setMode(mode) {
+        if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
+          const isKo = window.currentLang === "ko";
+          showToast(isKo ? "🔒 거래 터미널이 읽기 전용 모드입니다. 상단 스위치로 잠금을 해제하세요." : "🔒 Execution terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
+          terminalLockManager.openPasswordModal();
+          return false;
+        }
+
+        const wantDaemonEnabled = (mode === "live");
+        const currentDaemonEnabled = Boolean($("chkAutoPeriodic48h")?.checked);
+
+        if (wantDaemonEnabled !== currentDaemonEnabled) {
+          const success = await this.setDaemonAutoTranche(wantDaemonEnabled);
+          if (!success) {
+            if ($("chkAutoPeriodic48h")) $("chkAutoPeriodic48h").checked = currentDaemonEnabled;
+            return false;
+          }
+          const isKo = window.currentLang === "ko";
+          if (wantDaemonEnabled) {
+            showToast(isKo ? "⚡ 24/7 EC2 전자동 오토-트랜치 활성화됨" : "⚡ 24/7 EC2 Autonomous Auto-Tranche Activated", "success");
+          } else {
+            showToast(isKo ? "⏸ EC2 전자동 오토-트랜치 일시 정지됨" : "⏸ EC2 Autonomous Auto-Tranche Paused", "info");
+          }
+        }
+
+        this.applyModeUI(mode);
         this.logDaemonEvent(`Trading mode changed to ${mode.toUpperCase()}`, "warn");
+        const isKo = window.currentLang === "ko";
         showToast(
           isKo ? `매매 모드 전환: ${mode === "live" ? "전자동 봇" : mode === "semi_auto" ? "반자동 승인" : "수동 모의"}` : `Mode switched: ${mode.toUpperCase()}`,
           mode === "live" ? "danger" : "info"
         );
+        await this.fetchHedgedStatus();
+        return true;
       },
 
       renderAccountStrip() {
@@ -12143,10 +12197,30 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             if ($("badgeAutoPeriodicStatus")) {
               const recovery = data.auto_tranche_criteria.backend_auto_tranche_state?.execution_recovery;
               const badge = $("badgeAutoPeriodicStatus");
-              badge.style.display = isDaemonOn || recovery ? "inline-block" : "none";
-              badge.textContent = recovery ? "⚠ PAUSED — CHECK ORDER OUTCOMES" : "● EC2 DAEMON ACTIVE";
-              badge.style.color = recovery ? "#b91c1c" : "#059669";
-              badge.title = recovery ? (recovery.error || "An order outcome needs reconciliation before trading resumes.") : "";
+              badge.style.display = "inline-block";
+              if (recovery) {
+                badge.textContent = "⚠ PAUSED — CHECK ORDER OUTCOMES";
+                badge.style.background = "#fee2e2";
+                badge.style.color = "#b91c1c";
+                badge.style.borderColor = "#fca5a5";
+                badge.title = recovery.error || "An order outcome needs reconciliation before trading resumes.";
+              } else if (isDaemonOn) {
+                badge.textContent = "● EC2 DAEMON ACTIVE";
+                badge.style.background = "#ecfdf5";
+                badge.style.color = "#059669";
+                badge.style.borderColor = "#a7f3d0";
+                badge.title = "24/7 Autonomous background daemon is running on EC2";
+              } else {
+                badge.textContent = "○ EC2 DAEMON PAUSED";
+                badge.style.background = "#f1f5f9";
+                badge.style.color = "#475569";
+                badge.style.borderColor = "#cbd5e1";
+                badge.title = "Autonomous daemon is paused on EC2";
+              }
+            }
+            const authoritativeMode = isDaemonOn ? "live" : (this.state.mode === "live" ? "paper" : this.state.mode);
+            if (authoritativeMode !== this.state.mode) {
+              this.applyModeUI(authoritativeMode);
             }
           }
         }
@@ -13673,33 +13747,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               e.target.checked = !e.target.checked;
               const isKo = window.currentLang === "ko";
               showToast(isKo ? "🔒 읽기 전용 모드에서는 자동 매매 설정을 변경할 수 없습니다." : "🔒 Cannot toggle auto-trading in read-only mode.", "warn");
+              terminalLockManager.openPasswordModal();
               return;
             }
             const isChecked = e.target.checked;
-            const origin = window.location.origin;
-            const endpoints = [
-              `${origin}/skhynix/api/trade/toggle_auto_tranche?enabled=${isChecked}`,
-              `/skhynix/api/trade/toggle_auto_tranche?enabled=${isChecked}`,
-              `${origin}/api/trade/toggle_auto_tranche?enabled=${isChecked}`,
-              `/api/trade/toggle_auto_tranche?enabled=${isChecked}`,
-              `http://localhost:8000/api/trade/toggle_auto_tranche?enabled=${isChecked}`
-            ];
-            let result = null;
-            for (const url of endpoints) {
-              try {
-                const res = await fetch(url, { method: "POST", signal: AbortSignal.timeout(2000) });
-                if (res.ok) { result = await res.json(); break; }
-              } catch (err) {}
+            const targetMode = isChecked ? "live" : "paper";
+            const success = await this.setMode(targetMode);
+            if (!success) {
+              e.target.checked = !isChecked;
             }
-            if (!result?.success) {
-              showToast(result?.error || "Could not update auto-trading status", "error");
-              e.target.checked = false;
-            } else if (isChecked) {
-              showToast("⚡ 24/7 EC2 Autonomous Auto-Tranche Activated (Daemon running server-side)", "success");
-            } else {
-              showToast("⏸ EC2 Autonomous Auto-Tranche Paused", "info");
-            }
-            await this.fetchHedgedStatus();
           });
         }
 
