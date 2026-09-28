@@ -631,6 +631,99 @@ class TestLighterPairBot(unittest.TestCase):
                 "LEGACY — EXIT NOT RECORDED",
             )
 
+    def test_configure_and_evaluate_strategy_modes(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+                res = await bot.configure({
+                    "strategy_mode": "ou_quant",
+                    "strategy_interval": "15m",
+                    "ou_halflife_max": 12.0,
+                    "ou_stop_z": 4.0,
+                })
+                self.assertEqual(res["strategy_mode"], "ou_quant")
+                self.assertEqual(res["strategy_interval"], "15m")
+                self.assertEqual(res["strategy_params"]["ou_halflife_max"], 12.0)
+                self.assertEqual(res["strategy_params"]["ou_stop_z"], 4.0)
+
+                with self.assertRaises(ValueError):
+                    await bot.configure({"strategy_mode": "non_existent"})
+
+                ratios = [140.0 + (i * 0.05) for i in range(40)]
+                entry_sig, side, exit_sig, eval_info = bot._evaluate_strategy_signals(ratios)
+                self.assertEqual(eval_info["strategy"], "ou_quant")
+
+                await bot.configure({"strategy_mode": "grid"})
+                entry_sig, side, exit_sig, eval_info = bot._evaluate_strategy_signals(ratios)
+                self.assertEqual(eval_info["strategy"], "grid")
+
+                await bot.configure({"strategy_mode": "ma_stack"})
+                entry_sig, side, exit_sig, eval_info = bot._evaluate_strategy_signals(ratios)
+                self.assertEqual(eval_info["strategy"], "ma_stack")
+
+                await bot.configure({"strategy_mode": "multi_factor"})
+                entry_sig, side, exit_sig, eval_info = bot._evaluate_strategy_signals(ratios)
+                self.assertEqual(eval_info["strategy"], "multi_factor")
+
+                await bot.configure({"strategy_mode": "trend_pullback"})
+                entry_sig, side, exit_sig, eval_info = bot._evaluate_strategy_signals(ratios)
+                self.assertEqual(eval_info["strategy"], "trend_pullback")
+
+                await bot.configure({"strategy_mode": "ou_quant", "ou_stop_z": 1.5})
+                _, _, exit_sig, eval_info = bot._evaluate_strategy_signals(ratios)
+                self.assertEqual(eval_info["stop_z"], 1.5)
+                self.assertEqual(exit_sig, abs(eval_info["z"]) <= bot.state["exit_z"] or abs(eval_info["z"]) >= 1.5)
+
+                await bot.configure({"strategy_mode": "ma_stack", "ma_trailing_stop": 0.2})
+                _, _, _, eval_info = bot._evaluate_strategy_signals(ratios, side_if_open=-1)
+                self.assertEqual(eval_info["trailing_stop"], 0.2)
+
+        asyncio.run(run())
+
+    def test_live_entry_records_strategy_evaluation_after_execution(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.account_status = AsyncMock(return_value={
+                    "authenticated": True, "execution_enabled": True, "collateral": 100.0,
+                })
+                client.positions = AsyncMock(return_value=[])
+                timestamps = [1_700_000_000_000 + index * 300_000 for index in range(80)]
+                adr_rows = [
+                    {"t": timestamp, "c": str(140.0 + (0.1 if index % 2 else -0.1))}
+                    for index, timestamp in enumerate(timestamps)
+                ]
+                adr_rows[-1]["c"] = "145"
+                domestic_rows = [{"t": timestamp, "c": "1000"} for timestamp in timestamps]
+
+                async def candles(market_id, _interval, _count):
+                    return adr_rows if market_id == 216 else domestic_rows
+
+                client.candles = AsyncMock(side_effect=candles)
+                client.order_book = AsyncMock(return_value={
+                    "bids": [{"price": "100", "size": "10"}],
+                    "asks": [{"price": "100.01", "size": "10"}],
+                })
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state["min_seconds_between_orders"] = 0
+                bot._trade_pair = AsyncMock(return_value={
+                    "first_leg": {
+                        "filled_size": 0.17, "fill_price": 145.0, "fee_usd": 0.0,
+                    },
+                    "second_leg": {
+                        "filled_size": 0.017, "fill_price": 1000.0, "fee_usd": 0.0,
+                    },
+                })
+
+                await bot._evaluate()
+
+                self.assertEqual(len(bot.state["tranches"]), 1)
+                self.assertEqual(bot.state["tranches"][0]["entry_strategy"], "grid")
+                self.assertEqual(bot.state["tranches"][0]["entry_z"], bot.state["last_evaluation"]["z"])
+                bot._trade_pair.assert_awaited_once()
+
+        asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -99,11 +99,31 @@ class LighterPairBot:
     TAB2_MARGIN_LEVERAGE = 10.0
     TAB2_MARGIN_BUFFER_MULTIPLIER = 1.25
 
+    STRATEGY_NAMES: Dict[str, str] = {
+        "grid": "Dynamic Grid",
+        "ou_quant": "Ornstein-Uhlenbeck SDE",
+        "ma_stack": "Trend MA Stack",
+        "multi_factor": "Multi-Factor Gate",
+        "trend_pullback": "Macro Trend Reversion",
+        "custom": "Rule Composer",
+    }
+
     DEFAULTS: Dict[str, Any] = {
         "enabled": False,
         "symbol_pair": ["SKHY", "SKHYNIXUSD"],
+        "strategy_mode": "grid",
+        "strategy_interval": "5m",
         "entry_z": 1.5,
         "exit_z": 0.25,
+        "ou_halflife_max": 8.0,
+        "ou_stop_z": 3.5,
+        "ma_stretch_min": 0.30,
+        "ma_trailing_stop": 0.15,
+        "min_consensus_votes": 3,
+        "trend_macro_window": 24,
+        "trend_pullback_dist": 0.15,
+        "trend_tp_dist": 0.05,
+        "trend_slope_min": 0.002,
         "notional_usd": 25.0,
         "capacity_mode": "DYNAMIC_SAFE_LEVERAGE",
         "max_tranches": None,
@@ -160,11 +180,28 @@ class LighterPairBot:
         capacity = self.state.get("risk_capacity") or {}
         public_max = int(capacity.get("max_tranches", len(self.state.get("tranches") or [])))
         configured_max = self.state.get("max_tranches")
+        strat_mode = self.state.get("strategy_mode", "grid")
         return {key: value for key, value in self.state.items() if key != "pending_execution"} | {
             "recovery_required": bool(self.state.get("pending_execution")),
             "mode": "LIVE" if self.state.get("enabled") else "PAUSED",
             "max_tranches": public_max,
             "hard_max_tranches": int(configured_max) if configured_max is not None else None,
+            "strategy_mode": strat_mode,
+            "strategy_name": self.STRATEGY_NAMES.get(strat_mode, "Dynamic Grid"),
+            "strategy_interval": self.state.get("strategy_interval", "5m"),
+            "strategy_params": {
+                "entry_z": self.state.get("entry_z", 1.5),
+                "exit_z": self.state.get("exit_z", 0.25),
+                "ou_halflife_max": self.state.get("ou_halflife_max", 8.0),
+                "ou_stop_z": self.state.get("ou_stop_z", 3.5),
+                "ma_stretch_min": self.state.get("ma_stretch_min", 0.30),
+                "ma_trailing_stop": self.state.get("ma_trailing_stop", 0.15),
+                "min_consensus_votes": self.state.get("min_consensus_votes", 3),
+                "trend_macro_window": self.state.get("trend_macro_window", 24),
+                "trend_pullback_dist": self.state.get("trend_pullback_dist", 0.15),
+                "trend_tp_dist": self.state.get("trend_tp_dist", 0.05),
+                "trend_slope_min": self.state.get("trend_slope_min", 0.002),
+            },
             "execution_history": self._execution_history(),
         }
 
@@ -522,13 +559,28 @@ class LighterPairBot:
             "entry_z": (0.75, 4.0), "exit_z": (0.0, 1.0), "notional_usd": (10.0, 500.0),
             "max_book_spread_bps": (1.0, 100.0),
             "max_slippage": (0.001, 0.02), "min_seconds_between_orders": (6, 86400),
+            "ou_halflife_max": (1.0, 50.0), "ou_stop_z": (1.5, 6.0),
+            "ma_stretch_min": (0.05, 2.0), "ma_trailing_stop": (0.01, 1.0),
+            "min_consensus_votes": (1, 4), "trend_macro_window": (6, 120),
+            "trend_pullback_dist": (0.01, 2.0), "trend_tp_dist": (0.01, 1.0),
+            "trend_slope_min": (0.0001, 0.05),
         }
         async with self.lock:
             updated = dict(self.state)
+            if "strategy_mode" in values:
+                mode = str(values["strategy_mode"]).strip().lower()
+                if mode not in self.STRATEGY_NAMES:
+                    raise ValueError(f"Unknown strategy_mode: {mode}. Must be one of: {list(self.STRATEGY_NAMES.keys())}")
+                updated["strategy_mode"] = mode
+            if "strategy_interval" in values:
+                interval = str(values["strategy_interval"]).strip().lower()
+                if interval not in {"1m", "5m", "15m", "1h"}:
+                    raise ValueError(f"Invalid strategy_interval: {interval}")
+                updated["strategy_interval"] = interval
             for key, (low, high) in bounds.items():
                 if key not in values:
                     continue
-                value = int(values[key]) if key in {"max_tranches", "min_seconds_between_orders"} else float(values[key])
+                value = int(values[key]) if key in {"max_tranches", "min_seconds_between_orders", "min_consensus_votes", "trend_macro_window"} else float(values[key])
                 if not low <= value <= high:
                     raise ValueError(f"{key} must be between {low} and {high}")
                 updated[key] = value
@@ -628,6 +680,151 @@ class LighterPairBot:
             "connection refused", "server disconnected",
         ))
 
+    def _evaluate_strategy_signals(self, ratios: List[float], side_if_open: Optional[int] = None) -> tuple[bool, int, bool, Dict[str, Any]]:
+        mode = self.state.get("strategy_mode", "grid")
+        entry_z = float(self.state.get("entry_z", 1.5))
+        exit_z = float(self.state.get("exit_z", 0.25))
+
+        if mode == "ou_quant":
+            window = min(24, len(ratios) - 1)
+            sample = ratios[-window:]
+            mean = sum(sample) / len(sample)
+            x_prev = sample[:-1]
+            x_curr = sample[1:]
+            n = len(x_prev)
+            mean_prev = sum(x_prev) / n
+            mean_curr = sum(x_curr) / n
+            var_prev = sum((x - mean_prev)**2 for x in x_prev)
+            cov = sum((x_prev[i] - mean_prev) * (x_curr[i] - mean_curr) for i in range(n))
+            a = cov / var_prev if var_prev > 1e-12 else 0.95
+            a = max(0.01, min(0.999, a))
+            b = mean_curr - a * mean_prev
+            mu_ou = b / (1.0 - a) if abs(1.0 - a) > 1e-6 else mean
+            theta = -math.log(a)
+            half_life_bars = math.log(2.0) / theta if theta > 1e-6 else 24.0
+            residuals = [(x_curr[i] - (a * x_prev[i] + b)) for i in range(n)]
+            sigma_ou = math.sqrt(sum(r**2 for r in residuals) / n) if n else 0.05
+            denom = (sigma_ou / math.sqrt(2 * theta)) if theta > 0 and sigma_ou > 0 else 0.1
+            z_ou = (ratios[-1] - mu_ou) / denom if denom > 1e-6 else 0.0
+            candidate_side = -1 if z_ou > 0 else 1
+            max_hl = float(self.state.get("ou_halflife_max", 8.0)) * 4
+            entry_signal = bool(abs(z_ou) >= entry_z and half_life_bars <= max_hl)
+            stop_z = float(self.state.get("ou_stop_z", 3.5))
+            exit_signal = bool(abs(z_ou) <= exit_z or abs(z_ou) >= stop_z)
+            eval_info = {
+                "time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(mu_ou, 4),
+                "z": round(z_ou, 3), "strategy": "ou_quant", "theta": round(theta, 4),
+                "half_life_bars": round(half_life_bars, 1), "stop_z": stop_z,
+            }
+            return entry_signal, candidate_side, exit_signal, eval_info
+
+        elif mode == "ma_stack":
+            ma7 = sum(ratios[-7:]) / 7
+            ma24 = sum(ratios[-24:]) / 24
+            ma60 = sum(ratios[-60:]) / 60 if len(ratios) >= 60 else ma24
+            stretch_pct = abs(ratios[-1] - ma60) / ma60 * 100 if ma60 else 0.0
+            bearish_stack = ratios[-1] < ma7 < ma24 < ma60
+            bullish_stack = ratios[-1] > ma7 > ma24 > ma60
+            min_stretch = float(self.state.get("ma_stretch_min", 0.30))
+            trailing_stop = float(self.state.get("ma_trailing_stop", 0.15))
+            entry_signal = bool((bearish_stack or bullish_stack) and stretch_pct >= min_stretch)
+            candidate_side = 1 if bearish_stack else -1
+            if side_if_open is not None:
+                exit_signal = bool((side_if_open > 0 and ma7 >= ma24) or (side_if_open < 0 and ma7 <= ma24) or stretch_pct <= trailing_stop)
+            else:
+                exit_signal = bool(stretch_pct <= trailing_stop)
+            sample = ratios[-24:]
+            mean = sum(sample) / len(sample)
+            variance = sum((v - mean) ** 2 for v in sample) / len(sample)
+            zscore = (ratios[-1] - mean) / math.sqrt(variance) if variance > 1e-12 else 0.0
+            eval_info = {
+                "time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(ma24, 4),
+                "z": round(zscore, 3), "strategy": "ma_stack", "stretch_pct": round(stretch_pct, 3),
+                "trailing_stop": trailing_stop,
+            }
+            return entry_signal, candidate_side, exit_signal, eval_info
+
+        elif mode == "multi_factor":
+            sample = ratios[-24:]
+            mean = sum(sample) / len(sample)
+            variance = sum((v - mean) ** 2 for v in sample) / len(sample)
+            zscore = (ratios[-1] - mean) / math.sqrt(variance) if variance > 1e-12 else 0.0
+            f1 = abs(zscore) >= entry_z
+            v_curr = abs(ratios[-1] - ratios[-2])
+            v_prev = abs(ratios[-2] - ratios[-3]) if len(ratios) >= 3 else 0.01
+            f2 = v_curr >= v_prev
+            ma7 = sum(ratios[-7:]) / 7
+            f3 = abs(ratios[-1] - ma7) >= 0.08
+            local_12 = ratios[-12:]
+            f4 = (ratios[-1] >= max(local_12) * 0.9995) or (ratios[-1] <= min(local_12) * 1.0005)
+            votes = sum([f1, f2, f3, f4])
+            quorum = int(self.state.get("min_consensus_votes", 3))
+            candidate_side = -1 if zscore > 0 else 1
+            entry_signal = bool(votes >= quorum and abs(zscore) >= 0.8)
+            exit_signal = bool(abs(zscore) <= exit_z or votes < 2)
+            eval_info = {
+                "time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(mean, 4),
+                "z": round(zscore, 3), "strategy": "multi_factor", "votes": votes,
+            }
+            return entry_signal, candidate_side, exit_signal, eval_info
+
+        elif mode == "trend_pullback":
+            trend_window = max(12, min(60, int(self.state.get("trend_macro_window", 24))))
+            sample = ratios[-trend_window:]
+            n = len(sample)
+            x_bar = (n - 1) / 2.0
+            y_bar = sum(sample) / n
+            var_x = sum((k - x_bar) ** 2 for k in range(n))
+            cov_xy = sum((k - x_bar) * (sample[k] - y_bar) for k in range(n))
+            beta = cov_xy / var_x if var_x > 1e-12 else 0.0
+            alpha = y_bar - beta * x_bar
+            trendline_val = alpha + beta * (n - 1)
+            slope_min = float(self.state.get("trend_slope_min", 0.002))
+            pullback_dist = float(self.state.get("trend_pullback_dist", 0.15))
+            tp_dist = float(self.state.get("trend_tp_dist", 0.05))
+
+            is_uptrend = beta >= slope_min
+            is_downtrend = beta <= -slope_min
+            prev_val = ratios[-2]
+            prev_prev_val = ratios[-3] if len(ratios) >= 3 else prev_val
+            micro_up = (ratios[-1] > prev_val) and (prev_val <= prev_prev_val)
+            micro_down = (ratios[-1] < prev_val) and (prev_val >= prev_prev_val)
+
+            buy_signal = is_uptrend and (trendline_val - ratios[-1] >= pullback_dist) and micro_up
+            short_signal = is_downtrend and (ratios[-1] - trendline_val >= pullback_dist) and micro_down
+            entry_signal = bool(buy_signal or short_signal)
+            candidate_side = 1 if buy_signal else -1
+
+            if side_if_open is not None:
+                if side_if_open > 0:
+                    exit_signal = bool(ratios[-1] >= (trendline_val + tp_dist) or beta < -slope_min)
+                else:
+                    exit_signal = bool(ratios[-1] <= (trendline_val - tp_dist) or beta > slope_min)
+            else:
+                exit_signal = bool(abs(ratios[-1] - trendline_val) <= tp_dist)
+
+            eval_info = {
+                "time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(trendline_val, 4),
+                "z": round((ratios[-1] - trendline_val) / 0.1, 3), "strategy": "trend_pullback",
+                "slope": round(beta, 5), "trendline": round(trendline_val, 4),
+            }
+            return entry_signal, candidate_side, exit_signal, eval_info
+
+        else:
+            # Default "grid" and "custom"
+            sample = ratios[-25:-1]
+            mean = sum(sample) / len(sample)
+            variance = sum((value - mean) ** 2 for value in sample) / len(sample)
+            zscore = (ratios[-1] - mean) / math.sqrt(variance) if variance > 1e-12 else 0.0
+            candidate_side = -1 if zscore > 0 else 1
+            entry_signal = bool(abs(zscore) >= entry_z)
+            exit_signal = bool(abs(zscore) <= exit_z)
+            eval_info = {
+                "time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(mean, 4),
+                "z": round(zscore, 3), "strategy": "grid",
+            }
+            return entry_signal, candidate_side, exit_signal, eval_info
+
     async def _evaluate(self) -> None:
         if self.state.get("pending_execution"):
             raise RuntimeError("Pending execution requires reconciliation")
@@ -647,32 +844,36 @@ class LighterPairBot:
                 self.save()
         if await self._hydrate_active_tranche_fills():
             self.save()
+
+        interval = self.state.get("strategy_interval", "5m")
+        interval_ms = 300_000 if interval == "5m" else (60_000 if interval == "1m" else (900_000 if interval == "15m" else 3_600_000))
         adr_candles, domestic_candles, adr_book, domestic_book = await asyncio.gather(
-            self.client.candles(216, "5m", 80), self.client.candles(161, "5m", 80),
+            self.client.candles(216, interval, 80), self.client.candles(161, interval, 80),
             self.client.order_book(216, 20), self.client.order_book(161, 20),
         )
         now_ms = int(time.time() * 1000)
-        adr_candles = [row for row in adr_candles if int(row["t"]) + 300_000 <= now_ms]
-        domestic_candles = [row for row in domestic_candles if int(row["t"]) + 300_000 <= now_ms]
+        adr_candles = [row for row in adr_candles if int(row["t"]) + interval_ms <= now_ms]
+        domestic_candles = [row for row in domestic_candles if int(row["t"]) + interval_ms <= now_ms]
         ratios = self._aligned_ratio(adr_candles, domestic_candles)
         if len(ratios) < 25:
             raise RuntimeError("Insufficient aligned Lighter candles")
-        sample = ratios[-25:-1]
-        mean = sum(sample) / len(sample)
-        variance = sum((value - mean) ** 2 for value in sample) / len(sample)
-        zscore = (ratios[-1] - mean) / math.sqrt(variance) if variance > 1e-12 else 0.0
+
+        tranches = self.state["tranches"]
+        campaign_side = int(tranches[0]["side"]) if tranches else None
+        entry_signal, candidate_side, exit_signal, evaluation = self._evaluate_strategy_signals(ratios, campaign_side)
+        self.state["last_evaluation"] = evaluation
+
         adr_quote = _book_summary(adr_book)
         domestic_quote = _book_summary(domestic_book)
         risk = self._risk_capacity(status, open_pos, adr_quote, domestic_quote)
-        evaluation = {"time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(mean, 4), "z": round(zscore, 3)}
-        self.state["last_evaluation"] = evaluation
+
         if any((quote.get("spread_bps") or 1e9) > self.state["max_book_spread_bps"] for quote in (adr_quote, domestic_quote)):
             return
         elapsed = time.time() - float(self.state.get("last_action_time") or 0)
         if elapsed < self.state["min_seconds_between_orders"]:
             return
-        tranches = self.state["tranches"]
-        if tranches and abs(zscore) <= self.state["exit_z"]:
+
+        if tranches and exit_signal:
             exit_ratio = ratios[-1]
             for tranche in list(tranches):
                 execution = await self._trade_pair(-int(tranche["side"]), float(tranche["adr_qty"]), float(tranche["domestic_qty"]), adr_quote, domestic_quote, reduce_only=True)
@@ -711,10 +912,11 @@ class LighterPairBot:
                 })
                 self.state["pending_execution"] = None
                 self.save()
-            self.state["last_action"] = "EXITED_TO_MEAN"
+            strat_name = evaluation.get("strategy", "grid").upper()
+            self.state["last_action"] = f"EXITED_{strat_name}"
             self.state["last_action_time"] = int(time.time())
-        elif abs(zscore) >= self.state["entry_z"] and risk["can_add_tranche"]:
-            side = -1 if zscore > 0 else 1  # +1 long ratio, -1 short ratio
+        elif entry_signal and risk["can_add_tranche"]:
+            side = candidate_side
             if not self._campaign_allows_side(side):
                 self.state["last_action"] = "WAITING_FOR_EXISTING_CAMPAIGN_EXIT"
                 return
@@ -728,7 +930,9 @@ class LighterPairBot:
             actual_adr_qty = float(execution["first_leg"].get("filled_size", adr_qty))
             actual_domestic_qty = float(execution["second_leg"].get("filled_size", domestic_qty))
             new_tranche = {"side": side, "adr_qty": actual_adr_qty, "domestic_qty": actual_domestic_qty,
-                           "entry_ratio": entry_ratio, "entry_z": zscore, "time": int(time.time()),
+                           "entry_ratio": entry_ratio, "entry_z": float(evaluation.get("z", 0.0)),
+                           "entry_strategy": evaluation.get("strategy", self.state.get("strategy_mode", "grid")),
+                           "time": int(time.time()),
                            "notional_usd": self.state["notional_usd"], "is_entry": True,
                            "fee_usd": round(entry_fee, 8),
                            "fee_bps": round(entry_fee / self.state["notional_usd"] * 10_000, 4),

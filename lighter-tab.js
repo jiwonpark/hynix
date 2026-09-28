@@ -698,39 +698,7 @@
       const utilizationLabel = progressBar?.parentElement?.previousElementSibling?.querySelector("span");
       if (utilizationLabel) utilizationLabel.textContent = "Gross Leverage Utilization (separate from campaign slot cap):";
 
-      const controllerCard = lid("hedgedControllerCard");
-      if (controllerCard && !$("lighterLiveRulesPanel")) {
-        const panel = document.createElement("section");
-        panel.id = "lighterLiveRulesPanel";
-        panel.style.cssText = "margin:12px 0;padding:13px 14px;border:2px solid #059669;border-radius:9px;background:#ecfdf5;color:#064e3b";
-        panel.innerHTML = `
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px">
-            <strong style="font-size:13px;letter-spacing:.35px">REAL EC2 BOT — PRODUCTION RULES</strong>
-            <span id="lighterLiveRulesState" style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#475569">LOADING</span>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px;font-size:11px;line-height:1.4">
-            <div><b>Engine</b><br>Dynamic Grid only</div>
-            <div><b>Data</b><br>Completed 5m candles · 24-bar mean/std</div>
-            <div><b>Entry</b><br>|Z| ≥ <span id="lighterLiveEntryZ">1.50</span></div>
-            <div><b>Direction</b><br>Z high: short SKHY / long KR<br>Z low: long SKHY / short KR</div>
-            <div><b>Exit</b><br>|Z| ≤ <span id="lighterLiveExitZ">0.25</span> · no separate PnL gate</div>
-            <div><b>Size / dynamic capacity</b><br>ADR target $<span id="lighterLiveNotional">25</span> · pair gross ≈ $<span id="lighterLivePairGross">—</span><br><span id="lighterLiveMaxTranches">—</span> safe tranches · ≤8x account gross</div>
-            <div>
-              <b>Execution guards</b><br>Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps
-              <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
-                <input id="lighter_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Maximum paired trades per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
-                <output id="lighterLiveTradeRateValue" for="lighter_inputLiveTradeRate" style="min-width:48px;font-weight:900;color:#0369a1">0.2/min</output>
-                <button id="lighter_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
-              </div>
-              <small id="lighterLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 paired trades/min · 300s minimum · unlock required</small>
-            </div>
-            <div><b>Current evaluation</b><br><span id="lighterLiveEvaluation">Awaiting completed bar</span></div>
-          </div>
-          <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800">Only the rate slider above changes live execution pacing. Chart interval, paper strategy, condition switches, and “Rerun Paper” remain simulation-only.</div>`;
-        const telemetry = controllerCard.querySelector(".hedgedTelemetryCard");
-        if (telemetry) controllerCard.insertBefore(panel, telemetry);
-        else controllerCard.prepend(panel);
-      }
+      this.renderLiveRulesPanel();
       const saveLiveCooldown = lid("btnSaveLiveCooldown");
       if (saveLiveCooldown && !saveLiveCooldown._boundClick) {
         saveLiveCooldown._boundClick = true;
@@ -874,19 +842,24 @@
             <button id="lighter_tabParadigm_trend_pullback" class="lighterParadigmBtn" type="button" data-mode="trend_pullback" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🌊 Macro Trend Reversion</button>
             <button id="lighter_tabParadigm_custom" class="lighterParadigmBtn" type="button" data-mode="custom" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🛠️ Rule Composer</button>
           </div>
-          <div id="lighter_paradigmBadge" style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;">
-            PARITY HARVESTING · GRID ARB
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span id="lighter_liveBotStrategyBadge" style="font-size:10px;font-weight:800;padding:4px 8px;border-radius:6px;background:#dcfce7;color:#166534;border:1px solid #86efac;display:none;">
+              ● LIVE BOT: DYNAMIC GRID
+            </span>
+            <div id="lighter_paradigmBadge" style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;">
+              PARITY HARVESTING · GRID ARB
+            </div>
           </div>
         `;
         criteriaGrid.parentNode.insertBefore(nav, criteriaGrid);
         ["grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom"].forEach((mode) => {
           const btn = $(`lighter_tabParadigm_${mode}`);
-          if (btn) btn.addEventListener("click", () => this.setParadigm(mode));
+          if (btn) btn.addEventListener("click", () => this.setParadigm(mode, { deployLive: true }));
         });
       }
     },
 
-    setParadigm(mode) {
+    async setParadigm(mode, options = {}) {
       if (!this.paradigms[mode]) return;
       this.currentParadigm = mode;
       localStorage.setItem(STRATEGY_STORAGE_KEY, mode);
@@ -922,11 +895,16 @@
 
       const ladderSec = $("lighter_gridMatrixSection");
       let detailSec = $("lighter_paradigmDetailSection");
+      const rulesPanel = $("lighterLiveRulesPanel");
       if (!detailSec && ladderSec) {
         detailSec = document.createElement("div");
         detailSec.id = "lighter_paradigmDetailSection";
         detailSec.style.cssText = "margin-top:14px;background:#ffffff;border:1.5px solid #cbd5e1;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05);display:none;";
-        ladderSec.parentNode.insertBefore(detailSec, ladderSec.nextSibling);
+        if (rulesPanel) {
+          ladderSec.parentNode.insertBefore(detailSec, rulesPanel);
+        } else {
+          ladderSec.parentNode.insertBefore(detailSec, ladderSec.nextSibling);
+        }
       }
 
       if (mode === "grid") {
@@ -943,6 +921,8 @@
 
       this.runBacktest();
       this.updateRulesMatchStatus();
+      this.updateDeployButtonState();
+      if (options.deployLive) await this.deployLiveStrategy({ skipConfirm: true, source: "regime" });
     },
 
     renderParadigmDetail(mode) {
@@ -1186,10 +1166,183 @@
         section.id = "lighter_gridMatrixSection";
         section.style.cssText = "margin-top:14px;background:#ffffff;border:1.5px solid #cbd5e1;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05);";
         section.innerHTML = this.gridMatrixTemplate();
-        criteriaGrid.parentNode.insertBefore(section, criteriaGrid.nextSibling);
+        const rulesPanel = $("lighterLiveRulesPanel");
+        if (rulesPanel) {
+          criteriaGrid.parentNode.insertBefore(section, rulesPanel);
+        } else {
+          criteriaGrid.parentNode.insertBefore(section, criteriaGrid.nextSibling);
+        }
         this.bindGridMatrixEvents();
       }
       this.updateGridLadderData();
+    },
+
+    renderLiveRulesPanel() {
+      const criteriaGrid = $("tabContentLighter")?.querySelector(".shortTermCriteriaGrid");
+      if (!criteriaGrid || $("lighterLiveRulesPanel")) return;
+      const panel = document.createElement("section");
+      panel.id = "lighterLiveRulesPanel";
+      panel.style.cssText = "margin:14px 0 10px;padding:14px 16px;border:2px solid #059669;border-radius:10px;background:#ecfdf5;color:#064e3b;box-shadow:0 1px 3px rgba(0,0,0,0.05);";
+      panel.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;border-bottom:1px solid rgba(5,150,105,0.2);padding-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <strong style="font-size:13px;letter-spacing:.35px">REAL EC2 BOT — PRODUCTION RULES</strong>
+            <span id="lighter_liveBotEnginePill" style="font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px;background:#059669;color:#fff;">LIVE: DYNAMIC GRID</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <button id="lighter_btnDeployLiveStrategy" type="button" class="terminal-action-control" style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 12px;background:#0284c7;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer;">
+              <span>⚡</span> <span id="lighter_btnDeployLiveStrategyLabel">Deploy Current Strategy to Live Bot</span>
+            </button>
+            <span id="lighterLiveRulesState" style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#475569">LOADING</span>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;font-size:11px;line-height:1.4">
+          <div>
+            <b>Active Live Engine</b><br>
+            <span id="lighterLiveEngine">Dynamic Grid</span>
+            <div id="lighterLiveEngineDesc" style="font-size:10px;color:#047857;margin-top:2px;">Parity harvesting mean-reversion</div>
+          </div>
+          <div>
+            <b>Execution Data & Interval</b><br>
+            <span id="lighterLiveInterval">Completed 5m candles</span> · 24-bar window
+          </div>
+          <div>
+            <b>Entry Trigger</b><br>
+            |Z| ≥ <span id="lighterLiveEntryZ">1.50</span>
+            <div id="lighterLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short SKHY / long KR<br>Z low: long SKHY / short KR</div>
+          </div>
+          <div>
+            <b>Exit Target</b><br>
+            |Z| ≤ <span id="lighterLiveExitZ">0.25</span> · no separate PnL gate
+            <div id="lighterLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Full pair unwind at convergence</div>
+          </div>
+          <div>
+            <b>Size / dynamic capacity</b><br>
+            ADR target $<span id="lighterLiveNotional">25</span> · pair gross ≈ $<span id="lighterLivePairGross">—</span><br>
+            <span id="lighterLiveMaxTranches">—</span> safe tranches · ≤8x account gross
+          </div>
+          <div>
+            <b>Execution guards</b><br>
+            Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps
+            <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
+              <input id="lighter_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Maximum paired trades per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
+              <output id="lighterLiveTradeRateValue" for="lighter_inputLiveTradeRate" style="min-width:48px;font-weight:900;color:#0369a1">0.2/min</output>
+              <button id="lighter_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
+            </div>
+            <small id="lighterLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 paired trades/min · 300s minimum · unlock required</small>
+          </div>
+          <div>
+            <b>Current evaluation</b><br>
+            <span id="lighterLiveEvaluation">Awaiting completed bar</span>
+          </div>
+        </div>
+        <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+          <span>Live execution parameters and active engine are managed directly in this STRATEGY REGIME command center.</span>
+          <span style="font-size:10px;font-weight:700;color:#c2410c;">Simulations in chart/backtest remain paper-only until deployed.</span>
+        </div>
+      `;
+      const detailSec = $("lighter_paradigmDetailSection");
+      const ladderSec = $("lighter_gridMatrixSection");
+      if (detailSec) {
+        detailSec.parentNode.insertBefore(panel, detailSec.nextSibling);
+      } else if (ladderSec) {
+        ladderSec.parentNode.insertBefore(panel, ladderSec.nextSibling);
+      } else {
+        criteriaGrid.parentNode.appendChild(panel);
+      }
+
+      const deployBtn = $("lighter_btnDeployLiveStrategy");
+      if (deployBtn && !deployBtn._boundClick) {
+        deployBtn._boundClick = true;
+        deployBtn.addEventListener("click", () => this.deployLiveStrategy());
+      }
+      const saveBtn = $("lighter_btnSaveLiveCooldown");
+      if (saveBtn && !saveBtn._boundClick) {
+        saveBtn._boundClick = true;
+        saveBtn.addEventListener("click", () => this.saveLiveBotRate());
+      }
+      const rateInput = $("lighter_inputLiveTradeRate");
+      if (rateInput && !rateInput._boundInput) {
+        rateInput._boundInput = true;
+        rateInput.addEventListener("input", () => this.renderTradeRatePreview());
+      }
+      this.updateDeployButtonState();
+      window.terminalLockManager?.applyState?.();
+    },
+
+    updateDeployButtonState() {
+      const btnLabel = $("lighter_btnDeployLiveStrategyLabel");
+      const btn = $("lighter_btnDeployLiveStrategy");
+      if (!btn || !btnLabel) return;
+      const currentMode = this.currentParadigm || "grid";
+      const liveMode = this.botState?.strategy_mode || "grid";
+      const currentName = this.paradigms[currentMode]?.name || currentMode;
+      if (currentMode === liveMode) {
+        btnLabel.textContent = `✓ ${currentName} Active on Live Bot (Re-apply)`;
+        btn.style.background = "#059669";
+      } else {
+        btnLabel.textContent = `⚡ Deploy ${currentName} to Live Bot`;
+        btn.style.background = "#0284c7";
+      }
+    },
+
+    liveStrategyPayload(mode = this.currentParadigm || "grid") {
+      const payload = {
+        strategy_mode: mode,
+        strategy_interval: this.interval || "5m",
+      };
+      const numeric = (id, fallback) => {
+        const value = Number($(id)?.value);
+        return Number.isFinite(value) ? value : fallback;
+      };
+      if (mode === "ou_quant") {
+        payload.entry_z = numeric("lighter_inpOuEntryZ", 1.8);
+        payload.exit_z = numeric("lighter_inpOuExitZ", 0.20);
+      } else if (mode === "ma_stack") {
+        payload.ma_stretch_min = numeric("lighter_inpMaStretchMin", 0.30);
+        payload.ma_trailing_stop = numeric("lighter_inpMaTrailingStop", 0.15);
+      } else if (mode === "multi_factor") {
+        payload.min_consensus_votes = numeric("lighter_selFactorQuorum", 3);
+      } else if (mode === "trend_pullback") {
+        payload.trend_pullback_dist = numeric("lighter_inpTrendPullbackDist", 0.15);
+        payload.trend_tp_dist = numeric("lighter_inpTrendTpDist", 0.05);
+        payload.trend_macro_window = numeric("lighter_inpTrendMacroWindow", 24);
+      } else if (mode === "custom") {
+        payload.entry_z = numeric("lighter_inpCustomEntryZ", 1.5);
+        payload.exit_z = numeric("lighter_inpCustomExitZ", 0.25);
+      }
+      return payload;
+    },
+
+    async deployLiveStrategy(options = {}) {
+      if (window.terminalLockManager?.isLocked) {
+        window.showToast?.("🔒 Terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
+        window.terminalLockManager?.openPasswordModal?.();
+        return false;
+      }
+      const mode = this.currentParadigm || "grid";
+      const pName = this.paradigms[mode]?.name || mode;
+      const confirmed = options.skipConfirm || window.confirm(`Deploy "${pName}" (${this.interval}) to the live EC2 trading daemon?\n\nLive orders and existing inventory exits will immediately follow this strategy's parameters.`);
+      if (!confirmed) return false;
+
+      const btn = $("lighter_btnDeployLiveStrategy");
+      if (btn) btn.disabled = true;
+
+      const payload = this.liveStrategyPayload(mode);
+
+      try {
+        const data = await apiPost("/api/lighter/bot/config", payload);
+        if (data?.bot) {
+          this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
+        }
+        window.showToast?.(`✅ Live EC2 strategy changed to ${pName} (${payload.strategy_interval}).`, "success");
+        return true;
+      } catch (err) {
+        window.alert(`Failed to deploy strategy: ${err.message}`);
+        return false;
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     },
 
     bindGridMatrixEvents() {
@@ -1676,6 +1829,19 @@
         rulesState.style.color = isEnabled ? "#166534" : "#475569";
       }
       const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
+      const stratMode = bot?.strategy_mode || "grid";
+      const stratName = bot?.strategy_name || this.paradigms[stratMode]?.name || "Dynamic Grid";
+      const stratInterval = bot?.strategy_interval || "5m";
+      writeRule("lighterLiveEngine", `${stratName} (${stratInterval})`);
+      const enginePill = $("lighter_liveBotEnginePill");
+      if (enginePill) enginePill.textContent = `LIVE: ${stratName.toUpperCase()}`;
+      const navLiveBadge = $("lighter_liveBotStrategyBadge");
+      if (navLiveBadge) {
+        navLiveBadge.style.display = "inline-block";
+        navLiveBadge.textContent = `● LIVE BOT: ${stratName.toUpperCase()} (${stratInterval})`;
+      }
+      this.updateDeployButtonState();
+
       writeRule("lighterLiveEntryZ", Number(bot?.entry_z ?? 1.5).toFixed(2));
       writeRule("lighterLiveExitZ", Number(bot?.exit_z ?? 0.25).toFixed(2));
       const configuredAdrNotional = Number(bot?.notional_usd ?? 25);
@@ -1705,7 +1871,7 @@
       this.renderTradeRatePreview();
       this.setText("valDeployedSpeed", `${tradeRateText} paired trades/min (${Math.round(cooldownSeconds)}s minimum)`);
       const engineCondition = lid("rowCondEntryEngine")?.querySelector(".condLabel");
-      if (engineCondition) engineCondition.textContent = `9. Grid Engine State & ${tradeRateText}/min Rate Limit`;
+      if (engineCondition) engineCondition.textContent = `9. ${stratName} State & ${tradeRateText}/min Rate Limit`;
       this.setText("valCritRetainedCore", `${tranches.length} tracked pair tranche${tranches.length === 1 ? "" : "s"}`);
       if (bot?.last_error) {
         this.setText("lblHedgedSyncBadge", isEnabled

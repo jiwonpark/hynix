@@ -72,6 +72,20 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('ENTRY BLOCKED: ${tranchesCount}/${maxTranches} slot hard cap', script)
         self.assertIn('Campaign Slots`', script)
 
+    def test_strategy_regime_clicks_deploy_exact_visible_parameters(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn('this.setParadigm(mode, { deployLive: true })', script)
+        self.assertIn('liveStrategyPayload(mode', script)
+        for control_id in (
+            "lighter_inpOuEntryZ", "lighter_inpOuExitZ", "lighter_inpMaStretchMin",
+            "lighter_inpMaTrailingStop", "lighter_selFactorQuorum",
+            "lighter_inpTrendPullbackDist", "lighter_inpTrendTpDist",
+            "lighter_inpTrendMacroWindow", "lighter_inpCustomEntryZ", "lighter_inpCustomExitZ",
+        ):
+            self.assertIn(f'numeric("{control_id}"', script)
+        for stale_id in ("inputOuHalfLife", "inputMaStretchMin", "inputFactorVotes", "inputPullbackDist"):
+            self.assertNotIn(f'lid("{stale_id}")', script)
+
     def test_lighter_backtest_strategy_modes(self):
         import asyncio
         from unittest.mock import patch
