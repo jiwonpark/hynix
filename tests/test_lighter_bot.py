@@ -42,6 +42,17 @@ class TestLighterPairBot(unittest.TestCase):
         self.assertAlmostEqual(exposure["gross_notional_usd"], 42.64)
         self.assertAlmostEqual(exposure["margin_usd"], 42.64)
 
+    def test_event_exposure_accepts_legacy_order_list(self):
+        exposure = LighterPairBot._event_exposure({
+            "orders": [
+                {"base_amount": 0.05, "reference_price": 200.0},
+                {"base_amount": 0.5, "reference_price": 20.0},
+            ]
+        })
+        self.assertEqual(exposure["adr_notional_usd"], 10.0)
+        self.assertEqual(exposure["domestic_notional_usd"], 10.0)
+        self.assertEqual(exposure["gross_notional_usd"], 20.0)
+
     def test_dynamic_capacity_uses_tab_two_leverage_and_margin_rules(self):
         with tempfile.TemporaryDirectory() as directory:
             bot = LighterPairBot(Mock(), Path(directory) / "state.json")

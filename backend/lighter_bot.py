@@ -256,11 +256,26 @@ class LighterPairBot:
         return normalized
 
     @staticmethod
+    def _order_legs(event: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        """Return both execution legs from current and legacy persisted shapes."""
+        orders = event.get("orders") or {}
+        if isinstance(orders, dict):
+            first = orders.get("first_leg") or {}
+            second = orders.get("second_leg") or {}
+        elif isinstance(orders, list):
+            first = orders[0] if len(orders) > 0 else {}
+            second = orders[1] if len(orders) > 1 else {}
+        else:
+            first = second = {}
+        return (
+            first if isinstance(first, dict) else {},
+            second if isinstance(second, dict) else {},
+        )
+
+    @staticmethod
     def _event_exposure(event: Dict[str, Any]) -> Dict[str, float]:
         """Return per-leg USDT size and estimated 1x margin for one pair action."""
-        orders = event.get("orders") or {}
-        first = orders.get("first_leg") or {}
-        second = orders.get("second_leg") or {}
+        first, second = LighterPairBot._order_legs(event)
         adr_qty = abs(float(event.get("adr_qty", 0.0) or first.get("base_amount", 0.0) or 0.0))
         domestic_qty = abs(float(event.get("domestic_qty", 0.0) or second.get("base_amount", 0.0) or 0.0))
         adr_price = float(event.get("adr_price", 0.0) or first.get("reference_price", 0.0) or 0.0)
@@ -462,9 +477,8 @@ class LighterPairBot:
         for tranche in self.state.get("tranches") or []:
             if tranche.get("execution_source") == "LIGHTER_FILLS":
                 continue
-            orders = tranche.get("orders") or {}
-            first = orders.get("first_leg") or {}
-            second = orders.get("second_leg") or {}
+            first, second = self._order_legs(tranche)
+            orders = {"first_leg": first, "second_leg": second}
             if not first.get("fill_confirmed") and first.get("client_order_index"):
                 first = {**first, **await self.client.execution_fill(
                     int(first["client_order_index"]), 216, float(first.get("base_amount", tranche.get("adr_qty", 0.0)) or 0.0)
@@ -490,7 +504,7 @@ class LighterPairBot:
             tranche["execution_source"] = "LIGHTER_FILLS"
             first_client_id = str(first.get("client_order_index") or "")
             for event in reversed(self.state.get("history") or []):
-                event_first = ((event.get("orders") or {}).get("first_leg") or {})
+                event_first, _ = self._order_legs(event)
                 if first_client_id and str(event_first.get("client_order_index") or "") == first_client_id:
                     event.update(dict(tranche))
                     break
