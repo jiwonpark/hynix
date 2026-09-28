@@ -143,6 +143,19 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('overlay.style.borderColor = isDown ? "#fca5a5" : "#86efac"', script)
         self.assertIn('overlay.style.color = isDown ? "#991b1b" : "#166534"', script)
 
+    def test_trade_entry_exit_triangles_and_diagonals(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn("renderTradeTriangles()", script)
+        self.assertIn('lighter_tradeTrianglesLayer', script)
+        self.assertIn('aria-label", "Trade entry-exit triangles"', script)
+        self.assertIn('document.createElementNS("http://www.w3.org/2000/svg", "polygon")', script)
+        self.assertIn('document.createElementNS("http://www.w3.org/2000/svg", "line")', script)
+        # Verify upper triangle for short and lower triangle for long
+        self.assertIn("if (isShort)", script)
+        self.assertIn("y1 <= y2", script)
+        self.assertIn("rgba(34, 197, 94,", script)
+        self.assertIn("rgba(239, 68, 68,", script)
+
 
 if __name__ == "__main__":
     unittest.main()

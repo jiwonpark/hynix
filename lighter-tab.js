@@ -1520,6 +1520,13 @@
         hoverLabel.style.cssText = "display:none;position:absolute;z-index:8;top:8px;left:12px;max-width:min(420px,calc(100% - 24px));padding:6px 10px;border-radius:6px;border:1px solid #cbd5e1;background:rgba(255,255,255,.97);box-shadow:0 2px 8px rgba(15,23,42,.12);font-size:11px;font-weight:800;line-height:1.35;color:#0f172a;pointer-events:auto;white-space:normal";
         host.appendChild(hoverLabel);
       }
+      if (!lid("tradeTrianglesLayer")) {
+        const svgLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svgLayer.id = "lighter_tradeTrianglesLayer";
+        svgLayer.setAttribute("aria-label", "Trade entry-exit triangles");
+        svgLayer.style.cssText = "position:absolute;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;overflow:hidden";
+        host.appendChild(svgLayer);
+      }
       if (!lid("tradeMarkerTargets")) {
         const targetLayer = document.createElement("div");
         targetLayer.id = "lighter_tradeMarkerTargets";
@@ -1534,6 +1541,7 @@
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
         this.renderTrendRanges();
         this.renderTradeMarkerTargets();
+        this.renderTradeTriangles();
       });
 
       this.maSeries = {
@@ -1588,6 +1596,7 @@
         this.chart.applyOptions({ width: host.clientWidth });
         this.renderTrendRanges();
         this.renderTradeMarkerTargets();
+        this.renderTradeTriangles();
       }
       const assetHost = lid("shortTermAssetHost");
       if (assetHost && this.assetChart && assetHost.clientWidth > 0) this.assetChart.applyOptions({ width: assetHost.clientWidth });
@@ -2324,6 +2333,7 @@
           this.activeHoveredExecutionMarkerTime = marker.time;
           this.activeHoveredExecutionMarkerKey = marker.markerKey;
           this.updateMarkerState(marker.time, marker);
+          this.renderTradeTriangles();
         });
         target.addEventListener("mouseleave", () => {
           (targetsByPair.get(pairKey) || [target]).forEach((pairTarget) => {
@@ -2333,13 +2343,126 @@
           this.activeHoveredExecutionMarkerTime = null;
           this.activeHoveredExecutionMarkerKey = null;
           this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
+          this.renderTradeTriangles();
         });
         target.addEventListener("click", (event) => {
           event.stopPropagation();
           this.selectExecutionMarker(marker);
+          this.renderTradeTriangles();
         });
         layer.appendChild(target);
       }));
+      this.renderTradeTriangles();
+    },
+
+    renderTradeTriangles() {
+      const svg = lid("tradeTrianglesLayer");
+      if (!svg || !this.chart || !this.series) return;
+      svg.innerHTML = "";
+
+      const visible = (this.rawExecutionMarkers || []).filter((m) => this.isTradeMarkerVisible(m));
+      if (!visible.length) return;
+
+      const pairs = new Map();
+      visible.forEach((marker) => {
+        const key = marker.pairKey;
+        if (!key) return;
+        const pair = pairs.get(key) || { entry: null, exit: null };
+        if (marker.is_entry !== false) {
+          if (!pair.entry) pair.entry = marker;
+        } else {
+          if (!pair.exit) pair.exit = marker;
+        }
+        pairs.set(key, pair);
+      });
+
+      const fragment = document.createDocumentFragment();
+
+      pairs.forEach((pair) => {
+        const { entry, exit } = pair;
+        if (!entry || !exit) return;
+
+        let x1 = this.chart.timeScale().timeToCoordinate(entry.time);
+        let x2 = this.chart.timeScale().timeToCoordinate(exit.time);
+        if (!Number.isFinite(x1) || !Number.isFinite(x2)) return;
+
+        const p1 = Number(entry.ratio ?? entry.entry_price);
+        const p2 = Number(exit.ratio ?? exit.exit_price);
+        if (!Number.isFinite(p1) || !Number.isFinite(p2) || p1 <= 0 || p2 <= 0) return;
+
+        let y1 = this.series.priceToCoordinate(p1);
+        let y2 = this.series.priceToCoordinate(p2);
+        if (!Number.isFinite(y1) || !Number.isFinite(y2)) return;
+
+        if (Math.abs(x1 - x2) < 1) return;
+
+        const isShort = entry.direction ? entry.direction === "short" : (exit.direction ? exit.direction === "short" : (entry.shape === "arrowDown"));
+
+        if (x1 > x2) {
+          const tx = x1; x1 = x2; x2 = tx;
+          const ty = y1; y1 = y2; y2 = ty;
+        }
+
+        let isProfit = false;
+        if (exit.pnl != null && Number.isFinite(Number(exit.pnl))) {
+          isProfit = Number(exit.pnl) >= 0;
+        } else if (exit.pnl_pct != null && Number.isFinite(Number(exit.pnl_pct))) {
+          isProfit = Number(exit.pnl_pct) >= 0;
+        } else {
+          isProfit = isShort ? (p1 >= p2) : (p2 >= p1);
+        }
+
+        const isHovered = (this.activeHoveredExecutionMarkerKey && (entry.markerKey === this.activeHoveredExecutionMarkerKey || exit.markerKey === this.activeHoveredExecutionMarkerKey))
+          || (this.activeHoveredExecutionMarkerTime && (entry.time === this.activeHoveredExecutionMarkerTime || exit.time === this.activeHoveredExecutionMarkerTime));
+        const isSelected = (this.selectedExecutionMarkerKey && (entry.markerKey === this.selectedExecutionMarkerKey || exit.markerKey === this.selectedExecutionMarkerKey));
+        const isActive = isHovered || isSelected;
+
+        let pts;
+        if (isShort) {
+          pts = y1 <= y2
+            ? `${x1.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`
+            : `${x1.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y2.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+        } else {
+          pts = y1 >= y2
+            ? `${x1.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`
+            : `${x1.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y2.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+        }
+
+        const fillColor = isProfit
+          ? (isActive ? "rgba(34, 197, 94, 0.32)" : "rgba(34, 197, 94, 0.14)")
+          : (isActive ? "rgba(239, 68, 68, 0.32)" : "rgba(239, 68, 68, 0.14)");
+
+        const strokeColor = isProfit
+          ? (isActive ? "rgba(22, 163, 74, 0.85)" : "rgba(22, 163, 74, 0.40)")
+          : (isActive ? "rgba(220, 38, 38, 0.85)" : "rgba(220, 38, 38, 0.40)");
+
+        const diagStroke = isProfit
+          ? (isActive ? "#16a34a" : "rgba(22, 163, 74, 0.75)")
+          : (isActive ? "#dc2626" : "rgba(220, 38, 38, 0.75)");
+
+        const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+        polygon.setAttribute("points", pts);
+        polygon.setAttribute("fill", fillColor);
+        polygon.setAttribute("stroke", strokeColor);
+        polygon.setAttribute("stroke-width", isActive ? "1.75" : "1");
+        polygon.setAttribute("stroke-dasharray", isActive ? "none" : "3,3");
+        polygon.style.transition = "fill 0.15s ease, stroke 0.15s ease";
+        fragment.appendChild(polygon);
+
+        const diag = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        diag.setAttribute("x1", x1.toFixed(1));
+        diag.setAttribute("y1", y1.toFixed(1));
+        diag.setAttribute("x2", x2.toFixed(1));
+        diag.setAttribute("y2", y2.toFixed(1));
+        diag.setAttribute("stroke", diagStroke);
+        diag.setAttribute("stroke-width", isActive ? "2.5" : "1.5");
+        diag.setAttribute("stroke-linecap", "round");
+        if (!isActive) diag.setAttribute("stroke-dasharray", "4,3");
+        diag.style.transition = "stroke-width 0.15s ease, stroke 0.15s ease";
+        fragment.appendChild(diag);
+      });
+
+      svg.appendChild(fragment);
     },
 
     shortSpreadProfitLadder(entrySpread, maxNetProfitPct = 5, isLong = false) {
