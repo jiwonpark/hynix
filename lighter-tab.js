@@ -2318,7 +2318,6 @@
         const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
         let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
         if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
-        y += marker.position === "aboveBar" ? -13 : 13;
         const fanX = (index - (markers.length - 1) / 2) * 12;
         const finalX = x + fanX;
         const finalY = y;
@@ -2333,7 +2332,9 @@
         target.textContent = marker.hypothetical
           ? (isDown ? "▽" : "△")
           : (isDown ? "▼" : "▲");
-        target.style.cssText = `appearance:none;position:absolute;left:${x + fanX}px;top:${y}px;transform:translate(-50%,-50%);width:18px;height:24px;padding:0;border:0;background:transparent;color:${markerColor};font-size:13px;font-weight:900;line-height:24px;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
+        const transformY = isDown ? "-100%" : "0%";
+        const alignY = isDown ? "flex-end" : "flex-start";
+        target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${y}px;transform:translate(-50%,${transformY});width:18px;height:16px;padding:0;border:0;background:transparent;color:${markerColor};font-size:13px;font-weight:900;line-height:1;display:inline-flex;align-items:${alignY};justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
         const pairKey = marker.pairKey || marker.markerKey;
         const pairTargets = targetsByPair.get(pairKey) || [];
         pairTargets.push(target);
