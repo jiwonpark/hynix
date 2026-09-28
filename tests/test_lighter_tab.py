@@ -122,6 +122,15 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('hoverText: `${trade.side < 0 ? "SHORT" : "BUY"}', script)
         self.assertIn('hoverText: `${trade.side < 0 ? "COVER" : "SELL"}', script)
 
+    def test_shared_timestamp_trades_can_be_selected_individually(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn("this.chart.subscribeClick((param) => this.onChartClick(param))", script)
+        self.assertIn("executionMarkersAtTime(time)", script)
+        self.assertIn("selectedExecutionMarkerKey", script)
+        self.assertIn("click to inspect", script)
+        self.assertIn('item.addEventListener("click"', script)
+        self.assertNotIn("Trade details are intentionally hover-only", script)
+
 
 if __name__ == "__main__":
     unittest.main()

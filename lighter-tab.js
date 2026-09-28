@@ -66,6 +66,7 @@
     executionChartController: null,
     activeHoveredExecutionMarkerTime: null,
     selectedExecutionMarkerTime: null,
+    selectedExecutionMarkerKey: null,
     rawExecutionMarkers: [],
     currentRatio: 140.09,
     currentAdrPrice: null,
@@ -1506,6 +1507,7 @@
 
       this.activeHoveredExecutionMarkerTime = null;
       this.selectedExecutionMarkerTime = null;
+      this.selectedExecutionMarkerKey = null;
 
       host.style.position = "relative";
       if (!lid("tradeMarkerHover")) {
@@ -1513,7 +1515,7 @@
         hoverLabel.id = "lighter_tradeMarkerHover";
         hoverLabel.setAttribute("role", "status");
         hoverLabel.setAttribute("aria-live", "polite");
-        hoverLabel.style.cssText = "display:none;position:absolute;z-index:8;top:8px;left:12px;max-width:58%;padding:6px 10px;border-radius:6px;border:1px solid #cbd5e1;background:rgba(255,255,255,.96);box-shadow:0 2px 8px rgba(15,23,42,.12);font-size:11px;font-weight:800;line-height:1.35;color:#0f172a;pointer-events:none;white-space:normal";
+        hoverLabel.style.cssText = "display:none;position:absolute;z-index:8;top:8px;left:12px;max-width:min(420px,calc(100% - 24px));padding:6px 10px;border-radius:6px;border:1px solid #cbd5e1;background:rgba(255,255,255,.97);box-shadow:0 2px 8px rgba(15,23,42,.12);font-size:11px;font-weight:800;line-height:1.35;color:#0f172a;pointer-events:auto;white-space:normal";
         host.appendChild(hoverLabel);
       }
 
@@ -1521,7 +1523,7 @@
         if (!param || !param.point) {
           if (this.activeHoveredExecutionMarkerTime !== null) {
             this.activeHoveredExecutionMarkerTime = null;
-            this.updateMarkerState(null);
+            this.updateMarkerState(this.selectedExecutionMarkerTime);
           }
           return;
         }
@@ -1531,6 +1533,7 @@
           this.updateMarkerState(nextHover);
         }
       });
+      this.chart.subscribeClick((param) => this.onChartClick(param));
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.renderTrendRanges());
 
       this.maSeries = {
@@ -2188,9 +2191,35 @@
     },
 
     onChartClick(param) {
-      // Trade details are intentionally hover-only; clicks never pin a label.
-      this.selectedExecutionMarkerTime = null;
-      this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
+      const time = this.markerTimeAtParam(param);
+      const matches = this.executionMarkersAtTime(time);
+      if (!matches.length) {
+        this.selectedExecutionMarkerTime = null;
+        this.selectedExecutionMarkerKey = null;
+        this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
+        return;
+      }
+      const currentIndex = matches.findIndex((marker) => marker.markerKey === this.selectedExecutionMarkerKey);
+      this.selectExecutionMarker(matches[(currentIndex + 1) % matches.length]);
+    },
+
+    executionMarkersAtTime(time) {
+      if (time == null) return [];
+      return (this.rawExecutionMarkers || [])
+        .filter((marker) => marker.time === time && this.isTradeMarkerVisible(marker));
+    },
+
+    selectedExecutionMarker() {
+      if (!this.selectedExecutionMarkerKey) return null;
+      return (this.rawExecutionMarkers || [])
+        .find((marker) => marker.markerKey === this.selectedExecutionMarkerKey && this.isTradeMarkerVisible(marker)) || null;
+    },
+
+    selectExecutionMarker(marker) {
+      if (!marker) return;
+      this.selectedExecutionMarkerTime = marker.time;
+      this.selectedExecutionMarkerKey = marker.markerKey;
+      this.updateMarkerState(marker.time);
     },
 
     updateMarkerState(hoveredTime = null) {
@@ -2199,7 +2228,7 @@
         const markers = this.executionChartController.markersForRender(hoveredTime)
           .map((marker) => ({ ...marker, text: "" }));
         this.series.setMarkers(markers);
-        this.syncHoveredMarkerDetails(hoveredTime);
+        this.syncHoveredMarkerDetails(hoveredTime, this.selectedExecutionMarker());
         this.updateTradeHoverOverlay(hoveredTime);
       } else {
         this.series.setMarkers((this.rawExecutionMarkers || []).map((marker) => ({ ...marker, text: "" })));
@@ -2210,19 +2239,37 @@
     updateTradeHoverOverlay(hoveredTime = null) {
       const overlay = lid("tradeMarkerHover");
       if (!overlay) return;
-      const marker = hoveredTime == null ? null : (this.rawExecutionMarkers || [])
-        .find((candidate) => candidate.time === hoveredTime && this.isTradeMarkerVisible(candidate));
-      if (!marker) {
+      const markers = this.executionMarkersAtTime(hoveredTime);
+      if (!markers.length) {
         overlay.style.display = "none";
         overlay.textContent = "";
         return;
       }
-      const source = marker.source === "actual" ? "ACTUAL" : (marker.backtest ? "BACKTEST" : "PAPER");
-      const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
-      overlay.textContent = `${source} · ${marker.hoverText || "Trade"} · ${timeText}`;
+      overlay.textContent = "";
+      const timeText = formatKstDateTime(Number(hoveredTime) * 1000, false);
+      if (markers.length > 1) {
+        const heading = document.createElement("div");
+        heading.textContent = `${markers.length} trades · ${timeText} · click to inspect`;
+        heading.style.cssText = "margin-bottom:5px;color:#475569";
+        overlay.appendChild(heading);
+      }
+      markers.forEach((marker, index) => {
+        const source = marker.source === "actual" ? "ACTUAL" : (marker.backtest ? "BACKTEST" : "PAPER");
+        const item = document.createElement(markers.length > 1 ? "button" : "div");
+        item.textContent = `${markers.length > 1 ? `${index + 1}/${markers.length} · ` : ""}${source} · ${marker.hoverText || "Trade"}${markers.length === 1 ? ` · ${timeText}` : ""}`;
+        if (markers.length > 1) {
+          item.type = "button";
+          item.style.cssText = `display:block;width:100%;margin:3px 0;padding:5px 7px;text-align:left;border-radius:4px;border:1px solid ${marker.markerKey === this.selectedExecutionMarkerKey ? "#7c3aed" : "#e2e8f0"};background:${marker.markerKey === this.selectedExecutionMarkerKey ? "#f5f3ff" : "#fff"};color:#0f172a;font:inherit;cursor:pointer`;
+          item.addEventListener("click", (event) => {
+            event.stopPropagation();
+            this.selectExecutionMarker(marker);
+          });
+        }
+        overlay.appendChild(item);
+      });
       overlay.style.display = "block";
-      overlay.style.borderColor = marker.shape === "arrowDown" ? "#fca5a5" : "#86efac";
-      overlay.style.color = marker.shape === "arrowDown" ? "#991b1b" : "#166534";
+      overlay.style.borderColor = markers.length > 1 ? "#c4b5fd" : (markers[0].shape === "arrowDown" ? "#fca5a5" : "#86efac");
+      overlay.style.color = markers.length > 1 ? "#0f172a" : (markers[0].shape === "arrowDown" ? "#991b1b" : "#166534");
     },
 
     shortSpreadProfitLadder(entrySpread, maxNetProfitPct = 5, isLong = false) {
@@ -2301,7 +2348,7 @@
       this.clearReferenceLines();
     },
 
-    syncHoveredMarkerDetails(activeTime = null) {
+    syncHoveredMarkerDetails(activeTime = null, selectedMarker = null) {
       const pnlEl = lid("valShortTermNetPnl");
       const profitEl = lid("valSelectedMinProfit");
       if (!activeTime) {
@@ -2310,7 +2357,9 @@
         this.renderCurrentPositionReferenceLines();
         return;
       }
-      const marker = (this.rawExecutionMarkers || []).find((m) => m.time === activeTime && this.isTradeMarkerVisible(m));
+      const marker = selectedMarker && selectedMarker.time === activeTime
+        ? selectedMarker
+        : this.executionMarkersAtTime(activeTime)[0];
       if (!marker) {
         if (pnlEl) pnlEl.textContent = "--";
         if (profitEl) profitEl.textContent = "—";
@@ -2642,7 +2691,13 @@
         ...(this.actualMarkers || []),
         ...paperMarkers,
         ...(this.backtestMarkers || []),
-      ].sort((a, b) => a.time - b.time);
+      ].sort((a, b) => a.time - b.time)
+        .map((marker, index) => ({ ...marker, markerKey: `${marker.source || "trade"}:${marker.backtest ? "backtest" : "live"}:${marker.time}:${index}` }));
+
+      if (this.selectedExecutionMarkerKey && !rawMarkers.some((marker) => marker.markerKey === this.selectedExecutionMarkerKey)) {
+        this.selectedExecutionMarkerKey = null;
+        this.selectedExecutionMarkerTime = null;
+      }
 
       this.rawExecutionMarkers = rawMarkers;
       this.executionChartController?.setExecutions(rawMarkers);
