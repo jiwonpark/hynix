@@ -2279,14 +2279,18 @@
         target.type = "button";
         target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
         target.textContent = marker.shape === "arrowDown" ? "▼" : "▲";
-        const selected = marker.markerKey === this.selectedExecutionMarkerKey;
-        target.style.cssText = `position:absolute;left:${x + fanX}px;top:${y + fanY}px;transform:translate(-50%,-50%);width:22px;height:22px;padding:0;border-radius:50%;border:${selected ? "2px solid #7c3aed" : "1px solid rgba(255,255,255,.9)"};background:${marker.shape === "arrowDown" ? "#dc2626" : "#16a34a"};box-shadow:0 1px 4px rgba(15,23,42,.35);color:#fff;font-size:10px;line-height:18px;cursor:pointer;pointer-events:auto`;
+        const markerColor = marker.shape === "arrowDown" ? "#dc2626" : "#16a34a";
+        target.style.cssText = `appearance:none;position:absolute;left:${x + fanX}px;top:${y + fanY}px;transform:translate(-50%,-50%);width:24px;height:24px;padding:0;border:0;background:transparent;color:${markerColor};font-size:17px;font-weight:900;line-height:24px;cursor:pointer;pointer-events:auto;filter:none;transition:filter .12s ease,transform .12s ease`;
         target.addEventListener("mouseenter", () => {
+          target.style.filter = `drop-shadow(0 0 3px #fff) drop-shadow(0 0 6px ${markerColor})`;
+          target.style.transform = "translate(-50%,-50%) scale(1.12)";
           this.activeHoveredExecutionMarkerTime = marker.time;
           this.activeHoveredExecutionMarkerKey = marker.markerKey;
           this.updateMarkerState(marker.time, marker);
         });
         target.addEventListener("mouseleave", () => {
+          target.style.filter = "none";
+          target.style.transform = "translate(-50%,-50%)";
           this.activeHoveredExecutionMarkerTime = null;
           this.activeHoveredExecutionMarkerKey = null;
           this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
