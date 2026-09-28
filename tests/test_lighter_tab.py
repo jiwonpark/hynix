@@ -167,6 +167,8 @@ class TestLighterTab(unittest.TestCase):
         # Verify FIFO matching and direction preservation
         self.assertIn("const entry = stack.shift();", script)
         self.assertIn("pairKey: marker.pairKey || null", script)
+        # Verify Buy price lower than Sell close is always profit
+        self.assertIn("const isProfit = isShort ? (p1 >= p2) : (p2 >= p1);", script)
 
     def test_parity_markers_direction_and_pairkey_stamped(self):
         from backend.server import get_lighter_parity, lighter_pair_bot, lighter_client

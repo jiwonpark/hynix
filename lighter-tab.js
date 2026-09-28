@@ -2455,14 +2455,9 @@
           const ty = y1; y1 = y2; y2 = ty;
         }
 
-        let isProfit = false;
-        if (exit.pnl != null && Number.isFinite(Number(exit.pnl))) {
-          isProfit = Number(exit.pnl) >= 0;
-        } else if (exit.pnl_pct != null && Number.isFinite(Number(exit.pnl_pct))) {
-          isProfit = Number(exit.pnl_pct) >= 0;
-        } else {
-          isProfit = isShort ? (p1 >= p2) : (p2 >= p1);
-        }
+        // Invariant: Buy price lower than Sell close is ALWAYS Profit (Green).
+        // For Long: p2 (sell) >= p1 (buy). For Short: p1 (sell) >= p2 (buy).
+        const isProfit = isShort ? (p1 >= p2) : (p2 >= p1);
 
         let cornerX;
         let cornerY;
