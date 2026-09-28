@@ -2731,16 +2731,17 @@
       if (history.length) {
         this.setText("countOrderLog", String(history.length));
         const exits = history.filter((trade) => trade.event === "EXIT" || trade.is_exit);
+        const authoritativeExits = exits.filter((trade) => trade.pnl_authoritative || trade.pnl_source === "LIGHTER_REALIZED_PNL");
         const totalFees = history.reduce((sum, trade) => {
           const isExit = trade.event === "EXIT" || trade.is_exit;
           return sum + Number(isExit ? (trade.exit_fee_usd ?? trade.fee_usd ?? 0) : (trade.fee_usd || 0));
         }, 0);
-        const totalNet = exits.reduce((sum, trade) => sum + Number(trade.net_pnl_usd ?? trade.pnl ?? 0), 0);
+        const totalNet = authoritativeExits.reduce((sum, trade) => sum + Number(trade.net_pnl_usd ?? trade.pnl ?? 0), 0);
         const totalGrossTurnover = history.reduce((sum, trade) => sum + this.tradeExposure(trade).gross, 0);
-        const wins = exits.filter((trade) => Number(trade.net_pnl_usd ?? trade.pnl ?? 0) > 0).length;
+        const wins = authoritativeExits.filter((trade) => Number(trade.net_pnl_usd ?? trade.pnl ?? 0) > 0).length;
         const summary = lid("executionHistorySummary");
         if (summary) {
-          summary.innerHTML = `<span><b>${history.length}</b> persisted events</span><span><b>${exits.length}</b> completed exits</span><span>Gross turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Fees <b>$${totalFees.toFixed(4)}</b></span><span>Net P&L <b style="color:${totalNet >= 0 ? '#16a34a' : '#dc2626'}">${totalNet >= 0 ? '+' : ''}$${totalNet.toFixed(4)}</b></span><span>Win rate <b>${exits.length ? (wins / exits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">EC2 durable ledger · fee-adjusted ratio P&L</span>`;
+          summary.innerHTML = `<span><b>${history.length}</b> persisted events</span><span><b>${authoritativeExits.length}</b> verified exits</span><span>Gross turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Recorded fees <b>$${totalFees.toFixed(4)}</b></span><span>Verified net P&L <b style="color:${totalNet >= 0 ? '#16a34a' : '#dc2626'}">${totalNet >= 0 ? '+' : ''}$${totalNet.toFixed(4)}</b></span><span>Verified win rate <b>${authoritativeExits.length ? (wins / authoritativeExits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">Actual Lighter fills · legacy estimates excluded</span>`;
         }
         historyBody.innerHTML = history.slice().reverse().map((trade) => {
           const timeStr = formatKstDateTime(trade.time ? trade.time * 1000 : Date.now());
@@ -2766,9 +2767,10 @@
           const grossPnl = isExit ? Number(trade.gross_pnl_usd ?? trade.pnl ?? 0) : null;
           const netPnl = isExit ? Number(trade.net_pnl_usd ?? trade.pnl ?? 0) : null;
           const pnlPct = isExit ? Number(trade.pnl_pct ?? ((netPnl / Number(trade.notional_usd || 25)) * 100)) : null;
-          const pnlStr = isExit
+          const pnlVerified = trade.pnl_authoritative || trade.pnl_source === "LIGHTER_REALIZED_PNL";
+          const pnlStr = isExit && pnlVerified
             ? `<div style="font-weight:800;color:${netPnl >= 0 ? '#16a34a' : '#dc2626'}">${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(4)} net (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(3)}%)</div><small style="color:#64748b">Gross ${grossPnl >= 0 ? '+' : ''}$${grossPnl.toFixed(4)}</small>`
-            : '<span style="color:#64748b">Open cost basis</span>';
+            : (isExit ? '<span style="color:#b45309;font-weight:700">Legacy estimate excluded</span>' : '<span style="color:#64748b">Open cost basis</span>');
           const status = trade.status || (isExit ? "CLOSED" : "OPEN");
           return `<tr>
             <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr}</td>

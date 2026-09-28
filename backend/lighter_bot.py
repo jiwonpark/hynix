@@ -223,6 +223,7 @@ class LighterPairBot:
             exit_fee = float(event.get("exit_fee_usd", fee_usd) or 0.0)
             total_fee = entry_fee + exit_fee
             net_pnl = float(event.get("net_pnl_usd", gross_pnl - total_fee) or 0.0)
+            authoritative = event.get("pnl_source") == "LIGHTER_REALIZED_PNL"
             normalized.append({
                 **event,
                 **exposure,
@@ -237,7 +238,9 @@ class LighterPairBot:
                 "gross_pnl_usd": gross_pnl,
                 "net_pnl_usd": net_pnl,
                 "pnl_pct": net_pnl / margin_usd * 100 if margin_usd else 0.0,
-                "status": "CLOSED" if matched else "UNMATCHED EXIT",
+                "pnl_authoritative": authoritative,
+                "status": ("CLOSED" if authoritative and matched else
+                           "UNMATCHED EXIT" if authoritative else "LEGACY — ESTIMATED P&L"),
                 "history_index": index,
             })
         active_tranches = list(self.state.get("tranches") or [])
