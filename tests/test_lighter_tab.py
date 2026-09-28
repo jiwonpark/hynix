@@ -1,5 +1,7 @@
+import asyncio
 import pathlib
 import unittest
+from unittest.mock import AsyncMock, patch
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -162,8 +164,46 @@ class TestLighterTab(unittest.TestCase):
         # Verify perfect alignment with trade marker targets
         self.assertIn("entry._targetX", script)
         self.assertIn("entry._targetY", script)
+        # Verify FIFO matching and direction preservation
+        self.assertIn("const entry = stack.shift();", script)
+        self.assertIn("pairKey: marker.pairKey || null", script)
+
+    def test_parity_markers_direction_and_pairkey_stamped(self):
+        from backend.server import get_lighter_parity, lighter_pair_bot, lighter_client
+
+        fake_bars = [
+            {"t": 1000000, "c": 141.0},
+            {"t": 1060000, "c": 141.5},
+            {"t": 1120000, "c": 140.8},
+        ]
+        fake_tranches = [
+            {"time": 1000, "is_exit": False, "side": -1, "adr_qty": 1.0, "notional_usd": 25.0, "entry_ratio": 141.0},
+            {"time": 1060, "is_exit": True, "side": 1, "adr_qty": 1.0, "notional_usd": 25.0, "exit_ratio": 140.8, "pnl": 0.05},
+        ]
+
+        async def _run():
+            with patch.object(lighter_client, "candles", new_callable=AsyncMock) as mock_candles:
+                mock_candles.side_effect = [
+                    [{"t": 1000000, "c": 141.0}, {"t": 1060000, "c": 141.5}, {"t": 1120000, "c": 140.8}],
+                    [{"t": 1000000, "c": 10.0}, {"t": 1060000, "c": 10.0}, {"t": 1120000, "c": 10.0}],
+                ]
+                with patch.dict(lighter_pair_bot.state, {"tranches": [], "history": fake_tranches}):
+                    res = await get_lighter_parity("15m", 100)
+                    self.assertTrue(res.get("success"))
+                    markers = res.get("markers", [])
+                    self.assertEqual(len(markers), 2)
+                    entry_m, exit_m = markers[0], markers[1]
+                    self.assertTrue(entry_m["is_entry"])
+                    self.assertFalse(exit_m["is_entry"])
+                    self.assertEqual(entry_m["direction"], "short")
+                    self.assertEqual(exit_m["direction"], "short")
+                    self.assertTrue(entry_m.get("pairKey"))
+                    self.assertEqual(entry_m.get("pairKey"), exit_m.get("pairKey"))
+
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

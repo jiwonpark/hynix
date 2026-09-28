@@ -460,6 +460,7 @@ class LighterPairBot:
                        if adr_entry > 0 and domestic_entry > 0
                        else float(last_evaluation.get("ratio") or 141.0))
         return {
+            "tranche_id": f"tranche_{int(time.time() * 1000)}",
             "side": 1 if adr_size > 0 else -1,
             "adr_qty": abs(adr_size),
             "domestic_qty": abs(domestic_size),
@@ -888,6 +889,8 @@ class LighterPairBot:
                 exit_fee = self._execution_fees(execution)
                 net_pnl = gross_pnl - entry_fee - exit_fee
                 self.state.setdefault("history", []).append({
+                    "tranche_id": tranche.get("tranche_id"),
+                    "entry_time": tranche.get("time"),
                     "side": -side,
                     "adr_qty": tranche["adr_qty"],
                     "domestic_qty": tranche["domestic_qty"],
@@ -929,7 +932,8 @@ class LighterPairBot:
             entry_ratio = self._execution_ratio(execution, ratios[-1])
             actual_adr_qty = float(execution["first_leg"].get("filled_size", adr_qty))
             actual_domestic_qty = float(execution["second_leg"].get("filled_size", domestic_qty))
-            new_tranche = {"side": side, "adr_qty": actual_adr_qty, "domestic_qty": actual_domestic_qty,
+            new_tranche = {"tranche_id": f"tranche_{int(time.time() * 1000)}",
+                           "side": side, "adr_qty": actual_adr_qty, "domestic_qty": actual_domestic_qty,
                            "entry_ratio": entry_ratio, "entry_z": float(evaluation.get("z", 0.0)),
                            "entry_strategy": evaluation.get("strategy", self.state.get("strategy_mode", "grid")),
                            "time": int(time.time()),
@@ -1011,6 +1015,7 @@ class LighterPairBot:
             actual_adr_qty = float(execution["first_leg"].get("filled_size", adr_qty))
             actual_domestic_qty = float(execution["second_leg"].get("filled_size", domestic_qty))
             tranche = {
+                "tranche_id": f"tranche_{int(time.time() * 1000)}",
                 "side": side, "adr_qty": actual_adr_qty, "domestic_qty": actual_domestic_qty,
                 "entry_ratio": round(entry_ratio, 4), "time": int(time.time()),
                 "notional_usd": notional_usd, "is_entry": True,
@@ -1058,6 +1063,8 @@ class LighterPairBot:
             exit_fee = self._execution_fees(execution)
             net_pnl = gross_pnl - entry_fee - exit_fee
             self.state.setdefault("history", []).append({
+                "tranche_id": tranche.get("tranche_id"),
+                "entry_time": tranche.get("time"),
                 "side": -int(tranche["side"]),
                 "adr_qty": tranche["adr_qty"],
                 "domestic_qty": tranche["domestic_qty"],

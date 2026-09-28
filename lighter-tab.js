@@ -2156,7 +2156,7 @@
         .filter((marker) => Number(marker.time) >= firstBarTime && Number(marker.time) <= lastBarTime)
         .map((marker) => {
           const isEntry = marker.is_entry !== false;
-          const isShort = marker.side < 0 || marker.direction === "short";
+          const isShort = marker.direction ? marker.direction === "short" : (isEntry ? (marker.side < 0) : (marker.side > 0));
           const isDown = marker.shape ? marker.shape === "arrowDown" : (isShort !== !isEntry);
           return {
             time: marker.time,
@@ -2170,12 +2170,13 @@
             hypothetical: false,
             is_entry: isEntry,
             is_exit: !isEntry,
-            direction: marker.direction || (isShort ? "short" : "long"),
+            direction: isShort ? "short" : "long",
             entry_price: marker.entry_price || marker.ratio || marker.value,
             exit_price: marker.exit_price || (isEntry ? null : (marker.ratio || marker.value)),
             ratio: marker.ratio || marker.value,
             pnl: marker.pnl,
             pnl_pct: marker.pnl_pct,
+            pairKey: marker.pairKey || null,
           };
         }) : [];
       this.renderMarkers();
@@ -2941,16 +2942,16 @@
       ].sort((a, b) => (a.time - b.time) || (a.is_entry === false ? 1 : -1));
       const openPairs = new Map();
       rawMarkers.forEach((marker, index) => {
-        const dir = marker.direction || (marker.shape === "arrowDown" ? "short" : "long");
+        if (marker.pairKey) return;
+        const dir = marker.direction || (marker.shape === "arrowDown" ? (marker.is_entry !== false ? "short" : "long") : (marker.is_entry !== false ? "long" : "short"));
         const stream = `${marker.source || "trade"}:${marker.backtest ? "backtest" : (marker.is_paper ? "paper" : "live")}:${dir}`;
         const stack = openPairs.get(stream) || [];
-        if (marker.pairKey) return;
         if (marker.is_entry !== false) {
           marker.pairKey = `${stream}:pair:${index}`;
           stack.push(marker);
           openPairs.set(stream, stack);
         } else {
-          const entry = stack.pop();
+          const entry = stack.shift();
           marker.pairKey = entry?.pairKey || `${stream}:unmatched:${index}`;
           if (entry?.direction) marker.direction = entry.direction;
         }

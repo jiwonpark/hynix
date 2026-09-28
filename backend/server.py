@@ -304,7 +304,8 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                 # For entries: side < 0 is SHORT parity (selling ADR, buying domestic).
                 # For exits: in lighter_bot side is -original_side, so side > 0 is buying ADR (COVERING a short).
                 is_cover = (side > 0) if is_exit else False
-                is_short = (side < 0) if not is_exit else not is_cover
+                trade_direction = "short" if (side < 0 if not is_exit else side > 0) else "long"
+                is_short = (trade_direction == "short")
                 qty = float(t.get("adr_qty", 0.0))
                 ratio = float((t.get("exit_ratio") if is_exit else t.get("entry_ratio"))
                               or t.get("ratio", 0.0) or 0.0)
@@ -321,6 +322,7 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                         "time": matched_time,
                         "is_entry": not is_exit,
                         "is_short": is_short,
+                        "direction": trade_direction,
                         "side": side,
                         "count": 1,
                         "total_qty": qty,
@@ -338,6 +340,7 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
             for (m_time, is_entry, is_short), m_data in sorted(candle_markers.items(), key=lambda x: x[0][0]):
                 avg_ratio = m_data["weighted_ratio"] / max(1e-6, m_data["total_notional"])
                 cnt_str = f" ({m_data['count']}x)" if m_data["count"] > 1 else ""
+                trade_dir = m_data.get("direction") or ("short" if is_short else "long")
                 if is_entry:
                     position = "aboveBar" if is_short else "belowBar"
                     color = "rgba(220, 38, 38, 0.70)" if is_short else "rgba(22, 163, 74, 0.70)"
@@ -369,6 +372,7 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                     "hypothetical": False,
                     "is_entry": is_entry,
                     "is_exit": not is_entry,
+                    "direction": trade_dir,
                     "side": m_data["side"],
                     "ratio": round(avg_ratio, 4),
                     "entry_price": round(avg_ratio, 4),
@@ -377,6 +381,24 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                     "pnl": m_data.get("pnl"),
                 })
         markers.sort(key=lambda m: m["time"])
+
+        open_entries: Dict[str, List[Dict[str, Any]]] = {"short": [], "long": []}
+        pair_seq = 0
+        for marker in markers:
+            m_dir = marker.get("direction", "short")
+            if marker.get("is_entry"):
+                pair_seq += 1
+                p_key = f"live:{m_dir}:{pair_seq}"
+                marker["pairKey"] = p_key
+                open_entries[m_dir].append(marker)
+            else:
+                if open_entries[m_dir]:
+                    matched_entry = open_entries[m_dir].pop(0)
+                    marker["pairKey"] = matched_entry["pairKey"]
+                    marker["entry_price"] = matched_entry["entry_price"]
+                else:
+                    pair_seq += 1
+                    marker["pairKey"] = f"live:{m_dir}:unmatched:{pair_seq}"
 
         return {"success": True, "interval": interval, "bars": bars, "markers": markers}
     except Exception as error:
