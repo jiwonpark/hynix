@@ -2327,14 +2327,20 @@
         target.type = "button";
         target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
         const isDown = this.isTradeDown(marker);
-        const markerColor = isDown ? "#dc2626" : "#16a34a";
-        const baseOpacity = marker.hypothetical ? 0.55 : 0.82;
-        target.textContent = marker.hypothetical
+        const glyph = marker.hypothetical
           ? (isDown ? "▽" : "△")
           : (isDown ? "▼" : "▲");
+        target.setAttribute("aria-label", `${glyph} ${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
+        const markerColor = isDown ? "#dc2626" : "#16a34a";
+        const baseOpacity = marker.hypothetical ? 0.65 : 0.90;
+        const isHypo = Boolean(marker.hypothetical);
+        const fill = isHypo ? "transparent" : markerColor;
+        const arrowSvg = isDown
+          ? `<svg width="10" height="9" viewBox="0 0 10 9" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,0.5 9.5,0.5 5,8.5" fill="${fill}" stroke="${markerColor}" stroke-width="1" stroke-linejoin="round"/></svg>`
+          : `<svg width="10" height="9" viewBox="0 0 10 9" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,8.5 9.5,8.5 5,0.5" fill="${fill}" stroke="${markerColor}" stroke-width="1" stroke-linejoin="round"/></svg>`;
+        target.innerHTML = arrowSvg;
         const transformY = isDown ? "-100%" : "0%";
-        const alignY = isDown ? "flex-end" : "flex-start";
-        target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${y}px;transform:translate(-50%,${transformY});width:18px;height:16px;padding:0;border:0;background:transparent;color:${markerColor};font-size:13px;font-weight:900;line-height:1;display:inline-flex;align-items:${alignY};justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
+        target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${y}px;transform:translate(-50%,${transformY});width:16px;height:9px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
         const pairKey = marker.pairKey || marker.markerKey;
         const pairTargets = targetsByPair.get(pairKey) || [];
         pairTargets.push(target);
@@ -2437,7 +2443,13 @@
 
         if (Math.abs(x1 - x2) < 1) return;
 
-        const isShort = entry.direction ? entry.direction === "short" : (exit.direction ? exit.direction === "short" : (entry.shape === "arrowDown"));
+        const isShort = Boolean(
+          entry.direction === "short"
+          || entry.side < 0
+          || entry.shape === "arrowDown"
+          || (typeof entry.hoverText === "string" && entry.hoverText.toUpperCase().includes("SHORT"))
+          || (typeof entry.text === "string" && entry.text.toUpperCase().includes("SHORT"))
+        );
 
         if (x1 > x2) {
           const tx = x1; x1 = x2; x2 = tx;
@@ -2453,26 +2465,38 @@
           isProfit = isShort ? (p1 >= p2) : (p2 >= p1);
         }
 
-        let pts;
+        let cornerX;
+        let cornerY;
         if (isShort) {
-          pts = y1 <= y2
-            ? `${x1.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`
-            : `${x1.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y2.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+          // If entry by short, ALWAYS the UPPER triangle of the rectangle
+          if (y1 <= y2) {
+            cornerX = x2;
+            cornerY = y1;
+          } else {
+            cornerX = x1;
+            cornerY = y2;
+          }
         } else {
-          pts = y1 >= y2
-            ? `${x1.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y1.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`
-            : `${x1.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y2.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
+          // If entry by long, ALWAYS the LOWER triangle of the rectangle
+          if (y1 <= y2) {
+            cornerX = x1;
+            cornerY = y2;
+          } else {
+            cornerX = x2;
+            cornerY = y1;
+          }
         }
+        const pts = `${x1.toFixed(1)},${y1.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
 
-        const fillColor = isProfit ? "rgba(34, 197, 94, 0.28)" : "rgba(239, 68, 68, 0.28)";
-        const strokeColor = isProfit ? "rgba(22, 163, 74, 0.90)" : "rgba(220, 38, 38, 0.90)";
+        const fillColor = isProfit ? "rgba(34, 197, 94, 0.14)" : "rgba(239, 68, 68, 0.14)";
+        const strokeColor = isProfit ? "rgba(22, 163, 74, 0.70)" : "rgba(220, 38, 38, 0.70)";
         const diagStroke = isProfit ? "#16a34a" : "#dc2626";
 
         const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
         polygon.setAttribute("points", pts);
         polygon.setAttribute("fill", fillColor);
         polygon.setAttribute("stroke", strokeColor);
-        polygon.setAttribute("stroke-width", "1.75");
+        polygon.setAttribute("stroke-width", "1");
         polygon.style.transition = "fill 0.15s ease, stroke 0.15s ease";
         fragment.appendChild(polygon);
 
@@ -2482,8 +2506,7 @@
         diag.setAttribute("x2", x2.toFixed(1));
         diag.setAttribute("y2", y2.toFixed(1));
         diag.setAttribute("stroke", diagStroke);
-        diag.setAttribute("stroke-width", "2");
-        diag.setAttribute("stroke-linecap", "round");
+        diag.setAttribute("stroke-width", "1");
         diag.style.transition = "stroke-width 0.15s ease, stroke 0.15s ease";
         fragment.appendChild(diag);
       });

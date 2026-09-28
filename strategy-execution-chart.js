@@ -200,7 +200,7 @@
       this.referenceLines.push(this.series.createPriceLine({
         price: Number(config.entry),
         color: config.selected ? "#7c3aed" : "#0284c7",
-        lineWidth: config.selected ? 2 : 1.5,
+        lineWidth: 1,
         lineStyle: this.lineStyle.Solid,
         axisLabelVisible: true,
         title: config.selected ? "ENTRY · SELECTED" : "ENTRY"
@@ -219,7 +219,7 @@
         this.referenceLines.push(this.series.createPriceLine({
           price: Number(config.scaleInSpread),
           color: "#dc2626",
-          lineWidth: 1.5,
+          lineWidth: 1,
           lineStyle: this.lineStyle.Dashed,
           axisLabelVisible: true,
           title: "SCALE-IN SHORT"
@@ -229,7 +229,7 @@
         this.referenceLines.push(this.series.createPriceLine({
           price: Number(config.exit),
           color: "#dc2626",
-          lineWidth: 1.5,
+          lineWidth: 1,
           lineStyle: this.lineStyle.Dashed,
           axisLabelVisible: true,
           title: config.exitTitle || "EXIT"
