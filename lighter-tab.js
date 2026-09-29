@@ -2362,12 +2362,17 @@
             range.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${markers.length} trades; range ${minPrice.toFixed(3)} to ${maxPrice.toFixed(3)} percent; average ${avgPrice.toFixed(3)} percent`);
             range.style.cssText = `appearance:none;position:absolute;left:${x - 14}px;top:${buttonTop}px;width:28px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto;z-index:1;overflow:visible`;
             range.innerHTML = `<svg width="28" height="${svgHeight}" viewBox="0 0 28 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
-              <line x1="14" y1="${topLocal}" x2="14" y2="${bottomLocal}" stroke="${rangeColor}" stroke-width="2" stroke-linecap="round"/>
-              <line x1="8" y1="${avgLocal}" x2="20" y2="${avgLocal}" stroke="${rangeColor}" stroke-width="2.5" stroke-linecap="round"/>
-              ${sellCount ? `<polygon points="9,${topLocal - 7} 19,${topLocal - 7} 14,${topLocal}" fill="#dc2626" stroke="#fff" stroke-width="1"/>` : ""}
-              ${buyCount ? `<polygon points="9,${bottomLocal + 7} 19,${bottomLocal + 7} 14,${bottomLocal}" fill="#16a34a" stroke="#fff" stroke-width="1"/>` : ""}
+              <line x1="14" y1="${topLocal}" x2="14" y2="${bottomLocal}" stroke="${rangeColor}" stroke-width="1" stroke-linecap="round"/>
+              <line x1="9" y1="${avgLocal}" x2="19" y2="${avgLocal}" stroke="${rangeColor}" stroke-width="1.5" stroke-linecap="round"/>
+              ${sellCount ? `<polygon points="9,${topLocal - 7} 19,${topLocal - 7} 14,${topLocal}" fill="#dc2626"/>` : ""}
+              ${buyCount ? `<polygon points="9,${bottomLocal + 7} 19,${bottomLocal + 7} 14,${bottomLocal}" fill="#16a34a"/>` : ""}
             </svg>`;
             range.addEventListener("mouseenter", () => {
+            range._blinkAnimation?.cancel();
+            range._blinkAnimation = range.animate(
+              [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
+              { duration: 650, iterations: Infinity, easing: "ease-in-out" }
+            );
             const overlay = lid("tradeMarkerHover");
             if (!overlay) return;
             overlay.textContent = `${markers.length} TRADES · ${buyCount} buys / ${sellCount} sells · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}% · click to ${expanded ? "collapse" : "inspect fills"}`;
@@ -2375,6 +2380,8 @@
             overlay.style.borderColor = rangeColor;
           });
             range.addEventListener("mouseleave", () => {
+            range._blinkAnimation?.cancel();
+            range._blinkAnimation = null;
             const overlay = lid("tradeMarkerHover");
             if (overlay && !this.activeHoveredExecutionMarkerKey && !this.selectedExecutionMarkerKey) overlay.style.display = "none";
           });
