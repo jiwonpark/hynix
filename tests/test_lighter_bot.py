@@ -240,6 +240,29 @@ class TestLighterPairBot(unittest.TestCase):
             self.assertFalse(bot.public_state()["enabled"])
             self.assertTrue(bot.public_state()["recovery_required"])
 
+    def test_unsubmitted_pending_intent_clears_only_when_positions_match(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.positions = AsyncMock(return_value=[
+                    {"market_id": 216, "position": "0.1345", "sign": 1},
+                    {"market_id": 161, "position": "0.013", "sign": -1},
+                ])
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state.update({
+                    "tranches": [{"side": 1, "adr_qty": 0.1345, "domestic_qty": 0.013}],
+                    "pending_execution": {
+                        "side": -1, "adr_qty": 0.1345, "domestic_qty": 0.013,
+                        "reduce_only": True, "first_leg": None,
+                    },
+                })
+
+                self.assertTrue(await bot._reconcile_unsubmitted_pending_intent())
+                self.assertIsNone(bot.state["pending_execution"])
+                self.assertEqual(bot.state["recovery_log"][-1]["event"], "CLEARED_UNSUBMITTED_PAIR_INTENT")
+
+        asyncio.run(run())
+
     def test_confirmed_pending_reduction_reconciles_latest_tranche(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:

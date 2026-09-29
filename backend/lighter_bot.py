@@ -607,6 +607,8 @@ class LighterPairBot:
                 if signer is None or signer.check_client():
                     raise RuntimeError("Lighter signer validation failed")
                 if self.state.get("pending_execution"):
+                    await self._reconcile_unsubmitted_pending_intent()
+                if self.state.get("pending_execution"):
                     await self._reconcile_confirmed_pending_reduction()
                 if self.state.get("pending_execution"):
                     await self._repair_pending_entry()
@@ -624,6 +626,28 @@ class LighterPairBot:
             self.state["last_error"] = None
             self.save()
             return self.public_state()
+
+    async def _reconcile_unsubmitted_pending_intent(self) -> bool:
+        """Clear a pre-submit intent only when no order ID exists and positions are unchanged."""
+        pending = self.state.get("pending_execution") or {}
+        first = pending.get("first_leg") or {}
+        second = pending.get("second_leg") or {}
+        if first.get("client_order_index") or second.get("client_order_index"):
+            return False
+        actual = self._signed_pair_positions(await self.client.positions())
+        tracked = self._tracked_pair_positions()
+        if abs(actual[216] - tracked[216]) > 0.0003 or abs(actual[161] - tracked[161]) > 0.0011:
+            return False
+        self.state.setdefault("recovery_log", []).append({
+            "time": int(time.time()), "event": "CLEARED_UNSUBMITTED_PAIR_INTENT",
+            "intent": pending,
+        })
+        self.state["pending_execution"] = None
+        self.state["last_action"] = "RECOVERED_UNSUBMITTED_INTENT"
+        self.state["last_action_time"] = int(time.time())
+        self.state["last_error"] = None
+        self.save()
+        return True
 
     async def _reconcile_confirmed_pending_reduction(self) -> bool:
         """Clear only a fully confirmed reduction matching the latest tracked tranche."""
