@@ -1202,6 +1202,11 @@ class LighterPairBot:
                 })
                 self.state["pending_execution"] = None
                 self.save()
+                # Fill confirmation and account streams share strict venue rate
+                # limits. Pace campaign-wide exits instead of bursting every
+                # tranche in one evaluation cycle.
+                if tranches:
+                    await asyncio.sleep(2.0)
             strat_name = evaluation.get("strategy", "grid").upper()
             self.state["last_action"] = f"EXITED_{strat_name}"
             self.state["last_action_time"] = int(time.time())
