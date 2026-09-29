@@ -313,7 +313,7 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
-    def test_pending_entry_repair_never_retries_twice(self):
+    def test_failed_entry_repair_rolls_back_confirmed_leg_instead_of_retrying_twice(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
                 client = Mock()
@@ -321,6 +321,17 @@ class TestLighterPairBot(unittest.TestCase):
                     {"fill_confirmed": True, "filled_size": 0.1361},
                     {"fill_confirmed": False},
                 ])
+                client.positions = AsyncMock(return_value=[
+                    {"market_id": 216, "position": "0.1361", "sign": 1},
+                ])
+                client.order_book = AsyncMock(return_value={
+                    "bids": [{"price": "183", "size": "1"}],
+                    "asks": [{"price": "184", "size": "1"}],
+                })
+                client.create_market_order = AsyncMock(return_value={
+                    "market_id": 216, "fill_confirmed": True,
+                    "filled_size": 0.1361, "fill_price": 183.0,
+                })
                 bot = LighterPairBot(client, Path(directory) / "state.json")
                 bot.state["pending_execution"] = {
                     "completed": True, "reduce_only": False, "side": 1,
@@ -330,8 +341,12 @@ class TestLighterPairBot(unittest.TestCase):
                     "second_leg": {"client_order_index": 12},
                 }
 
-                self.assertFalse(await bot._repair_pending_entry())
-                client.create_market_order.assert_not_called()
+                self.assertTrue(await bot._repair_pending_entry())
+                self.assertIsNone(bot.state["pending_execution"])
+                self.assertGreater(bot.state["margin_blocked_until"], 0)
+                self.assertEqual(bot.state["last_action"], "ROLLED_BACK_ONE_LEGGED_ENTRY")
+                client.create_market_order.assert_awaited_once()
+                self.assertTrue(client.create_market_order.await_args.kwargs["reduce_only"])
 
         asyncio.run(run())
 

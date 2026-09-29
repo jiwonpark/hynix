@@ -137,6 +137,7 @@ class LighterPairBot:
         "last_action": "DISABLED",
         "last_action_time": 0,
         "last_entry_signal_bar_time": 0,
+        "margin_blocked_until": 0,
         "last_evaluation": None,
         "last_error": None,
         "transient_error_count": 0,
@@ -392,6 +393,9 @@ class LighterPairBot:
         has_margin = available_margin >= required_buffer
         has_leverage = projected_leverage <= leverage_cap
         remaining = leverage_remaining if has_margin and has_leverage else 0
+        exchange_margin_blocked = time.time() < float(self.state.get("margin_blocked_until", 0) or 0)
+        if exchange_margin_blocked:
+            remaining = 0
         if user_hard_cap is not None:
             remaining = max(0, min(user_hard_cap - active, remaining))
 
@@ -418,6 +422,7 @@ class LighterPairBot:
             "can_add_tranche": remaining > 0,
             "blocked_reason": (
                 None if remaining > 0 else
+                "EXCHANGE_MARGIN_REJECTED" if exchange_margin_blocked else
                 "INSUFFICIENT_MARGIN" if not has_margin else
                 "GROSS_LEVERAGE_CAP" if not has_leverage else
                 "CAMPAIGN_CAPACITY" if user_hard_cap is not None and active >= user_hard_cap else
@@ -725,8 +730,10 @@ class LighterPairBot:
         second_ok = bool(second.get("fill_confirmed"))
         if first_ok and second_ok:
             return self._record_recovered_pending_entry(pending, first, second)
-        if first_ok == second_ok or pending.get("repair_attempted_at"):
+        if first_ok == second_ok:
             return False
+        if pending.get("repair_attempted_at"):
+            return await self._rollback_pending_entry(pending, first, second)
 
         side = int(pending.get("side", 0) or 0)
         if side not in {-1, 1} or not self._campaign_allows_side(side):
@@ -760,8 +767,55 @@ class LighterPairBot:
             pending["first_leg"] = first
         self.save()
         if not first.get("fill_confirmed") or not second.get("fill_confirmed"):
-            return False
+            return await self._rollback_pending_entry(pending, first, second)
         return self._record_recovered_pending_entry(pending, first, second)
+
+    async def _rollback_pending_entry(
+        self, pending: Dict[str, Any], first: Dict[str, Any], second: Dict[str, Any],
+    ) -> bool:
+        """Reduce-only the confirmed leg when its pair cannot be opened."""
+        if pending.get("rollback_attempted_at"):
+            return False
+        first_ok = bool(first.get("fill_confirmed"))
+        second_ok = bool(second.get("fill_confirmed"))
+        if first_ok == second_ok:
+            return False
+        side = int(pending.get("side", 0) or 0)
+        actual = self._signed_pair_positions(await self.client.positions())
+        tracked = self._tracked_pair_positions()
+        if first_ok:
+            quantity = float(first.get("filled_size", pending.get("adr_qty", 0.0)) or 0.0)
+            market_id, is_ask = 216, side > 0
+            expected = {216: tracked[216] + side * quantity, 161: tracked[161]}
+        else:
+            quantity = float(second.get("filled_size", pending.get("domestic_qty", 0.0)) or 0.0)
+            market_id, is_ask = 161, side < 0
+            expected = {216: tracked[216], 161: tracked[161] - side * quantity}
+        if abs(actual[216] - expected[216]) > 0.0003 or abs(actual[161] - expected[161]) > 0.0011:
+            return False
+        pending["rollback_attempted_at"] = int(time.time())
+        self.save()
+        quote = _book_summary(await self.client.order_book(market_id, 20))
+        rollback = await self.client.create_market_order(
+            market_id, quantity, quote["mid"], is_ask,
+            reduce_only=True, max_slippage=max(0.02, float(self.state["max_slippage"])),
+        )
+        pending["rollback_leg"] = rollback
+        self.save()
+        if not rollback.get("fill_confirmed"):
+            return False
+        self.state.setdefault("recovery_log", []).append({
+            "time": int(time.time()), "event": "ONE_LEGGED_ENTRY_ROLLBACK",
+            "failed_entry": {"first_leg": first, "second_leg": second},
+            "rollback_leg": rollback,
+        })
+        self.state["pending_execution"] = None
+        self.state["margin_blocked_until"] = int(time.time()) + 900
+        self.state["last_action"] = "ROLLED_BACK_ONE_LEGGED_ENTRY"
+        self.state["last_action_time"] = int(time.time())
+        self.state["last_error"] = None
+        self.save()
+        return True
 
     def _record_recovered_pending_entry(
         self, pending: Dict[str, Any], first: Dict[str, Any], second: Dict[str, Any],
@@ -840,7 +894,11 @@ class LighterPairBot:
                 self.state["transient_error_count"] = 0
             except Exception as error:
                 self.state["last_error"] = str(error)[:500]
-                if self._is_transient_read_error(error) and not self.state.get("pending_execution"):
+                safely_rolled_back = str(error).startswith("Paired execution failed; confirmed leg rolled back")
+                if safely_rolled_back and not self.state.get("pending_execution"):
+                    self.state["last_action"] = "PAIR_ENTRY_ROLLED_BACK_MARGIN_BLOCKED"
+                    logger.warning("Lighter pair entry rolled back safely; bot remains enabled: %s", error)
+                elif self._is_transient_read_error(error) and not self.state.get("pending_execution"):
                     self.state["transient_error_count"] = int(self.state.get("transient_error_count", 0) or 0) + 1
                     self.state["last_transient_error_time"] = int(time.time())
                     self.state["last_action"] = "RETRYING_TRANSIENT_ERROR"
@@ -1166,6 +1224,9 @@ class LighterPairBot:
         intent["completed"] = True
         self.save()
         if not first.get("fill_confirmed") or not second.get("fill_confirmed"):
+            if bool(first.get("fill_confirmed")) != bool(second.get("fill_confirmed")):
+                if await self._rollback_pending_entry(intent, first, second):
+                    raise RuntimeError("Paired execution failed; confirmed leg rolled back safely")
             raise RuntimeError("Paired execution accepted but authoritative fills are not yet confirmed")
         return {"first_leg": first, "second_leg": second}
 
