@@ -2326,9 +2326,12 @@
         const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
         let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
         if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
-        const fanX = (index - (markers.length - 1) / 2) * 12;
-        const finalX = x + fanX;
-        const finalY = y;
+        // Keep same-candle executions anchored to the candle. A horizontal fan
+        // can grow hundreds of pixels wide during a scale-in burst and appear
+        // beyond the end of the chart. Separate collisions vertically instead.
+        const stackY = (index - (markers.length - 1) / 2) * 8;
+        const finalX = x;
+        const finalY = Math.max(6, Math.min(Math.max(6, layer.clientHeight - 6), y + stackY));
         marker._targetX = finalX;
         marker._targetY = finalY;
         const target = document.createElement("button");
@@ -2348,7 +2351,7 @@
           : `<svg width="7" height="6" viewBox="0 0 7 6" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,5.5 6.5,5.5 3.5,0.5" fill="${fill}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/></svg>`;
         target.innerHTML = arrowSvg;
         const transformY = isDown ? "-100%" : "0%";
-        target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${y}px;transform:translate(-50%,${transformY});width:12px;height:6px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
+        target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(-50%,${transformY});width:12px;height:6px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
         const pairKey = marker.pairKey || marker.markerKey;
         const pairTargets = targetsByPair.get(pairKey) || [];
         pairTargets.push(target);
