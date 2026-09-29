@@ -240,6 +240,37 @@ class TestLighterPairBot(unittest.TestCase):
             self.assertFalse(bot.public_state()["enabled"])
             self.assertTrue(bot.public_state()["recovery_required"])
 
+    def test_confirmed_pending_reduction_reconciles_latest_tranche(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.execution_fill = AsyncMock(side_effect=[
+                    {"fill_confirmed": True, "filled_size": 0.1345, "fill_price": 185.59,
+                     "fee_usd": 0.0, "realized_pnl_usd": 0.11},
+                    {"fill_confirmed": True, "filled_size": 0.013, "fill_price": 1314.847,
+                     "fee_usd": 0.0, "realized_pnl_usd": -0.02},
+                ])
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state.update({
+                    "tranches": [{"side": 1, "adr_qty": 0.1346, "domestic_qty": 0.013,
+                                  "entry_ratio": 141.18, "notional_usd": 25.0,
+                                  "fee_usd": 0.01, "time": 1000}],
+                    "pending_execution": {
+                        "completed": True, "reduce_only": True, "side": -1,
+                        "adr_qty": 0.1345, "domestic_qty": 0.013, "time": 1100,
+                        "first_leg": {"client_order_index": 11},
+                        "second_leg": {"client_order_index": 12},
+                    },
+                    "last_error": "Unresolved paired execution; manual reconciliation required",
+                })
+                self.assertTrue(await bot._reconcile_confirmed_pending_reduction())
+                self.assertIsNone(bot.state["pending_execution"])
+                self.assertEqual(bot.state["tranches"], [])
+                self.assertEqual(bot.state["last_action"], "RECOVERED_CONFIRMED_REDUCTION")
+                self.assertTrue(bot.state["history"][-1]["reconciled"])
+
+        asyncio.run(run())
+
     def test_enable_requires_funded_authenticated_account_and_signer(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:

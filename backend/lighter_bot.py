@@ -601,6 +601,8 @@ class LighterPairBot:
                 if signer is None or signer.check_client():
                     raise RuntimeError("Lighter signer validation failed")
                 if self.state.get("pending_execution"):
+                    await self._reconcile_confirmed_pending_reduction()
+                if self.state.get("pending_execution"):
                     raise RuntimeError("Resolve the pending paired execution before enabling")
                 open_positions = await self.client.positions()
                 if open_positions and not self.state.get("tranches"):
@@ -614,6 +616,70 @@ class LighterPairBot:
             self.state["last_error"] = None
             self.save()
             return self.public_state()
+
+    async def _reconcile_confirmed_pending_reduction(self) -> bool:
+        """Clear only a fully confirmed reduction matching the latest tracked tranche."""
+        pending = self.state.get("pending_execution") or {}
+        if not pending.get("completed") or not pending.get("reduce_only"):
+            return False
+        first = dict(pending.get("first_leg") or {})
+        second = dict(pending.get("second_leg") or {})
+        first_id = first.get("client_order_index")
+        second_id = second.get("client_order_index")
+        if not first_id or not second_id:
+            return False
+        adr_qty = float(pending.get("adr_qty", 0.0) or 0.0)
+        domestic_qty = float(pending.get("domestic_qty", 0.0) or 0.0)
+        first.update(await self.client.execution_fill(int(first_id), 216, adr_qty))
+        second.update(await self.client.execution_fill(int(second_id), 161, domestic_qty))
+        if not first.get("fill_confirmed") or not second.get("fill_confirmed"):
+            return False
+        filled_adr = float(first.get("filled_size", 0.0) or 0.0)
+        filled_domestic = float(second.get("filled_size", 0.0) or 0.0)
+        if filled_adr + 1e-6 < adr_qty or filled_domestic + 1e-6 < domestic_qty:
+            return False
+        tranches = self.state.get("tranches") or []
+        if not tranches:
+            return False
+        tranche = tranches[-1]
+        original_side = -int(pending.get("side", 0) or 0)
+        if int(tranche.get("side", 0) or 0) != original_side:
+            return False
+        tracked_adr = float(tranche.get("adr_qty", 0.0) or 0.0)
+        tracked_domestic = float(tranche.get("domestic_qty", 0.0) or 0.0)
+        if abs(tracked_adr - filled_adr) > 0.0002 or abs(tracked_domestic - filled_domestic) > 0.0011:
+            return False
+
+        execution = {"first_leg": first, "second_leg": second}
+        exit_ratio = self._execution_ratio(execution, float(tranche.get("entry_ratio", 0.0) or 0.0))
+        entry_ratio = float(tranche.get("entry_ratio", exit_ratio) or exit_ratio)
+        notional = float(tranche.get("notional_usd", 0.0) or 0.0)
+        entry_fee = float(tranche.get("fee_usd", 0.0) or 0.0)
+        exit_fee = self._execution_fees(execution)
+        gross_pnl = self._execution_realized_pnl(execution)
+        net_pnl = gross_pnl - entry_fee - exit_fee
+        tranches.pop()
+        self.state.setdefault("history", []).append({
+            "tranche_id": tranche.get("tranche_id"), "entry_time": tranche.get("time"),
+            "side": -original_side, "adr_qty": filled_adr, "domestic_qty": filled_domestic,
+            "entry_ratio": round(entry_ratio, 4), "exit_ratio": round(exit_ratio, 4),
+            "ratio": round(exit_ratio, 4), "time": int(pending.get("time") or time.time()),
+            "is_exit": True, "pnl": round(net_pnl, 6),
+            "gross_pnl_usd": round(gross_pnl, 6), "net_pnl_usd": round(net_pnl, 6),
+            "entry_fee_usd": round(entry_fee, 8), "exit_fee_usd": round(exit_fee, 8),
+            "fee_usd": round(exit_fee, 8),
+            "fee_bps": round((entry_fee + exit_fee) / notional * 10_000, 4) if notional else 0.0,
+            "pnl_pct": round(net_pnl / notional * 100, 6) if notional else 0.0,
+            "notional_usd": notional, "adr_price": first.get("fill_price"),
+            "domestic_price": second.get("fill_price"), "pnl_source": "LIGHTER_REALIZED_PNL",
+            "orders": execution, "reconciled": True,
+        })
+        self.state["pending_execution"] = None
+        self.state["last_action"] = "RECOVERED_CONFIRMED_REDUCTION"
+        self.state["last_action_time"] = int(time.time())
+        self.state["last_error"] = None
+        self.save()
+        return True
 
     @staticmethod
     def _aligned_ratio(adr: List[Dict[str, Any]], domestic: List[Dict[str, Any]]) -> List[float]:
