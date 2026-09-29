@@ -1514,6 +1514,7 @@
       this.selectedExecutionMarkerTime = null;
       this.selectedExecutionMarkerKey = null;
       this.selectedPairKey = null;
+      this.expandedExecutionMarkerTimes = new Set();
 
       host.style.position = "relative";
       if (!lid("tradeMarkerHover")) {
@@ -2316,13 +2317,61 @@
         group.push(marker);
         groups.set(marker.time, group);
       });
-      groups.forEach((markers) => markers.forEach((marker, index) => {
-        const x = this.chart.timeScale().timeToCoordinate(marker.time);
+      groups.forEach((markers) => {
+        const markerTime = markers[0]?.time;
+        const x = this.chart.timeScale().timeToCoordinate(markerTime);
         if (!Number.isFinite(x)) {
-          marker._targetX = null;
-          marker._targetY = null;
+          markers.forEach((marker) => {
+            marker._targetX = null;
+            marker._targetY = null;
+          });
           return;
         }
+        const denseGroup = markers.length > 3;
+        const expanded = denseGroup && this.expandedExecutionMarkerTimes?.has(markerTime);
+        if (denseGroup) {
+          const prices = markers
+            .map((marker) => Number(marker.ratio ?? marker.entry_price ?? marker.exit_price))
+            .filter(Number.isFinite);
+          const meanPrice = prices.length ? prices.reduce((sum, value) => sum + value, 0) / prices.length : null;
+          let clusterY = Number.isFinite(meanPrice) ? this.series.priceToCoordinate(meanPrice) : null;
+          if (!Number.isFinite(clusterY)) clusterY = Math.max(24, layer.clientHeight / 2);
+          clusterY = Math.max(12, Math.min(Math.max(12, layer.clientHeight - 12), clusterY));
+          const longCount = markers.filter((marker) => marker.direction === "long").length;
+          const shortCount = markers.length - longCount;
+          const clusterColor = longCount >= shortCount ? "#16a34a" : "#dc2626";
+          const cluster = document.createElement("button");
+          cluster.type = "button";
+          cluster.textContent = `${expanded ? "−" : "+"}${markers.length}`;
+          cluster.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${markers.length} trades at this candle`);
+          cluster.style.cssText = `appearance:none;position:absolute;left:${x}px;top:${clusterY}px;transform:translate(-50%,-50%);min-width:27px;height:18px;padding:0 5px;border:1px solid #fff;border-radius:9px;background:${clusterColor};box-shadow:0 1px 4px rgba(15,23,42,.28);color:#fff;font:800 9px/16px ui-monospace,SFMono-Regular,monospace;cursor:pointer;pointer-events:auto;z-index:2`;
+          cluster.addEventListener("mouseenter", () => {
+            const overlay = lid("tradeMarkerHover");
+            if (!overlay) return;
+            overlay.textContent = `${markers.length} ACTUAL TRADES · ${longCount} long / ${shortCount} short · click to ${expanded ? "collapse" : "inspect individually"}`;
+            overlay.style.display = "block";
+            overlay.style.borderColor = clusterColor;
+          });
+          cluster.addEventListener("mouseleave", () => {
+            const overlay = lid("tradeMarkerHover");
+            if (overlay && !this.activeHoveredExecutionMarkerKey && !this.selectedExecutionMarkerKey) overlay.style.display = "none";
+          });
+          cluster.addEventListener("click", (event) => {
+            event.stopPropagation();
+            if (expanded) this.expandedExecutionMarkerTimes.delete(markerTime);
+            else this.expandedExecutionMarkerTimes.add(markerTime);
+            this.renderTradeMarkerTargets();
+          });
+          layer.appendChild(cluster);
+          if (!expanded) {
+            markers.forEach((marker) => {
+              marker._targetX = x;
+              marker._targetY = clusterY;
+            });
+            return;
+          }
+        }
+        markers.forEach((marker, index) => {
         const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
         let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
         if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
@@ -2386,7 +2435,8 @@
           this.selectExecutionMarker(marker);
         });
         layer.appendChild(target);
-      }));
+        });
+      });
       this.renderTradeTriangles();
     },
 
