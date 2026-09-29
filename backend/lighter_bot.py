@@ -136,6 +136,7 @@ class LighterPairBot:
         "pending_execution": None,
         "last_action": "DISABLED",
         "last_action_time": 0,
+        "last_entry_signal_bar_time": 0,
         "last_evaluation": None,
         "last_error": None,
         "transient_error_count": 0,
@@ -924,6 +925,10 @@ class LighterPairBot:
         ratios = self._aligned_ratio(adr_candles, domestic_candles)
         if len(ratios) < 25:
             raise RuntimeError("Insufficient aligned Lighter candles")
+        shared_bar_times = {int(row["t"]) for row in adr_candles} & {int(row["t"]) for row in domestic_candles}
+        if not shared_bar_times:
+            raise RuntimeError("No aligned completed Lighter candle")
+        signal_bar_time = max(shared_bar_times)
 
         tranches = self.state["tranches"]
         campaign_side = int(tranches[0]["side"]) if tranches else None
@@ -985,6 +990,12 @@ class LighterPairBot:
             self.state["last_action"] = f"EXITED_{strat_name}"
             self.state["last_action_time"] = int(time.time())
         elif entry_signal and risk["can_add_tranche"]:
+            # A strategy signal belongs to a completed candle, not to each worker tick.
+            # Without this guard a persistent signal can scale in repeatedly while the
+            # same candle remains the latest one (especially with a short cooldown).
+            if int(self.state.get("last_entry_signal_bar_time") or 0) >= signal_bar_time:
+                self.state["last_action"] = "WAITING_FOR_NEXT_SIGNAL_BAR"
+                return
             side = candidate_side
             if not self._campaign_allows_side(side):
                 self.state["last_action"] = "WAITING_FOR_EXISTING_CAMPAIGN_EXIT"
@@ -1013,6 +1024,7 @@ class LighterPairBot:
             tranches.append(new_tranche)
             self.state.setdefault("history", []).append(dict(new_tranche))
             self.state["pending_execution"] = None
+            self.state["last_entry_signal_bar_time"] = signal_bar_time
             self.state["last_action"] = "ENTERED_LONG_RATIO" if side > 0 else "ENTERED_SHORT_RATIO"
             self.state["last_action_time"] = int(time.time())
 

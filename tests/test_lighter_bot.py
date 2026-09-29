@@ -751,6 +751,14 @@ class TestLighterPairBot(unittest.TestCase):
                 self.assertEqual(len(bot.state["tranches"]), 1)
                 self.assertEqual(bot.state["tranches"][0]["entry_strategy"], "grid")
                 self.assertEqual(bot.state["tranches"][0]["entry_z"], bot.state["last_evaluation"]["z"])
+                self.assertEqual(bot.state["last_entry_signal_bar_time"], timestamps[-1])
+                bot._trade_pair.assert_awaited_once()
+
+                # The same completed candle may remain actionable across many worker
+                # ticks, but it must create at most one automated tranche.
+                await bot._evaluate()
+                self.assertEqual(len(bot.state["tranches"]), 1)
+                self.assertEqual(bot.state["last_action"], "WAITING_FOR_NEXT_SIGNAL_BAR")
                 bot._trade_pair.assert_awaited_once()
 
         asyncio.run(run())
