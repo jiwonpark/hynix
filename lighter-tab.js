@@ -2289,22 +2289,19 @@
       const position = siblings.length > 1 ? ` · trade ${ordinal}/${siblings.length}` : "";
       const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
       overlay.textContent = `${source}${position} · ${marker.hoverText || "Trade"} · ${timeText}`;
-      const isDown = this.isTradeDown(marker);
-      const markerColor = isDown ? "#dc2626" : "#16a34a";
-      overlay.style.borderColor = isDown ? "#fca5a5" : "#86efac";
-      overlay.style.color = isDown ? "#991b1b" : "#166534";
+      const markerColor = this.tradeMarkerColor(marker);
+      overlay.style.borderColor = markerColor === "#dc2626" ? "#fca5a5" : "#86efac";
+      overlay.style.color = markerColor === "#dc2626" ? "#991b1b" : "#166534";
     },
 
     isTradeDown(marker) {
-      if (marker?.shape === "arrowDown") return true;
-      if (marker?.shape === "arrowUp") return false;
-      const isShortDirection = marker?.direction === "short";
-      const isExit = marker?.is_entry === false;
-      return isShortDirection !== isExit;
+      return marker?.direction === "short";
     },
 
     tradeMarkerColor(marker) {
-      return this.isTradeDown(marker) ? "#dc2626" : "#16a34a";
+      const isShortDirection = marker?.direction === "short";
+      const isExit = marker?.is_entry === false;
+      return (isShortDirection !== isExit) ? "#dc2626" : "#16a34a";
     },
 
     renderTradeMarkerTargets() {
@@ -2342,7 +2339,7 @@
           ? (isDown ? "▽" : "△")
           : (isDown ? "▼" : "▲");
         target.setAttribute("aria-label", `${glyph} ${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
-        const markerColor = isDown ? "#dc2626" : "#16a34a";
+        const markerColor = this.tradeMarkerColor(marker);
         const baseOpacity = marker.hypothetical ? 0.65 : 0.90;
         const isHypo = Boolean(marker.hypothetical);
         const fill = isHypo ? "transparent" : markerColor;

@@ -287,7 +287,9 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
         seen_keys = set()
         all_tranches = []
         for t in raw_tranches:
-            k = (int(t.get("time", 0)), bool(t.get("is_exit", False)), int(t.get("side", -1)))
+            tranche_id = t.get("tranche_id")
+            k = ("tranche", str(tranche_id), bool(t.get("is_exit", False))) if tranche_id else (
+                "legacy", int(t.get("time", 0)), bool(t.get("is_exit", False)), int(t.get("side", -1)))
             if k not in seen_keys and t.get("time"):
                 seen_keys.add(k)
                 all_tranches.append(t)
@@ -316,7 +318,8 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                     matched_bar = next((b for b in bars if b["time"] == matched_time), None)
                     ratio = matched_bar["value"] if matched_bar else 141.0
 
-                key = (matched_time, not is_exit, is_short)
+                tranche_id = str(t.get("tranche_id") or "")
+                key = (matched_time, not is_exit, is_short, tranche_id)
                 if key not in candle_markers:
                     candle_markers[key] = {
                         "time": matched_time,
@@ -329,6 +332,7 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                         "total_notional": gross_notional,
                         "weighted_ratio": ratio * gross_notional,
                         "pnl": t.get("pnl"),
+                        "tranche_id": tranche_id or None,
                     }
                 else:
                     m = candle_markers[key]
@@ -337,7 +341,7 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                     m["total_notional"] += gross_notional
                     m["weighted_ratio"] += ratio * gross_notional
 
-            for (m_time, is_entry, is_short), m_data in sorted(candle_markers.items(), key=lambda x: x[0][0]):
+            for (m_time, is_entry, is_short, _tranche_id), m_data in sorted(candle_markers.items(), key=lambda x: x[0][0]):
                 avg_ratio = m_data["weighted_ratio"] / max(1e-6, m_data["total_notional"])
                 cnt_str = f" ({m_data['count']}x)" if m_data["count"] > 1 else ""
                 trade_dir = m_data.get("direction") or ("short" if is_short else "long")
@@ -379,21 +383,29 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                     "qty": round(m_data["total_qty"], 4),
                     "notional": round(m_data["total_notional"], 2),
                     "pnl": m_data.get("pnl"),
+                    "tranche_id": m_data.get("tranche_id"),
                 })
         markers.sort(key=lambda m: m["time"])
 
         open_entries: Dict[str, List[Dict[str, Any]]] = {"short": [], "long": []}
+        entries_by_id: Dict[str, Dict[str, Any]] = {}
         pair_seq = 0
         for marker in markers:
             m_dir = marker.get("direction", "short")
+            tranche_id = str(marker.get("tranche_id") or "")
             if marker.get("is_entry"):
                 pair_seq += 1
-                p_key = f"live:{m_dir}:{pair_seq}"
+                p_key = f"live:id:{tranche_id}" if tranche_id else f"live:{m_dir}:{pair_seq}"
                 marker["pairKey"] = p_key
-                open_entries[m_dir].append(marker)
+                if tranche_id:
+                    entries_by_id[tranche_id] = marker
+                else:
+                    open_entries[m_dir].append(marker)
             else:
-                if open_entries[m_dir]:
-                    matched_entry = open_entries[m_dir].pop(0)
+                matched_entry = entries_by_id.get(tranche_id) if tranche_id else None
+                if matched_entry is None and open_entries[m_dir]:
+                    matched_entry = open_entries[m_dir].pop()
+                if matched_entry is not None:
                     marker["pairKey"] = matched_entry["pairKey"]
                     marker["entry_price"] = matched_entry["entry_price"]
                 else:

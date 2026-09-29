@@ -10840,6 +10840,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         accountSyncPending: true,
         backendAuthSource: "none",
         backendLatencyMs: 0,
+        daemonAutoEnabled: false,
         lastSyncTime: null,
         orderLog: [],
         daemonEvents: [],
@@ -11257,6 +11258,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           showToast(result?.error || "Could not update EC2 daemon status", "error");
           return false;
         }
+        this.state.daemonAutoEnabled = Boolean(result.state?.enabled ?? enabled);
         return true;
       },
 
@@ -11320,7 +11322,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
 
         const wantDaemonEnabled = (mode === "live");
-        const currentDaemonEnabled = Boolean($("chkAutoPeriodic48h")?.checked);
+        const currentDaemonEnabled = Boolean(this.state.daemonAutoEnabled);
 
         if (wantDaemonEnabled !== currentDaemonEnabled) {
           const success = await this.setDaemonAutoTranche(wantDaemonEnabled);
@@ -12193,6 +12195,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
           if ($("chkAutoPeriodic48h")) {
             const isDaemonOn = Boolean(data.auto_tranche_criteria.backend_auto_tranche_enabled);
+            this.state.daemonAutoEnabled = isDaemonOn;
             $("chkAutoPeriodic48h").checked = isDaemonOn;
             if ($("badgeAutoPeriodicStatus")) {
               const recovery = data.auto_tranche_criteria.backend_auto_tranche_state?.execution_recovery;

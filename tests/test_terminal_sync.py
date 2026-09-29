@@ -17,6 +17,9 @@ class TestTerminalSync(unittest.TestCase):
         
         # setMode must call setDaemonAutoTranche
         self.assertIn("await this.setDaemonAutoTranche(wantDaemonEnabled)", html)
+        self.assertIn("const currentDaemonEnabled = Boolean(this.state.daemonAutoEnabled)", html)
+        self.assertIn("this.state.daemonAutoEnabled = isDaemonOn", html)
+        self.assertNotIn('const currentDaemonEnabled = Boolean($("chkAutoPeriodic48h")?.checked)', html)
         
         # Lock manager modal must open on attempt to toggle while locked
         self.assertIn("terminalLockManager.openPasswordModal()", html)

@@ -136,14 +136,15 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("The native crosshair owns x-axis/price inspection", script)
         self.assertNotIn("Trade details are intentionally hover-only", script)
 
-    def test_trade_marker_red_is_always_down_green_is_always_up(self):
+    def test_trade_marker_orientation_is_direction_and_exit_color_is_opposite(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
         self.assertIn("isTradeDown(marker)", script)
-        self.assertIn('return this.isTradeDown(marker) ? "#dc2626" : "#16a34a"', script)
+        self.assertIn('return marker?.direction === "short"', script)
+        self.assertIn('return (isShortDirection !== isExit) ? "#dc2626" : "#16a34a"', script)
         self.assertIn('? (isDown ? "▽" : "△")', script)
         self.assertIn(': (isDown ? "▼" : "▲")', script)
-        self.assertIn('overlay.style.borderColor = isDown ? "#fca5a5" : "#86efac"', script)
-        self.assertIn('overlay.style.color = isDown ? "#991b1b" : "#166534"', script)
+        self.assertIn('overlay.style.borderColor = markerColor === "#dc2626"', script)
+        self.assertIn('overlay.style.color = markerColor === "#dc2626"', script)
 
     def test_trade_entry_exit_triangles_and_diagonals(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
@@ -204,8 +205,13 @@ class TestLighterTab(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_live_marker_pairing_uses_tranche_id_then_lifo_fallback(self):
+        server = (ROOT / "backend" / "server.py").read_text(encoding="utf-8")
+        self.assertIn('p_key = f"live:id:{tranche_id}"', server)
+        self.assertIn("entries_by_id.get(tranche_id)", server)
+        self.assertIn("matched_entry = open_entries[m_dir].pop()", server)
+        self.assertNotIn("matched_entry = open_entries[m_dir].pop(0)", server)
+
 
 if __name__ == "__main__":
     unittest.main()
-
-
