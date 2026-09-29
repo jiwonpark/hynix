@@ -2356,6 +2356,10 @@
             const sellMarkers = markers.filter((marker) => (marker.direction === "short") !== (marker.is_entry === false));
             const buyCount = markers.length - sellMarkers.length;
             const sellCount = sellMarkers.length;
+            const entryCount = markers.filter((marker) => marker.is_entry !== false).length;
+            const exitCount = markers.length - entryCount;
+            const longRatioCount = markers.filter((marker) => marker.direction === "long").length;
+            const shortRatioCount = markers.length - longRatioCount;
             const rangeColor = buyCount >= sellCount ? "#16a34a" : "#dc2626";
             const range = document.createElement("button");
             range.type = "button";
@@ -2364,8 +2368,8 @@
             range.innerHTML = `<svg width="28" height="${svgHeight}" viewBox="0 0 28 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
               <line x1="14" y1="${topLocal}" x2="14" y2="${bottomLocal}" stroke="${rangeColor}" stroke-width="1" stroke-linecap="round"/>
               <line x1="9" y1="${avgLocal}" x2="19" y2="${avgLocal}" stroke="${rangeColor}" stroke-width="1.5" stroke-linecap="round"/>
-              ${sellCount ? `<polygon points="9,${topLocal - 7} 19,${topLocal - 7} 14,${topLocal}" fill="#dc2626"/>` : ""}
-              ${buyCount ? `<polygon points="9,${bottomLocal + 7} 19,${bottomLocal + 7} 14,${bottomLocal}" fill="#16a34a"/>` : ""}
+              ${sellCount ? `<polygon points="7,${topLocal - 9} 21,${topLocal - 9} 14,${topLocal}" fill="#dc2626"/>` : ""}
+              ${buyCount ? `<polygon points="7,${bottomLocal + 9} 21,${bottomLocal + 9} 14,${bottomLocal}" fill="#16a34a"/>` : ""}
             </svg>`;
             range.addEventListener("mouseenter", () => {
             range._blinkAnimation?.cancel();
@@ -2375,7 +2379,7 @@
             );
             const overlay = lid("tradeMarkerHover");
             if (!overlay) return;
-            overlay.textContent = `${markers.length} TRADES · ${buyCount} buys / ${sellCount} sells · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}% · click to ${expanded ? "collapse" : "inspect fills"}`;
+            overlay.textContent = `${markers.length} PAIRED TRADES · ${entryCount} entries / ${exitCount} exits · ${longRatioCount} long-ratio / ${shortRatioCount} short-ratio · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}% · click to ${expanded ? "collapse" : "inspect fills"}`;
             overlay.style.display = "block";
             overlay.style.borderColor = rangeColor;
           });
@@ -2406,12 +2410,11 @@
         const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
         let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
         if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
-        // Keep same-candle executions anchored to the candle. A horizontal fan
-        // can grow hundreds of pixels wide during a scale-in burst and appear
-        // beyond the end of the chart. Separate collisions vertically instead.
-        const stackY = (index - (markers.length - 1) / 2) * 8;
-        const finalX = x;
-        const finalY = Math.max(6, Math.min(Math.max(6, layer.clientHeight - 6), y + stackY));
+        // Expanded fills stay at their actual price and use a small bounded
+        // beeswarm so dense executions remain individually targetable.
+        const swarmColumns = [-12, -6, 0, 6, 12];
+        const finalX = x + swarmColumns[index % swarmColumns.length];
+        const finalY = Math.max(6, Math.min(Math.max(6, layer.clientHeight - 6), y + Math.floor(index / swarmColumns.length) * 2));
         marker._targetX = finalX;
         marker._targetY = finalY;
         const target = document.createElement("button");
