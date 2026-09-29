@@ -604,6 +604,8 @@ class LighterPairBot:
                 if self.state.get("pending_execution"):
                     await self._reconcile_confirmed_pending_reduction()
                 if self.state.get("pending_execution"):
+                    await self._repair_pending_entry()
+                if self.state.get("pending_execution"):
                     raise RuntimeError("Resolve the pending paired execution before enabling")
                 open_positions = await self.client.positions()
                 if open_positions and not self.state.get("tranches"):
@@ -677,6 +679,118 @@ class LighterPairBot:
         })
         self.state["pending_execution"] = None
         self.state["last_action"] = "RECOVERED_CONFIRMED_REDUCTION"
+        self.state["last_action_time"] = int(time.time())
+        self.state["last_error"] = None
+        self.save()
+        return True
+
+    @staticmethod
+    def _signed_pair_positions(positions: List[Dict[str, Any]]) -> Dict[int, float]:
+        result = {216: 0.0, 161: 0.0}
+        for position in positions:
+            market_id = int(position.get("market_id", 0) or 0)
+            if market_id not in result:
+                continue
+            raw_size = float(position.get("position", 0.0) or position.get("size", 0.0) or 0.0)
+            sign = int(position.get("sign", 1 if raw_size >= 0 else -1) or 1)
+            result[market_id] = abs(raw_size) * (1 if sign > 0 else -1)
+        return result
+
+    def _tracked_pair_positions(self) -> Dict[int, float]:
+        return {
+            216: sum(int(row.get("side", 0) or 0) * float(row.get("adr_qty", 0.0) or 0.0)
+                     for row in self.state.get("tranches") or []),
+            161: sum(-int(row.get("side", 0) or 0) * float(row.get("domestic_qty", 0.0) or 0.0)
+                     for row in self.state.get("tranches") or []),
+        }
+
+    async def _repair_pending_entry(self) -> bool:
+        """Reconcile or make one guarded retry of a confirmed one-legged entry."""
+        pending = self.state.get("pending_execution") or {}
+        if not pending.get("completed") or pending.get("reduce_only"):
+            return False
+        first = dict(pending.get("first_leg") or {})
+        second = dict(pending.get("second_leg") or {})
+        adr_qty = float(pending.get("adr_qty", 0.0) or 0.0)
+        domestic_qty = float(pending.get("domestic_qty", 0.0) or 0.0)
+        if first.get("client_order_index"):
+            first.update(await self.client.execution_fill(int(first["client_order_index"]), 216, adr_qty))
+        if second.get("client_order_index"):
+            second.update(await self.client.execution_fill(int(second["client_order_index"]), 161, domestic_qty))
+        pending["first_leg"] = first
+        pending["second_leg"] = second
+        self.save()
+
+        first_ok = bool(first.get("fill_confirmed"))
+        second_ok = bool(second.get("fill_confirmed"))
+        if first_ok and second_ok:
+            return self._record_recovered_pending_entry(pending, first, second)
+        if first_ok == second_ok or pending.get("repair_attempted_at"):
+            return False
+
+        side = int(pending.get("side", 0) or 0)
+        if side not in {-1, 1} or not self._campaign_allows_side(side):
+            return False
+        actual = self._signed_pair_positions(await self.client.positions())
+        tracked = self._tracked_pair_positions()
+        if first_ok:
+            expected = {216: tracked[216] + side * float(first.get("filled_size", adr_qty)), 161: tracked[161]}
+        else:
+            expected = {216: tracked[216], 161: tracked[161] - side * float(second.get("filled_size", domestic_qty))}
+        if abs(actual[216] - expected[216]) > 0.0003 or abs(actual[161] - expected[161]) > 0.0011:
+            return False
+
+        pending["repair_attempted_at"] = int(time.time())
+        pending["repair_reason"] = "CONFIRMED_ONE_LEGGED_ENTRY"
+        self.save()  # A crash after this point cannot silently issue repeated repairs.
+        market_id = 161 if first_ok else 216
+        quantity = domestic_qty if first_ok else adr_qty
+        book = _book_summary(await self.client.order_book(market_id, 20))
+        is_ask = side > 0 if market_id == 161 else side < 0
+        repaired = await self.client.create_market_order(
+            market_id, quantity, book["mid"], is_ask,
+            reduce_only=False, max_slippage=self.state["max_slippage"],
+        )
+        pending["repair_leg"] = repaired
+        if first_ok:
+            second = repaired
+            pending["second_leg"] = second
+        else:
+            first = repaired
+            pending["first_leg"] = first
+        self.save()
+        if not first.get("fill_confirmed") or not second.get("fill_confirmed"):
+            return False
+        return self._record_recovered_pending_entry(pending, first, second)
+
+    def _record_recovered_pending_entry(
+        self, pending: Dict[str, Any], first: Dict[str, Any], second: Dict[str, Any],
+    ) -> bool:
+        side = int(pending.get("side", 0) or 0)
+        if side not in {-1, 1} or not self._campaign_allows_side(side):
+            return False
+        execution = {"first_leg": first, "second_leg": second}
+        notional = float(self.state.get("notional_usd", 25.0) or 25.0)
+        fallback_ratio = float((self.state.get("last_evaluation") or {}).get("ratio", 0.0) or 0.0)
+        entry_ratio = self._execution_ratio(execution, fallback_ratio)
+        entry_fee = self._execution_fees(execution)
+        evaluation = self.state.get("last_evaluation") or {}
+        tranche = {
+            "tranche_id": f"tranche_{int(time.time() * 1000)}", "side": side,
+            "adr_qty": float(first.get("filled_size", pending.get("adr_qty", 0.0)) or 0.0),
+            "domestic_qty": float(second.get("filled_size", pending.get("domestic_qty", 0.0)) or 0.0),
+            "entry_ratio": entry_ratio, "entry_z": float(evaluation.get("z", 0.0) or 0.0),
+            "entry_strategy": evaluation.get("strategy", self.state.get("strategy_mode", "grid")),
+            "time": int(pending.get("time") or time.time()), "notional_usd": notional,
+            "is_entry": True, "fee_usd": round(entry_fee, 8),
+            "fee_bps": round(entry_fee / notional * 10_000, 4) if notional else 0.0,
+            "adr_price": first.get("fill_price"), "domestic_price": second.get("fill_price"),
+            "execution_source": "LIGHTER_FILLS", "orders": execution, "reconciled": True,
+        }
+        self.state.setdefault("tranches", []).append(tranche)
+        self.state.setdefault("history", []).append(dict(tranche))
+        self.state["pending_execution"] = None
+        self.state["last_action"] = "RECOVERED_CONFIRMED_ENTRY"
         self.state["last_action_time"] = int(time.time())
         self.state["last_error"] = None
         self.save()

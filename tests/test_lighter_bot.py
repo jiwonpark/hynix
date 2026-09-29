@@ -271,6 +271,70 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_one_leg_pending_entry_is_repaired_once_and_reconciled(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.execution_fill = AsyncMock(side_effect=[
+                    {"fill_confirmed": True, "filled_size": 0.1361, "fill_price": 183.72, "fee_usd": 0.0},
+                    {"fill_confirmed": False},
+                ])
+                client.positions = AsyncMock(return_value=[
+                    {"market_id": 216, "position": "0.2706", "sign": 1},
+                    {"market_id": 161, "position": "0.013", "sign": -1},
+                ])
+                client.order_book = AsyncMock(return_value={
+                    "bids": [{"price": "1305", "size": "1"}],
+                    "asks": [{"price": "1306", "size": "1"}],
+                })
+                client.create_market_order = AsyncMock(return_value={
+                    "market_id": 161, "client_order_index": 13,
+                    "fill_confirmed": True, "filled_size": 0.013,
+                    "fill_price": 1305.5, "fee_usd": 0.0,
+                })
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state.update({
+                    "tranches": [{"side": 1, "adr_qty": 0.1345, "domestic_qty": 0.013}],
+                    "pending_execution": {
+                        "completed": True, "reduce_only": False, "side": 1,
+                        "adr_qty": 0.1361, "domestic_qty": 0.013, "time": 1100,
+                        "first_leg": {"client_order_index": 11},
+                        "second_leg": {"client_order_index": 12},
+                    },
+                })
+
+                self.assertTrue(await bot._repair_pending_entry())
+                self.assertIsNone(bot.state["pending_execution"])
+                self.assertEqual(len(bot.state["tranches"]), 2)
+                self.assertEqual(bot.state["last_action"], "RECOVERED_CONFIRMED_ENTRY")
+                self.assertTrue(bot.state["history"][-1]["reconciled"])
+                client.create_market_order.assert_awaited_once()
+                self.assertEqual(client.create_market_order.await_args.args[:2], (161, 0.013))
+
+        asyncio.run(run())
+
+    def test_pending_entry_repair_never_retries_twice(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.execution_fill = AsyncMock(side_effect=[
+                    {"fill_confirmed": True, "filled_size": 0.1361},
+                    {"fill_confirmed": False},
+                ])
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state["pending_execution"] = {
+                    "completed": True, "reduce_only": False, "side": 1,
+                    "adr_qty": 0.1361, "domestic_qty": 0.013,
+                    "repair_attempted_at": 1234,
+                    "first_leg": {"client_order_index": 11},
+                    "second_leg": {"client_order_index": 12},
+                }
+
+                self.assertFalse(await bot._repair_pending_entry())
+                client.create_market_order.assert_not_called()
+
+        asyncio.run(run())
+
     def test_enable_requires_funded_authenticated_account_and_signer(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
