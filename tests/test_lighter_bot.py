@@ -271,6 +271,48 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_one_leg_pending_reduction_retries_missing_leg_and_reconciles(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.execution_fill = AsyncMock(side_effect=[
+                    {"fill_confirmed": True, "filled_size": 0.1345, "fill_price": 185.59,
+                     "fee_usd": 0.0, "realized_pnl_usd": 0.11},
+                    {"fill_confirmed": False},
+                ])
+                client.positions = AsyncMock(return_value=[
+                    {"market_id": 161, "position": "0.013", "sign": -1},
+                ])
+                client.order_book = AsyncMock(return_value={
+                    "bids": [{"price": "1314", "size": "1"}],
+                    "asks": [{"price": "1315", "size": "1"}],
+                })
+                client.create_market_order = AsyncMock(return_value={
+                    "market_id": 161, "client_order_index": 13,
+                    "fill_confirmed": True, "filled_size": 0.013,
+                    "fill_price": 1314.8, "fee_usd": 0.0, "realized_pnl_usd": -0.02,
+                })
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state.update({
+                    "tranches": [{"side": 1, "adr_qty": 0.1345, "domestic_qty": 0.013,
+                                  "entry_ratio": 141.18, "notional_usd": 25.0,
+                                  "fee_usd": 0.01, "time": 1000}],
+                    "pending_execution": {
+                        "completed": True, "reduce_only": True, "side": -1,
+                        "adr_qty": 0.1345, "domestic_qty": 0.013, "time": 1100,
+                        "first_leg": {"client_order_index": 11},
+                        "second_leg": {"client_order_index": 12},
+                    },
+                })
+
+                self.assertTrue(await bot._reconcile_confirmed_pending_reduction())
+                self.assertIsNone(bot.state["pending_execution"])
+                self.assertEqual(bot.state["tranches"], [])
+                client.create_market_order.assert_awaited_once()
+                self.assertTrue(client.create_market_order.await_args.kwargs["reduce_only"])
+
+        asyncio.run(run())
+
     def test_one_leg_pending_entry_is_repaired_once_and_reconciled(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:

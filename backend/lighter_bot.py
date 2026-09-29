@@ -640,6 +640,8 @@ class LighterPairBot:
         domestic_qty = float(pending.get("domestic_qty", 0.0) or 0.0)
         first.update(await self.client.execution_fill(int(first_id), 216, adr_qty))
         second.update(await self.client.execution_fill(int(second_id), 161, domestic_qty))
+        if bool(first.get("fill_confirmed")) != bool(second.get("fill_confirmed")):
+            first, second = await self._retry_verified_missing_leg(pending, first, second)
         if not first.get("fill_confirmed") or not second.get("fill_confirmed"):
             return False
         filled_adr = float(first.get("filled_size", 0.0) or 0.0)
@@ -688,6 +690,48 @@ class LighterPairBot:
         self.state["last_error"] = None
         self.save()
         return True
+
+    async def _retry_verified_missing_leg(
+        self, pending: Dict[str, Any], first: Dict[str, Any], second: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        """Retry one absent IOC leg only when positions prove it did not fill."""
+        if pending.get("leg_retry_attempted_at"):
+            return first, second
+        first_ok = bool(first.get("fill_confirmed"))
+        second_ok = bool(second.get("fill_confirmed"))
+        if first_ok == second_ok:
+            return first, second
+        side = int(pending.get("side", 0) or 0)
+        actual = self._signed_pair_positions(await self.client.positions())
+        tracked = self._tracked_pair_positions()
+        adr_qty = float(first.get("filled_size", pending.get("adr_qty", 0.0)) or 0.0)
+        domestic_qty = float(second.get("filled_size", pending.get("domestic_qty", 0.0)) or 0.0)
+        expected = {
+            216: tracked[216] + (side * adr_qty if first_ok else 0.0),
+            161: tracked[161] + (-side * domestic_qty if second_ok else 0.0),
+        }
+        if abs(actual[216] - expected[216]) > 0.0003 or abs(actual[161] - expected[161]) > 0.0011:
+            return first, second
+        pending["leg_retry_attempted_at"] = int(time.time())
+        self.save()
+        market_id = 161 if first_ok else 216
+        quantity = float(pending.get("domestic_qty" if first_ok else "adr_qty", 0.0) or 0.0)
+        quote = _book_summary(await self.client.order_book(market_id, 20))
+        is_ask = side > 0 if market_id == 161 else side < 0
+        retry = await self.client.create_market_order(
+            market_id, quantity, quote["mid"], is_ask,
+            reduce_only=bool(pending.get("reduce_only")),
+            max_slippage=max(0.02, float(self.state["max_slippage"])),
+        )
+        pending.setdefault("leg_retry_attempts", []).append(retry)
+        if first_ok:
+            second = retry
+            pending["second_leg"] = second
+        else:
+            first = retry
+            pending["first_leg"] = first
+        self.save()
+        return first, second
 
     @staticmethod
     def _signed_pair_positions(positions: List[Dict[str, Any]]) -> Dict[int, float]:
@@ -1224,6 +1268,10 @@ class LighterPairBot:
         intent["completed"] = True
         self.save()
         if not first.get("fill_confirmed") or not second.get("fill_confirmed"):
+            if bool(first.get("fill_confirmed")) != bool(second.get("fill_confirmed")):
+                first, second = await self._retry_verified_missing_leg(intent, first, second)
+                if first.get("fill_confirmed") and second.get("fill_confirmed"):
+                    return {"first_leg": first, "second_leg": second}
             if bool(first.get("fill_confirmed")) != bool(second.get("fill_confirmed")):
                 if await self._rollback_pending_entry(intent, first, second):
                     raise RuntimeError("Paired execution failed; confirmed leg rolled back safely")
