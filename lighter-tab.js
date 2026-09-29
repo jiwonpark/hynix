@@ -1514,7 +1514,6 @@
       this.selectedExecutionMarkerTime = null;
       this.selectedExecutionMarkerKey = null;
       this.selectedPairKey = null;
-      this.expandedExecutionMarkerTimes = new Set();
 
       host.style.position = "relative";
       if (!lid("tradeMarkerHover")) {
@@ -2328,7 +2327,6 @@
           return;
         }
         const denseGroup = markers.length > 3;
-        const expanded = denseGroup && this.expandedExecutionMarkerTimes?.has(markerTime);
         if (denseGroup) {
           const pricedMarkers = markers.map((marker) => ({
             marker,
@@ -2363,8 +2361,8 @@
             const rangeColor = buyCount >= sellCount ? "#16a34a" : "#dc2626";
             const range = document.createElement("button");
             range.type = "button";
-            range.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${markers.length} trades; range ${minPrice.toFixed(3)} to ${maxPrice.toFixed(3)} percent; average ${avgPrice.toFixed(3)} percent`);
-            range.style.cssText = `appearance:none;position:absolute;left:${x - 14}px;top:${buttonTop}px;width:28px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto;z-index:1;overflow:visible`;
+            range.setAttribute("aria-label", `${markers.length} grouped trades; range ${minPrice.toFixed(3)} to ${maxPrice.toFixed(3)} percent; average ${avgPrice.toFixed(3)} percent`);
+            range.style.cssText = `appearance:none;position:absolute;left:${x - 14}px;top:${buttonTop}px;width:28px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:default;pointer-events:auto;z-index:1;overflow:visible`;
             range.innerHTML = `<svg width="28" height="${svgHeight}" viewBox="0 0 28 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
               <line x1="14" y1="${topLocal}" x2="14" y2="${bottomLocal}" stroke="${rangeColor}" stroke-width="1" stroke-linecap="round"/>
               <line x1="9" y1="${avgLocal}" x2="19" y2="${avgLocal}" stroke="${rangeColor}" stroke-width="1.5" stroke-linecap="round"/>
@@ -2379,7 +2377,7 @@
             );
             const overlay = lid("tradeMarkerHover");
             if (!overlay) return;
-            overlay.textContent = `${markers.length} PAIRED TRADES · ${entryCount} entries / ${exitCount} exits · ${longRatioCount} long-ratio / ${shortRatioCount} short-ratio · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}% · click to ${expanded ? "collapse" : "inspect fills"}`;
+            overlay.textContent = `${markers.length} PAIRED TRADES · ${entryCount} entries / ${exitCount} exits · ${longRatioCount} long-ratio / ${shortRatioCount} short-ratio · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}%`;
             overlay.style.display = "block";
             overlay.style.borderColor = rangeColor;
           });
@@ -2389,12 +2387,6 @@
             const overlay = lid("tradeMarkerHover");
             if (overlay && !this.activeHoveredExecutionMarkerKey && !this.selectedExecutionMarkerKey) overlay.style.display = "none";
           });
-            range.addEventListener("click", (event) => {
-            event.stopPropagation();
-            if (expanded) this.expandedExecutionMarkerTimes.delete(markerTime);
-            else this.expandedExecutionMarkerTimes.add(markerTime);
-            this.renderTradeMarkerTargets();
-          });
             layer.appendChild(range);
             markers.forEach((marker) => {
               marker._targetX = x;
@@ -2402,19 +2394,16 @@
               marker._targetY = isSell ? topY : bottomY;
             });
           }
-          if (!expanded) {
-            return;
-          }
+          return;
         }
         markers.forEach((marker, index) => {
         const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
         let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
         if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
-        // Expanded fills stay at their actual price and use a small bounded
-        // beeswarm so dense executions remain individually targetable.
-        const swarmColumns = [-12, -6, 0, 6, 12];
-        const finalX = x + swarmColumns[index % swarmColumns.length];
-        const finalY = Math.max(6, Math.min(Math.max(6, layer.clientHeight - 6), y + Math.floor(index / swarmColumns.length) * 2));
+        // Small same-candle groups stay at their actual prices with a bounded
+        // offset so each marker remains individually targetable.
+        const finalX = x + (index - (markers.length - 1) / 2) * 6;
+        const finalY = Math.max(6, Math.min(Math.max(6, layer.clientHeight - 6), y));
         marker._targetX = finalX;
         marker._targetY = finalY;
         const target = document.createElement("button");
