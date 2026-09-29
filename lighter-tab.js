@@ -2330,44 +2330,67 @@
         const denseGroup = markers.length > 3;
         const expanded = denseGroup && this.expandedExecutionMarkerTimes?.has(markerTime);
         if (denseGroup) {
-          const prices = markers
-            .map((marker) => Number(marker.ratio ?? marker.entry_price ?? marker.exit_price))
-            .filter(Number.isFinite);
-          const meanPrice = prices.length ? prices.reduce((sum, value) => sum + value, 0) / prices.length : null;
-          let clusterY = Number.isFinite(meanPrice) ? this.series.priceToCoordinate(meanPrice) : null;
-          if (!Number.isFinite(clusterY)) clusterY = Math.max(24, layer.clientHeight / 2);
-          clusterY = Math.max(12, Math.min(Math.max(12, layer.clientHeight - 12), clusterY));
-          const longCount = markers.filter((marker) => marker.direction === "long").length;
-          const shortCount = markers.length - longCount;
-          const clusterColor = longCount >= shortCount ? "#16a34a" : "#dc2626";
-          const cluster = document.createElement("button");
-          cluster.type = "button";
-          cluster.textContent = `${expanded ? "−" : "+"}${markers.length}`;
-          cluster.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${markers.length} trades at this candle`);
-          cluster.style.cssText = `appearance:none;position:absolute;left:${x}px;top:${clusterY}px;transform:translate(-50%,-50%);min-width:27px;height:18px;padding:0 5px;border:1px solid #fff;border-radius:9px;background:${clusterColor};box-shadow:0 1px 4px rgba(15,23,42,.28);color:#fff;font:800 9px/16px ui-monospace,SFMono-Regular,monospace;cursor:pointer;pointer-events:auto;z-index:2`;
-          cluster.addEventListener("mouseenter", () => {
+          const pricedMarkers = markers.map((marker) => ({
+            marker,
+            price: Number(marker.ratio ?? marker.entry_price ?? marker.exit_price),
+          })).filter((item) => Number.isFinite(item.price));
+          if (pricedMarkers.length) {
+            const prices = pricedMarkers.map((item) => item.price);
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+            const avgPrice = prices.reduce((sum, value) => sum + value, 0) / prices.length;
+            let topY = this.series.priceToCoordinate(maxPrice);
+            let bottomY = this.series.priceToCoordinate(minPrice);
+            let avgY = this.series.priceToCoordinate(avgPrice);
+            topY = Math.max(8, Math.min(layer.clientHeight - 8, Number(topY)));
+            bottomY = Math.max(8, Math.min(layer.clientHeight - 8, Number(bottomY)));
+            avgY = Math.max(topY, Math.min(bottomY, Number(avgY)));
+            const visualTop = Math.min(topY, bottomY);
+            const visualBottom = Math.max(topY, bottomY);
+            const buttonTop = Math.max(0, visualTop - 9);
+            const buttonBottom = Math.min(layer.clientHeight, visualBottom + 9);
+            const svgHeight = Math.max(18, buttonBottom - buttonTop);
+            const topLocal = topY - buttonTop;
+            const bottomLocal = bottomY - buttonTop;
+            const avgLocal = avgY - buttonTop;
+            const sellMarkers = markers.filter((marker) => (marker.direction === "short") !== (marker.is_entry === false));
+            const buyCount = markers.length - sellMarkers.length;
+            const sellCount = sellMarkers.length;
+            const range = document.createElement("button");
+            range.type = "button";
+            range.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${markers.length} trades; range ${minPrice.toFixed(3)} to ${maxPrice.toFixed(3)} percent; average ${avgPrice.toFixed(3)} percent`);
+            range.style.cssText = `appearance:none;position:absolute;left:${x - 14}px;top:${buttonTop}px;width:28px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto;z-index:1;overflow:visible`;
+            range.innerHTML = `<svg width="28" height="${svgHeight}" viewBox="0 0 28 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
+              <line x1="14" y1="${topLocal}" x2="14" y2="${bottomLocal}" stroke="#475569" stroke-width="2" stroke-linecap="round"/>
+              <line x1="8" y1="${avgLocal}" x2="20" y2="${avgLocal}" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round"/>
+              ${sellCount ? `<polygon points="9,${topLocal - 7} 19,${topLocal - 7} 14,${topLocal}" fill="#dc2626" stroke="#fff" stroke-width="1"/>` : ""}
+              ${buyCount ? `<polygon points="9,${bottomLocal + 7} 19,${bottomLocal + 7} 14,${bottomLocal}" fill="#16a34a" stroke="#fff" stroke-width="1"/>` : ""}
+            </svg>`;
+            range.addEventListener("mouseenter", () => {
             const overlay = lid("tradeMarkerHover");
             if (!overlay) return;
-            overlay.textContent = `${markers.length} ACTUAL TRADES · ${longCount} long / ${shortCount} short · click to ${expanded ? "collapse" : "inspect individually"}`;
+            overlay.textContent = `${markers.length} TRADES · ${buyCount} buys / ${sellCount} sells · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}% · click to ${expanded ? "collapse" : "inspect fills"}`;
             overlay.style.display = "block";
-            overlay.style.borderColor = clusterColor;
+            overlay.style.borderColor = "#64748b";
           });
-          cluster.addEventListener("mouseleave", () => {
+            range.addEventListener("mouseleave", () => {
             const overlay = lid("tradeMarkerHover");
             if (overlay && !this.activeHoveredExecutionMarkerKey && !this.selectedExecutionMarkerKey) overlay.style.display = "none";
           });
-          cluster.addEventListener("click", (event) => {
+            range.addEventListener("click", (event) => {
             event.stopPropagation();
             if (expanded) this.expandedExecutionMarkerTimes.delete(markerTime);
             else this.expandedExecutionMarkerTimes.add(markerTime);
             this.renderTradeMarkerTargets();
           });
-          layer.appendChild(cluster);
-          if (!expanded) {
+            layer.appendChild(range);
             markers.forEach((marker) => {
               marker._targetX = x;
-              marker._targetY = clusterY;
+              const isSell = (marker.direction === "short") !== (marker.is_entry === false);
+              marker._targetY = isSell ? topY : bottomY;
             });
+          }
+          if (!expanded) {
             return;
           }
         }
