@@ -125,6 +125,7 @@ class LighterPairBot:
         "trend_tp_dist": 0.05,
         "trend_slope_min": 0.002,
         "notional_usd": 25.0,
+        "hedge_mode": "DOLLAR_NEUTRAL",
         "capacity_mode": "DYNAMIC_SAFE_LEVERAGE",
         "max_tranches": None,
         "gross_leverage_cap": TAB2_GROSS_LEVERAGE_CAP,
@@ -374,10 +375,7 @@ class LighterPairBot:
         target_notional = float(notional_usd if notional_usd is not None else self.state.get("notional_usd", 25.0))
         adr_mid = float(adr_quote.get("mid", 0.0) or 0.0)
         domestic_mid = float(domestic_quote.get("mid", 0.0) or 0.0)
-        adr_qty = max(0.04, math.floor(target_notional / adr_mid * 10_000) / 10_000) if adr_mid > 0 else 0.0
-        domestic_qty = math.floor((adr_qty / 10.0) * 1_000) / 1_000 if adr_qty > 0 else 0.0
-        if adr_qty > 0 and domestic_qty < 0.004:
-            domestic_qty, adr_qty = 0.004, 0.04
+        adr_qty, domestic_qty = self._dollar_neutral_quantities(target_notional, adr_mid, domestic_mid)
         next_gross = adr_qty * adr_mid + domestic_qty * domestic_mid
 
         gross_capacity = collateral * leverage_cap
@@ -432,6 +430,15 @@ class LighterPairBot:
         self.state["risk_capacity"] = result
         return result
 
+    @staticmethod
+    def _dollar_neutral_quantities(notional_usd: float, adr_price: float, domestic_price: float) -> tuple[float, float]:
+        """Quantize both legs toward equal USDT notional using venue size steps."""
+        if notional_usd <= 0 or adr_price <= 0 or domestic_price <= 0:
+            return 0.0, 0.0
+        adr_qty = max(0.04, math.floor(notional_usd / adr_price * 10_000) / 10_000)
+        domestic_qty = max(0.004, round(notional_usd / domestic_price, 3))
+        return adr_qty, domestic_qty
+
     def _reconcile_open_pair(self, positions: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Adopt only a complete, directionally valid SKHY/SKHYNIXUSD hedge."""
         signed_sizes: Dict[int, float] = {}
@@ -447,20 +454,24 @@ class LighterPairBot:
 
         adr_size = signed_sizes.get(216, 0.0)
         domestic_size = signed_sizes.get(161, 0.0)
-        if abs(adr_size) <= 1e-6 and abs(domestic_size) <= 1e-6:
+        # Ignore sub-step settlement dust that cannot be traded on either market.
+        if abs(adr_size) <= 0.0002 and abs(domestic_size) <= 0.0011:
             return None
-        if abs(adr_size) <= 1e-6 or abs(domestic_size) <= 1e-6:
+        if abs(adr_size) <= 0.0002 or abs(domestic_size) <= 0.0011:
             raise RuntimeError("Unreconciled single-leg Lighter exposure detected")
         if adr_size * domestic_size >= 0:
             raise RuntimeError("Unreconciled Lighter positions are not an opposing pair")
 
-        expected_domestic = abs(adr_size) / 10.0
-        tolerance = max(0.0011, expected_domestic * 0.20)
-        if abs(abs(domestic_size) - expected_domestic) > tolerance:
-            raise RuntimeError("Unreconciled Lighter positions do not match the 10:1 hedge ratio")
-
         adr_entry = entry_prices.get(216, 0.0)
         domestic_entry = entry_prices.get(161, 0.0)
+        expected_domestic = abs(adr_size) * adr_entry / domestic_entry if adr_entry > 0 and domestic_entry > 0 else 0.0
+        tolerance = max(0.0011, expected_domestic * 0.10)
+        dollar_neutral = abs(abs(domestic_size) - expected_domestic) <= tolerance
+        legacy_expected = abs(adr_size) / 10.0
+        legacy_10_to_1 = abs(abs(domestic_size) - legacy_expected) <= max(0.0011, legacy_expected * 0.20)
+        if not dollar_neutral and not legacy_10_to_1:
+            raise RuntimeError("Unreconciled Lighter positions are not dollar-neutral")
+
         last_evaluation = self.state.get("last_evaluation") or {}
         entry_ratio = (adr_entry / (domestic_entry / 10.0) * 100
                        if adr_entry > 0 and domestic_entry > 0
@@ -477,6 +488,7 @@ class LighterPairBot:
             "fee_usd": 0.0,
             "time": int(time.time()),
             "reconciled": True,
+            "hedge_mode": "DOLLAR_NEUTRAL" if dollar_neutral else "LEGACY_10_TO_1",
         }
 
     def _reconcile_mixed_campaign(self, positions: List[Dict[str, Any]]) -> bool:
@@ -1245,10 +1257,8 @@ class LighterPairBot:
             if not self._campaign_allows_side(side):
                 self.state["last_action"] = "WAITING_FOR_EXISTING_CAMPAIGN_EXIT"
                 return
-            adr_qty = max(0.04, math.floor(self.state["notional_usd"] / adr_quote["mid"] * 10_000) / 10_000)
-            domestic_qty = math.floor((adr_qty / 10.0) * 1_000) / 1_000
-            if domestic_qty < 0.004:
-                domestic_qty, adr_qty = 0.004, 0.04
+            adr_qty, domestic_qty = self._dollar_neutral_quantities(
+                self.state["notional_usd"], adr_quote["mid"], domestic_quote["mid"])
             execution = await self._trade_pair(side, adr_qty, domestic_qty, adr_quote, domestic_quote, reduce_only=False)
             entry_fee = self._execution_fees(execution)
             entry_ratio = self._execution_ratio(execution, ratios[-1])
@@ -1334,10 +1344,8 @@ class LighterPairBot:
                 )
             if not self._campaign_allows_side(side):
                 raise RuntimeError("Requested side conflicts with the existing Lighter campaign")
-            adr_qty = max(0.04, math.floor(notional_usd / adr_quote["mid"] * 10_000) / 10_000)
-            domestic_qty = math.floor((adr_qty / 10.0) * 1_000) / 1_000
-            if domestic_qty < 0.004:
-                domestic_qty, adr_qty = 0.004, 0.04
+            adr_qty, domestic_qty = self._dollar_neutral_quantities(
+                notional_usd, adr_quote["mid"], domestic_quote["mid"])
             execution = await self._trade_pair(side, adr_qty, domestic_qty, adr_quote, domestic_quote, reduce_only=False)
             entry_fee = self._execution_fees(execution)
             midpoint_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100

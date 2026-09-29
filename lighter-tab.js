@@ -626,7 +626,7 @@
         rows.forEach((row, index) => { if (index > 0) row.style.display = "none"; });
         ticket.querySelector(".presetButtonGroup")?.setAttribute("style", "display:none");
         ticket.querySelector(".dualActionButtons")?.setAttribute("style", "display:none");
-        this.setText("valCalculatedMargin", "1x pair sizing");
+        this.setText("valCalculatedMargin", "1x dollar-neutral pair");
       }
 
       const notionalInput = lid("inputOrderNotional");
@@ -2061,7 +2061,7 @@
           const notional = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
           const tradeRate = this.tradeRatePerMinute();
           const cooldownSeconds = this.cooldownSecondsForTradeRate(tradeRate);
-          const confirmed = window.confirm(`Enable REAL 24/7 Lighter trading on EC2?\n\nPair: SKHY / SKHYNIXUSD (no 2x ETF)\nSizing: $${notional.toFixed(0)} per SKHY leg, 1x\nMaximum rate: ${this.formatTradeRate(tradeRate)} paired trades/min (${cooldownSeconds}s minimum)\n\nThe bot may place orders after the next closed-bar signal.`);
+          const confirmed = window.confirm(`Enable REAL 24/7 Lighter trading on EC2?\n\nPair: SKHY / SKHYNIXUSD (no 2x ETF)\nSizing: approximately $${notional.toFixed(0)} on each leg, dollar-neutral, 1x\nMaximum rate: ${this.formatTradeRate(tradeRate)} paired trades/min (${cooldownSeconds}s minimum)\n\nThe bot may place orders after the next closed-bar signal.`);
           if (!confirmed) { if (toggle) toggle.checked = false; return false; }
           await apiPost("/api/lighter/bot/config", { notional_usd: notional, min_seconds_between_orders: cooldownSeconds });
         }
@@ -2826,7 +2826,7 @@
       const notional = this.orderNotional();
       const btn = lid("btnStepTranche");
       if (btn) btn.disabled = true;
-      window.showToast?.(`Submitting live 1x pair order ($${notional}) on Lighter DEX...`, "info");
+      window.showToast?.(`Submitting live 1x dollar-neutral pair (~$${notional} per leg) on Lighter DEX...`, "info");
       try {
         const res = await apiPost("/api/lighter/step_tranche", { side, notional_usd: notional });
         if (res.success) {

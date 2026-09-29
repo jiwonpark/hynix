@@ -68,12 +68,20 @@ class TestLighterPairBot(unittest.TestCase):
             self.assertEqual(capacity["gross_leverage_cap"], 8.0)
             self.assertEqual(capacity["margin_leverage_assumption"], 10.0)
             self.assertEqual(capacity["active_tranches"], 3)
-            self.assertEqual(capacity["remaining_tranches"], 32)
-            self.assertEqual(capacity["max_tranches"], 35)
+            self.assertEqual(capacity["remaining_tranches"], 27)
+            self.assertEqual(capacity["max_tranches"], 30)
             self.assertIsNone(capacity["hard_max_tranches"])
             self.assertTrue(capacity["can_add_tranche"])
-            self.assertGreater(capacity["required_margin_buffer_usd"], 5.0)
-            self.assertLess(capacity["required_margin_buffer_usd"], 6.0)
+            self.assertGreater(capacity["required_margin_buffer_usd"], 6.0)
+            self.assertLess(capacity["required_margin_buffer_usd"], 7.0)
+
+    def test_dollar_neutral_sizing_matches_leg_notionals(self):
+        adr_qty, domestic_qty = LighterPairBot._dollar_neutral_quantities(25.0, 183.67, 1306.56)
+        self.assertEqual(adr_qty, 0.1361)
+        self.assertEqual(domestic_qty, 0.019)
+        adr_notional = adr_qty * 183.67
+        domestic_notional = domestic_qty * 1306.56
+        self.assertLess(abs(adr_notional - domestic_notional) / adr_notional, 0.02)
 
     def test_dynamic_capacity_blocks_entry_before_exceeding_safe_headroom(self):
         with tempfile.TemporaryDirectory() as directory:
