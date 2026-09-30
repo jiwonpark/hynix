@@ -682,7 +682,7 @@ class LighterPairBot:
             return False
         filled_adr = float(first.get("filled_size", 0.0) or 0.0)
         filled_domestic = float(second.get("filled_size", 0.0) or 0.0)
-        if filled_adr + 1e-6 < adr_qty or filled_domestic + 1e-6 < domestic_qty:
+        if filled_adr + 0.0002 < adr_qty or filled_domestic + 0.0011 < domestic_qty:
             return False
         tranches = self.state.get("tranches") or []
         if not tranches:

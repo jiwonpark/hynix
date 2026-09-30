@@ -377,7 +377,8 @@ class LighterClient:
                     or str(trade.get("bid_client_id_str") or trade.get("bid_client_id") or "") == expected_key
                 ]
                 filled_size = sum(abs(float(trade.get("size", 0.0) or 0.0)) for trade in matches)
-                if matches and filled_size >= expected_size - max(1e-8, expected_size * 1e-6):
+                fill_tolerance = max(0.0002 if int(market_id) == 216 else 0.0011, expected_size * 0.005)
+                if matches and filled_size >= expected_size - fill_tolerance:
                     usd_amount = sum(abs(float(trade.get("usd_amount", 0.0) or 0.0)) for trade in matches)
                     realized_pnl = 0.0
                     fee_usd = 0.0
