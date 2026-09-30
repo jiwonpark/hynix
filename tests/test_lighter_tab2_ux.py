@@ -1,4 +1,4 @@
-﻿import pathlib
+import pathlib
 import sys
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -15,7 +15,7 @@ class TestLighterTab2Ux(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_lighter_endpoints_registered(self):
-        routes = [route.path for route in app.routes]
+        routes = [route.path for route in app.routes if hasattr(route, "path")]
         self.assertIn("/api/lighter/status", routes)
         self.assertIn("/api/lighter/step_tranche", routes)
         self.assertIn("/api/lighter/reduce_tranche", routes)
