@@ -2812,7 +2812,7 @@
             });
             this.activeHoveredExecutionMarkerTime = marker.time;
             this.activeHoveredExecutionMarkerKey = marker.markerKey;
-            this.activeHoveredPairKey = marker.pairKey || null;
+            this.activeHoveredPairKey = pairKey;
             this.updateMarkerState(marker.time, marker);
             this.renderTradeTriangles();
           });
