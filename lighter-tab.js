@@ -565,6 +565,16 @@
         paperBadge.style.cssText = "display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:800;background:#fef3c7;color:#92400e;border:1px solid #fde68a;";
         paperBadge.textContent = "PAPER SIMULATION ONLY";
         entry.parentNode.appendChild(paperBadge);
+
+        const enforceLabel = document.createElement("label");
+        enforceLabel.id = "lighter_lblEnforceConditions";
+        enforceLabel.style.cssText = "display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#334155;cursor:pointer;background:#f8fafc;padding:5px 9px;border-radius:6px;border:1.5px solid #cbd5e1;user-select:none;";
+        enforceLabel.title = "When enabled, manual paper trades validate against active criteria checklist (MA Stretch, Peak, Spacing). Uncheck to trade unrestricted.";
+        enforceLabel.innerHTML = `
+          <input type="checkbox" id="lighter_chkEnforceConditions" checked style="cursor:pointer;accent-color:#0284c7;margin:0;width:14px;height:14px;">
+          <span>Enforce Live Conditions</span>
+        `;
+        entry.parentNode.appendChild(enforceLabel);
       }
 
       [entry, exit, flatten].forEach((button) => {
@@ -3044,6 +3054,168 @@
       window.showToast?.("↺ Reset paper balance to $10,000", "info");
     },
 
+    computeParityMetrics() {
+      if (!this.bars || this.bars.length < 24 || !Number.isFinite(this.currentRatio)) {
+        return null;
+      }
+      const windowSize = 24;
+      const sample = this.bars.slice(-windowSize).map((b) => Number(b.value));
+      const mean = sample.reduce((a, b) => a + b, 0) / sample.length;
+      const variance = sample.reduce((a, b) => a + (b - mean) ** 2, 0) / sample.length;
+      const std = Math.sqrt(variance);
+      const zScore = std > 1e-12 ? (this.currentRatio - mean) / std : 0.0;
+
+      let prevZScore = null;
+      if (this.bars.length >= windowSize + 1) {
+        const prevSample = this.bars.slice(-windowSize - 1, -1).map((b) => Number(b.value));
+        const prevMean = prevSample.reduce((a, b) => a + b, 0) / prevSample.length;
+        const prevVar = prevSample.reduce((a, b) => a + (b - prevMean) ** 2, 0) / prevSample.length;
+        const prevStd = Math.sqrt(prevVar);
+        const prevBarVal = Number(this.bars.at(-2)?.value ?? prevMean);
+        prevZScore = prevStd > 1e-12 ? (prevBarVal - prevMean) / prevStd : 0.0;
+      }
+
+      const ma7Sample = this.bars.slice(-7).map((b) => Number(b.value));
+      const ma7 = ma7Sample.reduce((a, b) => a + b, 0) / ma7Sample.length;
+
+      return { mean, std, zScore, prevZScore, ma7 };
+    },
+
+    getActiveZThresholds() {
+      let entry = 1.5, exit = 0.25;
+      if (this.currentParadigm === "ou_quant") {
+        entry = Number($("lighter_inpOuEntryZ")?.value || 1.8);
+        exit = Number($("lighter_inpOuExitZ")?.value || 0.2);
+      } else if (this.currentParadigm === "custom") {
+        entry = Number($("lighter_inpCustomEntryZ")?.value || 1.5);
+        exit = Number($("lighter_inpCustomExitZ")?.value || 0.25);
+      }
+      return { entryZ: entry, exitZ: exit };
+    },
+
+    isEnforceConditionsEnabled() {
+      const chk = lid("chkEnforceConditions");
+      return chk ? chk.checked : true;
+    },
+
+    validateVirtualEntryConditions(side) {
+      if (!this.isEnforceConditionsEnabled()) {
+        return { ok: true };
+      }
+
+      const metrics = this.computeParityMetrics();
+      if (!metrics) {
+        return { ok: true };
+      }
+
+      const { entryZ } = this.getActiveZThresholds();
+      const useMaStretch = lid("chkCondEntryMaStretch")?.checked !== false;
+      const useBaseSpacing = lid("chkCondEntryBase")?.checked !== false;
+      const usePeak = lid("chkCondEntryPeak")?.checked !== false;
+      const useMaStack = lid("chkCondEntryMaStack5m")?.checked === true;
+
+      // 1. MA Stretch / Z-score magnitude
+      if (useMaStretch && Math.abs(metrics.zScore) < entryZ) {
+        return {
+          ok: false,
+          reason: `|Z| = ${Math.abs(metrics.zScore).toFixed(2)} < required ${entryZ.toFixed(2)} (MA Stretch unmet)`,
+        };
+      }
+
+      // 2. Base Spacing (minimum 0.10pt gap from last same-side tranche)
+      if (useBaseSpacing && this.entries.length > 0) {
+        const lastSameSide = [...this.entries].reverse().find((e) => e.side === side);
+        if (lastSameSide) {
+          const spacing = side < 0 ? (this.currentRatio - lastSameSide.ratio) : (lastSameSide.ratio - this.currentRatio);
+          if (spacing < 0.10) {
+            return {
+              ok: false,
+              reason: `Spread spacing from last entry @ ${lastSameSide.ratio.toFixed(3)}% is ${spacing >= 0 ? "+" : ""}${spacing.toFixed(3)}pt < +0.10pt (Base Spacing unmet)`,
+            };
+          }
+        }
+      }
+
+      // 3. Peak Rollover (momentum crest)
+      if (usePeak && metrics.prevZScore !== null) {
+        if (Math.abs(metrics.zScore) > Math.abs(metrics.prevZScore)) {
+          return {
+            ok: false,
+            reason: `Momentum is still expanding: |Z| ${Math.abs(metrics.zScore).toFixed(2)} > prev ${Math.abs(metrics.prevZScore).toFixed(2)} (Peak Rollover unmet)`,
+          };
+        }
+      }
+
+      // 4. 5m MA Stack
+      if (useMaStack) {
+        const isAligned = side < 0
+          ? (this.currentRatio > metrics.ma7 && metrics.ma7 > metrics.mean)
+          : (this.currentRatio < metrics.ma7 && metrics.ma7 < metrics.mean);
+        if (!isAligned) {
+          return {
+            ok: false,
+            reason: `5m MA Stack alignment not satisfied (requires ${side < 0 ? "Ratio > MA7 > MA24" : "Ratio < MA7 < MA24"})`,
+          };
+        }
+      }
+
+      return { ok: true };
+    },
+
+    validateVirtualExitConditions() {
+      if (!this.isEnforceConditionsEnabled()) {
+        return { ok: true };
+      }
+
+      const metrics = this.computeParityMetrics();
+      if (!metrics) {
+        return { ok: true };
+      }
+
+      const { exitZ } = this.getActiveZThresholds();
+      const useConvergence = lid("chkCondExitConvergence")?.checked !== false;
+      const useDwell = lid("chkCondExitDwell")?.checked !== false;
+      const useBottoming = lid("chkCondExitBottoming")?.checked === true;
+
+      // Calculate total unrealized PnL
+      let totalPnl = 0;
+      this.entries.forEach((e) => {
+        totalPnl += e.notional * e.side * (this.currentRatio - e.ratio) / e.ratio;
+      });
+
+      // 1. Exit convergence: |Z| <= exitZ or positive net profit
+      if (useConvergence && Math.abs(metrics.zScore) > exitZ && totalPnl <= 0) {
+        return {
+          ok: false,
+          reason: `Exit convergence unmet: |Z| = ${Math.abs(metrics.zScore).toFixed(2)} > ${exitZ.toFixed(2)} and net PnL is non-positive ($${totalPnl.toFixed(2)})`,
+        };
+      }
+
+      // 2. Dwell time: minimum 4 bars held
+      if (useDwell && this.entries.length > 0 && this.bars?.length > 0) {
+        const oldestTime = Math.min(...this.entries.map((e) => e.time));
+        const barsSince = this.bars.filter((b) => b.time * 1000 >= oldestTime).length;
+        if (barsSince < 4) {
+          return {
+            ok: false,
+            reason: `Dwell time unmet: held for ${barsSince} bar${barsSince === 1 ? "" : "s"} < minimum 4 bars`,
+          };
+        }
+      }
+
+      // 3. Bottoming rollover
+      if (useBottoming && metrics.prevZScore !== null) {
+        if (Math.abs(metrics.zScore) < Math.abs(metrics.prevZScore)) {
+          return {
+            ok: false,
+            reason: `Convergence rollover unmet: |Z| is still dropping towards mean`,
+          };
+        }
+      }
+
+      return { ok: true };
+    },
+
     addVirtualEntry() {
       if (!Number.isFinite(this.currentRatio)) {
         if (typeof window.showToast === "function") {
@@ -3066,6 +3238,14 @@
           dirLabel = "LONG RATIO";
           dirToast = "▲ Long Parity (Long ADR / Short KR)";
         }
+      }
+
+      const validation = this.validateVirtualEntryConditions(side);
+      if (!validation.ok) {
+        if (typeof window.showToast === "function") {
+          window.showToast(`⚠️ Paper Entry Blocked: ${validation.reason}. (Toggle condition switch or uncheck 'Enforce Live Conditions' to override)`, "warning");
+        }
+        return;
       }
 
       const notional = this.orderNotional();
@@ -3093,6 +3273,15 @@
         }
         return;
       }
+
+      const validation = this.validateVirtualExitConditions();
+      if (!validation.ok) {
+        if (typeof window.showToast === "function") {
+          window.showToast(`⚠️ Paper Exit Blocked: ${validation.reason}. (Toggle condition switch or uncheck 'Enforce Live Conditions' to force exit)`, "warning");
+        }
+        return;
+      }
+
       const count = this.entries.length;
       let totalPnl = 0;
       this.entries.forEach((entry) => {

@@ -212,6 +212,21 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("matched_entry = open_entries[m_dir].pop()", server)
         self.assertNotIn("matched_entry = open_entries[m_dir].pop(0)", server)
 
+    def test_paper_trade_condition_validation_and_toggle_controls(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn("lighter_chkEnforceConditions", script)
+        self.assertIn("Enforce Live Conditions", script)
+        self.assertIn("validateVirtualEntryConditions", script)
+        self.assertIn("validateVirtualExitConditions", script)
+        self.assertIn("computeParityMetrics", script)
+        self.assertIn("isEnforceConditionsEnabled", script)
+        self.assertIn("chkCondEntryMaStretch", script)
+        self.assertIn("chkCondEntryBase", script)
+        self.assertIn("chkCondEntryPeak", script)
+        self.assertIn("chkCondEntryMaStack5m", script)
+        self.assertIn("Paper Entry Blocked", script)
+        self.assertIn("Paper Exit Blocked", script)
+
 
 if __name__ == "__main__":
     unittest.main()
