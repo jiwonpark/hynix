@@ -1492,7 +1492,7 @@
         },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       });
-      this.series = this.chart.addAreaSeries({ topColor: "rgba(2,132,199,.25)", bottomColor: "rgba(2,132,199,.02)", lineColor: "#0284c7", lineWidth: 2,
+      this.series = this.chart.addAreaSeries({ topColor: "rgba(2,132,199,.25)", bottomColor: "rgba(2,132,199,.02)", lineColor: "#0284c7", lineWidth: 1,
         priceFormat: { type: "price", precision: 2, minMove: .01 } });
 
       const ControllerClass = window.StrategyExecutionChartController || (typeof StrategyExecutionChartController !== "undefined" ? StrategyExecutionChartController : null);
@@ -2462,13 +2462,13 @@
             if (dominantEntry) {
               range.style.cssText = `appearance:none;position:absolute;left:${x - 13}px;top:${buttonTop}px;width:14px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:default;pointer-events:auto;z-index:1;overflow:visible`;
               range.innerHTML = `<svg width="14" height="${svgHeight}" viewBox="0 0 14 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
-                <line x1="6" y1="${topLocal}" x2="6" y2="${bottomLocal}" stroke="${markerColor}" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="6" y1="${topLocal}" x2="6" y2="${bottomLocal}" stroke="${markerColor}" stroke-width="1" stroke-linecap="round"/>
                 <polygon points="6,${avgLocal - 4} 13,${avgLocal} 6,${avgLocal + 4}" fill="${markerColor}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/>
               </svg>`;
             } else {
               range.style.cssText = `appearance:none;position:absolute;left:${x - 1}px;top:${buttonTop}px;width:14px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:default;pointer-events:auto;z-index:1;overflow:visible`;
               range.innerHTML = `<svg width="14" height="${svgHeight}" viewBox="0 0 14 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
-                <line x1="8" y1="${topLocal}" x2="8" y2="${bottomLocal}" stroke="${markerColor}" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="8" y1="${topLocal}" x2="8" y2="${bottomLocal}" stroke="${markerColor}" stroke-width="1" stroke-linecap="round"/>
                 <polygon points="8,${avgLocal - 4} 1,${avgLocal} 8,${avgLocal + 4}" fill="${markerColor}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/>
               </svg>`;
             }
@@ -2717,7 +2717,7 @@
           ? entry * (1 + roundTripCostRate + (netProfitPct / 100))
           : entry / (1 + roundTripCostRate + (netProfitPct / 100)),
         color: netProfitPct === 0 ? "rgba(71, 85, 105, 0.70)" : "rgba(22, 163, 74, 0.70)",
-        lineWidth: 1.5,
+        lineWidth: 1,
       }));
     },
 
