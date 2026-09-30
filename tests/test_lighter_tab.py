@@ -172,6 +172,25 @@ class TestLighterTab(unittest.TestCase):
         # Verify Buy price lower than Sell close is always profit
         self.assertIn("const isProfit = isShort ? (p1 >= p2) : (p2 >= p1);", script)
 
+    def test_multiple_trade_marker_hover_and_range_line_alignment(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        # Verify range line alignment to marker tip
+        self.assertIn('line x1="14" y1="${topLocal}" x2="14" y2="${bottomLocal}"', script)
+        self.assertIn('polygon points="7,${avgLocal - 4} 14,${avgLocal} 7,${avgLocal + 4}"', script)
+        self.assertIn('line x1="2" y1="${topLocal}" x2="2" y2="${bottomLocal}"', script)
+        self.assertIn('polygon points="9,${avgLocal - 4} 2,${avgLocal} 9,${avgLocal + 4}"', script)
+        # Verify button left alignment coordinates
+        self.assertIn('left:${x - 14}px', script)
+        self.assertIn('left:${x - 2}px', script)
+        # Verify hover triggers triangle rendering and marker state update
+        self.assertIn('range.addEventListener("mouseenter"', script)
+        self.assertIn('range.addEventListener("mouseleave"', script)
+        self.assertIn('range.addEventListener("click"', script)
+        self.assertIn('this.updateMarkerState(markerTime, markers[0])', script)
+        self.assertIn('this.renderTradeTriangles()', script)
+        # Verify target registration for grouped trades
+        self.assertIn('targetsByMarkerKey.set(marker.markerKey, range)', script)
+
     def test_parity_markers_direction_and_pairkey_stamped(self):
         from backend.server import get_lighter_parity, lighter_pair_bot, lighter_client
 

@@ -2419,12 +2419,57 @@
 
       const source = marker.source === "actual" ? "ACTUAL" : (marker.backtest ? "BACKTEST" : "PAPER");
       const siblings = this.executionMarkersAtTime(marker.time);
+      const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
+      const markerColor = this.tradeMarkerColor(marker);
+
+      if (siblings.length > 1) {
+        const isShort = this.isShortTrade(marker);
+        const dirLabel = isShort ? "SHORT" : "LONG";
+        const prices = siblings.map((m) => Number(m.ratio ?? m.entry_price ?? m.exit_price)).filter(Number.isFinite);
+        const minP = prices.length ? Math.min(...prices) : Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
+        const maxP = prices.length ? Math.max(...prices) : minP;
+        const avgP = prices.length ? prices.reduce((s, v) => s + v, 0) / prices.length : minP;
+        const entryCount = siblings.filter((m) => this.isTradeEntry(m)).length;
+        const exitCount = siblings.length - entryCount;
+        const rangeText = (minP === maxP) ? `${avgP.toFixed(2)}%` : `${minP.toFixed(2)}% – ${maxP.toFixed(2)}%`;
+
+        const rows = siblings.map((m, idx) => {
+          const p = Number(m.ratio ?? m.entry_price ?? m.exit_price);
+          const notional = m.notional ? ` · $${m.notional.toFixed(0)}` : "";
+          const pnlVal = m.pnl;
+          const pnlStr = (pnlVal != null && Number.isFinite(pnlVal))
+            ? ` · <span style="color:${pnlVal >= 0 ? '#16a34a' : '#dc2626'}">${pnlVal >= 0 ? '+' : ''}$${pnlVal.toFixed(2)}</span>`
+            : "";
+          const action = this.isTradeEntry(m) ? (isShort ? "SHORT" : "BUY") : (isShort ? "COVER" : "SELL");
+          return `<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;font-weight:700;padding:1px 0;">
+            <span>#${idx + 1} ${action} @ ${p.toFixed(2)}%${notional}</span>
+            <span>${pnlStr}</span>
+          </div>`;
+        }).join("");
+
+        overlay.innerHTML = `
+          <div style="font-weight:900;font-size:11px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #e2e8f0;padding-bottom:3px;">
+            <span>🏁 ${source} · ${dirLabel} (${siblings.length} Fills)</span>
+            <span style="font-weight:900;">${rangeText}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:1px;margin-bottom:3px;">
+            ${rows}
+          </div>
+          <div style="font-size:9.5px;color:#64748b;font-weight:700;display:flex;justify-content:space-between;">
+            <span>${timeText}</span>
+            <span>${entryCount ? entryCount + ' entries' : ''}${entryCount && exitCount ? ' / ' : ''}${exitCount ? exitCount + ' exits' : ''}</span>
+          </div>
+        `;
+        overlay.style.display = "block";
+        overlay.style.borderColor = markerColor === "#dc2626" ? "#fca5a5" : "#86efac";
+        overlay.style.color = "#0f172a";
+        return;
+      }
+
       const ordinal = siblings.findIndex((candidate) => candidate.markerKey === marker.markerKey) + 1;
       const position = siblings.length > 1 ? ` · trade ${ordinal}/${siblings.length}` : "";
-      const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
       overlay.textContent = `${source}${position} · ${marker.hoverText || "Trade"} · ${timeText}`;
       overlay.style.display = "block";
-      const markerColor = this.tradeMarkerColor(marker);
       overlay.style.borderColor = markerColor === "#dc2626" ? "#fca5a5" : "#86efac";
       overlay.style.color = markerColor === "#dc2626" ? "#991b1b" : "#166534";
     },
@@ -2519,7 +2564,7 @@
           });
           return;
         }
-        const denseGroup = markers.length > 3;
+        const denseGroup = markers.length > 1;
         if (denseGroup) {
           const pricedMarkers = markers.map((marker) => ({
             marker,
@@ -2536,8 +2581,12 @@
             topY = Math.max(8, Math.min(layer.clientHeight - 8, Number(topY)));
             bottomY = Math.max(8, Math.min(layer.clientHeight - 8, Number(bottomY)));
             avgY = Math.max(Math.min(topY, bottomY), Math.min(Math.max(topY, bottomY), Number(avgY)));
-            const visualTop = Math.min(topY, bottomY);
-            const visualBottom = Math.max(topY, bottomY);
+            let visualTop = Math.min(topY, bottomY);
+            let visualBottom = Math.max(topY, bottomY);
+            if (visualBottom - visualTop < 6) {
+              visualTop = Math.max(6, avgY - 4);
+              visualBottom = Math.min(layer.clientHeight - 6, avgY + 4);
+            }
             const buttonTop = Math.max(0, visualTop - 6);
             const buttonBottom = Math.min(layer.clientHeight, visualBottom + 6);
             const svgHeight = Math.max(16, buttonBottom - buttonTop);
@@ -2559,49 +2608,127 @@
             range.setAttribute("aria-label", `${markers.length} grouped trades; range ${minPrice.toFixed(3)} to ${maxPrice.toFixed(3)} percent; average ${avgPrice.toFixed(3)} percent`);
 
             // Entry arrow points right (▶) towards timeframe x:
-            // Tip is at x = 13 within the 14px SVG, placed with button left = x - 13. Tip touches x exactly!
+            // Tip is at x = 14 within the 16px SVG. Range line is at x1="14" x2="14" spanning topLocal to bottomLocal.
+            // Button is placed at left: ${x - 14}px so both the tip and the range line align exactly at screen coordinate (x - 14) + 14 = x!
             // Exit arrow points left (◀) away from timeframe x:
-            // Tip is at x = 1 within the 14px SVG, placed with button left = x - 1. Tip touches x exactly!
+            // Tip is at x = 2 within the 16px SVG. Range line is at x1="2" x2="2" spanning topLocal to bottomLocal.
+            // Button is placed at left: ${x - 2}px so both the tip and the range line align exactly at screen coordinate (x - 2) + 2 = x!
             if (dominantEntry) {
-              range.style.cssText = `appearance:none;position:absolute;left:${x - 13}px;top:${buttonTop}px;width:14px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:default;pointer-events:auto;z-index:1;overflow:visible`;
-              range.innerHTML = `<svg width="14" height="${svgHeight}" viewBox="0 0 14 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
-                <line x1="6" y1="${topLocal}" x2="6" y2="${bottomLocal}" stroke="${markerColor}" stroke-width="1" stroke-linecap="round"/>
-                <polygon points="6,${avgLocal - 4} 13,${avgLocal} 6,${avgLocal + 4}" fill="${markerColor}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/>
+              range.style.cssText = `appearance:none;position:absolute;left:${x - 14}px;top:${buttonTop}px;width:16px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto;z-index:2;overflow:visible`;
+              range.innerHTML = `<svg width="16" height="${svgHeight}" viewBox="0 0 16 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
+                <line x1="14" y1="${topLocal}" x2="14" y2="${bottomLocal}" stroke="${markerColor}" stroke-width="1" stroke-linecap="round"/>
+                <polygon points="7,${avgLocal - 4} 14,${avgLocal} 7,${avgLocal + 4}" fill="${markerColor}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/>
               </svg>`;
             } else {
-              range.style.cssText = `appearance:none;position:absolute;left:${x - 1}px;top:${buttonTop}px;width:14px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:default;pointer-events:auto;z-index:1;overflow:visible`;
-              range.innerHTML = `<svg width="14" height="${svgHeight}" viewBox="0 0 14 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
-                <line x1="8" y1="${topLocal}" x2="8" y2="${bottomLocal}" stroke="${markerColor}" stroke-width="1" stroke-linecap="round"/>
-                <polygon points="8,${avgLocal - 4} 1,${avgLocal} 8,${avgLocal + 4}" fill="${markerColor}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/>
+              range.style.cssText = `appearance:none;position:absolute;left:${x - 2}px;top:${buttonTop}px;width:16px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto;z-index:2;overflow:visible`;
+              range.innerHTML = `<svg width="16" height="${svgHeight}" viewBox="0 0 16 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
+                <line x1="2" y1="${topLocal}" x2="2" y2="${bottomLocal}" stroke="${markerColor}" stroke-width="1" stroke-linecap="round"/>
+                <polygon points="9,${avgLocal - 4} 2,${avgLocal} 9,${avgLocal + 4}" fill="${markerColor}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/>
               </svg>`;
             }
 
+            // Register range element for every marker and pair in this group
+            markers.forEach((marker) => {
+              marker._targetX = x;
+              marker._targetY = avgY;
+              targetsByMarkerKey.set(marker.markerKey, range);
+              const pairKey = marker.pairKey || marker.markerKey;
+              const pairTargets = targetsByPair.get(pairKey) || [];
+              pairTargets.push(range);
+              targetsByPair.set(pairKey, pairTargets);
+            });
+
             range.addEventListener("mouseenter", () => {
-              const shortCount = markers.filter((m) => this.isShortTrade(m)).length;
-              const longCount = markers.length - shortCount;
               range._blinkAnimation?.cancel();
               range._blinkAnimation = range.animate(
                 [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
                 { duration: 650, iterations: Infinity, easing: "ease-in-out" }
               );
-              const overlay = lid("tradeMarkerHover");
-              if (!overlay) return;
-              overlay.textContent = `${markers.length} PAIRED TRADES · ${entryCount} entries / ${exitCount} exits · ${buyCount} buy / ${sellCount} sell · ${longCount} long / ${shortCount} short · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}%`;
-              overlay.style.display = "block";
-              overlay.style.borderColor = markerColor === "#dc2626" ? "#fca5a5" : "#86efac";
-              overlay.style.color = markerColor === "#dc2626" ? "#991b1b" : "#166534";
+
+              // Find and blink all opposite paired targets
+              const relatedTargets = [];
+              markers.forEach((marker) => {
+                const isEntry = this.isTradeEntry(marker);
+                const isShort = this.isShortTrade(marker);
+                if (!isEntry) {
+                  const matched = tradePairs.filter((p) =>
+                    p.exit.markerKey === marker.markerKey
+                    || (p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
+                  );
+                  matched.forEach((p) => {
+                    const et = targetsByMarkerKey.get(p.entry.markerKey);
+                    if (et && et !== range) relatedTargets.push(et);
+                  });
+                } else {
+                  const matched = tradePairs.filter((p) =>
+                    p.entry.markerKey === marker.markerKey
+                    || (p.entry.time === marker.time && this.isShortTrade(p.entry) === isShort)
+                  );
+                  matched.forEach((p) => {
+                    const xt = targetsByMarkerKey.get(p.exit.markerKey);
+                    if (xt && xt !== range) relatedTargets.push(xt);
+                  });
+                }
+                const pairTargets = targetsByPair.get(marker.pairKey || marker.markerKey) || [];
+                pairTargets.forEach((pt) => { if (pt !== range) relatedTargets.push(pt); });
+              });
+
+              new Set(relatedTargets).forEach((targetEl) => {
+                targetEl._blinkAnimation?.cancel();
+                targetEl._blinkAnimation = targetEl.animate(
+                  [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
+                  { duration: 650, iterations: Infinity, easing: "ease-in-out" }
+                );
+              });
+
+              this.activeHoveredExecutionMarkerTime = markerTime;
+              this.activeHoveredExecutionMarkerKey = markers[0].markerKey;
+              this.activeHoveredPairKey = markers[0].pairKey || markers[0].markerKey;
+              this.updateMarkerState(markerTime, markers[0]);
+              this.renderTradeTriangles();
             });
+
             range.addEventListener("mouseleave", () => {
               range._blinkAnimation?.cancel();
               range._blinkAnimation = null;
-              const overlay = lid("tradeMarkerHover");
-              if (overlay && !this.activeHoveredExecutionMarkerKey && !this.selectedExecutionMarkerKey) overlay.style.display = "none";
+
+              markers.forEach((marker) => {
+                const isEntry = this.isTradeEntry(marker);
+                const isShort = this.isShortTrade(marker);
+                if (!isEntry) {
+                  const matched = tradePairs.filter((p) =>
+                    p.exit.markerKey === marker.markerKey
+                    || (p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
+                  );
+                  matched.forEach((p) => {
+                    const et = targetsByMarkerKey.get(p.entry.markerKey);
+                    if (et) { et._blinkAnimation?.cancel(); et._blinkAnimation = null; }
+                  });
+                } else {
+                  const matched = tradePairs.filter((p) =>
+                    p.entry.markerKey === marker.markerKey
+                    || (p.entry.time === marker.time && this.isShortTrade(p.entry) === isShort)
+                  );
+                  matched.forEach((p) => {
+                    const xt = targetsByMarkerKey.get(p.exit.markerKey);
+                    if (xt) { xt._blinkAnimation?.cancel(); xt._blinkAnimation = null; }
+                  });
+                }
+              });
+
+              this.activeHoveredExecutionMarkerTime = null;
+              this.activeHoveredExecutionMarkerKey = null;
+              this.activeHoveredPairKey = null;
+              this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
+              this.renderTradeTriangles();
             });
+
+            range.addEventListener("click", (event) => {
+              event.stopPropagation();
+              this.selectExecutionMarker(markers[0]);
+            });
+
             layer.appendChild(range);
-            markers.forEach((marker) => {
-              marker._targetX = x;
-              marker._targetY = avgY;
-            });
           }
           return;
         }
@@ -2759,13 +2886,19 @@
           exit.markerKey === hoveredMarker.markerKey
           || (exit.time === hoveredMarker.time && this.isShortTrade(exit) === this.isShortTrade(hoveredMarker))
         );
-        const isEntryHovered = !isHoveredExit && hoveredMarker && (entry.markerKey === hoveredMarker.markerKey);
+        const isEntryHovered = !isHoveredExit && hoveredMarker && (
+          entry.markerKey === hoveredMarker.markerKey
+          || (entry.time === hoveredMarker.time && this.isShortTrade(entry) === this.isShortTrade(hoveredMarker))
+        );
 
         const isExitSelected = isSelectedExit && (
           exit.markerKey === selectedMarker.markerKey
           || (exit.time === selectedMarker.time && this.isShortTrade(exit) === this.isShortTrade(selectedMarker))
         );
-        const isEntrySelected = !isSelectedExit && selectedMarker && (entry.markerKey === selectedMarker.markerKey);
+        const isEntrySelected = !isSelectedExit && selectedMarker && (
+          entry.markerKey === selectedMarker.markerKey
+          || (entry.time === selectedMarker.time && this.isShortTrade(entry) === this.isShortTrade(selectedMarker))
+        );
 
         const isPairHovered = Boolean(this.activeHoveredPairKey && pairKey === this.activeHoveredPairKey);
         const isPairSelected = Boolean(this.selectedPairKey && pairKey === this.selectedPairKey);
