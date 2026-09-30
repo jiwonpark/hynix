@@ -165,9 +165,10 @@ class TestLighterTab(unittest.TestCase):
         # Verify perfect alignment with trade marker targets
         self.assertIn("entry._targetX", script)
         self.assertIn("entry._targetY", script)
-        # Verify FIFO matching and direction preservation
-        self.assertIn("const entry = stack.shift();", script)
-        self.assertIn("pairKey: marker.pairKey || null", script)
+        # Verify LIFO matching and direction preservation
+        self.assertIn("const entry = stack.pop();", script)
+        self.assertIn("isCampaign", script)
+        self.assertIn("closedEntries", script)
         # Verify Buy price lower than Sell close is always profit
         self.assertIn("const isProfit = isShort ? (p1 >= p2) : (p2 >= p1);", script)
 
@@ -237,6 +238,17 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("isEntryHovered", script)
         self.assertIn("matchedPairs.length > 1", script)
         self.assertIn("trancheRows", script)
+
+    def test_multi_entry_to_single_exit_matching(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn("is_campaign_exit: true", script)
+        self.assertIn("isCampaign", script)
+        self.assertIn("closedEntries", script)
+        self.assertIn("stack.splice(-n)", script)
+        self.assertIn("const entry = stack.pop();", script)
+        self.assertIn("closedEntries.forEach((entry) => {", script)
+        self.assertIn("entry.pairKey = assignedPairKey;", script)
+        self.assertIn("exitBucketMap", script)
 
 
 if __name__ == "__main__":

@@ -3424,17 +3424,36 @@
 
       const count = this.entries.length;
       let totalPnl = 0;
-      this.entries.forEach((entry) => {
+      let totalNotional = 0;
+      const closedEntries = [...this.entries];
+      const trancheDetails = [];
+      closedEntries.forEach((entry, idx) => {
         const pnl = entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio;
         totalPnl += pnl;
-        this.ledger.unshift({
-          time: Date.now(),
-          ratio: this.currentRatio,
+        totalNotional += entry.notional;
+        trancheDetails.push({
+          idx: idx + 1,
+          time: entry.time,
+          ratio: entry.ratio,
           notional: entry.notional,
-          action: "EXIT",
-          side: entry.side,
           pnl,
         });
+      });
+      const firstSide = closedEntries[0]?.side || -1;
+      const exitTime = Date.now();
+      const campaignKey = `paper:campaign:${exitTime}`;
+
+      this.ledger.unshift({
+        time: exitTime,
+        ratio: this.currentRatio,
+        notional: totalNotional,
+        action: "EXIT",
+        side: firstSide,
+        pnl: totalPnl,
+        count,
+        is_campaign_exit: true,
+        campaignKey,
+        tranches: trancheDetails,
       });
       this.entries = [];
       this.save();
@@ -3457,7 +3476,37 @@
       if (!this.bars.length) return;
       const firstBarTime = Number(this.bars[0]?.time);
       const lastBarTime = Number(this.bars.at(-1)?.time);
-      const paperMarkers = this.ledger
+
+      // Consolidate simultaneous/legacy paper exit rows into single campaign markers
+      const paperRows = [];
+      const exitBucketMap = new Map();
+      (this.ledger || []).forEach((row) => {
+        if (row.action === "EXIT") {
+          const bucket = Math.floor((row.time || 0) / 1000);
+          const group = exitBucketMap.get(bucket) || [];
+          group.push(row);
+          exitBucketMap.set(bucket, group);
+        } else {
+          paperRows.push(row);
+        }
+      });
+      exitBucketMap.forEach((rows) => {
+        if (rows.length === 1) {
+          paperRows.push(rows[0]);
+        } else {
+          const totalPnl = rows.reduce((s, r) => s + (Number(r.pnl) || 0), 0);
+          const totalNotional = rows.reduce((s, r) => s + (Number(r.notional) || 0), 0);
+          paperRows.push({
+            ...rows[0],
+            notional: totalNotional,
+            pnl: totalPnl,
+            count: rows.length,
+            is_campaign_exit: true,
+          });
+        }
+      });
+
+      const paperMarkers = paperRows
         .filter((row) => (row.time / 1000) >= firstBarTime && (row.time / 1000) <= lastBarTime)
         .slice(0, 40)
         .map((row) => {
@@ -3466,6 +3515,7 @@
         const isSell = isShort ? !isExit : isExit;
         const markerColor = isSell ? "#dc2626" : "#16a34a";
         const markerShape = isExit ? "arrowLeft" : "arrowRight";
+        const cntStr = (row.count && row.count > 1) ? ` (${row.count}x)` : "";
         return {
           time: TerminalCommon.alignTime(this.bars, row.time / 1000),
           position: isSell ? "aboveBar" : "belowBar",
@@ -3474,12 +3524,14 @@
           shape: markerShape,
           text: "",
           hoverText: isExit
-            ? `${isShort ? "COVER" : "SELL"} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""}${row.pnl != null ? " · " + (row.pnl >= 0 ? "+" : "") + "$" + row.pnl.toFixed(2) : ""}`
+            ? `${isShort ? "COVER" : "SELL"}${cntStr} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""}${row.pnl != null ? " · " + (row.pnl >= 0 ? "+" : "") + "$" + row.pnl.toFixed(2) : ""}`
             : `${isShort ? "SHORT" : "BUY"} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""} ($${(row.notional || 0).toFixed(0)})`,
           source: "virtual",
           hypothetical: true,
           is_paper: true,
           is_entry: !isExit,
+          is_campaign_exit: Boolean(row.is_campaign_exit || (row.count && row.count > 1)),
+          count: row.count || 1,
           direction: isShort ? "short" : "long",
           ratio: row.ratio,
           entry_price: row.ratio,
@@ -3492,23 +3544,69 @@
         ...paperMarkers,
         ...(this.backtestMarkers || []),
       ].sort((a, b) => (a.time - b.time) || (a.is_entry === false ? 1 : -1));
+
       const openPairs = new Map();
+      let pairSequence = 0;
       rawMarkers.forEach((marker, index) => {
-        if (marker.pairKey) return;
         const dir = marker.direction || (marker.shape === "arrowDown" ? (marker.is_entry !== false ? "short" : "long") : (marker.is_entry !== false ? "long" : "short"));
         const stream = `${marker.source || "trade"}:${marker.backtest ? "backtest" : (marker.is_paper ? "paper" : "live")}:${dir}`;
         const stack = openPairs.get(stream) || [];
+
         if (marker.is_entry !== false) {
-          marker.pairKey = `${stream}:pair:${index}`;
           stack.push(marker);
           openPairs.set(stream, stack);
         } else {
-          const entry = stack.shift();
-          marker.pairKey = entry?.pairKey || `${stream}:unmatched:${index}`;
-          if (entry?.direction) marker.direction = entry.direction;
+          const isCampaign = Boolean(
+            marker.is_campaign_exit
+            || marker.is_paper
+            || (marker.count && marker.count >= stack.length)
+            || (marker.count == null && stack.length > 0 && !marker.is_partial)
+          );
+
+          let closedEntries = [];
+          if (isCampaign) {
+            closedEntries = [...stack];
+            stack.length = 0;
+          } else if (marker.count && marker.count > 1) {
+            const n = Math.min(marker.count, stack.length);
+            closedEntries = stack.splice(-n);
+          } else {
+            const entry = stack.pop();
+            if (entry) closedEntries = [entry];
+          }
+
+          pairSequence += 1;
+          const assignedPairKey = marker.pairKey || `${stream}:pair:${pairSequence}`;
+          marker.pairKey = assignedPairKey;
+
+          if (closedEntries.length > 0) {
+            closedEntries.forEach((entry) => {
+              entry.pairKey = assignedPairKey;
+              if (!entry.direction && marker.direction) entry.direction = marker.direction;
+            });
+            if (closedEntries[0]?.direction) marker.direction = closedEntries[0].direction;
+          } else if (!marker.pairKey) {
+            marker.pairKey = `${stream}:unmatched:${index}`;
+          }
+          openPairs.set(stream, stack);
         }
       });
-      rawMarkers = rawMarkers.map((marker, index) => ({ ...marker, markerKey: `${marker.source || "trade"}:${marker.backtest ? "backtest" : "live"}:${marker.time}:${index}` }));
+
+      openPairs.forEach((stack, stream) => {
+        stack.forEach((entry) => {
+          if (!entry.pairKey) {
+            pairSequence += 1;
+            entry.pairKey = `${stream}:open:${pairSequence}`;
+          }
+        });
+      });
+
+      rawMarkers = rawMarkers
+        .map((marker) => ({ ...marker, text: "" }))
+        .map((marker, index) => ({
+          ...marker,
+          markerKey: `${marker.source || "trade"}:${marker.backtest ? "backtest" : "live"}:${marker.time}:${index}`,
+        }));
 
       if (this.selectedExecutionMarkerKey && !rawMarkers.some((marker) => marker.markerKey === this.selectedExecutionMarkerKey)) {
         this.selectedExecutionMarkerKey = null;
