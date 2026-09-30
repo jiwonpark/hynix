@@ -1825,13 +1825,77 @@
         toggle.checked = isEnabled;
         toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || !venue?.execution_enabled || isRecovery;
       }
+      const banner = lid("autoTradeMasterBanner");
+      const pulseEl = lid("autoTradePulseIndicator");
+      const titleEl = lid("lblAutoTradeStateTitle");
       const badge = lid("badgeAutoPeriodicStatus");
-      if (badge) {
-        badge.style.display = "inline-block";
-        badge.textContent = isEnabled ? "● EC2 LIVE BOT ACTIVE" : (isRecovery ? "⚠ RECOVERY REQUIRED" : "○ EC2 BOT PAUSED");
-        badge.style.background = isEnabled ? "#dcfce7" : (isRecovery ? "#fef3c7" : "#f1f5f9");
-        badge.style.color = isEnabled ? "#166534" : (isRecovery ? "#92400e" : "#475569");
+      const headingEl = lid("lblAutoTradeStatusHeading");
+      const detailEl = lid("lblAutoTradeStatusDetail");
+      const isKo = window.currentLang === "ko";
+
+      if (banner) banner.classList.remove("active", "recovery");
+      if (pulseEl) pulseEl.className = "autoTradePulseIndicator";
+      if (badge) badge.classList.remove("active", "recovery");
+
+      if (isRecovery) {
+        if (banner) banner.classList.add("recovery");
+        if (pulseEl) pulseEl.className = "autoTradePulseIndicator recovery";
+        if (titleEl) titleEl.textContent = isKo ? "⚠️ 그리드 봇: 중단됨 (복구 필요)" : "⚠️ INSTITUTIONAL GRID BOT: HALTED (RECOVERY)";
+        if (badge) {
+          badge.style.display = "inline-flex";
+          badge.className = "badgeAutoPeriodicStatus recovery";
+          badge.textContent = "⚠ RECOVERY REQUIRED";
+          badge.style.background = "#fee2e2";
+          badge.style.color = "#991b1b";
+        }
+        if (headingEl) headingEl.textContent = "GRID BOT: RECOVERY";
+        if (detailEl) detailEl.textContent = "Order reconciliation required on Lighter/EC2";
+      } else if (isEnabled) {
+        if (banner) banner.classList.add("active");
+        if (pulseEl) pulseEl.className = "autoTradePulseIndicator active";
+        if (titleEl) titleEl.textContent = isKo ? "⚡ 그리드 봇: 실시간 가동 중" : "⚡ INSTITUTIONAL GRID BOT: ACTIVE";
+        if (badge) {
+          badge.style.display = "inline-flex";
+          badge.className = "badgeAutoPeriodicStatus active";
+          badge.textContent = "● EC2 LIVE BOT ACTIVE";
+          badge.style.background = "#dcfce7";
+          badge.style.color = "#166534";
+        }
+        if (headingEl) headingEl.textContent = "EC2 DAEMON: ACTIVE";
+        if (detailEl) detailEl.textContent = isKo ? "실시간 그리드 차익거래 가동 중" : "Running 24/7 institutional grid engine on EC2";
+      } else {
+        if (pulseEl) pulseEl.className = "autoTradePulseIndicator paused";
+        if (titleEl) titleEl.textContent = isKo ? "○ 그리드 봇: 대기 (일시정지)" : "○ INSTITUTIONAL GRID BOT: PAUSED";
+        if (badge) {
+          badge.style.display = "inline-flex";
+          badge.className = "badgeAutoPeriodicStatus";
+          badge.textContent = "○ EC2 BOT PAUSED";
+          badge.style.background = "#f1f5f9";
+          badge.style.color = "#475569";
+        }
+        if (headingEl) headingEl.textContent = "EC2 DAEMON: STANDBY";
+        if (detailEl) detailEl.textContent = isKo ? "토글 스위치를 켜서 24/7 그리드 매매를 시작하세요" : "Click toggle switch to start 24/7 grid bot";
       }
+
+      // Sync Tab 3 Top Nav Pill
+      const navLighterPill = $("navLighterLivePill");
+      if (navLighterPill) {
+        navLighterPill.className = "navLivePill";
+        if (isRecovery) {
+          navLighterPill.classList.add("recovery");
+          navLighterPill.textContent = "⚠ RECOVERY";
+        } else if (isEnabled) {
+          navLighterPill.classList.add("active");
+          navLighterPill.textContent = "● GRID AUTO ON";
+        } else {
+          navLighterPill.classList.add("paused");
+          navLighterPill.textContent = "○ GRID PAUSED";
+        }
+      }
+
+      const liveBtn = lid("modeLive");
+      if (liveBtn) liveBtn.classList.toggle("botActiveLive", isEnabled);
+
       this.setText("lblDaemonLatency", isEnabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused");
       this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${bot?.max_tranches ?? tranches.length} safe tranches` : "Awaiting first closed-bar evaluation");
       const rulesPanel = $("lighterLiveRulesPanel");
@@ -2804,6 +2868,38 @@
       }
 
       this.renderVirtualState();
+
+      const isLive = (mode === "live");
+      if (liveBtn) liveBtn.classList.toggle("botActiveLive", isLive);
+      const banner = lid("autoTradeMasterBanner");
+      const pulseEl = lid("autoTradePulseIndicator");
+      const titleEl = lid("lblAutoTradeStateTitle");
+      const headingEl = lid("lblAutoTradeStatusHeading");
+      const detailEl = lid("lblAutoTradeStatusDetail");
+      const navLighterPill = $("navLighterLivePill");
+
+      if (isLive) {
+        if (banner) banner.classList.add("active");
+        if (pulseEl) pulseEl.className = "autoTradePulseIndicator active";
+        if (titleEl) titleEl.textContent = isKo ? "⚡ 그리드 봇: 실시간 가동 중" : "⚡ INSTITUTIONAL GRID BOT: ACTIVE";
+        if (headingEl) headingEl.textContent = "EC2 DAEMON: ACTIVE";
+        if (detailEl) detailEl.textContent = isKo ? "실시간 그리드 차익거래 가동 중" : "Running 24/7 institutional grid engine on EC2";
+        if (navLighterPill) {
+          navLighterPill.className = "navLivePill active";
+          navLighterPill.textContent = "● GRID AUTO ON";
+        }
+      } else {
+        if (banner) banner.classList.remove("active");
+        if (pulseEl) pulseEl.className = "autoTradePulseIndicator paused";
+        if (titleEl) titleEl.textContent = isKo ? "○ 그리드 봇: 대기 (일시정지)" : "○ INSTITUTIONAL GRID BOT: PAUSED";
+        if (headingEl) headingEl.textContent = "EC2 DAEMON: STANDBY";
+        if (detailEl) detailEl.textContent = isKo ? "토글 스위치를 켜서 24/7 그리드 매매를 시작하세요" : "Click toggle switch to start 24/7 grid bot";
+        if (navLighterPill) {
+          navLighterPill.className = "navLivePill paused";
+          navLighterPill.textContent = "○ GRID PAUSED";
+        }
+      }
+
       if (showNotification) {
         window.showToast?.(
           isKo ? `매매 모드 전환: ${mode === "live" ? "전자동 봇" : mode === "semi_auto" ? "반자동 승인" : "수동 모의"}` : `Mode switched: ${mode.toUpperCase()}`,

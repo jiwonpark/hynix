@@ -923,11 +923,34 @@
       border: 1px solid #bae6fd;
       flex-shrink: 0;
       white-space: nowrap;
+      transition: all 0.2s ease;
     }
     .mainNavBtn.active .navLivePill {
       background: #0284c7;
       color: #ffffff;
       border-color: #0284c7;
+    }
+    .mainNavBtn .navLivePill.active {
+      background: #059669 !important;
+      color: #ffffff !important;
+      border-color: #047857 !important;
+      box-shadow: 0 0 8px rgba(5, 150, 105, 0.5) !important;
+      animation: navPillGlow 2s infinite ease-in-out;
+    }
+    .mainNavBtn .navLivePill.paused {
+      background: #64748b !important;
+      color: #ffffff !important;
+      border-color: #475569 !important;
+    }
+    .mainNavBtn .navLivePill.recovery {
+      background: #d97706 !important;
+      color: #ffffff !important;
+      border-color: #b45309 !important;
+      animation: navPillGlow 1.2s infinite ease-in-out;
+    }
+    @keyframes navPillGlow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.05); }
     }
 
     @media (max-width: 1024px) {
@@ -1543,6 +1566,241 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 12.5px;
     }
+
+    /* Master Auto-Trading Control Banner */
+    .autoTradeMasterBanner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 16px;
+      border-radius: 9px;
+      border: 2px solid #cbd5e1;
+      background: #f8fafc;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      margin-top: 4px;
+      margin-bottom: 2px;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+    .autoTradeMasterBanner.active {
+      background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+      border-color: #10b981;
+      box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25), 0 4px 14px rgba(16, 185, 129, 0.15);
+    }
+    .autoTradeMasterBanner.recovery {
+      background: linear-gradient(135deg, #fffbeb 0%, #fef2f2 100%);
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25), 0 4px 14px rgba(239, 68, 68, 0.12);
+    }
+    .autoTradeBannerLeft {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex: 1;
+      min-width: 0;
+    }
+    .autoTradeBannerInfo {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .autoTradeBannerTitleRow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .autoTradeStateTitle {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: #334155;
+      letter-spacing: -0.2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .autoTradeMasterBanner.active .autoTradeStateTitle {
+      color: #065f46;
+    }
+    .autoTradeMasterBanner.recovery .autoTradeStateTitle {
+      color: #991b1b;
+    }
+    .badgeAutoPeriodicStatus {
+      font-size: 10.5px;
+      font-weight: 800;
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid #cbd5e1;
+      background: #f1f5f9;
+      color: #475569;
+      letter-spacing: 0.3px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      text-transform: uppercase;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+    .badgeAutoPeriodicStatus.active {
+      background: #dcfce7;
+      color: #166534;
+      border-color: #86efac;
+      box-shadow: 0 1px 2px rgba(16, 185, 129, 0.2);
+    }
+    .badgeAutoPeriodicStatus.recovery {
+      background: #fee2e2;
+      color: #991b1b;
+      border-color: #fca5a5;
+    }
+    .autoTradeStateDesc {
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+    }
+    .autoTradeMasterBanner.active .autoTradeStateDesc {
+      color: #047857;
+    }
+
+    /* Modern Slide Switch */
+    .autoTradeToggleSwitch {
+      position: relative;
+      display: inline-block;
+      width: 52px;
+      height: 28px;
+      flex-shrink: 0;
+      cursor: pointer;
+      user-select: none;
+    }
+    .autoTradeToggleInput {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+    .autoTradeToggleSlider {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #94a3b8;
+      border-radius: 28px;
+      transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
+    }
+    .autoTradeToggleThumb {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      background-color: #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .autoTradeToggleInput:checked + .autoTradeToggleSlider {
+      background-color: #10b981;
+      box-shadow: inset 0 1px 2px rgba(0,0,0,0.1), 0 0 10px rgba(16, 185, 129, 0.45);
+    }
+    .autoTradeToggleInput:checked + .autoTradeToggleSlider .autoTradeToggleThumb {
+      transform: translateX(24px);
+    }
+    .autoTradeToggleInput:disabled + .autoTradeToggleSlider {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Right side indicator */
+    .autoTradeBannerRight {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .autoTradeStatusMeta {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .autoTradeStatusMeta strong {
+      font-size: 11px;
+      font-weight: 800;
+      color: #475569;
+      letter-spacing: 0.3px;
+    }
+    .autoTradeMasterBanner.active .autoTradeStatusMeta strong {
+      color: #059669;
+    }
+    .autoTradeMasterBanner.recovery .autoTradeStatusMeta strong {
+      color: #b91c1c;
+    }
+    .autoTradeStatusMeta span {
+      font-size: 10px;
+      color: #64748b;
+      font-weight: 600;
+    }
+
+    /* Pulse Indicator */
+    .autoTradePulseIndicator {
+      position: relative;
+      width: 14px;
+      height: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .autoTradePulseIndicator .pulseDot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+    .autoTradePulseIndicator .pulseRing {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid transparent;
+    }
+    .autoTradePulseIndicator.active .pulseDot {
+      background: #10b981;
+    }
+    .autoTradePulseIndicator.active .pulseRing {
+      border-color: #10b981;
+      animation: autoPulseRing 1.8s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .autoTradePulseIndicator.recovery .pulseDot {
+      background: #f59e0b;
+    }
+    .autoTradePulseIndicator.recovery .pulseRing {
+      border-color: #f59e0b;
+      animation: autoPulseRing 1.2s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    @keyframes autoPulseRing {
+      0% { transform: scale(0.7); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+
+    /* Top Mode Live active animation */
+    .tradingModeSwitch button#modeLive.botActiveLive,
+    .tradingModeSwitch button#lighter_modeLive.botActiveLive {
+      background: #059669 !important;
+      color: #fff !important;
+      box-shadow: 0 0 10px rgba(5, 150, 105, 0.5) !important;
+    }
+
+    @media (max-width: 900px) {
+      .autoTradeMasterBanner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .autoTradeBannerRight {
+        align-self: flex-end;
+        text-align: right;
+      }
+    }
+
     .pairOrderTicket.locked {
       opacity: 0.38;
       pointer-events: none;
@@ -2452,7 +2710,7 @@
           <strong id="lblNavTrading">Live & Paper Execution Terminal</strong>
           <small id="subNavTrading">Autonomous Bot & Orders</small>
         </div>
-        <span id="navLivePill" class="navLivePill">BOT READY</span>
+        <span id="navLivePill" class="navLivePill paused">○ AUTO PAUSED</span>
       </button>
       <button id="navTabLighter" class="mainNavBtn" type="button">
         <span class="navBtnIcon">🏛️</span>
@@ -2460,7 +2718,7 @@
           <strong>Institutional Grid Engine</strong>
           <small>Multi-Tier Parity Bands · Auto-Rebalance</small>
         </div>
-        <span class="navLivePill" style="background:#7c3aed;color:#fff;">GRID ARB</span>
+        <span id="navLighterLivePill" class="navLivePill paused">○ GRID PAUSED</span>
       </button>
       <button id="navTabPairs" class="mainNavBtn" type="button">
         <span class="navBtnIcon">⚖️</span>
@@ -3074,26 +3332,49 @@
                 <div id="barTrancheProgress" style="width: 0%; height: 100%; background: linear-gradient(90deg, #10b981 0%, #0284c7 70%, #f59e0b 100%); transition: width 0.3s ease;"></div>
               </div>
 
-              <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 4px;">
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                  <button id="btnStepTranche" class="terminal-action-control" type="button" style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #0284c7; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);">
-                    <span id="lblStepTrancheSize">➕ Scale In (loading size…)</span>
-                    <span id="lblStepTrancheSub" style="font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 5px; border-radius: 4px;">—</span>
-                  </button>
-                  <button id="btnReduceTranche" class="terminal-action-control" type="button" disabled style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #94a3b8; color: #fff; border: 0; border-radius: 6px; cursor: not-allowed; display: flex; align-items: center; gap: 6px;">
-                    <span id="lblReduceTrancheText">🔒 Latest tranche estimated net profit must exceed $0.02</span>
-                  </button>
-                  <button id="btnEmergencyFlatten" class="terminal-action-control" type="button" style="height: 38px; padding: 0 14px; font-size: 12px; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; cursor: pointer;">
-                    🚨 Emergency Flatten
-                  </button>
-                </div>
-                <div style="font-size: 11.5px; color: #64748b; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                  <label class="terminal-action-control" style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
-                    <input id="chkAutoPeriodic48h" type="checkbox" style="width: 15px; height: 15px; cursor: pointer;">
-                    <span id="lblAutoPeriodicText">⚡ 24/7 EC2 Autonomous Auto-Tranche (Runs Server-Side Even When Browser Closed)</span>
+              <!-- 3.1 Prominent Master Autonomous Trading Switch & Status Banner -->
+              <div id="autoTradeMasterBanner" class="autoTradeMasterBanner">
+                <div class="autoTradeBannerLeft">
+                  <label class="autoTradeToggleSwitch terminal-action-control" for="chkAutoPeriodic48h" title="Toggle 24/7 EC2 Autonomous Trading">
+                    <input id="chkAutoPeriodic48h" type="checkbox" class="autoTradeToggleInput">
+                    <span class="autoTradeToggleSlider">
+                      <span class="autoTradeToggleThumb"></span>
+                    </span>
                   </label>
-                  <span id="badgeAutoPeriodicStatus" style="display: none; font-size: 10.5px; font-weight: 800; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 1px 7px; border-radius: 4px;">● EC2 DAEMON ACTIVE</span>
+                  <div class="autoTradeBannerInfo">
+                    <div class="autoTradeBannerTitleRow">
+                      <span id="lblAutoTradeStateTitle" class="autoTradeStateTitle">AUTONOMOUS TRADING: PAUSED</span>
+                      <span id="badgeAutoPeriodicStatus" class="badgeAutoPeriodicStatus">○ EC2 DAEMON PAUSED</span>
+                    </div>
+                    <div id="lblAutoPeriodicText" class="autoTradeStateDesc">
+                      ⚡ 24/7 EC2 Autonomous Auto-Tranche (Runs Server-Side Even When Browser Closed)
+                    </div>
+                  </div>
                 </div>
+                <div class="autoTradeBannerRight">
+                  <div id="autoTradePulseIndicator" class="autoTradePulseIndicator paused">
+                    <span class="pulseRing"></span>
+                    <span class="pulseDot"></span>
+                  </div>
+                  <div class="autoTradeStatusMeta">
+                    <strong id="lblAutoTradeStatusHeading">EC2 DAEMON: STANDBY</strong>
+                    <span id="lblAutoTradeStatusDetail">Click toggle to activate 24/7 server-side execution</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3.2 Manual Tranche Action Buttons -->
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-start; margin-top: 2px;">
+                <button id="btnStepTranche" class="terminal-action-control" type="button" style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #0284c7; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);">
+                  <span id="lblStepTrancheSize">➕ Scale In (loading size…)</span>
+                  <span id="lblStepTrancheSub" style="font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 5px; border-radius: 4px;">—</span>
+                </button>
+                <button id="btnReduceTranche" class="terminal-action-control" type="button" disabled style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #94a3b8; color: #fff; border: 0; border-radius: 6px; cursor: not-allowed; display: flex; align-items: center; gap: 6px;">
+                  <span id="lblReduceTrancheText">🔒 Latest tranche estimated net profit must exceed $0.02</span>
+                </button>
+                <button id="btnEmergencyFlatten" class="terminal-action-control" type="button" style="height: 38px; padding: 0 14px; font-size: 12px; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; cursor: pointer;">
+                  🚨 Emergency Flatten
+                </button>
               </div>
             </div>
           </div>
@@ -11305,6 +11586,38 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if ($("aiSignalBox")) $("aiSignalBox").style.display = "none";
         }
 
+        const isLive = (mode === "live");
+        if ($("modeLive")) $("modeLive").classList.toggle("botActiveLive", isLive);
+
+        const banner = $("autoTradeMasterBanner");
+        const pulseEl = $("autoTradePulseIndicator");
+        const titleEl = $("lblAutoTradeStateTitle");
+        const headingEl = $("lblAutoTradeStatusHeading");
+        const detailEl = $("lblAutoTradeStatusDetail");
+        const navPill = $("navLivePill");
+
+        if (isLive) {
+          if (banner) banner.classList.add("active");
+          if (pulseEl) pulseEl.className = "autoTradePulseIndicator active";
+          if (titleEl) titleEl.textContent = isKo ? "⚡ 자동 매매: 실시간 가동 중" : "⚡ AUTONOMOUS TRADING: ACTIVE";
+          if (headingEl) headingEl.textContent = "EC2 DAEMON: ACTIVE";
+          if (detailEl) detailEl.textContent = isKo ? "백그라운드에서 실시간 주문 체결 중" : "Executing trades 24/7 even if browser closed";
+          if (navPill) {
+            navPill.className = "navLivePill active";
+            navPill.textContent = "● EC2 AUTO ON";
+          }
+        } else {
+          if (banner) banner.classList.remove("active");
+          if (pulseEl) pulseEl.className = "autoTradePulseIndicator paused";
+          if (titleEl) titleEl.textContent = isKo ? "○ 자동 매매: 대기 (일시정지)" : "○ AUTONOMOUS TRADING: PAUSED";
+          if (headingEl) headingEl.textContent = "EC2 DAEMON: STANDBY";
+          if (detailEl) detailEl.textContent = isKo ? "토글 스위치를 켜서 24/7 자동 매매를 시작하세요" : "Click toggle switch to start 24/7 autonomous bot";
+          if (navPill) {
+            navPill.className = "navLivePill paused";
+            navPill.textContent = "○ AUTO PAUSED";
+          }
+        }
+
         if ($("chkAutoPeriodic48h")) {
           $("chkAutoPeriodic48h").checked = (mode === "live");
         }
@@ -12197,30 +12510,81 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const isDaemonOn = Boolean(data.auto_tranche_criteria.backend_auto_tranche_enabled);
             this.state.daemonAutoEnabled = isDaemonOn;
             $("chkAutoPeriodic48h").checked = isDaemonOn;
-            if ($("badgeAutoPeriodicStatus")) {
-              const recovery = data.auto_tranche_criteria.backend_auto_tranche_state?.execution_recovery;
-              const badge = $("badgeAutoPeriodicStatus");
-              badge.style.display = "inline-block";
-              if (recovery) {
+            const recovery = data.auto_tranche_criteria.backend_auto_tranche_state?.execution_recovery;
+            const banner = $("autoTradeMasterBanner");
+            const pulseEl = $("autoTradePulseIndicator");
+            const titleEl = $("lblAutoTradeStateTitle");
+            const badge = $("badgeAutoPeriodicStatus");
+            const headingEl = $("lblAutoTradeStatusHeading");
+            const detailEl = $("lblAutoTradeStatusDetail");
+            const navPill = $("navLivePill");
+            const isKo = window.currentLang === "ko";
+
+            if (banner) banner.classList.remove("active", "recovery");
+            if (pulseEl) pulseEl.className = "autoTradePulseIndicator";
+            if (badge) badge.classList.remove("active", "recovery");
+
+            if (recovery) {
+              if (banner) banner.classList.add("recovery");
+              if (pulseEl) pulseEl.className = "autoTradePulseIndicator recovery";
+              if (titleEl) titleEl.textContent = isKo ? "⚠️ 자동 매매: 중단됨 (복구 필요)" : "⚠️ AUTONOMOUS TRADING: HALTED (RECOVERY REQUIRED)";
+              if (badge) {
+                badge.style.display = "inline-flex";
+                badge.className = "badgeAutoPeriodicStatus recovery";
                 badge.textContent = "⚠ PAUSED — CHECK ORDER OUTCOMES";
                 badge.style.background = "#fee2e2";
                 badge.style.color = "#b91c1c";
                 badge.style.borderColor = "#fca5a5";
                 badge.title = recovery.error || "An order outcome needs reconciliation before trading resumes.";
-              } else if (isDaemonOn) {
+              }
+              if (headingEl) headingEl.textContent = "ORDER RECOVERY REQUIRED";
+              if (detailEl) detailEl.textContent = recovery.error ? recovery.error.substring(0, 48) : (isKo ? "오더 복구 필요 (재개 전 확인)" : "Order reconciliation required before resuming");
+              if (navPill) {
+                navPill.className = "navLivePill recovery";
+                navPill.textContent = "⚠ RECOVERY";
+              }
+              if ($("modeLive")) $("modeLive").classList.remove("botActiveLive");
+            } else if (isDaemonOn) {
+              if (banner) banner.classList.add("active");
+              if (pulseEl) pulseEl.className = "autoTradePulseIndicator active";
+              if (titleEl) titleEl.textContent = isKo ? "⚡ 자동 매매: 실시간 가동 중" : "⚡ AUTONOMOUS TRADING: ACTIVE";
+              if (badge) {
+                badge.style.display = "inline-flex";
+                badge.className = "badgeAutoPeriodicStatus active";
                 badge.textContent = "● EC2 DAEMON ACTIVE";
                 badge.style.background = "#ecfdf5";
                 badge.style.color = "#059669";
                 badge.style.borderColor = "#a7f3d0";
                 badge.title = "24/7 Autonomous background daemon is running on EC2";
-              } else {
+              }
+              if (headingEl) headingEl.textContent = "EC2 DAEMON: ACTIVE";
+              if (detailEl) detailEl.textContent = isKo ? "백그라운드에서 실시간 주문 체결 중" : "Executing trades 24/7 even if browser closed";
+              if (navPill) {
+                navPill.className = "navLivePill active";
+                navPill.textContent = "● EC2 AUTO ON";
+              }
+              if ($("modeLive")) $("modeLive").classList.add("botActiveLive");
+            } else {
+              if (pulseEl) pulseEl.className = "autoTradePulseIndicator paused";
+              if (titleEl) titleEl.textContent = isKo ? "○ 자동 매매: 대기 (일시정지)" : "○ AUTONOMOUS TRADING: PAUSED";
+              if (badge) {
+                badge.style.display = "inline-flex";
+                badge.className = "badgeAutoPeriodicStatus";
                 badge.textContent = "○ EC2 DAEMON PAUSED";
                 badge.style.background = "#f1f5f9";
                 badge.style.color = "#475569";
                 badge.style.borderColor = "#cbd5e1";
                 badge.title = "Autonomous daemon is paused on EC2";
               }
+              if (headingEl) headingEl.textContent = "EC2 DAEMON: STANDBY";
+              if (detailEl) detailEl.textContent = isKo ? "토글 스위치를 켜서 24/7 자동 매매를 시작하세요" : "Click toggle switch to start 24/7 autonomous bot";
+              if (navPill) {
+                navPill.className = "navLivePill paused";
+                navPill.textContent = "○ AUTO PAUSED";
+              }
+              if ($("modeLive")) $("modeLive").classList.remove("botActiveLive");
             }
+
             const authoritativeMode = isDaemonOn ? "live" : (this.state.mode === "live" ? "paper" : this.state.mode);
             if (authoritativeMode !== this.state.mode) {
               this.applyModeUI(authoritativeMode);

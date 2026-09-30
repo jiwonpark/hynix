@@ -33,12 +33,24 @@ class TestTerminalSync(unittest.TestCase):
         self.assertIn("const authoritativeMode = isDaemonOn ? \"live\" : (this.state.mode === \"live\" ? \"paper\" : this.state.mode)", html)
         self.assertIn("this.applyModeUI(authoritativeMode)", html)
 
+        # Prominent Master Auto-Trading Banner & Nav Pill
+        self.assertIn('id="autoTradeMasterBanner"', html)
+        self.assertIn('class="autoTradeToggleSwitch', html)
+        self.assertIn('id="navLighterLivePill"', html)
+        self.assertIn('navPill.className = "navLivePill active"', html)
+        self.assertIn('navPill.textContent = "● EC2 AUTO ON"', html)
+
     def test_lighter_tab_lock_guard(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
         
         # toggleLiveBot must check terminal lock and trigger password modal
         self.assertIn("window.terminalLockManager?.openPasswordModal?.()", script)
         self.assertIn("if (window.terminalLockManager?.isLocked)", script)
+
+        # Tab 3 Lighter must update navLighterLivePill and autoTradeMasterBanner
+        self.assertIn('navLighterPill.className = "navLivePill active"', script)
+        self.assertIn('navLighterPill.textContent = "● GRID AUTO ON"', script)
+        self.assertIn('const banner = lid("autoTradeMasterBanner")', script)
 
 if __name__ == "__main__":
     unittest.main()
