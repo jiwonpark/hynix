@@ -223,6 +223,9 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("const exit = p.exits[i] || p.exits[p.exits.length - 1];", script)
         # Verify individual exit rows are preserved when !this.groupTradesAsRange
         self.assertIn("if (rows.length === 1 || !this.groupTradesAsRange)", script)
+        # Verify individual marker hover does not blink all markers on the candle
+        self.assertIn("!this.activeHoveredExecutionMarkerKey && exit.time === hoveredMarker.time", script)
+        self.assertIn("const matched = tradePairs.filter((p) => p.exit.markerKey === marker.markerKey);", script)
 
     def test_parity_markers_direction_and_pairkey_stamped(self):
         from backend.server import get_lighter_parity, lighter_pair_bot, lighter_client

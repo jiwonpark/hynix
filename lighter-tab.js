@@ -2367,7 +2367,7 @@
         const isShort = this.isShortTrade(marker);
         const matchedPairs = tradePairs.filter((p) =>
           p.exit.markerKey === marker.markerKey
-          || (p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
+          || (!this.activeHoveredExecutionMarkerKey && p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
         );
         if (matchedPairs.length > 1) {
           let totalPnl = 0;
@@ -2790,23 +2790,20 @@
           target.addEventListener("mouseenter", () => {
             const relatedTargets = [];
             if (!isEntry) {
-              const matched = tradePairs.filter((p) =>
-                p.exit.markerKey === marker.markerKey
-                || (p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
-              );
+              const matched = tradePairs.filter((p) => p.exit.markerKey === marker.markerKey);
               matched.forEach((p) => {
                 const et = targetsByMarkerKey.get(p.entry.markerKey);
                 if (et) relatedTargets.push(et);
               });
             } else {
-              const matched = tradePairs.find((p) => p.entry.markerKey === marker.markerKey);
-              if (matched) {
-                const xt = targetsByMarkerKey.get(matched.exit.markerKey);
+              const matched = tradePairs.filter((p) => p.entry.markerKey === marker.markerKey);
+              matched.forEach((p) => {
+                const xt = targetsByMarkerKey.get(p.exit.markerKey);
                 if (xt) relatedTargets.push(xt);
-              }
+              });
             }
-            const allTargets = [target, ...relatedTargets, ...(targetsByPair.get(pairKey) || [])];
-            allTargets.forEach((pairTarget) => {
+            const allTargets = [target, ...relatedTargets];
+            new Set(allTargets).forEach((pairTarget) => {
               pairTarget._blinkAnimation?.cancel();
               pairTarget._blinkAnimation = pairTarget.animate(
                 [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
@@ -2815,30 +2812,27 @@
             });
             this.activeHoveredExecutionMarkerTime = marker.time;
             this.activeHoveredExecutionMarkerKey = marker.markerKey;
-            this.activeHoveredPairKey = pairKey;
+            this.activeHoveredPairKey = marker.pairKey || null;
             this.updateMarkerState(marker.time, marker);
             this.renderTradeTriangles();
           });
           target.addEventListener("mouseleave", () => {
             const relatedTargets = [];
             if (!isEntry) {
-              const matched = tradePairs.filter((p) =>
-                p.exit.markerKey === marker.markerKey
-                || (p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
-              );
+              const matched = tradePairs.filter((p) => p.exit.markerKey === marker.markerKey);
               matched.forEach((p) => {
                 const et = targetsByMarkerKey.get(p.entry.markerKey);
                 if (et) relatedTargets.push(et);
               });
             } else {
-              const matched = tradePairs.find((p) => p.entry.markerKey === marker.markerKey);
-              if (matched) {
-                const xt = targetsByMarkerKey.get(matched.exit.markerKey);
+              const matched = tradePairs.filter((p) => p.entry.markerKey === marker.markerKey);
+              matched.forEach((p) => {
+                const xt = targetsByMarkerKey.get(p.exit.markerKey);
                 if (xt) relatedTargets.push(xt);
-              }
+              });
             }
-            const allTargets = [target, ...relatedTargets, ...(targetsByPair.get(pairKey) || [])];
-            allTargets.forEach((pairTarget) => {
+            const allTargets = [target, ...relatedTargets];
+            new Set(allTargets).forEach((pairTarget) => {
               pairTarget._blinkAnimation?.cancel();
               pairTarget._blinkAnimation = null;
             });
@@ -2894,24 +2888,24 @@
 
         const isExitHovered = isHoveredExit && (
           exit.markerKey === hoveredMarker.markerKey
-          || (exit.time === hoveredMarker.time && this.isShortTrade(exit) === this.isShortTrade(hoveredMarker))
+          || (!this.activeHoveredExecutionMarkerKey && exit.time === hoveredMarker.time && this.isShortTrade(exit) === this.isShortTrade(hoveredMarker))
         );
         const isEntryHovered = !isHoveredExit && hoveredMarker && (
           entry.markerKey === hoveredMarker.markerKey
-          || (entry.time === hoveredMarker.time && this.isShortTrade(entry) === this.isShortTrade(hoveredMarker))
+          || (!this.activeHoveredExecutionMarkerKey && entry.time === hoveredMarker.time && this.isShortTrade(entry) === this.isShortTrade(hoveredMarker))
         );
 
         const isExitSelected = isSelectedExit && (
           exit.markerKey === selectedMarker.markerKey
-          || (exit.time === selectedMarker.time && this.isShortTrade(exit) === this.isShortTrade(selectedMarker))
+          || (!this.selectedExecutionMarkerKey && exit.time === selectedMarker.time && this.isShortTrade(exit) === this.isShortTrade(selectedMarker))
         );
         const isEntrySelected = !isSelectedExit && selectedMarker && (
           entry.markerKey === selectedMarker.markerKey
-          || (entry.time === selectedMarker.time && this.isShortTrade(entry) === this.isShortTrade(selectedMarker))
+          || (!this.selectedExecutionMarkerKey && entry.time === selectedMarker.time && this.isShortTrade(entry) === this.isShortTrade(selectedMarker))
         );
 
-        const isPairHovered = Boolean(this.activeHoveredPairKey && pairKey === this.activeHoveredPairKey);
-        const isPairSelected = Boolean(this.selectedPairKey && pairKey === this.selectedPairKey);
+        const isPairHovered = Boolean(!this.activeHoveredExecutionMarkerKey && this.activeHoveredPairKey && pairKey === this.activeHoveredPairKey);
+        const isPairSelected = Boolean(!this.selectedExecutionMarkerKey && this.selectedPairKey && pairKey === this.selectedPairKey);
 
         const isHovered = isExitHovered || isEntryHovered || isPairHovered;
         const isSelected = isExitSelected || isEntrySelected || isPairSelected;
