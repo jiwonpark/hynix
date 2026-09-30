@@ -214,6 +214,16 @@ class TestLighterTab(unittest.TestCase):
         # Verify individual trade markers are stacked vertically on exact candle timestamp x
         self.assertIn("const finalX = x;", script)
 
+    def test_multiple_entry_to_multiple_exit_1_to_1_triangle_mapping(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        # Verify pre-matched pairKey is checked and spliced 1-to-1 without emptying the stack
+        self.assertIn("preMatchedIdx = stack.findIndex((e) => e.pairKey === marker.pairKey);", script)
+        self.assertIn("closedEntries = [stack.splice(preMatchedIdx, 1)[0]];", script)
+        # Verify getTradePairs maps each entry 1-to-1 to each exit
+        self.assertIn("const exit = p.exits[i] || p.exits[p.exits.length - 1];", script)
+        # Verify individual exit rows are preserved when !this.groupTradesAsRange
+        self.assertIn("if (rows.length === 1 || !this.groupTradesAsRange)", script)
+
     def test_parity_markers_direction_and_pairkey_stamped(self):
         from backend.server import get_lighter_parity, lighter_pair_bot, lighter_client
 

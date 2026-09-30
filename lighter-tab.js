@@ -2536,10 +2536,16 @@
       const tradePairs = [];
       pairMap.forEach((p, pairKey) => {
         if (p.entries.length && p.exits.length) {
-          p.entries.forEach((entry, idx) => {
-            const exit = p.exits[idx] || p.exits[0];
-            tradePairs.push({ entry, exit, pairKey });
-          });
+          if (p.entries.length === 1 && p.exits.length === 1) {
+            tradePairs.push({ entry: p.entries[0], exit: p.exits[0], pairKey });
+          } else {
+            // Map entries 1-to-1 to each corresponding exit
+            for (let i = 0; i < p.entries.length; i++) {
+              const entry = p.entries[i];
+              const exit = p.exits[i] || p.exits[p.exits.length - 1];
+              tradePairs.push({ entry, exit, pairKey });
+            }
+          }
         }
       });
       return tradePairs;
@@ -3628,8 +3634,8 @@
         }
       });
       exitBucketMap.forEach((rows) => {
-        if (rows.length === 1) {
-          paperRows.push(rows[0]);
+        if (rows.length === 1 || !this.groupTradesAsRange) {
+          rows.forEach((r) => paperRows.push(r));
         } else {
           const totalPnl = rows.reduce((s, r) => s + (Number(r.pnl) || 0), 0);
           const totalNotional = rows.reduce((s, r) => s + (Number(r.notional) || 0), 0);
@@ -3693,37 +3699,48 @@
           stack.push(marker);
           openPairs.set(stream, stack);
         } else {
-          const isCampaign = Boolean(
-            marker.is_campaign_exit
-            || marker.is_paper
-            || (marker.count && marker.count >= stack.length)
-            || (marker.count == null && stack.length > 0 && !marker.is_partial)
-          );
-
           let closedEntries = [];
-          if (isCampaign) {
-            closedEntries = [...stack];
-            stack.length = 0;
-          } else if (marker.count && marker.count > 1) {
-            const n = Math.min(marker.count, stack.length);
-            closedEntries = stack.splice(-n);
-          } else {
-            const entry = stack.pop();
-            if (entry) closedEntries = [entry];
+
+          // 1. If this exit marker has a pre-assigned pairKey matching an entry in the stack, pair 1-to-1
+          let preMatchedIdx = -1;
+          if (marker.pairKey) {
+            preMatchedIdx = stack.findIndex((e) => e.pairKey === marker.pairKey);
           }
 
-          pairSequence += 1;
-          const assignedPairKey = marker.pairKey || `${stream}:pair:${pairSequence}`;
-          marker.pairKey = assignedPairKey;
+          if (preMatchedIdx >= 0) {
+            closedEntries = [stack.splice(preMatchedIdx, 1)[0]];
+            if (closedEntries[0]?.direction && !marker.direction) marker.direction = closedEntries[0].direction;
+          } else {
+            // 2. Otherwise match: only true multi-tranche campaigns close multiple entries
+            const isCampaign = Boolean(
+              marker.is_campaign_exit
+              || (marker.count && marker.count > 1 && marker.count >= stack.length)
+            );
 
-          if (closedEntries.length > 0) {
-            closedEntries.forEach((entry) => {
-              entry.pairKey = assignedPairKey;
-              if (!entry.direction && marker.direction) entry.direction = marker.direction;
-            });
-            if (closedEntries[0]?.direction) marker.direction = closedEntries[0].direction;
-          } else if (!marker.pairKey) {
-            marker.pairKey = `${stream}:unmatched:${index}`;
+            if (isCampaign) {
+              closedEntries = [...stack];
+              stack.length = 0;
+            } else if (marker.count && marker.count > 1) {
+              const n = Math.min(marker.count, stack.length);
+              closedEntries = stack.splice(-n);
+            } else {
+              const entry = stack.pop();
+              if (entry) closedEntries = [entry];
+            }
+
+            pairSequence += 1;
+            const assignedPairKey = marker.pairKey || `${stream}:pair:${pairSequence}`;
+            marker.pairKey = assignedPairKey;
+
+            if (closedEntries.length > 0) {
+              closedEntries.forEach((entry) => {
+                if (!entry.pairKey) entry.pairKey = assignedPairKey;
+                if (!entry.direction && marker.direction) entry.direction = marker.direction;
+              });
+              if (closedEntries[0]?.direction && !marker.direction) marker.direction = closedEntries[0].direction;
+            } else if (!marker.pairKey) {
+              marker.pairKey = `${stream}:unmatched:${index}`;
+            }
           }
           openPairs.set(stream, stack);
         }
