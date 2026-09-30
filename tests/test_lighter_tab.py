@@ -227,6 +227,17 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("Paper Entry Blocked", script)
         self.assertIn("Paper Exit Blocked", script)
 
+    def test_converging_fan_multi_entry_triangles_and_campaign_tooltip(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        self.assertIn("getTradePairs()", script)
+        self.assertIn("SHORT CAMPAIGN", script)
+        self.assertIn("${dirLabel} EXIT", script)
+        self.assertIn("targetsByMarkerKey", script)
+        self.assertIn("isExitHovered", script)
+        self.assertIn("isEntryHovered", script)
+        self.assertIn("matchedPairs.length > 1", script)
+        self.assertIn("trancheRows", script)
+
 
 if __name__ == "__main__":
     unittest.main()

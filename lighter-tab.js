@@ -2356,12 +2356,74 @@
         overlay.textContent = "";
         return;
       }
+      const isExit = !this.isTradeEntry(marker);
+      if (isExit) {
+        const tradePairs = this.getTradePairs();
+        const isShort = this.isShortTrade(marker);
+        const matchedPairs = tradePairs.filter((p) =>
+          p.exit.markerKey === marker.markerKey
+          || (p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
+        );
+        if (matchedPairs.length > 1) {
+          let totalPnl = 0;
+          let hasPnl = false;
+          matchedPairs.forEach((p) => {
+            const pnlVal = p.exit.pnl ?? p.entry.pnl;
+            if (pnlVal != null && Number.isFinite(pnlVal)) {
+              totalPnl += pnlVal;
+              hasPnl = true;
+            }
+          });
+          const dirLabel = isShort ? "SHORT CAMPAIGN" : "LONG CAMPAIGN";
+          const exitPrice = Number(marker.ratio ?? marker.exit_price ?? marker.entry_price);
+          const isProfit = totalPnl >= 0;
+          const pnlText = hasPnl ? `${isProfit ? "+" : ""}$${totalPnl.toFixed(2)}` : "";
+          const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
+          const source = marker.source === "actual" ? "ACTUAL" : (marker.backtest ? "BACKTEST" : "PAPER");
+
+          const trancheRows = matchedPairs.map((p, idx) => {
+            const ep = Number(p.entry.ratio ?? p.entry.entry_price);
+            const pnlVal = p.exit.pnl ?? p.entry.pnl;
+            const pnlStr = (pnlVal != null && Number.isFinite(pnlVal))
+              ? ` · <span style="color:${pnlVal >= 0 ? '#16a34a' : '#dc2626'}">${pnlVal >= 0 ? '+' : ''}$${pnlVal.toFixed(2)}</span>`
+              : "";
+            const returnPct = (Number.isFinite(ep) && Number.isFinite(exitPrice) && ep > 0)
+              ? (isShort ? (ep - exitPrice) / ep * 100 : (exitPrice - ep) / ep * 100)
+              : null;
+            const retStr = returnPct != null ? ` (${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}%)` : "";
+            return `<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;font-weight:700;padding:1px 0;">
+              <span>#${idx + 1} Entry @ ${ep.toFixed(2)}%</span>
+              <span>${retStr}${pnlStr}</span>
+            </div>`;
+          }).join("");
+
+          overlay.innerHTML = `
+            <div style="font-weight:900;font-size:11px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #e2e8f0;padding-bottom:3px;">
+              <span>🏁 ${source} · ${dirLabel} EXIT (${matchedPairs.length} Tranches)</span>
+              ${pnlText ? `<span style="color:${isProfit ? '#16a34a' : '#dc2626'};font-weight:900;">${pnlText}</span>` : ""}
+            </div>
+            <div style="display:flex;flex-direction:column;gap:1px;margin-bottom:3px;">
+              ${trancheRows}
+            </div>
+            <div style="font-size:9.5px;color:#64748b;font-weight:700;display:flex;justify-content:space-between;">
+              <span>Exit Price: ${exitPrice.toFixed(2)}%</span>
+              <span>${timeText}</span>
+            </div>
+          `;
+          overlay.style.display = "block";
+          overlay.style.borderColor = isProfit ? "#86efac" : "#fca5a5";
+          overlay.style.color = "#0f172a";
+          return;
+        }
+      }
+
       const source = marker.source === "actual" ? "ACTUAL" : (marker.backtest ? "BACKTEST" : "PAPER");
       const siblings = this.executionMarkersAtTime(marker.time);
       const ordinal = siblings.findIndex((candidate) => candidate.markerKey === marker.markerKey) + 1;
       const position = siblings.length > 1 ? ` · trade ${ordinal}/${siblings.length}` : "";
       const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
       overlay.textContent = `${source}${position} · ${marker.hoverText || "Trade"} · ${timeText}`;
+      overlay.style.display = "block";
       const markerColor = this.tradeMarkerColor(marker);
       overlay.style.borderColor = markerColor === "#dc2626" ? "#fca5a5" : "#86efac";
       overlay.style.color = markerColor === "#dc2626" ? "#991b1b" : "#166534";
@@ -2404,11 +2466,42 @@
       return isEntry ? "▶" : "◀";
     },
 
+    getTradePairs() {
+      const visible = (this.rawExecutionMarkers || []).filter((m) => this.isTradeMarkerVisible(m));
+      if (!visible.length) return [];
+
+      const pairMap = new Map();
+      visible.forEach((marker) => {
+        const key = marker.pairKey;
+        if (!key) return;
+        const p = pairMap.get(key) || { entries: [], exits: [] };
+        if (this.isTradeEntry(marker)) {
+          p.entries.push(marker);
+        } else {
+          p.exits.push(marker);
+        }
+        pairMap.set(key, p);
+      });
+
+      const tradePairs = [];
+      pairMap.forEach((p, pairKey) => {
+        if (p.entries.length && p.exits.length) {
+          p.entries.forEach((entry, idx) => {
+            const exit = p.exits[idx] || p.exits[0];
+            tradePairs.push({ entry, exit, pairKey });
+          });
+        }
+      });
+      return tradePairs;
+    },
+
     renderTradeMarkerTargets() {
       const layer = lid("tradeMarkerTargets");
       if (!layer || !this.chart || !this.series) return;
       layer.textContent = "";
+      const tradePairs = this.getTradePairs();
       const targetsByPair = new Map();
+      const targetsByMarkerKey = new Map();
       const visible = (this.rawExecutionMarkers || []).filter((marker) => this.isTradeMarkerVisible(marker));
       const groups = new Map();
       visible.forEach((marker) => {
@@ -2555,8 +2648,28 @@
           const pairTargets = targetsByPair.get(pairKey) || [];
           pairTargets.push(target);
           targetsByPair.set(pairKey, pairTargets);
+          targetsByMarkerKey.set(marker.markerKey, target);
+
           target.addEventListener("mouseenter", () => {
-            (targetsByPair.get(pairKey) || [target]).forEach((pairTarget) => {
+            const relatedTargets = [];
+            if (!isEntry) {
+              const matched = tradePairs.filter((p) =>
+                p.exit.markerKey === marker.markerKey
+                || (p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
+              );
+              matched.forEach((p) => {
+                const et = targetsByMarkerKey.get(p.entry.markerKey);
+                if (et) relatedTargets.push(et);
+              });
+            } else {
+              const matched = tradePairs.find((p) => p.entry.markerKey === marker.markerKey);
+              if (matched) {
+                const xt = targetsByMarkerKey.get(matched.exit.markerKey);
+                if (xt) relatedTargets.push(xt);
+              }
+            }
+            const allTargets = [target, ...relatedTargets, ...(targetsByPair.get(pairKey) || [])];
+            allTargets.forEach((pairTarget) => {
               pairTarget._blinkAnimation?.cancel();
               pairTarget._blinkAnimation = pairTarget.animate(
                 [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
@@ -2570,7 +2683,25 @@
             this.renderTradeTriangles();
           });
           target.addEventListener("mouseleave", () => {
-            (targetsByPair.get(pairKey) || [target]).forEach((pairTarget) => {
+            const relatedTargets = [];
+            if (!isEntry) {
+              const matched = tradePairs.filter((p) =>
+                p.exit.markerKey === marker.markerKey
+                || (p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
+              );
+              matched.forEach((p) => {
+                const et = targetsByMarkerKey.get(p.entry.markerKey);
+                if (et) relatedTargets.push(et);
+              });
+            } else {
+              const matched = tradePairs.find((p) => p.entry.markerKey === marker.markerKey);
+              if (matched) {
+                const xt = targetsByMarkerKey.get(matched.exit.markerKey);
+                if (xt) relatedTargets.push(xt);
+              }
+            }
+            const allTargets = [target, ...relatedTargets, ...(targetsByPair.get(pairKey) || [])];
+            allTargets.forEach((pairTarget) => {
               pairTarget._blinkAnimation?.cancel();
               pairTarget._blinkAnimation = null;
             });
@@ -2604,36 +2735,43 @@
       );
       if (!hasActive) return;
 
-      const visible = (this.rawExecutionMarkers || []).filter((m) => this.isTradeMarkerVisible(m));
-      if (!visible.length) return;
+      const tradePairs = this.getTradePairs();
+      if (!tradePairs.length) return;
 
-      const pairs = new Map();
-      visible.forEach((marker) => {
-        const key = marker.pairKey;
-        if (!key) return;
-        const pair = pairs.get(key) || { entry: null, exit: null };
-        if (marker.is_entry !== false) {
-          if (!pair.entry) pair.entry = marker;
-        } else {
-          if (!pair.exit) pair.exit = marker;
-        }
-        pairs.set(key, pair);
-      });
+      const visible = (this.rawExecutionMarkers || []).filter((m) => this.isTradeMarkerVisible(m));
+      const hoveredMarker = this.activeHoveredExecutionMarkerKey
+        ? visible.find((m) => m.markerKey === this.activeHoveredExecutionMarkerKey)
+        : (this.activeHoveredExecutionMarkerTime
+            ? visible.find((m) => m.time === this.activeHoveredExecutionMarkerTime)
+            : null);
+      const selectedMarker = this.selectedExecutionMarker();
+
+      const isHoveredExit = Boolean(hoveredMarker && !this.isTradeEntry(hoveredMarker));
+      const isSelectedExit = Boolean(selectedMarker && !this.isTradeEntry(selectedMarker));
 
       const fragment = document.createDocumentFragment();
 
-      pairs.forEach((pair, pairKey) => {
-        const { entry, exit } = pair;
+      tradePairs.forEach((pair) => {
+        const { entry, exit, pairKey } = pair;
         if (!entry || !exit) return;
 
-        const isHovered = Boolean(
-          (this.activeHoveredPairKey && pairKey === this.activeHoveredPairKey)
-          || (this.activeHoveredExecutionMarkerKey && (entry.markerKey === this.activeHoveredExecutionMarkerKey || exit.markerKey === this.activeHoveredExecutionMarkerKey))
+        const isExitHovered = isHoveredExit && (
+          exit.markerKey === hoveredMarker.markerKey
+          || (exit.time === hoveredMarker.time && this.isShortTrade(exit) === this.isShortTrade(hoveredMarker))
         );
-        const isSelected = Boolean(
-          (this.selectedPairKey && pairKey === this.selectedPairKey)
-          || (this.selectedExecutionMarkerKey && (entry.markerKey === this.selectedExecutionMarkerKey || exit.markerKey === this.selectedExecutionMarkerKey))
+        const isEntryHovered = !isHoveredExit && hoveredMarker && (entry.markerKey === hoveredMarker.markerKey);
+
+        const isExitSelected = isSelectedExit && (
+          exit.markerKey === selectedMarker.markerKey
+          || (exit.time === selectedMarker.time && this.isShortTrade(exit) === this.isShortTrade(selectedMarker))
         );
+        const isEntrySelected = !isSelectedExit && selectedMarker && (entry.markerKey === selectedMarker.markerKey);
+
+        const isPairHovered = Boolean(this.activeHoveredPairKey && pairKey === this.activeHoveredPairKey);
+        const isPairSelected = Boolean(this.selectedPairKey && pairKey === this.selectedPairKey);
+
+        const isHovered = isExitHovered || isEntryHovered || isPairHovered;
+        const isSelected = isExitSelected || isEntrySelected || isPairSelected;
         if (!isHovered && !isSelected) return;
 
         const p1 = Number(entry.ratio ?? entry.entry_price);
@@ -2654,6 +2792,8 @@
 
         const isShort = this.isShortTrade(entry);
 
+        const origX1 = x1, origY1 = y1;
+        const origX2 = x2, origY2 = y2;
         if (x1 > x2) {
           const tx = x1; x1 = x2; x2 = tx;
           const ty = y1; y1 = y2; y2 = ty;
@@ -2686,8 +2826,8 @@
         }
         const pts = `${x1.toFixed(1)},${y1.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
 
-        const fillColor = isProfit ? "rgba(34, 197, 94, 0.14)" : "rgba(239, 68, 68, 0.14)";
-        const strokeColor = isProfit ? "rgba(22, 163, 74, 0.70)" : "rgba(220, 38, 38, 0.70)";
+        const fillColor = isProfit ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)";
+        const strokeColor = isProfit ? "rgba(22, 163, 74, 0.65)" : "rgba(220, 38, 38, 0.65)";
         const diagStroke = isProfit ? "#16a34a" : "#dc2626";
 
         const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
@@ -2699,10 +2839,10 @@
         fragment.appendChild(polygon);
 
         const diag = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        diag.setAttribute("x1", x1.toFixed(1));
-        diag.setAttribute("y1", y1.toFixed(1));
-        diag.setAttribute("x2", x2.toFixed(1));
-        diag.setAttribute("y2", y2.toFixed(1));
+        diag.setAttribute("x1", origX1.toFixed(1));
+        diag.setAttribute("y1", origY1.toFixed(1));
+        diag.setAttribute("x2", origX2.toFixed(1));
+        diag.setAttribute("y2", origY2.toFixed(1));
         diag.setAttribute("stroke", diagStroke);
         diag.setAttribute("stroke-width", "1");
         diag.style.transition = "stroke-width 0.15s ease, stroke 0.15s ease";
