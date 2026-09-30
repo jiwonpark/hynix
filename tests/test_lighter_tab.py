@@ -211,6 +211,9 @@ class TestLighterTab(unittest.TestCase):
         # Verify CSS styling in index.html
         self.assertIn(".executionChartGrouping", index_html)
 
+        # Verify individual trade markers are stacked vertically on exact candle timestamp x
+        self.assertIn("const finalX = x;", script)
+
     def test_parity_markers_direction_and_pairkey_stamped(self):
         from backend.server import get_lighter_parity, lighter_pair_bot, lighter_client
 

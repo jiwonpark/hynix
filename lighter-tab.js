@@ -2741,9 +2741,8 @@
           const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
           let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
           if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
-          // Small same-candle groups stay at their actual prices with a bounded
-          // offset so each marker remains individually targetable.
-          const finalX = x + (index - (markers.length - 1) / 2) * 8;
+          // Individual trade markers are stacked vertically on the exact candle timestamp x
+          const finalX = x;
           const finalY = Math.max(6, Math.min(Math.max(6, layer.clientHeight - 6), y));
           marker._targetX = finalX;
           marker._targetY = finalY;
