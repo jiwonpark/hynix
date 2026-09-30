@@ -517,7 +517,7 @@
           virtual: { label: "Virtual", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
           status: "PAPER ONLY · Select a strategy and interval, then rerun",
           description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
-          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry</span><span><strong style="color:#16a34a">◀</strong> Long Exit</span><span><strong style="color:#dc2626">▶</strong> Short Entry</span><span><strong style="color:#dc2626">◀</strong> Short Exit</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
+          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
         });
         [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
         const chartHost = lid("shortTermSpreadChartHost");
@@ -2228,12 +2228,13 @@
         .map((marker) => {
           const isEntry = marker.is_entry !== false;
           const isShort = marker.direction ? marker.direction === "short" : (isEntry ? (marker.side < 0) : (marker.side > 0));
-          const markerColor = isShort ? "#dc2626" : "#16a34a";
+          const isSell = isShort === isEntry;
+          const markerColor = isSell ? "#dc2626" : "#16a34a";
           const markerShape = isEntry ? "arrowRight" : "arrowLeft";
           return {
             time: marker.time,
-            position: marker.position || (isShort ? "aboveBar" : "belowBar"),
-            color: marker.color || (isShort ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
+            position: marker.position || (isSell ? "aboveBar" : "belowBar"),
+            color: marker.color || (isSell ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
             activeColor: marker.activeColor || markerColor,
             shape: markerShape,
             text: "",
@@ -2370,8 +2371,19 @@
       return false;
     },
 
+    isTradeSell(marker) {
+      const isShort = this.isShortTrade(marker);
+      const isEntry = this.isTradeEntry(marker);
+      // For Short position: entry is Sell (short), exit is Buy (cover).
+      // For Long position: entry is Buy (long), exit is Sell.
+      // Therefore, the trade itself is a SELL if: (isShort && isEntry) || (!isShort && !isEntry)
+      return isShort === isEntry;
+    },
+
     tradeMarkerColor(marker) {
-      return this.isShortTrade(marker) ? "#dc2626" : "#16a34a";
+      // Color according to the direction of the trade itself:
+      // Sell = Red (#dc2626), Buy = Green (#16a34a)
+      return this.isTradeSell(marker) ? "#dc2626" : "#16a34a";
     },
 
     tradeMarkerGlyph(marker) {
@@ -2430,14 +2442,14 @@
             const bottomLocal = visualBottom - buttonTop;
             const avgLocal = avgY - buttonTop;
 
-            const shortCount = markers.filter((m) => this.isShortTrade(m)).length;
-            const longCount = markers.length - shortCount;
+            const sellCount = markers.filter((m) => this.isTradeSell(m)).length;
+            const buyCount = markers.length - sellCount;
             const entryCount = markers.filter((m) => this.isTradeEntry(m)).length;
             const exitCount = markers.length - entryCount;
 
-            const dominantShort = shortCount >= longCount;
+            const dominantSell = sellCount >= buyCount;
             const dominantEntry = entryCount >= exitCount;
-            const markerColor = dominantShort ? "#dc2626" : "#16a34a";
+            const markerColor = dominantSell ? "#dc2626" : "#16a34a";
 
             const range = document.createElement("button");
             range.type = "button";
@@ -2462,6 +2474,8 @@
             }
 
             range.addEventListener("mouseenter", () => {
+              const shortCount = markers.filter((m) => this.isShortTrade(m)).length;
+              const longCount = markers.length - shortCount;
               range._blinkAnimation?.cancel();
               range._blinkAnimation = range.animate(
                 [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
@@ -2469,7 +2483,7 @@
               );
               const overlay = lid("tradeMarkerHover");
               if (!overlay) return;
-              overlay.textContent = `${markers.length} PAIRED TRADES · ${entryCount} entries / ${exitCount} exits · ${longCount} long / ${shortCount} short · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}%`;
+              overlay.textContent = `${markers.length} PAIRED TRADES · ${entryCount} entries / ${exitCount} exits · ${buyCount} buy / ${sellCount} sell · ${longCount} long / ${shortCount} short · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}%`;
               overlay.style.display = "block";
               overlay.style.borderColor = markerColor === "#dc2626" ? "#fca5a5" : "#86efac";
               overlay.style.color = markerColor === "#dc2626" ? "#991b1b" : "#166534";
@@ -3120,12 +3134,13 @@
         .map((row) => {
         const isExit = row.action === "EXIT";
         const isShort = row.side < 0 || row.action === "SHORT RATIO";
-        const markerColor = isShort ? "#dc2626" : "#16a34a";
+        const isSell = isShort ? !isExit : isExit;
+        const markerColor = isSell ? "#dc2626" : "#16a34a";
         const markerShape = isExit ? "arrowLeft" : "arrowRight";
         return {
           time: TerminalCommon.alignTime(this.bars, row.time / 1000),
-          position: isShort ? "aboveBar" : "belowBar",
-          color: isShort ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)",
+          position: isSell ? "aboveBar" : "belowBar",
+          color: isSell ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)",
           activeColor: markerColor,
           shape: markerShape,
           text: "",
@@ -3255,7 +3270,7 @@
             time: trade.entry_time,
             position: trade.side < 0 ? "aboveBar" : "belowBar",
             color: trade.side < 0 ? "rgba(220,38,38,.55)" : "rgba(22,163,74,.55)",
-            shape: trade.side < 0 ? "arrowDown" : "arrowUp",
+            shape: "arrowRight",
             text: "",
             hoverText: `${trade.side < 0 ? "SHORT" : "BUY"} ${trade.entry ? trade.entry.toFixed(2) + "%" : ""}`,
             source: "virtual",
@@ -3271,7 +3286,7 @@
             time: trade.exit_time,
             position: trade.side < 0 ? "belowBar" : "aboveBar",
             color: trade.side < 0 ? "rgba(22,163,74,.55)" : "rgba(220,38,38,.55)",
-            shape: trade.side < 0 ? "arrowUp" : "arrowDown",
+            shape: "arrowLeft",
             text: "",
             hoverText: `${trade.side < 0 ? "COVER" : "SELL"} ${trade.exit ? trade.exit.toFixed(2) + "%" : ""} · ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}% net`,
             source: "virtual",
