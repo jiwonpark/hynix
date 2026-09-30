@@ -191,6 +191,26 @@ class TestLighterTab(unittest.TestCase):
         # Verify target registration for grouped trades
         self.assertIn('targetsByMarkerKey.set(marker.markerKey, range)', script)
 
+    def test_trade_marker_grouping_toggle_and_individual_trade_option(self):
+        script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
+        chart_script = (ROOT / "strategy-execution-chart.js").read_text(encoding="utf-8")
+        index_html = (ROOT / "index.html").read_text(encoding="utf-8")
+
+        # Verify lighter-tab has groupTradesAsRange state and setTradeGrouping method
+        self.assertIn("groupTradesAsRange", script)
+        self.assertIn("setTradeGrouping(asRange)", script)
+        self.assertIn("lighter_group_trades_as_range", script)
+        self.assertIn("const denseGroup = this.groupTradesAsRange && markers.length > 1;", script)
+
+        # Verify strategy-execution-chart has grouping toolbar UI and methods
+        self.assertIn("executionChartGrouping", chart_script)
+        self.assertIn("ids.individualTrades", chart_script)
+        self.assertIn("ids.rangeTrades", chart_script)
+        self.assertIn("setGrouping(asRange)", chart_script)
+
+        # Verify CSS styling in index.html
+        self.assertIn(".executionChartGrouping", index_html)
+
     def test_parity_markers_direction_and_pairkey_stamped(self):
         from backend.server import get_lighter_parity, lighter_pair_bot, lighter_client
 

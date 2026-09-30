@@ -81,6 +81,7 @@
     backtestMarkers: [],
     showActualMarkers: true,
     showVirtualMarkers: true,
+    groupTradesAsRange: (typeof localStorage !== "undefined" && localStorage.getItem("lighter_group_trades_as_range") === "true"),
     interval: "15m",
     smallTrendInterval: "5m",
     bigTrendInterval: "1h",
@@ -515,6 +516,10 @@
           action: { label: "Rerun Paper", onClick: () => this.runBacktest() },
           actual: { label: "Actual", onToggle: () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
           virtual: { label: "Virtual", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
+          grouping: {
+            asRange: this.groupTradesAsRange,
+            onChange: (asRange) => this.setTradeGrouping(asRange),
+          },
           status: "PAPER ONLY · Select a strategy and interval, then rerun",
           description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
           legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
@@ -2564,7 +2569,7 @@
           });
           return;
         }
-        const denseGroup = markers.length > 1;
+        const denseGroup = this.groupTradesAsRange && markers.length > 1;
         if (denseGroup) {
           const pricedMarkers = markers.map((marker) => ({
             marker,
@@ -3758,11 +3763,22 @@
       this.executionChartController?.setVisibility("virtual", this.showVirtualMarkers);
       this.executionChartFrame?.setVisibility("actual", this.showActualMarkers);
       this.executionChartFrame?.setVisibility("virtual", this.showVirtualMarkers);
+      this.executionChartFrame?.setGrouping?.(this.groupTradesAsRange);
       this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
       this.renderTradeMarkerTargets();
       if (this.activeHoveredExecutionMarkerTime === null) {
         this.renderCurrentPositionReferenceLines();
       }
+    },
+
+    setTradeGrouping(asRange) {
+      this.groupTradesAsRange = Boolean(asRange);
+      try {
+        localStorage.setItem("lighter_group_trades_as_range", this.groupTradesAsRange ? "true" : "false");
+      } catch (e) {}
+      this.executionChartFrame?.setGrouping?.(this.groupTradesAsRange);
+      this.renderTradeMarkerTargets();
+      this.renderTradeTriangles();
     },
 
     toggleMA(period) {

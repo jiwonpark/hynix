@@ -24,6 +24,11 @@
       const actual = options.actual || {};
       const virtual = options.virtual || {};
       const action = options.action || {};
+      const grouping = options.grouping || null;
+      if (grouping) {
+        ids.individualTrades = ids.individualTrades || `${id}IndividualTrades`;
+        ids.rangeTrades = ids.rangeTrades || `${id}RangeTrades`;
+      }
       container.classList.add("executionChartFrame");
       container.innerHTML = `
         <div class="executionChartToolbar">
@@ -34,6 +39,12 @@
             <button id="${ids.actual}" type="button" aria-pressed="true" title="Show or hide actual entry and exit fills">✓ ${actual.label || "Actual"}</button>
             <button id="${ids.virtual}" type="button" aria-pressed="true" title="Show or hide virtual backtest entries and exits">✓ ${virtual.label || "Virtual"}</button>
           </div>
+          ${grouping ? `
+          <div class="executionChartGrouping" aria-label="Trade marker display style">
+            <span>TRADES</span>
+            <button id="${ids.individualTrades}" type="button" class="${!grouping.asRange ? "isActive" : ""}" aria-pressed="${!grouping.asRange ? "true" : "false"}" title="Show each trade fill individually at its exact price">📍 Individual</button>
+            <button id="${ids.rangeTrades}" type="button" class="${grouping.asRange ? "isActive" : ""}" aria-pressed="${grouping.asRange ? "true" : "false"}" title="Group same-candle trades into a single range line">📊 Range</button>
+          </div>` : ""}
           <span id="${ids.status}" class="executionChartStatus" role="status">${options.status || "Loading…"}</span>
         </div>
         ${options.description ? `<div class="executionChartDescription">${options.description}</div>` : ""}
@@ -58,6 +69,8 @@
         action: document.getElementById(ids.action),
         actual: document.getElementById(ids.actual),
         virtual: document.getElementById(ids.virtual),
+        individualTrades: grouping ? document.getElementById(ids.individualTrades) : null,
+        rangeTrades: grouping ? document.getElementById(ids.rangeTrades) : null,
         status: document.getElementById(ids.status),
         secondaryStatus: document.getElementById(ids.secondaryStatus),
         host: document.getElementById(ids.host),
@@ -70,6 +83,12 @@
       if (elements.action && typeof action.onClick === "function") elements.action.addEventListener("click", action.onClick);
       if (typeof actual.onToggle === "function") elements.actual.addEventListener("click", actual.onToggle);
       if (typeof virtual.onToggle === "function") elements.virtual.addEventListener("click", virtual.onToggle);
+      if (elements.individualTrades && typeof grouping?.onChange === "function") {
+        elements.individualTrades.addEventListener("click", () => grouping.onChange(false));
+      }
+      if (elements.rangeTrades && typeof grouping?.onChange === "function") {
+        elements.rangeTrades.addEventListener("click", () => grouping.onChange(true));
+      }
       if (actual && actual.enabled === false) elements.actual.disabled = true;
       if (virtual && virtual.enabled === false) elements.virtual.disabled = true;
 
@@ -84,12 +103,23 @@
           button.classList.toggle("isHidden", !visible);
           button.textContent = `${visible ? "✓" : "○"} ${label}`;
         },
+        setGrouping(asRange) {
+          if (elements.individualTrades) {
+            elements.individualTrades.setAttribute("aria-pressed", !asRange ? "true" : "false");
+            elements.individualTrades.classList.toggle("isActive", !asRange);
+          }
+          if (elements.rangeTrades) {
+            elements.rangeTrades.setAttribute("aria-pressed", asRange ? "true" : "false");
+            elements.rangeTrades.classList.toggle("isActive", Boolean(asRange));
+          }
+        },
         setStatus(text) { if (elements.status) elements.status.textContent = text; },
         setSecondaryStatus(text) { if (elements.secondaryStatus) elements.secondaryStatus.textContent = text; },
         setSync(text) { if (elements.sync) elements.sync.textContent = text; },
       };
       frame.setVisibility("actual", actual.visible !== false);
       frame.setVisibility("virtual", virtual.visible !== false);
+      if (grouping) frame.setGrouping(Boolean(grouping.asRange));
       return frame;
     }
   }
