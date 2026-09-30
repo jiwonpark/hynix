@@ -136,13 +136,12 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("The native crosshair owns x-axis/price inspection", script)
         self.assertNotIn("Trade details are intentionally hover-only", script)
 
-    def test_trade_marker_orientation_is_direction_and_exit_color_is_opposite(self):
+    def test_trade_marker_orientation_and_direction_color(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
-        self.assertIn("isTradeDown(marker)", script)
-        self.assertIn('return marker?.direction === "short"', script)
-        self.assertIn('return (isShortDirection !== isExit) ? "#dc2626" : "#16a34a"', script)
-        self.assertIn('? (isDown ? "▽" : "△")', script)
-        self.assertIn(': (isDown ? "▼" : "▲")', script)
+        self.assertIn("isTradeEntry(marker)", script)
+        self.assertIn("isShortTrade(marker)", script)
+        self.assertIn('return this.isShortTrade(marker) ? "#dc2626" : "#16a34a"', script)
+        self.assertIn('return isEntry ? "▶" : "◀"', script)
         self.assertIn('overlay.style.borderColor = markerColor === "#dc2626"', script)
         self.assertIn('overlay.style.color = markerColor === "#dc2626"', script)
 

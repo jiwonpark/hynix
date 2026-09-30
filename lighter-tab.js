@@ -517,10 +517,7 @@
           virtual: { label: "Virtual", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
           status: "PAPER ONLY · Select a strategy and interval, then rerun",
           description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
-          secondaryStatus: "Historical replay only · Live bot remains fixed to Dynamic Grid on completed 5m candles.",
-          height: 420,
-          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
-          syncText: "Updated 0s ago",
+          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry</span><span><strong style="color:#16a34a">◀</strong> Long Exit</span><span><strong style="color:#dc2626">▶</strong> Short Entry</span><span><strong style="color:#dc2626">◀</strong> Short Exit</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
         });
         [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
         const chartHost = lid("shortTermSpreadChartHost");
@@ -2231,13 +2228,14 @@
         .map((marker) => {
           const isEntry = marker.is_entry !== false;
           const isShort = marker.direction ? marker.direction === "short" : (isEntry ? (marker.side < 0) : (marker.side > 0));
-          const isDown = marker.shape ? marker.shape === "arrowDown" : (isShort !== !isEntry);
+          const markerColor = isShort ? "#dc2626" : "#16a34a";
+          const markerShape = isEntry ? "arrowRight" : "arrowLeft";
           return {
             time: marker.time,
-            position: marker.position || (isDown ? "aboveBar" : "belowBar"),
-            color: marker.color || (isDown ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
-            activeColor: marker.activeColor || (isDown ? "#dc2626" : "#16a34a"),
-            shape: isDown ? "arrowDown" : "arrowUp",
+            position: marker.position || (isShort ? "aboveBar" : "belowBar"),
+            color: marker.color || (isShort ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
+            activeColor: marker.activeColor || markerColor,
+            shape: markerShape,
             text: "",
             hoverText: marker.hoverText || marker.text || "Actual",
             source: "actual",
@@ -2358,14 +2356,30 @@
       overlay.style.color = markerColor === "#dc2626" ? "#991b1b" : "#166534";
     },
 
-    isTradeDown(marker) {
-      return marker?.direction === "short";
+    isTradeEntry(marker) {
+      return marker?.is_entry !== false && marker?.is_exit !== true;
+    },
+
+    isShortTrade(marker) {
+      if (marker?.direction) return marker.direction === "short";
+      if (typeof marker?.side === "number") {
+        return this.isTradeEntry(marker) ? marker.side < 0 : marker.side > 0;
+      }
+      const text = `${marker?.hoverText || ""} ${marker?.text || ""}`.toUpperCase();
+      if (text.includes("SHORT") || text.includes("COVER")) return true;
+      return false;
     },
 
     tradeMarkerColor(marker) {
-      const isShortDirection = marker?.direction === "short";
-      const isExit = marker?.is_entry === false;
-      return (isShortDirection !== isExit) ? "#dc2626" : "#16a34a";
+      return this.isShortTrade(marker) ? "#dc2626" : "#16a34a";
+    },
+
+    tradeMarkerGlyph(marker) {
+      const isEntry = this.isTradeEntry(marker);
+      if (marker?.hypothetical) {
+        return isEntry ? "▷" : "◁";
+      }
+      return isEntry ? "▶" : "◀";
     },
 
     renderTradeMarkerTargets() {
@@ -2406,122 +2420,147 @@
             let avgY = this.series.priceToCoordinate(avgPrice);
             topY = Math.max(8, Math.min(layer.clientHeight - 8, Number(topY)));
             bottomY = Math.max(8, Math.min(layer.clientHeight - 8, Number(bottomY)));
-            avgY = Math.max(topY, Math.min(bottomY, Number(avgY)));
+            avgY = Math.max(Math.min(topY, bottomY), Math.min(Math.max(topY, bottomY), Number(avgY)));
             const visualTop = Math.min(topY, bottomY);
             const visualBottom = Math.max(topY, bottomY);
-            const buttonTop = Math.max(0, visualTop - 9);
-            const buttonBottom = Math.min(layer.clientHeight, visualBottom + 9);
-            const svgHeight = Math.max(18, buttonBottom - buttonTop);
-            const topLocal = topY - buttonTop;
-            const bottomLocal = bottomY - buttonTop;
+            const buttonTop = Math.max(0, visualTop - 6);
+            const buttonBottom = Math.min(layer.clientHeight, visualBottom + 6);
+            const svgHeight = Math.max(16, buttonBottom - buttonTop);
+            const topLocal = visualTop - buttonTop;
+            const bottomLocal = visualBottom - buttonTop;
             const avgLocal = avgY - buttonTop;
-            const sellMarkers = markers.filter((marker) => (marker.direction === "short") !== (marker.is_entry === false));
-            const buyCount = markers.length - sellMarkers.length;
-            const sellCount = sellMarkers.length;
-            const entryCount = markers.filter((marker) => marker.is_entry !== false).length;
+
+            const shortCount = markers.filter((m) => this.isShortTrade(m)).length;
+            const longCount = markers.length - shortCount;
+            const entryCount = markers.filter((m) => this.isTradeEntry(m)).length;
             const exitCount = markers.length - entryCount;
-            const longRatioCount = markers.filter((marker) => marker.direction === "long").length;
-            const shortRatioCount = markers.length - longRatioCount;
-            const rangeColor = buyCount >= sellCount ? "#16a34a" : "#dc2626";
+
+            const dominantShort = shortCount >= longCount;
+            const dominantEntry = entryCount >= exitCount;
+            const markerColor = dominantShort ? "#dc2626" : "#16a34a";
+
             const range = document.createElement("button");
             range.type = "button";
             range.setAttribute("aria-label", `${markers.length} grouped trades; range ${minPrice.toFixed(3)} to ${maxPrice.toFixed(3)} percent; average ${avgPrice.toFixed(3)} percent`);
-            range.style.cssText = `appearance:none;position:absolute;left:${x - 14}px;top:${buttonTop}px;width:28px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:default;pointer-events:auto;z-index:1;overflow:visible`;
-            range.innerHTML = `<svg width="28" height="${svgHeight}" viewBox="0 0 28 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
-              <line x1="14" y1="${topLocal}" x2="14" y2="${bottomLocal}" stroke="${rangeColor}" stroke-width="1" stroke-linecap="round"/>
-              <line x1="9" y1="${avgLocal}" x2="19" y2="${avgLocal}" stroke="${rangeColor}" stroke-width="1.5" stroke-linecap="round"/>
-              ${sellCount ? `<polygon points="7,${topLocal - 9} 21,${topLocal - 9} 14,${topLocal}" fill="#dc2626"/>` : ""}
-              ${buyCount ? `<polygon points="7,${bottomLocal + 9} 21,${bottomLocal + 9} 14,${bottomLocal}" fill="#16a34a"/>` : ""}
-            </svg>`;
+
+            // Entry arrow points right (▶) towards timeframe x:
+            // Tip is at x = 13 within the 14px SVG, placed with button left = x - 13. Tip touches x exactly!
+            // Exit arrow points left (◀) away from timeframe x:
+            // Tip is at x = 1 within the 14px SVG, placed with button left = x - 1. Tip touches x exactly!
+            if (dominantEntry) {
+              range.style.cssText = `appearance:none;position:absolute;left:${x - 13}px;top:${buttonTop}px;width:14px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:default;pointer-events:auto;z-index:1;overflow:visible`;
+              range.innerHTML = `<svg width="14" height="${svgHeight}" viewBox="0 0 14 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
+                <line x1="6" y1="${topLocal}" x2="6" y2="${bottomLocal}" stroke="${markerColor}" stroke-width="1.5" stroke-linecap="round"/>
+                <polygon points="6,${avgLocal - 4} 13,${avgLocal} 6,${avgLocal + 4}" fill="${markerColor}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/>
+              </svg>`;
+            } else {
+              range.style.cssText = `appearance:none;position:absolute;left:${x - 1}px;top:${buttonTop}px;width:14px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:default;pointer-events:auto;z-index:1;overflow:visible`;
+              range.innerHTML = `<svg width="14" height="${svgHeight}" viewBox="0 0 14 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
+                <line x1="8" y1="${topLocal}" x2="8" y2="${bottomLocal}" stroke="${markerColor}" stroke-width="1.5" stroke-linecap="round"/>
+                <polygon points="8,${avgLocal - 4} 1,${avgLocal} 8,${avgLocal + 4}" fill="${markerColor}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/>
+              </svg>`;
+            }
+
             range.addEventListener("mouseenter", () => {
-            range._blinkAnimation?.cancel();
-            range._blinkAnimation = range.animate(
-              [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
-              { duration: 650, iterations: Infinity, easing: "ease-in-out" }
-            );
-            const overlay = lid("tradeMarkerHover");
-            if (!overlay) return;
-            overlay.textContent = `${markers.length} PAIRED TRADES · ${entryCount} entries / ${exitCount} exits · ${longRatioCount} long-ratio / ${shortRatioCount} short-ratio · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}%`;
-            overlay.style.display = "block";
-            overlay.style.borderColor = rangeColor;
-          });
+              range._blinkAnimation?.cancel();
+              range._blinkAnimation = range.animate(
+                [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
+                { duration: 650, iterations: Infinity, easing: "ease-in-out" }
+              );
+              const overlay = lid("tradeMarkerHover");
+              if (!overlay) return;
+              overlay.textContent = `${markers.length} PAIRED TRADES · ${entryCount} entries / ${exitCount} exits · ${longCount} long / ${shortCount} short · range ${minPrice.toFixed(3)}–${maxPrice.toFixed(3)}% · avg ${avgPrice.toFixed(3)}%`;
+              overlay.style.display = "block";
+              overlay.style.borderColor = markerColor === "#dc2626" ? "#fca5a5" : "#86efac";
+              overlay.style.color = markerColor === "#dc2626" ? "#991b1b" : "#166534";
+            });
             range.addEventListener("mouseleave", () => {
-            range._blinkAnimation?.cancel();
-            range._blinkAnimation = null;
-            const overlay = lid("tradeMarkerHover");
-            if (overlay && !this.activeHoveredExecutionMarkerKey && !this.selectedExecutionMarkerKey) overlay.style.display = "none";
-          });
+              range._blinkAnimation?.cancel();
+              range._blinkAnimation = null;
+              const overlay = lid("tradeMarkerHover");
+              if (overlay && !this.activeHoveredExecutionMarkerKey && !this.selectedExecutionMarkerKey) overlay.style.display = "none";
+            });
             layer.appendChild(range);
             markers.forEach((marker) => {
               marker._targetX = x;
-              const isSell = (marker.direction === "short") !== (marker.is_entry === false);
-              marker._targetY = isSell ? topY : bottomY;
+              marker._targetY = avgY;
             });
           }
           return;
         }
         markers.forEach((marker, index) => {
-        const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
-        let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
-        if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
-        // Small same-candle groups stay at their actual prices with a bounded
-        // offset so each marker remains individually targetable.
-        const finalX = x + (index - (markers.length - 1) / 2) * 6;
-        const finalY = Math.max(6, Math.min(Math.max(6, layer.clientHeight - 6), y));
-        marker._targetX = finalX;
-        marker._targetY = finalY;
-        const target = document.createElement("button");
-        target.type = "button";
-        target.setAttribute("aria-label", `${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
-        const isDown = this.isTradeDown(marker);
-        const glyph = marker.hypothetical
-          ? (isDown ? "▽" : "△")
-          : (isDown ? "▼" : "▲");
-        target.setAttribute("aria-label", `${glyph} ${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
-        const markerColor = this.tradeMarkerColor(marker);
-        const baseOpacity = marker.hypothetical ? 0.65 : 0.90;
-        const isHypo = Boolean(marker.hypothetical);
-        const fill = isHypo ? "transparent" : markerColor;
-        const arrowSvg = isDown
-          ? `<svg width="7" height="6" viewBox="0 0 7 6" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,0.5 6.5,0.5 3.5,5.5" fill="${fill}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/></svg>`
-          : `<svg width="7" height="6" viewBox="0 0 7 6" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,5.5 6.5,5.5 3.5,0.5" fill="${fill}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/></svg>`;
-        target.innerHTML = arrowSvg;
-        const transformY = isDown ? "-100%" : "0%";
-        target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(-50%,${transformY});width:12px;height:6px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
-        const pairKey = marker.pairKey || marker.markerKey;
-        const pairTargets = targetsByPair.get(pairKey) || [];
-        pairTargets.push(target);
-        targetsByPair.set(pairKey, pairTargets);
-        target.addEventListener("mouseenter", () => {
-          (targetsByPair.get(pairKey) || [target]).forEach((pairTarget) => {
-            pairTarget._blinkAnimation?.cancel();
-            pairTarget._blinkAnimation = pairTarget.animate(
-              [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
-              { duration: 650, iterations: Infinity, easing: "ease-in-out" }
-            );
+          const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
+          let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
+          if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
+          // Small same-candle groups stay at their actual prices with a bounded
+          // offset so each marker remains individually targetable.
+          const finalX = x + (index - (markers.length - 1) / 2) * 8;
+          const finalY = Math.max(6, Math.min(Math.max(6, layer.clientHeight - 6), y));
+          marker._targetX = finalX;
+          marker._targetY = finalY;
+
+          const isEntry = this.isTradeEntry(marker);
+          const isShort = this.isShortTrade(marker);
+          const markerColor = this.tradeMarkerColor(marker);
+          const glyph = this.tradeMarkerGlyph(marker);
+          const baseOpacity = marker.hypothetical ? 0.65 : 0.90;
+          const isHypo = Boolean(marker.hypothetical);
+          const fill = isHypo ? "transparent" : markerColor;
+
+          const target = document.createElement("button");
+          target.type = "button";
+          target.setAttribute("aria-label", `${glyph} ${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
+
+          // Entry: points left to right (▶).
+          // SVG viewBox 0 0 8 8, polygon points="0.5,0.5 7.5,4 0.5,7.5".
+          // Tip is at (7.5, 4). Position button at left: finalX, top: finalY, translate(-100%, -50%).
+          // The rightmost tip aligns exactly to (finalX, finalY).
+          // Exit: points right to left (◀).
+          // SVG viewBox 0 0 8 8, polygon points="7.5,0.5 0.5,4 7.5,7.5".
+          // Tip is at (0.5, 4). Position button at left: finalX, top: finalY, translate(0, -50%).
+          // The leftmost tip aligns exactly to (finalX, finalY).
+          if (isEntry) {
+            target.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,0.5 7.5,4 0.5,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/></svg>`;
+            target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(-100%,-50%);width:8px;height:8px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
+          } else {
+            target.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="7.5,0.5 0.5,4 7.5,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/></svg>`;
+            target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(0,-50%);width:8px;height:8px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
+          }
+
+          const pairKey = marker.pairKey || marker.markerKey;
+          const pairTargets = targetsByPair.get(pairKey) || [];
+          pairTargets.push(target);
+          targetsByPair.set(pairKey, pairTargets);
+          target.addEventListener("mouseenter", () => {
+            (targetsByPair.get(pairKey) || [target]).forEach((pairTarget) => {
+              pairTarget._blinkAnimation?.cancel();
+              pairTarget._blinkAnimation = pairTarget.animate(
+                [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
+                { duration: 650, iterations: Infinity, easing: "ease-in-out" }
+              );
+            });
+            this.activeHoveredExecutionMarkerTime = marker.time;
+            this.activeHoveredExecutionMarkerKey = marker.markerKey;
+            this.activeHoveredPairKey = pairKey;
+            this.updateMarkerState(marker.time, marker);
+            this.renderTradeTriangles();
           });
-          this.activeHoveredExecutionMarkerTime = marker.time;
-          this.activeHoveredExecutionMarkerKey = marker.markerKey;
-          this.activeHoveredPairKey = pairKey;
-          this.updateMarkerState(marker.time, marker);
-          this.renderTradeTriangles();
-        });
-        target.addEventListener("mouseleave", () => {
-          (targetsByPair.get(pairKey) || [target]).forEach((pairTarget) => {
-            pairTarget._blinkAnimation?.cancel();
-            pairTarget._blinkAnimation = null;
+          target.addEventListener("mouseleave", () => {
+            (targetsByPair.get(pairKey) || [target]).forEach((pairTarget) => {
+              pairTarget._blinkAnimation?.cancel();
+              pairTarget._blinkAnimation = null;
+            });
+            this.activeHoveredExecutionMarkerTime = null;
+            this.activeHoveredExecutionMarkerKey = null;
+            this.activeHoveredPairKey = null;
+            this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
+            this.renderTradeTriangles();
           });
-          this.activeHoveredExecutionMarkerTime = null;
-          this.activeHoveredExecutionMarkerKey = null;
-          this.activeHoveredPairKey = null;
-          this.updateMarkerState(this.selectedExecutionMarkerTime, this.selectedExecutionMarker());
-          this.renderTradeTriangles();
-        });
-        target.addEventListener("click", (event) => {
-          event.stopPropagation();
-          this.selectExecutionMarker(marker);
-        });
-        layer.appendChild(target);
+          target.addEventListener("click", (event) => {
+            event.stopPropagation();
+            this.selectExecutionMarker(marker);
+          });
+          layer.appendChild(target);
         });
       });
       this.renderTradeTriangles();
@@ -2589,13 +2628,7 @@
 
         if (Math.abs(x1 - x2) < 1) return;
 
-        const isShort = Boolean(
-          entry.direction === "short"
-          || entry.side < 0
-          || entry.shape === "arrowDown"
-          || (typeof entry.hoverText === "string" && entry.hoverText.toUpperCase().includes("SHORT"))
-          || (typeof entry.text === "string" && entry.text.toUpperCase().includes("SHORT"))
-        );
+        const isShort = this.isShortTrade(entry);
 
         if (x1 > x2) {
           const tx = x1; x1 = x2; x2 = tx;
@@ -3087,13 +3120,14 @@
         .map((row) => {
         const isExit = row.action === "EXIT";
         const isShort = row.side < 0 || row.action === "SHORT RATIO";
-        const isDown = isShort !== isExit;
+        const markerColor = isShort ? "#dc2626" : "#16a34a";
+        const markerShape = isExit ? "arrowLeft" : "arrowRight";
         return {
           time: TerminalCommon.alignTime(this.bars, row.time / 1000),
-          position: isDown ? "aboveBar" : "belowBar",
-          color: isDown ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)",
-          activeColor: isDown ? "#dc2626" : "#16a34a",
-          shape: isDown ? "arrowDown" : "arrowUp",
+          position: isShort ? "aboveBar" : "belowBar",
+          color: isShort ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)",
+          activeColor: markerColor,
+          shape: markerShape,
           text: "",
           hoverText: isExit
             ? `${isShort ? "COVER" : "SELL"} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""}${row.pnl != null ? " · " + (row.pnl >= 0 ? "+" : "") + "$" + row.pnl.toFixed(2) : ""}`
