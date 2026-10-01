@@ -761,8 +761,10 @@
         if (!input) return;
         input.onchange = null;
         input.disabled = false;
-        input.closest(".terminal-action-control")?.classList.remove("terminal-action-control");
-        input.addEventListener("change", () => this.runBacktest());
+        input.addEventListener("change", () => {
+          this.updateRulesMatchStatus();
+          this.runBacktest();
+        });
       });
       const labels = {
         valCondEntryMaStretch: "Replay: require selected Entry Z",
@@ -1724,10 +1726,42 @@
       const isParadigmMatch = currentMode === liveMode;
       const isBotActive = Boolean(this.botState?.enabled);
 
+      // Check replay condition toggles against live rules
+      const researchConditions = [
+        { id: "chkCondEntryMaStretch", badgeId: "badgeCondEntryMaStretch", rowId: "rowCondEntryMaStretch", name: "Entry Trigger" },
+        { id: "chkCondEntryBase", badgeId: "badgeCondEntryBase", rowId: "rowCondEntryBase", name: "Spacing" },
+        { id: "chkCondEntryPeak", badgeId: "badgeCondEntryPeak", rowId: "rowCondEntryPeak", name: "Peak Rollover" },
+        { id: "chkCondEntryMaStack5m", badgeId: "badgeCondEntryMaStack5m", rowId: "rowCondEntryMaStack5m", name: "5m Trend Stack" },
+        { id: "chkCondExitConvergence", badgeId: "badgeCondExitConvergence", rowId: "rowCondExitConvergence", name: "Convergence Target" },
+        { id: "chkCondExitDwell", badgeId: "badgeCondExitDwell", rowId: "rowCondExitDwell", name: "Dwell Time" },
+        { id: "chkCondExitBottoming", badgeId: "badgeCondExitBottoming", rowId: "rowCondExitBottoming", name: "Bottoming-Out" },
+      ];
+
+      const disabledRules = [];
+      researchConditions.forEach(({ id, badgeId, rowId, name }) => {
+        const el = lid(id);
+        const row = lid(rowId);
+        const badge = lid(badgeId);
+        if (el) {
+          if (!el.checked) {
+            disabledRules.push(`${name} OFF`);
+            if (row) row.classList.add("disabled-cond");
+            if (badge) {
+              badge.textContent = "OFF";
+              badge.className = "condBadge neutral";
+            }
+          } else {
+            if (row) row.classList.remove("disabled-cond");
+          }
+        }
+      });
+
+      const isConditionsMatch = disabledRules.length === 0;
+
       const pill = $("lighterMatchPill");
       if (!pill) return;
 
-      if (isIntervalMatch && isParadigmMatch) {
+      if (isIntervalMatch && isParadigmMatch && isConditionsMatch) {
         if (isBotActive) {
           pill.textContent = `● LIVE-MATCHED (${liveInterval} · ${liveName} · Bot Active)`;
           pill.style.background = "#dcfce7";
@@ -1743,6 +1777,9 @@
         const diffs = [];
         if (!isIntervalMatch) diffs.push(`Interval ${currentInterval} ≠ ${liveInterval}`);
         if (!isParadigmMatch) diffs.push(`Strategy ${currentName} ≠ ${liveName}`);
+        if (!isConditionsMatch) {
+          diffs.push(disabledRules.join(", "));
+        }
         pill.textContent = `▲ PAPER DIVERGENT (${diffs.join(" · ")})`;
         pill.style.background = "#fff7ed";
         pill.style.color = "#c2410c";

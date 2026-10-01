@@ -75,5 +75,7 @@ assert.ok(code.includes('tickMarkFormatter: (time) => formatKstChartTime(time)')
 assert.ok(code.includes('const liveMode = this.botState?.strategy_mode || "grid"'), 'must read deployed live strategy mode');
 assert.ok(code.includes('const isParadigmMatch = currentMode === liveMode'), 'rules matching must check current strategy against live strategy');
 assert.ok(code.includes('const isIntervalMatch = currentInterval === liveInterval'), 'rules matching must check current interval against live interval');
+assert.ok(code.includes('const isConditionsMatch = disabledRules.length === 0'), 'rules matching must verify replay conditions are all active');
+assert.ok(code.includes('if (!isConditionsMatch)'), 'must report disabled replay rules in PAPER DIVERGENT pill');
 
 console.log('Lighter Tab 2 UX & paper/live checks passed');
