@@ -52,7 +52,7 @@ upbit_scanner_cache: Dict[str, Any] = {"timestamp": 0.0, "payload": None}
 # Capital & solvency constraints remain mandatory for live execution safety.
 MANDATORY_LIVE_CONDITIONS = frozenset({
     "entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state",
-    "exit_speculative_tranche", "exit_net_profit", "exit_position_qty",
+    "exit_speculative_tranche", "exit_position_qty",
 })
 
 ENTRY_MIN_MA_STRETCH_PTS = 0.25
@@ -1766,7 +1766,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             "condition_toggles": cond_toggles,
             "mandatory_live_conditions": sorted(MANDATORY_LIVE_CONDITIONS),
             "live_condition_toggles": {k: is_cond_enabled(k) for k in
-                set(cond_toggles) | MANDATORY_LIVE_CONDITIONS | {"exit_ma_stack_5m", "exit_ma_stack_1h", "entry_adaptive_guard"}},
+                set(cond_toggles) | MANDATORY_LIVE_CONDITIONS | {"exit_ma_stack_5m", "exit_ma_stack_1h", "entry_adaptive_guard", "exit_net_profit"}},
             "effective_exit_ma_aligned": eff_ma_aligned,
             "macro_policy": macro,
             "exit_policy": exit_policy,

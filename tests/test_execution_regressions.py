@@ -302,15 +302,28 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['eligible_for_take_profit'])
         self.assertFalse(result['auto_tranche_criteria']['can_take_profit'])
 
-        # Backtest profit switches cannot authorize a losing live exit.
-        server.save_auto_tranche_state({'condition_toggles': {
-            key: False for key in server.MANDATORY_LIVE_CONDITIONS}})
+        # Net profit condition is toggleable for live trading:
+        # 1. When enabled (default), a non-profitable tranche locks exit.
         criteria = (await server.get_hedged_status())['auto_tranche_criteria']
         self.assertFalse(criteria['can_take_profit'])
         self.assertEqual(criteria['status_take_profit'], 'LOCKED_AWAITING_PROFIT')
         self.assertTrue(criteria['live_condition_toggles']['exit_net_profit'])
         self.assertFalse((await server.reduce_tranche())['success'])
         self.client.create_order.assert_not_awaited()
+
+        # 2. When disabled, net profit check is bypassed.
+        server.save_auto_tranche_state({'condition_toggles': {'exit_net_profit': False}})
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertFalse(criteria['live_condition_toggles']['exit_net_profit'])
+        self.assertNotEqual(criteria['status_take_profit'], 'LOCKED_AWAITING_PROFIT')
+        self.assertIn('ANTI_CHURN_WAITING_CONVERGENCE', criteria['status_take_profit'])
+
+        # 3. Mandatory live safeguards cannot be bypassed even if toggled False.
+        server.save_auto_tranche_state({'condition_toggles': {
+            key: False for key in server.MANDATORY_LIVE_CONDITIONS}})
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertTrue(criteria['live_condition_toggles']['exit_speculative_tranche'])
+        self.assertTrue(criteria['live_condition_toggles']['exit_position_qty'])
 
         # Explicit timeframe switches override the legacy combined switch.
         overview['positions'][0]['mark_price'] = 193.2

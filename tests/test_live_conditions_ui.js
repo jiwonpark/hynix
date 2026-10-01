@@ -66,10 +66,10 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
   assert.equal(engine.isConditionEnabled('exit_ma_stack_5m'), true);
   assert.equal(engine.isConditionEnabled('exit_ma_stack_1h'), false);
   assert.equal(engine.isConditionEnabled('exit_speculative_tranche'), true);
-  assert.equal(engine.isConditionEnabled('exit_net_profit'), false, 'profit switch remains usable by backtest');
+  assert.equal(engine.isConditionEnabled('exit_net_profit'), false, 'profit switch is toggleable');
 
   const badges = {};
-  context.criteria = {mandatory_live_conditions: ['exit_net_profit']};
+  context.criteria = {mandatory_live_conditions: ['exit_speculative_tranche']};
   context.isKo = false;
   context.setBadge = (id, text, type) => {badges[id] = {text, type};};
   elements.check = {};
@@ -77,10 +77,20 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
   const start = html.indexOf('        const syncCondRow =');
   const end = html.indexOf('\n        };', start) + '\n        };'.length;
   const sync = vm.runInContext(`(function() {${html.slice(start, end)} return syncCondRow;})`, context).call(engine);
-  sync('exit_net_profit', 'row', 'check', 'badge', false, 'PASS', 'LOCKED');
-  assert.equal(elements.check.checked, false);
+
+  // Mandatory condition (e.g. exit_speculative_tranche) remains locked ON with checkbox disabled
+  sync('exit_speculative_tranche', 'row', 'check', 'badge', false, 'PASS', 'WAIT');
+  assert.equal(elements.check.disabled, true, 'mandatory condition checkbox must be disabled');
   assert.equal(elements.row.disabled, false);
-  assert.equal(badges.badge.text, 'LOCKED', 'backtest switch cannot hide a live guard');
+  assert.equal(badges.badge.text, 'WAIT', 'mandatory condition cannot be toggled OFF');
+
+  // exit_net_profit is toggleable: checkbox is enabled and can be toggled OFF
+  sync('exit_net_profit', 'row', 'check', 'badge', false, 'PASS', 'LOCKED');
+  assert.equal(elements.check.disabled, false, 'exit_net_profit checkbox must be enabled');
+  assert.equal(elements.check.checked, false);
+  assert.equal(elements.row.disabled, true);
+  assert.equal(badges.badge.text, 'OFF', 'exit_net_profit shows OFF when disabled');
+
   sync('exit_ma_stack_1h', 'row', 'check', 'badge', false, 'PASS', 'WAIT');
   assert.equal(elements.row.disabled, true);
   assert.equal(badges.badge.text, 'OFF');

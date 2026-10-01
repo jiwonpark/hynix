@@ -3688,7 +3688,7 @@
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
                       <input type="checkbox" id="chkCondExitNetPnl" checked onchange="tradingEngine.toggleCondition('exit_net_profit', this.checked)">
                       <span class="toggleSlider"></span>
-                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">BACKTEST ONLY</span>
+                    </label>
                     <span class="condLabel" title="Net PnL must exceed the entry’s saved $0.02–$0.04 threshold after fees, slippage and funding">3. Net Profit (entry threshold)</span>
                     <span class="condValue" id="valCondExitNetPnl"><strong id="valCritCombinedPnl">—</strong></span>
                     <span class="condBadge wait" id="badgeCondExitNetPnl">LOCKED</span>
@@ -4634,7 +4634,7 @@
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
                       <input type="checkbox" id="lab_chkCondExitNetPnl" checked>
                       <span class="toggleSlider"></span>
-                    </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">BACKTEST ONLY</span>
+                    </label>
                     <span class="condLabel" title="Net return of top tranche must be positive">3. Net Profit (> 0.00% net)</span>
                     <span class="condValue" id="lab_valCondExitNetPnl"><strong id="lab_valCritCombinedPnl">—</strong></span>
                     <span class="condBadge wait" id="lab_badgeCondExitNetPnl">LOCKED</span>
@@ -13361,7 +13361,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const syncCondRow = (key, rowId, chkId, badgeId, isMet, passText, notMetText, badgeTypeIfNotMet = "wait") => {
           const on = this.isConditionEnabled(key, criteria.condition_toggles);
-          const mandatory = (criteria.mandatory_live_conditions || ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state", "exit_speculative_tranche", "exit_net_profit", "exit_position_qty"]).includes(key);
+          const mandatory = (criteria.mandatory_live_conditions || ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state", "exit_speculative_tranche", "exit_position_qty"]).includes(key);
           const liveOn = mandatory || on;
           const chk = $(chkId);
           const checkedState = mandatory && ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state"].includes(key) ? true : on;
