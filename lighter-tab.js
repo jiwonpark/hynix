@@ -1712,8 +1712,16 @@
     },
 
     updateRulesMatchStatus() {
-      const isIntervalMatch = this.interval === "5m";
-      const isParadigmMatch = this.currentParadigm === "grid";
+      const liveMode = this.botState?.strategy_mode || "grid";
+      const liveInterval = this.botState?.strategy_interval || "5m";
+      const liveName = this.botState?.strategy_name || this.paradigms[liveMode]?.name || "Dynamic Grid";
+
+      const currentMode = this.currentParadigm || "grid";
+      const currentInterval = this.interval || "5m";
+      const currentName = this.paradigms[currentMode]?.name || currentMode;
+
+      const isIntervalMatch = currentInterval === liveInterval;
+      const isParadigmMatch = currentMode === liveMode;
       const isBotActive = Boolean(this.botState?.enabled);
 
       const pill = $("lighterMatchPill");
@@ -1721,20 +1729,20 @@
 
       if (isIntervalMatch && isParadigmMatch) {
         if (isBotActive) {
-          pill.textContent = "● LIVE-MATCHED (5m · Grid · Bot Active)";
+          pill.textContent = `● LIVE-MATCHED (${liveInterval} · ${liveName} · Bot Active)`;
           pill.style.background = "#dcfce7";
           pill.style.color = "#166534";
           pill.style.borderColor = "#86efac";
         } else {
-          pill.textContent = "○ LIVE-MATCHED (5m · Grid · Bot Paused)";
+          pill.textContent = `○ LIVE-MATCHED (${liveInterval} · ${liveName} · Bot Paused)`;
           pill.style.background = "#fef3c7";
           pill.style.color = "#92400e";
           pill.style.borderColor = "#fcd34d";
         }
       } else {
         const diffs = [];
-        if (!isIntervalMatch) diffs.push(`Interval ${this.interval} ≠ 5m`);
-        if (!isParadigmMatch) diffs.push(`Strategy ${this.paradigms[this.currentParadigm]?.name || this.currentParadigm} ≠ Grid`);
+        if (!isIntervalMatch) diffs.push(`Interval ${currentInterval} ≠ ${liveInterval}`);
+        if (!isParadigmMatch) diffs.push(`Strategy ${currentName} ≠ ${liveName}`);
         pill.textContent = `▲ PAPER DIVERGENT (${diffs.join(" · ")})`;
         pill.style.background = "#fff7ed";
         pill.style.color = "#c2410c";
@@ -1889,6 +1897,11 @@
         if (detailEl) detailEl.textContent = isKo ? "토글 스위치를 켜서 24/7 그리드 매매를 시작하세요" : "Click toggle switch to start 24/7 grid bot";
       }
 
+      const stratMode = bot?.strategy_mode || "grid";
+      const stratName = bot?.strategy_name || this.paradigms[stratMode]?.name || "Dynamic Grid";
+      const stratInterval = bot?.strategy_interval || "5m";
+      const stratShort = stratMode === "grid" ? "GRID" : (stratMode === "ou_quant" ? "OU" : stratName.toUpperCase().slice(0, 8));
+
       // Sync Tab 3 Top Nav Pill
       const navLighterPill = $("navLighterLivePill");
       if (navLighterPill) {
@@ -1898,10 +1911,10 @@
           navLighterPill.textContent = "⚠ RECOVERY";
         } else if (isEnabled) {
           navLighterPill.classList.add("active");
-          navLighterPill.textContent = "● GRID AUTO ON";
+          navLighterPill.textContent = `● ${stratShort} AUTO ON`;
         } else {
           navLighterPill.classList.add("paused");
-          navLighterPill.textContent = "○ GRID PAUSED";
+          navLighterPill.textContent = `○ ${stratShort} PAUSED`;
         }
       }
 
@@ -1922,9 +1935,6 @@
         rulesState.style.color = isEnabled ? "#166534" : "#475569";
       }
       const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
-      const stratMode = bot?.strategy_mode || "grid";
-      const stratName = bot?.strategy_name || this.paradigms[stratMode]?.name || "Dynamic Grid";
-      const stratInterval = bot?.strategy_interval || "5m";
       writeRule("lighterLiveEngine", `${stratName} (${stratInterval})`);
       const enginePill = $("lighter_liveBotEnginePill");
       if (enginePill) enginePill.textContent = `LIVE: ${stratName.toUpperCase()}`;

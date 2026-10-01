@@ -71,4 +71,9 @@ assert.ok(code.includes('Last Sync: ${formatKstDateTime'), 'last sync must use t
 assert.ok(code.includes('localization: {'), 'chart must use explicit time localization');
 assert.ok(code.includes('tickMarkFormatter: (time) => formatKstChartTime(time)'), 'chart axis ticks must use KST');
 
+// Rule matching must compare against live bot's deployed strategy and interval dynamically
+assert.ok(code.includes('const liveMode = this.botState?.strategy_mode || "grid"'), 'must read deployed live strategy mode');
+assert.ok(code.includes('const isParadigmMatch = currentMode === liveMode'), 'rules matching must check current strategy against live strategy');
+assert.ok(code.includes('const isIntervalMatch = currentInterval === liveInterval'), 'rules matching must check current interval against live interval');
+
 console.log('Lighter Tab 2 UX & paper/live checks passed');
