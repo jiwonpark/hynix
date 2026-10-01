@@ -52,7 +52,7 @@ assert.ok(code.includes('this.applyMode(authoritativeMode, false)'), 'server mod
 assert.ok(code.includes('BOT ACTIVE · AUTO-RETRYING'), 'transient data failures must not be presented as a paused bot');
 assert.ok(code.includes('lighter_tradeMarkerHover'), 'trade details must render in a dedicated chart-top hover overlay');
 assert.ok(code.includes('.map((marker) => ({ ...marker, text: "" }))'), 'chart markers must remain label-free when rendered');
-assert.ok(code.includes('Trade details are intentionally hover-only'), 'clicks must not pin trade labels');
+assert.ok(code.includes('selectExecutionMarker'), 'clicking a trade marker must select it');
 assert.ok(code.includes('riskCapacity.gross_leverage_cap || 8.0'), 'Lighter margin utilization must use the Tab 2 account-wide leverage cap');
 assert.ok(code.includes('≤8x account gross'), 'live rules must disclose the Tab 2 leverage ceiling');
 assert.ok(code.includes('tabEl.disabled = false'), 'bottom section tabs must be re-enabled after fail-closed initialization');
