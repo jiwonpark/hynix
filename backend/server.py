@@ -22,7 +22,6 @@ from .tranche_accounting import (
     FUNDING_RESERVE_BPS_DAY,
     MIN_NET_PROFIT_USD,
     aggregate_orders,
-    estimate_exchange_average_exit,
     estimate_tranche_exit,
     infer_entry_pairs,
     entry_profiles,
@@ -1700,27 +1699,12 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             current_target_tranche, executions, adr_mark, stock_mark, stock_sym,
             auto_state.get("entry_order_pairs", []), now_sec, context=exit_context)
         eligible_for_take_profit = bool(tranche_profit["profitable"])
-        adr_position_data = adr_pos or {}
-        stock_position_data = stock_pos or {}
-        exchange_average_profit = estimate_exchange_average_exit(
-            float(adr_position_data.get("entry_price", 0.0) or 0.0),
-            float(stock_position_data.get("entry_price", 0.0) or 0.0),
-            adr_mark,
-            stock_mark,
-            entry_fees=float(tranche_profit.get("entry_fees_usd", 0.0) or 0.0),
-            funding_reserve=float(tranche_profit.get("funding_reserve_usd", 0.0) or 0.0),
-            threshold=float(tranche_profit.get("threshold_usd", MIN_NET_PROFIT_USD)),
-        )
-        exchange_average_profitable = bool(
-            exchange_average_profit["available"] and exchange_average_profit["profitable"])
 
         is_out_profitable_relative_to_latest = bool(current_target_tranche and curr_spread <= out_target_spread)
         is_dwell_satisfied = bool(current_target_tranche and dwell_time_sec >= 120)
 
         eff_spec_tranche = (speculative_tranches_active > 0 and current_target_tranche and current_target_tranche.get("trim_qty", 0) >= 0.07) if is_cond_enabled("exit_speculative_tranche") else True
         eff_profitable = eligible_for_take_profit if is_cond_enabled("exit_net_profit") else True
-        eff_exchange_average_profitable = (
-            exchange_average_profitable if is_cond_enabled("exit_net_profit") else True)
         eff_convergence = is_out_profitable_relative_to_latest if is_cond_enabled("exit_convergence") else True
         eff_dwell = is_dwell_satisfied if is_cond_enabled("exit_dwell_time") else True
         eff_bottoming = is_bottoming_out if is_cond_enabled("exit_bottoming_out") else True
@@ -1733,7 +1717,6 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         can_take_profit = bool(
             eff_spec_tranche
             and eff_profitable
-            and eff_exchange_average_profitable
             and eff_convergence
             and eff_dwell
             and eff_bottoming
@@ -1762,10 +1745,6 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             status_take_profit = tranche_profit["reason"]
         elif not eff_profitable:
             status_take_profit = "LOCKED_AWAITING_PROFIT"
-        elif is_cond_enabled("exit_net_profit") and not exchange_average_profit["available"]:
-            status_take_profit = exchange_average_profit["reason"]
-        elif not eff_exchange_average_profitable:
-            status_take_profit = "LOCKED_EXCHANGE_AVERAGE_LOSS"
         elif not eff_pos_qty:
             status_take_profit = "EXIT_POSITION_INSUFFICIENT_OR_WRONG_DIRECTION"
         elif not eff_dwell:
@@ -1871,9 +1850,6 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             "is_dwell_satisfied": is_dwell_satisfied,
             "is_out_profitable_relative_to_latest": is_out_profitable_relative_to_latest,
             "eligible_for_take_profit": eligible_for_take_profit,
-            "exchange_average_profit": exchange_average_profit,
-            "exchange_average_profitable": exchange_average_profitable,
-            "effective_exchange_average_profitable": eff_exchange_average_profitable,
             "can_take_profit": can_take_profit,
             "target_tranche_profit": tranche_profit,
             "status_take_profit": status_take_profit,

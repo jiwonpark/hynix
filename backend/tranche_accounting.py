@@ -10,54 +10,6 @@ LEG_PAIR_MAX_DELAY_MS = 5000
 MIN_NET_PROFIT_USD = 0.02
 
 
-def estimate_exchange_average_exit(adr_entry_price, stock_entry_price, adr_mark,
-                                   stock_mark, *, adr_qty=.07, stock_qty=1.2,
-                                   entry_fees=0.0, funding_reserve=0.0,
-                                   threshold=MIN_NET_PROFIT_USD):
-    """Estimate the P&L Binance will realize from reducing its aggregate book.
-
-    Binance Futures does not expose selectable tax lots in one-way mode.  A
-    reduce-only order realizes against the exchange position's average entry,
-    even when the strategy internally selected a profitable LIFO tranche.
-    """
-    values = (adr_entry_price, stock_entry_price, adr_mark, stock_mark,
-              adr_qty, stock_qty, entry_fees, funding_reserve, threshold)
-    if not all(math.isfinite(float(value)) for value in values):
-        return {'available': False, 'profitable': False,
-                'reason': 'INVALID_EXCHANGE_AVERAGE_INPUTS',
-                'net_pnl_usd': None, 'threshold_usd': threshold}
-    if min(adr_entry_price, stock_entry_price, adr_mark, stock_mark,
-           adr_qty, stock_qty) <= 0:
-        return {'available': False, 'profitable': False,
-                'reason': 'MISSING_EXCHANGE_AVERAGE_PRICES',
-                'net_pnl_usd': None, 'threshold_usd': threshold}
-    adr_pnl = adr_qty * (adr_entry_price - adr_mark)
-    stock_pnl = stock_qty * (stock_mark - stock_entry_price)
-    exit_notional = adr_qty * adr_mark + stock_qty * stock_mark
-    closing_fee = exit_notional * EXIT_FEE_BPS / 10000
-    slippage = exit_notional * EXIT_SLIPPAGE_BPS / 10000
-    net = adr_pnl + stock_pnl - entry_fees - closing_fee - slippage - funding_reserve
-    return {
-        'available': True,
-        'profitable': net > threshold,
-        'reason': 'EXCHANGE_AVERAGE_ESTIMATE_READY',
-        'valuation': 'binance_average_entry_with_cost_reserves',
-        'threshold_usd': threshold,
-        'adr_entry_price': adr_entry_price,
-        'stock_entry_price': stock_entry_price,
-        'adr_exit_qty': adr_qty,
-        'stock_exit_qty': stock_qty,
-        'adr_pnl_usd': adr_pnl,
-        'stock_pnl_usd': stock_pnl,
-        'gross_pnl_usd': adr_pnl + stock_pnl,
-        'entry_fees_usd': entry_fees,
-        'estimated_exit_fee_usd': closing_fee,
-        'slippage_reserve_usd': slippage,
-        'funding_reserve_usd': funding_reserve,
-        'net_pnl_usd': net,
-    }
-
-
 def aggregate_orders(executions):
     orders = {}
     seen = set()

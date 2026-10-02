@@ -277,8 +277,6 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stack_top['minimum_net_profit_usd'], .02)
         self.assertTrue(stack_top['profit_estimate_available'])
         self.assertIsNotNone(stack_top['estimated_net_pnl_usd'])
-        self.assertTrue(criteria['exchange_average_profitable'])
-        self.assertGreater(criteria['exchange_average_profit']['net_pnl_usd'], .02)
         self.assertIn(call('5m', 60), server.get_cached_parity_bars.await_args_list)
         self.assertIn(call('1h', 61), server.get_cached_parity_bars.await_args_list)
         flat_bars = self.ma_bars([141] * 60)
@@ -313,33 +311,12 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await server.reduce_tranche())['success'])
         self.client.create_order.assert_not_awaited()
 
-        # 2. The existing net-profit switch controls both LIFO attribution and
-        # the Binance average-entry guard.
+        # 2. When disabled, net profit check is bypassed.
         server.save_auto_tranche_state({'condition_toggles': {'exit_net_profit': False}})
         criteria = (await server.get_hedged_status())['auto_tranche_criteria']
         self.assertFalse(criteria['live_condition_toggles']['exit_net_profit'])
         self.assertNotEqual(criteria['status_take_profit'], 'LOCKED_AWAITING_PROFIT')
-        self.assertNotEqual(criteria['status_take_profit'], 'LOCKED_EXCHANGE_AVERAGE_LOSS')
-        self.assertTrue(criteria['effective_exchange_average_profitable'])
-
-        # A profitable latest LIFO lot is still blocked when Binance would
-        # realize the reduction at a loss against its aggregate average cost.
-        overview['positions'][0]['mark_price'] = 193.2
-        overview['positions'][0]['entry_price'] = 190
-        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
-        self.assertTrue(criteria['eligible_for_take_profit'])
-        self.assertFalse(criteria['exchange_average_profitable'])
-        self.assertTrue(criteria['effective_exchange_average_profitable'])
-        overview['positions'][0]['entry_price'] = 196
-
-        # Re-enabling the switch makes the exchange-average loss blocking again.
-        server.save_auto_tranche_state({'condition_toggles': {'exit_net_profit': True}})
-        overview['positions'][0]['entry_price'] = 190
-        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
-        self.assertEqual(criteria['status_take_profit'], 'LOCKED_EXCHANGE_AVERAGE_LOSS')
-        self.assertFalse((await server.reduce_tranche())['success'])
-        self.client.create_order.assert_not_awaited()
-        overview['positions'][0]['entry_price'] = 196
+        self.assertIn('ANTI_CHURN_WAITING_CONVERGENCE', criteria['status_take_profit'])
 
         # 3. Mandatory live safeguards cannot be bypassed even if toggled False.
         server.save_auto_tranche_state({'condition_toggles': {
