@@ -3689,7 +3689,7 @@
                       <input type="checkbox" id="chkCondExitNetPnl" checked onchange="tradingEngine.toggleCondition('exit_net_profit', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Net PnL must exceed the entry’s saved $0.02–$0.04 threshold after fees, slippage and funding">3. Net Profit (entry threshold)</span>
+                    <span class="condLabel" title="Both the selected LIFO tranche and Binance’s actual average-cost reduction must exceed the saved $0.02–$0.04 threshold after fees, slippage and funding">3. Net Profit (LIFO + actual average)</span>
                     <span class="condValue" id="valCondExitNetPnl"><strong id="valCritCombinedPnl">—</strong></span>
                     <span class="condBadge wait" id="badgeCondExitNetPnl">LOCKED</span>
                   </div>
@@ -13519,7 +13519,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const canTP = Boolean(criteria.can_take_profit);
         const trancheProfit = criteria.target_tranche_profit;
         const pnl = trancheProfit?.available ? trancheProfit.net_pnl_usd : null;
-        const isNetProfitable = Boolean(trancheProfit?.profitable);
+        const exchangeAverageProfit = criteria.exchange_average_profit || null;
+        const exchangeAveragePnl = exchangeAverageProfit?.net_pnl_usd;
+        const isNetProfitable = Boolean(
+          trancheProfit?.profitable && criteria.exchange_average_profitable);
         const latestIn = criteria.latest_entry_spread != null ? criteria.latest_entry_spread : baseEntry;
         const outTarget = criteria.out_target_spread != null ? criteria.out_target_spread : (criteria.take_profit_trigger_spread || (latestIn - 0.08));
         const gapOut = criteria.gap_to_out_pts != null ? criteria.gap_to_out_pts : (currSpread - outTarget);
@@ -13573,10 +13576,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         if ($("valCritCombinedPnl")) {
           const sign = pnl >= 0 ? "+" : "";
-          const col = pnl > (trancheProfit?.threshold_usd ?? .02) ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#64748b");
+          const avgSign = exchangeAveragePnl >= 0 ? "+" : "";
+          const col = isNetProfitable ? "#16a34a" : "#dc2626";
           $("valCritCombinedPnl").style.color = col;
-          $("valCritCombinedPnl").textContent = pnl == null ? (isKo ? "미확인" : "Unverified") : `${sign}$${pnl.toFixed(3)} net (> +$${(trancheProfit?.threshold_usd ?? .02).toFixed(2)})`;
-          $("valCritCombinedPnl").title = pnl == null ? (trancheProfit?.reason || "No matched tranche") : `Latest paired fills only. Entry fees + estimated exit fee (${trancheProfit.exit_fee_bps} bps), slippage (${trancheProfit.slippage_bps} bps), and funding reserve (${trancheProfit.funding_reserve_bps_day} bps/day) deducted. Actual PnL may differ.`;
+          $("valCritCombinedPnl").textContent = (pnl == null || exchangeAveragePnl == null)
+            ? (isKo ? "미확인" : "Unverified")
+            : `LIFO ${sign}$${pnl.toFixed(3)} · Actual avg ${avgSign}$${exchangeAveragePnl.toFixed(3)} (> +$${(trancheProfit?.threshold_usd ?? .02).toFixed(2)})`;
+          $("valCritCombinedPnl").title = (pnl == null || exchangeAveragePnl == null)
+            ? (trancheProfit?.reason || exchangeAverageProfit?.reason || "Profit estimate unavailable")
+            : "When enabled, both the selected LIFO tranche estimate and Binance average-entry reduction estimate must pass after fees, slippage, and funding reserves.";
         }
         syncCondRow("exit_net_profit", "rowCondExitNetPnl", "chkCondExitNetPnl", "badgeCondExitNetPnl", isNetProfitable, isKo ? "충족" : "PASS", isKo ? "수익미달" : "LOCKED", "wait");
 
