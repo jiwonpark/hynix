@@ -1149,6 +1149,10 @@
     },
 
     bindParadigmDetailEvents(mode) {
+      $("lighter_paradigmDetailSection")?.querySelectorAll("input, select").forEach((input) => {
+        input.addEventListener("input", () => this.updateRulesMatchStatus());
+        input.addEventListener("change", () => this.runBacktest());
+      });
       if (mode === "ou_quant") {
         $("lighter_btnOuReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "ma_stack") {
@@ -1713,78 +1717,102 @@
       }, 5000);
     },
 
+    replaySettings() {
+      const mode = this.currentParadigm || "grid";
+      const numeric = (id, fallback) => {
+        const raw = $(id)?.value;
+        const value = raw == null || raw === "" ? NaN : Number(raw);
+        return Number.isFinite(value) ? value : fallback;
+      };
+      return {
+        interval: this.interval, limit: 500, strategy_mode: mode,
+        entry_z: mode === "ou_quant" ? numeric("lighter_inpOuEntryZ", 1.8) :
+          mode === "custom" ? numeric("lighter_inpCustomEntryZ", 1.5) : 1.5,
+        exit_z: mode === "ou_quant" ? numeric("lighter_inpOuExitZ", 0.20) :
+          mode === "custom" ? numeric("lighter_inpCustomExitZ", 0.25) : 0.25,
+        ou_halflife_max: 8.0, ou_stop_z: 3.5,
+        ma_stretch_min: numeric("lighter_inpMaStretchMin", 0.30),
+        ma_trailing_stop: numeric("lighter_inpMaTrailingStop", 0.15),
+        min_consensus_votes: numeric("lighter_selFactorQuorum", 3),
+        trend_pullback_dist: numeric("lighter_inpTrendPullbackDist", 0.15),
+        trend_tp_dist: numeric("lighter_inpTrendTpDist", 0.05),
+        trend_macro_window: numeric("lighter_inpTrendMacroWindow", 24),
+        trend_slope_min: 0.002,
+        use_ma_stretch: lid("chkCondEntryMaStretch")?.checked !== false,
+        use_base_spacing: lid("chkCondEntryBase")?.checked !== false,
+        use_peak: lid("chkCondEntryPeak")?.checked !== false,
+        use_ma_stack: lid("chkCondEntryMaStack5m")?.checked === true,
+        use_convergence: lid("chkCondExitConvergence")?.checked !== false,
+        use_dwell: lid("chkCondExitDwell")?.checked !== false,
+        use_bottoming: lid("chkCondExitBottoming")?.checked === true,
+      };
+    },
+
     updateRulesMatchStatus() {
-      const liveMode = this.botState?.strategy_mode || "grid";
-      const liveInterval = this.botState?.strategy_interval || "5m";
-      const liveName = this.botState?.strategy_name || this.paradigms[liveMode]?.name || "Dynamic Grid";
-
-      const currentMode = this.currentParadigm || "grid";
-      const currentInterval = this.interval || "5m";
-      const currentName = this.paradigms[currentMode]?.name || currentMode;
-
-      const isIntervalMatch = currentInterval === liveInterval;
-      const isParadigmMatch = currentMode === liveMode;
-      const isBotActive = Boolean(this.botState?.enabled);
-
-      // Check replay condition toggles against live rules
-      const researchConditions = [
-        { id: "chkCondEntryMaStretch", badgeId: "badgeCondEntryMaStretch", rowId: "rowCondEntryMaStretch", name: "Entry Trigger" },
-        { id: "chkCondEntryBase", badgeId: "badgeCondEntryBase", rowId: "rowCondEntryBase", name: "Spacing" },
-        { id: "chkCondEntryPeak", badgeId: "badgeCondEntryPeak", rowId: "rowCondEntryPeak", name: "Peak Rollover" },
-        { id: "chkCondEntryMaStack5m", badgeId: "badgeCondEntryMaStack5m", rowId: "rowCondEntryMaStack5m", name: "5m Trend Stack" },
-        { id: "chkCondExitConvergence", badgeId: "badgeCondExitConvergence", rowId: "rowCondExitConvergence", name: "Convergence Target" },
-        { id: "chkCondExitDwell", badgeId: "badgeCondExitDwell", rowId: "rowCondExitDwell", name: "Dwell Time" },
-        { id: "chkCondExitBottoming", badgeId: "badgeCondExitBottoming", rowId: "rowCondExitBottoming", name: "Bottoming-Out" },
-      ];
-
-      const disabledRules = [];
-      researchConditions.forEach(({ id, badgeId, rowId, name }) => {
-        const el = lid(id);
-        const row = lid(rowId);
-        const badge = lid(badgeId);
-        if (el) {
-          if (!el.checked) {
-            disabledRules.push(`${name} OFF`);
-            if (row) row.classList.add("disabled-cond");
-            if (badge) {
-              badge.textContent = "OFF";
-              badge.className = "condBadge neutral";
-            }
-          } else {
-            if (row) row.classList.remove("disabled-cond");
-          }
-        }
-      });
-
-      const isConditionsMatch = disabledRules.length === 0;
-
       const pill = $("lighterMatchPill");
       if (!pill) return;
-
-      if (isIntervalMatch && isParadigmMatch && isConditionsMatch) {
-        if (isBotActive) {
-          pill.textContent = `● LIVE-MATCHED (${liveInterval} · ${liveName} · Bot Active)`;
-          pill.style.background = "#dcfce7";
-          pill.style.color = "#166534";
-          pill.style.borderColor = "#86efac";
-        } else {
-          pill.textContent = `○ LIVE-MATCHED (${liveInterval} · ${liveName} · Bot Paused)`;
-          pill.style.background = "#fef3c7";
-          pill.style.color = "#92400e";
-          pill.style.borderColor = "#fcd34d";
+      const settings = this.replaySettings();
+      const liveMode = this.botState?.strategy_mode || "grid";
+      const liveInterval = this.botState?.strategy_interval || "5m";
+      const liveName = this.botState?.strategy_name || this.paradigms[liveMode]?.name || liveMode;
+      const currentMode = settings.strategy_mode;
+      const currentInterval = settings.interval;
+      const isIntervalMatch = currentInterval === liveInterval;
+      const isParadigmMatch = currentMode === liveMode;
+      const diffs = [];
+      if (!this.botState) diffs.push("Live settings unavailable");
+      if (!isIntervalMatch) diffs.push(`Interval ${currentInterval} ≠ ${liveInterval}`);
+      if (!isParadigmMatch) diffs.push(`Strategy ${currentMode} ≠ ${liveMode}`);
+      const parameterKeys = {
+        grid: ["entry_z", "exit_z"], custom: ["entry_z", "exit_z"],
+        ou_quant: ["entry_z", "exit_z", "ou_halflife_max", "ou_stop_z"],
+        ma_stack: ["ma_stretch_min", "ma_trailing_stop"],
+        multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
+        trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
+      };
+      const liveParams = this.botState?.strategy_params || this.botState || {};
+      if (isParadigmMatch) (parameterKeys[currentMode] || []).forEach((key) => {
+        const live = liveParams[key];
+        if (live == null || !Number.isFinite(Number(live)) || Math.abs(settings[key] - Number(live)) > 1e-9)
+          diffs.push(`${key}: ${settings[key]} ≠ ${live ?? "unknown"}`);
+      });
+      // Only Grid/Custom consume these optional research filters. The other
+      // strategies ignore these checkboxes, so their state cannot affect matching.
+      const usesFilters = ["grid", "custom"].includes(currentMode);
+      const rules = [
+        ["EntryMaStretch", "use_ma_stretch", true, "Entry trigger"],
+        ["EntryBase", "use_base_spacing", false, "Spacing"],
+        ["EntryPeak", "use_peak", false, "Peak rollover"],
+        ["EntryMaStack5m", "use_ma_stack", false, "Trend stack"],
+        ["ExitConvergence", "use_convergence", true, "Convergence"],
+        ["ExitDwell", "use_dwell", false, "Dwell"],
+        ["ExitBottoming", "use_bottoming", false, "Bottoming"],
+      ];
+      rules.forEach(([suffix, key, liveEnabled, name]) => {
+        const input = lid(`chkCond${suffix}`);
+        const badge = lid(`badgeCond${suffix}`);
+        if (input) {
+          input.disabled = !usesFilters;
+          input.title = usesFilters ? "Paper replay filter" : "Not used by this strategy";
         }
-      } else {
-        const diffs = [];
-        if (!isIntervalMatch) diffs.push(`Interval ${currentInterval} ≠ ${liveInterval}`);
-        if (!isParadigmMatch) diffs.push(`Strategy ${currentName} ≠ ${liveName}`);
-        if (!isConditionsMatch) {
-          diffs.push(disabledRules.join(", "));
+        if (badge) {
+          badge.textContent = !usesFilters ? "N/A" : settings[key] ? "ON" : "OFF";
+          badge.className = "condBadge neutral";
         }
-        pill.textContent = `▲ PAPER DIVERGENT (${diffs.join(" · ")})`;
-        pill.style.background = "#fff7ed";
-        pill.style.color = "#c2410c";
-        pill.style.borderColor = "#fdba74";
-      }
+        if (usesFilters && settings[key] !== liveEnabled)
+          diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
+      });
+      if (!["grid", "custom", "ou_quant"].includes(currentMode))
+        diffs.push("Replay signal/exit rules differ from live");
+      const matched = diffs.length === 0;
+      const active = Boolean(this.botState?.enabled);
+      pill.textContent = matched
+        ? `${active ? "●" : "○"} LIVE-MATCHED SIGNALS (${liveInterval} · ${liveName} · Bot ${active ? "Active" : "Paused"})`
+        : `▲ PAPER DIVERGENT (${diffs.join(" · ")})`;
+      pill.title = "Price signals only. Replay ignores margin, execution cooldown, slippage and funding; fills can differ.";
+      pill.style.background = matched ? (active ? "#dcfce7" : "#fef3c7") : "#fff7ed";
+      pill.style.color = matched ? (active ? "#166534" : "#92400e") : "#c2410c";
+      pill.style.borderColor = matched ? (active ? "#86efac" : "#fcd34d") : "#fdba74";
     },
 
     trendScore(values) {
@@ -3846,57 +3874,19 @@
     },
 
     async runBacktest() {
+      const requestId = this.backtestRequestId = (this.backtestRequestId || 0) + 1;
       const summary = lid("dynamicBacktestStatus");
       const button = lid("btnRerunDynamicBacktest");
       if (button) button.disabled = true;
       if (summary) summary.textContent = "Running…";
       try {
-        let entry = 1.5;
-        let exit = 0.25;
-        let ouHalfLife = 8.0;
-        let maStretch = 0.30;
-        let quorum = 3;
-        let trendPullback = 0.15;
-        let trendTp = 0.05;
-        let trendMacroWin = 24;
-        let trendSlope = 0.002;
-
-        if (this.currentParadigm === "ou_quant") {
-          entry = Number($("lighter_inpOuEntryZ")?.value || 1.8);
-          exit = Number($("lighter_inpOuExitZ")?.value || 0.20);
-        } else if (this.currentParadigm === "ma_stack") {
-          maStretch = Number($("lighter_inpMaStretchMin")?.value || 0.30);
-        } else if (this.currentParadigm === "multi_factor") {
-          quorum = Number($("lighter_selFactorQuorum")?.value || 3);
-        } else if (this.currentParadigm === "trend_pullback") {
-          trendPullback = Number($("lighter_inpTrendPullbackDist")?.value || 0.15);
-          trendTp = Number($("lighter_inpTrendTpDist")?.value || 0.05);
-          trendMacroWin = Number($("lighter_inpTrendMacroWindow")?.value || 24);
-        } else if (this.currentParadigm === "custom") {
-          entry = Number($("lighter_inpCustomEntryZ")?.value || 1.5);
-          exit = Number($("lighter_inpCustomExitZ")?.value || 0.25);
-        }
-
-        const toggles = new URLSearchParams({
-          interval: this.interval, limit: "500",
-          strategy_mode: this.currentParadigm || "grid",
-          entry_z: String(entry), exit_z: String(exit),
-          ou_halflife_max: String(ouHalfLife),
-          ma_stretch_min: String(maStretch),
-          min_consensus_votes: String(quorum),
-          trend_pullback_dist: String(trendPullback),
-          trend_tp_dist: String(trendTp),
-          trend_macro_window: String(trendMacroWin),
-          trend_slope_min: String(trendSlope),
-          use_ma_stretch: String(lid("chkCondEntryMaStretch")?.checked !== false),
-          use_base_spacing: String(lid("chkCondEntryBase")?.checked !== false),
-          use_peak: String(lid("chkCondEntryPeak")?.checked !== false),
-          use_ma_stack: String(lid("chkCondEntryMaStack5m")?.checked === true),
-          use_convergence: String(lid("chkCondExitConvergence")?.checked !== false),
-          use_dwell: String(lid("chkCondExitDwell")?.checked !== false),
-          use_bottoming: String(lid("chkCondExitBottoming")?.checked === true),
-        });
+        const settings = this.replaySettings();
+        this.updateRulesMatchStatus();
+        const trendSlope = settings.trend_slope_min;
+        const trendPullback = settings.trend_pullback_dist;
+        const toggles = new URLSearchParams(settings);
         const data = await api(`/api/lighter/backtest?${toggles}`);
+        if (requestId !== this.backtestRequestId) return;
         const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
         this.backtestMarkers = data.trades.flatMap((trade, tradeIndex) => [
           {
@@ -3934,10 +3924,21 @@
             pnl_pct: trade.pnl_pct,
           },
         ]);
+        this.backtestMarkers.push(...(data.open_positions || []).map((entry, index) => ({
+          time: entry.entry_time,
+          position: entry.side < 0 ? "aboveBar" : "belowBar",
+          color: entry.side < 0 ? "rgba(220,38,38,.55)" : "rgba(22,163,74,.55)",
+          shape: "arrowRight", text: "", source: "virtual", hypothetical: true, backtest: true,
+          pairKey: `backtest:open:${entry.entry_time}:${index}`,
+          direction: entry.side < 0 ? "short" : "long", is_entry: true, is_open: true,
+          entry_price: entry.entry, ratio: entry.entry,
+          unrealized_pnl_pct: entry.unrealized_pnl_pct,
+          hoverText: `${entry.side < 0 ? "SHORT" : "BUY"} ${entry.entry.toFixed(2)}% · OPEN · unrealized ${entry.unrealized_pnl_pct >= 0 ? "+" : ""}${entry.unrealized_pnl_pct.toFixed(2)}%`,
+        })));
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
-        const sharedSignal = data.metrics?.signal_engine === "shared_live_ou";
-        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · net <strong>${data.summary.net_pct >= 0 ? "+" : ""}${data.summary.net_pct.toFixed(3)}%</strong> · <em>${sharedSignal ? "shared live signal timing" : "paper replay"}</em>`;
+        const sharedSignal = ["shared_live_ou", "shared_live_grid"].includes(data.metrics?.signal_engine);
+        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> closed trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · realized return sum <strong>${data.summary.net_pct.toFixed(3)}%</strong> · <strong>${data.open_positions?.length || 0}</strong> open · unrealized return sum <strong>${Number(data.summary.unrealized_pct || 0).toFixed(3)}%</strong> · <em>${sharedSignal ? "shared live signal timing" : "paper replay"}; price signals only, costs excluded</em>`;
 
         if (data.metrics && this.currentParadigm === "ou_quant") {
           const thetaEl = $("lighter_valOuTheta");
@@ -3965,8 +3966,8 @@
           }
         }
       } catch (error) {
-        if (summary) summary.textContent = error.message;
-      } finally { if (button) button.disabled = false; }
+        if (summary && requestId === this.backtestRequestId) summary.textContent = error.message;
+      } finally { if (button && requestId === this.backtestRequestId) button.disabled = false; }
     },
 
     save() { localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries: this.entries, ledger: this.ledger.slice(0, 100) })); },

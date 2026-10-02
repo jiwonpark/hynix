@@ -57,3 +57,21 @@ def evaluate_ou_signals(
         "stop_z": ou_stop_z,
     }
     return entry_signal, candidate_side, exit_signal, evaluation
+
+
+def evaluate_grid_signals(
+    ratios: List[float], *, entry_z: float, exit_z: float,
+    evaluation_time: Optional[int] = None,
+) -> Tuple[bool, int, bool, Dict[str, Any]]:
+    """Production Grid/Custom signals; optional research filters belong to replay."""
+    if len(ratios) < 25:
+        raise ValueError("Grid evaluation requires at least 25 completed ratios")
+    sample = ratios[-25:-1]
+    mean = sum(sample) / len(sample)
+    variance = sum((value - mean) ** 2 for value in sample) / len(sample)
+    zscore = (ratios[-1] - mean) / math.sqrt(variance) if variance > 1e-12 else 0.0
+    return abs(zscore) >= entry_z, -1 if zscore > 0 else 1, abs(zscore) <= exit_z, {
+        "time": evaluation_time, "ratio": round(ratios[-1], 4),
+        "mean": round(mean, 4), "z": round(zscore, 3),
+        "signal_z": zscore, "signal_mean": mean, "strategy": "grid",
+    }

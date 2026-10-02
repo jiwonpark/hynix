@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .lighter_strategy import evaluate_ou_signals
+from .lighter_strategy import evaluate_ou_signals, evaluate_grid_signals
 
 from .lighter_client import LighterClient
 
@@ -1110,19 +1110,10 @@ class LighterPairBot:
             return entry_signal, candidate_side, exit_signal, eval_info
 
         else:
-            # Default "grid" and "custom"
-            sample = ratios[-25:-1]
-            mean = sum(sample) / len(sample)
-            variance = sum((value - mean) ** 2 for value in sample) / len(sample)
-            zscore = (ratios[-1] - mean) / math.sqrt(variance) if variance > 1e-12 else 0.0
-            candidate_side = -1 if zscore > 0 else 1
-            entry_signal = bool(abs(zscore) >= entry_z)
-            exit_signal = bool(abs(zscore) <= exit_z)
-            eval_info = {
-                "time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(mean, 4),
-                "z": round(zscore, 3), "strategy": "grid",
-            }
-            return entry_signal, candidate_side, exit_signal, eval_info
+            return evaluate_grid_signals(
+                ratios, entry_z=entry_z, exit_z=exit_z,
+                evaluation_time=int(time.time()),
+            )
 
     async def _evaluate(self) -> None:
         if self.state.get("pending_execution"):

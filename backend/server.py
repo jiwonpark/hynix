@@ -36,7 +36,7 @@ from .config import config
 from .binance_client import BinanceFuturesClient
 from .lighter_client import LighterClient
 from .lighter_bot import LighterPairBot
-from .lighter_strategy import evaluate_ou_signals
+from .lighter_strategy import evaluate_ou_signals, evaluate_grid_signals
 from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
 from starlette.responses import JSONResponse
@@ -493,33 +493,56 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
     last_entry_side = None
     mode_metrics: Dict[str, Any] = {}
 
-    if strategy_mode == "ou_quant":
+    active_positions = []
+    if strategy_mode in {"ou_quant", "grid", "custom"}:
         ou_thetas = []
         ou_halflives = []
-        active_positions = []
-        replay_cap = int((lighter_pair_bot.state.get("risk_capacity") or {}).get("max_tranches") or 28)
+        is_ou = strategy_mode == "ou_quant"
         for index, bar in enumerate(bars):
             if index < window:
                 continue
             prefix = [item.get("signal_value", item["value"]) for item in bars[:index + 1]]
-            entry_signal, candidate_side, exit_signal, evaluation = evaluate_ou_signals(
-                prefix,
-                entry_z=entry_z,
-                exit_z=exit_z,
-                ou_halflife_max=ou_halflife_max,
-                ou_stop_z=ou_stop_z,
-                evaluation_time=int(bar["time"]),
-            )
-            signal_price = bar.get("signal_value", bar["value"])
+            if is_ou:
+                entry_signal, candidate_side, exit_signal, evaluation = evaluate_ou_signals(
+                    prefix, entry_z=entry_z, exit_z=exit_z,
+                    ou_halflife_max=ou_halflife_max, ou_stop_z=ou_stop_z,
+                    evaluation_time=int(bar["time"]),
+                )
+                ou_thetas.append(evaluation["theta"])
+                ou_halflives.append(evaluation["half_life_bars"])
+            else:
+                entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
+                    prefix, entry_z=entry_z if use_ma_stretch else 0.5,
+                    exit_z=exit_z, evaluation_time=int(bar["time"]),
+                )
+            signal_price = prefix[-1]
             series.append({"time": bar["time"], "value": bar["value"],
                            "mean": evaluation["mean"], "z": evaluation["z"]})
-            ou_thetas.append(evaluation["theta"])
-            ou_halflives.append(evaluation["half_life_bars"])
+            zscore = evaluation.get("signal_z", evaluation["z"])
+            reason = "convergence" if not is_ou or abs(evaluation["z"]) <= exit_z else "structural_stop"
+
+            if not is_ou:
+                # Research filters are opt-in differences from production Grid.
+                ma7 = sum(prefix[-8:-1]) / 7
+                mean = evaluation["signal_mean"]
+                stack_pass = ((zscore > 0 and signal_price > ma7 > mean)
+                              or (zscore < 0 and signal_price < ma7 < mean))
+                peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
+                spacing_pass = (not use_base_spacing or last_entry_value is None
+                                or candidate_side != last_entry_side
+                                or (candidate_side < 0 and signal_price >= last_entry_value + 0.10)
+                                or (candidate_side > 0 and signal_price <= last_entry_value - 0.10))
+                entry_signal = entry_signal and spacing_pass and (not use_peak or peak_pass) and (not use_ma_stack or stack_pass)
+                if active_positions:
+                    latest = active_positions[-1]
+                    convergence_pass = exit_signal if use_convergence else latest["side"] * (signal_price - latest["entry"]) > 0
+                    dwell_pass = not use_dwell or index - latest["entry_index"] >= 4
+                    bottoming_pass = not use_bottoming or (previous_zscore is not None and abs(zscore) >= abs(previous_zscore))
+                    exit_signal = convergence_pass and dwell_pass and bottoming_pass
 
             if active_positions and exit_signal:
-                reason = "convergence" if abs(evaluation["z"]) <= exit_z else "structural_stop"
                 for open_position in active_positions:
-                    pnl_pct = open_position["side"] * (signal_price - open_position["entry"])
+                    pnl_pct = open_position["side"] * (signal_price / open_position["entry"] - 1) * 100
                     trades.append({
                         "side": open_position["side"], "entry": open_position["entry"],
                         "entry_time": open_position["entry_time"],
@@ -527,23 +550,23 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                         "reason": reason,
                     })
                 active_positions = []
-            elif entry_signal and len(active_positions) < replay_cap:
+            elif entry_signal:
                 campaign_side = active_positions[0]["side"] if active_positions else None
                 if campaign_side is None or campaign_side == candidate_side:
                     active_positions.append({
-                        "side": candidate_side,
-                        "entry": signal_price,
-                        "entry_time": bar["time"],
+                        "side": candidate_side, "entry": signal_price,
+                        "entry_time": bar["time"], "entry_index": index,
                     })
+                    last_entry_value, last_entry_side = signal_price, candidate_side
+            previous_zscore = zscore
 
+        mode_metrics = {"signal_engine": "shared_live_ou" if is_ou else "shared_live_grid"}
         if ou_thetas:
-            mode_metrics = {
+            mode_metrics.update({
                 "avg_theta": round(sum(ou_thetas) / len(ou_thetas), 4),
                 "avg_half_life_bars": round(sum(ou_halflives) / len(ou_halflives), 1),
                 "half_life_mins": round((sum(ou_halflives) / len(ou_halflives)) * interval_seconds / 60, 1),
-                "signal_engine": "shared_live_ou",
-                "open_tranches": len(active_positions),
-            }
+            })
 
     elif strategy_mode == "ma_stack":
         # Dual MA Stack & Trend Reversal
@@ -720,49 +743,18 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                 "pullback_dist_target": trend_pullback_dist
             }
 
-    else:
-        # Default "grid" and "custom"
-        for index, bar in enumerate(bars):
-            if index < window:
-                continue
-            sample = [item["value"] for item in bars[index-window:index]]
-            mean = sum(sample) / len(sample)
-            variance = sum((value - mean) ** 2 for value in sample) / len(sample)
-            std = math.sqrt(variance)
-            zscore = (bar["value"] - mean) / std if std else 0.0
-            series.append({"time": bar["time"], "value": bar["value"], "mean": round(mean, 4), "z": round(zscore, 3)})
-            ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
-            stack_pass = ((zscore > 0 and bar["value"] > ma7 > mean)
-                          or (zscore < 0 and bar["value"] < ma7 < mean))
-            peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
-            entry_threshold = max(0.5, entry_z) if use_ma_stretch else 0.5
-            candidate_side = -1 if zscore > 0 else 1
-            base_spacing_pass = (not use_base_spacing or last_entry_value is None or candidate_side != last_entry_side
-                                 or (candidate_side < 0 and bar["value"] >= last_entry_value + 0.10)
-                                 or (candidate_side > 0 and bar["value"] <= last_entry_value - 0.10))
-            entry_signal = (abs(zscore) >= entry_threshold
-                            and base_spacing_pass
-                            and (not use_peak or peak_pass)
-                            and (not use_ma_stack or stack_pass))
-            if position is None and entry_signal:
-                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"]}
-                position["entry_index"] = index
-                last_entry_value = bar["value"]
-                last_entry_side = candidate_side
-            elif position is not None:
-                held_bars = index - position["entry_index"]
-                convergence_pass = abs(zscore) <= max(0.0, exit_z) if use_convergence else position["side"] * (bar["value"] - position["entry"]) > 0
-                dwell_pass = not use_dwell or held_bars >= 4
-                bottoming_pass = not use_bottoming or (previous_zscore is not None and abs(zscore) >= abs(previous_zscore))
-                if not ((convergence_pass and dwell_pass and bottoming_pass) or index == len(bars) - 1):
-                    previous_zscore = zscore
-                    continue
-                pnl_pct = position["side"] * (bar["value"] - position["entry"])
-                position.pop("entry_index", None)
-                trades.append({**position, "exit": bar["value"], "exit_time": bar["time"],
-                               "pnl_pct": round(pnl_pct, 4)})
-                position = None
-            previous_zscore = zscore
+    # Open entries are chart events, not completed trades. Never invent an exit
+    # just to make their markers visible, or include unrealized returns in wins.
+    if position is not None:
+        active_positions.append(position)
+    mark = bars[-1].get("signal_value", bars[-1]["value"]) if bars else None
+    open_positions = [{
+        "side": item["side"], "entry": item["entry"], "entry_time": item["entry_time"],
+        "mark": mark,
+        "unrealized_pnl_pct": round(item["side"] * (mark / item["entry"] - 1) * 100, 4),
+    } for item in active_positions]
+    mode_metrics["open_tranches"] = len(open_positions)
+    mode_metrics["capacity_mode"] = "PRICE_SIGNALS_ONLY"
 
     wins = sum(1 for trade in trades if trade["pnl_pct"] > 0)
     return {
@@ -770,9 +762,12 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
         "strategy_mode": strategy_mode,
         "series": series,
         "trades": trades,
+        "open_positions": open_positions,
         "metrics": mode_metrics,
         "summary": {
             "trades": len(trades),
+            "open_tranches": len(open_positions),
+            "unrealized_pct": round(sum(item["unrealized_pnl_pct"] for item in open_positions), 4),
             "wins": wins,
             "win_rate": round(wins / len(trades) * 100, 1) if trades else 0,
             "net_pct": round(sum(trade["pnl_pct"] for trade in trades), 4)
