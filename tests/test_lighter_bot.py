@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from backend.lighter_bot import LighterPairBot, classify_trend
 from backend.lighter_client import LighterClient
+from backend.lighter_strategy import evaluate_ou_signals
 
 
 class TestLighterTrend(unittest.TestCase):
@@ -893,6 +894,22 @@ class TestLighterPairBot(unittest.TestCase):
                 self.assertEqual(eval_info["trailing_stop"], 0.2)
 
         asyncio.run(run())
+
+    def test_live_ou_evaluation_uses_shared_signal_engine(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            bot.state.update({
+                "strategy_mode": "ou_quant", "entry_z": 1.8, "exit_z": 0.2,
+                "ou_halflife_max": 8.0, "ou_stop_z": 3.5,
+            })
+            ratios = [140.0 + ((index % 7) - 3) * 0.04 for index in range(40)]
+            live = bot._evaluate_strategy_signals(ratios)
+            replay = evaluate_ou_signals(
+                ratios, entry_z=1.8, exit_z=0.2,
+                ou_halflife_max=8.0, ou_stop_z=3.5,
+                evaluation_time=live[3]["time"],
+            )
+            self.assertEqual(live, replay)
 
     def test_live_entry_records_strategy_evaluation_after_execution(self):
         async def run():

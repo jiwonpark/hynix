@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .lighter_strategy import evaluate_ou_signals
+
 from .lighter_client import LighterClient
 
 logger = logging.getLogger("skhynix-daemon")
@@ -1006,37 +1008,14 @@ class LighterPairBot:
         exit_z = float(self.state.get("exit_z", 0.25))
 
         if mode == "ou_quant":
-            window = min(24, len(ratios) - 1)
-            sample = ratios[-window:]
-            mean = sum(sample) / len(sample)
-            x_prev = sample[:-1]
-            x_curr = sample[1:]
-            n = len(x_prev)
-            mean_prev = sum(x_prev) / n
-            mean_curr = sum(x_curr) / n
-            var_prev = sum((x - mean_prev)**2 for x in x_prev)
-            cov = sum((x_prev[i] - mean_prev) * (x_curr[i] - mean_curr) for i in range(n))
-            a = cov / var_prev if var_prev > 1e-12 else 0.95
-            a = max(0.01, min(0.999, a))
-            b = mean_curr - a * mean_prev
-            mu_ou = b / (1.0 - a) if abs(1.0 - a) > 1e-6 else mean
-            theta = -math.log(a)
-            half_life_bars = math.log(2.0) / theta if theta > 1e-6 else 24.0
-            residuals = [(x_curr[i] - (a * x_prev[i] + b)) for i in range(n)]
-            sigma_ou = math.sqrt(sum(r**2 for r in residuals) / n) if n else 0.05
-            denom = (sigma_ou / math.sqrt(2 * theta)) if theta > 0 and sigma_ou > 0 else 0.1
-            z_ou = (ratios[-1] - mu_ou) / denom if denom > 1e-6 else 0.0
-            candidate_side = -1 if z_ou > 0 else 1
-            max_hl = float(self.state.get("ou_halflife_max", 8.0)) * 4
-            entry_signal = bool(abs(z_ou) >= entry_z and half_life_bars <= max_hl)
-            stop_z = float(self.state.get("ou_stop_z", 3.5))
-            exit_signal = bool(abs(z_ou) <= exit_z or abs(z_ou) >= stop_z)
-            eval_info = {
-                "time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(mu_ou, 4),
-                "z": round(z_ou, 3), "strategy": "ou_quant", "theta": round(theta, 4),
-                "half_life_bars": round(half_life_bars, 1), "stop_z": stop_z,
-            }
-            return entry_signal, candidate_side, exit_signal, eval_info
+            return evaluate_ou_signals(
+                ratios,
+                entry_z=entry_z,
+                exit_z=exit_z,
+                ou_halflife_max=float(self.state.get("ou_halflife_max", 8.0)),
+                ou_stop_z=float(self.state.get("ou_stop_z", 3.5)),
+                evaluation_time=int(time.time()),
+            )
 
         elif mode == "ma_stack":
             ma7 = sum(ratios[-7:]) / 7

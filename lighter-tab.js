@@ -3936,7 +3936,8 @@
         ]);
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
-        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · net <strong>${data.summary.net_pct >= 0 ? "+" : ""}${data.summary.net_pct.toFixed(3)}%</strong> · <em>live rules unchanged</em>`;
+        const sharedSignal = data.metrics?.signal_engine === "shared_live_ou";
+        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · net <strong>${data.summary.net_pct >= 0 ? "+" : ""}${data.summary.net_pct.toFixed(3)}%</strong> · <em>${sharedSignal ? "shared live signal timing" : "paper replay"}</em>`;
 
         if (data.metrics && this.currentParadigm === "ou_quant") {
           const thetaEl = $("lighter_valOuTheta");

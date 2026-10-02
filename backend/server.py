@@ -36,6 +36,7 @@ from .config import config
 from .binance_client import BinanceFuturesClient
 from .lighter_client import LighterClient
 from .lighter_bot import LighterPairBot
+from .lighter_strategy import evaluate_ou_signals
 from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
 from starlette.responses import JSONResponse
@@ -277,7 +278,9 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                 continue
             adr_close = float(row["c"])
             domestic_close = domestic[timestamp]
-            bars.append({"time": timestamp // 1000, "value": round(adr_close / (domestic_close / 10) * 100, 4),
+            signal_value = adr_close / (domestic_close / 10) * 100
+            bars.append({"time": timestamp // 1000, "value": round(signal_value, 4),
+                         "signal_value": signal_value,
                          "adr": adr_close, "domestic": domestic_close})
         bars = bars[-limit:]
 
@@ -477,6 +480,10 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                                trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002) -> Dict[str, Any]:
     data = await get_lighter_parity(interval, min(500, limit))
     bars = data.get("bars", [])
+    interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
+                        "4h": 14400, "1d": 86400}.get(interval, 900)
+    now_seconds = int(time.time())
+    bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]
     window = 24
     trades = []
     position = None
@@ -487,61 +494,55 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
     mode_metrics: Dict[str, Any] = {}
 
     if strategy_mode == "ou_quant":
-        # Ornstein-Uhlenbeck SDE Calibration & Trading
-        # dX = theta * (mu - X) dt + sigma * dW
-        # Discrete AR(1): X_t = a * X_{t-1} + b + eps
         ou_thetas = []
         ou_halflives = []
+        active_positions = []
+        replay_cap = int((lighter_pair_bot.state.get("risk_capacity") or {}).get("max_tranches") or 28)
         for index, bar in enumerate(bars):
             if index < window:
                 continue
-            sample = [item["value"] for item in bars[index-window:index]]
-            mean = sum(sample) / len(sample)
-            x_prev = sample[:-1]
-            x_curr = sample[1:]
-            n = len(x_prev)
-            mean_prev = sum(x_prev) / n
-            mean_curr = sum(x_curr) / n
-            var_prev = sum((x - mean_prev)**2 for x in x_prev)
-            cov = sum((x_prev[i] - mean_prev) * (x_curr[i] - mean_curr) for i in range(n))
-            a = cov / var_prev if var_prev > 1e-12 else 0.95
-            a = max(0.01, min(0.999, a))
-            b = mean_curr - a * mean_prev
-            mu_ou = b / (1.0 - a) if abs(1.0 - a) > 1e-6 else mean
-            theta = -math.log(a)
-            half_life_bars = math.log(2.0) / theta if theta > 1e-6 else 24.0
-            residuals = [(x_curr[i] - (a * x_prev[i] + b)) for i in range(n)]
-            sigma_ou = math.sqrt(sum(r**2 for r in residuals) / n) if n else 0.05
-            z_ou = (bar["value"] - mu_ou) / (sigma_ou / math.sqrt(2 * theta)) if theta > 0 and sigma_ou > 0 else (bar["value"] - mean) / 0.1
+            prefix = [item.get("signal_value", item["value"]) for item in bars[:index + 1]]
+            entry_signal, candidate_side, exit_signal, evaluation = evaluate_ou_signals(
+                prefix,
+                entry_z=entry_z,
+                exit_z=exit_z,
+                ou_halflife_max=ou_halflife_max,
+                ou_stop_z=ou_stop_z,
+                evaluation_time=int(bar["time"]),
+            )
+            signal_price = bar.get("signal_value", bar["value"])
+            series.append({"time": bar["time"], "value": bar["value"],
+                           "mean": evaluation["mean"], "z": evaluation["z"]})
+            ou_thetas.append(evaluation["theta"])
+            ou_halflives.append(evaluation["half_life_bars"])
 
-            series.append({"time": bar["time"], "value": bar["value"], "mean": round(mu_ou, 4), "z": round(z_ou, 3)})
-            ou_thetas.append(theta)
-            ou_halflives.append(half_life_bars)
-
-            candidate_side = -1 if z_ou > 0 else 1
-            entry_signal = (abs(z_ou) >= entry_z and half_life_bars <= ou_halflife_max * 4)
-
-            if position is None and entry_signal:
-                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "half_life": half_life_bars}
-            elif position is not None:
-                held = index - position["entry_index"]
-                convergence_exit = abs(z_ou) <= exit_z
-                time_stop = held >= max(6, int(position["half_life"] * 2.5))
-                structural_stop = abs(z_ou) >= ou_stop_z and (candidate_side == position["side"])
-                if convergence_exit or time_stop or structural_stop or index == len(bars) - 1:
-                    pnl_pct = position["side"] * (bar["value"] - position["entry"])
+            if active_positions and exit_signal:
+                reason = "convergence" if abs(evaluation["z"]) <= exit_z else "structural_stop"
+                for open_position in active_positions:
+                    pnl_pct = open_position["side"] * (signal_price - open_position["entry"])
                     trades.append({
-                        "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],
-                        "exit": bar["value"], "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
-                        "reason": "convergence" if convergence_exit else ("time_stop" if time_stop else "stop_loss")
+                        "side": open_position["side"], "entry": open_position["entry"],
+                        "entry_time": open_position["entry_time"],
+                        "exit": signal_price, "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "reason": reason,
                     })
-                    position = None
+                active_positions = []
+            elif entry_signal and len(active_positions) < replay_cap:
+                campaign_side = active_positions[0]["side"] if active_positions else None
+                if campaign_side is None or campaign_side == candidate_side:
+                    active_positions.append({
+                        "side": candidate_side,
+                        "entry": signal_price,
+                        "entry_time": bar["time"],
+                    })
 
         if ou_thetas:
             mode_metrics = {
                 "avg_theta": round(sum(ou_thetas) / len(ou_thetas), 4),
                 "avg_half_life_bars": round(sum(ou_halflives) / len(ou_halflives), 1),
-                "half_life_mins": round((sum(ou_halflives) / len(ou_halflives)) * 15, 1)
+                "half_life_mins": round((sum(ou_halflives) / len(ou_halflives)) * interval_seconds / 60, 1),
+                "signal_engine": "shared_live_ou",
+                "open_tranches": len(active_positions),
             }
 
     elif strategy_mode == "ma_stack":

@@ -46,7 +46,7 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('skhynix_lighter_selected_strategy', script)
         self.assertIn('REAL EC2 BOT — PRODUCTION RULES', script)
         self.assertIn('Rerun Paper', script)
-        self.assertIn('live rules unchanged', script)
+        self.assertIn('shared live signal timing', script)
         self.assertIn('calculateTrendRanges', script)
         self.assertIn('lighterTrendBandLayer', script)
         self.assertIn('TREND SCORE −1 ← 0 → +1', script)
@@ -110,6 +110,51 @@ class TestLighterTab(unittest.TestCase):
                     if mode == "trend_pullback":
                         self.assertIn("macro_regime", res.get("metrics", {}))
                         self.assertIn("latest_slope", res.get("metrics", {}))
+
+        asyncio.run(_run())
+
+    def test_ou_replay_uses_live_campaign_timing_and_prices(self):
+        from backend.server import get_lighter_backtest
+
+        fake_bars = [
+            {"time": 1_700_000_000 + index * 300, "value": 140.0 + index / 100}
+            for index in range(30)
+        ]
+
+        def shared_signal(prefix, **kwargs):
+            index = len(prefix) - 1
+            entry = index in {24, 25, 28}
+            side = 1 if index < 28 else -1
+            exit_signal = index == 26
+            return entry, side, exit_signal, {
+                "time": kwargs["evaluation_time"], "ratio": prefix[-1],
+                "mean": 140.0, "z": 2.0, "strategy": "ou_quant",
+                "theta": 0.5, "half_life_bars": 1.4,
+                "stop_z": kwargs["ou_stop_z"],
+            }
+
+        async def _run():
+            with patch("backend.server.get_lighter_parity", new=AsyncMock(return_value={
+                    "success": True, "bars": fake_bars})), \
+                 patch("backend.server.evaluate_ou_signals", side_effect=shared_signal):
+                result = await get_lighter_backtest(
+                    interval="5m", limit=30, strategy_mode="ou_quant",
+                    entry_z=1.8, exit_z=0.2,
+                )
+            self.assertEqual(len(result["trades"]), 2)
+            self.assertEqual(
+                [(trade["entry_time"], trade["entry"], trade["exit_time"], trade["exit"])
+                 for trade in result["trades"]],
+                [
+                    (fake_bars[24]["time"], fake_bars[24]["value"],
+                     fake_bars[26]["time"], fake_bars[26]["value"]),
+                    (fake_bars[25]["time"], fake_bars[25]["value"],
+                     fake_bars[26]["time"], fake_bars[26]["value"]),
+                ],
+            )
+            self.assertEqual(result["metrics"]["signal_engine"], "shared_live_ou")
+            self.assertEqual(result["metrics"]["open_tranches"], 1)
+            self.assertNotIn("time_stop", {trade["reason"] for trade in result["trades"]})
 
         asyncio.run(_run())
 
