@@ -15,11 +15,13 @@ const elements = {
 const context = vm.createContext({window: {location: {origin: 'https://test', pathname: '/skhynix/'}},
   $: id => elements[id], AbortSignal, console, formatKstTime: () => 'now'});
 const engine = vm.runInContext(`({state: {positions: [], orderLog: [], conditionToggles: {}},
-  ${['isConditionEnabled', 'renderPositionsAndLogs', 'fetchHedgedStatus', 'fetchHedgedStatusOnce', 'renderHedgedController'].map(method).join('\n')}
+  ${['isConditionEnabled', 'renderPositionsAndLogs', 'fetchHedgedStatus', 'fetchHedgedStatusOnce', 'renderHedgedController', 'renderHeldPairPnl'].map(method).join('\n')}
 })`, context);
 engine.renderAutoTrancheCriteria = () => {};
 engine.fetchShortTermParity = () => {};
 engine.scheduleDynamicBacktest = () => {};
+let displayedStatus;
+engine.heldPairPnlPane = {update: (_, status) => {displayedStatus = status;}};
 engine.state.backendPositions = ['SKHYUSDT', 'CSOPSKHYNIX2LUSDT'].map(symbol => ({
   symbol, unrealized_pnl: 0, notional: 10, entry_price: 190, mark_price: 191, roe_percent: 0,
 }));
@@ -35,6 +37,7 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
       condition_toggles: {exit_ma_stack_5m: false}}};
   context.fetch = async () => ({ok: true, json: async () => data});
   await engine.fetchHedgedStatus();
+  assert.equal(displayedStatus, data);
   assert.match(elements.activePositionsBody.innerHTML, /12 \/ 189 UNITS/,
     'hedged status polling must refresh table capacity');
   assert.equal(elements.btnReduceTranche.disabled, false,
@@ -56,6 +59,7 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
   assert.equal(elements.btnStepTranche.disabled, true);
   assert.equal(elements.btnReduceTranche.disabled, true);
   assert.match(elements.lblHedgedSyncBadge.textContent, /DATA UNAVAILABLE/);
+  assert.equal(displayedStatus.authenticated, false, 'unavailable status clears held-pair P&L');
   context.fetch = async () => ({ok:true,json:async()=>data});
   await engine.fetchHedgedStatus();
   assert.equal(elements.btnStepTranche.disabled, false);

@@ -75,6 +75,7 @@ const engineCode = `({
   updateMarkerState: () => {},
   calcMovingAverage: () => [],
   initShortTermChart: () => {},
+  renderHeldPairPnl: () => {},
   ${renderMethod}
 })`;
 

@@ -4875,6 +4875,7 @@
   <div id="ellipsisHoverTooltip" class="ellipsisTooltip" style="display: none;" role="tooltip"></div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="held-pair-pnl.js?v=20261002_1"></script>
   <script src="strategy-execution-chart.js?v=20260923_sync_5"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
@@ -6369,7 +6370,7 @@
           }),
           ma7: window.spreadChart.addLineSeries({
             color: "#f59e0b",
-            lineWidth: 1.5,
+            lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
             priceFormat: lineFormat
@@ -12348,6 +12349,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 this.state.conditionToggles = {...data.auto_tranche_criteria.condition_toggles};
               }
               this.renderHedgedController(data);
+              this.renderHeldPairPnl();
               this.renderPositionsAndLogs();
               this.scheduleDynamicBacktest();
               return;
@@ -12356,6 +12358,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
         this.state.hedgedStatus = {authenticated: false, status: "unavailable", error: "Status request failed"};
         this.renderHedgedController(this.state.hedgedStatus);
+        this.renderHeldPairPnl();
       },
 
       renderHedgedController(data) {
@@ -12660,17 +12663,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           });
 
           this.shortTermSeries = this.shortTermChart.addAreaSeries({
-            topColor: "rgba(2, 132, 199, 0.25)",
+            topColor: "rgba(2, 132, 199, 0.10)",
             bottomColor: "rgba(2, 132, 199, 0.02)",
             lineColor: "#0284c7",
-            lineWidth: 2,
+            lineWidth: 1,
             priceFormat: { type: "price", precision: 2, minMove: 0.01 }
           });
 
           this.shortTermPnlSeries = this.shortTermChart.addLineSeries({
             priceScaleId: "pnl",
             color: "#0f766e",
-            lineWidth: 2,
+            lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
             crosshairMarkerVisible: true,
@@ -12687,7 +12690,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           });
 
           this.shortTermMa7Series = this.shortTermChart.addLineSeries({
-            color: "#f59e0b",
+            color: "rgba(245, 158, 11, 0.65)",
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
@@ -12696,7 +12699,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           });
 
           this.shortTermMa24Series = this.shortTermChart.addLineSeries({
-            color: "#8b5cf6",
+            color: "rgba(139, 92, 246, 0.65)",
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
@@ -12705,7 +12708,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           });
 
           this.shortTermMa60Series = this.shortTermChart.addLineSeries({
-            color: "#06b6d4",
+            color: "rgba(6, 182, 212, 0.65)",
             lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
@@ -12796,7 +12799,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             adr: this.shortTermAssetChart.addLineSeries({
               priceScaleId: 'right',
               color: '#2563eb',
-              lineWidth: 2,
+              lineWidth: 1,
               title: 'SKHY (ADR)',
               priceLineVisible: true,
               priceLineColor: '#2563eb',
@@ -12806,7 +12809,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             stock: this.shortTermAssetChart.addLineSeries({
               priceScaleId: 'left',
               color: '#d97706',
-              lineWidth: 2,
+              lineWidth: 1,
               title: 'CSOP 2L',
               priceLineVisible: true,
               priceLineColor: '#d97706',
@@ -12818,6 +12821,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         if (this.shortTermChart && this.shortTermAssetChart && !this._shortTermChartsSynced) {
           this.setupShortTermChartSync();
+        }
+
+        if (this.shortTermChart && host && !this.heldPairPnlPane && window.HeldPairPnl) {
+          this.heldPairPnlPane = new HeldPairPnl.Pane(host, this.shortTermChart, LightweightCharts);
+          this.renderHeldPairPnl();
         }
 
         if (!this._shortTermResizeBound) {
@@ -13262,11 +13270,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
       },
 
+      renderHeldPairPnl(bars = this.shortTermHistory?.bars || []) {
+        this.heldPairPnlPane?.update(bars, this.state.hedgedStatus);
+      },
+
       renderShortTermChart(data) {
         this.initShortTermChart();
         if (!this.shortTermSeries || !data.bars || !data.bars.length) return;
 
         this.shortTermSeries.setData(data.bars.map(b => ({ time: b.time, value: b.value })));
+        this.renderHeldPairPnl(data.bars);
 
         if (this.shortTermAssetSeries?.adr && data.bars?.length) {
           const adrPoints = [];
