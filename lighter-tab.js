@@ -1849,12 +1849,22 @@
       return points;
     },
 
+    alignChartOverlay(layer) {
+      // Chart coordinates start at the plot, after the left price scale.
+      const left = this.chart.priceScale("left").width();
+      const width = this.chart.timeScale().width();
+      layer.style.left = `${left}px`;
+      layer.style.right = "auto";
+      layer.style.width = `${width}px`;
+      return width;
+    },
+
     renderTrendRanges() {
       const layer = $("lighterTrendBandLayer");
       const host = lid("shortTermSpreadChartHost");
       if (!layer || !host || !this.chart || !this.trendRanges.length) return;
       const scale = this.chart.timeScale();
-      const width = host.clientWidth;
+      const width = this.alignChartOverlay(layer);
       const html = [];
       this.trendRanges.forEach((point) => {
         const x = scale.timeToCoordinate(point.time);
@@ -2630,6 +2640,7 @@
     renderTradeMarkerTargets() {
       const layer = lid("tradeMarkerTargets");
       if (!layer || !this.chart || !this.series) return;
+      this.alignChartOverlay(layer);
       layer.textContent = "";
       const tradePairs = this.getTradePairs();
       const targetsByPair = new Map();
@@ -2931,6 +2942,7 @@
     renderTradeTriangles() {
       const svg = lid("tradeTrianglesLayer");
       if (!svg || !this.chart || !this.series) return;
+      this.alignChartOverlay(svg);
       svg.innerHTML = "";
 
       // Triangles and diagonal connectors should show ONLY on hover (or selection)

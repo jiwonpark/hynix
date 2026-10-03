@@ -46,3 +46,13 @@ assert.deepEqual(Controller.preserveRange({from:.5,to:2.5},bars([1,2,3,4,5]),bar
 assert.deepEqual(Controller.preserveRange({from:2,to:5},bars([1,2,3,4,5]),bars([2,3,4,5,6])), {from:2,to:5});
 assert.deepEqual(Controller.preserveRange({from:.5,to:2.5},bars([3,4,5,6,7]),bars([1,2,3,4,5,6,7])), {from:2.5,to:4.5});
 console.log('Chart synchronization tests passed');
+
+const fs = require('node:fs');
+const vm = require('node:vm');
+const lighter = fs.readFileSync(require.resolve('../lighter-tab.js'), 'utf8');
+const alignMethod = lighter.slice(lighter.indexOf('    alignChartOverlay(layer) {'), lighter.indexOf('    renderTrendRanges() {'));
+const overlayEngine = vm.runInNewContext(`({${alignMethod}})`);
+overlayEngine.chart = {priceScale: () => ({width: () => 80}), timeScale: () => ({width: () => 988})};
+const layer = {style:{}};
+assert.equal(overlayEngine.alignChartOverlay(layer), 988);
+assert.deepEqual(layer.style, {left:'80px', right:'auto', width:'988px'});
