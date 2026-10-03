@@ -2353,7 +2353,7 @@
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
         if (range) this.chart.timeScale().setVisibleLogicalRange(range);
-        else this.chart.timeScale().fitContent();
+        else this.chart.timeScale().setVisibleLogicalRange(StrategyExecutionChartController.initialRange(data.bars.length));
         this.chartInterval = interval;
         window.requestAnimationFrame(() => this.renderTrendRanges());
         this.setText("valShortTermCurrentParity", `${this.currentRatio.toFixed(3)}%`);

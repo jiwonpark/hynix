@@ -305,6 +305,13 @@
     };
   };
 
+  // Fit the newest 90% of loaded candles, with half-bar edges and no empty future space.
+  StrategyExecutionChartController.initialRange = function (barCount) {
+    if (!Number.isFinite(barCount) || barCount < 1) return null;
+    const visibleBars = Math.max(1, Math.ceil(barCount * 0.9));
+    return { from: barCount - visibleBars - 0.5, to: barCount - 0.5 };
+  };
+
   // Retain the same candle when a fixed-length API window rolls forward.
   StrategyExecutionChartController.preserveRange = function (range, previous, next) {
     if (!range || !previous?.length || !next?.length) return null;

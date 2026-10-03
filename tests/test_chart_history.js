@@ -6,7 +6,7 @@ const start = html.indexOf('      async fetchShortTermParity(older = false)');
 const end = html.indexOf('      renderShortTermChart(data)', start);
 const method = html.slice(start, end);
 const label = {};
-const context = vm.createContext({ window: { location: { origin: 'http://test' } }, $: () => label, AbortSignal, console, Date });
+const context = vm.createContext({ StrategyExecutionChartController: require('../strategy-execution-chart.js'), window: { location: { origin: 'http://test' } }, $: () => label, AbortSignal, console, Date });
 const engine = vm.runInContext(`({state: {shortTermInterval: '5m'}, ${method}})`, context);
 assert.ok(html.includes("setShortTermInterval('1d')"), 'daily chart control must be visible');
 assert.ok(html.includes("setShortTermInterval('1h')"), 'hourly chart control must be visible');

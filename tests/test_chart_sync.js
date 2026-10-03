@@ -56,3 +56,9 @@ overlayEngine.chart = {priceScale: () => ({width: () => 80}), timeScale: () => (
 const layer = {style:{}};
 assert.equal(overlayEngine.alignChartOverlay(layer), 988);
 assert.deepEqual(layer.style, {left:'80px', right:'auto', width:'988px'});
+
+assert.deepEqual(Controller.initialRange(120), {from:11.5, to:119.5});
+assert.deepEqual(Controller.initialRange(300), {from:29.5, to:299.5});
+assert.deepEqual(Controller.initialRange(80), {from:7.5, to:79.5});
+assert.deepEqual(Controller.initialRange(1), {from:-.5, to:.5});
+assert.equal(Controller.initialRange(0), null);

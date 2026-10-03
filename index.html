@@ -4876,10 +4876,10 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="held-pair-pnl.js?v=20261003_4"></script>
-  <script src="strategy-execution-chart.js?v=20261003_sync_6"></script>
+  <script src="strategy-execution-chart.js?v=20261003_sync_7"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
-  <script src="lighter-tab.js?v=20261003_sync_2"></script>
+  <script src="lighter-tab.js?v=20261003_sync_3"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -13150,7 +13150,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   const shift = !older && range.to >= previous.length - 1 ? history.bars.length - previous.length : added;
                   this.shortTermChart.timeScale().setVisibleLogicalRange({ from: range.from + shift, to: range.to + shift });
                 } else if (history.bars.length) {
-                  this.shortTermChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, history.bars.length - 120), to: history.bars.length + 2 });
+                  this.shortTermChart.timeScale().setVisibleLogicalRange(StrategyExecutionChartController.initialRange(history.bars.length));
                 }
               } finally { this.shortTermRendering = false; }
               this.scheduleDynamicBacktest();
