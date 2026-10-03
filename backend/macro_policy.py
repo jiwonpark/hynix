@@ -1,8 +1,9 @@
-"""Shared, causal sizing and exit policy for live execution and price replay."""
+"""Causal macro signal and exit requirements; pair_sizing supplies live quantities."""
 import math
 
 
 def policy_for_level(level=0):
+    """Legacy quantities restore old lots; new entries must use size_policy."""
     level = max(0, min(2, int(level)))
     multiplier = (1.0, 1.25, 1.5)[level]
     return {

@@ -3270,7 +3270,7 @@
                 <span style="background: #16a34a; color: #fff; font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px;">ENFORCED BY ENGINE</span>
               </div>
               <p style="margin: 0; font-size: 12px; color: #1e293b; line-height: 1.55; font-weight: 500;">
-                Normal take-profit closes the <strong>latest matched entry first (LIFO)</strong>. The exact 0.07 ADR / 1.20 ETF trim must show <strong>estimated net profit above the entry’s $0.02–$0.04 threshold</strong>, after recorded entry fees and reserves for closing fees, slippage, and funding. Enabled convergence, holding-time, bottoming and MA conditions must also pass. Macro-boosted entries retain more core and require a larger convergence plus two rising closed 5m candles when the bottoming filter is enabled. <strong>Actual execution PnL may differ from the estimate.</strong> Emergency exits bypass these strategy checks.
+                Normal take-profit closes the <strong>latest matched entry first (LIFO)</strong>. The exit quantities saved with that entry must show <strong>estimated net profit above the entry’s $0.02–$0.04 threshold</strong>, after recorded entry fees and reserves for closing fees, slippage, and funding. Enabled convergence, holding-time, bottoming and MA conditions must also pass. Macro-boosted entries retain more core and require a larger convergence plus two rising closed 5m candles when the bottoming filter is enabled. <strong>Actual execution PnL may differ from the estimate.</strong> Emergency exits bypass these strategy checks.
               </p>
             </div>
 
@@ -3536,7 +3536,7 @@
               <!-- 1. Scale-in Criteria Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Guarded Scale-In <span style="display:inline-block;background:#7c3aed;color:#fff;border-radius:999px;padding:1px 6px;font-size:8px;vertical-align:1px;">NEW</span> (+0.08 SKHY / +1.40 CSOP)</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Guarded Scale-In <span style="display:inline-block;background:#7c3aed;color:#fff;border-radius:999px;padding:1px 6px;font-size:8px;vertical-align:1px;">NEW</span> (dynamic dollar balance)</span>
                   <span id="badgeCriteriaScaleIn" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #b45309;">WAITING</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritScaleInDesc">
@@ -3649,7 +3649,7 @@
               <!-- 2. Convergence Take-Profit Criteria Card -->
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                  <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lblCritTPTitle">🎯 Anti-Churn Take-Profit (0.07 SKHY / 1.20 CSOP)</span>
+                  <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lblCritTPTitle">🎯 Anti-Churn Take-Profit (saved entry quantities)</span>
                   <span id="badgeCriteriaTP" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #166534;">ZERO-LOSS LOCKED</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritTPDesc">
@@ -3734,7 +3734,7 @@
                       <input type="checkbox" id="chkCondExitPosition" checked disabled onchange="tradingEngine.toggleCondition('exit_position_qty', this.checked)">
                       <span class="toggleSlider"></span>
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">REQUIRED</span>
-                    <span class="condLabel" title="Open futures positions must have at least 0.07 short SKHY and 1.20 long CSOP">8. Position Sufficiency Check</span>
+                    <span class="condLabel" title="Open futures positions must cover both exit quantities saved with the latest entry">8. Position Sufficiency Check</span>
                     <span class="condValue" id="valCondExitPosition">--</span>
                     <span class="condBadge pass" id="badgeCondExitPosition">PASS</span>
                   </div>
@@ -3749,7 +3749,7 @@
                 </div>
                 <div style="font-size: 11px; color: #475569; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 2px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9;">
                   <div>Scale In: <strong id="valCritEntrySize">—</strong></div>
-                  <div>Trim Unit: <strong>0.07 SKHY / 1.20 CSOP</strong></div>
+                  <div>Latest Trim: <strong id="valCritExitSize">—</strong></div>
                   <div>Ratchet/Cycle: <strong id="valCritCycleCore" style="color: #16a34a;">—</strong></div>
                   <div>Current Lev: <strong id="valCritGrossLev">4.08x / 8.0x</strong></div>
                   <div>Dynamic Cap: <strong id="valCritGrossCap">$0.00 (8.0x)</strong></div>
@@ -4385,7 +4385,7 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
           <div class="safetyCard" style="border-top: 3px solid #0284c7;">
             <span class="safetyCardTitle">1. Strict Delta Neutrality</span>
-            <span class="safetyCardDesc">Always pairs 0.07 SKHY short ($13.55 notional) with 1.20 CSOP long ($13.72 effective delta). Net market imbalance &lt; $0.20. Market crashes or surges produce zero directional loss.</span>
+            <span class="safetyCardDesc">Balances ADR dollars against twice the ETF dollars using current prices and exchange lot increments. Rounding and subsequent price changes can leave residual exposure.</span>
           </div>
           <div class="safetyCard" style="border-top: 3px solid #16a34a;">
             <span class="safetyCardTitle">2. Zero-Loss Invariant</span>
@@ -4393,7 +4393,7 @@
           </div>
           <div class="safetyCard" style="border-top: 3px solid #8b5cf6;">
             <span class="safetyCardTitle">3. Asymmetric Core Ratchet</span>
-            <span class="safetyCardDesc">Enters 0.08 ADR + 1.40 ETF, exits 0.07 ADR + 1.20 ETF. Each micro-cycle retains +0.01 ADR and +0.20 ETF of permanent core asset paid for entirely by the churn gain.</span>
+            <span class="safetyCardDesc">Normal entries use the smallest balanced tradable pair. Macro topping increases entry size above one exit unit; that extra inventory is retained. Exit quantities stay with each entry.</span>
           </div>
           <div class="safetyCard" style="border-top: 3px solid #f59e0b;">
             <span class="safetyCardTitle">4. Anti-Churn LIFO Isolation</span>
@@ -12461,7 +12461,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const criteria = data.auto_tranche_criteria;
         const sizing = criteria?.asymmetric_sizing;
         if (sizing) {
-          const sizeText = `${sizing.scale_in_skhy.toFixed(2)} ADR / ${sizing.scale_in_csop.toFixed(2)} ETF`;
+          const sizeText = sizing.sizing_available === false ? "Waiting for exchange sizing" : `${sizing.scale_in_skhy.toFixed(2)} ADR / ${sizing.scale_in_csop.toFixed(2)} ETF`;
+          const exitText = `${Number(sizing.scale_out_skhy ?? criteria.exit_policy?.adr_exit_qty ?? 0).toFixed(2)} ADR / ${Number(sizing.scale_out_csop ?? criteria.exit_policy?.stock_exit_qty ?? 0).toFixed(2)} ETF`;
+          if ($("valCritExitSize")) $("valCritExitSize").textContent = exitText;
+          if ($("lblCritTPTitle")) $("lblCritTPTitle").textContent = `🎯 Anti-Churn Take-Profit (${exitText})`;
           if ($("lblStepTrancheSize")) $("lblStepTrancheSize").textContent = `➕ Scale In (${sizeText})`;
           if ($("lblCritScaleInTitle")) $("lblCritScaleInTitle").textContent = `➕ SPECULATIVE SCALE-IN (${sizeText})`;
           if ($("valCritEntrySize")) $("valCritEntrySize").textContent = sizeText;
@@ -12471,8 +12474,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const macro = criteria?.macro_policy;
         const exitPolicy = criteria?.exit_policy;
         if ($("macroPolicyStatus") && macro) {
-          $("macroPolicyStatus").textContent = `Macro: ${macro.regime} (${macro.score}/100) · Entry ${macro.entry_multiplier.toFixed(2)}× · Exit fixed 0.07 ADR / 1.20 ETF · Current exit: ${exitPolicy.convergence_pts.toFixed(2)} pts convergence, net > $${exitPolicy.minimum_net_profit_usd.toFixed(2)}${exitPolicy.require_confirmed_rebound ? ", two rising 5m closes" : ""}`;
-          $("macroPolicyStatus").title = `Completed 1h closes: ${macro.reason}. Normal / top watch / topping entry sizes: 0.08 / 0.10 / 0.12 ADR and 1.40 / 1.75 / 2.10 ETF. Exit requirements stay with each entry.`;
+          $("macroPolicyStatus").textContent = `Macro: ${macro.regime} (${macro.score}/100) · Entry ${macro.entry_multiplier.toFixed(2)}× · Next base unit ${Number(macro.adr_exit_qty).toFixed(2)} ADR / ${Number(macro.stock_exit_qty).toFixed(2)} ETF · Current exit: ${exitPolicy.convergence_pts.toFixed(2)} pts convergence, net > $${exitPolicy.minimum_net_profit_usd.toFixed(2)}${exitPolicy.require_confirmed_rebound ? ", two rising 5m closes" : ""}`;
+          $("macroPolicyStatus").title = macro.sizing_available === false ? macro.sizing_error : `Completed 1h closes: ${macro.reason}. ETF dollars = ADR dollars / 2. Minimum pair recalculated from prices and exchange filters; macro multiplier rounded up to an ADR lot. Entry delta $${Number(macro.entry_delta_usd).toFixed(4)} (${Number(macro.entry_delta_pct).toFixed(3)}%). Each entry retains its exit quantities.`;
         }
         const canTakeProfit = Boolean(criteria?.can_take_profit);
         if (btnReduce && lblReduce) {
@@ -12481,7 +12484,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             btnReduce.disabled = false;
             btnReduce.style.background = "#16a34a";
             btnReduce.style.cursor = "pointer";
-            lblReduce.textContent = `✅ Trim latest tranche (0.07 SKHY / 1.20 CSOP | est. +$${criteria.target_tranche_profit.net_pnl_usd.toFixed(3)})`;
+            lblReduce.textContent = `✅ Trim latest tranche (${Number(exitPolicy?.adr_exit_qty ?? criteria.target_tranche_profit?.adr_exit_qty ?? 0).toFixed(2)} ADR / ${Number(exitPolicy?.stock_exit_qty ?? criteria.target_tranche_profit?.stock_exit_qty ?? 0).toFixed(2)} ETF | est. +$${criteria.target_tranche_profit.net_pnl_usd.toFixed(3)})`;
           } else {
             btnReduce.disabled = true;
             btnReduce.style.background = "#94a3b8";
@@ -13223,7 +13226,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const s = data.summary;
           const coverage = s.evaluated_bars < s.expected_bars ? ` · ${s.evaluated_bars}/${s.expected_bars} candles available` : "";
           if ($("dynamicBacktestStatus")) {
-            $("dynamicBacktestStatus").textContent = `${s.entries} entries (${s.boosted_entries} boosted) · ${s.exits} exits · ${s.open_tranches} open · Net $${s.net_pnl_usd.toFixed(2)} · Max drawdown $${s.max_drawdown_usd.toFixed(2)} · Peak exposure $${s.peak_gross_exposure_usd.toFixed(2)} · Holding ${s.adr_short_qty.toFixed(2)} short ADR / ${s.stock_long_qty.toFixed(2)} long ETF · Retained core ${s.core_adr_qty.toFixed(2)} / ${s.core_stock_qty.toFixed(2)}${coverage}`;
+            $("dynamicBacktestStatus").textContent = `${s.entries} entries (${s.boosted_entries} boosted) · ${s.exits} exits · ${s.open_tranches} open · Net $${s.net_pnl_usd.toFixed(2)} · Max drawdown $${s.max_drawdown_usd.toFixed(2)} · Peak exposure $${s.peak_gross_exposure_usd.toFixed(2)} · Holding ${s.adr_short_qty.toFixed(2)} short ADR / ${s.stock_long_qty.toFixed(2)} long ETF · Retained core ${s.core_adr_qty.toFixed(2)} / ${s.core_stock_qty.toFixed(2)}${coverage} · Dynamic 2× dollar sizing (current exchange filters)`;
           }
         } catch (e) {
           if (controller === this.dynamicBacktestController && key === this.dynamicBacktestKey && history === this.shortTermHistory) {
@@ -13560,10 +13563,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const bothDown = Boolean(exit5mDown && exit1hDown);
         const specActive = criteria.speculative_tranches_active || 0;
         const topTranche = criteria.current_target_tranche;
-        const hasSpecTranche = criteria.has_speculative_tranche != null ? Boolean(criteria.has_speculative_tranche) : (specActive > 0 && topTranche && topTranche.trim_qty >= 0.07);
+        const hasSpecTranche = criteria.has_speculative_tranche != null ? Boolean(criteria.has_speculative_tranche) : (specActive > 0 && topTranche && topTranche.trim_qty >= (topTranche.exit_policy?.adr_exit_qty ?? Infinity));
         const adrQty = hedgedData?.adr_qty || 0.0;
         const stockQty = hedgedData?.stock_qty || 0.0;
-        const hasExitPos = criteria.has_exit_position_qty != null ? Boolean(criteria.has_exit_position_qty) : (adrQty >= 0.07 && stockQty >= 1.20);
+        const hasExitPos = criteria.has_exit_position_qty != null ? Boolean(criteria.has_exit_position_qty) : (adrQty >= (topTranche?.exit_policy?.adr_exit_qty ?? Infinity) && stockQty >= (topTranche?.exit_policy?.stock_exit_qty ?? Infinity));
         const coreSkhy = criteria.core_accumulated_skhy != null ? criteria.core_accumulated_skhy : 0.0;
         const coreCsop = criteria.core_accumulated_csop != null ? criteria.core_accumulated_csop : 0.0;
 
@@ -13583,7 +13586,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         // 8 Exit Conditions Checklist
         if ($("valCondExitActive")) {
-          $("valCondExitActive").textContent = hasSpecTranche ? `${specActive} ${isKo ? "개 활성" : "Active"} (0.07 ${isKo ? "익절" : "trim"})` : (coreSkhy > 0 ? (isKo ? "코어 보존 중" : "CORE PROTECTED") : (isKo ? "트랜치 없음" : "EMPTY"));
+          $("valCondExitActive").textContent = hasSpecTranche ? `${specActive} ${isKo ? "개 활성" : "Active"} (${Number(topTranche?.exit_policy?.adr_exit_qty ?? 0).toFixed(2)} ${isKo ? "익절" : "trim"})` : (coreSkhy > 0 ? (isKo ? "코어 보존 중" : "CORE PROTECTED") : (isKo ? "트랜치 없음" : "EMPTY"));
         }
         syncCondRow("exit_speculative_tranche", "rowCondExitActive", "chkCondExitActive", "badgeCondExitActive", hasSpecTranche, isKo ? "충족" : "PASS", coreSkhy > 0 ? (isKo ? "코어보호" : "PROTECTED") : (isKo ? "없음" : "EMPTY"), "neutral");
 
@@ -13685,7 +13688,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 </div>
                 <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); gap:2px 10px; margin-top:4px; color:#64748b;">
                   <span>Spread <strong style="color:#334155;">${Number(t.entry_spread).toFixed(2)}% → ≤${Number(t.target_out_spread).toFixed(2)}%</strong></span>
-                  <span>0.07 ADR / 1.20 ETF trim · net > $${Number(t.minimum_net_profit_usd ?? .02).toFixed(2)} · ${t.exit_policy?.regime || "NORMAL"}</span>
+                  <span>${Number(t.exit_policy?.adr_exit_qty ?? .07).toFixed(2)} ADR / ${Number(t.exit_policy?.stock_exit_qty ?? 1.2).toFixed(2)} ETF trim · net > $${Number(t.minimum_net_profit_usd ?? .02).toFixed(2)} · ${t.exit_policy?.regime || "NORMAL"}</span>
                   <span>Age <strong style="color:#334155;">${ageText}</strong></span>
                   <span>ADR ${Number(t.qty).toFixed(2)} @ <strong style="color:#334155;">${Number.isFinite(adrEntry) ? `$${adrEntry.toFixed(2)}` : "—"}</strong> · #${adrOrder}</span>
                   <span>ETF ${Number(t.stock_qty ?? 1.4).toFixed(2)} @ <strong style="color:#334155;">${t.stock_entry_price != null && Number.isFinite(etfEntry) ? `$${etfEntry.toFixed(4)}` : "—"}</strong> · #${etfOrder}</span>
@@ -13755,7 +13758,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
         const btn = $("btnReduceTranche");
         if (btn) btn.disabled = true;
-        showToast("Trimming 1 GCD Unit (0.07 SKHY / 1.20 CSOP) to skim profit...", "info");
+        showToast("Trimming the latest entry using its saved exit quantities...", "info");
         try {
           const res = await fetch("/skhynix/api/trade/reduce_tranche", { method: "POST" });
           const json = await res.json();

@@ -74,6 +74,9 @@ class TestCompoundingEngine(unittest.IsolatedAsyncioTestCase):
         from backend.server import get_compounding_stats
 
         mock_hedged = {
+            "auto_tranche_criteria": {"asymmetric_sizing": {
+                "scale_in_skhy": .06, "scale_in_csop": 1.08,
+                "scale_out_skhy": .07, "scale_out_csop": 1.2}},
             "equity_usd": 1500.0,
             "margin_ratio_percent": 15.0,
             "gross_leverage": 1.25,
@@ -103,8 +106,8 @@ class TestCompoundingEngine(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(stats["ready_to_harvest_count"], 1)
             self.assertIn("micro_churn_stats", stats)
             churn = stats["micro_churn_stats"]
-            self.assertEqual(churn["scale_in_unit"], "0.08 SKHY + 1.40 CSOP")
-            self.assertEqual(churn["scale_out_unit"], "0.07 SKHY + 1.20 CSOP")
+            self.assertEqual(churn["scale_in_unit"], "0.06 SKHY / 1.08 CSOP")
+            self.assertEqual(churn["scale_out_unit"], "0.07 SKHY / 1.20 CSOP")
             self.assertIn("core_retention_per_turn", churn)
             self.assertGreater(churn["projected_daily_compound_pct"], 0.0)
             self.assertGreater(churn["projected_annual_apy_pct"], 0.0)

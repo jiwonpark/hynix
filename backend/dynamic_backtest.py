@@ -2,13 +2,14 @@
 import math
 from collections import deque
 from .tranche_accounting import EXIT_FEE_BPS, EXIT_SLIPPAGE_BPS, FUNDING_RESERVE_BPS_DAY
+from .pair_sizing import size_policy, REFERENCE_RULES
 from .macro_policy import macro_policy, confirmed_rebound
 
 ENTRY_FEE_BPS = 5.0
 STEP = 300
 
 
-def replay(bars, start_time, end_time, initial_equity=None, toggles=None):
+def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing_rules=None):
     """Start flat at start_time; preceding bars warm indicators without trading.
 
     Bars contain closed 5m prices. Orders are simulated at that candle's close,
@@ -81,7 +82,7 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None):
         drawdown = max(drawdown, peak-pnl)
         peak_notional = max(peak_notional, aq*adr + sq*stock)
         vals = list(five)
-        macro = macro_policy(hourly)
+        macro = size_policy(macro_policy(hourly), adr, stock, sizing_rules or REFERENCE_RULES)
         entry_adr, entry_stock = macro['adr_entry_qty'], macro['stock_entry_qty']
         ma24 = sum(vals[-24:]) / min(24, len(vals))
         peak_out = len(vals) >= 3 and (vals[-1] <= vals[-2] or vals[-1] < max(vals[-3:-1]))
@@ -91,11 +92,12 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None):
         sold = False
         if target:
             exit_policy = target['exit_policy']
+            exit_adr, exit_stock = exit_policy['adr_exit_qty'], exit_policy['stock_exit_qty']
             if exit_policy['require_confirmed_rebound']:
                 bottoming = confirmed_rebound(vals)
-            trim_notional = .07 * adr + 1.2 * stock
-            gross = .07 * (target['adr_entry_price'] - adr) + 1.2 * (stock - target['stock_entry_price'])
-            entry_trim_notional = .07 * target['adr_entry_price'] + 1.2 * target['stock_entry_price']
+            trim_notional = exit_adr * adr + exit_stock * stock
+            gross = exit_adr * (target['adr_entry_price'] - adr) + exit_stock * (stock - target['stock_entry_price'])
+            entry_trim_notional = exit_adr * target['adr_entry_price'] + exit_stock * target['stock_entry_price']
             allocated_entry_cost = entry_trim_notional * (entry_rate + slip_rate)
             carry = entry_trim_notional * funding_rate * (close - target['entry_time_ms']/1000) / 86400
             net = gross - allocated_entry_cost - trim_notional * (exit_rate + slip_rate) - carry
@@ -106,7 +108,7 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None):
                 passes('exit_bottoming_out', bottoming),
                 ma_pass('exit_ma_stack_5m', five, False, spread),
                 ma_pass('exit_ma_stack_1h', hourly, False, spread),
-                passes('exit_position_qty', aq + 1e-8 >= .07 and sq + 1e-8 >= 1.2),
+                passes('exit_position_qty', aq + 1e-8 >= exit_adr and sq + 1e-8 >= exit_stock),
                 close - last_exit >= 30,
             ))
             # A simulated exit always needs an entry to close, even with the
@@ -115,7 +117,7 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None):
                 exit_fee, exit_slip = trim_notional * exit_rate, trim_notional * slip_rate
                 pnl -= exit_fee + exit_slip
                 fees += exit_fee; slippage += exit_slip
-                aq = round(aq - .07, 8); sq = round(sq - 1.2, 8)
+                aq = round(aq - exit_adr, 8); sq = round(sq - exit_stock, 8)
                 stack.pop()
                 target.update(status='CLOSED', exit_time_ms=close*1000, estimated_net_pnl_usd=net, exit_spread=spread)
                 events.append({'time': t, 'is_entry': False, 'trade_id': target['id'], 'net_pnl_usd': net})
@@ -153,6 +155,7 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None):
         drawdown = max(drawdown, peak-pnl)
     return {'trades': trades, 'events': events, 'summary': {
         'mode': 'price_signals', 'capital_constrained': False,
+        'sizing_mode': 'dollar_2x_v1', 'sizing_rules_basis': 'current_exchange_filters' if sizing_rules else 'reference_filters_2026_10_03',
         'net_pnl_usd': round(pnl, 6),
         'entries': len(trades), 'exits': len(trades)-len(stack), 'open_tranches': len(stack),
         'adr_short_qty': aq, 'stock_long_qty': sq,
@@ -176,6 +179,7 @@ def replay_markers(result, interval_seconds):
         key = (t, entry)
         trade = trades[event['trade_id']]
         policy = trade['exit_policy']
+        exit_adr, exit_stock = policy['adr_exit_qty'], policy['stock_exit_qty']
         if key not in markers:
             markers[key] = {'time': t, 'is_entry': entry, 'hypothetical': True, 'backtest': True,
                 'position': 'aboveBar' if entry else 'belowBar', 'shape': 'arrowDown' if entry else 'arrowUp',
@@ -185,8 +189,8 @@ def replay_markers(result, interval_seconds):
                 'convergence_target_spread': trade['entry_spread']-policy['convergence_pts'],
                 'pnl_model': {
                     'adr_entry_price': trade['adr_entry_price'], 'stock_entry_price': trade['stock_entry_price'],
-                    'entry_time_ms': trade['entry_time_ms'], 'adr_exit_qty': .07, 'stock_exit_qty': 1.2,
-                    'entry_fees_usd': (.07*trade['adr_entry_price']+1.2*trade['stock_entry_price'])*(ENTRY_FEE_BPS+EXIT_SLIPPAGE_BPS)/10000,
+                    'entry_time_ms': trade['entry_time_ms'], 'adr_exit_qty': exit_adr, 'stock_exit_qty': exit_stock,
+                    'entry_fees_usd': (exit_adr*trade['adr_entry_price']+exit_stock*trade['stock_entry_price'])*(ENTRY_FEE_BPS+EXIT_SLIPPAGE_BPS)/10000,
                     'exit_fee_bps': EXIT_FEE_BPS, 'slippage_bps': EXIT_SLIPPAGE_BPS,
                     'funding_reserve_bps_day': FUNDING_RESERVE_BPS_DAY, 'threshold_usd': policy['minimum_net_profit_usd']}}
             if 'exit_spread' in trade:
@@ -195,8 +199,8 @@ def replay_markers(result, interval_seconds):
         model = {
             'adr_order_id': f"replay-{trade['id']}",
             'adr_entry_price': trade['adr_entry_price'], 'stock_entry_price': trade['stock_entry_price'],
-            'entry_time_ms': trade['entry_time_ms'], 'adr_exit_qty': .07, 'stock_exit_qty': 1.2,
-            'entry_fees_usd': (.07*trade['adr_entry_price']+1.2*trade['stock_entry_price'])*(ENTRY_FEE_BPS+EXIT_SLIPPAGE_BPS)/10000,
+            'entry_time_ms': trade['entry_time_ms'], 'adr_exit_qty': exit_adr, 'stock_exit_qty': exit_stock,
+            'entry_fees_usd': (exit_adr*trade['adr_entry_price']+exit_stock*trade['stock_entry_price'])*(ENTRY_FEE_BPS+EXIT_SLIPPAGE_BPS)/10000,
             'exit_fee_bps': EXIT_FEE_BPS, 'slippage_bps': EXIT_SLIPPAGE_BPS,
             'funding_reserve_bps_day': FUNDING_RESERVE_BPS_DAY,
             'threshold_usd': policy['minimum_net_profit_usd'],
@@ -204,7 +208,7 @@ def replay_markers(result, interval_seconds):
         m.setdefault('pnl_models', []).append(model)
         m['pnl_model'] = model
         m['count'] += 1
-        m['qty'] = round(m['qty']+(trade['adr_entry_qty'] if entry else .07), 2)
+        m['qty'] = round(m['qty']+(trade['adr_entry_qty'] if entry else exit_adr), 2)
         m['estimated_net_pnl_usd'] += event.get('net_pnl_usd', 0)
         m['hoverText'] = f"BACKTEST {'SHORT' if entry else 'COVER'} {m['qty']:.2f} ({m['count']}x)"
         if not entry:

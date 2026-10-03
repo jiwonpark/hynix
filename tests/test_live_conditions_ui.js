@@ -10,7 +10,7 @@ function method(name) {
 }
 const elements = {
   activePositionsBody: {}, btnReduceTranche: {style: {}}, lblReduceTrancheText: {},
-  btnStepTranche: {}, lblHedgedSyncBadge: {}, lblStepTrancheSize: {}, valCritCycleCore: {}, macroPolicyStatus: {},
+  btnStepTranche: {}, lblHedgedSyncBadge: {}, lblStepTrancheSize: {}, valCritCycleCore: {}, macroPolicyStatus: {}, valCritExitSize: {},
 };
 const context = vm.createContext({window: {location: {origin: 'https://test', pathname: '/skhynix/'}},
   $: id => elements[id], AbortSignal, console, formatKstTime: () => 'now'});
@@ -42,14 +42,16 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
     'hedged status polling must refresh table capacity');
   assert.equal(elements.btnReduceTranche.disabled, false,
     'disabled MA gate must not override the backend exit decision');
-  data.auto_tranche_criteria.asymmetric_sizing = {scale_in_skhy:.12, scale_in_csop:2.1,
-    residual_retained_skhy:.05,residual_retained_csop:.9,scale_in_notional_usd:34};
-  data.auto_tranche_criteria.macro_policy = {regime:'TOPPING',score:100,entry_multiplier:1.5};
-  data.auto_tranche_criteria.exit_policy = {convergence_pts:.16,minimum_net_profit_usd:.04,require_confirmed_rebound:true};
+  data.auto_tranche_criteria.asymmetric_sizing = {scale_in_skhy:.09, scale_in_csop:1.62, scale_out_skhy:.06, scale_out_csop:1.08,
+    residual_retained_skhy:.03,residual_retained_csop:.54,scale_in_notional_usd:34};
+  data.auto_tranche_criteria.macro_policy = {regime:'TOPPING',score:100,entry_multiplier:1.5,adr_exit_qty:.06,stock_exit_qty:1.08};
+  data.auto_tranche_criteria.exit_policy = {adr_exit_qty:.06,stock_exit_qty:1.08,convergence_pts:.16,minimum_net_profit_usd:.04,require_confirmed_rebound:true};
   await engine.fetchHedgedStatus();
-  assert.match(elements.lblStepTrancheSize.textContent, /0.12 ADR \/ 2.10 ETF/);
-  assert.match(elements.valCritCycleCore.textContent, /0.05 ADR \/ 0.90 ETF/);
+  assert.match(elements.lblStepTrancheSize.textContent, /0.09 ADR \/ 1.62 ETF/);
+  assert.match(elements.valCritCycleCore.textContent, /0.03 ADR \/ 0.54 ETF/);
   assert.match(elements.macroPolicyStatus.textContent, /net > \$0.04, two rising 5m closes/);
+  assert.match(elements.valCritExitSize.textContent, /0.06 ADR \/ 1.08 ETF/);
+  assert.match(elements.lblReduceTrancheText.textContent, /0.06 ADR \/ 1.08 ETF/);
   data.auto_tranche_criteria.can_take_profit = false;
   await engine.fetchHedgedStatus();
   assert.equal(elements.btnReduceTranche.disabled, true);

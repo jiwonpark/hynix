@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 from backend import server
+from backend.pair_sizing import REFERENCE_RULES
 
 
 class BacktestAPITests(unittest.IsolatedAsyncioTestCase):
@@ -10,7 +11,8 @@ class BacktestAPITests(unittest.IsolatedAsyncioTestCase):
         request = server.DynamicBacktestRequest(start_time=start, end_time=start+6000,
             initial_equity=500, toggles={'entry_ma_stretch':False, 'entry_base_spread':False,
                                        'entry_ma_stack_5m':False,'entry_ma_stack_1h':False})
-        with patch.object(server, 'backtest_market_bars', AsyncMock(return_value=data)), \
+        with patch.object(server, 'exchange_rules', AsyncMock(return_value=REFERENCE_RULES)), \
+             patch.object(server, 'backtest_market_bars', AsyncMock(return_value=data)), \
              patch.object(server, 'load_auto_tranche_state', side_effect=AssertionError('no account state')), \
              patch.object(server, 'save_auto_tranche_state', side_effect=AssertionError('no writes')), \
              patch.object(server, 'binance_client', AsyncMock()) as client:

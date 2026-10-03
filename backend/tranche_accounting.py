@@ -1,4 +1,4 @@
-"""Conservative LIFO attribution for variable entries and fixed ADR/CSOP exits."""
+"""Conservative LIFO attribution for variable ADR/CSOP entries and saved exit quantities."""
 import math
 from .macro_policy import policy_for_level
 
@@ -75,6 +75,20 @@ def entry_profiles(orders, stock_symbol, pairs):
         stock = stocks.get(matched.get(adr['order_id']))
         if not stock:
             continue
+        recorded = saved.get(adr['order_id'], {}).get('entry_policy')
+        if recorded and recorded.get('sizing_version') == 'dollar_2x_v1':
+            # Never infer new variable-size lots from size or timing alone.
+            try:
+                valid = all(math.isfinite(recorded[k]) and recorded[k] > 0 for k in
+                            ('adr_entry_qty', 'stock_entry_qty', 'adr_exit_qty', 'stock_exit_qty'))
+                valid = valid and recorded['adr_exit_qty'] <= adr['qty'] + 1e-8 and recorded['stock_exit_qty'] <= stock['qty'] + 1e-8
+                valid = valid and abs(adr['qty']-recorded['adr_entry_qty']) < 1e-8 and abs(stock['qty']-recorded['stock_entry_qty']) < 1e-8
+            except (KeyError, TypeError):
+                valid = False
+            if valid:
+                profiles[adr['order_id']] = {'stock_order_id': stock['order_id'], 'policy': recorded,
+                    'entry_spread': saved[adr['order_id']].get('entry_spread')}
+            continue
         for level in range(3):
             policy = policy_for_level(level)
             if abs(adr['qty']-policy['adr_entry_qty']) < 1e-8 and abs(stock['qty']-policy['stock_entry_qty']) < 1e-8:
@@ -96,7 +110,10 @@ def reconstruct_leg_stack(orders, symbol, entry_side, entry_unit, exit_unit, ada
         if order['side'] == entry_side:
             while qty > 1e-8:
                 chunk = qty if order['order_id'] in adaptive_ids else min(entry_unit, qty)
-                stack.append({'order': order, 'qty': chunk, 'trim_qty': min(exit_unit, chunk)})
+                profile = adaptive_ids.get(order['order_id'], {}) if isinstance(adaptive_ids, dict) else {}
+                key = 'adr_exit_qty' if symbol == 'SKHYUSDT' else 'stock_exit_qty'
+                trim = profile.get('policy', {}).get(key, exit_unit)
+                stack.append({'order': order, 'qty': chunk, 'trim_qty': min(trim, chunk)})
                 qty = round(qty-chunk, 8)
         else:
             while qty > 1e-8 and stack:
@@ -116,12 +133,13 @@ def prepare_exit_context(executions, stock_symbol, pairs, *, orders=None, profil
     if profiles is None:
         profiles = entry_profiles(orders, stock_symbol, pairs)
     stock_stack = reconstruct_leg_stack(orders, stock_symbol, 'BUY', 1.4, 1.2,
-                                        {p['stock_order_id'] for p in profiles.values()})
+                                        {p['stock_order_id']: p for p in profiles.values()})
     return {
         'adr_entries': {o['order_id']: o for o in orders if o['symbol'] == 'SKHYUSDT' and o['side'] == 'SELL'},
         'active_stock': {item['order']['order_id']: item for item in stock_stack},
         'saved_pairs': {str(p['adr_order_id']): p for p in pairs},
         'inferred_pairs': infer_entry_pairs(orders, stock_symbol),
+        'profiles': profiles,
     }
 
 
@@ -157,7 +175,11 @@ def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol
     if not stock_item:
         return {**result, 'reason': 'AMBIGUOUS_OR_MISMATCHED_ENTRY_LEGS'}
     stock = stock_item['order']
-    if target['trim_qty'] < .07 or stock_item['trim_qty'] < 1.2:
+    policy = context['profiles'].get(adr['order_id'], {}).get('policy', {})
+    if saved_pair and saved_pair.get('entry_policy', {}).get('sizing_version') and not policy:
+        return {**result, 'reason': 'UNVERIFIED_DYNAMIC_ENTRY'}
+    aq, sq = policy.get('adr_exit_qty', .07), policy.get('stock_exit_qty', 1.2)
+    if target['trim_qty'] + 1e-8 < aq or stock_item['trim_qty'] + 1e-8 < sq:
         return {**result, 'reason': 'INCOMPLETE_REMAINING_TRANCHE'}
     if not adr['fee_known'] or not stock['fee_known']:
         return {**result, 'reason': 'ENTRY_COMMISSION_UNAVAILABLE_IN_USDT'}
@@ -165,19 +187,19 @@ def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol
     stock_entry = stock['cost'] / stock['qty']
     if not all(math.isfinite(p) and p > 0 for p in (adr_entry, stock_entry)):
         return {**result, 'reason': 'INVALID_ENTRY_PRICES'}
-    adr_pnl = .07 * (adr_entry - adr_mark)
-    stock_pnl = 1.2 * (stock_mark - stock_entry)
-    entry_fees = adr['fee'] * .07 / adr['qty'] + stock['fee'] * 1.2 / stock['qty']
-    exit_notional = .07 * adr_mark + 1.2 * stock_mark
+    adr_pnl = aq * (adr_entry - adr_mark)
+    stock_pnl = sq * (stock_mark - stock_entry)
+    entry_fees = adr['fee'] * aq / adr['qty'] + stock['fee'] * sq / stock['qty']
+    exit_notional = aq * adr_mark + sq * stock_mark
     closing_fee = exit_notional * EXIT_FEE_BPS / 10000
     slippage = exit_notional * EXIT_SLIPPAGE_BPS / 10000
     holding_days = max(0, now - min(adr['time'], stock['time']) / 1000) / 86400
-    funding = (.07 * adr_entry + 1.2 * stock_entry) * FUNDING_RESERVE_BPS_DAY / 10000 * holding_days
+    funding = (aq * adr_entry + sq * stock_entry) * FUNDING_RESERVE_BPS_DAY / 10000 * holding_days
     net = adr_pnl + stock_pnl - entry_fees - closing_fee - slippage - funding
     return {**result, 'available': True, 'profitable': net > threshold, 'reason': 'ESTIMATE_READY',
             'stock_order_id': stock['order_id'], 'pairing': pairing,
             'adr_entry_price': adr_entry, 'stock_entry_price': stock_entry,
-            'adr_exit_qty': .07, 'stock_exit_qty': 1.2,
+            'adr_exit_qty': aq, 'stock_exit_qty': sq,
             'adr_pnl_usd': adr_pnl, 'stock_pnl_usd': stock_pnl,
             'gross_pnl_usd': adr_pnl + stock_pnl, 'entry_fees_usd': entry_fees,
             'estimated_exit_fee_usd': closing_fee, 'slippage_reserve_usd': slippage,

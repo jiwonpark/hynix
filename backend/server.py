@@ -12,6 +12,7 @@ from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from collections import OrderedDict
 from .dynamic_backtest import replay, replay_markers
+from .pair_sizing import exchange_rules, live_sizing_inputs, size_policy
 from .macro_policy import macro_policy, policy_for_level, closed_values, confirmed_rebound
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -1381,8 +1382,8 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         adr_qty = abs(float(adr_pos.get("position_amt", 0.0))) if adr_pos else 0.0
         # Position quantity includes retained core from prior asymmetric trims.
         # It must not be presented as the number of active speculative tranches.
-        position_equivalent_units = round(stock_qty / 1.20) if stock_qty > 0 else 0
-        tranches_active = position_equivalent_units
+        position_equivalent_units = 0
+        tranches_active = 0
 
         loss_on_10pct = adr_notional * 0.10
         free_buffer = max(0.0, equity - maint_margin)
@@ -1484,7 +1485,19 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             get_cached_parity_bars("1h", 61),
         )
         macro = macro_policy(closed_values(parity_bars_1h, 3600, time.time()))
+        try:
+            rules = await exchange_rules(binance_client)
+            if adr_mark <= 0 or stock_mark <= 0 or stock_sym != "CSOPSKHYNIX2LUSDT":
+                sizing_adr, sizing_stock, rules = await live_sizing_inputs(binance_client)
+            else:
+                sizing_adr, sizing_stock = adr_mark, stock_mark
+            macro = size_policy(macro, sizing_adr, sizing_stock, rules)
+        except Exception as exc:
+            macro = {**macro, "sizing_available": False, "sizing_error": str(exc),
+                     "adr_entry_qty": 0.0, "stock_entry_qty": 0.0,
+                     "adr_exit_qty": 0.0, "stock_exit_qty": 0.0}
         entry_adr_qty, entry_stock_qty = macro["adr_entry_qty"], macro["stock_entry_qty"]
+        position_equivalent_units = round(stock_qty / macro["stock_exit_qty"]) if macro["stock_exit_qty"] > 0 else 0
         if current_spread is None and parity_bars:
             curr_spread = parity_bars[-1]["value"]
             if entry_spread is None:
@@ -1615,8 +1628,6 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         # Once all entries are exited, remaining position is accumulated core inventory and CANNOT be trimmed.
         if adr_qty == 0 or stock_qty == 0:
             active_tranches_queue = []
-        elif len(active_tranches_queue) > position_equivalent_units:
-            active_tranches_queue = active_tranches_queue[-position_equivalent_units:]
         # DO NOT prepend missing tranches! If len(active_tranches_queue) < tranches_active,
         # the difference represents accumulated core inventory that must remain protected.
 
@@ -1627,7 +1638,8 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         # Capacity is recalculated from live equity and gross exposure. Retained core
         # consumes leverage headroom, but is not mislabeled as a speculative tranche.
         tranches_active = speculative_tranches_active
-        next_tranche_notional = (entry_adr_qty * adr_mark) + (entry_stock_qty * stock_mark)
+        next_tranche_notional = (entry_adr_qty * macro.get("sizing_adr_price", adr_mark)
+                                 + entry_stock_qty * macro.get("sizing_stock_price", stock_mark))
         leverage_cap = 8.0
         gross_capacity_usd = max(0.0, equity * leverage_cap)
         gross_headroom_usd = max(0.0, gross_capacity_usd - total_notional)
@@ -1647,13 +1659,16 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         eff_capacity = has_scale_in_capacity if is_cond_enabled("entry_capacity") else True
         eff_margin = has_scale_in_margin if is_cond_enabled("entry_margin_buffer") else True
         eff_leverage = has_scale_in_leverage if is_cond_enabled("entry_gross_leverage") else True
-        can_scale_in = bool(eff_capacity and eff_margin and eff_leverage)
+        can_scale_in = bool(eff_capacity and eff_margin and eff_leverage and macro["sizing_available"])
         scale_in_armed = bool(can_scale_in and scale_in_setup)
         scale_in_blocked_reason = (
             "POSITION_CAPACITY" if not has_scale_in_capacity
             else ("GROSS_LEVERAGE_CAP" if not has_scale_in_leverage
             else ("INSUFFICIENT_MARGIN" if not has_scale_in_margin else None))
         )
+
+        if not macro["sizing_available"]:
+            scale_in_blocked_reason = "SIZING_UNAVAILABLE"
 
         exit_context = prepare_exit_context(executions, stock_sym, auto_state.get("entry_order_pairs", []),
                                             orders=orders, profiles=profiles)
@@ -1687,7 +1702,8 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             dwell_time_sec = 999
             out_target_spread = round(base_entry - 0.08, 2)
 
-        exit_policy = current_target_tranche["exit_policy"] if current_target_tranche else policy_for_level()
+        exit_policy = current_target_tranche["exit_policy"] if current_target_tranche else macro
+        exit_adr_qty, exit_stock_qty = exit_policy["adr_exit_qty"], exit_policy["stock_exit_qty"]
         if exit_policy["require_confirmed_rebound"]:
             is_bottoming_out = confirmed_rebound(closed_values(parity_bars, 300, now_sec, 3))
 
@@ -1699,7 +1715,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         is_out_profitable_relative_to_latest = bool(current_target_tranche and curr_spread <= out_target_spread)
         is_dwell_satisfied = bool(current_target_tranche and dwell_time_sec >= 120)
 
-        eff_spec_tranche = (speculative_tranches_active > 0 and current_target_tranche and current_target_tranche.get("trim_qty", 0) >= 0.07) if is_cond_enabled("exit_speculative_tranche") else True
+        eff_spec_tranche = (speculative_tranches_active > 0 and current_target_tranche and current_target_tranche.get("trim_qty", 0) + 1e-8 >= exit_adr_qty) if is_cond_enabled("exit_speculative_tranche") else True
         eff_profitable = eligible_for_take_profit if is_cond_enabled("exit_net_profit") else True
         eff_convergence = is_out_profitable_relative_to_latest if is_cond_enabled("exit_convergence") else True
         eff_dwell = is_dwell_satisfied if is_cond_enabled("exit_dwell_time") else True
@@ -1707,7 +1723,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         eff_exit_ma_5m = is_exit_ma_aligned_5m if is_cond_enabled("exit_ma_stack_5m") else True
         eff_exit_ma_1h = is_exit_ma_aligned_1h if is_cond_enabled("exit_ma_stack_1h") else True
         eff_ma_aligned = bool(eff_exit_ma_5m and eff_exit_ma_1h)
-        eff_pos_qty = (adr_qty >= 0.07 and stock_qty >= 1.20 and adr_amt < 0 and stock_amt > 0) if is_cond_enabled("exit_position_qty") else True
+        eff_pos_qty = (adr_qty + 1e-8 >= exit_adr_qty and stock_qty + 1e-8 >= exit_stock_qty and adr_amt < 0 and stock_amt > 0) if is_cond_enabled("exit_position_qty") else True
         eff_no_recovery = not auto_state.get("execution_recovery")
 
         can_take_profit = bool(
@@ -1719,9 +1735,10 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             and eff_ma_aligned
             and eff_pos_qty
             and eff_no_recovery
+            and tranche_profit["available"]
         )
 
-        status_scale_in = (
+        status_scale_in = "SIZING_UNAVAILABLE" if not macro["sizing_available"] else (
             "PEAK_REVERSAL_ARMED" if scale_in_armed
             else ("MAX_CAPACITY" if not can_scale_in
             else ("ENTRY_CAMPAIGN_CAP" if (is_cond_enabled("entry_campaign_cap") and not has_entry_campaign_capacity)
@@ -1833,8 +1850,8 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             "active_tranche_stack": active_tranches_queue,
             "active_tranches_queue": active_tranches_queue,  # Backward-compatible alias.
             "current_target_tranche": current_target_tranche,
-            "has_speculative_tranche": bool(speculative_tranches_active > 0 and current_target_tranche and current_target_tranche.get("trim_qty", 0) >= 0.07),
-            "has_exit_position_qty": bool(adr_qty >= 0.07 and stock_qty >= 1.20 and adr_amt < 0 and stock_amt > 0),
+            "has_speculative_tranche": bool(speculative_tranches_active > 0 and current_target_tranche and current_target_tranche.get("trim_qty", 0) + 1e-8 >= exit_adr_qty),
+            "has_exit_position_qty": bool(adr_qty + 1e-8 >= exit_adr_qty and stock_qty + 1e-8 >= exit_stock_qty and adr_amt < 0 and stock_amt > 0),
             "has_execution_recovery": bool(auto_state.get("execution_recovery")),
             "latest_entry_spread": round(latest_in_spread, 2),
             "out_target_spread": out_target_spread,
@@ -1854,11 +1871,14 @@ async def _compute_hedged_status() -> Dict[str, Any]:
                 "scale_in_skhy": entry_adr_qty,
                 "scale_in_csop": entry_stock_qty,
                 "scale_in_notional_usd": round(next_tranche_notional, 2),
-                "scale_out_skhy": 0.07,
-                "scale_out_csop": 1.20,
-                "scale_out_notional_usd": round(.07*adr_mark + 1.2*stock_mark, 2),
-                "residual_retained_skhy": round(entry_adr_qty-.07, 2),
-                "residual_retained_csop": round(entry_stock_qty-1.2, 2)
+                "scale_out_skhy": exit_adr_qty,
+                "scale_out_csop": exit_stock_qty,
+                "scale_out_notional_usd": round(exit_adr_qty*adr_mark + exit_stock_qty*stock_mark, 2),
+                "residual_retained_skhy": round(entry_adr_qty-macro["adr_exit_qty"], 8),
+                "residual_retained_csop": round(entry_stock_qty-macro["stock_exit_qty"], 8),
+                "sizing_available": macro["sizing_available"],
+                "entry_delta_usd": macro.get("entry_delta_usd"),
+                "entry_delta_pct": macro.get("entry_delta_pct")
             },
             "next_tranche_size": {
                 "skhy_qty": entry_adr_qty,
@@ -1973,7 +1993,8 @@ async def dynamic_backtest(request: DynamicBacktestRequest) -> Dict[str, Any]:
         return {"success": False, "error": "Select a completed range of up to 366 days."}
     try:
         bars = await backtest_market_bars(start-61*3600, end)
-        result = await asyncio.to_thread(replay, bars, start, end, toggles=request.toggles)
+        rules = await exchange_rules(binance_client)
+        result = await asyncio.to_thread(replay, bars, start, end, toggles=request.toggles, sizing_rules=rules)
         if not result['summary']['evaluated_bars']:
             return {"success": False, "error": "No complete paired price history for this range."}
         result['summary']['first_available_time'] = next((b['time'] for b in bars if b['time'] >= start), None)
@@ -2022,6 +2043,9 @@ async def get_compounding_stats() -> Dict[str, Any]:
     # Cap APY display for sanity while showing exponential effect
     clamped_apy = min(annual_apy_pct, 9999.9)
 
+    sizing = status.get("auto_tranche_criteria", {}).get("asymmetric_sizing", {})
+    def size_text(a, b):
+        return f"{sizing.get(a, 0):.2f} SKHY / {sizing.get(b, 0):.2f} CSOP"
     return {
         "status": "ok",
         "timestamp": int(now_sec * 1000),
@@ -2033,9 +2057,9 @@ async def get_compounding_stats() -> Dict[str, Any]:
         "minimum_hurdle_usd": 0.02,
         "avg_dwell_hours": avg_dwell_hours,
         "micro_churn_stats": {
-            "scale_in_unit": "0.08 SKHY + 1.40 CSOP",
-            "scale_out_unit": "0.07 SKHY + 1.20 CSOP",
-            "core_retention_per_turn": "+0.01 SKHY / +0.20 CSOP Free",
+            "scale_in_unit": size_text("scale_in_skhy", "scale_in_csop"),
+            "scale_out_unit": size_text("scale_out_skhy", "scale_out_csop"),
+            "core_retention_per_turn": size_text("residual_retained_skhy", "residual_retained_csop"),
             "estimated_daily_turns": round(daily_turns, 1),
             "net_edge_bps_per_turn": avg_edge_bps,
             "avg_net_profit_usd_per_turn": turn_net_profit_usd,
@@ -2155,19 +2179,24 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         continue
                     adr_fill = adr_order["cost"] / adr_order["qty"]
                     stock_fill = stock_order["cost"] / stock_order["qty"]
-                    if adr_order["fee_known"] and stock_order["fee_known"] and adr_order["qty"] >= .07 and stock_order["qty"] >= 1.2:
+                    if any(str(p["adr_order_id"]) == adr_order_id and p.get("entry_policy", {}).get("sizing_version")
+                           for p in saved_pairs) and adr_order_id not in marker_profiles:
+                        continue
+                    marker_policy = marker_profiles.get(adr_order_id, {}).get("policy", policy_for_level())
+                    marker_aq, marker_sq = marker_policy["adr_exit_qty"], marker_policy["stock_exit_qty"]
+                    if adr_order["fee_known"] and stock_order["fee_known"] and adr_order["qty"] + 1e-8 >= marker_aq and stock_order["qty"] + 1e-8 >= marker_sq:
                         pnl_model_by_order[adr_order_id] = {
                             "adr_order_id": adr_order_id,
                             "stock_order_id": stock_order_id,
-                            "adr_exit_qty": .07, "stock_exit_qty": 1.2,
+                            "adr_exit_qty": marker_aq, "stock_exit_qty": marker_sq,
                             "exit_fee_bps": EXIT_FEE_BPS,
                             "slippage_bps": EXIT_SLIPPAGE_BPS,
                             "funding_reserve_bps_day": FUNDING_RESERVE_BPS_DAY,
                             "adr_entry_price": adr_fill,
                             "stock_entry_price": stock_fill,
                             "entry_fees_usd": (
-                                adr_order["fee"] * 0.07 / adr_order["qty"]
-                                + stock_order["fee"] * 1.2 / stock_order["qty"]),
+                                adr_order["fee"] * marker_aq / adr_order["qty"]
+                                + stock_order["fee"] * marker_sq / stock_order["qty"]),
                             "entry_time_ms": min(adr_order["time"], stock_order["time"]),
                             "threshold_usd": marker_profiles.get(adr_order_id, {}).get("policy", policy_for_level())["minimum_net_profit_usd"],
                             "convergence_pts": marker_profiles.get(adr_order_id, {}).get("policy", policy_for_level())["convergence_pts"],
@@ -2327,7 +2356,11 @@ async def execute_scale_in() -> Dict[str, Any]:
         if adr_mark <= 0 or stock_mark <= 0 or equity <= 0:
             return {"success": False, "error": "Cannot verify live equity and both leg mark prices"}
 
-        entry_policy = criteria.get("macro_policy") or policy_for_level()
+        # Refresh public marks and filters immediately before any order; never use
+        # a stale preview or infer quantities from the existing position.
+        adr_mark, stock_mark, rules = await live_sizing_inputs(binance_client)
+        entry_policy = size_policy(criteria.get("macro_policy") or policy_for_level(),
+                                   adr_mark, stock_mark, rules)
         adr_qty, stock_qty = entry_policy["adr_entry_qty"], entry_policy["stock_entry_qty"]
         next_notional = (adr_qty * adr_mark) + (stock_qty * stock_mark)
         required_margin = max(2.50, (next_notional / 10.0) * 1.25)
@@ -2358,14 +2391,18 @@ async def execute_scale_in() -> Dict[str, Any]:
         save_auto_tranche_state(state)  # Persist before any order can reach the exchange.
         order_adr = await binance_client.create_order("SKHYUSDT", "SELL", adr_qty, "MARKET")
         recovery["order_adr"] = order_adr
-        if order_adr.get("status") != "FILLED" or float(order_adr.get("executedQty", 0)) < adr_qty:
+        if (order_adr.get("status") != "FILLED" or order_adr.get("orderId") is None
+                or not math.isfinite(float(order_adr.get("executedQty", 0)))
+                or abs(float(order_adr.get("executedQty", 0)) - adr_qty) > 1e-8):
             raise RuntimeError("ADR fill is incomplete or unconfirmed")
         recovery["phase"] = "ETF_SUBMITTING"
         save_auto_tranche_state(state)
         order_stock = await binance_client.create_order("CSOPSKHYNIX2LUSDT", "BUY", stock_qty, "MARKET")
 
         recovery["order_stock"] = order_stock
-        if order_stock.get("status") != "FILLED" or float(order_stock.get("executedQty", 0)) < stock_qty:
+        if (order_stock.get("status") != "FILLED" or order_stock.get("orderId") is None
+                or not math.isfinite(float(order_stock.get("executedQty", 0)))
+                or abs(float(order_stock.get("executedQty", 0)) - stock_qty) > 1e-8):
             raise RuntimeError("ETF fill is incomplete or unconfirmed")
         state = load_auto_tranche_state()
         if order_adr.get("orderId") is not None and order_stock.get("orderId") is not None:
@@ -2373,7 +2410,9 @@ async def execute_scale_in() -> Dict[str, Any]:
                 "adr_order_id": str(order_adr["orderId"]),
                 "stock_order_id": str(order_stock["orderId"]),
                 "entry_spread": criteria.get("current_spread"),
-                "entry_policy": entry_policy, "adr_quantity": adr_qty, "stock_quantity": stock_qty})
+                "entry_policy": entry_policy,
+                "adr_quantity": float(order_adr["executedQty"]),
+                "stock_quantity": float(order_stock["executedQty"])})
         now = time.time()
         state["last_entry_bar_time"] = criteria.get("entry_signal_bar_time") or now
         state["entries_since_last_exit"] = int(state.get("entries_since_last_exit", 0)) + 1
@@ -2418,9 +2457,8 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
                 "recovery_required": True,
                 "execution_recovery": state["execution_recovery"],
             }
-        status = None
+        status = await get_hedged_status()
         if not force:
-            status = await get_hedged_status()
             criteria = status.get("auto_tranche_criteria", {})
             if not criteria.get("can_take_profit", False):
                 return {"success": False,
@@ -2444,18 +2482,20 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
             return {"success": False, "error": "Reduction requires a short ADR and long hedge position."}
         adr_pos_amt, stock_pos_amt = abs(adr_signed), abs(stock_signed)
 
-        # 1-to-1 Entry-to-Exit Matching Guard:
-        # Require position to have at least 1 full tranche size (0.07 SKHY / 1.20 CSOP)
-        # to prevent liquidating fractional core accumulation!
-        if not force:
-            if adr_pos_amt < 0.07 or stock_pos_amt < 1.20:
-                return {
-                    "success": False,
-                    "error": f"CORE INVENTORY PROTECTED: Position size ({adr_pos_amt} SKHY / {stock_pos_amt} CSOP) is below 1 full tranche (0.07 / 1.20). Remaining inventory is retained core accumulation."
-                }
-
-        adr_reduce_qty = min(0.07, adr_pos_amt)
-        stock_target = 1.20 if stock_sym == "CSOPSKHYNIX2LUSDT" else 0.01
+        target_criteria = (status or {}).get("auto_tranche_criteria", {})
+        if force and not status.get("authenticated") and any(
+                p.get("entry_policy", {}).get("sizing_version") for p in state.get("entry_order_pairs", [])):
+            return {"success": False, "error": "Cannot verify the saved dynamic exit quantities; retry when history is available."}
+        # A forced core-only trim retains the legacy emergency cap. An active
+        # entry always uses its captured quantities, even after prices change.
+        target_policy = target_criteria.get("exit_policy") if target_criteria.get("current_target_tranche") or not force else None
+        target_policy = target_policy or policy_for_level()
+        adr_target, stock_target = target_policy["adr_exit_qty"], target_policy["stock_exit_qty"]
+        if stock_sym != "CSOPSKHYNIX2LUSDT":
+            stock_target = .01
+        if not force and (adr_pos_amt + 1e-8 < adr_target or stock_pos_amt + 1e-8 < stock_target):
+            return {"success": False, "error": "CORE INVENTORY PROTECTED: Insufficient position for the saved exit quantities."}
+        adr_reduce_qty = min(adr_target, adr_pos_amt)
         stock_reduce_qty = min(stock_target, stock_pos_amt)
 
         if adr_reduce_qty <= 0 or stock_reduce_qty <= 0:

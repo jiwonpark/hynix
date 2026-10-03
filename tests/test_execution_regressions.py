@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, call, patch
 
 from backend import server
 from backend.macro_policy import policy_for_level
+from backend.pair_sizing import REFERENCE_RULES, size_policy
 
 
 class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
@@ -16,6 +17,11 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.state_patch = patch.object(server, 'STATE_FILE', Path(self.tmp.name) / 'state.json')
         self.state_patch.start()
         self.addCleanup(self.state_patch.stop)
+        for name, result in (("exchange_rules", REFERENCE_RULES),
+                             ("live_sizing_inputs", (190, 5.6, REFERENCE_RULES))):
+            mock = patch.object(server, name, AsyncMock(return_value=result))
+            mock.start()
+            self.addCleanup(mock.stop)
         self.client = AsyncMock()
         self.client.get_detailed_account_overview.return_value = {
             'authenticated': True, 'positions': [],
@@ -57,7 +63,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_second_leg_records_fill_and_blocks_retry(self):
         self.client.create_order.side_effect = [
-            {'status': 'FILLED', 'executedQty': '0.08', 'orderId': 42}, RuntimeError('ETF rejected')]
+            {'status': 'FILLED', 'executedQty': '0.06', 'orderId': 42}, RuntimeError('ETF rejected')]
         first = await server.step_tranche()
         self.assertFalse(first['success'])
         self.assertEqual(first['execution_recovery']['order_adr']['orderId'], 42)
@@ -86,8 +92,8 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
 
     async def test_success_clears_pending_recovery(self):
         self.client.create_order.side_effect = [
-            {'status': 'FILLED', 'executedQty': '0.08'},
-            {'status': 'FILLED', 'executedQty': '1.40'}]
+            {'status': 'FILLED', 'executedQty': '0.06', 'orderId': 1},
+            {'status': 'FILLED', 'executedQty': '1.02', 'orderId': 2}]
         self.assertTrue((await server.step_tranche())['success'])
         self.assertNotIn('execution_recovery', server.load_auto_tranche_state())
 
@@ -476,8 +482,8 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
 
     async def test_successful_entry_records_both_order_ids(self):
         self.client.create_order.side_effect = [
-            {'status': 'FILLED', 'executedQty': '0.08', 'orderId': 101},
-            {'status': 'FILLED', 'executedQty': '1.40', 'orderId': 202}]
+            {'status': 'FILLED', 'executedQty': '0.06', 'orderId': 101},
+            {'status': 'FILLED', 'executedQty': '1.02', 'orderId': 202}]
         self.assertTrue((await server.step_tranche())['success'])
         pair = server.load_auto_tranche_state()['entry_order_pairs'][0]
         self.assertEqual(pair['adr_order_id'], '101')
@@ -489,18 +495,18 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         status = {'authenticated': True, 'tranches_active': 0, 'auto_tranche_criteria': {
             'tranches_max': 10, 'current_spread': 140, 'macro_policy': policy}}
         self.client.create_order.side_effect = [
-            {'status': 'FILLED', 'executedQty': '.12', 'orderId': 501},
-            {'status': 'FILLED', 'executedQty': '2.10', 'orderId': 502}]
+            {'status': 'FILLED', 'executedQty': '.09', 'orderId': 501},
+            {'status': 'FILLED', 'executedQty': '1.53', 'orderId': 502}]
         with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
             result = await server.step_tranche()
         self.assertTrue(result['success'])
         self.assertEqual(self.client.create_order.await_args_list, [
-            call('SKHYUSDT', 'SELL', .12, 'MARKET'),
-            call('CSOPSKHYNIX2LUSDT', 'BUY', 2.1, 'MARKET')])
+            call('SKHYUSDT', 'SELL', .09, 'MARKET'),
+            call('CSOPSKHYNIX2LUSDT', 'BUY', 1.53, 'MARKET')])
         pair = server.load_auto_tranche_state()['entry_order_pairs'][0]
-        self.assertEqual(pair['entry_policy'], policy)
+        self.assertEqual(pair['entry_policy'], size_policy(policy, 190, 5.6, REFERENCE_RULES))
         self.assertEqual(pair['entry_spread'], 140)
-        self.assertEqual(pair['adr_quantity'], .12)
+        self.assertEqual(pair['adr_quantity'], .09)
 
     async def test_boosted_entry_margin_is_checked_for_the_full_larger_size(self):
         self.client.get_detailed_account_overview.return_value['summary'] = {
@@ -554,3 +560,64 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(criteria['core_accumulated_skhy'], .05)
         self.assertEqual(criteria['core_accumulated_csop'], .9)
         self.assertFalse(criteria['can_take_profit'])
+
+    async def test_dynamic_exit_and_chart_use_saved_pair_after_prices_change(self):
+        policy = size_policy(policy_for_level(), 193.63, 5.378, REFERENCE_RULES)
+        times = [int(time.time())//300*300 - (20-i)*300 for i in range(20)]
+        server.save_auto_tranche_state({
+            'entry_order_pairs': [{'adr_order_id': '10', 'stock_order_id': '11',
+                                   'entry_policy': policy, 'entry_spread': 140}],
+            'condition_toggles': {k: False for k in ('exit_ma_stack_5m', 'exit_ma_stack_1h',
+                                                   'exit_convergence', 'exit_bottoming_out')}})
+        positions = [dict(symbol='SKHYUSDT', position_amt=-.06, mark_price=180, entry_price=193.63),
+                     dict(symbol='CSOPSKHYNIX2LUSDT', position_amt=1.08, mark_price=5.5, entry_price=5.378)]
+        self.client.get_detailed_account_overview.return_value['positions'] = positions
+        async def request(method, path, params, **kwargs):
+            if 'klines' in path:
+                return [[t*1000, 0, 0, 0, '100'] for t in times]
+            if 'ticker' in path:
+                return {'price': '1400'}
+            adr = params['symbol'] == 'SKHYUSDT'
+            return [{'id': 10 if adr else 11, 'orderId': 10 if adr else 11,
+                     'time': times[5]*1000 + (0 if adr else 1000), 'side': 'SELL' if adr else 'BUY',
+                     'qty': '.06' if adr else '1.08', 'price': '193.63' if adr else '5.378', 'commission': '.001'}]
+        self.client.request.side_effect = request
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        self.assertTrue(criteria['can_take_profit'])
+        self.assertEqual(criteria['speculative_tranches_active'], 1)
+        self.assertEqual(criteria['exit_policy']['stock_exit_qty'], 1.08)
+        self.assertNotEqual(criteria['macro_policy']['stock_exit_qty'], 1.08)
+        model = (await server.get_short_term_parity('5m', 20))['markers'][0]['pnl_model']
+        self.assertEqual((model['adr_exit_qty'], model['stock_exit_qty']), (.06, 1.08))
+        self.assertAlmostEqual(model['entry_fees_usd'], .002)
+        async def filled(symbol, side, qty, order_type, **kwargs):
+            return {'status': 'FILLED', 'executedQty': str(qty), 'orderId': 30}
+        self.client.create_order.side_effect = filled
+        for force in (False, True):
+            self.client.create_order.reset_mock()
+            self.assertTrue((await server.reduce_tranche(force=force))['success'])
+            self.assertEqual(self.client.create_order.await_args_list, [
+                call('SKHYUSDT', 'BUY', .06, 'MARKET', reduce_only=True),
+                call('CSOPSKHYNIX2LUSDT', 'SELL', 1.08, 'MARKET', reduce_only=True)])
+
+    async def test_entry_refreshes_size_instead_of_submitting_preview_quantities(self):
+        # Preview uses 190/5.6; the final pre-order quote is 100/5.
+        with patch.object(server, 'live_sizing_inputs', AsyncMock(return_value=(100, 5, REFERENCE_RULES))):
+            async def filled(symbol, side, qty, order_type, **kwargs):
+                return {'status': 'FILLED', 'executedQty': str(qty), 'orderId': 10 if symbol == 'SKHYUSDT' else 11}
+            self.client.create_order.side_effect = filled
+            self.assertTrue((await server.step_tranche())['success'])
+        self.assertEqual(self.client.create_order.await_args_list, [
+            call('SKHYUSDT', 'SELL', .1, 'MARKET'), call('CSOPSKHYNIX2LUSDT', 'BUY', 1, 'MARKET')])
+        pair = server.load_auto_tranche_state()['entry_order_pairs'][0]
+        self.assertEqual(pair['entry_policy']['adr_exit_qty'], .1)
+        self.assertEqual(pair['stock_quantity'], 1)
+
+    async def test_unavailable_sizing_prevents_orders_and_missing_fill_id_requires_recovery(self):
+        with patch.object(server, 'live_sizing_inputs', AsyncMock(side_effect=ValueError('Stale quotes'))):
+            self.assertFalse((await server.step_tranche())['success'])
+            self.client.create_order.assert_not_awaited()
+        self.client.create_order.return_value = {'status': 'FILLED', 'executedQty': '.06'}
+        result = await server.step_tranche()
+        self.assertTrue(result['recovery_required'])
+        self.assertEqual(self.client.create_order.await_count, 1)
