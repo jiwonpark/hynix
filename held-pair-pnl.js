@@ -65,8 +65,8 @@
         <strong>PAIRED P&amp;L</strong><strong id="heldPairLivePnl">Waiting for positions…</strong></div>
         <div id="heldPairBasis" style="padding:5px 0;font-size:11px;color:#475569"></div>
         <div style="font-size:11px;color:#64748b">Main chart: ADR / Korean domestic premium (%). Selected-entry net P&amp;L uses paired ADR/ETF fills and costs, on its own dollar scale. Premium profit lines assume the latest candle’s ETF and domestic prices stay fixed; they update with prices. Total held-pair figures exclude fees and funding.</div>
-        <div style="font-size:11px;color:#475569"><label id="heldPairEntryLabel" style="display:none">Selected entry <select id="heldPairEntrySelect" aria-label="LIFO entry at selected candle"></select></label><span id="heldPairEntryNote"></span></div>
-        <div id="heldPairPnlHover" style="min-height:18px;font-size:11px;color:#475569"></div>`;
+        <div id="heldPairEntryRow" style="display:flex;align-items:center;gap:6px;height:24px;min-height:24px;overflow:hidden;white-space:nowrap;font-size:11px;color:#475569"><label id="heldPairEntryLabel" style="display:none;flex:none">Selected entry <select id="heldPairEntrySelect" aria-label="LIFO entry at selected candle" style="max-width:160px;height:22px"></select></label><span id="heldPairEntryNote" style="min-width:0;overflow:hidden;text-overflow:ellipsis"></span></div>
+        <div id="heldPairPnlHover" style="height:18px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:11px;color:#475569"></div>`;
       host.insertAdjacentElement("beforebegin", shell);
       this.liveLabel = shell.querySelector("#heldPairLivePnl");
       this.basisLabel = shell.querySelector("#heldPairBasis");

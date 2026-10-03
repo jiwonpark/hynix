@@ -4875,7 +4875,7 @@
   <div id="ellipsisHoverTooltip" class="ellipsisTooltip" style="display: none;" role="tooltip"></div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="held-pair-pnl.js?v=20261003_3"></script>
+  <script src="held-pair-pnl.js?v=20261003_4"></script>
   <script src="strategy-execution-chart.js?v=20260923_sync_5"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
@@ -13010,6 +13010,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("heldPairEntryNote").textContent = marker ? (marker.pnl_model
             ? ` · Estimated net for this entry's ${marker.pnl_model.adr_exit_qty} ADR / ${marker.pnl_model.stock_exit_qty} ETF trim; recorded entry fees + estimated exit costs and funding.`
             : " · Entry P&L unavailable: paired fills or commission data missing.") : "";
+          $("heldPairEntryNote").title = $("heldPairEntryNote").textContent;
         }
         const selectedEntrySpread = Number(marker?.entry_spread);
         if (Number.isFinite(selectedEntrySpread) && selectedEntrySpread > 0) {
