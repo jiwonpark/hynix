@@ -26,22 +26,17 @@ assert.equal(pnl.snapshot({...status,stock_position:{...status.stock_position,ma
 assert.deepEqual(pnl.revalue([{time:1,adr:100}],null),[]);
 console.log('Held-pair P&L valuation and missing-data regression checks passed');
 
-assert.deepEqual(pnl.movingAverage([{time:1,value:-2},{time:2,value:-4},{time:3},{time:4,value:8}],2),
-  [{time:1},{time:2,value:-3},{time:3},{time:4}], 'MA must use dollar P&L and reset at missing prices');
-let mainData;
-const chart = Object.create(pnl.MainChart.prototype);
-chart.series = {setData: data => {mainData=data;}};
+const chart = Object.create(pnl.Readout.prototype);
+chart.series = {setData: () => {throw new Error("P&L readout must never overwrite premium chart data");}};
 chart.maSeries = [0,1,2].map(()=>({setData:()=>{}}));
 chart.liveLabel = {style:{}};
 chart.basisLabel = {};
 chart.hoverLabel = {};
-global.document = {getElementById:()=>null};
 const history = [{time:300,adr:100,csop:5},{time:600,adr:100,csop:5}];
 chart.update(history,status,'5m',650);
-assert.equal(mainData[0].value,0);
-assert.ok(Math.abs(mainData[1].value-position.live)<1e-10, 'forming candle must use live paired mark P&L');
+assert.equal(chart.points.get(300).value,0);
+assert.ok(Math.abs(chart.points.get(600).value-position.live)<1e-10, 'forming candle must use live paired mark P&L');
 chart.update(history,status,'5m',950);
-assert.equal(mainData[1].value,0,'closed candles must retain their historical prices');
+assert.equal(chart.points.get(600).value,0,'closed candles must retain their historical prices');
 chart.update(history,{authenticated:false},'5m',650);
-assert.equal(mainData.length,0,'unavailable holdings must not fall back to premium');
-delete global.document;
+assert.equal(chart.points.size,0,'unavailable holdings must not fall back to premium');

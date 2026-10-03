@@ -30,40 +30,22 @@
     });
   }
 
-  function movingAverage(points, period) {
-    const values = [];
-    return points.map(point => {
-      if (!Number.isFinite(point.value)) values.length = 0;
-      else values.push(point.value);
-      if (values.length > period) values.shift();
-      return values.length === period ? {time: point.time, value: values.reduce((a, b) => a + b, 0) / period}
-        : {time: point.time};
-    });
-  }
-
-  class MainChart {
-    constructor(host, chart, series, maSeries, charts) {
+  class Readout {
+    constructor(host, chart) {
       this.chart = chart;
-      this.series = series;
-      this.maSeries = maSeries;
       const shell = document.createElement("section");
       shell.id = "heldPairPnlPane";
       shell.style.cssText = "padding:8px 12px;background:#fff;";
       shell.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;font-size:12px">
-        <strong>HELD PAIR P&amp;L · UP = GAIN / DOWN = LOSS</strong><strong id="heldPairLivePnl">Waiting for positions…</strong></div>
+        <strong>PAIRED P&amp;L</strong><strong id="heldPairLivePnl">Waiting for positions…</strong></div>
         <div id="heldPairBasis" style="padding:5px 0;font-size:11px;color:#475569"></div>
-        <div style="font-size:11px;color:#64748b">Current quantities × each contract’s price change from average entry. History revalues today’s holdings at candle prices; the forming candle uses live marks. Fees and funding excluded. Position changes rebase this curve. This is not historical account equity. Trading rules and replay still use domestic premium.</div>
+        <div style="font-size:11px;color:#64748b">Main chart: ADR / Korean domestic premium (%). Selected-entry net P&amp;L uses paired ADR/ETF fills and costs, on its own dollar scale. Total held-pair figures exclude fees and funding.</div>
         <div style="font-size:11px;color:#475569"><label id="heldPairEntryLabel" style="display:none">Selected entry <select id="heldPairEntrySelect" aria-label="LIFO entry at selected candle"></select></label><span id="heldPairEntryNote"></span></div>
         <div id="heldPairPnlHover" style="min-height:18px;font-size:11px;color:#475569"></div>`;
       host.insertAdjacentElement("beforebegin", shell);
       this.liveLabel = shell.querySelector("#heldPairLivePnl");
       this.basisLabel = shell.querySelector("#heldPairBasis");
       this.hoverLabel = shell.querySelector("#heldPairPnlHover");
-      const priceFormat = {type: "custom", minMove: .01, formatter: usd};
-      chart.applyOptions({localization: {priceFormatter: usd}});
-      [series, ...maSeries].forEach(s => s.applyOptions({priceFormat}));
-      series.createPriceLine({price: 0, color: "#94a3b8", lineWidth: 1,
-        lineStyle: charts.LineStyle.Dashed, axisLabelVisible: true, title: "Gross $0"});
       this.points = new Map();
       chart.subscribeCrosshairMove(param => {
         this.hoverTime = param?.time;
@@ -88,13 +70,6 @@
         last.value = position.live;
       }
       this.points = new Map(points.map(point => [point.time, point]));
-      this.series.setData(points.map(({time, value}) => Number.isFinite(value) ? {time, value} : {time}));
-      [7, 24, 60].forEach((period, index) => {
-        const ma = movingAverage(points, period);
-        this.maSeries[index].setData(ma);
-        const label = document.getElementById(`valShortTermMa${period}`);
-        if (label) label.textContent = usd(ma.at(-1)?.value);
-      });
       this.renderHover();
       this.liveLabel.textContent = position ? `Live mark-price P&L ${usd(position.live)}`
         : status?.authenticated ? "No complete held pair" : "Live positions unavailable";
@@ -103,5 +78,5 @@
         `${p.qty < 0 ? "Short" : "Long"} ${Math.abs(p.qty)} ${p.symbol} · average entry $${p.entry.toFixed(4)}`).join(" / ") : "";
     }
   }
-  return {snapshot, revalue, movingAverage, MainChart};
+  return {snapshot, revalue, Readout};
 });
