@@ -4875,7 +4875,7 @@
   <div id="ellipsisHoverTooltip" class="ellipsisTooltip" style="display: none;" role="tooltip"></div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="held-pair-pnl.js?v=20261003_2"></script>
+  <script src="held-pair-pnl.js?v=20261003_3"></script>
   <script src="strategy-execution-chart.js?v=20260923_sync_5"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
@@ -13012,6 +13012,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (Number.isFinite(selectedEntrySpread) && selectedEntrySpread > 0) {
           this.renderShortTermReferenceLines(selectedEntrySpread, {
             selected: true,
+            model: marker.pnl_model,
             exitSpread: marker.exit_spread || null
           });
         } else {
@@ -13257,10 +13258,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.shortTermPriceLines = this.executionChartController?.referenceLines || [];
       },
 
-      renderShortTermReferenceLines() {
-        // Premium alone cannot determine a paired entry's net profit.
-        // Selected-tranche net profit has its own dollar scale below the main curve.
+      renderShortTermReferenceLines(entrySpread, options = {}) {
         this.clearShortTermReferenceLines();
+        if (!this.executionChartController || !(Number(entrySpread) > 0)) return;
+        const bar = this.shortTermHistory?.bars?.at(-1);
+        const seconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[this.state?.shortTermInterval || "5m"];
+        const valuedAt = Math.min(Date.now(), (Number(bar?.time) + seconds) * 1000);
+        const levels = window.HeldPairPnl?.profitLevels(options.model, bar, valuedAt) || [];
+        this.shortTermPriceLines = this.executionChartController.renderReferenceLines({
+          entry: Number(entrySpread), selected: true, levels,
+          exit: options.exitSpread, exitTitle: "EXIT",
+        });
       },
 
       renderCurrentPositionReferenceLines() {

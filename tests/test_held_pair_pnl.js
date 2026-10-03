@@ -40,3 +40,21 @@ chart.update(history,status,'5m',950);
 assert.equal(chart.points.get(600).value,0,'closed candles must retain their historical prices');
 chart.update(history,{authenticated:false},'5m',650);
 assert.equal(chart.points.size,0,'unavailable holdings must not fall back to premium');
+
+const model={adr_exit_qty:.07,stock_exit_qty:1.2,adr_entry_price:195,stock_entry_price:5.4,
+ entry_fees_usd:.02,entry_time_ms:1000,exit_fee_bps:5,slippage_bps:3,funding_reserve_bps_day:3,threshold_usd:.02};
+const bar={csop:5.5,domestic:138};
+const valuation=86401000;
+const levels=pnl.profitLevels(model,bar,valuation);
+assert.equal(levels.length,9);
+for(const level of levels){
+ const adr=level.price/100*bar.domestic;
+ const net=.07*(195-adr)+1.2*(5.5-5.4)-.02-(.07*adr+1.2*5.5)*.0008-(.07*195+1.2*5.4)*.0003;
+ assert.ok(Math.abs(net-level.net)<1e-10,'premium level must solve the paired P&L equation including costs');
+}
+assert.ok(levels[1].price<levels[0].price);
+assert.match(levels[1].title,/Min profit \(net/);
+assert.deepEqual(pnl.profitLevels({...model,entry_fees_usd:null},bar,valuation),[]);
+assert.deepEqual(pnl.profitLevels(model,{domestic:138},valuation),[]);
+assert.ok(pnl.profitLevels(model,{...bar,csop:5.6},valuation)[1].price>levels[1].price,
+ 'ETF gains must raise the ADR premium at which the paired profit threshold is met');

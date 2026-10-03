@@ -30,6 +30,31 @@
     });
   }
 
+  // Project exact paired-trim net targets onto the premium axis, holding the
+  // latest candle's hedge and domestic prices fixed while solving ADR price.
+  function profitLevels(model, bar, valuationTimeMs) {
+    const fields = ['adr_exit_qty', 'stock_exit_qty', 'adr_entry_price', 'stock_entry_price',
+      'entry_fees_usd', 'entry_time_ms', 'exit_fee_bps', 'slippage_bps',
+      'funding_reserve_bps_day', 'threshold_usd'];
+    if (!model || fields.some(k => model[k] == null || !Number.isFinite(Number(model[k])) || Number(model[k]) < 0)) return [];
+    const [a, h, ae, he, fees, entered, exitBps, slipBps, fundingBps, minimum] = fields.map(k => Number(model[k]));
+    const hedge = Number(bar?.csop), domestic = Number(bar?.domestic);
+    if (![a, h, ae, he, hedge, domestic].every(n => Number.isFinite(n) && n > 0)
+        || !Number.isFinite(valuationTimeMs) || valuationTimeMs < entered) return [];
+    const notional = a * ae + h * he;
+    const rate = (exitBps + slipBps) / 10000;
+    const funding = notional * fundingBps / 10000 * (valuationTimeMs - entered) / 86400000;
+    const targets = [{net: 0, title: 'B/E (net 0%)'},
+      {net: minimum, title: `Min profit (net ${(minimum / notional * 100).toFixed(2)}%)`},
+      ...[.2, .5, 1, 2, 3, 4, 5].map(p => ({net: notional * p / 100, title: `NET +${p}%`}))];
+    return targets.map(target => ({...target,
+      price: (a * ae + h * (hedge - he) - fees - funding - h * hedge * rate - target.net)
+        / (a * (1 + rate)) / domestic * 100,
+      lineWidth: 1,
+      color: target.net === minimum ? '#16a34a' : 'rgba(22,163,74,0.40)',
+    })).filter(target => Number.isFinite(target.price) && target.price > 0);
+  }
+
   class Readout {
     constructor(host, chart) {
       this.chart = chart;
@@ -39,7 +64,7 @@
       shell.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;font-size:12px">
         <strong>PAIRED P&amp;L</strong><strong id="heldPairLivePnl">Waiting for positions…</strong></div>
         <div id="heldPairBasis" style="padding:5px 0;font-size:11px;color:#475569"></div>
-        <div style="font-size:11px;color:#64748b">Main chart: ADR / Korean domestic premium (%). Selected-entry net P&amp;L uses paired ADR/ETF fills and costs, on its own dollar scale. Total held-pair figures exclude fees and funding.</div>
+        <div style="font-size:11px;color:#64748b">Main chart: ADR / Korean domestic premium (%). Selected-entry net P&amp;L uses paired ADR/ETF fills and costs, on its own dollar scale. Premium profit lines assume the latest candle’s ETF and domestic prices stay fixed; they update with prices. Total held-pair figures exclude fees and funding.</div>
         <div style="font-size:11px;color:#475569"><label id="heldPairEntryLabel" style="display:none">Selected entry <select id="heldPairEntrySelect" aria-label="LIFO entry at selected candle"></select></label><span id="heldPairEntryNote"></span></div>
         <div id="heldPairPnlHover" style="min-height:18px;font-size:11px;color:#475569"></div>`;
       host.insertAdjacentElement("beforebegin", shell);
@@ -78,5 +103,5 @@
         `${p.qty < 0 ? "Short" : "Long"} ${Math.abs(p.qty)} ${p.symbol} · average entry $${p.entry.toFixed(4)}`).join(" / ") : "";
     }
   }
-  return {snapshot, revalue, Readout};
+  return {snapshot, revalue, profitLevels, Readout};
 });
