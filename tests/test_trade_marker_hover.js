@@ -110,3 +110,23 @@ for (const redundantTitle of ['title: `ENTRY (${criteria.entry_baseline_spread.t
 }
 
 console.log('Trade marker x-hover regression checks passed');
+
+const originalModel = lineEngine.rawExecutionMarkers[0].pnl_model;
+lineEngine.rawExecutionMarkers = [{time:1000,is_entry:true,entry_spread:140,pnl_models:[
+  {...originalModel,adr_order_id:'old',adr_entry_price:120},
+  {...originalModel,adr_order_id:'new',adr_entry_price:90},
+]}];
+lineEngine.syncHoveredTrancheAnalytics(1000);
+assert.equal(pnlData.at(-1)[0].value,.57,'newest entry must use its own fills, never the candle-average cost basis');
+lineEngine.selectedLifoOrder='old';
+lineEngine.syncHoveredTrancheAnalytics(1000);
+assert.equal(pnlData.at(-1)[0].value,2.67,'choosing an older entry must use only that entry');
+lineEngine.rawExecutionMarkers[0].pnl_models.push({adr_order_id:'missing',unavailable:true});
+lineEngine.selectedLifoOrder='missing';
+lineEngine.syncHoveredTrancheAnalytics(1000);
+assert.equal(pnlData.at(-1).length,0,'missing entry costs must not borrow a valid model from another entry');
+const feeModel={...originalModel, entry_time_ms:2500,entry_fees_usd:.01,funding_reserve_bps_day:3};
+const feePoints=lineEngine.tranchePnlSeries({pnl_model:feeModel});
+const funding=(.07*100+1.2*10)*.0003*(302000-2500)/86400000;
+assert.ok(Math.abs(feePoints[0].value-(1.27-.01-funding))<.000001,'funding time must match candle closing prices and include mid-candle entries');
+assert.equal(lineEngine.tranchePnlSeries({pnl_model:{...feeModel,entry_fees_usd:null}}).length,0);

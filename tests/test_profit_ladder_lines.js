@@ -28,7 +28,11 @@ assert.equal(engine.shortSpreadProfitLadder(0).length, 0);
 
 assert.ok(componentSource.includes('rgba(22, 163, 74, 0.18)'), 'net-profit lines must remain visually subtle');
 assert.ok(componentSource.includes('lineStyle: this.lineStyle.Dashed'), 'profit ladder must use dashed lines');
-assert.ok(html.includes('this.executionChartController.renderReferenceLines'), 'ladder lines must use the reusable cleanup lifecycle');
+let cleared = 0;
+engine.clearShortTermReferenceLines = () => {cleared++;};
+engine.renderShortTermReferenceLines(140);
+engine.renderCurrentPositionReferenceLines();
+assert.equal(cleared, 2, 'domestic premium reference levels must never leak onto the dollar P&L scale');
 assert.ok(html.includes('this.isConditionEnabled("entry_base_spread", criteria.condition_toggles)'),
   'scale-in line visibility must follow entry condition #2');
 assert.ok(componentSource.includes('if (config.showScaleIn && Number(config.scaleInSpread) > 0)'),

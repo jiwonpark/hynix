@@ -103,6 +103,19 @@ class ReplayTests(unittest.TestCase):
         self.assertTrue(all(m.get('entry_spread', 0) > 0 for m in five))
         self.assertTrue(any(not m['is_entry'] and m.get('exit_spread', 0) > 0 for m in five))
 
+    def test_bucketed_replay_keeps_individual_entry_models(self):
+        result = self.run_replay(bars([140]*8+[139,139], [100,101,102,103,104,105,106,107,95,95]))
+        markers = replay_markers(result, 3600)
+        grouped = next(m for m in markers if m['is_entry'] and m['count'] > 1)
+        trades = {f"replay-{trade['id']}": trade for trade in result['trades']}
+        self.assertEqual(len(grouped['pnl_models']), grouped['count'])
+        for model in grouped['pnl_models']:
+            trade = trades[model['adr_order_id']]
+            self.assertEqual(model['adr_entry_price'], trade['adr_entry_price'])
+            self.assertEqual(model['stock_entry_price'], trade['stock_entry_price'])
+            self.assertEqual(model['entry_time_ms'], trade['entry_time_ms'])
+        self.assertEqual(grouped['pnl_model'], grouped['pnl_models'][-1])
+
     def test_ma_stack_requires_current_price_in_order(self):
         # 60 bars of rising spread
         rising = [140 + i * 0.01 for i in range(60)]

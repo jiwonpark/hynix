@@ -219,6 +219,27 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(marker['pnl_model']['threshold_usd'], .02)
         self.assertNotIn('Min net', marker['hoverText'])
 
+    async def test_same_candle_preserves_each_entry_cost_basis_and_missing_fees(self):
+        times = [300000 * i for i in range(1, 21)]
+        async def request(method, path, params, **kwargs):
+            if 'klines' in path:
+                return [[t, 0, 0, 0, '100'] for t in times]
+            hedge = params['symbol'] == 'CSOPSKHYNIX2LUSDT'
+            return [{'id': i, 'orderId': i, 'time': times[5] + i*10000 + (1000 if hedge else 0),
+                     'side': 'BUY' if hedge else 'SELL', 'price': str((5+i) if hedge else (190+i*10)),
+                     'qty': '1.40' if hedge else '.08', 'commission': None if i == 3 else str(.001*i)}
+                    for i in (1,2,3)]
+        self.client.request.side_effect = request
+        result = await server.get_short_term_parity('5m', 20)
+        marker = result['markers'][0]
+        models = marker['pnl_models']
+        self.assertEqual([m['adr_order_id'] for m in models], ['1','2','3'])
+        self.assertEqual(models[0]['adr_entry_price'], 200)
+        self.assertEqual(models[1]['adr_entry_price'], 210)
+        self.assertAlmostEqual(models[1]['entry_fees_usd'], .002*.07/.08+.002*1.2/1.4)
+        self.assertTrue(models[2]['unavailable'])
+        self.assertIsNone(marker['pnl_model'], 'unverified newest entry cannot inherit an older entry profit model')
+
     def ma_bars(self, values):
         end = int(time.time() // 300) * 300
         return [{'time': end - (len(values) - 1 - i) * 300, 'value': v} for i, v in enumerate(values)]

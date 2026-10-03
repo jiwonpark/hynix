@@ -2155,8 +2155,14 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         continue
                     adr_fill = adr_order["cost"] / adr_order["qty"]
                     stock_fill = stock_order["cost"] / stock_order["qty"]
-                    if adr_order["fee_known"] and stock_order["fee_known"]:
+                    if adr_order["fee_known"] and stock_order["fee_known"] and adr_order["qty"] >= .07 and stock_order["qty"] >= 1.2:
                         pnl_model_by_order[adr_order_id] = {
+                            "adr_order_id": adr_order_id,
+                            "stock_order_id": stock_order_id,
+                            "adr_exit_qty": .07, "stock_exit_qty": 1.2,
+                            "exit_fee_bps": EXIT_FEE_BPS,
+                            "slippage_bps": EXIT_SLIPPAGE_BPS,
+                            "funding_reserve_bps_day": FUNDING_RESERVE_BPS_DAY,
                             "adr_entry_price": adr_fill,
                             "stock_entry_price": stock_fill,
                             "entry_fees_usd": (
@@ -2183,7 +2189,10 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         price = float(tr.get("price", 0.0))
                         qty = float(tr.get("qty", 0.0))
                         order_id = str(tr.get("orderId", tr.get("id", "")))
-                        pnl_model = pnl_model_by_order.get(order_id) if is_entry else None
+                        pnl_model = (pnl_model_by_order.get(order_id) or {
+                            "adr_order_id": order_id, "unavailable": True,
+                            "entry_time_ms": t_ms,
+                        }) if is_entry else None
 
                         key = (marker_time, is_entry)
                         if key not in candle_markers:
@@ -2222,21 +2231,11 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                     hover_lbl = f"${avg_px:.2f} ({qty_str}){cnt_str}"
                     pnl_models = m_data["pnl_models"]
                     pnl_model = None
-                    if pnl_models:
-                        count = len(pnl_models)
-                        pnl_model = {
-                            "adr_entry_price": sum(m["adr_entry_price"] for m in pnl_models) / count,
-                            "stock_entry_price": sum(m["stock_entry_price"] for m in pnl_models) / count,
-                            "entry_fees_usd": sum(m["entry_fees_usd"] for m in pnl_models) / count,
-                            "entry_time_ms": sum(m["entry_time_ms"] for m in pnl_models) / count,
-                            "adr_exit_qty": 0.07,
-                            "stock_exit_qty": 1.2,
-                            "exit_fee_bps": EXIT_FEE_BPS,
-                            "slippage_bps": EXIT_SLIPPAGE_BPS,
-                            "funding_reserve_bps_day": FUNDING_RESERVE_BPS_DAY,
-                            "threshold_usd": sum(m["threshold_usd"] for m in pnl_models) / count,
-                            "paired_entries": count,
-                        }
+                    # A candle can contain multiple LIFO entries. Never average their
+                    # cost bases, fees or holding times into a fictional entry.
+                    pnl_models.sort(key=lambda model: model["entry_time_ms"])
+                    if pnl_models and not pnl_models[-1].get("unavailable"):
+                        pnl_model = pnl_models[-1]
                     markers.append({
                         "time": m_time,
                         "position": "aboveBar" if is_entry else "belowBar",
@@ -2250,7 +2249,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         "qty": round(m_data["total_qty"], 2),
                         "entry_spread": round(m_data["entry_spread"], 4) if is_entry else None,
                         "minimum_net_profit_usd": pnl_model["threshold_usd"] if pnl_model else (MIN_NET_PROFIT_USD if is_entry else None),
-                        "convergence_target_spread": (round(sum((m["entry_spread"] if m["entry_spread"] is not None else m_data["entry_spread"]) - m["convergence_pts"] for m in pnl_models) / len(pnl_models), 2) if pnl_models else round(m_data["entry_spread"] - .08, 2)) if is_entry else None,
+                        "convergence_target_spread": (round((pnl_model.get("entry_spread") or m_data["entry_spread"]) - pnl_model["convergence_pts"], 2) if pnl_model else None),
+                        "pnl_models": pnl_models,
                         "pnl_model": pnl_model,
                     })
         except Exception:

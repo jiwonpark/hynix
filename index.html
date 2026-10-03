@@ -3502,7 +3502,7 @@
             <div>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 16px;">📈</span>
-                <strong style="font-size: 13.5px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;" id="lblShortTermTitle">Short-Term Parity Tracker & Auto-Tranche Criteria</strong>
+                <strong style="font-size: 13.5px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;" id="lblShortTermTitle">Held-Pair P&L & Auto-Tranche Criteria</strong>
                 <span style="font-size: 10.5px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">LIVE BINANCE EXECUTION</span>
               </div>
               <div style="font-size: 11.5px; color: #64748b; margin-top: 2px;" id="lblShortTermSubtitle">
@@ -3521,7 +3521,7 @@
                 <button id="btnShortInterval1d" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('1d')">1d</button>
               </div>
               <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a;">
-                Parity: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
+                Domestic premium: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
               </div>
             </div>
           </div>
@@ -4875,7 +4875,7 @@
   <div id="ellipsisHoverTooltip" class="ellipsisTooltip" style="display: none;" role="tooltip"></div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="held-pair-pnl.js?v=20261002_1"></script>
+  <script src="held-pair-pnl.js?v=20261003_1"></script>
   <script src="strategy-execution-chart.js?v=20260923_sync_5"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
@@ -11160,7 +11160,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           description: "Starts flat at the beginning of loaded history · 5m closes / completed 1h macro sizing · capital, margin and leverage do not suppress simulated trades · fees, slippage and estimated funding included. LIVE ONLY checks protect real orders; BACKTEST ONLY switches affect the simulation.",
           secondaryStatus: "Macro sizing: waiting for completed hourly prices…",
           height: 420,
-          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">--%</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">--%</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">--%</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected net PnL: <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span><span id="legendScaleInLine">Scale-In</span>',
+          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Held pair P&L</span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">—</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">—</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">—</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected trim net (est.): <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>',
           syncText: "Updated 0s ago",
         });
       },
@@ -12824,7 +12824,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
 
         if (this.shortTermChart && host && !this.heldPairPnlPane && window.HeldPairPnl) {
-          this.heldPairPnlPane = new HeldPairPnl.Pane(host, this.shortTermChart, LightweightCharts);
+          this.heldPairPnlPane = new HeldPairPnl.MainChart(host, this.shortTermChart, this.shortTermSeries,
+            [this.shortTermMa7Series, this.shortTermMa24Series, this.shortTermMa60Series], LightweightCharts);
           this.renderHeldPairPnl();
         }
 
@@ -12944,6 +12945,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const model = marker?.pnl_model;
         const bars = this.shortTermHistory?.bars || [];
         if (!model || !bars.length) return [];
+        const required = ["adr_exit_qty", "stock_exit_qty", "adr_entry_price", "stock_entry_price",
+          "entry_fees_usd", "entry_time_ms", "exit_fee_bps", "slippage_bps", "funding_reserve_bps_day"];
+        if (required.some(key => model[key] == null || !Number.isFinite(Number(model[key])) || Number(model[key]) < 0)) return [];
         const adrQty = Number(model.adr_exit_qty);
         const stockQty = Number(model.stock_exit_qty);
         const adrEntry = Number(model.adr_entry_price);
@@ -12954,12 +12958,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const fundingRate = Number(model.funding_reserve_bps_day) / 10000;
         const entryNotional = adrQty * adrEntry + stockQty * stockEntry;
         if (![adrQty, stockQty, adrEntry, stockEntry, entryFees, entryTimeMs, exitCostRate, fundingRate]
-            .every(Number.isFinite)) return [];
+            .every(Number.isFinite) || !(adrQty > 0 && stockQty > 0 && adrEntry > 0 && stockEntry > 0)) return [];
         return bars.flatMap((bar) => {
-          const adr = Number(bar.adr);
-          const csop = Number(bar.csop);
-          const barTimeMs = Number(bar.time) * 1000;
-          if (!(adr > 0) || !(csop > 0) || barTimeMs < entryTimeMs) return [];
+          const seconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[this.state?.shortTermInterval || "5m"];
+          const now = Date.now();
+          const barTimeMs = Math.min(now, (Number(bar.time) + seconds) * 1000);
+          const live = this.state?.hedgedStatus;
+          const forming = now >= bar.time * 1000 && now < (bar.time + seconds) * 1000;
+          const useMarks = forming && live?.authenticated && live.stock_position?.symbol === "CSOPSKHYNIX2LUSDT";
+          const adr = Number(useMarks ? live.adr_position?.mark_price : bar.adr);
+          const csop = Number(useMarks ? live.stock_position?.mark_price : bar.csop);
+          if (!(adr > 0) || !(csop > 0) || barTimeMs < entryTimeMs) return [{time: bar.time}];
           const gross = adrQty * (adrEntry - adr) + stockQty * (csop - stockEntry);
           const exitCosts = (adrQty * adr + stockQty * csop) * exitCostRate;
           const holdingDays = Math.max(0, barTimeMs - entryTimeMs) / 86400000;
@@ -12972,8 +12981,34 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!this.shortTermSeries) return;
         const visible = this.rawExecutionMarkers?.filter((m) =>
           hoveredTime !== null && this.isTradeMarkerVisible(m) && m.time === hoveredTime);
-        const marker = visible?.find((m) => !m.hypothetical && (m.pnl_model || m.entry_spread))
+        let marker = visible?.find((m) => !m.hypothetical && (m.pnl_model || m.entry_spread))
           || visible?.find((m) => m.pnl_model || m.entry_spread);
+        const models = marker?.pnl_models || (marker?.pnl_model ? [marker.pnl_model] : []);
+        const selectionKey = `${hoveredTime}:${Boolean(marker?.hypothetical)}`;
+        if (this.lifoSelectionKey !== selectionKey) {
+          this.lifoSelectionKey = selectionKey;
+          this.selectedLifoOrder = models.at(-1)?.adr_order_id;
+        }
+        const selectedModel = models.find(m => m.adr_order_id === this.selectedLifoOrder) || models.at(-1);
+        if (marker && models.length) marker = {...marker, pnl_model: selectedModel?.unavailable ? null : selectedModel};
+        const selector = $("heldPairEntrySelect");
+        if (selector && selector.replaceChildren) {
+          selector.replaceChildren(...models.map((model, index) => {
+            const option = document.createElement("option");
+            option.value = model.adr_order_id || String(index);
+            option.textContent = `#${model.adr_order_id || index + 1}${model.unavailable ? " · unverified" : ""}`;
+            option.selected = model === selectedModel;
+            return option;
+          }));
+          selector.onchange = () => {
+            this.selectedLifoOrder = selector.value;
+            this.syncHoveredTrancheAnalytics(hoveredTime);
+          };
+          $("heldPairEntryLabel").style.display = models.length > 1 ? "inline" : "none";
+          $("heldPairEntryNote").textContent = marker ? (marker.pnl_model
+            ? ` · Estimated net for this entry's ${marker.pnl_model.adr_exit_qty} ADR / ${marker.pnl_model.stock_exit_qty} ETF trim; recorded entry fees + estimated exit costs and funding.`
+            : " · Entry P&L unavailable: paired fills or commission data missing.") : "";
+        }
         const selectedEntrySpread = Number(marker?.entry_spread);
         if (Number.isFinite(selectedEntrySpread) && selectedEntrySpread > 0) {
           this.renderShortTermReferenceLines(selectedEntrySpread, {
@@ -12996,8 +13031,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             color: "#16a34a",
             lineWidth: 1,
             lineStyle: LightweightCharts.LineStyle.Dashed,
-            axisLabelVisible: false,
-            title: ""
+            axisLabelVisible: true,
+            title: "Min net"
           });
         }
         if ($("valSelectedMinProfit")) $("valSelectedMinProfit").textContent = Number.isFinite(threshold) ? `$${threshold.toFixed(2)}` : "—";
@@ -13223,62 +13258,27 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.shortTermPriceLines = this.executionChartController?.referenceLines || [];
       },
 
-      renderShortTermReferenceLines(entrySpread, options = {}) {
-        const entry = Number(entrySpread);
-        if (!(entry > 0) || !this.executionChartController) return;
-        this.shortTermPriceLines = this.executionChartController.renderReferenceLines({
-          entry,
-          selected: Boolean(options.selected),
-          levels: this.shortSpreadProfitLadder(entry),
-          showScaleIn: Boolean(options.showScaleIn),
-          scaleInSpread: options.scaleInSpread,
-          exit: options.exitSpread,
-          exitTitle: options.exitSpread ? `EXIT (${Number(options.exitSpread).toFixed(2)}%)` : "EXIT"
-        });
+      renderShortTermReferenceLines() {
+        // Domestic premium thresholds have no unique mapping onto held-pair P&L.
+        // Selected-tranche net profit has its own dollar scale below the main curve.
+        this.clearShortTermReferenceLines();
       },
 
       renderCurrentPositionReferenceLines() {
-        const isActualVisible = this.executionChartController ? this.executionChartController.visibility.actual !== false : true;
-        if (!isActualVisible) {
-          const lastVirtual = (this.dynamicBacktestMarkers || []).filter(m => m.entry_spread).at(-1);
-          if (lastVirtual?.entry_spread) {
-            this.renderShortTermReferenceLines(lastVirtual.entry_spread, {
-              selected: false,
-              exitSpread: lastVirtual.exit_spread || null
-            });
-            return;
-          }
-        }
-        const criteria = this.shortTermReferenceCriteria || {};
-        const entry = Number(criteria.entry_baseline_spread);
-        if (!(entry > 0)) {
-          const lastVirtual = (this.dynamicBacktestMarkers || []).filter(m => m.entry_spread).at(-1);
-          if (lastVirtual?.entry_spread) {
-            this.renderShortTermReferenceLines(lastVirtual.entry_spread, {
-              selected: false,
-              exitSpread: lastVirtual.exit_spread || null
-            });
-            return;
-          }
-          this.clearShortTermReferenceLines();
-          return;
-        }
-        const showScaleIn = this.isConditionEnabled("entry_base_spread", criteria.condition_toggles);
-        this.renderShortTermReferenceLines(entry, {
-          showScaleIn,
-          scaleInSpread: criteria.scale_in_trigger_spread
-        });
+        this.clearShortTermReferenceLines();
       },
 
       renderHeldPairPnl(bars = this.shortTermHistory?.bars || []) {
-        this.heldPairPnlPane?.update(bars, this.state.hedgedStatus);
+        this.heldPairPnlPane?.update(bars, this.state.hedgedStatus, this.state.shortTermInterval);
+        if (this.heldPairPnlPane && this.rawExecutionMarkers) {
+          this.syncHoveredTrancheAnalytics(this.selectedExecutionMarkerTime ?? this.activeHoveredExecutionMarkerTime);
+        }
       },
 
       renderShortTermChart(data) {
         this.initShortTermChart();
         if (!this.shortTermSeries || !data.bars || !data.bars.length) return;
 
-        this.shortTermSeries.setData(data.bars.map(b => ({ time: b.time, value: b.value })));
         this.renderHeldPairPnl(data.bars);
 
         if (this.shortTermAssetSeries?.adr && data.bars?.length) {
@@ -13302,24 +13302,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (this.shortTermAssetSeries?.stock) {
             this.shortTermAssetSeries.stock.setData(stockPoints);
           }
-        }
-
-        const ma7Data = this.calcMovingAverage(data.bars, 7);
-        const ma24Data = this.calcMovingAverage(data.bars, 24);
-        const ma60Data = this.calcMovingAverage(data.bars, 60);
-
-        if (this.shortTermMa7Series) this.shortTermMa7Series.setData(ma7Data);
-        if (this.shortTermMa24Series) this.shortTermMa24Series.setData(ma24Data);
-        if (this.shortTermMa60Series) this.shortTermMa60Series.setData(ma60Data);
-
-        if ($("valShortTermMa7")) {
-          $("valShortTermMa7").textContent = ma7Data.length ? `${ma7Data[ma7Data.length - 1].value.toFixed(2)}%` : "--%";
-        }
-        if ($("valShortTermMa24")) {
-          $("valShortTermMa24").textContent = ma24Data.length ? `${ma24Data[ma24Data.length - 1].value.toFixed(2)}%` : "--%";
-        }
-        if ($("valShortTermMa60")) {
-          $("valShortTermMa60").textContent = ma60Data.length ? `${ma60Data[ma60Data.length - 1].value.toFixed(2)}%` : "--%";
         }
 
         const rawMarkers = [...(data.markers || []).filter(m => !m.hypothetical), ...(this.dynamicBacktestMarkers || [])];
@@ -13661,7 +13643,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("lifoTrancheStack").innerHTML = newestFirst.map(({ tranche: t, index }, visualIndex) => {
               const top = visualIndex === 0;
               const net = Number(t.estimated_net_pnl_usd);
-              const hasPnl = t.profit_estimate_available && Number.isFinite(net);
+              const hasPnl = t.profit_estimate_available && t.estimated_net_pnl_usd != null && Number.isFinite(net);
               const pnlText = hasPnl ? `${net >= 0 ? "+" : ""}$${net.toFixed(3)}` : "unverified";
               const pnlColor = hasPnl ? (net > (t.minimum_net_profit_usd ?? .02) ? "#16a34a" : "#dc2626") : "#d97706";
               const ageSec = Math.max(0, Math.floor(Date.now() / 1000 - Number(t.time || 0)));
@@ -13673,14 +13655,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               return `<div style="padding: 7px 8px; border: ${top ? "1.5px solid #16a34a" : "1px solid #cbd5e1"}; border-radius: 6px; background: ${top ? "#f0fdf4" : "#fff"}; box-shadow: ${top ? "0 1px 3px rgba(22,163,74,.12)" : "none"};">
                 <div style="display:flex; justify-content:space-between; gap:8px; align-items:center;">
                   <strong style="color:${top ? "#166534" : "#334155"};">${top ? "TOP · NEXT EXIT" : `STACK ${visualIndex + 1}`} <span style="color:#64748b;">T${index + 1}</span></strong>
-                  <strong style="color:${pnlColor};">Est. net ${pnlText}</strong>
+                  <strong style="color:${pnlColor};">Trim net (est.) ${pnlText}</strong>
                 </div>
                 <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); gap:2px 10px; margin-top:4px; color:#64748b;">
                   <span>Spread <strong style="color:#334155;">${Number(t.entry_spread).toFixed(2)}% → ≤${Number(t.target_out_spread).toFixed(2)}%</strong></span>
-                  <span>Exit net > $${Number(t.minimum_net_profit_usd ?? .02).toFixed(2)} · ${t.exit_policy?.regime || "NORMAL"}</span>
+                  <span>0.07 ADR / 1.20 ETF trim · net > $${Number(t.minimum_net_profit_usd ?? .02).toFixed(2)} · ${t.exit_policy?.regime || "NORMAL"}</span>
                   <span>Age <strong style="color:#334155;">${ageText}</strong></span>
                   <span>ADR ${Number(t.qty).toFixed(2)} @ <strong style="color:#334155;">${Number.isFinite(adrEntry) ? `$${adrEntry.toFixed(2)}` : "—"}</strong> · #${adrOrder}</span>
-                  <span>ETF ${Number(t.stock_qty ?? 1.4).toFixed(2)} @ <strong style="color:#334155;">${Number.isFinite(etfEntry) ? `$${etfEntry.toFixed(4)}` : "—"}</strong> · #${etfOrder}</span>
+                  <span>ETF ${Number(t.stock_qty ?? 1.4).toFixed(2)} @ <strong style="color:#334155;">${t.stock_entry_price != null && Number.isFinite(etfEntry) ? `$${etfEntry.toFixed(4)}` : "—"}</strong> · #${etfOrder}</span>
                 </div>
               </div>`;
             }).join("");

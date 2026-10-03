@@ -192,21 +192,17 @@ def replay_markers(result, interval_seconds):
             if 'exit_spread' in trade:
                 markers[key]['exit_spread'] = trade['exit_spread']
         m = markers[key]
-        if m['count']:
-            model = m['pnl_model']
-            n = m['count']
-            for field, value in (
-                ('adr_entry_price', trade['adr_entry_price']),
-                ('stock_entry_price', trade['stock_entry_price']),
-                ('entry_time_ms', trade['entry_time_ms']),
-                ('entry_fees_usd', (.07*trade['adr_entry_price']+1.2*trade['stock_entry_price'])*(ENTRY_FEE_BPS+EXIT_SLIPPAGE_BPS)/10000),
-                ('threshold_usd', policy['minimum_net_profit_usd']),
-            ):
-                model[field] = (model[field]*n+value)/(n+1)
-            m['convergence_target_spread'] = (m['convergence_target_spread']*n + trade['entry_spread']-policy['convergence_pts'])/(n+1)
-            m['entry_spread'] = (m['entry_spread']*n + trade['entry_spread'])/(n+1)
-            if 'exit_spread' in trade:
-                m['exit_spread'] = ((m.get('exit_spread') or trade['exit_spread'])*n + trade['exit_spread'])/(n+1)
+        model = {
+            'adr_order_id': f"replay-{trade['id']}",
+            'adr_entry_price': trade['adr_entry_price'], 'stock_entry_price': trade['stock_entry_price'],
+            'entry_time_ms': trade['entry_time_ms'], 'adr_exit_qty': .07, 'stock_exit_qty': 1.2,
+            'entry_fees_usd': (.07*trade['adr_entry_price']+1.2*trade['stock_entry_price'])*(ENTRY_FEE_BPS+EXIT_SLIPPAGE_BPS)/10000,
+            'exit_fee_bps': EXIT_FEE_BPS, 'slippage_bps': EXIT_SLIPPAGE_BPS,
+            'funding_reserve_bps_day': FUNDING_RESERVE_BPS_DAY,
+            'threshold_usd': policy['minimum_net_profit_usd'],
+        }
+        m.setdefault('pnl_models', []).append(model)
+        m['pnl_model'] = model
         m['count'] += 1
         m['qty'] = round(m['qty']+(trade['adr_entry_qty'] if entry else .07), 2)
         m['estimated_net_pnl_usd'] += event.get('net_pnl_usd', 0)
