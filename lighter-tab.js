@@ -1588,20 +1588,7 @@
           stock: this.assetChart.addLineSeries({ priceScaleId: 'left', color: '#d97706', lineWidth: 2, title: 'SKHYNIXUSD' }),
         };
 
-        // 2-way range sync
-        let syncing = false;
-        this.chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          if (syncing || !range || !this.assetChart) return;
-          syncing = true;
-          this.assetChart.timeScale().setVisibleLogicalRange(range);
-          window.requestAnimationFrame(() => { syncing = false; });
-        });
-        this.assetChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          if (syncing || !range || !this.chart) return;
-          syncing = true;
-          this.chart.timeScale().setVisibleLogicalRange(range);
-          window.requestAnimationFrame(() => { syncing = false; });
-        });
+        this.chartSync = StrategyExecutionChartController.linkTimeScales(this.chart, this.assetChart);
       }
 
       window.addEventListener("resize", () => this.resize());
@@ -1622,6 +1609,7 @@
       }
       const assetHost = lid("shortTermAssetHost");
       if (assetHost && this.assetChart && assetHost.clientWidth > 0) this.assetChart.applyOptions({ width: assetHost.clientWidth });
+      this.chartSync?.sync();
     },
 
     async refresh() {
@@ -2277,81 +2265,94 @@
 
     async refreshChart() {
       this.ensureChart();
+      const interval = this.interval;
+      const request = this.chartRequest = (this.chartRequest || 0) + 1;
       let data;
       try {
-        data = await api(`/api/lighter/parity?interval=${this.interval}&limit=300`);
+        data = await api(`/api/lighter/parity?interval=${interval}&limit=300`);
       } catch (_) {
-        data = await api(`/api/trade/short_term_parity?interval=${this.interval}&limit=120`);
+        data = await api(`/api/trade/short_term_parity?interval=${interval}&limit=120`);
       }
+      if (interval !== this.interval || request !== this.chartRequest) return;
       if (!data || !data.success || !data.bars || !data.bars.length) return;
-      this.currentRatio = Number(data.bars[data.bars.length - 1].value);
-      this.bars = data.bars;
-      this.trendRanges = this.calculateTrendRanges(data.bars);
-      this.series.setData(data.bars.map((bar) => ({ time: bar.time, value: bar.value })));
+      const range = this.chartInterval === interval
+        ? StrategyExecutionChartController.preserveRange(this.chart.timeScale().getVisibleLogicalRange(), this.bars, data.bars)
+        : null;
+      this.chartSync?.pause();
+      try {
+        this.currentRatio = Number(data.bars[data.bars.length - 1].value);
+        this.bars = data.bars;
+        this.trendRanges = this.calculateTrendRanges(data.bars);
+        this.series.setData(data.bars.map((bar) => ({ time: bar.time, value: bar.value })));
 
-      if (this.assetSeries?.adr && data.bars.length) {
-        const adrPoints = [];
-        const stockPoints = [];
-        let lastT = -1;
-        for (let i = 0; i < data.bars.length; i++) {
-          const b = data.bars[i];
-          if (b.time <= lastT) continue;
-          lastT = b.time;
-          if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) adrPoints.push({ time: b.time, value: Number(b.adr) });
-          const sVal = b.domestic != null ? b.domestic : b.csop;
-          if (sVal != null && Number.isFinite(sVal) && sVal > 0) stockPoints.push({ time: b.time, value: Number(sVal) });
+        if (this.assetSeries?.adr && data.bars.length) {
+          const adrPoints = [];
+          const stockPoints = [];
+          let lastT = -1;
+          for (let i = 0; i < data.bars.length; i++) {
+            const b = data.bars[i];
+            if (b.time <= lastT) continue;
+            lastT = b.time;
+            if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) adrPoints.push({ time: b.time, value: Number(b.adr) });
+            else adrPoints.push({ time: b.time });
+            const sVal = b.domestic != null ? b.domestic : b.csop;
+            if (sVal != null && Number.isFinite(sVal) && sVal > 0) stockPoints.push({ time: b.time, value: Number(sVal) });
+            else stockPoints.push({ time: b.time });
+          }
+          this.assetSeries.adr.setData(adrPoints);
+          if (this.assetSeries?.stock) this.assetSeries.stock.setData(stockPoints);
         }
-        this.assetSeries.adr.setData(adrPoints);
-        if (this.assetSeries?.stock) this.assetSeries.stock.setData(stockPoints);
-      }
 
-      [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(TerminalCommon.movingAverage(data.bars, windowSize)));
-      [7, 24, 60].forEach((windowSize) => {
-        const value = TerminalCommon.movingAverage(data.bars, windowSize).at(-1)?.value;
-        this.setText(`valShortTermMa${windowSize}`, Number.isFinite(value) ? `${value.toFixed(2)}%` : "--%");
-      });
+        [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(TerminalCommon.movingAverage(data.bars, windowSize)));
+        [7, 24, 60].forEach((windowSize) => {
+          const value = TerminalCommon.movingAverage(data.bars, windowSize).at(-1)?.value;
+          this.setText(`valShortTermMa${windowSize}`, Number.isFinite(value) ? `${value.toFixed(2)}%` : "--%");
+        });
 
-      const firstBarTime = Number(data.bars[0]?.time);
-      const lastBarTime = Number(data.bars.at(-1)?.time);
-      this.actualMarkers = Array.isArray(data.markers) ? data.markers
-        .filter((marker) => Number(marker.time) >= firstBarTime && Number(marker.time) <= lastBarTime)
-        .map((marker) => {
-          const isEntry = marker.is_entry !== false;
-          const isShort = marker.direction ? marker.direction === "short" : (isEntry ? (marker.side < 0) : (marker.side > 0));
-          const isSell = isShort === isEntry;
-          const markerColor = isSell ? "#dc2626" : "#16a34a";
-          const markerShape = isEntry ? "arrowRight" : "arrowLeft";
-          return {
-            time: marker.time,
-            position: marker.position || (isSell ? "aboveBar" : "belowBar"),
-            color: marker.color || (isSell ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
-            activeColor: marker.activeColor || markerColor,
-            shape: markerShape,
-            text: "",
-            hoverText: marker.hoverText || marker.text || "Actual",
-            source: "actual",
-            hypothetical: false,
-            is_entry: isEntry,
-            is_exit: !isEntry,
-            direction: isShort ? "short" : "long",
-            entry_price: marker.entry_price || marker.ratio || marker.value,
-            exit_price: marker.exit_price || (isEntry ? null : (marker.ratio || marker.value)),
-            ratio: marker.ratio || marker.value,
-            pnl: marker.pnl,
-            pnl_pct: marker.pnl_pct,
-            pairKey: marker.pairKey || null,
-          };
-        }) : [];
-      this.renderMarkers();
-      this.renderCurrentPositionReferenceLines();
-      this.chart.timeScale().fitContent();
-      window.requestAnimationFrame(() => this.renderTrendRanges());
-      this.setText("valShortTermCurrentParity", `${this.currentRatio.toFixed(3)}%`);
-      ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((value) => {
-        const button = lid(`btnShortInterval${value}`);
-        if (button) button.classList.toggle("active", value === this.interval);
-      });
-      this.updateGridLadderData();
+        const firstBarTime = Number(data.bars[0]?.time);
+        const lastBarTime = Number(data.bars.at(-1)?.time);
+        this.actualMarkers = Array.isArray(data.markers) ? data.markers
+          .filter((marker) => Number(marker.time) >= firstBarTime && Number(marker.time) <= lastBarTime)
+          .map((marker) => {
+            const isEntry = marker.is_entry !== false;
+            const isShort = marker.direction ? marker.direction === "short" : (isEntry ? (marker.side < 0) : (marker.side > 0));
+            const isSell = isShort === isEntry;
+            const markerColor = isSell ? "#dc2626" : "#16a34a";
+            const markerShape = isEntry ? "arrowRight" : "arrowLeft";
+            return {
+              time: marker.time,
+              position: marker.position || (isSell ? "aboveBar" : "belowBar"),
+              color: marker.color || (isSell ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
+              activeColor: marker.activeColor || markerColor,
+              shape: markerShape,
+              text: "",
+              hoverText: marker.hoverText || marker.text || "Actual",
+              source: "actual",
+              hypothetical: false,
+              is_entry: isEntry,
+              is_exit: !isEntry,
+              direction: isShort ? "short" : "long",
+              entry_price: marker.entry_price || marker.ratio || marker.value,
+              exit_price: marker.exit_price || (isEntry ? null : (marker.ratio || marker.value)),
+              ratio: marker.ratio || marker.value,
+              pnl: marker.pnl,
+              pnl_pct: marker.pnl_pct,
+              pairKey: marker.pairKey || null,
+            };
+          }) : [];
+        this.renderMarkers();
+        this.renderCurrentPositionReferenceLines();
+        if (range) this.chart.timeScale().setVisibleLogicalRange(range);
+        else this.chart.timeScale().fitContent();
+        this.chartInterval = interval;
+        window.requestAnimationFrame(() => this.renderTrendRanges());
+        this.setText("valShortTermCurrentParity", `${this.currentRatio.toFixed(3)}%`);
+        ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((value) => {
+          const button = lid(`btnShortInterval${value}`);
+          if (button) button.classList.toggle("active", value === this.interval);
+        });
+        this.updateGridLadderData();
+      } finally { this.chartSync?.resume(); }
     },
 
     markerTimeAtParam(param) {

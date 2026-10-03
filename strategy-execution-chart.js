@@ -269,6 +269,57 @@
     }
   }
 
+  // Both panes must contain the same timestamps, including whitespace for missing prices.
+  // Release the recursion guard synchronously: a frame-long guard loses wheel/drag events.
+  StrategyExecutionChartController.linkTimeScales = function (primary, secondary) {
+    let syncing = false;
+    let paused = 0;
+    const same = (a, b) => a && b && Math.abs(a.from - b.from) < 1e-7 && Math.abs(a.to - b.to) < 1e-7;
+    const sync = (source = primary, target = secondary) => {
+      if (syncing || paused) return;
+      const range = source.timeScale().getVisibleLogicalRange();
+      if (!range || same(range, target.timeScale().getVisibleLogicalRange())) return;
+      syncing = true;
+      try { target.timeScale().setVisibleLogicalRange(range); }
+      finally { syncing = false; }
+    };
+    for (const chart of [primary, secondary]) {
+      chart.applyOptions({
+        leftPriceScale: { visible: true, minimumWidth: 80 },
+        rightPriceScale: { visible: true, minimumWidth: 90 },
+        timeScale: { minBarSpacing: 0.5, lockVisibleTimeRangeOnResize: true },
+      });
+    }
+    const forward = () => sync(primary, secondary);
+    const backward = () => sync(secondary, primary);
+    primary.timeScale().subscribeVisibleLogicalRangeChange(forward);
+    secondary.timeScale().subscribeVisibleLogicalRangeChange(backward);
+    return {
+      sync: forward,
+      pause() { paused++; },
+      resume() { paused = Math.max(0, paused - 1); forward(); },
+      dispose() {
+        primary.timeScale().unsubscribeVisibleLogicalRangeChange(forward);
+        secondary.timeScale().unsubscribeVisibleLogicalRangeChange(backward);
+      },
+    };
+  };
+
+  // Retain the same candle when a fixed-length API window rolls forward.
+  StrategyExecutionChartController.preserveRange = function (range, previous, next) {
+    if (!range || !previous?.length || !next?.length) return null;
+    let shift;
+    if (range.to >= previous.length - 1) {
+      shift = next.length - previous.length;
+    } else {
+      const nextIndex = new Map(next.map((bar, index) => [bar.time, index]));
+      const anchor = previous.findIndex(bar => nextIndex.has(bar.time));
+      if (anchor < 0) return null;
+      shift = nextIndex.get(previous[anchor].time) - anchor;
+    }
+    return { from: range.from + shift, to: range.to + shift };
+  };
+
   StrategyExecutionChartController.Frame = StrategyExecutionChartFrame;
 
   return StrategyExecutionChartController;

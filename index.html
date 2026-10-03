@@ -4876,10 +4876,10 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="held-pair-pnl.js?v=20261003_4"></script>
-  <script src="strategy-execution-chart.js?v=20260923_sync_5"></script>
+  <script src="strategy-execution-chart.js?v=20261003_sync_6"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
-  <script src="lighter-tab.js?v=20260926_execution_ledger_1"></script>
+  <script src="lighter-tab.js?v=20261003_sync_1"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -12842,6 +12842,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             if (this.shortTermAssetChart && ah && ah.clientWidth > 0) {
               this.shortTermAssetChart.applyOptions({ width: ah.clientWidth });
             }
+            this.shortTermChartSync?.sync();
           });
         }
       },
@@ -12850,19 +12851,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!this.shortTermChart || !this.shortTermAssetChart || this._shortTermChartsSynced) return;
         this._shortTermChartsSynced = true;
 
-        let isSyncingShortTerm = false;
-        this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          if (isSyncingShortTerm || !range || !this.shortTermAssetChart) return;
-          isSyncingShortTerm = true;
-          this.shortTermAssetChart.timeScale().setVisibleLogicalRange(range);
-          window.requestAnimationFrame(() => { isSyncingShortTerm = false; });
-        });
-        this.shortTermAssetChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-          if (isSyncingShortTerm || !range || !this.shortTermChart) return;
-          isSyncingShortTerm = true;
-          this.shortTermChart.timeScale().setVisibleLogicalRange(range);
-          window.requestAnimationFrame(() => { isSyncingShortTerm = false; });
-        });
+        this.shortTermChartSync = StrategyExecutionChartController.linkTimeScales(
+          this.shortTermChart, this.shortTermAssetChart);
 
         const updateShortTermAssetHover = (param) => {
           const details = $("shortTermAssetDetails");
@@ -13290,88 +13280,91 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.initShortTermChart();
         if (!this.shortTermSeries || !data.bars || !data.bars.length) return;
 
-        this.shortTermSeries.setData(data.bars.map(b => ({time: b.time, value: b.value})));
-        this.renderHeldPairPnl(data.bars);
+        this.shortTermChartSync?.pause();
+        try {
+          this.shortTermSeries.setData(data.bars.map(b => ({time: b.time, value: b.value})));
+          this.renderHeldPairPnl(data.bars);
 
-        if (this.shortTermAssetSeries?.adr && data.bars?.length) {
-          const adrPoints = [];
-          const stockPoints = [];
-          let lastT = -1;
-          for (let i = 0; i < data.bars.length; i++) {
-            const b = data.bars[i];
-            const t = b.time;
-            if (t <= lastT) continue;
-            lastT = t;
-            if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) {
-              adrPoints.push({ time: t, value: Number(b.adr) });
+          if (this.shortTermAssetSeries?.adr && data.bars?.length) {
+            const adrPoints = [];
+            const stockPoints = [];
+            let lastT = -1;
+            for (let i = 0; i < data.bars.length; i++) {
+              const b = data.bars[i];
+              const t = b.time;
+              if (t <= lastT) continue;
+              lastT = t;
+              if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) {
+                adrPoints.push({ time: t, value: Number(b.adr) });
+              } else adrPoints.push({ time: t });
+              const sVal = b.csop != null ? b.csop : (b.domestic ? b.domestic * 10 : null);
+              if (sVal != null && Number.isFinite(sVal) && sVal > 0) {
+                stockPoints.push({ time: t, value: Number(sVal) });
+              } else stockPoints.push({ time: t });
             }
-            const sVal = b.csop != null ? b.csop : (b.domestic ? b.domestic * 10 : null);
-            if (sVal != null && Number.isFinite(sVal) && sVal > 0) {
-              stockPoints.push({ time: t, value: Number(sVal) });
+            this.shortTermAssetSeries.adr.setData(adrPoints);
+            if (this.shortTermAssetSeries?.stock) {
+              this.shortTermAssetSeries.stock.setData(stockPoints);
             }
           }
-          this.shortTermAssetSeries.adr.setData(adrPoints);
-          if (this.shortTermAssetSeries?.stock) {
-            this.shortTermAssetSeries.stock.setData(stockPoints);
+
+          const ma7Data = this.calcMovingAverage(data.bars, 7);
+          const ma24Data = this.calcMovingAverage(data.bars, 24);
+          const ma60Data = this.calcMovingAverage(data.bars, 60);
+
+          if (this.shortTermMa7Series) this.shortTermMa7Series.setData(ma7Data);
+          if (this.shortTermMa24Series) this.shortTermMa24Series.setData(ma24Data);
+          if (this.shortTermMa60Series) this.shortTermMa60Series.setData(ma60Data);
+
+          if ($("valShortTermMa7")) {
+            $("valShortTermMa7").textContent = ma7Data.length ? `${ma7Data[ma7Data.length - 1].value.toFixed(2)}%` : "--%";
           }
-        }
+          if ($("valShortTermMa24")) {
+            $("valShortTermMa24").textContent = ma24Data.length ? `${ma24Data[ma24Data.length - 1].value.toFixed(2)}%` : "--%";
+          }
+          if ($("valShortTermMa60")) {
+            $("valShortTermMa60").textContent = ma60Data.length ? `${ma60Data[ma60Data.length - 1].value.toFixed(2)}%` : "--%";
+          }
 
-        const ma7Data = this.calcMovingAverage(data.bars, 7);
-        const ma24Data = this.calcMovingAverage(data.bars, 24);
-        const ma60Data = this.calcMovingAverage(data.bars, 60);
+          const rawMarkers = [...(data.markers || []).filter(m => !m.hypothetical), ...(this.dynamicBacktestMarkers || [])];
+          const confirmedKeys = new Set(
+            rawMarkers.filter((m) => !m.hypothetical).map((m) => `${m.time}_${m.is_entry ? 1 : 0}`)
+          );
+          const markers = rawMarkers
+            .filter((m) => !(m.hypothetical && !m.backtest && confirmedKeys.has(`${m.time}_${m.is_entry ? 1 : 0}`)))
+            .sort((a, b) => a.time - b.time);
+          this.rawExecutionMarkers = markers;
+          this.executionChartController?.setExecutions(markers);
+          if (!markers.some((marker) => marker.time === this.activeHoveredExecutionMarkerTime)) {
+            this.activeHoveredExecutionMarkerTime = null;
+          }
+          if (!markers.some((marker) => marker.time === this.selectedExecutionMarkerTime)) {
+            this.selectedExecutionMarkerTime = null;
+          }
+          this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
+          window.latestExecutionMarkers = markers;
 
-        if (this.shortTermMa7Series) this.shortTermMa7Series.setData(ma7Data);
-        if (this.shortTermMa24Series) this.shortTermMa24Series.setData(ma24Data);
-        if (this.shortTermMa60Series) this.shortTermMa60Series.setData(ma60Data);
+          const latest = data.bars[data.bars.length - 1];
+          if ($("valShortTermCurrentParity") && latest) {
+            const prem = (latest.value - 100.0).toFixed(2);
+            $("valShortTermCurrentParity").textContent = `${latest.value.toFixed(2)}% (+${prem}%)`;
+          }
+          if ($("lblShortTermChartSync")) {
+            $("lblShortTermChartSync").textContent = `Sync ${formatKstTime()}`;
+          }
 
-        if ($("valShortTermMa7")) {
-          $("valShortTermMa7").textContent = ma7Data.length ? `${ma7Data[ma7Data.length - 1].value.toFixed(2)}%` : "--%";
-        }
-        if ($("valShortTermMa24")) {
-          $("valShortTermMa24").textContent = ma24Data.length ? `${ma24Data[ma24Data.length - 1].value.toFixed(2)}%` : "--%";
-        }
-        if ($("valShortTermMa60")) {
-          $("valShortTermMa60").textContent = ma60Data.length ? `${ma60Data[ma60Data.length - 1].value.toFixed(2)}%` : "--%";
-        }
-
-        const rawMarkers = [...(data.markers || []).filter(m => !m.hypothetical), ...(this.dynamicBacktestMarkers || [])];
-        const confirmedKeys = new Set(
-          rawMarkers.filter((m) => !m.hypothetical).map((m) => `${m.time}_${m.is_entry ? 1 : 0}`)
-        );
-        const markers = rawMarkers
-          .filter((m) => !(m.hypothetical && !m.backtest && confirmedKeys.has(`${m.time}_${m.is_entry ? 1 : 0}`)))
-          .sort((a, b) => a.time - b.time);
-        this.rawExecutionMarkers = markers;
-        this.executionChartController?.setExecutions(markers);
-        if (!markers.some((marker) => marker.time === this.activeHoveredExecutionMarkerTime)) {
-          this.activeHoveredExecutionMarkerTime = null;
-        }
-        if (!markers.some((marker) => marker.time === this.selectedExecutionMarkerTime)) {
-          this.selectedExecutionMarkerTime = null;
-        }
-        this.updateMarkerState(this.activeHoveredExecutionMarkerTime);
-        window.latestExecutionMarkers = markers;
-
-        const latest = data.bars[data.bars.length - 1];
-        if ($("valShortTermCurrentParity") && latest) {
-          const prem = (latest.value - 100.0).toFixed(2);
-          $("valShortTermCurrentParity").textContent = `${latest.value.toFixed(2)}% (+${prem}%)`;
-        }
-        if ($("lblShortTermChartSync")) {
-          $("lblShortTermChartSync").textContent = `Sync ${formatKstTime()}`;
-        }
-
-        const criteria = (this.state.hedgedStatus && this.state.hedgedStatus.auto_tranche_criteria) || {};
-        this.shortTermReferenceCriteria = criteria;
-        const showScaleInLine = this.isConditionEnabled("entry_base_spread", criteria.condition_toggles);
-        const scaleInLegend = $("legendScaleInLine");
-        if (scaleInLegend) scaleInLegend.style.display = showScaleInLine ? "inline-flex" : "none";
-        const activeTime = this.selectedExecutionMarkerTime !== null ? this.selectedExecutionMarkerTime : this.activeHoveredExecutionMarkerTime;
-        if (activeTime !== null) {
-          this.syncHoveredTrancheAnalytics(activeTime);
-        } else {
-          this.renderCurrentPositionReferenceLines();
-        }
+          const criteria = (this.state.hedgedStatus && this.state.hedgedStatus.auto_tranche_criteria) || {};
+          this.shortTermReferenceCriteria = criteria;
+          const showScaleInLine = this.isConditionEnabled("entry_base_spread", criteria.condition_toggles);
+          const scaleInLegend = $("legendScaleInLine");
+          if (scaleInLegend) scaleInLegend.style.display = showScaleInLine ? "inline-flex" : "none";
+          const activeTime = this.selectedExecutionMarkerTime !== null ? this.selectedExecutionMarkerTime : this.activeHoveredExecutionMarkerTime;
+          if (activeTime !== null) {
+            this.syncHoveredTrancheAnalytics(activeTime);
+          } else {
+            this.renderCurrentPositionReferenceLines();
+          }
+        } finally { this.shortTermChartSync?.resume(); }
       },
 
       renderAutoTrancheCriteria(criteria, hedgedData) {

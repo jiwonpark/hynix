@@ -88,3 +88,16 @@ assert.doesNotThrow(() => {
 }, 'renderShortTermChart must execute without ReferenceError');
 
 console.log('Prepend scroll regression checks passed');
+
+let adrData, stockData;
+testEngine.shortTermAssetSeries = {
+  adr: {setData: data => {adrData = data;}},
+  stock: {setData: data => {stockData = data;}}
+};
+testEngine.renderShortTermChart({bars:[
+  {time:100, value:139.2, adr:190, csop:5.5},
+  {time:200, value:139.3},
+  {time:300, value:139.4, adr:191, csop:5.6},
+], markers:[]});
+assert.equal(JSON.stringify(adrData), JSON.stringify([{time:100,value:190},{time:200},{time:300,value:191}]));
+assert.equal(JSON.stringify(stockData), JSON.stringify([{time:100,value:5.5},{time:200},{time:300,value:5.6}]));
