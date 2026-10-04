@@ -11,7 +11,7 @@ const points = pnl.revalue([
   {time:3,adr:105,csop:null,domestic:80,value:138},
 ],position);
 assert.equal(points[0].value,0);
-assert.ok(points[1].value < 0, 'falling domestic premium must not imply profitable held pair');
+assert.ok(points[1].value < 0, 'falling nominal signal must not imply profitable held pair');
 assert.equal(points[1].adrPnl,-5);
 assert.ok(Math.abs(points[1].hedgePnl-2.8)<1e-10);
 assert.deepEqual(points[2],{time:3},'missing ETF data must leave a gap, never substitute domestic prices');
@@ -43,12 +43,12 @@ assert.equal(chart.points.size,0,'unavailable holdings must not fall back to pre
 
 const model={adr_exit_qty:.07,stock_exit_qty:1.2,adr_entry_price:195,stock_entry_price:5.4,
  entry_fees_usd:.02,entry_time_ms:1000,exit_fee_bps:5,slippage_bps:3,funding_reserve_bps_day:3,threshold_usd:.02};
-const bar={csop:5.5,domestic:138};
+const bar={csop:5.5,signal_scale:60};
 const valuation=86401000;
 const levels=pnl.profitLevels(model,bar,valuation);
 assert.equal(levels.length,9);
 for(const level of levels){
- const adr=level.price/100*bar.domestic;
+ const adr=level.price/100*bar.signal_scale*Math.sqrt(bar.csop);
  const net=.07*(195-adr)+1.2*(5.5-5.4)-.02-(.07*adr+1.2*5.5)*.0008-(.07*195+1.2*5.4)*.0003;
  assert.ok(Math.abs(net-level.net)<1e-10,'premium level must solve the paired P&L equation including costs');
 }
@@ -56,5 +56,8 @@ assert.ok(levels[1].price<levels[0].price);
 assert.match(levels[1].title,/Min profit \(net/);
 assert.deepEqual(pnl.profitLevels({...model,entry_fees_usd:null},bar,valuation),[]);
 assert.deepEqual(pnl.profitLevels(model,{domestic:138},valuation),[]);
-assert.ok(pnl.profitLevels(model,{...bar,csop:5.6},valuation)[1].price>levels[1].price,
- 'ETF gains must raise the ADR premium at which the paired profit threshold is met');
+const higherEtf = pnl.profitLevels(model,{...bar,csop:5.6},valuation)[1];
+const adrTarget = level => level.price/100*bar.signal_scale*Math.sqrt(bar.csop);
+const higherEtfAdrTarget = higherEtf.price/100*bar.signal_scale*Math.sqrt(5.6);
+assert.ok(higherEtfAdrTarget>adrTarget(levels[1]),
+ 'ETF gains must raise the ADR price at which the paired profit threshold is met');

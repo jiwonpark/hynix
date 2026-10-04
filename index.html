@@ -3502,7 +3502,7 @@
             <div>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 16px;">📈</span>
-                <strong style="font-size: 13.5px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;" id="lblShortTermTitle">Premium Chart & Auto-Tranche Criteria</strong>
+                <strong style="font-size: 13.5px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;" id="lblShortTermTitle">ADR / √CSOP Signal & Auto-Tranche Criteria</strong>
                 <span style="font-size: 10.5px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">LIVE BINANCE EXECUTION</span>
               </div>
               <div style="font-size: 11.5px; color: #64748b; margin-top: 2px;" id="lblShortTermSubtitle">
@@ -3521,7 +3521,7 @@
                 <button id="btnShortInterval1d" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('1d')">1d</button>
               </div>
               <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a;">
-                Domestic premium: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
+                ADR / √CSOP signal: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
               </div>
             </div>
           </div>
@@ -4875,7 +4875,7 @@
   <div id="ellipsisHoverTooltip" class="ellipsisTooltip" style="display: none;" role="tooltip"></div>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="held-pair-pnl.js?v=20261003_4"></script>
+  <script src="held-pair-pnl.js?v=20261004_1"></script>
   <script src="strategy-execution-chart.js?v=20261003_sync_8"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
@@ -11160,7 +11160,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           description: "Starts flat at the beginning of loaded history · 5m closes / completed 1h macro sizing · capital, margin and leverage do not suppress simulated trades · fees, slippage and estimated funding included. LIVE ONLY checks protect real orders; BACKTEST ONLY switches affect the simulation.",
           secondaryStatus: "Macro sizing: waiting for completed hourly prices…",
           height: 420,
-          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Premium</span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">—</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">—</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">—</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected trim net (est.): <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>',
+          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> ADR / √CSOP signal</span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">—</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">—</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">—</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected trim net (est.): <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>',
           syncText: "Updated 0s ago",
         });
       },
@@ -11886,7 +11886,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               const stockDisplayName = stockPos.symbol === "CSOPSKHYNIX2LUSDT" ? "CSOP 2x ETF" : "SK Hynix KR";
 
               html += `<tr>
-                <!-- Merged Front Cell: Captured Premium & Dual-Leg Parity Summary -->
+                <!-- Merged Front Cell: signal movement and paired-leg P&L summary -->
                 <td rowspan="2" style="font-weight: 700; color: #0f172a; vertical-align: middle; background: #f8fafc; border-right: 2px solid #e2e8f0; min-width: 250px; padding: 14px 16px;">
                   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                     <span style="font-size: 13.5px; font-weight: 800; color: #0284c7;">⚡ SK Hynix Dual-Leg Arb</span>
@@ -11905,10 +11905,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                       ${pnlSign}$${combinedPnl.toFixed(2)} (${pnlSign}${combinedPnlPct.toFixed(2)}%)
                     </div>
                     <div style="font-size: 10.5px; color: ${isProfit ? '#065f46' : '#9f1239'}; margin-top: 3px; font-family: monospace;">
-                      Entry Parity: <strong>${entrySpread == null ? "—" : entrySpread.toFixed(2) + "%"}</strong> ➔ Mark: <strong>${currentSpread == null ? "—" : currentSpread.toFixed(2) + "%"}</strong>
+                      Entry signal: <strong>${entrySpread == null ? "—" : entrySpread.toFixed(2) + "%"}</strong> ➔ Mark: <strong>${currentSpread == null ? "—" : currentSpread.toFixed(2) + "%"}</strong>
                     </div>
                     <div style="font-size: 10px; color: #64748b; margin-top: 3px;">
-                      ADR Premium: <strong style="color: #0284c7;">${currentSpread == null ? "—" : ((currentSpread >= 100 ? "+" : "") + (currentSpread - 100).toFixed(2) + "%")}</strong> over KRX Domestic
+                      ADR / √CSOP signal: <strong style="color: #0284c7;">${currentSpread == null ? "—" : currentSpread.toFixed(2) + "%"}</strong> (fixed quote scale)
                     </div>
                   </div>
 
@@ -12868,7 +12868,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const csopVal = bar.csop != null ? bar.csop : (bar.domestic ? bar.domestic * 10 : null);
             const csopStr = csopVal != null ? `$${Number(csopVal).toFixed(3)}` : "--";
             const parStr = bar.value != null ? `${Number(bar.value).toFixed(2)}%` : "--";
-            details.textContent = `| ADR: ${adrStr} | ETF: ${csopStr} | Parity: ${parStr}`;
+            details.textContent = `| ADR: ${adrStr} | ETF: ${csopStr} | Signal: ${parStr}`;
           }
         };
         this.shortTermChart.subscribeCrosshairMove(updateShortTermAssetHover);
@@ -13353,8 +13353,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
           const latest = data.bars[data.bars.length - 1];
           if ($("valShortTermCurrentParity") && latest) {
-            const prem = (latest.value - 100.0).toFixed(2);
-            $("valShortTermCurrentParity").textContent = `${latest.value.toFixed(2)}% (+${prem}%)`;
+            $("valShortTermCurrentParity").textContent = `${latest.value.toFixed(2)}%`;
           }
           if ($("lblShortTermChartSync")) {
             $("lblShortTermChartSync").textContent = `Sync ${formatKstTime()}`;
@@ -13688,7 +13687,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   <strong style="color:${pnlColor};">Trim net (est.) ${pnlText}</strong>
                 </div>
                 <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); gap:2px 10px; margin-top:4px; color:#64748b;">
-                  <span>Spread <strong style="color:#334155;">${Number(t.entry_spread).toFixed(2)}% → ≤${Number(t.target_out_spread).toFixed(2)}%</strong></span>
+                  <span>Signal <strong style="color:#334155;">${Number(t.entry_spread).toFixed(2)}% → ≤${Number(t.target_out_spread).toFixed(2)}%</strong></span>
                   <span>${Number(t.exit_policy?.adr_exit_qty ?? .07).toFixed(2)} ADR / ${Number(t.exit_policy?.stock_exit_qty ?? 1.2).toFixed(2)} ETF trim · net > $${Number(t.minimum_net_profit_usd ?? .02).toFixed(2)} · ${t.exit_policy?.regime || "NORMAL"}</span>
                   <span>Age <strong style="color:#334155;">${ageText}</strong></span>
                   <span>ADR ${Number(t.qty).toFixed(2)} @ <strong style="color:#334155;">${Number.isFinite(adrEntry) ? `$${adrEntry.toFixed(2)}` : "—"}</strong> · #${adrOrder}</span>
@@ -13831,8 +13830,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         // 2. Speculative Scale-In (Peak-Out / MA Stretch Filter):
         // Only scale in if:
-        // - Parity spread >= 24-MA + 0.10% pts
-        // - AND Parity spread >= entry baseline + 0.10% pts
+        // - Nominal signal >= 24-MA + 0.10 index points
+        // - AND nominal signal >= entry baseline + 0.10 index points
         // - AND Upward divergence is showing peak-out / momentum exhaustion
         const canScaleIn = criteria 
           ? Boolean(criteria.scale_in_armed) 

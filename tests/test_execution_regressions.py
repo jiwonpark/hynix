@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, call, patch
 from backend import server
 from backend.macro_policy import policy_for_level
 from backend.pair_sizing import REFERENCE_RULES, size_policy
+from backend.nominal_signal import nominal_premium
 
 
 class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
@@ -137,6 +138,28 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(criteria['current_target_tranche']['trim_qty'], .07)
         self.assertEqual(criteria['current_target_tranche']['trade_id'], '1')
 
+    async def test_legacy_entry_signal_is_rebuilt_from_paired_fills(self):
+        now = int(time.time() * 1000) - 300000
+        self.client.get_detailed_account_overview.return_value['positions'] = [
+            {'symbol': 'SKHYUSDT', 'position_amt': -.08, 'mark_price': 190, 'entry_price': 195},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 1.4, 'mark_price': 5.6, 'entry_price': 5.5}]
+        server.save_auto_tranche_state({
+            'entry_order_pairs': [{'adr_order_id': '11', 'stock_order_id': '12',
+                                   'entry_spread': 999.0}],
+            'last_exit_spread': 999.0, 'entries_since_last_exit': 1})
+        async def request(method, path, params, **kwargs):
+            if params['symbol'] == 'SKHYUSDT':
+                return [{'id': 1, 'orderId': 11, 'side': 'SELL', 'qty': '.08',
+                         'price': '195', 'time': now, 'commission': '.001'}]
+            return [{'id': 2, 'orderId': 12, 'side': 'BUY', 'qty': '1.4',
+                     'price': '5.5', 'time': now + 1000, 'commission': '.001'}]
+        self.client.request.side_effect = request
+        criteria = (await server.get_hedged_status())['auto_tranche_criteria']
+        expected = nominal_premium(195, 5.5)
+        self.assertAlmostEqual(criteria['latest_recorded_entry_spread'], expected, places=2)
+        self.assertAlmostEqual(criteria['current_target_tranche']['entry_spread'], expected, places=2)
+        self.assertIsNone(criteria['last_exit_spread'])
+
     async def test_historical_page_bounds_both_legs_and_markers(self):
         times = [300000 * i for i in range(1, 21)]
         async def request(method, path, params, **kwargs):
@@ -218,7 +241,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result['markers']), 1)
         marker = result['markers'][0]
         self.assertEqual(marker['minimum_net_profit_usd'], .02)
-        self.assertEqual(marker['convergence_target_spread'], 999.92)
+        self.assertAlmostEqual(marker['convergence_target_spread'], 135.22)
         self.assertNotIn('minimum_profit_spread', marker)
         self.assertAlmostEqual(marker['pnl_model']['adr_entry_price'], 191.25)
         self.assertAlmostEqual(marker['pnl_model']['stock_entry_price'], 5.55)

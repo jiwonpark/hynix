@@ -30,16 +30,16 @@
     });
   }
 
-  // Project exact paired-trim net targets onto the premium axis, holding the
-  // latest candle's hedge and domestic prices fixed while solving ADR price.
+  // Project exact paired-trim net targets onto the nominal ADR/sqrt(CSOP) axis,
+  // holding the latest candle's ETF price fixed while solving ADR price.
   function profitLevels(model, bar, valuationTimeMs) {
     const fields = ['adr_exit_qty', 'stock_exit_qty', 'adr_entry_price', 'stock_entry_price',
       'entry_fees_usd', 'entry_time_ms', 'exit_fee_bps', 'slippage_bps',
       'funding_reserve_bps_day', 'threshold_usd'];
     if (!model || fields.some(k => model[k] == null || !Number.isFinite(Number(model[k])) || Number(model[k]) < 0)) return [];
     const [a, h, ae, he, fees, entered, exitBps, slipBps, fundingBps, minimum] = fields.map(k => Number(model[k]));
-    const hedge = Number(bar?.csop), domestic = Number(bar?.domestic);
-    if (![a, h, ae, he, hedge, domestic].every(n => Number.isFinite(n) && n > 0)
+    const hedge = Number(bar?.csop), scale = Number(bar?.signal_scale ?? 60);
+    if (![a, h, ae, he, hedge, scale].every(n => Number.isFinite(n) && n > 0)
         || !Number.isFinite(valuationTimeMs) || valuationTimeMs < entered) return [];
     const notional = a * ae + h * he;
     const rate = (exitBps + slipBps) / 10000;
@@ -49,7 +49,7 @@
       ...[.2, .5, 1, 2, 3, 4, 5].map(p => ({net: notional * p / 100, title: `NET +${p}%`}))];
     return targets.map(target => ({...target,
       price: (a * ae + h * (hedge - he) - fees - funding - h * hedge * rate - target.net)
-        / (a * (1 + rate)) / domestic * 100,
+        / (a * (1 + rate)) / (scale * Math.sqrt(hedge)) * 100,
       lineWidth: 1,
       color: target.net === minimum ? '#16a34a' : 'rgba(22,163,74,0.40)',
     })).filter(target => Number.isFinite(target.price) && target.price > 0);
@@ -64,7 +64,7 @@
       shell.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;font-size:12px">
         <strong>PAIRED P&amp;L</strong><strong id="heldPairLivePnl">Waiting for positions…</strong></div>
         <div id="heldPairBasis" style="padding:5px 0;font-size:11px;color:#475569"></div>
-        <div style="font-size:11px;color:#64748b">Main chart: ADR / Korean domestic premium (%). Selected-entry net P&amp;L uses paired ADR/ETF fills and costs, on its own dollar scale. Premium profit lines assume the latest candle’s ETF and domestic prices stay fixed; they update with prices. Total held-pair figures exclude fees and funding.</div>
+        <div style="font-size:11px;color:#64748b">Main chart: nominal ADR / √CSOP signal (fixed scale; no order quantities). Entry size uses dollar exposure. Selected-entry net P&amp;L uses paired ADR/ETF fills and costs. Profit lines hold the latest ETF price fixed; they update with prices. Total held-pair figures exclude fees and funding.</div>
         <div id="heldPairEntryRow" style="display:flex;align-items:center;gap:6px;height:24px;min-height:24px;overflow:hidden;white-space:nowrap;font-size:11px;color:#475569"><label id="heldPairEntryLabel" style="display:none;flex:none">Selected entry <select id="heldPairEntrySelect" aria-label="LIFO entry at selected candle" style="max-width:160px;height:22px"></select></label><span id="heldPairEntryNote" style="min-width:0;overflow:hidden;text-overflow:ellipsis"></span></div>
         <div id="heldPairPnlHover" style="height:18px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:11px;color:#475569"></div>`;
       host.insertAdjacentElement("beforebegin", shell);

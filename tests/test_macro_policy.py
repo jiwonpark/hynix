@@ -1,6 +1,7 @@
 import unittest
 from backend.macro_policy import macro_policy, policy_for_level, closed_values, confirmed_rebound
 from backend.dynamic_backtest import replay, replay_markers
+from backend.nominal_signal import CSOP_SQRT_SCALE
 from backend.tranche_accounting import aggregate_orders, entry_profiles, reconstruct_leg_stack, estimate_tranche_exit
 
 BASE = 1704067200
@@ -41,8 +42,8 @@ class MacroPolicyTests(unittest.TestCase):
 
     def test_boosted_replay_waits_for_rebound_and_retains_larger_core(self):
         values = [v for v in self.hours(2) for _ in range(12)] + [105, 104.9, 104.95, 105]
-        data = [dict(time=BASE+i*300, value=v, adr=100 if i<720 else 95,
-                     csop=5, domestic=100/v*100) for i,v in enumerate(values)]
+        data = [dict(time=BASE+i*300, value=v, adr=v*CSOP_SQRT_SCALE*(5**.5)/100,
+                     csop=5) for i,v in enumerate(values)]
         toggles = dict(entry_ma_stack_5m=False, entry_ma_stack_1h=False, entry_ma_stretch=False,
                        exit_ma_stack_5m=False, exit_ma_stack_1h=False)
         before = replay(data, BASE+719*300, BASE+722*300, toggles=toggles)
@@ -50,12 +51,15 @@ class MacroPolicyTests(unittest.TestCase):
         self.assertEqual(before['summary']['exits'], 0, 'falling below MA must not close boosted entry')
         after = replay(data, BASE+719*300, BASE+724*300, toggles=toggles)
         self.assertEqual(after['summary']['exits'], 1)
-        self.assertAlmostEqual(after['summary']['core_adr_qty'], .05)
-        self.assertAlmostEqual(after['summary']['core_stock_qty'], .5)
+        entry = after['trades'][0]
+        self.assertAlmostEqual(after['summary']['core_adr_qty'],
+                               entry['adr_entry_qty'] - entry['exit_policy']['adr_exit_qty'])
+        self.assertAlmostEqual(after['summary']['core_stock_qty'],
+                               entry['stock_entry_qty'] - entry['exit_policy']['stock_exit_qty'])
         self.assertEqual(after['trades'][0]['exit_policy']['minimum_net_profit_usd'], .04)
         markers = replay_markers(after, 300)
-        self.assertEqual(markers[0]['qty'], .15)
-        self.assertEqual(markers[1]['qty'], .1)
+        self.assertEqual(markers[0]['qty'], entry['adr_entry_qty'])
+        self.assertEqual(markers[1]['qty'], entry['exit_policy']['adr_exit_qty'])
         self.assertEqual(markers[0]['pnl_model']['threshold_usd'], .04)
         self.assertAlmostEqual(markers[0]['convergence_target_spread'], 105.74)
 
@@ -85,7 +89,7 @@ class MacroPolicyTests(unittest.TestCase):
     def test_saved_exit_policy_survives_regime_changes(self):
         from unittest.mock import patch
         # An entry policy is captured in the replay lot, not recomputed on exit.
-        data = [dict(time=BASE+i*300,value=v,adr=100 if i==0 else 95,csop=5,domestic=100/v*100)
+        data = [dict(time=BASE+i*300,value=v,adr=v*CSOP_SQRT_SCALE*(5**.5)/100,csop=5)
                 for i,v in enumerate([140,139,138,138.1,138.2])]
         toggles = dict(entry_ma_stretch=False,entry_peak_rollover=False,
                        entry_ma_stack_5m=False,entry_ma_stack_1h=False,

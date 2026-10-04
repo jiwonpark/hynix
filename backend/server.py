@@ -14,6 +14,7 @@ from collections import OrderedDict
 from .dynamic_backtest import replay, replay_markers
 from .pair_sizing import exchange_rules, live_sizing_inputs, size_policy
 from .macro_policy import macro_policy, policy_for_level, closed_values, confirmed_rebound
+from .nominal_signal import nominal_premium, SIGNAL_VERSION, CSOP_SQRT_SCALE
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -1196,7 +1197,7 @@ async def get_cached_parity_bars(interval: str = "5m", limit: int = 60) -> List[
     try:
         k1, k2 = await asyncio.gather(
             binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYUSDT", "interval": interval, "limit": limit}),
-            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "SKHYNIXUSDT", "interval": interval, "limit": limit}),
+            binance_client.request("GET", "/fapi/v1/klines", {"symbol": "CSOPSKHYNIX2LUSDT", "interval": interval, "limit": limit}),
             return_exceptions=True
         )
         if isinstance(k1, list) and isinstance(k2, list):
@@ -1206,13 +1207,14 @@ async def get_cached_parity_bars(interval: str = "5m", limit: int = 60) -> List[
                 t = x[0]
                 if t in m2 and m2[t] > 0:
                     p1 = float(x[4])
-                    p2 = m2[t] / 10.0
-                    ratio = round((p1 / p2) * 100.0, 3)
+                    ratio = nominal_premium(p1, m2[t])
+                    if ratio is None:
+                        continue
                     bars.append({
                         "time": int(t / 1000),
-                        "value": ratio,
+                        "value": round(ratio, 3),
                         "adr": p1,
-                        "domestic": round(p2, 2)
+                        "csop": m2[t],
                     })
             if bars:
                 _parity_cache[cache_key] = {"timestamp": now, "data": bars}
@@ -1347,36 +1349,11 @@ async def _compute_hedged_status() -> Dict[str, Any]:
 
         stock_sym = stock_pos.get("symbol") if stock_pos else ""
 
-        # Retrieve live domestic Korean share price (SKHYNIXUSDT contract = 10 domestic shares)
-        # to calculate the true ADR vs. Domestic Parity ratio (~135% - 139%)
-        domestic_price = None
-        if stock_sym == "SKHYNIXUSDT" and stock_mark > 0:
-            domestic_price = stock_mark / 10.0
-        else:
-            try:
-                ticker = await binance_client.request("GET", "/fapi/v1/ticker/price", {"symbol": "SKHYNIXUSDT"})
-                if ticker and "price" in ticker:
-                    domestic_price = float(ticker["price"]) / 10.0
-            except Exception:
-                pass
-
-        if not domestic_price and stock_mark > 0:
-            # CSOP fallback estimation (CSOP is roughly 1/24.5th of domestic share price)
-            domestic_price = stock_mark * 24.5
-
-        if domestic_price and adr_mark > 0:
-            current_spread = (adr_mark / domestic_price) * 100.0
-            if stock_sym == "CSOPSKHYNIX2LUSDT" and stock_entry > 0 and stock_mark > 0:
-                csop_pct = (stock_mark - stock_entry) / stock_entry
-                domestic_entry = domestic_price / (1.0 + (csop_pct / 2.0))
-                entry_spread = (adr_entry / domestic_entry) * 100.0 if domestic_entry > 0 else current_spread
-            elif stock_sym == "SKHYNIXUSDT" and stock_entry > 0:
-                entry_spread = (adr_entry / (stock_entry / 10.0)) * 100.0
-            else:
-                entry_spread = current_spread
-        else:
-            current_spread = (adr_mark / (stock_mark * 34.0) * 100.0) if stock_mark > 0 else None
-            entry_spread = (adr_entry / (stock_entry * 34.0) * 100.0) if stock_entry > 0 else None
+        # Signal is a ratio of quoted prices, adjusted for CSOP's approximate
+        # daily 2x exposure. Dollar notionals enter only sizing and actual P&L.
+        # A legacy domestic hedge cannot be evaluated on this signal scale.
+        current_spread = nominal_premium(adr_mark, stock_mark) if stock_sym == "CSOPSKHYNIX2LUSDT" else None
+        entry_spread = nominal_premium(adr_entry, stock_entry) if stock_sym == "CSOPSKHYNIX2LUSDT" else None
 
         stock_qty = abs(float(stock_pos.get("position_amt", 0.0))) if stock_pos else 0.0
         adr_qty = abs(float(adr_pos.get("position_amt", 0.0))) if adr_pos else 0.0
@@ -1491,6 +1468,8 @@ async def _compute_hedged_status() -> Dict[str, Any]:
                 sizing_adr, sizing_stock, rules = await live_sizing_inputs(binance_client)
             else:
                 sizing_adr, sizing_stock = adr_mark, stock_mark
+            if current_spread is None and stock_sym != "SKHYNIXUSDT":
+                current_spread = nominal_premium(sizing_adr, sizing_stock)
             macro = size_policy(macro, sizing_adr, sizing_stock, rules)
         except Exception as exc:
             macro = {**macro, "sizing_available": False, "sizing_error": str(exc),
@@ -1498,7 +1477,9 @@ async def _compute_hedged_status() -> Dict[str, Any]:
                      "adr_exit_qty": 0.0, "stock_exit_qty": 0.0}
         entry_adr_qty, entry_stock_qty = macro["adr_entry_qty"], macro["stock_entry_qty"]
         position_equivalent_units = round(stock_qty / macro["stock_exit_qty"]) if macro["stock_exit_qty"] > 0 else 0
-        if current_spread is None and parity_bars:
+        if current_spread is not None:
+            curr_spread = current_spread
+        elif parity_bars:
             curr_spread = parity_bars[-1]["value"]
             if entry_spread is None:
                 base_entry = curr_spread
@@ -1542,9 +1523,22 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         ma_stretch_pts = round(curr_spread - ma24, 2)
         is_stretched_above_ma = bool(ma_stretch_pts >= ENTRY_MIN_MA_STRETCH_PTS)
         entry_pairs = auto_state.get("entry_order_pairs", [])
-        latest_entry_raw = entry_pairs[-1].get("entry_spread") if entry_pairs else None
-        latest_recorded_entry = (
-            float(latest_entry_raw) if latest_entry_raw is not None else None)
+        orders = aggregate_orders(executions)
+        profiles = entry_profiles(orders, stock_sym, entry_pairs)
+        adr_entry_orders = {o["order_id"]: o for o in orders
+                            if o["symbol"] == "SKHYUSDT" and o["side"] == "SELL"}
+        stock_entry_orders = {o["order_id"]: o for o in orders
+                              if o["symbol"] == "CSOPSKHYNIX2LUSDT" and o["side"] == "BUY"}
+        latest_recorded_entry = None
+        if entry_pairs:
+            last_pair = entry_pairs[-1]
+            adr_order = adr_entry_orders.get(str(last_pair.get("adr_order_id")))
+            stock_order = stock_entry_orders.get(str(last_pair.get("stock_order_id")))
+            if adr_order and stock_order and adr_order["qty"] > 0 and stock_order["qty"] > 0:
+                latest_recorded_entry = nominal_premium(
+                    adr_order["cost"] / adr_order["qty"], stock_order["cost"] / stock_order["qty"])
+            elif last_pair.get("signal_version") == SIGNAL_VERSION:
+                latest_recorded_entry = last_pair.get("entry_spread")
         campaign_count = int(auto_state.get(
             "entries_since_last_exit", min(len(entry_pairs), ENTRY_MAX_CAMPAIGN)))
         recent_entry_times = [
@@ -1560,7 +1554,8 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         rolling_sigma = math.sqrt(rolling_variance)
         adaptive_floor = rolling_mean + max(
             ENTRY_MIN_MA_STRETCH_PTS, 1.25 * rolling_sigma)
-        last_exit_spread = auto_state.get("last_exit_spread")
+        last_exit_spread = (auto_state.get("last_exit_spread")
+                            if auto_state.get("last_exit_signal_version") == SIGNAL_VERSION else None)
         if campaign_count <= 0:
             scale_in_trigger = max(
                 adaptive_floor,
@@ -1603,8 +1598,6 @@ async def _compute_hedged_status() -> Dict[str, Any]:
 
         # Larger adaptive entries are one fixed exit unit plus retained core.
         # Restore their policy from recorded pairs or recognized paired fill sizes.
-        orders = aggregate_orders(executions)
-        profiles = entry_profiles(orders, stock_sym, auto_state.get("entry_order_pairs", []))
         adr_stack = reconstruct_leg_stack(orders, "SKHYUSDT", "SELL", .08, .07, profiles)
         for item in adr_stack:
             tr = item["order"]
@@ -1612,7 +1605,9 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             policy = profile.get("policy", policy_for_level())
             t_sec = tr["time"] / 1000
             matched_bar = min(parity_bars, key=lambda b: abs(b["time"] - t_sec)) if parity_bars else None
-            bar_spread = profile.get("entry_spread")
+            stock_order = stock_entry_orders.get(str(profile.get("stock_order_id")))
+            bar_spread = (nominal_premium(tr["cost"] / tr["qty"], stock_order["cost"] / stock_order["qty"])
+                          if stock_order and tr["qty"] > 0 and stock_order["qty"] > 0 else None)
             if bar_spread is None:
                 bar_spread = matched_bar["value"] if matched_bar else base_entry
             active_tranches_queue.append({
@@ -1960,17 +1955,18 @@ async def backtest_market_bars(start, end):
                     binance_client.request("GET", "/fapi/v1/klines", {
                         "symbol": symbol, "interval": "5m", "limit": 1500,
                         "startTime": chunk * 1000, "endTime": chunk_end * 1000 - 1,
-                    }) for symbol in ("SKHYUSDT", "SKHYNIXUSDT", "CSOPSKHYNIX2LUSDT")
+                    }) for symbol in ("SKHYUSDT", "CSOPSKHYNIX2LUSDT")
                 ])
-                if not all(isinstance(r, list) for r in responses):
+                if not all(isinstance(response, list) for response in responses):
                     raise ValueError("Historical prices unavailable; retry the backtest.")
-                legs = [{int(b[0])//1000: float(b[4]) for b in r} for r in responses]
+                legs = [{int(b[0])//1000: float(b[4]) for b in response} for response in responses]
                 aligned = []
                 for t in sorted(legs[0]):
-                    adr, domestic, stock = legs[0][t], legs[1].get(t, 0)/10, legs[2].get(t, 0)
-                    if t+300 <= chunk_end:
-                        aligned.append({'time': t, 'adr': adr, 'domestic': domestic, 'csop': stock,
-                                        'value': round(adr/domestic*100, 3) if domestic > 0 else 0})
+                    adr, stock = legs[0][t], legs[1].get(t, 0)
+                    signal = nominal_premium(adr, stock)
+                    if t+300 <= chunk_end and signal is not None:
+                        aligned.append({'time': t, 'adr': adr, 'csop': stock,
+                                        'value': round(signal, 3)})
                 cached = {'end': chunk_end, 'bars': aligned}
                 _backtest_market_cache[chunk] = cached
                 while len(_backtest_market_cache) > 80:
@@ -2097,24 +2093,26 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
             return_exceptions=True
         )
 
-        if not isinstance(k1, list) or not isinstance(k2, list):
+        if not isinstance(k1, list) or not isinstance(k3, list):
             return {"error": "Failed to fetch klines from Binance", "bars": [], "markers": []}
 
-        m2 = {x[0]: float(x[4]) for x in k2}
-        m3 = {x[0]: float(x[4]) for x in k3} if isinstance(k3, list) else {}
+        m2 = {x[0]: float(x[4]) for x in k2} if isinstance(k2, list) else {}
+        m3 = {x[0]: float(x[4]) for x in k3}
         bars = []
         for x in k1:
             t = x[0]
-            if t in m2 and m2[t] > 0:
+            if t in m3 and m3[t] > 0:
                 p1 = float(x[4])
-                p2 = m2[t] / 10.0  # Domestic Korean price in USD
-                ratio = round((p1 / p2) * 100.0, 3)
+                signal = nominal_premium(p1, m3[t])
+                if signal is None:
+                    continue
                 bars.append({
                     "time": int(t / 1000),
-                    "value": ratio,
+                    "value": round(signal, 3),
                     "adr": p1,
-                    "domestic": round(p2, 2),
-                    "csop": m3.get(t)
+                    "domestic": round(m2[t] / 10.0, 2) if t in m2 else None,
+                    "csop": m3[t],
+                    "signal_scale": CSOP_SQRT_SCALE,
                 })
 
         markers = []
@@ -2200,7 +2198,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                             "entry_time_ms": min(adr_order["time"], stock_order["time"]),
                             "threshold_usd": marker_profiles.get(adr_order_id, {}).get("policy", policy_for_level())["minimum_net_profit_usd"],
                             "convergence_pts": marker_profiles.get(adr_order_id, {}).get("policy", policy_for_level())["convergence_pts"],
-                            "entry_spread": marker_profiles.get(adr_order_id, {}).get("entry_spread"),
+                            "entry_spread": nominal_premium(adr_fill, stock_fill),
                         }
 
                 min_time_sec = bars[0]["time"]
@@ -2294,7 +2292,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
             "markers": markers,
             "executions": executions,
             "next_end_time": bars[0]["time"] * 1000 - 1 if bars else None,
-            "has_more": bool(bars) and len(k1) >= limit and len(k2) >= limit,
+            "has_more": bool(bars) and len(k1) >= limit and len(k3) >= limit,
             "latest_parity": bars[-1]["value"] if bars else None
         }
     except Exception as e:
@@ -2386,6 +2384,7 @@ async def execute_scale_in() -> Dict[str, Any]:
 
         recovery = {"started_at": time.time(), "phase": "ADR_SUBMITTING", "order_adr": None, "order_stock": None,
                     "entry_policy": entry_policy, "entry_spread": criteria.get("current_spread"),
+                    "signal_version": SIGNAL_VERSION,
                     "adr_quantity": adr_qty, "stock_quantity": stock_qty}
         state["execution_recovery"] = recovery
         save_auto_tranche_state(state)  # Persist before any order can reach the exchange.
@@ -2410,6 +2409,7 @@ async def execute_scale_in() -> Dict[str, Any]:
                 "adr_order_id": str(order_adr["orderId"]),
                 "stock_order_id": str(order_stock["orderId"]),
                 "entry_spread": criteria.get("current_spread"),
+                "signal_version": SIGNAL_VERSION,
                 "entry_policy": entry_policy,
                 "adr_quantity": float(order_adr["executedQty"]),
                 "stock_quantity": float(order_stock["executedQty"])})
@@ -2535,6 +2535,7 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         state.pop("execution_recovery", None)
         if status:
             state["last_exit_spread"] = status.get("auto_tranche_criteria", {}).get("current_spread")
+            state["last_exit_signal_version"] = SIGNAL_VERSION
         state["entries_since_last_exit"] = 0
         state["recent_entry_times"] = []
         save_auto_tranche_state(state)

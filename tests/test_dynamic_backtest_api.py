@@ -44,5 +44,7 @@ class BacktestAPITests(unittest.IsolatedAsyncioTestCase):
             data=await server.backtest_market_bars(now-600,now)
             again=await server.backtest_market_bars(now-600,now)
             self.assertEqual(data,again)
-            self.assertEqual(len(requested),3)
+            self.assertEqual(len(requested),2)
             self.assertEqual([b['time'] for b in data],[now-600,now-300])
+            self.assertNotIn('domestic', data[0])
+            self.assertAlmostEqual(data[0]['value'], server.nominal_premium(100, 5), places=3)

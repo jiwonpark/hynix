@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from backend import server
+from backend.nominal_signal import nominal_premium
 
 
 class ParityCacheTests(unittest.IsolatedAsyncioTestCase):
@@ -16,6 +17,8 @@ class ParityCacheTests(unittest.IsolatedAsyncioTestCase):
             five, hourly = await asyncio.gather(
                 server.get_cached_parity_bars('5m', 60), server.get_cached_parity_bars('1h', 60))
             self.assertEqual(five[1]['time'], 300)
+            self.assertAlmostEqual(five[1]['value'], nominal_premium(100, 100), places=3)
+            self.assertEqual(five[1]['csop'], 100)
             self.assertEqual(hourly[1]['time'], 3600)
             self.assertEqual(await server.get_cached_parity_bars('5m', 60), five)
             self.assertEqual(await server.get_cached_parity_bars('1h', 60), hourly)
@@ -32,3 +35,9 @@ class ParityCacheTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(await server.get_cached_parity_bars('1h', 60), [])
             with patch.object(server.time, 'time', return_value=105):
                 self.assertEqual(await server.get_cached_parity_bars('5m', 60), [])
+
+    def test_nominal_signal_ignores_order_quantities_and_common_two_x_moves(self):
+        self.assertAlmostEqual(nominal_premium(120, 4), 100)
+        self.assertAlmostEqual(nominal_premium(132, 4 * 1.1 ** 2), 100)
+        self.assertIsNone(nominal_premium(120, 0))
+        self.assertIsNone(nominal_premium(float('inf'), 4))

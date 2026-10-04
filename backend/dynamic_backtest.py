@@ -4,6 +4,7 @@ from collections import deque
 from .tranche_accounting import EXIT_FEE_BPS, EXIT_SLIPPAGE_BPS, FUNDING_RESERVE_BPS_DAY
 from .pair_sizing import size_policy, REFERENCE_RULES
 from .macro_policy import macro_policy, confirmed_rebound
+from .nominal_signal import nominal_premium
 
 ENTRY_FEE_BPS = 5.0
 STEP = 300
@@ -52,7 +53,7 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
         if close > end_time:
             break
         if not all(isinstance(bar.get(k), (int, float)) and math.isfinite(bar[k]) and bar[k] > 0
-                   for k in ('value', 'adr', 'csop', 'domestic')):
+                   for k in ('value', 'adr', 'csop')):
             missing += 1
             five.clear(); hourly.clear(); hour_parts.clear()
             continue
@@ -124,10 +125,10 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
                 last_exit = close
                 sold = True
         if not sold:
-            # Match the live baseline formula using simulated average entry costs.
+            # Compare nominal prices; position quantities only size fills and P&L.
             baseline = spread
             if aq and sq and stock_avg > 0:
-                baseline = adr_avg / (bar['domestic'] / (1 + (stock-stock_avg)/stock_avg/2)) * 100
+                baseline = nominal_premium(adr_avg, stock_avg) or spread
             setup = all((
                 passes('entry_ma_stretch', len(vals) >= 6 and spread-ma24 >= .10),
                 passes('entry_base_spread', not aq or spread >= baseline + .10),
