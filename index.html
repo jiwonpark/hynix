@@ -4876,10 +4876,10 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="held-pair-pnl.js?v=20261003_4"></script>
-  <script src="strategy-execution-chart.js?v=20261003_sync_7"></script>
+  <script src="strategy-execution-chart.js?v=20261003_sync_8"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
-  <script src="lighter-tab.js?v=20261003_sync_3"></script>
+  <script src="lighter-tab.js?v=20261003_sync_4"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -13131,7 +13131,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               if (!data.success || !Array.isArray(data.bars)) continue;
               // Capture the viewport at response time so scrolling during the request is preserved.
               const previous = history.bars;
-              const range = previous.length ? this.shortTermChart?.timeScale().getVisibleLogicalRange() : null;
+              const range = previous.length ? (this.shortTermChartSync?.getRange() || this.shortTermChart?.timeScale().getVisibleLogicalRange()) : null;
               const page = data.bars.filter(b => !older || b.time * 1000 <= endTime);
               const byTime = new Map(previous.map(b => [b.time, b]));
               page.forEach(b => byTime.set(b.time, b));
@@ -13148,9 +13148,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 if (range) {
                   // Follow new bars only if already watching the live edge.
                   const shift = !older && range.to >= previous.length - 1 ? history.bars.length - previous.length : added;
-                  this.shortTermChart.timeScale().setVisibleLogicalRange({ from: range.from + shift, to: range.to + shift });
+                  const restored = { from: range.from + shift, to: range.to + shift };
+                  if (this.shortTermChartSync) this.shortTermChartSync.setRange(restored);
+                  else this.shortTermChart.timeScale().setVisibleLogicalRange(restored);
                 } else if (history.bars.length) {
-                  this.shortTermChart.timeScale().setVisibleLogicalRange(StrategyExecutionChartController.initialRange(history.bars.length));
+                  const initial = StrategyExecutionChartController.initialRange(history.bars.length);
+                  if (this.shortTermChartSync) this.shortTermChartSync.setRange(initial);
+                  else this.shortTermChart.timeScale().setVisibleLogicalRange(initial);
                 }
               } finally { this.shortTermRendering = false; }
               this.scheduleDynamicBacktest();
@@ -13190,11 +13194,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       redrawDynamicBacktest() {
         const history = this.shortTermHistory;
         if (!history?.bars?.length || !this.shortTermChart) return;
-        const range = this.shortTermChart.timeScale().getVisibleLogicalRange();
+        const range = this.shortTermChartSync?.getRange() || this.shortTermChart.timeScale().getVisibleLogicalRange();
         this.shortTermRendering = true;
         try {
           this.renderShortTermChart({bars: history.bars, markers: history.markers});
-          if (range) this.shortTermChart.timeScale().setVisibleLogicalRange(range);
+          if (range) {
+            if (this.shortTermChartSync) this.shortTermChartSync.setRange(range);
+            else this.shortTermChart.timeScale().setVisibleLogicalRange(range);
+          }
         } finally { this.shortTermRendering = false; }
       },
 

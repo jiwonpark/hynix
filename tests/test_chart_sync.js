@@ -21,7 +21,7 @@ for (const deferred of [false, true]) {
   const queue = deferred ? [] : null;
   const flush = () => {let limit = 100; while (queue?.length && limit--) queue.shift()(); assert.ok(limit > 0, 'no feedback loop');};
   const a = chart(queue), b = chart(queue);
-  const sync = Controller.linkTimeScales(a, b);
+  const sync = Controller.linkTimeScales(a, b, cb => cb());
   for (let i = 0; i < 10; i++) a.timeScale().setVisibleLogicalRange({from: i + .25, to: 100 - i});
   flush();
   assert.deepEqual(b.timeScale().getVisibleLogicalRange(), {from:9.25, to:91}, 'rapid zoom keeps final range');
@@ -62,3 +62,22 @@ assert.deepEqual(Controller.initialRange(300), {from:29.5, to:299.5});
 assert.deepEqual(Controller.initialRange(80), {from:7.5, to:79.5});
 assert.deepEqual(Controller.initialRange(1), {from:-.5, to:.5});
 assert.equal(Controller.initialRange(0), null);
+
+// Model the real chart API: setters queue a draw, getters still return the old range.
+const frames = [];
+function delayedChart() {
+  const c = chart();
+  const apply = c.timeScale().setVisibleLogicalRange;
+  c.timeScale().setVisibleLogicalRange = range => frames.push(() => apply(range));
+  return c;
+}
+const primary = delayedChart(), secondary = delayedChart();
+const linked = Controller.linkTimeScales(primary, secondary, cb => frames.push(cb));
+const initial = Controller.initialRange(120);
+linked.setRange(initial);
+assert.deepEqual(linked.getRange(), initial, 'redraws must see the requested viewport before the next draw');
+linked.pause();
+linked.resume();
+while (frames.length) frames.shift()();
+assert.deepEqual(primary.timeScale().getVisibleLogicalRange(), initial);
+assert.deepEqual(secondary.timeScale().getVisibleLogicalRange(), initial);

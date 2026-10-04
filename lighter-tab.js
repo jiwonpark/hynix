@@ -2286,7 +2286,7 @@
       if (interval !== this.interval || request !== this.chartRequest) return;
       if (!data || !data.success || !data.bars || !data.bars.length) return;
       const range = this.chartInterval === interval
-        ? StrategyExecutionChartController.preserveRange(this.chart.timeScale().getVisibleLogicalRange(), this.bars, data.bars)
+        ? StrategyExecutionChartController.preserveRange(this.chartSync?.getRange() || this.chart.timeScale().getVisibleLogicalRange(), this.bars, data.bars)
         : null;
       this.chartSync?.pause();
       try {
@@ -2352,8 +2352,9 @@
           }) : [];
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
-        if (range) this.chart.timeScale().setVisibleLogicalRange(range);
-        else this.chart.timeScale().setVisibleLogicalRange(StrategyExecutionChartController.initialRange(data.bars.length));
+        const viewport = range || StrategyExecutionChartController.initialRange(data.bars.length);
+        if (this.chartSync) this.chartSync.setRange(viewport);
+        else this.chart.timeScale().setVisibleLogicalRange(viewport);
         this.chartInterval = interval;
         window.requestAnimationFrame(() => this.renderTrendRanges());
         this.setText("valShortTermCurrentParity", `${this.currentRatio.toFixed(3)}%`);

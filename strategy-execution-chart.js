@@ -271,12 +271,14 @@
 
   // Both panes must contain the same timestamps, including whitespace for missing prices.
   // Release the recursion guard synchronously: a frame-long guard loses wheel/drag events.
-  StrategyExecutionChartController.linkTimeScales = function (primary, secondary) {
+  StrategyExecutionChartController.linkTimeScales = function (primary, secondary, scheduleFrame = requestAnimationFrame) {
     let syncing = false;
     let paused = 0;
+    let pendingRange = null;
+    let framePending = false;
     const same = (a, b) => a && b && Math.abs(a.from - b.from) < 1e-7 && Math.abs(a.to - b.to) < 1e-7;
     const sync = (source = primary, target = secondary) => {
-      if (syncing || paused) return;
+      if (syncing || paused || pendingRange) return;
       const range = source.timeScale().getVisibleLogicalRange();
       if (!range || same(range, target.timeScale().getVisibleLogicalRange())) return;
       syncing = true;
@@ -296,6 +298,22 @@
     secondary.timeScale().subscribeVisibleLogicalRangeChange(backward);
     return {
       sync: forward,
+      getRange() { return pendingRange || primary.timeScale().getVisibleLogicalRange(); },
+      setRange(range) {
+        // Lightweight Charts applies programmatic ranges on its next draw. Keep
+        // the requested viewport authoritative until both panes have drawn it.
+        pendingRange = { ...range };
+        primary.timeScale().setVisibleLogicalRange(range);
+        secondary.timeScale().setVisibleLogicalRange(range);
+        if (!framePending) {
+          framePending = true;
+          scheduleFrame(() => {
+            framePending = false;
+            pendingRange = null;
+            forward();
+          });
+        }
+      },
       pause() { paused++; },
       resume() { paused = Math.max(0, paused - 1); forward(); },
       dispose() {
