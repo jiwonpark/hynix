@@ -246,6 +246,9 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(marker['pnl_model']['adr_entry_price'], 191.25)
         self.assertAlmostEqual(marker['pnl_model']['stock_entry_price'], 5.55)
         self.assertEqual(marker['pnl_model']['threshold_usd'], .02)
+        self.assertAlmostEqual(marker['fill_signals'][0]['signal'], server.nominal_premium(191.25, 5.55), places=4)
+        self.assertAlmostEqual(marker['entry_spread'], server.nominal_premium(191.25, 5.55), places=4)
+        self.assertEqual(marker['unpaired_order_count'], 0)
         self.assertNotIn('Min net', marker['hoverText'])
 
     async def test_same_candle_preserves_each_entry_cost_basis_and_missing_fees(self):
@@ -268,6 +271,56 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(models[1]['entry_fees_usd'], .002*.07/.08+.002*1.2/1.4)
         self.assertTrue(models[2]['unavailable'])
         self.assertIsNone(marker['pnl_model'], 'unverified newest entry cannot inherit an older entry profit model')
+        self.assertEqual(len(marker['fill_signals']), 3)
+        self.assertNotEqual(marker['entry_spread'], result['bars'][5]['value'],
+                            'grouped arrows must use paired fills rather than candle closes')
+
+    async def test_exit_arrow_uses_paired_cover_and_etf_sell_prices(self):
+        times = [300000 * i for i in range(1, 21)]
+        async def request(method, path, params, **kwargs):
+            if 'klines' in path:
+                return [[t, 0, 0, 0, '100'] for t in times]
+            if params['symbol'] == 'CSOPSKHYNIX2LUSDT':
+                return [{'id': 22, 'orderId': 22, 'time': times[5] + 2000,
+                         'side': 'SELL', 'price': '5.65', 'qty': '1.08', 'commission': '.001'}]
+            return [{'id': 21, 'orderId': 21, 'time': times[5] + 1000,
+                     'side': 'BUY', 'price': '190.5', 'qty': '.06', 'commission': '.001'}]
+        self.client.request.side_effect = request
+        marker = (await server.get_short_term_parity('5m', 20))['markers'][0]
+        self.assertFalse(marker['is_entry'])
+        self.assertAlmostEqual(marker['exit_spread'], server.nominal_premium(190.5, 5.65), places=4)
+        self.assertEqual(marker['fill_signals'][0]['paired_order_id'], '22')
+
+    async def test_unpaired_actual_fill_has_no_invented_signal(self):
+        times = [300000 * i for i in range(1, 21)]
+        async def request(method, path, params, **kwargs):
+            if 'klines' in path:
+                return [[t, 0, 0, 0, '100'] for t in times]
+            if params['symbol'] == 'CSOPSKHYNIX2LUSDT':
+                return []
+            return [{'id': 31, 'orderId': 31, 'time': times[5] + 1000,
+                     'side': 'SELL', 'price': '190.5', 'qty': '.06', 'commission': '.001'}]
+        self.client.request.side_effect = request
+        marker = (await server.get_short_term_parity('5m', 20))['markers'][0]
+        self.assertEqual(marker['fill_signals'], [])
+        self.assertEqual(marker['unpaired_order_count'], 1)
+        self.assertIsNone(marker['entry_spread'])
+
+    async def test_recorded_exit_pair_survives_a_delayed_second_fill(self):
+        server.save_auto_tranche_state({'exit_order_pairs': [
+            {'adr_order_id': '41', 'stock_order_id': '42'}]})
+        times = [300000 * i for i in range(1, 21)]
+        async def request(method, path, params, **kwargs):
+            if 'klines' in path:
+                return [[t, 0, 0, 0, '100'] for t in times]
+            if params['symbol'] == 'CSOPSKHYNIX2LUSDT':
+                return [{'id': 42, 'orderId': 42, 'time': times[5] + 45000,
+                         'side': 'SELL', 'price': '5.65', 'qty': '1.08', 'commission': '.001'}]
+            return [{'id': 41, 'orderId': 41, 'time': times[5] + 1000,
+                     'side': 'BUY', 'price': '190.5', 'qty': '.06', 'commission': '.001'}]
+        self.client.request.side_effect = request
+        marker = (await server.get_short_term_parity('5m', 20))['markers'][0]
+        self.assertEqual(marker['fill_signals'][0]['paired_order_id'], '42')
 
     def ma_bars(self, values):
         end = int(time.time() // 300) * 300

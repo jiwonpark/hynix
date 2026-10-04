@@ -4876,7 +4876,7 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="held-pair-pnl.js?v=20261004_1"></script>
-  <script src="strategy-execution-chart.js?v=20261003_sync_8"></script>
+  <script src="strategy-execution-chart.js?v=20261004_exact_1"></script>
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
   <script src="lighter-tab.js?v=20261003_sync_4"></script>
@@ -11163,6 +11163,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> ADR / √CSOP signal</span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">—</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">—</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">—</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected trim net (est.): <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>',
           syncText: "Updated 0s ago",
         });
+        const fillReadout = document.createElement("span");
+        fillReadout.id = "shortTermExactFillReadout";
+        fillReadout.style.color = "#475569";
+        fillReadout.textContent = "Actual arrows: paired fills · gray dot: unpaired";
+        $("shortTermChartLegend")?.appendChild(fillReadout);
       },
 
       onTabActivated() {
@@ -12721,10 +12726,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
           this.executionChartController = new StrategyExecutionChartController({
             series: this.shortTermSeries,
-            lineStyle: LightweightCharts.LineStyle
+            lineStyle: LightweightCharts.LineStyle,
+            exactActual: true
           });
+          this.shortTermExactFillOverlay = document.createElement("div");
+          this.shortTermExactFillOverlay.id = "shortTermExactFillOverlay";
+          this.shortTermExactFillOverlay.setAttribute("aria-hidden", "true");
+          this.shortTermExactFillOverlay.style.cssText = "position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:6";
+          host.appendChild(this.shortTermExactFillOverlay);
 
           this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+            this.scheduleExactFillMarkers();
             if (range && range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
               this.fetchShortTermParity(true);
             }
@@ -12734,6 +12746,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           this.activeHoveredExecutionMarkerTime = null;
           this.selectedExecutionMarkerTime = null;
           this.shortTermChart.subscribeCrosshairMove((param) => {
+            this.scheduleExactFillMarkers(true);
             if (!param || !param.point) {
               if (this.activeHoveredExecutionMarkerTime !== null) {
                 this.activeHoveredExecutionMarkerTime = null;
@@ -12843,6 +12856,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               this.shortTermAssetChart.applyOptions({ width: ah.clientWidth });
             }
             this.shortTermChartSync?.sync();
+            this.scheduleExactFillMarkers();
           });
         }
       },
@@ -12924,6 +12938,40 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.selectedExecutionMarkerTime = null;
         this.activeHoveredExecutionMarkerTime = null;
         this.updateMarkerState(null);
+        this.scheduleExactFillMarkers();
+      },
+
+      scheduleExactFillMarkers(scaleOnly = false) {
+        if (this.exactFillFramePending || !this.shortTermExactFillOverlay) return;
+        if (scaleOnly) {
+          const latest = this.shortTermHistory?.bars?.at(-1)?.value;
+          if (!Number.isFinite(latest)) return;
+          const probe = [this.shortTermSeries.priceToCoordinate(latest),
+            this.shortTermSeries.priceToCoordinate(latest + 1)];
+          if (probe.every(Number.isFinite) && this.exactFillScaleProbe
+              && probe.every((value, index) => Math.abs(value - this.exactFillScaleProbe[index]) < 0.25)) return;
+          this.exactFillScaleProbe = probe;
+        }
+        this.exactFillFramePending = true;
+        requestAnimationFrame(() => {
+          this.exactFillFramePending = false;
+          this.renderExactFillMarkers();
+        });
+      },
+
+      renderExactFillMarkers() {
+        const overlay = this.shortTermExactFillOverlay;
+        const host = $("shortTermSpreadChartHost");
+        if (!overlay || !host || !this.executionChartController || !this.shortTermChart) return;
+        const points = this.executionChartController.projectActualFills(
+          this.shortTermChart, host.clientWidth, host.clientHeight);
+        const fragment = document.createDocumentFragment();
+        points.forEach((point) => {
+          const glyph = document.createElement("span");
+          glyph.style.cssText = `position:absolute;left:${point.x}px;top:${point.y}px;width:13px;height:12px;transform:translate(-50%,${point.is_entry ? "-100%" : "0"});background:${point.is_entry ? "#dc2626" : "#16a34a"};clip-path:polygon(${point.is_entry ? "0 0,100% 0,50% 100%" : "50% 0,0 100%,100% 100%"})`;
+          fragment.appendChild(glyph);
+        });
+        overlay.replaceChildren(fragment);
       },
 
       updateMarkerState(hoveredTime = null) {
@@ -12973,8 +13021,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!this.shortTermSeries) return;
         const visible = this.rawExecutionMarkers?.filter((m) =>
           hoveredTime !== null && this.isTradeMarkerVisible(m) && m.time === hoveredTime);
-        let marker = visible?.find((m) => !m.hypothetical && (m.pnl_model || m.entry_spread))
-          || visible?.find((m) => m.pnl_model || m.entry_spread);
+        let marker = visible?.find((m) => !m.hypothetical && (m.pnl_model || m.entry_spread || m.exit_spread || m.fill_signals?.length))
+          || visible?.find((m) => m.pnl_model || m.entry_spread || m.exit_spread);
         const models = marker?.pnl_models || (marker?.pnl_model ? [marker.pnl_model] : []);
         const selectionKey = `${hoveredTime}:${Boolean(marker?.hypothetical)}`;
         if (this.lifoSelectionKey !== selectionKey) {
@@ -12997,12 +13045,19 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             this.syncHoveredTrancheAnalytics(hoveredTime);
           };
           $("heldPairEntryLabel").style.display = models.length > 1 ? "inline" : "none";
-          $("heldPairEntryNote").textContent = marker ? (marker.pnl_model
+          $("heldPairEntryNote").textContent = marker?.is_entry ? (marker.pnl_model
             ? ` · Estimated net for this entry's ${marker.pnl_model.adr_exit_qty} ADR / ${marker.pnl_model.stock_exit_qty} ETF trim; recorded entry fees + estimated exit costs and funding.`
             : " · Entry P&L unavailable: paired fills or commission data missing.") : "";
           $("heldPairEntryNote").title = $("heldPairEntryNote").textContent;
         }
-        const selectedEntrySpread = Number(marker?.entry_spread);
+        const selectedFill = marker?.fill_signals?.find(fill => fill.order_id === this.selectedLifoOrder)
+          || marker?.fill_signals?.[0];
+        const fillReadout = $("shortTermExactFillReadout");
+        if (fillReadout) fillReadout.textContent = selectedFill
+          ? `${marker.is_entry ? "Entry" : "Exit"} fill #${selectedFill.order_id}: ADR $${Number(selectedFill.adr_price).toFixed(2)} / ETF $${Number(selectedFill.stock_price).toFixed(4)} · ${Number(selectedFill.signal).toFixed(3)}%`
+          : marker && !marker.hypothetical ? "Paired fill price unavailable" : "Actual arrows: paired fills · gray dot: unpaired";
+        const selectedEntrySpread = Number(marker?.is_entry && !marker.hypothetical
+          ? (selectedFill?.signal ?? marker?.entry_spread) : marker?.entry_spread);
         if (Number.isFinite(selectedEntrySpread) && selectedEntrySpread > 0) {
           this.renderShortTermReferenceLines(selectedEntrySpread, {
             selected: true,
@@ -13342,6 +13397,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             .sort((a, b) => a.time - b.time);
           this.rawExecutionMarkers = markers;
           this.executionChartController?.setExecutions(markers);
+          this.scheduleExactFillMarkers();
           if (!markers.some((marker) => marker.time === this.activeHoveredExecutionMarkerTime)) {
             this.activeHoveredExecutionMarkerTime = null;
           }

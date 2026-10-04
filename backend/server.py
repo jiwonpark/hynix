@@ -26,6 +26,7 @@ from .tranche_accounting import (
     aggregate_orders,
     estimate_tranche_exit,
     infer_entry_pairs,
+    infer_exit_pairs,
     entry_profiles,
     reconstruct_leg_stack,
     prepare_exit_context,
@@ -2157,10 +2158,15 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         })
                 pair_orders = aggregate_orders(pair_executions)
                 inferred_pairs = infer_entry_pairs(pair_orders, "CSOPSKHYNIX2LUSDT")
-                saved_pairs = load_auto_tranche_state().get("entry_order_pairs", [])
+                inferred_exit_pairs = infer_exit_pairs(pair_orders, "CSOPSKHYNIX2LUSDT")
+                saved_state = load_auto_tranche_state()
+                saved_pairs = saved_state.get("entry_order_pairs", [])
+                saved_exit_pairs = saved_state.get("exit_order_pairs", [])
                 marker_profiles = entry_profiles(pair_orders, "CSOPSKHYNIX2LUSDT", saved_pairs)
                 for pair in saved_pairs:
                     inferred_pairs[str(pair["adr_order_id"])] = str(pair["stock_order_id"])
+                for pair in saved_exit_pairs:
+                    inferred_exit_pairs[str(pair["adr_order_id"])] = str(pair["stock_order_id"])
                 stock_entries = {
                     order["order_id"]: order for order in pair_orders
                     if order["symbol"] == "CSOPSKHYNIX2LUSDT" and order["side"] == "BUY"
@@ -2168,6 +2174,14 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                 adr_entries = {
                     order["order_id"]: order for order in pair_orders
                     if order["symbol"] == "SKHYUSDT" and order["side"] == "SELL"
+                }
+                adr_exits = {
+                    order["order_id"]: order for order in pair_orders
+                    if order["symbol"] == "SKHYUSDT" and order["side"] == "BUY"
+                }
+                stock_exits = {
+                    order["order_id"]: order for order in pair_orders
+                    if order["symbol"] == "CSOPSKHYNIX2LUSDT" and order["side"] == "SELL"
                 }
                 pnl_model_by_order = {}
                 for adr_order_id, stock_order_id in inferred_pairs.items():
@@ -2216,6 +2230,13 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         price = float(tr.get("price", 0.0))
                         qty = float(tr.get("qty", 0.0))
                         order_id = str(tr.get("orderId", tr.get("id", "")))
+                        adr_order = (adr_entries if is_entry else adr_exits).get(order_id)
+                        stock_order_id = (inferred_pairs if is_entry else inferred_exit_pairs).get(order_id)
+                        stock_order = (stock_entries if is_entry else stock_exits).get(stock_order_id)
+                        fill_signal = (nominal_premium(
+                            adr_order["cost"] / adr_order["qty"], stock_order["cost"] / stock_order["qty"])
+                            if adr_order and stock_order and adr_order["qty"] > 0 and stock_order["qty"] > 0
+                            else None)
                         pnl_model = (pnl_model_by_order.get(order_id) or {
                             "adr_order_id": order_id, "unavailable": True,
                             "entry_time_ms": t_ms,
@@ -2230,6 +2251,9 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                                 "total_qty": qty,
                                 "weighted_price": price * qty,
                                 "count": 1,
+                                "fill_signals": [],
+                                "seen_order_ids": set(),
+                                "unpaired_order_ids": set(),
                                 "pnl_models": [pnl_model] if pnl_model else [],
                                 "pnl_order_ids": {order_id} if pnl_model else set(),
                             }
@@ -2240,6 +2264,21 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                             if pnl_model and order_id not in candle_markers[key]["pnl_order_ids"]:
                                 candle_markers[key]["pnl_models"].append(pnl_model)
                                 candle_markers[key]["pnl_order_ids"].add(order_id)
+
+                        grouped = candle_markers[key]
+                        if order_id not in grouped["seen_order_ids"]:
+                            grouped["seen_order_ids"].add(order_id)
+                            if fill_signal is not None:
+                                grouped["fill_signals"].append({
+                                    "order_id": order_id,
+                                    "paired_order_id": stock_order_id,
+                                    "signal": round(fill_signal, 4),
+                                    "adr_price": round(adr_order["cost"] / adr_order["qty"], 6),
+                                    "stock_price": round(stock_order["cost"] / stock_order["qty"], 6),
+                                    "adr_qty": round(adr_order["qty"], 8),
+                                })
+                            else:
+                                grouped["unpaired_order_ids"].add(order_id)
 
                         executions.append({
                             "time": t_sec,
@@ -2263,6 +2302,9 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                     pnl_models.sort(key=lambda model: model["entry_time_ms"])
                     if pnl_models and not pnl_models[-1].get("unavailable"):
                         pnl_model = pnl_models[-1]
+                    fill_signals = m_data["fill_signals"]
+                    exact_signal = (sum(fill["signal"] * fill["adr_qty"] for fill in fill_signals)
+                                    / sum(fill["adr_qty"] for fill in fill_signals)) if fill_signals else None
                     markers.append({
                         "time": m_time,
                         "position": "aboveBar" if is_entry else "belowBar",
@@ -2274,7 +2316,10 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         "is_entry": is_entry,
                         "avg_price": round(avg_px, 2),
                         "qty": round(m_data["total_qty"], 2),
-                        "entry_spread": round(m_data["entry_spread"], 4) if is_entry else None,
+                        "entry_spread": round(exact_signal, 4) if is_entry and exact_signal is not None else None,
+                        "exit_spread": round(exact_signal, 4) if not is_entry and exact_signal is not None else None,
+                        "fill_signals": fill_signals,
+                        "unpaired_order_count": len(m_data["unpaired_order_ids"]),
                         "minimum_net_profit_usd": pnl_model["threshold_usd"] if pnl_model else (MIN_NET_PROFIT_USD if is_entry else None),
                         "convergence_target_spread": (round((pnl_model.get("entry_spread") or m_data["entry_spread"]) - pnl_model["convergence_pts"], 2) if pnl_model else None),
                         "pnl_models": pnl_models,
@@ -2533,6 +2578,11 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
 
         state = load_auto_tranche_state()
         state.pop("execution_recovery", None)
+        if order_adr.get("orderId") is not None and order_stock.get("orderId") is not None:
+            state.setdefault("exit_order_pairs", []).append({
+                "adr_order_id": str(order_adr["orderId"]),
+                "stock_order_id": str(order_stock["orderId"]),
+            })
         if status:
             state["last_exit_spread"] = status.get("auto_tranche_criteria", {}).get("current_spread")
             state["last_exit_signal_version"] = SIGNAL_VERSION

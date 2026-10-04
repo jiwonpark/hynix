@@ -62,6 +62,31 @@ def infer_entry_pairs(orders, stock_symbol):
     return pairs
 
 
+def infer_exit_pairs(orders, stock_symbol):
+    """Pair sequential ADR covers with a unique subsequent ETF reduction.
+
+    Exit sizes vary with the saved policy. Ambiguous or delayed fills are left
+    unpaired rather than assigning a misleading chart price.
+    """
+    adr_exits = [order for order in orders
+                 if order['symbol'] == 'SKHYUSDT' and order['side'] == 'BUY']
+    stock_exits = [order for order in orders
+                   if order['symbol'] == stock_symbol and order['side'] == 'SELL']
+    pairs = {}
+    used_stock_ids = set()
+    for index, adr in enumerate(adr_exits):
+        next_adr_time = adr_exits[index + 1]['time'] if index + 1 < len(adr_exits) else math.inf
+        candidates = [stock for stock in stock_exits
+                      if stock['order_id'] not in used_stock_ids
+                      and 0 <= stock['time'] - adr['time'] <= 30000
+                      and stock['time'] < next_adr_time]
+        if len(candidates) == 1:
+            stock = candidates[0]
+            pairs[adr['order_id']] = stock['order_id']
+            used_stock_ids.add(stock['order_id'])
+    return pairs
+
+
 def entry_profiles(orders, stock_symbol, pairs):
     """Recover adaptive lots from persisted pairs or exact paired order sizes."""
     matched = infer_entry_pairs(orders, stock_symbol)

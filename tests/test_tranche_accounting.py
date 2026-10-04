@@ -1,8 +1,17 @@
 import unittest
-from backend.tranche_accounting import estimate_tranche_exit, prepare_exit_context
+from backend.tranche_accounting import aggregate_orders, estimate_tranche_exit, infer_exit_pairs, prepare_exit_context
 
 
 class TrancheAccountingTests(unittest.TestCase):
+    def test_exit_pairs_require_a_unique_sequential_etf_fill(self):
+        trades = [self.trade('SKHYUSDT', 1, 'BUY', .06, 195, 1000000),
+                  self.trade('CSOPSKHYNIX2LUSDT', 2, 'SELL', 1.08, 5.5, 1001000),
+                  self.trade('SKHYUSDT', 3, 'BUY', .08, 194, 1100000),
+                  self.trade('CSOPSKHYNIX2LUSDT', 4, 'SELL', 1.4, 5.6, 1101000),
+                  self.trade('CSOPSKHYNIX2LUSDT', 5, 'SELL', 1.4, 5.6, 1102000)]
+        self.assertEqual(infer_exit_pairs(aggregate_orders(trades), 'CSOPSKHYNIX2LUSDT'),
+                         {'1': '2'})
+
     def test_many_tranches_share_one_history_reconstruction_without_changing_profit(self):
         from unittest.mock import patch
         from backend import tranche_accounting as accounting

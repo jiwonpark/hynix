@@ -45,7 +45,9 @@ assert.ok(html.includes('this.updateMarkerState(this.activeHoveredExecutionMarke
 assert.ok(!html.includes('let activeHoveredMarkerTime = null;'),
   'hover state must survive beyond the chart initialization closure');
 const componentSource = fs.readFileSync(path.join(__dirname, '../strategy-execution-chart.js'), 'utf8');
-assert.ok(componentSource.includes('shape: isShort ? "arrowDown" : "arrowUp"'),
+const virtualArrow = new StrategyExecutionChartController();
+virtualArrow.setExecutions([{time: 1000, hypothetical: true, backtest: true, is_entry: true, position: 'aboveBar'}]);
+assert.equal(virtualArrow.markersForRender()[0].shape, 'arrowDown',
   'hypothetical markers must use arrow shapes instead of colored circle dots');
 assert.ok(componentSource.includes('m.hypothetical ? "0.35" : "0.70"'),
   'simulated trades should use dimmed arrows');
@@ -73,6 +75,7 @@ const pnlSeries = {
   removePriceLine: line => pnlRemoved.push(line),
 };
 const pnlLabel = {style: {}};
+const fillReadout = {};
 const lineEngine = vm.runInContext(`({
   shortTermSeries: lineSeries,
   shortTermPnlSeries: pnlSeries,
@@ -87,7 +90,8 @@ const lineEngine = vm.runInContext(`({
   ${pnlMethod}
   ${lineMethod}
 })`, vm.createContext({lineSeries, pnlSeries, Number, LightweightCharts: {LineStyle: {Dashed: 2}},
-  referenceRenders, $: id => id === 'valShortTermNetPnl' ? pnlLabel : null}));
+  referenceRenders, $: id => id === 'valShortTermNetPnl' ? pnlLabel
+    : id === 'shortTermExactFillReadout' ? fillReadout : null}));
 lineEngine.syncHoveredTrancheAnalytics(1000);
 assert.equal(referenceRenders[0].entry, 139.34, 'entry x-hover must use that execution instance spread');
 assert.equal(referenceRenders[0].options.selected, true, 'hovered entry must replace position reference lines');
@@ -115,12 +119,18 @@ const originalModel = lineEngine.rawExecutionMarkers[0].pnl_model;
 lineEngine.rawExecutionMarkers = [{time:1000,is_entry:true,entry_spread:140,pnl_models:[
   {...originalModel,adr_order_id:'old',adr_entry_price:120},
   {...originalModel,adr_order_id:'new',adr_entry_price:90},
+],fill_signals:[
+  {order_id:'old',signal:139.4,adr_price:120,stock_price:10},
+  {order_id:'new',signal:139.8,adr_price:90,stock_price:10},
 ]}];
 lineEngine.syncHoveredTrancheAnalytics(1000);
 assert.equal(pnlData.at(-1)[0].value,.57,'newest entry must use its own fills, never the candle-average cost basis');
+assert.equal(referenceRenders.at(-1).entry,139.8,'selected entry line must use its paired fill signal');
 lineEngine.selectedLifoOrder='old';
 lineEngine.syncHoveredTrancheAnalytics(1000);
 assert.equal(pnlData.at(-1)[0].value,2.67,'choosing an older entry must use only that entry');
+assert.equal(referenceRenders.at(-1).entry,139.4,'changing the selected fill must move the reference line');
+assert.match(fillReadout.textContent,/Entry fill #old: ADR \$120\.00 \/ ETF \$10\.0000 · 139\.400%/);
 lineEngine.rawExecutionMarkers[0].pnl_models.push({adr_order_id:'missing',unavailable:true});
 lineEngine.selectedLifoOrder='missing';
 lineEngine.syncHoveredTrancheAnalytics(1000);

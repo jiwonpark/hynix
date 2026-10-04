@@ -73,6 +73,7 @@ const engineCode = `({
   syncHoveredTrancheAnalytics: () => {},
   renderCurrentPositionReferenceLines: () => {},
   updateMarkerState: () => {},
+  scheduleExactFillMarkers: () => {},
   calcMovingAverage: () => [],
   initShortTermChart: () => {},
   renderHeldPairPnl: () => {},
