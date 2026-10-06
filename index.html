@@ -2725,6 +2725,14 @@
         </div>
         <span id="navLighterLivePill" class="navLivePill paused">○ GRID PAUSED</span>
       </button>
+      <button id="navTabCrypto" class="mainNavBtn" type="button">
+        <span class="navBtnIcon">🪙</span>
+        <div class="navBtnText">
+          <strong id="lblNavCrypto">Single-Leg Crypto Terminal</strong>
+          <small id="subNavCrypto">Autonomous Multi-Regime Quantitative Engine</small>
+        </div>
+        <span id="navCryptoLivePill" class="navLivePill paused">○ AUTO PAUSED</span>
+      </button>
       <button id="navTabPairs" class="mainNavBtn" type="button">
         <span class="navBtnIcon">⚖️</span>
         <div class="navBtnText">
@@ -3931,6 +3939,12 @@
     </div><!-- End #tabContentLighter -->
 
     <!-- ======================================================= -->
+    <!-- TAB 4: SINGLE-LEG CRYPTO TERMINAL                       -->
+    <!-- ======================================================= -->
+    <div id="tabContentCrypto" class="terminal-read-only" style="display:none;">
+    </div><!-- End #tabContentCrypto -->
+
+    <!-- ======================================================= -->
     <!-- TAB 3: HEDGE-WORTHY PAIRS EXPLORER (CROSS-MARKET ARB)   -->
     <!-- ======================================================= -->
     <div id="tabContentPairs" style="display: none;">
@@ -4880,6 +4894,7 @@
   <script src="strategy-lab.js?v=20260921_strategy_sync_2"></script>
   <script src="terminal-common.js?v=20260922_1"></script>
   <script src="lighter-tab.js?v=20261003_sync_4"></script>
+  <script src="crypto-tab.js?v=20261006_crypto_1"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -10721,6 +10736,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       const isBacktest = normalized === "backtest";
       const isTrading = normalized === "trading";
       const isLighter = normalized === "lighter";
+      const isCrypto = normalized === "crypto";
       const isPairs = normalized === "pairs";
       const isCompound = normalized === "compound";
       const isStrategyLab = normalized === "strategylab";
@@ -10728,6 +10744,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("navTabBacktest")) $("navTabBacktest").classList.toggle("active", isBacktest);
       if ($("navTabTrading")) $("navTabTrading").classList.toggle("active", isTrading);
       if ($("navTabLighter")) $("navTabLighter").classList.toggle("active", isLighter);
+      if ($("navTabCrypto")) $("navTabCrypto").classList.toggle("active", isCrypto);
       if ($("navTabPairs")) $("navTabPairs").classList.toggle("active", isPairs);
       if ($("navTabCompound")) $("navTabCompound").classList.toggle("active", isCompound);
       if ($("navTabStrategyLab")) $("navTabStrategyLab").classList.toggle("active", isStrategyLab);
@@ -10735,6 +10752,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("tabContentBacktest")) $("tabContentBacktest").style.display = isBacktest ? "block" : "none";
       if ($("tabContentTrading")) $("tabContentTrading").style.display = isTrading ? "block" : "none";
       if ($("tabContentLighter")) $("tabContentLighter").style.display = isLighter ? "block" : "none";
+      if ($("tabContentCrypto")) $("tabContentCrypto").style.display = isCrypto ? "block" : "none";
       if ($("tabContentPairs")) $("tabContentPairs").style.display = isPairs ? "block" : "none";
       if ($("tabContentCompound")) $("tabContentCompound").style.display = isCompound ? "block" : "none";
       if ($("tabContentStrategyLab")) $("tabContentStrategyLab").style.display = isStrategyLab ? "block" : "none";
@@ -10742,6 +10760,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       const activeNav = isBacktest ? $("navTabBacktest")
         : isTrading ? $("navTabTrading")
         : isLighter ? $("navTabLighter")
+        : isCrypto ? $("navTabCrypto")
         : isPairs ? $("navTabPairs")
         : isCompound ? $("navTabCompound")
         : isStrategyLab ? $("navTabStrategyLab")
@@ -10770,6 +10789,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           tradingEngine.onTabActivated();
         }
         if (window.lighterEngine && isLighter) window.lighterEngine.onTabActivated();
+        if (window.cryptoEngine && isCrypto) window.cryptoEngine.onTabActivated();
         if (typeof pairsExplorer !== "undefined" && isPairs) {
           pairsExplorer.onTabActivated();
         }
@@ -10785,6 +10805,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     if ($("navTabBacktest")) $("navTabBacktest").addEventListener("click", () => switchMainTab("backtest"));
     if ($("navTabTrading")) $("navTabTrading").addEventListener("click", () => switchMainTab("trading"));
     if ($("navTabLighter")) $("navTabLighter").addEventListener("click", () => switchMainTab("lighter"));
+    if ($("navTabCrypto")) $("navTabCrypto").addEventListener("click", () => switchMainTab("crypto"));
     if ($("navTabPairs")) $("navTabPairs").addEventListener("click", () => switchMainTab("pairs"));
     if ($("navTabCompound")) $("navTabCompound").addEventListener("click", () => switchMainTab("compound"));
     if ($("navTabStrategyLab")) $("navTabStrategyLab").addEventListener("click", () => switchMainTab("strategyLab"));
@@ -10793,7 +10814,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     // Restore saved tab on load
     try {
       const savedTab = localStorage.getItem("skhynix_active_tab");
-      if (savedTab === "trading" || savedTab === "lighter" || savedTab === "backtest" || savedTab === "pairs" || savedTab === "compound" || savedTab === "strategyLab" || savedTab === "upbitScanner") {
+      if (savedTab === "trading" || savedTab === "lighter" || savedTab === "crypto" || savedTab === "backtest" || savedTab === "pairs" || savedTab === "compound" || savedTab === "strategyLab" || savedTab === "upbitScanner") {
         switchMainTab(savedTab);
       }
     } catch (e) {}

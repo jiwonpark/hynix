@@ -50,11 +50,15 @@
   function renderAll() {
     const trading = document.getElementById("tabContentTrading");
     const lighter = document.getElementById("tabContentLighter");
+    const crypto = document.getElementById("tabContentCrypto");
     const template = document.getElementById("tradingTerminalTemplate");
     if (!trading || !lighter || !template) throw new Error("Trading terminal template hosts are missing");
 
     renderTerminal(template, trading, { venue: "binance", prefix: "", stripHandlers: false });
     renderTerminal(template, lighter, { venue: "lighter", prefix: "lighter_", stripHandlers: true });
+    if (crypto) {
+      renderTerminal(template, crypto, { venue: "crypto", prefix: "crypto_", stripHandlers: true });
+    }
   }
 
   window.TerminalCommon = { alignTime, movingAverage, namespaceFragment, renderTerminal };

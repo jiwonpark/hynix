@@ -194,7 +194,12 @@ app.include_router(terminal_auth_router)
 
 @app.middleware("http")
 async def authorize_strategy_lab(request: Request, call_next):
-    protected_prefixes = ("/api/strategy-lab/", "/api/lighter/bot/", "/api/lighter/step_tranche", "/api/lighter/reduce_tranche", "/api/lighter/flatten", "/api/lighter/order")
+    protected_prefixes = (
+        "/api/strategy-lab/", "/api/lighter/bot/", "/api/lighter/step_tranche",
+        "/api/lighter/reduce_tranche", "/api/lighter/flatten", "/api/lighter/order",
+        "/api/crypto/bot/", "/api/crypto/step_tranche", "/api/crypto/reduce_tranche",
+        "/api/crypto/flatten", "/api/crypto/order",
+    )
     if (request.url.path.startswith(protected_prefixes)
             and request.method not in ("GET", "HEAD", "OPTIONS")
             and not terminal_authorized(request)):
@@ -847,6 +852,461 @@ async def get_klines(symbol: str, interval: str = "15m", limit: int = 1000, endT
     except Exception as e:
         logger.error(f"Error fetching klines for {symbol}: {e}")
         return []
+
+# ==============================================================================
+# SINGLE-LEG CRYPTO QUANTITATIVE ENGINE (TAB 4)
+# ==============================================================================
+
+SUPPORTED_CRYPTO_SYMBOLS = [
+    {"symbol": "BTCUSDT", "name": "Bitcoin Perpetual", "base": "BTC", "quote": "USDT", "tick_size": 0.1, "step_size": 0.001},
+    {"symbol": "ETHUSDT", "name": "Ethereum Perpetual", "base": "ETH", "quote": "USDT", "tick_size": 0.01, "step_size": 0.01},
+    {"symbol": "SOLUSDT", "name": "Solana Perpetual", "base": "SOL", "quote": "USDT", "tick_size": 0.01, "step_size": 0.1},
+    {"symbol": "DOGEUSDT", "name": "Dogecoin Perpetual", "base": "DOGE", "quote": "USDT", "tick_size": 0.00001, "step_size": 1.0},
+    {"symbol": "XRPUSDT", "name": "XRP Perpetual", "base": "XRP", "quote": "USDT", "tick_size": 0.0001, "step_size": 1.0},
+]
+
+_crypto_bot_state: Dict[str, Any] = {
+    "enabled": False,
+    "selected_symbol": "BTCUSDT",
+    "strategy_mode": "grid",
+    "entry_z": 1.5,
+    "exit_z": 0.25,
+    "notional_usd": 50.0,
+    "max_tranches": 5,
+    "live_tranches": [],
+    "last_evaluation": None,
+    "fail_closed_reason": "Single-leg crypto live execution is fail-closed. Real live order submission requires explicit confirmation.",
+}
+
+@app.get("/api/crypto/markets")
+async def get_crypto_markets() -> Dict[str, Any]:
+    return {"success": True, "markets": SUPPORTED_CRYPTO_SYMBOLS}
+
+@app.get("/api/crypto/status")
+async def get_crypto_status(symbol: str = "BTCUSDT") -> Dict[str, Any]:
+    """Public single-leg crypto pricing, 24hr stats, and execution readiness."""
+    try:
+        klines = await get_klines(symbol, interval="1m", limit=2)
+        mark_price = float(klines[-1][4]) if klines and len(klines[-1]) > 4 else 0.0
+        high = float(klines[-1][2]) if klines else 0.0
+        low = float(klines[-1][3]) if klines else 0.0
+        open_price = float(klines[0][1]) if klines else mark_price
+        change_pct = round((mark_price - open_price) / open_price * 100, 2) if open_price else 0.0
+        return {
+            "success": True,
+            "symbol": symbol,
+            "mark_price": mark_price,
+            "bid": mark_price * 0.9999,
+            "ask": mark_price * 1.0001,
+            "high": high,
+            "low": low,
+            "change_pct": change_pct,
+            "venue": "Binance Futures Single-Leg",
+            "authenticated": False,
+            "execution_enabled": _crypto_bot_state.get("enabled", False),
+            "execution_message": _crypto_bot_state.get("fail_closed_reason", ""),
+            "collateral": 10000.0,
+            "server_time_ms": int(time.time() * 1000),
+        }
+    except Exception as error:
+        logger.warning(f"Crypto status error for {symbol}: {error}")
+        return {"success": False, "symbol": symbol, "error": str(error), "server_time_ms": int(time.time() * 1000)}
+
+@app.get("/api/crypto/candles")
+async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 300) -> Dict[str, Any]:
+    """Candles & price bars for single-leg crypto terminal."""
+    try:
+        raw_klines = await get_klines(symbol, interval=interval, limit=limit)
+        bars = []
+        for row in raw_klines:
+            t = int(row[0]) // 1000
+            c = float(row[4])
+            bars.append({"time": t, "value": c, "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": c, "volume": float(row[5])})
+        return {"success": True, "symbol": symbol, "interval": interval, "bars": bars, "markers": []}
+    except Exception as error:
+        logger.error(f"Error fetching crypto candles: {error}")
+        return {"success": False, "symbol": symbol, "interval": interval, "bars": [], "markers": [], "error": str(error)}
+
+@app.get("/api/crypto/trends")
+async def get_crypto_trends(symbol: str = "BTCUSDT", small: str = "5m", big: str = "1h") -> Dict[str, Any]:
+    try:
+        small_bars = (await get_crypto_candles(symbol, interval=small, limit=30)).get("bars", [])
+        big_bars = (await get_crypto_candles(symbol, interval=big, limit=30)).get("bars", [])
+        def _calc_trend(bars):
+            if len(bars) < 5:
+                return {"slope": 0.0, "regime": "FLAT", "pct_change": 0.0}
+            vals = [b["value"] for b in bars]
+            pct = (vals[-1] - vals[0]) / vals[0] * 100 if vals[0] else 0.0
+            regime = "BULL" if pct > 0.15 else ("BEAR" if pct < -0.15 else "FLAT")
+            return {"slope": round(pct, 3), "regime": regime, "pct_change": round(pct, 3)}
+        return {
+            "success": True,
+            "symbol": symbol,
+            "trends": {"small": _calc_trend(small_bars), "big": _calc_trend(big_bars)},
+            "server_time_ms": int(time.time() * 1000)
+        }
+    except Exception as error:
+        return {"success": False, "symbol": symbol, "trends": {}, "error": str(error)}
+
+@app.get("/api/crypto/parity")
+async def get_crypto_parity(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 300) -> Dict[str, Any]:
+    """Compatibility alias returning candles as bars for the cloned visual surface."""
+    return await get_crypto_candles(symbol=symbol, interval=interval, limit=limit)
+
+@app.get("/api/crypto/bot/status")
+async def get_crypto_bot_status() -> Dict[str, Any]:
+    return {"success": True, "bot": _crypto_bot_state}
+
+@app.post("/api/crypto/bot/toggle")
+async def toggle_crypto_bot(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        body = await request.json()
+        enabled = body.get("enabled", False)
+        if enabled and body.get("confirm_live_trading") is not True:
+            raise ValueError("Explicit single-leg crypto live trading confirmation is required")
+        _crypto_bot_state["enabled"] = bool(enabled)
+        return JSONResponse({"success": True, "bot": _crypto_bot_state})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+@app.post("/api/crypto/bot/config")
+async def configure_crypto_bot(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        body = await request.json()
+        for k in ("selected_symbol", "strategy_mode", "entry_z", "exit_z", "notional_usd", "max_tranches"):
+            if k in body:
+                _crypto_bot_state[k] = body[k]
+        return JSONResponse({"success": True, "bot": _crypto_bot_state})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+@app.post("/api/crypto/step_tranche")
+async def step_crypto_tranche(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    return JSONResponse({"success": False, "error": "Single-leg crypto live execution is fail-closed. Test orders are prohibited."}, status_code=400)
+
+@app.post("/api/crypto/reduce_tranche")
+async def reduce_crypto_tranche(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    return JSONResponse({"success": False, "error": "Single-leg crypto live execution is fail-closed."}, status_code=400)
+
+@app.post("/api/crypto/flatten")
+async def flatten_crypto(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    _crypto_bot_state["enabled"] = False
+    return JSONResponse({"success": True, "message": "Crypto bot paused", "bot": _crypto_bot_state})
+
+@app.get("/api/crypto/backtest")
+async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 500,
+                              strategy_mode: str = "grid",
+                              entry_z: float = 1.5, exit_z: float = 0.25,
+                              use_ma_stretch: bool = True, use_peak: bool = True,
+                              use_base_spacing: bool = True, use_ma_stack: bool = False, use_convergence: bool = True,
+                              use_dwell: bool = True, use_bottoming: bool = False,
+                              ou_halflife_max: float = 8.0, ou_stop_z: float = 3.5,
+                              ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
+                              min_consensus_votes: int = 3,
+                              trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
+                              trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002) -> Dict[str, Any]:
+    """Single-leg crypto strategy backtest engine across 5 quantitative regimes."""
+    candle_res = await get_crypto_candles(symbol, interval=interval, limit=min(500, limit))
+    bars = candle_res.get("bars", [])
+    interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
+    now_seconds = int(time.time())
+    bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]
+    window = 24
+    trades = []
+    position = None
+    series = []
+    previous_zscore = None
+    last_entry_value = None
+    last_entry_side = None
+    mode_metrics: Dict[str, Any] = {}
+    active_positions = []
+
+    if strategy_mode in {"ou_quant", "grid", "custom"}:
+        ou_thetas = []
+        ou_halflives = []
+        is_ou = strategy_mode == "ou_quant"
+        for index, bar in enumerate(bars):
+            if index < window:
+                continue
+            prefix = [item["value"] for item in bars[:index + 1]]
+            if is_ou:
+                entry_signal, candidate_side, exit_signal, evaluation = evaluate_ou_signals(
+                    prefix, entry_z=entry_z, exit_z=exit_z,
+                    ou_halflife_max=ou_halflife_max, ou_stop_z=ou_stop_z,
+                    evaluation_time=int(bar["time"]),
+                )
+                ou_thetas.append(evaluation["theta"])
+                ou_halflives.append(evaluation["half_life_bars"])
+            else:
+                entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
+                    prefix, entry_z=entry_z if use_ma_stretch else 0.5,
+                    exit_z=exit_z, evaluation_time=int(bar["time"]),
+                )
+            signal_price = prefix[-1]
+            series.append({"time": bar["time"], "value": bar["value"],
+                           "mean": evaluation["mean"], "z": evaluation["z"]})
+            zscore = evaluation.get("signal_z", evaluation["z"])
+            reason = "convergence" if not is_ou or abs(evaluation["z"]) <= exit_z else "structural_stop"
+
+            if not is_ou:
+                ma7 = sum(prefix[-8:-1]) / 7
+                mean = evaluation["signal_mean"]
+                stack_pass = ((zscore > 0 and signal_price > ma7 > mean)
+                              or (zscore < 0 and signal_price < ma7 < mean))
+                peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
+                step_dist = signal_price * 0.002
+                spacing_pass = (not use_base_spacing or last_entry_value is None
+                                or candidate_side != last_entry_side
+                                or (candidate_side < 0 and signal_price >= last_entry_value + step_dist)
+                                or (candidate_side > 0 and signal_price <= last_entry_value - step_dist))
+                entry_signal = entry_signal and spacing_pass and (not use_peak or peak_pass) and (not use_ma_stack or stack_pass)
+                if active_positions:
+                    latest = active_positions[-1]
+                    convergence_pass = exit_signal if use_convergence else latest["side"] * (signal_price - latest["entry"]) > 0
+                    dwell_pass = not use_dwell or index - latest["entry_index"] >= 4
+                    bottoming_pass = not use_bottoming or (previous_zscore is not None and abs(zscore) >= abs(previous_zscore))
+                    exit_signal = convergence_pass and dwell_pass and bottoming_pass
+
+            if active_positions and exit_signal:
+                for open_pos in active_positions:
+                    pnl_pct = open_pos["side"] * (signal_price / open_pos["entry"] - 1) * 100
+                    trades.append({
+                        "side": open_pos["side"], "entry": open_pos["entry"],
+                        "entry_time": open_pos["entry_time"],
+                        "exit": signal_price, "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "reason": reason,
+                    })
+                active_positions = []
+            elif entry_signal:
+                campaign_side = active_positions[0]["side"] if active_positions else None
+                if campaign_side is None or campaign_side == candidate_side:
+                    active_positions.append({
+                        "side": candidate_side, "entry": signal_price,
+                        "entry_time": bar["time"], "entry_index": index,
+                    })
+                    last_entry_value, last_entry_side = signal_price, candidate_side
+            previous_zscore = zscore
+
+        mode_metrics = {"signal_engine": "single_leg_ou" if is_ou else "single_leg_grid"}
+        if ou_thetas:
+            mode_metrics.update({
+                "avg_theta": round(sum(ou_thetas) / len(ou_thetas), 4),
+                "avg_half_life_bars": round(sum(ou_halflives) / len(ou_halflives), 1),
+                "half_life_mins": round((sum(ou_halflives) / len(ou_halflives)) * interval_seconds / 60, 1),
+            })
+
+    elif strategy_mode == "ma_stack":
+        for index, bar in enumerate(bars):
+            if index < 60:
+                continue
+            ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
+            ma24 = sum(item["value"] for item in bars[index-24:index]) / 24
+            ma60 = sum(item["value"] for item in bars[index-60:index]) / 60
+            sample = [item["value"] for item in bars[index-24:index]]
+            mean = sum(sample) / len(sample)
+            variance = sum((v - mean) ** 2 for v in sample) / len(sample)
+            std = math.sqrt(variance)
+            zscore = (bar["value"] - mean) / std if std else 0.0
+            series.append({"time": bar["time"], "value": bar["value"], "mean": round(ma24, 4), "z": round(zscore, 3)})
+
+            stretch_pct = abs(bar["value"] - ma60) / ma60 * 100
+            bearish_stack = bar["value"] < ma7 < ma24 < ma60
+            bullish_stack = bar["value"] > ma7 > ma24 > ma60
+            entry_signal = (bearish_stack or bullish_stack) and stretch_pct >= ma_stretch_min
+            candidate_side = 1 if bearish_stack else -1
+
+            if position is None and entry_signal:
+                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "max_favorable": 0.0}
+            elif position is not None:
+                held = index - position["entry_index"]
+                current_pnl = position["side"] * (bar["value"] / position["entry"] - 1) * 100
+                position["max_favorable"] = max(position.get("max_favorable", 0.0), current_pnl)
+                golden_cross = (position["side"] > 0 and ma7 >= ma24) or (position["side"] < 0 and ma7 <= ma24)
+                trailing_stop = position["max_favorable"] >= 0.20 and (position["max_favorable"] - current_pnl) >= ma_trailing_stop
+                if golden_cross or trailing_stop or held >= 16 or index == len(bars) - 1:
+                    pnl_pct = current_pnl
+                    trades.append({
+                        "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],
+                        "exit": bar["value"], "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "reason": "golden_cross" if golden_cross else ("trailing_stop" if trailing_stop else "max_dwell")
+                    })
+                    position = None
+
+    elif strategy_mode == "multi_factor":
+        for index, bar in enumerate(bars):
+            if index < window:
+                continue
+            sample = [item["value"] for item in bars[index-window:index]]
+            mean = sum(sample) / len(sample)
+            variance = sum((v - mean) ** 2 for v in sample) / len(sample)
+            std = math.sqrt(variance)
+            zscore = (bar["value"] - mean) / std if std else 0.0
+            series.append({"time": bar["time"], "value": bar["value"], "mean": round(mean, 4), "z": round(zscore, 3)})
+
+            f1 = abs(zscore) >= entry_z
+            v_curr = abs(bar["value"] - bars[index-1]["value"])
+            v_prev = abs(bars[index-1]["value"] - bars[index-2]["value"]) if index >= 2 else 0.01
+            f2 = v_curr >= v_prev
+            ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
+            f3 = abs(bar["value"] - ma7) >= (bar["value"] * 0.001)
+            local_vals = [item["value"] for item in bars[index-12:index]]
+            f4 = (bar["value"] >= max(local_vals) * 0.9995) or (bar["value"] <= min(local_vals) * 1.0005)
+
+            votes = sum([f1, f2, f3, f4])
+            candidate_side = -1 if zscore > 0 else 1
+            entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8)
+
+            if position is None and entry_signal:
+                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index}
+            elif position is not None:
+                held = index - position["entry_index"]
+                current_votes = sum([
+                    abs(zscore) >= entry_z * 0.5,
+                    abs(bar["value"] - bars[index-1]["value"]) > (bar["value"] * 0.0005),
+                    abs(bar["value"] - mean) > (bar["value"] * 0.001),
+                    held < 8
+                ])
+                consensus_drop = current_votes < 2
+                convergence = abs(zscore) <= exit_z
+                if (consensus_drop and held >= 3) or convergence or held >= 20 or index == len(bars) - 1:
+                    pnl_pct = position["side"] * (bar["value"] / position["entry"] - 1) * 100
+                    trades.append({
+                        "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],
+                        "exit": bar["value"], "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "reason": "convergence" if convergence else "consensus_demotion"
+                    })
+                    position = None
+
+    elif strategy_mode == "trend_pullback":
+        slopes = []
+        trend_window = max(12, min(60, int(trend_macro_window)))
+        for index, bar in enumerate(bars):
+            if index < trend_window:
+                continue
+            sample = [item["value"] for item in bars[index-trend_window:index]]
+            n = len(sample)
+            x_bar = (n - 1) / 2.0
+            y_bar = sum(sample) / n
+            var_x = sum((k - x_bar) ** 2 for k in range(n))
+            cov_xy = sum((k - x_bar) * (sample[k] - y_bar) for k in range(n))
+            beta = cov_xy / var_x if var_x > 1e-12 else 0.0
+            alpha = y_bar - beta * x_bar
+            trendline_val = alpha + beta * (n - 1)
+            slopes.append(beta)
+
+            residuals = [sample[k] - (alpha + beta * k) for k in range(n)]
+            std_res = math.sqrt(sum(r ** 2 for r in residuals) / n) if n else 0.1
+            z_trend = (bar["value"] - trendline_val) / std_res if std_res > 1e-6 else 0.0
+            series.append({"time": bar["time"], "value": bar["value"], "mean": round(trendline_val, 4), "z": round(z_trend, 3)})
+
+            is_uptrend = beta >= trend_slope_min
+            is_downtrend = beta <= -trend_slope_min
+
+            prev_val = bars[index-1]["value"]
+            prev_prev_val = bars[index-2]["value"] if index >= 2 else prev_val
+            micro_reverting_up = (bar["value"] > prev_val) and (prev_val <= prev_prev_val)
+            micro_reverting_down = (bar["value"] < prev_val) and (prev_val >= prev_prev_val)
+
+            pullback_dist = bar["value"] * (trend_pullback_dist / 100.0)
+            tp_dist = bar["value"] * (trend_tp_dist / 100.0)
+
+            buy_signal = is_uptrend and (trendline_val - bar["value"] >= pullback_dist) and micro_reverting_up
+            short_signal = is_downtrend and (bar["value"] - trendline_val >= pullback_dist) and micro_reverting_down
+
+            if position is None:
+                if buy_signal:
+                    position = {
+                        "side": 1, "entry": bar["value"], "entry_time": bar["time"],
+                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta
+                    }
+                elif short_signal:
+                    position = {
+                        "side": -1, "entry": bar["value"], "entry_time": bar["time"],
+                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta
+                    }
+            elif position is not None:
+                held = index - position["entry_index"]
+                current_pnl = position["side"] * (bar["value"] / position["entry"] - 1) * 100
+
+                if position["side"] > 0:
+                    tp_reached = bar["value"] >= (trendline_val + tp_dist)
+                    opposite_reversal = (bar["value"] > trendline_val) and micro_reverting_down
+                    trend_invalidated = beta < -trend_slope_min
+                else:
+                    tp_reached = bar["value"] <= (trendline_val - tp_dist)
+                    opposite_reversal = (bar["value"] < trendline_val) and micro_reverting_up
+                    trend_invalidated = beta > trend_slope_min
+
+                stop_loss = current_pnl <= -1.5 or held >= 32 or index == len(bars) - 1
+
+                if tp_reached or (opposite_reversal and current_pnl > 0) or trend_invalidated or stop_loss:
+                    trades.append({
+                        "side": position["side"],
+                        "entry": position["entry"],
+                        "entry_time": position["entry_time"],
+                        "exit": bar["value"],
+                        "exit_time": bar["time"],
+                        "pnl_pct": round(current_pnl, 4),
+                        "reason": "tp_reached" if tp_reached else ("opposite_reversal" if opposite_reversal else ("trend_invalidation" if trend_invalidated else "stop_loss"))
+                    })
+                    position = None
+
+        if slopes:
+            avg_slope = sum(slopes) / len(slopes)
+            latest_slope = slopes[-1]
+            last_bar = bars[-1] if bars else None
+            last_tl = series[-1]["mean"] if series else 0.0
+            last_dist = (last_bar["value"] - last_tl) if last_bar else 0.0
+            mode_metrics = {
+                "avg_slope": round(avg_slope, 5),
+                "latest_slope": round(latest_slope, 5),
+                "latest_trendline": round(last_tl, 4),
+                "latest_distance": round(last_dist, 4),
+                "macro_regime": "UPTREND" if latest_slope >= trend_slope_min else ("DOWNTREND" if latest_slope <= -trend_slope_min else "NEUTRAL"),
+                "trend_window_bars": trend_window,
+                "pullback_dist_target": trend_pullback_dist
+            }
+
+    if position is not None:
+        active_positions.append(position)
+    mark = bars[-1]["value"] if bars else None
+    open_positions = [{
+        "side": item["side"], "entry": item["entry"], "entry_time": item["entry_time"],
+        "mark": mark,
+        "unrealized_pnl_pct": round(item["side"] * (mark / item["entry"] - 1) * 100, 4),
+    } for item in active_positions] if mark else []
+    mode_metrics["open_tranches"] = len(open_positions)
+    mode_metrics["capacity_mode"] = "SINGLE_LEG_CRYPTO"
+
+    wins = sum(1 for trade in trades if trade["pnl_pct"] > 0)
+    return {
+        "success": candle_res.get("success", False),
+        "symbol": symbol,
+        "strategy_mode": strategy_mode,
+        "series": series,
+        "trades": trades,
+        "open_positions": open_positions,
+        "metrics": mode_metrics,
+        "summary": {
+            "trades": len(trades),
+            "open_tranches": len(open_positions),
+            "unrealized_pct": round(sum(item["unrealized_pnl_pct"] for item in open_positions), 4),
+            "wins": wins,
+            "win_rate": round(wins / len(trades) * 100, 1) if trades else 0,
+            "net_pct": round(sum(trade["pnl_pct"] for trade in trades), 4)
+        },
+        "assumptions": "Binance Futures perpetual single-leg candles; maker fee 0.02%, taker 0.05%."
+    }
 
 _PAIRS_CACHE: Dict[str, Any] = {
     "timestamp": 0,
