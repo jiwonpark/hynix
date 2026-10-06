@@ -186,7 +186,17 @@ class LighterPairBot:
         public_max = int(capacity.get("max_tranches", len(self.state.get("tranches") or [])))
         configured_max = self.state.get("max_tranches")
         strat_mode = self.state.get("strategy_mode", "grid")
-        return {key: value for key, value in self.state.items() if key != "pending_execution"} | {
+        execution_history = self._execution_history()
+        public_execution_history = execution_history[-300:]
+        authoritative_exits = [
+            event for event in execution_history
+            if event.get("event") == "EXIT"
+            and (event.get("pnl_authoritative") or event.get("pnl_source") == "LIGHTER_REALIZED_PNL")
+        ]
+        # The persisted history contains full order/fill payloads and is intentionally
+        # retained on disk for reconciliation.  Do not duplicate it in the polling API:
+        # execution_history is the compact, display-ready representation.
+        return {key: value for key, value in self.state.items() if key not in {"pending_execution", "history"}} | {
             "recovery_required": bool(self.state.get("pending_execution")),
             "mode": "LIVE" if self.state.get("enabled") else "PAUSED",
             "max_tranches": public_max,
@@ -207,7 +217,14 @@ class LighterPairBot:
                 "trend_tp_dist": self.state.get("trend_tp_dist", 0.05),
                 "trend_slope_min": self.state.get("trend_slope_min", 0.002),
             },
-            "execution_history": self._execution_history(),
+            "history_event_count": len(self.state.get("history") or []),
+            "displayed_history_event_count": len(public_execution_history),
+            "verified_exit_count": len(authoritative_exits),
+            "verified_realized_pnl_usd": round(sum(
+                float(event.get("net_pnl_usd", event.get("pnl", 0.0)) or 0.0)
+                for event in authoritative_exits
+            ), 8),
+            "execution_history": public_execution_history,
         }
 
     def _execution_history(self) -> List[Dict[str, Any]]:
@@ -293,7 +310,10 @@ class LighterPairBot:
                     for active in active_tranches
                 )
                 row["status"] = "OPEN" if is_active else "LEGACY — EXIT NOT RECORDED"
-        return normalized
+        # Full nested order responses can include hundreds of fills per event.  The
+        # frontend only needs normalized execution fields, so omit those blobs from
+        # the frequently-polled status response while preserving them in state.
+        return [{key: value for key, value in row.items() if key != "orders"} for row in normalized]
 
     @staticmethod
     def _order_legs(event: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Any]]:

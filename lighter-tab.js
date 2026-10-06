@@ -399,7 +399,7 @@
       this.setText("valAccountEquity", "—");
       this.setText("lblAvailMargin", "Free Grid Margin");
       this.setText("valAvailMargin", "$8,240.00");
-      this.setText("lblUnrealizedPnl", "Grid Harvested PnL");
+      this.setText("lblUnrealizedPnl", "Verified Realized PnL");
       this.setText("lblActivePairs", "Active Grid Rungs");
       this.setText("lblMarginRisk", "Target Leverage");
       this.setText("valMarginRisk", "8.0x cap");
@@ -1615,22 +1615,21 @@
     },
 
     async refresh() {
+      const chartRefresh = this.refreshChart().catch((error) => {
+        this.setText("lblShortTermChartStatus", `Chart unavailable: ${error.message}`);
+        return false;
+      });
       try {
-        let status, botStatus, trendStatus;
-        try {
-          status = await api("/api/lighter/status");
-          const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
-          const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
-          [botStatus, trendStatus] = await Promise.all([
-            api("/api/lighter/bot/status").catch(() => null),
-            api(`/api/lighter/trends?small=${sParam}&big=${bParam}`).catch(() => null),
-          ]);
-        } catch (_) {
-          status = { success: true, parity_ratio: 140.09, server_time_ms: Date.now(), adr: { spread_bps: 12 }, domestic: { spread_bps: 15 } };
-        }
+        const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
+        const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
+        const [statusResult, botStatus, trendStatus] = await Promise.all([
+          api("/api/lighter/status").catch(() => null),
+          api("/api/lighter/bot/status").catch(() => null),
+          api(`/api/lighter/trends?small=${sParam}&big=${bParam}`).catch(() => null),
+        ]);
+        const status = statusResult || { success: false, server_time_ms: Date.now(), positions: [] };
         this.liveVenue = status;
         this.livePositions = Array.isArray(status?.positions) ? status.positions : [];
-        await this.refreshChart();
         if (status && status.parity_ratio) {
           this.currentRatio = Number(status.parity_ratio);
         }
@@ -1667,6 +1666,7 @@
       } catch (error) {
         this.setText("lblHedgedSyncBadge", `GRID ENGINE: ${error.message}`);
       }
+      await chartRefresh;
     },
 
     renderTrends(trends) {
@@ -4002,6 +4002,21 @@
       return { adr, domestic, gross, margin };
     },
 
+    verifiedRealizedSummary() {
+      const serverPnl = Number(this.botState?.verified_realized_pnl_usd);
+      const serverCount = Number(this.botState?.verified_exit_count);
+      if (Number.isFinite(serverPnl) && Number.isFinite(serverCount)) {
+        return { pnl: serverPnl, count: serverCount };
+      }
+      const history = Array.isArray(this.botState?.execution_history) ? this.botState.execution_history : [];
+      const exits = history.filter((trade) => (trade.event === "EXIT" || trade.is_exit)
+        && (trade.pnl_authoritative || trade.pnl_source === "LIGHTER_REALIZED_PNL"));
+      return {
+        pnl: exits.reduce((sum, trade) => sum + Number(trade.net_pnl_usd ?? trade.pnl ?? 0), 0),
+        count: exits.length,
+      };
+    },
+
     renderVirtualState() {
       const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position || pos.size || 0)) > 1e-6);
       const showExchangeState = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
@@ -4012,6 +4027,8 @@
         const pnlPct = col > 0 ? (liveUnrealized / col) * 100 : 0;
         const pnlSign = liveUnrealized >= 0 ? "+" : "";
         const pnlText = `${pnlSign}$${liveUnrealized.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
+        const realized = this.verifiedRealizedSummary();
+        const realizedSign = realized.pnl >= 0 ? "+" : "";
         this.setText("valAccountEquity", `$${col.toFixed(2)}`);
         this.setText("badgeEquitySource", "LIGHTER L2");
         const openLive = (this.livePositions || []).filter(p => Math.abs(Number(p.position || p.size || 0)) > 1e-6);
@@ -4032,7 +4049,9 @@
         this.setText("valHedgedPnlSubtitle", this.botState?.enabled && this.botState?.last_error
           ? "Transient Lighter data error · EC2 bot remains enabled and will retry"
           : (validTranches.length > 0 ? (liveUnrealized >= 0 ? "✅ Positive Net Return (Take-Profit Eligible)" : "Holding (Awaiting Convergence)") : "All positions flat (Awaiting signal)"));
-        this.setText("valUnrealizedPnl", `${pnlSign}$${liveUnrealized.toFixed(2)}`);
+        this.setText("valUnrealizedPnl", `${realizedSign}$${realized.pnl.toFixed(2)} · ${realized.count} exits`);
+        const realizedEl = lid("valUnrealizedPnl");
+        if (realizedEl) realizedEl.style.color = realized.pnl > 0 ? "#16a34a" : (realized.pnl < 0 ? "#dc2626" : "#64748b");
         this.setText("countPositions", String(openLive.length));
 
         const body = lid("activePositionsBody");
@@ -4103,19 +4122,20 @@
       const legacy = Array.isArray(this.botState?.history) ? this.botState.history : [];
       const history = normalized.length ? normalized : legacy;
       if (history.length) {
-        this.setText("countOrderLog", String(history.length));
+        const persistedCount = Number(this.botState?.history_event_count || history.length);
+        this.setText("countOrderLog", String(persistedCount));
         const exits = history.filter((trade) => trade.event === "EXIT" || trade.is_exit);
         const authoritativeExits = exits.filter((trade) => trade.pnl_authoritative || trade.pnl_source === "LIGHTER_REALIZED_PNL");
         const totalFees = history.reduce((sum, trade) => {
           const isExit = trade.event === "EXIT" || trade.is_exit;
           return sum + Number(isExit ? (trade.exit_fee_usd ?? trade.fee_usd ?? 0) : (trade.fee_usd || 0));
         }, 0);
-        const totalNet = authoritativeExits.reduce((sum, trade) => sum + Number(trade.net_pnl_usd ?? trade.pnl ?? 0), 0);
         const totalGrossTurnover = history.reduce((sum, trade) => sum + this.tradeExposure(trade).gross, 0);
         const wins = authoritativeExits.filter((trade) => Number(trade.net_pnl_usd ?? trade.pnl ?? 0) > 0).length;
         const summary = lid("executionHistorySummary");
         if (summary) {
-          summary.innerHTML = `<span><b>${history.length}</b> persisted events</span><span><b>${authoritativeExits.length}</b> verified exits</span><span>Gross turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Recorded fees <b>$${totalFees.toFixed(4)}</b></span><span>Verified net P&L <b style="color:${totalNet >= 0 ? '#16a34a' : '#dc2626'}">${totalNet >= 0 ? '+' : ''}$${totalNet.toFixed(4)}</b></span><span>Verified win rate <b>${authoritativeExits.length ? (wins / authoritativeExits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">Actual Lighter fills · legacy estimates excluded</span>`;
+          const verifiedSummary = this.verifiedRealizedSummary();
+          summary.innerHTML = `<span><b>${persistedCount}</b> persisted events${persistedCount > history.length ? ` · latest ${history.length} shown` : ""}</span><span><b>${verifiedSummary.count}</b> verified exits</span><span>Recent displayed turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Recent recorded fees <b>$${totalFees.toFixed(4)}</b></span><span>All-time verified net P&L <b style="color:${verifiedSummary.pnl >= 0 ? '#16a34a' : '#dc2626'}">${verifiedSummary.pnl >= 0 ? '+' : ''}$${verifiedSummary.pnl.toFixed(4)}</b></span><span>Displayed verified win rate <b>${authoritativeExits.length ? (wins / authoritativeExits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">Actual Lighter fills · legacy estimates excluded</span>`;
         }
         historyBody.innerHTML = history.slice().reverse().map((trade) => {
           const timeStr = formatKstDateTime(trade.time ? trade.time * 1000 : Date.now());

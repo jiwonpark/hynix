@@ -846,6 +846,41 @@ class TestLighterPairBot(unittest.TestCase):
                 "LEGACY — EXIT NOT RECORDED",
             )
 
+    def test_public_state_compacts_history_and_summarizes_verified_pnl(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            bot.state["history"] = [
+                {"side": -1, "adr_qty": 0.13, "domestic_qty": 0.013,
+                 "entry_ratio": 141.0, "time": 100, "notional_usd": 25.0,
+                 "orders": {"first_leg": {"fills": ["large"]}}},
+                {"side": 1, "adr_qty": 0.13, "domestic_qty": 0.013,
+                 "ratio": 140.0, "time": 200, "notional_usd": 25.0,
+                 "is_exit": True, "net_pnl_usd": 0.42, "pnl_source": "LIGHTER_REALIZED_PNL",
+                 "orders": {"first_leg": {"fills": ["large"]}}},
+            ]
+            state = bot.public_state()
+            self.assertNotIn("history", state)
+            self.assertEqual(state["history_event_count"], 2)
+            self.assertEqual(state["displayed_history_event_count"], 2)
+            self.assertEqual(state["verified_exit_count"], 1)
+            self.assertEqual(state["verified_realized_pnl_usd"], 0.42)
+            self.assertTrue(all("orders" not in row for row in state["execution_history"]))
+
+    def test_public_state_limits_display_history_without_truncating_pnl_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            bot.state["history"] = [
+                {"side": 1, "is_exit": True, "time": index,
+                 "net_pnl_usd": 0.01, "pnl_source": "LIGHTER_REALIZED_PNL"}
+                for index in range(350)
+            ]
+            state = bot.public_state()
+            self.assertEqual(state["history_event_count"], 350)
+            self.assertEqual(state["displayed_history_event_count"], 300)
+            self.assertEqual(len(state["execution_history"]), 300)
+            self.assertEqual(state["verified_exit_count"], 350)
+            self.assertEqual(state["verified_realized_pnl_usd"], 3.5)
+
     def test_configure_and_evaluate_strategy_modes(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
