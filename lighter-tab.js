@@ -1856,9 +1856,17 @@
     },
 
     alignChartOverlay(layer) {
-      // Chart coordinates start at the plot, after the left price scale.
-      const left = this.chart.priceScale("left").width();
-      const width = this.chart.timeScale().width();
+      // Chart coordinates start at the plot, after the left price scale if present.
+      let left = 0;
+      try {
+        const scale = this.chart?.priceScale?.("left");
+        if (scale && typeof scale.width === "function") {
+          left = Number(scale.width()) || 0;
+        }
+      } catch (_) {
+        left = 0;
+      }
+      const width = Number(this.chart?.timeScale?.().width()) || 0;
       layer.style.left = `${left}px`;
       layer.style.right = "auto";
       layer.style.width = `${width}px`;
@@ -2879,13 +2887,13 @@
           target.addEventListener("mouseenter", () => {
             const relatedTargets = [];
             if (!isEntry) {
-              const matched = exitPairsMap.get(marker.markerKey) || [];
+              const matched = tradePairs.filter((p) => p.exit.markerKey === marker.markerKey);
               matched.forEach((p) => {
                 const et = targetsByMarkerKey.get(p.entry.markerKey);
                 if (et) relatedTargets.push(et);
               });
             } else {
-              const matched = entryPairsMap.get(marker.markerKey) || [];
+              const matched = tradePairs.filter((p) => p.entry.markerKey === marker.markerKey);
               matched.forEach((p) => {
                 const xt = targetsByMarkerKey.get(p.exit.markerKey);
                 if (xt) relatedTargets.push(xt);
