@@ -4,6 +4,14 @@
   const $ = (id) => document.getElementById(id);
   const STORAGE_KEY = "skhynix_lighter_virtual_ledger_v2";
   const STRATEGY_STORAGE_KEY = "skhynix_lighter_selected_strategy";
+  const safeStorage = {
+    getItem: (key) => {
+      try { return typeof localStorage !== "undefined" ? localStorage.getItem(key) : null; } catch (_) { return null; }
+    },
+    setItem: (key, val) => {
+      try { if (typeof localStorage !== "undefined") localStorage.setItem(key, val); } catch (_) {}
+    }
+  };
   const lid = (id) => $(`lighter_${id}`);
   const KST_TIME_ZONE = "Asia/Seoul";
 
@@ -883,16 +891,18 @@
     async setParadigm(mode, options = {}) {
       if (!this.paradigms[mode]) return;
       this.currentParadigm = mode;
-      localStorage.setItem(STRATEGY_STORAGE_KEY, mode);
+      safeStorage.setItem(STRATEGY_STORAGE_KEY, mode);
       const p = this.paradigms[mode];
 
-      document.querySelectorAll(".lighterParadigmBtn").forEach((btn) => {
-        const isCurrent = btn.dataset.mode === mode;
-        btn.style.background = isCurrent ? "#7c3aed" : "#fff";
-        btn.style.color = isCurrent ? "#fff" : "#475569";
-        btn.style.borderColor = isCurrent ? "#7c3aed" : "#cbd5e1";
-        btn.style.fontWeight = isCurrent ? "800" : "700";
-      });
+      if (typeof document.querySelectorAll === "function") {
+        document.querySelectorAll(".lighterParadigmBtn").forEach((btn) => {
+          const isCurrent = btn.dataset.mode === mode;
+          btn.style.background = isCurrent ? "#7c3aed" : "#fff";
+          btn.style.color = isCurrent ? "#fff" : "#475569";
+          btn.style.borderColor = isCurrent ? "#7c3aed" : "#cbd5e1";
+          btn.style.fontWeight = isCurrent ? "800" : "700";
+        });
+      }
 
       const badge = $("lighter_paradigmBadge");
       if (badge) badge.textContent = p.badge;
@@ -1237,7 +1247,7 @@
           const ez = $("lighter_inpCustomEntryZ")?.value || "1.5";
           const xz = $("lighter_inpCustomExitZ")?.value || "0.25";
           const dw = $("lighter_inpCustomDwell")?.value || "4";
-          localStorage.setItem("skhynix_custom_rule_preset", JSON.stringify({ entry_z: ez, exit_z: xz, dwell: dw }));
+          safeStorage.setItem("skhynix_custom_rule_preset", JSON.stringify({ entry_z: ez, exit_z: xz, dwell: dw }));
           alert("Custom strategy preset saved to local storage!");
           this.runBacktest();
         });
@@ -1554,13 +1564,13 @@
       $("tabContentLighter").querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
       $("tabContentLighter").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
       try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+        const saved = JSON.parse(safeStorage.getItem(STORAGE_KEY) || "{}");
         this.entries = Array.isArray(saved.entries) ? saved.entries : [];
         this.ledger = Array.isArray(saved.ledger) ? saved.ledger : [];
       } catch (_) {}
-      const selectedStrategy = localStorage.getItem(STRATEGY_STORAGE_KEY);
+      const selectedStrategy = safeStorage.getItem(STRATEGY_STORAGE_KEY);
       if (this.paradigms[selectedStrategy]) this.currentParadigm = selectedStrategy;
-      this.mode = localStorage.getItem("skhynix_lighter_mode") || "paper";
+      this.mode = safeStorage.getItem("skhynix_lighter_mode") || "paper";
       this.labelTerminal();
       this.applyMode(this.mode, false);
       this.initialized = true;
@@ -2035,7 +2045,7 @@
       const authoritativeMode = isEnabled ? "live" : (this.mode === "live" ? "paper" : this.mode);
       if (authoritativeMode !== this.mode) {
         this.mode = authoritativeMode;
-        localStorage.setItem("skhynix_lighter_mode", authoritativeMode);
+        safeStorage.setItem("skhynix_lighter_mode", authoritativeMode);
         this.applyMode(authoritativeMode, false);
       }
       const toggle = lid("chkAutoPeriodic48h");
@@ -3376,7 +3386,7 @@
         if (!await this.toggleLiveBot(false)) return;
       }
       this.mode = mode;
-      localStorage.setItem("skhynix_lighter_mode", mode);
+      safeStorage.setItem("skhynix_lighter_mode", mode);
       this.applyMode(mode, true);
     },
 
@@ -4027,9 +4037,7 @@
 
     setTradeGrouping(asRange) {
       this.groupTradesAsRange = Boolean(asRange);
-      try {
-        localStorage.setItem("lighter_group_trades_as_range", this.groupTradesAsRange ? "true" : "false");
-      } catch (e) {}
+      safeStorage.setItem("lighter_group_trades_as_range", this.groupTradesAsRange ? "true" : "false");
       this.executionChartFrame?.setGrouping?.(this.groupTradesAsRange);
       this.renderTradeMarkerTargets();
       this.renderTradeTriangles();
@@ -4139,7 +4147,7 @@
       } finally { if (button && requestId === this.backtestRequestId) button.disabled = false; }
     },
 
-    save() { localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries: this.entries, ledger: this.ledger.slice(0, 100) })); },
+    save() { safeStorage.setItem(STORAGE_KEY, JSON.stringify({ entries: this.entries, ledger: this.ledger.slice(0, 100) })); },
 
     tradeExposure(trade) {
       const ratio = Math.abs(Number(trade.exit_ratio || trade.entry_ratio || trade.ratio || this.currentRatio || 0));
