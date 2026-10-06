@@ -128,7 +128,6 @@
     constructor(options = {}) {
       this.series = options.series || null;
       this.lineStyle = options.lineStyle || { Solid: 0, Dashed: 2 };
-      this.exactActual = Boolean(options.exactActual);
       this.visibility = { actual: true, virtual: true };
       this.executions = [];
       this.referenceLines = [];
@@ -191,8 +190,6 @@
       );
       const seenKeys = new Set();
       return visible.filter((m) => {
-        if (this.exactActual && !m.hypothetical && m.fill_signals?.length
-            && !m.unpaired_order_count) return false;
         const key = `${m.time}_${m.is_entry ? 1 : 0}_${m.backtest ? "backtest" : "actual"}`;
         if (m.hypothetical && !m.backtest && confirmedKeys.has(`${m.time}_${m.is_entry ? 1 : 0}`)) return false;
         if (seenKeys.has(key)) return false;
@@ -205,33 +202,17 @@
           : (m.direction ? m.direction === "short" : (m.is_entry || m.color === "#dc2626"
             || (typeof m.color === "string" && m.color.includes("220"))));
         const dimAlpha = m.hypothetical ? "0.35" : "0.70";
-        const unpaired = this.exactActual && !m.hypothetical && Number(m.unpaired_order_count) > 0;
         return {
           time: m.time,
           position: m.position,
-          shape: unpaired ? "circle" : (isShort ? "arrowDown" : "arrowUp"),
-          color: unpaired ? "#64748b" : isMatch
+          shape: isShort ? "arrowDown" : "arrowUp",
+          color: isMatch
             ? (isShort ? "#dc2626" : "#16a34a")
             : (isShort ? `rgba(220, 38, 38, ${dimAlpha})` : `rgba(22, 163, 74, ${dimAlpha})`),
           size: 1.2,
-          text: isMatch ? (unpaired ? "Unpaired fill · price unknown" : (m.hoverText || m.text || "")) : (m.text || "")
+          text: isMatch ? (m.hoverText || m.text || "") : (m.text || "")
         };
       });
-    }
-
-    projectActualFills(chart, hostWidth, hostHeight) {
-      if (!this.exactActual || !this.series || !chart) return [];
-      return this.visibleExecutions().filter(m => !m.hypothetical).flatMap(marker =>
-        (marker.fill_signals || []).map((fill, index, fills) => {
-          const signal = Number(fill.signal);
-          const x = chart.timeScale().timeToCoordinate(marker.time);
-          const y = this.series.priceToCoordinate(signal);
-          if (!(signal > 0) || !Number.isFinite(x) || !Number.isFinite(y)
-              || x < 0 || x > hostWidth || y < 0 || y > hostHeight) return null;
-          return {time: marker.time, is_entry: marker.is_entry, signal,
-            order_id: fill.order_id, adr_price: fill.adr_price, stock_price: fill.stock_price,
-            x: x + Math.max(-10, Math.min(10, (index - (fills.length - 1) / 2) * 7)), y};
-        }).filter(Boolean));
     }
 
     clearReferenceLines() {

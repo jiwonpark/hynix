@@ -12726,17 +12726,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
           this.executionChartController = new StrategyExecutionChartController({
             series: this.shortTermSeries,
-            lineStyle: LightweightCharts.LineStyle,
-            exactActual: true
+            lineStyle: LightweightCharts.LineStyle
           });
-          this.shortTermExactFillOverlay = document.createElement("div");
-          this.shortTermExactFillOverlay.id = "shortTermExactFillOverlay";
-          this.shortTermExactFillOverlay.setAttribute("aria-hidden", "true");
-          this.shortTermExactFillOverlay.style.cssText = "position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:6";
-          host.appendChild(this.shortTermExactFillOverlay);
 
           this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-            this.scheduleExactFillMarkers();
             if (range && range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
               this.fetchShortTermParity(true);
             }
@@ -12746,7 +12739,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           this.activeHoveredExecutionMarkerTime = null;
           this.selectedExecutionMarkerTime = null;
           this.shortTermChart.subscribeCrosshairMove((param) => {
-            this.scheduleExactFillMarkers(true);
             if (!param || !param.point) {
               if (this.activeHoveredExecutionMarkerTime !== null) {
                 this.activeHoveredExecutionMarkerTime = null;
@@ -12856,7 +12848,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               this.shortTermAssetChart.applyOptions({ width: ah.clientWidth });
             }
             this.shortTermChartSync?.sync();
-            this.scheduleExactFillMarkers();
           });
         }
       },
@@ -12938,40 +12929,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.selectedExecutionMarkerTime = null;
         this.activeHoveredExecutionMarkerTime = null;
         this.updateMarkerState(null);
-        this.scheduleExactFillMarkers();
-      },
-
-      scheduleExactFillMarkers(scaleOnly = false) {
-        if (this.exactFillFramePending || !this.shortTermExactFillOverlay) return;
-        if (scaleOnly) {
-          const latest = this.shortTermHistory?.bars?.at(-1)?.value;
-          if (!Number.isFinite(latest)) return;
-          const probe = [this.shortTermSeries.priceToCoordinate(latest),
-            this.shortTermSeries.priceToCoordinate(latest + 1)];
-          if (probe.every(Number.isFinite) && this.exactFillScaleProbe
-              && probe.every((value, index) => Math.abs(value - this.exactFillScaleProbe[index]) < 0.25)) return;
-          this.exactFillScaleProbe = probe;
-        }
-        this.exactFillFramePending = true;
-        requestAnimationFrame(() => {
-          this.exactFillFramePending = false;
-          this.renderExactFillMarkers();
-        });
-      },
-
-      renderExactFillMarkers() {
-        const overlay = this.shortTermExactFillOverlay;
-        const host = $("shortTermSpreadChartHost");
-        if (!overlay || !host || !this.executionChartController || !this.shortTermChart) return;
-        const points = this.executionChartController.projectActualFills(
-          this.shortTermChart, host.clientWidth, host.clientHeight);
-        const fragment = document.createDocumentFragment();
-        points.forEach((point) => {
-          const glyph = document.createElement("span");
-          glyph.style.cssText = `position:absolute;left:${point.x}px;top:${point.y}px;width:13px;height:12px;transform:translate(-50%,${point.is_entry ? "-100%" : "0"});background:${point.is_entry ? "#dc2626" : "#16a34a"};clip-path:polygon(${point.is_entry ? "0 0,100% 0,50% 100%" : "50% 0,0 100%,100% 100%"})`;
-          fragment.appendChild(glyph);
-        });
-        overlay.replaceChildren(fragment);
       },
 
       updateMarkerState(hoveredTime = null) {
@@ -13397,7 +13354,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             .sort((a, b) => a.time - b.time);
           this.rawExecutionMarkers = markers;
           this.executionChartController?.setExecutions(markers);
-          this.scheduleExactFillMarkers();
           if (!markers.some((marker) => marker.time === this.activeHoveredExecutionMarkerTime)) {
             this.activeHoveredExecutionMarkerTime = null;
           }
