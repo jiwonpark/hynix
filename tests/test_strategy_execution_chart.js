@@ -49,4 +49,22 @@ controller.renderReferenceLines({entry: 141, levels: [], exit: 139.5, exitTitle:
 assert.equal(created.at(-1).title, 'EXIT', 'must render optional exit price line');
 assert.equal(created.at(-1).price, 139.5);
 
+const seriesOptions = [];
+const fakeLibrary = {
+  createChart: () => ({
+    addLineSeries: options => seriesOptions.push(options),
+    addAreaSeries: options => seriesOptions.push(options),
+    addBaselineSeries: options => seriesOptions.push(options),
+  }),
+};
+Controller.installCompactCrosshairMarkers(fakeLibrary);
+const compactChart = fakeLibrary.createChart();
+compactChart.addLineSeries({color: '#000'});
+compactChart.addAreaSeries({crosshairMarkerRadius: 8});
+compactChart.addBaselineSeries();
+assert.deepEqual(seriesOptions.map(options => options.crosshairMarkerRadius), [2, 2, 2],
+  'all line-like series use the shared compact crosshair dot');
+assert.deepEqual(seriesOptions.map(options => options.crosshairMarkerBorderWidth), [1, 1, 1],
+  'compact crosshair dots use a thin border');
+
 console.log('Reusable strategy execution chart checks passed');
