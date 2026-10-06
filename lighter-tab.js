@@ -2652,6 +2652,20 @@
       layer.textContent = "";
       const fragment = document.createDocumentFragment();
       const tradePairs = this.getTradePairs();
+      const exitPairsMap = new Map();
+      const entryPairsMap = new Map();
+      tradePairs.forEach((p) => {
+        if (p.exit?.markerKey) {
+          const list = exitPairsMap.get(p.exit.markerKey) || [];
+          list.push(p);
+          exitPairsMap.set(p.exit.markerKey, list);
+        }
+        if (p.entry?.markerKey) {
+          const list = entryPairsMap.get(p.entry.markerKey) || [];
+          list.push(p);
+          entryPairsMap.set(p.entry.markerKey, list);
+        }
+      });
       const targetsByPair = new Map();
       const targetsByMarkerKey = new Map();
       const visible = (this.rawExecutionMarkers || []).filter((marker) => this.isTradeMarkerVisible(marker));
@@ -2714,12 +2728,6 @@
             range.type = "button";
             range.setAttribute("aria-label", `${markers.length} grouped trades; range ${minPrice.toFixed(3)} to ${maxPrice.toFixed(3)} percent; average ${avgPrice.toFixed(3)} percent`);
 
-            // Entry arrow points right (▶) towards timeframe x:
-            // Tip is at x = 14 within the 16px SVG. Range line is at x1="14" x2="14" spanning topLocal to bottomLocal.
-            // Button is placed at left: ${x - 14}px so both the tip and the range line align exactly at screen coordinate (x - 14) + 14 = x!
-            // Exit arrow points left (◀) away from timeframe x:
-            // Tip is at x = 2 within the 16px SVG. Range line is at x1="2" x2="2" spanning topLocal to bottomLocal.
-            // Button is placed at left: ${x - 2}px so both the tip and the range line align exactly at screen coordinate (x - 2) + 2 = x!
             if (dominantEntry) {
               range.style.cssText = `appearance:none;position:absolute;left:${x - 14}px;top:${buttonTop}px;width:16px;height:${svgHeight}px;padding:0;border:0;background:transparent;cursor:pointer;pointer-events:auto;z-index:2;overflow:visible`;
               range.innerHTML = `<svg width="16" height="${svgHeight}" viewBox="0 0 16 ${svgHeight}" style="display:block;overflow:visible;pointer-events:none">
@@ -2734,7 +2742,6 @@
               </svg>`;
             }
 
-            // Register range element for every marker and pair in this group
             markers.forEach((marker) => {
               marker._targetX = x;
               marker._targetY = avgY;
@@ -2756,21 +2763,14 @@
               const relatedTargets = [];
               markers.forEach((marker) => {
                 const isEntry = this.isTradeEntry(marker);
-                const isShort = this.isShortTrade(marker);
                 if (!isEntry) {
-                  const matched = tradePairs.filter((p) =>
-                    p.exit.markerKey === marker.markerKey
-                    || (p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
-                  );
+                  const matched = exitPairsMap.get(marker.markerKey) || [];
                   matched.forEach((p) => {
                     const et = targetsByMarkerKey.get(p.entry.markerKey);
                     if (et && et !== range) relatedTargets.push(et);
                   });
                 } else {
-                  const matched = tradePairs.filter((p) =>
-                    p.entry.markerKey === marker.markerKey
-                    || (p.entry.time === marker.time && this.isShortTrade(p.entry) === isShort)
-                  );
+                  const matched = entryPairsMap.get(marker.markerKey) || [];
                   matched.forEach((p) => {
                     const xt = targetsByMarkerKey.get(p.exit.markerKey);
                     if (xt && xt !== range) relatedTargets.push(xt);
@@ -2801,21 +2801,14 @@
 
               markers.forEach((marker) => {
                 const isEntry = this.isTradeEntry(marker);
-                const isShort = this.isShortTrade(marker);
                 if (!isEntry) {
-                  const matched = tradePairs.filter((p) =>
-                    p.exit.markerKey === marker.markerKey
-                    || (p.exit.time === marker.time && this.isShortTrade(p.exit) === isShort)
-                  );
+                  const matched = exitPairsMap.get(marker.markerKey) || [];
                   matched.forEach((p) => {
                     const et = targetsByMarkerKey.get(p.entry.markerKey);
                     if (et) { et._blinkAnimation?.cancel(); et._blinkAnimation = null; }
                   });
                 } else {
-                  const matched = tradePairs.filter((p) =>
-                    p.entry.markerKey === marker.markerKey
-                    || (p.entry.time === marker.time && this.isShortTrade(p.entry) === isShort)
-                  );
+                  const matched = entryPairsMap.get(marker.markerKey) || [];
                   matched.forEach((p) => {
                     const xt = targetsByMarkerKey.get(p.exit.markerKey);
                     if (xt) { xt._blinkAnimation?.cancel(); xt._blinkAnimation = null; }
@@ -2886,13 +2879,13 @@
           target.addEventListener("mouseenter", () => {
             const relatedTargets = [];
             if (!isEntry) {
-              const matched = tradePairs.filter((p) => p.exit.markerKey === marker.markerKey);
+              const matched = exitPairsMap.get(marker.markerKey) || [];
               matched.forEach((p) => {
                 const et = targetsByMarkerKey.get(p.entry.markerKey);
                 if (et) relatedTargets.push(et);
               });
             } else {
-              const matched = tradePairs.filter((p) => p.entry.markerKey === marker.markerKey);
+              const matched = entryPairsMap.get(marker.markerKey) || [];
               matched.forEach((p) => {
                 const xt = targetsByMarkerKey.get(p.exit.markerKey);
                 if (xt) relatedTargets.push(xt);
@@ -2915,13 +2908,13 @@
           target.addEventListener("mouseleave", () => {
             const relatedTargets = [];
             if (!isEntry) {
-              const matched = tradePairs.filter((p) => p.exit.markerKey === marker.markerKey);
+              const matched = exitPairsMap.get(marker.markerKey) || [];
               matched.forEach((p) => {
                 const et = targetsByMarkerKey.get(p.entry.markerKey);
                 if (et) relatedTargets.push(et);
               });
             } else {
-              const matched = tradePairs.filter((p) => p.entry.markerKey === marker.markerKey);
+              const matched = entryPairsMap.get(marker.markerKey) || [];
               matched.forEach((p) => {
                 const xt = targetsByMarkerKey.get(p.exit.markerKey);
                 if (xt) relatedTargets.push(xt);

@@ -300,9 +300,18 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                 seen_keys.add(k)
                 all_tranches.append(t)
         if bars and all_tranches:
+            first_bar_time = int(bars[0]["time"])
+            last_bar_time = int(bars[-1]["time"])
+            # Filter tranches strictly to the returned candle history window
+            # (matches get_short_term_parity and prevents thousands of historical fills clamping to bar 0)
+            interval_sec = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
+            valid_tranches = [
+                t for t in all_tranches
+                if first_bar_time <= int(t.get("time", 0)) <= last_bar_time + interval_sec
+            ]
             bar_times = [b["time"] for b in bars]
             candle_markers: Dict[Any, Dict[str, Any]] = {}
-            for t in all_tranches:
+            for t in valid_tranches:
                 t_time = int(t.get("time", 0))
                 if not t_time:
                     continue
