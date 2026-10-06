@@ -957,11 +957,19 @@
               </div>
               <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Continuous stochastic differential equation calibration: dX = θ(μ - X)dt + σdW · Normalized Z-score mean reversion.</p>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-size:11px;font-weight:700;color:#475569;">Entry Z:</span>
-              <input id="lighter_inpOuEntryZ" type="number" step="0.1" value="${liveEntryZ}" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
-              <span style="font-size:11px;font-weight:700;color:#475569;">Exit Z:</span>
-              <input id="lighter_inpOuExitZ" type="number" step="0.05" value="${liveExitZ}" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:11px;font-weight:700;color:#475569;">Entry Z:</span>
+                <input id="lighter_rangeOuEntryZ" type="range" min="0.8" max="3.0" step="0.05" value="${liveEntryZ}" aria-label="OU Entry Z-score threshold slider" style="width:90px;height:24px;margin:0;cursor:pointer;accent-color:#7c3aed;">
+                <input id="lighter_inpOuEntryZ" type="number" step="0.05" min="0.8" max="3.0" value="${liveEntryZ}" style="width:54px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 5px;font-size:11px;font-weight:700;">
+                <span id="lighter_valOuEntryZBadge" style="font-size:10px;font-weight:800;color:#6d28d9;background:#f5f3ff;border:1px solid #ddd6fe;padding:2px 6px;border-radius:4px;">≥ ${liveEntryZ}σ</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:11px;font-weight:700;color:#475569;">Exit Z:</span>
+                <input id="lighter_rangeOuExitZ" type="range" min="0.05" max="0.80" step="0.05" value="${liveExitZ}" aria-label="OU Exit Z-score threshold slider" style="width:90px;height:24px;margin:0;cursor:pointer;accent-color:#0284c7;">
+                <input id="lighter_inpOuExitZ" type="number" step="0.05" min="0.05" max="0.80" value="${liveExitZ}" style="width:54px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 5px;font-size:11px;font-weight:700;">
+                <span id="lighter_valOuExitZBadge" style="font-size:10px;font-weight:800;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;padding:2px 6px;border-radius:4px;">≤ ${liveExitZ}σ</span>
+              </div>
               <button id="lighter_btnOuReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun SDE</button>
             </div>
           </div>
@@ -1151,12 +1159,70 @@
     },
 
     bindParadigmDetailEvents(mode) {
-      $("lighter_paradigmDetailSection")?.querySelectorAll("input, select").forEach((input) => {
-        input.addEventListener("input", () => this.updateRulesMatchStatus());
-        input.addEventListener("change", () => this.runBacktest());
-      });
+      const detailSec = $("lighter_paradigmDetailSection");
+      if (detailSec && typeof detailSec.querySelectorAll === "function") {
+        detailSec.querySelectorAll("input, select").forEach((input) => {
+          if (typeof input.addEventListener === "function") {
+            input.addEventListener("input", () => this.updateRulesMatchStatus());
+            input.addEventListener("change", () => this.runBacktest());
+          }
+        });
+      }
       if (mode === "ou_quant") {
-        $("lighter_btnOuReplay")?.addEventListener("click", () => this.runBacktest());
+        const rangeEntry = $("lighter_rangeOuEntryZ");
+        const inpEntry = $("lighter_inpOuEntryZ");
+        const badgeEntry = $("lighter_valOuEntryZBadge");
+        const rangeExit = $("lighter_rangeOuExitZ");
+        const inpExit = $("lighter_inpOuExitZ");
+        const badgeExit = $("lighter_valOuExitZBadge");
+
+        const syncEntry = (val, fromSlider = false) => {
+          const num = Number(val);
+          if (!Number.isFinite(num)) return;
+          const formatted = num.toFixed(2);
+          if (fromSlider && inpEntry) {
+            inpEntry.value = formatted;
+            inpEntry._userModified = true;
+          } else if (!fromSlider && rangeEntry) {
+            rangeEntry.value = formatted;
+          }
+          if (badgeEntry) badgeEntry.textContent = `≥ ${formatted}σ`;
+          this.updateRulesMatchStatus();
+        };
+
+        const syncExit = (val, fromSlider = false) => {
+          const num = Number(val);
+          if (!Number.isFinite(num)) return;
+          const formatted = num.toFixed(2);
+          if (fromSlider && inpExit) {
+            inpExit.value = formatted;
+            inpExit._userModified = true;
+          } else if (!fromSlider && rangeExit) {
+            rangeExit.value = formatted;
+          }
+          if (badgeExit) badgeExit.textContent = `≤ ${formatted}σ`;
+          this.updateRulesMatchStatus();
+        };
+
+        if (rangeEntry && typeof rangeEntry.addEventListener === "function") {
+          rangeEntry.addEventListener("input", (e) => syncEntry(e.target.value, true));
+          rangeEntry.addEventListener("change", () => this.runBacktest());
+        }
+        if (inpEntry && typeof inpEntry.addEventListener === "function") {
+          inpEntry.addEventListener("input", (e) => syncEntry(e.target.value, false));
+        }
+        if (rangeExit && typeof rangeExit.addEventListener === "function") {
+          rangeExit.addEventListener("input", (e) => syncExit(e.target.value, true));
+          rangeExit.addEventListener("change", () => this.runBacktest());
+        }
+        if (inpExit && typeof inpExit.addEventListener === "function") {
+          inpExit.addEventListener("input", (e) => syncExit(e.target.value, false));
+        }
+
+        const btnReplay = $("lighter_btnOuReplay");
+        if (btnReplay && typeof btnReplay.addEventListener === "function") {
+          btnReplay.addEventListener("click", () => this.runBacktest());
+        }
       } else if (mode === "ma_stack") {
         $("lighter_btnMaReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "multi_factor") {
@@ -1839,9 +1905,23 @@
       const params = this.botState.strategy_params || {};
       if (liveMode === "ou_quant") {
         const inpEntry = $("lighter_inpOuEntryZ");
-        if (inpEntry && params.entry_z != null) inpEntry.value = String(params.entry_z);
+        const rangeEntry = $("lighter_rangeOuEntryZ");
+        const badgeEntry = $("lighter_valOuEntryZBadge");
+        if (params.entry_z != null) {
+          const val = Number(params.entry_z).toFixed(2);
+          if (inpEntry) { inpEntry.value = val; inpEntry._userModified = false; }
+          if (rangeEntry) rangeEntry.value = val;
+          if (badgeEntry) badgeEntry.textContent = `≥ ${val}σ`;
+        }
         const inpExit = $("lighter_inpOuExitZ");
-        if (inpExit && params.exit_z != null) inpExit.value = String(params.exit_z);
+        const rangeExit = $("lighter_rangeOuExitZ");
+        const badgeExit = $("lighter_valOuExitZBadge");
+        if (params.exit_z != null) {
+          const val = Number(params.exit_z).toFixed(2);
+          if (inpExit) { inpExit.value = val; inpExit._userModified = false; }
+          if (rangeExit) rangeExit.value = val;
+          if (badgeExit) badgeExit.textContent = `≤ ${val}σ`;
+        }
       }
       this.updateRulesMatchStatus();
       this.refreshChart();
@@ -2069,11 +2149,19 @@
       const liveExitZ = Number(bot?.exit_z ?? 0.2);
       const ouEntryInp = $("lighter_inpOuEntryZ");
       const ouExitInp = $("lighter_inpOuExitZ");
+      const ouEntryRange = $("lighter_rangeOuEntryZ");
+      const ouExitRange = $("lighter_rangeOuExitZ");
+      const ouEntryBadge = $("lighter_valOuEntryZBadge");
+      const ouExitBadge = $("lighter_valOuExitZBadge");
       if (ouEntryInp && (!ouEntryInp._userModified || Math.abs(Number(ouEntryInp.value) - 1.8) < 1e-4)) {
-        ouEntryInp.value = liveEntryZ.toFixed(1);
+        ouEntryInp.value = liveEntryZ.toFixed(2);
+        if (ouEntryRange) ouEntryRange.value = liveEntryZ.toFixed(2);
+        if (ouEntryBadge) ouEntryBadge.textContent = `≥ ${liveEntryZ.toFixed(2)}σ`;
       }
       if (ouExitInp && !ouExitInp._userModified) {
         ouExitInp.value = liveExitZ.toFixed(2);
+        if (ouExitRange) ouExitRange.value = liveExitZ.toFixed(2);
+        if (ouExitBadge) ouExitBadge.textContent = `≤ ${liveExitZ.toFixed(2)}σ`;
       }
       const configuredAdrNotional = Number(bot?.notional_usd ?? 50);
       const liveRatio = Number(bot?.last_evaluation?.ratio || this.currentRatio || 0);
