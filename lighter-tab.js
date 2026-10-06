@@ -1562,9 +1562,13 @@
       // driven only by the individual DOM marker targets rendered above it.
       this.chart.subscribeClick((param) => this.onChartClick(param));
       this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-        this.renderTrendRanges();
-        this.renderTradeMarkerTargets();
-        this.renderTradeTriangles();
+        if (this._rangeChangeRaf) return;
+        this._rangeChangeRaf = requestAnimationFrame(() => {
+          this._rangeChangeRaf = null;
+          this.renderTrendRanges();
+          this.renderTradeMarkerTargets();
+          this.renderTradeTriangles();
+        });
       });
 
       this.maSeries = {
@@ -2643,8 +2647,10 @@
     renderTradeMarkerTargets() {
       const layer = lid("tradeMarkerTargets");
       if (!layer || !this.chart || !this.series) return;
-      this.alignChartOverlay(layer);
+      const layerWidth = this.alignChartOverlay(layer);
+      const layerHeight = layer.clientHeight || 420;
       layer.textContent = "";
+      const fragment = document.createDocumentFragment();
       const tradePairs = this.getTradePairs();
       const targetsByPair = new Map();
       const targetsByMarkerKey = new Map();
@@ -2658,9 +2664,9 @@
       groups.forEach((markers) => {
         const markerTime = markers[0]?.time;
         const x = this.chart.timeScale().timeToCoordinate(markerTime);
-        if (!Number.isFinite(x)) {
+        if (!Number.isFinite(x) || x < -30 || x > layerWidth + 30) {
           markers.forEach((marker) => {
-            marker._targetX = null;
+            marker._targetX = Number.isFinite(x) ? x : null;
             marker._targetY = null;
           });
           return;
@@ -2679,17 +2685,17 @@
             let topY = this.series.priceToCoordinate(maxPrice);
             let bottomY = this.series.priceToCoordinate(minPrice);
             let avgY = this.series.priceToCoordinate(avgPrice);
-            topY = Math.max(8, Math.min(layer.clientHeight - 8, Number(topY)));
-            bottomY = Math.max(8, Math.min(layer.clientHeight - 8, Number(bottomY)));
+            topY = Math.max(8, Math.min(layerHeight - 8, Number(topY)));
+            bottomY = Math.max(8, Math.min(layerHeight - 8, Number(bottomY)));
             avgY = Math.max(Math.min(topY, bottomY), Math.min(Math.max(topY, bottomY), Number(avgY)));
             let visualTop = Math.min(topY, bottomY);
             let visualBottom = Math.max(topY, bottomY);
             if (visualBottom - visualTop < 6) {
               visualTop = Math.max(6, avgY - 4);
-              visualBottom = Math.min(layer.clientHeight - 6, avgY + 4);
+              visualBottom = Math.min(layerHeight - 6, avgY + 4);
             }
             const buttonTop = Math.max(0, visualTop - 6);
-            const buttonBottom = Math.min(layer.clientHeight, visualBottom + 6);
+            const buttonBottom = Math.min(layerHeight, visualBottom + 6);
             const svgHeight = Math.max(16, buttonBottom - buttonTop);
             const topLocal = visualTop - buttonTop;
             const bottomLocal = visualBottom - buttonTop;
@@ -2829,17 +2835,17 @@
               this.selectExecutionMarker(markers[0]);
             });
 
-            layer.appendChild(range);
+            fragment.appendChild(range);
           }
           return;
         }
         markers.forEach((marker, index) => {
           const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
           let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
-          if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layer.clientHeight - 54);
+          if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layerHeight - 54);
           // Individual trade markers are stacked vertically on the exact candle timestamp x
           const finalX = x;
-          const finalY = Math.max(6, Math.min(Math.max(6, layer.clientHeight - 6), y));
+          const finalY = Math.max(6, Math.min(Math.max(6, layerHeight - 6), y));
           marker._targetX = finalX;
           marker._targetY = finalY;
 
@@ -2936,9 +2942,10 @@
             event.stopPropagation();
             this.selectExecutionMarker(marker);
           });
-          layer.appendChild(target);
+          fragment.appendChild(target);
         });
       });
+      layer.appendChild(fragment);
       this.renderTradeTriangles();
     },
 
