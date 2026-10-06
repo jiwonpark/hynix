@@ -82,7 +82,7 @@
     showActualMarkers: true,
     showVirtualMarkers: true,
     groupTradesAsRange: (typeof localStorage !== "undefined" && localStorage.getItem("lighter_group_trades_as_range") === "true"),
-    interval: "15m",
+    interval: "5m",
     smallTrendInterval: "5m",
     bigTrendInterval: "1h",
     currentTier: 2,
@@ -123,7 +123,7 @@
         csopAlloc: 0.016
       }
     },
-    currentParadigm: "grid",
+    currentParadigm: "ou_quant",
     paradigms: {
       grid: {
         id: "grid",
@@ -957,7 +957,7 @@
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Entry Z:</span>
-              <input id="lighter_inpOuEntryZ" type="number" step="0.1" value="1.8" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <input id="lighter_inpOuEntryZ" type="number" step="0.1" value="1.4" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Exit Z:</span>
               <input id="lighter_inpOuExitZ" type="number" step="0.05" value="0.20" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <button id="lighter_btnOuReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun SDE</button>
@@ -1802,11 +1802,45 @@
       const active = Boolean(this.botState?.enabled);
       pill.textContent = matched
         ? `${active ? "●" : "○"} LIVE-MATCHED SIGNALS (${liveInterval} · ${liveName} · Bot ${active ? "Active" : "Paused"})`
-        : `▲ PAPER DIVERGENT (${diffs.join(" · ")})`;
-      pill.title = "Price signals only. Replay ignores margin, execution cooldown, slippage and funding; fills can differ.";
+        : `▲ PAPER DIVERGENT (${diffs.join(" · ")}) — Click to match live`;
+      pill.title = matched
+        ? "Price signals only. Replay ignores margin, execution cooldown, slippage and funding; fills can differ."
+        : "Click to align paper replay with the live bot settings";
+      pill.style.cursor = matched ? "default" : "pointer";
+      if (!pill._boundAlignClick && typeof pill.addEventListener === "function") {
+        pill._boundAlignClick = true;
+        pill.addEventListener("click", () => {
+          if (pill.textContent && pill.textContent.includes("DIVERGENT")) {
+            this.alignReplayToLive();
+          }
+        });
+      }
       pill.style.background = matched ? (active ? "#dcfce7" : "#fef3c7") : "#fff7ed";
       pill.style.color = matched ? (active ? "#166534" : "#92400e") : "#c2410c";
       pill.style.borderColor = matched ? (active ? "#86efac" : "#fcd34d") : "#fdba74";
+    },
+
+    alignReplayToLive() {
+      if (!this.botState) return;
+      const liveMode = this.botState.strategy_mode || "ou_quant";
+      const liveInterval = this.botState.strategy_interval || "5m";
+      this.interval = liveInterval;
+      ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((v) => {
+        const btn = lid(`btnShortInterval${v}`);
+        if (btn) btn.classList.toggle("active", v === liveInterval);
+      });
+      if (this.paradigms[liveMode]) {
+        this.setParadigm(liveMode);
+      }
+      const params = this.botState.strategy_params || {};
+      if (liveMode === "ou_quant") {
+        const inpEntry = $("lighter_inpOuEntryZ");
+        if (inpEntry && params.entry_z != null) inpEntry.value = String(params.entry_z);
+        const inpExit = $("lighter_inpOuExitZ");
+        if (inpExit && params.exit_z != null) inpExit.value = String(params.exit_z);
+      }
+      this.updateRulesMatchStatus();
+      this.refreshChart();
     },
 
     trendScore(values) {
