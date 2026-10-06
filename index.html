@@ -11160,7 +11160,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           description: "Starts flat at the beginning of loaded history · 5m closes / completed 1h macro sizing · capital, margin and leverage do not suppress simulated trades · fees, slippage and estimated funding included. LIVE ONLY checks protect real orders; BACKTEST ONLY switches affect the simulation.",
           secondaryStatus: "Macro sizing: waiting for completed hourly prices…",
           height: 420,
-          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> ADR / √CSOP signal</span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">—</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">—</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">—</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected trim net (est.): <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>',
+          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> ADR / √CSOP signal</span><span style="color:#64748b"><span style="display:inline-block;width:10px;border-top:2px dashed #64748b"></span> ADR / domestic reference: <strong id="valDomesticPremiumRef">—</strong></span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">—</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">—</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">—</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected trim net (est.): <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>',
           syncText: "Updated 0s ago",
         });
         const fillReadout = document.createElement("span");
@@ -12678,6 +12678,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             priceFormat: { type: "price", precision: 2, minMove: 0.01 }
           });
 
+          this.shortTermDomesticPremiumSeries = this.shortTermChart.addLineSeries({
+            color: "rgba(100, 116, 139, 0.85)",
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: true,
+            priceFormat: { type: "price", precision: 2, minMove: 0.01 }
+          });
+
           this.shortTermPnlSeries = this.shortTermChart.addLineSeries({
             priceScaleId: "pnl",
             color: "#0f766e",
@@ -12873,7 +12883,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const csopVal = bar.csop != null ? bar.csop : (bar.domestic ? bar.domestic * 10 : null);
             const csopStr = csopVal != null ? `$${Number(csopVal).toFixed(3)}` : "--";
             const parStr = bar.value != null ? `${Number(bar.value).toFixed(2)}%` : "--";
-            details.textContent = `| ADR: ${adrStr} | ETF: ${csopStr} | Signal: ${parStr}`;
+            const domesticPremium = Number(bar.adr) > 0 && Number(bar.domestic) > 0
+              ? Number(bar.adr) / Number(bar.domestic) * 100 : null;
+            const domesticStr = Number.isFinite(domesticPremium) ? `${domesticPremium.toFixed(2)}%` : "--";
+            details.textContent = `| ADR: ${adrStr} | ETF: ${csopStr} | Signal: ${parStr} | Stock ref: ${domesticStr}`;
           }
         };
         this.shortTermChart.subscribeCrosshairMove(updateShortTermAssetHover);
@@ -13302,6 +13315,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.shortTermChartSync?.pause();
         try {
           this.shortTermSeries.setData(data.bars.map(b => ({time: b.time, value: b.value})));
+          if (this.shortTermDomesticPremiumSeries) {
+            this.shortTermDomesticPremiumSeries.setData(data.bars.map((b) => {
+              const premium = Number(b.adr) > 0 && Number(b.domestic) > 0
+                ? Number(b.adr) / Number(b.domestic) * 100 : null;
+              return Number.isFinite(premium) ? {time: b.time, value: premium} : {time: b.time};
+            }));
+          }
           this.renderHeldPairPnl(data.bars);
 
           if (this.shortTermAssetSeries?.adr && data.bars?.length) {
@@ -13366,6 +13386,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const latest = data.bars[data.bars.length - 1];
           if ($("valShortTermCurrentParity") && latest) {
             $("valShortTermCurrentParity").textContent = `${latest.value.toFixed(2)}%`;
+          }
+          if ($("valDomesticPremiumRef") && latest) {
+            const domesticPremium = Number(latest.adr) > 0 && Number(latest.domestic) > 0
+              ? Number(latest.adr) / Number(latest.domestic) * 100 : null;
+            $("valDomesticPremiumRef").textContent = Number.isFinite(domesticPremium)
+              ? `${domesticPremium.toFixed(2)}%` : "—";
           }
           if ($("lblShortTermChartSync")) {
             $("lblShortTermChartSync").textContent = `Sync ${formatKstTime()}`;
