@@ -6321,6 +6321,7 @@
           crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
         });
         const lineFormat = { type: "price", precision: 2, minMove: 0.01 };
+        StrategyExecutionChartController.compactCrosshairMarkers(window.spreadChart);
         window.spreadSeries = {
           projectedWave: window.spreadChart.addLineSeries({
             color: "#00d2ff",
@@ -6453,6 +6454,7 @@
           },
           crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
         });
+        StrategyExecutionChartController.compactCrosshairMarkers(window.assetPriceChart);
         window.assetPriceSeries = {
           adr: window.assetPriceChart.addLineSeries({
             priceScaleId: 'right',
@@ -6551,6 +6553,7 @@
           },
           crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
         });
+        StrategyExecutionChartController.compactCrosshairMarkers(window.positionChart);
         window.positionSeries = {
           pnl: window.positionChart.addBaselineSeries({
             priceScaleId: 'right',
@@ -12670,6 +12673,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
           });
 
+          StrategyExecutionChartController.compactCrosshairMarkers(this.shortTermChart);
           this.shortTermSeries = this.shortTermChart.addAreaSeries({
             topColor: "rgba(2, 132, 199, 0.10)",
             bottomColor: "rgba(2, 132, 199, 0.02)",
@@ -12813,6 +12817,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
           });
+          StrategyExecutionChartController.compactCrosshairMarkers(this.shortTermAssetChart);
           this.shortTermAssetSeries = {
             adr: this.shortTermAssetChart.addLineSeries({
               priceScaleId: 'right',
@@ -15233,6 +15238,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             }
           });
 
+          StrategyExecutionChartController.compactCrosshairMarkers(this.spreadChart);
           this.spreadLine = this.spreadChart.addLineSeries({ color: "#0284c7", lineWidth: 2, title: "Spread Ratio" });
           this.meanLine = this.spreadChart.addLineSeries({ color: "#64748b", lineWidth: 1, lineStyle: 2, title: "Mean" });
           this.upper15Line = this.spreadChart.addLineSeries({ color: "#ef4444", lineWidth: 1, lineStyle: 1, title: "+1.5σ" });
@@ -15273,6 +15279,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             }
           });
 
+          StrategyExecutionChartController.compactCrosshairMarkers(this.zscoreChart);
           this.zscoreLine = this.zscoreChart.addLineSeries({ color: "#0f172a", lineWidth: 2, title: "Z-Score" });
           this.zUpperLine = this.zscoreChart.addLineSeries({ color: "#ef4444", lineWidth: 1, lineStyle: 2, title: "+1.5σ Threshold" });
           this.zLowerLine = this.zscoreChart.addLineSeries({ color: "#10b981", lineWidth: 1, lineStyle: 2, title: "-1.5σ Threshold" });
@@ -15531,6 +15538,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           timeScale: { visible: true, borderVisible: false, secondsVisible: false }
         });
 
+        StrategyExecutionChartController.compactCrosshairMarkers(this.chart);
         this.wealthSeries = this.chart.addLineSeries({
           color: "#0284c7",
           lineWidth: 3,
@@ -16002,6 +16010,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
         });
         this.candleSeries = this.chart.addCandlestickSeries({ upColor: "#16a34a", downColor: "#dc2626", borderVisible: false, wickUpColor: "#16a34a", wickDownColor: "#dc2626" });
+        StrategyExecutionChartController.compactCrosshairMarkers(this.chart);
         this.ma7Series = this.chart.addLineSeries({ color: "#0284c7", lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
         this.ma24Series = this.chart.addLineSeries({ color: "#8b5cf6", lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
         this.resizeObserver = new ResizeObserver(() => {

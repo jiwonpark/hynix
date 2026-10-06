@@ -181,6 +181,7 @@
           timeFormatter: (time) => formatKst(time),
         },
       });
+      StrategyExecutionChartController.compactCrosshairMarkers(this.chart);
       this.candles = this.chart.addCandlestickSeries({
         upColor: "#16a34a", downColor: "#dc2626", borderVisible: false,
         wickUpColor: "#16a34a", wickDownColor: "#dc2626",

@@ -2,7 +2,6 @@
   const Controller = factory();
   if (typeof module === "object" && module.exports) module.exports = Controller;
   if (root) {
-    Controller.installCompactCrosshairMarkers(root.LightweightCharts);
     root.StrategyExecutionChartController = Controller;
     root.StrategyExecutionChartFrame = Controller.Frame;
   }
@@ -348,23 +347,19 @@
 
   // Apply one compact crosshair-dot standard to every Lightweight Charts pane.
   // Patching chart construction here covers all tabs and any series added later.
-  StrategyExecutionChartController.installCompactCrosshairMarkers = function (library, radius = 2) {
-    if (!library?.createChart || library.__compactCrosshairMarkersInstalled) return;
-    const createChart = library.createChart.bind(library);
-    library.createChart = function (...args) {
-      const chart = createChart(...args);
-      for (const method of ["addLineSeries", "addAreaSeries", "addBaselineSeries"]) {
-        if (typeof chart[method] !== "function") continue;
-        const addSeries = chart[method].bind(chart);
-        chart[method] = (options = {}) => addSeries({
-          ...options,
-          crosshairMarkerRadius: radius,
-          crosshairMarkerBorderWidth: 1,
-        });
-      }
-      return chart;
-    };
-    library.__compactCrosshairMarkersInstalled = true;
+  StrategyExecutionChartController.compactCrosshairMarkers = function (chart, radius = 2) {
+    if (!chart || chart.__compactCrosshairMarkersInstalled) return chart;
+    for (const method of ["addLineSeries", "addAreaSeries", "addBaselineSeries"]) {
+      if (typeof chart[method] !== "function") continue;
+      const addSeries = chart[method].bind(chart);
+      chart[method] = (options = {}) => addSeries({
+        ...options,
+        crosshairMarkerRadius: radius,
+        crosshairMarkerBorderWidth: 1,
+      });
+    }
+    chart.__compactCrosshairMarkersInstalled = true;
+    return chart;
   };
 
   StrategyExecutionChartController.Frame = StrategyExecutionChartFrame;

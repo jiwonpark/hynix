@@ -50,15 +50,12 @@ assert.equal(created.at(-1).title, 'EXIT', 'must render optional exit price line
 assert.equal(created.at(-1).price, 139.5);
 
 const seriesOptions = [];
-const fakeLibrary = {
-  createChart: () => ({
-    addLineSeries: options => seriesOptions.push(options),
-    addAreaSeries: options => seriesOptions.push(options),
-    addBaselineSeries: options => seriesOptions.push(options),
-  }),
+const compactChart = {
+  addLineSeries: options => seriesOptions.push(options),
+  addAreaSeries: options => seriesOptions.push(options),
+  addBaselineSeries: options => seriesOptions.push(options),
 };
-Controller.installCompactCrosshairMarkers(fakeLibrary);
-const compactChart = fakeLibrary.createChart();
+Controller.compactCrosshairMarkers(compactChart);
 compactChart.addLineSeries({color: '#000'});
 compactChart.addAreaSeries({crosshairMarkerRadius: 8});
 compactChart.addBaselineSeries();

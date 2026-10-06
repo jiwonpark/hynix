@@ -1513,6 +1513,7 @@
         },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       });
+      StrategyExecutionChartController.compactCrosshairMarkers(this.chart);
       this.series = this.chart.addAreaSeries({ topColor: "rgba(2,132,199,.25)", bottomColor: "rgba(2,132,199,.02)", lineColor: "#0284c7", lineWidth: 1,
         priceFormat: { type: "price", precision: 2, minMove: .01 } });
 
@@ -1583,6 +1584,7 @@
           timeScale: { visible: false, borderColor: "#e2e8f0" },
           crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
         });
+        StrategyExecutionChartController.compactCrosshairMarkers(this.assetChart);
         this.assetSeries = {
           adr: this.assetChart.addLineSeries({ priceScaleId: 'right', color: '#2563eb', lineWidth: 2, title: 'SKHY' }),
           stock: this.assetChart.addLineSeries({ priceScaleId: 'left', color: '#d97706', lineWidth: 2, title: 'SKHYNIXUSD' }),
