@@ -389,10 +389,10 @@
       this.setText("valDeployedEngine", "Asymmetric Delta-Neutral Parity Grid Harvester");
       this.setText("valDeployedInterval", "5m completed candles");
       this.setText("valDeployedWindow", "24 completed bars");
-      this.setText("valDeployedEdge", "Entry |Z| ≥ 1.50");
+      this.setText("valDeployedEdge", "Entry |Z| ≥ 1.40");
       this.setText("valDeployedMaxLeverage", "800% (8.0x account cap)");
       this.setText("valDeployedSpeed", "Configurable paired trade rate (0.2–10/min)");
-      this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.25");
+      this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.20");
       this.setText("valDeployedCost", "0 BPS advertised fee / slippage excluded");
       this.setText("lblAccountEquity", "Lighter Account Collateral");
       this.setText("badgeEquitySource", "SYNCING");
@@ -2021,10 +2021,13 @@
         navLiveBadge.textContent = `● LIVE BOT: ${stratName.toUpperCase()} (${stratInterval})`;
       }
       this.updateDeployButtonState();
+      this.setText("valDeployedInterval", `${stratInterval} completed candles`);
+      this.setText("valDeployedEdge", `Entry |Z| ≥ ${Number(bot?.entry_z ?? 1.4).toFixed(2)}`);
+      this.setText("valDeployedMinProfit", `Exit |Z| ≤ ${Number(bot?.exit_z ?? 0.2).toFixed(2)}`);
 
-      writeRule("lighterLiveEntryZ", Number(bot?.entry_z ?? 1.5).toFixed(2));
-      writeRule("lighterLiveExitZ", Number(bot?.exit_z ?? 0.25).toFixed(2));
-      const configuredAdrNotional = Number(bot?.notional_usd ?? 25);
+      writeRule("lighterLiveEntryZ", Number(bot?.entry_z ?? 1.4).toFixed(2));
+      writeRule("lighterLiveExitZ", Number(bot?.exit_z ?? 0.2).toFixed(2));
+      const configuredAdrNotional = Number(bot?.notional_usd ?? 50);
       const liveRatio = Number(bot?.last_evaluation?.ratio || this.currentRatio || 0);
       const estimatedPairGross = configuredAdrNotional * (1 + (liveRatio > 0 ? 100 / liveRatio : 1));
       writeRule("lighterLiveNotional", configuredAdrNotional.toFixed(0));
