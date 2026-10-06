@@ -207,7 +207,7 @@
           valCondExitDwell: "Replay: half-life time-stop enforced",
           valCondExitBottoming: "Replay: require mean inflection",
         },
-        defaultParams: { entry_z: 1.8, exit_z: 0.20 }
+        defaultParams: { entry_z: 1.4, exit_z: 0.20 }
       },
       ma_stack: {
         id: "ma_stack",
@@ -945,6 +945,8 @@
 
     renderParadigmDetail(mode) {
       if (mode === "ou_quant") {
+        const liveEntryZ = Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4).toFixed(1);
+        const liveExitZ = Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20).toFixed(2);
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div>
@@ -957,9 +959,9 @@
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Entry Z:</span>
-              <input id="lighter_inpOuEntryZ" type="number" step="0.1" value="1.4" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <input id="lighter_inpOuEntryZ" type="number" step="0.1" value="${liveEntryZ}" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Exit Z:</span>
-              <input id="lighter_inpOuExitZ" type="number" step="0.05" value="0.20" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <input id="lighter_inpOuExitZ" type="number" step="0.05" value="${liveExitZ}" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <button id="lighter_btnOuReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun SDE</button>
             </div>
           </div>
@@ -1318,8 +1320,8 @@
         return Number.isFinite(value) ? value : fallback;
       };
       if (mode === "ou_quant") {
-        payload.entry_z = numeric("lighter_inpOuEntryZ", 1.8);
-        payload.exit_z = numeric("lighter_inpOuExitZ", 0.20);
+        payload.entry_z = numeric("lighter_inpOuEntryZ", Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4));
+        payload.exit_z = numeric("lighter_inpOuExitZ", Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20));
       } else if (mode === "ma_stack") {
         payload.ma_stretch_min = numeric("lighter_inpMaStretchMin", 0.30);
         payload.ma_trailing_stop = numeric("lighter_inpMaTrailingStop", 0.15);
@@ -1718,11 +1720,13 @@
         const value = raw == null || raw === "" ? NaN : Number(raw);
         return Number.isFinite(value) ? value : fallback;
       };
+      const liveOuEntryFallback = Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4);
+      const liveOuExitFallback = Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20);
       return {
         interval: this.interval, limit: 500, strategy_mode: mode,
-        entry_z: mode === "ou_quant" ? numeric("lighter_inpOuEntryZ", 1.8) :
+        entry_z: mode === "ou_quant" ? numeric("lighter_inpOuEntryZ", liveOuEntryFallback) :
           mode === "custom" ? numeric("lighter_inpCustomEntryZ", 1.5) : 1.5,
-        exit_z: mode === "ou_quant" ? numeric("lighter_inpOuExitZ", 0.20) :
+        exit_z: mode === "ou_quant" ? numeric("lighter_inpOuExitZ", liveOuExitFallback) :
           mode === "custom" ? numeric("lighter_inpCustomExitZ", 0.25) : 0.25,
         ou_halflife_max: 8.0, ou_stop_z: 3.5,
         ma_stretch_min: numeric("lighter_inpMaStretchMin", 0.30),
@@ -2061,6 +2065,16 @@
 
       writeRule("lighterLiveEntryZ", Number(bot?.entry_z ?? 1.4).toFixed(2));
       writeRule("lighterLiveExitZ", Number(bot?.exit_z ?? 0.2).toFixed(2));
+      const liveEntryZ = Number(bot?.entry_z ?? 1.4);
+      const liveExitZ = Number(bot?.exit_z ?? 0.2);
+      const ouEntryInp = $("lighter_inpOuEntryZ");
+      const ouExitInp = $("lighter_inpOuExitZ");
+      if (ouEntryInp && (!ouEntryInp._userModified || Math.abs(Number(ouEntryInp.value) - 1.8) < 1e-4)) {
+        ouEntryInp.value = liveEntryZ.toFixed(1);
+      }
+      if (ouExitInp && !ouExitInp._userModified) {
+        ouExitInp.value = liveExitZ.toFixed(2);
+      }
       const configuredAdrNotional = Number(bot?.notional_usd ?? 50);
       const liveRatio = Number(bot?.last_evaluation?.ratio || this.currentRatio || 0);
       const estimatedPairGross = configuredAdrNotional * (1 + (liveRatio > 0 ? 100 / liveRatio : 1));
@@ -3497,8 +3511,8 @@
     getActiveZThresholds() {
       let entry = 1.5, exit = 0.25;
       if (this.currentParadigm === "ou_quant") {
-        entry = Number($("lighter_inpOuEntryZ")?.value || 1.8);
-        exit = Number($("lighter_inpOuExitZ")?.value || 0.2);
+        entry = Number($("lighter_inpOuEntryZ")?.value || this.botState?.strategy_params?.entry_z || this.botState?.entry_z || 1.4);
+        exit = Number($("lighter_inpOuExitZ")?.value || this.botState?.strategy_params?.exit_z || this.botState?.exit_z || 0.20);
       } else if (this.currentParadigm === "custom") {
         entry = Number($("lighter_inpCustomEntryZ")?.value || 1.5);
         exit = Number($("lighter_inpCustomExitZ")?.value || 0.25);
