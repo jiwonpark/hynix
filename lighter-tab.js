@@ -872,7 +872,10 @@
         criteriaGrid.parentNode.insertBefore(nav, criteriaGrid);
         ["grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom"].forEach((mode) => {
           const btn = $(`lighter_tabParadigm_${mode}`);
-          if (btn) btn.addEventListener("click", () => this.setParadigm(mode, { deployLive: true }));
+          if (btn) btn.addEventListener("click", () => {
+            this._userSelectedParadigm = true;
+            this.setParadigm(mode, { deployLive: true });
+          });
         });
       }
     },
@@ -2139,6 +2142,9 @@
         navLiveBadge.textContent = `● LIVE BOT: ${stratName.toUpperCase()} (${stratInterval})`;
       }
       this.updateDeployButtonState();
+      if (!this._userSelectedParadigm && stratMode && this.currentParadigm !== stratMode && this.paradigms[stratMode]) {
+        this.setParadigm(stratMode);
+      }
       this.setText("valDeployedInterval", `${stratInterval} completed candles`);
       this.setText("valDeployedEdge", `Entry |Z| ≥ ${Number(bot?.entry_z ?? 1.4).toFixed(2)}`);
       this.setText("valDeployedMinProfit", `Exit |Z| ≤ ${Number(bot?.exit_z ?? 0.2).toFixed(2)}`);
