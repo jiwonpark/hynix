@@ -998,6 +998,145 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_estimate_tranche_pnl_computes_leg_pnl(self):
+        tranche = {
+            "side": -1,
+            "adr_qty": 0.13,
+            "domestic_qty": 0.0195,
+            "adr_price": 180.0,
+            "domestic_price": 1200.0,
+            "notional_usd": 25.0,
+            "fee_usd": 0.01,
+        }
+        est_profitable = LighterPairBot.estimate_tranche_pnl(
+            tranche,
+            {"mid": 175.0, "ask": 175.05, "bid": 174.95},
+            {"mid": 1250.0, "ask": 1250.5, "bid": 1249.5},
+        )
+        self.assertGreater(est_profitable["net_pnl_usd"], 1.5)
+
+        est_loss = LighterPairBot.estimate_tranche_pnl(
+            tranche,
+            {"mid": 185.0, "ask": 185.05, "bid": 184.95},
+            {"mid": 1150.0, "ask": 1150.5, "bid": 1149.5},
+        )
+        self.assertLess(est_loss["net_pnl_usd"], -1.0)
+
+    def test_zero_loss_guard_blocks_negative_exit_and_allows_profitable_exit(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.account_status = AsyncMock(return_value={
+                    "authenticated": True, "execution_enabled": True, "collateral": 100.0,
+                })
+                client.positions = AsyncMock(return_value=[])
+                timestamps = [1_700_000_000_000 + index * 300_000 for index in range(80)]
+                adr_rows = [{"t": ts, "c": "140.0"} for ts in timestamps]
+                domestic_rows = [{"t": ts, "c": "1000.0"} for ts in timestamps]
+
+                async def candles(market_id, _interval, _count):
+                    return adr_rows if market_id == 216 else domestic_rows
+
+                client.candles = AsyncMock(side_effect=candles)
+
+                def adverse_book(market_id, depth):
+                    if market_id == 216:
+                        return {"mid": 145.0, "bids": [{"price": "144.9", "size": "10"}], "asks": [{"price": "145.0", "size": "10"}]}
+                    return {"mid": 980.0, "bids": [{"price": "980.0", "size": "10"}], "asks": [{"price": "980.1", "size": "10"}]}
+                client.order_book = AsyncMock(side_effect=adverse_book)
+
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state["min_seconds_between_orders"] = 0
+                bot.state["min_profit_usd"] = 0.02
+                bot.state["tranches"] = [{
+                    "tranche_id": "t1",
+                    "side": -1,
+                    "adr_qty": 0.17,
+                    "domestic_qty": 0.024,
+                    "adr_price": 140.0,
+                    "domestic_price": 1000.0,
+                    "entry_ratio": 140.0,
+                    "notional_usd": 25.0,
+                    "fee_usd": 0.0,
+                    "time": timestamps[-2] // 1000,
+                }]
+                bot._trade_pair = AsyncMock()
+
+                await bot._evaluate()
+                self.assertEqual(len(bot.state["tranches"]), 1)
+                self.assertTrue(bot.state["last_action"].startswith("ZERO_LOSS_GUARD_HOLDING"))
+                bot._trade_pair.assert_not_called()
+
+                def profitable_book(market_id, depth):
+                    if market_id == 216:
+                        return {"mid": 135.0, "bids": [{"price": "134.9", "size": "10"}], "asks": [{"price": "135.0", "size": "10"}]}
+                    return {"mid": 1020.0, "bids": [{"price": "1020.0", "size": "10"}], "asks": [{"price": "1020.1", "size": "10"}]}
+                client.order_book = AsyncMock(side_effect=profitable_book)
+                bot._trade_pair = AsyncMock(return_value={
+                    "first_leg": {"filled_size": 0.17, "fill_price": 135.0, "fee_usd": 0.0, "realized_pnl_usd": 0.85},
+                    "second_leg": {"filled_size": 0.024, "fill_price": 1020.0, "fee_usd": 0.0, "realized_pnl_usd": 0.48},
+                })
+
+                await bot._evaluate()
+                self.assertEqual(len(bot.state["tranches"]), 0)
+                self.assertTrue(bot.state["last_action"].startswith("EXITED"))
+                bot._trade_pair.assert_awaited_once()
+
+        asyncio.run(run())
+
+    def test_stop_loss_exits_even_when_unprofitable(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.account_status = AsyncMock(return_value={
+                    "authenticated": True, "execution_enabled": True, "collateral": 100.0,
+                })
+                client.positions = AsyncMock(return_value=[])
+                timestamps = [1_700_000_000_000 + index * 300_000 for index in range(80)]
+                adr_rows = [{"t": ts, "c": str(140.0 + index * 0.05)} for index, ts in enumerate(timestamps)]
+                adr_rows[-1]["c"] = "150.0"
+                domestic_rows = [{"t": ts, "c": "1000.0"} for ts in timestamps]
+
+                async def candles(market_id, _interval, _count):
+                    return adr_rows if market_id == 216 else domestic_rows
+
+                client.candles = AsyncMock(side_effect=candles)
+                client.order_book = AsyncMock(return_value={
+                    "mid": 100.0,
+                    "bids": [{"price": "100.0", "size": "10"}],
+                    "asks": [{"price": "100.01", "size": "10"}],
+                })
+
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state["strategy_mode"] = "ou_quant"
+                bot.state["ou_stop_z"] = 2.0
+                bot.state["min_seconds_between_orders"] = 0
+                bot.state["min_profit_usd"] = 0.05
+                bot.state["tranches"] = [{
+                    "tranche_id": "t1",
+                    "side": -1,
+                    "adr_qty": 0.17,
+                    "domestic_qty": 0.024,
+                    "adr_price": 140.0,
+                    "domestic_price": 1000.0,
+                    "entry_ratio": 140.0,
+                    "notional_usd": 25.0,
+                    "fee_usd": 0.0,
+                    "time": timestamps[-2] // 1000,
+                }]
+                bot._trade_pair = AsyncMock(return_value={
+                    "first_leg": {"filled_size": 0.17, "fill_price": 170.0, "fee_usd": 0.0, "realized_pnl_usd": -5.1},
+                    "second_leg": {"filled_size": 0.024, "fill_price": 1000.0, "fee_usd": 0.0, "realized_pnl_usd": 0.0},
+                })
+
+                await bot._evaluate()
+                self.assertEqual(len(bot.state["tranches"]), 0)
+                self.assertTrue(bot.state["last_action"].startswith("STOP_EXIT"))
+                bot._trade_pair.assert_awaited_once()
+
+        asyncio.run(run())
+
 
 if __name__ == "__main__":
     unittest.main()
+
