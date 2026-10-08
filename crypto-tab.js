@@ -79,7 +79,9 @@
     selectedExecutionMarkerKey: null,
     selectedPairKey: null,
     rawExecutionMarkers: [],
-    currentRatio: 140.09,
+    selectedSymbol: "BTCUSDT",
+    supportedSymbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"],
+    currentRatio: 68000.0,
     currentAdrPrice: null,
     currentDomesticPrice: null,
     entries: [],
@@ -101,34 +103,28 @@
         name: "Tier 1: Conservative (1.0x)",
         badge: "CONSERVATIVE · 1.0x",
         leverage: 1.0,
-        spacingPct: 0.20,
+        spacingPct: 0.005,
         rungCount: 5,
-        notional: 500,
-        minProfit: 0.03,
-        skhyAlloc: 0.04,
-        csopAlloc: 0.004
+        notional: 250,
+        minProfit: 0.50,
       },
       2: {
-        name: "Tier 2: Delta-Neutral (1.0x)",
-        badge: "DELTA-NEUTRAL · 1.0x",
-        leverage: 1.0,
-        spacingPct: 0.12,
+        name: "Tier 2: Single-Leg Quant (2.0x)",
+        badge: "BALANCED · 2.0x",
+        leverage: 2.0,
+        spacingPct: 0.003,
         rungCount: 8,
-        notional: 1000,
-        minProfit: 0.05,
-        skhyAlloc: 0.08,
-        csopAlloc: 0.008
+        notional: 500,
+        minProfit: 1.00,
       },
       3: {
-        name: "Tier 3: Opportunistic (1.0x)",
-        badge: "OPPORTUNISTIC · 1.0x",
-        leverage: 1.0,
-        spacingPct: 0.08,
+        name: "Tier 3: High-Frequency (3.0x)",
+        badge: "OPPORTUNISTIC · 3.0x",
+        leverage: 3.0,
+        spacingPct: 0.002,
         rungCount: 12,
-        notional: 2000,
-        minProfit: 0.08,
-        skhyAlloc: 0.16,
-        csopAlloc: 0.016
+        notional: 1000,
+        minProfit: 2.00,
       }
     },
     currentParadigm: "ou_quant",
@@ -137,11 +133,11 @@
         id: "grid",
         name: "Dynamic Grid",
         icon: "🏛️",
-        badge: "PARITY HARVESTING · GRID ARB",
-        title: "➕ Grid Band Scale-In (Upper Harvester)",
-        desc: "Adaptive trigger: Price ≥ Upper Rung (rolling mean; ATR dynamic volatility + reset guard)",
-        tpTitle: "🎯 Grid Rebalance & Take-Profit (Mean Reversion)",
-        tpDesc: "Adaptive exit: Price ≤ Benchmark Mean (Zero-Loss Hurdle > +$0.02, Core Ratchet, Anti-churn Dwell)",
+        badge: "SINGLE-LEG VOLATILITY HARVESTER",
+        title: "➕ Dip Scale-In (Buy Rung / Lower Harvester)",
+        desc: "Adaptive trigger: Price ≤ Lower Rung (rolling mean; ATR dynamic volatility + dip guard)",
+        tpTitle: "🎯 Rebalance & Take-Profit (Mean Reversion)",
+        tpDesc: "Adaptive exit: Price ≥ Benchmark Mean (Profit Hurdle, Core Ratchet, Anti-churn Dwell)",
         entryLabels: {
           rowCondEntryMaStretch: "1. Grid Band Trigger (Upper Rung ≥ +0.12%)",
           rowCondEntryBase: "2. ATR Dynamic Volatility Spacing",
@@ -389,43 +385,116 @@
 
     setText(id, text) { const element = lid(id); if (element) element.textContent = text; },
 
+    formatCryptoPrice(price, symbol = this.selectedSymbol) {
+      const p = Number(price);
+      if (!Number.isFinite(p)) return "$—";
+      const sym = symbol || this.selectedSymbol || "BTCUSDT";
+      if (sym.startsWith("DOGE")) return `$${p.toFixed(5)}`;
+      if (sym.startsWith("XRP")) return `$${p.toFixed(4)}`;
+      if (sym.startsWith("SOL")) return `$${p.toFixed(2)}`;
+      if (p >= 1000) return `$${p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return `$${p.toFixed(2)}`;
+    },
+
+    formatCryptoQty(qty, symbol = this.selectedSymbol) {
+      const q = Number(qty);
+      if (!Number.isFinite(q)) return "0";
+      const sym = symbol || this.selectedSymbol || "BTCUSDT";
+      if (sym.startsWith("DOGE") || sym.startsWith("XRP")) return q.toFixed(1);
+      if (sym.startsWith("SOL")) return q.toFixed(2);
+      if (sym.startsWith("ETH")) return q.toFixed(3);
+      return q.toFixed(4);
+    },
+
+    async selectSymbol(sym) {
+      if (!sym) return;
+      this.selectedSymbol = sym;
+      ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"].forEach((s) => {
+        const btn = $(`crypto_sym_${s}`);
+        if (btn) {
+          const isSel = s === sym;
+          btn.style.borderColor = isSel ? "#7c3aed" : "#cbd5e1";
+          btn.style.background = isSel ? "#7c3aed" : "#fff";
+          btn.style.color = isSel ? "#fff" : "#475569";
+          btn.style.fontWeight = isSel ? "800" : "700";
+        }
+      });
+      this.labelTerminal();
+      await this.refresh();
+      await this.runBacktest();
+      this.updateGridLadderData();
+    },
+
+    renderSymbolSelector() {
+      const parent = $("tabContentCrypto")?.querySelector("#crypto_secExecutionTerminal");
+      if (!parent || $("crypto_symbolSelectorBar")) return;
+      const bar = document.createElement("div");
+      bar.id = "crypto_symbolSelectorBar";
+      bar.style.cssText = "display:flex;justify-content:space-between;align-items:center;background:#ffffff;border:1.5px solid #cbd5e1;border-radius:9px;padding:8px 14px;margin-bottom:12px;gap:8px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,0.04);";
+      bar.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:11px;font-weight:800;color:#475569;letter-spacing:0.5px;">TRADED ASSET:</span>
+          <button id="crypto_sym_BTCUSDT" class="cryptoSymBtn" type="button" data-symbol="BTCUSDT" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:800;cursor:pointer;">⚡ BTC/USDT (Bitcoin)</button>
+          <button id="crypto_sym_ETHUSDT" class="cryptoSymBtn" type="button" data-symbol="ETHUSDT" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">💎 ETH/USDT (Ethereum)</button>
+          <button id="crypto_sym_SOLUSDT" class="cryptoSymBtn" type="button" data-symbol="SOLUSDT" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">☀️ SOL/USDT (Solana)</button>
+          <button id="crypto_sym_DOGEUSDT" class="cryptoSymBtn" type="button" data-symbol="DOGEUSDT" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🐶 DOGE/USDT (Dogecoin)</button>
+          <button id="crypto_sym_XRPUSDT" class="cryptoSymBtn" type="button" data-symbol="XRPUSDT" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">💧 XRP/USDT (Ripple)</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="crypto_valLivePriceBadge" style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:6px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;">
+            BTCUSDT: $68,450.00
+          </span>
+        </div>
+      `;
+      parent.parentNode.insertBefore(bar, parent);
+      ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"].forEach((sym) => {
+        const btn = $(`crypto_sym_${sym}`);
+        if (btn) btn.addEventListener("click", () => this.selectSymbol(sym));
+      });
+    },
+
     labelTerminal() {
-      this.setText("lblDaemonMainStatus", "Daemon: Institutional Grid Engine Active");
-      this.setText("lblDaemonAuthBadge", "GRID ARB: READY");
-      this.setText("lblDaemonUpbitBadge", "RISK TIER: TIER 2 (1x NEUTRAL)");
-      this.setText("valDeployedStrategyName", "🏛️ Institutional Grid Engine (Multi-Tier Price Bands)");
-      this.setText("valDeployedEngine", "Asymmetric Delta-Neutral Price Grid Harvester");
-      this.setText("valDeployedInterval", "5m completed candles");
+      const sym = this.selectedSymbol || "BTCUSDT";
+      const base = sym.replace("USDT", "");
+      this.renderSymbolSelector();
+      this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto Terminal · ${sym}`);
+      this.setText("lblDaemonAuthBadge", "CRYPTO ENGINE: READY");
+      this.setText("lblDaemonUpbitBadge", `RISK TIER: TIER ${this.currentTier} (${this.tiers[this.currentTier]?.leverage.toFixed(0)}x)`);
+      this.setText("valDeployedStrategyName", `⚡ ${sym} Single-Leg Quantitative Engine`);
+      this.setText("valDeployedEngine", "Continuous SDE Mean-Reversion & Volatility Harvester");
+      this.setText("valDeployedInterval", `${this.interval || "5m"} completed candles`);
       this.setText("valDeployedWindow", "24 completed bars");
-      this.setText("valDeployedEdge", "Entry |Z| ≥ 1.40");
-      this.setText("valDeployedMaxLeverage", "800% (8.0x account cap)");
-      this.setText("valDeployedSpeed", "Configurable paired trade rate (0.2–10/min)");
-      this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.20");
-      this.setText("valDeployedCost", "0 BPS advertised fee / slippage excluded");
-      this.setText("lblAccountEquity", "Crypto Account Collateral");
-      this.setText("badgeEquitySource", "SYNCING");
-      this.setText("valAccountEquity", "—");
-      this.setText("lblAvailMargin", "Free Grid Margin");
-      this.setText("valAvailMargin", "$8,240.00");
+      this.setText("valDeployedEdge", "Entry |Z| ≥ 1.40σ");
+      this.setText("valDeployedMaxLeverage", `${(this.tiers[this.currentTier]?.leverage * 100).toFixed(0)}% (${this.tiers[this.currentTier]?.leverage.toFixed(1)}x account cap)`);
+      this.setText("valDeployedSpeed", "Configurable trade execution rate (0.2–10/min)");
+      this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.20σ");
+      this.setText("valDeployedCost", "0 BPS fee simulated / slippage guarded");
+      this.setText("lblAccountEquity", "Crypto Collateral");
+      this.setText("badgeEquitySource", "BINANCE FUTURES");
+      this.setText("valAccountEquity", "$10,000.00");
+      this.setText("lblAvailMargin", "Available Margin");
+      this.setText("valAvailMargin", "$8,500.00");
       this.setText("lblUnrealizedPnl", "Verified Realized PnL");
-      this.setText("lblActivePairs", "Active Grid Rungs");
+      this.setText("lblActivePairs", "Active Crypto Tranches");
       this.setText("lblMarginRisk", "Target Leverage");
-      this.setText("valMarginRisk", "8.0x cap");
-      this.setText("lblCollateralSummary", "Grid Mode");
-      this.setText("lblUpbitEquity", "Grid Underlying Pair");
-      this.setText("badgeUpbitSource", "DUAL-LEG");
-      this.setText("valUpbitEquity", "BTCUSDT (ADR) ↔ BTCUSDTNIXUSD (Korean underlying)");
-      this.setText("titleExecutionTerminal", "🏛️ 1-Click Institutional Grid Execution & Virtual Orders");
-      this.setText("badgeExecMode", "INSTITUTIONAL GRID REBALANCING · DUAL-LEG ARB");
-      this.setText("lblHedgedSyncBadge", "GRID ENGINE ACTIVE");
-      this.setText("lblShortTermTitle", "Paper Replay Conditions — Do Not Control the Real Bot");
-      this.setText("lblShortTermSubtitle", "Chart interval, strategy tabs, condition switches, and Rerun affect the historical paper simulation only.");
-      this.setText("lblCritScaleInTitle", "➕ Grid Band Scale-In (Upper Harvester)");
-      this.setText("lblCritTPTitle", "🎯 Grid Rebalance & Take-Profit (Mean Reversion)");
-      this.setText("lblOrderNotional", "Grid Order Notional (USDT)");
-      this.setText("lblStepTrancheSize", "➕ Add Paper Tranche");
+      this.setText("valMarginRisk", `${this.tiers[this.currentTier]?.leverage.toFixed(1)}x cap`);
+      this.setText("lblCollateralSummary", "Selected Asset");
+      const pillsContainer = lid("valCollateralPills");
+      if (pillsContainer) pillsContainer.innerHTML = `<span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 800;">${sym} PERP</span>`;
+      this.setText("lblUpbitEquity", "Single-Leg Perpetual");
+      this.setText("badgeUpbitSource", "SINGLE-LEG");
+      this.setText("valUpbitEquity", `${sym} (${base} / USDT)`);
+      this.setText("titleExecutionTerminal", `⚡ 1-Click ${sym} Quantitative Execution`);
+      this.setText("badgeExecMode", "SINGLE-LEG PERPETUAL QUANTITATIVE ENGINE");
+      this.setText("lblHedgedSyncBadge", "CRYPTO ENGINE ACTIVE");
+      this.setText("lblShortTermTitle", "Paper Replay Conditions — Single-Leg Crypto Simulation");
+      this.setText("lblShortTermSubtitle", "Chart interval, strategy regimes, condition switches, and Rerun affect the historical paper simulation only.");
+      this.setText("lblCritScaleInTitle", "➕ Dip Scale-In (Buy Rung / Lower Harvester)");
+      this.setText("lblCritTPTitle", "🎯 Rebalance & Take-Profit (Mean Reversion)");
+      this.setText("lblOrderNotional", "Order Notional (USDT)");
+      this.setText("lblStepTrancheSize", `➕ Buy / Long ${sym}`);
       this.setText("lblStepTrancheSub", "SIMULATED");
-      this.setText("lblReduceTrancheText", "Close All Paper Tranches");
+      this.setText("lblReduceTrancheText", `Close ${sym} Tranches`);
       const trancheHeading = lid("valHedgedTranches")?.previousElementSibling;
       if (trancheHeading) trancheHeading.textContent = "Campaign Entry Slots";
       const utilizationHeading = lid("lblTranchePct")?.previousElementSibling;
@@ -567,9 +636,9 @@
         dirSelect.id = "crypto_selTrancheDirection";
         dirSelect.style.cssText = "height:38px;padding:0 10px;font-size:12px;font-weight:700;background:#fff;color:#0f172a;border:1.5px solid #0284c7;border-radius:6px;cursor:pointer;";
         dirSelect.innerHTML = `
-          <option value="auto">⚡ Auto (Ratio Price)</option>
-          <option value="short">▼ Short Price (Short ADR / Long KR)</option>
-          <option value="long">▲ Long Price (Long ADR / Short KR)</option>
+          <option value="auto">⚡ Auto (Signal Based)</option>
+          <option value="long">▲ Buy / Long Dip</option>
+          <option value="short">▼ Sell / Short Rip</option>
         `;
         entry.parentNode.insertBefore(dirSelect, entry);
 
@@ -638,7 +707,7 @@
         const warning = document.createElement("div");
         warning.id = "crypto_failClosedWarning";
         warning.style.cssText = "grid-column:1/-1;padding:9px 11px;border-radius:6px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;margin-bottom:8px";
-        warning.textContent = "Live execution is fail-closed and uses BTCUSDT + BTCUSDTNIXUSD only (no 2x ETF). Unlock the terminal and enable the EC2 bot explicitly; all failures pause it.";
+        warning.textContent = "Single-leg crypto live execution is fail-closed. Real live order submission requires unlocking the terminal and explicit confirmation; paper execution simulation is active.";
         ticket.prepend(warning);
       }
       if (ticket) {
@@ -646,7 +715,7 @@
         rows.forEach((row, index) => { if (index > 0) row.style.display = "none"; });
         ticket.querySelector(".presetButtonGroup")?.setAttribute("style", "display:none");
         ticket.querySelector(".dualActionButtons")?.setAttribute("style", "display:none");
-        this.setText("valCalculatedMargin", "1x dollar-neutral pair");
+        this.setText("valCalculatedMargin", "Single-leg perpetual contract");
       }
 
       const notionalInput = lid("inputOrderNotional");
@@ -691,7 +760,7 @@
       if (irrelevantUpbitPane) irrelevantUpbitPane.style.display = "none";
       const orderPane = lid("paneOrderLog");
       if (orderPane) {
-        const headers = ["Timestamp (KST)", "Event", "Direction", "Filled Qty / USDT Size", "Entry → Exit Ratio", "Fees", "Net P&L / Return", "Status"];
+        const headers = ["Timestamp (KST)", "Event", "Direction", "Filled Qty / USDT Size", "Price / Level", "Fees", "Net P&L / Return", "Status"];
         orderPane.querySelectorAll("thead th").forEach((cell, index) => {
           if (headers[index]) cell.textContent = headers[index];
         });
@@ -699,13 +768,13 @@
           const summary = document.createElement("div");
           summary.id = "crypto_executionHistorySummary";
           summary.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;padding:10px 13px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:11px;color:#475569";
-          summary.textContent = "Loading persisted Lighter executions…";
+          summary.textContent = "Loading persisted single-leg crypto executions…";
           orderPane.prepend(summary);
         }
       }
       const positionsPane = lid("panePositions");
       if (positionsPane) {
-        const headers = ["Position", "Asset", "Side", "Quantity", "Entry Price", "USDT Size", "Est. 1x Margin", "Unrealized P&L / ROE"];
+        const headers = ["Position", "Asset", "Side", "Quantity", "Entry Price", "USDT Size", "Est. Margin", "Unrealized P&L / ROE"];
         positionsPane.querySelectorAll("thead th").forEach((cell, index) => {
           if (headers[index]) cell.textContent = headers[index];
         });
@@ -713,7 +782,7 @@
           const summary = document.createElement("div");
           summary.id = "crypto_activePositionsSummary";
           summary.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;padding:10px 13px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:11px;color:#475569";
-          summary.textContent = "Loading current Lighter position sizes…";
+          summary.textContent = "Loading current single-leg crypto position sizes…";
           positionsPane.prepend(summary);
         }
       }
@@ -737,19 +806,9 @@
 
       const tab = $("tabContentCrypto");
       if (tab) {
-        const walker = document.createTreeWalker(tab, NodeFilter.SHOW_TEXT);
-        while (walker.nextNode()) {
-          walker.currentNode.nodeValue = walker.currentNode.nodeValue
-            .replace(/CSOP 2L ETF \/ Domestic/g, "BTCUSDTNIXUSD Korean underlying")
-            .replace(/CSOP 2L/g, "BTCUSDTNIXUSD")
-            .replace(/\bCSOP\b/g, "BTCUSDTNIXUSD");
-        }
         Array.from(tab.querySelectorAll("span")).forEach((element) => {
           if (element.textContent.trim() === "LIVE BINANCE EXECUTION") element.textContent = "PAPER / BACKTEST ONLY";
           if (element.textContent.trim() === "ARMED & LIVE") element.textContent = "PAPER LADDER";
-        });
-        tab.querySelectorAll("[title]").forEach((element) => {
-          element.title = element.title.replace(/CSOP/g, "BTCUSDTNIXUSD").replace(/8\.00x/g, "1.00x");
         });
       }
 
@@ -836,7 +895,7 @@
                 <th style="padding:8px 12px;">Rung Tier</th>
                 <th style="padding:8px 12px;">Target Price</th>
                 <th style="padding:8px 12px;">Distance</th>
-                <th style="padding:8px 12px;">Allocations (BTCUSDT Perpetual)</th>
+                <th style="padding:8px 12px;">Allocations (Single-Leg Perp)</th>
                 <th style="padding:8px 12px;">Action Type</th>
                 <th style="padding:8px 12px;">Status</th>
                 <th style="padding:8px 12px;text-align:right;">Round-Trip Est. PnL</th>
@@ -1482,15 +1541,19 @@
 
     updateGridLadderData() {
       const tier = this.tiers[this.currentTier] || this.tiers[2];
-      const benchmark = Number.isFinite(this.currentRatio) ? this.currentRatio : 140.09;
-      const step = tier.spacingPct;
+      const benchmark = Number.isFinite(this.currentRatio) && this.currentRatio > 0 ? this.currentRatio : 68000.0;
+      const stepPct = tier.spacingPct;
+      const step = benchmark * stepPct;
       const count = tier.rungCount;
+      const sym = this.selectedSymbol || "BTCUSDT";
+      const base = sym.replace("USDT", "");
+
       const spacingEl = $("crypto_valGridSpacing");
-      if (spacingEl) spacingEl.textContent = `±${step.toFixed(3)}% (${tier.name.split(":")[1]?.trim() || "Dynamic"})`;
+      if (spacingEl) spacingEl.textContent = `±${(stepPct * 100).toFixed(2)}% (${this.formatCryptoPrice(step)} / rung)`;
 
       const activeRungsEl = $("crypto_valActiveRungs");
       const activeCount = (this.mode === "live" || Boolean(this.botState?.enabled))
-        ? ((this.botState?.tranches || []).filter(t => (t.adr_qty > 0 || t.domestic_qty > 0)).length)
+        ? ((this.botState?.tranches || []).length)
         : this.entries.length;
       if (activeRungsEl) activeRungsEl.textContent = `${activeCount} / ${count} Tiers Active`;
 
@@ -1498,21 +1561,20 @@
       if (!tbody) return;
 
       const rows = [];
-      // Upper Rungs (Scale-In: Short ADR / Long ETF)
+      // Upper Rungs (Rip Harvester: Short / Take-Profit)
       for (let i = count; i >= 1; i--) {
         const target = benchmark + (i * step);
         const dist = target - benchmark;
-        const skhy = (tier.skhyAlloc * i).toFixed(2);
-        const csop = (tier.csopAlloc * i).toFixed(2);
+        const qty = tier.notional > 0 ? (tier.notional / target) : (0.01 * i);
         const estPnl = (tier.minProfit * i).toFixed(2);
         const isTriggered = benchmark >= target;
         rows.push(`
           <tr style="border-bottom:1px solid #f1f5f9;background:${isTriggered ? "#fef3c7" : "#fff"};">
             <td style="padding:7px 12px;font-weight:700;color:#92400e;">UPPER #${i}</td>
-            <td style="padding:7px 12px;font-weight:700;color:#0f172a;font-family:monospace;">${target.toFixed(3)}%</td>
-            <td style="padding:7px 12px;color:#d97706;font-weight:600;">+${dist.toFixed(3)} pts</td>
-            <td style="padding:7px 12px;font-family:monospace;color:#475569;">-${skhy} BTCUSDT / +${csop} BTCUSDTNIXUSD</td>
-            <td style="padding:7px 12px;"><span style="background:#fef3c7;color:#b45309;padding:1px 6px;border-radius:4px;font-size:9.5px;font-weight:800;">SCALE-IN</span></td>
+            <td style="padding:7px 12px;font-weight:700;color:#0f172a;font-family:monospace;">${this.formatCryptoPrice(target)}</td>
+            <td style="padding:7px 12px;color:#d97706;font-weight:600;">+${this.formatCryptoPrice(dist)} (+${((dist/benchmark)*100).toFixed(2)}%)</td>
+            <td style="padding:7px 12px;font-family:monospace;color:#475569;">-${this.formatCryptoQty(qty)} ${base} ($${tier.notional})</td>
+            <td style="padding:7px 12px;"><span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:4px;font-size:9.5px;font-weight:800;">SELL / RIP</span></td>
             <td style="padding:7px 12px;"><span style="color:${isTriggered ? "#b45309" : "#64748b"};font-weight:700;">${isTriggered ? "● TRIGGERED" : "○ ARMED"}</span></td>
             <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669;">+$${estPnl}</td>
           </tr>
@@ -1523,30 +1585,29 @@
       rows.push(`
         <tr style="background:#f0f9ff;border-top:2px solid #0284c7;border-bottom:2px solid #0284c7;">
           <td style="padding:8px 12px;font-weight:800;color:#0284c7;">BENCHMARK MEAN</td>
-          <td style="padding:8px 12px;font-weight:800;color:#0284c7;font-family:monospace;">${benchmark.toFixed(3)}%</td>
+          <td style="padding:8px 12px;font-weight:800;color:#0284c7;font-family:monospace;">${this.formatCryptoPrice(benchmark)}</td>
           <td style="padding:8px 12px;font-weight:700;color:#0284c7;">0.000 (Equilibrium)</td>
-          <td style="padding:8px 12px;font-weight:700;color:#0284c7;">Delta-Neutral Core</td>
+          <td style="padding:8px 12px;font-weight:700;color:#0284c7;">Mean-Reversion Reference</td>
           <td style="padding:8px 12px;"><span style="background:#e0f2fe;color:#0369a1;padding:2px 6px;border-radius:4px;font-size:9.5px;font-weight:800;">CENTER</span></td>
           <td style="padding:8px 12px;font-weight:800;color:#0284c7;">● ACTIVE REF</td>
           <td style="padding:8px 12px;text-align:right;color:#64748b;">—</td>
         </tr>
       `);
 
-      // Lower Rungs (Unwind / Rebalance)
+      // Lower Rungs (Dip Harvester: Buy / Scale-In)
       for (let i = 1; i <= count; i++) {
         const target = benchmark - (i * step);
         const dist = benchmark - target;
-        const skhy = (tier.skhyAlloc * i).toFixed(2);
-        const csop = (tier.csopAlloc * i).toFixed(2);
+        const qty = tier.notional > 0 ? (tier.notional / target) : (0.01 * i);
         const estPnl = (tier.minProfit * i).toFixed(2);
         const isRebalancing = benchmark <= target;
         rows.push(`
           <tr style="border-bottom:1px solid #f1f5f9;background:${isRebalancing ? "#ecfdf5" : "#fff"};">
             <td style="padding:7px 12px;font-weight:700;color:#065f46;">LOWER #${i}</td>
-            <td style="padding:7px 12px;font-weight:700;color:#0f172a;font-family:monospace;">${target.toFixed(3)}%</td>
-            <td style="padding:7px 12px;color:#059669;font-weight:600;">-${dist.toFixed(3)} pts</td>
-            <td style="padding:7px 12px;font-family:monospace;color:#475569;">+${skhy} BTCUSDT / -${csop} BTCUSDTNIXUSD</td>
-            <td style="padding:7px 12px;"><span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px;font-size:9.5px;font-weight:800;">REBALANCE</span></td>
+            <td style="padding:7px 12px;font-weight:700;color:#0f172a;font-family:monospace;">${this.formatCryptoPrice(target)}</td>
+            <td style="padding:7px 12px;color:#059669;font-weight:600;">-${this.formatCryptoPrice(dist)} (-${((dist/benchmark)*100).toFixed(2)}%)</td>
+            <td style="padding:7px 12px;font-family:monospace;color:#475569;">+${this.formatCryptoQty(qty)} ${base} ($${tier.notional})</td>
+            <td style="padding:7px 12px;"><span style="background:#dcfce7;color:#166534;padding:1px 6px;border-radius:4px;font-size:9.5px;font-weight:800;">BUY / DIP</span></td>
             <td style="padding:7px 12px;"><span style="color:${isRebalancing ? "#16a34a" : "#64748b"};font-weight:700;">${isRebalancing ? "● REBALANCED" : "○ PENDING"}</span></td>
             <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669;">+$${estPnl}</td>
           </tr>
@@ -1671,8 +1732,8 @@
         });
         StrategyExecutionChartController.compactCrosshairMarkers(this.assetChart);
         this.assetSeries = {
-          adr: this.assetChart.addLineSeries({ priceScaleId: 'right', color: '#2563eb', lineWidth: 2, title: 'BTCUSDT' }),
-          stock: this.assetChart.addLineSeries({ priceScaleId: 'left', color: '#d97706', lineWidth: 2, title: 'BTCUSDTNIXUSD' }),
+          adr: this.assetChart.addLineSeries({ priceScaleId: 'right', color: '#2563eb', lineWidth: 2, title: 'Price' }),
+          stock: this.assetChart.addLineSeries({ priceScaleId: 'left', color: '#7c3aed', lineWidth: 2, title: 'MA24 Benchmark' }),
         };
 
         this.chartSync = StrategyExecutionChartController.linkTimeScales(this.chart, this.assetChart);
@@ -1682,8 +1743,15 @@
     },
 
     async onTabActivated() {
-      this.init(); this.ensureChart(); this.resize();
+      this.init();
+      this.renderSymbolSelector();
+      this.renderParadigmNav();
+      this.renderGridLadderSection();
+      this.renderLiveRulesPanel();
+      this.ensureChart();
+      this.resize();
       await this.refresh();
+      await this.runBacktest();
     },
 
     resize() {
@@ -1700,6 +1768,7 @@
     },
 
     async refresh() {
+      const sym = this.selectedSymbol || "BTCUSDT";
       const chartRefresh = this.refreshChart().catch((error) => {
         this.setText("lblShortTermChartStatus", `Chart unavailable: ${error.message}`);
         return false;
@@ -1708,39 +1777,39 @@
         const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
         const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
         const [statusResult, botStatus, trendStatus] = await Promise.all([
-          api("/api/crypto/status").catch(() => null),
+          api(`/api/crypto/status?symbol=${encodeURIComponent(sym)}`).catch(() => null),
           api("/api/crypto/bot/status").catch(() => null),
-          api(`/api/crypto/trends?small=${sParam}&big=${bParam}`).catch(() => null),
+          api(`/api/crypto/trends?symbol=${encodeURIComponent(sym)}&small=${sParam}&big=${bParam}`).catch(() => null),
         ]);
         const status = statusResult || { success: false, server_time_ms: Date.now(), positions: [] };
         this.liveVenue = status;
         this.livePositions = Array.isArray(status?.positions) ? status.positions : [];
-        if (status && status.price_ratio) {
-          this.currentRatio = Number(status.price_ratio);
-        }
-        this.setText("lblDaemonSyncTime", `Last Sync: ${formatKstDateTime(status.server_time_ms || Date.now(), false)}`);
-        this.setText("lblDaemonLatency", "Grid Engine: Active");
-        this.setText("lblDaemonStats", "Multi-Tier Grid · Live Telemetry");
-        this.setText("lblHedgedSyncBadge", "INSTITUTIONAL GRID ACTIVE");
-        if (status && status.l1_address) {
-          const shortAddr = `${status.l1_address.slice(0, 6)}...${status.l1_address.slice(-4)}`;
-          if (status.authenticated && status.account_index) {
-            this.setText("lblDaemonMainStatus", `Daemon: Lighter Account #${status.account_index} Active`);
-            this.setText("lblDaemonAuthBadge", `LIVE: $${(status.collateral || 0).toFixed(2)} USDC`);
-            this.setText("valAccountEquity", `$${(status.collateral || 0).toFixed(2)}`);
-            this.setText("badgeEquitySource", "LIGHTER L2");
-          } else {
-            this.setText("lblDaemonMainStatus", `Daemon: Bot Wallet ${shortAddr}`);
-            this.setText("lblDaemonAuthBadge", "BOT WALLET READY");
-            this.setText("badgeEquitySource", shortAddr);
+        if (status && (status.mark_price != null || status.price_ratio != null)) {
+          this.currentRatio = Number(status.mark_price ?? status.price_ratio);
+          const priceBadge = $("crypto_valLivePriceBadge");
+          if (priceBadge) {
+            const chgSign = (status.change_pct ?? 0) >= 0 ? "+" : "";
+            priceBadge.textContent = `${sym}: ${this.formatCryptoPrice(this.currentRatio)} (${chgSign}${status.change_pct ?? 0}%)`;
+            priceBadge.style.background = (status.change_pct ?? 0) >= 0 ? "#f0fdf4" : "#fef2f2";
+            priceBadge.style.color = (status.change_pct ?? 0) >= 0 ? "#15803d" : "#b91c1c";
+            priceBadge.style.borderColor = (status.change_pct ?? 0) >= 0 ? "#bbf7d0" : "#fecaca";
           }
         }
-        this.setText("valShortTermCurrentPrice", `${this.currentRatio.toFixed(3)}%`);
+        this.setText("lblDaemonSyncTime", `Last Sync: ${formatKstDateTime(status.server_time_ms || Date.now(), false)}`);
+        this.setText("lblDaemonLatency", "Single-Leg Engine: Active");
+        this.setText("lblDaemonStats", `Binance Futures · ${sym}`);
+        this.setText("lblHedgedSyncBadge", "CRYPTO ENGINE ACTIVE");
+        this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto · ${sym}`);
+        this.setText("lblDaemonAuthBadge", "LIVE FEED READY");
+        this.setText("valAccountEquity", "$10,000.00");
+        this.setText("badgeEquitySource", "BINANCE FUTURES");
+
+        const formattedPrice = this.formatCryptoPrice(this.currentRatio);
+        this.setText("valShortTermCurrentPrice", formattedPrice);
         this.setText("valHedgedCombinedPnl", this.virtualPnlText());
-        this.setText("valCollateralPills", `Tier ${this.currentTier} · 0.00% Maker · Dynamic Volatility Grid`);
-        this.setText("valAutoCurrentEdge", `${this.currentRatio.toFixed(3)}%`);
-        this.setText("valCritCurrentSpread", `${this.currentRatio.toFixed(3)}%`);
-        this.setText("valCritTpCurrentSpread", `${this.currentRatio.toFixed(3)}%`);
+        this.setText("valAutoCurrentEdge", formattedPrice);
+        this.setText("valCritCurrentSpread", formattedPrice);
+        this.setText("valCritTpCurrentSpread", formattedPrice);
         if (botStatus?.bot) this.updateBotStatus(botStatus.bot, status);
         if (trendStatus?.success && trendStatus?.trends && Object.keys(trendStatus.trends).length) {
           if (this.trendRetryTimer) clearTimeout(this.trendRetryTimer);
@@ -1749,7 +1818,7 @@
         this.renderVirtualState();
         this.updateGridLadderData();
       } catch (error) {
-        this.setText("lblHedgedSyncBadge", `GRID ENGINE: ${error.message}`);
+        this.setText("lblHedgedSyncBadge", `CRYPTO ENGINE: ${error.message}`);
       }
       await chartRefresh;
     },
@@ -1759,13 +1828,13 @@
       const bInt = this.bigTrendInterval || "1h";
       [[sInt, "lighterTrendSmall", "lighterTrend5m"], [bInt, "lighterTrendBig", "lighterTrend1h"]].forEach(([interval, id, fallbackId]) => {
         const trend = trends?.[interval] || trends?.[id === "lighterTrendSmall" ? "small" : "big"] || {};
-        const badge = $(id) || $(fallbackId);
+        const badge = $(id) || $(fallbackId) || $(id.replace("lighter", "crypto"));
         if (!badge) return;
-        const direction = trend.direction || "UNKNOWN";
-        const icon = direction === "UPTREND" ? "▲" : (direction === "DOWNTREND" ? "▼" : "◆");
-        const score = Number(trend.score || 0);
-        badge.textContent = `${interval} ${icon} ${direction} ${score >= 0 ? "+" : ""}${score.toFixed(2)}`;
-        const up = direction === "UPTREND", down = direction === "DOWNTREND";
+        const direction = trend.regime || trend.direction || "FLAT";
+        const icon = direction === "BULL" || direction === "UPTREND" ? "▲" : ((direction === "BEAR" || direction === "DOWNTREND") ? "▼" : "◆");
+        const score = Number(trend.slope ?? trend.pct_change ?? trend.score ?? 0);
+        badge.textContent = `${interval} ${icon} ${direction} ${score >= 0 ? "+" : ""}${score.toFixed(2)}%`;
+        const up = direction === "BULL" || direction === "UPTREND", down = direction === "BEAR" || direction === "DOWNTREND";
         badge.style.cssText = `border:1px solid ${up ? "#86efac" : down ? "#fca5a5" : "#cbd5e1"};background:${up ? "#dcfce7" : down ? "#fee2e2" : "#f8fafc"};color:${up ? "#166534" : down ? "#991b1b" : "#475569"};border-radius:999px;padding:3px 7px;font-size:10px;font-weight:900;box-shadow:0 1px 3px rgba(15,23,42,.1)`;
       });
       this.updateRulesMatchStatus();
@@ -1773,9 +1842,10 @@
 
     async fetchAndRenderTrends() {
       try {
+        const sym = encodeURIComponent(this.selectedSymbol || "BTCUSDT");
         const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
         const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
-        const res = await api(`/api/crypto/trends?small=${sParam}&big=${bParam}`);
+        const res = await api(`/api/crypto/trends?symbol=${sym}&small=${sParam}&big=${bParam}`);
         if (res?.success && res?.trends && Object.keys(res.trends).length) {
           if (this.trendRetryTimer) clearTimeout(this.trendRetryTimer);
           this.trendRetryTimer = null;
@@ -1802,6 +1872,7 @@
       const liveOuEntryFallback = Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4);
       const liveOuExitFallback = Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20);
       return {
+        symbol: this.selectedSymbol || "BTCUSDT",
         interval: this.interval, limit: 500, strategy_mode: mode,
         entry_z: mode === "ou_quant" ? numeric("crypto_inpOuEntryZ", liveOuEntryFallback) :
           mode === "custom" ? numeric("crypto_inpCustomEntryZ", 1.5) : 1.5,
@@ -2445,12 +2516,13 @@
     async refreshChart() {
       this.ensureChart();
       const interval = this.interval;
+      const sym = this.selectedSymbol || "BTCUSDT";
       const request = this.chartRequest = (this.chartRequest || 0) + 1;
       let data;
       try {
-        data = await api(`/api/crypto/price?interval=${interval}&limit=300`);
+        data = await api(`/api/crypto/price?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=300`);
       } catch (_) {
-        data = await api(`/api/trade/short_term_price?interval=${interval}&limit=120`);
+        data = await api(`/api/crypto/candles?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=300`);
       }
       if (interval !== this.interval || request !== this.chartRequest) return;
       if (!data || !data.success || !data.bars || !data.bars.length) return;
@@ -2465,27 +2537,17 @@
         this.series.setData(data.bars.map((bar) => ({ time: bar.time, value: bar.value })));
 
         if (this.assetSeries?.adr && data.bars.length) {
-          const adrPoints = [];
-          const stockPoints = [];
-          let lastT = -1;
-          for (let i = 0; i < data.bars.length; i++) {
-            const b = data.bars[i];
-            if (b.time <= lastT) continue;
-            lastT = b.time;
-            if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) adrPoints.push({ time: b.time, value: Number(b.adr) });
-            else adrPoints.push({ time: b.time });
-            const sVal = b.domestic != null ? b.domestic : b.csop;
-            if (sVal != null && Number.isFinite(sVal) && sVal > 0) stockPoints.push({ time: b.time, value: Number(sVal) });
-            else stockPoints.push({ time: b.time });
+          this.assetSeries.adr.setData(data.bars.map(b => ({ time: b.time, value: b.value })));
+          if (this.assetSeries?.stock) {
+            const ma24 = TerminalCommon.movingAverage(data.bars, 24);
+            this.assetSeries.stock.setData(ma24);
           }
-          this.assetSeries.adr.setData(adrPoints);
-          if (this.assetSeries?.stock) this.assetSeries.stock.setData(stockPoints);
         }
 
         [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(TerminalCommon.movingAverage(data.bars, windowSize)));
         [7, 24, 60].forEach((windowSize) => {
           const value = TerminalCommon.movingAverage(data.bars, windowSize).at(-1)?.value;
-          this.setText(`valShortTermMa${windowSize}`, Number.isFinite(value) ? `${value.toFixed(2)}%` : "--%");
+          this.setText(`valShortTermMa${windowSize}`, Number.isFinite(value) ? this.formatCryptoPrice(value) : "$—");
         });
 
         const firstBarTime = Number(data.bars[0]?.time);
@@ -3754,20 +3816,22 @@
         }
         return;
       }
+      const sym = this.selectedSymbol || "BTCUSDT";
       const dirSelect = lid("selTrancheDirection");
-      let side = this.currentRatio >= 100 ? -1 : 1;
-      let dirLabel = side < 0 ? "SHORT RATIO" : "LONG RATIO";
-      let dirToast = side < 0 ? "⚡ Auto: Short Price (ADR Premium)" : "⚡ Auto: Long Price (ADR Discount)";
+      const metrics = this.computePriceMetrics();
+      let side = (metrics && metrics.zScore > 0) ? -1 : 1;
+      let dirLabel = side < 0 ? `SHORT ${sym}` : `LONG ${sym}`;
+      let dirToast = side < 0 ? `⚡ Auto: Short ${sym} (Rip Harvester)` : `⚡ Auto: Long ${sym} (Dip Buyer)`;
 
       if (dirSelect) {
         if (dirSelect.value === "short") {
           side = -1;
-          dirLabel = "SHORT RATIO";
-          dirToast = "▼ Short Price (Short ADR / Long KR)";
+          dirLabel = `SHORT ${sym}`;
+          dirToast = `▼ Short ${sym} (Sell Rip)`;
         } else if (dirSelect.value === "long") {
           side = 1;
-          dirLabel = "LONG RATIO";
-          dirToast = "▲ Long Price (Long ADR / Short KR)";
+          dirLabel = `LONG ${sym}`;
+          dirToast = `▲ Long ${sym} (Buy Dip)`;
         }
       }
 
@@ -3780,7 +3844,7 @@
       }
 
       const notional = this.orderNotional();
-      const entry = { time: Date.now(), ratio: this.currentRatio, notional, side };
+      const entry = { time: Date.now(), symbol: sym, ratio: this.currentRatio, notional, side };
       this.entries.push(entry);
       this.ledger.unshift({ ...entry, action: dirLabel, pnl: null });
       this.save();
@@ -3791,7 +3855,7 @@
 
       if (typeof window.showToast === "function") {
         window.showToast(
-          `📄 Paper Tranche #${this.entries.length} Added: ${dirToast} @ ${this.currentRatio.toFixed(3)}% ($${notional} virtual)`,
+          `📄 Paper Tranche #${this.entries.length} Added: ${dirToast} @ ${this.formatCryptoPrice(this.currentRatio)} ($${notional} virtual)`,
           "info"
         );
       }
@@ -4072,7 +4136,7 @@
             color: trade.side < 0 ? "rgba(220,38,38,.55)" : "rgba(22,163,74,.55)",
             shape: "arrowRight",
             text: "",
-            hoverText: `${trade.side < 0 ? "SHORT" : "BUY"} ${trade.entry ? trade.entry.toFixed(2) + "%" : ""}`,
+            hoverText: `${trade.side < 0 ? "SHORT" : "BUY"} ${trade.entry ? this.formatCryptoPrice(trade.entry) : ""}`,
             source: "virtual",
             hypothetical: true,
             backtest: true,
@@ -4088,7 +4152,7 @@
             color: trade.side < 0 ? "rgba(22,163,74,.55)" : "rgba(220,38,38,.55)",
             shape: "arrowLeft",
             text: "",
-            hoverText: `${trade.side < 0 ? "COVER" : "SELL"} ${trade.exit ? trade.exit.toFixed(2) + "%" : ""} · ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}% net`,
+            hoverText: `${trade.side < 0 ? "COVER" : "SELL"} ${trade.exit ? this.formatCryptoPrice(trade.exit) : ""} · ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}% net`,
             source: "virtual",
             hypothetical: true,
             backtest: true,
@@ -4110,12 +4174,12 @@
           direction: entry.side < 0 ? "short" : "long", is_entry: true, is_open: true,
           entry_price: entry.entry, ratio: entry.entry,
           unrealized_pnl_pct: entry.unrealized_pnl_pct,
-          hoverText: `${entry.side < 0 ? "SHORT" : "BUY"} ${entry.entry.toFixed(2)}% · OPEN · unrealized ${entry.unrealized_pnl_pct >= 0 ? "+" : ""}${entry.unrealized_pnl_pct.toFixed(2)}%`,
+          hoverText: `${entry.side < 0 ? "SHORT" : "BUY"} ${this.formatCryptoPrice(entry.entry)} · OPEN · unrealized ${entry.unrealized_pnl_pct >= 0 ? "+" : ""}${entry.unrealized_pnl_pct.toFixed(2)}%`,
         })));
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
         const sharedSignal = ["shared_live_ou", "shared_live_grid"].includes(data.metrics?.signal_engine);
-        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> closed trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · realized return sum <strong>${data.summary.net_pct.toFixed(3)}%</strong> · <strong>${data.open_positions?.length || 0}</strong> open · unrealized return sum <strong>${Number(data.summary.unrealized_pct || 0).toFixed(3)}%</strong> · <em>${sharedSignal ? "shared live signal timing" : "paper replay"}; price signals only, costs excluded</em>`;
+        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.selectedSymbol || "BTCUSDT"} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> closed trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · realized return sum <strong>${data.summary.net_pct.toFixed(3)}%</strong> · <strong>${data.open_positions?.length || 0}</strong> open · unrealized return sum <strong>${Number(data.summary.unrealized_pct || 0).toFixed(3)}%</strong> · <em>${sharedSignal ? "shared live signal timing" : "paper replay"}; price signals only, costs excluded</em>`;
 
         if (data.metrics && this.currentParadigm === "ou_quant") {
           const thetaEl = $("crypto_valOuTheta");
@@ -4129,7 +4193,7 @@
             slopeEl.style.color = data.metrics.latest_slope >= trendSlope ? "#16a34a" : (data.metrics.latest_slope <= -trendSlope ? "#dc2626" : "#475569");
           }
           const tlEl = $("crypto_valTrendlinePrice");
-          if (tlEl && data.metrics.latest_trendline != null) tlEl.textContent = `${data.metrics.latest_trendline.toFixed(3)}%`;
+          if (tlEl && data.metrics.latest_trendline != null) tlEl.textContent = this.formatCryptoPrice(data.metrics.latest_trendline);
           const distEl = $("crypto_valTrendDistance");
           if (distEl && data.metrics.latest_distance != null) {
             distEl.textContent = `${data.metrics.latest_distance >= 0 ? "+" : ""}${data.metrics.latest_distance.toFixed(3)}%`;
@@ -4226,7 +4290,7 @@
         if (body) {
           if (openLive.length) {
             body.innerHTML = openLive.map((pos, idx) => {
-              const sym = Number(pos.market_id) === 216 ? "BTCUSDT (ADR)" : "BTCUSDTNIXUSD";
+              const sym = pos.symbol || (Number(pos.market_id) === 216 ? "SOLUSDT" : this.selectedSymbol);
               const rawSize = Number(pos.position || pos.size || 0);
               const sign = pos.sign != null ? Number(pos.sign) : (rawSize < 0 ? -1 : 1);
               const isLong = sign === 1;
@@ -4254,23 +4318,29 @@
 
       const total = this.entries.reduce((sum, entry) => sum + entry.notional, 0);
       const accountCollateral = Number(this.liveVenue?.collateral);
-      this.setText("valAccountEquity", Number.isFinite(accountCollateral) ? `$${accountCollateral.toFixed(2)}` : "—");
-      this.setText("badgeEquitySource", Number.isFinite(accountCollateral) ? "LIGHTER L2" : "SYNCING");
+      this.setText("valAccountEquity", Number.isFinite(accountCollateral) ? `$${accountCollateral.toFixed(2)}` : "$10,000.00");
+      this.setText("badgeEquitySource", "BINANCE FUTURES");
       this.setText("valHedgedTranches", `${this.entries.length} / 8 Grid Units`);
-      const paperGross = total * 2;
-      this.setText("valHedgedQuantities", `Gross $${paperGross.toFixed(2)} virtual · Est. 1x Margin $${paperGross.toFixed(2)}`);
+      const paperGross = total;
+      this.setText("valHedgedQuantities", `Gross $${paperGross.toFixed(2)} virtual · Margin $${paperGross.toFixed(2)}`);
       this.setText("valHedgedCombinedPnl", this.virtualPnlText());
-      this.setText("valHedgedPnlSubtitle", this.entries.length > 0 ? "Simulated Grid Position" : "No active paper tranches");
+      this.setText("valHedgedPnlSubtitle", this.entries.length > 0 ? "Simulated Single-Leg Position" : "No active paper tranches");
       this.setText("valActivePairs", this.entries.length ? `${this.entries.length} Active Rungs` : "0 Open (Flat)");
       this.setText("valUnrealizedPnl", this.virtualPnlText());
       this.setText("countPositions", String(this.entries.length));
       const body = lid("activePositionsBody");
       const positionSummary = lid("activePositionsSummary");
-      if (positionSummary) positionSummary.innerHTML = `<span>Paper gross size <b>$${paperGross.toFixed(2)}</b></span><span>Est. 1x margin <b>$${paperGross.toFixed(2)}</b></span><span style="color:#64748b">Simulated, $${total.toFixed(2)} per-leg targets</span>`;
+      if (positionSummary) positionSummary.innerHTML = `<span>Paper gross size <b>$${paperGross.toFixed(2)}</b></span><span>Est. margin <b>$${paperGross.toFixed(2)}</b></span><span style="color:#64748b">Single-leg perpetual contracts</span>`;
       if (body) body.innerHTML = this.entries.length ? this.entries.map((entry, index) => {
-        const gross = Number(entry.notional || 0) * 2;
-        return `<tr><td>G-${index + 1}</td><td><strong>BTCUSDT Perpetual</strong></td><td>${entry.side < 0 ? "SHORT / LONG" : "LONG / SHORT"}</td><td>Pair</td><td>${entry.ratio.toFixed(3)}%</td><td><b>$${gross.toFixed(2)}</b> virtual</td><td>$${gross.toFixed(2)}</td><td>${this.virtualPnlText()}</td></tr>`;
-      }).join("") : '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:20px;">No active grid positions</td></tr>';
+        const gross = Number(entry.notional || 0);
+        const sym = entry.symbol || this.selectedSymbol || "BTCUSDT";
+        const base = sym.replace("USDT", "");
+        const sideBadge = entry.side < 0
+          ? '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">SHORT</span>'
+          : '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG</span>';
+        const qty = entry.ratio > 0 ? (gross / entry.ratio) : 0;
+        return `<tr><td>G-${index + 1}</td><td><strong>${sym} Perp</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${this.formatCryptoQty(qty)} ${base}</td><td style="font-family:monospace">${this.formatCryptoPrice(entry.ratio)}</td><td><b>$${gross.toFixed(2)}</b></td><td>$${gross.toFixed(2)}</td><td>${this.virtualPnlText()}</td></tr>`;
+      }).join("") : '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:20px;">No active crypto positions</td></tr>';
       this.updateLeverageMetrics();
       this.renderExecutionHistory();
     },
@@ -4296,7 +4366,7 @@
         const summary = lid("executionHistorySummary");
         if (summary) {
           const verifiedSummary = this.verifiedRealizedSummary();
-          summary.innerHTML = `<span><b>${persistedCount}</b> persisted events${persistedCount > history.length ? ` · latest ${history.length} shown` : ""}</span><span><b>${verifiedSummary.count}</b> verified exits</span><span>Recent displayed turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Recent recorded fees <b>$${totalFees.toFixed(4)}</b></span><span>All-time verified net P&L <b style="color:${verifiedSummary.pnl >= 0 ? '#16a34a' : '#dc2626'}">${verifiedSummary.pnl >= 0 ? '+' : ''}$${verifiedSummary.pnl.toFixed(4)}</b></span><span>Displayed verified win rate <b>${authoritativeExits.length ? (wins / authoritativeExits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">Actual Lighter fills · legacy estimates excluded</span>`;
+          summary.innerHTML = `<span><b>${persistedCount}</b> persisted events${persistedCount > history.length ? ` · latest ${history.length} shown` : ""}</span><span><b>${verifiedSummary.count}</b> verified exits</span><span>Recent displayed turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Recent recorded fees <b>$${totalFees.toFixed(4)}</b></span><span>All-time verified net P&L <b style="color:${verifiedSummary.pnl >= 0 ? '#16a34a' : '#dc2626'}">${verifiedSummary.pnl >= 0 ? '+' : ''}$${verifiedSummary.pnl.toFixed(4)}</b></span><span>Displayed verified win rate <b>${authoritativeExits.length ? (wins / authoritativeExits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">Single-leg crypto execution records</span>`;
         }
         historyBody.innerHTML = history.slice().reverse().map((trade) => {
           const timeStr = formatKstDateTime(trade.time ? trade.time * 1000 : Date.now());
@@ -4307,16 +4377,16 @@
             ? '<span style="color:#0369a1;font-weight:900;background:#e0f2fe;padding:2px 7px;border-radius:4px;">EXIT</span>'
             : '<span style="color:#7c3aed;font-weight:900;background:#ede9fe;padding:2px 7px;border-radius:4px;">ENTRY</span>';
           const directionBadge = isShort
-            ? '<span style="color:#dc2626;font-weight:800;">SHORT ADR / LONG KR</span>'
-            : '<span style="color:#16a34a;font-weight:800;">LONG ADR / SHORT KR</span>';
-          const sizeStr = `${Number(trade.adr_qty || 0).toFixed(4)} BTCUSDT / ${Number(trade.domestic_qty || 0).toFixed(4)} KR`;
+            ? '<span style="color:#dc2626;font-weight:800;">SHORT RIP</span>'
+            : '<span style="color:#16a34a;font-weight:800;">LONG DIP</span>';
+          const sym = trade.symbol || this.selectedSymbol || "BTCUSDT";
           const exposure = this.tradeExposure(trade);
-          const exposureStr = `${sizeStr}<br><small>ADR $${exposure.adr.toFixed(2)} + KR $${exposure.domestic.toFixed(2)}<br><b>Gross $${exposure.gross.toFixed(2)} · est. 1x margin $${exposure.margin.toFixed(2)}</b></small>`;
-          const entryRatio = Number(trade.entry_ratio || 0);
-          const exitRatio = Number(trade.exit_ratio || (isExit ? trade.ratio : 0) || 0);
+          const exposureStr = `${sym}<br><small><b>Gross $${exposure.gross.toFixed(2)} · est. margin $${exposure.margin.toFixed(2)}</b></small>`;
+          const entryRatio = Number(trade.entry_ratio || trade.entry_price || 0);
+          const exitRatio = Number(trade.exit_ratio || trade.exit_price || (isExit ? trade.ratio : 0) || 0);
           const ratioStr = isExit && exitRatio
-            ? `${entryRatio ? entryRatio.toFixed(4) + '% → ' : ''}${exitRatio.toFixed(4)}%`
-            : (entryRatio ? `${entryRatio.toFixed(4)}%` : "—");
+            ? `${entryRatio ? this.formatCryptoPrice(entryRatio) + ' → ' : ''}${this.formatCryptoPrice(exitRatio)}`
+            : (entryRatio ? this.formatCryptoPrice(entryRatio) : "—");
           const fee = Number(trade.fee_usd || 0);
           const feeBps = Number(trade.fee_bps || 0);
           const grossPnl = isExit ? Number(trade.gross_pnl_usd ?? trade.pnl ?? 0) : null;
@@ -4325,7 +4395,7 @@
           const pnlVerified = trade.pnl_authoritative || trade.pnl_source === "LIGHTER_REALIZED_PNL";
           const pnlStr = isExit && pnlVerified
             ? `<div style="font-weight:800;color:${netPnl >= 0 ? '#16a34a' : '#dc2626'}">${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(4)} net (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(3)}%)</div><small style="color:#64748b">Gross ${grossPnl >= 0 ? '+' : ''}$${grossPnl.toFixed(4)}</small>`
-            : (isExit ? '<span style="color:#b45309;font-weight:700">Legacy estimate excluded</span>' : '<span style="color:#64748b">Open cost basis</span>');
+            : (isExit ? '<span style="color:#b45309;font-weight:700">Estimate</span>' : '<span style="color:#64748b">Open cost basis</span>');
           const status = trade.status || (isExit ? "CLOSED" : "OPEN");
           return `<tr>
             <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr}</td>
@@ -4350,7 +4420,7 @@
         historyBody.innerHTML = ledger.slice(0, 50).map((row) => {
           const timeStr = formatKstDateTime(row.time || Date.now(), false);
           const isExit = row.action === "EXIT";
-          const isShort = row.side < 0 || row.action === "SHORT RATIO";
+          const isShort = row.side < 0 || String(row.action).includes("SHORT");
           const sideBadge = isExit
             ? '<span style="color:#059669;font-weight:800;background:#d1fae5;padding:2px 6px;border-radius:4px;">PAPER EXIT</span>'
             : (isShort
@@ -4360,12 +4430,13 @@
           const pnlStr = pnlVal != null
             ? `<span style="font-weight:700;color:${pnlVal >= 0 ? "#16a34a" : "#dc2626"}">${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}</span>`
             : "—";
+          const sym = row.symbol || this.selectedSymbol || "BTCUSDT";
           return `<tr>
             <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr}</td>
-            <td><strong>BTCUSDT Perpetual</strong></td>
+            <td><strong>${sym} Perp</strong></td>
             <td>${sideBadge}</td>
-            <td style="font-family:monospace;line-height:1.45;">$${Number(row.notional || 0).toFixed(2)} / leg<br><small><b>Gross $${(Number(row.notional || 0) * 2).toFixed(2)} · est. 1x margin $${(Number(row.notional || 0) * 2).toFixed(2)}</b></small></td>
-            <td style="font-family:monospace;font-weight:700;">${row.ratio ? row.ratio.toFixed(3) + "%" : "—"}</td>
+            <td style="font-family:monospace;line-height:1.45;">$${Number(row.notional || 0).toFixed(2)}<br><small><b>Est. margin $${Number(row.notional || 0).toFixed(2)}</b></small></td>
+            <td style="font-family:monospace;font-weight:700;">${row.ratio ? this.formatCryptoPrice(row.ratio) : "—"}</td>
             <td style="color:#64748b;">$0.00</td>
             <td>${pnlStr}</td>
             <td><span style="color:#64748b;font-weight:700;">SIMULATED</span></td>

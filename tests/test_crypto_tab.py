@@ -63,5 +63,36 @@ class TestCryptoTab(unittest.TestCase):
         self.assertIn("/api/crypto/step_tranche", server)
         self.assertIn("/api/crypto/flatten", server)
 
+    def test_crypto_price_and_status_endpoints(self):
+        from backend.server import get_crypto_price, get_crypto_status
+
+        async def _run():
+            with patch("backend.server.get_klines") as mock_klines:
+                mock_klines.return_value = [
+                    [1000000, "68000.0", "68500.0", "67900.0", "68200.0", "150.0"],
+                    [1060000, "68200.0", "68600.0", "68100.0", "68450.0", "120.0"]
+                ]
+                status_res = await get_crypto_status(symbol="BTCUSDT")
+                self.assertTrue(status_res.get("success"))
+                self.assertEqual(status_res.get("symbol"), "BTCUSDT")
+                self.assertEqual(status_res.get("mark_price"), 68450.0)
+                self.assertEqual(status_res.get("price_ratio"), 68450.0)
+
+                price_res = await get_crypto_price(symbol="BTCUSDT", interval="15m", limit=2)
+                self.assertTrue(price_res.get("success"))
+                self.assertEqual(price_res.get("symbol"), "BTCUSDT")
+                self.assertEqual(len(price_res.get("bars", [])), 2)
+                self.assertEqual(price_res["bars"][-1]["value"], 68450.0)
+
+        asyncio.run(_run())
+
+    def test_crypto_tab_single_leg_features(self):
+        script = (ROOT / "crypto-tab.js").read_text(encoding="utf-8")
+        self.assertIn("selectedSymbol", script)
+        self.assertIn("renderSymbolSelector", script)
+        self.assertIn("formatCryptoPrice", script)
+        self.assertIn("formatCryptoQty", script)
+        self.assertNotIn("BTCUSDTNIXUSD", script)
+
 if __name__ == "__main__":
     unittest.main()

@@ -896,6 +896,7 @@ async def get_crypto_status(symbol: str = "BTCUSDT") -> Dict[str, Any]:
             "success": True,
             "symbol": symbol,
             "mark_price": mark_price,
+            "price_ratio": mark_price,
             "bid": mark_price * 0.9999,
             "ask": mark_price * 1.0001,
             "high": high,
@@ -926,6 +927,11 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
     except Exception as error:
         logger.error(f"Error fetching crypto candles: {error}")
         return {"success": False, "symbol": symbol, "interval": interval, "bars": [], "markers": [], "error": str(error)}
+
+@app.get("/api/crypto/price")
+async def get_crypto_price(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 300) -> Dict[str, Any]:
+    """Candles & price bars for single-leg crypto pricing."""
+    return await get_crypto_candles(symbol=symbol, interval=interval, limit=limit)
 
 @app.get("/api/crypto/trends")
 async def get_crypto_trends(symbol: str = "BTCUSDT", small: str = "5m", big: str = "1h") -> Dict[str, Any]:
