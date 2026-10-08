@@ -2153,6 +2153,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             tranche["profit_estimate_available"] = profit["available"]
             tranche["profit_reason"] = profit["reason"]
             tranche["minimum_net_profit_usd"] = profit["threshold_usd"]
+            tranche["min_profit_pct"] = profit.get("min_profit_pct")
             tranche["estimated_net_pnl_usd"] = (
                 round(profit["net_pnl_usd"], 6)
                 if profit["net_pnl_usd"] is not None else None)

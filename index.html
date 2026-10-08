@@ -3205,7 +3205,7 @@
             <span>Edge Band: <strong id="valDeployedEdge">0.75% ~ 2.50%</strong></span>
             <span>Max Leverage: <strong id="valDeployedMaxLeverage">500% (5.0x)</strong></span>
             <span>Speed: <strong id="valDeployedSpeed">50% in / 50% out</strong></span>
-            <span>Min Profit: <strong id="valDeployedMinProfit">0.20%</strong></span>
+            <span>Min Profit: <strong id="valDeployedMinProfit">0.10%</strong></span>
             <span>Cost: <strong id="valDeployedCost">5 BPS fee / 0 BPS slip</strong></span>
           </div>
         </div>
@@ -3697,7 +3697,7 @@
                       <input type="checkbox" id="chkCondExitNetPnl" checked onchange="tradingEngine.toggleCondition('exit_net_profit', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Net PnL must exceed the entry’s saved $0.02–$0.04 threshold after fees, slippage and funding">3. Net Profit (entry threshold)</span>
+                    <span class="condLabel" title="Net PnL must exceed the entry’s saved 0.10% ($0.02–$0.04 floor) threshold after fees, slippage and funding">3. Net Profit (≥ 0.10% after costs)</span>
                     <span class="condValue" id="valCondExitNetPnl"><strong id="valCritCombinedPnl">—</strong></span>
                     <span class="condBadge wait" id="badgeCondExitNetPnl">LOCKED</span>
                   </div>
@@ -13660,11 +13660,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         syncCondRow("exit_convergence", "rowCondExitConvergence", "chkCondExitConvergence", "badgeCondExitConvergence", isOutProfitable, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
         if ($("valCritCombinedPnl")) {
-          const sign = pnl >= 0 ? "+" : "";
-          const col = pnl > (trancheProfit?.threshold_usd ?? .02) ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#64748b");
+          const threshUsd = Number(trancheProfit?.threshold_usd ?? .02);
+          const minPct = Number(trancheProfit?.min_profit_pct ?? 0.10);
           $("valCritCombinedPnl").style.color = col;
-          $("valCritCombinedPnl").textContent = pnl == null ? (isKo ? "미확인" : "Unverified") : `${sign}$${pnl.toFixed(3)} net (> +$${(trancheProfit?.threshold_usd ?? .02).toFixed(2)})`;
-          $("valCritCombinedPnl").title = pnl == null ? (trancheProfit?.reason || "No matched tranche") : `Latest paired fills only. Entry fees + estimated exit fee (${trancheProfit.exit_fee_bps} bps), slippage (${trancheProfit.slippage_bps} bps), and funding reserve (${trancheProfit.funding_reserve_bps_day} bps/day) deducted. Actual PnL may differ.`;
+          $("valCritCombinedPnl").textContent = pnl == null ? (isKo ? "미확인" : "Unverified") : `${sign}$${pnl.toFixed(3)} net (> +${minPct.toFixed(2)}% / $${threshUsd.toFixed(3)})`;
+          $("valCritCombinedPnl").title = pnl == null ? (trancheProfit?.reason || "No matched tranche") : `Latest paired fills only. Min hurdle: ${minPct.toFixed(2)}% notional ($${threshUsd.toFixed(3)}). Entry fees + estimated exit fee (${trancheProfit.exit_fee_bps} bps), slippage (${trancheProfit.slippage_bps} bps), and funding reserve (${trancheProfit.funding_reserve_bps_day} bps/day) deducted. Actual PnL may differ.`;
         }
         syncCondRow("exit_net_profit", "rowCondExitNetPnl", "chkCondExitNetPnl", "badgeCondExitNetPnl", isNetProfitable, isKo ? "충족" : "PASS", isKo ? "수익미달" : "LOCKED", "wait");
 

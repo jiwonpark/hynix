@@ -8,6 +8,7 @@ EXIT_SLIPPAGE_BPS = 3.0
 FUNDING_RESERVE_BPS_DAY = 3.0
 LEG_PAIR_MAX_DELAY_MS = 5000
 MIN_NET_PROFIT_USD = 0.02
+MIN_NET_PROFIT_PCT = 0.10
 
 
 def aggregate_orders(executions):
@@ -171,13 +172,19 @@ def prepare_exit_context(executions, stock_symbol, pairs, *, orders=None, profil
 def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol, pairs, now, *, context=None):
     result = {'available': False, 'net_pnl_usd': None, 'profitable': False,
               'reason': 'NO_TARGET_TRANCHE', 'threshold_usd': MIN_NET_PROFIT_USD,
+              'min_profit_pct': MIN_NET_PROFIT_PCT,
               'valuation': 'mark_prices_with_cost_reserves',
               'exit_fee_bps': EXIT_FEE_BPS, 'slippage_bps': EXIT_SLIPPAGE_BPS,
               'funding_reserve_bps_day': FUNDING_RESERVE_BPS_DAY}
     if not target:
         return result
-    threshold = target.get('exit_policy', {}).get('minimum_net_profit_usd', MIN_NET_PROFIT_USD)
+    exit_policy = target.get('exit_policy') or {}
+    min_profit_pct = exit_policy.get('min_profit_pct')
+    min_usd_floor = exit_policy.get('minimum_net_profit_usd', MIN_NET_PROFIT_USD)
+    threshold = min_usd_floor
     result['threshold_usd'] = threshold
+    if min_profit_pct is not None:
+        result['min_profit_pct'] = min_profit_pct
     result['adr_order_id'] = target['trade_id']
     if stock_symbol != 'CSOPSKHYNIX2LUSDT':
         return {**result, 'reason': 'UNSUPPORTED_HEDGE_SYMBOL'}
@@ -221,6 +228,14 @@ def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol
     holding_days = max(0, now - min(adr['time'], stock['time']) / 1000) / 86400
     funding = (aq * adr_entry + sq * stock_entry) * FUNDING_RESERVE_BPS_DAY / 10000 * holding_days
     net = adr_pnl + stock_pnl - entry_fees - closing_fee - slippage - funding
+    if min_profit_pct is not None and exit_notional > 0:
+        threshold = max(min_usd_floor, exit_notional * (min_profit_pct / 100.0))
+    else:
+        threshold = min_usd_floor
+    threshold = round(threshold, 4)
+    result['threshold_usd'] = threshold
+    result['exit_notional_usd'] = round(exit_notional, 4)
+    result['net_return_pct'] = round((net / exit_notional * 100.0), 4) if exit_notional > 0 else 0.0
     return {**result, 'available': True, 'profitable': net > threshold, 'reason': 'ESTIMATE_READY',
             'stock_order_id': stock['order_id'], 'pairing': pairing,
             'adr_entry_price': adr_entry, 'stock_entry_price': stock_entry,

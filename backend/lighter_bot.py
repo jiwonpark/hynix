@@ -117,6 +117,7 @@ class LighterPairBot:
         "strategy_interval": "5m",
         "entry_z": 1.4,
         "exit_z": 0.20,
+        "min_profit_pct": 0.10,
         "min_profit_usd": 0.02,
         "ou_halflife_max": 8.0,
         "ou_stop_z": 3.5,
@@ -208,6 +209,7 @@ class LighterPairBot:
             "strategy_params": {
                 "entry_z": self.state.get("entry_z", 1.5),
                 "exit_z": self.state.get("exit_z", 0.25),
+                "min_profit_pct": float(self.state.get("min_profit_pct", 0.10)),
                 "min_profit_usd": float(self.state.get("min_profit_usd", 0.02)),
                 "ou_halflife_max": self.state.get("ou_halflife_max", 8.0),
                 "ou_stop_z": self.state.get("ou_stop_z", 3.5),
@@ -378,6 +380,7 @@ class LighterPairBot:
         tranche: Dict[str, Any],
         adr_quote: Dict[str, Any],
         domestic_quote: Dict[str, Any],
+        min_profit_pct: float = 0.10,
     ) -> Dict[str, Any]:
         """Estimate the realizable net PnL in USD for closing a tranche at current quotes."""
         side = int(tranche.get("side", -1) or -1)
@@ -429,15 +432,22 @@ class LighterPairBot:
         entry_fee = float(tranche.get("fee_usd", 0.0) or 0.0)
         exit_fee = 0.0
         net_pnl = gross_pnl - entry_fee - exit_fee
+        net_return_pct = round((net_pnl / notional * 100.0), 4) if notional > 0 else 0.0
+        hurdle_usd = max(0.01, notional * (min_profit_pct / 100.0)) if notional > 0 else 0.01
+        hurdle_usd = round(hurdle_usd, 4)
         return {
             "gross_pnl_usd": round(gross_pnl, 6),
             "net_pnl_usd": round(net_pnl, 6),
+            "net_return_pct": net_return_pct,
             "entry_fee_usd": round(entry_fee, 8),
             "exit_fee_usd": round(exit_fee, 8),
             "adr_pnl_usd": round(adr_pnl, 6),
             "domestic_pnl_usd": round(domestic_pnl, 6),
             "adr_exit_price": adr_exit,
             "domestic_exit_price": domestic_exit,
+            "min_profit_pct": min_profit_pct,
+            "threshold_usd": hurdle_usd,
+            "profitable": net_pnl >= hurdle_usd,
         }
 
 
@@ -667,7 +677,8 @@ class LighterPairBot:
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         bounds = {
-            "entry_z": (0.75, 4.0), "exit_z": (0.0, 1.0), "min_profit_usd": (0.0, 5.0),
+            "entry_z": (0.75, 4.0), "exit_z": (0.0, 1.0),
+            "min_profit_pct": (0.0, 5.0), "min_profit_usd": (0.0, 5.0),
             "notional_usd": (10.0, 500.0),
             "max_book_spread_bps": (1.0, 100.0),
             "max_slippage": (0.001, 0.02), "min_seconds_between_orders": (6, 86400),
@@ -1252,11 +1263,15 @@ class LighterPairBot:
         domestic_quote = _book_summary(domestic_book)
         risk = self._risk_capacity(status, open_pos, adr_quote, domestic_quote)
 
+        min_profit_pct = float(self.state.get("min_profit_pct", 0.10))
         for tranche in tranches:
-            est = self.estimate_tranche_pnl(tranche, adr_quote, domestic_quote)
+            est = self.estimate_tranche_pnl(tranche, adr_quote, domestic_quote, min_profit_pct=min_profit_pct)
             tranche["estimated_net_pnl_usd"] = est["net_pnl_usd"]
             tranche["estimated_gross_pnl_usd"] = est["gross_pnl_usd"]
-            tranche["minimum_net_profit_usd"] = float(self.state.get("min_profit_usd", 0.02))
+            tranche["net_return_pct"] = est["net_return_pct"]
+            tranche["min_profit_pct"] = min_profit_pct
+            tranche["minimum_net_profit_usd"] = est["threshold_usd"]
+            tranche["profitable"] = est["profitable"]
 
         if any((quote.get("spread_bps") or 1e9) > self.state["max_book_spread_bps"] for quote in (adr_quote, domestic_quote)):
             return
@@ -1271,17 +1286,19 @@ class LighterPairBot:
                 if abs(float(evaluation.get("z", 0.0) or 0.0)) >= stop_z:
                     is_emergency_stop = True
 
-            min_profit_usd = float(self.state.get("min_profit_usd", 0.02))
+            min_profit_pct = float(self.state.get("min_profit_pct", 0.10))
             exited_tranches = []
             held_tranches = []
             exit_ratio = ratios[-1]
 
             for tranche in list(tranches):
-                est = self.estimate_tranche_pnl(tranche, adr_quote, domestic_quote)
+                est = self.estimate_tranche_pnl(tranche, adr_quote, domestic_quote, min_profit_pct=min_profit_pct)
                 net_pnl_est = est["net_pnl_usd"]
+                hurdle_usd = est["threshold_usd"]
+                net_return_pct = est["net_return_pct"]
 
-                if not is_emergency_stop and net_pnl_est < min_profit_usd:
-                    held_tranches.append((tranche, net_pnl_est))
+                if not is_emergency_stop and not est["profitable"]:
+                    held_tranches.append((tranche, net_pnl_est, net_return_pct, hurdle_usd))
                     continue
 
                 execution = await self._trade_pair(-int(tranche["side"]), float(tranche["adr_qty"]), float(tranche["domestic_qty"]), adr_quote, domestic_quote, reduce_only=True)
@@ -1336,9 +1353,10 @@ class LighterPairBot:
                 self.state["last_action"] = f"{action_prefix}_{strat_name}"
                 self.state["last_action_time"] = int(time.time())
             elif held_tranches:
-                best_pnl = max(pnl for _, pnl in held_tranches)
+                best_pnl = max(pnl for _, pnl, _, _ in held_tranches)
+                best_pct = max(pct for _, _, pct, _ in held_tranches)
                 self.state["last_action"] = (
-                    f"ZERO_LOSS_GUARD_HOLDING ({len(held_tranches)} tranches, best ${best_pnl:+.3f} < ${min_profit_usd:+.2f})"
+                    f"ZERO_LOSS_GUARD_HOLDING ({len(held_tranches)} tranches, best {best_pct:+.2f}% / ${best_pnl:+.3f} < {min_profit_pct:.2f}%)"
                 )
         elif entry_signal and risk["can_add_tranche"]:
             # A strategy signal belongs to a completed candle, not to each worker tick.

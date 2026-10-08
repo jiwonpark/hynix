@@ -158,7 +158,7 @@
           rowCondExitConvergence: "1. Benchmark Convergence (≤ Target Parity)",
           rowCondExitDwell: "2. Anti-Churn Dwell Time (≥ 4 Bars Hold)",
           rowCondExitBottoming: "3. Bottoming-Out Momentum Inflection",
-          rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +$0.05 / tranche)",
+          rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +0.10% / tranche)",
           rowCondExitActive: "5. Core Inventory Ratchet (+0.01 / +0.20)",
           rowCondExitMaStack5m: "6. 5m Exit Stack Alignment",
           rowCondExitMaStack1h: "7. 1h Macro Sizing Neutralization",
@@ -200,7 +200,7 @@
           rowCondExitConvergence: "1. OU Neutral Line Crossing (|Z_OU| ≤ 0.25σ)",
           rowCondExitDwell: "2. Half-Life Expiry Time-Stop (3 × τ_half)",
           rowCondExitBottoming: "3. Mean Reversion Deceleration Inflection",
-          rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +$0.02 / tranche)",
+          rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +0.10% / tranche)",
           rowCondExitActive: "5. Asymmetric Alpha Retention Ratchet",
           rowCondExitMaStack5m: "6. Residual Error Envelope Crossing",
           rowCondExitMaStack1h: "7. Structural Drift Boundary Check",
@@ -242,7 +242,7 @@
           rowCondExitConvergence: "1. MA7 / MA24 Bullish Golden Cross",
           rowCondExitDwell: "2. Minimum Trend Dwell (≥ 3 Candles)",
           rowCondExitBottoming: "3. Trailing Stop Ratchet (0.15% Trail)",
-          rowCondExitNetPnl: "4. Zero-Loss Guaranteed Lock (> +$0.03)",
+          rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +0.10% / tranche)",
           rowCondExitActive: "5. Core Trend Inventory Retention",
           rowCondExitMaStack5m: "6. Fast MA Mean Reversion Touch",
           rowCondExitMaStack1h: "7. Macro Resistance Rejection Exit",
@@ -284,7 +284,7 @@
           rowCondExitConvergence: "1. Consensus Demotion (Active Votes < 2)",
           rowCondExitDwell: "2. Quorum Persistence Dwell (≥ 3 Bars)",
           rowCondExitBottoming: "3. Consensus Recovery Inflection",
-          rowCondExitNetPnl: "4. Zero-Loss Invariant Rule (> +$0.02)",
+          rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +0.10% / tranche)",
           rowCondExitActive: "5. Multi-Factor Core Retention",
           rowCondExitMaStack5m: "6. Factor Balance Mean Touch",
           rowCondExitMaStack1h: "7. Macro Factor Demotion Cut",
@@ -326,7 +326,7 @@
           rowCondExitConvergence: "1. Dynamic Trendline Crossing (Target Reversion)",
           rowCondExitDwell: "2. Minimum Dip Absorption Dwell (≥ 3 bars)",
           rowCondExitBottoming: "3. Opposite Micro-Exhaustion Rollover",
-          rowCondExitNetPnl: "4. Zero-Loss Hurdle Rule (> +$0.02 / tranche)",
+          rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +0.10% / tranche)",
           rowCondExitActive: "5. Trend Inventory Retention Ratchet",
           rowCondExitMaStack5m: "6. Fast Micro Trend Envelope Exit",
           rowCondExitMaStack1h: "7. Macro Trend Invalidation Stop",
@@ -454,7 +454,7 @@
         rowCondExitConvergence: "1. Benchmark Convergence (≤ Target Parity)",
         rowCondExitDwell: "2. Anti-Churn Dwell Time (≥ 120s Hold)",
         rowCondExitBottoming: "3. Bottoming-Out Momentum Inflection",
-        rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +$0.05 / tranche)",
+        rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +0.10% / tranche)",
         rowCondExitActive: "5. Core Inventory Ratchet (+0.01 / +0.20)",
         rowCondExitMaStack5m: "6. 5m Exit Stack Alignment",
         rowCondExitMaStack1h: "7. 1h Macro Sizing Neutralization",
@@ -1316,7 +1316,7 @@
           </div>
           <div>
             <b>Exit Target</b><br>
-            |Z| ≤ <span id="lighterLiveExitZ">0.25</span> · no separate PnL gate
+            |Z| ≤ <span id="lighterLiveExitZ">0.25</span> · Zero-Loss Guard
             <div id="lighterLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Full pair unwind at convergence</div>
           </div>
           <div>
@@ -1333,6 +1333,16 @@
               <button id="lighter_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
             </div>
             <small id="lighterLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 paired trades/min · 300s minimum · unlock required</small>
+          </div>
+          <div>
+            <b>Zero-Loss Hurdle</b><br>
+            Min Net Profit ≥ <span id="lighterLiveMinProfitPctVal">0.10</span>%
+            <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
+              <input id="lighter_inputLiveMinProfitPct" type="range" min="0.0" max="1.0" step="0.05" value="0.10" aria-label="Minimum net profit percent hurdle per tranche" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#059669">
+              <output id="lighterLiveMinProfitPctDisplay" for="lighter_inputLiveMinProfitPct" style="min-width:48px;font-weight:900;color:#047857">0.10%</output>
+              <button id="lighter_btnSaveLiveMinProfit" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#059669;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
+            </div>
+            <small id="lighterLiveMinProfitDesc" style="display:block;margin-top:3px;color:#64748b">Current: 0.10% notional (~$0.025 hurdle) · unlock required</small>
           </div>
           <div>
             <b>Current evaluation</b><br>
@@ -1368,6 +1378,16 @@
       if (rateInput && !rateInput._boundInput) {
         rateInput._boundInput = true;
         rateInput.addEventListener("input", () => this.renderTradeRatePreview());
+      }
+      const minProfitSaveBtn = $("lighter_btnSaveLiveMinProfit");
+      if (minProfitSaveBtn && !minProfitSaveBtn._boundClick) {
+        minProfitSaveBtn._boundClick = true;
+        minProfitSaveBtn.addEventListener("click", () => this.saveLiveMinProfitPct());
+      }
+      const minProfitInput = $("lighter_inputLiveMinProfitPct");
+      if (minProfitInput && !minProfitInput._boundInput) {
+        minProfitInput._boundInput = true;
+        minProfitInput.addEventListener("input", () => this.renderMinProfitPreview());
       }
       this.updateDeployButtonState();
       window.terminalLockManager?.applyState?.();
@@ -1413,6 +1433,10 @@
       } else if (mode === "custom") {
         payload.entry_z = numeric("lighter_inpCustomEntryZ", 1.5);
         payload.exit_z = numeric("lighter_inpCustomExitZ", 0.25);
+      }
+      const minProfitInp = $("lighter_inputLiveMinProfitPct");
+      if (minProfitInp) {
+        payload.min_profit_pct = numeric("lighter_inputLiveMinProfitPct", Number(this.botState?.strategy_params?.min_profit_pct ?? this.botState?.min_profit_pct ?? 0.10));
       }
       return payload;
     },
@@ -2204,6 +2228,21 @@
         tradeRateInput.value = String(Math.round(tradeRate * 5) / 5);
       }
       this.renderTradeRatePreview();
+
+      const liveMinProfitPct = Number(bot?.strategy_params?.min_profit_pct ?? bot?.min_profit_pct ?? 0.10);
+      writeRule("lighterLiveMinProfitPctVal", liveMinProfitPct.toFixed(2));
+      const minProfitInput = $("lighter_inputLiveMinProfitPct");
+      const minProfitDisplay = $("lighterLiveMinProfitPctDisplay");
+      const minProfitDesc = $("lighterLiveMinProfitDesc");
+      if (minProfitInput && document.activeElement !== minProfitInput) {
+        minProfitInput.value = liveMinProfitPct.toFixed(2);
+        if (minProfitDisplay) minProfitDisplay.textContent = `${liveMinProfitPct.toFixed(2)}%`;
+        const notional = Number(bot?.notional_usd || 25);
+        const hurdleUsd = Math.max(0.01, notional * liveMinProfitPct / 100);
+        if (minProfitDesc) minProfitDesc.textContent = `Current: ${liveMinProfitPct.toFixed(2)}% notional (~$${hurdleUsd.toFixed(3)} hurdle) · unlock required`;
+      }
+      this.setText("valDeployedMinProfit", `Min Profit ≥ ${liveMinProfitPct.toFixed(2)}%`);
+
       this.setText("valDeployedSpeed", `${tradeRateText} paired trades/min (${Math.round(cooldownSeconds)}s minimum)`);
       const engineCondition = lid("rowCondEntryEngine")?.querySelector(".condLabel");
       if (engineCondition) engineCondition.textContent = `9. ${stratName} State & ${tradeRateText}/min Rate Limit`;
@@ -2433,6 +2472,48 @@
         const data = await apiPost("/api/lighter/bot/config", { min_seconds_between_orders: cooldownSeconds });
         if (data?.bot) this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
         window.showToast?.(`Live bot rate saved: ${this.formatTradeRate(tradeRate)} paired trades/min (${cooldownSeconds}s minimum).`, "success");
+        return true;
+      } catch (error) {
+        window.alert(error.message);
+        return false;
+      } finally {
+        if (button) button.disabled = false;
+      }
+    },
+
+    renderMinProfitPreview() {
+      const input = $("lighter_inputLiveMinProfitPct");
+      const output = $("lighterLiveMinProfitPctDisplay");
+      if (!input || !output) return;
+      const pct = Number(input.value || 0.10);
+      output.textContent = `${pct.toFixed(2)}%`;
+      const notional = Number(this.botState?.notional_usd || 25);
+      const hurdleUsd = Math.max(0.01, notional * pct / 100);
+      const desc = $("lighterLiveMinProfitDesc");
+      if (desc) {
+        desc.textContent = `Target: ${pct.toFixed(2)}% notional (~$${hurdleUsd.toFixed(3)} hurdle) · unlock required`;
+      }
+    },
+
+    async saveLiveMinProfitPct() {
+      if (window.terminalLockManager?.isLocked) {
+        window.showToast?.("🔒 Terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
+        window.terminalLockManager?.openPasswordModal?.();
+        return false;
+      }
+      const button = $("lighter_btnSaveLiveMinProfit");
+      const input = $("lighter_inputLiveMinProfitPct");
+      if (!input) return false;
+      const pct = Number(input.value);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 5.0) {
+        window.showToast?.("Invalid profit percentage (must be between 0.0% and 5.0%)", "warn");
+        return false;
+      }
+      if (button) button.disabled = true;
+      try {
+        const data = await apiPost("/api/lighter/bot/config", { min_profit_pct: pct });
+        if (data?.bot) this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
+        window.showToast?.(`✓ Minimum net profit hurdle set to ${pct.toFixed(2)}%`, "success");
         return true;
       } catch (error) {
         window.alert(error.message);

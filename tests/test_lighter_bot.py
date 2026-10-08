@@ -890,11 +890,13 @@ class TestLighterPairBot(unittest.TestCase):
                     "strategy_interval": "15m",
                     "ou_halflife_max": 12.0,
                     "ou_stop_z": 4.0,
+                    "min_profit_pct": 0.25,
                 })
                 self.assertEqual(res["strategy_mode"], "ou_quant")
                 self.assertEqual(res["strategy_interval"], "15m")
                 self.assertEqual(res["strategy_params"]["ou_halflife_max"], 12.0)
                 self.assertEqual(res["strategy_params"]["ou_stop_z"], 4.0)
+                self.assertEqual(res["strategy_params"]["min_profit_pct"], 0.25)
 
                 with self.assertRaises(ValueError):
                     await bot.configure({"strategy_mode": "non_existent"})
@@ -1047,7 +1049,7 @@ class TestLighterPairBot(unittest.TestCase):
 
                 bot = LighterPairBot(client, Path(directory) / "state.json")
                 bot.state["min_seconds_between_orders"] = 0
-                bot.state["min_profit_usd"] = 0.02
+                bot.state["min_profit_pct"] = 0.10
                 bot.state["tranches"] = [{
                     "tranche_id": "t1",
                     "side": -1,

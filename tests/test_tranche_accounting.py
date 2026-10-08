@@ -111,3 +111,14 @@ class TrancheAccountingTests(unittest.TestCase):
         trades += [self.trade('CSOPSKHYNIX2LUSDT', 3, 'SELL', .5, 5.7, 1200000, fill=31),
                    self.trade('CSOPSKHYNIX2LUSDT', 3, 'SELL', .7, 5.7, 1200001, fill=32)]
         self.assertTrue(self.estimate(trades, '1')['available'])
+
+    def test_percentage_hurdle_scales_with_exit_notional(self):
+        trades = self.entries(adr_price=200, etf_price=10.0)
+        # exit notional = 0.07 * 195 + 1.2 * 5.7 = 13.65 + 6.84 = 20.49
+        # min_profit_pct = 0.50% => 20.49 * 0.005 = 0.10245 > 0.02 floor
+        target = {'trade_id': '1', 'trim_qty': .07, 'exit_policy': {'min_profit_pct': 0.50, 'minimum_net_profit_usd': 0.02}}
+        result = estimate_tranche_exit(target, trades, 195, 5.7, 'CSOPSKHYNIX2LUSDT', [], 2000)
+        self.assertTrue(result['available'])
+        self.assertAlmostEqual(result['threshold_usd'], 0.1025, places=4)
+        self.assertEqual(result['min_profit_pct'], 0.50)
+        self.assertAlmostEqual(result['exit_notional_usd'], 20.49, places=2)

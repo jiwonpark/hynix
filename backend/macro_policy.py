@@ -14,6 +14,7 @@ def policy_for_level(level=0):
         'stock_entry_qty': round(1.4 * multiplier, 2),
         'adr_exit_qty': .07, 'stock_exit_qty': 1.2,
         'convergence_pts': (.08, .12, .16)[level],
+        'min_profit_pct': 0.10,
         'minimum_net_profit_usd': (.02, .03, .04)[level],
         'require_confirmed_rebound': level > 0,
     }
