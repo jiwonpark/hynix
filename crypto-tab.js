@@ -402,7 +402,7 @@
       this.setText("valDeployedSpeed", "Configurable paired trade rate (0.2–10/min)");
       this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.20");
       this.setText("valDeployedCost", "0 BPS advertised fee / slippage excluded");
-      this.setText("lblAccountEquity", "Lighter Account Collateral");
+      this.setText("lblAccountEquity", "Crypto Account Collateral");
       this.setText("badgeEquitySource", "SYNCING");
       this.setText("valAccountEquity", "—");
       this.setText("lblAvailMargin", "Free Grid Margin");
@@ -471,7 +471,7 @@
       const kill = lid("btnKillSwitch");
       const resetPaper = lid("btnResetPaperBalance");
       const auto = lid("lblAutoPeriodicText");
-      if (auto) auto.textContent = "24/7 EC2 Lighter bot (continues when this browser closes)";
+      if (auto) auto.textContent = "24/7 Autonomous Crypto Bot (continues when this browser closes)";
       if (resetPaper) resetPaper.textContent = "↺ Reset Paper $10k";
 
       [paper, semi, live, kill, resetPaper].forEach((btn) => {
@@ -511,7 +511,7 @@
         frame.innerHTML = "";
         this.executionChartFrame = StrategyExecutionChartFrame.mount({
           container: frame,
-          id: "lighterShortTermSpreadChart",
+          id: "cryptoShortTermSpreadChart",
           showAssetPane: true,
           assetHeight: 185,
           ids: {
@@ -1302,41 +1302,41 @@
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;font-size:11px;line-height:1.4">
           <div>
             <b>Active Live Engine</b><br>
-            <span id="lighterLiveEngine">Dynamic Grid</span>
-            <div id="lighterLiveEngineDesc" style="font-size:10px;color:#047857;margin-top:2px;">Price harvesting mean-reversion</div>
+            <span id="cryptoLiveEngine">Dynamic Grid</span>
+            <div id="cryptoLiveEngineDesc" style="font-size:10px;color:#047857;margin-top:2px;">Price harvesting mean-reversion</div>
           </div>
           <div>
             <b>Execution Data & Interval</b><br>
-            <span id="lighterLiveInterval">Completed 5m candles</span> · 24-bar window
+            <span id="cryptoLiveInterval">Completed 5m candles</span> · 24-bar window
           </div>
           <div>
             <b>Entry Trigger</b><br>
-            |Z| ≥ <span id="lighterLiveEntryZ">1.50</span>
-            <div id="lighterLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short BTCUSDT / long KR<br>Z low: long BTCUSDT / short KR</div>
+            |Z| ≥ <span id="cryptoLiveEntryZ">1.50</span>
+            <div id="cryptoLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short BTCUSDT / long KR<br>Z low: long BTCUSDT / short KR</div>
           </div>
           <div>
             <b>Exit Target</b><br>
-            |Z| ≤ <span id="lighterLiveExitZ">0.25</span> · no separate PnL gate
-            <div id="lighterLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Full pair unwind at convergence</div>
+            |Z| ≤ <span id="cryptoLiveExitZ">0.25</span> · no separate PnL gate
+            <div id="cryptoLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Full pair unwind at convergence</div>
           </div>
           <div>
             <b>Size / dynamic capacity</b><br>
-            ADR target $<span id="lighterLiveNotional">25</span> · pair gross ≈ $<span id="lighterLivePairGross">—</span><br>
-            <span id="lighterLiveMaxTranches">—</span> safe tranches · ≤8x account gross
+            ADR target $<span id="cryptoLiveNotional">25</span> · pair gross ≈ $<span id="cryptoLivePairGross">—</span><br>
+            <span id="cryptoLiveMaxTranches">—</span> safe tranches · ≤8x account gross
           </div>
           <div>
             <b>Execution guards</b><br>
-            Book spread ≤ <span id="lighterLiveMaxSpread">45</span> bps
+            Book spread ≤ <span id="cryptoLiveMaxSpread">45</span> bps
             <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
               <input id="crypto_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Maximum paired trades per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
               <output id="cryptoLiveTradeRateValue" for="crypto_inputLiveTradeRate" style="min-width:48px;font-weight:900;color:#0369a1">0.2/min</output>
               <button id="crypto_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
             </div>
-            <small id="lighterLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 paired trades/min · 300s minimum · unlock required</small>
+            <small id="cryptoLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 paired trades/min · 300s minimum · unlock required</small>
           </div>
           <div>
             <b>Current evaluation</b><br>
-            <span id="lighterLiveEvaluation">Awaiting completed bar</span>
+            <span id="cryptoLiveEvaluation">Awaiting completed bar</span>
           </div>
         </div>
         <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
@@ -1558,8 +1558,8 @@
 
     init() {
       if (this.initialized || !$("tabContentCrypto")) return;
-      if (!window.TerminalCommon || $("tabContentCrypto").dataset.terminalInstance !== "lighter") {
-        throw new Error("Shared terminal module did not initialize the Lighter instance");
+      if (!window.TerminalCommon || $("tabContentCrypto").dataset.terminalInstance !== "crypto") {
+        throw new Error("Shared terminal module did not initialize the Crypto instance");
       }
       $("tabContentCrypto").querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
       $("tabContentCrypto").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
@@ -2143,7 +2143,7 @@
         rulesState.style.color = isEnabled ? "#166534" : "#475569";
       }
       const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
-      writeRule("lighterLiveEngine", `${stratName} (${stratInterval})`);
+      writeRule("cryptoLiveEngine", `${stratName} (${stratInterval})`);
       const enginePill = $("crypto_liveBotEnginePill");
       if (enginePill) enginePill.textContent = `LIVE: ${stratName.toUpperCase()}`;
       const navLiveBadge = $("crypto_liveBotStrategyBadge");
@@ -2159,8 +2159,8 @@
       this.setText("valDeployedEdge", `Entry |Z| ≥ ${Number(bot?.entry_z ?? 1.4).toFixed(2)}`);
       this.setText("valDeployedMinProfit", `Exit |Z| ≤ ${Number(bot?.exit_z ?? 0.2).toFixed(2)}`);
 
-      writeRule("lighterLiveEntryZ", Number(bot?.entry_z ?? 1.4).toFixed(2));
-      writeRule("lighterLiveExitZ", Number(bot?.exit_z ?? 0.2).toFixed(2));
+      writeRule("cryptoLiveEntryZ", Number(bot?.entry_z ?? 1.4).toFixed(2));
+      writeRule("cryptoLiveExitZ", Number(bot?.exit_z ?? 0.2).toFixed(2));
       const liveEntryZ = Number(bot?.entry_z ?? 1.4);
       const liveExitZ = Number(bot?.exit_z ?? 0.2);
       const ouEntryInp = $("crypto_inpOuEntryZ");
@@ -2182,16 +2182,16 @@
       const configuredAdrNotional = Number(bot?.notional_usd ?? 50);
       const liveRatio = Number(bot?.last_evaluation?.ratio || this.currentRatio || 0);
       const estimatedPairGross = configuredAdrNotional * (1 + (liveRatio > 0 ? 100 / liveRatio : 1));
-      writeRule("lighterLiveNotional", configuredAdrNotional.toFixed(0));
-      writeRule("lighterLivePairGross", estimatedPairGross.toFixed(2));
+      writeRule("cryptoLiveNotional", configuredAdrNotional.toFixed(0));
+      writeRule("cryptoLivePairGross", estimatedPairGross.toFixed(2));
       const capacity = bot?.risk_capacity || {};
-      writeRule("lighterLiveMaxTranches", `${capacity.active_tranches ?? tranches.length}/${capacity.max_tranches ?? bot?.max_tranches ?? tranches.length} campaign slots`);
-      writeRule("lighterLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
+      writeRule("cryptoLiveMaxTranches", `${capacity.active_tranches ?? tranches.length}/${capacity.max_tranches ?? bot?.max_tranches ?? tranches.length} campaign slots`);
+      writeRule("cryptoLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
       const cooldownSeconds = Math.max(6, Number(bot?.min_seconds_between_orders ?? 300));
       const tradeRate = Math.max(0.2, Math.min(10, 60 / cooldownSeconds));
       const tradeRateText = this.formatTradeRate(tradeRate);
-      writeRule("lighterLiveCooldown", `Current: ${tradeRateText} paired trades/min · ${Math.round(cooldownSeconds)}s minimum · unlock required`);
-      writeRule("lighterLiveEvaluation", bot?.last_evaluation
+      writeRule("cryptoLiveCooldown", `Current: ${tradeRateText} paired trades/min · ${Math.round(cooldownSeconds)}s minimum · unlock required`);
+      writeRule("cryptoLiveEvaluation", bot?.last_evaluation
         ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · ratio ${Number(bot.last_evaluation.ratio || 0).toFixed(3)}% · mean ${Number(bot.last_evaluation.mean || 0).toFixed(3)}%`
         : "Awaiting completed bar");
       const notionalInput = lid("inputOrderNotional");
@@ -4375,7 +4375,7 @@
     }
   };
 
-  window.cryptoEngine = lighterEngine;
+  window.cryptoEngine = cryptoEngine;
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => cryptoEngine.init());
   } else {
