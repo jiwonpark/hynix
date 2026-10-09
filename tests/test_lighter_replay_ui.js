@@ -11,6 +11,7 @@ elements.set('lighterMatchPill', {
   style:{}, dataset:{}, setAttribute(){},
   addEventListener(type, handler){pillEvents[type]=handler;},
 });
+elements.set('lighter_btnMatchLiveReplay',{});
 elements.set('lighter_dynamicBacktestStatus', {});
 elements.set('lighter_btnRerunDynamicBacktest', {});
 elements.set('lighter_inpOuEntryZ', {value:'1.8'});
@@ -40,6 +41,7 @@ engine.botState={enabled:true,strategy_mode:'ou_quant',strategy_interval:'5m',
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/PAPER DIVERGENT/);
 assert.match(pill.textContent,/entry_z: 1.8 ≠ 3.5/);
+assert.equal(elements.get('lighter_btnMatchLiveReplay').disabled,false);
 let alignCalls=0;
 const alignReplayToLive=engine.alignReplayToLive;
 engine.alignReplayToLive=()=>{alignCalls++;};
@@ -76,6 +78,7 @@ engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/Replay signal\/exit rules differ from live/);
 assert.match(pill.textContent,/Live match unavailable/);
 assert.equal(pill.dataset.matchState,'unavailable');
+assert.equal(elements.get('lighter_btnMatchLiveReplay').disabled,true);
 
 // A single click after choosing another replay strategy restores the live OU
 // strategy and thresholds without deploying anything to the bot.

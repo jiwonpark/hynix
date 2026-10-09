@@ -558,6 +558,17 @@
         }
       }
 
+      const replayControls = lid("shortTermExecutionSection")?.firstElementChild?.lastElementChild;
+      if (replayControls && !$("lighter_btnMatchLiveReplay")) {
+        const matchButton = document.createElement("button");
+        matchButton.id = "lighter_btnMatchLiveReplay";
+        matchButton.type = "button";
+        matchButton.textContent = "Match live replay";
+        matchButton.style.cssText = "padding:5px 10px;border:1px solid #f59e0b;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800;cursor:pointer";
+        matchButton.addEventListener("click", () => this.alignReplayToLive());
+        replayControls.appendChild(matchButton);
+      }
+
       const entry = lid("btnStepTranche");
       const exit = lid("btnReduceTranche");
       const flatten = lid("btnEmergencyFlatten");
@@ -2011,6 +2022,12 @@
       pill.dataset.matchState = !matched && canAlign ? "divergent" : "unavailable";
       pill.setAttribute("aria-disabled", !matched && canAlign ? "false" : "true");
       pill.setAttribute("tabindex", !matched && canAlign ? "0" : "-1");
+      const matchButton = $("lighter_btnMatchLiveReplay");
+      if (matchButton) {
+        matchButton.disabled = matched || !canAlign;
+        matchButton.textContent = matched ? "Replay matches live" : canAlign ? "Match live replay" : "Live match unavailable";
+        matchButton.title = pill.title;
+      }
       pill.style.background = matched ? (active ? "#dcfce7" : "#fef3c7") : "#fff7ed";
       pill.style.color = matched ? (active ? "#166534" : "#92400e") : "#c2410c";
       pill.style.borderColor = matched ? (active ? "#86efac" : "#fcd34d") : "#fdba74";
