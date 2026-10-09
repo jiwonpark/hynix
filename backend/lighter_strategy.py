@@ -5,17 +5,17 @@ from typing import Any, Dict, List, Optional, Tuple
 OU_MIN_ABS_DEVIATION_PP = 0.25
 OU_MACRO_EMA_SPAN = 60
 OU_MACRO_SLOPE_BARS = 12
-OU_MACRO_WARMUP_BARS = 120
 
 
-def _ou_macro_ema_slope(ratios: List[float]) -> Optional[float]:
-    """EMA60 change over 12 completed bars, with causal warmup."""
-    if len(ratios) < OU_MACRO_WARMUP_BARS:
+def _ou_macro_ema_slope(ratios: List[float], span: int = OU_MACRO_EMA_SPAN,
+                        slope_bars: int = OU_MACRO_SLOPE_BARS) -> Optional[float]:
+    """Causal EMA change over completed bars, with enough warmup for the span."""
+    if len(ratios) < max(span * 2, slope_bars + 2):
         return None
-    alpha = 2.0 / (OU_MACRO_EMA_SPAN + 1)
+    alpha = 2.0 / (span + 1)
     ema = ratios[0]
     earlier = None
-    comparison_index = len(ratios) - OU_MACRO_SLOPE_BARS - 1
+    comparison_index = len(ratios) - slope_bars - 1
     for index, ratio in enumerate(ratios[1:], 1):
         ema += alpha * (ratio - ema)
         if index == comparison_index:
@@ -27,6 +27,15 @@ def evaluate_ou_signals(
     ratios: List[float], *, entry_z: float, exit_z: float,
     ou_halflife_max: float, ou_stop_z: float,
     evaluation_time: Optional[int] = None,
+    ou_min_abs_deviation_pp: float = OU_MIN_ABS_DEVIATION_PP,
+    ou_macro_ema_span: int = OU_MACRO_EMA_SPAN,
+    ou_macro_slope_bars: int = OU_MACRO_SLOPE_BARS,
+    ou_use_entry_z: bool = True,
+    ou_use_halflife: bool = True,
+    ou_use_min_abs_deviation: bool = True,
+    ou_use_macro_trend: bool = True,
+    ou_use_stop_zone: bool = True,
+    ou_use_exit_z: bool = True,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Evaluate the production OU rules on completed ratios only.
 
@@ -64,15 +73,17 @@ def evaluate_ou_signals(
     z_score = (ratios[-1] - ou_mean) / denominator if denominator > 1e-6 else 0.0
     candidate_side = -1 if z_score > 0 else 1
     abs_deviation_pp = abs(ratios[-1] - ou_mean)
-    macro_slope = _ou_macro_ema_slope(ratios)
+    macro_slope = _ou_macro_ema_slope(ratios, ou_macro_ema_span, ou_macro_slope_bars)
     macro_aligned = bool(macro_slope is not None and
                          (macro_slope >= 0 if candidate_side > 0 else macro_slope <= 0))
     entry_signal = bool(
-        entry_z <= abs(z_score) < ou_stop_z
-        and half_life_bars <= ou_halflife_max * 4
-        and abs_deviation_pp >= OU_MIN_ABS_DEVIATION_PP
-        and macro_aligned)
-    exit_signal = bool(abs(z_score) <= exit_z or abs(z_score) >= ou_stop_z)
+        math.isfinite(z_score) and z_score != 0
+        and (not ou_use_entry_z or abs(z_score) >= entry_z)
+        and (not ou_use_stop_zone or abs(z_score) < ou_stop_z)
+        and (not ou_use_halflife or half_life_bars <= ou_halflife_max * 4)
+        and (not ou_use_min_abs_deviation or abs_deviation_pp >= ou_min_abs_deviation_pp)
+        and (not ou_use_macro_trend or macro_aligned))
+    exit_signal = bool((ou_use_exit_z and abs(z_score) <= exit_z) or abs(z_score) >= ou_stop_z)
     evaluation = {
         "time": evaluation_time,
         "ratio": round(ratios[-1], 4),
@@ -83,11 +94,17 @@ def evaluate_ou_signals(
         "half_life_bars": round(half_life_bars, 1),
         "stop_z": ou_stop_z,
         "abs_deviation_pp": abs_deviation_pp,
-        "min_abs_deviation_pp": OU_MIN_ABS_DEVIATION_PP,
-        "macro_ema_span": OU_MACRO_EMA_SPAN,
-        "macro_slope_bars": OU_MACRO_SLOPE_BARS,
+        "min_abs_deviation_pp": ou_min_abs_deviation_pp,
+        "macro_ema_span": ou_macro_ema_span,
+        "macro_slope_bars": ou_macro_slope_bars,
         "macro_ema_slope": macro_slope,
         "macro_aligned": macro_aligned,
+        "ou_use_entry_z": ou_use_entry_z,
+        "ou_use_halflife": ou_use_halflife,
+        "ou_use_min_abs_deviation": ou_use_min_abs_deviation,
+        "ou_use_macro_trend": ou_use_macro_trend,
+        "ou_use_stop_zone": ou_use_stop_zone,
+        "ou_use_exit_z": ou_use_exit_z,
         # Preserve the exact fitted parameters for the executable-quote check.
         # Rounded display values can flip a decision near the entry threshold.
         "signal_mean": ou_mean,

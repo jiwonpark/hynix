@@ -181,9 +181,9 @@
         icon: "🔬",
         badge: "STATISTICAL ARBITRAGE · SDE DRIFT",
         title: "➕ OU Stochastic Equilibrium Scale-In",
-        desc: "SDE Trigger: Parity Discount ≥ 2.0σ from calibrated continuous OU drift mean (dX = θ(μ - X)dt + σdW)",
+        desc: "OU entry uses the enabled Z, half-life, absolute-deviation, macro EMA and upper-Z checks shown below.",
         tpTitle: "🎯 OU Mean Reversion Neutral Crossing",
-        tpDesc: "SDE Exit: Parity recovers to |Z_OU| ≤ 0.25σ or half-life time-stop (3 × τ_half) expires",
+        tpDesc: "OU exit uses the selected neutral-Z target, subject to net-profit checks; emergency stop remains active.",
         entryLabels: {
           rowCondEntryMaStretch: "1. Calibrated OU Drift Stretch (Z_OU ≥ 2.0σ)",
           rowCondEntryBase: "2. Half-Life Actionability Window (15m ≤ τ ≤ 4h)",
@@ -923,6 +923,14 @@
         if (el) el.textContent = text;
       });
       Object.entries(p.researchLabels).forEach(([id, text]) => this.setText(id, text));
+      const legacyEntryChecklist = lid("entryConditionsChecklist");
+      if (legacyEntryChecklist) legacyEntryChecklist.style.display = mode === "ou_quant" ? "none" : "";
+      const legacyExitChecklist = lid("exitConditionsChecklist");
+      if (legacyExitChecklist) legacyExitChecklist.style.display = mode === "ou_quant" ? "none" : "";
+      const legacyCards = $("tabContentLighter")?.querySelector(".shortTermCriteriaGrid")?.children || [];
+      for (const card of [legacyCards[0], legacyCards[1]]) {
+        if (card) card.style.display = mode === "ou_quant" ? "none" : "";
+      }
 
       const ladderSec = $("lighter_gridMatrixSection");
       let detailSec = $("lighter_paradigmDetailSection");
@@ -960,12 +968,15 @@
       if (mode === "ou_quant") {
         const liveEntryZ = Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4).toFixed(1);
         const liveExitZ = Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20).toFixed(2);
+        const params = this.botState?.strategy_params || {};
+        const ouChecked = (key) => params[key] !== false ? "checked" : "";
+        const ouNumber = (key, fallback) => Number(params[key] ?? fallback);
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div>
               <div style="display:flex;align-items:center;gap:8px;">
                 <span style="font-size:18px;">🔬</span>
-                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Ornstein-Uhlenbeck Continuous Drift & Cointegration Matrix</strong>
+                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">OU mean-reversion rules</strong>
                 <span style="background:#e0e7ff;color:#4338ca;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #c7d2fe;">SDE CALIBRATED</span>
               </div>
               <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Continuous stochastic differential equation calibration: dX = θ(μ - X)dt + σdW · Normalized Z-score mean reversion.</p>
@@ -986,22 +997,36 @@
               <button id="lighter_btnOuReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun SDE</button>
             </div>
           </div>
+          <div id="lighter_ouEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+            <strong style="font-size:12px;color:#0f172a;">Entry conditions · switches and values apply to replay; Deploy applies them to the live bot</strong>
+            <label>1. Minimum |Z| <input id="lighter_ouUseEntryZ" type="checkbox" ${ouChecked("ou_use_entry_z")}></label>
+            <label>2. Maximum half-life <input id="lighter_ouUseHalflife" type="checkbox" ${ouChecked("ou_use_halflife")}> <input id="lighter_ouHalflifeMax" type="number" min="1" max="50" step="0.5" value="${ouNumber("ou_halflife_max", 8)}" style="width:62px;"> × 4 bars</label>
+            <label>3. Minimum deviation from OU mean <input id="lighter_ouUseMinDeviation" type="checkbox" ${ouChecked("ou_use_min_abs_deviation")}> <input id="lighter_ouMinDeviation" type="number" min="0" max="5" step="0.01" value="${ouNumber("ou_min_abs_deviation_pp", 0.25)}" style="width:62px;"> pp</label>
+            <label>4. Macro EMA slope aligned <input id="lighter_ouUseMacroTrend" type="checkbox" ${ouChecked("ou_use_macro_trend")}> EMA <input id="lighter_ouMacroSpan" type="number" min="5" max="120" step="1" value="${ouNumber("ou_macro_ema_span", 60)}" style="width:58px;"> over <input id="lighter_ouMacroSlopeBars" type="number" min="1" max="60" step="1" value="${ouNumber("ou_macro_slope_bars", 12)}" style="width:58px;"> bars</label>
+            <label>5. Entry below emergency |Z| limit <input id="lighter_ouUseStopZone" type="checkbox" ${ouChecked("ou_use_stop_zone")}> <input id="lighter_ouStopZ" type="number" min="1.5" max="6" step="0.05" value="${ouNumber("ou_stop_z", 3.5)}" style="width:62px;"> σ</label>
+            <small style="color:#64748b;">Live order-book quote confirmation, account capacity and order safety remain separate execution checks. Historical replay has no order-book quotes.</small>
+          </div>
+          <div id="lighter_ouExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+            <strong style="font-size:12px;color:#0f172a;">Exit condition</strong>
+            <label>1. OU neutral |Z| target (Exit Z above) <input id="lighter_ouUseExitZ" type="checkbox" ${ouChecked("ou_use_exit_z")}></label>
+            <small style="color:#64748b;">Emergency stop at the upper Z limit remains active. Live exits also check net profit and actual positions; replay uses price signals only.</small>
+          </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Reversion Speed (θ)</small>
-              <strong id="lighter_valOuTheta" style="font-size:15px;color:#0f172a;">0.0418 / bar</strong>
+              <strong id="lighter_valOuTheta" style="font-size:15px;color:#0f172a;">Awaiting replay</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Equilibrium Half-Life (τ)</small>
-              <strong id="lighter_valOuHalfLife" style="font-size:15px;color:#0284c7;">16.5 bars (4.1h)</strong>
+              <strong id="lighter_valOuHalfLife" style="font-size:15px;color:#0284c7;">Awaiting replay</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
-              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">ADF Stationarity</small>
-              <strong style="font-size:15px;color:#16a34a;">p = 0.012 (Stationary ✓)</strong>
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Replay macro EMA slope</small>
+              <strong id="lighter_valOuMacroSlope" style="font-size:15px;color:#16a34a;">Awaiting completed bars</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Current SDE Divergence</small>
-              <strong id="lighter_valOuZScore" style="font-size:15px;color:#7c3aed;">+1.84σ (Reversion Zone)</strong>
+              <strong id="lighter_valOuZScore" style="font-size:15px;color:#7c3aed;">Awaiting replay</strong>
             </div>
           </div>
         `;
@@ -1176,7 +1201,8 @@
       if (detailSec && typeof detailSec.querySelectorAll === "function") {
         detailSec.querySelectorAll("input, select").forEach((input) => {
           if (typeof input.addEventListener === "function") {
-            input.addEventListener("input", () => this.updateRulesMatchStatus());
+            input.addEventListener("input", () => { input._userModified = true; this.updateRulesMatchStatus(); });
+            input.addEventListener("change", () => { input._userModified = true; });
             input.addEventListener("change", () => this.runBacktest());
           }
         });
@@ -1409,6 +1435,29 @@
       }
     },
 
+    ouConditionSettings() {
+      const live = this.botState?.strategy_params || {};
+      const number = (id, key, fallback) => {
+        const raw = $(id)?.value;
+        const value = raw == null || raw === "" ? NaN : Number(raw);
+        return Number.isFinite(value) ? value : Number(live[key] ?? fallback);
+      };
+      const enabled = (id, key) => $(id)?.checked ?? (live[key] !== false);
+      return {
+        ou_halflife_max: number("lighter_ouHalflifeMax", "ou_halflife_max", 8),
+        ou_stop_z: number("lighter_ouStopZ", "ou_stop_z", 3.5),
+        ou_min_abs_deviation_pp: number("lighter_ouMinDeviation", "ou_min_abs_deviation_pp", 0.25),
+        ou_macro_ema_span: number("lighter_ouMacroSpan", "ou_macro_ema_span", 60),
+        ou_macro_slope_bars: number("lighter_ouMacroSlopeBars", "ou_macro_slope_bars", 12),
+        ou_use_entry_z: enabled("lighter_ouUseEntryZ", "ou_use_entry_z"),
+        ou_use_halflife: enabled("lighter_ouUseHalflife", "ou_use_halflife"),
+        ou_use_min_abs_deviation: enabled("lighter_ouUseMinDeviation", "ou_use_min_abs_deviation"),
+        ou_use_macro_trend: enabled("lighter_ouUseMacroTrend", "ou_use_macro_trend"),
+        ou_use_stop_zone: enabled("lighter_ouUseStopZone", "ou_use_stop_zone"),
+        ou_use_exit_z: enabled("lighter_ouUseExitZ", "ou_use_exit_z"),
+      };
+    },
+
     liveStrategyPayload(mode = this.currentParadigm || "grid") {
       const payload = {
         strategy_mode: mode,
@@ -1421,6 +1470,7 @@
       if (mode === "ou_quant") {
         payload.entry_z = numeric("lighter_inpOuEntryZ", Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4));
         payload.exit_z = numeric("lighter_inpOuExitZ", Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20));
+        Object.assign(payload, this.ouConditionSettings());
       } else if (mode === "ma_stack") {
         payload.ma_stretch_min = numeric("lighter_inpMaStretchMin", 0.30);
         payload.ma_trailing_stop = numeric("lighter_inpMaTrailingStop", 0.15);
@@ -1448,6 +1498,15 @@
         return false;
       }
       const mode = this.currentParadigm || "grid";
+      if (mode === "ou_quant") {
+        const controls = $("lighter_paradigmDetailSection")?.querySelectorAll?.("input[type=number]") || [];
+        for (const input of controls) {
+          if (typeof input.checkValidity === "function" && !input.checkValidity()) {
+            input.reportValidity?.();
+            return false;
+          }
+        }
+      }
       const pName = this.paradigms[mode]?.name || mode;
       const confirmed = options.skipConfirm || window.confirm(`Deploy "${pName}" (${this.interval}) to the live EC2 trading daemon?\n\nLive orders and existing inventory exits will immediately follow this strategy's parameters.`);
       if (!confirmed) return false;
@@ -1831,7 +1890,7 @@
           mode === "custom" ? numeric("lighter_inpCustomEntryZ", 1.5) : 1.5,
         exit_z: mode === "ou_quant" ? numeric("lighter_inpOuExitZ", liveOuExitFallback) :
           mode === "custom" ? numeric("lighter_inpCustomExitZ", 0.25) : 0.25,
-        ou_halflife_max: 8.0, ou_stop_z: 3.5,
+        ...this.ouConditionSettings(),
         ma_stretch_min: numeric("lighter_inpMaStretchMin", 0.30),
         ma_trailing_stop: numeric("lighter_inpMaTrailingStop", 0.15),
         min_consensus_votes: numeric("lighter_selFactorQuorum", 3),
@@ -1866,7 +1925,10 @@
       if (!isParadigmMatch) diffs.push(`Strategy ${currentMode} ≠ ${liveMode}`);
       const parameterKeys = {
         grid: ["entry_z", "exit_z"], custom: ["entry_z", "exit_z"],
-        ou_quant: ["entry_z", "exit_z", "ou_halflife_max", "ou_stop_z"],
+        ou_quant: ["entry_z", "exit_z", "ou_halflife_max", "ou_stop_z",
+          "ou_min_abs_deviation_pp", "ou_macro_ema_span", "ou_macro_slope_bars",
+          "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
+          "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z"],
         ma_stack: ["ma_stretch_min", "ma_trailing_stop"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
@@ -1874,7 +1936,9 @@
       const liveParams = this.botState?.strategy_params || this.botState || {};
       if (isParadigmMatch) (parameterKeys[currentMode] || []).forEach((key) => {
         const live = liveParams[key];
-        if (live == null || !Number.isFinite(Number(live)) || Math.abs(settings[key] - Number(live)) > 1e-9)
+        if (live == null || (typeof settings[key] === "boolean"
+          ? settings[key] !== live
+          : !Number.isFinite(Number(live)) || Math.abs(settings[key] - Number(live)) > 1e-9))
           diffs.push(`${key}: ${settings[key]} ≠ ${live ?? "unknown"}`);
       });
       // Only Grid/Custom consume these optional research filters. The other
@@ -1959,6 +2023,26 @@
           if (rangeExit) rangeExit.value = val;
           if (badgeExit) badgeExit.textContent = `≤ ${val}σ`;
         }
+        const controls = {
+          ou_halflife_max: "lighter_ouHalflifeMax", ou_stop_z: "lighter_ouStopZ",
+          ou_min_abs_deviation_pp: "lighter_ouMinDeviation",
+          ou_macro_ema_span: "lighter_ouMacroSpan",
+          ou_macro_slope_bars: "lighter_ouMacroSlopeBars",
+          ou_use_entry_z: "lighter_ouUseEntryZ",
+          ou_use_halflife: "lighter_ouUseHalflife",
+          ou_use_min_abs_deviation: "lighter_ouUseMinDeviation",
+          ou_use_macro_trend: "lighter_ouUseMacroTrend",
+          ou_use_stop_zone: "lighter_ouUseStopZone",
+          ou_use_exit_z: "lighter_ouUseExitZ",
+        };
+        Object.entries(controls).forEach(([key, id]) => {
+          const input = $(id);
+          if (input && params[key] != null) {
+            if (typeof params[key] === "boolean") input.checked = params[key];
+            else input.value = String(params[key]);
+            input._userModified = false;
+          }
+        });
       }
       this.updateRulesMatchStatus();
       this.refreshChart();
@@ -2187,12 +2271,29 @@
       writeRule("lighterLiveExitZ", Number(bot?.exit_z ?? 0.2).toFixed(2));
       const liveEntryDetail = $("lighterLiveEntryDetail");
       if (liveEntryDetail) {
-        liveEntryDetail.innerHTML = stratMode === "ou_quant"
-          ? `Executable deviation ≥ ${Number(bot?.strategy_params?.ou_min_abs_deviation_pp ?? 0.25).toFixed(2)} pp<br>EMA${Number(bot?.strategy_params?.ou_macro_ema_span ?? 60)} slope over ${Number(bot?.strategy_params?.ou_macro_slope_bars ?? 12)} bars aligned with entry`
-          : "Z high: short SKHY / long KR<br>Z low: long SKHY / short KR";
+        const rules = bot?.strategy_params || {};
+        liveEntryDetail.textContent = stratMode === "ou_quant"
+          ? `OU entry: Z ${rules.ou_use_entry_z === false ? "off" : `≥ ${Number(bot?.entry_z ?? 1.5).toFixed(2)}`}; half-life ${rules.ou_use_halflife === false ? "off" : `≤ ${Number(rules.ou_halflife_max ?? 8) * 4} bars`}; deviation ${rules.ou_use_min_abs_deviation === false ? "off" : `≥ ${Number(rules.ou_min_abs_deviation_pp ?? 0.25).toFixed(2)} pp`}; EMA ${rules.ou_use_macro_trend === false ? "off" : `${rules.ou_macro_ema_span ?? 60}/${rules.ou_macro_slope_bars ?? 12} aligned`}; upper Z ${rules.ou_use_stop_zone === false ? "off" : `< ${Number(rules.ou_stop_z ?? 3.5).toFixed(2)}`}`
+          : "Z high: short SKHY / long KR; Z low: long SKHY / short KR";
       }
       const liveEntryZ = Number(bot?.entry_z ?? 1.4);
       const liveExitZ = Number(bot?.exit_z ?? 0.2);
+      const ouControlMap = {
+        ou_halflife_max: "lighter_ouHalflifeMax", ou_stop_z: "lighter_ouStopZ",
+        ou_min_abs_deviation_pp: "lighter_ouMinDeviation",
+        ou_macro_ema_span: "lighter_ouMacroSpan", ou_macro_slope_bars: "lighter_ouMacroSlopeBars",
+        ou_use_entry_z: "lighter_ouUseEntryZ", ou_use_halflife: "lighter_ouUseHalflife",
+        ou_use_min_abs_deviation: "lighter_ouUseMinDeviation",
+        ou_use_macro_trend: "lighter_ouUseMacroTrend", ou_use_stop_zone: "lighter_ouUseStopZone",
+        ou_use_exit_z: "lighter_ouUseExitZ",
+      };
+      Object.entries(ouControlMap).forEach(([key, id]) => {
+        const input = $(id);
+        const value = bot?.strategy_params?.[key];
+        if (!input || input._userModified || value == null) return;
+        if (typeof value === "boolean") input.checked = value;
+        else input.value = String(value);
+      });
       const ouEntryInp = $("lighter_inpOuEntryZ");
       const ouExitInp = $("lighter_inpOuExitZ");
       const ouEntryRange = $("lighter_rangeOuEntryZ");
@@ -4144,6 +4245,13 @@
       if (button) button.disabled = true;
       if (summary) summary.textContent = "Running…";
       try {
+        if (this.currentParadigm === "ou_quant") {
+          const controls = $("lighter_paradigmDetailSection")?.querySelectorAll?.("input[type=number]") || [];
+          for (const input of controls) {
+            if (typeof input.checkValidity === "function" && !input.checkValidity())
+              throw new Error("Fix the highlighted OU threshold before replaying");
+          }
+        }
         const settings = this.replaySettings();
         this.updateRulesMatchStatus();
         const trendSlope = settings.trend_slope_min;
@@ -4209,6 +4317,14 @@
           if (thetaEl && data.metrics.avg_theta) thetaEl.textContent = `${data.metrics.avg_theta.toFixed(4)} / bar`;
           const hlEl = $("lighter_valOuHalfLife");
           if (hlEl && data.metrics.avg_half_life_bars) hlEl.textContent = `${data.metrics.avg_half_life_bars} bars (${data.metrics.half_life_mins}m)`;
+          const slopeEl = $("lighter_valOuMacroSlope");
+          if (slopeEl) {
+            const slope = data.metrics.latest_macro_ema_slope;
+            slopeEl.textContent = slope == null ? "Insufficient bars" : `${Number(slope).toFixed(4)} pp`;
+          }
+          const zEl = $("lighter_valOuZScore");
+          const lastZ = data.series?.[data.series.length - 1]?.z;
+          if (zEl) zEl.textContent = lastZ == null ? "Insufficient bars" : `${Number(lastZ) >= 0 ? "+" : ""}${Number(lastZ).toFixed(3)}σ`;
         } else if (data.metrics && this.currentParadigm === "trend_pullback") {
           const slopeEl = $("lighter_valTrendSlope");
           if (slopeEl && data.metrics.latest_slope != null) {

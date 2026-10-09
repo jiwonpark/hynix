@@ -18,11 +18,20 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../lighter-tab.js'),'utf8'),ctx);
 const engine = ctx.window.lighterEngine;
 engine.currentParadigm='ou_quant'; engine.interval='5m';
+const ouHtml=engine.renderParadigmDetail('ou_quant');
+for (const id of ['lighter_ouUseEntryZ','lighter_ouHalflifeMax','lighter_ouMinDeviation',
+  'lighter_ouMacroSpan','lighter_ouMacroSlopeBars','lighter_ouStopZ','lighter_ouUseExitZ']) {
+  assert.match(ouHtml,new RegExp(`id="${id}"`));
+}
+assert.doesNotMatch(ouHtml,/ADF Stationarity|Cointegration Drift Persistence/);
 const pill = elements.get('lighterMatchPill');
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/Live settings unavailable/);
 engine.botState={enabled:true,strategy_mode:'ou_quant',strategy_interval:'5m',
-  strategy_params:{entry_z:3.5,exit_z:0.8,ou_halflife_max:8,ou_stop_z:3.5}};
+  strategy_params:{entry_z:3.5,exit_z:0.8,ou_halflife_max:8,ou_stop_z:3.5,
+    ou_min_abs_deviation_pp:.25,ou_macro_ema_span:60,ou_macro_slope_bars:12,
+    ou_use_entry_z:true,ou_use_halflife:true,ou_use_min_abs_deviation:true,
+    ou_use_macro_trend:true,ou_use_stop_zone:true,ou_use_exit_z:true}};
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/PAPER DIVERGENT/);
 assert.match(pill.textContent,/entry_z: 1.8 ≠ 3.5/);
@@ -34,6 +43,13 @@ elements.get('lighter_chkCondEntryPeak').checked=true;
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
 assert.equal(elements.get('lighter_chkCondEntryPeak').disabled,true);
+elements.set('lighter_ouUseMinDeviation', {checked:false});
+engine.updateRulesMatchStatus();
+assert.match(pill.textContent,/ou_use_min_abs_deviation: false ≠ true/);
+assert.equal(engine.liveStrategyPayload('ou_quant').ou_use_min_abs_deviation,false);
+elements.get('lighter_ouUseMinDeviation').checked=true;
+engine.updateRulesMatchStatus();
+assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
 engine.currentParadigm='grid'; engine.botState.strategy_mode='grid';
 engine.botState.strategy_params={entry_z:1.5,exit_z:.25};
 engine.updateRulesMatchStatus();

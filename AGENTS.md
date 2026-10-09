@@ -1,5 +1,18 @@
 # Project workflow
 
+## Condition controls (product requirement)
+
+Across every trading tab and strategy, each condition presented as a user-facing
+entry or exit rule must correspond to a real rule in the live engine or replay.
+Users must be able to turn each strategy condition on or off and adjust every
+applicable threshold. Changes to replay controls must affect the replay; live
+changes must be saved through the authenticated bot configuration and reflected
+in status. Show clearly when replay cannot model a live-only execution check.
+Never present a decorative switch, a hard-coded threshold, or a stale rule label
+as though it controls trading. Exchange validity, order reconciliation, and
+account safety limits are execution safeguards; label them separately from
+optional strategy conditions instead of presenting disabled fake switches.
+
 The user wants implementation changes committed, pushed, and deployed by default.
 After completing the appropriate checks, commit the changes, push to origin, deploy
 both affected frontend and backend files, and verify the live site. Do not stop at

@@ -124,6 +124,15 @@ class LighterPairBot:
         "min_profit_usd": 0.02,
         "ou_halflife_max": 8.0,
         "ou_stop_z": 3.5,
+        "ou_min_abs_deviation_pp": OU_MIN_ABS_DEVIATION_PP,
+        "ou_macro_ema_span": OU_MACRO_EMA_SPAN,
+        "ou_macro_slope_bars": OU_MACRO_SLOPE_BARS,
+        "ou_use_entry_z": True,
+        "ou_use_halflife": True,
+        "ou_use_min_abs_deviation": True,
+        "ou_use_macro_trend": True,
+        "ou_use_stop_zone": True,
+        "ou_use_exit_z": True,
         "ma_stretch_min": 0.30,
         "ma_trailing_stop": 0.15,
         "min_consensus_votes": 3,
@@ -219,9 +228,12 @@ class LighterPairBot:
                 "min_profit_usd": float(self.state.get("min_profit_usd", 0.02)),
                 "ou_halflife_max": self.state.get("ou_halflife_max", 8.0),
                 "ou_stop_z": self.state.get("ou_stop_z", 3.5),
-                "ou_min_abs_deviation_pp": OU_MIN_ABS_DEVIATION_PP,
-                "ou_macro_ema_span": OU_MACRO_EMA_SPAN,
-                "ou_macro_slope_bars": OU_MACRO_SLOPE_BARS,
+                "ou_min_abs_deviation_pp": self.state.get("ou_min_abs_deviation_pp", OU_MIN_ABS_DEVIATION_PP),
+                "ou_macro_ema_span": self.state.get("ou_macro_ema_span", OU_MACRO_EMA_SPAN),
+                "ou_macro_slope_bars": self.state.get("ou_macro_slope_bars", OU_MACRO_SLOPE_BARS),
+                **{key: self.state.get(key, True) for key in (
+                    "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
+                    "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z")},
                 "ma_stretch_min": self.state.get("ma_stretch_min", 0.30),
                 "ma_trailing_stop": self.state.get("ma_trailing_stop", 0.15),
                 "min_consensus_votes": self.state.get("min_consensus_votes", 3),
@@ -692,6 +704,8 @@ class LighterPairBot:
             "max_book_spread_bps": (1.0, 100.0),
             "max_slippage": (0.001, 0.02), "min_seconds_between_orders": (6, 86400),
             "ou_halflife_max": (1.0, 50.0), "ou_stop_z": (1.5, 6.0),
+            "ou_min_abs_deviation_pp": (0.0, 5.0),
+            "ou_macro_ema_span": (5, 120), "ou_macro_slope_bars": (1, 60),
             "ma_stretch_min": (0.05, 2.0), "ma_trailing_stop": (0.01, 1.0),
             "min_consensus_votes": (1, 4), "trend_macro_window": (6, 120),
             "trend_pullback_dist": (0.01, 2.0), "trend_tp_dist": (0.01, 1.0),
@@ -712,10 +726,16 @@ class LighterPairBot:
             for key, (low, high) in bounds.items():
                 if key not in values:
                     continue
-                value = int(values[key]) if key in {"max_tranches", "min_seconds_between_orders", "min_consensus_votes", "trend_macro_window"} else float(values[key])
-                if not low <= value <= high:
+                value = int(values[key]) if key in {"max_tranches", "min_seconds_between_orders", "min_consensus_votes", "trend_macro_window", "ou_macro_ema_span", "ou_macro_slope_bars"} else float(values[key])
+                if not math.isfinite(value) or not low <= value <= high:
                     raise ValueError(f"{key} must be between {low} and {high}")
                 updated[key] = value
+            for key in ("ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
+                        "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z"):
+                if key in values:
+                    if not isinstance(values[key], bool):
+                        raise ValueError(f"{key} must be boolean")
+                    updated[key] = values[key]
             if updated["exit_z"] >= updated["entry_z"]:
                 raise ValueError("exit_z must be lower than entry_z")
             self.state = updated
@@ -1068,11 +1088,13 @@ class LighterPairBot:
         z = (ratio - mean) / scale
         result.update(quote_ratio=ratio, quote_z=z)
         result["abs_deviation_pp"] = abs(ratio - mean)
-        if not math.isfinite(z) or (side > 0 and z > -entry_z) or (side < 0 and z < entry_z):
+        if not math.isfinite(z) or (side > 0 and z >= 0) or (side < 0 and z <= 0):
+            result["reason"] = "EXECUTABLE_PRICE_REVERSED_SIGNAL_SIDE"
+        elif evaluation.get("ou_use_entry_z", True) and abs(z) < entry_z:
             result["reason"] = "EXECUTABLE_PRICE_NO_LONGER_SUPPORTS_SIGNAL"
-        elif abs(z) >= float(evaluation.get("stop_z") or math.inf):
+        elif evaluation.get("ou_use_stop_zone", True) and abs(z) >= float(evaluation.get("stop_z") or math.inf):
             result["reason"] = "EXECUTABLE_PRICE_IN_STOP_ZONE"
-        elif result["abs_deviation_pp"] < OU_MIN_ABS_DEVIATION_PP:
+        elif evaluation.get("ou_use_min_abs_deviation", True) and result["abs_deviation_pp"] < float(evaluation.get("min_abs_deviation_pp", OU_MIN_ABS_DEVIATION_PP)):
             result["reason"] = "EXECUTABLE_EDGE_BELOW_MINIMUM"
         else:
             result["accepted"] = True
@@ -1173,6 +1195,12 @@ class LighterPairBot:
                 exit_z=exit_z,
                 ou_halflife_max=float(self.state.get("ou_halflife_max", 8.0)),
                 ou_stop_z=float(self.state.get("ou_stop_z", 3.5)),
+                ou_min_abs_deviation_pp=float(self.state.get("ou_min_abs_deviation_pp", OU_MIN_ABS_DEVIATION_PP)),
+                ou_macro_ema_span=int(self.state.get("ou_macro_ema_span", OU_MACRO_EMA_SPAN)),
+                ou_macro_slope_bars=int(self.state.get("ou_macro_slope_bars", OU_MACRO_SLOPE_BARS)),
+                **{key: self.state.get(key, True) for key in (
+                    "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
+                    "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z")},
                 evaluation_time=int(time.time()),
             )
 
@@ -1296,7 +1324,8 @@ class LighterPairBot:
 
         interval = self.state.get("strategy_interval", "5m")
         interval_ms = 300_000 if interval == "5m" else (60_000 if interval == "1m" else (900_000 if interval == "15m" else 3_600_000))
-        candle_count = 200 if self.state.get("strategy_mode") == "ou_quant" else 80
+        candle_count = (max(200, 2 * int(self.state.get("ou_macro_ema_span", OU_MACRO_EMA_SPAN)) + 10)
+                        if self.state.get("strategy_mode") == "ou_quant" else 80)
         adr_candles, domestic_candles, adr_book, domestic_book = await asyncio.gather(
             self.client.candles(216, interval, candle_count, fresh=True),
             self.client.candles(161, interval, candle_count, fresh=True),

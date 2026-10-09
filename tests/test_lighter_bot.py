@@ -1017,6 +1017,73 @@ class TestLighterPairBot(unittest.TestCase):
         self.assertFalse(no_warmup[0])
         self.assertIsNone(no_warmup[3]["macro_ema_slope"])
 
+    def test_ou_entry_condition_switches_and_thresholds(self):
+        def evaluate(slope, adjustment, **settings):
+            ratios = [140 + slope * index + .2 * math.sin(index * .7) for index in range(200)]
+            ratios[-1] += adjustment
+            return evaluate_ou_signals(
+                ratios, entry_z=settings.pop("entry_z", 1.4), exit_z=.2,
+                ou_halflife_max=settings.pop("ou_halflife_max", 8),
+                ou_stop_z=settings.pop("ou_stop_z", 3.5), **settings)
+
+        baseline = evaluate(.003, -.6)
+        self.assertTrue(baseline[0])
+        self.assertFalse(evaluate(.003, -.6, ou_min_abs_deviation_pp=1.0)[0])
+        self.assertTrue(evaluate(.003, -.6, ou_min_abs_deviation_pp=1.0,
+                                 ou_use_min_abs_deviation=False)[0])
+        self.assertFalse(evaluate(.003, -.6, ou_macro_ema_span=120)[0])
+        self.assertTrue(evaluate(.003, -.6, ou_macro_ema_span=120,
+                                 ou_use_macro_trend=False)[0])
+        self.assertFalse(evaluate(-.003, -.6)[0])
+        self.assertTrue(evaluate(-.003, -.6, ou_use_macro_trend=False)[0])
+        self.assertEqual(baseline[3]["min_abs_deviation_pp"], .25)
+        self.assertFalse(evaluate(.003, -.6, entry_z=3.0)[0])
+        self.assertTrue(evaluate(.003, -.6, entry_z=3.0,
+                                 ou_use_entry_z=False)[0])
+        self.assertFalse(evaluate(.003, -.6, ou_halflife_max=.1)[0])
+        self.assertTrue(evaluate(.003, -.6, ou_halflife_max=.1,
+                                 ou_use_halflife=False)[0])
+        self.assertFalse(evaluate(.003, -.6, ou_stop_z=1.5)[0])
+        self.assertTrue(evaluate(.003, -.6, ou_stop_z=1.5,
+                                 ou_use_stop_zone=False)[0])
+        self.assertTrue(evaluate_ou_signals(
+            [140.0] * 50, entry_z=1.4, exit_z=.2,
+            ou_halflife_max=8, ou_stop_z=3.5)[2])
+        self.assertFalse(evaluate_ou_signals(
+            [140.0] * 50, entry_z=1.4, exit_z=.2,
+            ou_halflife_max=8, ou_stop_z=3.5, ou_use_exit_z=False)[2])
+
+        quote = {"bid": 140.3}
+        domestic = {"ask": 1000}
+        model = {"signal_mean": 140, "signal_scale": .1, "stop_z": 2,
+                 "min_abs_deviation_pp": .5}
+        self.assertEqual(LighterPairBot._ou_executable_entry(
+            model, -1, quote, domestic, 1.5)["reason"], "EXECUTABLE_PRICE_IN_STOP_ZONE")
+        model["ou_use_stop_zone"] = False
+        self.assertEqual(LighterPairBot._ou_executable_entry(
+            model, -1, quote, domestic, 1.5)["reason"], "EXECUTABLE_EDGE_BELOW_MINIMUM")
+        model["ou_use_min_abs_deviation"] = False
+        self.assertTrue(LighterPairBot._ou_executable_entry(
+            model, -1, quote, domestic, 1.5)["accepted"])
+
+        async def configure():
+            with tempfile.TemporaryDirectory() as directory:
+                bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+                state = await bot.configure({
+                    "strategy_mode": "ou_quant", "ou_min_abs_deviation_pp": .4,
+                    "ou_macro_ema_span": 80, "ou_macro_slope_bars": 20,
+                    "ou_use_macro_trend": False,
+                })
+                self.assertEqual(state["strategy_params"]["ou_min_abs_deviation_pp"], .4)
+                self.assertEqual(state["strategy_params"]["ou_macro_ema_span"], 80)
+                self.assertFalse(state["strategy_params"]["ou_use_macro_trend"])
+                self.assertEqual(bot._evaluate_strategy_signals(
+                    [140 + .2 * math.sin(i * .7) for i in range(50)])[3]["macro_slope_bars"], 20)
+                with self.assertRaises(ValueError):
+                    await bot.configure({"ou_use_macro_trend": "false"})
+
+        asyncio.run(configure())
+
     def test_ou_entry_rechecks_executable_pair_before_any_order(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
