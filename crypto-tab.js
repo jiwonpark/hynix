@@ -135,9 +135,9 @@
         icon: "🏛️",
         badge: "SINGLE-LEG VOLATILITY HARVESTER",
         title: "➕ Dip Scale-In (Buy Rung / Lower Harvester)",
-        desc: "Adaptive trigger: Price ≤ Lower Rung (rolling mean; ATR dynamic volatility + dip guard)",
-        tpTitle: "🎯 Rebalance & Take-Profit (Mean Reversion)",
-        tpDesc: "Adaptive exit: Price ≥ Benchmark Mean (Profit Hurdle, Core Ratchet, Anti-churn Dwell)",
+        desc: "Paper entry: completed price is at least the selected Z-score distance from the prior 24-bar mean. Optional replay filters appear below.",
+        tpTitle: "🎯 Mean-Reversion Exit",
+        tpDesc: "Paper exit: price returns within the selected Z-score band. Optional replay filters appear below.",
         entryLabels: {
           rowCondEntryMaStretch: "1. Grid Band Trigger (Upper Rung ≥ +0.12%)",
           rowCondEntryBase: "2. ATR Dynamic Volatility Spacing",
@@ -459,7 +459,7 @@
       this.renderSymbolSelector();
       this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto Terminal · ${sym}`);
       this.setText("lblDaemonAuthBadge", "CHECKING BINANCE FUTURES");
-      this.setText("lblDaemonUpbitBadge", `PAPER LADDER TIER ${this.currentTier} · LIVE CAP 1x`);
+      this.setText("lblDaemonUpbitBadge", "PAPER REPLAY · LIVE CAP 1x");
       this.setText("valDeployedStrategyName", `⚡ ${sym} Single-Leg Quantitative Engine`);
       this.setText("valDeployedEngine", "Live Grid signal on completed candles");
       this.setText("valDeployedInterval", `${this.interval || "5m"} completed candles`);
@@ -469,6 +469,53 @@
       this.setText("valDeployedSpeed", "Configurable trade execution rate (0.2–10/min)");
       this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.20σ");
       this.setText("valDeployedCost", "Paper replay excludes fees; live orders use exchange fills");
+      const cryptoTab = $("tabContentCrypto");
+      const execHeader = lid("secExecutionTerminal")?.querySelector(".chartHeader > span");
+      if (execHeader) execHeader.textContent = "Single-leg Futures · no hedge";
+      const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner");
+      if (guard) {
+        guard.querySelector("strong").textContent = "Live Grid execution rules";
+        const guardBadge = guard.querySelector("span[style*='background: #16a34a']");
+        if (guardBadge) guardBadge.textContent = "GRID ONLY";
+        guard.querySelector("p").textContent = "The live Grid bot uses completed-candle Z-score entry and convergence exit, then checks the current executable quote before entry. It has no minimum-profit exit rule. Exchange validity, available margin, a selected-contract 1x equity cap, and order reconciliation are execution safeguards. Replay-only switches below do not change live orders.";
+      }
+      const telemetryTitle = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner + div strong");
+      if (telemetryTitle) telemetryTitle.textContent = "📊 Single-leg position and account risk";
+      const riskCards = lid("valHedgedDelta")?.parentElement;
+      if (riskCards) riskCards.querySelector("span").textContent = "Selected-contract exposure";
+      const pnlCard = lid("valHedgedCombinedPnl")?.parentElement;
+      if (pnlCard) pnlCard.querySelector("span").textContent = "Open PnL (exchange / paper)";
+      const moveCard = lid("valHedgedLoss10")?.parentElement;
+      if (moveCard) {
+        moveCard.querySelector("span").textContent = "10% adverse price move (estimate)";
+        moveCard.querySelector("div").textContent = "Approximate loss on selected-contract size";
+      }
+      const divergenceCard = lid("valHedgedMaxDiv")?.parentElement;
+      if (divergenceCard) divergenceCard.style.display = "none";
+      const exposureBar = lid("pillAdrShares")?.parentElement?.parentElement;
+      if (exposureBar) {
+        exposureBar.querySelector("span").textContent = "CONTRACT EXPOSURE";
+        exposureBar.querySelector("span + span").textContent = "Selected Futures contract; no hedge leg:";
+      }
+      const priceLegend = cryptoTab?.querySelector(".assetPriceLegendBar");
+      if (priceLegend) {
+        priceLegend.querySelector("span").textContent = "📊 CONTRACT PRICE:";
+        const firstAsset = priceLegend.querySelector("#crypto_legAdrPrice");
+        if (firstAsset) firstAsset.textContent = `● ${sym} perpetual`;
+        const secondAsset = priceLegend.querySelector("#crypto_legStockPrice");
+        if (secondAsset) secondAsset.style.display = "none";
+      }
+      const replayPrice = lid("valShortTermCurrentParity")?.parentElement;
+      if (replayPrice) replayPrice.firstChild.textContent = "Contract price: ";
+      this.setText("valShortTermCurrentParity", "—");
+      const replayCaption = lid("valCritCurrentSpread")?.parentElement;
+      if (replayCaption) replayCaption.firstChild.textContent = "Current price: ";
+      this.setText("valHedgedShares", `${sym} single-leg contract`);
+      this.setText("lblExecutionSlippage", "Execution: current book quote checked before orders");
+      const syncBacktest = lid("btnSyncFromBacktest");
+      if (syncBacktest) syncBacktest.style.display = "none";
+      const minProfitLabel = lid("valDeployedMinProfit")?.parentElement;
+      if (minProfitLabel) minProfitLabel.firstChild.textContent = "Exit Rule: ";
       this.setText("lblAccountEquity", "Real Futures Equity");
       this.setText("badgeEquitySource", "SYNCING");
       this.setText("valAccountEquity", "—");
@@ -666,7 +713,7 @@
         enforceLabel.title = "When enabled, manual paper trades validate against active criteria checklist (MA Stretch, Peak, Spacing). Uncheck to trade unrestricted.";
         enforceLabel.innerHTML = `
           <input type="checkbox" id="crypto_chkEnforceConditions" checked style="cursor:pointer;accent-color:#0284c7;margin:0;width:14px;height:14px;">
-          <span>Enforce Live Conditions</span>
+          <span>Enforce Paper Conditions</span>
         `;
         entry.parentNode.appendChild(enforceLabel);
       }
@@ -741,7 +788,6 @@
       }
       const autoToggle = lid("chkAutoPeriodic48h");
       if (autoToggle) autoToggle.addEventListener("change", () => this.toggleLiveBot(autoToggle.checked));
-      const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner p");
       const switchPosTab = (activeTab) => {
         ["tabPositions", "tabAssets", "tabDaemonActivity", "tabOrderLog"].forEach((id) => {
           const tabEl = lid(id);
@@ -864,60 +910,16 @@
 
     gridMatrixTemplate() {
       return `
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
-          <div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-size:18px;">🏛️</span>
-              <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Institutional Grid Bands & Rebalance Ladder</strong>
-              <span id="crypto_gridStatusPill" style="background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #bae6fd;">PAPER LADDER</span>
-            </div>
-            <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Asymmetric multi-tier volatility harvester · Dynamic price equilibrium rebalancing.</p>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            <span style="font-size:11px;font-weight:800;color:#475569;margin-right:2px;">RISK TIER:</span>
-            <button id="crypto_btnTier1" class="lighterTierBtn" type="button" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">Tier 1 (1x Conservative)</button>
-            <button id="crypto_btnTier2" class="lighterTierBtn" type="button" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;">Tier 2 (1x Neutral)</button>
-            <button id="crypto_btnTier3" class="lighterTierBtn" type="button" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">Tier 3 (1x Opportunistic)</button>
-          </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:9px">
+          <strong style="font-size:13px;color:#0f172a">Paper Grid replay thresholds</strong>
+          <span style="font-size:10px;font-weight:800;color:#0369a1;background:#e0f2fe;padding:3px 8px;border-radius:5px">PAPER ONLY · no resting orders</span>
         </div>
-
-        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px;">
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
-            <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Grid Band Spacing</small>
-            <strong id="crypto_valGridSpacing" style="font-size:15px;color:#0f172a;">±0.120% (ATR Scaled)</strong>
-          </div>
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
-            <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Active Grid Rungs</small>
-            <strong id="crypto_valActiveRungs" style="font-size:15px;color:#0f172a;">0 / 8 Tiers Active</strong>
-          </div>
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
-            <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Net Delta Skew</small>
-            <strong id="crypto_valDeltaSkew" style="font-size:15px;color:#10b981;">0.000 Neutral ($0.00)</strong>
-          </div>
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
-            <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Harvested Yield (Round-Trips)</small>
-            <strong id="crypto_valHarvestedYield" style="font-size:15px;color:#059669;">+$0.00 (0 Cycles)</strong>
-          </div>
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:11px;color:#334155">
+          <label>Entry |Z| ≥ <input id="crypto_gridReplayEntryZ" type="number" min="0.1" max="10" step="0.1" value="${Number(this.gridReplayEntryZ ?? 1.5)}" style="width:62px;font-weight:800"></label>
+          <label>Exit |Z| ≤ <input id="crypto_gridReplayExitZ" type="number" min="0" max="5" step="0.05" value="${Number(this.gridReplayExitZ ?? 0.25)}" style="width:62px;font-weight:800"></label>
+          <button id="crypto_gridReplayRerun" type="button" style="background:#0284c7;color:white;border:0;border-radius:5px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer">Rerun paper</button>
         </div>
-
-        <div style="overflow-x:auto;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;">
-          <table style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left;">
-            <thead>
-              <tr style="background:#f8fafc;color:#475569;font-size:10.5px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;">
-                <th style="padding:8px 12px;">Rung Tier</th>
-                <th style="padding:8px 12px;">Target Price</th>
-                <th style="padding:8px 12px;">Distance</th>
-                <th style="padding:8px 12px;">Allocations (Single-Leg Perp)</th>
-                <th style="padding:8px 12px;">Action Type</th>
-                <th style="padding:8px 12px;">Status</th>
-                <th style="padding:8px 12px;text-align:right;">Round-Trip Est. PnL</th>
-              </tr>
-            </thead>
-            <tbody id="crypto_gridLadderBody">
-              <!-- Dynamically populated -->
-            </tbody>
-          </table>
-        </div>
+        <p style="margin:8px 0 0;font-size:10.5px;color:#64748b">These thresholds and the enabled replay filters determine the paper arrows. Live Grid settings are saved separately in the authenticated bot panel.</p>
       `;
     },
 
@@ -1494,7 +1496,7 @@
       }
       btn.disabled = false;
       if (currentMode === liveMode) {
-        btnLabel.textContent = `✓ ${currentName} Active on Live Bot (Re-apply)`;
+        btnLabel.textContent = `✓ ${currentName} saved on paused bot (Re-apply)`;
         btn.style.background = "#059669";
       } else {
         btnLabel.textContent = `⚡ Deploy ${currentName} to Live Bot`;
@@ -1596,10 +1598,22 @@
     },
 
     bindGridMatrixEvents() {
-      [1, 2, 3].forEach((tierNum) => {
-        const btn = $(`crypto_btnTier${tierNum}`);
-        if (btn) btn.addEventListener("click", () => this.setRiskTier(tierNum));
+      [["crypto_gridReplayEntryZ", "gridReplayEntryZ", 1.5],
+        ["crypto_gridReplayExitZ", "gridReplayExitZ", 0.25]].forEach(([id, field, fallback]) => {
+        const input = $(id);
+        if (!input) return;
+        input.addEventListener("change", () => {
+          const value = Number(input.value);
+          if (!Number.isFinite(value) || value < Number(input.min) || value > Number(input.max)) {
+            input.value = String(this[field] ?? fallback);
+            return;
+          }
+          this[field] = value;
+          this.runBacktest();
+          this.updateRulesMatchStatus();
+        });
       });
+      $("crypto_gridReplayRerun")?.addEventListener("click", () => this.runBacktest());
     },
 
     setRiskTier(tierNum) {
@@ -1896,6 +1910,7 @@
 
         const formattedPrice = this.formatCryptoPrice(this.currentRatio);
         this.setText("valShortTermCurrentPrice", formattedPrice);
+        this.setText("valShortTermCurrentParity", formattedPrice);
         this.setText("valHedgedCombinedPnl", this.virtualPnlText());
         this.setText("valAutoCurrentEdge", formattedPrice);
         this.setText("valCritCurrentSpread", formattedPrice);
@@ -2105,6 +2120,8 @@
       if (liveMode === "grid") {
         this.gridReplayEntryZ = Number(params.entry_z);
         this.gridReplayExitZ = Number(params.exit_z);
+        if ($("crypto_gridReplayEntryZ")) $("crypto_gridReplayEntryZ").value = String(this.gridReplayEntryZ);
+        if ($("crypto_gridReplayExitZ")) $("crypto_gridReplayExitZ").value = String(this.gridReplayExitZ);
       }
       if (liveMode === "custom") {
         [["crypto_inpCustomEntryZ", "entry_z"], ["crypto_inpCustomExitZ", "exit_z"]].forEach(([id, key]) => {
@@ -2359,11 +2376,11 @@
       const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
       writeRule("cryptoLiveEngine", `${stratName} (${stratInterval})`);
       const enginePill = $("crypto_liveBotEnginePill");
-      if (enginePill) enginePill.textContent = `LIVE: ${stratName.toUpperCase()}`;
+      if (enginePill) enginePill.textContent = `${isEnabled ? "ACTIVE" : "SAVED / PAUSED"}: ${stratName.toUpperCase()}`;
       const navLiveBadge = $("crypto_liveBotStrategyBadge");
       if (navLiveBadge) {
         navLiveBadge.style.display = "inline-block";
-        navLiveBadge.textContent = `● LIVE BOT: ${stratName.toUpperCase()} (${stratInterval})`;
+        navLiveBadge.textContent = `${isEnabled ? "● ACTIVE" : "○ PAUSED"} BOT: ${stratName.toUpperCase()} (${stratInterval})`;
       }
       this.updateDeployButtonState();
       if (!this._userSelectedParadigm && stratMode && this.currentParadigm !== stratMode && this.paradigms[stratMode]) {
@@ -2426,7 +2443,7 @@
       this.setText("valDeployedSpeed", `${tradeRateText} single-leg orders/min (${Math.round(cooldownSeconds)}s minimum)`);
       const engineCondition = lid("rowCondEntryEngine")?.querySelector(".condLabel");
       if (engineCondition) engineCondition.textContent = `9. ${stratName} State & ${tradeRateText}/min Rate Limit`;
-      this.setText("valCritRetainedCore", `${tranches.length} tracked pair tranche${tranches.length === 1 ? "" : "s"}`);
+      this.setText("valCritRetainedCore", `${tranches.length} bot-owned single-leg tranche${tranches.length === 1 ? "" : "s"}`);
       if (bot?.last_error) {
         this.setText("lblHedgedSyncBadge", isEnabled
           ? `BOT ACTIVE · AUTO-RETRYING: ${bot.last_error}`
@@ -2478,7 +2495,7 @@
         collateral = 10000.0;
         tranchesCount = this.entries.length;
         maxTranches = 8;
-        grossNotional = this.entries.reduce((sum, entry) => sum + (Number(entry.notional) || 0) * 2, 0);
+        grossNotional = this.entries.reduce((sum, entry) => sum + (Number(entry.notional) || 0), 0);
       }
 
       const grossLev = collateral > 0 ? (grossNotional / collateral) : 0;

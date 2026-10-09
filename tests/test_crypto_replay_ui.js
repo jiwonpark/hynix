@@ -55,4 +55,24 @@ assert.equal(engine.replaySettings().entry_z, 2);
 assert.equal(engine.replaySettings().exit_z, .4);
 assert.equal(replayCalls, 2);
 
+// The visible Grid controls drive the same values sent to replay.
+assert.doesNotMatch(engine.gridMatrixTemplate(), /ARMED|Round-Trip Est. PnL/);
+const gridEvents = {};
+for (const [id, value, min, max] of [
+  ['crypto_gridReplayEntryZ', '2', '0.1', '10'],
+  ['crypto_gridReplayExitZ', '0.4', '0', '5'],
+]) {
+  elements.set(id, { value, min, max, addEventListener(type, handler) { gridEvents[id] = handler; } });
+}
+elements.set('crypto_gridReplayRerun', {addEventListener() {}});
+engine.bindGridMatrixEvents();
+elements.get('crypto_gridReplayEntryZ').value = '2.6';
+gridEvents.crypto_gridReplayEntryZ();
+assert.equal(engine.replaySettings().entry_z, 2.6);
+assert.equal(replayCalls, 3);
+elements.get('crypto_gridReplayExitZ').value = '0.35';
+gridEvents.crypto_gridReplayExitZ();
+assert.equal(engine.replaySettings().exit_z, 0.35);
+assert.equal(replayCalls, 4);
+
 console.log('Crypto Tab 4 live-match replay checks passed');
