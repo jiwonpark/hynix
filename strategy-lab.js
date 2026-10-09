@@ -72,7 +72,7 @@
         description: "Starts flat at the beginning of loaded history · completed 5m and 1h candles · next-open execution · entry and exit fees included.",
         secondaryStatus: "Completed 1h MA stack: waiting for data…",
         height: 420,
-        legend: '<span style="color:#0284c7">━ BTC/KRW</span><span style="color:#b45309">— 7-MA: <strong id="lab_valShortTermMa7">--</strong></span><span style="color:#6d28d9">— 24-MA: <strong id="lab_valShortTermMa24">--</strong></span><span style="color:#0891b2">— 60-MA: <strong id="lab_valShortTermMa60">--</strong></span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Actual</span><span><strong style="color:#16a34a;opacity:.45">⇧</strong>/<strong style="color:#dc2626;opacity:.45">⇩</strong> Virtual</span>',
+        legend: '<span style="color:#0284c7">━ BTC/KRW</span><span style="color:#b45309">— 7-MA: <strong id="lab_valShortTermMa7">--</strong></span><span style="color:#6d28d9">— 24-MA: <strong id="lab_valShortTermMa24">--</strong></span><span style="color:#0891b2">— 60-MA: <strong id="lab_valShortTermMa60">--</strong></span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Actual</span><span><strong style="color:#16a34a;opacity:.45">⇧</strong>/<strong style="color:#dc2626;opacity:.45">⇩</strong> Virtual</span><span><span style="display:inline-block;width:9px;height:9px;background:rgba(34,197,94,0.3);border:1px solid #16a34a;clip-path:polygon(0 100%, 100% 100%, 100% 0);vertical-align:middle;margin-right:2px;"></span> PnL Triangles</span>',
         syncText: "Upbit public candles (KST)",
       });
       this.forked = true;
@@ -1049,9 +1049,9 @@
       this.alignChartOverlay(svg);
       svg.innerHTML = "";
 
-      // Triangles and diagonal connectors should show ONLY on hover (or selection)
+      // Triangles and diagonal connectors show across completed trades and highlight on hover
       const activeTime = this.selectedMarkerTime ?? this.hoveredMarkerTime;
-      if (activeTime === null || activeTime === undefined) return;
+      const hasActive = activeTime !== null && activeTime !== undefined;
 
       const tradePairs = this.getTradePairs();
       if (!tradePairs.length) return;
@@ -1065,9 +1065,9 @@
         const { entry_time, exit_time, entry_price, exit_price, direction } = pair;
         if (!entry_time || !exit_time) return;
 
-        const isEntryMatch = this.isTimeMatch(activeTime, entry_time);
-        const isExitMatch = this.isTimeMatch(activeTime, exit_time);
-        if (!isEntryMatch && !isExitMatch) return;
+        const isEntryMatch = hasActive && this.isTimeMatch(activeTime, entry_time);
+        const isExitMatch = hasActive && this.isTimeMatch(activeTime, exit_time);
+        const isHighlighted = isEntryMatch || isExitMatch;
 
         const p1 = Number(entry_price);
         const p2 = Number(exit_price);
@@ -1124,16 +1124,22 @@
         }
         const pts = `${leftX.toFixed(1)},${leftY.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${rightX.toFixed(1)},${rightY.toFixed(1)}`;
 
-        const fillColor = isProfit ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)";
-        const strokeColor = isProfit ? "rgba(22, 163, 74, 0.65)" : "rgba(220, 38, 38, 0.65)";
+        const opacity = hasActive ? (isHighlighted ? 1.0 : 0.20) : 0.85;
+        const fillColor = isProfit
+          ? (isHighlighted ? "rgba(34, 197, 94, 0.22)" : "rgba(34, 197, 94, 0.12)")
+          : (isHighlighted ? "rgba(239, 68, 68, 0.22)" : "rgba(239, 68, 68, 0.12)");
+        const strokeColor = isProfit
+          ? (isHighlighted ? "rgba(22, 163, 74, 0.95)" : "rgba(22, 163, 74, 0.65)")
+          : (isHighlighted ? "rgba(220, 38, 38, 0.95)" : "rgba(220, 38, 38, 0.65)");
         const diagStroke = isProfit ? "#16a34a" : "#dc2626";
 
         const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
         polygon.setAttribute("points", pts);
         polygon.setAttribute("fill", fillColor);
         polygon.setAttribute("stroke", strokeColor);
-        polygon.setAttribute("stroke-width", "1");
-        polygon.style.transition = "fill 0.15s ease, stroke 0.15s ease";
+        polygon.setAttribute("stroke-width", isHighlighted ? "2" : "1");
+        polygon.style.opacity = String(opacity);
+        polygon.style.transition = "fill 0.15s ease, stroke 0.15s ease, opacity 0.15s ease";
         fragment.appendChild(polygon);
 
         const diag = document.createElementNS("http://www.w3.org/2000/svg", "line");
@@ -1142,8 +1148,9 @@
         diag.setAttribute("x2", origX2.toFixed(1));
         diag.setAttribute("y2", origY2.toFixed(1));
         diag.setAttribute("stroke", diagStroke);
-        diag.setAttribute("stroke-width", "1");
-        diag.style.transition = "stroke-width 0.15s ease, stroke 0.15s ease";
+        diag.setAttribute("stroke-width", isHighlighted ? "2" : "1");
+        diag.style.opacity = String(opacity);
+        diag.style.transition = "stroke-width 0.15s ease, stroke 0.15s ease, opacity 0.15s ease";
         fragment.appendChild(diag);
       });
 

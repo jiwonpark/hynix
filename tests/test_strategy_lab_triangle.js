@@ -186,9 +186,10 @@ lab.controller.setExecutions(lab.data.markers);
 lab.selectedMarkerTime = null;
 lab.hoveredMarkerTime = null;
 lab.renderTradeTriangles();
-assert.equal(svg.children.length, 0, 'triangles must not show when neither hovered nor selected');
+assert.equal(svg.children.length, 2, 'completed trades must show triangles by default');
+assert.equal(svg.children[0].getAttribute('stroke-width'), '1', 'default state uses normal stroke');
 
-// Test 3: Hover on entry marker time draws green lower triangle for profitable long
+// Test 3: Hover on entry marker time highlights green lower triangle for profitable long
 lab.hoveredMarkerTime = 1000;
 lab.renderTradeTriangles();
 assert.equal(svg.children.length, 2, 'hover must render 1 polygon and 1 diagonal line');
@@ -196,8 +197,9 @@ const polygon = svg.children[0];
 const diag = svg.children[1];
 assert.equal(polygon.tagName, 'polygon');
 assert.equal(diag.tagName, 'line');
-assert.equal(polygon.getAttribute('fill'), 'rgba(34, 197, 94, 0.12)', 'profitable trade must have green fill');
+assert.equal(polygon.getAttribute('fill'), 'rgba(34, 197, 94, 0.22)', 'highlighted profitable trade must have green fill');
 assert.equal(diag.getAttribute('stroke'), '#16a34a', 'profitable trade must have green diagonal');
+assert.equal(polygon.getAttribute('stroke-width'), '2', 'highlighted trade uses stroke width 2');
 
 // Verify lower triangle geometry for long trade:
 // Entry: t=1000 -> x1=0, p1=100 -> y1=400
@@ -215,7 +217,7 @@ lab.data.trades = [
 svg.children = [];
 lab.renderTradeTriangles();
 assert.equal(svg.children.length, 2);
-assert.equal(svg.children[0].getAttribute('fill'), 'rgba(239, 68, 68, 0.12)', 'loss trade must have red fill');
+assert.equal(svg.children[0].getAttribute('fill'), 'rgba(239, 68, 68, 0.22)', 'highlighted loss trade must have red fill');
 assert.equal(svg.children[1].getAttribute('stroke'), '#dc2626', 'loss trade must have red diagonal');
 
 // Test 5: Profitable short trade draws green upper triangle
@@ -225,22 +227,22 @@ lab.data.trades = [
 svg.children = [];
 lab.renderTradeTriangles();
 assert.equal(svg.children.length, 2);
-assert.equal(svg.children[0].getAttribute('fill'), 'rgba(34, 197, 94, 0.12)', 'profitable short trade must have green fill');
+assert.equal(svg.children[0].getAttribute('fill'), 'rgba(34, 197, 94, 0.22)', 'profitable short trade must have green fill');
 // Entry: p1=110 -> y1=300. Exit: p2=100 -> y2=400.
 // leftY (300) <= rightY (400)
 // For short: corner is (rightX, leftY) = (600, 300)
 // Points: 0.0,300.0 600.0,300.0 600.0,400.0 (upper triangle)
 assert.equal(svg.children[0].getAttribute('points'), '0.0,300.0 600.0,300.0 600.0,400.0', 'short trade must construct upper triangle');
 
-// Test 6: Selection via onTrancheClick shows triangle, unhovering leaves it selected
+// Test 6: Selection via onTrancheClick highlights triangle
 lab.hoveredMarkerTime = null;
 lab.onTrancheClick(1000);
 assert.equal(lab.selectedMarkerTime, 1000, 'onTrancheClick must select marker time');
-assert.equal(svg.children.length, 2, 'selected trade must render triangle');
+assert.equal(svg.children[0].getAttribute('stroke-width'), '2', 'selected trade must be highlighted with stroke 2');
 
-// Test 7: Clicking again deselects and clears triangle
+// Test 7: Clicking again deselects, returning to default normal stroke
 lab.onTrancheClick(1000);
 assert.equal(lab.selectedMarkerTime, null);
-assert.equal(svg.children.length, 0, 'deselecting must clear triangle layer');
+assert.equal(svg.children[0].getAttribute('stroke-width'), '1', 'deselected trade returns to normal stroke');
 
 console.log('Strategy Lab PnL triangle unit tests passed');

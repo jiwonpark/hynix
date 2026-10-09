@@ -54,7 +54,7 @@ class StrategyLabUiTests(unittest.TestCase):
         self.assertIn("if (isShort)", self.js)
         self.assertIn("rgba(34, 197, 94,", self.js)
         self.assertIn("rgba(239, 68, 68,", self.js)
-        self.assertIn("Triangles and diagonal connectors should show ONLY on hover", self.js)
+        self.assertIn("Triangles and diagonal connectors show across completed trades and highlight on hover", self.js)
 
 
 if __name__ == "__main__":
