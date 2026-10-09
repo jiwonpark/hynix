@@ -971,6 +971,9 @@
         const params = this.botState?.strategy_params || {};
         const ouChecked = (key) => params[key] !== false ? "checked" : "";
         const ouNumber = (key, fallback) => Number(params[key] ?? fallback);
+        const ouRowStyle = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
+        const ouToggleStyle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
+        const ouNumberStyle = "display:inline-block;width:62px;height:26px;margin:0;padding:2px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;";
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div>
@@ -999,16 +1002,16 @@
           </div>
           <div id="lighter_ouEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Entry conditions · switches and values apply to replay; Deploy applies them to the live bot</strong>
-            <label>1. Minimum |Z| <input id="lighter_ouUseEntryZ" type="checkbox" ${ouChecked("ou_use_entry_z")}></label>
-            <label>2. Maximum half-life <input id="lighter_ouUseHalflife" type="checkbox" ${ouChecked("ou_use_halflife")}> <input id="lighter_ouHalflifeMax" type="number" min="1" max="50" step="0.5" value="${ouNumber("ou_halflife_max", 8)}" style="width:62px;"> × 4 bars</label>
-            <label>3. Minimum deviation from OU mean <input id="lighter_ouUseMinDeviation" type="checkbox" ${ouChecked("ou_use_min_abs_deviation")}> <input id="lighter_ouMinDeviation" type="number" min="0" max="5" step="0.01" value="${ouNumber("ou_min_abs_deviation_pp", 0.25)}" style="width:62px;"> pp</label>
-            <label>4. Macro EMA slope aligned <input id="lighter_ouUseMacroTrend" type="checkbox" ${ouChecked("ou_use_macro_trend")}> EMA <input id="lighter_ouMacroSpan" type="number" min="5" max="120" step="1" value="${ouNumber("ou_macro_ema_span", 60)}" style="width:58px;"> over <input id="lighter_ouMacroSlopeBars" type="number" min="1" max="60" step="1" value="${ouNumber("ou_macro_slope_bars", 12)}" style="width:58px;"> bars</label>
-            <label>5. Entry below emergency |Z| limit <input id="lighter_ouUseStopZone" type="checkbox" ${ouChecked("ou_use_stop_zone")}> <input id="lighter_ouStopZ" type="number" min="1.5" max="6" step="0.05" value="${ouNumber("ou_stop_z", 3.5)}" style="width:62px;"> σ</label>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseEntryZ" type="checkbox" aria-label="Enable minimum entry Z" style="${ouToggleStyle}" ${ouChecked("ou_use_entry_z")}><span>1. Minimum |Z| (Entry Z above)</span></div>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseHalflife" type="checkbox" aria-label="Enable maximum half-life" style="${ouToggleStyle}" ${ouChecked("ou_use_halflife")}><span>2. Maximum half-life</span><input id="lighter_ouHalflifeMax" type="number" aria-label="Maximum half-life parameter" min="1" max="50" step="0.5" value="${ouNumber("ou_halflife_max", 8)}" style="${ouNumberStyle}"><span>× 4 bars</span></div>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseMinDeviation" type="checkbox" aria-label="Enable minimum OU deviation" style="${ouToggleStyle}" ${ouChecked("ou_use_min_abs_deviation")}><span>3. Minimum deviation from OU mean</span><input id="lighter_ouMinDeviation" type="number" aria-label="Minimum OU deviation in percentage points" min="0" max="5" step="0.01" value="${ouNumber("ou_min_abs_deviation_pp", 0.25)}" style="${ouNumberStyle}"><span>pp</span></div>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseMacroTrend" type="checkbox" aria-label="Enable macro EMA alignment" style="${ouToggleStyle}" ${ouChecked("ou_use_macro_trend")}><span>4. Macro EMA slope aligned · EMA</span><input id="lighter_ouMacroSpan" type="number" aria-label="Macro EMA span" min="5" max="120" step="1" value="${ouNumber("ou_macro_ema_span", 60)}" style="${ouNumberStyle}"><span>over</span><input id="lighter_ouMacroSlopeBars" type="number" aria-label="Macro EMA slope comparison bars" min="1" max="60" step="1" value="${ouNumber("ou_macro_slope_bars", 12)}" style="${ouNumberStyle}"><span>bars</span></div>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseStopZone" type="checkbox" aria-label="Enable upper entry Z limit" style="${ouToggleStyle}" ${ouChecked("ou_use_stop_zone")}><span>5. Entry below emergency |Z| limit</span><input id="lighter_ouStopZ" type="number" aria-label="Emergency Z limit" min="1.5" max="6" step="0.05" value="${ouNumber("ou_stop_z", 3.5)}" style="${ouNumberStyle}"><span>σ</span></div>
             <small style="color:#64748b;">Live order-book quote confirmation, account capacity and order safety remain separate execution checks. Historical replay has no order-book quotes.</small>
           </div>
           <div id="lighter_ouExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Exit condition</strong>
-            <label>1. OU neutral |Z| target (Exit Z above) <input id="lighter_ouUseExitZ" type="checkbox" ${ouChecked("ou_use_exit_z")}></label>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseExitZ" type="checkbox" aria-label="Enable neutral Z exit" style="${ouToggleStyle}" ${ouChecked("ou_use_exit_z")}><span>1. OU neutral |Z| target (Exit Z above)</span></div>
             <small style="color:#64748b;">Emergency stop at the upper Z limit remains active. Live exits also check net profit and actual positions; replay uses price signals only.</small>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
