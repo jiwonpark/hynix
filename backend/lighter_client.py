@@ -449,10 +449,10 @@ class LighterClient:
 
         return await self._cached(f"market-detail:{market_id}", 3600.0, load)
 
-    async def order_book(self, market_id: int, limit: int = 20) -> Dict[str, Any]:
+    async def order_book(self, market_id: int, limit: int = 20, *, fresh: bool = False) -> Dict[str, Any]:
         bounded_limit = min(100, max(1, limit))
         updated = self._ws_book_times.get(market_id, 0.0)
-        if time.monotonic() - updated <= 15.0 and market_id in self._ws_books:
+        if time.monotonic() - updated <= (2.0 if fresh else 15.0) and market_id in self._ws_books:
             book = self._clone(self._ws_books[market_id])
             book["asks"] = sorted(book.get("asks") or [], key=lambda row: float(row["price"]))[:bounded_limit]
             book["bids"] = sorted(book.get("bids") or [], key=lambda row: float(row["price"]), reverse=True)[:bounded_limit]
@@ -463,10 +463,15 @@ class LighterClient:
                 "/api/v1/orderBookOrders", {"market_id": market_id, "limit": bounded_limit}
             )
 
+        if fresh:
+            # Entries must never use the normal two-second REST cache or its
+            # stale-on-error fallback when validating executable prices.
+            return await load()
         return await self._cached(f"order-book:{market_id}:{bounded_limit}", 2.0, load)
 
     async def candles(
-        self, market_id: int, resolution: str, count: int, end_timestamp: Optional[int] = None
+        self, market_id: int, resolution: str, count: int, end_timestamp: Optional[int] = None,
+        *, fresh: bool = False,
     ) -> List[Dict[str, Any]]:
         interval_ms = {
             "1m": 60_000, "5m": 300_000, "15m": 900_000,
@@ -474,7 +479,7 @@ class LighterClient:
         }[resolution]
         end_ms = end_timestamp or int(time.time() * 1000)
         bounded_count = min(500, max(20, count))
-        fetch_count = 500 if end_timestamp is None else bounded_count
+        fetch_count = 500 if end_timestamp is None and not fresh else bounded_count
         start_ms = end_ms - interval_ms * (fetch_count + 4)
 
         async def load() -> List[Dict[str, Any]]:
@@ -487,14 +492,15 @@ class LighterClient:
             })
             return payload.get("c") or []
 
-        # Historical requests are immutable. Live requests refresh just after the next bar closes.
+        # Live candles can be revised shortly after closing. Keep the latest
+        # response short-lived so a post-close bot evaluation refetches it.
         if end_timestamp is not None:
             ttl = 3600.0
             cache_suffix = str(end_timestamp)
         else:
-            ttl = max(1.0, ((end_ms // interval_ms + 1) * interval_ms - end_ms) / 1000.0 + 1.0)
+            ttl = min(5.0, max(1.0, ((end_ms // interval_ms + 1) * interval_ms - end_ms) / 1000.0 + 1.0))
             cache_suffix = "latest"
-        rows = await self._cached(
+        rows = await load() if fresh else await self._cached(
             f"candles:{market_id}:{resolution}:{fetch_count}:{cache_suffix}", ttl, load
         )
         return rows[-bounded_count:]

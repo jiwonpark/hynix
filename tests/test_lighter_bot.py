@@ -30,6 +30,15 @@ class TestLighterTrend(unittest.TestCase):
 
 
 class TestLighterPairBot(unittest.TestCase):
+    def setUp(self):
+        # Python 3.9 binds asyncio.Lock to the current loop at construction.
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+    def tearDown(self):
+        self.loop.close()
+        asyncio.set_event_loop(None)
+
     def test_event_exposure_reports_both_usdt_legs_and_one_x_margin(self):
         exposure = LighterPairBot._event_exposure({
             "adr_qty": 0.13,
@@ -601,6 +610,32 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_fresh_order_book_bypasses_cached_rest_quote(self):
+        async def run():
+            client = LighterClient()
+            client.request = AsyncMock(side_effect=[
+                {"asks": [{"price": "101"}], "bids": [{"price": "99"}]},
+                {"asks": [{"price": "103"}], "bids": [{"price": "101"}]},
+            ])
+            first = await client.order_book(216, 20)
+            current = await client.order_book(216, 20, fresh=True)
+            self.assertEqual(first["asks"][0]["price"], "101")
+            self.assertEqual(current["asks"][0]["price"], "103")
+            self.assertEqual(client.request.await_count, 2)
+
+        asyncio.run(run())
+
+    def test_fresh_candles_bypass_cached_or_stale_history(self):
+        async def run():
+            client = LighterClient()
+            client.request = AsyncMock(return_value={"c": [{"t": 1, "c": "140"}]})
+            await client.candles(216, "5m", 80)
+            client.request = AsyncMock(side_effect=RuntimeError("Lighter API error (429)"))
+            with self.assertRaisesRegex(RuntimeError, "429"):
+                await client.candles(216, "5m", 80, fresh=True)
+
+        asyncio.run(run())
+
     def test_lighter_client_reads_dictionary_positions_from_account_stream(self):
         client = LighterClient()
         client._ws_connected = True
@@ -948,6 +983,73 @@ class TestLighterPairBot(unittest.TestCase):
             )
             self.assertEqual(live, replay)
 
+    def test_ou_entry_rechecks_executable_pair_before_any_order(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                client = Mock()
+                client.account_status = AsyncMock(return_value={
+                    "authenticated": True, "execution_enabled": True, "collateral": 1000.0,
+                })
+                client.positions = AsyncMock(return_value=[])
+                timestamps = [1_700_000_000_000 + index * 300_000 for index in range(40)]
+                adr_rows = [{"t": ts, "c": str(140 + ((index % 7) - 3) * .04)}
+                            for index, ts in enumerate(timestamps)]
+                adr_rows[-1]["c"] = "139.9"
+                domestic_rows = [{"t": ts, "c": "1000"} for ts in timestamps]
+                client.candles = AsyncMock(side_effect=lambda market_id, *_, **kwargs: adr_rows if market_id == 216 else domestic_rows)
+
+                adr_ask = 140.2
+                async def book(market_id, _limit, *, fresh=False):
+                    if market_id == 216:
+                        return {"bids": [{"price": str(adr_ask - .01)}],
+                                "asks": [{"price": str(adr_ask)}]}
+                    return {"bids": [{"price": "1000"}], "asks": [{"price": "1000.1"}]}
+                client.order_book = AsyncMock(side_effect=book)
+                bot = LighterPairBot(client, Path(directory) / "state.json")
+                bot.state.update(strategy_mode="ou_quant", min_seconds_between_orders=0)
+                bot._trade_pair = AsyncMock(return_value={
+                    "first_leg": {"filled_size": .35, "fill_price": 139.9, "fee_usd": 0},
+                    "second_leg": {"filled_size": .05, "fill_price": 1000, "fee_usd": 0},
+                })
+
+                await bot._evaluate()
+                self.assertEqual(bot.state["last_action"], "ENTRY_BLOCKED_EXECUTABLE_SIGNAL")
+                self.assertGreater(bot.state["last_evaluation"]["executable_entry_check"]["quote_ratio"],
+                                   bot.state["last_evaluation"]["signal_mean"])
+                self.assertEqual(bot.state["last_entry_signal_bar_time"], 0)
+                bot._trade_pair.assert_not_awaited()
+
+                adr_ask = 139.9
+                await bot._evaluate()
+                bot._trade_pair.assert_awaited_once()
+                self.assertTrue(bot.state["tranches"][0]["entry_quote_check"]["accepted"])
+                self.assertIsNotNone(bot.state["tranches"][0]["entry_fill_z"])
+                self.assertEqual(bot.state["last_entry_signal_bar_time"], timestamps[-1])
+
+        asyncio.run(run())
+
+    def test_completed_candle_revisions_are_audited(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            adr = [{"t": 300_000, "c": "140.0"}]
+            domestic = [{"t": 300_000, "c": "1000.0"}]
+            bot._audit_signal_candles(adr, domestic)
+            self.assertEqual(bot.state["candle_revision_count"], 0)
+            bot._audit_signal_candles([{"t": 300_000, "c": "140.1"}], domestic)
+            self.assertEqual(bot.state["candle_revision_count"], 1)
+            self.assertEqual(bot.state["last_candle_revision"]["previous"]["adr"], 140.0)
+            self.assertEqual(bot.state["last_candle_revision"]["current"]["adr"], 140.1)
+            bot._audit_signal_candles([{"t": 300_000, "c": "140.1"}], domestic)
+            self.assertEqual(bot.state["candle_revision_count"], 1)
+
+    def test_ou_quote_in_stop_zone_is_not_executable_entry(self):
+        evaluation = {"signal_mean": 140.0, "signal_scale": .1, "signal_z": -2.0,
+                      "ratio": 139.8, "stop_z": 3.5}
+        check = LighterPairBot._ou_executable_entry(
+            evaluation, 1, {"ask": 139.6}, {"bid": 1000.0}, 1.4)
+        self.assertFalse(check["accepted"])
+        self.assertEqual(check["reason"], "EXECUTABLE_PRICE_IN_STOP_ZONE")
+
     def test_live_entry_records_strategy_evaluation_after_execution(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
@@ -964,13 +1066,13 @@ class TestLighterPairBot(unittest.TestCase):
                 adr_rows[-1]["c"] = "145"
                 domestic_rows = [{"t": timestamp, "c": "1000"} for timestamp in timestamps]
 
-                async def candles(market_id, _interval, _count):
+                async def candles(market_id, _interval, _count, **kwargs):
                     return adr_rows if market_id == 216 else domestic_rows
 
                 client.candles = AsyncMock(side_effect=candles)
-                client.order_book = AsyncMock(return_value={
-                    "bids": [{"price": "100", "size": "10"}],
-                    "asks": [{"price": "100.01", "size": "10"}],
+                client.order_book = AsyncMock(side_effect=lambda market_id, _limit, **kwargs: {
+                    "bids": [{"price": "145" if market_id == 216 else "1000", "size": "10"}],
+                    "asks": [{"price": "145.01" if market_id == 216 else "1000.1", "size": "10"}],
                 })
                 bot = LighterPairBot(client, Path(directory) / "state.json")
                 bot.state["min_seconds_between_orders"] = 0
@@ -1036,7 +1138,7 @@ class TestLighterPairBot(unittest.TestCase):
                 adr_rows = [{"t": ts, "c": "140.0"} for ts in timestamps]
                 domestic_rows = [{"t": ts, "c": "1000.0"} for ts in timestamps]
 
-                async def candles(market_id, _interval, _count):
+                async def candles(market_id, _interval, _count, **kwargs):
                     return adr_rows if market_id == 216 else domestic_rows
 
                 client.candles = AsyncMock(side_effect=candles)
@@ -1099,7 +1201,7 @@ class TestLighterPairBot(unittest.TestCase):
                 adr_rows[-1]["c"] = "150.0"
                 domestic_rows = [{"t": ts, "c": "1000.0"} for ts in timestamps]
 
-                async def candles(market_id, _interval, _count):
+                async def candles(market_id, _interval, _count, **kwargs):
                     return adr_rows if market_id == 216 else domestic_rows
 
                 client.candles = AsyncMock(side_effect=candles)
@@ -1141,4 +1243,3 @@ class TestLighterPairBot(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

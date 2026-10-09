@@ -55,6 +55,11 @@ def evaluate_ou_signals(
         "theta": round(theta, 4),
         "half_life_bars": round(half_life_bars, 1),
         "stop_z": ou_stop_z,
+        # Preserve the exact fitted parameters for the executable-quote check.
+        # Rounded display values can flip a decision near the entry threshold.
+        "signal_mean": ou_mean,
+        "signal_scale": denominator,
+        "signal_z": z_score,
     }
     return entry_signal, candidate_side, exit_signal, evaluation
 

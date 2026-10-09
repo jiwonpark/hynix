@@ -144,6 +144,9 @@ class LighterPairBot:
         "last_entry_signal_bar_time": 0,
         "margin_blocked_until": 0,
         "last_evaluation": None,
+        "recent_signal_candles": [],
+        "last_candle_revision": None,
+        "candle_revision_count": 0,
         "last_error": None,
         "transient_error_count": 0,
         "last_transient_error_time": 0,
@@ -1040,6 +1043,51 @@ class LighterPairBot:
         return [float(row["c"]) / (domestic_close[int(row["t"])] / 10.0) * 100
                 for row in adr if int(row["t"]) in domestic_close and float(row.get("c", 0)) > 0]
 
+    @staticmethod
+    def _ou_executable_entry(evaluation: Dict[str, Any], side: int,
+                             adr_quote: Dict[str, Any], domestic_quote: Dict[str, Any],
+                             entry_z: float) -> Dict[str, Any]:
+        """Check the original OU fit against the prices that would open both legs."""
+        adr_price = float(adr_quote.get("ask" if side > 0 else "bid") or 0)
+        domestic_price = float(domestic_quote.get("bid" if side > 0 else "ask") or 0)
+        mean = float(evaluation.get("signal_mean") or 0)
+        scale = float(evaluation.get("signal_scale") or 0)
+        result = {"side": side, "adr_price": adr_price, "domestic_price": domestic_price,
+                  "signal_z": evaluation.get("signal_z"), "signal_ratio": evaluation.get("ratio"),
+                  "quote_ratio": None, "quote_z": None, "accepted": False}
+        if not all(math.isfinite(value) and value > 0 for value in (adr_price, domestic_price, mean, scale)):
+            result["reason"] = "INVALID_EXECUTABLE_QUOTE_OR_MODEL"
+            return result
+        ratio = adr_price / (domestic_price / 10.0) * 100
+        z = (ratio - mean) / scale
+        result.update(quote_ratio=ratio, quote_z=z)
+        if not math.isfinite(z) or (side > 0 and z > -entry_z) or (side < 0 and z < entry_z):
+            result["reason"] = "EXECUTABLE_PRICE_NO_LONGER_SUPPORTS_SIGNAL"
+        elif abs(z) >= float(evaluation.get("stop_z") or math.inf):
+            result["reason"] = "EXECUTABLE_PRICE_IN_STOP_ZONE"
+        else:
+            result["accepted"] = True
+            result["reason"] = "ENTRY_THRESHOLD_CONFIRMED"
+        return result
+
+    def _audit_signal_candles(self, adr_candles: List[Dict[str, Any]],
+                              domestic_candles: List[Dict[str, Any]]) -> None:
+        domestic = {int(row["t"]): float(row["c"]) for row in domestic_candles}
+        current = [{"t": int(row["t"]), "adr": float(row["c"]),
+                    "domestic": domestic[int(row["t"])]}
+                   for row in adr_candles if int(row["t"]) in domestic][-25:]
+        previous = {int(row["t"]): row for row in self.state.get("recent_signal_candles") or []}
+        for row in current:
+            old = previous.get(row["t"])
+            if old and (old["adr"] != row["adr"] or old["domestic"] != row["domestic"]):
+                self.state["last_candle_revision"] = {
+                    "detected_at": int(time.time()), "bar_time": row["t"],
+                    "previous": old, "current": row,
+                }
+                self.state["candle_revision_count"] = int(self.state.get("candle_revision_count") or 0) + 1
+                logger.warning("Lighter completed candle revised: %s", self.state["last_candle_revision"])
+        self.state["recent_signal_candles"] = current
+
     INTERVAL_MS = {
         "1m": 60_000, "5m": 300_000, "15m": 900_000,
         "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000,
@@ -1239,13 +1287,19 @@ class LighterPairBot:
 
         interval = self.state.get("strategy_interval", "5m")
         interval_ms = 300_000 if interval == "5m" else (60_000 if interval == "1m" else (900_000 if interval == "15m" else 3_600_000))
+        candle_options = {"fresh": True}
         adr_candles, domestic_candles, adr_book, domestic_book = await asyncio.gather(
-            self.client.candles(216, interval, 80), self.client.candles(161, interval, 80),
+            self.client.candles(216, interval, 80, **candle_options),
+            self.client.candles(161, interval, 80, **candle_options),
             self.client.order_book(216, 20), self.client.order_book(161, 20),
         )
         now_ms = int(time.time() * 1000)
-        adr_candles = [row for row in adr_candles if int(row["t"]) + interval_ms <= now_ms]
-        domestic_candles = [row for row in domestic_candles if int(row["t"]) + interval_ms <= now_ms]
+        # The exchange can publish a preliminary close at the boundary.
+        # Entries wait for the first ten seconds of the next interval.
+        finality_cutoff = now_ms - 10_000
+        adr_candles = [row for row in adr_candles if int(row["t"]) + interval_ms <= finality_cutoff]
+        domestic_candles = [row for row in domestic_candles if int(row["t"]) + interval_ms <= finality_cutoff]
+        self._audit_signal_candles(adr_candles, domestic_candles)
         ratios = self._aligned_ratio(adr_candles, domestic_candles)
         if len(ratios) < 25:
             raise RuntimeError("Insufficient aligned Lighter candles")
@@ -1359,6 +1413,9 @@ class LighterPairBot:
                     f"ZERO_LOSS_GUARD_HOLDING ({len(held_tranches)} tranches, best {best_pct:+.2f}% / ${best_pnl:+.3f} < {min_profit_pct:.2f}%)"
                 )
         elif entry_signal and risk["can_add_tranche"]:
+            if now_ms % interval_ms < 10_000:
+                self.state["last_action"] = "WAITING_FOR_CANDLE_FINALITY"
+                return
             # A strategy signal belongs to a completed candle, not to each worker tick.
             # Without this guard a persistent signal can scale in repeatedly while the
             # same candle remains the latest one (especially with a short cooldown).
@@ -1369,16 +1426,59 @@ class LighterPairBot:
             if not self._campaign_allows_side(side):
                 self.state["last_action"] = "WAITING_FOR_EXISTING_CAMPAIGN_EXIT"
                 return
+            # Refresh both books immediately before any order; the quotes
+            # fetched alongside candles may already be too old to trade.
+            fresh_adr_book, fresh_domestic_book = await asyncio.gather(
+                self.client.order_book(216, 20, fresh=True),
+                self.client.order_book(161, 20, fresh=True),
+            )
+            adr_quote = _book_summary(fresh_adr_book)
+            domestic_quote = _book_summary(fresh_domestic_book)
+            if evaluation.get("strategy") == "ou_quant":
+                check = self._ou_executable_entry(
+                    evaluation, side, adr_quote, domestic_quote,
+                    float(self.state.get("entry_z", 1.4)),
+                )
+            else:
+                adr_price = float(adr_quote.get("ask" if side > 0 else "bid") or 0)
+                domestic_price = float(domestic_quote.get("bid" if side > 0 else "ask") or 0)
+                check = {"side": side, "adr_price": adr_price, "domestic_price": domestic_price,
+                         "signal_ratio": ratios[-1], "quote_ratio": None, "accepted": False}
+                if all(math.isfinite(value) and value > 0 for value in (adr_price, domestic_price)):
+                    quote_ratio = adr_price / (domestic_price / 10.0) * 100
+                    if math.isfinite(quote_ratio):
+                        quote_entry, quote_side, _, quote_evaluation = self._evaluate_strategy_signals(
+                            ratios[:-1] + [quote_ratio], campaign_side)
+                        check.update(quote_ratio=quote_ratio, quote_z=quote_evaluation.get("z"),
+                                     accepted=bool(quote_entry and quote_side == side))
+                check["reason"] = "ENTRY_THRESHOLD_CONFIRMED" if check["accepted"] else "EXECUTABLE_PRICE_NO_LONGER_SUPPORTS_SIGNAL"
+            evaluation["executable_entry_check"] = check
+            if not check["accepted"]:
+                self.state["last_action"] = "ENTRY_BLOCKED_EXECUTABLE_SIGNAL"
+                return
+            if any((quote.get("spread_bps") is None or quote["spread_bps"] > self.state["max_book_spread_bps"])
+                   for quote in (adr_quote, domestic_quote)):
+                self.state["last_action"] = "ENTRY_BLOCKED_BOOK_SPREAD"
+                return
+            refreshed_risk = self._risk_capacity(status, open_pos, adr_quote, domestic_quote)
+            if not refreshed_risk["can_add_tranche"]:
+                self.state["last_action"] = "ENTRY_BLOCKED_RISK_CAPACITY"
+                return
             adr_qty, domestic_qty = self._dollar_neutral_quantities(
                 self.state["notional_usd"], adr_quote["mid"], domestic_quote["mid"])
             execution = await self._trade_pair(side, adr_qty, domestic_qty, adr_quote, domestic_quote, reduce_only=False)
             entry_fee = self._execution_fees(execution)
             entry_ratio = self._execution_ratio(execution, ratios[-1])
+            entry_fill_z = None
+            if evaluation.get("strategy") == "ou_quant":
+                entry_fill_z = (entry_ratio - evaluation["signal_mean"]) / evaluation["signal_scale"]
             actual_adr_qty = float(execution["first_leg"].get("filled_size", adr_qty))
             actual_domestic_qty = float(execution["second_leg"].get("filled_size", domestic_qty))
             new_tranche = {"tranche_id": f"tranche_{int(time.time() * 1000)}",
                            "side": side, "adr_qty": actual_adr_qty, "domestic_qty": actual_domestic_qty,
                            "entry_ratio": entry_ratio, "entry_z": float(evaluation.get("z", 0.0)),
+                           "entry_fill_z": entry_fill_z,
+                           "entry_quote_check": evaluation.get("executable_entry_check"),
                            "entry_strategy": evaluation.get("strategy", self.state.get("strategy_mode", "grid")),
                            "time": int(time.time()),
                            "notional_usd": self.state["notional_usd"], "is_entry": True,
