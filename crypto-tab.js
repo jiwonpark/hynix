@@ -510,6 +510,18 @@
       this.setText("valShortTermCurrentParity", "—");
       const replayCaption = lid("valCritCurrentSpread")?.parentElement;
       if (replayCaption) replayCaption.firstChild.textContent = "Current price: ";
+      const exitCaption = lid("valCritTpCurrentSpread")?.parentElement;
+      if (exitCaption) exitCaption.firstChild.textContent = "Current price: ";
+      ["valCritGapScaleIn", "valCritGapTP"].forEach((id) => {
+        const example = lid(id)?.parentElement;
+        if (example) example.style.display = "none";
+      });
+      ["barCritScaleInProgress", "barCritTPProgress"].forEach((id) => {
+        const bar = lid(id)?.parentElement;
+        if (bar) bar.style.display = "none";
+      });
+      this.setText("badgeCriteriaScaleIn", "PAPER REPLAY");
+      this.setText("badgeCriteriaTP", "PAPER REPLAY");
       this.setText("valHedgedShares", `${sym} single-leg contract`);
       this.setText("lblExecutionSlippage", "Execution: current book quote checked before orders");
       const syncBacktest = lid("btnSyncFromBacktest");
@@ -646,8 +658,15 @@
           },
           status: "PAPER ONLY · Select a strategy and interval, then rerun",
           description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
-          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="crypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="crypto_valShortTermMa7">--%</strong></span><span id="crypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="crypto_valShortTermMa24">--%</strong></span><span id="crypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="crypto_valShortTermMa60">--%</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected net PnL: <strong id="crypto_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="crypto_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
+          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="crypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="crypto_valShortTermMa7">—</strong></span><span id="crypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="crypto_valShortTermMa24">—</strong></span><span id="crypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="crypto_valShortTermMa60">—</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="crypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="crypto_valSelectedMinProfit">—</strong></span>',
         });
+        const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
+        if (replayAssetLegend) {
+          const spans = replayAssetLegend.querySelectorAll("span");
+          if (spans[0]) spans[0].textContent = "📊 CONTRACT PRICE:";
+          if (spans[1]) spans[1].textContent = `● ${this.selectedSymbol} perpetual`;
+          if (spans[2]) spans[2].style.display = "none";
+        }
         [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
         const chartHost = lid("shortTermSpreadChartHost");
         if (chartHost && !$("cryptoTrendOverlay")) {
@@ -984,7 +1003,7 @@
       const descEl = lid("txtCritScaleInDesc");
       if (descEl) descEl.innerHTML = p.desc;
       this.setText("lblCritTPTitle", p.tpTitle);
-      const tpDescEl = lid("txtCritTpDesc");
+      const tpDescEl = lid("txtCritTPDesc");
       if (tpDescEl) tpDescEl.innerHTML = p.tpDesc;
 
       Object.entries(p.entryLabels).forEach(([id, text]) => {
@@ -2586,6 +2605,9 @@
 
       // 6. Leverage & Capacity Breakdown Section
       this.setText("valCritGrossLev", `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x`);
+      const capLabel = lid("valCritGrossCap")?.parentElement;
+      if (capLabel) capLabel.firstChild.textContent = (this.mode === "paper" && !this.botState?.enabled)
+        ? "Paper cap: " : "Selected-contract cap: ";
       this.setText("valCritGrossCap", `$${dynamicCapUsd.toFixed(2)} (${levCap.toFixed(1)}x)`);
       this.setText("valCritGrossHeadroom", `$${headroomUsd.toFixed(2)} free`);
       this.setText("valAvailMargin", this.liveVenue?.available_margin != null
@@ -2878,7 +2900,7 @@
               : null;
             const retStr = returnPct != null ? ` (${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}%)` : "";
             return `<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;font-weight:700;padding:1px 0;">
-              <span>#${idx + 1} Entry @ ${ep.toFixed(2)}%</span>
+              <span>#${idx + 1} Entry @ ${this.formatCryptoPrice(ep)}</span>
               <span>${retStr}${pnlStr}</span>
             </div>`;
           }).join("");
@@ -2892,7 +2914,7 @@
               ${trancheRows}
             </div>
             <div style="font-size:9.5px;color:#64748b;font-weight:700;display:flex;justify-content:space-between;">
-              <span>Exit Price: ${exitPrice.toFixed(2)}%</span>
+              <span>Exit Price: ${this.formatCryptoPrice(exitPrice)}</span>
               <span>${timeText}</span>
             </div>
           `;
@@ -2917,7 +2939,7 @@
         const avgP = prices.length ? prices.reduce((s, v) => s + v, 0) / prices.length : minP;
         const entryCount = siblings.filter((m) => this.isTradeEntry(m)).length;
         const exitCount = siblings.length - entryCount;
-        const rangeText = (minP === maxP) ? `${avgP.toFixed(2)}%` : `${minP.toFixed(2)}% – ${maxP.toFixed(2)}%`;
+        const rangeText = (minP === maxP) ? this.formatCryptoPrice(avgP) : `${this.formatCryptoPrice(minP)} – ${this.formatCryptoPrice(maxP)}`;
 
         const rows = siblings.map((m, idx) => {
           const p = Number(m.ratio ?? m.entry_price ?? m.exit_price);
@@ -2928,7 +2950,7 @@
             : "";
           const action = this.isTradeEntry(m) ? (isShort ? "SHORT" : "BUY") : (isShort ? "COVER" : "SELL");
           return `<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;font-weight:700;padding:1px 0;">
-            <span>#${idx + 1} ${action} @ ${p.toFixed(2)}%${notional}</span>
+            <span>#${idx + 1} ${action} @ ${this.formatCryptoPrice(p)}${notional}</span>
             <span>${pnlStr}</span>
           </div>`;
         }).join("");
@@ -3478,7 +3500,7 @@
       )].filter((target, index, values) => target <= maxNetProfitPct && values.indexOf(target) === index);
       return netProfitTargets.map((netProfitPct) => ({
         netProfitPct,
-        title: netProfitPct === 0 ? "B/E" : `NET +${netProfitPct}%`,
+        title: netProfitPct === 0 ? "EST. B/E (16bps cost)" : `EST. NET +${netProfitPct}% (16bps cost)`,
         price: isLong
           ? entry * (1 + roundTripCostRate + (netProfitPct / 100))
           : entry / (1 + roundTripCostRate + (netProfitPct / 100)),
@@ -3501,7 +3523,7 @@
         showScaleIn: Boolean(options.showScaleIn),
         scaleInSpread: options.scaleInSpread,
         exit: options.exitSpread,
-        exitTitle: options.exitSpread ? `EXIT (${Number(options.exitSpread).toFixed(2)}%)` : "EXIT"
+        exitTitle: options.exitSpread ? `EXIT (${this.formatCryptoPrice(options.exitSpread)})` : "EXIT"
       });
     },
 
@@ -3584,7 +3606,7 @@
       }
       if (profitEl) {
         const val = marker.ratio != null ? marker.ratio : (marker.entry_price != null ? marker.entry_price : marker.exit_price);
-        profitEl.textContent = Number.isFinite(val) ? `${Number(val).toFixed(2)}%` : "—";
+        profitEl.textContent = Number.isFinite(val) ? this.formatCryptoPrice(val) : "—";
       }
     },
 
