@@ -545,6 +545,7 @@
           overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
           overlay.innerHTML = '<span id="lighterMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="lighterSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="lighterSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
           chartHost.appendChild(overlay);
+          this.bindMatchPill(overlay.querySelector("#lighterMatchPill"));
 
           $("lighterSelSmallTrend")?.addEventListener("change", (e) => {
             this.smallTrendInterval = e.target.value;
@@ -1910,9 +1911,28 @@
       };
     },
 
+    bindMatchPill(pill) {
+      if (!pill || pill._boundAlignClick) return;
+      pill._boundAlignClick = true;
+      pill.setAttribute("role", "button");
+      pill.setAttribute("tabindex", "0");
+      const align = () => {
+        if (pill.dataset.matchState !== "divergent" || !this.botState) return;
+        this.alignReplayToLive();
+      };
+      pill.addEventListener("click", align);
+      pill.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          align();
+        }
+      });
+    },
+
     updateRulesMatchStatus() {
       const pill = $("lighterMatchPill");
       if (!pill) return;
+      this.bindMatchPill(pill);
       const settings = this.replaySettings();
       const liveMode = this.botState?.strategy_mode || "grid";
       const liveInterval = this.botState?.strategy_interval || "5m";
@@ -1980,14 +2000,7 @@
         ? "Price signals only. Replay ignores margin, execution cooldown, slippage and funding; fills can differ."
         : "Click to align paper replay with the live bot settings";
       pill.style.cursor = matched ? "default" : "pointer";
-      if (!pill._boundAlignClick && typeof pill.addEventListener === "function") {
-        pill._boundAlignClick = true;
-        pill.addEventListener("click", () => {
-          if (pill.textContent && pill.textContent.includes("DIVERGENT")) {
-            this.alignReplayToLive();
-          }
-        });
-      }
+      pill.dataset.matchState = matched ? "matched" : "divergent";
       pill.style.background = matched ? (active ? "#dcfce7" : "#fef3c7") : "#fff7ed";
       pill.style.color = matched ? (active ? "#166534" : "#92400e") : "#c2410c";
       pill.style.borderColor = matched ? (active ? "#86efac" : "#fcd34d") : "#fdba74";
@@ -1997,6 +2010,7 @@
       if (!this.botState) return;
       const liveMode = this.botState.strategy_mode || "ou_quant";
       const liveInterval = this.botState.strategy_interval || "5m";
+      this._userSelectedParadigm = false;
       this.interval = liveInterval;
       ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((v) => {
         const btn = lid(`btnShortInterval${v}`);
@@ -2302,7 +2316,7 @@
       const ouExitRange = $("lighter_rangeOuExitZ");
       const ouEntryBadge = $("lighter_valOuEntryZBadge");
       const ouExitBadge = $("lighter_valOuExitZBadge");
-      if (ouEntryInp && (!ouEntryInp._userModified || Math.abs(Number(ouEntryInp.value) - 1.8) < 1e-4)) {
+      if (ouEntryInp && !ouEntryInp._userModified) {
         ouEntryInp.value = liveEntryZ.toFixed(2);
         if (ouEntryRange) ouEntryRange.value = liveEntryZ.toFixed(2);
         if (ouEntryBadge) ouEntryBadge.textContent = `≥ ${liveEntryZ.toFixed(2)}σ`;

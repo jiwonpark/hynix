@@ -6,7 +6,11 @@ const elements = new Map();
 const conditions = {EntryMaStretch:true, EntryBase:false, EntryPeak:false, EntryMaStack5m:false,
   ExitConvergence:true, ExitDwell:false, ExitBottoming:false};
 for (const [suffix, checked] of Object.entries(conditions)) elements.set(`lighter_chkCond${suffix}`, {checked});
-elements.set('lighterMatchPill', {style:{}});
+const pillEvents = {};
+elements.set('lighterMatchPill', {
+  style:{}, dataset:{}, setAttribute(){},
+  addEventListener(type, handler){pillEvents[type]=handler;},
+});
 elements.set('lighter_dynamicBacktestStatus', {});
 elements.set('lighter_btnRerunDynamicBacktest', {});
 elements.set('lighter_inpOuEntryZ', {value:'1.8'});
@@ -27,6 +31,7 @@ assert.doesNotMatch(ouHtml,/ADF Stationarity|Cointegration Drift Persistence/);
 const pill = elements.get('lighterMatchPill');
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/Live settings unavailable/);
+assert.equal(typeof pillEvents.click,'function');
 engine.botState={enabled:true,strategy_mode:'ou_quant',strategy_interval:'5m',
   strategy_params:{entry_z:3.5,exit_z:0.8,ou_halflife_max:8,ou_stop_z:3.5,
     ou_min_abs_deviation_pp:.25,ou_macro_ema_span:60,ou_macro_slope_bars:12,
@@ -35,9 +40,16 @@ engine.botState={enabled:true,strategy_mode:'ou_quant',strategy_interval:'5m',
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/PAPER DIVERGENT/);
 assert.match(pill.textContent,/entry_z: 1.8 ≠ 3.5/);
+let alignCalls=0;
+const alignReplayToLive=engine.alignReplayToLive;
+engine.alignReplayToLive=()=>{alignCalls++;};
+pillEvents.click();
+assert.equal(alignCalls,1,'the first divergent click must align the replay');
+engine.alignReplayToLive=alignReplayToLive;
 engine.botState.strategy_params.entry_z=1.8; engine.botState.strategy_params.exit_z=.2;
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
+const liveOuParams = {...engine.botState.strategy_params, entry_z:2.1, exit_z:.35};
 // OU ignores these checkboxes; turning one on cannot change match status.
 elements.get('lighter_chkCondEntryPeak').checked=true;
 engine.updateRulesMatchStatus();
@@ -62,6 +74,19 @@ engine.currentParadigm='ma_stack'; engine.botState.strategy_mode='ma_stack';
 engine.botState.strategy_params={ma_stretch_min:.3,ma_trailing_stop:.15};
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/Replay signal\/exit rules differ from live/);
+
+// A single click after choosing another replay strategy restores the live OU
+// strategy and thresholds without deploying anything to the bot.
+engine.botState.strategy_mode='ou_quant';
+engine.botState.strategy_params=liveOuParams;
+engine.setParadigm=(mode)=>{engine.currentParadigm=mode;};
+engine.refreshChart=()=>{};
+engine.updateRulesMatchStatus();
+pillEvents.click();
+assert.equal(engine.currentParadigm,'ou_quant');
+assert.equal(elements.get('lighter_inpOuEntryZ').value,'2.10');
+assert.equal(elements.get('lighter_inpOuExitZ').value,'0.35');
+assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
 
 async function main() {
   engine.currentParadigm='ou_quant';
