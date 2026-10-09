@@ -2185,6 +2185,12 @@
 
       writeRule("lighterLiveEntryZ", Number(bot?.entry_z ?? 1.4).toFixed(2));
       writeRule("lighterLiveExitZ", Number(bot?.exit_z ?? 0.2).toFixed(2));
+      const liveEntryDetail = $("lighterLiveEntryDetail");
+      if (liveEntryDetail) {
+        liveEntryDetail.innerHTML = stratMode === "ou_quant"
+          ? `Executable deviation ≥ ${Number(bot?.strategy_params?.ou_min_abs_deviation_pp ?? 0.25).toFixed(2)} pp<br>EMA${Number(bot?.strategy_params?.ou_macro_ema_span ?? 60)} slope over ${Number(bot?.strategy_params?.ou_macro_slope_bars ?? 12)} bars aligned with entry`
+          : "Z high: short SKHY / long KR<br>Z low: long SKHY / short KR";
+      }
       const liveEntryZ = Number(bot?.entry_z ?? 1.4);
       const liveExitZ = Number(bot?.exit_z ?? 0.2);
       const ouEntryInp = $("lighter_inpOuEntryZ");

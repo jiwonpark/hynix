@@ -583,6 +583,9 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                 "avg_theta": round(sum(ou_thetas) / len(ou_thetas), 4),
                 "avg_half_life_bars": round(sum(ou_halflives) / len(ou_halflives), 1),
                 "half_life_mins": round((sum(ou_halflives) / len(ou_halflives)) * interval_seconds / 60, 1),
+                "min_abs_deviation_pp": evaluation.get("min_abs_deviation_pp", 0.25),
+                "macro_ema_span": evaluation.get("macro_ema_span", 60),
+                "macro_slope_bars": evaluation.get("macro_slope_bars", 12),
             })
 
     elif strategy_mode == "ma_stack":

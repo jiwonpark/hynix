@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -983,6 +984,39 @@ class TestLighterPairBot(unittest.TestCase):
             )
             self.assertEqual(live, replay)
 
+    def test_ou_entry_requires_absolute_edge_and_macro_alignment(self):
+        def evaluate(slope, adjustment):
+            ratios = [140 + slope * index + .2 * math.sin(index * .7) for index in range(200)]
+            ratios[-1] += adjustment
+            return evaluate_ou_signals(ratios, entry_z=1.4, exit_z=.2,
+                                       ou_halflife_max=8, ou_stop_z=3.5)
+
+        below_edge = evaluate(.003, -.499)
+        self.assertLess(below_edge[3]["abs_deviation_pp"], .25)
+        self.assertLess(below_edge[3]["signal_z"], -1.4)
+        self.assertFalse(below_edge[0])
+
+        aligned_long = evaluate(.003, -.6)
+        self.assertTrue(aligned_long[0])
+        self.assertEqual(aligned_long[1], 1)
+        self.assertTrue(aligned_long[3]["macro_aligned"])
+
+        falling_macro = evaluate(-.003, -.6)
+        self.assertLess(falling_macro[3]["signal_z"], -1.4)
+        self.assertGreater(falling_macro[3]["abs_deviation_pp"], .25)
+        self.assertFalse(falling_macro[0])
+        self.assertFalse(falling_macro[3]["macro_aligned"])
+
+        aligned_short = evaluate(-.003, .6)
+        self.assertTrue(aligned_short[0])
+        self.assertEqual(aligned_short[1], -1)
+
+        no_warmup = evaluate_ou_signals(
+            [140 + .2 * math.sin(index * .7) for index in range(50)],
+            entry_z=1.4, exit_z=.2, ou_halflife_max=8, ou_stop_z=3.5)
+        self.assertFalse(no_warmup[0])
+        self.assertIsNone(no_warmup[3]["macro_ema_slope"])
+
     def test_ou_entry_rechecks_executable_pair_before_any_order(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
@@ -991,14 +1025,16 @@ class TestLighterPairBot(unittest.TestCase):
                     "authenticated": True, "execution_enabled": True, "collateral": 1000.0,
                 })
                 client.positions = AsyncMock(return_value=[])
-                timestamps = [1_700_000_000_000 + index * 300_000 for index in range(40)]
-                adr_rows = [{"t": ts, "c": str(140 + ((index % 7) - 3) * .04)}
+                timestamps = [1_700_000_000_000 + index * 300_000 for index in range(200)]
+                ratio_values = [140 + .003 * index + .2 * math.sin(index * .7)
+                                for index in range(200)]
+                ratio_values[-1] -= .6
+                adr_rows = [{"t": ts, "c": str(ratio_values[index])}
                             for index, ts in enumerate(timestamps)]
-                adr_rows[-1]["c"] = "139.9"
                 domestic_rows = [{"t": ts, "c": "1000"} for ts in timestamps]
                 client.candles = AsyncMock(side_effect=lambda market_id, *_, **kwargs: adr_rows if market_id == 216 else domestic_rows)
 
-                adr_ask = 140.2
+                adr_ask = 140.3
                 async def book(market_id, _limit, *, fresh=False):
                     if market_id == 216:
                         return {"bids": [{"price": str(adr_ask - .01)}],
@@ -1008,18 +1044,18 @@ class TestLighterPairBot(unittest.TestCase):
                 bot = LighterPairBot(client, Path(directory) / "state.json")
                 bot.state.update(strategy_mode="ou_quant", min_seconds_between_orders=0)
                 bot._trade_pair = AsyncMock(return_value={
-                    "first_leg": {"filled_size": .35, "fill_price": 139.9, "fee_usd": 0},
+                    "first_leg": {"filled_size": .35, "fill_price": ratio_values[-1], "fee_usd": 0},
                     "second_leg": {"filled_size": .05, "fill_price": 1000, "fee_usd": 0},
                 })
 
                 await bot._evaluate()
                 self.assertEqual(bot.state["last_action"], "ENTRY_BLOCKED_EXECUTABLE_SIGNAL")
-                self.assertGreater(bot.state["last_evaluation"]["executable_entry_check"]["quote_ratio"],
-                                   bot.state["last_evaluation"]["signal_mean"])
+                self.assertEqual(bot.state["last_evaluation"]["executable_entry_check"]["reason"],
+                                 "EXECUTABLE_EDGE_BELOW_MINIMUM")
                 self.assertEqual(bot.state["last_entry_signal_bar_time"], 0)
                 bot._trade_pair.assert_not_awaited()
 
-                adr_ask = 139.9
+                adr_ask = ratio_values[-1]
                 await bot._evaluate()
                 bot._trade_pair.assert_awaited_once()
                 self.assertTrue(bot.state["tranches"][0]["entry_quote_check"]["accepted"])

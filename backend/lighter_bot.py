@@ -9,7 +9,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .lighter_strategy import evaluate_ou_signals, evaluate_grid_signals
+from .lighter_strategy import (
+    OU_MACRO_EMA_SPAN, OU_MACRO_SLOPE_BARS, OU_MIN_ABS_DEVIATION_PP,
+    evaluate_ou_signals, evaluate_grid_signals,
+)
 
 from .lighter_client import LighterClient
 
@@ -216,6 +219,9 @@ class LighterPairBot:
                 "min_profit_usd": float(self.state.get("min_profit_usd", 0.02)),
                 "ou_halflife_max": self.state.get("ou_halflife_max", 8.0),
                 "ou_stop_z": self.state.get("ou_stop_z", 3.5),
+                "ou_min_abs_deviation_pp": OU_MIN_ABS_DEVIATION_PP,
+                "ou_macro_ema_span": OU_MACRO_EMA_SPAN,
+                "ou_macro_slope_bars": OU_MACRO_SLOPE_BARS,
                 "ma_stretch_min": self.state.get("ma_stretch_min", 0.30),
                 "ma_trailing_stop": self.state.get("ma_trailing_stop", 0.15),
                 "min_consensus_votes": self.state.get("min_consensus_votes", 3),
@@ -1061,10 +1067,13 @@ class LighterPairBot:
         ratio = adr_price / (domestic_price / 10.0) * 100
         z = (ratio - mean) / scale
         result.update(quote_ratio=ratio, quote_z=z)
+        result["abs_deviation_pp"] = abs(ratio - mean)
         if not math.isfinite(z) or (side > 0 and z > -entry_z) or (side < 0 and z < entry_z):
             result["reason"] = "EXECUTABLE_PRICE_NO_LONGER_SUPPORTS_SIGNAL"
         elif abs(z) >= float(evaluation.get("stop_z") or math.inf):
             result["reason"] = "EXECUTABLE_PRICE_IN_STOP_ZONE"
+        elif result["abs_deviation_pp"] < OU_MIN_ABS_DEVIATION_PP:
+            result["reason"] = "EXECUTABLE_EDGE_BELOW_MINIMUM"
         else:
             result["accepted"] = True
             result["reason"] = "ENTRY_THRESHOLD_CONFIRMED"
@@ -1287,10 +1296,10 @@ class LighterPairBot:
 
         interval = self.state.get("strategy_interval", "5m")
         interval_ms = 300_000 if interval == "5m" else (60_000 if interval == "1m" else (900_000 if interval == "15m" else 3_600_000))
-        candle_options = {"fresh": True}
+        candle_count = 200 if self.state.get("strategy_mode") == "ou_quant" else 80
         adr_candles, domestic_candles, adr_book, domestic_book = await asyncio.gather(
-            self.client.candles(216, interval, 80, **candle_options),
-            self.client.candles(161, interval, 80, **candle_options),
+            self.client.candles(216, interval, candle_count, fresh=True),
+            self.client.candles(161, interval, candle_count, fresh=True),
             self.client.order_book(216, 20), self.client.order_book(161, 20),
         )
         now_ms = int(time.time() * 1000)
