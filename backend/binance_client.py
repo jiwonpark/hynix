@@ -168,18 +168,20 @@ class BinanceFuturesClient:
                 return {"code": 200, "msg": "Already set"}
             raise
 
-    async def create_order(self, symbol: str, side: str, quantity: float, order_type: str = "MARKET", price: Optional[float] = None, reduce_only: bool = False) -> Dict[str, Any]:
+    async def create_order(self, symbol: str, side: str, quantity: float, order_type: str = "MARKET", price: Optional[float] = None, reduce_only: bool = False, client_order_id: Optional[str] = None) -> Dict[str, Any]:
         """Create a new futures order on Binance."""
         params: Dict[str, Any] = {
             "symbol": symbol,
             "side": side.upper(),
             "type": order_type.upper(),
-            "quantity": f"{quantity:.2f}"
+            "quantity": quantity if isinstance(quantity, str) else f"{quantity:.2f}"
         }
         if order_type.upper() == "MARKET":
             params["newOrderRespType"] = "RESULT"
         if reduce_only:
             params["reduceOnly"] = "true"
+        if client_order_id:
+            params["newClientOrderId"] = client_order_id
         if order_type.upper() == "LIMIT":
             if price is None:
                 raise ValueError("Price required for LIMIT orders")

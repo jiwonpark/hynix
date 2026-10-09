@@ -37,6 +37,7 @@ from .counterfactual_trades import (
 )
 from .config import config
 from .binance_client import BinanceFuturesClient
+from .crypto_bot import CryptoBot
 from .lighter_client import LighterClient
 from .lighter_bot import LighterPairBot
 from .lighter_strategy import evaluate_ou_signals, evaluate_grid_signals
@@ -101,6 +102,7 @@ logging.basicConfig(
 logger = logging.getLogger("skhynix-daemon")
 
 binance_client = BinanceFuturesClient()
+crypto_bot = CryptoBot(binance_client)
 upbit_client = UpbitClient()
 lighter_client = LighterClient()
 lighter_pair_bot = LighterPairBot(lighter_client)
@@ -151,6 +153,16 @@ async def lighter_pair_worker():
         cooldown = max(6.0, float(lighter_pair_bot.state.get("min_seconds_between_orders", 300)))
         await asyncio.sleep(max(1.0, min(60.0, cooldown / 2.0)))
 
+
+async def crypto_bot_worker():
+    """Evaluate only newly completed Binance bars while the persisted bot is armed."""
+    while True:
+        try:
+            await crypto_bot.run_once()
+        except Exception:
+            logger.exception("Crypto bot worker failed")
+        await asyncio.sleep(5)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting HYPERION Trading & Multi-Exchange Telemetry Daemon...")
@@ -168,17 +180,20 @@ async def lifespan(app: FastAPI):
         logger.warning("No Upbit Access Key detected (checked .env, arbiter/keys.json, midas/keys.json).")
 
     await lighter_client.start_streams()
+    await crypto_bot.verify_startup()
     broadcaster_task = asyncio.create_task(account_broadcaster())
     auto_tranche_task = asyncio.create_task(auto_tranche_worker())
     upbit_strategy_task = asyncio.create_task(upbit_strategy_worker())
     upbit_forecast_validation_task = asyncio.create_task(upbit_forecast_validation_worker())
     lighter_pair_task = asyncio.create_task(lighter_pair_worker())
+    crypto_bot_task = asyncio.create_task(crypto_bot_worker())
     yield
     broadcaster_task.cancel()
     auto_tranche_task.cancel()
     upbit_strategy_task.cancel()
     upbit_forecast_validation_task.cancel()
     lighter_pair_task.cancel()
+    crypto_bot_task.cancel()
     await asyncio.gather(binance_client.close(), upbit_client.close(), lighter_client.close(), return_exceptions=True)
     logger.info("HYPERION Trading Daemon shutdown complete.")
 
@@ -884,29 +899,32 @@ SUPPORTED_CRYPTO_SYMBOLS = [
     {"symbol": "XRPUSDT", "name": "XRP Perpetual", "base": "XRP", "quote": "USDT", "tick_size": 0.0001, "step_size": 1.0},
 ]
 
-_crypto_bot_state: Dict[str, Any] = {
-    "enabled": False,
-    "selected_symbol": "BTCUSDT",
-    "strategy_mode": "grid",
-    "entry_z": 1.5,
-    "exit_z": 0.25,
-    "notional_usd": 50.0,
-    "max_tranches": 5,
-    "live_tranches": [],
-    "last_evaluation": None,
-    "fail_closed_reason": "Single-leg crypto live execution is fail-closed. Real live order submission requires explicit confirmation.",
-}
-
 @app.get("/api/crypto/markets")
 async def get_crypto_markets() -> Dict[str, Any]:
     return {"success": True, "markets": SUPPORTED_CRYPTO_SYMBOLS}
 
 @app.get("/api/crypto/status")
 async def get_crypto_status(symbol: str = "BTCUSDT") -> Dict[str, Any]:
-    """Public single-leg crypto pricing, 24hr stats, and execution readiness."""
+    """Real Binance Futures quote and account data; never substitute paper capital."""
     try:
-        klines = await get_klines(symbol, interval="1m", limit=2)
-        mark_price = float(klines[-1][4]) if klines and len(klines[-1]) > 4 else 0.0
+        if symbol not in {row["symbol"] for row in SUPPORTED_CRYPTO_SYMBOLS}:
+            raise ValueError("Unsupported crypto symbol")
+        klines, account, book = await asyncio.gather(
+            get_klines(symbol, interval="1m", limit=2),
+            binance_client.get_detailed_account_overview(),
+            binance_client.request("GET", "/fapi/v1/ticker/bookTicker", {"symbol": symbol}),
+            return_exceptions=True,
+        )
+        if isinstance(klines, Exception):
+            klines = []
+        if isinstance(account, Exception):
+            account = {"authenticated": False, "error": str(account), "summary": {}, "positions": []}
+        if isinstance(book, Exception):
+            book = {}
+        bid = float(book.get("bidPrice", 0) or 0)
+        ask = float(book.get("askPrice", 0) or 0)
+        mark_price = ((bid + ask) / 2 if bid and ask else
+                      (float(klines[-1][4]) if klines and len(klines[-1]) > 4 else 0.0))
         high = float(klines[-1][2]) if klines else 0.0
         low = float(klines[-1][3]) if klines else 0.0
         open_price = float(klines[0][1]) if klines else mark_price
@@ -916,16 +934,18 @@ async def get_crypto_status(symbol: str = "BTCUSDT") -> Dict[str, Any]:
             "symbol": symbol,
             "mark_price": mark_price,
             "price_ratio": mark_price,
-            "bid": mark_price * 0.9999,
-            "ask": mark_price * 1.0001,
+            "bid": bid,
+            "ask": ask,
             "high": high,
             "low": low,
             "change_pct": change_pct,
             "venue": "Binance Futures Single-Leg",
-            "authenticated": False,
-            "execution_enabled": _crypto_bot_state.get("enabled", False),
-            "execution_message": _crypto_bot_state.get("fail_closed_reason", ""),
-            "collateral": 10000.0,
+            "authenticated": bool(account.get("authenticated")),
+            "execution_enabled": bool(account.get("authenticated") and book and not crypto_bot.state["recovery_required"]),
+            "execution_message": crypto_bot.state.get("last_error") or account.get("error") or "Binance Futures live executor available",
+            "collateral": account.get("summary", {}).get("total_equity_usd") if account.get("authenticated") else None,
+            "available_margin": account.get("summary", {}).get("available_margin_usd") if account.get("authenticated") else None,
+            "positions": [row for row in account.get("positions", []) if row.get("symbol") == symbol],
             "server_time_ms": int(time.time() * 1000),
         }
     except Exception as error:
@@ -942,7 +962,32 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
             t = int(row[0]) // 1000
             c = float(row[4])
             bars.append({"time": t, "value": c, "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": c, "volume": float(row[5])})
-        return {"success": True, "symbol": symbol, "interval": interval, "bars": bars, "markers": []}
+        markers = []
+        if bars:
+            interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
+                                "4h": 14400, "1d": 86400}.get(interval, 900)
+            first, last = bars[0]["time"], bars[-1]["time"]
+            for event in crypto_bot.state.get("execution_history", []):
+                if event.get("symbol") != symbol:
+                    continue
+                trade_time = int(event.get("time", 0))
+                bar_time = trade_time // interval_seconds * interval_seconds
+                if not first <= bar_time <= last:
+                    continue
+                is_entry = event.get("event") == "ENTRY"
+                original_side = int(event.get("original_side", event.get("side", 0)))
+                price = float(event.get("price", 0))
+                markers.append({
+                    "time": bar_time, "source": "actual", "is_entry": is_entry,
+                    "is_exit": not is_entry, "side": int(event.get("side", 0)),
+                    "direction": "long" if original_side > 0 else "short",
+                    "ratio": price, "entry_price": float(event.get("entry_price", price)),
+                    "exit_price": price if not is_entry else None,
+                    "qty": float(event.get("qty", 0)), "notional": float(event.get("notional_usd", 0)),
+                    "pairKey": str(event.get("entry_order_id") or event.get("order_id")),
+                    "hoverText": f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {symbol} @ {price:.6f} · {event.get('qty')} filled",
+                })
+        return {"success": True, "symbol": symbol, "interval": interval, "bars": bars, "markers": markers}
     except Exception as error:
         logger.error(f"Error fetching crypto candles: {error}")
         return {"success": False, "symbol": symbol, "interval": interval, "bars": [], "markers": [], "error": str(error)}
@@ -980,7 +1025,18 @@ async def get_crypto_parity(symbol: str = "BTCUSDT", interval: str = "15m", limi
 
 @app.get("/api/crypto/bot/status")
 async def get_crypto_bot_status() -> Dict[str, Any]:
-    return {"success": True, "bot": _crypto_bot_state}
+    return {"success": True, "bot": crypto_bot.public_state()}
+
+
+@app.post("/api/crypto/bot/reconcile")
+async def reconcile_crypto_bot(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        result = await crypto_bot.reconcile()
+        return JSONResponse({"success": True, **result})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
 
 @app.post("/api/crypto/bot/toggle")
 async def toggle_crypto_bot(request: Request) -> JSONResponse:
@@ -991,8 +1047,8 @@ async def toggle_crypto_bot(request: Request) -> JSONResponse:
         enabled = body.get("enabled", False)
         if enabled and body.get("confirm_live_trading") is not True:
             raise ValueError("Explicit single-leg crypto live trading confirmation is required")
-        _crypto_bot_state["enabled"] = bool(enabled)
-        return JSONResponse({"success": True, "bot": _crypto_bot_state})
+        bot = await crypto_bot.toggle(bool(enabled))
+        return JSONResponse({"success": True, "bot": bot})
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error)}, status_code=400)
 
@@ -1002,10 +1058,8 @@ async def configure_crypto_bot(request: Request) -> JSONResponse:
         return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
     try:
         body = await request.json()
-        for k in ("selected_symbol", "strategy_mode", "entry_z", "exit_z", "notional_usd", "max_tranches"):
-            if k in body:
-                _crypto_bot_state[k] = body[k]
-        return JSONResponse({"success": True, "bot": _crypto_bot_state})
+        bot = await crypto_bot.configure(body)
+        return JSONResponse({"success": True, "bot": bot})
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error)}, status_code=400)
 
@@ -1013,20 +1067,37 @@ async def configure_crypto_bot(request: Request) -> JSONResponse:
 async def step_crypto_tranche(request: Request) -> JSONResponse:
     if not terminal_authorized(request):
         return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
-    return JSONResponse({"success": False, "error": "Single-leg crypto live execution is fail-closed. Test orders are prohibited."}, status_code=400)
+    try:
+        body = await request.json()
+        if body.get("confirm_live_trading") is not True:
+            raise ValueError("Confirm the live Binance Futures order")
+        event = await crypto_bot.manual_entry(int(body.get("side", 0)), float(body.get("notional_usd", 0)))
+        return JSONResponse({"success": True, "message": "Binance Futures order filled", "event": event, "bot": crypto_bot.public_state()})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
 
 @app.post("/api/crypto/reduce_tranche")
 async def reduce_crypto_tranche(request: Request) -> JSONResponse:
     if not terminal_authorized(request):
         return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
-    return JSONResponse({"success": False, "error": "Single-leg crypto live execution is fail-closed."}, status_code=400)
+    try:
+        body = await request.json()
+        if body.get("confirm_live_trading") is not True:
+            raise ValueError("Confirm the live Binance Futures reduction")
+        event = await crypto_bot.manual_reduce()
+        return JSONResponse({"success": True, "message": "Binance Futures tranche reduced", "event": event, "bot": crypto_bot.public_state()})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
 
 @app.post("/api/crypto/flatten")
 async def flatten_crypto(request: Request) -> JSONResponse:
     if not terminal_authorized(request):
         return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
-    _crypto_bot_state["enabled"] = False
-    return JSONResponse({"success": True, "message": "Crypto bot paused", "bot": _crypto_bot_state})
+    try:
+        result = await crypto_bot.flatten()
+        return JSONResponse({"success": True, "message": "Bot-owned Binance Futures inventory flattened and bot paused", **result})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error), "bot": crypto_bot.public_state()}, status_code=400)
 
 @app.get("/api/crypto/backtest")
 async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 500,

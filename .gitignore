@@ -46,3 +46,4 @@ backend/terminal_auth.json
 backend/upbit_forecast_validation.json
 backend/lighter_credentials.json
 backend/lighter_bot_state.json
+backend/crypto_bot_state.json

@@ -458,26 +458,26 @@
       const base = sym.replace("USDT", "");
       this.renderSymbolSelector();
       this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto Terminal · ${sym}`);
-      this.setText("lblDaemonAuthBadge", "CRYPTO ENGINE: READY");
-      this.setText("lblDaemonUpbitBadge", `RISK TIER: TIER ${this.currentTier} (${this.tiers[this.currentTier]?.leverage.toFixed(0)}x)`);
+      this.setText("lblDaemonAuthBadge", "CHECKING BINANCE FUTURES");
+      this.setText("lblDaemonUpbitBadge", `PAPER LADDER TIER ${this.currentTier} · LIVE CAP 1x`);
       this.setText("valDeployedStrategyName", `⚡ ${sym} Single-Leg Quantitative Engine`);
-      this.setText("valDeployedEngine", "Continuous SDE Mean-Reversion & Volatility Harvester");
+      this.setText("valDeployedEngine", "Live Grid signal on completed candles");
       this.setText("valDeployedInterval", `${this.interval || "5m"} completed candles`);
       this.setText("valDeployedWindow", "24 completed bars");
       this.setText("valDeployedEdge", "Entry |Z| ≥ 1.40σ");
-      this.setText("valDeployedMaxLeverage", `${(this.tiers[this.currentTier]?.leverage * 100).toFixed(0)}% (${this.tiers[this.currentTier]?.leverage.toFixed(1)}x account cap)`);
+      this.setText("valDeployedMaxLeverage", "Selected contract ≤ 1x Futures equity");
       this.setText("valDeployedSpeed", "Configurable trade execution rate (0.2–10/min)");
       this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.20σ");
-      this.setText("valDeployedCost", "0 BPS fee simulated / slippage guarded");
-      this.setText("lblAccountEquity", "Crypto Collateral");
-      this.setText("badgeEquitySource", "BINANCE FUTURES");
-      this.setText("valAccountEquity", "$10,000.00");
-      this.setText("lblAvailMargin", "Available Margin");
-      this.setText("valAvailMargin", "$8,500.00");
-      this.setText("lblUnrealizedPnl", "Verified Realized PnL");
+      this.setText("valDeployedCost", "Paper replay excludes fees; live orders use exchange fills");
+      this.setText("lblAccountEquity", "Real Futures Equity");
+      this.setText("badgeEquitySource", "SYNCING");
+      this.setText("valAccountEquity", "—");
+      this.setText("lblAvailMargin", "Real Available Margin");
+      this.setText("valAvailMargin", "—");
+      this.setText("lblUnrealizedPnl", "Bot Realized Net PnL (unverified)");
       this.setText("lblActivePairs", "Active Crypto Tranches");
       this.setText("lblMarginRisk", "Target Leverage");
-      this.setText("valMarginRisk", `${this.tiers[this.currentTier]?.leverage.toFixed(1)}x cap`);
+      this.setText("valMarginRisk", "1.0x selected-contract cap");
       this.setText("lblCollateralSummary", "Selected Asset");
       const pillsContainer = lid("valCollateralPills");
       if (pillsContainer) pillsContainer.innerHTML = `<span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 800;">${sym} PERP</span>`;
@@ -486,7 +486,7 @@
       this.setText("valUpbitEquity", `${sym} (${base} / USDT)`);
       this.setText("titleExecutionTerminal", `⚡ 1-Click ${sym} Quantitative Execution`);
       this.setText("badgeExecMode", "SINGLE-LEG PERPETUAL QUANTITATIVE ENGINE");
-      this.setText("lblHedgedSyncBadge", "CRYPTO ENGINE ACTIVE");
+      this.setText("lblHedgedSyncBadge", "CRYPTO BOT PAUSED");
       this.setText("lblShortTermTitle", "Paper Replay Conditions — Single-Leg Crypto Simulation");
       this.setText("lblShortTermSubtitle", "Chart interval, strategy regimes, condition switches, and Rerun affect the historical paper simulation only.");
       this.setText("lblCritScaleInTitle", "➕ Dip Scale-In (Buy Rung / Lower Harvester)");
@@ -557,7 +557,7 @@
       }
       if (semi && !semi._boundMode) {
         semi._boundMode = true;
-        semi.textContent = "⚡ Semi-Auto";
+        semi.textContent = "⚡ Manual Live";
         semi.addEventListener("click", () => this.setMode("semi_auto"));
       }
       if (live && !live._boundMode) {
@@ -719,7 +719,7 @@
         const warning = document.createElement("div");
         warning.id = "crypto_failClosedWarning";
         warning.style.cssText = "grid-column:1/-1;padding:9px 11px;border-radius:6px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;margin-bottom:8px";
-        warning.textContent = "Single-leg crypto live execution is fail-closed. Real live order submission requires unlocking the terminal and explicit confirmation; paper execution simulation is active.";
+        warning.textContent = "Real Binance Futures orders require terminal unlock and confirmation. Grid supports automatic execution; other strategies are paper replay only.";
         ticket.prepend(warning);
       }
       if (ticket) {
@@ -736,7 +736,7 @@
         notionalInput.min = "10";
         notionalInput.max = "500";
         notionalInput.step = "5";
-        notionalInput.value = "25";
+        notionalInput.value = "150";
         notionalInput.addEventListener("input", () => this.updateLeverageMetrics());
       }
       const autoToggle = lid("chkAutoPeriodic48h");
@@ -858,7 +858,7 @@
       ["chkCondEntryMaStack1h", "chkCondEntryCapacity", "chkCondEntryLeverage",
        "chkCondEntryMargin", "chkCondEntryEngine", "chkCondEntryGuard", "chkCondExitActive",
        "chkCondExitNetPnl", "chkCondExitMaStack5m", "chkCondExitMaStack1h", "chkCondExitPosition"].forEach((id) => {
-        const input = lid(id); if (input) { input.disabled = true; input.title = "Available when Lighter live account execution is configured"; }
+        const input = lid(id); if (input) { input.disabled = true; input.title = "Not a Tab 4 replay condition; live exchange safeguards are shown separately"; }
       });
     },
 
@@ -869,7 +869,7 @@
             <div style="display:flex;align-items:center;gap:8px;">
               <span style="font-size:18px;">🏛️</span>
               <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Institutional Grid Bands & Rebalance Ladder</strong>
-              <span id="crypto_gridStatusPill" style="background:#dcfce7;color:#166534;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #bbf7d0;">ARMED & LIVE</span>
+              <span id="crypto_gridStatusPill" style="background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #bae6fd;">PAPER LADDER</span>
             </div>
             <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Asymmetric multi-tier volatility harvester · Dynamic price equilibrium rebalancing.</p>
           </div>
@@ -994,6 +994,28 @@
         if (el) el.textContent = text;
       });
       Object.entries(p.researchLabels).forEach(([id, text]) => this.setText(id, text));
+
+      // The inherited paired-asset checklist contains rules that this
+      // single-leg replay does not evaluate. Show only wired replay switches;
+      // live-only exchange safeguards are reported in the separate bot panel.
+      const wiredReplayRows = ["grid", "custom"].includes(mode) ? {
+        rowCondEntryMaStretch: "Paper entry: Z-score stretch (adjust Entry Z in replay)",
+        rowCondEntryBase: "Paper entry: minimum spacing from prior entry",
+        rowCondEntryPeak: "Paper entry: Z-score rollover",
+        rowCondEntryMaStack5m: "Paper entry: price / MA7 / mean stack",
+        rowCondExitConvergence: "Paper exit: Z-score convergence (adjust Exit Z in replay)",
+        rowCondExitDwell: "Paper exit: minimum four completed bars",
+        rowCondExitBottoming: "Paper exit: Z-score no longer converging",
+      } : {};
+      [...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels)].forEach((id) => {
+        const row = lid(id);
+        if (!row) return;
+        row.style.display = wiredReplayRows[id] ? "" : "none";
+        if (wiredReplayRows[id]) {
+          const label = row.querySelector(".condLabel");
+          if (label) label.textContent = wiredReplayRows[id];
+        }
+      });
 
       const ladderSec = $("crypto_gridMatrixSection");
       let detailSec = $("crypto_paradigmDetailSection");
@@ -1360,7 +1382,7 @@
       panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;border-bottom:1px solid rgba(5,150,105,0.2);padding-bottom:8px;">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <strong style="font-size:13px;letter-spacing:.35px">REAL EC2 BOT — PRODUCTION RULES</strong>
+            <strong style="font-size:13px;letter-spacing:.35px">REAL BINANCE FUTURES BOT — GRID</strong>
             <span id="crypto_liveBotEnginePill" style="font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px;background:#059669;color:#fff;">LIVE: DYNAMIC GRID</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -1368,6 +1390,7 @@
               <span>⚡</span> <span id="crypto_btnDeployLiveStrategyLabel">Deploy Current Strategy to Live Bot</span>
             </button>
             <span id="cryptoLiveRulesState" style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#475569">LOADING</span>
+            <button id="crypto_btnReconcileBot" type="button" class="terminal-action-control" style="display:none;height:28px;padding:0 10px;border:1px solid #b45309;border-radius:6px;background:#fff7ed;color:#92400e;font-size:11px;font-weight:800;cursor:pointer">Reconcile exchange order</button>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;font-size:11px;line-height:1.4">
@@ -1382,28 +1405,28 @@
           </div>
           <div>
             <b>Entry Trigger</b><br>
-            |Z| ≥ <span id="cryptoLiveEntryZ">1.50</span>
-            <div id="cryptoLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short BTCUSDT / long KR<br>Z low: long BTCUSDT / short KR</div>
+            |Z| ≥ <input id="crypto_inputLiveGridEntryZ" type="number" min="0.1" max="10" step="0.1" value="1.5" aria-label="Live Grid entry Z threshold" style="width:65px;font-weight:800">
+            <div id="cryptoLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short selected contract<br>Z low: long selected contract</div>
           </div>
           <div>
             <b>Exit Target</b><br>
-            |Z| ≤ <span id="cryptoLiveExitZ">0.25</span> · no separate PnL gate
-            <div id="cryptoLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Full pair unwind at convergence</div>
+            |Z| ≤ <input id="crypto_inputLiveGridExitZ" type="number" min="0" max="5" step="0.05" value="0.25" aria-label="Live Grid exit Z threshold" style="width:65px;font-weight:800"> · no separate PnL gate
+            <div id="cryptoLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Reduce one bot-owned tranche per closed-bar convergence signal</div>
           </div>
           <div>
             <b>Size / dynamic capacity</b><br>
-            ADR target $<span id="cryptoLiveNotional">25</span> · pair gross ≈ $<span id="cryptoLivePairGross">—</span><br>
-            <span id="cryptoLiveMaxTranches">—</span> safe tranches · ≤8x account gross
+            Single-leg target $<span id="cryptoLiveNotional">50</span> · gross ≈ $<span id="cryptoLivePairGross">—</span><br>
+            <span id="cryptoLiveMaxTranches">—</span> bot-owned tranches · max <input id="crypto_inputLiveMaxTranches" type="number" min="1" max="5" step="1" value="5" aria-label="Maximum live Grid tranches" style="width:45px;font-weight:800"> · selected contract ≤1x Futures equity
           </div>
           <div>
             <b>Execution guards</b><br>
-            Book spread ≤ <span id="cryptoLiveMaxSpread">45</span> bps
+            Book spread ≤ <input id="crypto_inputLiveMaxSpread" type="number" min="1" max="100" step="1" value="45" aria-label="Maximum executable book spread in basis points" style="width:55px;font-weight:800"> bps
             <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
-              <input id="crypto_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Maximum paired trades per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
+              <input id="crypto_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Maximum single-leg orders per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
               <output id="cryptoLiveTradeRateValue" for="crypto_inputLiveTradeRate" style="min-width:48px;font-weight:900;color:#0369a1">0.2/min</output>
               <button id="crypto_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
             </div>
-            <small id="cryptoLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 paired trades/min · 300s minimum · unlock required</small>
+            <small id="cryptoLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 single-leg orders/min · 300s minimum · unlock required</small>
           </div>
           <div>
             <b>Current evaluation</b><br>
@@ -1411,8 +1434,8 @@
           </div>
         </div>
         <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
-          <span>Live execution parameters and active engine are managed directly in this STRATEGY REGIME command center.</span>
-          <span style="font-size:10px;font-weight:700;color:#c2410c;">Simulations in chart/backtest remain paper-only until deployed.</span>
+          <span>Only Grid can be deployed to live execution. Manual live orders require a separate confirmation.</span>
+          <span style="font-size:10px;font-weight:700;color:#c2410c;">Replay-only filters do not control live orders.</span>
         </div>
       `;
       const detailSec = $("crypto_paradigmDetailSection");
@@ -1440,6 +1463,13 @@
         rateInput._boundInput = true;
         rateInput.addEventListener("input", () => this.renderTradeRatePreview());
       }
+      const reconcileButton = $("crypto_btnReconcileBot");
+      if (reconcileButton) reconcileButton.addEventListener("click", () => this.reconcileLiveBot());
+      ["crypto_inputLiveGridEntryZ", "crypto_inputLiveGridExitZ", "crypto_inputLiveMaxTranches",
+        "crypto_inputLiveMaxSpread"].forEach((id) => {
+        const input = $(id);
+        if (input) input.addEventListener("input", () => { input.dataset.unsaved = "true"; });
+      });
       this.updateDeployButtonState();
       window.terminalLockManager?.applyState?.();
     },
@@ -1451,6 +1481,18 @@
       const currentMode = this.currentParadigm || "grid";
       const liveMode = this.botState?.strategy_mode || "grid";
       const currentName = this.paradigms[currentMode]?.name || currentMode;
+      if (currentMode !== "grid") {
+        btnLabel.textContent = `${currentName} · replay only`;
+        btn.disabled = true;
+        btn.title = "Only Grid has live execution rules";
+        return;
+      }
+      if (this.botState?.enabled) {
+        btnLabel.textContent = "Pause live bot before editing Grid rules";
+        btn.disabled = true;
+        return;
+      }
+      btn.disabled = false;
       if (currentMode === liveMode) {
         btnLabel.textContent = `✓ ${currentName} Active on Live Bot (Re-apply)`;
         btn.style.background = "#059669";
@@ -1464,6 +1506,7 @@
       const payload = {
         strategy_mode: mode,
         strategy_interval: this.interval || "5m",
+        selected_symbol: this.selectedSymbol || "BTCUSDT",
       };
       const numeric = (id, fallback) => {
         const value = Number($(id)?.value);
@@ -1485,6 +1528,13 @@
         payload.entry_z = numeric("crypto_inpCustomEntryZ", 1.5);
         payload.exit_z = numeric("crypto_inpCustomExitZ", 0.25);
       }
+      if (mode === "grid") {
+        payload.entry_z = numeric("crypto_inputLiveGridEntryZ", Number(this.botState?.entry_z ?? 1.5));
+        payload.exit_z = numeric("crypto_inputLiveGridExitZ", Number(this.botState?.exit_z ?? 0.25));
+        payload.notional_usd = Number(this.orderNotional());
+        payload.max_tranches = numeric("crypto_inputLiveMaxTranches", Number(this.botState?.max_tranches ?? 5));
+        payload.max_book_spread_bps = numeric("crypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45));
+      }
       return payload;
     },
 
@@ -1495,8 +1545,12 @@
         return false;
       }
       const mode = this.currentParadigm || "grid";
+      if (mode !== "grid") {
+        window.showToast?.("This strategy is replay-only. Live execution supports Grid.", "warn");
+        return false;
+      }
       const pName = this.paradigms[mode]?.name || mode;
-      const confirmed = options.skipConfirm || window.confirm(`Deploy "${pName}" (${this.interval}) to the live EC2 trading daemon?\n\nLive orders and existing inventory exits will immediately follow this strategy's parameters.`);
+      const confirmed = options.skipConfirm || window.confirm(`Save ${pName} (${this.interval}) for real Binance Futures trading?\n\nPause the bot before changing strategy. Saving while paused places no order.`);
       if (!confirmed) return false;
 
       const btn = $("crypto_btnDeployLiveStrategy");
@@ -1507,6 +1561,8 @@
       try {
         const data = await apiPost("/api/crypto/bot/config", payload);
         if (data?.bot) {
+          ["crypto_inputLiveGridEntryZ", "crypto_inputLiveGridExitZ", "crypto_inputLiveMaxTranches",
+            "crypto_inputLiveMaxSpread"].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
           this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
         }
         window.showToast?.(`✅ Live EC2 strategy changed to ${pName} (${payload.strategy_interval}).`, "success");
@@ -1516,6 +1572,26 @@
         return false;
       } finally {
         if (btn) btn.disabled = false;
+      }
+    },
+
+    async reconcileLiveBot() {
+      if (window.terminalLockManager?.isLocked) {
+        window.showToast?.("Unlock the terminal to reconcile the Binance order.", "warn");
+        return false;
+      }
+      const button = $("crypto_btnReconcileBot");
+      if (button) button.disabled = true;
+      try {
+        await apiPost("/api/crypto/bot/reconcile", {});
+        await this.refresh();
+        window.showToast?.("Exchange order and position reconciled. Review inventory before re-enabling.", "success");
+        return true;
+      } catch (error) {
+        window.showToast?.(`Reconciliation still required: ${error.message}`, "danger");
+        return false;
+      } finally {
+        if (button) button.disabled = false;
       }
     },
 
@@ -1546,8 +1622,7 @@
           }
         }
       });
-      this.setText("valMarginRisk", `${tier.leverage.toFixed(1)}x`);
-      this.setText("lblDaemonUpbitBadge", `RISK TIER: TIER ${tierNum} (${tier.leverage.toFixed(0)}x)`);
+      this.setText("lblDaemonUpbitBadge", `PAPER LADDER TIER ${tierNum} · LIVE CAP 1x`);
       this.updateGridLadderData();
     },
 
@@ -1643,7 +1718,7 @@
       } catch (_) {}
       const selectedStrategy = safeStorage.getItem(STRATEGY_STORAGE_KEY);
       if (this.paradigms[selectedStrategy]) this.currentParadigm = selectedStrategy;
-      this.mode = safeStorage.getItem("skhynix_crypto_mode") || "paper";
+      this.mode = safeStorage.getItem("skhynix_crypto_mode") === "semi_auto" ? "semi_auto" : "paper";
       this.labelTerminal();
       this.applyMode(this.mode, false);
       this.initialized = true;
@@ -1808,13 +1883,16 @@
           }
         }
         this.setText("lblDaemonSyncTime", `Last Sync: ${formatKstDateTime(status.server_time_ms || Date.now(), false)}`);
-        this.setText("lblDaemonLatency", "Single-Leg Engine: Active");
+      this.setText("lblDaemonLatency", botStatus?.bot?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Paused");
         this.setText("lblDaemonStats", `Binance Futures · ${sym}`);
-        this.setText("lblHedgedSyncBadge", "CRYPTO ENGINE ACTIVE");
+      this.setText("lblHedgedSyncBadge", botStatus?.bot?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT PAUSED");
         this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto · ${sym}`);
-        this.setText("lblDaemonAuthBadge", "LIVE FEED READY");
-        this.setText("valAccountEquity", "$10,000.00");
-        this.setText("badgeEquitySource", "BINANCE FUTURES");
+      this.setText("lblDaemonAuthBadge", status.authenticated ? "BINANCE FUTURES CONNECTED" : "ACCOUNT UNAVAILABLE");
+      this.setText("valAccountEquity", Number.isFinite(Number(status.collateral)) && status.collateral != null
+        ? `$${Number(status.collateral).toFixed(2)}` : "—");
+      this.setText("badgeEquitySource", status.authenticated ? "REAL FUTURES" : "UNAVAILABLE");
+      this.setText("valAvailMargin", Number.isFinite(Number(status.available_margin)) && status.available_margin != null
+        ? `$${Number(status.available_margin).toFixed(2)}` : "—");
 
         const formattedPrice = this.formatCryptoPrice(this.currentRatio);
         this.setText("valShortTermCurrentPrice", formattedPrice);
@@ -1992,7 +2070,7 @@
         : canAlign ? `▲ PAPER SETTINGS DIFFER (${diffs.join(" · ")}) — Click to align with saved bot thresholds`
           : `▲ PAPER SETTINGS DIFFER (${diffs.join(" · ")}) — Alignment unavailable`;
       pill.title = matched
-        ? "Saved bot thresholds and default replay filters are aligned. Crypto execution is fail-closed; this does not confirm live order behavior."
+        ? "Persisted bot thresholds and default replay filters are aligned. Paper fills, costs, and exits can still differ from live execution."
         : canAlign ? "Restore saved bot thresholds and default replay filters, then rerun the paper backtest."
           : "This strategy cannot be aligned exactly, or its saved settings are unavailable.";
       pill.style.cursor = !matched && canAlign ? "pointer" : "default";
@@ -2171,6 +2249,8 @@
       this.botState = bot;
       const isEnabled = Boolean(bot?.enabled);
       const isRecovery = Boolean(bot?.recovery_required);
+      const reconcileButton = $("crypto_btnReconcileBot");
+      if (reconcileButton) reconcileButton.style.display = isRecovery ? "inline-flex" : "none";
       const tranches = Array.isArray(bot?.tranches) ? bot.tranches : [];
       // The EC2 bot is shared across browsers; per-browser localStorage is not
       // authoritative. Reconcile the visible execution mode to persisted server
@@ -2185,7 +2265,7 @@
       const toggle = lid("chkAutoPeriodic48h");
       if (toggle) {
         toggle.checked = isEnabled;
-        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || !venue?.execution_enabled || isRecovery;
+        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || (!venue?.execution_enabled && !isEnabled) || (isRecovery && !isEnabled);
       }
       const banner = lid("autoTradeMasterBanner");
       const pulseEl = lid("autoTradePulseIndicator");
@@ -2211,7 +2291,7 @@
           badge.style.color = "#991b1b";
         }
         if (headingEl) headingEl.textContent = "GRID BOT: RECOVERY";
-        if (detailEl) detailEl.textContent = "Order reconciliation required on Lighter/EC2";
+        if (detailEl) detailEl.textContent = "Check the pending order and exchange position before resuming";
       } else if (isEnabled) {
         if (banner) banner.classList.add("active");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator active";
@@ -2224,7 +2304,7 @@
           badge.style.color = "#166534";
         }
         if (headingEl) headingEl.textContent = "EC2 DAEMON: ACTIVE";
-        if (detailEl) detailEl.textContent = isKo ? "실시간 그리드 차익거래 가동 중" : "Running 24/7 institutional grid engine on EC2";
+        if (detailEl) detailEl.textContent = isKo ? "바이낸스 선물 단일 종목 자동매매 가동 중" : "Single-leg Binance Futures bot running on EC2";
       } else {
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator paused";
         if (titleEl) titleEl.textContent = isKo ? "○ 그리드 봇: 대기 (일시정지)" : "○ INSTITUTIONAL GRID BOT: PAUSED";
@@ -2236,7 +2316,7 @@
           badge.style.color = "#475569";
         }
         if (headingEl) headingEl.textContent = "EC2 DAEMON: STANDBY";
-        if (detailEl) detailEl.textContent = isKo ? "토글 스위치를 켜서 24/7 그리드 매매를 시작하세요" : "Click toggle switch to start 24/7 grid bot";
+        if (detailEl) detailEl.textContent = isKo ? "실계좌 확인 후 스위치로 자동매매 시작" : "Review the real account, then enable automatic trading";
       }
 
       const stratMode = bot?.strategy_mode || "grid";
@@ -2263,7 +2343,7 @@
       const liveBtn = lid("modeLive");
       if (liveBtn) liveBtn.classList.toggle("botActiveLive", isEnabled);
 
-      this.setText("lblDaemonLatency", isEnabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused");
+      this.setText("lblDaemonLatency", isEnabled ? "Binance Crypto Bot: Running on EC2" : "Binance Crypto Bot: Paused");
       this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${bot?.max_tranches ?? tranches.length} safe tranches` : "Awaiting first closed-bar evaluation");
       const rulesPanel = $("cryptoLiveRulesPanel");
       if (rulesPanel) {
@@ -2295,6 +2375,11 @@
 
       writeRule("cryptoLiveEntryZ", Number(bot?.entry_z ?? 1.4).toFixed(2));
       writeRule("cryptoLiveExitZ", Number(bot?.exit_z ?? 0.2).toFixed(2));
+      [["crypto_inputLiveGridEntryZ", bot?.entry_z], ["crypto_inputLiveGridExitZ", bot?.exit_z],
+        ["crypto_inputLiveMaxTranches", bot?.max_tranches], ["crypto_inputLiveMaxSpread", bot?.max_book_spread_bps]].forEach(([id, value]) => {
+        const input = $(id);
+        if (input && value != null && document.activeElement !== input && input.dataset.unsaved !== "true") input.value = String(value);
+      });
       const liveEntryZ = Number(bot?.entry_z ?? 1.4);
       const liveExitZ = Number(bot?.exit_z ?? 0.2);
       const ouEntryInp = $("crypto_inpOuEntryZ");
@@ -2315,7 +2400,7 @@
       }
       const configuredAdrNotional = Number(bot?.notional_usd ?? 50);
       const liveRatio = Number(bot?.last_evaluation?.ratio || this.currentRatio || 0);
-      const estimatedPairGross = configuredAdrNotional * (1 + (liveRatio > 0 ? 100 / liveRatio : 1));
+      const estimatedPairGross = configuredAdrNotional;
       writeRule("cryptoLiveNotional", configuredAdrNotional.toFixed(0));
       writeRule("cryptoLivePairGross", estimatedPairGross.toFixed(2));
       const capacity = bot?.risk_capacity || {};
@@ -2324,9 +2409,9 @@
       const cooldownSeconds = Math.max(6, Number(bot?.min_seconds_between_orders ?? 300));
       const tradeRate = Math.max(0.2, Math.min(10, 60 / cooldownSeconds));
       const tradeRateText = this.formatTradeRate(tradeRate);
-      writeRule("cryptoLiveCooldown", `Current: ${tradeRateText} paired trades/min · ${Math.round(cooldownSeconds)}s minimum · unlock required`);
+      writeRule("cryptoLiveCooldown", `Current: ${tradeRateText} single-leg orders/min · ${Math.round(cooldownSeconds)}s minimum · unlock required`);
       writeRule("cryptoLiveEvaluation", bot?.last_evaluation
-        ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · ratio ${Number(bot.last_evaluation.ratio || 0).toFixed(3)}% · mean ${Number(bot.last_evaluation.mean || 0).toFixed(3)}%`
+        ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · price ${this.formatCryptoPrice(Number(bot.last_evaluation.ratio || 0))} · mean ${this.formatCryptoPrice(Number(bot.last_evaluation.mean || 0))}`
         : "Awaiting completed bar");
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput && document.activeElement !== notionalInput) {
@@ -2338,7 +2423,7 @@
         tradeRateInput.value = String(Math.round(tradeRate * 5) / 5);
       }
       this.renderTradeRatePreview();
-      this.setText("valDeployedSpeed", `${tradeRateText} paired trades/min (${Math.round(cooldownSeconds)}s minimum)`);
+      this.setText("valDeployedSpeed", `${tradeRateText} single-leg orders/min (${Math.round(cooldownSeconds)}s minimum)`);
       const engineCondition = lid("rowCondEntryEngine")?.querySelector(".condLabel");
       if (engineCondition) engineCondition.textContent = `9. ${stratName} State & ${tradeRateText}/min Rate Limit`;
       this.setText("valCritRetainedCore", `${tranches.length} tracked pair tranche${tranches.length === 1 ? "" : "s"}`);
@@ -2353,40 +2438,33 @@
 
     updateLeverageMetrics() {
       const riskCapacity = this.botState?.risk_capacity || {};
-      const levCap = Number(riskCapacity.gross_leverage_cap || 8.0);
+      const levCap = Number(riskCapacity.gross_leverage_cap || 1.0);
       let grossNotional = 0;
-      let collateral = 187.55;
+      let collateral = 0;
       let adrQty = 0;
       let domesticQty = 0;
       let adrNotional = 0;
       let domesticNotional = 0;
       let tranchesCount = 0;
-      let maxTranches = 8;
+      let maxTranches = 5;
 
-      const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position || pos.size || 0)) > 1e-6);
+      const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position_amt ?? pos.size ?? 0)) > 1e-6);
       if (this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure) {
-        collateral = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 187.55;
+        collateral = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 0;
         const positions = Array.isArray(this.livePositions) ? this.livePositions : [];
         positions.forEach((pos) => {
-          const rawSize = Number(pos.position || pos.size || 0);
+          const rawSize = Number(pos.position_amt ?? pos.size ?? 0);
           const size = Math.abs(rawSize);
           const price = Number(pos.avg_entry_price || pos.entry_price || pos.price || 0);
-          const positionValue = Math.abs(Number(pos.position_value || 0));
+          const positionValue = Math.abs(Number(pos.notional || 0));
           const notional = positionValue > 0 ? positionValue : (size * price);
           grossNotional += notional;
 
-          const sym = String(pos.symbol || "").toUpperCase();
-          const isAdr = Number(pos.market_id) === 216 || (sym.includes("BTCUSDT") && !sym.includes("USD"));
-          if (isAdr) {
-            adrQty = size;
-            adrNotional = notional;
-          } else {
-            domesticQty = size;
-            domesticNotional = notional;
-          }
+          adrQty += size;
+          adrNotional += notional;
         });
 
-        const validTranches = (this.botState?.tranches || []).filter((t) => (t.adr_qty > 0 || t.domestic_qty > 0));
+        const validTranches = (this.botState?.tranches || []).filter((t) => Number(t.qty) > 0);
         tranchesCount = validTranches.length;
         maxTranches = Number(this.botState?.max_tranches || 8);
 
@@ -2394,8 +2472,7 @@
         if (grossNotional === 0 && tranchesCount > 0) {
           const singleLeg = Number(this.botState?.notional_usd || 25);
           const ratio = Number(this.botState?.last_evaluation?.ratio || this.currentRatio || 0);
-          const pairFactor = 1 + (ratio > 0 ? 100 / ratio : 1);
-          grossNotional = tranchesCount * singleLeg * pairFactor;
+          grossNotional = tranchesCount * singleLeg;
         }
       } else {
         collateral = 10000.0;
@@ -2407,11 +2484,13 @@
       const grossLev = collateral > 0 ? (grossNotional / collateral) : 0;
       const dynamicCapUsd = collateral * levCap;
       const headroomUsd = Math.max(0, dynamicCapUsd - grossNotional);
-      const freeMarginUsd = Number(riskCapacity.available_margin_usd ?? Math.max(0, collateral - (grossNotional / levCap)));
+      const freeMarginUsd = this.mode === "live" || this.botState?.enabled || hasLiveExposure
+        ? Number(this.liveVenue?.available_margin ?? 0)
+        : Math.max(0, collateral - (grossNotional / levCap));
       const hasLeverage = grossLev <= levCap;
-      const netDeltaUsd = adrNotional - domesticNotional;
-      const netShares = domesticQty - adrQty;
-      const loss10 = grossNotional * 0.10 * 0.5;
+      const netDeltaUsd = grossNotional;
+      const netShares = adrQty;
+      const loss10 = grossNotional * 0.10;
       const maxDiv = grossNotional > 0 ? ((collateral / grossNotional) * 100) : 999;
       const utilPct = Math.min(100, Math.max(0, (grossLev / levCap) * 100));
 
@@ -2421,22 +2500,22 @@
       if (levEl) {
         levEl.style.color = grossLev > levCap ? "#dc2626" : (grossLev > levCap * 0.75 ? "#d97706" : "#0284c7");
       }
-      this.setText("valHedgedNotional", `Gross Size: $${grossNotional.toFixed(2)} USDT · Est. ${levCap.toFixed(0)}x Margin: $${(grossNotional / levCap).toFixed(2)}`);
-      this.setText("valDeployedMaxLeverage", `${(levCap * 100).toFixed(0)}% (${levCap.toFixed(1)}x account cap)`);
+      this.setText("valHedgedNotional", `Selected contract size: $${grossNotional.toFixed(2)} USDT`);
+      this.setText("valDeployedMaxLeverage", `Selected contract ≤ ${levCap.toFixed(1)}x Futures equity`);
       this.setText("valMarginRisk", `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x cap`);
 
       // 2. Telemetry Cards
       this.setText("valHedgedDelta", `$${Math.abs(netDeltaUsd).toFixed(2)}`);
       this.setText("valHedgedNetDeltaSubtitle", tranchesCount > 0
-        ? `Net: ${netShares >= 0 ? "+" : ""}${netShares.toFixed(4)} BTCUSDT eq.`
-        : "Dollar Neutral 1:1 Hedge");
+        ? `${netShares.toFixed(4)} selected-contract units · no hedge leg`
+        : "Single-leg exposure · no hedge leg");
       this.setText("valHedgedLoss10", `-$${loss10.toFixed(2)} USDT`);
       this.setText("valHedgedMaxDiv", maxDiv >= 900 ? "+∞ % pts" : `+${maxDiv.toFixed(1)}% pts`);
 
       // 3. BTCUSDT Shares Exposure Bar
-      this.setText("pillAdrShares", `Short Leg: ${adrQty.toFixed(4)} BTCUSDT`);
-      this.setText("pillStockShares", `Long Hedge: ${domesticQty.toFixed(4)} BTCUSDT eq.`);
-      this.setText("pillNetShares", `Net Delta: ${netShares >= 0 ? "+" : ""}${netShares.toFixed(4)} shares`);
+      this.setText("pillAdrShares", `Selected contract: ${adrQty.toFixed(4)} units`);
+      this.setText("pillStockShares", "Hedge leg: none");
+      this.setText("pillNetShares", `Open units: ${netShares.toFixed(4)}`);
 
       // 4. Sizing Progress Bar & Utilization
       const capacityBlock = riskCapacity.blocked_reason === "CAMPAIGN_CAPACITY"
@@ -2474,9 +2553,8 @@
       }
 
       const sizingRatio = Number(this.botState?.last_evaluation?.ratio || this.currentRatio || 0);
-      const pairFactor = 1 + (sizingRatio > 0 ? 100 / sizingRatio : 1);
-      const nextPairGross = Number(riskCapacity.next_tranche_gross_usd || (Number(this.orderNotional() || 25) * pairFactor));
-      const reqMarginPerTranche = Number(riskCapacity.required_margin_buffer_usd || Math.max(2.5, (nextPairGross / 10) * 1.25));
+      const nextPairGross = Number(this.orderNotional() || 25);
+      const reqMarginPerTranche = nextPairGross * 1.25;
       const hasMargin = freeMarginUsd >= reqMarginPerTranche;
       this.setText("valCondEntryMargin", `$${freeMarginUsd.toFixed(2)} ≥ $${reqMarginPerTranche.toFixed(2)}`);
       const chkMargin = lid("chkCondEntryMargin");
@@ -2493,7 +2571,8 @@
       this.setText("valCritGrossLev", `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x`);
       this.setText("valCritGrossCap", `$${dynamicCapUsd.toFixed(2)} (${levCap.toFixed(1)}x)`);
       this.setText("valCritGrossHeadroom", `$${headroomUsd.toFixed(2)} free`);
-      this.setText("valAvailMargin", `$${freeMarginUsd.toFixed(2)} free`);
+      this.setText("valAvailMargin", this.liveVenue?.available_margin != null
+        ? `$${Number(this.liveVenue.available_margin).toFixed(2)}` : "—");
     },
 
     async toggleLiveBot(enabled) {
@@ -2510,10 +2589,14 @@
       }
       try {
         if (enabled) {
+          if (this.selectedSymbol !== this.botState?.selected_symbol) {
+            throw new Error("Save the selected symbol to the live bot before enabling orders.");
+          }
           const notional = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
           const tradeRate = this.tradeRatePerMinute();
           const cooldownSeconds = this.cooldownSecondsForTradeRate(tradeRate);
-          const confirmed = window.confirm(`Enable REAL 24/7 Lighter trading on EC2?\n\nPair: BTCUSDT Perpetual (no 2x ETF)\nSizing: approximately $${notional.toFixed(0)} on each leg, dollar-neutral, 1x\nMaximum rate: ${this.formatTradeRate(tradeRate)} paired trades/min (${cooldownSeconds}s minimum)\n\nThe bot may place orders after the next closed-bar signal.`);
+          const symbol = this.botState?.selected_symbol || this.selectedSymbol || "BTCUSDT";
+          const confirmed = window.confirm(`Enable REAL Binance Futures trading on EC2?\n\nContract: ${symbol}\nStrategy: ${this.botState?.strategy_mode || "grid"} on completed ${this.botState?.strategy_interval || "5m"} bars\nOrder target: $${notional.toFixed(0)} single-leg, up to ${this.botState?.max_tranches || 5} tranches\nRate: up to ${this.formatTradeRate(tradeRate)} orders/min (${cooldownSeconds}s minimum)\n\nOrders can start after the next completed bar. No hedge leg is placed.`);
           if (!confirmed) { if (toggle) toggle.checked = false; return false; }
           await apiPost("/api/crypto/bot/config", { notional_usd: notional, min_seconds_between_orders: cooldownSeconds });
         }
@@ -2566,7 +2649,7 @@
       try {
         const data = await apiPost("/api/crypto/bot/config", { min_seconds_between_orders: cooldownSeconds });
         if (data?.bot) this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
-        window.showToast?.(`Live bot rate saved: ${this.formatTradeRate(tradeRate)} paired trades/min (${cooldownSeconds}s minimum).`, "success");
+        window.showToast?.(`Live bot rate saved: ${this.formatTradeRate(tradeRate)} single-leg orders/min (${cooldownSeconds}s minimum).`, "success");
         return true;
       } catch (error) {
         window.alert(error.message);
@@ -2651,7 +2734,7 @@
         else this.chart.timeScale().setVisibleLogicalRange(viewport);
         this.chartInterval = interval;
         window.requestAnimationFrame(() => this.renderTrendRanges());
-        this.setText("valShortTermCurrentPrice", `${this.currentRatio.toFixed(3)}%`);
+        this.setText("valShortTermCurrentPrice", this.formatCryptoPrice(this.currentRatio));
         ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((value) => {
           const button = lid(`btnShortInterval${value}`);
           if (button) button.classList.toggle("active", value === this.interval);
@@ -3540,26 +3623,26 @@
         if (ticket) ticket.classList.add("locked");
         if (autoBox) autoBox.style.display = "block";
         if (lid("aiSignalBox")) lid("aiSignalBox").style.display = "none";
-        this.setText("lblAutoBotTitle", "🤖 24H Autonomous Lighter Engine Active");
-        this.setText("lblStepTrancheSize", "➕ Scale In (Live 1x Pair)");
-        this.setText("lblStepTrancheSub", "BTCUSDT Perpetual");
-        this.setText("lblReduceTrancheText", "Trim 1 GCD Tranche (Take-Profit)");
+        this.setText("lblAutoBotTitle", "🤖 Binance Futures Single-Leg Bot Active");
+        this.setText("lblStepTrancheSize", "➕ Open Live Single-Leg Tranche");
+        this.setText("lblStepTrancheSub", this.selectedSymbol);
+        this.setText("lblReduceTrancheText", "Reduce Latest Bot-Owned Tranche");
         const flatten = lid("btnEmergencyFlatten");
         if (flatten) flatten.textContent = "🚨 Emergency Flatten";
       } else if (mode === "semi_auto") {
         if (badge) {
-          badge.textContent = isKo ? "⚡ AI 시그널 반자동 승인" : "AI SEMI-AUTO APPROVAL";
+          badge.textContent = isKo ? "⚡ 바이낸스 수동 실거래" : "MANUAL LIVE FUTURES";
           badge.style.background = "#f0fdf4";
           badge.style.color = "#15803d";
           badge.style.borderColor = "#86efac";
         }
         if (paperBadge) paperBadge.style.display = "none";
-        if (ticket) ticket.classList.add("locked");
+        if (ticket) ticket.classList.remove("locked");
         if (autoBox) autoBox.style.display = "none";
-        if (lid("aiSignalBox")) lid("aiSignalBox").style.display = "block";
-        this.setText("lblStepTrancheSize", "➕ Scale In (Approve Signal)");
-        this.setText("lblStepTrancheSub", "1-CLICK APPROVAL");
-        this.setText("lblReduceTrancheText", "Trim 1 GCD Tranche (Take-Profit)");
+        if (lid("aiSignalBox")) lid("aiSignalBox").style.display = "none";
+        this.setText("lblStepTrancheSize", "➕ Open Live Single-Leg Tranche");
+        this.setText("lblStepTrancheSub", "CONFIRM ORDER");
+        this.setText("lblReduceTrancheText", "Reduce Latest Bot-Owned Tranche");
         const flatten = lid("btnEmergencyFlatten");
         if (flatten) flatten.textContent = "🚨 Emergency Flatten";
       } else {
@@ -3627,17 +3710,26 @@
         return;
       }
       const dirSelect = lid("selTrancheDirection");
-      let side = this.currentRatio >= 100 ? -1 : 1;
+      let side = 0;
       if (dirSelect) {
         if (dirSelect.value === "short") side = -1;
         else if (dirSelect.value === "long") side = 1;
       }
+      if (!side) {
+        window.showToast?.("Choose Long or Short explicitly for a real order.", "warn");
+        return;
+      }
+      if (this.selectedSymbol !== this.botState?.selected_symbol) {
+        window.showToast?.("Save this symbol to the live bot before ordering.", "warn");
+        return;
+      }
       const notional = this.orderNotional();
+      if (!window.confirm(`Place a REAL ${side > 0 ? "BUY" : "SELL"} market order for approximately $${notional.toFixed(2)} of ${this.selectedSymbol} on Binance Futures?`)) return;
       const btn = lid("btnStepTranche");
       if (btn) btn.disabled = true;
-      window.showToast?.(`Submitting live 1x dollar-neutral pair (~$${notional} per leg) on Lighter DEX...`, "info");
+      window.showToast?.(`Submitting real ${this.selectedSymbol} Futures order...`, "info");
       try {
-        const res = await apiPost("/api/crypto/step_tranche", { side, notional_usd: notional });
+        const res = await apiPost("/api/crypto/step_tranche", { side, notional_usd: notional, confirm_live_trading: true });
         if (res.success) {
           window.showToast?.(`✅ ${res.message}`, "success");
           await this.refresh();
@@ -3656,11 +3748,12 @@
         window.showToast?.("🔒 Terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
         return;
       }
+      if (!window.confirm(`Place a REAL reduce-only market order for the latest bot-owned ${this.botState?.selected_symbol || "crypto"} tranche?`)) return;
       const btn = lid("btnReduceTranche");
       if (btn) btn.disabled = true;
-      window.showToast?.("Trimming 1x tranche on Lighter DEX...", "info");
+      window.showToast?.("Reducing bot-owned Binance Futures tranche...", "info");
       try {
-        const res = await apiPost("/api/crypto/reduce_tranche", {});
+        const res = await apiPost("/api/crypto/reduce_tranche", { confirm_live_trading: true });
         if (res.success) {
           window.showToast?.(`✅ ${res.message}`, "success");
           await this.refresh();
@@ -3675,18 +3768,18 @@
     },
 
     async emergencyFlatten() {
-      if (this.mode === "live") {
+      if (this.mode === "live" || this.mode === "semi_auto" || (this.botState?.tranches || []).length > 0) {
         if (window.terminalLockManager?.isLocked) {
           window.showToast?.("🔒 Terminal is in read-only mode. Unlock before emergency flatten.", "warn");
           return;
         }
-        const confirmed = window.confirm("🚨 EMERGENCY FLATTEN: Close both BTCUSDT pair legs on Lighter DEX and pause the EC2 bot at market?");
+        const confirmed = window.confirm(`REAL Binance Futures flatten: pause the bot and close only its recorded ${this.botState?.selected_symbol || "crypto"} tranches at market?`);
         if (!confirmed) return;
-        window.showToast?.("Closing all Lighter positions and halting bot...", "info");
+        window.showToast?.("Closing bot-owned Binance Futures inventory and pausing bot...", "info");
         try {
           const res = await apiPost("/api/crypto/flatten", {});
           if (res.success) {
-            window.showToast?.("✅ BTCUSDT pair positions flattened and bot paused.", "success");
+            window.showToast?.("✅ Bot-owned Binance Futures inventory flattened and bot paused.", "success");
             await this.refresh();
           } else {
             window.showToast?.(`Error: ${res.error}`, "danger");
@@ -4277,6 +4370,10 @@
     save() { safeStorage.setItem(STORAGE_KEY, JSON.stringify({ entries: this.entries, ledger: this.ledger.slice(0, 100) })); },
 
     tradeExposure(trade) {
+      if (trade?.symbol && trade?.qty != null && trade?.price != null) {
+        const gross = Math.abs(Number(trade.notional_usd ?? (Number(trade.qty) * Number(trade.price))));
+        return { adr: gross, domestic: 0, gross, margin: gross };
+      }
       const ratio = Math.abs(Number(trade.exit_ratio || trade.entry_ratio || trade.ratio || this.currentRatio || 0));
       const configured = Math.abs(Number(trade.notional_usd || trade.notional || 0));
       const adrQty = Math.abs(Number(trade.adr_qty || 0));
@@ -4306,38 +4403,41 @@
     },
 
     renderVirtualState() {
-      const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position || pos.size || 0)) > 1e-6);
+      const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position_amt ?? pos.size ?? 0)) > 1e-6);
       const showExchangeState = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
       if (showExchangeState) {
-        const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 187.55;
-        const validTranches = (this.botState?.tranches || []).filter(t => (t.adr_qty > 0 || t.domestic_qty > 0));
+        this.setText("lblUnrealizedPnl", "Bot Realized Net PnL");
+        const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : null;
+        const validTranches = (this.botState?.tranches || []).filter(t => Number(t.qty) > 0);
         const liveUnrealized = (this.livePositions || []).reduce((acc, pos) => acc + Number(pos.unrealized_pnl || 0), 0);
         const pnlPct = col > 0 ? (liveUnrealized / col) * 100 : 0;
         const pnlSign = liveUnrealized >= 0 ? "+" : "";
         const pnlText = `${pnlSign}$${liveUnrealized.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
         const realized = this.verifiedRealizedSummary();
         const realizedSign = realized.pnl >= 0 ? "+" : "";
-        this.setText("valAccountEquity", `$${col.toFixed(2)}`);
-        this.setText("badgeEquitySource", "LIGHTER L2");
-        const openLive = (this.livePositions || []).filter(p => Math.abs(Number(p.position || p.size || 0)) > 1e-6);
+        this.setText("valAccountEquity", col != null ? `$${col.toFixed(2)}` : "—");
+        this.setText("badgeEquitySource", col != null ? "REAL FUTURES" : "UNAVAILABLE");
+        const openLive = (this.livePositions || []).filter(p => Math.abs(Number(p.position_amt ?? p.size ?? 0)) > 1e-6);
         const liveGross = openLive.reduce((sum, pos) => {
-          const quantity = Math.abs(Number(pos.position || pos.size || 0));
+          const quantity = Math.abs(Number(pos.position_amt ?? pos.size ?? 0));
           const mark = Number(pos.mark_price || pos.avg_entry_price || pos.entry_price || pos.price || 0);
-          return sum + (Math.abs(Number(pos.position_value || 0)) || quantity * mark);
+          return sum + (Math.abs(Number(pos.notional || 0)) || quantity * mark);
         }, 0);
-        const estimatedFreeMargin = Math.max(0, col - liveGross);
+        const actualFreeMargin = this.liveVenue?.available_margin;
         this.setText("valActivePairs", `${openLive.length} Open on Exchange`);
         const maxTranches = Number(this.botState?.max_tranches || 8);
         this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Campaign Slots`);
-        this.setText("valHedgedQuantities", `Gross $${liveGross.toFixed(2)} USDT · Est. 1x Margin $${liveGross.toFixed(2)}`);
+        this.setText("valHedgedQuantities", `Selected contract $${liveGross.toFixed(2)} USDT`);
         const pausedError = this.botState?.last_error && !this.botState?.enabled;
         this.setText("valHedgedCombinedPnl", pausedError ? `Error: ${this.botState.last_error}` : pnlText);
         const pnlEl = lid("valHedgedCombinedPnl");
         if (pnlEl) pnlEl.style.color = liveUnrealized > 0 ? "#16a34a" : (liveUnrealized < 0 ? "#dc2626" : "#0f172a");
-        this.setText("valHedgedPnlSubtitle", this.botState?.enabled && this.botState?.last_error
-          ? "Transient Lighter data error · EC2 bot remains enabled and will retry"
-          : (validTranches.length > 0 ? (liveUnrealized >= 0 ? "✅ Positive Net Return (Take-Profit Eligible)" : "Holding (Awaiting Convergence)") : "All positions flat (Awaiting signal)"));
-        this.setText("valUnrealizedPnl", `${realizedSign}$${realized.pnl.toFixed(2)} · ${realized.count} exits`);
+        this.setText("valHedgedPnlSubtitle", this.botState?.last_error
+          ? `Execution status: ${this.botState.last_error}`
+          : (validTranches.length > 0 ? "Exchange unrealized PnL; fees excluded" : "No bot-owned open tranche"));
+        this.setText("valUnrealizedPnl", realized.count
+          ? `${realizedSign}$${realized.pnl.toFixed(2)} · ${realized.count} verified exits`
+          : "— (fees / realized PnL not reconciled)");
         const realizedEl = lid("valUnrealizedPnl");
         if (realizedEl) realizedEl.style.color = realized.pnl > 0 ? "#16a34a" : (realized.pnl < 0 ? "#dc2626" : "#64748b");
         this.setText("countPositions", String(openLive.length));
@@ -4347,23 +4447,21 @@
         if (positionSummary) {
           const liveRisk = this.botState?.risk_capacity || {};
           const liveLevCap = Number(liveRisk.gross_leverage_cap || 8);
-          const displayedFreeMargin = Number(liveRisk.available_margin_usd ?? estimatedFreeMargin);
-          positionSummary.innerHTML = `<span>Gross pair size <b>$${liveGross.toFixed(2)} USDT</b></span><span>Est. margin at ${liveLevCap.toFixed(0)}x <b>$${(liveGross / liveLevCap).toFixed(2)}</b></span><span>Collateral <b>$${col.toFixed(2)}</b></span><span>Available margin <b>$${displayedFreeMargin.toFixed(2)}</b></span><span style="color:#64748b">Exchange position values · cross-margin estimate</span>`;
+          positionSummary.innerHTML = `<span>Selected contract <b>$${liveGross.toFixed(2)} USDT</b></span><span>Futures equity <b>${col != null ? `$${col.toFixed(2)}` : "unavailable"}</b></span><span>Available margin <b>${actualFreeMargin != null ? `$${Number(actualFreeMargin).toFixed(2)}` : "unavailable"}</b></span><span style="color:#64748b">Authenticated exchange account</span>`;
         }
         if (body) {
           if (openLive.length) {
             body.innerHTML = openLive.map((pos, idx) => {
               const sym = pos.symbol || (Number(pos.market_id) === 216 ? "SOLUSDT" : this.selectedSymbol);
-              const rawSize = Number(pos.position || pos.size || 0);
+              const rawSize = Number(pos.position_amt ?? pos.size ?? 0);
               const sign = pos.sign != null ? Number(pos.sign) : (rawSize < 0 ? -1 : 1);
               const isLong = sign === 1;
               const signedSize = sign === -1 ? -Math.abs(rawSize) : Math.abs(rawSize);
               const pnl = Number(pos.unrealized_pnl || 0);
               const price = Number(pos.avg_entry_price || pos.entry_price || pos.price || 0);
               const mark = Number(pos.mark_price || pos.price || price);
-              const notional = Math.abs(Number(pos.position_value || 0)) || Math.abs(rawSize) * mark;
-              const liveLevCap = Number(this.botState?.risk_capacity?.gross_leverage_cap || 8);
-              const margin = Math.abs(Number(pos.allocated_margin || 0)) || notional / liveLevCap;
+              const notional = Math.abs(Number(pos.notional || 0)) || Math.abs(rawSize) * mark;
+              const margin = Math.abs(Number(pos.initial_margin || 0));
               const roePct = margin > 0 ? pnl / margin * 100 : 0;
               const sideBadge = isLong
                 ? '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG</span>'
@@ -4371,7 +4469,7 @@
               return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td><b>$${notional.toFixed(2)}</b> USDT</td><td>$${margin.toFixed(2)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(4)}<br><small>${roePct >= 0 ? "+" : ""}${roePct.toFixed(3)}%</small></td></tr>`;
             }).join("");
           } else {
-            body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px 16px;line-height:1.6;">🛡️ All positions closed / flat (Take-profit mean-reversion executed)<br><small style="color:#059669;font-weight:700;">Check Execution History tab below for filled orders</small></td></tr>';
+            body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px 16px;line-height:1.6;">No selected-contract Futures position on the exchange.</td></tr>';
           }
         }
         this.updateLeverageMetrics();
@@ -4380,9 +4478,10 @@
       }
 
       const total = this.entries.reduce((sum, entry) => sum + entry.notional, 0);
-      const accountCollateral = Number(this.liveVenue?.collateral);
-      this.setText("valAccountEquity", Number.isFinite(accountCollateral) ? `$${accountCollateral.toFixed(2)}` : "$10,000.00");
-      this.setText("badgeEquitySource", "BINANCE FUTURES");
+      this.setText("lblUnrealizedPnl", "Paper Unrealized PnL");
+      const accountCollateral = this.liveVenue?.collateral == null ? null : Number(this.liveVenue.collateral);
+      this.setText("valAccountEquity", accountCollateral != null && Number.isFinite(accountCollateral) ? `$${accountCollateral.toFixed(2)}` : "—");
+      this.setText("badgeEquitySource", accountCollateral != null ? "REAL FUTURES" : "UNAVAILABLE");
       this.setText("valHedgedTranches", `${this.entries.length} / 8 Grid Units`);
       const paperGross = total;
       this.setText("valHedgedQuantities", `Gross $${paperGross.toFixed(2)} virtual · Margin $${paperGross.toFixed(2)}`);
@@ -4393,7 +4492,7 @@
       this.setText("countPositions", String(this.entries.length));
       const body = lid("activePositionsBody");
       const positionSummary = lid("activePositionsSummary");
-      if (positionSummary) positionSummary.innerHTML = `<span>Paper gross size <b>$${paperGross.toFixed(2)}</b></span><span>Est. margin <b>$${paperGross.toFixed(2)}</b></span><span style="color:#64748b">Single-leg perpetual contracts</span>`;
+      if (positionSummary) positionSummary.innerHTML = `<span>Paper bankroll <b>$10,000.00</b></span><span>Paper gross size <b>$${paperGross.toFixed(2)}</b></span><span>Est. paper margin <b>$${paperGross.toFixed(2)}</b></span><span style="color:#64748b">Simulation only</span>`;
       if (body) body.innerHTML = this.entries.length ? this.entries.map((entry, index) => {
         const gross = Number(entry.notional || 0);
         const sym = entry.symbol || this.selectedSymbol || "BTCUSDT";
@@ -4429,7 +4528,7 @@
         const summary = lid("executionHistorySummary");
         if (summary) {
           const verifiedSummary = this.verifiedRealizedSummary();
-          summary.innerHTML = `<span><b>${persistedCount}</b> persisted events${persistedCount > history.length ? ` · latest ${history.length} shown` : ""}</span><span><b>${verifiedSummary.count}</b> verified exits</span><span>Recent displayed turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Recent recorded fees <b>$${totalFees.toFixed(4)}</b></span><span>All-time verified net P&L <b style="color:${verifiedSummary.pnl >= 0 ? '#16a34a' : '#dc2626'}">${verifiedSummary.pnl >= 0 ? '+' : ''}$${verifiedSummary.pnl.toFixed(4)}</b></span><span>Displayed verified win rate <b>${authoritativeExits.length ? (wins / authoritativeExits.length * 100).toFixed(1) : '0.0'}%</b></span><span style="color:#64748b">Single-leg crypto execution records</span>`;
+          summary.innerHTML = `<span><b>${persistedCount}</b> persisted fills</span><span>Recent turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Fees and realized P&amp;L <b>not reconciled</b></span><span style="color:#64748b">Exchange order fills · confirm final P&amp;L in Binance history</span>`;
         }
         historyBody.innerHTML = history.slice().reverse().map((trade) => {
           const timeStr = formatKstDateTime(trade.time ? trade.time * 1000 : Date.now());
@@ -4445,8 +4544,8 @@
           const sym = trade.symbol || this.selectedSymbol || "BTCUSDT";
           const exposure = this.tradeExposure(trade);
           const exposureStr = `${sym}<br><small><b>Gross $${exposure.gross.toFixed(2)} · est. margin $${exposure.margin.toFixed(2)}</b></small>`;
-          const entryRatio = Number(trade.entry_ratio || trade.entry_price || 0);
-          const exitRatio = Number(trade.exit_ratio || trade.exit_price || (isExit ? trade.ratio : 0) || 0);
+          const entryRatio = Number(trade.entry_ratio || trade.entry_price || (!isExit ? trade.price : 0) || 0);
+          const exitRatio = Number(trade.exit_ratio || trade.exit_price || (isExit ? trade.price : 0) || 0);
           const ratioStr = isExit && exitRatio
             ? `${entryRatio ? this.formatCryptoPrice(entryRatio) + ' → ' : ''}${this.formatCryptoPrice(exitRatio)}`
             : (entryRatio ? this.formatCryptoPrice(entryRatio) : "—");
@@ -4458,7 +4557,7 @@
           const pnlVerified = trade.pnl_authoritative || trade.pnl_source === "LIGHTER_REALIZED_PNL";
           const pnlStr = isExit && pnlVerified
             ? `<div style="font-weight:800;color:${netPnl >= 0 ? '#16a34a' : '#dc2626'}">${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(4)} net (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(3)}%)</div><small style="color:#64748b">Gross ${grossPnl >= 0 ? '+' : ''}$${grossPnl.toFixed(4)}</small>`
-            : (isExit ? '<span style="color:#b45309;font-weight:700">Estimate</span>' : '<span style="color:#64748b">Open cost basis</span>');
+            : (isExit ? '<span style="color:#b45309;font-weight:700">Realized P&amp;L unverified</span>' : '<span style="color:#64748b">Open cost basis</span>');
           const status = trade.status || (isExit ? "CLOSED" : "OPEN");
           return `<tr>
             <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr}</td>
@@ -4466,7 +4565,7 @@
             <td>${directionBadge}</td>
             <td style="font-family:monospace;line-height:1.45;">${exposureStr}</td>
             <td style="font-family:monospace;font-weight:700;">${ratioStr}</td>
-            <td style="font-family:monospace;color:#64748b;">$${fee.toFixed(4)}<br><small>${feeBps.toFixed(2)} bps</small></td>
+            <td style="font-family:monospace;color:#64748b;">${trade.fee_usd == null ? "—" : `$${fee.toFixed(4)}`}</td>
             <td>${pnlStr}</td>
             <td><span style="color:${status === 'CLOSED' ? '#059669' : '#0369a1'};font-weight:800;">● ${status}</span></td>
           </tr>`;

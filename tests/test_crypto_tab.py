@@ -54,11 +54,13 @@ class TestCryptoTab(unittest.TestCase):
 
         asyncio.run(_run())
 
-    def test_crypto_fail_closed_and_auth(self):
+    def test_crypto_live_auth_and_paper_distinction(self):
         script = (ROOT / "crypto-tab.js").read_text(encoding="utf-8")
         server = (ROOT / "backend/server.py").read_text(encoding="utf-8")
 
-        self.assertIn("fail-closed", script.lower())
+        self.assertIn("REAL FUTURES", script)
+        self.assertIn("confirm_live_trading", script)
+        self.assertIn("CryptoBot(binance_client)", server)
         self.assertIn("/api/crypto/bot/", server)
         self.assertIn("/api/crypto/step_tranche", server)
         self.assertIn("/api/crypto/flatten", server)
@@ -67,16 +69,24 @@ class TestCryptoTab(unittest.TestCase):
         from backend.server import get_crypto_price, get_crypto_status
 
         async def _run():
-            with patch("backend.server.get_klines") as mock_klines:
+            with patch("backend.server.get_klines") as mock_klines, \
+                 patch("backend.server.binance_client.get_detailed_account_overview", new_callable=AsyncMock) as mock_account, \
+                 patch("backend.server.binance_client.request", new_callable=AsyncMock) as mock_request:
                 mock_klines.return_value = [
                     [1000000, "68000.0", "68500.0", "67900.0", "68200.0", "150.0"],
                     [1060000, "68200.0", "68600.0", "68100.0", "68450.0", "120.0"]
                 ]
+                mock_account.return_value = {"authenticated": True, "summary": {
+                    "total_equity_usd": 933.05, "available_margin_usd": 483.5}, "positions": []}
+                mock_request.return_value = {"bidPrice": "68449.9", "askPrice": "68450.1"}
                 status_res = await get_crypto_status(symbol="BTCUSDT")
                 self.assertTrue(status_res.get("success"))
                 self.assertEqual(status_res.get("symbol"), "BTCUSDT")
                 self.assertEqual(status_res.get("mark_price"), 68450.0)
                 self.assertEqual(status_res.get("price_ratio"), 68450.0)
+                self.assertEqual(status_res.get("collateral"), 933.05)
+                self.assertEqual(status_res.get("available_margin"), 483.5)
+                self.assertEqual(status_res.get("bid"), 68449.9)
 
                 price_res = await get_crypto_price(symbol="BTCUSDT", interval="15m", limit=2)
                 self.assertTrue(price_res.get("success"))
