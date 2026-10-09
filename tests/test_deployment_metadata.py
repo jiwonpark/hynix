@@ -34,6 +34,7 @@ class DeploymentMetadataTests(unittest.TestCase):
             self.assertEqual(html.count('buildVersion: "v1.7.1+abc1234.20260922153000"'), 1)
             self.assertEqual(html.count('deployedAt: "2026-09-22 15:30:00 KST"'), 1)
             self.assertNotIn('buildVersion: "v1.7.1+local"', html)
+            self.assertIn('src="crypto-tab.js?v=v1.7.1+abc1234.20260922153000"', html)
 
 
 if __name__ == "__main__":

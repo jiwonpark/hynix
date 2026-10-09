@@ -614,6 +614,7 @@
           overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
           overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
           chartHost.appendChild(overlay);
+          this.bindMatchPill(overlay.querySelector("#cryptoMatchPill"));
 
           $("cryptoSelSmallTrend")?.addEventListener("change", (e) => {
             this.smallTrendInterval = e.target.value;
@@ -624,6 +625,17 @@
             this.fetchAndRenderTrends();
           });
         }
+      }
+
+      const replayControls = lid("shortTermExecutionSection")?.firstElementChild?.lastElementChild;
+      if (replayControls && !$("crypto_btnMatchLiveReplay")) {
+        const matchButton = document.createElement("button");
+        matchButton.id = "crypto_btnMatchLiveReplay";
+        matchButton.type = "button";
+        matchButton.textContent = "Align to saved bot thresholds";
+        matchButton.style.cssText = "padding:5px 10px;border:1px solid #f59e0b;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800;cursor:pointer";
+        matchButton.addEventListener("click", () => this.alignReplayToLive());
+        replayControls.appendChild(matchButton);
       }
 
       const entry = lid("btnStepTranche");
@@ -941,7 +953,7 @@
           const btn = $(`crypto_tabParadigm_${mode}`);
           if (btn) btn.addEventListener("click", () => {
             this._userSelectedParadigm = true;
-            this.setParadigm(mode, { deployLive: true });
+            this.setParadigm(mode);
           });
         });
       }
@@ -1875,9 +1887,11 @@
         symbol: this.selectedSymbol || "BTCUSDT",
         interval: this.interval, limit: 500, strategy_mode: mode,
         entry_z: mode === "ou_quant" ? numeric("crypto_inpOuEntryZ", liveOuEntryFallback) :
-          mode === "custom" ? numeric("crypto_inpCustomEntryZ", 1.5) : 1.5,
+          mode === "custom" ? numeric("crypto_inpCustomEntryZ", 1.5) :
+          mode === "grid" ? Number(this.gridReplayEntryZ ?? 1.5) : 1.5,
         exit_z: mode === "ou_quant" ? numeric("crypto_inpOuExitZ", liveOuExitFallback) :
-          mode === "custom" ? numeric("crypto_inpCustomExitZ", 0.25) : 0.25,
+          mode === "custom" ? numeric("crypto_inpCustomExitZ", 0.25) :
+          mode === "grid" ? Number(this.gridReplayExitZ ?? 0.25) : 0.25,
         ou_halflife_max: 8.0, ou_stop_z: 3.5,
         ma_stretch_min: numeric("crypto_inpMaStretchMin", 0.30),
         ma_trailing_stop: numeric("crypto_inpMaTrailingStop", 0.15),
@@ -1896,9 +1910,26 @@
       };
     },
 
+    bindMatchPill(pill) {
+      if (!pill || pill._boundAlignClick) return;
+      pill._boundAlignClick = true;
+      pill.setAttribute("role", "button");
+      const align = () => {
+        if (pill.dataset.matchState === "divergent" && this.botState) this.alignReplayToLive();
+      };
+      pill.addEventListener("click", align);
+      pill.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          align();
+        }
+      });
+    },
+
     updateRulesMatchStatus() {
       const pill = $("cryptoMatchPill");
       if (!pill) return;
+      this.bindMatchPill(pill);
       const settings = this.replaySettings();
       const liveMode = this.botState?.strategy_mode || "grid";
       const liveInterval = this.botState?.strategy_interval || "5m";
@@ -1918,7 +1949,7 @@
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
       };
-      const liveParams = this.botState?.strategy_params || this.botState || {};
+      const liveParams = { ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
       if (isParadigmMatch) (parameterKeys[currentMode] || []).forEach((key) => {
         const live = liveParams[key];
         if (live == null || !Number.isFinite(Number(live)) || Math.abs(settings[key] - Number(live)) > 1e-9)
@@ -1953,21 +1984,26 @@
       if (!["grid", "custom", "ou_quant"].includes(currentMode))
         diffs.push("Replay signal/exit rules differ from live");
       const matched = diffs.length === 0;
+      const canAlign = Boolean(this.botState && ["grid", "custom", "ou_quant"].includes(liveMode)
+        && (parameterKeys[liveMode] || []).every((key) => liveParams[key] != null));
       const active = Boolean(this.botState?.enabled);
       pill.textContent = matched
-        ? `${active ? "●" : "○"} LIVE-MATCHED SIGNALS (${liveInterval} · ${liveName} · Bot ${active ? "Active" : "Paused"})`
-        : `▲ PAPER DIVERGENT (${diffs.join(" · ")}) — Click to match live`;
+        ? `${active ? "●" : "○"} PAPER ALIGNED TO SAVED BOT THRESHOLDS (${liveInterval} · ${liveName})`
+        : canAlign ? `▲ PAPER SETTINGS DIFFER (${diffs.join(" · ")}) — Click to align with saved bot thresholds`
+          : `▲ PAPER SETTINGS DIFFER (${diffs.join(" · ")}) — Alignment unavailable`;
       pill.title = matched
-        ? "Price signals only. Replay ignores margin, execution cooldown, slippage and funding; fills can differ."
-        : "Click to align paper replay with the live bot settings";
-      pill.style.cursor = matched ? "default" : "pointer";
-      if (!pill._boundAlignClick && typeof pill.addEventListener === "function") {
-        pill._boundAlignClick = true;
-        pill.addEventListener("click", () => {
-          if (pill.textContent && pill.textContent.includes("DIVERGENT")) {
-            this.alignReplayToLive();
-          }
-        });
+        ? "Saved bot thresholds and default replay filters are aligned. Crypto execution is fail-closed; this does not confirm live order behavior."
+        : canAlign ? "Restore saved bot thresholds and default replay filters, then rerun the paper backtest."
+          : "This strategy cannot be aligned exactly, or its saved settings are unavailable.";
+      pill.style.cursor = !matched && canAlign ? "pointer" : "default";
+      pill.dataset.matchState = !matched && canAlign ? "divergent" : "unavailable";
+      pill.setAttribute("aria-disabled", !matched && canAlign ? "false" : "true");
+      pill.setAttribute("tabindex", !matched && canAlign ? "0" : "-1");
+      const matchButton = $("crypto_btnMatchLiveReplay");
+      if (matchButton) {
+        matchButton.disabled = matched || !canAlign;
+        matchButton.textContent = matched ? "Paper thresholds aligned" : canAlign ? "Align to saved bot thresholds" : "Alignment unavailable";
+        matchButton.title = pill.title;
       }
       pill.style.background = matched ? (active ? "#dcfce7" : "#fef3c7") : "#fff7ed";
       pill.style.color = matched ? (active ? "#166534" : "#92400e") : "#c2410c";
@@ -1978,6 +2014,7 @@
       if (!this.botState) return;
       const liveMode = this.botState.strategy_mode || "ou_quant";
       const liveInterval = this.botState.strategy_interval || "5m";
+      this._userSelectedParadigm = false;
       this.interval = liveInterval;
       ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((v) => {
         const btn = lid(`btnShortInterval${v}`);
@@ -1986,7 +2023,32 @@
       if (this.paradigms[liveMode]) {
         this.setParadigm(liveMode);
       }
-      const params = this.botState.strategy_params || {};
+      const params = { ...this.botState, ...(this.botState.strategy_params || {}) };
+      if (liveMode === "grid") {
+        this.gridReplayEntryZ = Number(params.entry_z);
+        this.gridReplayExitZ = Number(params.exit_z);
+      }
+      if (liveMode === "custom") {
+        [["crypto_inpCustomEntryZ", "entry_z"], ["crypto_inpCustomExitZ", "exit_z"]].forEach(([id, key]) => {
+          const input = $(id);
+          if (input && params[key] != null) {
+            input.value = String(params[key]);
+            input._userModified = false;
+          }
+        });
+      }
+      if (liveMode === "grid" || liveMode === "custom") {
+        const filters = {
+          chkCondEntryMaStretch: true, chkCondEntryBase: false,
+          chkCondEntryPeak: false, chkCondEntryMaStack5m: false,
+          chkCondExitConvergence: true, chkCondExitDwell: false,
+          chkCondExitBottoming: false,
+        };
+        Object.entries(filters).forEach(([id, checked]) => {
+          const input = lid(id);
+          if (input) input.checked = checked;
+        });
+      }
       if (liveMode === "ou_quant") {
         const inpEntry = $("crypto_inpOuEntryZ");
         const rangeEntry = $("crypto_rangeOuEntryZ");
@@ -2009,6 +2071,7 @@
       }
       this.updateRulesMatchStatus();
       this.refreshChart();
+      this.runBacktest();
     },
 
     trendScore(values) {
@@ -2240,7 +2303,7 @@
       const ouExitRange = $("crypto_rangeOuExitZ");
       const ouEntryBadge = $("crypto_valOuEntryZBadge");
       const ouExitBadge = $("crypto_valOuExitZBadge");
-      if (ouEntryInp && (!ouEntryInp._userModified || Math.abs(Number(ouEntryInp.value) - 1.8) < 1e-4)) {
+      if (ouEntryInp && !ouEntryInp._userModified) {
         ouEntryInp.value = liveEntryZ.toFixed(2);
         if (ouEntryRange) ouEntryRange.value = liveEntryZ.toFixed(2);
         if (ouEntryBadge) ouEntryBadge.textContent = `≥ ${liveEntryZ.toFixed(2)}σ`;
