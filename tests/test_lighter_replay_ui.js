@@ -74,6 +74,8 @@ engine.currentParadigm='ma_stack'; engine.botState.strategy_mode='ma_stack';
 engine.botState.strategy_params={ma_stretch_min:.3,ma_trailing_stop:.15};
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/Replay signal\/exit rules differ from live/);
+assert.match(pill.textContent,/Live match unavailable/);
+assert.equal(pill.dataset.matchState,'unavailable');
 
 // A single click after choosing another replay strategy restores the live OU
 // strategy and thresholds without deploying anything to the bot.
@@ -81,12 +83,42 @@ engine.botState.strategy_mode='ou_quant';
 engine.botState.strategy_params=liveOuParams;
 engine.setParadigm=(mode)=>{engine.currentParadigm=mode;};
 engine.refreshChart=()=>{};
+const runBacktest=engine.runBacktest;
+let replayCalls=0;
+engine.runBacktest=()=>{replayCalls++;};
 engine.updateRulesMatchStatus();
 pillEvents.click();
 assert.equal(engine.currentParadigm,'ou_quant');
 assert.equal(elements.get('lighter_inpOuEntryZ').value,'2.10');
 assert.equal(elements.get('lighter_inpOuExitZ').value,'0.35');
 assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
+assert.equal(replayCalls,1,'matching live must rerun the paper replay with restored thresholds');
+
+engine.currentParadigm='ma_stack';
+engine.botState.strategy_mode='grid';
+engine.botState.strategy_params={entry_z:2,exit_z:.4};
+elements.get('lighter_chkCondEntryPeak').checked=true;
+engine.updateRulesMatchStatus();
+pillEvents.click();
+assert.equal(engine.currentParadigm,'grid');
+assert.equal(engine.replaySettings().entry_z,2);
+assert.equal(engine.replaySettings().exit_z,.4);
+assert.equal(elements.get('lighter_chkCondEntryPeak').checked,false);
+assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
+
+elements.set('lighter_inpCustomEntryZ',{value:'1.5'});
+elements.set('lighter_inpCustomExitZ',{value:'0.25'});
+engine.currentParadigm='ma_stack';
+engine.botState.strategy_mode='custom';
+engine.botState.strategy_params={entry_z:2.2,exit_z:.3};
+engine.updateRulesMatchStatus();
+pillEvents.click();
+assert.equal(engine.currentParadigm,'custom');
+assert.equal(elements.get('lighter_inpCustomEntryZ').value,'2.2');
+assert.equal(elements.get('lighter_inpCustomExitZ').value,'0.3');
+assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
+assert.equal(replayCalls,3);
+engine.runBacktest=runBacktest;
 
 async function main() {
   engine.currentParadigm='ou_quant';

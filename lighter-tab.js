@@ -1890,9 +1890,11 @@
       return {
         interval: this.interval, limit: 500, strategy_mode: mode,
         entry_z: mode === "ou_quant" ? numeric("lighter_inpOuEntryZ", liveOuEntryFallback) :
-          mode === "custom" ? numeric("lighter_inpCustomEntryZ", 1.5) : 1.5,
+          mode === "custom" ? numeric("lighter_inpCustomEntryZ", 1.5) :
+          mode === "grid" ? Number(this.gridReplayEntryZ ?? 1.5) : 1.5,
         exit_z: mode === "ou_quant" ? numeric("lighter_inpOuExitZ", liveOuExitFallback) :
-          mode === "custom" ? numeric("lighter_inpCustomExitZ", 0.25) : 0.25,
+          mode === "custom" ? numeric("lighter_inpCustomExitZ", 0.25) :
+          mode === "grid" ? Number(this.gridReplayExitZ ?? 0.25) : 0.25,
         ...this.ouConditionSettings(),
         ma_stretch_min: numeric("lighter_inpMaStretchMin", 0.30),
         ma_trailing_stop: numeric("lighter_inpMaTrailingStop", 0.15),
@@ -1955,7 +1957,7 @@
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
       };
-      const liveParams = this.botState?.strategy_params || this.botState || {};
+      const liveParams = { ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
       if (isParadigmMatch) (parameterKeys[currentMode] || []).forEach((key) => {
         const live = liveParams[key];
         if (live == null || (typeof settings[key] === "boolean"
@@ -1992,15 +1994,23 @@
       if (!["grid", "custom", "ou_quant"].includes(currentMode))
         diffs.push("Replay signal/exit rules differ from live");
       const matched = diffs.length === 0;
+      const matchableModes = ["grid", "custom", "ou_quant"];
+      const canAlign = Boolean(this.botState && matchableModes.includes(liveMode)
+        && (parameterKeys[liveMode] || []).every((key) => liveParams[key] != null));
       const active = Boolean(this.botState?.enabled);
       pill.textContent = matched
         ? `${active ? "●" : "○"} LIVE-MATCHED SIGNALS (${liveInterval} · ${liveName} · Bot ${active ? "Active" : "Paused"})`
-        : `▲ PAPER DIVERGENT (${diffs.join(" · ")}) — Click to match live`;
+        : canAlign
+          ? `▲ PAPER DIVERGENT (${diffs.join(" · ")}) — Click to match live`
+          : `▲ PAPER DIVERGENT (${diffs.join(" · ")}) — Live match unavailable`;
       pill.title = matched
         ? "Price signals only. Replay ignores margin, execution cooldown, slippage and funding; fills can differ."
-        : "Click to align paper replay with the live bot settings";
-      pill.style.cursor = matched ? "default" : "pointer";
-      pill.dataset.matchState = matched ? "matched" : "divergent";
+        : canAlign ? "Click to align paper replay with the live bot settings"
+          : "This live strategy cannot be reproduced exactly, or its settings are unavailable.";
+      pill.style.cursor = !matched && canAlign ? "pointer" : "default";
+      pill.dataset.matchState = !matched && canAlign ? "divergent" : "unavailable";
+      pill.setAttribute("aria-disabled", !matched && canAlign ? "false" : "true");
+      pill.setAttribute("tabindex", !matched && canAlign ? "0" : "-1");
       pill.style.background = matched ? (active ? "#dcfce7" : "#fef3c7") : "#fff7ed";
       pill.style.color = matched ? (active ? "#166534" : "#92400e") : "#c2410c";
       pill.style.borderColor = matched ? (active ? "#86efac" : "#fcd34d") : "#fdba74";
@@ -2020,12 +2030,38 @@
         this.setParadigm(liveMode);
       }
       const params = this.botState.strategy_params || {};
+      const liveParams = { ...this.botState, ...params };
+      if (liveMode === "grid") {
+        this.gridReplayEntryZ = Number(liveParams.entry_z);
+        this.gridReplayExitZ = Number(liveParams.exit_z);
+      }
+      if (liveMode === "custom") {
+        [["lighter_inpCustomEntryZ", "entry_z"], ["lighter_inpCustomExitZ", "exit_z"]].forEach(([id, key]) => {
+          const input = $(id);
+          if (input && liveParams[key] != null) {
+            input.value = String(liveParams[key]);
+            input._userModified = false;
+          }
+        });
+      }
+      if (liveMode === "grid" || liveMode === "custom") {
+        const filters = {
+          chkCondEntryMaStretch: true, chkCondEntryBase: false,
+          chkCondEntryPeak: false, chkCondEntryMaStack5m: false,
+          chkCondExitConvergence: true, chkCondExitDwell: false,
+          chkCondExitBottoming: false,
+        };
+        Object.entries(filters).forEach(([id, checked]) => {
+          const input = lid(id);
+          if (input) input.checked = checked;
+        });
+      }
       if (liveMode === "ou_quant") {
         const inpEntry = $("lighter_inpOuEntryZ");
         const rangeEntry = $("lighter_rangeOuEntryZ");
         const badgeEntry = $("lighter_valOuEntryZBadge");
-        if (params.entry_z != null) {
-          const val = Number(params.entry_z).toFixed(2);
+        if (liveParams.entry_z != null) {
+          const val = Number(liveParams.entry_z).toFixed(2);
           if (inpEntry) { inpEntry.value = val; inpEntry._userModified = false; }
           if (rangeEntry) rangeEntry.value = val;
           if (badgeEntry) badgeEntry.textContent = `≥ ${val}σ`;
@@ -2033,8 +2069,8 @@
         const inpExit = $("lighter_inpOuExitZ");
         const rangeExit = $("lighter_rangeOuExitZ");
         const badgeExit = $("lighter_valOuExitZBadge");
-        if (params.exit_z != null) {
-          const val = Number(params.exit_z).toFixed(2);
+        if (liveParams.exit_z != null) {
+          const val = Number(liveParams.exit_z).toFixed(2);
           if (inpExit) { inpExit.value = val; inpExit._userModified = false; }
           if (rangeExit) rangeExit.value = val;
           if (badgeExit) badgeExit.textContent = `≤ ${val}σ`;
@@ -2053,15 +2089,16 @@
         };
         Object.entries(controls).forEach(([key, id]) => {
           const input = $(id);
-          if (input && params[key] != null) {
-            if (typeof params[key] === "boolean") input.checked = params[key];
-            else input.value = String(params[key]);
+          if (input && liveParams[key] != null) {
+            if (typeof liveParams[key] === "boolean") input.checked = liveParams[key];
+            else input.value = String(liveParams[key]);
             input._userModified = false;
           }
         });
       }
       this.updateRulesMatchStatus();
       this.refreshChart();
+      this.runBacktest();
     },
 
     trendScore(values) {
