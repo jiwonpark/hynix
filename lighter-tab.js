@@ -882,13 +882,13 @@
           const btn = $(`lighter_tabParadigm_${mode}`);
           if (btn) btn.addEventListener("click", () => {
             this._userSelectedParadigm = true;
-            this.setParadigm(mode, { deployLive: true });
+            this.setParadigm(mode);
           });
         });
       }
     },
 
-    async setParadigm(mode, options = {}) {
+    async setParadigm(mode) {
       if (!this.paradigms[mode]) return;
       this.currentParadigm = mode;
       safeStorage.setItem(STRATEGY_STORAGE_KEY, mode);
@@ -961,7 +961,6 @@
       this.runBacktest();
       this.updateRulesMatchStatus();
       this.updateDeployButtonState();
-      if (options.deployLive) await this.deployLiveStrategy({ skipConfirm: true, source: "regime" });
     },
 
     renderParadigmDetail(mode) {

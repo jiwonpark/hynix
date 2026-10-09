@@ -74,9 +74,10 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn('ENTRY BLOCKED: ${tranchesCount}/${maxTranches} slot hard cap', script)
         self.assertIn('Campaign Slots`', script)
 
-    def test_strategy_regime_clicks_deploy_exact_visible_parameters(self):
+    def test_strategy_regime_selection_waits_for_explicit_deploy(self):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
-        self.assertIn('this.setParadigm(mode, { deployLive: true })', script)
+        self.assertIn('this.setParadigm(mode);', script)
+        self.assertNotIn('this.setParadigm(mode, { deployLive: true })', script)
         self.assertIn('liveStrategyPayload(mode', script)
         for control_id in (
             "lighter_inpOuEntryZ", "lighter_inpOuExitZ", "lighter_inpMaStretchMin",
