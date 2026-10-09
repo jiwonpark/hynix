@@ -11047,6 +11047,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
         const lighterTab = $("tabContentLighter");
         if (lighterTab) lighterTab.classList.toggle("terminal-read-only", locked);
+        const cryptoTab = $("tabContentCrypto");
+        if (cryptoTab) cryptoTab.classList.toggle("terminal-read-only", locked);
 
         const banner = $("terminalLockBanner");
         const bannerText = $("lblTerminalLockBannerText");
@@ -11090,7 +11092,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         window.strategyLab?.applyExecutionLock();
 
         // Apply disabled state to action controls
-        const actionControls = document.querySelectorAll("#tabContentTrading .terminal-action-control, #tabContentLighter .terminal-action-control");
+        const actionControls = document.querySelectorAll("#tabContentTrading .terminal-action-control, #tabContentLighter .terminal-action-control, #tabContentCrypto .terminal-action-control");
         actionControls.forEach(ctrl => {
           const updateElem = (el) => {
             if (el.id === "lighterLiveMode") {
