@@ -483,8 +483,10 @@ def run_ma_stack_backtest(
             total_fees += exit_fee
             net_pnl = gross - exit_fee - popped["capital_before"]
             net_return = (net_pnl / popped["capital_before"]) * 100.0
+            pair_key = f"{popped['id']}_{popped['time']}_{int(next_bar['time'])}"
             trade = {
                 "id": popped["id"],
+                "pairKey": pair_key,
                 "entry_time": popped["time"],
                 "exit_time": int(next_bar["time"]),
                 "entry_price": popped["price"],
@@ -500,6 +502,7 @@ def run_ma_stack_backtest(
                 entry_marker["exit_price"] = fill_price
                 entry_marker["exit_time"] = int(next_bar["time"])
                 entry_marker["net_return_pct"] = net_return
+                entry_marker["pairKey"] = pair_key
             markers.append({
                 "time": int(next_bar["time"]),
                 "source": "virtual",
@@ -511,9 +514,11 @@ def run_ma_stack_backtest(
                 "position": "aboveBar",
                 "shape": "arrowDown",
                 "color": "#dc2626",
+                "entry_time": popped["time"],
                 "entry_price": popped["price"],
                 "exit_price": fill_price,
                 "net_return_pct": net_return,
+                "pairKey": pair_key,
                 "hoverText": f"SELL {popped['id']} ₩{fill_price:,.0f} · {net_return:+.2f}% net",
             })
         elif should_enter and len(tranche_stack) < max_tranches and cash >= tranche_capital * 0.95:

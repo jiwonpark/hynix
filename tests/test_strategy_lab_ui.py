@@ -45,6 +45,17 @@ class StrategyLabUiTests(unittest.TestCase):
         self.assertNotIn(r"\n", markup)
         self.assertNotIn(r"\t", markup)
 
+    def test_trade_entry_exit_triangles_and_diagonals(self):
+        self.assertIn("renderTradeTriangles()", self.js)
+        self.assertIn("tradeTrianglesLayer", self.js)
+        self.assertIn('aria-label", "Trade entry-exit triangles"', self.js)
+        self.assertIn('document.createElementNS("http://www.w3.org/2000/svg", "polygon")', self.js)
+        self.assertIn('document.createElementNS("http://www.w3.org/2000/svg", "line")', self.js)
+        self.assertIn("if (isShort)", self.js)
+        self.assertIn("rgba(34, 197, 94,", self.js)
+        self.assertIn("rgba(239, 68, 68,", self.js)
+        self.assertIn("Triangles and diagonal connectors should show ONLY on hover", self.js)
+
 
 if __name__ == "__main__":
     unittest.main()

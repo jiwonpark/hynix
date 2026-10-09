@@ -193,9 +193,29 @@
         this.bbSeries.push({ key, series: this.chart.addLineSeries({ color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false }) });
       });
       this.controller = new StrategyExecutionChartController({ series: this.candles, lineStyle: LightweightCharts.LineStyle });
+      if (!el("tradeTrianglesLayer") && typeof document.createElementNS === "function") {
+        const svgLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svgLayer.id = rootId("tradeTrianglesLayer");
+        svgLayer.setAttribute("aria-label", "Trade entry-exit triangles");
+        svgLayer.style.cssText = "position:absolute;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;overflow:hidden";
+        host.style.position = "relative";
+        host.appendChild(svgLayer);
+      }
+      this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+        if (this._rangeChangeRaf) return;
+        this._rangeChangeRaf = requestAnimationFrame(() => {
+          this._rangeChangeRaf = null;
+          this.renderTradeTriangles();
+        });
+      });
       this.chart.subscribeCrosshairMove((param) => this.onCrosshair(param));
       this.chart.subscribeClick((param) => this.onClick(param));
-      new ResizeObserver(() => { if (host.clientWidth) this.chart.applyOptions({ width: host.clientWidth }); }).observe(host);
+      new ResizeObserver(() => {
+        if (host.clientWidth) {
+          this.chart.applyOptions({ width: host.clientWidth });
+          this.renderTradeTriangles();
+        }
+      }).observe(host);
     },
 
     conditions() {
@@ -305,6 +325,7 @@
       // Closed trades
       trades.forEach((t) => {
         const modeStr = (t.mode || s.mode || "live").toUpperCase();
+        const pairKey = t.pairKey || `actual_${t.id || 'T'}_${t.entry_time || ''}_${t.exit_time || ''}`;
         if (t.entry_time && Number(t.entry_price) > 0) {
           const timeStr = formatKst(t.entry_time);
           markers.push({
@@ -319,6 +340,10 @@
             shape: "arrowUp",
             color: "#16a34a",
             entry_price: Number(t.entry_price),
+            exit_price: Number(t.exit_price || 0),
+            exit_time: Number(t.exit_time || 0),
+            net_return_pct: Number(t.net_return_pct ?? 0),
+            pairKey: pairKey,
             hoverText: `ACTUAL BUY ${t.id || "Tranche"} ₩${Math.round(t.entry_price).toLocaleString()} · ${timeStr} (${modeStr})`,
           });
         }
@@ -336,9 +361,12 @@
             position: "aboveBar",
             shape: "arrowDown",
             color: "#dc2626",
-            entry_price: Number(t.entry_price),
+            entry_price: Number(t.entry_price || 0),
             exit_price: Number(t.exit_price),
+            entry_time: Number(t.entry_time || 0),
+            exit_time: Number(t.exit_time),
             net_return_pct: ret,
+            pairKey: pairKey,
             hoverText: `ACTUAL SELL ${t.id || "Tranche"} ₩${Math.round(t.exit_price).toLocaleString()} · ${ret >= 0 ? "+" : ""}${ret.toFixed(2)}% net · ${timeStr} (${modeStr})`,
           });
         }
@@ -857,10 +885,11 @@
       const marker = this.findMarkerForTime(time);
       if (marker && marker.entry_price) {
         this.selectedMarkerTime = (this.selectedMarkerTime === time) ? null : time;
+        this.hoveredMarkerTime = this.selectedMarkerTime;
       } else {
         this.selectedMarkerTime = null;
+        this.hoveredMarkerTime = null;
       }
-      this.hoveredMarkerTime = time;
       this.syncMarkerState();
     },
 
@@ -882,9 +911,243 @@
         const activeTime = this.selectedMarkerTime ?? this.hoveredMarkerTime;
         this.renderMarkers(activeTime);
         this.syncActiveReferenceLines(this.hoveredMarkerTime);
+        this.renderTradeTriangles();
       } finally {
         this.syncingMarkerState = false;
       }
+    },
+
+    alignChartOverlay(layer) {
+      if (!layer || !this.chart) return 0;
+      let left = 0;
+      try {
+        const scale = this.chart?.priceScale?.("left");
+        if (scale && typeof scale.width === "function") {
+          left = Number(scale.width()) || 0;
+        }
+      } catch (_) {
+        left = 0;
+      }
+      const host = el("shortTermSpreadChartHost");
+      const width = Number(this.chart?.timeScale?.().width()) || (host?.clientWidth || 0);
+      layer.style.left = `${left}px`;
+      layer.style.right = "auto";
+      layer.style.width = `${width}px`;
+      if (host?.clientHeight) {
+        layer.style.height = `${host.clientHeight}px`;
+      }
+      return width;
+    },
+
+    snapTimeToBar(time) {
+      const bars = this.chartInterval === "1h" ? (this.data?.hourly || []) : (this.data?.bars || []);
+      if (!bars.length) return time;
+      if (this.chartInterval === "1h") {
+        const match = bars.find((b) => b.time <= time && time < b.time + 3600);
+        return match ? match.time : Math.floor(time / 3600) * 3600;
+      }
+      const match = bars.find((b) => b.time <= time && time < b.time + 300);
+      return match ? match.time : Math.floor(time / 300) * 300;
+    },
+
+    isTimeMatch(activeTime, targetTime) {
+      if (activeTime === null || targetTime === null || activeTime === undefined || targetTime === undefined) return false;
+      if (activeTime === targetTime) return true;
+      if (this.chartInterval === "1h") {
+        return Math.floor(activeTime / 3600) * 3600 === Math.floor(targetTime / 3600) * 3600;
+      }
+      return Math.abs(activeTime - targetTime) < 300;
+    },
+
+    getTradePairs() {
+      const pairs = [];
+      const showVirtual = this.controller ? this.controller.visibility?.virtual !== false : true;
+      const showActual = this.controller ? this.controller.visibility?.actual !== false : true;
+
+      // 1. Virtual trades from this.data.trades
+      if (showVirtual && Array.isArray(this.data?.trades)) {
+        this.data.trades.forEach((t) => {
+          if (t.entry_time && t.exit_time && Number(t.entry_price) > 0 && Number(t.exit_price) > 0) {
+            pairs.push({
+              source: "virtual",
+              id: t.id,
+              pairKey: t.pairKey || `${t.id || 'V'}_${t.entry_time}_${t.exit_time}`,
+              entry_time: Number(t.entry_time),
+              exit_time: Number(t.exit_time),
+              entry_price: Number(t.entry_price),
+              exit_price: Number(t.exit_price),
+              net_return_pct: Number(t.net_return_pct ?? 0),
+              direction: t.direction || "long",
+            });
+          }
+        });
+      }
+
+      // 2. Fallback to markers if trades list is omitted or in test mocks
+      if (showVirtual && (!this.data?.trades || !this.data.trades.length) && Array.isArray(this.data?.markers)) {
+        const entries = this.data.markers.filter((m) => m.is_entry && m.entry_price && (m.exit_price || m.exit_time));
+        const exits = this.data.markers.filter((m) => !m.is_entry && m.entry_price && m.exit_price);
+        entries.forEach((entry) => {
+          const exit = exits.find((ex) => ex.entry_price === entry.entry_price && ex.time > entry.time);
+          if (exit) {
+            pairs.push({
+              source: "virtual",
+              id: entry.id || exit.id,
+              pairKey: entry.pairKey || exit.pairKey || `${entry.time}_${exit.time}`,
+              entry_time: Number(entry.time),
+              exit_time: Number(exit.time),
+              entry_price: Number(entry.entry_price),
+              exit_price: Number(exit.exit_price),
+              net_return_pct: Number(exit.net_return_pct ?? entry.net_return_pct ?? 0),
+              direction: entry.direction || "long",
+            });
+          } else if (entry.exit_price && entry.exit_time) {
+            pairs.push({
+              source: "virtual",
+              id: entry.id,
+              pairKey: entry.pairKey || `${entry.time}_${entry.exit_time}`,
+              entry_time: Number(entry.time),
+              exit_time: Number(entry.exit_time),
+              entry_price: Number(entry.entry_price),
+              exit_price: Number(entry.exit_price),
+              net_return_pct: Number(entry.net_return_pct ?? 0),
+              direction: entry.direction || "long",
+            });
+          }
+        });
+      }
+
+      // 3. Actual trades from botState
+      if (showActual && this.botState) {
+        const actualTrades = this.botState.recent_trades || this.botState.trade_history || [];
+        actualTrades.forEach((t) => {
+          if (t.entry_time && t.exit_time && Number(t.entry_price) > 0 && Number(t.exit_price) > 0) {
+            pairs.push({
+              source: "actual",
+              id: t.id,
+              pairKey: t.pairKey || `actual_${t.id || 'A'}_${t.entry_time}_${t.exit_time}`,
+              entry_time: Number(t.entry_time),
+              exit_time: Number(t.exit_time),
+              entry_price: Number(t.entry_price),
+              exit_price: Number(t.exit_price),
+              net_return_pct: Number(t.net_return_pct ?? 0),
+              direction: t.direction || "long",
+            });
+          }
+        });
+      }
+
+      return pairs;
+    },
+
+    renderTradeTriangles() {
+      const svg = el("tradeTrianglesLayer");
+      if (!svg || !this.chart || !this.candles) return;
+      if (typeof this.candles.priceToCoordinate !== "function") return;
+      if (typeof document.createElementNS !== "function") return;
+
+      this.alignChartOverlay(svg);
+      svg.innerHTML = "";
+
+      // Triangles and diagonal connectors should show ONLY on hover (or selection)
+      const activeTime = this.selectedMarkerTime ?? this.hoveredMarkerTime;
+      if (activeTime === null || activeTime === undefined) return;
+
+      const tradePairs = this.getTradePairs();
+      if (!tradePairs.length) return;
+
+      const timeScale = this.chart.timeScale?.();
+      if (!timeScale || typeof timeScale.timeToCoordinate !== "function") return;
+
+      const fragment = document.createDocumentFragment();
+
+      tradePairs.forEach((pair) => {
+        const { entry_time, exit_time, entry_price, exit_price, direction } = pair;
+        if (!entry_time || !exit_time) return;
+
+        const isEntryMatch = this.isTimeMatch(activeTime, entry_time);
+        const isExitMatch = this.isTimeMatch(activeTime, exit_time);
+        if (!isEntryMatch && !isExitMatch) return;
+
+        const p1 = Number(entry_price);
+        const p2 = Number(exit_price);
+        if (!Number.isFinite(p1) || !Number.isFinite(p2) || p1 <= 0 || p2 <= 0) return;
+
+        const snappedEntryTime = this.snapTimeToBar(entry_time);
+        const snappedExitTime = this.snapTimeToBar(exit_time);
+
+        const x1 = timeScale.timeToCoordinate(snappedEntryTime);
+        const x2 = timeScale.timeToCoordinate(snappedExitTime);
+        if (!Number.isFinite(x1) || !Number.isFinite(x2)) return;
+
+        const y1 = this.candles.priceToCoordinate(p1);
+        const y2 = this.candles.priceToCoordinate(p2);
+        if (!Number.isFinite(y1) || !Number.isFinite(y2)) return;
+
+        if (Math.abs(x1 - x2) < 1) return;
+
+        const isShort = direction === "short";
+
+        const origX1 = x1, origY1 = y1;
+        const origX2 = x2, origY2 = y2;
+        let leftX = x1, leftY = y1;
+        let rightX = x2, rightY = y2;
+        if (leftX > rightX) {
+          leftX = x2; leftY = y2;
+          rightX = x1; rightY = y1;
+        }
+
+        // Invariant: Buy price lower than Sell close is ALWAYS Profit (Green).
+        // For Long: p2 (sell) >= p1 (buy). For Short: p1 (sell) >= p2 (buy).
+        const isProfit = isShort ? (p1 >= p2) : (p2 >= p1);
+
+        let cornerX;
+        let cornerY;
+        if (isShort) {
+          // If entry by short, ALWAYS the UPPER triangle of the rectangle
+          if (leftY <= rightY) {
+            cornerX = rightX;
+            cornerY = leftY;
+          } else {
+            cornerX = leftX;
+            cornerY = rightY;
+          }
+        } else {
+          // If entry by long, ALWAYS the LOWER triangle of the rectangle
+          if (leftY <= rightY) {
+            cornerX = leftX;
+            cornerY = rightY;
+          } else {
+            cornerX = rightX;
+            cornerY = leftY;
+          }
+        }
+        const pts = `${leftX.toFixed(1)},${leftY.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${rightX.toFixed(1)},${rightY.toFixed(1)}`;
+
+        const fillColor = isProfit ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)";
+        const strokeColor = isProfit ? "rgba(22, 163, 74, 0.65)" : "rgba(220, 38, 38, 0.65)";
+        const diagStroke = isProfit ? "#16a34a" : "#dc2626";
+
+        const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+        polygon.setAttribute("points", pts);
+        polygon.setAttribute("fill", fillColor);
+        polygon.setAttribute("stroke", strokeColor);
+        polygon.setAttribute("stroke-width", "1");
+        polygon.style.transition = "fill 0.15s ease, stroke 0.15s ease";
+        fragment.appendChild(polygon);
+
+        const diag = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        diag.setAttribute("x1", origX1.toFixed(1));
+        diag.setAttribute("y1", origY1.toFixed(1));
+        diag.setAttribute("x2", origX2.toFixed(1));
+        diag.setAttribute("y2", origY2.toFixed(1));
+        diag.setAttribute("stroke", diagStroke);
+        diag.setAttribute("stroke-width", "1");
+        diag.style.transition = "stroke-width 0.15s ease, stroke 0.15s ease";
+        fragment.appendChild(diag);
+      });
+
+      svg.appendChild(fragment);
     },
 
     syncActiveReferenceLines(hoverTime = null) {
@@ -970,8 +1233,13 @@
     onTrancheClick(time) {
       if (!this.chart) return;
       const mappedTime = (this.chartInterval === "1h") ? Math.floor(time / 3600) * 3600 : time;
-      this.selectedMarkerTime = (this.selectedMarkerTime === mappedTime) ? null : mappedTime;
-      this.hoveredMarkerTime = mappedTime;
+      if (this.selectedMarkerTime === mappedTime) {
+        this.selectedMarkerTime = null;
+        this.hoveredMarkerTime = null;
+      } else {
+        this.selectedMarkerTime = mappedTime;
+        this.hoveredMarkerTime = mappedTime;
+      }
       this.syncMarkerState();
     },
 
@@ -980,6 +1248,7 @@
       const host = el("shortTermSpreadChartHost");
       if (this.chart && host?.clientWidth) this.chart.applyOptions({ width: host.clientWidth });
       if (!this.loaded) this.run();
+      this.renderTradeTriangles();
       this.fetchBotStatus();
       this.startBotPolling();
     },
