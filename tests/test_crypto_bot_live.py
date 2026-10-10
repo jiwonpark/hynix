@@ -125,6 +125,18 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(restored.state["tranches"]), 1)
         self.assertEqual(len(self.client.orders), 1)
 
+    async def test_create_order_polls_if_initial_response_not_filled(self):
+        # Initial response has status NEW and 0 avgPrice, polling returns FILLED
+        orig_create = self.client.create_order
+        async def create_new(symbol, side, qty, order_type, **options):
+            await orig_create(symbol, side, qty, order_type, **options)
+            return {"status": "NEW", "executedQty": "0.0", "avgPrice": "0.0", "orderId": 999}
+        self.client.create_order = create_new
+        event = await self.bot.manual_entry(1, 50)
+        self.assertEqual(event["event"], "ENTRY")
+        self.assertEqual(len(self.bot.state["tranches"]), 1)
+        self.assertFalse(self.bot.state["recovery_required"])
+
     async def test_enabling_never_places_an_order_and_strategy_cannot_change_while_active(self):
         state = await self.bot.toggle(True)
         self.assertTrue(state["enabled"])

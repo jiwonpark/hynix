@@ -284,6 +284,27 @@ class CryptoBot:
         try:
             order = await self.client.create_order(symbol, "BUY" if side > 0 else "SELL", qty_text,
                                                    "MARKET", reduce_only=reduce_only, client_order_id=client_id)
+            # Binance Futures market orders may return status="NEW" or avgPrice="0.00" initially
+            # while matching engine processes the fill. Poll GET /fapi/v1/order briefly if needed.
+            status = order.get("status")
+            fill_price = float(order.get("avgPrice", 0))
+            if status != "FILLED" or fill_price <= 0:
+                for _ in range(4):
+                    await asyncio.sleep(0.25)
+                    try:
+                        polled = await self.client.request(
+                            "GET", "/fapi/v1/order",
+                            {"symbol": symbol, "origClientOrderId": client_id},
+                            signed=True,
+                        )
+                        if polled.get("status") == "FILLED" and float(polled.get("avgPrice", 0)) > 0:
+                            order = polled
+                            break
+                        if polled.get("status") in {"CANCELED", "EXPIRED", "REJECTED"}:
+                            order = polled
+                            break
+                    except Exception:
+                        pass
             return self._record_fill(order, self.state["pending_order"])
         except Exception as exc:
             # Binance may have filled an order even if its response timed out.
