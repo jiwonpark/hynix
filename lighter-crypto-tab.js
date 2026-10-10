@@ -797,7 +797,7 @@
         const warning = document.createElement("div");
         warning.id = "lighterCrypto_failClosedWarning";
         warning.style.cssText = "grid-column:1/-1;padding:9px 11px;border-radius:6px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;margin-bottom:8px";
-        warning.textContent = "Real Lighter Perpetuals orders require terminal unlock and confirmation. Grid supports automatic execution; other strategies are paper replay only.";
+        warning.textContent = "Real Lighter Perpetuals orders require terminal unlock and confirmation. The selected quantitative strategy can be deployed to the live bot while it is paused.";
         ticket.prepend(warning);
       }
       if (ticket) {
@@ -1091,8 +1091,9 @@
       if (mode === "ou_quant") {
         const liveEntryZ = Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4).toFixed(1);
         const liveExitZ = Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20).toFixed(2);
-        const ouChecked = () => "checked";
-        const ouNumber = (_, fallback) => fallback;
+        const liveOu = this.botState?.strategy_mode === "ou_quant" ? this.botState : {};
+        const ouChecked = (key) => liveOu[key] !== false ? "checked" : "";
+        const ouNumber = (key, fallback) => Number(liveOu[key] ?? fallback);
         const ouRowStyle = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
         const ouToggleStyle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
         const ouNumberStyle = "display:inline-block;width:62px;height:26px;margin:0;padding:2px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;";
@@ -1123,20 +1124,20 @@
             </div>
           </div>
           <div id="lighterCrypto_ouEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
-            <strong style="font-size:12px;color:#0f172a;">Entry conditions · PAPER ONLY (Tab 5 live bot supports Grid)</strong>
+            <strong style="font-size:12px;color:#0f172a;">Entry conditions · switches and values apply to replay; Deploy saves them to the live bot</strong>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseEntryZ" type="checkbox" aria-label="Enable minimum entry Z" style="${ouToggleStyle}" ${ouChecked("ou_use_entry_z")}><span>1. Minimum |Z| (Entry Z above)</span><span class="condBadge neutral" id="lighterCrypto_ouStatusEntryZ">WAITING</span></div>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseHalflife" type="checkbox" aria-label="Enable maximum half-life" style="${ouToggleStyle}" ${ouChecked("ou_use_halflife")}><span>2. Maximum half-life</span><input id="lighterCrypto_ouHalflifeMax" type="number" aria-label="Maximum half-life parameter" min="1" max="50" step="0.5" value="${ouNumber("ou_halflife_max", 8)}" style="${ouNumberStyle}"><span>× 4 bars</span><span class="condBadge neutral" id="lighterCrypto_ouStatusHalflife">WAITING</span></div>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseMinDeviation" type="checkbox" aria-label="Enable minimum OU deviation" style="${ouToggleStyle}" ${ouChecked("ou_use_min_abs_deviation")}><span>3. Minimum deviation from OU mean</span><input id="lighterCrypto_ouMinDeviation" type="number" aria-label="Minimum OU deviation in percentage points" min="0" max="5" step="0.01" value="${ouNumber("ou_min_abs_deviation_pp", 0.25)}" style="${ouNumberStyle}"><span>pp</span><span class="condBadge neutral" id="lighterCrypto_ouStatusMinDeviation">WAITING</span></div>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseMacroTrend" type="checkbox" aria-label="Enable macro EMA alignment" style="${ouToggleStyle}" ${ouChecked("ou_use_macro_trend")}><span>4. Macro EMA slope aligned · EMA</span><input id="lighterCrypto_ouMacroSpan" type="number" aria-label="Macro EMA span" min="5" max="120" step="1" value="${ouNumber("ou_macro_ema_span", 60)}" style="${ouNumberStyle}"><span>over</span><input id="lighterCrypto_ouMacroSlopeBars" type="number" aria-label="Macro EMA slope comparison bars" min="1" max="60" step="1" value="${ouNumber("ou_macro_slope_bars", 12)}" style="${ouNumberStyle}"><span>bars</span><span class="condBadge neutral" id="lighterCrypto_ouStatusMacroTrend">WAITING</span></div>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseStopZone" type="checkbox" aria-label="Enable upper entry Z limit" style="${ouToggleStyle}" ${ouChecked("ou_use_stop_zone")}><span>5. Entry below emergency |Z| limit</span><input id="lighterCrypto_ouStopZ" type="number" aria-label="Emergency Z limit" min="1.5" max="6" step="0.05" value="${ouNumber("ou_stop_z", 3.5)}" style="${ouNumberStyle}"><span>σ</span><span class="condBadge neutral" id="lighterCrypto_ouStatusStopZone">WAITING</span></div>
-            <small style="color:#64748b;">Live Grid execution safeguards and account capacity are separate. Historical replay has no order-book quotes.</small>
+            <small style="color:#64748b;">Live order-book quote confirmation and account safety checks are separate. Historical replay has no order-book quotes.</small>
           </div>
           <div id="lighterCrypto_ouExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Exit condition</strong>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseExitZ" type="checkbox" aria-label="Enable neutral Z exit" style="${ouToggleStyle}" ${ouChecked("ou_use_exit_z")}><span>1. OU neutral |Z| target (Exit Z above)</span><span class="condBadge neutral" id="lighterCrypto_ouStatusExitZ">WAITING</span></div>
             <div style="${ouRowStyle}"><span>Emergency stop (always active)</span><span class="condBadge neutral" id="lighterCrypto_ouStatusEmergencyStop">WAITING</span></div>
             <small id="lighterCrypto_ouStatusSource" style="color:#64748b;">PAPER · Awaiting completed-candle replay</small>
-            <small style="color:#64748b;">Emergency stop at the upper Z limit remains active. Replay uses price signals only; Tab 5 live bot supports Grid.</small>
+            <small style="color:#64748b;">Emergency stop at the upper Z limit remains active. Replay uses price signals only; live execution also checks current quotes and positions.</small>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
@@ -1395,7 +1396,7 @@
       panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;border-bottom:1px solid rgba(5,150,105,0.2);padding-bottom:8px;">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <strong style="font-size:13px;letter-spacing:.35px">REAL LIGHTER PERPETUALS BOT — GRID</strong>
+            <strong style="font-size:13px;letter-spacing:.35px">REAL LIGHTER PERPETUALS BOT — QUANT</strong>
             <span id="lighterCrypto_liveBotEnginePill" style="font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px;background:#059669;color:#fff;">LIVE: DYNAMIC GRID</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -1416,13 +1417,13 @@
             <b>Execution Data & Interval</b><br>
             <span id="lighterCryptoLiveInterval">Completed 5m candles</span> · 24-bar window
           </div>
-          <div>
+          <div id="lighterCryptoLiveGridEntryRule">
             <b>Entry Trigger</b><br>
             |Z| ≥ <input id="lighterCrypto_inputLiveGridEntryZ" type="number" min="0.1" max="10" step="0.1" value="1.5" aria-label="Live Grid entry Z threshold" style="width:65px;font-weight:800">
             <span id="lighterCrypto_liveEntryVerdict" class="condBadge neutral">UNAVAILABLE</span>
             <div id="lighterCryptoLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short selected contract<br>Z low: long selected contract</div>
           </div>
-          <div>
+          <div id="lighterCryptoLiveGridExitRule">
             <b>Exit Target</b><br>
             |Z| ≤ <input id="lighterCrypto_inputLiveGridExitZ" type="number" min="0" max="5" step="0.05" value="0.25" aria-label="Live Grid exit Z threshold" style="width:65px;font-weight:800"> · no separate PnL gate
             <span id="lighterCrypto_liveExitVerdict" class="condBadge neutral">UNAVAILABLE</span>
@@ -1448,6 +1449,7 @@
             <span id="lighterCryptoLiveEvaluation">Awaiting completed bar</span>
           </div>
         </div>
+        <div id="lighterCryptoLiveConditions" style="display:grid;gap:6px;margin-top:10px;"></div>
         <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#f0fdf4;color:#166534;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
           <span>All testable quantitative strategies can be deployed to live execution. Manual live orders require a separate confirmation.</span>
           <span style="font-size:10px;font-weight:700;color:#15803d;">Causal completed-candle &amp; executable-quote validation enforced.</span>
@@ -1546,6 +1548,7 @@
       if (mode === "ou_quant") {
         payload.entry_z = numeric("lighterCrypto_inpOuEntryZ", Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4));
         payload.exit_z = numeric("lighterCrypto_inpOuExitZ", Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20));
+        Object.assign(payload, this.ouConditionSettings());
       } else if (mode === "ma_stack") {
         payload.ma_stretch_min = numeric("lighterCrypto_inpMaStretchMin", Number(this.botState?.ma_stretch_min ?? 0.30));
         payload.ma_trailing_stop = numeric("lighterCrypto_inpMaTrailingStop", Number(this.botState?.ma_trailing_stop ?? 0.15));
@@ -2039,23 +2042,24 @@
     },
 
     ouConditionSettings() {
+      const saved = this.botState?.strategy_mode === "ou_quant" ? this.botState : {};
       const number = (id, fallback) => {
         const value = Number($(id)?.value);
-        return $(id) && Number.isFinite(value) ? value : fallback;
+        return $(id) && Number.isFinite(value) ? value : Number(fallback);
       };
-      const enabled = (id) => $(id)?.checked !== false;
+      const enabled = (id, key) => $(id)?.checked ?? (saved[key] !== false);
       return {
-        ou_halflife_max: number("lighterCrypto_ouHalflifeMax", 8),
-        ou_stop_z: number("lighterCrypto_ouStopZ", 3.5),
-        ou_min_abs_deviation_pp: number("lighterCrypto_ouMinDeviation", 0.25),
-        ou_macro_ema_span: number("lighterCrypto_ouMacroSpan", 60),
-        ou_macro_slope_bars: number("lighterCrypto_ouMacroSlopeBars", 12),
-        ou_use_entry_z: enabled("lighterCrypto_ouUseEntryZ"),
-        ou_use_halflife: enabled("lighterCrypto_ouUseHalflife"),
-        ou_use_min_abs_deviation: enabled("lighterCrypto_ouUseMinDeviation"),
-        ou_use_macro_trend: enabled("lighterCrypto_ouUseMacroTrend"),
-        ou_use_stop_zone: enabled("lighterCrypto_ouUseStopZone"),
-        ou_use_exit_z: enabled("lighterCrypto_ouUseExitZ"),
+        ou_halflife_max: number("lighterCrypto_ouHalflifeMax", saved.ou_halflife_max ?? 8),
+        ou_stop_z: number("lighterCrypto_ouStopZ", saved.ou_stop_z ?? 3.5),
+        ou_min_abs_deviation_pp: number("lighterCrypto_ouMinDeviation", saved.ou_min_abs_deviation_pp ?? 0.25),
+        ou_macro_ema_span: number("lighterCrypto_ouMacroSpan", saved.ou_macro_ema_span ?? 60),
+        ou_macro_slope_bars: number("lighterCrypto_ouMacroSlopeBars", saved.ou_macro_slope_bars ?? 12),
+        ou_use_entry_z: enabled("lighterCrypto_ouUseEntryZ", "ou_use_entry_z"),
+        ou_use_halflife: enabled("lighterCrypto_ouUseHalflife", "ou_use_halflife"),
+        ou_use_min_abs_deviation: enabled("lighterCrypto_ouUseMinDeviation", "ou_use_min_abs_deviation"),
+        ou_use_macro_trend: enabled("lighterCrypto_ouUseMacroTrend", "ou_use_macro_trend"),
+        ou_use_stop_zone: enabled("lighterCrypto_ouUseStopZone", "ou_use_stop_zone"),
+        ou_use_exit_z: enabled("lighterCrypto_ouUseExitZ", "ou_use_exit_z"),
       };
     },
 
@@ -2095,7 +2099,10 @@
       if (!isParadigmMatch) diffs.push(`Strategy ${currentMode} ≠ ${liveMode}`);
       const parameterKeys = {
         grid: ["entry_z", "exit_z"], custom: ["entry_z", "exit_z"],
-        ou_quant: ["entry_z", "exit_z", "ou_halflife_max", "ou_stop_z"],
+        ou_quant: ["entry_z", "exit_z", "ou_halflife_max", "ou_stop_z",
+          "ou_min_abs_deviation_pp", "ou_macro_ema_span", "ou_macro_slope_bars",
+          "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
+          "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z"],
         ma_stack: ["ma_stretch_min", "ma_trailing_stop"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
@@ -2242,6 +2249,59 @@
       });
     },
 
+    renderLiveConditionStatus(bot = this.botState) {
+      const panel = $("lighterCryptoLiveConditions");
+      if (!panel) return;
+      const evaluation = bot?.last_evaluation;
+      const time = Number(evaluation?.time);
+      const seconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[bot?.strategy_interval] || 300;
+      const fresh = bot?.enabled && evaluation?.strategy === bot?.strategy_mode
+        && Number.isFinite(time) && time > 0 && Date.now() / 1000 - time <= seconds * 2 + 60;
+      const checks = evaluation?.condition_pass || {};
+      const heading = document.createElement("strong");
+      heading.textContent = fresh
+        ? `LIVE · ${bot.strategy_mode} conditions at completed candle ${new Date(time * 1000).toLocaleString()}`
+        : `LIVE · ${bot?.strategy_mode || "strategy"} conditions unavailable (paused, stale, or awaiting a completed candle)`;
+      panel.replaceChildren(heading);
+      const toggleByKey = bot?.strategy_mode === "ou_quant" ? {
+        entry_z:"ou_use_entry_z", entry_halflife:"ou_use_halflife",
+        entry_min_deviation:"ou_use_min_abs_deviation", entry_macro_trend:"ou_use_macro_trend",
+        entry_stop_zone:"ou_use_stop_zone", exit_z:"ou_use_exit_z",
+      } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
+        entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
+        entry_ma_stack:"use_ma_stack", exit_convergence:"use_convergence",
+        exit_dwell:"use_dwell", exit_bottoming:"use_bottoming",
+      } : {};
+      const keysByMode = {
+        grid:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","exit_convergence","exit_dwell","exit_bottoming"],
+        custom:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","exit_convergence","exit_dwell","exit_bottoming"],
+        ou_quant:["entry_z","entry_halflife","entry_min_deviation","entry_macro_trend","entry_stop_zone","exit_z","exit_emergency_stop"],
+        ma_stack:["entry_ma_stack","entry_stretch","exit_ma_cross","exit_trailing_stop","exit_max_dwell"],
+        multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","exit_consensus","exit_convergence","exit_max_dwell"],
+        trend_pullback:["entry_macro_trend","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
+      };
+      (keysByMode[bot?.strategy_mode] || Object.keys(checks)).forEach((key) => {
+        const value = checks[key];
+        const row = document.createElement("div");
+        row.className = "condRow";
+        const label = document.createElement("span");
+        label.className = "condLabel";
+        label.textContent = key.replace(/^entry_/, "Entry · ").replace(/^exit_/, "Exit · ").replaceAll("_", " ");
+        const badge = document.createElement("span");
+        const toggle = toggleByKey[key];
+        const hasPosition = Array.isArray(bot?.tranches) && bot.tranches.length > 0;
+        const state = !fresh ? "UNAVAILABLE" : toggle && bot[toggle] === false ? "OFF"
+          : key.startsWith("exit_") && !hasPosition ? "N/A"
+            : value == null ? "UNAVAILABLE" : value ? "PASS" : "WAITING";
+        badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+        badge.textContent = state;
+        badge.title = fresh ? `LIVE · ${new Date(time * 1000).toLocaleString()} · saved bot rules`
+          : "No current live evaluation";
+        row.append(label, badge);
+        panel.append(row);
+      });
+    },
+
     alignReplayToLive() {
       if (!this.botState) return;
       const liveMode = this.botState.strategy_mode || "ou_quant";
@@ -2292,6 +2352,26 @@
         });
       }
       if (liveMode === "ou_quant") {
+        const ouControls = {
+          ou_halflife_max: "lighterCrypto_ouHalflifeMax",
+          ou_stop_z: "lighterCrypto_ouStopZ",
+          ou_min_abs_deviation_pp: "lighterCrypto_ouMinDeviation",
+          ou_macro_ema_span: "lighterCrypto_ouMacroSpan",
+          ou_macro_slope_bars: "lighterCrypto_ouMacroSlopeBars",
+          ou_use_entry_z: "lighterCrypto_ouUseEntryZ",
+          ou_use_halflife: "lighterCrypto_ouUseHalflife",
+          ou_use_min_abs_deviation: "lighterCrypto_ouUseMinDeviation",
+          ou_use_macro_trend: "lighterCrypto_ouUseMacroTrend",
+          ou_use_stop_zone: "lighterCrypto_ouUseStopZone",
+          ou_use_exit_z: "lighterCrypto_ouUseExitZ",
+        };
+        Object.entries(ouControls).forEach(([key, id]) => {
+          const input = $(id);
+          if (!input || params[key] == null) return;
+          if (typeof params[key] === "boolean") input.checked = params[key];
+          else input.value = String(params[key]);
+          input._userModified = false;
+        });
         const inpEntry = $("lighterCrypto_inpOuEntryZ");
         const rangeEntry = $("lighterCrypto_rangeOuEntryZ");
         const badgeEntry = $("lighterCrypto_valOuEntryZBadge");
@@ -2624,6 +2704,11 @@
         badge.title = fresh ? `LIVE · completed candle ${new Date(evaluatedAt * 1000).toLocaleString()} · |Z| ${Math.abs(z).toFixed(3)} ${isEntry ? "≥" : "≤"} ${threshold.toFixed(2)}`
           : "LIVE · Paused, stale, or missing completed-candle evaluation";
       });
+      ["lighterCryptoLiveGridEntryRule", "lighterCryptoLiveGridExitRule"].forEach((id) => {
+        const row = $(id);
+        if (row) row.style.display = bot?.strategy_mode === "grid" ? "" : "none";
+      });
+      this.renderLiveConditionStatus(bot);
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput && document.activeElement !== notionalInput) {
         notionalInput.value = String(bot?.notional_usd || 25);

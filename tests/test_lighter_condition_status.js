@@ -5,7 +5,8 @@ const vm = require('node:vm');
 
 function load(file, name) {
   const elements = new Map();
-  const document = {readyState:'loading', addEventListener(){}, getElementById:id=>elements.get(id)};
+  const document = {readyState:'loading', addEventListener(){}, getElementById:id=>elements.get(id),
+    createElement(){return {children:[],append(...items){this.children.push(...items)}};}};
   const context = {window:{}, document, URLSearchParams, console};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
@@ -56,6 +57,17 @@ for (const [file, name, prefix] of [
 }
 
 const {engine, elements} = load('lighter-crypto-tab.js','lighterCryptoEngine');
+const livePanel={children:[],replaceChildren(...items){this.children=items},append(...items){this.children.push(...items)}};
+elements.set('lighterCryptoLiveConditions',livePanel);
+engine.renderLiveConditionStatus({enabled:true,strategy_mode:'ou_quant',strategy_interval:'5m',
+  ou_use_macro_trend:false,tranches:[{}],
+  last_evaluation:{...evaluation,time:Math.floor(Date.now()/1000)-300,strategy:'ou_quant'}});
+assert.equal(livePanel.children[1].children[1].textContent,'PASS');
+assert.equal(livePanel.children[2].children[1].textContent,'WAITING');
+assert.equal(livePanel.children[4].children[1].textContent,'OFF');
+engine.renderLiveConditionStatus({enabled:false,strategy_mode:'ou_quant',strategy_interval:'5m',
+  last_evaluation:{...evaluation,time:Math.floor(Date.now()/1000)-300,strategy:'ou_quant'}});
+assert.equal(livePanel.children[1].children[1].textContent,'UNAVAILABLE');
 engine.currentParadigm='grid';
 engine.interval='5m';
 elements.set('lighterCryptoMatchPill',{style:{},dataset:{},addEventListener(){},setAttribute(){}});

@@ -581,7 +581,9 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
             else:
                 entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
                     prefix, entry_z=entry_z if use_ma_stretch else 0.0,
-                    exit_z=exit_z, evaluation_time=int(bar["time"]),
+                    exit_z=exit_z, use_peak=False, use_base_spacing=False,
+                    use_dwell=False, use_bottoming=False,
+                    evaluation_time=int(bar["time"]),
                 )
             signal_price = prefix[-1]
             series.append({"time": bar["time"], "value": bar["value"],
@@ -1431,7 +1433,9 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
             else:
                 entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
                     prefix, entry_z=entry_z if use_ma_stretch else 0.0,
-                    exit_z=exit_z, evaluation_time=int(bar["time"]),
+                    exit_z=exit_z, use_peak=False, use_base_spacing=False,
+                    use_dwell=False, use_bottoming=False,
+                    evaluation_time=int(bar["time"]),
                 )
             signal_price = prefix[-1]
             series.append({"time": bar["time"], "value": bar["value"],
