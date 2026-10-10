@@ -11298,7 +11298,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
       },
 
-      deployCurrentStrategy() {
+      async deployCurrentStrategy() {
         const assetKey = $("assetStrategy")?.value || "skhynix_arb";
         const assetConfig = typeof ASSET_STRATEGIES !== 'undefined' && ASSET_STRATEGIES[assetKey] ? ASSET_STRATEGIES[assetKey] : { title: "SK Hynix Arb" };
         const engKey = $("predictionEngine")?.value || "hmm_vol_target";
