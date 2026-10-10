@@ -2022,11 +2022,8 @@
         if (usesFilters && settings[key] !== liveEnabled)
           diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
       });
-      if (!["grid", "custom", "ou_quant"].includes(currentMode))
-        diffs.push("Replay signal/exit rules differ from live");
       const matched = diffs.length === 0;
-      const matchableModes = ["grid", "custom", "ou_quant"];
-      const canAlign = Boolean(this.botState && matchableModes.includes(liveMode)
+      const canAlign = Boolean(this.botState && parameterKeys[liveMode]
         && (parameterKeys[liveMode] || []).every((key) => liveParams[key] != null));
       const active = Boolean(this.botState?.enabled);
       pill.textContent = matched
@@ -2196,6 +2193,33 @@
           if (input && liveParams[key] != null) {
             if (typeof liveParams[key] === "boolean") input.checked = liveParams[key];
             else input.value = String(liveParams[key]);
+            input._userModified = false;
+          }
+        });
+      }
+      if (liveMode === "ma_stack") {
+        if (liveParams.ma_stretch_min != null && $("lighter_inpMaStretchMin")) {
+          $("lighter_inpMaStretchMin").value = String(liveParams.ma_stretch_min);
+          $("lighter_inpMaStretchMin")._userModified = false;
+        }
+        if (liveParams.ma_trailing_stop != null && $("lighter_inpMaTrailingStop")) {
+          $("lighter_inpMaTrailingStop").value = String(liveParams.ma_trailing_stop);
+          $("lighter_inpMaTrailingStop")._userModified = false;
+        }
+      }
+      if (liveMode === "multi_factor") {
+        if (liveParams.min_consensus_votes != null && $("lighter_selFactorQuorum")) {
+          $("lighter_selFactorQuorum").value = String(liveParams.min_consensus_votes);
+          $("lighter_selFactorQuorum")._userModified = false;
+        }
+      }
+      if (liveMode === "trend_pullback") {
+        [["lighter_inpTrendPullbackDist", "trend_pullback_dist"],
+         ["lighter_inpTrendTpDist", "trend_tp_dist"],
+         ["lighter_inpTrendMacroWindow", "trend_macro_window"]].forEach(([id, key]) => {
+          const input = $(id);
+          if (input && liveParams[key] != null) {
+            input.value = String(liveParams[key]);
             input._userModified = false;
           }
         });

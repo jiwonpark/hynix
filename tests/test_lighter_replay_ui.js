@@ -16,6 +16,8 @@ elements.set('lighter_dynamicBacktestStatus', {});
 elements.set('lighter_btnRerunDynamicBacktest', {});
 elements.set('lighter_inpOuEntryZ', {value:'1.8'});
 elements.set('lighter_inpOuExitZ', {value:'0.2'});
+elements.set('lighter_inpMaStretchMin', {value:'0.3'});
+elements.set('lighter_inpMaTrailingStop', {value:'0.15'});
 let response, requestUrl;
 const ctx = {window:{}, document:{getElementById:id=>elements.get(id),readyState:'loading',addEventListener(){}},
   URLSearchParams, console, fetch:async url=>{requestUrl=url; return {ok:true,json:async()=>response};}};
@@ -75,10 +77,16 @@ assert.equal(elements.get('lighter_chkCondEntryPeak').disabled,false);
 engine.currentParadigm='ma_stack'; engine.botState.strategy_mode='ma_stack';
 engine.botState.strategy_params={ma_stretch_min:.3,ma_trailing_stop:.15};
 engine.updateRulesMatchStatus();
-assert.match(pill.textContent,/Replay signal\/exit rules differ from live/);
-assert.match(pill.textContent,/Live match unavailable/);
-assert.equal(pill.dataset.matchState,'unavailable');
-assert.equal(elements.get('lighter_btnMatchLiveReplay').disabled,true);
+assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
+elements.get('lighter_inpMaStretchMin').value='0.45';
+engine.updateRulesMatchStatus();
+assert.match(pill.textContent,/PAPER DIVERGENT/);
+assert.match(pill.textContent,/ma_stretch_min: 0.45 ≠ 0.3/);
+assert.equal(elements.get('lighter_btnMatchLiveReplay').disabled,false);
+assert.equal(pill.dataset.matchState,'divergent');
+elements.get('lighter_inpMaStretchMin').value='0.3';
+engine.updateRulesMatchStatus();
+assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
 
 // A single click after choosing another replay strategy restores the live OU
 // strategy and thresholds without deploying anything to the bot.

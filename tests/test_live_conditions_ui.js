@@ -12,8 +12,8 @@ const elements = {
   activePositionsBody: {}, btnReduceTranche: {style: {}}, lblReduceTrancheText: {},
   btnStepTranche: {}, lblHedgedSyncBadge: {}, lblStepTrancheSize: {}, valCritCycleCore: {}, macroPolicyStatus: {}, valCritExitSize: {},
 };
-const context = vm.createContext({window: {location: {origin: 'https://test', pathname: '/skhynix/'}},
-  $: id => elements[id], AbortSignal, console, formatKstTime: () => 'now'});
+const context = vm.createContext({window: {location: {origin: 'https://test', pathname: '/skhynix/'}, terminalLockManager: {isLocked: false}},
+  terminalLockManager: {isLocked: false}, $: id => elements[id], AbortSignal, console, formatKstTime: () => 'now'});
 const engine = vm.runInContext(`({state: {positions: [], orderLog: [], conditionToggles: {}},
   ${['isConditionEnabled', 'renderPositionsAndLogs', 'fetchHedgedStatus', 'fetchHedgedStatusOnce', 'renderHedgedController', 'renderHeldPairPnl'].map(method).join('\n')}
 })`, context);
@@ -78,7 +78,7 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
   context.criteria = {mandatory_live_conditions: ['exit_speculative_tranche']};
   context.isKo = false;
   context.setBadge = (id, text, type) => {badges[id] = {text, type};};
-  elements.check = {};
+  elements.check = {dataset: {}};
   elements.row = {classList: {toggle: (_, disabled) => {elements.row.disabled = disabled;}}};
   const start = html.indexOf('        const syncCondRow =');
   const end = html.indexOf('\n        };', start) + '\n        };'.length;
