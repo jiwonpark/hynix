@@ -4903,12 +4903,12 @@
 
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="held-pair-pnl.js?v=20261004_1"></script>
-  <script src="strategy-execution-chart.js?v=20261004_exact_1"></script>
-  <script src="strategy-lab.js?v=20261009_triangle_fresh"></script>
+  <script src="strategy-execution-chart.js?v=20261011_price_scale"></script>
+  <script src="strategy-lab.js?v=20261011_price_scale"></script>
   <script src="terminal-common.js?v=20261010_tab5_1"></script>
-  <script src="lighter-tab.js?v=20261010_condition_status_1"></script>
-  <script src="crypto-tab.js?v=20261010_unlock_1"></script>
-  <script src="lighter-crypto-tab.js?v=20261010_tab5_risk_margin"></script>
+  <script src="lighter-tab.js?v=20261011_price_scale"></script>
+  <script src="crypto-tab.js?v=20261011_price_scale"></script>
+  <script src="lighter-crypto-tab.js?v=20261011_price_scale"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -6420,6 +6420,16 @@
             priceFormat: lineFormat
           })
         };
+        StrategyExecutionChartController.watchPriceScale({
+          series: window.spreadSeries.value,
+          host,
+          samplePrice: () => {
+            const row = window.exposureOverlayRows?.at(-1);
+            return row && (window.chartMode || "parity") === "ma"
+              ? row.normalized / row.mean * 100 : row?.normalized;
+          },
+          onChange: requestExposureOverlayDraw,
+        });
         const assetPriceHost = $("assetPricePane");
         window.assetPriceChart = LightweightCharts.createChart(assetPriceHost, {
           height: Math.max(140, assetPriceHost.clientHeight || 175),

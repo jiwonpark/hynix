@@ -1875,6 +1875,16 @@
           this.renderTradeTriangles();
         });
       });
+      this.stopPriceScaleWatch = StrategyExecutionChartController.watchPriceScale({
+        series: this.series,
+        host,
+        samplePrice: () => this.bars?.at(-1)?.value,
+        onChange: () => {
+          this.renderTrendRanges();
+          this.renderTradeMarkerTargets();
+          this.renderTradeTriangles();
+        },
+      });
 
       this.maSeries = {
         7: this.chart.addLineSeries({ color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
@@ -3219,6 +3229,10 @@
             let topY = this.series.priceToCoordinate(maxPrice);
             let bottomY = this.series.priceToCoordinate(minPrice);
             let avgY = this.series.priceToCoordinate(avgPrice);
+            if (!StrategyExecutionChartController.isPriceVisible(avgY, layerHeight)) {
+              markers.forEach((marker) => { marker._targetX = x; marker._targetY = null; });
+              return;
+            }
             topY = Math.max(8, Math.min(layerHeight - 8, Number(topY)));
             bottomY = Math.max(8, Math.min(layerHeight - 8, Number(bottomY)));
             avgY = Math.max(Math.min(topY, bottomY), Math.min(Math.max(topY, bottomY), Number(avgY)));
@@ -3355,7 +3369,11 @@
         markers.forEach((marker, index) => {
           const price = Number(marker.ratio ?? marker.entry_price ?? marker.exit_price);
           let y = Number.isFinite(price) ? this.series.priceToCoordinate(price) : null;
-          if (!Number.isFinite(y)) y = marker.position === "aboveBar" ? 54 : Math.max(80, layerHeight - 54);
+          if (!StrategyExecutionChartController.isPriceVisible(y, layerHeight)) {
+            marker._targetX = x;
+            marker._targetY = null;
+            return;
+          }
           // Individual trade markers are stacked vertically on the exact candle timestamp x
           const finalX = x;
           const finalY = Math.max(6, Math.min(Math.max(6, layerHeight - 6), y));

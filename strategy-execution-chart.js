@@ -125,6 +125,44 @@
   }
 
   class StrategyExecutionChartController {
+    static isPriceVisible(coordinate, height) {
+      return Number.isFinite(coordinate) && Number.isFinite(height)
+        && coordinate >= 0 && coordinate <= height;
+    }
+
+    // Lightweight Charts exposes a visible-range callback for time, but no
+    // corresponding callback for a drag or wheel change on the price axis.
+    // Sample two nearby prices so overlays repaint only when their y mapping
+    // actually changes. Hidden charts are skipped until they become visible.
+    static watchPriceScale({ series, host, samplePrice, onChange, requestFrame } = {}) {
+      const frame = requestFrame || ((callback) => requestAnimationFrame(callback));
+      let previous = null;
+      let running = true;
+      const tick = () => {
+        if (!running) return;
+        const price = Number(samplePrice?.());
+        const visible = host && host.clientWidth > 0 && host.clientHeight > 0
+          && (!host.getClientRects || host.getClientRects().length > 0);
+        if (visible && Number.isFinite(price) && price > 0 && series?.priceToCoordinate) {
+          const nearby = price * 1.001;
+          const current = [series.priceToCoordinate(price), series.priceToCoordinate(nearby)];
+          if (current.every(Number.isFinite)) {
+            if (previous && current.some((coordinate, index) => Math.abs(coordinate - previous[index]) >= 0.25)) {
+              onChange?.();
+            }
+            previous = current;
+          } else {
+            previous = null;
+          }
+        } else {
+          previous = null;
+        }
+        frame(tick);
+      };
+      frame(tick);
+      return () => { running = false; };
+    }
+
     constructor(options = {}) {
       this.series = options.series || null;
       this.lineStyle = options.lineStyle || { Solid: 0, Dashed: 2 };

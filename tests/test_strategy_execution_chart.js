@@ -64,4 +64,39 @@ assert.deepEqual(seriesOptions.map(options => options.crosshairMarkerRadius), [2
 assert.deepEqual(seriesOptions.map(options => options.crosshairMarkerBorderWidth), [1, 1, 1],
   'compact crosshair dots use a thin border');
 
+const frames = [];
+let scaleOffset = 0;
+let overlayRedraws = 0;
+const chartHost = {clientWidth: 600, clientHeight: 420, getClientRects: () => [{}]};
+const stopWatching = Controller.watchPriceScale({
+  series: {priceToCoordinate: price => 300 - price + scaleOffset},
+  host: chartHost,
+  samplePrice: () => 100,
+  onChange: () => { overlayRedraws += 1; },
+  requestFrame: callback => frames.push(callback),
+});
+const nextFrame = () => frames.shift()();
+nextFrame();
+nextFrame();
+assert.equal(overlayRedraws, 0, 'unchanged price scale must not redraw markers');
+scaleOffset = 20;
+nextFrame();
+assert.equal(overlayRedraws, 1, 'vertical price-scale movement must redraw markers');
+chartHost.getClientRects = () => [];
+nextFrame();
+assert.equal(overlayRedraws, 1, 'hidden charts must not redraw overlays');
+chartHost.getClientRects = () => [{}];
+nextFrame();
+assert.equal(overlayRedraws, 1, 'returning to a visible chart establishes a new baseline');
+scaleOffset = 30;
+nextFrame();
+assert.equal(overlayRedraws, 2, 'subsequent visible scaling must redraw again');
+stopWatching();
+nextFrame();
+assert.equal(frames.length, 0, 'stopped observer must not schedule more frames');
+assert.equal(Controller.isPriceVisible(120, 420), true);
+assert.equal(Controller.isPriceVisible(-1, 420), false);
+assert.equal(Controller.isPriceVisible(421, 420), false);
+assert.equal(Controller.isPriceVisible(null, 420), false);
+
 console.log('Reusable strategy execution chart checks passed');

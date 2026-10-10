@@ -208,6 +208,12 @@
           this.renderTradeTriangles();
         });
       });
+      this.stopPriceScaleWatch = StrategyExecutionChartController.watchPriceScale({
+        series: this.candles,
+        host,
+        samplePrice: () => this.data?.bars?.at(-1)?.close,
+        onChange: () => this.renderTradeTriangles(),
+      });
       this.chart.subscribeCrosshairMove((param) => this.onCrosshair(param));
       this.chart.subscribeClick((param) => this.onClick(param));
       new ResizeObserver(() => {
