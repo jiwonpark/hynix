@@ -52,6 +52,8 @@ class CryptoBot:
         self.client = client
         self.state_path = state_path or Path(__file__).with_name("crypto_bot_state.json")
         self.lock = asyncio.Lock()
+        self._pnl_lock = asyncio.Lock()
+        self._pnl_cache = None
         self.state = copy.deepcopy(DEFAULT_STATE)
         self._load()
 
@@ -125,6 +127,85 @@ class CryptoBot:
             "trend_slope_min": float(self.state.get("trend_slope_min", 0.002)),
         }
         result["history_event_count"] = len(result["execution_history"])
+        return result
+
+    async def reconciled_public_state(self) -> Dict[str, Any]:
+        """Annotate a status snapshot with Binance fills; never alter trading state."""
+        result = self.public_state()
+        history = result["execution_history"]
+        exits = [row for row in history if row.get("event") == "EXIT"]
+        result["verified_exit_count"] = 0
+        result["verified_realized_pnl_usd"] = 0.0
+        result["pnl_reconciliation"] = {"total_exits": len(exits), "verified_exits": 0,
+                                         "basis": "Binance realized PnL minus entry and exit commissions; funding excluded"}
+        if not exits:
+            return result
+        signature = tuple((row.get("symbol"), row.get("order_id"), row.get("entry_order_id")) for row in exits)
+        async with self._pnl_lock:
+            now = time.monotonic()
+            cached = self._pnl_cache
+            if cached and cached[0] == signature and now - cached[1] < cached[2]:
+                reconciled, error = cached[3], cached[4]
+            else:
+                reconciled, error = {}, None
+                try:
+                    symbols = {row["symbol"] for row in exits}
+                    for symbol in symbols:
+                        fills = await self.client.request("GET", "/fapi/v1/userTrades",
+                                                          {"symbol": symbol, "limit": 1000}, signed=True)
+                        if not isinstance(fills, list):
+                            raise ValueError("Binance trade history response is not a list")
+                        by_order = {}
+                        for fill in fills:
+                            if fill.get("symbol") == symbol:
+                                by_order.setdefault(str(fill.get("orderId")), []).append(fill)
+                        for row in exits:
+                            if row["symbol"] != symbol:
+                                continue
+                            entry = by_order.get(str(row.get("entry_order_id")))
+                            exit_fills = by_order.get(str(row.get("order_id")))
+                            if not entry or not exit_fills:
+                                continue
+                            try:
+                                expected_qty = Decimal(str(row["qty"]))
+                                entry_qty = sum((Decimal(str(fill["qty"])) for fill in entry), Decimal(0))
+                                exit_qty = sum((Decimal(str(fill["qty"])) for fill in exit_fills), Decimal(0))
+                                if (abs(entry_qty - expected_qty) > max(Decimal("0.00000001"), expected_qty * Decimal("0.00001"))
+                                    or abs(exit_qty - expected_qty) > max(Decimal("0.00000001"), expected_qty * Decimal("0.00001"))):
+                                    continue
+                                entry_side = "BUY" if int(row["original_side"]) > 0 else "SELL"
+                                if (any(fill.get("side") != entry_side for fill in entry)
+                                    or any(fill.get("side") == entry_side for fill in exit_fills)
+                                    or any(fill.get("commissionAsset") != "USDT" for fill in entry + exit_fills)):
+                                    continue
+                                entry_fee = sum((Decimal(str(fill["commission"])) for fill in entry), Decimal(0))
+                                exit_fee = sum((Decimal(str(fill["commission"])) for fill in exit_fills), Decimal(0))
+                                gross = sum((Decimal(str(fill["realizedPnl"])) for fill in exit_fills), Decimal(0))
+                                if any(Decimal(str(fill["realizedPnl"])) != 0 for fill in entry):
+                                    continue
+                                net = gross - entry_fee - exit_fee
+                                reconciled[str(row["order_id"])] = {
+                                    "gross_pnl_usd": float(gross), "net_pnl_usd": float(net),
+                                    "entry_fee_usd": float(entry_fee), "exit_fee_usd": float(exit_fee),
+                                    "round_trip_fee_usd": float(entry_fee + exit_fee),
+                                    "pnl_pct": float(net / (expected_qty * Decimal(str(row["entry_price"]))) * 100),
+                                    "pnl_authoritative": True, "pnl_source": "BINANCE_USER_TRADES",
+                                }
+                            except (KeyError, ValueError, ArithmeticError):
+                                continue
+                except Exception as exc:
+                    error = str(exc)
+                    reconciled = {}
+                self._pnl_cache = (signature, now, 10 if error else 60, reconciled, error)
+        for row in history:
+            if row.get("event") == "EXIT" and str(row.get("order_id")) in reconciled:
+                row.update(reconciled[str(row["order_id"])])
+        verified = [row for row in history if row.get("event") == "EXIT" and row.get("pnl_authoritative")]
+        result["verified_exit_count"] = len(verified)
+        result["verified_realized_pnl_usd"] = sum(row["net_pnl_usd"] for row in verified)
+        result["pnl_reconciliation"]["verified_exits"] = len(verified)
+        if error:
+            result["pnl_reconciliation"]["error"] = "Binance trade history temporarily unavailable"
         return result
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:

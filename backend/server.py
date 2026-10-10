@@ -1052,7 +1052,7 @@ async def get_crypto_parity(symbol: str = "BTCUSDT", interval: str = "15m", limi
 
 @app.get("/api/crypto/bot/status")
 async def get_crypto_bot_status() -> Dict[str, Any]:
-    return {"success": True, "bot": crypto_bot.public_state()}
+    return {"success": True, "bot": await crypto_bot.reconciled_public_state()}
 
 
 @app.post("/api/crypto/bot/reconcile")

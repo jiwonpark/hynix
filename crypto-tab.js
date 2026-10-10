@@ -4573,7 +4573,7 @@
       const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position_amt ?? pos.size ?? 0)) > 1e-6);
       const showExchangeState = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
       if (showExchangeState) {
-        this.setText("lblUnrealizedPnl", "Bot Realized Net PnL");
+        this.setText("lblUnrealizedPnl", "Bot Realized Net PnL · ex funding");
         const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : null;
         const validTranches = (this.botState?.tranches || []).filter(t => Number(t.qty) > 0);
         const liveUnrealized = (this.livePositions || []).reduce((acc, pos) => acc + Number(pos.unrealized_pnl || 0), 0);
@@ -4602,8 +4602,9 @@
         this.setText("valHedgedPnlSubtitle", this.botState?.last_error
           ? `Execution status: ${this.botState.last_error}`
           : (validTranches.length > 0 ? "Exchange unrealized PnL; fees excluded" : "No bot-owned open tranche"));
+        const totalExits = Number(this.botState?.pnl_reconciliation?.total_exits ?? realized.count);
         this.setText("valUnrealizedPnl", realized.count
-          ? `${realizedSign}$${realized.pnl.toFixed(2)} · ${realized.count} verified exits`
+          ? `${realizedSign}$${realized.pnl.toFixed(2)} · ${realized.count}/${totalExits} verified exits`
           : "— (fees / realized PnL not reconciled)");
         const realizedEl = lid("valUnrealizedPnl");
         if (realizedEl) realizedEl.style.color = realized.pnl > 0 ? "#16a34a" : (realized.pnl < 0 ? "#dc2626" : "#64748b");
@@ -4686,16 +4687,14 @@
         this.setText("countOrderLog", String(persistedCount));
         const exits = history.filter((trade) => trade.event === "EXIT" || trade.is_exit);
         const authoritativeExits = exits.filter((trade) => trade.pnl_authoritative || trade.pnl_source === "LIGHTER_REALIZED_PNL");
-        const totalFees = history.reduce((sum, trade) => {
-          const isExit = trade.event === "EXIT" || trade.is_exit;
-          return sum + Number(isExit ? (trade.exit_fee_usd ?? trade.fee_usd ?? 0) : (trade.fee_usd || 0));
-        }, 0);
+        const totalFees = authoritativeExits.reduce((sum, trade) => sum + Number(trade.round_trip_fee_usd ?? trade.fee_usd ?? 0), 0);
         const totalGrossTurnover = history.reduce((sum, trade) => sum + this.tradeExposure(trade).gross, 0);
         const wins = authoritativeExits.filter((trade) => Number(trade.net_pnl_usd ?? trade.pnl ?? 0) > 0).length;
         const summary = lid("executionHistorySummary");
         if (summary) {
           const verifiedSummary = this.verifiedRealizedSummary();
-          summary.innerHTML = `<span><b>${persistedCount}</b> persisted fills</span><span>Recent turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Fees and realized P&amp;L <b>not reconciled</b></span><span style="color:#64748b">Exchange order fills · confirm final P&amp;L in Binance history</span>`;
+          const pnlSign = verifiedSummary.pnl >= 0 ? "+" : "";
+          summary.innerHTML = `<span><b>${persistedCount}</b> recorded orders</span><span>Turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Verified exits <b>${verifiedSummary.count}/${exits.length}</b></span><span>Net after commissions <b>${verifiedSummary.count ? `${pnlSign}$${verifiedSummary.pnl.toFixed(4)}` : "—"}</b></span><span>Matched round-trip fees <b>${verifiedSummary.count ? `$${totalFees.toFixed(4)}` : "—"}</b></span><span>Wins <b>${verifiedSummary.count ? wins : "—"}</b></span><span style="color:#64748b">Binance fills · funding excluded; unmatched exits remain unverified</span>`;
         }
         historyBody.innerHTML = history.slice().reverse().map((trade) => {
           const timeStr = formatKstDateTime(trade.time ? trade.time * 1000 : Date.now());
@@ -4716,7 +4715,7 @@
           const ratioStr = isExit && exitRatio
             ? `${entryRatio ? this.formatCryptoPrice(entryRatio) + ' → ' : ''}${this.formatCryptoPrice(exitRatio)}`
             : (entryRatio ? this.formatCryptoPrice(entryRatio) : "—");
-          const fee = Number(trade.fee_usd || 0);
+          const fee = Number(isExit ? (trade.round_trip_fee_usd ?? trade.fee_usd ?? 0) : (trade.fee_usd || 0));
           const feeBps = Number(trade.fee_bps || 0);
           const grossPnl = isExit ? Number(trade.gross_pnl_usd ?? trade.pnl ?? 0) : null;
           const netPnl = isExit ? Number(trade.net_pnl_usd ?? trade.pnl ?? 0) : null;
@@ -4732,7 +4731,7 @@
             <td>${directionBadge}</td>
             <td style="font-family:monospace;line-height:1.45;">${exposureStr}</td>
             <td style="font-family:monospace;font-weight:700;">${ratioStr}</td>
-            <td style="font-family:monospace;color:#64748b;">${trade.fee_usd == null ? "—" : `$${fee.toFixed(4)}`}</td>
+            <td style="font-family:monospace;color:#64748b;">${(isExit ? trade.round_trip_fee_usd ?? trade.fee_usd : trade.fee_usd) == null ? "—" : `$${fee.toFixed(4)}${isExit && trade.round_trip_fee_usd != null ? " total" : ""}`}</td>
             <td>${pnlStr}</td>
             <td><span style="color:${status === 'CLOSED' ? '#059669' : '#0369a1'};font-weight:800;">● ${status}</span></td>
           </tr>`;
