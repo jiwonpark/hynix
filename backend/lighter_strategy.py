@@ -404,7 +404,7 @@ def evaluate_strategy_signal(
     if strategy_mode not in LIVE_STRATEGIES:
         raise ValueError(f"Unsupported strategy mode: {strategy_mode}")
     if strategy_mode == "ou_quant":
-        return evaluate_ou_signals(
+        entry_signal, candidate_side, exit_signal, details = evaluate_ou_signals(
             prices,
             entry_z=float(config.get("entry_z", 1.4)),
             exit_z=float(config.get("exit_z", 0.20)),
@@ -422,7 +422,7 @@ def evaluate_strategy_signal(
             evaluation_time=evaluation_time,
         )
     elif strategy_mode == "ma_stack":
-        return evaluate_ma_stack_signals(
+        entry_signal, candidate_side, exit_signal, details = evaluate_ma_stack_signals(
             prices,
             ma_stretch_min=float(config.get("ma_stretch_min", 0.30)),
             ma_trailing_stop=float(config.get("ma_trailing_stop", 0.15)),
@@ -432,7 +432,7 @@ def evaluate_strategy_signal(
             held_bars=held_bars,
         )
     elif strategy_mode == "multi_factor":
-        return evaluate_multi_factor_signals(
+        entry_signal, candidate_side, exit_signal, details = evaluate_multi_factor_signals(
             prices,
             entry_z=float(config.get("entry_z", 1.5)),
             exit_z=float(config.get("exit_z", 0.25)),
@@ -443,7 +443,7 @@ def evaluate_strategy_signal(
             held_bars=held_bars,
         )
     elif strategy_mode == "trend_pullback":
-        return evaluate_trend_pullback_signals(
+        entry_signal, candidate_side, exit_signal, details = evaluate_trend_pullback_signals(
             prices,
             trend_macro_window=int(config.get("trend_macro_window", 24)),
             trend_pullback_dist=float(config.get("trend_pullback_dist", 0.15)),
@@ -492,4 +492,27 @@ def evaluate_strategy_signal(
             entry_price=entry_price,
             held_bars=held_bars,
         )
+
+    current_price = prices[-1] if prices else 0.0
+    use_base_spacing = bool(config.get("use_base_spacing", True))
+    base_spacing_pct = float(config.get("base_spacing_pct", 0.2))
+    step_dist = current_price * max(0.0, min(10.0, base_spacing_pct)) / 100.0
+    spacing_pass = True
+    if position_side != 0 and entry_price > 0:
+        spacing_pass = (not use_base_spacing
+                        or (candidate_side < 0 and current_price >= entry_price + step_dist)
+                        or (candidate_side > 0 and current_price <= entry_price - step_dist))
+    if not spacing_pass:
+        entry_signal = False
+
+    use_dwell = bool(config.get("use_dwell", True))
+    min_dwell_bars = int(config.get("min_dwell_bars", 4))
+    dwell_pass = not use_dwell or held_bars >= max(0, min(100, min_dwell_bars))
+    if position_side != 0 and not dwell_pass:
+        exit_signal = False
+
+    if isinstance(details.get("condition_pass"), dict):
+        details["condition_pass"]["entry_spacing"] = spacing_pass
+        details["condition_pass"]["exit_dwell"] = dwell_pass
+    return entry_signal, candidate_side, exit_signal, details
 

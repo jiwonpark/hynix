@@ -782,6 +782,8 @@
         input.onchange = null;
         input.disabled = Boolean(window.terminalLockManager?.isLocked);
         input.addEventListener("change", () => {
+          input.dataset.unsaved = "true";
+          this.updateDeployButtonState();
           this.updateRulesMatchStatus();
           this.runBacktest();
         });
@@ -1443,7 +1445,19 @@
       const currentMode = this.currentParadigm || "grid";
       const liveMode = this.botState?.strategy_mode || "grid";
       const currentName = this.paradigms[currentMode]?.name || currentMode;
-      if (currentMode === liveMode) {
+      const hasUnsaved = Boolean(
+        $("tabContentLighter")?.querySelector("input[data-unsaved='true'], select[data-unsaved='true']") ||
+        [
+          "chkCondEntryMaStretch", "chkCondEntryBase", "chkCondEntryPeak", "chkCondEntryMaStack5m",
+          "chkCondExitConvergence", "chkCondExitDwell", "chkCondExitBottoming"
+        ].some((id) => lid(id)?.dataset?.unsaved === "true")
+      );
+      if (hasUnsaved) {
+        btnLabel.textContent = currentMode === liveMode
+          ? `⚡ Save & Deploy ${currentName} Changes to Live Bot`
+          : `⚡ Deploy ${currentName} to Live Bot`;
+        btn.style.background = "#0284c7";
+      } else if (currentMode === liveMode) {
         btnLabel.textContent = `✓ ${currentName} Active on Live Bot (Re-apply)`;
         btn.style.background = "#059669";
       } else {
@@ -1515,15 +1529,13 @@
         payload.entry_z = numeric("lighter_inpCustomEntryZ", 1.5);
         payload.exit_z = numeric("lighter_inpCustomExitZ", 0.25);
       }
-      if (mode === "grid" || mode === "custom") {
-        payload.use_ma_stretch = lid("chkCondEntryMaStretch")?.checked !== false;
-        payload.use_base_spacing = lid("chkCondEntryBase")?.checked !== false;
-        payload.use_peak = lid("chkCondEntryPeak")?.checked !== false;
-        payload.use_ma_stack = lid("chkCondEntryMaStack5m")?.checked === true;
-        payload.use_convergence = lid("chkCondExitConvergence")?.checked !== false;
-        payload.use_dwell = lid("chkCondExitDwell")?.checked !== false;
-        payload.use_bottoming = lid("chkCondExitBottoming")?.checked === true;
-      }
+      payload.use_ma_stretch = lid("chkCondEntryMaStretch")?.checked !== false;
+      payload.use_base_spacing = lid("chkCondEntryBase")?.checked !== false;
+      payload.use_peak = lid("chkCondEntryPeak")?.checked !== false;
+      payload.use_ma_stack = lid("chkCondEntryMaStack5m")?.checked === true;
+      payload.use_convergence = lid("chkCondExitConvergence")?.checked !== false;
+      payload.use_dwell = lid("chkCondExitDwell")?.checked !== false;
+      payload.use_bottoming = lid("chkCondExitBottoming")?.checked === true;
       const minProfitInp = $("lighter_inputLiveMinProfitPct");
       if (minProfitInp) {
         payload.min_profit_pct = numeric("lighter_inputLiveMinProfitPct", Number(this.botState?.strategy_params?.min_profit_pct ?? this.botState?.min_profit_pct ?? 0.10));
@@ -1559,6 +1571,13 @@
       try {
         const data = await apiPost("/api/lighter/bot/config", payload);
         if (data?.bot) {
+          [
+            "chkCondEntryMaStretch", "chkCondEntryBase", "chkCondEntryPeak", "chkCondEntryMaStack5m",
+            "chkCondExitConvergence", "chkCondExitDwell", "chkCondExitBottoming"
+          ].forEach((id) => { const el = lid(id); if (el) delete el.dataset.unsaved; });
+          $("tabContentLighter")?.querySelectorAll("input[data-unsaved='true'], select[data-unsaved='true']").forEach((el) => {
+            delete el.dataset.unsaved;
+          });
           this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
         }
         window.showToast?.(`✅ Live EC2 strategy changed to ${pName} (${payload.strategy_interval}).`, "success");
@@ -2008,7 +2027,7 @@
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
         use_ma_stack: false, use_convergence: true, use_dwell: false, use_bottoming: false,
       };
-      const usesFilters = ["grid", "custom"].includes(currentMode);
+      const usesFilters = true;
       const rules = [
         ["EntryMaStretch", "use_ma_stretch", "Entry trigger"],
         ["EntryBase", "use_base_spacing", "Spacing"],
@@ -2023,15 +2042,15 @@
         const badge = lid(`badgeCond${suffix}`);
         const liveEnabled = liveParams[key] != null ? Boolean(liveParams[key]) : Boolean(defaultConditionToggles[key]);
         if (input) {
-          input.dataset.terminalUnavailable = String(!usesFilters);
-          input.disabled = !usesFilters || Boolean(window.terminalLockManager?.isLocked);
-          input.title = usesFilters ? `${name} strategy condition` : "Not used by this strategy";
+          input.dataset.terminalUnavailable = "false";
+          input.disabled = Boolean(window.terminalLockManager?.isLocked);
+          input.title = `${name} strategy condition`;
         }
         if (badge) {
-          badge.textContent = !usesFilters ? "N/A" : settings[key] ? "ON" : "OFF";
+          badge.textContent = settings[key] ? "ON" : "OFF";
           badge.className = "condBadge neutral";
         }
-        if (usesFilters && settings[key] !== liveEnabled)
+        if (settings[key] !== liveEnabled)
           diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
       });
       const matched = diffs.length === 0;
@@ -2157,26 +2176,27 @@
           }
         });
       }
-      if (liveMode === "grid" || liveMode === "custom") {
-        const defaultConditionToggles = {
-          use_ma_stretch: true, use_base_spacing: false, use_peak: false,
-          use_ma_stack: false, use_convergence: true, use_dwell: false, use_bottoming: false,
-        };
-        const filterKeys = {
-          chkCondEntryMaStretch: "use_ma_stretch",
-          chkCondEntryBase: "use_base_spacing",
-          chkCondEntryPeak: "use_peak",
-          chkCondEntryMaStack5m: "use_ma_stack",
-          chkCondExitConvergence: "use_convergence",
-          chkCondExitDwell: "use_dwell",
-          chkCondExitBottoming: "use_bottoming",
-        };
-        Object.entries(filterKeys).forEach(([id, key]) => {
-          const input = lid(id);
-          const liveVal = liveParams[key] != null ? Boolean(liveParams[key]) : Boolean(defaultConditionToggles[key]);
-          if (input) input.checked = liveVal;
-        });
-      }
+      const defaultConditionToggles = {
+        use_ma_stretch: true, use_base_spacing: false, use_peak: false,
+        use_ma_stack: false, use_convergence: true, use_dwell: false, use_bottoming: false,
+      };
+      const filterKeys = {
+        chkCondEntryMaStretch: "use_ma_stretch",
+        chkCondEntryBase: "use_base_spacing",
+        chkCondEntryPeak: "use_peak",
+        chkCondEntryMaStack5m: "use_ma_stack",
+        chkCondExitConvergence: "use_convergence",
+        chkCondExitDwell: "use_dwell",
+        chkCondExitBottoming: "use_bottoming",
+      };
+      Object.entries(filterKeys).forEach(([id, key]) => {
+        const input = lid(id);
+        const liveVal = liveParams[key] != null ? Boolean(liveParams[key]) : Boolean(defaultConditionToggles[key]);
+        if (input) {
+          input.checked = liveVal;
+          delete input.dataset.unsaved;
+        }
+      });
       if (liveMode === "ou_quant") {
         const inpEntry = $("lighter_inpOuEntryZ");
         const rangeEntry = $("lighter_rangeOuEntryZ");
@@ -2495,6 +2515,22 @@
         if (!input || input._userModified || value == null) return;
         if (typeof value === "boolean") input.checked = value;
         else input.value = String(value);
+      });
+      const condCheckboxes = {
+        chkCondEntryMaStretch: "use_ma_stretch",
+        chkCondEntryBase: "use_base_spacing",
+        chkCondEntryPeak: "use_peak",
+        chkCondEntryMaStack5m: "use_ma_stack",
+        chkCondExitConvergence: "use_convergence",
+        chkCondExitDwell: "use_dwell",
+        chkCondExitBottoming: "use_bottoming",
+      };
+      Object.entries(condCheckboxes).forEach(([id, key]) => {
+        const input = lid(id);
+        const liveVal = bot?.[key] != null ? Boolean(bot[key]) : (bot?.strategy_params?.[key] != null ? Boolean(bot.strategy_params[key]) : null);
+        if (input && liveVal != null && input.dataset.unsaved !== "true") {
+          input.checked = liveVal;
+        }
       });
       const ouEntryInp = $("lighter_inpOuEntryZ");
       const ouExitInp = $("lighter_inpOuExitZ");

@@ -918,6 +918,8 @@
         input.onchange = null;
         input.disabled = Boolean(window.terminalLockManager?.isLocked);
         input.addEventListener("change", () => {
+          input.dataset.unsaved = "true";
+          this.updateDeployButtonState();
           this.updateRulesMatchStatus();
           this.runBacktest();
         });
@@ -1504,7 +1506,19 @@
         return;
       }
       btn.disabled = false;
-      if (currentMode === liveMode) {
+      const hasUnsaved = Boolean(
+        $("tabContentLighterCrypto")?.querySelector("input[data-unsaved='true'], select[data-unsaved='true']") ||
+        [
+          "chkCondEntryMaStretch", "chkCondEntryBase", "chkCondEntryPeak", "chkCondEntryMaStack5m",
+          "chkCondExitConvergence", "chkCondExitDwell", "chkCondExitBottoming"
+        ].some((id) => lid(id)?.dataset?.unsaved === "true")
+      );
+      if (hasUnsaved) {
+        btnLabel.textContent = currentMode === liveMode
+          ? `⚡ Save & Deploy ${currentName} Changes to Live Bot`
+          : `⚡ Deploy ${currentName} to Live Bot`;
+        btn.style.background = "#0284c7";
+      } else if (currentMode === liveMode) {
         btnLabel.textContent = `✓ ${currentName} deployed on paused bot (Re-apply)`;
         btn.style.background = "#059669";
       } else {
@@ -1565,15 +1579,13 @@
         payload.entry_z = numeric("lighterCrypto_inputLiveGridEntryZ", Number(this.botState?.entry_z ?? 1.5));
         payload.exit_z = numeric("lighterCrypto_inputLiveGridExitZ", Number(this.botState?.exit_z ?? 0.25));
       }
-      if (mode === "grid" || mode === "custom") {
-        payload.use_ma_stretch = lid("chkCondEntryMaStretch")?.checked !== false;
-        payload.use_base_spacing = lid("chkCondEntryBase")?.checked !== false;
-        payload.use_peak = lid("chkCondEntryPeak")?.checked !== false;
-        payload.use_ma_stack = lid("chkCondEntryMaStack5m")?.checked === true;
-        payload.use_convergence = lid("chkCondExitConvergence")?.checked !== false;
-        payload.use_dwell = lid("chkCondExitDwell")?.checked !== false;
-        payload.use_bottoming = lid("chkCondExitBottoming")?.checked === true;
-      }
+      payload.use_ma_stretch = lid("chkCondEntryMaStretch")?.checked !== false;
+      payload.use_base_spacing = lid("chkCondEntryBase")?.checked !== false;
+      payload.use_peak = lid("chkCondEntryPeak")?.checked !== false;
+      payload.use_ma_stack = lid("chkCondEntryMaStack5m")?.checked === true;
+      payload.use_convergence = lid("chkCondExitConvergence")?.checked !== false;
+      payload.use_dwell = lid("chkCondExitDwell")?.checked !== false;
+      payload.use_bottoming = lid("chkCondExitBottoming")?.checked === true;
       return payload;
     },
 
@@ -1596,8 +1608,14 @@
       try {
         const data = await apiPost("/api/lighter-crypto/bot/config", payload);
         if (data?.bot) {
-          ["lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
-            "lighterCrypto_inputLiveMaxSpread"].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
+          [
+            "lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
+            "lighterCrypto_inputLiveMaxSpread", "lighterCrypto_inpOuEntryZ", "lighterCrypto_inpOuExitZ"
+          ].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
+          [
+            "chkCondEntryMaStretch", "chkCondEntryBase", "chkCondEntryPeak", "chkCondEntryMaStack5m",
+            "chkCondExitConvergence", "chkCondExitDwell", "chkCondExitBottoming"
+          ].forEach((id) => { const el = lid(id); if (el) delete el.dataset.unsaved; });
           this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
         }
         window.showToast?.(`✅ Live EC2 strategy changed to ${pName} (${payload.strategy_interval}).`, "success");
@@ -2117,7 +2135,7 @@
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
         use_ma_stack: false, use_convergence: true, use_dwell: false, use_bottoming: false,
       };
-      const usesFilters = ["grid", "custom"].includes(currentMode);
+      const usesFilters = true;
       const rules = [
         ["EntryMaStretch", "use_ma_stretch", "Entry trigger"],
         ["EntryBase", "use_base_spacing", "Spacing"],
@@ -2132,9 +2150,9 @@
         const badge = lid(`badgeCond${suffix}`);
         const liveEnabled = liveParams[key] != null ? Boolean(liveParams[key]) : Boolean(defaultConditionToggles[key]);
         if (input) {
-          input.dataset.terminalUnavailable = String(!usesFilters);
-          input.disabled = !usesFilters || Boolean(window.terminalLockManager?.isLocked);
-          input.title = usesFilters ? `${name} strategy condition` : "Not used by this strategy";
+          input.dataset.terminalUnavailable = "false";
+          input.disabled = Boolean(window.terminalLockManager?.isLocked);
+          input.title = `${name} strategy condition`;
         }
         if (badge) {
           const conditionKey = {EntryMaStretch:"entry_z", EntryBase:"entry_spacing", EntryPeak:"entry_rollover",
@@ -2142,14 +2160,14 @@
             ExitDwell:"exit_dwell", ExitBottoming:"exit_bottoming"}[suffix];
           const result = this.latestReplayConditionResult;
           const value = result?.latest_conditions?.[conditionKey];
-          const state = !usesFilters ? "N/A" : !settings[key] ? "OFF"
+          const state = !settings[key] ? "OFF"
             : value == null ? "N/A" : value ? "PASS" : "WAITING";
           badge.textContent = state;
           badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
           badge.title = value == null ? "No completed replay evaluation or open position" :
             `PAPER · ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()}`;
         }
-        if (usesFilters && settings[key] !== liveEnabled)
+        if (settings[key] !== liveEnabled)
           diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
       });
       const matched = diffs.length === 0;
@@ -2331,26 +2349,27 @@
           }
         });
       }
-      if (liveMode === "grid" || liveMode === "custom") {
-        const defaultConditionToggles = {
-          use_ma_stretch: true, use_base_spacing: false, use_peak: false,
-          use_ma_stack: false, use_convergence: true, use_dwell: false, use_bottoming: false,
-        };
-        const filterKeys = {
-          chkCondEntryMaStretch: "use_ma_stretch",
-          chkCondEntryBase: "use_base_spacing",
-          chkCondEntryPeak: "use_peak",
-          chkCondEntryMaStack5m: "use_ma_stack",
-          chkCondExitConvergence: "use_convergence",
-          chkCondExitDwell: "use_dwell",
-          chkCondExitBottoming: "use_bottoming",
-        };
-        Object.entries(filterKeys).forEach(([id, key]) => {
-          const input = lid(id);
-          const liveVal = params[key] != null ? Boolean(params[key]) : Boolean(defaultConditionToggles[key]);
-          if (input) input.checked = liveVal;
-        });
-      }
+      const defaultConditionToggles = {
+        use_ma_stretch: true, use_base_spacing: false, use_peak: false,
+        use_ma_stack: false, use_convergence: true, use_dwell: false, use_bottoming: false,
+      };
+      const filterKeys = {
+        chkCondEntryMaStretch: "use_ma_stretch",
+        chkCondEntryBase: "use_base_spacing",
+        chkCondEntryPeak: "use_peak",
+        chkCondEntryMaStack5m: "use_ma_stack",
+        chkCondExitConvergence: "use_convergence",
+        chkCondExitDwell: "use_dwell",
+        chkCondExitBottoming: "use_bottoming",
+      };
+      Object.entries(filterKeys).forEach(([id, key]) => {
+        const input = lid(id);
+        const liveVal = params[key] != null ? Boolean(params[key]) : Boolean(defaultConditionToggles[key]);
+        if (input) {
+          input.checked = liveVal;
+          delete input.dataset.unsaved;
+        }
+      });
       if (liveMode === "ou_quant") {
         const ouControls = {
           ou_halflife_max: "lighterCrypto_ouHalflifeMax",
@@ -2651,6 +2670,22 @@
         ["lighterCrypto_inputLiveMaxTranches", bot?.max_tranches], ["lighterCrypto_inputLiveMaxSpread", bot?.max_book_spread_bps]].forEach(([id, value]) => {
         const input = $(id);
         if (input && value != null && document.activeElement !== input && input.dataset.unsaved !== "true") input.value = String(value);
+      });
+      const condCheckboxes = {
+        chkCondEntryMaStretch: "use_ma_stretch",
+        chkCondEntryBase: "use_base_spacing",
+        chkCondEntryPeak: "use_peak",
+        chkCondEntryMaStack5m: "use_ma_stack",
+        chkCondExitConvergence: "use_convergence",
+        chkCondExitDwell: "use_dwell",
+        chkCondExitBottoming: "use_bottoming",
+      };
+      Object.entries(condCheckboxes).forEach(([id, key]) => {
+        const input = lid(id);
+        const liveVal = bot?.[key] != null ? Boolean(bot[key]) : (bot?.strategy_params?.[key] != null ? Boolean(bot.strategy_params[key]) : null);
+        if (input && liveVal != null && input.dataset.unsaved !== "true") {
+          input.checked = liveVal;
+        }
       });
       const liveEntryZ = Number(bot?.entry_z ?? 1.4);
       const liveExitZ = Number(bot?.exit_z ?? 0.2);

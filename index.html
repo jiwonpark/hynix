@@ -11333,6 +11333,53 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           localStorage.setItem("skhynix_deployed_strategy", JSON.stringify(deployed));
         } catch(e) {}
 
+        // Gather current condition states and sync to backend /api/trade/update_conditions
+        const conditionCheckboxes = {
+          entry_ma_stretch: $("chkCondEntryMaStretch")?.checked ?? true,
+          entry_base_spread: $("chkCondEntryBase")?.checked ?? true,
+          entry_peak_rollover: $("chkCondEntryPeak")?.checked ?? true,
+          entry_ma_stack_5m: $("chkCondEntryMaStack5m")?.checked ?? true,
+          entry_ma_stack_1h: $("chkCondEntryMaStack1h")?.checked ?? true,
+          entry_adaptive_guard: $("chkCondEntryGuard")?.checked ?? true,
+          exit_convergence: $("chkCondExitConvergence")?.checked ?? true,
+          exit_net_profit: $("chkCondExitNetPnl")?.checked ?? true,
+          exit_dwell_time: $("chkCondExitDwell")?.checked ?? true,
+          exit_ma_stack_5m: $("chkCondExitMaStack5m")?.checked ?? true,
+          exit_ma_stack_1h: $("chkCondExitMaStack1h")?.checked ?? true,
+          exit_bottoming_out: $("chkCondExitBottoming")?.checked ?? true
+        };
+        if (!this.state.conditionToggles) {
+          this.state.conditionToggles = {};
+        }
+        Object.assign(this.state.conditionToggles, conditionCheckboxes);
+        this.saveStorage();
+
+        const origin = window.location.origin;
+        const endpoints = [
+          `${origin}/skhynix/api/trade/update_conditions`,
+          `${origin}/api/trade/update_conditions`,
+          `http://localhost:8000/api/trade/update_conditions`
+        ];
+        this.pendingConditionWrites = (this.pendingConditionWrites || 0) + 1;
+        try {
+          for (const url of endpoints) {
+            try {
+              const res = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(conditionCheckboxes),
+                signal: AbortSignal.timeout(5000)
+              });
+              if (res.ok && (await res.json()).success) break;
+            } catch (e) {}
+          }
+        } finally {
+          this.pendingConditionWrites -= 1;
+          if (!this.pendingConditionWrites && typeof this.fetchHedgedStatus === "function") {
+            await this.fetchHedgedStatus();
+          }
+        }
+
         this.renderDeployedStrategyCard();
         this.updateSignalApprover();
         this.logDaemonEvent(`Deployed strategy [${deployed.assetName}] to trading bot.`, "success");
@@ -13475,11 +13522,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const chk = $(chkId);
           const checkedState = mandatory && ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state"].includes(key) ? true : on;
           if (chk) {
-            if (this.pendingWarningKey !== key && chk.checked !== checkedState) {
+            if (!this.pendingConditionWrites && this.pendingWarningKey !== key && chk.checked !== checkedState) {
               chk.checked = checkedState;
             }
             chk.dataset.terminalUnavailable = String(mandatory);
-            chk.disabled = mandatory || terminalLockManager.isLocked;
+            chk.disabled = mandatory || (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked);
           }
           const row = $(rowId);
           if (row) row.classList.toggle("disabled-cond", !liveOn);

@@ -54,11 +54,14 @@ engine.botState.strategy_params.entry_z=1.8; engine.botState.strategy_params.exi
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
 const liveOuParams = {...engine.botState.strategy_params, entry_z:2.1, exit_z:.35};
-// OU ignores these checkboxes; turning one on cannot change match status.
+// Checkboxes now actively control replay and live across all strategies
 elements.get('lighter_chkCondEntryPeak').checked=true;
 engine.updateRulesMatchStatus();
+assert.match(pill.textContent,/Peak rollover ON \(live OFF\)/);
+assert.equal(elements.get('lighter_chkCondEntryPeak').disabled,false);
+elements.get('lighter_chkCondEntryPeak').checked=false;
+engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
-assert.equal(elements.get('lighter_chkCondEntryPeak').disabled,true);
 elements.set('lighter_ouUseMinDeviation', {checked:false});
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/ou_use_min_abs_deviation: false ≠ true/);
@@ -68,6 +71,7 @@ engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/LIVE-MATCHED SIGNALS/);
 engine.currentParadigm='grid'; engine.botState.strategy_mode='grid';
 engine.botState.strategy_params={entry_z:1.5,exit_z:.25};
+elements.get('lighter_chkCondEntryPeak').checked=true;
 engine.updateRulesMatchStatus();
 assert.match(pill.textContent,/Peak rollover ON \(live OFF\)/);
 elements.get('lighter_chkCondEntryPeak').checked=false;
