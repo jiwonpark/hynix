@@ -4906,9 +4906,9 @@
   <script src="strategy-execution-chart.js?v=20261004_exact_1"></script>
   <script src="strategy-lab.js?v=20261009_triangle_fresh"></script>
   <script src="terminal-common.js?v=20261010_tab5_1"></script>
-  <script src="lighter-tab.js?v=20261003_sync_4"></script>
-  <script src="crypto-tab.js?v=20261010_tab5_1"></script>
-  <script src="lighter-crypto-tab.js?v=20261010_lighter_crypto_3"></script>
+  <script src="lighter-tab.js?v=20261010_unlock_1"></script>
+  <script src="crypto-tab.js?v=20261010_unlock_1"></script>
+  <script src="lighter-crypto-tab.js?v=20261010_unlock_1"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -11117,22 +11117,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const actionControls = document.querySelectorAll("#tabContentTrading .terminal-action-control, #tabContentLighter .terminal-action-control, #tabContentCrypto .terminal-action-control, #tabContentLighterCrypto .terminal-action-control");
         actionControls.forEach(ctrl => {
           const updateElem = (el) => {
-            if (el.id === "lighterLiveMode") {
+            if (el.dataset.terminalUnavailable === "true") {
+              el.disabled = true;
+            } else if (!locked && (el.id === "btnStepTranche" || el.id === "btnReduceTranche")) {
+              const status = window.tradingEngine?.state?.hedgedStatus;
+              const criteria = status?.auto_tranche_criteria;
+              const hasOpenTranche = Number(status?.speculative_tranches_active ?? status?.tranches_active ?? 0) > 0;
+              el.disabled = !status?.authenticated || !(el.id === "btnStepTranche" ? criteria?.can_scale_in : (hasOpenTranche && criteria?.can_take_profit));
+            } else {
               el.disabled = locked;
-              return;
             }
-            if (el.id === "btnReduceTranche" && !locked) {
-              return;
-            }
-            if (el.id && el.id.startsWith("chkCondEntry") && (el.id === "chkCondEntryCapacity" || el.id === "chkCondEntryLeverage" || el.id === "chkCondEntryMargin" || el.id === "chkCondEntryEngine")) {
-              el.disabled = true;
-              return;
-            }
-            if (el.id && el.id.startsWith("chkCondExit") && (el.id === "chkCondExitActive" || el.id === "chkCondExitPosition")) {
-              el.disabled = true;
-              return;
-            }
-            el.disabled = locked;
           };
 
           if (ctrl.tagName === "BUTTON" || ctrl.tagName === "INPUT" || ctrl.tagName === "SELECT") {
@@ -11141,6 +11135,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             ctrl.querySelectorAll("button, input, select").forEach(updateElem);
           }
         });
+        window.lighterEngine?.applyExecutionLock?.();
+        window.cryptoEngine?.applyExecutionLock?.();
+        window.lighterCryptoEngine?.applyExecutionLock?.();
       }
     };
     window.terminalLockManager = terminalLockManager;
@@ -13481,7 +13478,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             if (this.pendingWarningKey !== key && chk.checked !== checkedState) {
               chk.checked = checkedState;
             }
-            chk.disabled = mandatory;
+            chk.dataset.terminalUnavailable = String(mandatory);
+            chk.disabled = mandatory || terminalLockManager.isLocked;
           }
           const row = $(rowId);
           if (row) row.classList.toggle("disabled-cond", !liveOn);

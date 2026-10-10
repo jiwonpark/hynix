@@ -12,7 +12,7 @@ elements.set('cryptoMatchPill', {
 elements.set('crypto_btnMatchLiveReplay', {});
 for (const suffix of ['EntryMaStretch', 'EntryBase', 'EntryPeak', 'EntryMaStack5m',
   'ExitConvergence', 'ExitDwell', 'ExitBottoming']) {
-  elements.set(`crypto_chkCond${suffix}`, {checked: true});
+  elements.set(`crypto_chkCond${suffix}`, {checked: true, dataset: {}});
 }
 const context = {
   window: {},

@@ -904,7 +904,7 @@
         const input = lid(id);
         if (!input) return;
         input.onchange = null;
-        input.disabled = false;
+        input.disabled = Boolean(window.terminalLockManager?.isLocked);
         input.addEventListener("change", () => {
           this.updateRulesMatchStatus();
           this.runBacktest();
@@ -923,7 +923,7 @@
       ["chkCondEntryMaStack1h", "chkCondEntryCapacity", "chkCondEntryLeverage",
        "chkCondEntryMargin", "chkCondEntryEngine", "chkCondEntryGuard", "chkCondExitActive",
        "chkCondExitNetPnl", "chkCondExitMaStack5m", "chkCondExitMaStack1h", "chkCondExitPosition"].forEach((id) => {
-        const input = lid(id); if (input) { input.disabled = true; input.title = "Not a Tab 4 replay condition; live exchange safeguards are shown separately"; }
+        const input = lid(id); if (input) { input.dataset.terminalUnavailable = "true"; input.disabled = true; input.title = "Not a Tab 4 replay condition; live exchange safeguards are shown separately"; }
       });
     },
 
@@ -1067,6 +1067,7 @@
       this.runBacktest();
       this.updateRulesMatchStatus();
       this.updateDeployButtonState();
+      this.applyExecutionLock();
       if (options.deployLive) await this.deployLiveStrategy({ skipConfirm: true, source: "regime" });
     },
 
@@ -1521,6 +1522,26 @@
         btnLabel.textContent = `⚡ Deploy ${currentName} to Live Bot`;
         btn.style.background = "#0284c7";
       }
+    },
+
+    applyExecutionLock() {
+      const locked = window.terminalLockManager?.isLocked !== false;
+      const botEnabled = Boolean(this.botState?.enabled);
+      const recovering = Boolean(this.botState?.recovery_required);
+      const gridSelected = (this.currentParadigm || "grid") === "grid";
+      const toggle = lid("chkAutoPeriodic48h");
+      if (toggle) toggle.disabled = locked || (!this.liveVenue?.execution_enabled && !botEnabled) || (recovering && !botEnabled);
+      ["btnDeployLiveStrategy", "inputLiveGridEntryZ", "inputLiveGridExitZ",
+       "inputLiveMaxTranches"].forEach((id) => {
+        const control = lid(id);
+        if (control) control.disabled = locked || !gridSelected || botEnabled;
+      });
+      ["inputLiveMaxSpread", "inputLiveTradeRate", "btnSaveLiveCooldown"].forEach((id) => {
+        const control = lid(id);
+        if (control) control.disabled = locked;
+      });
+      const reconcile = lid("btnReconcileBot");
+      if (reconcile) reconcile.disabled = locked || !recovering;
     },
 
     liveStrategyPayload(mode = this.currentParadigm || "grid") {
@@ -2083,7 +2104,8 @@
         const input = lid(`chkCond${suffix}`);
         const badge = lid(`badgeCond${suffix}`);
         if (input) {
-          input.disabled = !usesFilters;
+          input.dataset.terminalUnavailable = String(!usesFilters);
+          input.disabled = !usesFilters || Boolean(window.terminalLockManager?.isLocked);
           input.title = usesFilters ? "Paper replay filter" : "Not used by this strategy";
         }
         if (badge) {
@@ -2402,6 +2424,7 @@
         navLiveBadge.textContent = `${isEnabled ? "● ACTIVE" : "○ PAUSED"} BOT: ${stratName.toUpperCase()} (${stratInterval})`;
       }
       this.updateDeployButtonState();
+      this.applyExecutionLock();
       if (!this._userSelectedParadigm && stratMode && this.currentParadigm !== stratMode && this.paradigms[stratMode]) {
         this.setParadigm(stratMode);
       }

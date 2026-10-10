@@ -780,7 +780,7 @@
         const input = lid(id);
         if (!input) return;
         input.onchange = null;
-        input.disabled = false;
+        input.disabled = Boolean(window.terminalLockManager?.isLocked);
         input.addEventListener("change", () => {
           this.updateRulesMatchStatus();
           this.runBacktest();
@@ -799,7 +799,7 @@
       ["chkCondEntryMaStack1h", "chkCondEntryCapacity", "chkCondEntryLeverage",
        "chkCondEntryMargin", "chkCondEntryEngine", "chkCondEntryGuard", "chkCondExitActive",
        "chkCondExitNetPnl", "chkCondExitMaStack5m", "chkCondExitMaStack1h", "chkCondExitPosition"].forEach((id) => {
-        const input = lid(id); if (input) { input.disabled = true; input.title = "Available when Lighter live account execution is configured"; }
+        const input = lid(id); if (input) { input.dataset.terminalUnavailable = "true"; input.disabled = true; input.title = "Available when Lighter live account execution is configured"; }
       });
     },
 
@@ -973,6 +973,7 @@
       this.runBacktest();
       this.updateRulesMatchStatus();
       this.updateDeployButtonState();
+      this.applyExecutionLock();
     },
 
     renderParadigmDetail(mode) {
@@ -1447,6 +1448,20 @@
         btnLabel.textContent = `⚡ Deploy ${currentName} to Live Bot`;
         btn.style.background = "#0284c7";
       }
+    },
+
+    applyExecutionLock() {
+      const locked = window.terminalLockManager?.isLocked !== false;
+      const botEnabled = Boolean(this.botState?.enabled);
+      const unavailable = !this.liveVenue?.execution_enabled && !botEnabled;
+      const recovering = Boolean(this.botState?.recovery_required) && !botEnabled;
+      const toggle = lid("chkAutoPeriodic48h");
+      if (toggle) toggle.disabled = locked || unavailable || recovering;
+      ["btnDeployLiveStrategy", "inputLiveTradeRate", "btnSaveLiveCooldown",
+       "inputLiveMinProfitPct", "btnSaveLiveMinProfit"].forEach((id) => {
+        const control = lid(id);
+        if (control) control.disabled = locked;
+      });
     },
 
     ouConditionSettings() {
@@ -1992,7 +2007,8 @@
         const input = lid(`chkCond${suffix}`);
         const badge = lid(`badgeCond${suffix}`);
         if (input) {
-          input.disabled = !usesFilters;
+          input.dataset.terminalUnavailable = String(!usesFilters);
+          input.disabled = !usesFilters || Boolean(window.terminalLockManager?.isLocked);
           input.title = usesFilters ? "Paper replay filter" : "Not used by this strategy";
         }
         if (badge) {
@@ -2330,6 +2346,7 @@
         navLiveBadge.textContent = `● LIVE BOT: ${stratName.toUpperCase()} (${stratInterval})`;
       }
       this.updateDeployButtonState();
+      this.applyExecutionLock();
       if (!this._userSelectedParadigm && stratMode && this.currentParadigm !== stratMode && this.paradigms[stratMode]) {
         this.setParadigm(stratMode);
       }
