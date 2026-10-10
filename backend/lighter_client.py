@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 import time
+from decimal import Decimal, ROUND_DOWN
 from typing import Any, Dict, List, Optional
 
 import aiohttp
@@ -37,6 +38,8 @@ class LighterClient:
         self._ws_account_time = 0.0
         self._ws_connected = False
         self._ws_last_error: Optional[str] = None
+        # Serialize account-wide capacity checks and multi-bot submissions.
+        self.execution_lock = asyncio.Lock()
 
     @staticmethod
     def _clone(value: Any) -> Any:
@@ -166,7 +169,7 @@ class LighterClient:
             positions = list(positions.values())
         return self._clone(positions) if isinstance(positions, list) else None
 
-    async def _account_snapshot(self) -> Optional[Dict[str, Any]]:
+    async def _account_snapshot(self, *, fresh: bool = False) -> Optional[Dict[str, Any]]:
         creds = self.get_credentials() or {}
         address = creds.get("l1_address")
         if not address:
@@ -177,7 +180,7 @@ class LighterClient:
             accounts = payload.get("accounts") or []
             return accounts[0] if accounts else None
 
-        return await self._cached(f"account:{address}", 3.0, load)
+        return await load() if fresh else await self._cached(f"account:{address}", 3.0, load)
 
     def get_credentials(self) -> Optional[Dict[str, Any]]:
         if not self.CREDENTIALS_FILE.exists():
@@ -285,21 +288,22 @@ class LighterClient:
         if self._session and not self._session.closed:
             await self._session.close()
 
-    async def positions(self) -> List[Dict[str, Any]]:
+    async def positions(self, *, fresh: bool = False) -> List[Dict[str, Any]]:
         """Return the configured account's open positions without exposing credentials."""
-        streamed = self._stream_positions()
+        streamed = None if fresh else self._stream_positions()
         if streamed is not None:
             return streamed
         creds = self.get_credentials() or {}
         address = creds.get("l1_address")
         if not address:
             return []
-        account = await self._account_snapshot()
+        account = await self._account_snapshot(fresh=fresh)
         return list((account or {}).get("positions") or [])
 
     async def create_market_order(
         self, market_id: int, base_amount: float, reference_price: float,
         is_ask: bool, *, reduce_only: bool = False, max_slippage: float = 0.006,
+        client_order_index: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Submit one IOC market order using explicit size/price precision guards."""
         if base_amount <= 0 or reference_price <= 0:
@@ -314,16 +318,24 @@ class LighterClient:
         size_decimals = int(detail["supported_size_decimals"])
         price_decimals = int(detail["supported_price_decimals"])
         minimum = float(detail.get("min_base_amount") or 0)
-        quantized_size = int(base_amount * (10 ** size_decimals))
+        quantized_size = int((Decimal(str(base_amount)) * (10 ** size_decimals)).to_integral_value(rounding=ROUND_DOWN))
         if quantized_size <= 0 or quantized_size < int(minimum * (10 ** size_decimals)):
             raise ValueError(f"Lighter market {market_id} order is below its minimum size")
         protected_price = reference_price * (1 - max_slippage if is_ask else 1 + max_slippage)
         price_int = int(round(protected_price * (10 ** price_decimals)))
-        client_order_index = int(time.time_ns() % self.MAX_CLIENT_ORDER_INDEX) or 1
-        _, response, error = await signer.create_market_order(
-            market_id, client_order_index, quantized_size, price_int, is_ask,
-            reduce_only=reduce_only,
-        )
+        client_order_index = client_order_index or int(time.time_ns() % self.MAX_CLIENT_ORDER_INDEX) or 1
+        try:
+            _, response, error = await signer.create_market_order(
+                market_id, client_order_index, quantized_size, price_int, is_ask,
+                reduce_only=reduce_only,
+            )
+        finally:
+            # A fill can precede the account stream update. The next capacity
+            # check must fetch the new account rather than an old snapshot.
+            self._ws_account = None
+            for key in list(self._cache):
+                if key.startswith("account:"):
+                    self._cache.pop(key, None)
         if error:
             raise RuntimeError(f"Lighter order rejected: {error}")
         accepted = {
@@ -340,6 +352,26 @@ class LighterClient:
         }
         fill = await self.execution_fill(client_order_index, market_id, accepted["base_amount"])
         return {**accepted, **fill}
+
+    async def account_order(self, client_order_index: int) -> Optional[Dict[str, Any]]:
+        """Read one submitted order by its persisted client index for recovery."""
+        creds = self.get_credentials() or {}
+        signer = self.get_signer()
+        if creds.get("account_index") is None or signer is None:
+            raise RuntimeError("Lighter account authentication is unavailable")
+        auth, error = signer.create_auth_token_with_expiry(
+            api_key_index=int(creds.get("api_key_index", 0))
+        )
+        if error:
+            raise RuntimeError(f"Lighter order lookup authentication failed: {error}")
+        payload = await self.request(
+            "/api/v1/accountOrders",
+            {"client_order_indexes": str(client_order_index),
+             "account_index": int(creds["account_index"])},
+            headers={"authorization": auth},
+        )
+        orders = payload.get("orders") or []
+        return orders[0] if orders else None
 
     async def execution_fill(
         self, client_order_index: int, market_id: int, expected_size: float,
@@ -358,6 +390,17 @@ class LighterClient:
             return {"fill_confirmed": False}
 
         expected_key = str(client_order_index)
+        try:
+            detail = await self.market_detail(market_id)
+            size_step = 10 ** -int(detail["supported_size_decimals"])
+            fill_tolerance = max(size_step / 2, expected_size * 0.00001)
+        except Exception:
+            # Preserve existing pair-market recovery when metadata is briefly
+            # unavailable. New crypto markets must have precision metadata.
+            if int(market_id) not in {self.ADR_MARKET_ID, self.DOMESTIC_MARKET_ID}:
+                return {"fill_confirmed": False}
+            fill_tolerance = max(0.0002 if int(market_id) == self.ADR_MARKET_ID else 0.0011,
+                                 expected_size * 0.005)
         for attempt in range(12):
             try:
                 payload = await self.request(
@@ -377,7 +420,6 @@ class LighterClient:
                     or str(trade.get("bid_client_id_str") or trade.get("bid_client_id") or "") == expected_key
                 ]
                 filled_size = sum(abs(float(trade.get("size", 0.0) or 0.0)) for trade in matches)
-                fill_tolerance = max(0.0002 if int(market_id) == 216 else 0.0011, expected_size * 0.005)
                 if matches and filled_size >= expected_size - fill_tolerance:
                     usd_amount = sum(abs(float(trade.get("usd_amount", 0.0) or 0.0)) for trade in matches)
                     realized_pnl = 0.0
@@ -439,7 +481,7 @@ class LighterClient:
                 raise TimeoutError(f"Lighter GET {endpoint} timed out") from None
         raise RuntimeError("Lighter API retry loop exhausted")
 
-    async def market_detail(self, market_id: int) -> Dict[str, Any]:
+    async def market_detail(self, market_id: int, *, fresh: bool = False) -> Dict[str, Any]:
         async def load() -> Dict[str, Any]:
             payload = await self.request("/api/v1/orderBookDetails", {"market_id": market_id})
             details = payload.get("order_book_details") or []
@@ -447,7 +489,7 @@ class LighterClient:
                 raise RuntimeError(f"Lighter market {market_id} is unavailable")
             return details[0]
 
-        return await self._cached(f"market-detail:{market_id}", 3600.0, load)
+        return await load() if fresh else await self._cached(f"market-detail:{market_id}", 3600.0, load)
 
     async def order_book(self, market_id: int, limit: int = 20, *, fresh: bool = False) -> Dict[str, Any]:
         bounded_limit = min(100, max(1, limit))

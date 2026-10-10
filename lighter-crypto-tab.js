@@ -2,8 +2,8 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
-  const STORAGE_KEY = "skhynix_crypto_virtual_ledger_v2";
-  const STRATEGY_STORAGE_KEY = "skhynix_crypto_selected_strategy";
+  const STORAGE_KEY = "skhynix_lighterCrypto_virtual_ledger_v2";
+  const STRATEGY_STORAGE_KEY = "skhynix_lighterCrypto_selected_strategy";
   const safeStorage = {
     getItem: (key) => {
       try { return typeof localStorage !== "undefined" ? localStorage.getItem(key) : null; } catch (_) { return null; }
@@ -12,7 +12,7 @@
       try { if (typeof localStorage !== "undefined") localStorage.setItem(key, val); } catch (_) {}
     }
   };
-  const lid = (id) => $(`crypto_${id}`);
+  const lid = (id) => $(`lighterCrypto_${id}`);
   const KST_TIME_ZONE = "Asia/Seoul";
 
   function formatKstDateTime(value, includeDate = true) {
@@ -61,7 +61,7 @@
     throw lastError || new Error("API unavailable");
   }
 
-  const cryptoEngine = {
+  const lighterCryptoEngine = {
     initialized: false,
     chart: null,
     series: null,
@@ -79,8 +79,8 @@
     selectedExecutionMarkerKey: null,
     selectedPairKey: null,
     rawExecutionMarkers: [],
-    selectedSymbol: "BTCUSDT",
-    supportedSymbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"],
+    selectedSymbol: "BTC",
+    supportedSymbols: ["BTC", "ETH", "SOL", "DOGE", "XRP"],
     currentRatio: 68000.0,
     currentAdrPrice: null,
     currentDomesticPrice: null,
@@ -91,7 +91,7 @@
     backtestMarkers: [],
     showActualMarkers: true,
     showVirtualMarkers: true,
-    groupTradesAsRange: (typeof localStorage !== "undefined" && localStorage.getItem("crypto_group_trades_as_range") === "true"),
+    groupTradesAsRange: (typeof localStorage !== "undefined" && localStorage.getItem("lighterCrypto_group_trades_as_range") === "true"),
     interval: "5m",
     smallTrendInterval: "5m",
     bigTrendInterval: "1h",
@@ -388,7 +388,7 @@
     formatCryptoPrice(price, symbol = this.selectedSymbol) {
       const p = Number(price);
       if (!Number.isFinite(p)) return "$—";
-      const sym = symbol || this.selectedSymbol || "BTCUSDT";
+      const sym = symbol || this.selectedSymbol || "BTC";
       if (sym.startsWith("DOGE")) return `$${p.toFixed(5)}`;
       if (sym.startsWith("XRP")) return `$${p.toFixed(4)}`;
       if (sym.startsWith("SOL")) return `$${p.toFixed(2)}`;
@@ -399,7 +399,7 @@
     formatCryptoQty(qty, symbol = this.selectedSymbol) {
       const q = Number(qty);
       if (!Number.isFinite(q)) return "0";
-      const sym = symbol || this.selectedSymbol || "BTCUSDT";
+      const sym = symbol || this.selectedSymbol || "BTC";
       if (sym.startsWith("DOGE") || sym.startsWith("XRP")) return q.toFixed(1);
       if (sym.startsWith("SOL")) return q.toFixed(2);
       if (sym.startsWith("ETH")) return q.toFixed(3);
@@ -409,8 +409,8 @@
     async selectSymbol(sym) {
       if (!sym) return;
       this.selectedSymbol = sym;
-      ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"].forEach((s) => {
-        const btn = $(`crypto_sym_${s}`);
+      ["BTC", "ETH", "SOL", "DOGE", "XRP"].forEach((s) => {
+        const btn = $(`lighterCrypto_sym_${s}`);
         if (btn) {
           const isSel = s === sym;
           btn.style.borderColor = isSel ? "#7c3aed" : "#cbd5e1";
@@ -426,39 +426,39 @@
     },
 
     renderSymbolSelector() {
-      const parent = $("tabContentCrypto")?.querySelector("#crypto_secExecutionTerminal");
-      if (!parent || $("crypto_symbolSelectorBar")) return;
+      const parent = $("tabContentLighterCrypto")?.querySelector("#lighterCrypto_secExecutionTerminal");
+      if (!parent || $("lighterCrypto_symbolSelectorBar")) return;
       const bar = document.createElement("div");
-      bar.id = "crypto_symbolSelectorBar";
+      bar.id = "lighterCrypto_symbolSelectorBar";
       bar.style.cssText = "display:flex;justify-content:space-between;align-items:center;background:#ffffff;border:1.5px solid #cbd5e1;border-radius:9px;padding:8px 14px;margin-bottom:12px;gap:8px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,0.04);";
       bar.innerHTML = `
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <span style="font-size:11px;font-weight:800;color:#475569;letter-spacing:0.5px;">TRADED ASSET:</span>
-          <button id="crypto_sym_BTCUSDT" class="cryptoSymBtn" type="button" data-symbol="BTCUSDT" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:800;cursor:pointer;">⚡ BTC/USDT (Bitcoin)</button>
-          <button id="crypto_sym_ETHUSDT" class="cryptoSymBtn" type="button" data-symbol="ETHUSDT" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">💎 ETH/USDT (Ethereum)</button>
-          <button id="crypto_sym_SOLUSDT" class="cryptoSymBtn" type="button" data-symbol="SOLUSDT" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">☀️ SOL/USDT (Solana)</button>
-          <button id="crypto_sym_DOGEUSDT" class="cryptoSymBtn" type="button" data-symbol="DOGEUSDT" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🐶 DOGE/USDT (Dogecoin)</button>
-          <button id="crypto_sym_XRPUSDT" class="cryptoSymBtn" type="button" data-symbol="XRPUSDT" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">💧 XRP/USDT (Ripple)</button>
+          <button id="lighterCrypto_sym_BTC" class="cryptoSymBtn" type="button" data-symbol="BTC" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:800;cursor:pointer;">⚡ BTC/USD (Bitcoin)</button>
+          <button id="lighterCrypto_sym_ETH" class="cryptoSymBtn" type="button" data-symbol="ETH" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">💎 ETH/USD (Ethereum)</button>
+          <button id="lighterCrypto_sym_SOL" class="cryptoSymBtn" type="button" data-symbol="SOL" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">☀️ SOL/USD (Solana)</button>
+          <button id="lighterCrypto_sym_DOGE" class="cryptoSymBtn" type="button" data-symbol="DOGE" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🐶 DOGE/USD (Dogecoin)</button>
+          <button id="lighterCrypto_sym_XRP" class="cryptoSymBtn" type="button" data-symbol="XRP" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">💧 XRP/USD (Ripple)</button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
-          <span id="crypto_valLivePriceBadge" style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:6px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;">
-            BTCUSDT: $68,450.00
+          <span id="lighterCrypto_valLivePriceBadge" style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:6px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;">
+            BTC: $68,450.00
           </span>
         </div>
       `;
       parent.parentNode.insertBefore(bar, parent);
-      ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"].forEach((sym) => {
-        const btn = $(`crypto_sym_${sym}`);
+      ["BTC", "ETH", "SOL", "DOGE", "XRP"].forEach((sym) => {
+        const btn = $(`lighterCrypto_sym_${sym}`);
         if (btn) btn.addEventListener("click", () => this.selectSymbol(sym));
       });
     },
 
     labelTerminal() {
-      const sym = this.selectedSymbol || "BTCUSDT";
-      const base = sym.replace("USDT", "");
+      const sym = this.selectedSymbol || "BTC";
+      const base = sym.replace("USD", "");
       this.renderSymbolSelector();
       this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto Terminal · ${sym}`);
-      this.setText("lblDaemonAuthBadge", "CHECKING BINANCE FUTURES");
+      this.setText("lblDaemonAuthBadge", "CHECKING LIGHTER PERPETUALS");
       this.setText("lblDaemonUpbitBadge", "PAPER REPLAY · LIVE CAP 1x");
       this.setText("valDeployedStrategyName", `⚡ ${sym} Single-Leg Quantitative Engine`);
       this.setText("valDeployedEngine", "Live Grid signal on completed candles");
@@ -469,7 +469,7 @@
       this.setText("valDeployedSpeed", "Configurable trade execution rate (0.2–10/min)");
       this.setText("valDeployedMinProfit", "Exit |Z| ≤ 0.20σ");
       this.setText("valDeployedCost", "Paper replay excludes fees; live orders use exchange fills");
-      const cryptoTab = $("tabContentCrypto");
+      const cryptoTab = $("tabContentLighterCrypto");
       const execHeader = lid("secExecutionTerminal")?.querySelector(".chartHeader > span");
       if (execHeader) execHeader.textContent = "Single-leg Futures · no hedge";
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner");
@@ -500,9 +500,9 @@
       const priceLegend = cryptoTab?.querySelector(".assetPriceLegendBar");
       if (priceLegend) {
         priceLegend.querySelector("span").textContent = "📊 CONTRACT PRICE:";
-        const firstAsset = priceLegend.querySelector("#crypto_legAdrPrice");
+        const firstAsset = priceLegend.querySelector("#lighterCrypto_legAdrPrice");
         if (firstAsset) firstAsset.textContent = `● ${sym} perpetual`;
-        const secondAsset = priceLegend.querySelector("#crypto_legStockPrice");
+        const secondAsset = priceLegend.querySelector("#lighterCrypto_legStockPrice");
         if (secondAsset) secondAsset.style.display = "none";
       }
       const replayPrice = lid("valShortTermCurrentParity")?.parentElement;
@@ -542,7 +542,7 @@
       if (pillsContainer) pillsContainer.innerHTML = `<span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 800;">${sym} PERP</span>`;
       this.setText("lblUpbitEquity", "Single-Leg Perpetual");
       this.setText("badgeUpbitSource", "SINGLE-LEG");
-      this.setText("valUpbitEquity", `${sym} (${base} / USDT)`);
+      this.setText("valUpbitEquity", `${sym} (${base} / USD)`);
       this.setText("titleExecutionTerminal", `⚡ 1-Click ${sym} Quantitative Execution`);
       this.setText("badgeExecMode", "SINGLE-LEG PERPETUAL QUANTITATIVE ENGINE");
       this.setText("lblHedgedSyncBadge", "CRYPTO BOT PAUSED");
@@ -550,7 +550,7 @@
       this.setText("lblShortTermSubtitle", "Chart interval, strategy regimes, condition switches, and Rerun affect the historical paper simulation only.");
       this.setText("lblCritScaleInTitle", "➕ Dip Scale-In (Buy Rung / Lower Harvester)");
       this.setText("lblCritTPTitle", "🎯 Rebalance & Take-Profit (Mean Reversion)");
-      this.setText("lblOrderNotional", "Order Notional (USDT)");
+      this.setText("lblOrderNotional", "Order Notional (USD)");
       this.setText("lblStepTrancheSize", `➕ Buy / Long ${sym}`);
       this.setText("lblStepTrancheSub", "SIMULATED");
       this.setText("lblReduceTrancheText", `Close ${sym} Tranches`);
@@ -639,14 +639,14 @@
         frame.innerHTML = "";
         this.executionChartFrame = StrategyExecutionChartFrame.mount({
           container: frame,
-          id: "cryptoShortTermSpreadChart",
+          id: "lighterCryptoShortTermSpreadChart",
           showAssetPane: true,
           assetHeight: 185,
           ids: {
-            action: "crypto_btnRerunDynamicBacktest", actual: "crypto_legendActualTrades", virtual: "crypto_legendVirtualTrades",
-            status: "crypto_dynamicBacktestStatus", secondaryStatus: "crypto_macroPolicyStatus",
-            host: "crypto_shortTermSpreadChartHost", legend: "crypto_shortTermChartLegend", sync: "crypto_lblShortTermChartSync",
-            assetPaneShell: "crypto_shortTermAssetPaneShell", assetHost: "crypto_shortTermAssetHost", assetDetails: "crypto_shortTermAssetDetails"
+            action: "lighterCrypto_btnRerunDynamicBacktest", actual: "lighterCrypto_legendActualTrades", virtual: "lighterCrypto_legendVirtualTrades",
+            status: "lighterCrypto_dynamicBacktestStatus", secondaryStatus: "lighterCrypto_macroPolicyStatus",
+            host: "lighterCrypto_shortTermSpreadChartHost", legend: "lighterCrypto_shortTermChartLegend", sync: "lighterCrypto_lblShortTermChartSync",
+            assetPaneShell: "lighterCrypto_shortTermAssetPaneShell", assetHost: "lighterCrypto_shortTermAssetHost", assetDetails: "lighterCrypto_shortTermAssetDetails"
           },
           title: "PAPER REPLAY · INTERVAL-DEPENDENT · NOT LIVE EXECUTION",
           action: { label: "Rerun Paper", onClick: () => this.runBacktest() },
@@ -658,7 +658,7 @@
           },
           status: "PAPER ONLY · Select a strategy and interval, then rerun",
           description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
-          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="crypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="crypto_valShortTermMa7">—</strong></span><span id="crypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="crypto_valShortTermMa24">—</strong></span><span id="crypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="crypto_valShortTermMa60">—</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="crypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="crypto_valSelectedMinProfit">—</strong></span>',
+          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="lighterCrypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighterCrypto_valShortTermMa7">—</strong></span><span id="lighterCrypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighterCrypto_valShortTermMa24">—</strong></span><span id="lighterCrypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighterCrypto_valShortTermMa60">—</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="lighterCrypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="lighterCrypto_valSelectedMinProfit">—</strong></span>',
         });
         const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
         if (replayAssetLegend) {
@@ -669,24 +669,24 @@
         }
         [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
         const chartHost = lid("shortTermSpreadChartHost");
-        if (chartHost && !$("cryptoTrendOverlay")) {
+        if (chartHost && !$("lighterCryptoTrendOverlay")) {
           chartHost.style.position = "relative";
           const bands = document.createElement("div");
-          bands.id = "cryptoTrendBandLayer";
+          bands.id = "lighterCryptoTrendBandLayer";
           bands.style.cssText = "position:absolute;z-index:2;inset:0 0 26px 0;overflow:hidden;pointer-events:none";
           chartHost.appendChild(bands);
           const overlay = document.createElement("div");
-          overlay.id = "cryptoTrendOverlay";
+          overlay.id = "lighterCryptoTrendOverlay";
           overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
-          overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
+          overlay.innerHTML = '<span id="lighterCryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="lighterCryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterCryptoTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="lighterCryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterCryptoTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
           chartHost.appendChild(overlay);
-          this.bindMatchPill(overlay.querySelector("#cryptoMatchPill"));
+          this.bindMatchPill(overlay.querySelector("#lighterCryptoMatchPill"));
 
-          $("cryptoSelSmallTrend")?.addEventListener("change", (e) => {
+          $("lighterCryptoSelSmallTrend")?.addEventListener("change", (e) => {
             this.smallTrendInterval = e.target.value;
             this.fetchAndRenderTrends();
           });
-          $("cryptoSelBigTrend")?.addEventListener("change", (e) => {
+          $("lighterCryptoSelBigTrend")?.addEventListener("change", (e) => {
             this.bigTrendInterval = e.target.value;
             this.fetchAndRenderTrends();
           });
@@ -694,9 +694,9 @@
       }
 
       const replayControls = lid("shortTermExecutionSection")?.firstElementChild?.lastElementChild;
-      if (replayControls && !$("crypto_btnMatchLiveReplay")) {
+      if (replayControls && !$("lighterCrypto_btnMatchLiveReplay")) {
         const matchButton = document.createElement("button");
-        matchButton.id = "crypto_btnMatchLiveReplay";
+        matchButton.id = "lighterCrypto_btnMatchLiveReplay";
         matchButton.type = "button";
         matchButton.textContent = "Align to saved bot thresholds";
         matchButton.style.cssText = "padding:5px 10px;border:1px solid #f59e0b;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800;cursor:pointer";
@@ -711,7 +711,7 @@
       // Inject Direction Dropdown & Paper Indicator if not already present
       if (entry && !lid("selTrancheDirection") && entry.parentNode) {
         const dirSelect = document.createElement("select");
-        dirSelect.id = "crypto_selTrancheDirection";
+        dirSelect.id = "lighterCrypto_selTrancheDirection";
         dirSelect.style.cssText = "height:38px;padding:0 10px;font-size:12px;font-weight:700;background:#fff;color:#0f172a;border:1.5px solid #0284c7;border-radius:6px;cursor:pointer;";
         dirSelect.innerHTML = `
           <option value="auto">⚡ Auto (Signal Based)</option>
@@ -721,17 +721,17 @@
         entry.parentNode.insertBefore(dirSelect, entry);
 
         const paperBadge = document.createElement("span");
-        paperBadge.id = "crypto_paperBadge";
+        paperBadge.id = "lighterCrypto_paperBadge";
         paperBadge.style.cssText = "display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:800;background:#fef3c7;color:#92400e;border:1px solid #fde68a;";
         paperBadge.textContent = "PAPER SIMULATION ONLY";
         entry.parentNode.appendChild(paperBadge);
 
         const enforceLabel = document.createElement("label");
-        enforceLabel.id = "crypto_lblEnforceConditions";
+        enforceLabel.id = "lighterCrypto_lblEnforceConditions";
         enforceLabel.style.cssText = "display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#334155;cursor:pointer;background:#f8fafc;padding:5px 9px;border-radius:6px;border:1.5px solid #cbd5e1;user-select:none;";
         enforceLabel.title = "When enabled, manual paper trades validate against active criteria checklist (MA Stretch, Peak, Spacing). Uncheck to trade unrestricted.";
         enforceLabel.innerHTML = `
-          <input type="checkbox" id="crypto_chkEnforceConditions" checked style="cursor:pointer;accent-color:#0284c7;margin:0;width:14px;height:14px;">
+          <input type="checkbox" id="lighterCrypto_chkEnforceConditions" checked style="cursor:pointer;accent-color:#0284c7;margin:0;width:14px;height:14px;">
           <span>Enforce Paper Conditions</span>
         `;
         entry.parentNode.appendChild(enforceLabel);
@@ -781,11 +781,11 @@
       });
 
       const ticket = lid("pairOrderTicket");
-      if (ticket && !lid("crypto_failClosedWarning")) {
+      if (ticket && !lid("failClosedWarning")) {
         const warning = document.createElement("div");
-        warning.id = "crypto_failClosedWarning";
+        warning.id = "lighterCrypto_failClosedWarning";
         warning.style.cssText = "grid-column:1/-1;padding:9px 11px;border-radius:6px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;margin-bottom:8px";
-        warning.textContent = "Real Binance Futures orders require terminal unlock and confirmation. Grid supports automatic execution; other strategies are paper replay only.";
+        warning.textContent = "Real Lighter Perpetuals orders require terminal unlock and confirmation. Grid supports automatic execution; other strategies are paper replay only.";
         ticket.prepend(warning);
       }
       if (ticket) {
@@ -837,13 +837,13 @@
       if (irrelevantUpbitPane) irrelevantUpbitPane.style.display = "none";
       const orderPane = lid("paneOrderLog");
       if (orderPane) {
-        const headers = ["Timestamp (KST)", "Event", "Direction", "Filled Qty / USDT Size", "Price / Level", "Fees", "Net P&L / Return", "Status"];
+        const headers = ["Timestamp (KST)", "Event", "Direction", "Filled Qty / USD Size", "Price / Level", "Fees", "Net P&L / Return", "Status"];
         orderPane.querySelectorAll("thead th").forEach((cell, index) => {
           if (headers[index]) cell.textContent = headers[index];
         });
         if (!lid("executionHistorySummary")) {
           const summary = document.createElement("div");
-          summary.id = "crypto_executionHistorySummary";
+          summary.id = "lighterCrypto_executionHistorySummary";
           summary.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;padding:10px 13px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:11px;color:#475569";
           summary.textContent = "Loading persisted single-leg crypto executions…";
           orderPane.prepend(summary);
@@ -851,13 +851,13 @@
       }
       const positionsPane = lid("panePositions");
       if (positionsPane) {
-        const headers = ["Position", "Asset", "Side", "Quantity", "Entry Price", "USDT Size", "Est. Margin", "Unrealized P&L / ROE"];
+        const headers = ["Position", "Asset", "Side", "Quantity", "Entry Price", "USD Size", "Est. Margin", "Unrealized P&L / ROE"];
         positionsPane.querySelectorAll("thead th").forEach((cell, index) => {
           if (headers[index]) cell.textContent = headers[index];
         });
         if (!lid("activePositionsSummary")) {
           const summary = document.createElement("div");
-          summary.id = "crypto_activePositionsSummary";
+          summary.id = "lighterCrypto_activePositionsSummary";
           summary.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;padding:10px 13px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:11px;color:#475569";
           summary.textContent = "Loading current single-leg crypto position sizes…";
           positionsPane.prepend(summary);
@@ -881,10 +881,10 @@
       }
       window.terminalLockManager?.applyState?.();
 
-      const tab = $("tabContentCrypto");
+      const tab = $("tabContentLighterCrypto");
       if (tab) {
         Array.from(tab.querySelectorAll("span")).forEach((element) => {
-          if (element.textContent.trim() === "LIVE BINANCE EXECUTION") element.textContent = "PAPER / BACKTEST ONLY";
+          if (element.textContent.trim() === "LIVE LIGHTER EXECUTION") element.textContent = "PAPER / BACKTEST ONLY";
           if (element.textContent.trim() === "ARMED & LIVE") element.textContent = "PAPER LADDER";
         });
       }
@@ -912,66 +912,71 @@
       });
       const labels = {
         valCondEntryMaStretch: "Replay: require selected Entry Z",
-        valCondEntryBase: "Replay: require +0.10pt spacing from prior same-side entry",
+        valCondEntryBase: "Replay: require configured spacing from prior same-side entry",
         valCondEntryPeak: "Replay: require z-score rollover",
         valCondEntryMaStack5m: "Replay: require MA7 / MA24 alignment",
         valCondExitConvergence: "Replay: require selected Exit Z",
-        valCondExitDwell: "Replay: minimum four bars held",
+        valCondExitDwell: "Replay: minimum configured bars held",
         valCondExitBottoming: "Replay: require convergence rollover",
       };
       Object.entries(labels).forEach(([id, text]) => this.setText(id, text));
       ["chkCondEntryMaStack1h", "chkCondEntryCapacity", "chkCondEntryLeverage",
        "chkCondEntryMargin", "chkCondEntryEngine", "chkCondEntryGuard", "chkCondExitActive",
        "chkCondExitNetPnl", "chkCondExitMaStack5m", "chkCondExitMaStack1h", "chkCondExitPosition"].forEach((id) => {
-        const input = lid(id); if (input) { input.disabled = true; input.title = "Not a Tab 4 replay condition; live exchange safeguards are shown separately"; }
+        const input = lid(id); if (input) { input.disabled = true; input.title = "Not a Tab 5 replay condition; live exchange safeguards are shown separately"; }
       });
     },
 
     gridMatrixTemplate() {
       return `
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:9px">
-          <strong style="font-size:13px;color:#0f172a">Paper Grid replay thresholds</strong>
+          <strong style="font-size:13px;color:#0f172a">Paper replay thresholds</strong>
           <span style="font-size:10px;font-weight:800;color:#0369a1;background:#e0f2fe;padding:3px 8px;border-radius:5px">PAPER ONLY · no resting orders</span>
         </div>
         <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:11px;color:#334155">
-          <label>Entry |Z| ≥ <input id="crypto_gridReplayEntryZ" type="number" min="0.1" max="10" step="0.1" value="${Number(this.gridReplayEntryZ ?? 1.5)}" style="width:62px;font-weight:800"></label>
-          <label>Exit |Z| ≤ <input id="crypto_gridReplayExitZ" type="number" min="0" max="5" step="0.05" value="${Number(this.gridReplayExitZ ?? 0.25)}" style="width:62px;font-weight:800"></label>
-          <button id="crypto_gridReplayRerun" type="button" style="background:#0284c7;color:white;border:0;border-radius:5px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer">Rerun paper</button>
+          <label>Entry |Z| ≥ <input id="lighterCrypto_gridReplayEntryZ" type="number" min="0.1" max="10" step="0.1" value="${Number(this.gridReplayEntryZ ?? 1.5)}" style="width:62px;font-weight:800"></label>
+          <label>Exit |Z| ≤ <input id="lighterCrypto_gridReplayExitZ" type="number" min="0" max="5" step="0.05" value="${Number(this.gridReplayExitZ ?? 0.25)}" style="width:62px;font-weight:800"></label>
+          <label>Entry spacing ≥ <input id="lighterCrypto_replaySpacingPct" type="number" min="0" max="10" step="0.05" value="0.2" style="width:60px;font-weight:800">% of price</label>
+          <label>Exit dwell ≥ <input id="lighterCrypto_replayDwellBars" type="number" min="0" max="100" step="1" value="4" style="width:50px;font-weight:800"> bars</label>
+          <label>OU max half-life <input id="lighterCrypto_replayOuHalfLife" type="number" min="0.1" max="100" step="0.5" value="8" style="width:55px;font-weight:800"> bars</label>
+          <label>OU stop |Z| ≥ <input id="lighterCrypto_replayOuStopZ" type="number" min="0.5" max="20" step="0.1" value="3.5" style="width:55px;font-weight:800"></label>
+          <label>Trend slope ≥ <input id="lighterCrypto_replayTrendSlope" type="number" min="0" max="10" step="0.001" value="0.002" style="width:70px;font-weight:800"></label>
+          <button id="lighterCrypto_gridReplayRerun" type="button" style="background:#0284c7;color:white;border:0;border-radius:5px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer">Rerun paper</button>
         </div>
         <p style="margin:8px 0 0;font-size:10.5px;color:#64748b">These thresholds and the enabled replay filters determine the paper arrows. Live Grid settings are saved separately in the authenticated bot panel.</p>
       `;
     },
 
     renderParadigmNav() {
-      const criteriaGrid = $("tabContentCrypto")?.querySelector(".shortTermCriteriaGrid");
+      const criteriaGrid = $("tabContentLighterCrypto")?.querySelector(".shortTermCriteriaGrid");
       if (!criteriaGrid) return;
-      let nav = $("crypto_paradigmNav");
+      let nav = $("lighterCrypto_paradigmNav");
       if (!nav) {
         nav = document.createElement("div");
-        nav.id = "crypto_paradigmNav";
+        nav.id = "lighterCrypto_paradigmNav";
         nav.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 10px;padding:10px 14px;background:#f8fafc;border:1.5px solid #cbd5e1;border-radius:10px;flex-wrap:wrap;";
         nav.innerHTML = `
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span style="font-size:11px;font-weight:800;color:#475569;margin-right:2px;letter-spacing:0.5px;">STRATEGY REGIME:</span>
-            <button id="crypto_tabParadigm_grid" class="lighterParadigmBtn" type="button" data-mode="grid" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🏛️ Dynamic Grid</button>
-            <button id="crypto_tabParadigm_ou_quant" class="lighterParadigmBtn" type="button" data-mode="ou_quant" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🔬 Ornstein-Uhlenbeck SDE</button>
-            <button id="crypto_tabParadigm_ma_stack" class="lighterParadigmBtn" type="button" data-mode="ma_stack" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">📈 Trend MA Stack</button>
-            <button id="crypto_tabParadigm_multi_factor" class="lighterParadigmBtn" type="button" data-mode="multi_factor" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚖️ Multi-Factor Gate</button>
-            <button id="crypto_tabParadigm_trend_pullback" class="lighterParadigmBtn" type="button" data-mode="trend_pullback" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🌊 Macro Trend Reversion</button>
-            <button id="crypto_tabParadigm_custom" class="lighterParadigmBtn" type="button" data-mode="custom" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🛠️ Rule Composer</button>
+            <button id="lighterCrypto_tabParadigm_grid" class="lighterParadigmBtn" type="button" data-mode="grid" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🏛️ Dynamic Grid</button>
+            <button id="lighterCrypto_tabParadigm_ou_quant" class="lighterParadigmBtn" type="button" data-mode="ou_quant" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🔬 Ornstein-Uhlenbeck SDE</button>
+            <button id="lighterCrypto_tabParadigm_ma_stack" class="lighterParadigmBtn" type="button" data-mode="ma_stack" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">📈 Trend MA Stack</button>
+            <button id="lighterCrypto_tabParadigm_multi_factor" class="lighterParadigmBtn" type="button" data-mode="multi_factor" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚖️ Multi-Factor Gate</button>
+            <button id="lighterCrypto_tabParadigm_trend_pullback" class="lighterParadigmBtn" type="button" data-mode="trend_pullback" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🌊 Macro Trend Reversion</button>
+            <button id="lighterCrypto_tabParadigm_custom" class="lighterParadigmBtn" type="button" data-mode="custom" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🛠️ Rule Composer</button>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span id="crypto_liveBotStrategyBadge" style="font-size:10px;font-weight:800;padding:4px 8px;border-radius:6px;background:#dcfce7;color:#166534;border:1px solid #86efac;display:none;">
+            <span id="lighterCrypto_liveBotStrategyBadge" style="font-size:10px;font-weight:800;padding:4px 8px;border-radius:6px;background:#dcfce7;color:#166534;border:1px solid #86efac;display:none;">
               ● LIVE BOT: DYNAMIC GRID
             </span>
-            <div id="crypto_paradigmBadge" style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;">
+            <div id="lighterCrypto_paradigmBadge" style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;">
               PARITY HARVESTING · GRID ARB
             </div>
           </div>
         `;
         criteriaGrid.parentNode.insertBefore(nav, criteriaGrid);
         ["grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom"].forEach((mode) => {
-          const btn = $(`crypto_tabParadigm_${mode}`);
+          const btn = $(`lighterCrypto_tabParadigm_${mode}`);
           if (btn) btn.addEventListener("click", () => {
             this._userSelectedParadigm = true;
             this.setParadigm(mode);
@@ -987,7 +992,7 @@
       const p = this.paradigms[mode];
 
       if (typeof document.querySelectorAll === "function") {
-        $("tabContentCrypto").querySelectorAll(".lighterParadigmBtn").forEach((btn) => {
+        $("tabContentLighterCrypto").querySelectorAll(".lighterParadigmBtn").forEach((btn) => {
           const isCurrent = btn.dataset.mode === mode;
           btn.style.background = isCurrent ? "#7c3aed" : "#fff";
           btn.style.color = isCurrent ? "#fff" : "#475569";
@@ -996,7 +1001,7 @@
         });
       }
 
-      const badge = $("crypto_paradigmBadge");
+      const badge = $("lighterCrypto_paradigmBadge");
       if (badge) badge.textContent = p.badge;
 
       this.setText("lblCritScaleInTitle", p.title);
@@ -1025,7 +1030,7 @@
         rowCondEntryPeak: "Paper entry: Z-score rollover",
         rowCondEntryMaStack5m: "Paper entry: price / MA7 / mean stack",
         rowCondExitConvergence: "Paper exit: Z-score convergence (adjust Exit Z in replay)",
-        rowCondExitDwell: "Paper exit: minimum four completed bars",
+        rowCondExitDwell: "Paper exit: minimum configured completed bars",
         rowCondExitBottoming: "Paper exit: Z-score no longer converging",
       } : {};
       [...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels)].forEach((id) => {
@@ -1038,12 +1043,12 @@
         }
       });
 
-      const ladderSec = $("crypto_gridMatrixSection");
-      let detailSec = $("crypto_paradigmDetailSection");
-      const rulesPanel = $("cryptoLiveRulesPanel");
+      const ladderSec = $("lighterCrypto_gridMatrixSection");
+      let detailSec = $("lighterCrypto_paradigmDetailSection");
+      const rulesPanel = $("lighterCryptoLiveRulesPanel");
       if (!detailSec && ladderSec) {
         detailSec = document.createElement("div");
-        detailSec.id = "crypto_paradigmDetailSection";
+        detailSec.id = "lighterCrypto_paradigmDetailSection";
         detailSec.style.cssText = "margin-top:14px;background:#ffffff;border:1.5px solid #cbd5e1;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05);display:none;";
         if (rulesPanel) {
           ladderSec.parentNode.insertBefore(detailSec, rulesPanel);
@@ -1087,27 +1092,27 @@
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
               <div style="display:flex;align-items:center;gap:6px;">
                 <span style="font-size:11px;font-weight:700;color:#475569;">Entry Z:</span>
-                <input id="crypto_rangeOuEntryZ" type="range" min="0.8" max="3.0" step="0.05" value="${liveEntryZ}" aria-label="OU Entry Z-score threshold slider" style="width:90px;height:24px;margin:0;cursor:pointer;accent-color:#7c3aed;">
-                <input id="crypto_inpOuEntryZ" type="number" step="0.05" min="0.8" max="3.0" value="${liveEntryZ}" style="width:54px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 5px;font-size:11px;font-weight:700;">
-                <span id="crypto_valOuEntryZBadge" style="font-size:10px;font-weight:800;color:#6d28d9;background:#f5f3ff;border:1px solid #ddd6fe;padding:2px 6px;border-radius:4px;">≥ ${liveEntryZ}σ</span>
+                <input id="lighterCrypto_rangeOuEntryZ" type="range" min="0.8" max="3.0" step="0.05" value="${liveEntryZ}" aria-label="OU Entry Z-score threshold slider" style="width:90px;height:24px;margin:0;cursor:pointer;accent-color:#7c3aed;">
+                <input id="lighterCrypto_inpOuEntryZ" type="number" step="0.05" min="0.8" max="3.0" value="${liveEntryZ}" style="width:54px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 5px;font-size:11px;font-weight:700;">
+                <span id="lighterCrypto_valOuEntryZBadge" style="font-size:10px;font-weight:800;color:#6d28d9;background:#f5f3ff;border:1px solid #ddd6fe;padding:2px 6px;border-radius:4px;">≥ ${liveEntryZ}σ</span>
               </div>
               <div style="display:flex;align-items:center;gap:6px;">
                 <span style="font-size:11px;font-weight:700;color:#475569;">Exit Z:</span>
-                <input id="crypto_rangeOuExitZ" type="range" min="0.05" max="0.80" step="0.05" value="${liveExitZ}" aria-label="OU Exit Z-score threshold slider" style="width:90px;height:24px;margin:0;cursor:pointer;accent-color:#0284c7;">
-                <input id="crypto_inpOuExitZ" type="number" step="0.05" min="0.05" max="0.80" value="${liveExitZ}" style="width:54px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 5px;font-size:11px;font-weight:700;">
-                <span id="crypto_valOuExitZBadge" style="font-size:10px;font-weight:800;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;padding:2px 6px;border-radius:4px;">≤ ${liveExitZ}σ</span>
+                <input id="lighterCrypto_rangeOuExitZ" type="range" min="0.05" max="0.80" step="0.05" value="${liveExitZ}" aria-label="OU Exit Z-score threshold slider" style="width:90px;height:24px;margin:0;cursor:pointer;accent-color:#0284c7;">
+                <input id="lighterCrypto_inpOuExitZ" type="number" step="0.05" min="0.05" max="0.80" value="${liveExitZ}" style="width:54px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 5px;font-size:11px;font-weight:700;">
+                <span id="lighterCrypto_valOuExitZBadge" style="font-size:10px;font-weight:800;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;padding:2px 6px;border-radius:4px;">≤ ${liveExitZ}σ</span>
               </div>
-              <button id="crypto_btnOuReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun SDE</button>
+              <button id="lighterCrypto_btnOuReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun SDE</button>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Reversion Speed (θ)</small>
-              <strong id="crypto_valOuTheta" style="font-size:15px;color:#0f172a;">0.0418 / bar</strong>
+              <strong id="lighterCrypto_valOuTheta" style="font-size:15px;color:#0f172a;">0.0418 / bar</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Equilibrium Half-Life (τ)</small>
-              <strong id="crypto_valOuHalfLife" style="font-size:15px;color:#0284c7;">16.5 bars (4.1h)</strong>
+              <strong id="lighterCrypto_valOuHalfLife" style="font-size:15px;color:#0284c7;">16.5 bars (4.1h)</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">ADF Stationarity</small>
@@ -1115,7 +1120,7 @@
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Current SDE Divergence</small>
-              <strong id="crypto_valOuZScore" style="font-size:15px;color:#7c3aed;">+1.84σ (Reversion Zone)</strong>
+              <strong id="lighterCrypto_valOuZScore" style="font-size:15px;color:#7c3aed;">+1.84σ (Reversion Zone)</strong>
             </div>
           </div>
         `;
@@ -1133,10 +1138,10 @@
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Min Stretch %:</span>
-              <input id="crypto_inpMaStretchMin" type="number" step="0.05" value="0.30" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <input id="lighterCrypto_inpMaStretchMin" type="number" step="0.05" value="0.30" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Trailing Stop %:</span>
-              <input id="crypto_inpMaTrailingStop" type="number" step="0.05" value="0.15" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
-              <button id="crypto_btnMaReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
+              <input id="lighterCrypto_inpMaTrailingStop" type="number" step="0.05" value="0.15" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <button id="lighterCrypto_btnMaReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
@@ -1146,7 +1151,7 @@
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">60-MA Stretch Gap</small>
-              <strong id="crypto_valMaStretchGap" style="font-size:15px;color:#7c3aed;">-0.38% (Oversold Dip)</strong>
+              <strong id="lighterCrypto_valMaStretchGap" style="font-size:15px;color:#7c3aed;">-0.38% (Oversold Dip)</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">1h Macro Trend Anchor</small>
@@ -1172,12 +1177,12 @@
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Quorum Required:</span>
-              <select id="crypto_selFactorQuorum" style="height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <select id="lighterCrypto_selFactorQuorum" style="height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
                 <option value="2">2 of 4 Votes</option>
                 <option value="3" selected>3 of 4 Votes (Default)</option>
                 <option value="4">4 of 4 (Strict)</option>
               </select>
-              <button id="crypto_btnFactorReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Voting</button>
+              <button id="lighterCrypto_btnFactorReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Voting</button>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
@@ -1219,36 +1224,36 @@
               <div style="display:flex;align-items:center;gap:8px;">
                 <span style="font-size:18px;">🌊</span>
                 <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Macro Trendline Pullback & Micro-Reversion Engine</strong>
-                <span id="crypto_valTrendRegimeBadge" style="background:#dcfce7;color:#166534;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #bbf7d0;">REGIME: ACTIVE</span>
+                <span id="lighterCrypto_valTrendRegimeBadge" style="background:#dcfce7;color:#166534;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #bbf7d0;">REGIME: ACTIVE</span>
               </div>
               <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Buys dips under rising macro trendlines when short-term hooks up · Sells rips above falling trendlines when short-term hooks down.</p>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Pullback Δ:</span>
-              <input id="crypto_inpTrendPullbackDist" type="number" step="0.05" value="0.15" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <input id="lighterCrypto_inpTrendPullbackDist" type="number" step="0.05" value="0.15" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <span style="font-size:11px;font-weight:700;color:#475569;">TP Offset:</span>
-              <input id="crypto_inpTrendTpDist" type="number" step="0.05" value="0.05" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <input id="lighterCrypto_inpTrendTpDist" type="number" step="0.05" value="0.05" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Macro Win:</span>
-              <input id="crypto_inpTrendMacroWindow" type="number" step="4" value="24" style="width:52px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
-              <button id="crypto_btnTrendReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
+              <input id="lighterCrypto_inpTrendMacroWindow" type="number" step="4" value="24" style="width:52px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <button id="lighterCrypto_btnTrendReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Macro Trend Slope (β)</small>
-              <strong id="crypto_valTrendSlope" style="font-size:15px;color:#0f172a;">+0.0034 / bar</strong>
+              <strong id="lighterCrypto_valTrendSlope" style="font-size:15px;color:#0f172a;">+0.0034 / bar</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Current Trendline Level</small>
-              <strong id="crypto_valTrendlinePrice" style="font-size:15px;color:#0284c7;">139.24%</strong>
+              <strong id="lighterCrypto_valTrendlinePrice" style="font-size:15px;color:#0284c7;">139.24%</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Distance to Trendline (Δ)</small>
-              <strong id="crypto_valTrendDistance" style="font-size:15px;color:#16a34a;">-0.18% (Dip Active)</strong>
+              <strong id="lighterCrypto_valTrendDistance" style="font-size:15px;color:#16a34a;">-0.18% (Dip Active)</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Micro-Reversal Hook</small>
-              <strong id="crypto_valTrendMicroState" style="font-size:15px;color:#7c3aed;">Armed (Hook Detected)</strong>
+              <strong id="lighterCrypto_valTrendMicroState" style="font-size:15px;color:#7c3aed;">Armed (Hook Detected)</strong>
             </div>
           </div>
         `;
@@ -1264,29 +1269,29 @@
             <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Freely combine mathematical triggers, adjust parameters, and save custom rule profiles to local storage.</p>
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
-            <button id="crypto_btnCustomSave" type="button" style="border:1px solid #16a34a;background:#16a34a;color:#fff;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;">💾 Save My Preset</button>
-            <button id="crypto_btnCustomReset" type="button" style="border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">↺ Reset</button>
+            <button id="lighterCrypto_btnCustomSave" type="button" style="border:1px solid #16a34a;background:#16a34a;color:#fff;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;">💾 Save My Preset</button>
+            <button id="lighterCrypto_btnCustomReset" type="button" style="border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">↺ Reset</button>
           </div>
         </div>
         <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;">
           <div>
             <label style="display:block;font-size:11px;font-weight:700;color:#334155;margin-bottom:4px;">Custom Entry Z-Score (σ):</label>
-            <input id="crypto_inpCustomEntryZ" type="number" step="0.1" value="1.5" style="width:100%;height:28px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:700;">
+            <input id="lighterCrypto_inpCustomEntryZ" type="number" step="0.1" value="1.5" style="width:100%;height:28px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:700;">
           </div>
           <div>
             <label style="display:block;font-size:11px;font-weight:700;color:#334155;margin-bottom:4px;">Custom Exit Z-Score (σ):</label>
-            <input id="crypto_inpCustomExitZ" type="number" step="0.05" value="0.25" style="width:100%;height:28px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:700;">
+            <input id="lighterCrypto_inpCustomExitZ" type="number" step="0.05" value="0.25" style="width:100%;height:28px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:700;">
           </div>
           <div>
             <label style="display:block;font-size:11px;font-weight:700;color:#334155;margin-bottom:4px;">Min Dwell Candles (Hold):</label>
-            <input id="crypto_inpCustomDwell" type="number" step="1" value="4" style="width:100%;height:28px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:700;">
+            <input id="lighterCrypto_inpCustomDwell" type="number" step="1" value="4" style="width:100%;height:28px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:700;">
           </div>
         </div>
       `;
     },
 
     bindParadigmDetailEvents(mode) {
-      const detailSec = $("crypto_paradigmDetailSection");
+      const detailSec = $("lighterCrypto_paradigmDetailSection");
       if (detailSec && typeof detailSec.querySelectorAll === "function") {
         detailSec.querySelectorAll("input, select").forEach((input) => {
           if (typeof input.addEventListener === "function") {
@@ -1296,12 +1301,12 @@
         });
       }
       if (mode === "ou_quant") {
-        const rangeEntry = $("crypto_rangeOuEntryZ");
-        const inpEntry = $("crypto_inpOuEntryZ");
-        const badgeEntry = $("crypto_valOuEntryZBadge");
-        const rangeExit = $("crypto_rangeOuExitZ");
-        const inpExit = $("crypto_inpOuExitZ");
-        const badgeExit = $("crypto_valOuExitZBadge");
+        const rangeEntry = $("lighterCrypto_rangeOuEntryZ");
+        const inpEntry = $("lighterCrypto_inpOuEntryZ");
+        const badgeEntry = $("lighterCrypto_valOuEntryZBadge");
+        const rangeExit = $("lighterCrypto_rangeOuExitZ");
+        const inpExit = $("lighterCrypto_inpOuExitZ");
+        const badgeExit = $("lighterCrypto_valOuExitZBadge");
 
         const syncEntry = (val, fromSlider = false) => {
           const num = Number(val);
@@ -1346,44 +1351,44 @@
           inpExit.addEventListener("input", (e) => syncExit(e.target.value, false));
         }
 
-        const btnReplay = $("crypto_btnOuReplay");
+        const btnReplay = $("lighterCrypto_btnOuReplay");
         if (btnReplay && typeof btnReplay.addEventListener === "function") {
           btnReplay.addEventListener("click", () => this.runBacktest());
         }
       } else if (mode === "ma_stack") {
-        $("crypto_btnMaReplay")?.addEventListener("click", () => this.runBacktest());
+        $("lighterCrypto_btnMaReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "multi_factor") {
-        $("crypto_btnFactorReplay")?.addEventListener("click", () => this.runBacktest());
+        $("lighterCrypto_btnFactorReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "trend_pullback") {
-        $("crypto_btnTrendReplay")?.addEventListener("click", () => this.runBacktest());
+        $("lighterCrypto_btnTrendReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "custom") {
-        $("crypto_btnCustomSave")?.addEventListener("click", () => {
-          const ez = $("crypto_inpCustomEntryZ")?.value || "1.5";
-          const xz = $("crypto_inpCustomExitZ")?.value || "0.25";
-          const dw = $("crypto_inpCustomDwell")?.value || "4";
-          safeStorage.setItem("skhynix_custom_rule_preset", JSON.stringify({ entry_z: ez, exit_z: xz, dwell: dw }));
+        $("lighterCrypto_btnCustomSave")?.addEventListener("click", () => {
+          const ez = $("lighterCrypto_inpCustomEntryZ")?.value || "1.5";
+          const xz = $("lighterCrypto_inpCustomExitZ")?.value || "0.25";
+          const dw = $("lighterCrypto_inpCustomDwell")?.value || "4";
+          safeStorage.setItem("skhynix_lighter_crypto_custom_rule_preset", JSON.stringify({ entry_z: ez, exit_z: xz, dwell: dw }));
           alert("Custom strategy preset saved to local storage!");
           this.runBacktest();
         });
-        $("crypto_btnCustomReset")?.addEventListener("click", () => {
-          if ($("crypto_inpCustomEntryZ")) $("crypto_inpCustomEntryZ").value = "1.5";
-          if ($("crypto_inpCustomExitZ")) $("crypto_inpCustomExitZ").value = "0.25";
-          if ($("crypto_inpCustomDwell")) $("crypto_inpCustomDwell").value = "4";
+        $("lighterCrypto_btnCustomReset")?.addEventListener("click", () => {
+          if ($("lighterCrypto_inpCustomEntryZ")) $("lighterCrypto_inpCustomEntryZ").value = "1.5";
+          if ($("lighterCrypto_inpCustomExitZ")) $("lighterCrypto_inpCustomExitZ").value = "0.25";
+          if ($("lighterCrypto_inpCustomDwell")) $("lighterCrypto_inpCustomDwell").value = "4";
           this.runBacktest();
         });
       }
     },
 
     renderGridLadderSection() {
-      const criteriaGrid = $("tabContentCrypto")?.querySelector(".shortTermCriteriaGrid");
+      const criteriaGrid = $("tabContentLighterCrypto")?.querySelector(".shortTermCriteriaGrid");
       if (!criteriaGrid) return;
-      let section = $("crypto_gridMatrixSection");
+      let section = $("lighterCrypto_gridMatrixSection");
       if (!section) {
         section = document.createElement("div");
-        section.id = "crypto_gridMatrixSection";
+        section.id = "lighterCrypto_gridMatrixSection";
         section.style.cssText = "margin-top:14px;background:#ffffff;border:1.5px solid #cbd5e1;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05);";
         section.innerHTML = this.gridMatrixTemplate();
-        const rulesPanel = $("cryptoLiveRulesPanel");
+        const rulesPanel = $("lighterCryptoLiveRulesPanel");
         if (rulesPanel) {
           criteriaGrid.parentNode.insertBefore(section, rulesPanel);
         } else {
@@ -1395,63 +1400,63 @@
     },
 
     renderLiveRulesPanel() {
-      const criteriaGrid = $("tabContentCrypto")?.querySelector(".shortTermCriteriaGrid");
-      if (!criteriaGrid || $("cryptoLiveRulesPanel")) return;
+      const criteriaGrid = $("tabContentLighterCrypto")?.querySelector(".shortTermCriteriaGrid");
+      if (!criteriaGrid || $("lighterCryptoLiveRulesPanel")) return;
       const panel = document.createElement("section");
-      panel.id = "cryptoLiveRulesPanel";
+      panel.id = "lighterCryptoLiveRulesPanel";
       panel.style.cssText = "margin:14px 0 10px;padding:14px 16px;border:2px solid #059669;border-radius:10px;background:#ecfdf5;color:#064e3b;box-shadow:0 1px 3px rgba(0,0,0,0.05);";
       panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;border-bottom:1px solid rgba(5,150,105,0.2);padding-bottom:8px;">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <strong style="font-size:13px;letter-spacing:.35px">REAL BINANCE FUTURES BOT — GRID</strong>
-            <span id="crypto_liveBotEnginePill" style="font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px;background:#059669;color:#fff;">LIVE: DYNAMIC GRID</span>
+            <strong style="font-size:13px;letter-spacing:.35px">REAL LIGHTER PERPETUALS BOT — GRID</strong>
+            <span id="lighterCrypto_liveBotEnginePill" style="font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px;background:#059669;color:#fff;">LIVE: DYNAMIC GRID</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <button id="crypto_btnDeployLiveStrategy" type="button" class="terminal-action-control" style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 12px;background:#0284c7;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer;">
-              <span>⚡</span> <span id="crypto_btnDeployLiveStrategyLabel">Deploy Current Strategy to Live Bot</span>
+            <button id="lighterCrypto_btnDeployLiveStrategy" type="button" class="terminal-action-control" style="display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 12px;background:#0284c7;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer;">
+              <span>⚡</span> <span id="lighterCrypto_btnDeployLiveStrategyLabel">Deploy Current Strategy to Live Bot</span>
             </button>
-            <span id="cryptoLiveRulesState" style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#475569">LOADING</span>
-            <button id="crypto_btnReconcileBot" type="button" class="terminal-action-control" style="display:none;height:28px;padding:0 10px;border:1px solid #b45309;border-radius:6px;background:#fff7ed;color:#92400e;font-size:11px;font-weight:800;cursor:pointer">Reconcile exchange order</button>
+            <span id="lighterCryptoLiveRulesState" style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#475569">LOADING</span>
+            <button id="lighterCrypto_btnReconcileBot" type="button" class="terminal-action-control" style="display:none;height:28px;padding:0 10px;border:1px solid #b45309;border-radius:6px;background:#fff7ed;color:#92400e;font-size:11px;font-weight:800;cursor:pointer">Reconcile exchange order</button>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;font-size:11px;line-height:1.4">
           <div>
             <b>Active Live Engine</b><br>
-            <span id="cryptoLiveEngine">Dynamic Grid</span>
-            <div id="cryptoLiveEngineDesc" style="font-size:10px;color:#047857;margin-top:2px;">Price harvesting mean-reversion</div>
+            <span id="lighterCryptoLiveEngine">Dynamic Grid</span>
+            <div id="lighterCryptoLiveEngineDesc" style="font-size:10px;color:#047857;margin-top:2px;">Price harvesting mean-reversion</div>
           </div>
           <div>
             <b>Execution Data & Interval</b><br>
-            <span id="cryptoLiveInterval">Completed 5m candles</span> · 24-bar window
+            <span id="lighterCryptoLiveInterval">Completed 5m candles</span> · 24-bar window
           </div>
           <div>
             <b>Entry Trigger</b><br>
-            |Z| ≥ <input id="crypto_inputLiveGridEntryZ" type="number" min="0.1" max="10" step="0.1" value="1.5" aria-label="Live Grid entry Z threshold" style="width:65px;font-weight:800">
-            <div id="cryptoLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short selected contract<br>Z low: long selected contract</div>
+            |Z| ≥ <input id="lighterCrypto_inputLiveGridEntryZ" type="number" min="0.1" max="10" step="0.1" value="1.5" aria-label="Live Grid entry Z threshold" style="width:65px;font-weight:800">
+            <div id="lighterCryptoLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short selected contract<br>Z low: long selected contract</div>
           </div>
           <div>
             <b>Exit Target</b><br>
-            |Z| ≤ <input id="crypto_inputLiveGridExitZ" type="number" min="0" max="5" step="0.05" value="0.25" aria-label="Live Grid exit Z threshold" style="width:65px;font-weight:800"> · no separate PnL gate
-            <div id="cryptoLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Reduce one bot-owned tranche per closed-bar convergence signal</div>
+            |Z| ≤ <input id="lighterCrypto_inputLiveGridExitZ" type="number" min="0" max="5" step="0.05" value="0.25" aria-label="Live Grid exit Z threshold" style="width:65px;font-weight:800"> · no separate PnL gate
+            <div id="lighterCryptoLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Reduce one bot-owned tranche per closed-bar convergence signal</div>
           </div>
           <div>
             <b>Size / dynamic capacity</b><br>
-            Single-leg target $<span id="cryptoLiveNotional">50</span> · gross ≈ $<span id="cryptoLivePairGross">—</span><br>
-            <span id="cryptoLiveMaxTranches">—</span> bot-owned tranches · max <input id="crypto_inputLiveMaxTranches" type="number" min="1" max="5" step="1" value="5" aria-label="Maximum live Grid tranches" style="width:45px;font-weight:800"> · selected contract ≤1x Futures equity
+            Single-leg target $<span id="lighterCryptoLiveNotional">50</span> · gross ≈ $<span id="lighterCryptoLivePairGross">—</span><br>
+            <span id="lighterCryptoLiveMaxTranches">—</span> bot-owned tranches · max <input id="lighterCrypto_inputLiveMaxTranches" type="number" min="1" max="5" step="1" value="5" aria-label="Maximum live Grid tranches" style="width:45px;font-weight:800"> · new Tab 5 entries require total gross ≤1x Lighter collateral
           </div>
           <div>
             <b>Execution guards</b><br>
-            Book spread ≤ <input id="crypto_inputLiveMaxSpread" type="number" min="1" max="100" step="1" value="45" aria-label="Maximum executable book spread in basis points" style="width:55px;font-weight:800"> bps
+            Book spread ≤ <input id="lighterCrypto_inputLiveMaxSpread" type="number" min="1" max="100" step="1" value="45" aria-label="Maximum executable book spread in basis points" style="width:55px;font-weight:800"> bps
             <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
-              <input id="crypto_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Maximum single-leg orders per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
-              <output id="cryptoLiveTradeRateValue" for="crypto_inputLiveTradeRate" style="min-width:48px;font-weight:900;color:#0369a1">0.2/min</output>
-              <button id="crypto_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
+              <input id="lighterCrypto_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Maximum single-leg orders per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
+              <output id="lighterCryptoLiveTradeRateValue" for="lighterCrypto_inputLiveTradeRate" style="min-width:48px;font-weight:900;color:#0369a1">0.2/min</output>
+              <button id="lighterCrypto_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
             </div>
-            <small id="cryptoLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 single-leg orders/min · 300s minimum · unlock required</small>
+            <small id="lighterCryptoLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 single-leg orders/min · 300s minimum · unlock required</small>
           </div>
           <div>
             <b>Current evaluation</b><br>
-            <span id="cryptoLiveEvaluation">Awaiting completed bar</span>
+            <span id="lighterCryptoLiveEvaluation">Awaiting completed bar</span>
           </div>
         </div>
         <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
@@ -1459,8 +1464,8 @@
           <span style="font-size:10px;font-weight:700;color:#c2410c;">Replay-only filters do not control live orders.</span>
         </div>
       `;
-      const detailSec = $("crypto_paradigmDetailSection");
-      const ladderSec = $("crypto_gridMatrixSection");
+      const detailSec = $("lighterCrypto_paradigmDetailSection");
+      const ladderSec = $("lighterCrypto_gridMatrixSection");
       if (detailSec) {
         detailSec.parentNode.insertBefore(panel, detailSec.nextSibling);
       } else if (ladderSec) {
@@ -1469,25 +1474,25 @@
         criteriaGrid.parentNode.appendChild(panel);
       }
 
-      const deployBtn = $("crypto_btnDeployLiveStrategy");
+      const deployBtn = $("lighterCrypto_btnDeployLiveStrategy");
       if (deployBtn && !deployBtn._boundClick) {
         deployBtn._boundClick = true;
         deployBtn.addEventListener("click", () => this.deployLiveStrategy());
       }
-      const saveBtn = $("crypto_btnSaveLiveCooldown");
+      const saveBtn = $("lighterCrypto_btnSaveLiveCooldown");
       if (saveBtn && !saveBtn._boundClick) {
         saveBtn._boundClick = true;
         saveBtn.addEventListener("click", () => this.saveLiveBotRate());
       }
-      const rateInput = $("crypto_inputLiveTradeRate");
+      const rateInput = $("lighterCrypto_inputLiveTradeRate");
       if (rateInput && !rateInput._boundInput) {
         rateInput._boundInput = true;
         rateInput.addEventListener("input", () => this.renderTradeRatePreview());
       }
-      const reconcileButton = $("crypto_btnReconcileBot");
+      const reconcileButton = $("lighterCrypto_btnReconcileBot");
       if (reconcileButton) reconcileButton.addEventListener("click", () => this.reconcileLiveBot());
-      ["crypto_inputLiveGridEntryZ", "crypto_inputLiveGridExitZ", "crypto_inputLiveMaxTranches",
-        "crypto_inputLiveMaxSpread"].forEach((id) => {
+      ["lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
+        "lighterCrypto_inputLiveMaxSpread"].forEach((id) => {
         const input = $(id);
         if (input) input.addEventListener("input", () => { input.dataset.unsaved = "true"; });
       });
@@ -1496,8 +1501,8 @@
     },
 
     updateDeployButtonState() {
-      const btnLabel = $("crypto_btnDeployLiveStrategyLabel");
-      const btn = $("crypto_btnDeployLiveStrategy");
+      const btnLabel = $("lighterCrypto_btnDeployLiveStrategyLabel");
+      const btn = $("lighterCrypto_btnDeployLiveStrategy");
       if (!btn || !btnLabel) return;
       const currentMode = this.currentParadigm || "grid";
       const liveMode = this.botState?.strategy_mode || "grid";
@@ -1527,34 +1532,34 @@
       const payload = {
         strategy_mode: mode,
         strategy_interval: this.interval || "5m",
-        selected_symbol: this.selectedSymbol || "BTCUSDT",
+        selected_symbol: this.selectedSymbol || "BTC",
       };
       const numeric = (id, fallback) => {
         const value = Number($(id)?.value);
         return Number.isFinite(value) ? value : fallback;
       };
       if (mode === "ou_quant") {
-        payload.entry_z = numeric("crypto_inpOuEntryZ", Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4));
-        payload.exit_z = numeric("crypto_inpOuExitZ", Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20));
+        payload.entry_z = numeric("lighterCrypto_inpOuEntryZ", Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4));
+        payload.exit_z = numeric("lighterCrypto_inpOuExitZ", Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20));
       } else if (mode === "ma_stack") {
-        payload.ma_stretch_min = numeric("crypto_inpMaStretchMin", 0.30);
-        payload.ma_trailing_stop = numeric("crypto_inpMaTrailingStop", 0.15);
+        payload.ma_stretch_min = numeric("lighterCrypto_inpMaStretchMin", 0.30);
+        payload.ma_trailing_stop = numeric("lighterCrypto_inpMaTrailingStop", 0.15);
       } else if (mode === "multi_factor") {
-        payload.min_consensus_votes = numeric("crypto_selFactorQuorum", 3);
+        payload.min_consensus_votes = numeric("lighterCrypto_selFactorQuorum", 3);
       } else if (mode === "trend_pullback") {
-        payload.trend_pullback_dist = numeric("crypto_inpTrendPullbackDist", 0.15);
-        payload.trend_tp_dist = numeric("crypto_inpTrendTpDist", 0.05);
-        payload.trend_macro_window = numeric("crypto_inpTrendMacroWindow", 24);
+        payload.trend_pullback_dist = numeric("lighterCrypto_inpTrendPullbackDist", 0.15);
+        payload.trend_tp_dist = numeric("lighterCrypto_inpTrendTpDist", 0.05);
+        payload.trend_macro_window = numeric("lighterCrypto_inpTrendMacroWindow", 24);
       } else if (mode === "custom") {
-        payload.entry_z = numeric("crypto_inpCustomEntryZ", 1.5);
-        payload.exit_z = numeric("crypto_inpCustomExitZ", 0.25);
+        payload.entry_z = numeric("lighterCrypto_inpCustomEntryZ", 1.5);
+        payload.exit_z = numeric("lighterCrypto_inpCustomExitZ", 0.25);
       }
       if (mode === "grid") {
-        payload.entry_z = numeric("crypto_inputLiveGridEntryZ", Number(this.botState?.entry_z ?? 1.5));
-        payload.exit_z = numeric("crypto_inputLiveGridExitZ", Number(this.botState?.exit_z ?? 0.25));
+        payload.entry_z = numeric("lighterCrypto_inputLiveGridEntryZ", Number(this.botState?.entry_z ?? 1.5));
+        payload.exit_z = numeric("lighterCrypto_inputLiveGridExitZ", Number(this.botState?.exit_z ?? 0.25));
         payload.notional_usd = Number(this.orderNotional());
-        payload.max_tranches = numeric("crypto_inputLiveMaxTranches", Number(this.botState?.max_tranches ?? 5));
-        payload.max_book_spread_bps = numeric("crypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45));
+        payload.max_tranches = numeric("lighterCrypto_inputLiveMaxTranches", Number(this.botState?.max_tranches ?? 5));
+        payload.max_book_spread_bps = numeric("lighterCrypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45));
       }
       return payload;
     },
@@ -1571,19 +1576,19 @@
         return false;
       }
       const pName = this.paradigms[mode]?.name || mode;
-      const confirmed = options.skipConfirm || window.confirm(`Save ${pName} (${this.interval}) for real Binance Futures trading?\n\nPause the bot before changing strategy. Saving while paused places no order.`);
+      const confirmed = options.skipConfirm || window.confirm(`Save ${pName} (${this.interval}) for real Lighter Perpetuals trading?\n\nPause the bot before changing strategy. Saving while paused places no order.`);
       if (!confirmed) return false;
 
-      const btn = $("crypto_btnDeployLiveStrategy");
+      const btn = $("lighterCrypto_btnDeployLiveStrategy");
       if (btn) btn.disabled = true;
 
       const payload = this.liveStrategyPayload(mode);
 
       try {
-        const data = await apiPost("/api/crypto/bot/config", payload);
+        const data = await apiPost("/api/lighter-crypto/bot/config", payload);
         if (data?.bot) {
-          ["crypto_inputLiveGridEntryZ", "crypto_inputLiveGridExitZ", "crypto_inputLiveMaxTranches",
-            "crypto_inputLiveMaxSpread"].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
+          ["lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
+            "lighterCrypto_inputLiveMaxSpread"].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
           this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
         }
         window.showToast?.(`✅ Live EC2 strategy changed to ${pName} (${payload.strategy_interval}).`, "success");
@@ -1598,13 +1603,13 @@
 
     async reconcileLiveBot() {
       if (window.terminalLockManager?.isLocked) {
-        window.showToast?.("Unlock the terminal to reconcile the Binance order.", "warn");
+        window.showToast?.("Unlock the terminal to reconcile the Lighter order.", "warn");
         return false;
       }
-      const button = $("crypto_btnReconcileBot");
+      const button = $("lighterCrypto_btnReconcileBot");
       if (button) button.disabled = true;
       try {
-        await apiPost("/api/crypto/bot/reconcile", {});
+        await apiPost("/api/lighter-crypto/bot/reconcile", {});
         await this.refresh();
         window.showToast?.("Exchange order and position reconciled. Review inventory before re-enabling.", "success");
         return true;
@@ -1617,8 +1622,8 @@
     },
 
     bindGridMatrixEvents() {
-      [["crypto_gridReplayEntryZ", "gridReplayEntryZ", 1.5],
-        ["crypto_gridReplayExitZ", "gridReplayExitZ", 0.25]].forEach(([id, field, fallback]) => {
+      [["lighterCrypto_gridReplayEntryZ", "gridReplayEntryZ", 1.5],
+        ["lighterCrypto_gridReplayExitZ", "gridReplayExitZ", 0.25]].forEach(([id, field, fallback]) => {
         const input = $(id);
         if (!input) return;
         input.addEventListener("change", () => {
@@ -1632,7 +1637,12 @@
           this.updateRulesMatchStatus();
         });
       });
-      $("crypto_gridReplayRerun")?.addEventListener("click", () => this.runBacktest());
+      ["lighterCrypto_replaySpacingPct", "lighterCrypto_replayDwellBars",
+       "lighterCrypto_replayOuHalfLife", "lighterCrypto_replayOuStopZ",
+       "lighterCrypto_replayTrendSlope"].forEach((id) => {
+        $(id)?.addEventListener("change", () => this.runBacktest());
+      });
+      $("lighterCrypto_gridReplayRerun")?.addEventListener("click", () => this.runBacktest());
     },
 
     setRiskTier(tierNum) {
@@ -1640,7 +1650,7 @@
       const tier = this.tiers[tierNum];
       if (!tier) return;
       [1, 2, 3].forEach((num) => {
-        const btn = $(`crypto_btnTier${num}`);
+        const btn = $(`lighterCrypto_btnTier${num}`);
         if (btn) {
           if (num === tierNum) {
             btn.style.borderColor = "#7c3aed";
@@ -1665,19 +1675,19 @@
       const stepPct = tier.spacingPct;
       const step = benchmark * stepPct;
       const count = tier.rungCount;
-      const sym = this.selectedSymbol || "BTCUSDT";
-      const base = sym.replace("USDT", "");
+      const sym = this.selectedSymbol || "BTC";
+      const base = sym.replace("USD", "");
 
-      const spacingEl = $("crypto_valGridSpacing");
+      const spacingEl = $("lighterCrypto_valGridSpacing");
       if (spacingEl) spacingEl.textContent = `±${(stepPct * 100).toFixed(2)}% (${this.formatCryptoPrice(step)} / rung)`;
 
-      const activeRungsEl = $("crypto_valActiveRungs");
+      const activeRungsEl = $("lighterCrypto_valActiveRungs");
       const activeCount = (this.mode === "live" || Boolean(this.botState?.enabled))
         ? ((this.botState?.tranches || []).length)
         : this.entries.length;
       if (activeRungsEl) activeRungsEl.textContent = `${activeCount} / ${count} Tiers Active`;
 
-      const tbody = $("crypto_gridLadderBody");
+      const tbody = $("lighterCrypto_gridLadderBody");
       if (!tbody) return;
 
       const rows = [];
@@ -1738,12 +1748,12 @@
     },
 
     init() {
-      if (this.initialized || !$("tabContentCrypto")) return;
-      if (!window.TerminalCommon || $("tabContentCrypto").dataset.terminalInstance !== "crypto") {
+      if (this.initialized || !$("tabContentLighterCrypto")) return;
+      if (!window.TerminalCommon || $("tabContentLighterCrypto").dataset.terminalInstance !== "lighterCrypto") {
         throw new Error("Shared terminal module did not initialize the Crypto instance");
       }
-      $("tabContentCrypto").querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
-      $("tabContentCrypto").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
+      $("tabContentLighterCrypto").querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
+      $("tabContentLighterCrypto").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
       try {
         const saved = JSON.parse(safeStorage.getItem(STORAGE_KEY) || "{}");
         this.entries = Array.isArray(saved.entries) ? saved.entries : [];
@@ -1751,7 +1761,7 @@
       } catch (_) {}
       const selectedStrategy = safeStorage.getItem(STRATEGY_STORAGE_KEY);
       if (this.paradigms[selectedStrategy]) this.currentParadigm = selectedStrategy;
-      this.mode = safeStorage.getItem("skhynix_crypto_mode") === "semi_auto" ? "semi_auto" : "paper";
+      this.mode = safeStorage.getItem("skhynix_lighterCrypto_mode") === "semi_auto" ? "semi_auto" : "paper";
       this.labelTerminal();
       this.applyMode(this.mode, false);
       this.initialized = true;
@@ -1799,7 +1809,7 @@
       host.style.position = "relative";
       if (!lid("tradeMarkerHover")) {
         const hoverLabel = document.createElement("div");
-        hoverLabel.id = "crypto_tradeMarkerHover";
+        hoverLabel.id = "lighterCrypto_tradeMarkerHover";
         hoverLabel.setAttribute("role", "status");
         hoverLabel.setAttribute("aria-live", "polite");
         hoverLabel.style.cssText = "display:none;position:absolute;z-index:8;top:8px;left:12px;max-width:min(420px,calc(100% - 24px));padding:6px 10px;border-radius:6px;border:1px solid #cbd5e1;background:rgba(255,255,255,.97);box-shadow:0 2px 8px rgba(15,23,42,.12);font-size:11px;font-weight:800;line-height:1.35;color:#0f172a;pointer-events:auto;white-space:normal";
@@ -1807,14 +1817,14 @@
       }
       if (!lid("tradeTrianglesLayer")) {
         const svgLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svgLayer.id = "crypto_tradeTrianglesLayer";
+        svgLayer.id = "lighterCrypto_tradeTrianglesLayer";
         svgLayer.setAttribute("aria-label", "Trade entry-exit triangles");
         svgLayer.style.cssText = "position:absolute;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;overflow:hidden";
         host.appendChild(svgLayer);
       }
       if (!lid("tradeMarkerTargets")) {
         const targetLayer = document.createElement("div");
-        targetLayer.id = "crypto_tradeMarkerTargets";
+        targetLayer.id = "lighterCrypto_tradeMarkerTargets";
         targetLayer.setAttribute("aria-label", "Individual trade markers");
         targetLayer.style.cssText = "position:absolute;inset:0;z-index:7;pointer-events:none;overflow:hidden";
         host.appendChild(targetLayer);
@@ -1888,7 +1898,7 @@
     },
 
     async refresh() {
-      const sym = this.selectedSymbol || "BTCUSDT";
+      const sym = this.selectedSymbol || "BTC";
       const chartRefresh = this.refreshChart().catch((error) => {
         this.setText("lblShortTermChartStatus", `Chart unavailable: ${error.message}`);
         return false;
@@ -1897,16 +1907,16 @@
         const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
         const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
         const [statusResult, botStatus, trendStatus] = await Promise.all([
-          api(`/api/crypto/status?symbol=${encodeURIComponent(sym)}`).catch(() => null),
-          api("/api/crypto/bot/status").catch(() => null),
-          api(`/api/crypto/trends?symbol=${encodeURIComponent(sym)}&small=${sParam}&big=${bParam}`).catch(() => null),
+          api(`/api/lighter-crypto/status?symbol=${encodeURIComponent(sym)}`).catch(() => null),
+          api("/api/lighter-crypto/bot/status").catch(() => null),
+          api(`/api/lighter-crypto/trends?symbol=${encodeURIComponent(sym)}&small=${sParam}&big=${bParam}`).catch(() => null),
         ]);
         const status = statusResult || { success: false, server_time_ms: Date.now(), positions: [] };
         this.liveVenue = status;
         this.livePositions = Array.isArray(status?.positions) ? status.positions : [];
         if (status && (status.mark_price != null || status.price_ratio != null)) {
           this.currentRatio = Number(status.mark_price ?? status.price_ratio);
-          const priceBadge = $("crypto_valLivePriceBadge");
+          const priceBadge = $("lighterCrypto_valLivePriceBadge");
           if (priceBadge) {
             const chgSign = (status.change_pct ?? 0) >= 0 ? "+" : "";
             priceBadge.textContent = `${sym}: ${this.formatCryptoPrice(this.currentRatio)} (${chgSign}${status.change_pct ?? 0}%)`;
@@ -1917,10 +1927,10 @@
         }
         this.setText("lblDaemonSyncTime", `Last Sync: ${formatKstDateTime(status.server_time_ms || Date.now(), false)}`);
       this.setText("lblDaemonLatency", botStatus?.bot?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Paused");
-        this.setText("lblDaemonStats", `Binance Futures · ${sym}`);
+        this.setText("lblDaemonStats", `Lighter Perpetuals · ${sym}`);
       this.setText("lblHedgedSyncBadge", botStatus?.bot?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT PAUSED");
         this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto · ${sym}`);
-      this.setText("lblDaemonAuthBadge", status.authenticated ? "BINANCE FUTURES CONNECTED" : "ACCOUNT UNAVAILABLE");
+      this.setText("lblDaemonAuthBadge", status.authenticated ? "LIGHTER PERPETUALS CONNECTED" : "ACCOUNT UNAVAILABLE");
       this.setText("valAccountEquity", Number.isFinite(Number(status.collateral)) && status.collateral != null
         ? `$${Number(status.collateral).toFixed(2)}` : "—");
       this.setText("badgeEquitySource", status.authenticated ? "REAL FUTURES" : "UNAVAILABLE");
@@ -1950,9 +1960,9 @@
     renderTrends(trends) {
       const sInt = this.smallTrendInterval || "5m";
       const bInt = this.bigTrendInterval || "1h";
-      [[sInt, "lighterTrendSmall", "lighterTrend5m"], [bInt, "lighterTrendBig", "lighterTrend1h"]].forEach(([interval, id, fallbackId]) => {
-        const trend = trends?.[interval] || trends?.[id === "lighterTrendSmall" ? "small" : "big"] || {};
-        const badge = $(id) || $(fallbackId) || $(id.replace("lighter", "crypto"));
+      [[sInt, "lighterCryptoTrendSmall"], [bInt, "lighterCryptoTrendBig"]].forEach(([interval, id]) => {
+        const trend = trends?.[interval] || trends?.[id === "lighterCryptoTrendSmall" ? "small" : "big"] || {};
+        const badge = $(id);
         if (!badge) return;
         const direction = trend.regime || trend.direction || "FLAT";
         const icon = direction === "BULL" || direction === "UPTREND" ? "▲" : ((direction === "BEAR" || direction === "DOWNTREND") ? "▼" : "◆");
@@ -1966,10 +1976,10 @@
 
     async fetchAndRenderTrends() {
       try {
-        const sym = encodeURIComponent(this.selectedSymbol || "BTCUSDT");
+        const sym = encodeURIComponent(this.selectedSymbol || "BTC");
         const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
         const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
-        const res = await api(`/api/crypto/trends?symbol=${sym}&small=${sParam}&big=${bParam}`);
+        const res = await api(`/api/lighter-crypto/trends?symbol=${sym}&small=${sParam}&big=${bParam}`);
         if (res?.success && res?.trends && Object.keys(res.trends).length) {
           if (this.trendRetryTimer) clearTimeout(this.trendRetryTimer);
           this.trendRetryTimer = null;
@@ -1996,22 +2006,25 @@
       const liveOuEntryFallback = Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4);
       const liveOuExitFallback = Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20);
       return {
-        symbol: this.selectedSymbol || "BTCUSDT",
+        symbol: this.selectedSymbol || "BTC",
         interval: this.interval, limit: 500, strategy_mode: mode,
-        entry_z: mode === "ou_quant" ? numeric("crypto_inpOuEntryZ", liveOuEntryFallback) :
-          mode === "custom" ? numeric("crypto_inpCustomEntryZ", 1.5) :
+        entry_z: mode === "ou_quant" ? numeric("lighterCrypto_inpOuEntryZ", liveOuEntryFallback) :
+          mode === "custom" ? numeric("lighterCrypto_inpCustomEntryZ", 1.5) :
           mode === "grid" ? Number(this.gridReplayEntryZ ?? 1.5) : 1.5,
-        exit_z: mode === "ou_quant" ? numeric("crypto_inpOuExitZ", liveOuExitFallback) :
-          mode === "custom" ? numeric("crypto_inpCustomExitZ", 0.25) :
+        exit_z: mode === "ou_quant" ? numeric("lighterCrypto_inpOuExitZ", liveOuExitFallback) :
+          mode === "custom" ? numeric("lighterCrypto_inpCustomExitZ", 0.25) :
           mode === "grid" ? Number(this.gridReplayExitZ ?? 0.25) : 0.25,
-        ou_halflife_max: 8.0, ou_stop_z: 3.5,
-        ma_stretch_min: numeric("crypto_inpMaStretchMin", 0.30),
-        ma_trailing_stop: numeric("crypto_inpMaTrailingStop", 0.15),
-        min_consensus_votes: numeric("crypto_selFactorQuorum", 3),
-        trend_pullback_dist: numeric("crypto_inpTrendPullbackDist", 0.15),
-        trend_tp_dist: numeric("crypto_inpTrendTpDist", 0.05),
-        trend_macro_window: numeric("crypto_inpTrendMacroWindow", 24),
-        trend_slope_min: 0.002,
+        ou_halflife_max: numeric("lighterCrypto_replayOuHalfLife", 8.0),
+        ou_stop_z: numeric("lighterCrypto_replayOuStopZ", 3.5),
+        base_spacing_pct: numeric("lighterCrypto_replaySpacingPct", 0.2),
+        min_dwell_bars: numeric("lighterCrypto_replayDwellBars", 4),
+        ma_stretch_min: numeric("lighterCrypto_inpMaStretchMin", 0.30),
+        ma_trailing_stop: numeric("lighterCrypto_inpMaTrailingStop", 0.15),
+        min_consensus_votes: numeric("lighterCrypto_selFactorQuorum", 3),
+        trend_pullback_dist: numeric("lighterCrypto_inpTrendPullbackDist", 0.15),
+        trend_tp_dist: numeric("lighterCrypto_inpTrendTpDist", 0.05),
+        trend_macro_window: numeric("lighterCrypto_inpTrendMacroWindow", 24),
+        trend_slope_min: numeric("lighterCrypto_replayTrendSlope", 0.002),
         use_ma_stretch: lid("chkCondEntryMaStretch")?.checked !== false,
         use_base_spacing: lid("chkCondEntryBase")?.checked !== false,
         use_peak: lid("chkCondEntryPeak")?.checked !== false,
@@ -2039,7 +2052,7 @@
     },
 
     updateRulesMatchStatus() {
-      const pill = $("cryptoMatchPill");
+      const pill = $("lighterCryptoMatchPill");
       if (!pill) return;
       this.bindMatchPill(pill);
       const settings = this.replaySettings();
@@ -2111,7 +2124,7 @@
       pill.dataset.matchState = !matched && canAlign ? "divergent" : "unavailable";
       pill.setAttribute("aria-disabled", !matched && canAlign ? "false" : "true");
       pill.setAttribute("tabindex", !matched && canAlign ? "0" : "-1");
-      const matchButton = $("crypto_btnMatchLiveReplay");
+      const matchButton = $("lighterCrypto_btnMatchLiveReplay");
       if (matchButton) {
         matchButton.disabled = matched || !canAlign;
         matchButton.textContent = matched ? "Paper thresholds aligned" : canAlign ? "Align to saved bot thresholds" : "Alignment unavailable";
@@ -2139,11 +2152,11 @@
       if (liveMode === "grid") {
         this.gridReplayEntryZ = Number(params.entry_z);
         this.gridReplayExitZ = Number(params.exit_z);
-        if ($("crypto_gridReplayEntryZ")) $("crypto_gridReplayEntryZ").value = String(this.gridReplayEntryZ);
-        if ($("crypto_gridReplayExitZ")) $("crypto_gridReplayExitZ").value = String(this.gridReplayExitZ);
+        if ($("lighterCrypto_gridReplayEntryZ")) $("lighterCrypto_gridReplayEntryZ").value = String(this.gridReplayEntryZ);
+        if ($("lighterCrypto_gridReplayExitZ")) $("lighterCrypto_gridReplayExitZ").value = String(this.gridReplayExitZ);
       }
       if (liveMode === "custom") {
-        [["crypto_inpCustomEntryZ", "entry_z"], ["crypto_inpCustomExitZ", "exit_z"]].forEach(([id, key]) => {
+        [["lighterCrypto_inpCustomEntryZ", "entry_z"], ["lighterCrypto_inpCustomExitZ", "exit_z"]].forEach(([id, key]) => {
           const input = $(id);
           if (input && params[key] != null) {
             input.value = String(params[key]);
@@ -2164,18 +2177,18 @@
         });
       }
       if (liveMode === "ou_quant") {
-        const inpEntry = $("crypto_inpOuEntryZ");
-        const rangeEntry = $("crypto_rangeOuEntryZ");
-        const badgeEntry = $("crypto_valOuEntryZBadge");
+        const inpEntry = $("lighterCrypto_inpOuEntryZ");
+        const rangeEntry = $("lighterCrypto_rangeOuEntryZ");
+        const badgeEntry = $("lighterCrypto_valOuEntryZBadge");
         if (params.entry_z != null) {
           const val = Number(params.entry_z).toFixed(2);
           if (inpEntry) { inpEntry.value = val; inpEntry._userModified = false; }
           if (rangeEntry) rangeEntry.value = val;
           if (badgeEntry) badgeEntry.textContent = `≥ ${val}σ`;
         }
-        const inpExit = $("crypto_inpOuExitZ");
-        const rangeExit = $("crypto_rangeOuExitZ");
-        const badgeExit = $("crypto_valOuExitZBadge");
+        const inpExit = $("lighterCrypto_inpOuExitZ");
+        const rangeExit = $("lighterCrypto_rangeOuExitZ");
+        const badgeExit = $("lighterCrypto_valOuExitZBadge");
         if (params.exit_z != null) {
           const val = Number(params.exit_z).toFixed(2);
           if (inpExit) { inpExit.value = val; inpExit._userModified = false; }
@@ -2253,7 +2266,7 @@
     },
 
     renderTrendRanges() {
-      const layer = $("cryptoTrendBandLayer");
+      const layer = $("lighterCryptoTrendBandLayer");
       const host = lid("shortTermSpreadChartHost");
       if (!layer || !host || !this.chart || !this.trendRanges.length) return;
       const scale = this.chart.timeScale();
@@ -2285,7 +2298,7 @@
       this.botState = bot;
       const isEnabled = Boolean(bot?.enabled);
       const isRecovery = Boolean(bot?.recovery_required);
-      const reconcileButton = $("crypto_btnReconcileBot");
+      const reconcileButton = $("lighterCrypto_btnReconcileBot");
       if (reconcileButton) reconcileButton.style.display = isRecovery ? "inline-flex" : "none";
       const tranches = Array.isArray(bot?.tranches) ? bot.tranches : [];
       // The EC2 bot is shared across browsers; per-browser localStorage is not
@@ -2295,7 +2308,7 @@
       const authoritativeMode = isEnabled ? "live" : (this.mode === "live" ? "paper" : this.mode);
       if (authoritativeMode !== this.mode) {
         this.mode = authoritativeMode;
-        safeStorage.setItem("skhynix_crypto_mode", authoritativeMode);
+        safeStorage.setItem("skhynix_lighterCrypto_mode", authoritativeMode);
         this.applyMode(authoritativeMode, false);
       }
       const toggle = lid("chkAutoPeriodic48h");
@@ -2340,7 +2353,7 @@
           badge.style.color = "#166534";
         }
         if (headingEl) headingEl.textContent = "EC2 DAEMON: ACTIVE";
-        if (detailEl) detailEl.textContent = isKo ? "바이낸스 선물 단일 종목 자동매매 가동 중" : "Single-leg Binance Futures bot running on EC2";
+        if (detailEl) detailEl.textContent = isKo ? "바이낸스 선물 단일 종목 자동매매 가동 중" : "Single-leg Lighter Perpetuals bot running on EC2";
       } else {
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator paused";
         if (titleEl) titleEl.textContent = isKo ? "○ 그리드 봇: 대기 (일시정지)" : "○ INSTITUTIONAL GRID BOT: PAUSED";
@@ -2361,7 +2374,7 @@
       const stratShort = stratMode === "grid" ? "GRID" : (stratMode === "ou_quant" ? "OU" : stratName.toUpperCase().slice(0, 8));
 
       // Sync Tab 3 Top Nav Pill
-      const navLighterPill = $("navCryptoLivePill");
+      const navLighterPill = $("navLighterCryptoLivePill");
       if (navLighterPill) {
         navLighterPill.className = "navLivePill";
         if (isRecovery) {
@@ -2379,24 +2392,24 @@
       const liveBtn = lid("modeLive");
       if (liveBtn) liveBtn.classList.toggle("botActiveLive", isEnabled);
 
-      this.setText("lblDaemonLatency", isEnabled ? "Binance Crypto Bot: Running on EC2" : "Binance Crypto Bot: Paused");
+      this.setText("lblDaemonLatency", isEnabled ? "Lighter Crypto Bot: Running on EC2" : "Lighter Crypto Bot: Paused");
       this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${bot?.max_tranches ?? tranches.length} safe tranches` : "Awaiting first closed-bar evaluation");
-      const rulesPanel = $("cryptoLiveRulesPanel");
+      const rulesPanel = $("lighterCryptoLiveRulesPanel");
       if (rulesPanel) {
         rulesPanel.style.borderColor = isEnabled ? "#059669" : "#94a3b8";
         rulesPanel.style.background = isEnabled ? "#ecfdf5" : "#f8fafc";
       }
-      const rulesState = $("cryptoLiveRulesState");
+      const rulesState = $("lighterCryptoLiveRulesState");
       if (rulesState) {
         rulesState.textContent = isEnabled ? "● REAL BOT ACTIVE" : "○ REAL BOT PAUSED";
         rulesState.style.background = isEnabled ? "#dcfce7" : "#e2e8f0";
         rulesState.style.color = isEnabled ? "#166534" : "#475569";
       }
       const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
-      writeRule("cryptoLiveEngine", `${stratName} (${stratInterval})`);
-      const enginePill = $("crypto_liveBotEnginePill");
+      writeRule("lighterCryptoLiveEngine", `${stratName} (${stratInterval})`);
+      const enginePill = $("lighterCrypto_liveBotEnginePill");
       if (enginePill) enginePill.textContent = `${isEnabled ? "ACTIVE" : "SAVED / PAUSED"}: ${stratName.toUpperCase()}`;
-      const navLiveBadge = $("crypto_liveBotStrategyBadge");
+      const navLiveBadge = $("lighterCrypto_liveBotStrategyBadge");
       if (navLiveBadge) {
         navLiveBadge.style.display = "inline-block";
         navLiveBadge.textContent = `${isEnabled ? "● ACTIVE" : "○ PAUSED"} BOT: ${stratName.toUpperCase()} (${stratInterval})`;
@@ -2409,21 +2422,21 @@
       this.setText("valDeployedEdge", `Entry |Z| ≥ ${Number(bot?.entry_z ?? 1.4).toFixed(2)}`);
       this.setText("valDeployedMinProfit", `Exit |Z| ≤ ${Number(bot?.exit_z ?? 0.2).toFixed(2)}`);
 
-      writeRule("cryptoLiveEntryZ", Number(bot?.entry_z ?? 1.4).toFixed(2));
-      writeRule("cryptoLiveExitZ", Number(bot?.exit_z ?? 0.2).toFixed(2));
-      [["crypto_inputLiveGridEntryZ", bot?.entry_z], ["crypto_inputLiveGridExitZ", bot?.exit_z],
-        ["crypto_inputLiveMaxTranches", bot?.max_tranches], ["crypto_inputLiveMaxSpread", bot?.max_book_spread_bps]].forEach(([id, value]) => {
+      writeRule("lighterCryptoLiveEntryZ", Number(bot?.entry_z ?? 1.4).toFixed(2));
+      writeRule("lighterCryptoLiveExitZ", Number(bot?.exit_z ?? 0.2).toFixed(2));
+      [["lighterCrypto_inputLiveGridEntryZ", bot?.entry_z], ["lighterCrypto_inputLiveGridExitZ", bot?.exit_z],
+        ["lighterCrypto_inputLiveMaxTranches", bot?.max_tranches], ["lighterCrypto_inputLiveMaxSpread", bot?.max_book_spread_bps]].forEach(([id, value]) => {
         const input = $(id);
         if (input && value != null && document.activeElement !== input && input.dataset.unsaved !== "true") input.value = String(value);
       });
       const liveEntryZ = Number(bot?.entry_z ?? 1.4);
       const liveExitZ = Number(bot?.exit_z ?? 0.2);
-      const ouEntryInp = $("crypto_inpOuEntryZ");
-      const ouExitInp = $("crypto_inpOuExitZ");
-      const ouEntryRange = $("crypto_rangeOuEntryZ");
-      const ouExitRange = $("crypto_rangeOuExitZ");
-      const ouEntryBadge = $("crypto_valOuEntryZBadge");
-      const ouExitBadge = $("crypto_valOuExitZBadge");
+      const ouEntryInp = $("lighterCrypto_inpOuEntryZ");
+      const ouExitInp = $("lighterCrypto_inpOuExitZ");
+      const ouEntryRange = $("lighterCrypto_rangeOuEntryZ");
+      const ouExitRange = $("lighterCrypto_rangeOuExitZ");
+      const ouEntryBadge = $("lighterCrypto_valOuEntryZBadge");
+      const ouExitBadge = $("lighterCrypto_valOuExitZBadge");
       if (ouEntryInp && !ouEntryInp._userModified) {
         ouEntryInp.value = liveEntryZ.toFixed(2);
         if (ouEntryRange) ouEntryRange.value = liveEntryZ.toFixed(2);
@@ -2437,16 +2450,16 @@
       const configuredAdrNotional = Number(bot?.notional_usd ?? 50);
       const liveRatio = Number(bot?.last_evaluation?.ratio || this.currentRatio || 0);
       const estimatedPairGross = configuredAdrNotional;
-      writeRule("cryptoLiveNotional", configuredAdrNotional.toFixed(0));
-      writeRule("cryptoLivePairGross", estimatedPairGross.toFixed(2));
+      writeRule("lighterCryptoLiveNotional", configuredAdrNotional.toFixed(0));
+      writeRule("lighterCryptoLivePairGross", estimatedPairGross.toFixed(2));
       const capacity = bot?.risk_capacity || {};
-      writeRule("cryptoLiveMaxTranches", `${capacity.active_tranches ?? tranches.length}/${capacity.max_tranches ?? bot?.max_tranches ?? tranches.length} campaign slots`);
-      writeRule("cryptoLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
+      writeRule("lighterCryptoLiveMaxTranches", `${capacity.active_tranches ?? tranches.length}/${capacity.max_tranches ?? bot?.max_tranches ?? tranches.length} campaign slots`);
+      writeRule("lighterCryptoLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
       const cooldownSeconds = Math.max(6, Number(bot?.min_seconds_between_orders ?? 300));
       const tradeRate = Math.max(0.2, Math.min(10, 60 / cooldownSeconds));
       const tradeRateText = this.formatTradeRate(tradeRate);
-      writeRule("cryptoLiveCooldown", `Current: ${tradeRateText} single-leg orders/min · ${Math.round(cooldownSeconds)}s minimum · unlock required`);
-      writeRule("cryptoLiveEvaluation", bot?.last_evaluation
+      writeRule("lighterCryptoLiveCooldown", `Current: ${tradeRateText} single-leg orders/min · ${Math.round(cooldownSeconds)}s minimum · unlock required`);
+      writeRule("lighterCryptoLiveEvaluation", bot?.last_evaluation
         ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · price ${this.formatCryptoPrice(Number(bot.last_evaluation.ratio || 0))} · mean ${this.formatCryptoPrice(Number(bot.last_evaluation.mean || 0))}`
         : "Awaiting completed bar");
       const notionalInput = lid("inputOrderNotional");
@@ -2536,7 +2549,7 @@
       if (levEl) {
         levEl.style.color = grossLev > levCap ? "#dc2626" : (grossLev > levCap * 0.75 ? "#d97706" : "#0284c7");
       }
-      this.setText("valHedgedNotional", `Selected contract size: $${grossNotional.toFixed(2)} USDT`);
+      this.setText("valHedgedNotional", `Selected contract size: $${grossNotional.toFixed(2)} USD`);
       this.setText("valDeployedMaxLeverage", `Selected contract ≤ ${levCap.toFixed(1)}x Futures equity`);
       this.setText("valMarginRisk", `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x cap`);
 
@@ -2545,10 +2558,10 @@
       this.setText("valHedgedNetDeltaSubtitle", tranchesCount > 0
         ? `${netShares.toFixed(4)} selected-contract units · no hedge leg`
         : "Single-leg exposure · no hedge leg");
-      this.setText("valHedgedLoss10", `-$${loss10.toFixed(2)} USDT`);
+      this.setText("valHedgedLoss10", `-$${loss10.toFixed(2)} USD`);
       this.setText("valHedgedMaxDiv", maxDiv >= 900 ? "+∞ % pts" : `+${maxDiv.toFixed(1)}% pts`);
 
-      // 3. BTCUSDT Shares Exposure Bar
+      // 3. BTC Shares Exposure Bar
       this.setText("pillAdrShares", `Selected contract: ${adrQty.toFixed(4)} units`);
       this.setText("pillStockShares", "Hedge leg: none");
       this.setText("pillNetShares", `Open units: ${netShares.toFixed(4)}`);
@@ -2634,12 +2647,12 @@
           const notional = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
           const tradeRate = this.tradeRatePerMinute();
           const cooldownSeconds = this.cooldownSecondsForTradeRate(tradeRate);
-          const symbol = this.botState?.selected_symbol || this.selectedSymbol || "BTCUSDT";
-          const confirmed = window.confirm(`Enable REAL Binance Futures trading on EC2?\n\nContract: ${symbol}\nStrategy: ${this.botState?.strategy_mode || "grid"} on completed ${this.botState?.strategy_interval || "5m"} bars\nOrder target: $${notional.toFixed(0)} single-leg, up to ${this.botState?.max_tranches || 5} tranches\nRate: up to ${this.formatTradeRate(tradeRate)} orders/min (${cooldownSeconds}s minimum)\n\nOrders can start after the next completed bar. No hedge leg is placed.`);
+          const symbol = this.botState?.selected_symbol || this.selectedSymbol || "BTC";
+          const confirmed = window.confirm(`Enable REAL Lighter Perpetuals trading on EC2?\n\nContract: ${symbol}\nStrategy: ${this.botState?.strategy_mode || "grid"} on completed ${this.botState?.strategy_interval || "5m"} bars\nOrder target: $${notional.toFixed(0)} single-leg, up to ${this.botState?.max_tranches || 5} tranches\nRate: up to ${this.formatTradeRate(tradeRate)} orders/min (${cooldownSeconds}s minimum)\n\nOrders can start after the next completed bar. No hedge leg is placed.`);
           if (!confirmed) { if (toggle) toggle.checked = false; return false; }
-          await apiPost("/api/crypto/bot/config", { notional_usd: notional, min_seconds_between_orders: cooldownSeconds });
+          await apiPost("/api/lighter-crypto/bot/config", { notional_usd: notional, min_seconds_between_orders: cooldownSeconds });
         }
-        const data = await apiPost("/api/crypto/bot/toggle", { enabled, confirm_live_trading: enabled });
+        const data = await apiPost("/api/lighter-crypto/bot/toggle", { enabled, confirm_live_trading: enabled });
         if (data?.bot) {
           this.updateBotStatus(data.bot, { execution_enabled: true });
         }
@@ -2671,7 +2684,7 @@
 
     renderTradeRatePreview() {
       const rate = this.tradeRatePerMinute();
-      const output = $("cryptoLiveTradeRateValue");
+      const output = $("lighterCryptoLiveTradeRateValue");
       if (output) output.textContent = `${this.formatTradeRate(rate)}/min`;
     },
 
@@ -2686,7 +2699,7 @@
       const cooldownSeconds = this.cooldownSecondsForTradeRate(tradeRate);
       if (button) button.disabled = true;
       try {
-        const data = await apiPost("/api/crypto/bot/config", { min_seconds_between_orders: cooldownSeconds });
+        const data = await apiPost("/api/lighter-crypto/bot/config", { min_seconds_between_orders: cooldownSeconds });
         if (data?.bot) this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
         window.showToast?.(`Live bot rate saved: ${this.formatTradeRate(tradeRate)} single-leg orders/min (${cooldownSeconds}s minimum).`, "success");
         return true;
@@ -2701,13 +2714,13 @@
     async refreshChart() {
       this.ensureChart();
       const interval = this.interval;
-      const sym = this.selectedSymbol || "BTCUSDT";
+      const sym = this.selectedSymbol || "BTC";
       const request = this.chartRequest = (this.chartRequest || 0) + 1;
       let data;
       try {
-        data = await api(`/api/crypto/price?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=300`);
+        data = await api(`/api/lighter-crypto/price?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=300`);
       } catch (_) {
-        data = await api(`/api/crypto/candles?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=300`);
+        data = await api(`/api/lighter-crypto/candles?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=300`);
       }
       if (interval !== this.interval || request !== this.chartRequest) return;
       if (!data || !data.success || !data.bars || !data.bars.length) return;
@@ -3633,7 +3646,7 @@
         if (!await this.toggleLiveBot(false)) return;
       }
       this.mode = mode;
-      safeStorage.setItem("skhynix_crypto_mode", mode);
+      safeStorage.setItem("skhynix_lighterCrypto_mode", mode);
       this.applyMode(mode, true);
     },
 
@@ -3662,7 +3675,7 @@
         if (ticket) ticket.classList.add("locked");
         if (autoBox) autoBox.style.display = "block";
         if (lid("aiSignalBox")) lid("aiSignalBox").style.display = "none";
-        this.setText("lblAutoBotTitle", "🤖 Binance Futures Single-Leg Bot Active");
+        this.setText("lblAutoBotTitle", "🤖 Lighter Perpetuals Single-Leg Bot Active");
         this.setText("lblStepTrancheSize", "➕ Open Live Single-Leg Tranche");
         this.setText("lblStepTrancheSub", this.selectedSymbol);
         this.setText("lblReduceTrancheText", "Reduce Latest Bot-Owned Tranche");
@@ -3711,7 +3724,7 @@
       const titleEl = lid("lblAutoTradeStateTitle");
       const headingEl = lid("lblAutoTradeStatusHeading");
       const detailEl = lid("lblAutoTradeStatusDetail");
-      const navLighterPill = $("navCryptoLivePill");
+      const navLighterPill = $("navLighterCryptoLivePill");
 
       if (isLive) {
         if (banner) banner.classList.add("active");
@@ -3763,12 +3776,12 @@
         return;
       }
       const notional = this.orderNotional();
-      if (!window.confirm(`Place a REAL ${side > 0 ? "BUY" : "SELL"} market order for approximately $${notional.toFixed(2)} of ${this.selectedSymbol} on Binance Futures?`)) return;
+      if (!window.confirm(`Place a REAL ${side > 0 ? "BUY" : "SELL"} market order for approximately $${notional.toFixed(2)} of ${this.selectedSymbol} on Lighter Perpetuals?`)) return;
       const btn = lid("btnStepTranche");
       if (btn) btn.disabled = true;
       window.showToast?.(`Submitting real ${this.selectedSymbol} Futures order...`, "info");
       try {
-        const res = await apiPost("/api/crypto/step_tranche", { side, notional_usd: notional, confirm_live_trading: true });
+        const res = await apiPost("/api/lighter-crypto/step_tranche", { side, notional_usd: notional, confirm_live_trading: true });
         if (res.success) {
           window.showToast?.(`✅ ${res.message}`, "success");
           await this.refresh();
@@ -3790,9 +3803,9 @@
       if (!window.confirm(`Place a REAL reduce-only market order for the latest bot-owned ${this.botState?.selected_symbol || "crypto"} tranche?`)) return;
       const btn = lid("btnReduceTranche");
       if (btn) btn.disabled = true;
-      window.showToast?.("Reducing bot-owned Binance Futures tranche...", "info");
+      window.showToast?.("Reducing bot-owned Lighter Perpetuals tranche...", "info");
       try {
-        const res = await apiPost("/api/crypto/reduce_tranche", { confirm_live_trading: true });
+        const res = await apiPost("/api/lighter-crypto/reduce_tranche", { confirm_live_trading: true });
         if (res.success) {
           window.showToast?.(`✅ ${res.message}`, "success");
           await this.refresh();
@@ -3812,13 +3825,13 @@
           window.showToast?.("🔒 Terminal is in read-only mode. Unlock before emergency flatten.", "warn");
           return;
         }
-        const confirmed = window.confirm(`REAL Binance Futures flatten: pause the bot and close only its recorded ${this.botState?.selected_symbol || "crypto"} tranches at market?`);
+        const confirmed = window.confirm(`REAL Lighter Perpetuals flatten: pause the bot and close only its recorded ${this.botState?.selected_symbol || "crypto"} tranches at market?`);
         if (!confirmed) return;
-        window.showToast?.("Closing bot-owned Binance Futures inventory and pausing bot...", "info");
+        window.showToast?.("Closing bot-owned Lighter Perpetuals inventory and pausing bot...", "info");
         try {
-          const res = await apiPost("/api/crypto/flatten", {});
+          const res = await apiPost("/api/lighter-crypto/flatten", {});
           if (res.success) {
-            window.showToast?.("✅ Bot-owned Binance Futures inventory flattened and bot paused.", "success");
+            window.showToast?.("✅ Bot-owned Lighter Perpetuals inventory flattened and bot paused.", "success");
             await this.refresh();
           } else {
             window.showToast?.(`Error: ${res.error}`, "danger");
@@ -3872,11 +3885,11 @@
     getActiveZThresholds() {
       let entry = 1.5, exit = 0.25;
       if (this.currentParadigm === "ou_quant") {
-        entry = Number($("crypto_inpOuEntryZ")?.value || this.botState?.strategy_params?.entry_z || this.botState?.entry_z || 1.4);
-        exit = Number($("crypto_inpOuExitZ")?.value || this.botState?.strategy_params?.exit_z || this.botState?.exit_z || 0.20);
+        entry = Number($("lighterCrypto_inpOuEntryZ")?.value || this.botState?.strategy_params?.entry_z || this.botState?.entry_z || 1.4);
+        exit = Number($("lighterCrypto_inpOuExitZ")?.value || this.botState?.strategy_params?.exit_z || this.botState?.exit_z || 0.20);
       } else if (this.currentParadigm === "custom") {
-        entry = Number($("crypto_inpCustomEntryZ")?.value || 1.5);
-        exit = Number($("crypto_inpCustomExitZ")?.value || 0.25);
+        entry = Number($("lighterCrypto_inpCustomEntryZ")?.value || 1.5);
+        exit = Number($("lighterCrypto_inpCustomExitZ")?.value || 0.25);
       }
       return { entryZ: entry, exitZ: exit };
     },
@@ -4011,7 +4024,7 @@
         }
         return;
       }
-      const sym = this.selectedSymbol || "BTCUSDT";
+      const sym = this.selectedSymbol || "BTC";
       const dirSelect = lid("selTrancheDirection");
       const metrics = this.computePriceMetrics();
       let side = (metrics && metrics.zScore > 0) ? -1 : 1;
@@ -4296,7 +4309,7 @@
 
     setTradeGrouping(asRange) {
       this.groupTradesAsRange = Boolean(asRange);
-      safeStorage.setItem("crypto_group_trades_as_range", this.groupTradesAsRange ? "true" : "false");
+      safeStorage.setItem("lighterCrypto_group_trades_as_range", this.groupTradesAsRange ? "true" : "false");
       this.executionChartFrame?.setGrouping?.(this.groupTradesAsRange);
       this.renderTradeMarkerTargets();
       this.renderTradeTriangles();
@@ -4321,7 +4334,7 @@
         const trendSlope = settings.trend_slope_min;
         const trendPullback = settings.trend_pullback_dist;
         const toggles = new URLSearchParams(settings);
-        const data = await api(`/api/crypto/backtest?${toggles}`);
+        const data = await api(`/api/lighter-crypto/backtest?${toggles}&market_source=lighter`);
         if (requestId !== this.backtestRequestId) return;
         const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
         this.backtestMarkers = data.trades.flatMap((trade, tradeIndex) => [
@@ -4374,27 +4387,27 @@
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
         const sharedSignal = ["shared_live_ou", "shared_live_grid"].includes(data.metrics?.signal_engine);
-        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.selectedSymbol || "BTCUSDT"} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> closed trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · realized return sum <strong>${data.summary.net_pct.toFixed(3)}%</strong> · <strong>${data.open_positions?.length || 0}</strong> open · unrealized return sum <strong>${Number(data.summary.unrealized_pct || 0).toFixed(3)}%</strong> · <em>${sharedSignal ? "shared live signal timing" : "paper replay"}; price signals only, costs excluded</em>`;
+        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.selectedSymbol || "BTC"} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> closed trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · realized return sum <strong>${data.summary.net_pct.toFixed(3)}%</strong> · <strong>${data.open_positions?.length || 0}</strong> open · unrealized return sum <strong>${Number(data.summary.unrealized_pct || 0).toFixed(3)}%</strong> · <em>${sharedSignal ? "shared live signal timing" : "paper replay"}; price signals only, costs excluded</em>`;
 
         if (data.metrics && this.currentParadigm === "ou_quant") {
-          const thetaEl = $("crypto_valOuTheta");
+          const thetaEl = $("lighterCrypto_valOuTheta");
           if (thetaEl && data.metrics.avg_theta) thetaEl.textContent = `${data.metrics.avg_theta.toFixed(4)} / bar`;
-          const hlEl = $("crypto_valOuHalfLife");
+          const hlEl = $("lighterCrypto_valOuHalfLife");
           if (hlEl && data.metrics.avg_half_life_bars) hlEl.textContent = `${data.metrics.avg_half_life_bars} bars (${data.metrics.half_life_mins}m)`;
         } else if (data.metrics && this.currentParadigm === "trend_pullback") {
-          const slopeEl = $("crypto_valTrendSlope");
+          const slopeEl = $("lighterCrypto_valTrendSlope");
           if (slopeEl && data.metrics.latest_slope != null) {
             slopeEl.textContent = `${data.metrics.latest_slope >= 0 ? "+" : ""}${data.metrics.latest_slope.toFixed(5)} / bar`;
             slopeEl.style.color = data.metrics.latest_slope >= trendSlope ? "#16a34a" : (data.metrics.latest_slope <= -trendSlope ? "#dc2626" : "#475569");
           }
-          const tlEl = $("crypto_valTrendlinePrice");
+          const tlEl = $("lighterCrypto_valTrendlinePrice");
           if (tlEl && data.metrics.latest_trendline != null) tlEl.textContent = this.formatCryptoPrice(data.metrics.latest_trendline);
-          const distEl = $("crypto_valTrendDistance");
+          const distEl = $("lighterCrypto_valTrendDistance");
           if (distEl && data.metrics.latest_distance != null) {
             distEl.textContent = `${data.metrics.latest_distance >= 0 ? "+" : ""}${data.metrics.latest_distance.toFixed(3)}%`;
             distEl.style.color = Math.abs(data.metrics.latest_distance) >= trendPullback ? "#7c3aed" : "#0f172a";
           }
-          const badgeEl = $("crypto_valTrendRegimeBadge");
+          const badgeEl = $("lighterCrypto_valTrendRegimeBadge");
           if (badgeEl && data.metrics.macro_regime) {
             badgeEl.textContent = `REGIME: ${data.metrics.macro_regime}`;
             badgeEl.style.background = data.metrics.macro_regime === "UPTREND" ? "#dcfce7" : (data.metrics.macro_regime === "DOWNTREND" ? "#fee2e2" : "#f1f5f9");
@@ -4445,7 +4458,7 @@
       const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position_amt ?? pos.size ?? 0)) > 1e-6);
       const showExchangeState = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
       if (showExchangeState) {
-        this.setText("lblUnrealizedPnl", "Bot Realized Net PnL");
+        this.setText("lblUnrealizedPnl", "Closed-Trade Net PnL");
         const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : null;
         const validTranches = (this.botState?.tranches || []).filter(t => Number(t.qty) > 0);
         const liveUnrealized = (this.livePositions || []).reduce((acc, pos) => acc + Number(pos.unrealized_pnl || 0), 0);
@@ -4453,6 +4466,9 @@
         const pnlSign = liveUnrealized >= 0 ? "+" : "";
         const pnlText = `${pnlSign}$${liveUnrealized.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
         const realized = this.verifiedRealizedSummary();
+        const estimatedClosed = (this.botState?.execution_history || []).filter(
+          (trade) => trade.event === "EXIT" && Number.isFinite(Number(trade.net_pnl_usd)));
+        const estimatedClosedNet = estimatedClosed.reduce((sum, trade) => sum + Number(trade.net_pnl_usd), 0);
         const realizedSign = realized.pnl >= 0 ? "+" : "";
         this.setText("valAccountEquity", col != null ? `$${col.toFixed(2)}` : "—");
         this.setText("badgeEquitySource", col != null ? "REAL FUTURES" : "UNAVAILABLE");
@@ -4466,7 +4482,7 @@
         this.setText("valActivePairs", `${openLive.length} Open on Exchange`);
         const maxTranches = Number(this.botState?.max_tranches || 8);
         this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Campaign Slots`);
-        this.setText("valHedgedQuantities", `Selected contract $${liveGross.toFixed(2)} USDT`);
+        this.setText("valHedgedQuantities", `Selected contract $${liveGross.toFixed(2)} USD`);
         const pausedError = this.botState?.last_error && !this.botState?.enabled;
         this.setText("valHedgedCombinedPnl", pausedError ? `Error: ${this.botState.last_error}` : pnlText);
         const pnlEl = lid("valHedgedCombinedPnl");
@@ -4476,7 +4492,9 @@
           : (validTranches.length > 0 ? "Exchange unrealized PnL; fees excluded" : "No bot-owned open tranche"));
         this.setText("valUnrealizedPnl", realized.count
           ? `${realizedSign}$${realized.pnl.toFixed(2)} · ${realized.count} verified exits`
-          : "— (fees / realized PnL not reconciled)");
+          : estimatedClosed.length
+            ? `~${estimatedClosedNet >= 0 ? '+' : ''}$${estimatedClosedNet.toFixed(2)} · ${estimatedClosed.length} exits (funding excluded)`
+            : "— (no closed Lighter trades)");
         const realizedEl = lid("valUnrealizedPnl");
         if (realizedEl) realizedEl.style.color = realized.pnl > 0 ? "#16a34a" : (realized.pnl < 0 ? "#dc2626" : "#64748b");
         this.setText("countPositions", String(openLive.length));
@@ -4486,12 +4504,12 @@
         if (positionSummary) {
           const liveRisk = this.botState?.risk_capacity || {};
           const liveLevCap = Number(liveRisk.gross_leverage_cap || 8);
-          positionSummary.innerHTML = `<span>Selected contract <b>$${liveGross.toFixed(2)} USDT</b></span><span>Futures equity <b>${col != null ? `$${col.toFixed(2)}` : "unavailable"}</b></span><span>Available margin <b>${actualFreeMargin != null ? `$${Number(actualFreeMargin).toFixed(2)}` : "unavailable"}</b></span><span style="color:#64748b">Authenticated exchange account</span>`;
+          positionSummary.innerHTML = `<span>Selected contract <b>$${liveGross.toFixed(2)} USD</b></span><span>Futures equity <b>${col != null ? `$${col.toFixed(2)}` : "unavailable"}</b></span><span>Available margin <b>${actualFreeMargin != null ? `$${Number(actualFreeMargin).toFixed(2)}` : "unavailable"}</b></span><span style="color:#64748b">Authenticated exchange account</span>`;
         }
         if (body) {
           if (openLive.length) {
             body.innerHTML = openLive.map((pos, idx) => {
-              const sym = pos.symbol || (Number(pos.market_id) === 216 ? "SOLUSDT" : this.selectedSymbol);
+              const sym = pos.symbol || (Number(pos.market_id) === 216 ? "SOL" : this.selectedSymbol);
               const rawSize = Number(pos.position_amt ?? pos.size ?? 0);
               const sign = pos.sign != null ? Number(pos.sign) : (rawSize < 0 ? -1 : 1);
               const isLong = sign === 1;
@@ -4505,7 +4523,7 @@
               const sideBadge = isLong
                 ? '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG</span>'
                 : '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">SHORT</span>';
-              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td><b>$${notional.toFixed(2)}</b> USDT</td><td>$${margin.toFixed(2)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(4)}<br><small>${roePct >= 0 ? "+" : ""}${roePct.toFixed(3)}%</small></td></tr>`;
+              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td><b>$${notional.toFixed(2)}</b> USD</td><td>$${margin.toFixed(2)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(4)}<br><small>${roePct >= 0 ? "+" : ""}${roePct.toFixed(3)}%</small></td></tr>`;
             }).join("");
           } else {
             body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px 16px;line-height:1.6;">No selected-contract Futures position on the exchange.</td></tr>';
@@ -4534,8 +4552,8 @@
       if (positionSummary) positionSummary.innerHTML = `<span>Paper bankroll <b>$10,000.00</b></span><span>Paper gross size <b>$${paperGross.toFixed(2)}</b></span><span>Est. paper margin <b>$${paperGross.toFixed(2)}</b></span><span style="color:#64748b">Simulation only</span>`;
       if (body) body.innerHTML = this.entries.length ? this.entries.map((entry, index) => {
         const gross = Number(entry.notional || 0);
-        const sym = entry.symbol || this.selectedSymbol || "BTCUSDT";
-        const base = sym.replace("USDT", "");
+        const sym = entry.symbol || this.selectedSymbol || "BTC";
+        const base = sym.replace("USD", "");
         const sideBadge = entry.side < 0
           ? '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">SHORT</span>'
           : '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG</span>';
@@ -4563,11 +4581,11 @@
           return sum + Number(isExit ? (trade.exit_fee_usd ?? trade.fee_usd ?? 0) : (trade.fee_usd || 0));
         }, 0);
         const totalGrossTurnover = history.reduce((sum, trade) => sum + this.tradeExposure(trade).gross, 0);
-        const wins = authoritativeExits.filter((trade) => Number(trade.net_pnl_usd ?? trade.pnl ?? 0) > 0).length;
+        const estimatedExits = exits.filter((trade) => Number.isFinite(Number(trade.net_pnl_usd)));
+        const estimatedNet = estimatedExits.reduce((sum, trade) => sum + Number(trade.net_pnl_usd), 0);
         const summary = lid("executionHistorySummary");
         if (summary) {
-          const verifiedSummary = this.verifiedRealizedSummary();
-          summary.innerHTML = `<span><b>${persistedCount}</b> persisted fills</span><span>Recent turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Fees and realized P&amp;L <b>not reconciled</b></span><span style="color:#64748b">Exchange order fills · confirm final P&amp;L in Binance history</span>`;
+          summary.innerHTML = `<span><b>${persistedCount}</b> persisted fills</span><span>Recent turnover <b>$${totalGrossTurnover.toFixed(2)}</b></span><span>Fill fees <b>$${totalFees.toFixed(4)}</b></span><span>Estimated closed net <b>${estimatedNet >= 0 ? '+' : ''}$${estimatedNet.toFixed(4)}</b></span><span style="color:#64748b">Fill-price estimate; funding excluded</span>`;
         }
         historyBody.innerHTML = history.slice().reverse().map((trade) => {
           const timeStr = formatKstDateTime(trade.time ? trade.time * 1000 : Date.now());
@@ -4580,7 +4598,7 @@
           const directionBadge = isShort
             ? '<span style="color:#dc2626;font-weight:800;">SHORT RIP</span>'
             : '<span style="color:#16a34a;font-weight:800;">LONG DIP</span>';
-          const sym = trade.symbol || this.selectedSymbol || "BTCUSDT";
+          const sym = trade.symbol || this.selectedSymbol || "BTC";
           const exposure = this.tradeExposure(trade);
           const exposureStr = `${sym}<br><small><b>Gross $${exposure.gross.toFixed(2)} · est. margin $${exposure.margin.toFixed(2)}</b></small>`;
           const entryRatio = Number(trade.entry_ratio || trade.entry_price || (!isExit ? trade.price : 0) || 0);
@@ -4594,8 +4612,8 @@
           const netPnl = isExit ? Number(trade.net_pnl_usd ?? trade.pnl ?? 0) : null;
           const pnlPct = isExit ? Number(trade.pnl_pct ?? ((netPnl / Number(trade.notional_usd || 25)) * 100)) : null;
           const pnlVerified = trade.pnl_authoritative || trade.pnl_source === "LIGHTER_REALIZED_PNL";
-          const pnlStr = isExit && pnlVerified
-            ? `<div style="font-weight:800;color:${netPnl >= 0 ? '#16a34a' : '#dc2626'}">${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(4)} net (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(3)}%)</div><small style="color:#64748b">Gross ${grossPnl >= 0 ? '+' : ''}$${grossPnl.toFixed(4)}</small>`
+          const pnlStr = isExit && (pnlVerified || Number.isFinite(Number(trade.net_pnl_usd)))
+            ? `<div style="font-weight:800;color:${netPnl >= 0 ? '#16a34a' : '#dc2626'}">${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(4)} net (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(3)}%)</div><small style="color:#64748b">${pnlVerified ? 'Verified' : 'Estimated · funding excluded'} · Gross ${grossPnl >= 0 ? '+' : ''}$${grossPnl.toFixed(4)}</small>`
             : (isExit ? '<span style="color:#b45309;font-weight:700">Realized P&amp;L unverified</span>' : '<span style="color:#64748b">Open cost basis</span>');
           const status = trade.status || (isExit ? "CLOSED" : "OPEN");
           return `<tr>
@@ -4631,7 +4649,7 @@
           const pnlStr = pnlVal != null
             ? `<span style="font-weight:700;color:${pnlVal >= 0 ? "#16a34a" : "#dc2626"}">${pnlVal >= 0 ? "+" : ""}$${pnlVal.toFixed(2)}</span>`
             : "—";
-          const sym = row.symbol || this.selectedSymbol || "BTCUSDT";
+          const sym = row.symbol || this.selectedSymbol || "BTC";
           return `<tr>
             <td style="font-family:monospace;font-size:11px;color:#475569;">${timeStr}</td>
             <td><strong>${sym} Perp</strong></td>
@@ -4647,10 +4665,10 @@
     }
   };
 
-  window.cryptoEngine = cryptoEngine;
+  window.lighterCryptoEngine = lighterCryptoEngine;
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => cryptoEngine.init());
+    document.addEventListener("DOMContentLoaded", () => lighterCryptoEngine.init());
   } else {
-    cryptoEngine.init();
+    lighterCryptoEngine.init();
   }
 })();

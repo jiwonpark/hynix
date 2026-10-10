@@ -39,6 +39,7 @@ from .config import config
 from .binance_client import BinanceFuturesClient
 from .crypto_bot import CryptoBot
 from .lighter_client import LighterClient
+from .lighter_crypto_bot import LighterCryptoBot, MARKETS as LIGHTER_CRYPTO_MARKETS
 from .lighter_bot import LighterPairBot
 from .lighter_strategy import evaluate_ou_signals, evaluate_grid_signals
 from .upbit_client import UpbitClient
@@ -106,6 +107,7 @@ crypto_bot = CryptoBot(binance_client)
 upbit_client = UpbitClient()
 lighter_client = LighterClient()
 lighter_pair_bot = LighterPairBot(lighter_client)
+lighter_crypto_bot = LighterCryptoBot(lighter_client)
 
 # Active WebSocket connections for live push
 active_connections: List[WebSocket] = []
@@ -149,7 +151,8 @@ async def account_broadcaster():
 async def lighter_pair_worker():
     """Evaluate the persisted Lighter strategy independently of browser sessions."""
     while True:
-        await lighter_pair_bot.run_once()
+        async with lighter_client.execution_lock:
+            await lighter_pair_bot.run_once()
         cooldown = max(6.0, float(lighter_pair_bot.state.get("min_seconds_between_orders", 300)))
         await asyncio.sleep(max(1.0, min(60.0, cooldown / 2.0)))
 
@@ -161,6 +164,16 @@ async def crypto_bot_worker():
             await crypto_bot.run_once()
         except Exception:
             logger.exception("Crypto bot worker failed")
+        await asyncio.sleep(5)
+
+
+async def lighter_crypto_bot_worker():
+    """Evaluate Tab 5 on newly completed Lighter perp candles."""
+    while True:
+        try:
+            await lighter_crypto_bot.run_once()
+        except Exception:
+            logger.exception("Lighter crypto bot worker failed")
         await asyncio.sleep(5)
 
 @asynccontextmanager
@@ -181,12 +194,14 @@ async def lifespan(app: FastAPI):
 
     await lighter_client.start_streams()
     await crypto_bot.verify_startup()
+    await lighter_crypto_bot.verify_startup()
     broadcaster_task = asyncio.create_task(account_broadcaster())
     auto_tranche_task = asyncio.create_task(auto_tranche_worker())
     upbit_strategy_task = asyncio.create_task(upbit_strategy_worker())
     upbit_forecast_validation_task = asyncio.create_task(upbit_forecast_validation_worker())
     lighter_pair_task = asyncio.create_task(lighter_pair_worker())
     crypto_bot_task = asyncio.create_task(crypto_bot_worker())
+    lighter_crypto_bot_task = asyncio.create_task(lighter_crypto_bot_worker())
     yield
     broadcaster_task.cancel()
     auto_tranche_task.cancel()
@@ -194,6 +209,7 @@ async def lifespan(app: FastAPI):
     upbit_forecast_validation_task.cancel()
     lighter_pair_task.cancel()
     crypto_bot_task.cancel()
+    lighter_crypto_bot_task.cancel()
     await asyncio.gather(binance_client.close(), upbit_client.close(), lighter_client.close(), return_exceptions=True)
     logger.info("HYPERION Trading Daemon shutdown complete.")
 
@@ -214,6 +230,8 @@ async def authorize_strategy_lab(request: Request, call_next):
         "/api/lighter/reduce_tranche", "/api/lighter/flatten", "/api/lighter/order",
         "/api/crypto/bot/", "/api/crypto/step_tranche", "/api/crypto/reduce_tranche",
         "/api/crypto/flatten", "/api/crypto/order",
+        "/api/lighter-crypto/bot/", "/api/lighter-crypto/step_tranche",
+        "/api/lighter-crypto/reduce_tranche", "/api/lighter-crypto/flatten",
     )
     if (request.url.path.startswith(protected_prefixes)
             and request.method not in ("GET", "HEAD", "OPTIONS")
@@ -490,7 +508,8 @@ async def toggle_lighter_bot(request: Request) -> JSONResponse:
             raise ValueError("enabled must be true or false")
         if enabled and body.get("confirm_live_trading") is not True:
             raise ValueError("Explicit live-trading confirmation is required")
-        state = await lighter_pair_bot.set_enabled(enabled)
+        async with lighter_client.execution_lock:
+            state = await lighter_pair_bot.set_enabled(enabled)
         return JSONResponse({"success": True, "bot": state})
     except ValueError as error:
         return JSONResponse({"success": False, "error": str(error)}, status_code=400)
@@ -842,7 +861,8 @@ async def step_lighter_tranche(request: Request) -> JSONResponse:
             raise ValueError("notional_usd must be between 10 and 500")
         if side not in {-1, 1}:
             raise ValueError("side must be -1 or 1")
-        tranche = await lighter_pair_bot.execute_manual_tranche(side=side, notional_usd=notional)
+        async with lighter_client.execution_lock:
+            tranche = await lighter_pair_bot.execute_manual_tranche(side=side, notional_usd=notional)
         return JSONResponse({"success": True, "message": f"Executed 1x pair tranche (${notional:.0f}) on Lighter DEX", "tranche": tranche})
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error)}, status_code=400)
@@ -853,7 +873,8 @@ async def reduce_lighter_tranche(request: Request) -> JSONResponse:
     if not terminal_authorized(request):
         return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
     try:
-        tranche = await lighter_pair_bot.execute_manual_reduce()
+        async with lighter_client.execution_lock:
+            tranche = await lighter_pair_bot.execute_manual_reduce()
         return JSONResponse({"success": True, "message": "Reduced 1x tranche on Lighter DEX", "tranche": tranche})
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error)}, status_code=400)
@@ -864,7 +885,8 @@ async def flatten_lighter(request: Request) -> JSONResponse:
     if not terminal_authorized(request):
         return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
     try:
-        res = await lighter_pair_bot.flatten_all()
+        async with lighter_client.execution_lock:
+            res = await lighter_pair_bot.flatten_all()
         return JSONResponse({"success": True, "message": "SKHY pair positions flattened and bot paused", **res})
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error)}, status_code=400)
@@ -1099,7 +1121,241 @@ async def flatten_crypto(request: Request) -> JSONResponse:
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error), "bot": crypto_bot.public_state()}, status_code=400)
 
+
+# Tab 5 owns separate Lighter inventory and history. Tab 4 endpoints remain Binance-only.
+@app.get("/api/lighter-crypto/markets")
+async def get_lighter_crypto_markets() -> Dict[str, Any]:
+    try:
+        rows = await asyncio.gather(*(
+            lighter_client.market_detail(market_id) for market_id in LIGHTER_CRYPTO_MARKETS.values()
+        ))
+        markets = [{"symbol": symbol, "name": f"{symbol} Perpetual", "base": symbol,
+                    "quote": "USD", "market_id": market_id, "status": detail.get("status"),
+                    "min_base_amount": detail.get("min_base_amount"),
+                    "min_quote_amount": detail.get("min_quote_amount"),
+                    "supported_size_decimals": detail.get("supported_size_decimals")}
+                   for (symbol, market_id), detail in zip(LIGHTER_CRYPTO_MARKETS.items(), rows)]
+        return {"success": True, "venue": "Lighter", "markets": markets}
+    except Exception as error:
+        return {"success": False, "markets": [], "error": str(error)}
+
+
+@app.get("/api/lighter-crypto/status")
+async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
+    try:
+        if symbol not in LIGHTER_CRYPTO_MARKETS:
+            raise ValueError("Unsupported Lighter crypto symbol")
+        market_id = LIGHTER_CRYPTO_MARKETS[symbol]
+        detail, book, account, candles = await asyncio.gather(
+            lighter_client.market_detail(market_id),
+            lighter_client.order_book(market_id, 20),
+            lighter_client.account_status(),
+            lighter_client.candles(market_id, "1m", 20),
+            return_exceptions=True,
+        )
+        for required in (detail, book, account):
+            if isinstance(required, Exception):
+                raise required
+        if isinstance(candles, Exception):
+            candles = []
+        quote = _lighter_book_summary(book)
+        positions = await lighter_client.positions(fresh=True) if account.get("authenticated") else []
+        selected = []
+        allocated = sum(abs(float(p.get("allocated_margin", 0) or 0)) for p in positions)
+        for position in positions:
+            if int(position.get("market_id", -1)) != market_id:
+                continue
+            raw = float(position.get("position", 0) or position.get("size", 0) or 0)
+            sign = int(position.get("sign", 1 if raw >= 0 else -1))
+            amount = abs(raw) * (1 if sign > 0 else -1)
+            selected.append({"symbol": symbol, "market_id": market_id,
+                             "position_amt": amount, "size": abs(amount),
+                             "notional": abs(float(position.get("position_value", 0) or 0)),
+                             "entry_price": float(position.get("avg_entry_price", 0) or 0),
+                             "mark_price": float(position.get("mark_price", 0) or detail.get("mark_price", 0) or 0),
+                             "unrealized_pnl": float(position.get("unrealized_pnl", 0) or 0),
+                             "initial_margin": float(position.get("allocated_margin", 0) or 0)})
+        collateral = float(account.get("collateral", 0) or 0) if account.get("authenticated") else None
+        mark = float(quote["mid"] or 0)
+        previous_open = float(candles[-2]["o"]) if len(candles) > 1 else mark
+        change_pct = (mark - previous_open) / previous_open * 100 if previous_open else 0.0
+        return {"success": True, "symbol": symbol, "market_id": market_id,
+                "mark_price": mark, "price_ratio": mark, "bid": quote["bid"], "ask": quote["ask"],
+                "high": float(candles[-1]["h"]) if candles else mark,
+                "low": float(candles[-1]["l"]) if candles else mark,
+                "change_pct": round(change_pct, 2),
+                "venue": "Lighter Single-Leg Perpetual", "authenticated": bool(account.get("authenticated")),
+                "execution_enabled": bool(account.get("execution_enabled") and detail.get("status") == "active"
+                                          and quote["bid"] and quote["ask"]
+                                          and not lighter_crypto_bot.state["recovery_required"]),
+                "execution_message": lighter_crypto_bot.state.get("last_error") or account.get("message"),
+                "collateral": collateral,
+                "available_margin": max(0.0, collateral - allocated) if collateral is not None else None,
+                "positions": selected, "server_time_ms": int(time.time() * 1000)}
+    except Exception as error:
+        return {"success": False, "symbol": symbol, "error": str(error),
+                "server_time_ms": int(time.time() * 1000)}
+
+
+@app.get("/api/lighter-crypto/candles")
+async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
+                                     limit: int = 300) -> Dict[str, Any]:
+    try:
+        if symbol not in LIGHTER_CRYPTO_MARKETS:
+            raise ValueError("Unsupported Lighter crypto symbol")
+        if interval not in {"1m", "5m", "15m", "1h", "4h", "1d"}:
+            raise ValueError("Unsupported candle interval")
+        rows = await lighter_client.candles(LIGHTER_CRYPTO_MARKETS[symbol], interval,
+                                            min(500, max(20, limit)))
+        bars = [{"time": int(row["t"]) // 1000, "value": float(row["c"]),
+                 "open": float(row["o"]), "high": float(row["h"]),
+                 "low": float(row["l"]), "close": float(row["c"]),
+                 "volume": float(row.get("v", 0) or 0)} for row in rows]
+        markers = []
+        if bars:
+            interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
+                                "4h": 14400, "1d": 86400}[interval]
+            first, last = bars[0]["time"], bars[-1]["time"]
+            for event in lighter_crypto_bot.state.get("execution_history", []):
+                if event.get("symbol") != symbol:
+                    continue
+                trade_time = int(event.get("time", 0))
+                bar_time = trade_time // interval_seconds * interval_seconds
+                if not first <= bar_time <= last:
+                    continue
+                is_entry = event.get("event") == "ENTRY"
+                price = float(event.get("price", 0))
+                original_side = int(event.get("original_side", event.get("side", 0)))
+                markers.append({"time": bar_time, "source": "actual", "is_entry": is_entry,
+                                "is_exit": not is_entry, "side": int(event.get("side", 0)),
+                                "direction": "long" if original_side > 0 else "short",
+                                "ratio": price, "entry_price": float(event.get("entry_price", price)),
+                                "exit_price": price if not is_entry else None,
+                                "qty": float(event.get("qty", 0)),
+                                "notional": float(event.get("notional_usd", 0)),
+                                "pairKey": str(event.get("entry_order_id") or event.get("order_id")),
+                                "hoverText": f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {symbol} @ {price:.6f} · {event.get('qty')} filled"})
+        return {"success": True, "symbol": symbol, "interval": interval,
+                "bars": bars, "markers": markers}
+    except Exception as error:
+        return {"success": False, "symbol": symbol, "interval": interval,
+                "bars": [], "markers": [], "error": str(error)}
+
+
+@app.get("/api/lighter-crypto/price")
+@app.get("/api/lighter-crypto/parity")
+async def get_lighter_crypto_price(symbol: str = "BTC", interval: str = "15m",
+                                   limit: int = 300) -> Dict[str, Any]:
+    return await get_lighter_crypto_candles(symbol, interval, limit)
+
+
+@app.get("/api/lighter-crypto/trends")
+async def get_lighter_crypto_trends(symbol: str = "BTC", small: str = "5m",
+                                    big: str = "1h") -> Dict[str, Any]:
+    try:
+        small_bars, big_bars = await asyncio.gather(
+            get_lighter_crypto_candles(symbol, small, 30),
+            get_lighter_crypto_candles(symbol, big, 30),
+        )
+        def trend(rows: list[Dict[str, Any]]) -> Dict[str, Any]:
+            if len(rows) < 5:
+                return {"slope": 0.0, "regime": "FLAT", "pct_change": 0.0}
+            first, last = rows[0]["value"], rows[-1]["value"]
+            pct = (last - first) / first * 100 if first else 0.0
+            return {"slope": round(pct, 3), "regime": "BULL" if pct > 0.15 else
+                    "BEAR" if pct < -0.15 else "FLAT", "pct_change": round(pct, 3)}
+        return {"success": True, "symbol": symbol,
+                "trends": {"small": trend(small_bars.get("bars", [])),
+                           "big": trend(big_bars.get("bars", []))},
+                "server_time_ms": int(time.time() * 1000)}
+    except Exception as error:
+        return {"success": False, "symbol": symbol, "trends": {}, "error": str(error)}
+
+
+@app.get("/api/lighter-crypto/bot/status")
+async def get_lighter_crypto_bot_status() -> Dict[str, Any]:
+    return {"success": True, "bot": lighter_crypto_bot.public_state()}
+
+
+@app.post("/api/lighter-crypto/bot/config")
+async def configure_lighter_crypto_bot(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        bot = await lighter_crypto_bot.configure(await request.json())
+        return JSONResponse({"success": True, "bot": bot})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/lighter-crypto/bot/toggle")
+async def toggle_lighter_crypto_bot(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        body = await request.json()
+        enabled = bool(body.get("enabled", False))
+        if enabled and body.get("confirm_live_trading") is not True:
+            raise ValueError("Explicit Lighter single-leg trading confirmation is required")
+        bot = await lighter_crypto_bot.toggle(enabled)
+        return JSONResponse({"success": True, "bot": bot})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/lighter-crypto/bot/reconcile")
+async def reconcile_lighter_crypto_bot(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        return JSONResponse({"success": True, **await lighter_crypto_bot.reconcile()})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/lighter-crypto/step_tranche")
+async def step_lighter_crypto_tranche(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        body = await request.json()
+        if body.get("confirm_live_trading") is not True:
+            raise ValueError("Confirm the live Lighter order")
+        event = await lighter_crypto_bot.manual_entry(int(body.get("side", 0)), float(body.get("notional_usd", 0)))
+        return JSONResponse({"success": True, "message": "Lighter perp order filled",
+                             "event": event, "bot": lighter_crypto_bot.public_state()})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/lighter-crypto/reduce_tranche")
+async def reduce_lighter_crypto_tranche(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        body = await request.json()
+        if body.get("confirm_live_trading") is not True:
+            raise ValueError("Confirm the live Lighter reduction")
+        event = await lighter_crypto_bot.manual_reduce()
+        return JSONResponse({"success": True, "message": "Lighter perp tranche reduced",
+                             "event": event, "bot": lighter_crypto_bot.public_state()})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+
+@app.post("/api/lighter-crypto/flatten")
+async def flatten_lighter_crypto(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        result = await lighter_crypto_bot.flatten()
+        return JSONResponse({"success": True, "message": "Tab 5 Lighter inventory flattened and bot paused", **result})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error),
+                             "bot": lighter_crypto_bot.public_state()}, status_code=400)
+
 @app.get("/api/crypto/backtest")
+@app.get("/api/lighter-crypto/backtest")
 async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 500,
                               strategy_mode: str = "grid",
                               entry_z: float = 1.5, exit_z: float = 0.25,
@@ -1110,9 +1366,15 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
                               min_consensus_votes: int = 3,
                               trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
-                              trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002) -> Dict[str, Any]:
+                              trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002,
+                              base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
+                              market_source: str = "binance") -> Dict[str, Any]:
     """Single-leg crypto strategy backtest engine across 5 quantitative regimes."""
-    candle_res = await get_crypto_candles(symbol, interval=interval, limit=min(500, limit))
+    if market_source not in {"binance", "lighter"}:
+        raise ValueError("Unsupported crypto replay market source")
+    candle_res = (await get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit))
+                  if market_source == "lighter" else
+                  await get_crypto_candles(symbol, interval=interval, limit=min(500, limit)))
     bars = candle_res.get("bars", [])
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
     now_seconds = int(time.time())
@@ -1160,7 +1422,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                 stack_pass = ((zscore > 0 and signal_price > ma7 > mean)
                               or (zscore < 0 and signal_price < ma7 < mean))
                 peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
-                step_dist = signal_price * 0.002
+                step_dist = signal_price * max(0.0, min(10.0, base_spacing_pct)) / 100.0
                 spacing_pass = (not use_base_spacing or last_entry_value is None
                                 or candidate_side != last_entry_side
                                 or (candidate_side < 0 and signal_price >= last_entry_value + step_dist)
@@ -1169,7 +1431,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                 if active_positions:
                     latest = active_positions[-1]
                     convergence_pass = exit_signal if use_convergence else latest["side"] * (signal_price - latest["entry"]) > 0
-                    dwell_pass = not use_dwell or index - latest["entry_index"] >= 4
+                    dwell_pass = not use_dwell or index - latest["entry_index"] >= max(0, min(100, min_dwell_bars))
                     bottoming_pass = not use_bottoming or (previous_zscore is not None and abs(zscore) >= abs(previous_zscore))
                     exit_signal = convergence_pass and dwell_pass and bottoming_pass
 
@@ -1401,7 +1663,9 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
             "win_rate": round(wins / len(trades) * 100, 1) if trades else 0,
             "net_pct": round(sum(trade["pnl_pct"] for trade in trades), 4)
         },
-        "assumptions": "Binance Futures perpetual single-leg candles; maker fee 0.02%, taker 0.05%."
+        "assumptions": ("Lighter perp candles; price signals only, costs and funding excluded."
+                        if market_source == "lighter" else
+                        "Binance Futures perpetual single-leg candles; maker fee 0.02%, taker 0.05%.")
     }
 
 _PAIRS_CACHE: Dict[str, Any] = {

@@ -51,6 +51,7 @@
     const trading = document.getElementById("tabContentTrading");
     const lighter = document.getElementById("tabContentLighter");
     const crypto = document.getElementById("tabContentCrypto");
+    const lighterCrypto = document.getElementById("tabContentLighterCrypto");
     const template = document.getElementById("tradingTerminalTemplate");
     if (!trading || !lighter || !template) throw new Error("Trading terminal template hosts are missing");
 
@@ -58,6 +59,9 @@
     renderTerminal(template, lighter, { venue: "lighter", prefix: "lighter_", stripHandlers: true });
     if (crypto) {
       renderTerminal(template, crypto, { venue: "crypto", prefix: "crypto_", stripHandlers: true });
+    }
+    if (lighterCrypto) {
+      renderTerminal(template, lighterCrypto, { venue: "lighterCrypto", prefix: "lighterCrypto_", stripHandlers: true });
     }
   }
 
