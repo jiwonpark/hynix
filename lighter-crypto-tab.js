@@ -145,8 +145,8 @@
           rowCondEntryMaStack5m: "4. 5m Micro-Trend Neutrality Confirmation",
           rowCondEntryMaStack1h: "5. 1h Macro Divergence Boundary",
           rowCondEntryCapacity: "6. Max Active Grid Tiers (Cap: 8 Rungs)",
-          rowCondEntryLeverage: "7. Fixed 1.0x Position Sizing",
-          rowCondEntryMargin: "8. Buffered Margin Reserve (≥ 125%)",
+          rowCondEntryLeverage: "7. Projected account-wide gross exposure (≤ 1.0×)",
+          rowCondEntryMargin: "8. Buffered initial margin (10× estimate + 25%)",
           rowCondEntryEngine: "9. Grid Engine State & Configured Rate Limit",
           rowCondEntryGuard: "10. Anti-Whipsaw Bar Cadence (1 bar/rung)",
         },
@@ -474,10 +474,10 @@
       if (execHeader) execHeader.textContent = "Single-leg Futures · no hedge";
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner");
       if (guard) {
-        guard.querySelector("strong").textContent = "Live Grid execution rules";
+        guard.querySelector("strong").textContent = "Live strategy execution rules";
         const guardBadge = guard.querySelector("span[style*='background: #16a34a']");
-        if (guardBadge) guardBadge.textContent = "GRID ONLY";
-        guard.querySelector("p").textContent = "The live Grid bot uses completed-candle Z-score entry and convergence exit, then checks the current executable quote before entry. It has no minimum-profit exit rule. Exchange validity, available margin, a selected-contract 1x equity cap, and order reconciliation are execution safeguards. Replay-only switches below do not change live orders.";
+        if (guardBadge) guardBadge.textContent = "ALL LIVE MODES";
+        guard.querySelector("p").textContent = "The deployed strategy uses completed-candle signals and checks the current executable quote before entry. Account-wide exposure, buffered initial margin, exchange validity, and order reconciliation are execution safeguards. The 10% adverse-move figure is a risk estimate, not a liquidation threshold.";
       }
       const telemetryTitle = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner + div strong");
       if (telemetryTitle) telemetryTitle.textContent = "📊 Single-leg position and account risk";
@@ -573,8 +573,8 @@
         rowCondEntryMaStack5m: "4. 5m Micro-Trend Neutrality Confirmation",
         rowCondEntryMaStack1h: "5. 1h Macro Divergence Boundary",
         rowCondEntryCapacity: "6. Max Active Grid Tiers (Cap: 8 Rungs)",
-        rowCondEntryLeverage: "7. Account-Wide Gross Leverage (≤ 8.0x)",
-        rowCondEntryMargin: "8. Buffered Margin Reserve (≥ 125%)",
+        rowCondEntryLeverage: "7. Projected account-wide gross exposure (≤ 1.0×)",
+        rowCondEntryMargin: "8. Buffered initial margin (10× estimate + 25%)",
         rowCondEntryEngine: "9. Grid Engine State & Configured Rate Limit",
         rowCondEntryGuard: "10. Anti-Whipsaw Bar Cadence (1 bar/rung)",
       };
@@ -1437,6 +1437,10 @@
             <b>Size / dynamic capacity</b><br>
             Single-leg target $<span id="lighterCryptoLiveNotional">50</span> · gross ≈ $<span id="lighterCryptoLivePairGross">—</span><br>
             <span id="lighterCryptoLiveMaxTranches">—</span> bot-owned tranches · max <input id="lighterCrypto_inputLiveMaxTranches" type="number" min="1" max="5" step="1" value="5" aria-label="Maximum live Grid tranches" style="width:45px;font-weight:800"> · new Tab 5 entries require total gross ≤1x Lighter collateral
+          </div>
+          <div>
+            <b>Next-entry risk estimate</b><br>
+            <span id="lighterCrypto_LiveRiskBudget">Awaiting account equity and order size</span>
           </div>
           <div>
             <b>Execution guards</b><br>
@@ -2824,12 +2828,18 @@
       }
 
       const grossLev = collateral > 0 ? (grossNotional / collateral) : 0;
+      const isLiveAccount = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
+      const accountGross = isLiveAccount && Number.isFinite(Number(this.liveVenue?.account_gross_notional))
+        ? Number(this.liveVenue.account_gross_notional) : grossNotional;
       const dynamicCapUsd = collateral * levCap;
-      const headroomUsd = Math.max(0, dynamicCapUsd - grossNotional);
-      const freeMarginUsd = this.mode === "live" || this.botState?.enabled || hasLiveExposure
+      const headroomUsd = Math.max(0, dynamicCapUsd - accountGross);
+      const freeMarginUsd = isLiveAccount
         ? Number(this.liveVenue?.available_margin ?? 0)
         : Math.max(0, collateral - (grossNotional / levCap));
-      const hasLeverage = grossLev <= levCap;
+      const nextOrderUsd = Number(this.orderNotional() || 25);
+      const projectedGross = accountGross + nextOrderUsd;
+      const projectedLeverage = collateral > 0 ? projectedGross / collateral : Infinity;
+      const hasLeverage = projectedLeverage <= levCap;
       const netDeltaUsd = grossNotional;
       const netShares = adrQty;
       const loss10 = grossNotional * 0.10;
@@ -2870,7 +2880,7 @@
       }
 
       // 5. Conditions & Criteria Checklist
-      this.setText("valCondEntryLeverage", `${grossLev.toFixed(2)}x ≤ ${levCap.toFixed(1)}x`);
+      this.setText("valCondEntryLeverage", `${Number.isFinite(projectedLeverage) ? projectedLeverage.toFixed(2) : "—"}x projected ≤ ${levCap.toFixed(1)}x`);
       const chkLev = lid("chkCondEntryLeverage");
       if (chkLev) chkLev.checked = hasLeverage;
       const badgeLev = lid("badgeCondEntryLeverage");
@@ -2894,10 +2904,18 @@
         badgeCap.style.color = hasCapacity ? "#166534" : "#dc2626";
       }
 
-      const sizingRatio = Number(this.botState?.last_evaluation?.ratio || this.currentRatio || 0);
-      const nextPairGross = Number(this.orderNotional() || 25);
-      const reqMarginPerTranche = nextPairGross * 1.25;
+      const riskMarginLeverage = Number(riskCapacity.margin_leverage_assumption || 10);
+      const riskMarginMultiplier = Number(riskCapacity.margin_buffer_multiplier || 1.25);
+      const minimumMargin = Number(riskCapacity.min_margin_buffer_usd || 2.50);
+      const reqMarginPerTranche = Math.max(minimumMargin, nextOrderUsd / riskMarginLeverage * riskMarginMultiplier);
       const hasMargin = freeMarginUsd >= reqMarginPerTranche;
+      const stressMovePct = Number(riskCapacity.stress_move_pct || 10);
+      const stressBudgetPct = Number(riskCapacity.stress_loss_budget_pct_equity || 10);
+      const projectedLossUsd = projectedGross * stressMovePct / 100;
+      const projectedLossEquityPct = collateral > 0 ? projectedLossUsd / collateral * 100 : 0;
+      this.setText("LiveRiskBudget", collateral > 0
+        ? `Next $${nextOrderUsd.toFixed(2)} → ${projectedLeverage.toFixed(2)}x account gross; ${stressMovePct.toFixed(0)}% adverse move ≈ −$${projectedLossUsd.toFixed(2)} (${projectedLossEquityPct.toFixed(1)}% of equity, limit ${stressBudgetPct.toFixed(0)}%). Buffered 10× margin estimate: $${reqMarginPerTranche.toFixed(2)}. Pre-rounding estimate.`
+        : "Account equity unavailable");
       this.setText("valCondEntryMargin", `$${freeMarginUsd.toFixed(2)} ≥ $${reqMarginPerTranche.toFixed(2)}`);
       const chkMargin = lid("chkCondEntryMargin");
       if (chkMargin) chkMargin.checked = hasMargin;

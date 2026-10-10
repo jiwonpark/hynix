@@ -92,6 +92,36 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
             await self.bot.manual_entry(1, 50)
         self.assertEqual(self.client.orders, {})
 
+    async def test_buffer_applies_to_estimated_margin_not_order_notional(self):
+        self.client.collateral = 170.0
+        entry = await self.bot.manual_entry(1, 150.0)
+        self.assertEqual(entry["event"], "ENTRY")
+        self.assertAlmostEqual(entry["notional_usd"], 150.015)
+        self.assertEqual(len(self.client.orders), 1)
+
+    async def test_projected_account_wide_gross_cap_blocks_entry(self):
+        self.client.collateral = 140.0
+        with self.assertRaisesRegex(ValueError, "gross exposure"):
+            await self.bot.manual_entry(1, 150.0)
+        self.assertEqual(self.client.orders, {})
+
+    async def test_buffered_initial_margin_still_blocks_low_free_margin(self):
+        self.client.extra_positions = [{"market_id": 216, "position": "1", "sign": 1,
+                                        "position_value": "100", "allocated_margin": "990"}]
+        with self.assertRaisesRegex(ValueError, "buffered initial-margin estimate"):
+            await self.bot.manual_entry(1, 150.0)
+        self.assertEqual(self.client.orders, {})
+
+    async def test_enable_checks_actual_next_order_capacity(self):
+        self.client.collateral = 140.0
+        with self.assertRaisesRegex(ValueError, "gross exposure"):
+            await self.bot.toggle(True)
+        self.assertFalse(self.bot.state["enabled"])
+        self.client.collateral = 170.0
+        enabled = await self.bot.toggle(True)
+        self.assertTrue(enabled["enabled"])
+        self.assertEqual(self.client.orders, {})
+
     async def test_current_executable_quote_must_still_support_signal(self):
         with patch("backend.lighter_crypto_bot.evaluate_strategy_signal",
                    return_value=(False, 1, False, {})):

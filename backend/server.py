@@ -1167,7 +1167,14 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
         positions = await lighter_client.positions(fresh=True) if account.get("authenticated") else []
         selected = []
         allocated = sum(abs(float(p.get("allocated_margin", 0) or 0)) for p in positions)
+        account_gross = 0.0
         for position in positions:
+            size = abs(float(position.get("position", 0) or position.get("size", 0) or 0))
+            value = abs(float(position.get("position_value", 0) or 0))
+            if size and not value:
+                mark_price = float(position.get("mark_price", 0) or position.get("avg_entry_price", 0) or 0)
+                value = size * mark_price
+            account_gross += value
             if int(position.get("market_id", -1)) != market_id:
                 continue
             raw = float(position.get("position", 0) or position.get("size", 0) or 0)
@@ -1196,6 +1203,7 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
                 "execution_message": lighter_crypto_bot.state.get("last_error") or account.get("message"),
                 "collateral": collateral,
                 "available_margin": max(0.0, collateral - allocated) if collateral is not None else None,
+                "account_gross_notional": account_gross if collateral is not None else None,
                 "positions": selected, "server_time_ms": int(time.time() * 1000)}
     except Exception as error:
         return {"success": False, "symbol": symbol, "error": str(error),

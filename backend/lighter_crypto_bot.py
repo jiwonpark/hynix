@@ -50,6 +50,15 @@ DEFAULT_STATE = {
 
 
 class LighterCryptoBot:
+    # A 10% adverse single-leg move may consume at most 10% of account equity.
+    # Tab 2's margin buffer applies to estimated initial margin, not gross value.
+    STRESS_MOVE_PCT = 10.0
+    MAX_STRESS_LOSS_PCT_EQUITY = 10.0
+    GROSS_LEVERAGE_CAP = MAX_STRESS_LOSS_PCT_EQUITY / STRESS_MOVE_PCT
+    MARGIN_LEVERAGE_ASSUMPTION = 10.0
+    MARGIN_BUFFER_MULTIPLIER = 1.25
+    MIN_MARGIN_BUFFER_USD = 2.50
+
     def __init__(self, client: Any, state_path: Optional[Path] = None):
         self.client = client
         self.state_path = state_path or Path(__file__).with_name("lighter_crypto_bot_state.json")
@@ -92,7 +101,12 @@ class LighterCryptoBot:
                       venue="Lighter", history_event_count=len(result["execution_history"]),
                       risk_capacity={"active_tranches": len(result["tranches"]),
                                      "max_tranches": result["max_tranches"],
-                                     "gross_leverage_cap": 1.0},
+                                     "gross_leverage_cap": self.GROSS_LEVERAGE_CAP,
+                                     "margin_leverage_assumption": self.MARGIN_LEVERAGE_ASSUMPTION,
+                                     "margin_buffer_multiplier": self.MARGIN_BUFFER_MULTIPLIER,
+                                     "min_margin_buffer_usd": self.MIN_MARGIN_BUFFER_USD,
+                                     "stress_move_pct": self.STRESS_MOVE_PCT,
+                                     "stress_loss_budget_pct_equity": self.MAX_STRESS_LOSS_PCT_EQUITY},
                       strategy_params={
                           "entry_z": float(self.state.get("entry_z", 1.5)),
                           "exit_z": float(self.state.get("exit_z", 0.25)),
@@ -250,6 +264,37 @@ class LighterCryptoBot:
             raise ValueError(f"Lighter lot size makes nearest order ${actual:.2f}; adjust target")
         return float(chosen)
 
+    def _check_entry_capacity(self, account: Dict[str, Any], positions: list[Dict[str, Any]],
+                              order_usd: float) -> None:
+        collateral = float(account.get("collateral", 0) or 0)
+        gross = 0.0
+        for position in positions:
+            size = abs(float(position.get("position", 0) or position.get("size", 0) or 0))
+            value = abs(float(position.get("position_value", 0) or 0))
+            if size and not value:
+                mark = float(position.get("mark_price", 0) or position.get("avg_entry_price", 0) or 0)
+                if mark <= 0:
+                    raise ValueError("Cannot determine account-wide Lighter exposure")
+                value = size * mark
+            gross += value
+        projected_gross = gross + order_usd
+        if projected_gross > collateral * self.GROSS_LEVERAGE_CAP:
+            raise ValueError(
+                f"Account-wide gross exposure ${projected_gross:.2f} exceeds "
+                f"{self.GROSS_LEVERAGE_CAP:.1f}x collateral cap ${collateral * self.GROSS_LEVERAGE_CAP:.2f}"
+            )
+        allocated = sum(abs(float(p.get("allocated_margin", 0) or 0)) for p in positions)
+        required_margin = max(
+            self.MIN_MARGIN_BUFFER_USD,
+            order_usd / self.MARGIN_LEVERAGE_ASSUMPTION * self.MARGIN_BUFFER_MULTIPLIER,
+        )
+        available_margin = max(0.0, collateral - allocated)
+        if available_margin < required_margin:
+            raise ValueError(
+                f"Available margin ${available_margin:.2f} is below "
+                f"${required_margin:.2f} buffered initial-margin estimate"
+            )
+
     async def toggle(self, enabled: bool) -> Dict[str, Any]:
         async with self.lock:
             if not enabled:
@@ -260,10 +305,11 @@ class LighterCryptoBot:
                 raise ValueError("Resolve Lighter execution recovery before enabling")
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol, fresh=True)
-            account, amount, _ = await self._account_position(symbol)
+            account, amount, positions = await self._account_position(symbol)
             self._check_position(amount, step)
             _, ask = await self._book(market_id)
-            self._entry_quantity(self.state["notional_usd"], ask, detail)
+            qty = self._entry_quantity(self.state["notional_usd"], ask, detail)
+            self._check_entry_capacity(account, positions, qty * ask)
             if float(account.get("collateral", 0)) <= 0:
                 raise ValueError("No available Lighter collateral")
             seconds = INTERVAL_SECONDS[self.state["strategy_interval"]]
@@ -339,21 +385,7 @@ class LighterCryptoBot:
                 if amount and amount * side < 0:
                     raise ValueError("Cannot reverse an active campaign")
                 qty = self._entry_quantity(notional, price, detail)
-                collateral = float(account.get("collateral", 0) or 0)
-                gross = 0.0
-                for position in positions:
-                    size = abs(float(position.get("position", 0) or position.get("size", 0) or 0))
-                    value = abs(float(position.get("position_value", 0) or 0))
-                    if size and not value:
-                        mark = float(position.get("mark_price", 0) or position.get("avg_entry_price", 0) or 0)
-                        if mark <= 0:
-                            raise ValueError("Cannot determine account-wide Lighter exposure")
-                        value = size * mark
-                    gross += value
-                allocated = sum(abs(float(p.get("allocated_margin", 0) or 0)) for p in positions)
-                order_usd = qty * price
-                if gross + order_usd > collateral or order_usd > (collateral - allocated) / 1.25:
-                    raise ValueError("Account-wide 1x gross cap or 125% margin reserve would be exceeded")
+                self._check_entry_capacity(account, positions, qty * price)
             order_index = secrets.randbelow(self.client.MAX_CLIENT_ORDER_INDEX - 1) + 1
             pending = {"client_order_index": order_index, "symbol": symbol, "market_id": market_id,
                        "side": side, "qty": qty, "size_step": step,
@@ -487,6 +519,7 @@ class LighterCryptoBot:
                 )
                 self.state["last_evaluation"] = evaluation
                 self.state["last_evaluated_candle"] = last_candle
+                self.state["last_error"] = None
                 self._save()
                 if self.state["tranches"] and exit_signal:
                     await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
