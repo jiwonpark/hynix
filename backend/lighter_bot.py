@@ -144,6 +144,7 @@ class LighterPairBot:
         "use_base_spacing": True,
         "use_peak": True,
         "use_ma_stack": False,
+        "use_ma_stack_1h": True,
         "use_convergence": True,
         "use_dwell": True,
         "use_bottoming": False,
@@ -254,6 +255,7 @@ class LighterPairBot:
                 "use_base_spacing": self.state.get("use_base_spacing", True),
                 "use_peak": self.state.get("use_peak", True),
                 "use_ma_stack": self.state.get("use_ma_stack", False),
+                "use_ma_stack_1h": self.state.get("use_ma_stack_1h", True),
                 "use_convergence": self.state.get("use_convergence", True),
                 "use_dwell": self.state.get("use_dwell", True),
                 "use_bottoming": self.state.get("use_bottoming", False),
@@ -752,7 +754,7 @@ class LighterPairBot:
             for key in ("ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
                         "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
                         "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
-                        "use_convergence", "use_dwell", "use_bottoming"):
+                        "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming"):
                 if key in values:
                     if not isinstance(values[key], bool):
                         raise ValueError(f"{key} must be boolean")

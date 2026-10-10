@@ -910,6 +910,7 @@
     bindResearchConditions() {
       const researchIds = [
         "chkCondEntryMaStretch", "chkCondEntryBase", "chkCondEntryPeak", "chkCondEntryMaStack5m",
+        "chkCondEntryMaStack1h",
         "chkCondExitConvergence", "chkCondExitDwell", "chkCondExitBottoming",
       ];
       researchIds.forEach((id) => {
@@ -929,12 +930,13 @@
         valCondEntryBase: "Replay: require configured spacing from prior same-side entry",
         valCondEntryPeak: "Replay: require z-score rollover",
         valCondEntryMaStack5m: "Replay: require MA7 / MA24 alignment",
+        valCondEntryMaStack1h: "Replay: require 1h macro support alignment",
         valCondExitConvergence: "Replay: require selected Exit Z",
         valCondExitDwell: "Replay: minimum configured bars held",
         valCondExitBottoming: "Replay: require convergence rollover",
       };
       Object.entries(labels).forEach(([id, text]) => this.setText(id, text));
-      ["chkCondEntryMaStack1h", "chkCondEntryCapacity", "chkCondEntryLeverage",
+      ["chkCondEntryCapacity", "chkCondEntryLeverage",
        "chkCondEntryMargin", "chkCondEntryEngine", "chkCondEntryGuard", "chkCondExitActive",
        "chkCondExitNetPnl", "chkCondExitMaStack5m", "chkCondExitMaStack1h", "chkCondExitPosition"].forEach((id) => {
         const input = lid(id); if (input) { input.dataset.terminalUnavailable = "true"; input.disabled = true; input.title = "Not a Tab 5 replay condition; live exchange safeguards are shown separately"; }
@@ -1583,6 +1585,10 @@
       payload.use_base_spacing = lid("chkCondEntryBase")?.checked !== false;
       payload.use_peak = lid("chkCondEntryPeak")?.checked !== false;
       payload.use_ma_stack = lid("chkCondEntryMaStack5m")?.checked === true;
+      payload.use_ma_stack_1h = lid("chkCondEntryMaStack1h")?.checked !== false;
+      if (mode === "ou_quant") {
+        payload.ou_use_macro_trend = lid("chkCondEntryMaStack1h")?.checked !== false;
+      }
       payload.use_convergence = lid("chkCondExitConvergence")?.checked !== false;
       payload.use_dwell = lid("chkCondExitDwell")?.checked !== false;
       payload.use_bottoming = lid("chkCondExitBottoming")?.checked === true;
@@ -1614,6 +1620,7 @@
           ].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
           [
             "chkCondEntryMaStretch", "chkCondEntryBase", "chkCondEntryPeak", "chkCondEntryMaStack5m",
+            "chkCondEntryMaStack1h",
             "chkCondExitConvergence", "chkCondExitDwell", "chkCondExitBottoming"
           ].forEach((id) => { const el = lid(id); if (el) delete el.dataset.unsaved; });
           this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
@@ -2053,6 +2060,7 @@
         use_base_spacing: lid("chkCondEntryBase")?.checked !== false,
         use_peak: lid("chkCondEntryPeak")?.checked !== false,
         use_ma_stack: lid("chkCondEntryMaStack5m")?.checked === true,
+        use_ma_stack_1h: lid("chkCondEntryMaStack1h")?.checked !== false,
         use_convergence: lid("chkCondExitConvergence")?.checked !== false,
         use_dwell: lid("chkCondExitDwell")?.checked !== false,
         use_bottoming: lid("chkCondExitBottoming")?.checked === true,
@@ -2133,7 +2141,7 @@
       });
       const defaultConditionToggles = {
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
-        use_ma_stack: false, use_convergence: true, use_dwell: false, use_bottoming: false,
+        use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
       };
       const usesFilters = true;
       const rules = [
@@ -2141,6 +2149,7 @@
         ["EntryBase", "use_base_spacing", "Spacing"],
         ["EntryPeak", "use_peak", "Peak rollover"],
         ["EntryMaStack5m", "use_ma_stack", "Trend stack"],
+        ["EntryMaStack1h", "use_ma_stack_1h", "Macro trend 1h"],
         ["ExitConvergence", "use_convergence", "Convergence"],
         ["ExitDwell", "use_dwell", "Dwell"],
         ["ExitBottoming", "use_bottoming", "Bottoming"],
@@ -2351,13 +2360,14 @@
       }
       const defaultConditionToggles = {
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
-        use_ma_stack: false, use_convergence: true, use_dwell: false, use_bottoming: false,
+        use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
       };
       const filterKeys = {
         chkCondEntryMaStretch: "use_ma_stretch",
         chkCondEntryBase: "use_base_spacing",
         chkCondEntryPeak: "use_peak",
         chkCondEntryMaStack5m: "use_ma_stack",
+        chkCondEntryMaStack1h: "use_ma_stack_1h",
         chkCondExitConvergence: "use_convergence",
         chkCondExitDwell: "use_dwell",
         chkCondExitBottoming: "use_bottoming",
@@ -2676,6 +2686,7 @@
         chkCondEntryBase: "use_base_spacing",
         chkCondEntryPeak: "use_peak",
         chkCondEntryMaStack5m: "use_ma_stack",
+        chkCondEntryMaStack1h: "use_ma_stack_1h",
         chkCondExitConvergence: "use_convergence",
         chkCondExitDwell: "use_dwell",
         chkCondExitBottoming: "use_bottoming",

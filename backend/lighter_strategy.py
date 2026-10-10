@@ -193,6 +193,7 @@ def evaluate_grid_signals(
 
 def evaluate_ma_stack_signals(
     prices: List[float], *, ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
+    use_ma_stretch: bool = True, use_ma_stack: bool = True, use_ma_stack_1h: bool = True,
     evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
     held_bars: int = 0,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
@@ -211,14 +212,24 @@ def evaluate_ma_stack_signals(
     stretch_pct = abs(current_price - ma60) / ma60 * 100 if ma60 > 1e-12 else 0.0
     bearish_stack = current_price < ma7 < ma24 < ma60
     bullish_stack = current_price > ma7 > ma24 > ma60
-    entry_signal = bool((bearish_stack or bullish_stack) and stretch_pct >= ma_stretch_min)
     candidate_side = 1 if bearish_stack else -1
+
+    stack_pass = (bearish_stack or bullish_stack) if use_ma_stack else True
+    stretch_pass = stretch_pct >= ma_stretch_min if use_ma_stretch else True
+
+    macro_slope = _ou_macro_ema_slope(prices, 60, 12)
+    macro_aligned = bool(macro_slope is not None and (macro_slope >= 0 if candidate_side > 0 else macro_slope <= 0)) if macro_slope is not None else True
+    macro_pass = macro_aligned if use_ma_stack_1h else True
+
+    entry_signal = bool(stack_pass and stretch_pass and macro_pass)
 
     golden_cross = bool((position_side > 0 and ma7 >= ma24) or (position_side < 0 and ma7 <= ma24))
     exit_signal = bool(golden_cross or held_bars >= 16) if position_side != 0 else False
     condition_pass = {
-        "entry_ma_stack": bearish_stack or bullish_stack,
-        "entry_stretch": stretch_pct >= ma_stretch_min,
+        "entry_ma_stack": stack_pass,
+        "entry_stretch": stretch_pass,
+        "entry_macro_trend": macro_pass,
+        "entry_ma_stack_1h": macro_pass,
         "exit_ma_cross": golden_cross if position_side else None,
         "exit_trailing_stop": None,
         "exit_max_dwell": held_bars >= 16 if position_side else None,
@@ -416,7 +427,7 @@ def evaluate_strategy_signal(
             ou_use_entry_z=bool(config.get("ou_use_entry_z", True)),
             ou_use_halflife=bool(config.get("ou_use_halflife", True)),
             ou_use_min_abs_deviation=bool(config.get("ou_use_min_abs_deviation", True)),
-            ou_use_macro_trend=bool(config.get("ou_use_macro_trend", True)),
+            ou_use_macro_trend=bool(config.get("ou_use_macro_trend", config.get("use_ma_stack_1h", True))),
             ou_use_stop_zone=bool(config.get("ou_use_stop_zone", True)),
             ou_use_exit_z=bool(config.get("ou_use_exit_z", True)),
             evaluation_time=evaluation_time,
@@ -426,6 +437,9 @@ def evaluate_strategy_signal(
             prices,
             ma_stretch_min=float(config.get("ma_stretch_min", 0.30)),
             ma_trailing_stop=float(config.get("ma_trailing_stop", 0.15)),
+            use_ma_stretch=bool(config.get("use_ma_stretch", True)),
+            use_ma_stack=bool(config.get("use_ma_stack", True)),
+            use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
             evaluation_time=evaluation_time,
             position_side=position_side,
             entry_price=entry_price,

@@ -41,6 +41,7 @@ DEFAULT_STATE = {
     "ma_stretch_min": 0.30, "ma_trailing_stop": 0.15, "min_consensus_votes": 3,
     "trend_macro_window": 24, "trend_pullback_dist": 0.15, "trend_tp_dist": 0.05, "trend_slope_min": 0.002,
     "use_ma_stretch": True, "use_base_spacing": True, "use_peak": True, "use_ma_stack": False,
+    "use_ma_stack_1h": True,
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
     "last_evaluated_candle": 0, "last_order_time": 0,
@@ -99,6 +100,7 @@ class LighterCryptoBot:
                           "use_base_spacing": bool(self.state.get("use_base_spacing", True)),
                           "use_peak": bool(self.state.get("use_peak", True)),
                           "use_ma_stack": bool(self.state.get("use_ma_stack", False)),
+                          "use_ma_stack_1h": bool(self.state.get("use_ma_stack_1h", True)),
                           "use_convergence": bool(self.state.get("use_convergence", True)),
                           "use_dwell": bool(self.state.get("use_dwell", True)),
                           "use_bottoming": bool(self.state.get("use_bottoming", False)),
@@ -136,7 +138,7 @@ class LighterCryptoBot:
             "ma_stretch_min", "ma_trailing_stop", "min_consensus_votes",
             "trend_macro_window", "trend_pullback_dist", "trend_tp_dist", "trend_slope_min",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
-            "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
+            "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
         }
         unknown = set(values) - permitted
         if unknown:
@@ -151,7 +153,7 @@ class LighterCryptoBot:
             elif key in {"ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
                         "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
                         "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
-                        "use_convergence", "use_dwell", "use_bottoming"}:
+                        "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)

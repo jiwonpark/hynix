@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const elements = new Map();
 const conditions = {EntryMaStretch:true, EntryBase:false, EntryPeak:false, EntryMaStack5m:false,
-  ExitConvergence:true, ExitDwell:false, ExitBottoming:false};
+  EntryMaStack1h:true, ExitConvergence:true, ExitDwell:false, ExitBottoming:false};
 for (const [suffix, checked] of Object.entries(conditions)) elements.set(`lighter_chkCond${suffix}`, {checked, dataset: {}});
 const pillEvents = {};
 elements.set('lighterMatchPill', {
