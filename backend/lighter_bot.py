@@ -140,6 +140,15 @@ class LighterPairBot:
         "trend_pullback_dist": 0.15,
         "trend_tp_dist": 0.05,
         "trend_slope_min": 0.002,
+        "use_ma_stretch": True,
+        "use_base_spacing": True,
+        "use_peak": True,
+        "use_ma_stack": False,
+        "use_convergence": True,
+        "use_dwell": True,
+        "use_bottoming": False,
+        "base_spacing_pct": 0.2,
+        "min_dwell_bars": 4,
         "notional_usd": 50.0,
         "hedge_mode": "DOLLAR_NEUTRAL",
         "capacity_mode": "DYNAMIC_SAFE_LEVERAGE",
@@ -710,6 +719,7 @@ class LighterPairBot:
             "min_consensus_votes": (1, 4), "trend_macro_window": (6, 120),
             "trend_pullback_dist": (0.01, 2.0), "trend_tp_dist": (0.01, 1.0),
             "trend_slope_min": (0.0001, 0.05),
+            "base_spacing_pct": (0.01, 10.0), "min_dwell_bars": (0, 100),
         }
         async with self.lock:
             updated = dict(self.state)
@@ -726,12 +736,14 @@ class LighterPairBot:
             for key, (low, high) in bounds.items():
                 if key not in values:
                     continue
-                value = int(values[key]) if key in {"max_tranches", "min_seconds_between_orders", "min_consensus_votes", "trend_macro_window", "ou_macro_ema_span", "ou_macro_slope_bars"} else float(values[key])
+                value = int(values[key]) if key in {"max_tranches", "min_seconds_between_orders", "min_consensus_votes", "trend_macro_window", "ou_macro_ema_span", "ou_macro_slope_bars", "min_dwell_bars"} else float(values[key])
                 if not math.isfinite(value) or not low <= value <= high:
                     raise ValueError(f"{key} must be between {low} and {high}")
                 updated[key] = value
             for key in ("ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
-                        "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z"):
+                        "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
+                        "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
+                        "use_convergence", "use_dwell", "use_bottoming"):
                 if key in values:
                     if not isinstance(values[key], bool):
                         raise ValueError(f"{key} must be boolean")
@@ -1297,9 +1309,30 @@ class LighterPairBot:
             return entry_signal, candidate_side, exit_signal, eval_info
 
         else:
+            position_side = 0
+            entry_price = 0.0
+            held_bars = 0
+            if self.state.get("tranches"):
+                latest_t = self.state["tranches"][-1]
+                position_side = int(latest_t.get("side", 0))
+                entry_price = float(latest_t.get("entry_ratio", latest_t.get("ratio", 0.0)))
+                held_seconds = max(0, int(time.time()) - int(latest_t.get("entry_time", latest_t.get("time", 0))))
+                held_bars = held_seconds // 300
             return evaluate_grid_signals(
                 ratios, entry_z=entry_z, exit_z=exit_z,
+                use_ma_stretch=bool(self.state.get("use_ma_stretch", True)),
+                use_base_spacing=bool(self.state.get("use_base_spacing", True)),
+                use_peak=bool(self.state.get("use_peak", True)),
+                use_ma_stack=bool(self.state.get("use_ma_stack", False)),
+                use_convergence=bool(self.state.get("use_convergence", True)),
+                use_dwell=bool(self.state.get("use_dwell", True)),
+                use_bottoming=bool(self.state.get("use_bottoming", False)),
+                base_spacing_pct=float(self.state.get("base_spacing_pct", 0.2)),
+                min_dwell_bars=int(self.state.get("min_dwell_bars", 4)),
                 evaluation_time=int(time.time()),
+                position_side=position_side,
+                entry_price=entry_price,
+                held_bars=held_bars,
             )
 
     async def _evaluate(self) -> None:

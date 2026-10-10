@@ -1569,6 +1569,15 @@
         payload.entry_z = numeric("crypto_inputLiveGridEntryZ", Number(this.botState?.entry_z ?? 1.5));
         payload.exit_z = numeric("crypto_inputLiveGridExitZ", Number(this.botState?.exit_z ?? 0.25));
       }
+      if (mode === "grid" || mode === "custom") {
+        payload.use_ma_stretch = lid("chkCondEntryMaStretch")?.checked !== false;
+        payload.use_base_spacing = lid("chkCondEntryBase")?.checked !== false;
+        payload.use_peak = lid("chkCondEntryPeak")?.checked !== false;
+        payload.use_ma_stack = lid("chkCondEntryMaStack5m")?.checked === true;
+        payload.use_convergence = lid("chkCondExitConvergence")?.checked !== false;
+        payload.use_dwell = lid("chkCondExitDwell")?.checked !== false;
+        payload.use_bottoming = lid("chkCondExitBottoming")?.checked === true;
+      }
       return payload;
     },
 
@@ -2076,25 +2085,28 @@
         if (live == null || !Number.isFinite(Number(live)) || Math.abs(settings[key] - Number(live)) > 1e-9)
           diffs.push(`${key}: ${settings[key]} ≠ ${live ?? "unknown"}`);
       });
-      // Only Grid/Custom consume these optional research filters. The other
-      // strategies ignore these checkboxes, so their state cannot affect matching.
+      const defaultConditionToggles = {
+        use_ma_stretch: true, use_base_spacing: false, use_peak: false,
+        use_ma_stack: false, use_convergence: true, use_dwell: false, use_bottoming: false,
+      };
       const usesFilters = ["grid", "custom"].includes(currentMode);
       const rules = [
-        ["EntryMaStretch", "use_ma_stretch", true, "Entry trigger"],
-        ["EntryBase", "use_base_spacing", false, "Spacing"],
-        ["EntryPeak", "use_peak", false, "Peak rollover"],
-        ["EntryMaStack5m", "use_ma_stack", false, "Trend stack"],
-        ["ExitConvergence", "use_convergence", true, "Convergence"],
-        ["ExitDwell", "use_dwell", false, "Dwell"],
-        ["ExitBottoming", "use_bottoming", false, "Bottoming"],
+        ["EntryMaStretch", "use_ma_stretch", "Entry trigger"],
+        ["EntryBase", "use_base_spacing", "Spacing"],
+        ["EntryPeak", "use_peak", "Peak rollover"],
+        ["EntryMaStack5m", "use_ma_stack", "Trend stack"],
+        ["ExitConvergence", "use_convergence", "Convergence"],
+        ["ExitDwell", "use_dwell", "Dwell"],
+        ["ExitBottoming", "use_bottoming", "Bottoming"],
       ];
-      rules.forEach(([suffix, key, liveEnabled, name]) => {
+      rules.forEach(([suffix, key, name]) => {
         const input = lid(`chkCond${suffix}`);
         const badge = lid(`badgeCond${suffix}`);
+        const liveEnabled = liveParams[key] != null ? Boolean(liveParams[key]) : Boolean(defaultConditionToggles[key]);
         if (input) {
           input.dataset.terminalUnavailable = String(!usesFilters);
           input.disabled = !usesFilters || Boolean(window.terminalLockManager?.isLocked);
-          input.title = usesFilters ? "Paper replay filter" : "Not used by this strategy";
+          input.title = usesFilters ? `${name} strategy condition` : "Not used by this strategy";
         }
         if (badge) {
           badge.textContent = !usesFilters ? "N/A" : settings[key] ? "ON" : "OFF";
@@ -2160,15 +2172,23 @@
         });
       }
       if (liveMode === "grid" || liveMode === "custom") {
-        const filters = {
-          chkCondEntryMaStretch: true, chkCondEntryBase: false,
-          chkCondEntryPeak: false, chkCondEntryMaStack5m: false,
-          chkCondExitConvergence: true, chkCondExitDwell: false,
-          chkCondExitBottoming: false,
+        const defaultConditionToggles = {
+          use_ma_stretch: true, use_base_spacing: false, use_peak: false,
+          use_ma_stack: false, use_convergence: true, use_dwell: false, use_bottoming: false,
         };
-        Object.entries(filters).forEach(([id, checked]) => {
+        const filterKeys = {
+          chkCondEntryMaStretch: "use_ma_stretch",
+          chkCondEntryBase: "use_base_spacing",
+          chkCondEntryPeak: "use_peak",
+          chkCondEntryMaStack5m: "use_ma_stack",
+          chkCondExitConvergence: "use_convergence",
+          chkCondExitDwell: "use_dwell",
+          chkCondExitBottoming: "use_bottoming",
+        };
+        Object.entries(filterKeys).forEach(([id, key]) => {
           const input = lid(id);
-          if (input) input.checked = checked;
+          const liveVal = params[key] != null ? Boolean(params[key]) : Boolean(defaultConditionToggles[key]);
+          if (input) input.checked = liveVal;
         });
       }
       if (liveMode === "ou_quant") {

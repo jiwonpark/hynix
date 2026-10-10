@@ -126,25 +126,64 @@ def evaluate_ou_signals(
 
 def evaluate_grid_signals(
     ratios: List[float], *, entry_z: float, exit_z: float,
-    evaluation_time: Optional[int] = None,
+    use_ma_stretch: bool = True, use_base_spacing: bool = True, use_peak: bool = True,
+    use_ma_stack: bool = False, use_convergence: bool = True, use_dwell: bool = True,
+    use_bottoming: bool = False, base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
+    evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
+    held_bars: int = 0,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
-    """Production Grid/Custom signals; optional research filters belong to replay."""
+    """Grid signals with full user-configurable condition switches."""
     if len(ratios) < 25:
         raise ValueError("Grid evaluation requires at least 25 completed ratios")
     sample = ratios[-25:-1]
     mean = sum(sample) / len(sample)
     variance = sum((value - mean) ** 2 for value in sample) / len(sample)
     zscore = (ratios[-1] - mean) / math.sqrt(variance) if variance > 1e-12 else 0.0
+    candidate_side = -1 if zscore > 0 else 1
+    current_price = ratios[-1]
+
+    prev_zscore = None
+    if len(ratios) >= 26:
+        prev_sample = ratios[-26:-2]
+        prev_mean = sum(prev_sample) / len(prev_sample)
+        prev_var = sum((v - prev_mean) ** 2 for v in prev_sample) / len(prev_sample)
+        prev_zscore = (ratios[-2] - prev_mean) / math.sqrt(prev_var) if prev_var > 1e-12 else 0.0
+
+    entry_z_pass = abs(zscore) >= entry_z if use_ma_stretch else True
+    step_dist = current_price * max(0.0, min(10.0, base_spacing_pct)) / 100.0
+    spacing_pass = True
+    if position_side != 0 and entry_price > 0:
+        spacing_pass = (not use_base_spacing
+                        or (candidate_side < 0 and current_price >= entry_price + step_dist)
+                        or (candidate_side > 0 and current_price <= entry_price - step_dist))
+
+    peak_pass = (not use_peak or prev_zscore is None or abs(zscore) <= abs(prev_zscore))
+    ma7 = sum(ratios[-8:-1]) / 7 if len(ratios) >= 8 else mean
+    stack_pass = ((zscore > 0 and current_price > ma7 > mean)
+                  or (zscore < 0 and current_price < ma7 < mean))
+    ma_stack_pass = not use_ma_stack or stack_pass
+
+    entry_signal = bool(entry_z_pass and spacing_pass and peak_pass and ma_stack_pass)
+
+    convergence_pass = abs(zscore) <= exit_z if use_convergence else True
+    dwell_pass = not use_dwell or held_bars >= max(0, min(100, min_dwell_bars))
+    bottoming_pass = (not use_bottoming or prev_zscore is None or abs(zscore) >= abs(prev_zscore))
+
+    if position_side != 0:
+        exit_signal = bool(convergence_pass and dwell_pass and bottoming_pass)
+    else:
+        exit_signal = bool(abs(zscore) <= exit_z if use_convergence else True)
+
     condition_pass = {
-        "entry_z": abs(zscore) >= entry_z,
-        "entry_spacing": True,
-        "entry_rollover": True,
-        "entry_ma_stack": True,
-        "exit_convergence": abs(zscore) <= exit_z,
-        "exit_dwell": True,
-        "exit_bottoming": True,
+        "entry_z": entry_z_pass,
+        "entry_spacing": spacing_pass,
+        "entry_rollover": peak_pass,
+        "entry_ma_stack": stack_pass,
+        "exit_convergence": convergence_pass if position_side else abs(zscore) <= exit_z,
+        "exit_dwell": dwell_pass if position_side else True,
+        "exit_bottoming": bottoming_pass if position_side else True,
     }
-    return abs(zscore) >= entry_z, -1 if zscore > 0 else 1, abs(zscore) <= exit_z, {
+    return entry_signal, candidate_side, exit_signal, {
         "time": evaluation_time, "ratio": round(ratios[-1], 4),
         "mean": round(mean, 4), "z": round(zscore, 3),
         "signal_z": zscore, "signal_mean": mean, "strategy": "grid",
@@ -336,34 +375,14 @@ def evaluate_custom_signals(
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Custom Rule Composer signals."""
     entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
-        prices, entry_z=entry_z if use_ma_stretch else 0.0, exit_z=exit_z,
-        evaluation_time=evaluation_time)
-    current_price = prices[-1]
-    mean = evaluation["signal_mean"]
-    zscore = evaluation["signal_z"]
-    ma7 = sum(prices[-8:-1]) / 7 if len(prices) >= 8 else mean
-    stack_pass = ((zscore > 0 and current_price > ma7 > mean)
-                  or (zscore < 0 and current_price < ma7 < mean))
-    step_dist = current_price * max(0.0, min(10.0, base_spacing_pct)) / 100.0
-    spacing_pass = True
-    if position_side != 0 and entry_price > 0:
-        spacing_pass = (not use_base_spacing
-                        or (candidate_side < 0 and current_price >= entry_price + step_dist)
-                        or (candidate_side > 0 and current_price <= entry_price - step_dist))
-    entry_signal = bool(entry_signal and spacing_pass and (not use_ma_stack or stack_pass))
-    convergence_pass = exit_signal if use_convergence else True
-    dwell_pass = not use_dwell or held_bars >= max(0, min(100, min_dwell_bars))
-    if position_side != 0:
-        exit_signal = bool(convergence_pass and dwell_pass)
-    evaluation["condition_pass"] = {
-        "entry_z": abs(zscore) >= entry_z,
-        "entry_spacing": spacing_pass,
-        "entry_rollover": True,
-        "entry_ma_stack": stack_pass,
-        "exit_convergence": convergence_pass if position_side else None,
-        "exit_dwell": dwell_pass if position_side else None,
-        "exit_bottoming": None,
-    }
+        prices, entry_z=entry_z, exit_z=exit_z,
+        use_ma_stretch=use_ma_stretch, use_base_spacing=use_base_spacing,
+        use_peak=use_peak, use_ma_stack=use_ma_stack,
+        use_convergence=use_convergence, use_dwell=use_dwell,
+        use_bottoming=use_bottoming, base_spacing_pct=base_spacing_pct,
+        min_dwell_bars=min_dwell_bars, evaluation_time=evaluation_time,
+        position_side=position_side, entry_price=entry_price, held_bars=held_bars,
+    )
     evaluation["strategy"] = "custom"
     return entry_signal, candidate_side, exit_signal, evaluation
 
@@ -459,6 +478,18 @@ def evaluate_strategy_signal(
             prices,
             entry_z=float(config.get("entry_z", 1.5)),
             exit_z=float(config.get("exit_z", 0.25)),
+            use_ma_stretch=bool(config.get("use_ma_stretch", True)),
+            use_base_spacing=bool(config.get("use_base_spacing", True)),
+            use_peak=bool(config.get("use_peak", True)),
+            use_ma_stack=bool(config.get("use_ma_stack", False)),
+            use_convergence=bool(config.get("use_convergence", True)),
+            use_dwell=bool(config.get("use_dwell", True)),
+            use_bottoming=bool(config.get("use_bottoming", False)),
+            base_spacing_pct=float(config.get("base_spacing_pct", 0.2)),
+            min_dwell_bars=int(config.get("min_dwell_bars", 4)),
             evaluation_time=evaluation_time,
+            position_side=position_side,
+            entry_price=entry_price,
+            held_bars=held_bars,
         )
 

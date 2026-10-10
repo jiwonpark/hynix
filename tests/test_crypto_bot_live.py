@@ -206,6 +206,28 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(self.bot.state["last_evaluation"])
             self.assertEqual(self.bot.state["last_evaluation"]["strategy"], strat)
 
+    async def test_grid_respects_user_condition_switches(self):
+        from backend.lighter_strategy import evaluate_strategy_signal
+        prices = [100.0 + (i % 3 - 1) * 0.5 for i in range(30)]
+        prices[-1] = 90.0
+        # When use_base_spacing is True and spacing distance not satisfied, entry is blocked
+        entry, side, exit_sig, eval_info = evaluate_strategy_signal(
+            "grid", prices,
+            {"entry_z": 1.5, "exit_z": 0.25, "use_base_spacing": True, "use_peak": False, "base_spacing_pct": 5.0},
+            position_side=1, entry_price=92.0, held_bars=1,
+        )
+        self.assertFalse(entry)
+        self.assertFalse(eval_info["condition_pass"]["entry_spacing"])
+
+        # When use_base_spacing is False, spacing is bypassed
+        entry, side, exit_sig, eval_info = evaluate_strategy_signal(
+            "grid", prices,
+            {"entry_z": 1.5, "exit_z": 0.25, "use_base_spacing": False, "use_peak": False, "base_spacing_pct": 5.0},
+            position_side=1, entry_price=92.0, held_bars=1,
+        )
+        self.assertTrue(entry)
+        self.assertTrue(eval_info["condition_pass"]["entry_spacing"])
+
 
 if __name__ == "__main__":
     unittest.main()
