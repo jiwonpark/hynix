@@ -548,6 +548,12 @@
       this.setText("lblHedgedSyncBadge", "CRYPTO BOT PAUSED");
       this.setText("lblShortTermTitle", "Paper Replay Conditions — Single-Leg Crypto Simulation");
       this.setText("lblShortTermSubtitle", "Chart interval, strategy regimes, condition switches, and Rerun affect the historical paper simulation only.");
+      const replayBadge = [...(lid("shortTermExecutionSection")?.querySelectorAll("span") || [])]
+        .find((element) => element.textContent.trim() === "LIVE BINANCE EXECUTION");
+      if (replayBadge) replayBadge.textContent = "LIGHTER PAPER REPLAY";
+      const collateralTab = lid("tabAssets");
+      const collateralLabel = [...(collateralTab?.childNodes || [])].find((node) => node.nodeType === 3);
+      if (collateralLabel) collateralLabel.textContent = "Lighter Collateral (";
       this.setText("lblCritScaleInTitle", "➕ Dip Scale-In (Buy Rung / Lower Harvester)");
       this.setText("lblCritTPTitle", "🎯 Rebalance & Take-Profit (Mean Reversion)");
       this.setText("lblOrderNotional", "Order Notional (USD)");
