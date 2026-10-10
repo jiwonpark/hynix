@@ -635,7 +635,8 @@
       }
 
       const frame = lid("shortTermExecutionChartFrame");
-      if (frame) {
+      // Keep the mounted chart and its event handlers when changing markets.
+      if (frame && !lid("shortTermSpreadChartHost")) {
         frame.innerHTML = "";
         this.executionChartFrame = StrategyExecutionChartFrame.mount({
           container: frame,
@@ -691,6 +692,11 @@
             this.fetchAndRenderTrends();
           });
         }
+      }
+      const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
+      if (replayAssetLegend) {
+        const spans = replayAssetLegend.querySelectorAll("span");
+        if (spans[1]) spans[1].textContent = `● ${sym} perpetual`;
       }
 
       const replayControls = lid("shortTermExecutionSection")?.firstElementChild?.lastElementChild;
