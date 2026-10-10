@@ -1014,16 +1014,18 @@
           </div>
           <div id="lighter_ouEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Entry conditions · switches and values apply to replay; Deploy applies them to the live bot</strong>
-            <div style="${ouRowStyle}"><input id="lighter_ouUseEntryZ" type="checkbox" aria-label="Enable minimum entry Z" style="${ouToggleStyle}" ${ouChecked("ou_use_entry_z")}><span>1. Minimum |Z| (Entry Z above)</span></div>
-            <div style="${ouRowStyle}"><input id="lighter_ouUseHalflife" type="checkbox" aria-label="Enable maximum half-life" style="${ouToggleStyle}" ${ouChecked("ou_use_halflife")}><span>2. Maximum half-life</span><input id="lighter_ouHalflifeMax" type="number" aria-label="Maximum half-life parameter" min="1" max="50" step="0.5" value="${ouNumber("ou_halflife_max", 8)}" style="${ouNumberStyle}"><span>× 4 bars</span></div>
-            <div style="${ouRowStyle}"><input id="lighter_ouUseMinDeviation" type="checkbox" aria-label="Enable minimum OU deviation" style="${ouToggleStyle}" ${ouChecked("ou_use_min_abs_deviation")}><span>3. Minimum deviation from OU mean</span><input id="lighter_ouMinDeviation" type="number" aria-label="Minimum OU deviation in percentage points" min="0" max="5" step="0.01" value="${ouNumber("ou_min_abs_deviation_pp", 0.25)}" style="${ouNumberStyle}"><span>pp</span></div>
-            <div style="${ouRowStyle}"><input id="lighter_ouUseMacroTrend" type="checkbox" aria-label="Enable macro EMA alignment" style="${ouToggleStyle}" ${ouChecked("ou_use_macro_trend")}><span>4. Macro EMA slope aligned · EMA</span><input id="lighter_ouMacroSpan" type="number" aria-label="Macro EMA span" min="5" max="120" step="1" value="${ouNumber("ou_macro_ema_span", 60)}" style="${ouNumberStyle}"><span>over</span><input id="lighter_ouMacroSlopeBars" type="number" aria-label="Macro EMA slope comparison bars" min="1" max="60" step="1" value="${ouNumber("ou_macro_slope_bars", 12)}" style="${ouNumberStyle}"><span>bars</span></div>
-            <div style="${ouRowStyle}"><input id="lighter_ouUseStopZone" type="checkbox" aria-label="Enable upper entry Z limit" style="${ouToggleStyle}" ${ouChecked("ou_use_stop_zone")}><span>5. Entry below emergency |Z| limit</span><input id="lighter_ouStopZ" type="number" aria-label="Emergency Z limit" min="1.5" max="6" step="0.05" value="${ouNumber("ou_stop_z", 3.5)}" style="${ouNumberStyle}"><span>σ</span></div>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseEntryZ" type="checkbox" aria-label="Enable minimum entry Z" style="${ouToggleStyle}" ${ouChecked("ou_use_entry_z")}><span>1. Minimum |Z| (Entry Z above)</span><span class="condBadge neutral" id="lighter_ouStatusEntryZ">WAITING</span><span class="condBadge neutral" id="lighter_ouLiveStatusEntryZ">LIVE N/A</span></div>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseHalflife" type="checkbox" aria-label="Enable maximum half-life" style="${ouToggleStyle}" ${ouChecked("ou_use_halflife")}><span>2. Maximum half-life</span><input id="lighter_ouHalflifeMax" type="number" aria-label="Maximum half-life parameter" min="1" max="50" step="0.5" value="${ouNumber("ou_halflife_max", 8)}" style="${ouNumberStyle}"><span>× 4 bars</span><span class="condBadge neutral" id="lighter_ouStatusHalflife">WAITING</span><span class="condBadge neutral" id="lighter_ouLiveStatusHalflife">LIVE N/A</span></div>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseMinDeviation" type="checkbox" aria-label="Enable minimum OU deviation" style="${ouToggleStyle}" ${ouChecked("ou_use_min_abs_deviation")}><span>3. Minimum deviation from OU mean</span><input id="lighter_ouMinDeviation" type="number" aria-label="Minimum OU deviation in percentage points" min="0" max="5" step="0.01" value="${ouNumber("ou_min_abs_deviation_pp", 0.25)}" style="${ouNumberStyle}"><span>pp</span><span class="condBadge neutral" id="lighter_ouStatusMinDeviation">WAITING</span><span class="condBadge neutral" id="lighter_ouLiveStatusMinDeviation">LIVE N/A</span></div>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseMacroTrend" type="checkbox" aria-label="Enable macro EMA alignment" style="${ouToggleStyle}" ${ouChecked("ou_use_macro_trend")}><span>4. Macro EMA slope aligned · EMA</span><input id="lighter_ouMacroSpan" type="number" aria-label="Macro EMA span" min="5" max="120" step="1" value="${ouNumber("ou_macro_ema_span", 60)}" style="${ouNumberStyle}"><span>over</span><input id="lighter_ouMacroSlopeBars" type="number" aria-label="Macro EMA slope comparison bars" min="1" max="60" step="1" value="${ouNumber("ou_macro_slope_bars", 12)}" style="${ouNumberStyle}"><span>bars</span><span class="condBadge neutral" id="lighter_ouStatusMacroTrend">WAITING</span><span class="condBadge neutral" id="lighter_ouLiveStatusMacroTrend">LIVE N/A</span></div>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseStopZone" type="checkbox" aria-label="Enable upper entry Z limit" style="${ouToggleStyle}" ${ouChecked("ou_use_stop_zone")}><span>5. Entry below emergency |Z| limit</span><input id="lighter_ouStopZ" type="number" aria-label="Emergency Z limit" min="1.5" max="6" step="0.05" value="${ouNumber("ou_stop_z", 3.5)}" style="${ouNumberStyle}"><span>σ</span><span class="condBadge neutral" id="lighter_ouStatusStopZone">WAITING</span><span class="condBadge neutral" id="lighter_ouLiveStatusStopZone">LIVE N/A</span></div>
             <small style="color:#64748b;">Live order-book quote confirmation, account capacity and order safety remain separate execution checks. Historical replay has no order-book quotes.</small>
           </div>
           <div id="lighter_ouExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Exit condition</strong>
-            <div style="${ouRowStyle}"><input id="lighter_ouUseExitZ" type="checkbox" aria-label="Enable neutral Z exit" style="${ouToggleStyle}" ${ouChecked("ou_use_exit_z")}><span>1. OU neutral |Z| target (Exit Z above)</span></div>
+            <div style="${ouRowStyle}"><input id="lighter_ouUseExitZ" type="checkbox" aria-label="Enable neutral Z exit" style="${ouToggleStyle}" ${ouChecked("ou_use_exit_z")}><span>1. OU neutral |Z| target (Exit Z above)</span><span class="condBadge neutral" id="lighter_ouStatusExitZ">WAITING</span><span class="condBadge neutral" id="lighter_ouLiveStatusExitZ">LIVE N/A</span></div>
+            <div style="${ouRowStyle}"><span>Emergency stop (always active)</span><span class="condBadge neutral" id="lighter_ouStatusEmergencyStop">WAITING</span><span class="condBadge neutral" id="lighter_ouLiveStatusEmergencyStop">LIVE N/A</span></div>
+            <small id="lighter_ouStatusSource" style="color:#64748b;">PAPER · Awaiting completed-candle replay</small>
             <small style="color:#64748b;">Emergency stop at the upper Z limit remains active. Live exits also check net profit and actual positions; replay uses price signals only.</small>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
@@ -1962,6 +1964,8 @@
       if (!pill) return;
       this.bindMatchPill(pill);
       const settings = this.replaySettings();
+      if (this.currentParadigm === "ou_quant" && this.ouStatusSettings !== new URLSearchParams(settings).toString())
+        this.renderOuConditionStatus(null, settings);
       const liveMode = this.botState?.strategy_mode || "grid";
       const liveInterval = this.botState?.strategy_interval || "5m";
       const liveName = this.botState?.strategy_name || this.paradigms[liveMode]?.name || liveMode;
@@ -2047,6 +2051,73 @@
       pill.style.background = matched ? (active ? "#dcfce7" : "#fef3c7") : "#fff7ed";
       pill.style.color = matched ? (active ? "#166534" : "#92400e") : "#c2410c";
       pill.style.borderColor = matched ? (active ? "#86efac" : "#fcd34d") : "#fdba74";
+      this.renderLiveOuConditionStatus();
+    },
+
+    renderOuConditionStatus(evaluation, settings = this.replaySettings()) {
+      this.ouStatusSettings = evaluation ? new URLSearchParams(settings).toString() : null;
+      const checks = evaluation?.condition_pass || {};
+      const rows = [
+        ["EntryZ", "entry_z", "ou_use_entry_z", `|Z| ${Number(evaluation?.z).toFixed(3)} ≥ ${Number(settings.entry_z).toFixed(2)}`],
+        ["Halflife", "entry_halflife", "ou_use_halflife", `${Number(evaluation?.half_life_bars).toFixed(1)} ≤ ${(Number(settings.ou_halflife_max) * 4).toFixed(1)} bars`],
+        ["MinDeviation", "entry_min_deviation", "ou_use_min_abs_deviation", `${Number(evaluation?.abs_deviation_pp).toFixed(4)} ≥ ${Number(settings.ou_min_abs_deviation_pp).toFixed(2)} pp`],
+        ["MacroTrend", "entry_macro_trend", "ou_use_macro_trend", `EMA slope ${evaluation?.macro_ema_slope == null ? "unavailable" : Number(evaluation.macro_ema_slope).toFixed(4)} pp`],
+        ["StopZone", "entry_stop_zone", "ou_use_stop_zone", `|Z| ${Number(evaluation?.z).toFixed(3)} < ${Number(settings.ou_stop_z).toFixed(2)}`],
+        ["ExitZ", "exit_z", "ou_use_exit_z", `|Z| ${Number(evaluation?.z).toFixed(3)} ≤ ${Number(settings.exit_z).toFixed(2)}`],
+        ["EmergencyStop", "exit_emergency_stop", null, `|Z| ${Number(evaluation?.z).toFixed(3)} ≥ ${Number(settings.ou_stop_z).toFixed(2)}`],
+      ];
+      rows.forEach(([id, key, toggle, detail]) => {
+        const badge = $(`lighter_ouStatus${id}`);
+        if (!badge) return;
+        const enabled = toggle == null || settings[toggle] !== false;
+        const available = evaluation && Object.hasOwn(checks, key)
+          && (key !== "entry_macro_trend" || evaluation.macro_ema_slope != null);
+        const state = !enabled ? "OFF" : !available ? "UNAVAILABLE" : checks[key] ? "PASS" : "WAITING";
+        badge.textContent = state;
+        badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+        badge.title = available ? `PAPER · ${detail}` : "Awaiting completed-candle replay";
+      });
+      const source = $("lighter_ouStatusSource");
+      if (source) source.textContent = evaluation?.time
+        ? `PAPER · Completed candle ${new Date(Number(evaluation.time) * 1000).toLocaleString()} · Price signals only; live quotes and account checks are separate`
+        : "PAPER · Awaiting completed-candle replay";
+      this.renderLiveOuConditionStatus();
+    },
+
+    renderLiveOuConditionStatus() {
+      if (this.currentParadigm !== "ou_quant") return;
+      const bot = this.botState;
+      const evaluation = bot?.last_evaluation;
+      const saved = bot?.strategy_params || {};
+      const intervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[bot?.strategy_interval] || 300;
+      const time = Number(evaluation?.time);
+      const fresh = bot?.enabled && bot?.strategy_mode === "ou_quant" && evaluation?.strategy === "ou_quant"
+        && Number.isFinite(time) && time > 0 && Date.now() / 1000 - time <= intervalSeconds * 2 + 60;
+      const checks = evaluation?.condition_pass || {};
+      const hasPosition = Array.isArray(bot?.tranches) && bot.tranches.length > 0;
+      [
+        ["EntryZ", "entry_z", "ou_use_entry_z"],
+        ["Halflife", "entry_halflife", "ou_use_halflife"],
+        ["MinDeviation", "entry_min_deviation", "ou_use_min_abs_deviation"],
+        ["MacroTrend", "entry_macro_trend", "ou_use_macro_trend"],
+        ["StopZone", "entry_stop_zone", "ou_use_stop_zone"],
+        ["ExitZ", "exit_z", "ou_use_exit_z"],
+        ["EmergencyStop", "exit_emergency_stop", null],
+      ].forEach(([id, key, toggle]) => {
+        const badge = $(`lighter_ouLiveStatus${id}`);
+        if (!badge) return;
+        const enabled = toggle == null || saved[toggle] !== false;
+        const needsPosition = key.startsWith("exit_");
+        const available = fresh && Object.hasOwn(checks, key)
+          && (key !== "entry_macro_trend" || evaluation.macro_ema_slope != null);
+        const state = !fresh ? "UNAVAILABLE" : !enabled ? "OFF"
+          : needsPosition && !hasPosition ? "N/A" : !available ? "UNAVAILABLE"
+            : checks[key] ? "PASS" : "WAITING";
+        badge.textContent = `LIVE ${state}`;
+        badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+        badge.title = fresh ? `LIVE · saved bot settings · completed candle ${new Date(time * 1000).toLocaleString()}`
+          : "LIVE · Paused, different strategy, stale, or missing completed-candle evaluation";
+      });
     },
 
     alignReplayToLive() {
@@ -4346,6 +4417,7 @@
         const toggles = new URLSearchParams(settings);
         const data = await api(`/api/lighter/backtest?${toggles}`);
         if (requestId !== this.backtestRequestId) return;
+        if (this.currentParadigm === "ou_quant") this.renderOuConditionStatus(data.latest_evaluation, settings);
         const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
         this.backtestMarkers = data.trades.flatMap((trade, tradeIndex) => [
           {
@@ -4433,6 +4505,8 @@
           }
         }
       } catch (error) {
+        if (requestId === this.backtestRequestId && this.currentParadigm === "ou_quant")
+          this.renderOuConditionStatus(null);
         if (summary && requestId === this.backtestRequestId) summary.textContent = error.message;
       } finally { if (button && requestId === this.backtestRequestId) button.disabled = false; }
     },

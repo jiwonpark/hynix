@@ -12,6 +12,8 @@ Never present a decorative switch, a hard-coded threshold, or a stale rule label
 as though it controls trading. Exchange validity, order reconciliation, and
 account safety limits are execution safeguards; label them separately from
 optional strategy conditions instead of presenting disabled fake switches.
+Follow [the trading terminal design guide](docs/trading-terminal-design-guide.md)
+for per-condition PASS/WAITING states and source/timestamp display.
 
 The user wants implementation changes committed, pushed, and deployed by default.
 After completing the appropriate checks, commit the changes, push to origin, deploy

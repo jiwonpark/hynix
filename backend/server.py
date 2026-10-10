@@ -549,6 +549,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
     last_entry_value = None
     last_entry_side = None
     mode_metrics: Dict[str, Any] = {}
+    latest_evaluation: Dict[str, Any] = {}
 
     active_positions = []
     if strategy_mode in {"ou_quant", "grid", "custom"}:
@@ -576,9 +577,10 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                 )
                 ou_thetas.append(evaluation["theta"])
                 ou_halflives.append(evaluation["half_life_bars"])
+                latest_evaluation = evaluation
             else:
                 entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
-                    prefix, entry_z=entry_z if use_ma_stretch else 0.5,
+                    prefix, entry_z=entry_z if use_ma_stretch else 0.0,
                     exit_z=exit_z, evaluation_time=int(bar["time"]),
                 )
             signal_price = prefix[-1]
@@ -601,7 +603,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                 entry_signal = entry_signal and spacing_pass and (not use_peak or peak_pass) and (not use_ma_stack or stack_pass)
                 if active_positions:
                     latest = active_positions[-1]
-                    convergence_pass = exit_signal if use_convergence else latest["side"] * (signal_price - latest["entry"]) > 0
+                    convergence_pass = exit_signal if use_convergence else True
                     dwell_pass = not use_dwell or index - latest["entry_index"] >= 4
                     bottoming_pass = not use_bottoming or (previous_zscore is not None and abs(zscore) >= abs(previous_zscore))
                     exit_signal = convergence_pass and dwell_pass and bottoming_pass
@@ -834,6 +836,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
         "trades": trades,
         "open_positions": open_positions,
         "metrics": mode_metrics,
+        "latest_evaluation": latest_evaluation,
         "summary": {
             "trades": len(trades),
             "open_tranches": len(open_positions),
@@ -1363,6 +1366,12 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_base_spacing: bool = True, use_ma_stack: bool = False, use_convergence: bool = True,
                               use_dwell: bool = True, use_bottoming: bool = False,
                               ou_halflife_max: float = 8.0, ou_stop_z: float = 3.5,
+                              ou_min_abs_deviation_pp: float = 0.25,
+                              ou_macro_ema_span: int = 60, ou_macro_slope_bars: int = 12,
+                              ou_use_entry_z: bool = True, ou_use_halflife: bool = True,
+                              ou_use_min_abs_deviation: bool = True,
+                              ou_use_macro_trend: bool = True, ou_use_stop_zone: bool = True,
+                              ou_use_exit_z: bool = True,
                               ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
                               min_consensus_votes: int = 3,
                               trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
@@ -1387,6 +1396,9 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     last_entry_value = None
     last_entry_side = None
     mode_metrics: Dict[str, Any] = {}
+    latest_evaluation: Dict[str, Any] = {}
+    latest_conditions: Dict[str, Optional[bool]] = {}
+    latest_condition_time: Optional[int] = None
     active_positions = []
 
     if strategy_mode in {"ou_quant", "grid", "custom"}:
@@ -1401,13 +1413,24 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                 entry_signal, candidate_side, exit_signal, evaluation = evaluate_ou_signals(
                     prefix, entry_z=entry_z, exit_z=exit_z,
                     ou_halflife_max=ou_halflife_max, ou_stop_z=ou_stop_z,
+                    ou_min_abs_deviation_pp=ou_min_abs_deviation_pp,
+                    ou_macro_ema_span=ou_macro_ema_span,
+                    ou_macro_slope_bars=ou_macro_slope_bars,
+                    ou_use_entry_z=ou_use_entry_z,
+                    ou_use_halflife=ou_use_halflife,
+                    ou_use_min_abs_deviation=ou_use_min_abs_deviation,
+                    ou_use_macro_trend=ou_use_macro_trend,
+                    ou_use_stop_zone=ou_use_stop_zone,
+                    ou_use_exit_z=ou_use_exit_z,
                     evaluation_time=int(bar["time"]),
                 )
                 ou_thetas.append(evaluation["theta"])
                 ou_halflives.append(evaluation["half_life_bars"])
+                latest_evaluation = evaluation
+                latest_conditions = evaluation.get("condition_pass", {})
             else:
                 entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
-                    prefix, entry_z=entry_z if use_ma_stretch else 0.5,
+                    prefix, entry_z=entry_z if use_ma_stretch else 0.0,
                     exit_z=exit_z, evaluation_time=int(bar["time"]),
                 )
             signal_price = prefix[-1]
@@ -1427,13 +1450,25 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                                 or candidate_side != last_entry_side
                                 or (candidate_side < 0 and signal_price >= last_entry_value + step_dist)
                                 or (candidate_side > 0 and signal_price <= last_entry_value - step_dist))
+                latest_conditions = {
+                    "entry_z": abs(zscore) >= entry_z,
+                    "entry_spacing": spacing_pass,
+                    "entry_rollover": peak_pass,
+                    "entry_ma_stack": stack_pass,
+                    "exit_convergence": None,
+                    "exit_dwell": None,
+                    "exit_bottoming": None,
+                }
                 entry_signal = entry_signal and spacing_pass and (not use_peak or peak_pass) and (not use_ma_stack or stack_pass)
                 if active_positions:
                     latest = active_positions[-1]
-                    convergence_pass = exit_signal if use_convergence else latest["side"] * (signal_price - latest["entry"]) > 0
+                    convergence_pass = exit_signal if use_convergence else True
                     dwell_pass = not use_dwell or index - latest["entry_index"] >= max(0, min(100, min_dwell_bars))
                     bottoming_pass = not use_bottoming or (previous_zscore is not None and abs(zscore) >= abs(previous_zscore))
+                    latest_conditions.update(exit_convergence=convergence_pass,
+                                             exit_dwell=dwell_pass, exit_bottoming=bottoming_pass)
                     exit_signal = convergence_pass and dwell_pass and bottoming_pass
+            latest_condition_time = int(bar["time"])
 
             if active_positions and exit_signal:
                 for open_pos in active_positions:
@@ -1480,6 +1515,14 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
             stretch_pct = abs(bar["value"] - ma60) / ma60 * 100
             bearish_stack = bar["value"] < ma7 < ma24 < ma60
             bullish_stack = bar["value"] > ma7 > ma24 > ma60
+            latest_conditions = {
+                "entry_ma_stack": bearish_stack or bullish_stack,
+                "entry_stretch": stretch_pct >= ma_stretch_min,
+                "exit_ma_cross": None,
+                "exit_trailing_stop": None,
+                "exit_max_dwell": None,
+            }
+            latest_condition_time = int(bar["time"])
             entry_signal = (bearish_stack or bullish_stack) and stretch_pct >= ma_stretch_min
             candidate_side = 1 if bearish_stack else -1
 
@@ -1491,6 +1534,9 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                 position["max_favorable"] = max(position.get("max_favorable", 0.0), current_pnl)
                 golden_cross = (position["side"] > 0 and ma7 >= ma24) or (position["side"] < 0 and ma7 <= ma24)
                 trailing_stop = position["max_favorable"] >= 0.20 and (position["max_favorable"] - current_pnl) >= ma_trailing_stop
+                latest_conditions.update(exit_ma_cross=golden_cross,
+                                         exit_trailing_stop=trailing_stop,
+                                         exit_max_dwell=held >= 16)
                 if golden_cross or trailing_stop or held >= 16 or index == len(bars) - 1:
                     pnl_pct = current_pnl
                     trades.append({
@@ -1522,6 +1568,18 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
 
             votes = sum([f1, f2, f3, f4])
             candidate_side = -1 if zscore > 0 else 1
+            latest_conditions = {
+                "entry_factor_z": f1,
+                "entry_factor_velocity": f2,
+                "entry_factor_ma": f3,
+                "entry_factor_extremum": f4,
+                "entry_quorum": votes >= min_consensus_votes,
+                "entry_min_z": abs(zscore) >= 0.8,
+                "exit_consensus": None,
+                "exit_convergence": None,
+                "exit_max_dwell": None,
+            }
+            latest_condition_time = int(bar["time"])
             entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8)
 
             if position is None and entry_signal:
@@ -1536,6 +1594,9 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                 ])
                 consensus_drop = current_votes < 2
                 convergence = abs(zscore) <= exit_z
+                latest_conditions.update(exit_consensus=consensus_drop and held >= 3,
+                                         exit_convergence=convergence,
+                                         exit_max_dwell=held >= 20)
                 if (consensus_drop and held >= 3) or convergence or held >= 20 or index == len(bars) - 1:
                     pnl_pct = position["side"] * (bar["value"] / position["entry"] - 1) * 100
                     trades.append({
@@ -1580,6 +1641,18 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
 
             buy_signal = is_uptrend and (trendline_val - bar["value"] >= pullback_dist) and micro_reverting_up
             short_signal = is_downtrend and (bar["value"] - trendline_val >= pullback_dist) and micro_reverting_down
+            latest_conditions = {
+                "entry_macro_trend": is_uptrend or is_downtrend,
+                "entry_pullback": (is_uptrend and trendline_val - bar["value"] >= pullback_dist)
+                                  or (is_downtrend and bar["value"] - trendline_val >= pullback_dist),
+                "entry_micro_reversal": (is_uptrend and micro_reverting_up)
+                                        or (is_downtrend and micro_reverting_down),
+                "exit_target": None,
+                "exit_opposite_reversal": None,
+                "exit_trend_invalidation": None,
+                "exit_stop_or_dwell": None,
+            }
+            latest_condition_time = int(bar["time"])
 
             if position is None:
                 if buy_signal:
@@ -1606,6 +1679,10 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                     trend_invalidated = beta > trend_slope_min
 
                 stop_loss = current_pnl <= -1.5 or held >= 32 or index == len(bars) - 1
+                latest_conditions.update(exit_target=tp_reached,
+                                         exit_opposite_reversal=opposite_reversal and current_pnl > 0,
+                                         exit_trend_invalidation=trend_invalidated,
+                                         exit_stop_or_dwell=current_pnl <= -1.5 or held >= 32)
 
                 if tp_reached or (opposite_reversal and current_pnl > 0) or trend_invalidated or stop_loss:
                     trades.append({
@@ -1655,6 +1732,9 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         "trades": trades,
         "open_positions": open_positions,
         "metrics": mode_metrics,
+        "latest_evaluation": latest_evaluation,
+        "latest_conditions": latest_conditions,
+        "latest_condition_time": latest_condition_time,
         "summary": {
             "trades": len(trades),
             "open_tranches": len(open_positions),

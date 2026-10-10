@@ -76,6 +76,15 @@ def evaluate_ou_signals(
     macro_slope = _ou_macro_ema_slope(ratios, ou_macro_ema_span, ou_macro_slope_bars)
     macro_aligned = bool(macro_slope is not None and
                          (macro_slope >= 0 if candidate_side > 0 else macro_slope <= 0))
+    condition_pass = {
+        "entry_z": math.isfinite(z_score) and z_score != 0 and abs(z_score) >= entry_z,
+        "entry_stop_zone": math.isfinite(z_score) and abs(z_score) < ou_stop_z,
+        "entry_halflife": half_life_bars <= ou_halflife_max * 4,
+        "entry_min_deviation": abs_deviation_pp >= ou_min_abs_deviation_pp,
+        "entry_macro_trend": macro_aligned,
+        "exit_z": abs(z_score) <= exit_z,
+        "exit_emergency_stop": abs(z_score) >= ou_stop_z,
+    }
     entry_signal = bool(
         math.isfinite(z_score) and z_score != 0
         and (not ou_use_entry_z or abs(z_score) >= entry_z)
@@ -99,6 +108,7 @@ def evaluate_ou_signals(
         "macro_slope_bars": ou_macro_slope_bars,
         "macro_ema_slope": macro_slope,
         "macro_aligned": macro_aligned,
+        "condition_pass": condition_pass,
         "ou_use_entry_z": ou_use_entry_z,
         "ou_use_halflife": ou_use_halflife,
         "ou_use_min_abs_deviation": ou_use_min_abs_deviation,
