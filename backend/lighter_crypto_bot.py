@@ -1,4 +1,8 @@
-"""Independent, fail-closed Lighter perp Grid executor for Tab 5."""
+"""Independent, fail-closed Lighter perp executor for Tab 5.
+
+Supports live execution for all testable quantitative single-leg strategies:
+grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
+"""
 
 import asyncio
 import copy
@@ -12,7 +16,14 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .crypto_bot import INTERVAL_SECONDS
-from .lighter_strategy import evaluate_grid_signals
+from .lighter_strategy import (
+    evaluate_strategy_signal,
+    evaluate_grid_signals,
+    LIVE_STRATEGIES,
+    OU_MIN_ABS_DEVIATION_PP,
+    OU_MACRO_EMA_SPAN,
+    OU_MACRO_SLOPE_BARS,
+)
 
 
 # Verified against Lighter's live perp market list. Market details are checked
@@ -23,6 +34,14 @@ DEFAULT_STATE = {
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
     "notional_usd": 150.0, "max_tranches": 5,
     "min_seconds_between_orders": 300, "max_book_spread_bps": 45.0,
+    "ou_halflife_max": 8.0, "ou_stop_z": 3.5, "ou_min_abs_deviation_pp": 0.25,
+    "ou_macro_ema_span": 60, "ou_macro_slope_bars": 12,
+    "ou_use_entry_z": True, "ou_use_halflife": True, "ou_use_min_abs_deviation": True,
+    "ou_use_macro_trend": True, "ou_use_stop_zone": True, "ou_use_exit_z": True,
+    "ma_stretch_min": 0.30, "ma_trailing_stop": 0.15, "min_consensus_votes": 3,
+    "trend_macro_window": 24, "trend_pullback_dist": 0.15, "trend_tp_dist": 0.05, "trend_slope_min": 0.002,
+    "use_ma_stretch": True, "use_base_spacing": True, "use_peak": True, "use_ma_stack": False,
+    "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
     "last_evaluated_candle": 0, "last_order_time": 0,
     "last_evaluation": None, "last_error": None, "recovery_required": False,
@@ -46,7 +65,7 @@ class LighterCryptoBot:
                 raise ValueError("State must be an object")
             self.state.update({key: saved[key] for key in DEFAULT_STATE if key in saved})
             if (self.state["selected_symbol"] not in MARKETS or
-                    self.state["strategy_mode"] != "grid" or
+                    self.state["strategy_mode"] not in LIVE_STRATEGIES or
                     self.state["strategy_interval"] not in INTERVAL_SECONDS or
                     not isinstance(self.state["tranches"], list)):
                 raise ValueError("Unsupported persisted Lighter crypto configuration")
@@ -68,7 +87,7 @@ class LighterCryptoBot:
 
     def public_state(self) -> Dict[str, Any]:
         result = copy.deepcopy(self.state)
-        result.update(live_strategies=["grid"], execution_implemented=True,
+        result.update(live_strategies=sorted(LIVE_STRATEGIES), execution_implemented=True,
                       venue="Lighter", history_event_count=len(result["execution_history"]),
                       risk_capacity={"active_tranches": len(result["tranches"]),
                                      "max_tranches": result["max_tranches"],
@@ -76,8 +95,18 @@ class LighterCryptoBot:
         return result
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
-        permitted = {"selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
-                     "notional_usd", "max_tranches", "min_seconds_between_orders", "max_book_spread_bps"}
+        permitted = {
+            "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+            "notional_usd", "max_tranches", "min_seconds_between_orders", "max_book_spread_bps",
+            "ou_halflife_max", "ou_stop_z", "ou_min_abs_deviation_pp",
+            "ou_macro_ema_span", "ou_macro_slope_bars",
+            "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
+            "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
+            "ma_stretch_min", "ma_trailing_stop", "min_consensus_votes",
+            "trend_macro_window", "trend_pullback_dist", "trend_tp_dist", "trend_slope_min",
+            "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
+            "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
+        }
         unknown = set(values) - permitted
         if unknown:
             raise ValueError(f"Unsupported live setting: {', '.join(sorted(unknown))}")
@@ -85,29 +114,45 @@ class LighterCryptoBot:
         for key, value in values.items():
             if key in {"selected_symbol", "strategy_mode", "strategy_interval"}:
                 candidate[key] = str(value)
-            elif key in {"max_tranches", "min_seconds_between_orders"}:
+            elif key in {"max_tranches", "min_seconds_between_orders", "ou_macro_ema_span",
+                        "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars"}:
                 candidate[key] = int(value)
+            elif key in {"ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
+                        "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
+                        "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
+                        "use_convergence", "use_dwell", "use_bottoming"}:
+                candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
         if candidate["selected_symbol"] not in MARKETS:
             raise ValueError("Unsupported Lighter perp symbol")
-        if candidate["strategy_mode"] != "grid":
-            raise ValueError("This strategy is available in replay only; live supports Grid")
+        if candidate["strategy_mode"] not in LIVE_STRATEGIES:
+            raise ValueError(f"Unsupported live strategy: {candidate['strategy_mode']}")
         if candidate["strategy_interval"] not in INTERVAL_SECONDS:
             raise ValueError("Unsupported candle interval")
-        for key, (low, high) in {"entry_z": (0.1, 10), "exit_z": (0, 5),
-                                "notional_usd": (10, 500), "max_tranches": (1, 5),
-                                "min_seconds_between_orders": (6, 86400),
-                                "max_book_spread_bps": (1, 100)}.items():
-            value = candidate[key]
-            if not math.isfinite(value) or not low <= value <= high:
-                raise ValueError(f"{key} must be between {low} and {high}")
-        if candidate["exit_z"] >= candidate["entry_z"]:
-            raise ValueError("Exit Z must be below Entry Z")
+        bounds = {
+            "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0),
+            "notional_usd": (10.0, 500.0), "max_tranches": (1, 5),
+            "min_seconds_between_orders": (6, 86400), "max_book_spread_bps": (1, 100),
+            "ou_halflife_max": (0.5, 50.0), "ou_stop_z": (1.0, 10.0),
+            "ou_min_abs_deviation_pp": (0.01, 10.0),
+            "ma_stretch_min": (0.01, 10.0), "ma_trailing_stop": (0.01, 10.0),
+            "min_consensus_votes": (1, 4),
+            "trend_macro_window": (12, 100), "trend_pullback_dist": (0.01, 10.0),
+            "trend_tp_dist": (0.01, 10.0), "trend_slope_min": (0.0001, 1.0),
+        }
+        for key, (low, high) in bounds.items():
+            if key in candidate:
+                value = candidate[key]
+                if not math.isfinite(value) or not low <= value <= high:
+                    raise ValueError(f"{key} must be between {low} and {high}")
+        if candidate["strategy_mode"] in {"grid", "custom", "ou_quant"}:
+            if candidate["exit_z"] >= candidate["entry_z"]:
+                raise ValueError("Exit Z must be below Entry Z")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
                 ("selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
-                 "notional_usd", "max_tranches")):
+                 "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:
                 raise ValueError("Close tracked inventory before changing symbol")
@@ -238,9 +283,15 @@ class LighterCryptoBot:
             bid, ask = await self._book(market_id, enforce_spread=not reduce_only)
             price = ask if side > 0 else bid
             if signal_values is not None and not reduce_only:
-                valid, quote_side, _, _ = evaluate_grid_signals(
-                    signal_values[:-1] + [price], entry_z=self.state["entry_z"],
-                    exit_z=self.state["exit_z"])
+                valid, quote_side, _, _ = evaluate_strategy_signal(
+                    self.state["strategy_mode"],
+                    signal_values[:-1] + [price],
+                    self.state,
+                    evaluation_time=int(time.time()),
+                    position_side=0,
+                    entry_price=0.0,
+                    held_bars=0,
+                )
                 if not valid or quote_side != side:
                     raise ValueError("Current Lighter quote no longer supports the candle entry signal")
             if reduce_only:
@@ -373,7 +424,8 @@ class LighterCryptoBot:
                 rows = await self.client.candles(market_id, interval, 125, fresh=True)
                 now_ms = int(time.time() * 1000)
                 closed = [row for row in rows if int(row["t"]) + seconds * 1000 <= now_ms - 1000]
-                if len(closed) < 25:
+                min_bars = 65 if self.state["strategy_mode"] in {"ma_stack", "ou_quant"} else 25
+                if len(closed) < min_bars:
                     raise ValueError("Insufficient completed Lighter candles")
                 last_candle = int(closed[-1]["t"]) // 1000
                 if last_candle <= self.state["last_evaluated_candle"]:
@@ -383,14 +435,26 @@ class LighterCryptoBot:
                     self._save()
                     return
                 values = [float(row["c"]) for row in closed]
-                entry, side, exit_signal, evaluation = evaluate_grid_signals(
-                    values, entry_z=self.state["entry_z"], exit_z=self.state["exit_z"],
-                    evaluation_time=last_candle)
+                _, amount, _ = await self._account_position(symbol)
+                self._check_position(amount, step)
+                position_side = int(self.state["tranches"][-1]["side"]) if self.state["tranches"] else 0
+                entry_price = float(self.state["tranches"][-1]["price"]) if self.state["tranches"] else 0.0
+                entry_time = int(self.state["tranches"][-1].get("time", 0)) if self.state["tranches"] else 0
+                held_seconds = max(0, int(time.time()) - entry_time) if entry_time else 0
+                held_bars = held_seconds // seconds if seconds else 0
+
+                entry, side, exit_signal, evaluation = evaluate_strategy_signal(
+                    self.state["strategy_mode"],
+                    values,
+                    self.state,
+                    evaluation_time=last_candle,
+                    position_side=position_side,
+                    entry_price=entry_price,
+                    held_bars=held_bars,
+                )
                 self.state["last_evaluation"] = evaluation
                 self.state["last_evaluated_candle"] = last_candle
                 self._save()
-                _, amount, _ = await self._account_position(symbol)
-                self._check_position(amount, step)
                 if self.state["tranches"] and exit_signal:
                     await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
                                        reduce_only=True, reason="signal_exit")

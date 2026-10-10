@@ -474,10 +474,10 @@
       if (execHeader) execHeader.textContent = "Single-leg Futures · no hedge";
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner");
       if (guard) {
-        guard.querySelector("strong").textContent = "Live Grid execution rules";
+        guard.querySelector("strong").textContent = "Live strategy execution rules";
         const guardBadge = guard.querySelector("span[style*='background: #16a34a']");
-        if (guardBadge) guardBadge.textContent = "GRID ONLY";
-        guard.querySelector("p").textContent = "The live Grid bot uses completed-candle Z-score entry and convergence exit, then checks the current executable quote before entry. It has no minimum-profit exit rule. Exchange validity, available margin, a selected-contract 1x equity cap, and order reconciliation are execution safeguards. Replay-only switches below do not change live orders.";
+        if (guardBadge) guardBadge.textContent = "DEPLOYABLE";
+        guard.querySelector("p").textContent = "The live bot executes the deployed quantitative strategy on completed candles, then validates the executable book quote before entry. Exchange validity, available margin, a selected-contract 1x equity cap, and order reconciliation are execution safeguards.";
       }
       const telemetryTitle = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner + div strong");
       if (telemetryTitle) telemetryTitle.textContent = "📊 Single-leg position and account risk";
@@ -1455,9 +1455,9 @@
             <span id="cryptoLiveEvaluation">Awaiting completed bar</span>
           </div>
         </div>
-        <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
-          <span>Only Grid can be deployed to live execution. Manual live orders require a separate confirmation.</span>
-          <span style="font-size:10px;font-weight:700;color:#c2410c;">Replay-only filters do not control live orders.</span>
+        <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#f0fdf4;color:#166534;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+          <span>All testable quantitative strategies can be deployed to live execution. Manual live orders require separate confirmation.</span>
+          <span style="font-size:10px;font-weight:700;color:#15803d;">Causal completed-candle &amp; executable-quote validation enforced.</span>
         </div>
       `;
       const detailSec = $("crypto_paradigmDetailSection");
@@ -1503,20 +1503,14 @@
       const currentMode = this.currentParadigm || "grid";
       const liveMode = this.botState?.strategy_mode || "grid";
       const currentName = this.paradigms[currentMode]?.name || currentMode;
-      if (currentMode !== "grid") {
-        btnLabel.textContent = `${currentName} · replay only`;
-        btn.disabled = true;
-        btn.title = "Only Grid has live execution rules";
-        return;
-      }
       if (this.botState?.enabled) {
-        btnLabel.textContent = "Pause live bot before editing Grid rules";
+        btnLabel.textContent = `Pause live bot before changing ${currentName} rules`;
         btn.disabled = true;
         return;
       }
       btn.disabled = false;
       if (currentMode === liveMode) {
-        btnLabel.textContent = `✓ ${currentName} saved on paused bot (Re-apply)`;
+        btnLabel.textContent = `✓ ${currentName} deployed on paused bot (Re-apply)`;
         btn.style.background = "#059669";
       } else {
         btnLabel.textContent = `⚡ Deploy ${currentName} to Live Bot`;
@@ -1528,13 +1522,12 @@
       const locked = window.terminalLockManager?.isLocked !== false;
       const botEnabled = Boolean(this.botState?.enabled);
       const recovering = Boolean(this.botState?.recovery_required);
-      const gridSelected = (this.currentParadigm || "grid") === "grid";
       const toggle = lid("chkAutoPeriodic48h");
       if (toggle) toggle.disabled = locked || (!this.liveVenue?.execution_enabled && !botEnabled) || (recovering && !botEnabled);
       ["btnDeployLiveStrategy", "inputLiveGridEntryZ", "inputLiveGridExitZ",
        "inputLiveMaxTranches"].forEach((id) => {
         const control = lid(id);
-        if (control) control.disabled = locked || !gridSelected || botEnabled;
+        if (control) control.disabled = locked || botEnabled;
       });
       ["inputLiveMaxSpread", "inputLiveTradeRate", "btnSaveLiveCooldown"].forEach((id) => {
         const control = lid(id);
@@ -1545,37 +1538,36 @@
     },
 
     liveStrategyPayload(mode = this.currentParadigm || "grid") {
+      const numeric = (id, fallback) => {
+        const value = Number($(id)?.value);
+        return Number.isFinite(value) ? value : fallback;
+      };
       const payload = {
         strategy_mode: mode,
         strategy_interval: this.interval || "5m",
         selected_symbol: this.selectedSymbol || "BTCUSDT",
-      };
-      const numeric = (id, fallback) => {
-        const value = Number($(id)?.value);
-        return Number.isFinite(value) ? value : fallback;
+        notional_usd: Number(this.orderNotional()),
+        max_tranches: numeric("crypto_inputLiveMaxTranches", Number(this.botState?.max_tranches ?? 5)),
+        max_book_spread_bps: numeric("crypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45)),
       };
       if (mode === "ou_quant") {
         payload.entry_z = numeric("crypto_inpOuEntryZ", Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4));
         payload.exit_z = numeric("crypto_inpOuExitZ", Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20));
       } else if (mode === "ma_stack") {
-        payload.ma_stretch_min = numeric("crypto_inpMaStretchMin", 0.30);
-        payload.ma_trailing_stop = numeric("crypto_inpMaTrailingStop", 0.15);
+        payload.ma_stretch_min = numeric("crypto_inpMaStretchMin", Number(this.botState?.ma_stretch_min ?? 0.30));
+        payload.ma_trailing_stop = numeric("crypto_inpMaTrailingStop", Number(this.botState?.ma_trailing_stop ?? 0.15));
       } else if (mode === "multi_factor") {
-        payload.min_consensus_votes = numeric("crypto_selFactorQuorum", 3);
+        payload.min_consensus_votes = numeric("crypto_selFactorQuorum", Number(this.botState?.min_consensus_votes ?? 3));
       } else if (mode === "trend_pullback") {
-        payload.trend_pullback_dist = numeric("crypto_inpTrendPullbackDist", 0.15);
-        payload.trend_tp_dist = numeric("crypto_inpTrendTpDist", 0.05);
-        payload.trend_macro_window = numeric("crypto_inpTrendMacroWindow", 24);
+        payload.trend_pullback_dist = numeric("crypto_inpTrendPullbackDist", Number(this.botState?.trend_pullback_dist ?? 0.15));
+        payload.trend_tp_dist = numeric("crypto_inpTrendTpDist", Number(this.botState?.trend_tp_dist ?? 0.05));
+        payload.trend_macro_window = numeric("crypto_inpTrendMacroWindow", Number(this.botState?.trend_macro_window ?? 24));
       } else if (mode === "custom") {
-        payload.entry_z = numeric("crypto_inpCustomEntryZ", 1.5);
-        payload.exit_z = numeric("crypto_inpCustomExitZ", 0.25);
-      }
-      if (mode === "grid") {
+        payload.entry_z = numeric("crypto_inpCustomEntryZ", Number(this.botState?.entry_z ?? 1.5));
+        payload.exit_z = numeric("crypto_inpCustomExitZ", Number(this.botState?.exit_z ?? 0.25));
+      } else if (mode === "grid") {
         payload.entry_z = numeric("crypto_inputLiveGridEntryZ", Number(this.botState?.entry_z ?? 1.5));
         payload.exit_z = numeric("crypto_inputLiveGridExitZ", Number(this.botState?.exit_z ?? 0.25));
-        payload.notional_usd = Number(this.orderNotional());
-        payload.max_tranches = numeric("crypto_inputLiveMaxTranches", Number(this.botState?.max_tranches ?? 5));
-        payload.max_book_spread_bps = numeric("crypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45));
       }
       return payload;
     },
@@ -1587,10 +1579,6 @@
         return false;
       }
       const mode = this.currentParadigm || "grid";
-      if (mode !== "grid") {
-        window.showToast?.("This strategy is replay-only. Live execution supports Grid.", "warn");
-        return false;
-      }
       const pName = this.paradigms[mode]?.name || mode;
       const confirmed = options.skipConfirm || window.confirm(`Save ${pName} (${this.interval}) for real Binance Futures trading?\n\nPause the bot before changing strategy. Saving while paused places no order.`);
       if (!confirmed) return false;
@@ -2115,10 +2103,8 @@
         if (usesFilters && settings[key] !== liveEnabled)
           diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
       });
-      if (!["grid", "custom", "ou_quant"].includes(currentMode))
-        diffs.push("Replay signal/exit rules differ from live");
       const matched = diffs.length === 0;
-      const canAlign = Boolean(this.botState && ["grid", "custom", "ou_quant"].includes(liveMode)
+      const canAlign = Boolean(this.botState && parameterKeys[liveMode]
         && (parameterKeys[liveMode] || []).every((key) => liveParams[key] != null));
       const active = Boolean(this.botState?.enabled);
       pill.textContent = matched
@@ -2204,6 +2190,33 @@
           if (rangeExit) rangeExit.value = val;
           if (badgeExit) badgeExit.textContent = `≤ ${val}σ`;
         }
+      }
+      if (liveMode === "ma_stack") {
+        if (params.ma_stretch_min != null && $("crypto_inpMaStretchMin")) {
+          $("crypto_inpMaStretchMin").value = String(params.ma_stretch_min);
+          $("crypto_inpMaStretchMin")._userModified = false;
+        }
+        if (params.ma_trailing_stop != null && $("crypto_inpMaTrailingStop")) {
+          $("crypto_inpMaTrailingStop").value = String(params.ma_trailing_stop);
+          $("crypto_inpMaTrailingStop")._userModified = false;
+        }
+      }
+      if (liveMode === "multi_factor") {
+        if (params.min_consensus_votes != null && $("crypto_selFactorQuorum")) {
+          $("crypto_selFactorQuorum").value = String(params.min_consensus_votes);
+          $("crypto_selFactorQuorum")._userModified = false;
+        }
+      }
+      if (liveMode === "trend_pullback") {
+        [["crypto_inpTrendPullbackDist", "trend_pullback_dist"],
+         ["crypto_inpTrendTpDist", "trend_tp_dist"],
+         ["crypto_inpTrendMacroWindow", "trend_macro_window"]].forEach(([id, key]) => {
+          const input = $(id);
+          if (input && params[key] != null) {
+            input.value = String(params[key]);
+            input._userModified = false;
+          }
+        });
       }
       this.updateRulesMatchStatus();
       this.refreshChart();
@@ -2427,6 +2440,14 @@
       this.applyExecutionLock();
       if (!this._userSelectedParadigm && stratMode && this.currentParadigm !== stratMode && this.paradigms[stratMode]) {
         this.setParadigm(stratMode);
+      }
+      this.setText("valDeployedEngine", `Live ${stratName} signal on completed candles`);
+      const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner");
+      if (guard) {
+        guard.querySelector("strong").textContent = `Live ${stratName} execution rules`;
+        const guardBadge = guard.querySelector("span[style*='background: #16a34a']");
+        if (guardBadge) guardBadge.textContent = stratMode.toUpperCase();
+        guard.querySelector("p").textContent = `The live bot executes ${stratName} signals on completed candles and verifies the executable quote before order entry. Exchange validity, available margin, a selected-contract 1x equity cap, and order reconciliation are execution safeguards.`;
       }
       this.setText("valDeployedInterval", `${stratInterval} completed candles`);
       this.setText("valDeployedEdge", `Entry |Z| ≥ ${Number(bot?.entry_z ?? 1.4).toFixed(2)}`);

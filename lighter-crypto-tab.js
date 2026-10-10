@@ -1448,9 +1448,9 @@
             <span id="lighterCryptoLiveEvaluation">Awaiting completed bar</span>
           </div>
         </div>
-        <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
-          <span>Only Grid can be deployed to live execution. Manual live orders require a separate confirmation.</span>
-          <span style="font-size:10px;font-weight:700;color:#c2410c;">Replay-only filters do not control live orders.</span>
+        <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#f0fdf4;color:#166534;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+          <span>All testable quantitative strategies can be deployed to live execution. Manual live orders require a separate confirmation.</span>
+          <span style="font-size:10px;font-weight:700;color:#15803d;">Causal completed-candle &amp; executable-quote validation enforced.</span>
         </div>
       `;
       const detailSec = $("lighterCrypto_paradigmDetailSection");
@@ -1496,20 +1496,14 @@
       const currentMode = this.currentParadigm || "grid";
       const liveMode = this.botState?.strategy_mode || "grid";
       const currentName = this.paradigms[currentMode]?.name || currentMode;
-      if (currentMode !== "grid") {
-        btnLabel.textContent = `${currentName} · replay only`;
-        btn.disabled = true;
-        btn.title = "Only Grid has live execution rules";
-        return;
-      }
       if (this.botState?.enabled) {
-        btnLabel.textContent = "Pause live bot before editing Grid rules";
+        btnLabel.textContent = `Pause live bot before changing ${currentName} rules`;
         btn.disabled = true;
         return;
       }
       btn.disabled = false;
       if (currentMode === liveMode) {
-        btnLabel.textContent = `✓ ${currentName} saved on paused bot (Re-apply)`;
+        btnLabel.textContent = `✓ ${currentName} deployed on paused bot (Re-apply)`;
         btn.style.background = "#059669";
       } else {
         btnLabel.textContent = `⚡ Deploy ${currentName} to Live Bot`;
@@ -1521,13 +1515,12 @@
       const locked = window.terminalLockManager?.isLocked !== false;
       const botEnabled = Boolean(this.botState?.enabled);
       const recovering = Boolean(this.botState?.recovery_required);
-      const gridSelected = (this.currentParadigm || "grid") === "grid";
       const toggle = lid("chkAutoPeriodic48h");
       if (toggle) toggle.disabled = locked || (!this.liveVenue?.execution_enabled && !botEnabled) || (recovering && !botEnabled);
       ["btnDeployLiveStrategy", "inputLiveGridEntryZ", "inputLiveGridExitZ",
        "inputLiveMaxTranches"].forEach((id) => {
         const control = lid(id);
-        if (control) control.disabled = locked || !gridSelected || botEnabled;
+        if (control) control.disabled = locked || botEnabled;
       });
       ["inputLiveMaxSpread", "inputLiveTradeRate", "btnSaveLiveCooldown"].forEach((id) => {
         const control = lid(id);
@@ -1538,37 +1531,36 @@
     },
 
     liveStrategyPayload(mode = this.currentParadigm || "grid") {
+      const numeric = (id, fallback) => {
+        const value = Number($(id)?.value);
+        return Number.isFinite(value) ? value : fallback;
+      };
       const payload = {
         strategy_mode: mode,
         strategy_interval: this.interval || "5m",
         selected_symbol: this.selectedSymbol || "BTC",
-      };
-      const numeric = (id, fallback) => {
-        const value = Number($(id)?.value);
-        return Number.isFinite(value) ? value : fallback;
+        notional_usd: Number(this.orderNotional()),
+        max_tranches: numeric("lighterCrypto_inputLiveMaxTranches", Number(this.botState?.max_tranches ?? 5)),
+        max_book_spread_bps: numeric("lighterCrypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45)),
       };
       if (mode === "ou_quant") {
         payload.entry_z = numeric("lighterCrypto_inpOuEntryZ", Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4));
         payload.exit_z = numeric("lighterCrypto_inpOuExitZ", Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20));
       } else if (mode === "ma_stack") {
-        payload.ma_stretch_min = numeric("lighterCrypto_inpMaStretchMin", 0.30);
-        payload.ma_trailing_stop = numeric("lighterCrypto_inpMaTrailingStop", 0.15);
+        payload.ma_stretch_min = numeric("lighterCrypto_inpMaStretchMin", Number(this.botState?.ma_stretch_min ?? 0.30));
+        payload.ma_trailing_stop = numeric("lighterCrypto_inpMaTrailingStop", Number(this.botState?.ma_trailing_stop ?? 0.15));
       } else if (mode === "multi_factor") {
-        payload.min_consensus_votes = numeric("lighterCrypto_selFactorQuorum", 3);
+        payload.min_consensus_votes = numeric("lighterCrypto_selFactorQuorum", Number(this.botState?.min_consensus_votes ?? 3));
       } else if (mode === "trend_pullback") {
-        payload.trend_pullback_dist = numeric("lighterCrypto_inpTrendPullbackDist", 0.15);
-        payload.trend_tp_dist = numeric("lighterCrypto_inpTrendTpDist", 0.05);
-        payload.trend_macro_window = numeric("lighterCrypto_inpTrendMacroWindow", 24);
+        payload.trend_pullback_dist = numeric("lighterCrypto_inpTrendPullbackDist", Number(this.botState?.trend_pullback_dist ?? 0.15));
+        payload.trend_tp_dist = numeric("lighterCrypto_inpTrendTpDist", Number(this.botState?.trend_tp_dist ?? 0.05));
+        payload.trend_macro_window = numeric("lighterCrypto_inpTrendMacroWindow", Number(this.botState?.trend_macro_window ?? 24));
       } else if (mode === "custom") {
-        payload.entry_z = numeric("lighterCrypto_inpCustomEntryZ", 1.5);
-        payload.exit_z = numeric("lighterCrypto_inpCustomExitZ", 0.25);
-      }
-      if (mode === "grid") {
+        payload.entry_z = numeric("lighterCrypto_inpCustomEntryZ", Number(this.botState?.entry_z ?? 1.5));
+        payload.exit_z = numeric("lighterCrypto_inpCustomExitZ", Number(this.botState?.exit_z ?? 0.25));
+      } else if (mode === "grid") {
         payload.entry_z = numeric("lighterCrypto_inputLiveGridEntryZ", Number(this.botState?.entry_z ?? 1.5));
         payload.exit_z = numeric("lighterCrypto_inputLiveGridExitZ", Number(this.botState?.exit_z ?? 0.25));
-        payload.notional_usd = Number(this.orderNotional());
-        payload.max_tranches = numeric("lighterCrypto_inputLiveMaxTranches", Number(this.botState?.max_tranches ?? 5));
-        payload.max_book_spread_bps = numeric("lighterCrypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45));
       }
       return payload;
     },
@@ -1580,10 +1572,6 @@
         return false;
       }
       const mode = this.currentParadigm || "grid";
-      if (mode !== "grid") {
-        window.showToast?.("This strategy is replay-only. Live execution supports Grid.", "warn");
-        return false;
-      }
       const pName = this.paradigms[mode]?.name || mode;
       const confirmed = options.skipConfirm || window.confirm(`Save ${pName} (${this.interval}) for real Lighter Perpetuals trading?\n\nPause the bot before changing strategy. Saving while paused places no order.`);
       if (!confirmed) return false;
@@ -2145,10 +2133,8 @@
         if (usesFilters && settings[key] !== liveEnabled)
           diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
       });
-      if (!["grid", "custom", "ou_quant"].includes(currentMode))
-        diffs.push("Replay signal/exit rules differ from live");
       const matched = diffs.length === 0;
-      const canAlign = Boolean(this.botState && ["grid", "custom", "ou_quant"].includes(liveMode)
+      const canAlign = Boolean(this.botState && parameterKeys[liveMode]
         && (parameterKeys[liveMode] || []).every((key) => liveParams[key] != null));
       const active = Boolean(this.botState?.enabled);
       pill.textContent = matched
@@ -2202,7 +2188,7 @@
         });
         const source = $("lighterCrypto_ouStatusSource");
         if (source) source.textContent = evaluation?.time
-          ? `PAPER · Completed candle ${new Date(Number(evaluation.time) * 1000).toLocaleString()} · Tab 5 live bot supports Grid only`
+          ? `PAPER · Completed candle ${new Date(Number(evaluation.time) * 1000).toLocaleString()} · Tab 5 live bot executes deployed strategy`
           : "PAPER · Awaiting completed-candle replay";
         return;
       }
@@ -2304,6 +2290,33 @@
           if (rangeExit) rangeExit.value = val;
           if (badgeExit) badgeExit.textContent = `≤ ${val}σ`;
         }
+      }
+      if (liveMode === "ma_stack") {
+        if (params.ma_stretch_min != null && $("lighterCrypto_inpMaStretchMin")) {
+          $("lighterCrypto_inpMaStretchMin").value = String(params.ma_stretch_min);
+          $("lighterCrypto_inpMaStretchMin")._userModified = false;
+        }
+        if (params.ma_trailing_stop != null && $("lighterCrypto_inpMaTrailingStop")) {
+          $("lighterCrypto_inpMaTrailingStop").value = String(params.ma_trailing_stop);
+          $("lighterCrypto_inpMaTrailingStop")._userModified = false;
+        }
+      }
+      if (liveMode === "multi_factor") {
+        if (params.min_consensus_votes != null && $("lighterCrypto_selFactorQuorum")) {
+          $("lighterCrypto_selFactorQuorum").value = String(params.min_consensus_votes);
+          $("lighterCrypto_selFactorQuorum")._userModified = false;
+        }
+      }
+      if (liveMode === "trend_pullback") {
+        [["lighterCrypto_inpTrendPullbackDist", "trend_pullback_dist"],
+         ["lighterCrypto_inpTrendTpDist", "trend_tp_dist"],
+         ["lighterCrypto_inpTrendMacroWindow", "trend_macro_window"]].forEach(([id, key]) => {
+          const input = $(id);
+          if (input && params[key] != null) {
+            input.value = String(params[key]);
+            input._userModified = false;
+          }
+        });
       }
       this.updateRulesMatchStatus();
       this.refreshChart();

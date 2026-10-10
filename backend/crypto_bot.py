@@ -1,7 +1,7 @@
 """Persisted, fail-closed Binance Futures single-leg executor for Tab 4.
 
-Only Grid is enabled for live execution. Other research strategies remain
-replay-only until all their conditions can be configured and reconciled here.
+Supports live execution for all testable quantitative single-leg strategies:
+grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 """
 
 import asyncio
@@ -15,17 +15,31 @@ from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .lighter_strategy import evaluate_grid_signals
+from .lighter_strategy import (
+    evaluate_strategy_signal,
+    evaluate_grid_signals,
+    LIVE_STRATEGIES,
+    OU_MIN_ABS_DEVIATION_PP,
+    OU_MACRO_EMA_SPAN,
+    OU_MACRO_SLOPE_BARS,
+)
 
 
 SUPPORTED = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"}
 INTERVAL_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
-LIVE_STRATEGIES = {"grid"}
 DEFAULT_STATE = {
     "enabled": False, "selected_symbol": "BTCUSDT", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
     "notional_usd": 150.0, "max_tranches": 5,
     "min_seconds_between_orders": 300, "max_book_spread_bps": 45.0,
+    "ou_halflife_max": 8.0, "ou_stop_z": 3.5, "ou_min_abs_deviation_pp": 0.25,
+    "ou_macro_ema_span": 60, "ou_macro_slope_bars": 12,
+    "ou_use_entry_z": True, "ou_use_halflife": True, "ou_use_min_abs_deviation": True,
+    "ou_use_macro_trend": True, "ou_use_stop_zone": True, "ou_use_exit_z": True,
+    "ma_stretch_min": 0.30, "ma_trailing_stop": 0.15, "min_consensus_votes": 3,
+    "trend_macro_window": 24, "trend_pullback_dist": 0.15, "trend_tp_dist": 0.05, "trend_slope_min": 0.002,
+    "use_ma_stretch": True, "use_base_spacing": True, "use_peak": True, "use_ma_stack": False,
+    "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
     "last_evaluated_candle": 0, "last_order_time": 0,
     "last_evaluation": None, "last_error": None, "recovery_required": False,
@@ -83,8 +97,15 @@ class CryptoBot:
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         permitted = {
             "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
-            "notional_usd", "max_tranches",
-            "min_seconds_between_orders", "max_book_spread_bps",
+            "notional_usd", "max_tranches", "min_seconds_between_orders", "max_book_spread_bps",
+            "ou_halflife_max", "ou_stop_z", "ou_min_abs_deviation_pp",
+            "ou_macro_ema_span", "ou_macro_slope_bars",
+            "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
+            "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
+            "ma_stretch_min", "ma_trailing_stop", "min_consensus_votes",
+            "trend_macro_window", "trend_pullback_dist", "trend_tp_dist", "trend_slope_min",
+            "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
+            "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
         }
         unknown = set(values) - permitted
         if unknown:
@@ -93,28 +114,45 @@ class CryptoBot:
         for key, value in values.items():
             if key in {"selected_symbol", "strategy_mode", "strategy_interval"}:
                 candidate[key] = str(value)
-            elif key in {"max_tranches", "min_seconds_between_orders"}:
+            elif key in {"max_tranches", "min_seconds_between_orders", "ou_macro_ema_span",
+                        "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars"}:
                 candidate[key] = int(value)
+            elif key in {"ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
+                        "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
+                        "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
+                        "use_convergence", "use_dwell", "use_bottoming"}:
+                candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
         if candidate["selected_symbol"] not in SUPPORTED:
             raise ValueError("Unsupported Futures symbol")
         if candidate["strategy_mode"] not in LIVE_STRATEGIES:
-            raise ValueError("This strategy is available in replay only; live supports Grid")
+            raise ValueError(f"Unsupported live strategy: {candidate['strategy_mode']}")
         if candidate["strategy_interval"] not in INTERVAL_SECONDS:
             raise ValueError("Unsupported candle interval")
-        bounds = {"entry_z": (0.1, 10), "exit_z": (0, 5),
-                  "notional_usd": (10, 500), "max_tranches": (1, 5),
-                  "min_seconds_between_orders": (6, 86400), "max_book_spread_bps": (1, 100)}
+        bounds = {
+            "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0),
+            "notional_usd": (10.0, 500.0), "max_tranches": (1, 5),
+            "min_seconds_between_orders": (6, 86400), "max_book_spread_bps": (1, 100),
+            "ou_halflife_max": (0.5, 50.0), "ou_stop_z": (1.0, 10.0),
+            "ou_min_abs_deviation_pp": (0.01, 10.0),
+            "ma_stretch_min": (0.01, 10.0), "ma_trailing_stop": (0.01, 10.0),
+            "min_consensus_votes": (1, 4),
+            "trend_macro_window": (12, 100), "trend_pullback_dist": (0.01, 10.0),
+            "trend_tp_dist": (0.01, 10.0), "trend_slope_min": (0.0001, 1.0),
+        }
         for key, (low, high) in bounds.items():
-            value = candidate[key]
-            if not math.isfinite(value) or not low <= value <= high:
-                raise ValueError(f"{key} must be between {low} and {high}")
-        if candidate["exit_z"] >= candidate["entry_z"]:
-            raise ValueError("Exit Z must be below Entry Z")
+            if key in candidate:
+                value = candidate[key]
+                if not math.isfinite(value) or not low <= value <= high:
+                    raise ValueError(f"{key} must be between {low} and {high}")
+        if candidate["strategy_mode"] in {"grid", "custom", "ou_quant"}:
+            if candidate["exit_z"] >= candidate["entry_z"]:
+                raise ValueError("Exit Z must be below Entry Z")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z", "notional_usd", "max_tranches")):
+                ("selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                 "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:
                 raise ValueError("Close tracked inventory before changing symbol")
@@ -248,8 +286,15 @@ class CryptoBot:
         price = ask if side > 0 else bid
         if signal_values is not None and not reduce_only:
             executable_values = signal_values[:-1] + [price]
-            valid, quote_side, _, _ = evaluate_grid_signals(
-                executable_values, entry_z=self.state["entry_z"], exit_z=self.state["exit_z"])
+            valid, quote_side, _, _ = evaluate_strategy_signal(
+                self.state["strategy_mode"],
+                executable_values,
+                self.state,
+                evaluation_time=int(time.time()),
+                position_side=0,
+                entry_price=0.0,
+                held_bars=0,
+            )
             if not valid or quote_side != side:
                 raise ValueError("Current executable quote no longer supports the candle entry signal")
         step, minimum, min_notional = await self._exchange_rules(symbol)
@@ -398,7 +443,8 @@ class CryptoBot:
                                                 {"symbol": symbol, "interval": interval, "limit": 125})
                 now_ms = int(time.time() * 1000)
                 closed = [row for row in raw if int(row[6]) < now_ms]
-                if len(closed) < 25:
+                min_bars = 65 if self.state["strategy_mode"] in {"ma_stack", "ou_quant"} else 25
+                if len(closed) < min_bars:
                     raise ValueError("Insufficient completed Binance candles")
                 last_candle = int(closed[-1][0]) // 1000
                 if last_candle <= self.state["last_evaluated_candle"]:
@@ -409,14 +455,26 @@ class CryptoBot:
                     self._save()
                     return
                 values = [float(row[4]) for row in closed]
-                entry, side, exit_signal, evaluation = evaluate_grid_signals(
-                    values, entry_z=self.state["entry_z"], exit_z=self.state["exit_z"],
-                    evaluation_time=last_candle)
+                account, amount = await self._account_position(symbol)
+                self._check_position(amount)
+                position_side = int(self.state["tranches"][-1]["side"]) if self.state["tranches"] else 0
+                entry_price = float(self.state["tranches"][-1]["price"]) if self.state["tranches"] else 0.0
+                entry_time = int(self.state["tranches"][-1].get("time", 0)) if self.state["tranches"] else 0
+                held_seconds = max(0, int(time.time()) - entry_time) if entry_time else 0
+                held_bars = held_seconds // seconds if seconds else 0
+
+                entry, side, exit_signal, evaluation = evaluate_strategy_signal(
+                    self.state["strategy_mode"],
+                    values,
+                    self.state,
+                    evaluation_time=last_candle,
+                    position_side=position_side,
+                    entry_price=entry_price,
+                    held_bars=held_bars,
+                )
                 self.state["last_evaluation"] = evaluation
                 self.state["last_evaluated_candle"] = last_candle
                 self._save()
-                account, amount = await self._account_position(symbol)
-                self._check_position(amount)
                 if self.state["tranches"] and exit_signal:
                     # Exit one owned tranche per bar; all exits are reduce-only.
                     await self._submit(-int(self.state["tranches"][-1]["side"]), 0,

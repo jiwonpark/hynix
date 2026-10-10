@@ -60,14 +60,16 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         self.client = FakeBinance()
         self.bot = CryptoBot(self.client, self.path)
 
-    async def test_config_is_persisted_and_replay_only_strategy_rejected(self):
+    async def test_config_is_persisted_and_all_testable_strategies_deployable(self):
         await self.bot.configure({"entry_z": 2.0, "selected_symbol": "BTCUSDT"})
         restored = CryptoBot(self.client, self.path)
         self.assertEqual(restored.state["entry_z"], 2.0)
         self.assertFalse(restored.state["enabled"])
-        with self.assertRaisesRegex(ValueError, "replay only"):
-            await self.bot.configure({"strategy_mode": "ma_stack"})
-        self.assertEqual(self.bot.state["strategy_mode"], "grid")
+        for strat in ["ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "grid"]:
+            await self.bot.configure({"strategy_mode": strat})
+            self.assertEqual(self.bot.state["strategy_mode"], strat)
+        with self.assertRaisesRegex(ValueError, "Unsupported live strategy"):
+            await self.bot.configure({"strategy_mode": "unsupported_unknown"})
 
     async def test_foreign_position_blocks_enable_and_order(self):
         self.client.amount = 0.4
@@ -157,7 +159,7 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
             for i in range(25)
         ]
         with patch("backend.crypto_bot.time.time", return_value=now), patch(
-            "backend.crypto_bot.evaluate_grid_signals",
+            "backend.crypto_bot.evaluate_strategy_signal",
             side_effect=[(True, 1, False, {"mean": 100, "z": -2, "ratio": 100}),
                          (False, 1, False, {"mean": 100, "z": 0, "ratio": 100.01})],
         ):
@@ -176,13 +178,33 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         self.bot.state["enabled"] = True
         self.bot.state["strategy_interval"] = "1m"
         with patch("backend.crypto_bot.time.time", return_value=now), patch(
-            "backend.crypto_bot.evaluate_grid_signals",
+            "backend.crypto_bot.evaluate_strategy_signal",
             return_value=(True, 1, False, {"mean": 100, "z": -2, "ratio": 100}),
         ):
             await self.bot.run_once()
             await self.bot.run_once()
         self.assertEqual(len(self.client.orders), 1)
         self.assertEqual(self.bot.state["last_evaluated_candle"], last_open)
+
+    async def test_all_strategies_evaluate_in_live_worker(self):
+        now = 1000030
+        last_open = 999960
+        # 70 candles to satisfy 65 candle requirement for ma_stack and ou_quant
+        self.client.klines = [
+            [int((last_open - (69 - i) * 60) * 1000), "100", "100", "100", "100", "1",
+             int((last_open - (69 - i) * 60 + 60) * 1000 - 1)]
+            for i in range(70)
+        ]
+        self.bot.state["enabled"] = True
+        self.bot.state["strategy_interval"] = "1m"
+        for strat in ["ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "grid"]:
+            self.bot.state["strategy_mode"] = strat
+            self.bot.state["last_evaluated_candle"] = 0
+            with patch("backend.crypto_bot.time.time", return_value=now):
+                await self.bot.run_once()
+            self.assertEqual(self.bot.state["last_evaluated_candle"], last_open)
+            self.assertIsNotNone(self.bot.state["last_evaluation"])
+            self.assertEqual(self.bot.state["last_evaluation"]["strategy"], strat)
 
 
 if __name__ == "__main__":

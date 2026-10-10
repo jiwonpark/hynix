@@ -73,8 +73,11 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         await self.bot.configure({"entry_z": 2.0, "max_tranches": 3})
         restored = LighterCryptoBot(self.client, self.path)
         self.assertEqual(restored.state["entry_z"], 2.0)
-        with self.assertRaisesRegex(ValueError, "replay only"):
-            await self.bot.configure({"strategy_mode": "ou_quant"})
+        for strat in ["ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "grid"]:
+            await self.bot.configure({"strategy_mode": strat})
+            self.assertEqual(self.bot.state["strategy_mode"], strat)
+        with self.assertRaisesRegex(ValueError, "Unsupported live strategy"):
+            await self.bot.configure({"strategy_mode": "unsupported_unknown"})
 
     async def test_foreign_same_market_position_blocks_entry(self):
         self.client.amount = 0.5
@@ -90,7 +93,7 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.orders, {})
 
     async def test_current_executable_quote_must_still_support_signal(self):
-        with patch("backend.lighter_crypto_bot.evaluate_grid_signals",
+        with patch("backend.lighter_crypto_bot.evaluate_strategy_signal",
                    return_value=(False, 1, False, {})):
             with self.assertRaisesRegex(ValueError, "quote no longer supports"):
                 await self.bot._submit(1, 50, reduce_only=False, reason="closed_bar_signal",
