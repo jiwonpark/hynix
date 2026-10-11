@@ -29,7 +29,8 @@ const window = {
   lighterCryptoEngine: { applyExecutionLock() { synced++; } },
 };
 const document = { querySelectorAll() { return actionControls; } };
-const context = { window, document, $: () => null, clearTimeout, setTimeout };
+const context = { window, document, $: () => null, clearTimeout, setTimeout,
+  showToast() {} };
 vm.createContext(context);
 vm.runInContext(`${html.slice(start, end)}\nwindow.lock = terminalLockManager;`, context);
 window.lock.applyState();
@@ -89,4 +90,21 @@ for (const [file, engineName, prefix] of [
   assert.equal(el(`${prefix}inputLiveTradeRate`).disabled, true, `${file}: relock disables live settings`);
 }
 
-console.log('Terminal unlock respects active controls and execution safeguards across trading tabs');
+(async () => {
+  window.lock.isLocked = true;
+  context.fetch = async (url) => {
+    assert.equal(url, 'api/terminal-auth/resume');
+    return {ok: true, json: async () => ({success: true, token: 'renewed-session', expires_in: 3600})};
+  };
+  await window.lock.openPasswordModal();
+  assert.equal(window.lock.isLocked, false, 'remembered browser unlocks without a password prompt');
+  assert.equal(window.lock.token, 'renewed-session');
+  context.fetch = async (url) => {
+    assert.ok(['api/terminal-auth/forget', 'api/terminal-auth/lock'].includes(url));
+    return {ok: true};
+  };
+  await window.lock.forgetBrowser();
+  assert.equal(window.lock.isLocked, true, 'forgetting the browser revokes the active unlock');
+  assert.equal(window.lock.token, null);
+  console.log('Terminal unlock respects active controls and remembered browser sessions');
+})().catch((error) => { console.error(error); process.exitCode = 1; });

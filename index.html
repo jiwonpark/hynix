@@ -2683,7 +2683,7 @@
         <h1 id="topTitle" style="letter-spacing: -0.5px; font-weight: 900;">HYPERION · Dual-Leg Quant Terminal</h1>
       </div>
       <div class="topRight" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-        <div class="terminalLockToggleWrap" id="terminalLockToggleWrap" title="Execution Terminal Lock (Password required to unlock)">
+        <div class="terminalLockToggleWrap" id="terminalLockToggleWrap" title="Unlock with password once; this browser is remembered for 24 hours">
           <span class="terminalLockBadge" id="topLockBadge">
             <span id="topLockIcon">🔒</span>
             <span id="topLockLabel">Read-Only</span>
@@ -2693,6 +2693,7 @@
             <span class="terminalSliderRound"></span>
           </label>
         </div>
+        <button id="btnForgetTerminalBrowser" type="button" title="Require password on this browser next time" style="background:none;border:0;color:#64748b;font-size:11px;cursor:pointer;text-decoration:underline;padding:4px 2px;">Forget this browser</button>
         <div class="langSwitch" aria-label="Language switch">
           <button id="langKo" type="button">🇰🇷 한국어</button>
           <button id="langEn" class="active" type="button">🇺🇸 English</button>
@@ -4845,7 +4846,7 @@
       </div>
       <div class="modalBody" style="padding: 16px;">
         <p style="font-size: 12px; color: #334155; line-height: 1.5; margin: 0 0 12px 0;" id="lblPassModalDesc">
-          Enter authorization password to unlock live order execution, bot controls, and parameter adjustments:
+          Enter the password once. This browser can unlock again without it for 24 hours:
         </p>
         <div style="position: relative;">
           <input type="password" id="terminalPasswordInput" placeholder="Enter password..." autocomplete="off"
@@ -9671,9 +9672,9 @@
         badgeEvaluationStage: "TWO-STAGE ARCHITECTURE",
         topLockReadOnly: "Read-Only",
         topLockUnlocked: "Unlocked",
-        topLockTooltip: "Execution Terminal Lock (Password required to unlock)",
+        topLockTooltip: "Unlock with password once; this browser is remembered for 24 hours",
         passModalTitle: "🔒 Unlock Execution Terminal",
-        passModalDesc: "Enter authorization password to unlock live order execution, bot controls, and parameter adjustments:",
+        passModalDesc: "Enter the password once. This browser can unlock again without it for 24 hours:",
         passModalPlaceholder: "Enter password...",
         passModalCancel: "Cancel",
         passModalUnlock: "Unlock",
@@ -9702,9 +9703,9 @@
         badgeEvaluationStage: "2단계 평가 프레임워크",
         topLockReadOnly: "읽기 전용",
         topLockUnlocked: "잠금 해제",
-        topLockTooltip: "거래 터미널 잠금 (잠금 해제 시 비밀번호 필요)",
+        topLockTooltip: "한 번 비밀번호를 입력하면 이 브라우저에서 24시간 동안 다시 입력하지 않아도 됩니다",
         passModalTitle: "🔒 거래 터미널 잠금 해제",
-        passModalDesc: "실제 주문 실행, 봇 제어 및 파라미터 조정을 잠금 해제하려면 비밀번호를 입력하세요:",
+        passModalDesc: "비밀번호를 한 번 입력하면 이 브라우저에서 24시간 동안 다시 입력하지 않아도 됩니다:",
         passModalPlaceholder: "비밀번호 입력...",
         passModalCancel: "취소",
         passModalUnlock: "잠금 해제",
@@ -10921,6 +10922,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       isLocked: true,
       token: null,
       expiryTimer: null,
+      unlocking: false,
 
       init() {
         this.bindUI();
@@ -10955,6 +10957,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           });
         }
 
+        const forgetButton = $("btnForgetTerminalBrowser");
+        if (forgetButton) forgetButton.addEventListener("click", () => this.forgetBrowser());
+
         const btnClose = $("btnClosePassModal");
         const btnCancel = $("btnCancelUnlock");
         if (btnClose) btnClose.addEventListener("click", () => this.closePasswordModal());
@@ -10984,7 +10989,28 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
       },
 
-      openPasswordModal() {
+      async openPasswordModal() {
+        if (!this.isLocked || this.unlocking) return;
+        this.unlocking = true;
+        try {
+          const response = await fetch("api/terminal-auth/resume", {
+            method: "POST", credentials: "same-origin", cache: "no-store",
+          });
+          if (response.ok) {
+            const auth = await response.json();
+            if (auth.success && auth.token) {
+              this.acceptSession(auth);
+              const isKo = window.currentLang === "ko";
+              showToast(isKo ? "🔓 이 브라우저에서 다시 잠금 해제했습니다." : "🔓 Unlocked on this remembered browser.", "success");
+              return;
+            }
+          }
+        } catch (_) { /* A failed resume falls back to the password prompt. */ }
+        finally { this.unlocking = false; }
+        this.showPasswordModal();
+      },
+
+      showPasswordModal() {
         const modal = $("terminalPasswordModal");
         const passInput = $("terminalPasswordInput");
         const errEl = $("terminalPasswordError");
@@ -11006,6 +11032,30 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (switchEl) switchEl.checked = !this.isLocked;
       },
 
+      acceptSession(auth) {
+        this.token = auth.token;
+        clearTimeout(this.expiryTimer);
+        this.expiryTimer = setTimeout(() => this.setLocked(true), auth.expires_in * 1000);
+        this.closePasswordModal();
+        this.setLocked(false);
+      },
+
+      async forgetBrowser() {
+        const isKo = window.currentLang === "ko";
+        try {
+          const response = await fetch("api/terminal-auth/forget", {
+            method: "POST", credentials: "same-origin", cache: "no-store",
+            headers: this.token ? {Authorization: `Bearer ${this.token}`} : {},
+          });
+          if (!response.ok) throw new Error("Could not forget this browser");
+          this.setLocked(true);
+          showToast(isKo ? "이 브라우저의 기억을 해제했습니다. 다음에는 비밀번호가 필요합니다."
+            : "This browser was forgotten. A password is needed next time.", "info");
+        } catch (error) {
+          showToast(isKo ? "브라우저 기억을 해제하지 못했습니다." : error.message, "danger");
+        }
+      },
+
       async verifyPassword() {
         const passInput = $("terminalPasswordInput");
         const errEl = $("terminalPasswordError");
@@ -11025,11 +11075,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           return;
         }
         if (auth.success && auth.token) {
-          this.token = auth.token;
-          clearTimeout(this.expiryTimer);
-          this.expiryTimer = setTimeout(() => this.setLocked(true), auth.expires_in * 1000);
-          this.closePasswordModal();
-          this.setLocked(false);
+          this.acceptSession(auth);
           showToast(isKo ? "🔓 거래 터미널이 잠금 해제되었습니다." : "🔓 Execution terminal unlocked.", "success");
         } else {
           if (errEl) {
@@ -11070,6 +11116,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const labelEl = $("topLockLabel");
         if (labelEl) labelEl.textContent = locked ? (isKo ? "읽기 전용" : "Read-Only") : (isKo ? "잠금 해제" : "Unlocked");
+        const forgetButton = $("btnForgetTerminalBrowser");
+        if (forgetButton) {
+          forgetButton.textContent = isKo ? "이 브라우저 기억 해제" : "Forget this browser";
+          forgetButton.title = isKo ? "다음 잠금 해제 시 비밀번호를 요구합니다" : "Require password on this browser next time";
+        }
 
         const tradingTab = $("tabContentTrading");
         if (tradingTab) {

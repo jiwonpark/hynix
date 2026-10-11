@@ -32,7 +32,9 @@ class ASGIClient:
         await asyncio.wait_for(server.app(scope, receive, send), timeout=5)
         code = next(m['status'] for m in messages if m['type']=='http.response.start')
         body = b''.join(m.get('body',b'') for m in messages if m['type']=='http.response.body')
-        return SimpleNamespace(status_code=code, json=lambda: __import__('json').loads(body))
+        response_headers = next(m['headers'] for m in messages if m['type']=='http.response.start')
+        return SimpleNamespace(status_code=code, headers={k.decode().lower(): v.decode() for k,v in response_headers},
+                               json=lambda: __import__('json').loads(body))
 
     async def post(self, path, **kwargs):
         return await self.request('POST', path, **kwargs)
@@ -45,9 +47,11 @@ class StrategyLabAuthorizationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / 'auth.json'
+        self.remember_path = Path(self.temp.name) / 'remember.json'
         salt = bytes.fromhex('0123456789abcdef0123456789abcdef')
         self.path.write_text(json.dumps(dict(salt=salt.hex(), hash=hashlib.scrypt(b'test-only-password', salt=salt, n=16384, r=8, p=1).hex())))
-        self.env = patch.dict(os.environ, {'TERMINAL_AUTH_FILE': str(self.path)})
+        self.env = patch.dict(os.environ, {'TERMINAL_AUTH_FILE': str(self.path),
+                                        'TERMINAL_REMEMBER_FILE': str(self.remember_path)})
         self.env.start()
         terminal_auth._sessions.clear()
         terminal_auth._attempts.clear()
@@ -97,3 +101,46 @@ class StrategyLabAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         for _ in range(3):
             (await self.client.post('/api/terminal-auth/unlock', json={'password':'wrong'}))
         self.assertEqual((await self.client.post('/api/terminal-auth/unlock', json={'password':'wrong'})).status_code, 429)
+
+    async def test_same_browser_can_resume_for_day_after_lock_and_restart(self):
+        self.assertEqual((await self.client.post('/api/terminal-auth/resume')).status_code, 401)
+        unlocked = await self.client.post('/api/terminal-auth/unlock', json={'password':'test-only-password'})
+        self.assertEqual(unlocked.status_code, 200)
+        self.assertEqual(unlocked.json()['remembered_for'], 86400)
+        cookie = unlocked.headers['set-cookie']
+        self.assertIn('HttpOnly', cookie)
+        self.assertIn('Secure', cookie)
+        self.assertIn('SameSite=strict', cookie)
+        self.assertIn('Max-Age=86400', cookie)
+        cookie_header = {'Cookie': cookie.split(';', 1)[0]}
+        self.assertNotIn(cookie_header['Cookie'].split('=', 1)[1], self.remember_path.read_text())
+        self.assertEqual(self.remember_path.stat().st_mode & 0o777, 0o600)
+        old_headers = {'Authorization': 'Bearer ' + unlocked.json()['token']}
+        await self.client.post('/api/terminal-auth/lock', headers=old_headers)
+        self.assertFalse((await self.client.get('/api/terminal-auth/status', headers=old_headers)).json()['authorized'])
+        terminal_auth._sessions.clear()  # Simulate a backend restart.
+        self.assertEqual((await self.client.post('/api/terminal-auth/resume')).status_code, 401)
+        resumed = await self.client.post('/api/terminal-auth/resume', headers=cookie_header)
+        self.assertEqual(resumed.status_code, 200)
+        new_headers = {'Authorization': 'Bearer ' + resumed.json()['token']}
+        self.assertTrue((await self.client.get('/api/terminal-auth/status', headers=new_headers)).json()['authorized'])
+        forgotten = await self.client.post('/api/terminal-auth/forget', headers={**cookie_header, **new_headers})
+        self.assertEqual(forgotten.status_code, 200)
+        self.assertEqual((await self.client.post('/api/terminal-auth/resume', headers=cookie_header)).status_code, 401)
+        self.assertFalse((await self.client.get('/api/terminal-auth/status', headers=new_headers)).json()['authorized'])
+
+    async def test_expired_remembered_browser_requires_password(self):
+        unlocked = await self.client.post('/api/terminal-auth/unlock', json={'password':'test-only-password'})
+        cookie_header = {'Cookie': unlocked.headers['set-cookie'].split(';', 1)[0]}
+        remembered = json.loads(self.remember_path.read_text())
+        remembered['sessions'] = {key: 1 for key in remembered['sessions']}
+        self.remember_path.write_text(json.dumps(remembered))
+        self.assertEqual((await self.client.post('/api/terminal-auth/resume', headers=cookie_header)).status_code, 401)
+
+    async def test_password_rotation_invalidates_remembered_browser(self):
+        unlocked = await self.client.post('/api/terminal-auth/unlock', json={'password':'test-only-password'})
+        cookie_header = {'Cookie': unlocked.headers['set-cookie'].split(';', 1)[0]}
+        config = json.loads(self.path.read_text())
+        config['hash'] = '0' * 128
+        self.path.write_text(json.dumps(config))
+        self.assertEqual((await self.client.post('/api/terminal-auth/resume', headers=cookie_header)).status_code, 401)
