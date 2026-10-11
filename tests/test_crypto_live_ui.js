@@ -61,4 +61,30 @@ assert.match(elements.get('crypto_executionHistoryBody').innerHTML, /\+\$1\.8000
 assert.match(elements.get('crypto_executionHistoryBody').innerHTML, /\$0\.2000 total/);
 assert.match(elements.get('crypto_executionHistorySummary').innerHTML, /funding excluded/);
 
+// A favorable fill-price move can be a realized net loss after commissions.
+const svg = {children: [], set innerHTML(value) { if (value === '') this.children = []; },
+  appendChild(fragment) { this.children.push(...fragment.children); }};
+elements.set('crypto_tradeTrianglesLayer', svg);
+context.document.createDocumentFragment = () => ({children: [], appendChild(child) { this.children.push(child); }});
+context.document.createElementNS = (_, tag) => ({tag, attributes: {}, style: {},
+  setAttribute(name, value) { this.attributes[name] = value; }});
+const entry = {source: 'actual', is_entry: true, direction: 'short', ratio: 100,
+  time: 100, markerKey: 'entry', pairKey: 'pair'};
+const exit = {source: 'actual', is_entry: false, direction: 'short', ratio: 99.98,
+  time: 200, markerKey: 'exit', pairKey: 'pair', pnl: -0.14, pnl_authoritative: true};
+engine.rawExecutionMarkers = [entry, exit];
+engine.selectedExecutionMarkerKey = 'entry';
+engine.isTradeMarkerVisible = () => true;
+engine.alignChartOverlay = () => {};
+engine.chart = {timeScale: () => ({timeToCoordinate: (time) => time})};
+engine.series = {priceToCoordinate: (price) => price};
+engine.renderTradeTriangles();
+assert.equal(svg.children[1].attributes.stroke, '#dc2626', 'verified net loss is red despite favorable prices');
+exit.pnl = 0.01;
+engine.renderTradeTriangles();
+assert.equal(svg.children[1].attributes.stroke, '#16a34a', 'verified net gain is green');
+exit.pnl_authoritative = false;
+engine.renderTradeTriangles();
+assert.equal(svg.children[1].attributes.stroke, '#64748b', 'unverified realized P&L is neutral');
+
 console.log('Crypto live balance display checks passed');

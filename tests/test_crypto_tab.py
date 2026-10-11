@@ -96,6 +96,42 @@ class TestCryptoTab(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_actual_chart_marker_uses_verified_net_after_fees(self):
+        from backend.server import get_crypto_candles
+
+        history = [
+            {"event": "ENTRY", "symbol": "BTCUSDT", "time": 970, "side": -1,
+             "original_side": -1, "price": 100.0, "qty": 1, "order_id": 1},
+            {"event": "EXIT", "symbol": "BTCUSDT", "time": 1030, "side": 1,
+             "original_side": -1, "price": 99.98, "entry_price": 100.0, "qty": 1,
+             "entry_order_id": 1, "order_id": 2, "pnl_authoritative": True,
+             "gross_pnl_usd": 0.02, "round_trip_fee_usd": 0.16,
+             "net_pnl_usd": -0.14, "pnl_pct": -0.14},
+            {"event": "EXIT", "symbol": "BTCUSDT", "time": 1090, "side": 1,
+             "original_side": -1, "price": 99.90, "entry_price": 100.0, "qty": 1,
+             "entry_order_id": 3, "order_id": 4, "pnl_authoritative": False},
+        ]
+
+        async def _run():
+            with patch("backend.server.get_klines", new_callable=AsyncMock) as klines, \
+                 patch("backend.server.crypto_bot.reconciled_public_state", new_callable=AsyncMock) as state:
+                klines.return_value = [
+                    [t * 1000, "100", "101", "99", "100", "1"]
+                    for t in (960, 1020, 1080)
+                ]
+                state.return_value = {"execution_history": history}
+                result = await get_crypto_candles("BTCUSDT", "1m", 3)
+                exits = [marker for marker in result["markers"] if marker["is_exit"]]
+                self.assertEqual(exits[0]["pnl"], -0.14)
+                self.assertEqual(exits[0]["gross_pnl_usd"], 0.02)
+                self.assertEqual(exits[0]["round_trip_fee_usd"], 0.16)
+                self.assertTrue(exits[0]["pnl_authoritative"])
+                self.assertIn("net -0.1400", exits[0]["hoverText"])
+                self.assertIsNone(exits[1]["pnl"])
+                self.assertFalse(exits[1]["pnl_authoritative"])
+
+        asyncio.run(_run())
+
     def test_crypto_tab_single_leg_features(self):
         script = (ROOT / "crypto-tab.js").read_text(encoding="utf-8")
         self.assertIn("selectedSymbol", script)

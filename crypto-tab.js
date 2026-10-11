@@ -650,8 +650,8 @@
           },
           title: "PAPER REPLAY · INTERVAL-DEPENDENT · NOT LIVE EXECUTION",
           action: { label: "Rerun Paper", onClick: () => this.runBacktest() },
-          actual: { label: "Actual", onToggle: () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
-          virtual: { label: "Virtual", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
+          actual: { label: "Actual (net)", onToggle: () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
+          virtual: { label: "Paper (pre-fee)", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
           grouping: {
             asRange: this.groupTradesAsRange,
             onChange: (asRange) => this.setTradeGrouping(asRange),
@@ -2883,6 +2883,9 @@
               ratio: marker.ratio || marker.value,
               pnl: marker.pnl,
               pnl_pct: marker.pnl_pct,
+              pnl_authoritative: Boolean(marker.pnl_authoritative),
+              gross_pnl_usd: marker.gross_pnl_usd,
+              round_trip_fee_usd: marker.round_trip_fee_usd,
               pairKey: marker.pairKey || null,
             };
           }) : [];
@@ -3004,8 +3007,8 @@
           });
           const dirLabel = isShort ? "SHORT CAMPAIGN" : "LONG CAMPAIGN";
           const exitPrice = Number(marker.ratio ?? marker.exit_price ?? marker.entry_price);
-          const isProfit = totalPnl >= 0;
-          const pnlText = hasPnl ? `${isProfit ? "+" : ""}$${totalPnl.toFixed(2)}` : "";
+          const isProfit = hasPnl ? totalPnl > 0 : null;
+          const pnlText = hasPnl ? `Net ${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}` : "Unverified P&L";
           const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
           const source = marker.source === "actual" ? "ACTUAL" : (marker.backtest ? "BACKTEST" : "PAPER");
 
@@ -3018,7 +3021,7 @@
             const returnPct = (Number.isFinite(ep) && Number.isFinite(exitPrice) && ep > 0)
               ? (isShort ? (ep - exitPrice) / ep * 100 : (exitPrice - ep) / ep * 100)
               : null;
-            const retStr = returnPct != null ? ` (${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}%)` : "";
+            const retStr = returnPct != null ? ` (price ${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}%)` : "";
             return `<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;font-weight:700;padding:1px 0;">
               <span>#${idx + 1} Entry @ ${this.formatCryptoPrice(ep)}</span>
               <span>${retStr}${pnlStr}</span>
@@ -3028,7 +3031,7 @@
           overlay.innerHTML = `
             <div style="font-weight:900;font-size:11px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #e2e8f0;padding-bottom:3px;">
               <span>🏁 ${source} · ${dirLabel} EXIT (${matchedPairs.length} Tranches)</span>
-              ${pnlText ? `<span style="color:${isProfit ? '#16a34a' : '#dc2626'};font-weight:900;">${pnlText}</span>` : ""}
+              <span style="color:${isProfit === null ? '#64748b' : (isProfit ? '#16a34a' : '#dc2626')};font-weight:900;">${pnlText}</span>
             </div>
             <div style="display:flex;flex-direction:column;gap:1px;margin-bottom:3px;">
               ${trancheRows}
@@ -3039,7 +3042,7 @@
             </div>
           `;
           overlay.style.display = "block";
-          overlay.style.borderColor = isProfit ? "#86efac" : "#fca5a5";
+          overlay.style.borderColor = isProfit === null ? "#cbd5e1" : (isProfit ? "#86efac" : "#fca5a5");
           overlay.style.color = "#0f172a";
           return;
         }
@@ -3565,9 +3568,13 @@
           const ty = y1; y1 = y2; y2 = ty;
         }
 
-        // Invariant: Buy price lower than Sell close is ALWAYS Profit (Green).
-        // For Long: p2 (sell) >= p1 (buy). For Short: p1 (sell) >= p2 (buy).
-        const isProfit = isShort ? (p1 >= p2) : (p2 >= p1);
+        // Actual fills use verified net P&L after both commissions. Price
+        // direction alone can be favorable while the trade loses money.
+        const actualFill = entry.source === "actual" && exit.source === "actual";
+        const verifiedNet = actualFill && exit.pnl_authoritative && Number.isFinite(exit.pnl);
+        const isProfit = actualFill
+          ? (verifiedNet ? exit.pnl > 0 : null)
+          : (isShort ? p1 >= p2 : p2 >= p1);
 
         let cornerX;
         let cornerY;
@@ -3592,9 +3599,9 @@
         }
         const pts = `${x1.toFixed(1)},${y1.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
 
-        const fillColor = isProfit ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)";
-        const strokeColor = isProfit ? "rgba(22, 163, 74, 0.65)" : "rgba(220, 38, 38, 0.65)";
-        const diagStroke = isProfit ? "#16a34a" : "#dc2626";
+        const fillColor = isProfit === null ? "rgba(100, 116, 139, 0.08)" : (isProfit ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)");
+        const strokeColor = isProfit === null ? "rgba(100, 116, 139, 0.65)" : (isProfit ? "rgba(22, 163, 74, 0.65)" : "rgba(220, 38, 38, 0.65)");
+        const diagStroke = isProfit === null ? "#64748b" : (isProfit ? "#16a34a" : "#dc2626");
 
         const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
         polygon.setAttribute("points", pts);

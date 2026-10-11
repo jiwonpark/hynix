@@ -980,7 +980,8 @@ async def get_crypto_status(symbol: str = "BTCUSDT") -> Dict[str, Any]:
         return {"success": False, "symbol": symbol, "error": str(error), "server_time_ms": int(time.time() * 1000)}
 
 @app.get("/api/crypto/candles")
-async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 300) -> Dict[str, Any]:
+async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 300,
+                             include_markers: bool = True) -> Dict[str, Any]:
     """Candles & price bars for single-leg crypto terminal."""
     try:
         raw_klines = await get_klines(symbol, interval=interval, limit=limit)
@@ -990,11 +991,14 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
             c = float(row[4])
             bars.append({"time": t, "value": c, "open": float(row[1]), "high": float(row[2]), "low": float(row[3]), "close": c, "volume": float(row[5])})
         markers = []
-        if bars:
+        if bars and include_markers:
+            # Use the same exchange-reconciled fills as the execution list.
+            # A favorable price move can still lose money after both commissions.
+            execution_history = (await crypto_bot.reconciled_public_state()).get("execution_history", [])
             interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
                                 "4h": 14400, "1d": 86400}.get(interval, 900)
             first, last = bars[0]["time"], bars[-1]["time"]
-            for event in crypto_bot.state.get("execution_history", []):
+            for event in execution_history:
                 if event.get("symbol") != symbol:
                     continue
                 trade_time = int(event.get("time", 0))
@@ -1002,8 +1006,10 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
                 if not first <= bar_time <= last:
                     continue
                 is_entry = event.get("event") == "ENTRY"
+                verified_exit = not is_entry and bool(event.get("pnl_authoritative"))
                 original_side = int(event.get("original_side", event.get("side", 0)))
                 price = float(event.get("price", 0))
+                net_pnl = float(event["net_pnl_usd"]) if verified_exit else None
                 markers.append({
                     "time": bar_time, "source": "actual", "is_entry": is_entry,
                     "is_exit": not is_entry, "side": int(event.get("side", 0)),
@@ -1012,7 +1018,14 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
                     "exit_price": price if not is_entry else None,
                     "qty": float(event.get("qty", 0)), "notional": float(event.get("notional_usd", 0)),
                     "pairKey": str(event.get("entry_order_id") or event.get("order_id")),
-                    "hoverText": f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {symbol} @ {price:.6f} · {event.get('qty')} filled",
+                    "pnl": net_pnl, "pnl_pct": float(event["pnl_pct"]) if verified_exit else None,
+                    "pnl_authoritative": verified_exit,
+                    "gross_pnl_usd": float(event["gross_pnl_usd"]) if verified_exit else None,
+                    "round_trip_fee_usd": float(event["round_trip_fee_usd"]) if verified_exit else None,
+                    "hoverText": (f"ACTUAL EXIT {symbol} @ {price:.6f} · net {net_pnl:+.4f} USDT"
+                                  if verified_exit else
+                                  f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {symbol} @ {price:.6f} · "
+                                  + (f"{event.get('qty')} filled" if is_entry else "realized P&L unverified")),
                 })
         return {"success": True, "symbol": symbol, "interval": interval, "bars": bars, "markers": markers}
     except Exception as error:
@@ -1027,8 +1040,8 @@ async def get_crypto_price(symbol: str = "BTCUSDT", interval: str = "15m", limit
 @app.get("/api/crypto/trends")
 async def get_crypto_trends(symbol: str = "BTCUSDT", small: str = "5m", big: str = "1h") -> Dict[str, Any]:
     try:
-        small_bars = (await get_crypto_candles(symbol, interval=small, limit=30)).get("bars", [])
-        big_bars = (await get_crypto_candles(symbol, interval=big, limit=30)).get("bars", [])
+        small_bars = (await get_crypto_candles(symbol, interval=small, limit=30, include_markers=False)).get("bars", [])
+        big_bars = (await get_crypto_candles(symbol, interval=big, limit=30, include_markers=False)).get("bars", [])
         def _calc_trend(bars):
             if len(bars) < 5:
                 return {"slope": 0.0, "regime": "FLAT", "pct_change": 0.0}
@@ -1393,7 +1406,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         raise ValueError("Unsupported crypto replay market source")
     candle_res = (await get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit))
                   if market_source == "lighter" else
-                  await get_crypto_candles(symbol, interval=interval, limit=min(500, limit)))
+                  await get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False))
     bars = candle_res.get("bars", [])
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
     now_seconds = int(time.time())
