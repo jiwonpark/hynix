@@ -106,6 +106,21 @@
     .terminalLockToggleWrap.unlocked .terminalLockBadge {
       color: #059669;
     }
+    .terminalForgetBrowser {
+      width: auto;
+      max-width: none;
+      height: 20px;
+      margin-left: 2px;
+      padding: 0 0 0 7px;
+      border: 0;
+      border-left: 1px solid var(--line);
+      border-radius: 0;
+      background: transparent;
+      color: #64748b;
+      font-size: 10px;
+      font-weight: 600;
+      flex: 0 0 auto;
+    }
     .terminalSlideSwitch {
       position: relative;
       display: inline-block;
@@ -2692,8 +2707,8 @@
             <input type="checkbox" id="terminalLockSwitch" aria-label="Unlock execution terminal">
             <span class="terminalSliderRound"></span>
           </label>
+          <button id="btnForgetTerminalBrowser" class="terminalForgetBrowser" type="button" title="Require password on this browser next time" aria-label="Forget this browser">Forget</button>
         </div>
-        <button id="btnForgetTerminalBrowser" type="button" title="Require password on this browser next time" style="background:none;border:0;color:#64748b;font-size:11px;cursor:pointer;text-decoration:underline;padding:4px 2px;">Forget this browser</button>
         <div class="langSwitch" aria-label="Language switch">
           <button id="langKo" type="button">🇰🇷 한국어</button>
           <button id="langEn" class="active" type="button">🇺🇸 English</button>
@@ -11118,8 +11133,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (labelEl) labelEl.textContent = locked ? (isKo ? "읽기 전용" : "Read-Only") : (isKo ? "잠금 해제" : "Unlocked");
         const forgetButton = $("btnForgetTerminalBrowser");
         if (forgetButton) {
-          forgetButton.textContent = isKo ? "이 브라우저 기억 해제" : "Forget this browser";
+          forgetButton.textContent = isKo ? "기억 해제" : "Forget";
           forgetButton.title = isKo ? "다음 잠금 해제 시 비밀번호를 요구합니다" : "Require password on this browser next time";
+          forgetButton.setAttribute("aria-label", isKo ? "이 브라우저 기억 해제" : "Forget this browser");
         }
 
         const tradingTab = $("tabContentTrading");
