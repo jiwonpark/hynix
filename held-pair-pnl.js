@@ -34,19 +34,21 @@
   // holding the latest candle's ETF price fixed while solving ADR price.
   function profitLevels(model, bar, valuationTimeMs) {
     const fields = ['adr_exit_qty', 'stock_exit_qty', 'adr_entry_price', 'stock_entry_price',
-      'entry_fees_usd', 'entry_time_ms', 'exit_fee_bps', 'slippage_bps',
+      'entry_fees_usd', 'entry_time_ms', 'exit_fee_bps',
       'funding_reserve_bps_day', 'threshold_usd'];
     if (!model || fields.some(k => model[k] == null || !Number.isFinite(Number(model[k])) || Number(model[k]) < 0)) return [];
-    const [a, h, ae, he, fees, entered, exitBps, slipBps, fundingBps, minimum] = fields.map(k => Number(model[k]));
+    const [a, h, ae, he, fees, entered, exitBps, fundingBps, minimum] = fields.map(k => Number(model[k]));
     const hedge = Number(bar?.csop), scale = Number(bar?.signal_scale ?? 60);
     if (![a, h, ae, he, hedge, scale].every(n => Number.isFinite(n) && n > 0)
         || !Number.isFinite(valuationTimeMs) || valuationTimeMs < entered) return [];
     const notional = a * ae + h * he;
-    const rate = (exitBps + slipBps) / 10000;
+    // Chart targets use commissions only. Slippage remains an execution risk,
+    // not an exchange fee or a fixed price hurdle.
+    const rate = exitBps / 10000;
     const funding = notional * fundingBps / 10000 * (valuationTimeMs - entered) / 86400000;
-    const targets = [{net: 0, title: 'B/E (net 0%)'},
-      {net: minimum, title: `Min profit (net ${(minimum / notional * 100).toFixed(2)}%)`},
-      ...[.2, .5, 1, 2, 3, 4, 5].map(p => ({net: notional * p / 100, title: `NET +${p}%`}))];
+    const targets = [{net: 0, title: 'B/E (fees + funding reserve)'},
+      {net: minimum, title: `Min profit (fees + funding; ${(minimum / notional * 100).toFixed(2)}%)`},
+      ...[.2, .5, 1, 2, 3, 4, 5].map(p => ({net: notional * p / 100, title: `NET +${p}% (fees + funding)`}))];
     return targets.map(target => ({...target,
       price: (a * ae + h * (hedge - he) - fees - funding - h * hedge * rate - target.net)
         / (a * (1 + rate)) / (scale * Math.sqrt(hedge)) * 100,

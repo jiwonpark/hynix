@@ -13060,7 +13060,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const bars = this.shortTermHistory?.bars || [];
         if (!model || !bars.length) return [];
         const required = ["adr_exit_qty", "stock_exit_qty", "adr_entry_price", "stock_entry_price",
-          "entry_fees_usd", "entry_time_ms", "exit_fee_bps", "slippage_bps", "funding_reserve_bps_day"];
+          "entry_fees_usd", "entry_time_ms", "exit_fee_bps", "funding_reserve_bps_day"];
         if (required.some(key => model[key] == null || !Number.isFinite(Number(model[key])) || Number(model[key]) < 0)) return [];
         const adrQty = Number(model.adr_exit_qty);
         const stockQty = Number(model.stock_exit_qty);
@@ -13068,7 +13068,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const stockEntry = Number(model.stock_entry_price);
         const entryFees = Number(model.entry_fees_usd);
         const entryTimeMs = Number(model.entry_time_ms);
-        const exitCostRate = (Number(model.exit_fee_bps) + Number(model.slippage_bps)) / 10000;
+        const exitCostRate = this.observedPairExitFeeBps() / 10000;
         const fundingRate = Number(model.funding_reserve_bps_day) / 10000;
         const entryNotional = adrQty * adrEntry + stockQty * stockEntry;
         if (![adrQty, stockQty, adrEntry, stockEntry, entryFees, entryTimeMs, exitCostRate, fundingRate]
@@ -13120,7 +13120,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           };
           $("heldPairEntryLabel").style.display = models.length > 1 ? "inline" : "none";
           $("heldPairEntryNote").textContent = marker?.is_entry ? (marker.pnl_model
-            ? ` · Estimated net for this entry's ${marker.pnl_model.adr_exit_qty} ADR / ${marker.pnl_model.stock_exit_qty} ETF trim; recorded entry fees + estimated exit costs and funding.`
+            ? ` · Estimated net for this entry's ${marker.pnl_model.adr_exit_qty} ADR / ${marker.pnl_model.stock_exit_qty} ETF trim; recorded entry fees + observed exit fee rate and funding reserve; slippage excluded.`
             : " · Entry P&L unavailable: paired fills or commission data missing.") : "";
           $("heldPairEntryNote").title = $("heldPairEntryNote").textContent;
         }
@@ -13363,24 +13363,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         } finally { clearTimeout(timeout); }
       },
 
-      shortSpreadProfitLadder(entrySpread, maxNetProfitPct = 5) {
-        const entry = Number(entrySpread);
-        if (!(entry > 0)) return [];
-        // Estimated fixed round-trip friction: 5 bps entry fee + 3 bps entry
-        // slippage + 5 bps exit fee + 3 bps exit slippage. Funding remains
-        // time-dependent and therefore is intentionally not presented as fixed.
-        const roundTripCostRate = 16 / 10000;
-        const netProfitTargets = [0, 0.2, 0.5, ...Array.from(
-          { length: Math.max(0, Math.floor(maxNetProfitPct)) },
-          (_, index) => index + 1
-        )].filter((target, index, values) => target <= maxNetProfitPct && values.indexOf(target) === index);
-        return netProfitTargets.map((netProfitPct) => ({
-          netProfitPct,
-          title: netProfitPct === 0 ? "B/E" : `NET +${netProfitPct}%`,
-          price: entry / (1 + roundTripCostRate + (netProfitPct / 100)),
-          color: netProfitPct === 0 ? "rgba(71, 85, 105, 0.70)" : "rgba(22, 163, 74, 0.70)",
-          lineWidth: 1.5,
-        }));
+      observedPairExitFeeBps() {
+        const fills = (this.state?.hedgedStatus?.recent_executions || [])
+          .filter((fill) => ["SKHYUSDT", "CSOPSKHYNIX2LUSDT"].includes(fill.symbol)
+            && fill.commission_asset === "USDT" && Number.isFinite(Number(fill.commission))
+            && Number(fill.qty) > 0 && Number(fill.price) > 0)
+          .sort((a, b) => Number(a.time) - Number(b.time)).slice(-20);
+        const symbols = new Set(fills.map((fill) => fill.symbol));
+        const notional = fills.reduce((sum, fill) => sum + Number(fill.qty) * Number(fill.price), 0);
+        return fills.length >= 4 && symbols.size === 2 && notional > 0
+          ? fills.reduce((sum, fill) => sum + Number(fill.commission), 0) / notional * 10000
+          : 5; // Explicit estimate until both legs have recent USDT fee records.
       },
 
       clearShortTermReferenceLines() {
@@ -13394,7 +13387,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const bar = this.shortTermHistory?.bars?.at(-1);
         const seconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[this.state?.shortTermInterval || "5m"];
         const valuedAt = Math.min(Date.now(), (Number(bar?.time) + seconds) * 1000);
-        const levels = window.HeldPairPnl?.profitLevels(options.model, bar, valuedAt) || [];
+        const chartModel = options.model
+          ? {...options.model, exit_fee_bps: this.observedPairExitFeeBps()} : null;
+        const levels = window.HeldPairPnl?.profitLevels(chartModel, bar, valuedAt) || [];
         this.shortTermPriceLines = this.executionChartController.renderReferenceLines({
           entry: Number(entrySpread), selected: true, levels,
           exit: options.exitSpread, exitTitle: "EXIT",

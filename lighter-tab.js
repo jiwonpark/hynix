@@ -3701,17 +3701,18 @@
     shortSpreadProfitLadder(entrySpread, maxNetProfitPct = 5, isLong = false) {
       const entry = Number(entrySpread);
       if (!(entry > 0)) return [];
-      const roundTripCostRate = 16 / 10000;
+      // This ratio is not a dollar P&L series. Lighter fill fees are accounted
+      // for separately; these lines show only the ratio move from the entry.
       const netProfitTargets = [0, 0.2, 0.5, ...Array.from(
         { length: Math.max(0, Math.floor(maxNetProfitPct)) },
         (_, index) => index + 1
       )].filter((target, index, values) => target <= maxNetProfitPct && values.indexOf(target) === index);
       return netProfitTargets.map((netProfitPct) => ({
         netProfitPct,
-        title: netProfitPct === 0 ? "B/E" : `NET +${netProfitPct}%`,
+        title: netProfitPct === 0 ? "ENTRY (price move 0%)" : `PRICE MOVE +${netProfitPct}% (not paired P&L)`,
         price: isLong
-          ? entry * (1 + roundTripCostRate + (netProfitPct / 100))
-          : entry / (1 + roundTripCostRate + (netProfitPct / 100)),
+          ? entry * (1 + netProfitPct / 100)
+          : entry * (1 - netProfitPct / 100),
         color: netProfitPct === 0 ? "rgba(71, 85, 105, 0.70)" : "rgba(22, 163, 74, 0.70)",
         lineWidth: 1,
       }));

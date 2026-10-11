@@ -85,6 +85,7 @@ const lineEngine = vm.runInContext(`({
       stock_entry_price: 10, entry_fees_usd: 0, entry_time_ms: 1000,
       exit_fee_bps: 0, slippage_bps: 0, funding_reserve_bps_day: 0, threshold_usd: .02}}],
   isTradeMarkerVisible() { return true; },
+  observedPairExitFeeBps() { return 0; },
   renderShortTermReferenceLines(entry, options) { referenceRenders.push({entry, options}); },
   renderCurrentPositionReferenceLines() { referenceRenders.push({current: true}); },
   ${pnlMethod}

@@ -5,26 +5,12 @@ const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const componentSource = fs.readFileSync(path.join(__dirname, '../strategy-execution-chart.js'), 'utf8');
-const start = html.indexOf('      shortSpreadProfitLadder(entrySpread');
+const start = html.indexOf('      observedPairExitFeeBps()');
 const end = html.indexOf('      renderShortTermChart(data)', start);
-assert.ok(start >= 0 && end > start, 'profit ladder method must exist before chart rendering');
+assert.ok(start >= 0 && end > start, 'fill-based profit lines must exist before chart rendering');
 const method = html.slice(start, end);
-const engine = vm.runInNewContext(`({${method}})`, { Number, Array, window: {HeldPairPnl: require("../held-pair-pnl.js")} });
-
-const levels = engine.shortSpreadProfitLadder(140, 5);
-assert.equal(levels.length, 8, 'ladder should include break-even, +0.2%, +0.5%, and +1% through +5%');
-assert.equal(levels[0].title, 'B/E');
-assert.equal(levels[1].title, 'NET +0.2%');
-assert.equal(levels[2].title, 'NET +0.5%');
-assert.equal(levels[3].title, 'NET +1%');
-assert.equal(levels[7].title, 'NET +5%');
-assert.ok(levels[0].price < 140, 'break-even must recover estimated round-trip costs');
-assert.ok(levels[1].price < levels[0].price, 'higher short-spread profit requires more convergence');
-assert.ok(Math.abs(levels[0].price - (140 / 1.0016)) < 1e-10);
-assert.ok(Math.abs(levels[1].price - (140 / 1.0036)) < 1e-10);
-assert.ok(Math.abs(levels[2].price - (140 / 1.0066)) < 1e-10);
-assert.ok(Math.abs(levels[5].price - (140 / 1.0316)) < 1e-10);
-assert.equal(engine.shortSpreadProfitLadder(0).length, 0);
+const engine = vm.runInNewContext(`({${method}})`, { Number, Array, Set, window: {HeldPairPnl: require("../held-pair-pnl.js")} });
+assert.ok(!html.includes('const roundTripCostRate = 16 / 10000'), 'Tab 2 must not retain the unused fixed-cost ladder');
 
 assert.ok(componentSource.includes('rgba(22, 163, 74, 0.18)'), 'net-profit lines must remain visually subtle');
 assert.ok(componentSource.includes('lineStyle: this.lineStyle.Dashed'), 'profit ladder must use dashed lines');
@@ -49,8 +35,21 @@ assert.ok(!html.includes('> Convergence ref</span>'),
   'obsolete convergence reference legend must be removed');
 
 console.log('Profit ladder line regression checks passed');
+engine.state = {hedgedStatus: {recent_executions: [
+  {symbol:'SKHYUSDT',commission_asset:'USDT',commission:.04,qty:1,price:100,time:1},
+  {symbol:'CSOPSKHYNIX2LUSDT',commission_asset:'USDT',commission:.04,qty:10,price:10,time:2},
+  {symbol:'SKHYUSDT',commission_asset:'USDT',commission:.04,qty:1,price:100,time:3},
+  {symbol:'CSOPSKHYNIX2LUSDT',commission_asset:'USDT',commission:.04,qty:10,price:10,time:4},
+]}};
+assert.ok(Math.abs(engine.observedPairExitFeeBps() - 4) < 1e-10);
 engine.renderShortTermReferenceLines(140, {model:{adr_exit_qty:.07,stock_exit_qty:1.2,
  adr_entry_price:140,stock_entry_price:5,entry_fees_usd:.01,entry_time_ms:1000,
  exit_fee_bps:5,slippage_bps:3,funding_reserve_bps_day:3,threshold_usd:.02}});
 assert.equal(rendered.levels.length,9,'entry hover must actually pass all paired profit levels to chart renderer');
 assert.ok(rendered.levels.some(level=>level.title.startsWith('Min profit')));
+const expected = require('../held-pair-pnl.js').profitLevels({
+ adr_exit_qty:.07,stock_exit_qty:1.2,adr_entry_price:140,stock_entry_price:5,
+ entry_fees_usd:.01,entry_time_ms:1000,exit_fee_bps:4,funding_reserve_bps_day:3,
+ threshold_usd:.02},engine.shortTermHistory.bars[0],301000);
+assert.ok(Math.abs(rendered.levels[0].price - expected[0].price) < 1e-10,
+ 'hover target must use the observed fee rate, not the model fallback');

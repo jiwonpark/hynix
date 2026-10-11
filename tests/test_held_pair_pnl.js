@@ -49,11 +49,11 @@ const levels=pnl.profitLevels(model,bar,valuation);
 assert.equal(levels.length,9);
 for(const level of levels){
  const adr=level.price/100*bar.signal_scale*Math.sqrt(bar.csop);
- const net=.07*(195-adr)+1.2*(5.5-5.4)-.02-(.07*adr+1.2*5.5)*.0008-(.07*195+1.2*5.4)*.0003;
+ const net=.07*(195-adr)+1.2*(5.5-5.4)-.02-(.07*adr+1.2*5.5)*.0005-(.07*195+1.2*5.4)*.0003;
  assert.ok(Math.abs(net-level.net)<1e-10,'premium level must solve the paired P&L equation including costs');
 }
 assert.ok(levels[1].price<levels[0].price);
-assert.match(levels[1].title,/Min profit \(net/);
+assert.match(levels[1].title,/Min profit \(fees \+ funding/);
 assert.deepEqual(pnl.profitLevels({...model,entry_fees_usd:null},bar,valuation),[]);
 assert.deepEqual(pnl.profitLevels(model,{domestic:138},valuation),[]);
 const higherEtf = pnl.profitLevels(model,{...bar,csop:5.6},valuation)[1];

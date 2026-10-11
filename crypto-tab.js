@@ -3621,17 +3621,25 @@
     shortSpreadProfitLadder(entrySpread, maxNetProfitPct = 5, isLong = false) {
       const entry = Number(entrySpread);
       if (!(entry > 0)) return [];
-      const roundTripCostRate = 16 / 10000;
+      const verified = (this.botState?.execution_history || []).filter((row) =>
+        row.event === "EXIT" && row.pnl_authoritative && row.round_trip_fee_usd != null
+        && Number(row.round_trip_fee_usd) >= 0
+        && Number(row.qty) > 0 && Number(row.entry_price) > 0);
+      const feeTotal = verified.reduce((sum, row) => sum + Number(row.round_trip_fee_usd), 0);
+      const entryNotional = verified.reduce((sum, row) => sum + Number(row.qty) * Number(row.entry_price), 0);
+      const feeBpsPerSide = entryNotional > 0 ? feeTotal / entryNotional * 5000 : 5;
+      const feeRate = feeBpsPerSide / 10000;
+      const feeLabel = `${(feeBpsPerSide * 2).toFixed(2)}bps ${verified.length ? "observed avg" : "fee estimate"}`;
       const netProfitTargets = [0, 0.2, 0.5, ...Array.from(
         { length: Math.max(0, Math.floor(maxNetProfitPct)) },
         (_, index) => index + 1
       )].filter((target, index, values) => target <= maxNetProfitPct && values.indexOf(target) === index);
       return netProfitTargets.map((netProfitPct) => ({
         netProfitPct,
-        title: netProfitPct === 0 ? "EST. B/E (16bps cost)" : `EST. NET +${netProfitPct}% (16bps cost)`,
+        title: netProfitPct === 0 ? `EST. B/E (${feeLabel}; no funding)` : `EST. NET +${netProfitPct}% (${feeLabel}; no funding)`,
         price: isLong
-          ? entry * (1 + roundTripCostRate + (netProfitPct / 100))
-          : entry / (1 + roundTripCostRate + (netProfitPct / 100)),
+          ? entry * (1 + feeRate + netProfitPct / 100) / (1 - feeRate)
+          : entry * (1 - feeRate - netProfitPct / 100) / (1 + feeRate),
         color: netProfitPct === 0 ? "rgba(71, 85, 105, 0.70)" : "rgba(22, 163, 74, 0.70)",
         lineWidth: 1,
       }));

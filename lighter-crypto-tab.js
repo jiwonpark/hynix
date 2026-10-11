@@ -3835,17 +3835,28 @@
     shortSpreadProfitLadder(entrySpread, maxNetProfitPct = 5, isLong = false) {
       const entry = Number(entrySpread);
       if (!(entry > 0)) return [];
-      const roundTripCostRate = 16 / 10000;
+      const history = this.botState?.execution_history || [];
+      const entries = new Map(history.filter((row) => row.event === "ENTRY").map((row) => [String(row.order_id), row]));
+      const paired = history.filter((row) => row.event === "EXIT" && entries.has(String(row.entry_order_id))
+        && row.fee_usd != null && entries.get(String(row.entry_order_id)).fee_usd != null
+        && Number(row.fee_usd) >= 0 && Number(entries.get(String(row.entry_order_id)).fee_usd) >= 0
+        && Number(row.qty) > 0 && Number(row.entry_price) > 0);
+      const feeTotal = paired.reduce((sum, row) => sum + Number(row.fee_usd)
+        + Number(entries.get(String(row.entry_order_id)).fee_usd), 0);
+      const entryNotional = paired.reduce((sum, row) => sum + Number(row.qty) * Number(row.entry_price), 0);
+      const feeBpsPerSide = entryNotional > 0 ? feeTotal / entryNotional * 5000 : 0;
+      const feeRate = feeBpsPerSide / 10000;
+      const feeLabel = `${(feeBpsPerSide * 2).toFixed(2)}bps ${paired.length ? "recorded avg" : "fee estimate"}`;
       const netProfitTargets = [0, 0.2, 0.5, ...Array.from(
         { length: Math.max(0, Math.floor(maxNetProfitPct)) },
         (_, index) => index + 1
       )].filter((target, index, values) => target <= maxNetProfitPct && values.indexOf(target) === index);
       return netProfitTargets.map((netProfitPct) => ({
         netProfitPct,
-        title: netProfitPct === 0 ? "EST. B/E (16bps cost)" : `EST. NET +${netProfitPct}% (16bps cost)`,
+        title: netProfitPct === 0 ? `EST. B/E (${feeLabel}; no funding)` : `EST. NET +${netProfitPct}% (${feeLabel}; no funding)`,
         price: isLong
-          ? entry * (1 + roundTripCostRate + (netProfitPct / 100))
-          : entry / (1 + roundTripCostRate + (netProfitPct / 100)),
+          ? entry * (1 + feeRate + netProfitPct / 100) / (1 - feeRate)
+          : entry * (1 - feeRate - netProfitPct / 100) / (1 + feeRate),
         color: netProfitPct === 0 ? "rgba(71, 85, 105, 0.70)" : "rgba(22, 163, 74, 0.70)",
         lineWidth: 1,
       }));
