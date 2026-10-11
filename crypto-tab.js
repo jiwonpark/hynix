@@ -3010,7 +3010,7 @@
           const isProfit = hasPnl ? totalPnl > 0 : null;
           const pnlText = hasPnl ? `Net ${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}` : "Unverified P&L";
           const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
-          const source = marker.source === "actual" ? "ACTUAL" : (marker.backtest ? "BACKTEST" : "PAPER");
+          const source = marker.source === "actual" ? "ACTUAL NET" : (marker.backtest ? "BACKTEST PRE-FEE" : "PAPER PRE-FEE");
 
           const trancheRows = matchedPairs.map((p, idx) => {
             const ep = Number(p.entry.ratio ?? p.entry.entry_price);
@@ -3048,7 +3048,7 @@
         }
       }
 
-      const source = marker.source === "actual" ? "ACTUAL" : (marker.backtest ? "BACKTEST" : "PAPER");
+      const source = marker.source === "actual" ? "ACTUAL NET" : (marker.backtest ? "BACKTEST PRE-FEE" : "PAPER PRE-FEE");
       const siblings = this.executionMarkersAtTime(marker.time);
       const timeText = formatKstDateTime(Number(marker.time) * 1000, false);
       const markerColor = this.tradeMarkerColor(marker);
@@ -4490,7 +4490,7 @@
             color: trade.side < 0 ? "rgba(22,163,74,.55)" : "rgba(220,38,38,.55)",
             shape: "arrowLeft",
             text: "",
-            hoverText: `${trade.side < 0 ? "COVER" : "SELL"} ${trade.exit ? this.formatCryptoPrice(trade.exit) : ""} · ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}% net`,
+            hoverText: `${trade.side < 0 ? "COVER" : "SELL"} ${trade.exit ? this.formatCryptoPrice(trade.exit) : ""} · ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}% pre-fee`,
             source: "virtual",
             hypothetical: true,
             backtest: true,
@@ -4512,7 +4512,7 @@
           direction: entry.side < 0 ? "short" : "long", is_entry: true, is_open: true,
           entry_price: entry.entry, ratio: entry.entry,
           unrealized_pnl_pct: entry.unrealized_pnl_pct,
-          hoverText: `${entry.side < 0 ? "SHORT" : "BUY"} ${this.formatCryptoPrice(entry.entry)} · OPEN · unrealized ${entry.unrealized_pnl_pct >= 0 ? "+" : ""}${entry.unrealized_pnl_pct.toFixed(2)}%`,
+          hoverText: `${entry.side < 0 ? "SHORT" : "BUY"} ${this.formatCryptoPrice(entry.entry)} · OPEN · unrealized ${entry.unrealized_pnl_pct >= 0 ? "+" : ""}${entry.unrealized_pnl_pct.toFixed(2)}% pre-fee`,
         })));
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
