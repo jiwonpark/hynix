@@ -37,16 +37,22 @@
       padding: 28px 0 40px;
     }
     .top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 16px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas: "meta actions" "title title";
+      align-items: start;
+      column-gap: 16px;
+      row-gap: 4px;
       margin-bottom: 20px;
     }
+    .topMeta { grid-area: meta; min-width: 0; }
+    #topTitle { grid-area: title; white-space: nowrap; }
     .topRight {
+      grid-area: actions;
       display: flex;
       align-items: center;
       gap: 10px;
+      justify-self: end;
     }
     .langSwitch {
       display: inline-flex;
@@ -2494,7 +2500,9 @@
 
     @media (max-width: 860px) {
       main { width: min(100vw - 20px, 1280px); padding-top: 18px; }
-      .top, .chartHeader, .tableHead { flex-direction: column; }
+      .top { grid-template-columns: minmax(0, 1fr); grid-template-areas: "meta" "title" "actions"; }
+      .topRight { justify-self: start; }
+      .chartHeader, .tableHead { flex-direction: column; }
       .controls, .stats { grid-template-columns: 1fr; }
       .stat { border-right: 0; border-bottom: 1px solid var(--line); }
       .stat:last-child { border-bottom: 0; }
@@ -2529,6 +2537,7 @@
         max-width: 100%;
         font-size: clamp(21px, 6.2vw, 27px);
         line-height: 1.08;
+        white-space: normal;
         overflow-wrap: anywhere;
       }
       .deployBadge {
@@ -2685,7 +2694,7 @@
 <body>
   <main>
     <section class="top">
-      <div>
+      <div class="topMeta">
         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
           <p id="topEyebrow" class="eyebrow" style="margin: 0; font-weight: 800; letter-spacing: 0.5px; color: #0284c7;">HYPERION // AUTONOMOUS RELATIVE VALUE ENGINE</p>
           <div class="deployBadge" title="Deployment Status">
@@ -2695,7 +2704,6 @@
             <span id="deployTime">Development build</span>
           </div>
         </div>
-        <h1 id="topTitle" style="letter-spacing: -0.5px; font-weight: 900;">HYPERION · Dual-Leg Quant Terminal</h1>
       </div>
       <div class="topRight" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <div class="terminalLockToggleWrap" id="terminalLockToggleWrap" title="Unlock with password once; this browser is remembered for 24 hours">
@@ -2715,6 +2723,7 @@
         </div>
         <div id="position" class="pill">Loading</div>
       </div>
+      <h1 id="topTitle" style="letter-spacing: -0.5px; font-weight: 900;">HYPERION · Dual-Leg Quant Terminal</h1>
     </section>
 
     <!-- Top Primary Navigation Tabs -->
