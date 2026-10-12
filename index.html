@@ -2689,6 +2689,79 @@
         line-height: 1.45;
       }
     }
+
+    /* =====================================================================
+       COLLAPSIBLE SECTIONS FRAMEWORK
+       ===================================================================== */
+    .collapsible-section {
+      position: relative;
+      transition: margin-bottom 0.2s ease, padding 0.2s ease;
+    }
+    .collapsible-section.is-collapsed {
+      padding-bottom: 8px !important;
+      margin-bottom: 10px !important;
+    }
+    .collapsible-header {
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.15s ease;
+    }
+    .collapsible-header:hover {
+      opacity: 0.94;
+    }
+    .collapsible-header button,
+    .collapsible-header select,
+    .collapsible-header input,
+    .collapsible-header label,
+    .collapsible-header a,
+    .collapsible-header .pillGroup,
+    .collapsible-header .tradingModeSwitch,
+    .collapsible-header .chartModeSwitch,
+    .collapsible-header .newsFilterSwitch,
+    .collapsible-header .pairsFilterGroup,
+    .collapsible-header .posTabBtn {
+      cursor: pointer;
+      user-select: auto;
+    }
+    .section-collapse-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      min-width: 26px;
+      min-height: 26px;
+      padding: 0;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #475569;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+      flex-shrink: 0;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .section-collapse-btn:hover {
+      background: #0284c7;
+      border-color: #0284c7;
+      color: #ffffff;
+      box-shadow: 0 1px 3px rgba(2, 132, 199, 0.3);
+    }
+    .section-collapse-btn .collapse-icon {
+      width: 14px;
+      height: 14px;
+      transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      display: block;
+      pointer-events: none;
+      transform: rotate(0deg);
+    }
+    .collapsible-section.is-collapsed .section-collapse-btn .collapse-icon {
+      transform: rotate(-90deg);
+    }
+    .collapsible-section.is-collapsed > *:not(.collapsible-header) {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
@@ -2807,13 +2880,16 @@
     <div id="tabContentBacktest">
       <section class="controls" aria-label="Chart controls">
       <!-- Section 1: Market Environment, Strategy & Execution Cost Parameters -->
-      <div class="controlSection">
-        <div class="controlSectionHeader">
+      <div class="controlSection collapsible-section" id="secMarketEnvironment">
+        <div class="controlSectionHeader collapsible-header">
           <div>
             <h3 id="grpEnvTitle">⚙️ Market Environment & Cost Framework</h3>
             <span id="grpEnvBadge">Environment & Fees (Fixed / User-Defined)</span>
           </div>
-          <button id="refresh" type="button" style="width: auto; height: 32px; padding: 0 14px; font-size: 12px; background: #334155;">🔄 Refresh Data</button>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button id="refresh" type="button" style="width: auto; height: 32px; padding: 0 14px; font-size: 12px; background: #334155;">🔄 Refresh Data</button>
+            <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+          </div>
         </div>
         <div class="controlGrid environment">
           <label id="lblAssetStrategy">
@@ -2884,8 +2960,8 @@
       </div>
 
       <!-- Section 2: Auto-Optimizable Execution Parameters -->
-      <div class="controlSection optimizable">
-        <div class="controlSectionHeader">
+      <div class="controlSection optimizable collapsible-section" id="secStrategyOptimizer">
+        <div class="controlSectionHeader collapsible-header">
           <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
             <h3 id="grpOptTitle" style="color: #0369a1;">🎯 Auto-Optimizable Execution Parameters</h3>
             <span id="grpOptBadge" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 700; border: 1px solid #bae6fd;">TUNED BY ALGO OPTIMIZER</span>
@@ -2893,6 +2969,7 @@
           <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <button id="optimizeProfit" type="button" style="width: auto; height: 32px; padding: 0 14px; font-size: 12px; background: #0284c7; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);">⚡ Optimize Profit</button>
             <button id="btnDeployToBot" class="btnDeployStrategy" type="button">🚀 Deploy Strategy to Trading Bot</button>
+            <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
           </div>
         </div>
         <div class="controlGrid optimizableGrid">
@@ -3033,8 +3110,8 @@
       <div class="stat"><span>Bars</span><strong id="bars">--</strong></div>
     </section>
 
-    <section class="panel">
-      <div class="chartHeader">
+    <section class="panel collapsible-section" id="secParityChart">
+      <div class="chartHeader collapsible-header">
         <div class="legend" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           <span id="legSpread" class="black" style="color: #0f172a; font-weight: 700;">Spread (Price)</span>
           <span id="legPrediction" class="cyan" style="color: #00d2ff; font-weight: 700;">Rolling Prediction</span>
@@ -3049,7 +3126,10 @@
           </button>
           <span id="simulationPeriodBadge" style="background: #f1f5f9; color: #1e293b; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; border: 1px solid #cbd5e1; font-family: monospace;">📅 --</span>
         </div>
-        <p id="status">Loading Binance Futures data...</p>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <p id="status" style="margin: 0;">Loading Binance Futures data...</p>
+          <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        </div>
       </div>
       <div id="chart" class="chartBox">
         <div class="newsFilterSwitch" aria-label="News filter">
@@ -3080,13 +3160,16 @@
       </div>
     </section>
 
-    <section class="panel tableBoundPanel">
-      <div class="chartHeader">
+    <section class="panel tableBoundPanel collapsible-section" id="secNewsCatalystFeed">
+      <div class="chartHeader collapsible-header">
         <div>
           <h2 id="secNewsCatalyst">Semiconductor & SK Hynix News Catalyst Impact Feed</h2>
           <p id="subNewsCatalyst">Real-time correlation between global headlines, HBM chip announcements, Nvidia capex, and parity spread dislocation</p>
         </div>
-        <span style="background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; border: 1px solid #bae6fd;">HISTORICAL EVENT MAPPING</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; border: 1px solid #bae6fd;">HISTORICAL EVENT MAPPING</span>
+          <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        </div>
       </div>
 
       <div style="display: block; width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; contain: inline-size;">
@@ -3109,35 +3192,44 @@
       </div>
     </section>
 
-    <section class="panel">
-      <div class="chartHeader">
+    <section class="panel collapsible-section" id="secHistogramPanel">
+      <div class="chartHeader collapsible-header">
         <div>
           <h2 id="secHist">MA-Normalized Premium Histogram</h2>
           <p id="subHist">Distribution of <code>(spread / rolling mean - 1) * 100</code> over loaded bars</p>
         </div>
-        <p id="histStats">--</p>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <p id="histStats" style="margin: 0;">--</p>
+          <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        </div>
       </div>
       <div id="histogram"></div>
     </section>
 
-    <section class="panel">
-      <div class="chartHeader">
+    <section class="panel collapsible-section" id="secSpectrumPanel">
+      <div class="chartHeader collapsible-header">
         <div>
           <h2 id="secSpectrum">Dominant Wave Cycle Analyzer & Spectrum</h2>
           <p id="subSpectrum">Signal-to-Friction Ratio (SFR), cycle half-life, and amplitude by lookback window</p>
         </div>
-        <p id="waveSummary">Analyzing spectrum...</p>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <p id="waveSummary" style="margin: 0;">Analyzing spectrum...</p>
+          <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        </div>
       </div>
       <div id="waveSpectrum"></div>
     </section>
 
-    <section class="panel">
-      <div class="chartHeader">
+    <section class="panel collapsible-section" id="secQuantArchitecturePanel">
+      <div class="chartHeader collapsible-header">
         <div>
           <h2 id="secQuantArchitecture">Quantitative Prediction Engines: Simplified & Detailed Architectures</h2>
           <p id="subQuantArchitecture">Mathematical foundations, regime-switching filters, and stochastic differential equations</p>
         </div>
-        <p id="tagZeroBias" style="color: #0284c7; font-weight: 700;">Zero Lookahead Bias</p>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <p id="tagZeroBias" style="color: #0284c7; font-weight: 700; margin: 0;">Zero Lookahead Bias</p>
+          <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        </div>
       </div>
 
       <div id="architectureCards" class="modelCard" style="grid-template-columns: 1fr;">
@@ -3146,13 +3238,16 @@
     </section>
 
     <!-- Dedicated Section: Two-Stage Quantitative Model Evaluation Architecture -->
-    <section class="panel" id="secModelEvaluation">
-      <div class="chartHeader">
+    <section class="panel collapsible-section" id="secModelEvaluation">
+      <div class="chartHeader collapsible-header">
         <div>
           <h2 id="secModelEvaluationTitle">🏛️ Two-Stage Model Evaluation: ML Metrics vs Trading Backtest</h2>
           <p id="subModelEvaluation">Why accuracy fails in quantitative finance, and how institutional funds separate Alpha Signal Validation from Execution Backtesting</p>
         </div>
-        <span id="badgeEvaluationStage" style="background: #ede9fe; color: #6d28d9; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; border: 1px solid #ddd6fe;">TWO-STAGE PIPELINE</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span id="badgeEvaluationStage" style="background: #ede9fe; color: #6d28d9; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; border: 1px solid #ddd6fe;">TWO-STAGE PIPELINE</span>
+          <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        </div>
       </div>
 
       <div id="evaluationCards" class="modelCard" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
@@ -3160,13 +3255,16 @@
       </div>
     </section>
 
-    <section class="panel">
-      <div class="chartHeader">
+    <section class="panel collapsible-section" id="secFaqPanel">
+      <div class="chartHeader collapsible-header">
         <div>
           <h2 id="secFaq">Frequently Asked Questions & Quantitative Verification (FAQ)</h2>
           <p id="subFaq">Addressing lookahead bias, out-of-sample forecast accuracy, and statistical arbitrage physics</p>
         </div>
-        <span id="tagFaqVerified" style="background: #f0fdf4; color: #166534; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; border: 1px solid #bbf7d0;">PROVEN ZERO LOOKAHEAD</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span id="tagFaqVerified" style="background: #f0fdf4; color: #166534; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 12px; border: 1px solid #bbf7d0;">PROVEN ZERO LOOKAHEAD</span>
+          <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        </div>
       </div>
 
       <div id="faqCards" class="modelCard" style="grid-template-columns: 1fr; gap: 16px;">
@@ -3249,57 +3347,77 @@
       </div>
 
       <!-- Real-Time Account Balance & Margin Risk Strip -->
-      <section class="realAccountStrip" id="realAccountStrip">
-        <div class="realAccountStat">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span id="lblAccountEquity">Binance Total Equity</span>
-            <span id="badgeEquitySource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">SYNCING</span>
+      <section class="panel collapsible-section" id="secAccountStrip" style="margin-top: 0; padding: 10px 14px 10px; margin-bottom: 14px;">
+        <div class="collapsible-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 13px;">💼</span>
+            <strong style="font-size: 12px; color: #334155; text-transform: uppercase; letter-spacing: 0.5px;">Live Account Balances &amp; Margin Risk Strip</strong>
           </div>
-          <strong id="valAccountEquity" style="color: #0284c7; font-size: 16px;">—</strong>
+          <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
         </div>
-        <div class="realAccountStat">
-          <span id="lblAvailMargin">Available Margin</span>
-          <strong id="valAvailMargin" style="font-size: 16px;">—</strong>
-        </div>
-        <div class="realAccountStat">
-          <span id="lblUnrealizedPnl">Unrealized PnL</span>
-          <strong id="valUnrealizedPnl" style="color: #64748b; font-size: 16px;">—</strong>
-        </div>
-        <div class="realAccountStat">
-          <span id="lblActivePairs">Active Positions</span>
-          <strong id="valActivePairs" style="font-size: 15px;">0 Open (Flat)</strong>
-        </div>
-        <div class="realAccountStat">
-          <span id="lblMarginRisk">Margin Safety Ratio</span>
-          <strong id="valMarginRisk" style="color: #64748b; font-size: 15px;">—</strong>
-        </div>
-        <div class="realAccountStat" id="statCollateralSummary" style="min-width: 170px;">
-          <span id="lblCollateralSummary">Binance Wallet Split</span>
-          <div id="valCollateralPills" style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px;">
-            <span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $10,000</span>
+        <div class="realAccountStrip" id="realAccountStrip" style="margin-bottom: 0; border: none; box-shadow: none;">
+          <div class="realAccountStat">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span id="lblAccountEquity">Binance Total Equity</span>
+              <span id="badgeEquitySource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">SYNCING</span>
+            </div>
+            <strong id="valAccountEquity" style="color: #0284c7; font-size: 16px;">—</strong>
           </div>
-        </div>
-        <div class="realAccountStat" id="statUpbitEquity" style="min-width: 150px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span id="lblUpbitEquity">Upbit KRW Equity</span>
-            <span id="badgeUpbitSource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">UPBIT SPOT</span>
+          <div class="realAccountStat">
+            <span id="lblAvailMargin">Available Margin</span>
+            <strong id="valAvailMargin" style="font-size: 16px;">—</strong>
           </div>
-          <strong id="valUpbitEquity" style="color: #0d9488; font-size: 16px;">₩0</strong>
+          <div class="realAccountStat">
+            <span id="lblUnrealizedPnl">Unrealized PnL</span>
+            <strong id="valUnrealizedPnl" style="color: #64748b; font-size: 16px;">—</strong>
+          </div>
+          <div class="realAccountStat">
+            <span id="lblActivePairs">Active Positions</span>
+            <strong id="valActivePairs" style="font-size: 15px;">0 Open (Flat)</strong>
+          </div>
+          <div class="realAccountStat">
+            <span id="lblMarginRisk">Margin Safety Ratio</span>
+            <strong id="valMarginRisk" style="color: #64748b; font-size: 15px;">—</strong>
+          </div>
+          <div class="realAccountStat" id="statCollateralSummary" style="min-width: 170px;">
+            <span id="lblCollateralSummary">Binance Wallet Split</span>
+            <div id="valCollateralPills" style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px;">
+              <span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $10,000</span>
+            </div>
+          </div>
+          <div class="realAccountStat" id="statUpbitEquity" style="min-width: 150px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span id="lblUpbitEquity">Upbit KRW Equity</span>
+              <span id="badgeUpbitSource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">UPBIT SPOT</span>
+            </div>
+            <strong id="valUpbitEquity" style="color: #0d9488; font-size: 16px;">₩0</strong>
+          </div>
         </div>
       </section>
 
       <!-- Stage 1 Real / Paper Trading Execution Terminal & Active Positions Section -->
-      <section class="panel" id="secExecutionTerminal" style="margin-top: 0;">
-        <div class="chartHeader" style="margin-bottom: 6px; align-items: center;">
+      <section class="panel collapsible-section" id="secExecutionTerminal" style="margin-top: 0;">
+        <div class="chartHeader collapsible-header" style="margin-bottom: 6px; align-items: center;">
           <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
             <h2 id="titleExecutionTerminal" style="font-size: 15px; font-weight: 800; color: #0f172a; margin: 0;">⚡ 1-Click Pair Execution Terminal & Live Orders</h2>
             <span id="badgeExecMode" style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; border: 1px solid #bae6fd;">BINANCE FUTURES LIVE ENGINE</span>
           </div>
-          <span style="font-size: 11px; color: #16a34a; font-weight: 700;">🟢 Delta Neutral Simultaneous Fill</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; color: #16a34a; font-weight: 700;">🟢 Delta Neutral Simultaneous Fill</span>
+            <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+          </div>
         </div>
 
         <!-- Top Section: Hedged Arbitrage Controller (Left) + Trade Execute Pane (Right) -->
-        <div class="topHedgedAndTicketGrid">
+        <div class="collapsible-section" id="secHedgedController" style="margin-bottom: 14px;">
+          <div class="collapsible-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 2px 4px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 13px;">🛡️</span>
+              <strong style="font-size: 12px; color: #334155; text-transform: uppercase; letter-spacing: 0.5px;">Hedged Controller &amp; Dual-Leg Order Ticket</strong>
+            </div>
+            <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+          </div>
+          <div class="topHedgedAndTicketGrid">
           <!-- Left: Live Hedged Arbitrage & Zero-Loss Controller -->
           <div class="hedgedControllerCard" id="hedgedControllerCard" style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; justify-content: space-between;">
             <!-- 1. The Zero-Loss Structural Arbitrage Rule Banner (Verbatim) -->
@@ -3535,12 +3653,12 @@
               </div>
             </div>
           </div>
-        </div>
+        </div><!-- End #secHedgedController -->
 
         <!-- Short-Term Parity Execution Tracker & Real-Time Auto-Tranche Criteria Section -->
-        <div class="shortTermExecutionSection" id="shortTermExecutionSection">
+        <div class="shortTermExecutionSection collapsible-section" id="shortTermExecutionSection">
           <!-- Section Header -->
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <div class="collapsible-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
             <div>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 16px;">📈</span>
@@ -3565,6 +3683,7 @@
               <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a;">
                 ADR / √CSOP signal: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
               </div>
+              <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
             </div>
           </div>
 
@@ -3815,13 +3934,14 @@
         </div>
 
         <!-- Full-Width Positions & Execution History Shell -->
-        <div class="posTableShell" style="width: 100%;">
-            <div class="posTableTabs">
+        <div class="posTableShell collapsible-section" id="secPositionsTable" style="width: 100%;">
+            <div class="posTableTabs collapsible-header">
               <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">0</span>)</button>
               <button id="tabAssets" class="posTabBtn" type="button">Binance Collateral (<span id="countAssets">0</span>)</button>
               <button id="tabUpbit" class="posTabBtn" type="button">🇰🇷 Upbit Spot (<span id="countUpbitAssets">0</span>)</button>
               <button id="tabDaemonActivity" class="posTabBtn" type="button">Daemon Activity (<span id="countDaemonEvents">0</span>)</button>
               <button id="tabOrderLog" class="posTabBtn" type="button">Execution History (<span id="countOrderLog">0</span>)</button>
+              <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section" style="margin-left: auto;"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
             </div>
 
             <!-- Tab Pane 1: Active Positions Table -->
@@ -3988,14 +4108,15 @@
     <div id="tabContentPairs" style="display: none;">
       <!-- Overview & Controls Section -->
       <section class="controls" aria-label="Pairs screener controls">
-        <div class="controlSection">
-          <div class="controlSectionHeader">
+        <div class="controlSection collapsible-section" id="secPairsControls">
+          <div class="controlSectionHeader collapsible-header">
             <div>
               <h3 id="lblPairsTitle">🌐 Cross-Market Cointegration & Statistical Arbitrage Screener</h3>
               <span id="lblPairsSub">Screening real-time Z-score dislocations, Ornstein-Uhlenbeck mean-reversion half-lives, and risk-neutral hedge ratios across curated pairs & custom inputs</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
               <button id="btnPairsRefresh" type="button" style="width: auto; height: 32px; padding: 0 14px; font-size: 12px; background: #0284c7; color: #fff; font-weight: 700; border-radius: 6px; cursor: pointer;">🔄 Refresh Scanner</button>
+              <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
             </div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 8px;">
@@ -4057,13 +4178,16 @@
       </section>
 
       <!-- Screener Matrix Panel -->
-      <section class="panel tablePanel" style="margin-bottom: 14px;">
-        <div class="tableHead" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); background: #f8fafc;">
+      <section class="panel tablePanel collapsible-section" id="secPairsMatrix" style="margin-bottom: 14px;">
+        <div class="tableHead collapsible-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); background: #f8fafc;">
           <div>
             <h3 style="margin: 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.02em;" id="lblMatrixTitle">📊 Hedge-Worthy Opportunity Screener Matrix</h3>
             <span style="font-size: 11.5px; color: #64748b;" id="lblMatrixSub">Click any row or 'Analyze' button to load the full statistical arbitrage deep-dive and interactive chart below</span>
           </div>
-          <span id="pairsScanStatus" style="font-size: 11px; font-weight: 700; color: #0284c7; background: #e0f2fe; padding: 3px 8px; border-radius: 4px;">LIVE DATA ACTIVE</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span id="pairsScanStatus" style="font-size: 11px; font-weight: 700; color: #0284c7; background: #e0f2fe; padding: 3px 8px; border-radius: 4px;">LIVE DATA ACTIVE</span>
+            <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+          </div>
         </div>
         <div class="tableWrap" style="overflow-x: auto;">
           <table class="pairsTable" id="tblPairsScreener">
@@ -4091,11 +4215,14 @@
       </section>
 
       <!-- Custom Pair Scanner Form -->
-      <section class="controlSection" style="margin-bottom: 14px; background: #ffffff;">
-        <div class="controlSectionHeader">
-          <div>
-            <h3 style="margin: 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase;" id="lblCustScanTitle">🔍 On-Demand Arbitrage Diagnostic for Custom Pair</h3>
-            <span style="font-size: 11.5px; color: #64748b;" id="lblCustScanSub">Analyze any two Binance Futures contracts to evaluate real-time cointegration, beta, Z-score, and mean-reversion speed</span>
+      <section class="controlSection collapsible-section" id="secCustomPairScan" style="margin-bottom: 14px; background: #ffffff;">
+        <div class="controlSectionHeader collapsible-header">
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div>
+              <h3 style="margin: 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase;" id="lblCustScanTitle">🔍 On-Demand Arbitrage Diagnostic for Custom Pair</h3>
+              <span style="font-size: 11.5px; color: #64748b;" id="lblCustScanSub">Analyze any two Binance Futures contracts to evaluate real-time cointegration, beta, Z-score, and mean-reversion speed</span>
+            </div>
+            <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
           </div>
         </div>
         <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 8px;">
@@ -4116,8 +4243,8 @@
       </section>
 
       <!-- Selected Pair Deep Dive Panel -->
-      <section class="panel" style="padding: 16px; margin-bottom: 14px; background: #ffffff;" id="secPairDeepDive">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+      <section class="panel collapsible-section" style="padding: 16px; margin-bottom: 14px; background: #ffffff;" id="secPairDeepDive">
+        <div class="collapsible-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
           <div>
             <div style="display: flex; align-items: center; gap: 8px;">
               <h2 id="deepDivePairTitle" style="margin: 0; font-size: 18px; font-weight: 900; color: #0f172a;">ETH / BTC Ratio Spread</h2>
@@ -4135,6 +4262,7 @@
               <div style="font-size: 11px; font-weight: 700; color: #64748b;" class="fieldTip" data-tip-key="deepZScore">CURRENT Z-SCORE <span class="tipIcon">ⓘ</span></div>
               <div style="font-size: 18px; font-weight: 900;" id="deepDiveCurrentZScore">--</div>
             </div>
+            <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
           </div>
         </div>
 
@@ -4248,17 +4376,18 @@
     <div id="tabContentCompound" style="display: none;">
       <!-- Section 1: Engine Controls & Framework Header -->
       <section class="controls" aria-label="Micro-compounding controls">
-        <div class="controlSection">
-          <div class="controlSectionHeader">
+        <div class="controlSection collapsible-section" id="secCompoundControls">
+          <div class="controlSectionHeader collapsible-header">
             <div>
               <h3 id="lblCompoundTitle">🔁 Ultra-Frequent Micro-Compounding Engine & Asymmetric Ratchet</h3>
               <span id="lblCompoundSub">Harvesting tiny, guaranteed-positive micro-dislocations (+$0.02 to +$0.15 net per turn) across rapid microstructure noise with 0 directional market risk and exponential compounding geometry</span>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
               <button id="btnCompoundRefresh" type="button" style="width: auto; height: 32px; padding: 0 14px; font-size: 12px; background: #10b981; color: #fff; font-weight: 700; border-radius: 6px; cursor: pointer;">🔄 Sync Live Tranche Queue</button>
+              <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
             </div>
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: gap: 10px; margin-top: 8px;">
             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
               <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #475569;">
                 <span id="lblCompStrategyMode">Strategy Pair:</span>
@@ -4316,13 +4445,16 @@
       </section>
 
       <!-- Section 3: Interactive Geometric Compounding Simulator -->
-      <section class="panel" style="padding: 16px; margin-bottom: 14px; background: #ffffff;">
-        <div class="tableHead" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 14px;">
+      <section class="panel collapsible-section" style="padding: 16px; margin-bottom: 14px; background: #ffffff;" id="secCompYieldCurve">
+        <div class="tableHead collapsible-header" style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 14px;">
           <div>
             <h3 style="margin: 0; font-size: 14px; font-weight: 900; color: #0f172a; text-transform: uppercase;" id="lblSimTitle">📈 Interactive Geometric Compounding Simulator & Wealth Trajectory</h3>
             <span style="font-size: 11.5px; color: #64748b;" id="lblSimSub">Model how micro-dislocation harvesting generates exponential geometric growth W_N = W_0 · (1 + r)^N over time</span>
           </div>
-          <span style="font-size: 11px; font-weight: 800; background: #ede9fe; color: #6d28d9; padding: 3px 8px; border-radius: 4px;">EXPONENTIAL GEOMETRY</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; font-weight: 800; background: #ede9fe; color: #6d28d9; padding: 3px 8px; border-radius: 4px;">EXPONENTIAL GEOMETRY</span>
+            <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+          </div>
         </div>
 
         <div class="deepDiveGrid">
@@ -4397,8 +4529,8 @@
       </section>
 
       <!-- Section 4: Live Micro-Tranche Harvest Queue & Cost Shield -->
-      <section class="panel tablePanel" style="margin-bottom: 14px;">
-        <div class="tableHead" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); background: #f8fafc;">
+      <section class="panel tablePanel collapsible-section" id="secCompQueue" style="margin-bottom: 14px;">
+        <div class="tableHead collapsible-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); background: #f8fafc;">
           <div>
             <h3 style="margin: 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase;" id="lblQueueTitle">⚡ Live Active Micro-Tranche Queue & Cost Reserves</h3>
             <span style="font-size: 11.5px; color: #64748b;" id="lblQueueSub">Real-time status of open micro-lots, pre-deducted fee shields (5bps taker + 3bps slippage + 3bps/day funding), and harvest triggers</span>
@@ -4406,6 +4538,7 @@
           <div style="display: flex; align-items: center; gap: 8px;">
             <span style="font-size: 11.5px; font-weight: 700; color: #475569;">Active Tranches: <strong id="cntActiveTranchesQueue" style="color: #0284c7;">--</strong></span>
             <span style="font-size: 11.5px; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 2px 7px; border-radius: 4px;">READY TO HARVEST: <strong id="cntReadyHarvestQueue">--</strong></span>
+            <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
           </div>
         </div>
         <div class="tableWrap" style="overflow-x: auto;">
@@ -4432,8 +4565,11 @@
       </section>
 
       <!-- Section 5: The 5 Safety Invariants & Mathematical Proof -->
-      <section style="margin-bottom: 14px;">
-        <h3 style="margin: 0 0 10px 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase;">🛡️ The 5 Pillars of Mathematical Safety ("Why This Never Blows Up")</h3>
+      <section class="collapsible-section" id="secCompInvariants" style="margin-bottom: 14px; background: #ffffff; border: 1px solid var(--line); border-radius: 8px; padding: 14px;">
+        <div class="collapsible-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <h3 style="margin: 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase;">🛡️ The 5 Pillars of Mathematical Safety ("Why This Never Blows Up")</h3>
+          <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        </div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
           <div class="safetyCard" style="border-top: 3px solid #0284c7;">
             <span class="safetyCardTitle">1. Strict Delta Neutrality</span>
@@ -4460,9 +4596,9 @@
     </div><!-- End #tabContentCompound -->
 
     <div id="tabContentStrategyLab" style="display:none;">
-        <div class="shortTermExecutionSection" id="lab_shortTermExecutionSection">
+        <div class="shortTermExecutionSection collapsible-section" id="lab_shortTermExecutionSection">
           <!-- Section Header -->
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <div class="collapsible-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
             <div>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 16px;">📈</span>
@@ -4487,6 +4623,7 @@
               <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a;">
                 Parity: <strong id="lab_valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
               </div>
+              <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
             </div>
           </div>
 
@@ -4773,13 +4910,16 @@
 
     <div id="tabContentUpbitScanner" style="display:none;">
       <section class="controls" aria-label="Upbit KRW coin ranking controls">
-        <div class="controlSection">
-          <div class="controlSectionHeader">
+        <div class="controlSection collapsible-section" id="secUpbitRadarControls">
+          <div class="controlSectionHeader collapsible-header">
             <div>
               <h3 style="margin:0;">🔮 Upbit KRW Pre-Move Forecast Radar</h3>
               <span>Causal forecast of which coin may hit +2% before −1% during the next six hours, based on similar historical setups.</span>
             </div>
-            <button id="btnUpbitScannerRefresh" type="button" style="width:auto;height:32px;padding:0 14px;font-size:12px;background:#059669;color:#fff;font-weight:800;border-radius:6px;">🔄 Rescan All Coins</button>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button id="btnUpbitScannerRefresh" type="button" style="width:auto;height:32px;padding:0 14px;font-size:12px;background:#059669;color:#fff;font-weight:800;border-radius:6px;">🔄 Rescan All Coins</button>
+              <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+            </div>
           </div>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;">
             <input id="upbitScannerSearch" type="search" placeholder="Search symbol or coin name…" style="height:32px;min-width:240px;padding:0 10px;border:1px solid #cbd5e1;border-radius:6px;">
@@ -4803,8 +4943,8 @@
         <div class="pairKpiCard"><span class="pairKpiLabel">Net Return</span><div class="pairKpiValue" id="upbitFwdReturn">--</div><span class="pairKpiSub">After 0.20% costs</span></div>
         <div class="pairKpiCard"><span class="pairKpiLabel">Forward Brier</span><div class="pairKpiValue" id="upbitFwdBrier">--</div><span class="pairKpiSub">Requires ≥200 signals</span></div>
       </section>
-      <section id="upbitCoinChartPanel" class="panel" style="display:none;margin-bottom:14px;padding:14px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+      <section id="upbitCoinChartPanel" class="panel collapsible-section" style="display:none;margin-bottom:14px;padding:14px;">
+        <div class="collapsible-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
           <div>
             <div style="display:flex;align-items:center;gap:8px;">
               <h3 id="upbitChartTitle" style="margin:0;font-size:16px;color:#0f172a;">Coin Chart</h3>
@@ -4819,6 +4959,7 @@
             <button class="upbitChartInterval active" data-interval="60" type="button" style="height:28px;padding:0 10px;background:#0284c7;color:#fff;border:1px solid #0284c7;border-radius:5px;">1h</button>
             <button class="upbitChartInterval" data-interval="240" type="button" style="height:28px;padding:0 10px;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:5px;">4h</button>
             <button id="btnCloseUpbitChart" type="button" style="height:28px;padding:0 10px;background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;border-radius:5px;">✕</button>
+            <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
           </div>
         </div>
         <div id="upbitCoinChartHost" style="width:100%;height:420px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;position:relative;"></div>
@@ -4839,10 +4980,13 @@
           </div>
         </div>
       </section>
-      <section class="panel tablePanel">
-        <div class="tableHead" style="padding:12px 16px;border-bottom:1px solid var(--line);background:#f8fafc;">
-          <strong>Quantitative Ranking Matrix</strong>
-          <div style="font-size:11px;color:#64748b;margin-top:3px;">Click a coin to chart it. Forecasts use only pre-outcome data and nearest historical analogues; same-bar target/stop ambiguity is counted as a loss.</div>
+      <section class="panel tablePanel collapsible-section" id="secUpbitRankMatrix">
+        <div class="tableHead collapsible-header" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:#f8fafc;">
+          <div>
+            <strong>Quantitative Ranking Matrix</strong>
+            <div style="font-size:11px;color:#64748b;margin-top:3px;">Click a coin to chart it. Forecasts use only pre-outcome data and nearest historical analogues; same-bar target/stop ambiguity is counted as a loss.</div>
+          </div>
+          <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
         </div>
         <div class="tableWrap" style="overflow:auto;max-height:680px;">
           <table class="pairsTable" id="tblUpbitScanner">
@@ -16441,11 +16585,93 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
       }
     };
+
+    const collapsibleSectionsManager = {
+      init() {
+        this.ensureCollapseButtons();
+        this.restoreStates();
+        document.addEventListener("click", (e) => this.handleClick(e));
+      },
+
+      ensureCollapseButtons(root = document) {
+        root.querySelectorAll(".collapsible-section").forEach((sec) => {
+          const header = sec.querySelector(".collapsible-header");
+          if (!header) return;
+          if (!header.querySelector(".section-collapse-btn")) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "section-collapse-btn";
+            btn.setAttribute("aria-label", "Toggle section");
+            btn.setAttribute("title", "Collapse / Expand section");
+            btn.setAttribute("aria-expanded", String(!sec.classList.contains("is-collapsed")));
+            btn.innerHTML = `<svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+            header.appendChild(btn);
+          }
+        });
+      },
+
+      restoreStates() {
+        document.querySelectorAll(".collapsible-section").forEach((sec) => {
+          const key = sec.id || sec.dataset.collapseKey;
+          if (!key) return;
+          try {
+            if (localStorage.getItem("hynix_collapse_" + key) === "1") {
+              sec.classList.add("is-collapsed");
+              const btn = sec.querySelector(".collapsible-header .section-collapse-btn");
+              if (btn) btn.setAttribute("aria-expanded", "false");
+            }
+          } catch (_) {}
+        });
+      },
+
+      toggle(section) {
+        if (!section) return;
+        const isCollapsed = section.classList.toggle("is-collapsed");
+        const btn = section.querySelector(".collapsible-header .section-collapse-btn");
+        if (btn) {
+          btn.setAttribute("aria-expanded", String(!isCollapsed));
+        }
+
+        const key = section.id || section.dataset.collapseKey;
+        if (key) {
+          try {
+            localStorage.setItem("hynix_collapse_" + key, isCollapsed ? "1" : "0");
+          } catch (_) {}
+        }
+
+        if (!isCollapsed) {
+          window.dispatchEvent(new Event("resize"));
+          setTimeout(() => window.dispatchEvent(new Event("resize")), 60);
+        }
+      },
+
+      handleClick(e) {
+        const toggleBtn = e.target.closest(".section-collapse-btn");
+        if (toggleBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const section = toggleBtn.closest(".collapsible-section");
+          if (section) this.toggle(section);
+          return;
+        }
+
+        const header = e.target.closest(".collapsible-header");
+        if (header) {
+          if (e.target.closest("button, select, input, textarea, a, label, .pillGroup, .tradingModeSwitch, .chartModeSwitch, .newsFilterSwitch, .pairsFilterGroup, .terminalSlideSwitch, .toggleSwitch, .presetBtn, .leverageBtn, .posTabBtn")) {
+            return;
+          }
+          const section = header.closest(".collapsible-section");
+          if (section) this.toggle(section);
+        }
+      }
+    };
+
     window.tradingEngine = tradingEngine;
     window.pairsExplorer = pairsExplorer;
     window.compoundingEngine = compoundingEngine;
     window.upbitCoinScanner = upbitCoinScanner;
     window.ellipsisTooltipManager = ellipsisTooltipManager;
+    window.collapsibleSectionsManager = collapsibleSectionsManager;
 
     loadSettings();
     tradingEngine.init();
@@ -16453,6 +16679,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     compoundingEngine.init();
     upbitCoinScanner.init();
     ellipsisTooltipManager.init();
+    collapsibleSectionsManager.init();
     refresh();
   </script>
 </body>
