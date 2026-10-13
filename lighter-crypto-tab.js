@@ -1042,6 +1042,7 @@
         rowCondEntryBase: "Paper entry: minimum spacing from prior entry",
         rowCondEntryPeak: "Paper entry: Z-score rollover",
         rowCondEntryMaStack5m: "Paper entry: price / MA7 / mean stack",
+        rowCondEntryMaStack1h: "Paper entry: 1h macro trend / green-red range alignment",
         rowCondExitConvergence: "Paper exit: Z-score convergence (adjust Exit Z in replay)",
         rowCondExitDwell: "Paper exit: minimum configured completed bars",
         rowCondExitBottoming: "Paper exit: Z-score no longer converging",
@@ -2179,7 +2180,7 @@
         }
         if (badge) {
           const conditionKey = {EntryMaStretch:"entry_z", EntryBase:"entry_spacing", EntryPeak:"entry_rollover",
-            EntryMaStack5m:"entry_ma_stack", ExitConvergence:"exit_convergence",
+            EntryMaStack5m:"entry_ma_stack", EntryMaStack1h:"entry_ma_stack_1h", ExitConvergence:"exit_convergence",
             ExitDwell:"exit_dwell", ExitBottoming:"exit_bottoming"}[suffix];
           const result = this.latestReplayConditionResult;
           const value = result?.latest_conditions?.[conditionKey];
@@ -2256,13 +2257,16 @@
       if (!panel) return;
       const labels = {
         ma_stack: {entry_ma_stack:"Entry · MA7/24/60 stack", entry_stretch:"Entry · MA60 stretch",
+          entry_ma_stack_1h:"Entry · 1h macro trend alignment",
           exit_ma_cross:"Exit · MA cross", exit_trailing_stop:"Exit · trailing stop", exit_max_dwell:"Exit · 16-bar limit"},
         multi_factor: {entry_factor_z:"Entry · Z factor", entry_factor_velocity:"Entry · velocity factor",
           entry_factor_ma:"Entry · MA distance factor", entry_factor_extremum:"Entry · local extremum factor",
           entry_quorum:"Entry · vote quorum", entry_min_z:"Entry · minimum |Z| 0.8",
+          entry_ma_stack_1h:"Entry · 1h macro trend alignment",
           exit_consensus:"Exit · consensus drop + 3 bars", exit_convergence:"Exit · Z convergence",
           exit_max_dwell:"Exit · 20-bar limit"},
-        trend_pullback: {entry_macro_trend:"Entry · macro trend", entry_pullback:"Entry · pullback distance",
+        trend_pullback: {entry_macro_trend:"Entry · macro trend", entry_ma_stack_1h:"Entry · 1h macro trend alignment",
+          entry_pullback:"Entry · pullback distance",
           entry_micro_reversal:"Entry · micro reversal", exit_target:"Exit · target reached",
           exit_opposite_reversal:"Exit · profitable opposite reversal",
           exit_trend_invalidation:"Exit · trend invalidation", exit_stop_or_dwell:"Exit · stop loss / 32-bar limit"},
@@ -2310,16 +2314,18 @@
         entry_stop_zone:"ou_use_stop_zone", exit_z:"ou_use_exit_z",
       } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
         entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
-        entry_ma_stack:"use_ma_stack", exit_convergence:"use_convergence",
+        entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
         exit_dwell:"use_dwell", exit_bottoming:"use_bottoming",
-      } : {};
+      } : {
+        entry_ma_stack_1h:"use_ma_stack_1h",
+      };
       const keysByMode = {
-        grid:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","exit_convergence","exit_dwell","exit_bottoming"],
-        custom:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","exit_convergence","exit_dwell","exit_bottoming"],
+        grid:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
+        custom:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
         ou_quant:["entry_z","entry_halflife","entry_min_deviation","entry_macro_trend","entry_stop_zone","exit_z","exit_emergency_stop"],
-        ma_stack:["entry_ma_stack","entry_stretch","exit_ma_cross","exit_trailing_stop","exit_max_dwell"],
-        multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","exit_consensus","exit_convergence","exit_max_dwell"],
-        trend_pullback:["entry_macro_trend","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
+        ma_stack:["entry_ma_stack","entry_stretch","entry_ma_stack_1h","exit_ma_cross","exit_trailing_stop","exit_max_dwell"],
+        multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","entry_ma_stack_1h","exit_consensus","exit_convergence","exit_max_dwell"],
+        trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
       };
       (keysByMode[bot?.strategy_mode] || Object.keys(checks)).forEach((key) => {
         const value = checks[key];
@@ -2839,8 +2845,9 @@
 
       const grossLev = collateral > 0 ? (grossNotional / collateral) : 0;
       const isLiveAccount = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
-      const accountGross = isLiveAccount && Number.isFinite(Number(this.liveVenue?.account_gross_notional))
-        ? Number(this.liveVenue.account_gross_notional) : grossNotional;
+      const venueGross = this.liveVenue?.selected_gross_notional ?? this.liveVenue?.account_gross_notional;
+      const accountGross = isLiveAccount && Number.isFinite(Number(venueGross))
+        ? Number(venueGross) : grossNotional;
       const dynamicCapUsd = collateral * levCap;
       const headroomUsd = Math.max(0, dynamicCapUsd - accountGross);
       const freeMarginUsd = isLiveAccount

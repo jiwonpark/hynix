@@ -86,11 +86,15 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.orders, {})
 
     async def test_account_wide_exposure_blocks_entry(self):
+        # Unrelated market position (SKHY market 216) with sufficient free margin does not block BTC 1.0x cap
         self.client.extra_positions = [{"market_id": 216, "position": "5", "sign": 1,
-                                        "position_value": "970", "allocated_margin": "970"}]
-        with self.assertRaisesRegex(ValueError, "Account-wide"):
+                                        "position_value": "970", "allocated_margin": "97"}]
+        entry = await self.bot.manual_entry(1, 50)
+        self.assertEqual(entry["event"], "ENTRY")
+        # Same-market (BTC market 1) gross exposure exceeding 1.0x collateral cap blocks entry
+        self.client.collateral = 80.0
+        with self.assertRaisesRegex(ValueError, "Selected-contract gross exposure"):
             await self.bot.manual_entry(1, 50)
-        self.assertEqual(self.client.orders, {})
 
     async def test_buffer_applies_to_estimated_margin_not_order_notional(self):
         self.client.collateral = 170.0
@@ -129,6 +133,28 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
                 await self.bot._submit(1, 50, reduce_only=False, reason="closed_bar_signal",
                                        signal_values=[100.0] * 25)
         self.assertEqual(self.client.orders, {})
+
+    async def test_use_ma_stack_1h_blocks_short_in_uptrend_range(self):
+        from backend.lighter_strategy import evaluate_strategy_signal
+        uptrend_prices = [70000.0 + i * 50.0 for i in range(64)] + [73800.0]
+        entry_on, side_on, _, eval_on = evaluate_strategy_signal(
+            "custom",
+            uptrend_prices,
+            {"entry_z": 1.2, "exit_z": 0.2, "use_ma_stretch": True, "use_peak": False,
+             "use_base_spacing": False, "use_ma_stack": False, "use_ma_stack_1h": True},
+        )
+        self.assertEqual(side_on, -1)
+        self.assertFalse(entry_on)
+        self.assertFalse(eval_on["condition_pass"]["entry_ma_stack_1h"])
+
+        entry_off, side_off, _, _ = evaluate_strategy_signal(
+            "custom",
+            uptrend_prices,
+            {"entry_z": 1.2, "exit_z": 0.2, "use_ma_stretch": True, "use_peak": False,
+             "use_base_spacing": False, "use_ma_stack": False, "use_ma_stack_1h": False},
+        )
+        self.assertEqual(side_off, -1)
+        self.assertTrue(entry_off)
 
     async def test_entry_and_reduce_are_tracked_separately(self):
         entry = await self.bot.manual_entry(1, 50)

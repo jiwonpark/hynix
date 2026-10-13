@@ -23,6 +23,84 @@ def _ou_macro_ema_slope(ratios: List[float], span: int = OU_MACRO_EMA_SPAN,
     return ema - earlier if earlier is not None else None
 
 
+def _trend_score(window: List[float]) -> float:
+    """Continuous causal score combining normalized slope, MA separation and efficiency."""
+    logs = [math.log(max(value, 1e-12)) for value in window]
+    returns = [logs[index] - logs[index - 1] for index in range(1, len(logs))]
+    mean_return = sum(returns) / len(returns)
+    return_std = math.sqrt(sum((value - mean_return) ** 2 for value in returns) / len(returns))
+    x_mean = (len(logs) - 1) / 2
+    y_mean = sum(logs) / len(logs)
+    denominator = sum((index - x_mean) ** 2 for index in range(len(logs)))
+    slope = sum((index - x_mean) * (logs[index] - y_mean) for index in range(len(logs))) / denominator
+    slope_score = math.tanh(2.0 * slope / max(return_std, 1e-9))
+
+    ma7 = sum(window[-7:]) / 7
+    ma24 = sum(window) / len(window)
+    price_std = math.sqrt(sum((value - ma24) ** 2 for value in window) / len(window))
+    ma_score = math.tanh((ma7 - ma24) / max(price_std, 1e-9))
+
+    travel = sum(abs(window[index] - window[index - 1]) for index in range(1, len(window)))
+    efficiency = (window[-1] - window[0]) / travel if travel > 1e-12 else 0.0
+    return max(-1.0, min(1.0, 0.45 * slope_score + 0.35 * ma_score + 0.20 * efficiency))
+
+
+def classify_trend_direction(values: List[float]) -> str:
+    """Return the causal 3-bar-confirmed trend regime (UPTREND / DOWNTREND / SIDEWAYS)."""
+    clean = [float(value) for value in values if math.isfinite(float(value))]
+    if len(clean) < 24:
+        return "UNKNOWN"
+    state = "SIDEWAYS"
+    pending: Optional[str] = None
+    pending_count = 0
+    for index in range(23, len(clean)):
+        score = _trend_score(clean[index - 23:index + 1])
+        if state == "UPTREND":
+            target = "DOWNTREND" if score <= -0.35 else ("SIDEWAYS" if score < 0.15 else "UPTREND")
+        elif state == "DOWNTREND":
+            target = "UPTREND" if score >= 0.35 else ("SIDEWAYS" if score > -0.15 else "DOWNTREND")
+        else:
+            target = "UPTREND" if score >= 0.35 else ("DOWNTREND" if score <= -0.35 else "SIDEWAYS")
+        if target == state:
+            pending, pending_count = None, 0
+        else:
+            if target == pending:
+                pending_count += 1
+            else:
+                pending, pending_count = target, 1
+            if pending_count >= 3:
+                state, pending, pending_count = target, None, 0
+    return state
+
+
+def _macro_trend_aligned(values: List[float], candidate_side: int) -> bool:
+    """Check Condition #5 (1h macro trend / Green-Red range alignment).
+
+    Requires at least 60 completed bars (1h on 1m or 5h on 5m) before enforcing
+    so short-window unit tests without macro warmup remain unaffected.
+    Blocks Shorts (candidate_side < 0) during Green UPTREND ranges or positive
+    macro EMA slope, and blocks Longs (candidate_side > 0) during Red DOWNTREND
+    ranges or negative macro EMA slope.
+    """
+    if len(values) < 60:
+        return True
+    direction = classify_trend_direction(values)
+    macro_slope = _ou_macro_ema_slope(values[:-1], OU_MACRO_EMA_SPAN, OU_MACRO_SLOPE_BARS)
+    if candidate_side < 0:
+        if direction == "UPTREND":
+            return False
+        if macro_slope is not None and macro_slope > 0:
+            return False
+        return True
+    if candidate_side > 0:
+        if direction == "DOWNTREND":
+            return False
+        if macro_slope is not None and macro_slope < 0:
+            return False
+        return True
+    return True
+
+
 def evaluate_ou_signals(
     ratios: List[float], *, entry_z: float, exit_z: float,
     ou_halflife_max: float, ou_stop_z: float,
@@ -127,7 +205,8 @@ def evaluate_ou_signals(
 def evaluate_grid_signals(
     ratios: List[float], *, entry_z: float, exit_z: float,
     use_ma_stretch: bool = True, use_base_spacing: bool = True, use_peak: bool = True,
-    use_ma_stack: bool = False, use_convergence: bool = True, use_dwell: bool = True,
+    use_ma_stack: bool = False, use_ma_stack_1h: bool = True,
+    use_convergence: bool = True, use_dwell: bool = True,
     use_bottoming: bool = False, base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
     evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
     held_bars: int = 0,
@@ -162,8 +241,10 @@ def evaluate_grid_signals(
     stack_pass = ((zscore > 0 and current_price > ma7 > mean)
                   or (zscore < 0 and current_price < ma7 < mean))
     ma_stack_pass = not use_ma_stack or stack_pass
+    macro_aligned = _macro_trend_aligned(ratios, candidate_side)
+    ma_stack_1h_pass = not use_ma_stack_1h or macro_aligned
 
-    entry_signal = bool(entry_z_pass and spacing_pass and peak_pass and ma_stack_pass)
+    entry_signal = bool(entry_z_pass and spacing_pass and peak_pass and ma_stack_pass and ma_stack_1h_pass)
 
     convergence_pass = abs(zscore) <= exit_z if use_convergence else True
     dwell_pass = not use_dwell or held_bars >= max(0, min(100, min_dwell_bars))
@@ -179,6 +260,7 @@ def evaluate_grid_signals(
         "entry_spacing": spacing_pass,
         "entry_rollover": peak_pass,
         "entry_ma_stack": stack_pass,
+        "entry_ma_stack_1h": macro_aligned,
         "exit_convergence": convergence_pass if position_side else abs(zscore) <= exit_z,
         "exit_dwell": dwell_pass if position_side else True,
         "exit_bottoming": bottoming_pass if position_side else True,
@@ -217,8 +299,7 @@ def evaluate_ma_stack_signals(
     stack_pass = (bearish_stack or bullish_stack) if use_ma_stack else True
     stretch_pass = stretch_pct >= ma_stretch_min if use_ma_stretch else True
 
-    macro_slope = _ou_macro_ema_slope(prices, 60, 12)
-    macro_aligned = bool(macro_slope is not None and (macro_slope >= 0 if candidate_side > 0 else macro_slope <= 0)) if macro_slope is not None else True
+    macro_aligned = _macro_trend_aligned(prices, candidate_side)
     macro_pass = macro_aligned if use_ma_stack_1h else True
 
     entry_signal = bool(stack_pass and stretch_pass and macro_pass)
@@ -229,7 +310,7 @@ def evaluate_ma_stack_signals(
         "entry_ma_stack": stack_pass,
         "entry_stretch": stretch_pass,
         "entry_macro_trend": macro_pass,
-        "entry_ma_stack_1h": macro_pass,
+        "entry_ma_stack_1h": macro_aligned,
         "exit_ma_cross": golden_cross if position_side else None,
         "exit_trailing_stop": None,
         "exit_max_dwell": held_bars >= 16 if position_side else None,
@@ -246,7 +327,8 @@ def evaluate_ma_stack_signals(
 
 def evaluate_multi_factor_signals(
     prices: List[float], *, entry_z: float = 1.5, exit_z: float = 0.25,
-    min_consensus_votes: int = 3, evaluation_time: Optional[int] = None,
+    min_consensus_votes: int = 3, use_ma_stack_1h: bool = True,
+    evaluation_time: Optional[int] = None,
     position_side: int = 0, entry_price: float = 0.0, held_bars: int = 0,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Causal Multi-Factor Consensus Gate evaluation."""
@@ -270,7 +352,9 @@ def evaluate_multi_factor_signals(
 
     votes = sum([f1, f2, f3, f4])
     candidate_side = -1 if zscore > 0 else 1
-    entry_signal = bool(votes >= min_consensus_votes and abs(zscore) >= 0.8)
+    macro_aligned = _macro_trend_aligned(prices, candidate_side)
+    macro_pass = not use_ma_stack_1h or macro_aligned
+    entry_signal = bool(votes >= min_consensus_votes and abs(zscore) >= 0.8 and macro_pass)
 
     current_votes = sum([
         abs(zscore) >= entry_z * 0.5,
@@ -288,6 +372,7 @@ def evaluate_multi_factor_signals(
         "entry_factor_extremum": f4,
         "entry_quorum": votes >= min_consensus_votes,
         "entry_min_z": abs(zscore) >= 0.8,
+        "entry_ma_stack_1h": macro_aligned,
         "exit_consensus": (consensus_drop and held_bars >= 3) if position_side else None,
         "exit_convergence": convergence,
         "exit_max_dwell": held_bars >= 20 if position_side else None,
@@ -302,7 +387,8 @@ def evaluate_multi_factor_signals(
 
 def evaluate_trend_pullback_signals(
     prices: List[float], *, trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
-    trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002, evaluation_time: Optional[int] = None,
+    trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002, use_ma_stack_1h: bool = True,
+    evaluation_time: Optional[int] = None,
     position_side: int = 0, entry_price: float = 0.0, held_bars: int = 0,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Causal Macro Trendline Reversion evaluation."""
@@ -336,8 +422,10 @@ def evaluate_trend_pullback_signals(
 
     buy_signal = is_uptrend and (trendline_val - current_price >= pullback_gap) and micro_reverting_up
     short_signal = is_downtrend and (current_price - trendline_val >= pullback_gap) and micro_reverting_down
-    entry_signal = bool(buy_signal or short_signal)
     candidate_side = 1 if buy_signal else -1
+    macro_aligned = _macro_trend_aligned(prices, candidate_side)
+    macro_pass = not use_ma_stack_1h or macro_aligned
+    entry_signal = bool((buy_signal or short_signal) and macro_pass)
 
     current_pnl = position_side * (current_price / entry_price - 1) * 100 if (position_side != 0 and entry_price > 0) else 0.0
     if position_side > 0:
@@ -357,7 +445,8 @@ def evaluate_trend_pullback_signals(
     exit_signal = bool((tp_reached or (opposite_reversal and current_pnl > 0) or trend_invalidated or stop_loss) if position_side else False)
 
     condition_pass = {
-        "entry_macro_trend": is_uptrend or is_downtrend,
+        "entry_macro_trend": (is_uptrend or is_downtrend) and macro_pass,
+        "entry_ma_stack_1h": macro_aligned,
         "entry_pullback": bool((is_uptrend and trendline_val - current_price >= pullback_gap)
                                or (is_downtrend and current_price - trendline_val >= pullback_gap)),
         "entry_micro_reversal": bool((is_uptrend and micro_reverting_up)
@@ -379,7 +468,8 @@ def evaluate_trend_pullback_signals(
 def evaluate_custom_signals(
     prices: List[float], *, entry_z: float = 1.5, exit_z: float = 0.25,
     use_ma_stretch: bool = True, use_base_spacing: bool = True, use_peak: bool = True,
-    use_ma_stack: bool = False, use_convergence: bool = True, use_dwell: bool = True,
+    use_ma_stack: bool = False, use_ma_stack_1h: bool = True,
+    use_convergence: bool = True, use_dwell: bool = True,
     use_bottoming: bool = False, base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
     evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
     held_bars: int = 0,
@@ -388,7 +478,7 @@ def evaluate_custom_signals(
     entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
         prices, entry_z=entry_z, exit_z=exit_z,
         use_ma_stretch=use_ma_stretch, use_base_spacing=use_base_spacing,
-        use_peak=use_peak, use_ma_stack=use_ma_stack,
+        use_peak=use_peak, use_ma_stack=use_ma_stack, use_ma_stack_1h=use_ma_stack_1h,
         use_convergence=use_convergence, use_dwell=use_dwell,
         use_bottoming=use_bottoming, base_spacing_pct=base_spacing_pct,
         min_dwell_bars=min_dwell_bars, evaluation_time=evaluation_time,
@@ -451,6 +541,7 @@ def evaluate_strategy_signal(
             entry_z=float(config.get("entry_z", 1.5)),
             exit_z=float(config.get("exit_z", 0.25)),
             min_consensus_votes=int(config.get("min_consensus_votes", 3)),
+            use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
             evaluation_time=evaluation_time,
             position_side=position_side,
             entry_price=entry_price,
@@ -463,6 +554,7 @@ def evaluate_strategy_signal(
             trend_pullback_dist=float(config.get("trend_pullback_dist", 0.15)),
             trend_tp_dist=float(config.get("trend_tp_dist", 0.05)),
             trend_slope_min=float(config.get("trend_slope_min", 0.002)),
+            use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
             evaluation_time=evaluation_time,
             position_side=position_side,
             entry_price=entry_price,
@@ -477,6 +569,7 @@ def evaluate_strategy_signal(
             use_base_spacing=bool(config.get("use_base_spacing", True)),
             use_peak=bool(config.get("use_peak", True)),
             use_ma_stack=bool(config.get("use_ma_stack", False)),
+            use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
             use_convergence=bool(config.get("use_convergence", True)),
             use_dwell=bool(config.get("use_dwell", True)),
             use_bottoming=bool(config.get("use_bottoming", False)),
@@ -496,6 +589,7 @@ def evaluate_strategy_signal(
             use_base_spacing=bool(config.get("use_base_spacing", True)),
             use_peak=bool(config.get("use_peak", True)),
             use_ma_stack=bool(config.get("use_ma_stack", False)),
+            use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
             use_convergence=bool(config.get("use_convergence", True)),
             use_dwell=bool(config.get("use_dwell", True)),
             use_bottoming=bool(config.get("use_bottoming", False)),

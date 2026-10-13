@@ -1028,6 +1028,7 @@
         rowCondEntryBase: "Paper entry: minimum spacing from prior entry",
         rowCondEntryPeak: "Paper entry: Z-score rollover",
         rowCondEntryMaStack5m: "Paper entry: price / MA7 / mean stack",
+        rowCondEntryMaStack1h: "Paper entry: 1h macro trend / green-red range alignment",
         rowCondExitConvergence: "Paper exit: Z-score convergence (adjust Exit Z in replay)",
         rowCondExitDwell: "Paper exit: minimum four completed bars",
         rowCondExitBottoming: "Paper exit: Z-score no longer converging",

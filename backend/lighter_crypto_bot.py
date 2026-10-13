@@ -267,20 +267,23 @@ class LighterCryptoBot:
     def _check_entry_capacity(self, account: Dict[str, Any], positions: list[Dict[str, Any]],
                               order_usd: float) -> None:
         collateral = float(account.get("collateral", 0) or 0)
+        selected_market_id = MARKETS[self.state["selected_symbol"]]
         gross = 0.0
         for position in positions:
+            if int(position.get("market_id", -1)) != selected_market_id:
+                continue
             size = abs(float(position.get("position", 0) or position.get("size", 0) or 0))
             value = abs(float(position.get("position_value", 0) or 0))
             if size and not value:
                 mark = float(position.get("mark_price", 0) or position.get("avg_entry_price", 0) or 0)
                 if mark <= 0:
-                    raise ValueError("Cannot determine account-wide Lighter exposure")
+                    raise ValueError("Cannot determine selected-contract Lighter exposure")
                 value = size * mark
             gross += value
         projected_gross = gross + order_usd
         if projected_gross > collateral * self.GROSS_LEVERAGE_CAP:
             raise ValueError(
-                f"Account-wide gross exposure ${projected_gross:.2f} exceeds "
+                f"Selected-contract gross exposure ${projected_gross:.2f} exceeds "
                 f"{self.GROSS_LEVERAGE_CAP:.1f}x collateral cap ${collateral * self.GROSS_LEVERAGE_CAP:.2f}"
             )
         allocated = sum(abs(float(p.get("allocated_margin", 0) or 0)) for p in positions)
@@ -486,7 +489,7 @@ class LighterCryptoBot:
             seconds = INTERVAL_SECONDS[interval]
             try:
                 market_id, _, step = await self._market(symbol)
-                rows = await self.client.candles(market_id, interval, 125, fresh=True)
+                rows = await self.client.candles(market_id, interval, 130, fresh=True)
                 now_ms = int(time.time() * 1000)
                 closed = [row for row in rows if int(row["t"]) + seconds * 1000 <= now_ms - 1000]
                 min_bars = 65 if self.state["strategy_mode"] in {"ma_stack", "ou_quant"} else 25
@@ -519,7 +522,6 @@ class LighterCryptoBot:
                 )
                 self.state["last_evaluation"] = evaluation
                 self.state["last_evaluated_candle"] = last_candle
-                self.state["last_error"] = None
                 self._save()
                 if self.state["tranches"] and exit_signal:
                     await self._submit(-int(self.state["tranches"][-1]["side"]), 0,

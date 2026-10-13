@@ -41,7 +41,7 @@ from .crypto_bot import CryptoBot
 from .lighter_client import LighterClient
 from .lighter_crypto_bot import LighterCryptoBot, MARKETS as LIGHTER_CRYPTO_MARKETS
 from .lighter_bot import LighterPairBot
-from .lighter_strategy import evaluate_ou_signals, evaluate_grid_signals
+from .lighter_strategy import _macro_trend_aligned, evaluate_ou_signals, evaluate_grid_signals
 from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
 from starlette.responses import JSONResponse
@@ -582,6 +582,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                 entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
                     prefix, entry_z=entry_z if use_ma_stretch else 0.0,
                     exit_z=exit_z, use_peak=False, use_base_spacing=False,
+                    use_ma_stack_1h=False,
                     use_dwell=False, use_bottoming=False,
                     evaluation_time=int(bar["time"]),
                 )
@@ -597,12 +598,16 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                 mean = evaluation["signal_mean"]
                 stack_pass = ((zscore > 0 and signal_price > ma7 > mean)
                               or (zscore < 0 and signal_price < ma7 < mean))
+                macro_aligned = _macro_trend_aligned(prefix, candidate_side)
                 peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
                 spacing_pass = (not use_base_spacing or last_entry_value is None
                                 or candidate_side != last_entry_side
                                 or (candidate_side < 0 and signal_price >= last_entry_value + 0.10)
                                 or (candidate_side > 0 and signal_price <= last_entry_value - 0.10))
-                entry_signal = entry_signal and spacing_pass and (not use_peak or peak_pass) and (not use_ma_stack or stack_pass)
+                entry_signal = (entry_signal and spacing_pass
+                                and (not use_peak or peak_pass)
+                                and (not use_ma_stack or stack_pass)
+                                and (not use_ma_stack_1h or macro_aligned))
                 if active_positions:
                     latest = active_positions[-1]
                     convergence_pass = exit_signal if use_convergence else True
@@ -647,6 +652,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
         for index, bar in enumerate(bars):
             if index < 60:
                 continue
+            prefix = [item["value"] for item in bars[:index + 1]]
             ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
             ma24 = sum(item["value"] for item in bars[index-24:index]) / 24
             ma60 = sum(item["value"] for item in bars[index-60:index]) / 60
@@ -660,8 +666,11 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
             stretch_pct = abs(bar["value"] - ma60) / ma60 * 100
             bearish_stack = bar["value"] < ma7 < ma24 < ma60
             bullish_stack = bar["value"] > ma7 > ma24 > ma60
-            entry_signal = (bearish_stack or bullish_stack) and stretch_pct >= ma_stretch_min
             candidate_side = 1 if bearish_stack else -1
+            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+            entry_signal = ((bearish_stack or bullish_stack)
+                            and stretch_pct >= ma_stretch_min
+                            and (not use_ma_stack_1h or macro_aligned))
 
             if position is None and entry_signal:
                 position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "max_favorable": 0.0}
@@ -685,6 +694,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
         for index, bar in enumerate(bars):
             if index < window:
                 continue
+            prefix = [item["value"] for item in bars[:index + 1]]
             sample = [item["value"] for item in bars[index-window:index]]
             mean = sum(sample) / len(sample)
             variance = sum((v - mean) ** 2 for v in sample) / len(sample)
@@ -703,7 +713,9 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
 
             votes = sum([f1, f2, f3, f4])
             candidate_side = -1 if zscore > 0 else 1
-            entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8)
+            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+            entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8
+                            and (not use_ma_stack_1h or macro_aligned))
 
             if position is None and entry_signal:
                 position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index}
@@ -736,6 +748,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
         for index, bar in enumerate(bars):
             if index < trend_window:
                 continue
+            prefix = [item["value"] for item in bars[:index + 1]]
             sample = [item["value"] for item in bars[index-trend_window:index]]
             n = len(sample)
             x_bar = (n - 1) / 2.0
@@ -760,8 +773,12 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
             micro_reverting_up = (bar["value"] > prev_val) and (prev_val <= prev_prev_val)
             micro_reverting_down = (bar["value"] < prev_val) and (prev_val >= prev_prev_val)
 
-            buy_signal = is_uptrend and (trendline_val - bar["value"] >= trend_pullback_dist) and micro_reverting_up
-            short_signal = is_downtrend and (bar["value"] - trendline_val >= trend_pullback_dist) and micro_reverting_down
+            raw_buy = is_uptrend and (trendline_val - bar["value"] >= trend_pullback_dist) and micro_reverting_up
+            raw_short = is_downtrend and (bar["value"] - trendline_val >= trend_pullback_dist) and micro_reverting_down
+            candidate_side = 1 if raw_buy else -1
+            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+            buy_signal = raw_buy and (not use_ma_stack_1h or macro_aligned)
+            short_signal = raw_short and (not use_ma_stack_1h or macro_aligned)
 
             if position is None:
                 if buy_signal:
@@ -1181,6 +1198,7 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
         selected = []
         allocated = sum(abs(float(p.get("allocated_margin", 0) or 0)) for p in positions)
         account_gross = 0.0
+        selected_gross = 0.0
         for position in positions:
             size = abs(float(position.get("position", 0) or position.get("size", 0) or 0))
             value = abs(float(position.get("position_value", 0) or 0))
@@ -1190,6 +1208,7 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
             account_gross += value
             if int(position.get("market_id", -1)) != market_id:
                 continue
+            selected_gross += value
             raw = float(position.get("position", 0) or position.get("size", 0) or 0)
             sign = int(position.get("sign", 1 if raw >= 0 else -1))
             amount = abs(raw) * (1 if sign > 0 else -1)
@@ -1217,6 +1236,7 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
                 "collateral": collateral,
                 "available_margin": max(0.0, collateral - allocated) if collateral is not None else None,
                 "account_gross_notional": account_gross if collateral is not None else None,
+                "selected_gross_notional": selected_gross if collateral is not None else None,
                 "positions": selected, "server_time_ms": int(time.time() * 1000)}
     except Exception as error:
         return {"success": False, "symbol": symbol, "error": str(error),
@@ -1455,6 +1475,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                 entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
                     prefix, entry_z=entry_z if use_ma_stretch else 0.0,
                     exit_z=exit_z, use_peak=False, use_base_spacing=False,
+                    use_ma_stack_1h=False,
                     use_dwell=False, use_bottoming=False,
                     evaluation_time=int(bar["time"]),
                 )
@@ -1469,6 +1490,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                 mean = evaluation["signal_mean"]
                 stack_pass = ((zscore > 0 and signal_price > ma7 > mean)
                               or (zscore < 0 and signal_price < ma7 < mean))
+                macro_aligned = _macro_trend_aligned(prefix, candidate_side)
                 peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
                 step_dist = signal_price * max(0.0, min(10.0, base_spacing_pct)) / 100.0
                 spacing_pass = (not use_base_spacing or last_entry_value is None
@@ -1480,11 +1502,15 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                     "entry_spacing": spacing_pass,
                     "entry_rollover": peak_pass,
                     "entry_ma_stack": stack_pass,
+                    "entry_ma_stack_1h": macro_aligned,
                     "exit_convergence": None,
                     "exit_dwell": None,
                     "exit_bottoming": None,
                 }
-                entry_signal = entry_signal and spacing_pass and (not use_peak or peak_pass) and (not use_ma_stack or stack_pass)
+                entry_signal = (entry_signal and spacing_pass
+                                and (not use_peak or peak_pass)
+                                and (not use_ma_stack or stack_pass)
+                                and (not use_ma_stack_1h or macro_aligned))
                 if active_positions:
                     latest = active_positions[-1]
                     convergence_pass = exit_signal if use_convergence else True
@@ -1527,6 +1553,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         for index, bar in enumerate(bars):
             if index < 60:
                 continue
+            prefix = [item["value"] for item in bars[:index + 1]]
             ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
             ma24 = sum(item["value"] for item in bars[index-24:index]) / 24
             ma60 = sum(item["value"] for item in bars[index-60:index]) / 60
@@ -1540,16 +1567,20 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
             stretch_pct = abs(bar["value"] - ma60) / ma60 * 100
             bearish_stack = bar["value"] < ma7 < ma24 < ma60
             bullish_stack = bar["value"] > ma7 > ma24 > ma60
+            candidate_side = 1 if bearish_stack else -1
+            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
             latest_conditions = {
                 "entry_ma_stack": bearish_stack or bullish_stack,
                 "entry_stretch": stretch_pct >= ma_stretch_min,
+                "entry_ma_stack_1h": macro_aligned,
                 "exit_ma_cross": None,
                 "exit_trailing_stop": None,
                 "exit_max_dwell": None,
             }
             latest_condition_time = int(bar["time"])
-            entry_signal = (bearish_stack or bullish_stack) and stretch_pct >= ma_stretch_min
-            candidate_side = 1 if bearish_stack else -1
+            entry_signal = ((bearish_stack or bullish_stack)
+                            and stretch_pct >= ma_stretch_min
+                            and (not use_ma_stack_1h or macro_aligned))
 
             if position is None and entry_signal:
                 position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "max_favorable": 0.0}
@@ -1575,6 +1606,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         for index, bar in enumerate(bars):
             if index < window:
                 continue
+            prefix = [item["value"] for item in bars[:index + 1]]
             sample = [item["value"] for item in bars[index-window:index]]
             mean = sum(sample) / len(sample)
             variance = sum((v - mean) ** 2 for v in sample) / len(sample)
@@ -1593,6 +1625,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
 
             votes = sum([f1, f2, f3, f4])
             candidate_side = -1 if zscore > 0 else 1
+            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
             latest_conditions = {
                 "entry_factor_z": f1,
                 "entry_factor_velocity": f2,
@@ -1600,12 +1633,14 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                 "entry_factor_extremum": f4,
                 "entry_quorum": votes >= min_consensus_votes,
                 "entry_min_z": abs(zscore) >= 0.8,
+                "entry_ma_stack_1h": macro_aligned,
                 "exit_consensus": None,
                 "exit_convergence": None,
                 "exit_max_dwell": None,
             }
             latest_condition_time = int(bar["time"])
-            entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8)
+            entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8
+                            and (not use_ma_stack_1h or macro_aligned))
 
             if position is None and entry_signal:
                 position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index}
@@ -1637,6 +1672,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         for index, bar in enumerate(bars):
             if index < trend_window:
                 continue
+            prefix = [item["value"] for item in bars[:index + 1]]
             sample = [item["value"] for item in bars[index-trend_window:index]]
             n = len(sample)
             x_bar = (n - 1) / 2.0
@@ -1664,10 +1700,15 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
             pullback_dist = bar["value"] * (trend_pullback_dist / 100.0)
             tp_dist = bar["value"] * (trend_tp_dist / 100.0)
 
-            buy_signal = is_uptrend and (trendline_val - bar["value"] >= pullback_dist) and micro_reverting_up
-            short_signal = is_downtrend and (bar["value"] - trendline_val >= pullback_dist) and micro_reverting_down
+            raw_buy = is_uptrend and (trendline_val - bar["value"] >= pullback_dist) and micro_reverting_up
+            raw_short = is_downtrend and (bar["value"] - trendline_val >= pullback_dist) and micro_reverting_down
+            candidate_side = 1 if raw_buy else -1
+            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+            buy_signal = raw_buy and (not use_ma_stack_1h or macro_aligned)
+            short_signal = raw_short and (not use_ma_stack_1h or macro_aligned)
             latest_conditions = {
-                "entry_macro_trend": is_uptrend or is_downtrend,
+                "entry_macro_trend": (is_uptrend or is_downtrend) and (not use_ma_stack_1h or macro_aligned),
+                "entry_ma_stack_1h": macro_aligned,
                 "entry_pullback": (is_uptrend and trendline_val - bar["value"] >= pullback_dist)
                                   or (is_downtrend and bar["value"] - trendline_val >= pullback_dist),
                 "entry_micro_reversal": (is_uptrend and micro_reverting_up)

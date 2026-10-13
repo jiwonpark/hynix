@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from .lighter_strategy import (
     OU_MACRO_EMA_SPAN, OU_MACRO_SLOPE_BARS, OU_MIN_ABS_DEVIATION_PP,
-    evaluate_ou_signals, evaluate_grid_signals,
+    _macro_trend_aligned, evaluate_ou_signals, evaluate_grid_signals,
 )
 
 from .lighter_client import LighterClient
@@ -1236,8 +1236,10 @@ class LighterPairBot:
             bullish_stack = ratios[-1] > ma7 > ma24 > ma60
             min_stretch = float(self.state.get("ma_stretch_min", 0.30))
             trailing_stop = float(self.state.get("ma_trailing_stop", 0.15))
-            entry_signal = bool((bearish_stack or bullish_stack) and stretch_pct >= min_stretch)
             candidate_side = 1 if bearish_stack else -1
+            macro_aligned = _macro_trend_aligned(ratios, candidate_side)
+            macro_pass = not bool(self.state.get("use_ma_stack_1h", True)) or macro_aligned
+            entry_signal = bool((bearish_stack or bullish_stack) and stretch_pct >= min_stretch and macro_pass)
             if side_if_open is not None:
                 exit_signal = bool((side_if_open > 0 and ma7 >= ma24) or (side_if_open < 0 and ma7 <= ma24) or stretch_pct <= trailing_stop)
             else:
@@ -1269,7 +1271,9 @@ class LighterPairBot:
             votes = sum([f1, f2, f3, f4])
             quorum = int(self.state.get("min_consensus_votes", 3))
             candidate_side = -1 if zscore > 0 else 1
-            entry_signal = bool(votes >= quorum and abs(zscore) >= 0.8)
+            macro_aligned = _macro_trend_aligned(ratios, candidate_side)
+            macro_pass = not bool(self.state.get("use_ma_stack_1h", True)) or macro_aligned
+            entry_signal = bool(votes >= quorum and abs(zscore) >= 0.8 and macro_pass)
             exit_signal = bool(abs(zscore) <= exit_z or votes < 2)
             eval_info = {
                 "time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(mean, 4),
@@ -1301,8 +1305,10 @@ class LighterPairBot:
 
             buy_signal = is_uptrend and (trendline_val - ratios[-1] >= pullback_dist) and micro_up
             short_signal = is_downtrend and (ratios[-1] - trendline_val >= pullback_dist) and micro_down
-            entry_signal = bool(buy_signal or short_signal)
             candidate_side = 1 if buy_signal else -1
+            macro_aligned = _macro_trend_aligned(ratios, candidate_side)
+            macro_pass = not bool(self.state.get("use_ma_stack_1h", True)) or macro_aligned
+            entry_signal = bool((buy_signal or short_signal) and macro_pass)
 
             if side_if_open is not None:
                 if side_if_open > 0:
@@ -1335,6 +1341,7 @@ class LighterPairBot:
                 use_base_spacing=bool(self.state.get("use_base_spacing", True)),
                 use_peak=bool(self.state.get("use_peak", True)),
                 use_ma_stack=bool(self.state.get("use_ma_stack", False)),
+                use_ma_stack_1h=bool(self.state.get("use_ma_stack_1h", True)),
                 use_convergence=bool(self.state.get("use_convergence", True)),
                 use_dwell=bool(self.state.get("use_dwell", True)),
                 use_bottoming=bool(self.state.get("use_bottoming", False)),
@@ -1369,7 +1376,7 @@ class LighterPairBot:
         interval = self.state.get("strategy_interval", "5m")
         interval_ms = 300_000 if interval == "5m" else (60_000 if interval == "1m" else (900_000 if interval == "15m" else 3_600_000))
         candle_count = (max(200, 2 * int(self.state.get("ou_macro_ema_span", OU_MACRO_EMA_SPAN)) + 10)
-                        if self.state.get("strategy_mode") == "ou_quant" else 80)
+                        if self.state.get("strategy_mode") == "ou_quant" else 130)
         adr_candles, domestic_candles, adr_book, domestic_book = await asyncio.gather(
             self.client.candles(216, interval, candle_count, fresh=True),
             self.client.candles(161, interval, candle_count, fresh=True),
