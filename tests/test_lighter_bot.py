@@ -1179,6 +1179,8 @@ class TestLighterPairBot(unittest.TestCase):
                 })
                 bot = LighterPairBot(client, Path(directory) / "state.json")
                 bot.state["min_seconds_between_orders"] = 0
+                bot.state["use_peak"] = False
+                bot.state["use_base_spacing"] = False
                 bot._trade_pair = AsyncMock(return_value={
                     "first_leg": {
                         "filled_size": 0.17, "fill_price": 145.0, "fee_usd": 0.0,
