@@ -3,8 +3,8 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 OU_MIN_ABS_DEVIATION_PP = 0.25
-OU_MACRO_EMA_SPAN = 60
-OU_MACRO_SLOPE_BARS = 12
+OU_MACRO_EMA_SPAN = 20
+OU_MACRO_SLOPE_BARS = 4
 
 
 def _ou_macro_ema_slope(ratios: List[float], span: int = OU_MACRO_EMA_SPAN,
@@ -36,31 +36,31 @@ def _trend_score(window: List[float]) -> float:
     slope_score = math.tanh(2.0 * slope / max(return_std, 1e-9))
 
     ma7 = sum(window[-7:]) / 7
-    ma24 = sum(window) / len(window)
-    price_std = math.sqrt(sum((value - ma24) ** 2 for value in window) / len(window))
-    ma_score = math.tanh((ma7 - ma24) / max(price_std, 1e-9))
+    ma_window = sum(window) / len(window)
+    price_std = math.sqrt(sum((value - ma_window) ** 2 for value in window) / len(window))
+    ma_score = math.tanh((ma7 - ma_window) / max(price_std, 1e-9))
 
     travel = sum(abs(window[index] - window[index - 1]) for index in range(1, len(window)))
     efficiency = (window[-1] - window[0]) / travel if travel > 1e-12 else 0.0
     return max(-1.0, min(1.0, 0.45 * slope_score + 0.35 * ma_score + 0.20 * efficiency))
 
 
-def classify_trend_direction(values: List[float]) -> str:
-    """Return the causal 3-bar-confirmed trend regime (UPTREND / DOWNTREND / SIDEWAYS)."""
+def classify_trend_direction(values: List[float], window_size: int = 20) -> str:
+    """Return the causal 1-bar-confirmed fast trend regime (UPTREND / DOWNTREND / SIDEWAYS)."""
     clean = [float(value) for value in values if math.isfinite(float(value))]
-    if len(clean) < 24:
+    if len(clean) < window_size:
         return "UNKNOWN"
     state = "SIDEWAYS"
     pending: Optional[str] = None
     pending_count = 0
-    for index in range(23, len(clean)):
-        score = _trend_score(clean[index - 23:index + 1])
+    for index in range(window_size - 1, len(clean)):
+        score = _trend_score(clean[index - (window_size - 1):index + 1])
         if state == "UPTREND":
-            target = "DOWNTREND" if score <= -0.35 else ("SIDEWAYS" if score < 0.15 else "UPTREND")
+            target = "DOWNTREND" if score <= -0.20 else ("SIDEWAYS" if score < 0.05 else "UPTREND")
         elif state == "DOWNTREND":
-            target = "UPTREND" if score >= 0.35 else ("SIDEWAYS" if score > -0.15 else "DOWNTREND")
+            target = "UPTREND" if score >= 0.20 else ("SIDEWAYS" if score > -0.05 else "DOWNTREND")
         else:
-            target = "UPTREND" if score >= 0.35 else ("DOWNTREND" if score <= -0.35 else "SIDEWAYS")
+            target = "UPTREND" if score >= 0.20 else ("DOWNTREND" if score <= -0.20 else "SIDEWAYS")
         if target == state:
             pending, pending_count = None, 0
         else:
@@ -68,21 +68,21 @@ def classify_trend_direction(values: List[float]) -> str:
                 pending_count += 1
             else:
                 pending, pending_count = target, 1
-            if pending_count >= 3:
+            if pending_count >= 1:
                 state, pending, pending_count = target, None, 0
     return state
 
 
 def _macro_trend_aligned(values: List[float], candidate_side: int) -> bool:
-    """Check Condition #5 (1h macro trend / Green-Red range alignment).
+    """Check Condition #5 (Macro trend / Green-Red range alignment).
 
-    Requires at least 60 completed bars (1h on 1m or 5h on 5m) before enforcing
-    so short-window unit tests without macro warmup remain unaffected.
+    Requires at least 20 completed bars before enforcing so short-window
+    unit tests without macro warmup remain unaffected.
     Blocks Shorts (candidate_side < 0) during Green UPTREND ranges or positive
     macro EMA slope, and blocks Longs (candidate_side > 0) during Red DOWNTREND
     ranges or negative macro EMA slope.
     """
-    if len(values) < 60:
+    if len(values) < 20:
         return True
     direction = classify_trend_direction(values)
     macro_slope = _ou_macro_ema_slope(values[:-1], OU_MACRO_EMA_SPAN, OU_MACRO_SLOPE_BARS)

@@ -35,7 +35,7 @@ DEFAULT_STATE = {
     "notional_usd": 150.0, "max_tranches": 5,
     "min_seconds_between_orders": 300, "max_book_spread_bps": 45.0,
     "ou_halflife_max": 8.0, "ou_stop_z": 3.5, "ou_min_abs_deviation_pp": 0.25,
-    "ou_macro_ema_span": 60, "ou_macro_slope_bars": 12,
+    "ou_macro_ema_span": OU_MACRO_EMA_SPAN, "ou_macro_slope_bars": OU_MACRO_SLOPE_BARS,
     "ou_use_entry_z": True, "ou_use_halflife": True, "ou_use_min_abs_deviation": True,
     "ou_use_macro_trend": True, "ou_use_stop_zone": True, "ou_use_exit_z": True,
     "ma_stretch_min": 0.30, "ma_trailing_stop": 0.15, "min_consensus_votes": 3,

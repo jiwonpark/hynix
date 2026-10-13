@@ -2298,9 +2298,9 @@
       const slope = numerator / denominator;
       const slopeScore = Math.tanh(2 * slope / Math.max(returnStd, 1e-9));
       const ma7 = values.slice(-7).reduce((sum, value) => sum + value, 0) / 7;
-      const ma24 = values.reduce((sum, value) => sum + value, 0) / values.length;
-      const priceStd = Math.sqrt(values.reduce((sum, value) => sum + ((value - ma24) ** 2), 0) / values.length);
-      const maScore = Math.tanh((ma7 - ma24) / Math.max(priceStd, 1e-9));
+      const maWindow = values.reduce((sum, value) => sum + value, 0) / values.length;
+      const priceStd = Math.sqrt(values.reduce((sum, value) => sum + ((value - maWindow) ** 2), 0) / values.length);
+      const maScore = Math.tanh((ma7 - maWindow) / Math.max(priceStd, 1e-9));
       const travel = values.slice(1).reduce((sum, value, index) => sum + Math.abs(value - values[index]), 0);
       const efficiency = travel > 1e-12 ? (values.at(-1) - values[0]) / travel : 0;
       return Math.max(-1, Math.min(1, 0.45 * slopeScore + 0.35 * maScore + 0.20 * efficiency));
@@ -2309,20 +2309,20 @@
     calculateTrendRanges(bars) {
       const points = [];
       let state = "SIDEWAYS", pending = null, pendingCount = 0;
-      for (let index = 23; index < bars.length; index += 1) {
-        const values = bars.slice(index - 23, index + 1).map((bar) => Number(bar.value));
+      for (let index = 19; index < bars.length; index += 1) {
+        const values = bars.slice(index - 19, index + 1).map((bar) => Number(bar.value));
         if (values.some((value) => !Number.isFinite(value))) continue;
         const score = this.trendScore(values);
         let target;
-        if (state === "UPTREND") target = score <= -0.35 ? "DOWNTREND" : (score < 0.15 ? "SIDEWAYS" : "UPTREND");
-        else if (state === "DOWNTREND") target = score >= 0.35 ? "UPTREND" : (score > -0.15 ? "SIDEWAYS" : "DOWNTREND");
-        else target = score >= 0.35 ? "UPTREND" : (score <= -0.35 ? "DOWNTREND" : "SIDEWAYS");
+        if (state === "UPTREND") target = score <= -0.20 ? "DOWNTREND" : (score < 0.05 ? "SIDEWAYS" : "UPTREND");
+        else if (state === "DOWNTREND") target = score >= 0.20 ? "UPTREND" : (score > -0.05 ? "SIDEWAYS" : "DOWNTREND");
+        else target = score >= 0.20 ? "UPTREND" : (score <= -0.20 ? "DOWNTREND" : "SIDEWAYS");
         if (target === state) {
           pending = null; pendingCount = 0;
         } else {
           if (target === pending) pendingCount += 1;
           else { pending = target; pendingCount = 1; }
-          if (pendingCount >= 3) { state = target; pending = null; pendingCount = 0; }
+          if (pendingCount >= 1) { state = target; pending = null; pendingCount = 0; }
         }
         points.push({ direction: state, score, time: bars[index].time, index });
       }

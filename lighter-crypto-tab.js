@@ -1133,7 +1133,7 @@
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseEntryZ" type="checkbox" aria-label="Enable minimum entry Z" style="${ouToggleStyle}" ${ouChecked("ou_use_entry_z")}><span>1. Minimum |Z| (Entry Z above)</span><span class="condBadge neutral" id="lighterCrypto_ouStatusEntryZ">WAITING</span></div>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseHalflife" type="checkbox" aria-label="Enable maximum half-life" style="${ouToggleStyle}" ${ouChecked("ou_use_halflife")}><span>2. Maximum half-life</span><input id="lighterCrypto_ouHalflifeMax" type="number" aria-label="Maximum half-life parameter" min="1" max="50" step="0.5" value="${ouNumber("ou_halflife_max", 8)}" style="${ouNumberStyle}"><span>× 4 bars</span><span class="condBadge neutral" id="lighterCrypto_ouStatusHalflife">WAITING</span></div>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseMinDeviation" type="checkbox" aria-label="Enable minimum OU deviation" style="${ouToggleStyle}" ${ouChecked("ou_use_min_abs_deviation")}><span>3. Minimum deviation from OU mean</span><input id="lighterCrypto_ouMinDeviation" type="number" aria-label="Minimum OU deviation in percentage points" min="0" max="5" step="0.01" value="${ouNumber("ou_min_abs_deviation_pp", 0.25)}" style="${ouNumberStyle}"><span>pp</span><span class="condBadge neutral" id="lighterCrypto_ouStatusMinDeviation">WAITING</span></div>
-            <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseMacroTrend" type="checkbox" aria-label="Enable macro EMA alignment" style="${ouToggleStyle}" ${ouChecked("ou_use_macro_trend")}><span>4. Macro EMA slope aligned · EMA</span><input id="lighterCrypto_ouMacroSpan" type="number" aria-label="Macro EMA span" min="5" max="120" step="1" value="${ouNumber("ou_macro_ema_span", 60)}" style="${ouNumberStyle}"><span>over</span><input id="lighterCrypto_ouMacroSlopeBars" type="number" aria-label="Macro EMA slope comparison bars" min="1" max="60" step="1" value="${ouNumber("ou_macro_slope_bars", 12)}" style="${ouNumberStyle}"><span>bars</span><span class="condBadge neutral" id="lighterCrypto_ouStatusMacroTrend">WAITING</span></div>
+            <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseMacroTrend" type="checkbox" aria-label="Enable macro EMA alignment" style="${ouToggleStyle}" ${ouChecked("ou_use_macro_trend")}><span>4. Macro EMA slope aligned · EMA</span><input id="lighterCrypto_ouMacroSpan" type="number" aria-label="Macro EMA span" min="5" max="120" step="1" value="${ouNumber("ou_macro_ema_span", 20)}" style="${ouNumberStyle}"><span>over</span><input id="lighterCrypto_ouMacroSlopeBars" type="number" aria-label="Macro EMA slope comparison bars" min="1" max="60" step="1" value="${ouNumber("ou_macro_slope_bars", 4)}" style="${ouNumberStyle}"><span>bars</span><span class="condBadge neutral" id="lighterCrypto_ouStatusMacroTrend">WAITING</span></div>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseStopZone" type="checkbox" aria-label="Enable upper entry Z limit" style="${ouToggleStyle}" ${ouChecked("ou_use_stop_zone")}><span>5. Entry below emergency |Z| limit</span><input id="lighterCrypto_ouStopZ" type="number" aria-label="Emergency Z limit" min="1.5" max="6" step="0.05" value="${ouNumber("ou_stop_z", 3.5)}" style="${ouNumberStyle}"><span>σ</span><span class="condBadge neutral" id="lighterCrypto_ouStatusStopZone">WAITING</span></div>
             <small style="color:#64748b;">Live order-book quote confirmation and account safety checks are separate. Historical replay has no order-book quotes.</small>
           </div>
@@ -2093,8 +2093,8 @@
         ou_halflife_max: number("lighterCrypto_ouHalflifeMax", saved.ou_halflife_max ?? 8),
         ou_stop_z: number("lighterCrypto_ouStopZ", saved.ou_stop_z ?? 3.5),
         ou_min_abs_deviation_pp: number("lighterCrypto_ouMinDeviation", saved.ou_min_abs_deviation_pp ?? 0.25),
-        ou_macro_ema_span: number("lighterCrypto_ouMacroSpan", saved.ou_macro_ema_span ?? 60),
-        ou_macro_slope_bars: number("lighterCrypto_ouMacroSlopeBars", saved.ou_macro_slope_bars ?? 12),
+        ou_macro_ema_span: number("lighterCrypto_ouMacroSpan", saved.ou_macro_ema_span ?? 20),
+        ou_macro_slope_bars: number("lighterCrypto_ouMacroSlopeBars", saved.ou_macro_slope_bars ?? 4),
         ou_use_entry_z: enabled("lighterCrypto_ouUseEntryZ", "ou_use_entry_z"),
         ou_use_halflife: enabled("lighterCrypto_ouUseHalflife", "ou_use_halflife"),
         ou_use_min_abs_deviation: enabled("lighterCrypto_ouUseMinDeviation", "ou_use_min_abs_deviation"),
@@ -2487,9 +2487,9 @@
       const slope = numerator / denominator;
       const slopeScore = Math.tanh(2 * slope / Math.max(returnStd, 1e-9));
       const ma7 = values.slice(-7).reduce((sum, value) => sum + value, 0) / 7;
-      const ma24 = values.reduce((sum, value) => sum + value, 0) / values.length;
-      const priceStd = Math.sqrt(values.reduce((sum, value) => sum + ((value - ma24) ** 2), 0) / values.length);
-      const maScore = Math.tanh((ma7 - ma24) / Math.max(priceStd, 1e-9));
+      const maWindow = values.reduce((sum, value) => sum + value, 0) / values.length;
+      const priceStd = Math.sqrt(values.reduce((sum, value) => sum + ((value - maWindow) ** 2), 0) / values.length);
+      const maScore = Math.tanh((ma7 - maWindow) / Math.max(priceStd, 1e-9));
       const travel = values.slice(1).reduce((sum, value, index) => sum + Math.abs(value - values[index]), 0);
       const efficiency = travel > 1e-12 ? (values.at(-1) - values[0]) / travel : 0;
       return Math.max(-1, Math.min(1, 0.45 * slopeScore + 0.35 * maScore + 0.20 * efficiency));
@@ -2498,20 +2498,20 @@
     calculateTrendRanges(bars) {
       const points = [];
       let state = "SIDEWAYS", pending = null, pendingCount = 0;
-      for (let index = 23; index < bars.length; index += 1) {
-        const values = bars.slice(index - 23, index + 1).map((bar) => Number(bar.value));
+      for (let index = 19; index < bars.length; index += 1) {
+        const values = bars.slice(index - 19, index + 1).map((bar) => Number(bar.value));
         if (values.some((value) => !Number.isFinite(value))) continue;
         const score = this.trendScore(values);
         let target;
-        if (state === "UPTREND") target = score <= -0.35 ? "DOWNTREND" : (score < 0.15 ? "SIDEWAYS" : "UPTREND");
-        else if (state === "DOWNTREND") target = score >= 0.35 ? "UPTREND" : (score > -0.15 ? "SIDEWAYS" : "DOWNTREND");
-        else target = score >= 0.35 ? "UPTREND" : (score <= -0.35 ? "DOWNTREND" : "SIDEWAYS");
+        if (state === "UPTREND") target = score <= -0.20 ? "DOWNTREND" : (score < 0.05 ? "SIDEWAYS" : "UPTREND");
+        else if (state === "DOWNTREND") target = score >= 0.20 ? "UPTREND" : (score > -0.05 ? "SIDEWAYS" : "DOWNTREND");
+        else target = score >= 0.20 ? "UPTREND" : (score <= -0.20 ? "DOWNTREND" : "SIDEWAYS");
         if (target === state) {
           pending = null; pendingCount = 0;
         } else {
           if (target === pending) pendingCount += 1;
           else { pending = target; pendingCount = 1; }
-          if (pendingCount >= 3) { state = target; pending = null; pendingCount = 0; }
+          if (pendingCount >= 1) { state = target; pending = null; pendingCount = 0; }
         }
         points.push({ direction: state, score, time: bars[index].time, index });
       }
