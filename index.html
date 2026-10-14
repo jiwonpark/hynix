@@ -3540,33 +3540,41 @@
                     Basic unit: <strong id="lblBasicTradableUnit" style="color: #334155;">-- ADR / -- ETF</strong>
                   </div>
                 </div>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px;">
                   <!-- Entry Multiplier Control -->
                   <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                       <span style="font-size: 11px; font-weight: 800; color: #0369a1;">ENTRY MULTIPLIER</span>
                       <label style="display: flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: #64748b; cursor: pointer;" title="Automatically adjust entry size from 60h macro regime (1.0x / 1.25x / 1.5x)">
                         <input type="checkbox" id="chkAutoEntryMultiplier">
                         <span>Auto Macro</span>
                       </label>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                      <input id="inputEntryMultiplier" type="number" min="1.0" max="10.0" step="0.25" value="1.00" style="width: 72px; height: 28px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 6px; font-size: 12px; font-weight: 800; color: #0f172a;">
-                      <span style="font-size: 11.5px; font-weight: 700; color: #64748b;">× basic</span>
-                      <span id="lblEntryMultiplierQty" style="font-size: 10.5px; font-weight: 700; color: #0284c7; margin-left: auto;">-- ADR / -- ETF</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <input id="rangeEntryMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Entry Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #0284c7;">
+                      <input id="inputEntryMultiplier" type="number" min="1.0" max="10.0" step="0.05" value="1.00" style="width: 58px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11.5px; font-weight: 800; color: #0f172a; text-align: right;">
+                      <span style="font-size: 11px; font-weight: 700; color: #64748b;">×</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                      <span id="badgeEntryMultiplier" style="font-size: 10px; font-weight: 800; color: #0369a1; background: #e0f2fe; padding: 1px 6px; border-radius: 4px;">1.00× basic</span>
+                      <span id="lblEntryMultiplierQty" style="font-size: 10.5px; font-weight: 700; color: #0284c7;">-- ADR / -- ETF</span>
                     </div>
                   </div>
 
                   <!-- Exit Multiplier Control -->
                   <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                       <span style="font-size: 11px; font-weight: 800; color: #166534;">EXIT MULTIPLIER</span>
                       <button id="btnSyncExitToEntry" type="button" style="height: 20px; padding: 0 6px; font-size: 10px; font-weight: 800; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 4px; cursor: pointer;" title="Set Exit Multiplier equal to Entry Multiplier for 100% full tranche exit">Match Entry (100%)</button>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                      <input id="inputExitMultiplier" type="number" min="1.0" max="10.0" step="0.25" value="1.00" style="width: 72px; height: 28px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 6px; font-size: 12px; font-weight: 800; color: #0f172a;">
-                      <span style="font-size: 11.5px; font-weight: 700; color: #64748b;">× basic</span>
-                      <span id="lblExitMultiplierQty" style="font-size: 10.5px; font-weight: 700; color: #16a34a; margin-left: auto;">-- ADR / -- ETF</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <input id="rangeExitMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Exit Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #16a34a;">
+                      <input id="inputExitMultiplier" type="number" min="1.0" max="10.0" step="0.05" value="1.00" style="width: 58px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11.5px; font-weight: 800; color: #0f172a; text-align: right;">
+                      <span style="font-size: 11px; font-weight: 700; color: #64748b;">×</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                      <span id="badgeExitMultiplier" style="font-size: 10px; font-weight: 800; color: #166534; background: #dcfce7; padding: 1px 6px; border-radius: 4px;">1.00× basic</span>
+                      <span id="lblExitMultiplierQty" style="font-size: 10.5px; font-weight: 700; color: #16a34a;">-- ADR / -- ETF</span>
                     </div>
                   </div>
                 </div>
@@ -12845,19 +12853,38 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             badgeSymmetric.style.color = isSymmetric ? "#0369a1" : "#92400e";
           }
 
+          const rangeEntry = $("rangeEntryMultiplier");
           const inpEntry = $("inputEntryMultiplier");
-          if (inpEntry && document.activeElement !== inpEntry) {
-            inpEntry.value = Number(sizing.entry_multiplier ?? 1.0).toFixed(2);
-          }
+          const badgeEntry = $("badgeEntryMultiplier");
           const chkAutoEntry = $("chkAutoEntryMultiplier");
+          const entryVal = Number(sizing.entry_multiplier ?? 1.0);
           if (chkAutoEntry && document.activeElement !== chkAutoEntry) {
             chkAutoEntry.checked = Boolean(sizing.auto_entry_multiplier);
             if (inpEntry) inpEntry.disabled = chkAutoEntry.checked;
+            if (rangeEntry) rangeEntry.disabled = chkAutoEntry.checked;
+          }
+          if (inpEntry && document.activeElement !== inpEntry && document.activeElement !== rangeEntry) {
+            inpEntry.value = entryVal.toFixed(2);
+          }
+          if (rangeEntry && document.activeElement !== rangeEntry && document.activeElement !== inpEntry) {
+            rangeEntry.value = Math.min(5.0, Math.max(1.0, entryVal)).toFixed(2);
+          }
+          if (badgeEntry) {
+            badgeEntry.textContent = `${entryVal.toFixed(2)}× basic${sizing.auto_entry_multiplier ? " (Macro)" : ""}`;
           }
 
+          const rangeExit = $("rangeExitMultiplier");
           const inpExit = $("inputExitMultiplier");
-          if (inpExit && document.activeElement !== inpExit) {
-            inpExit.value = Number(sizing.exit_multiplier ?? 1.0).toFixed(2);
+          const badgeExit = $("badgeExitMultiplier");
+          const exitVal = Number(sizing.exit_multiplier ?? 1.0);
+          if (inpExit && document.activeElement !== inpExit && document.activeElement !== rangeExit) {
+            inpExit.value = exitVal.toFixed(2);
+          }
+          if (rangeExit && document.activeElement !== rangeExit && document.activeElement !== inpExit) {
+            rangeExit.value = Math.min(5.0, Math.max(1.0, exitVal)).toFixed(2);
+          }
+          if (badgeExit) {
+            badgeExit.textContent = `${exitVal.toFixed(2)}× basic`;
           }
 
           if ($("lblEntryMultiplierQty")) $("lblEntryMultiplierQty").textContent = sizeText;
@@ -14590,27 +14617,70 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
         };
 
-        $("inputEntryMultiplier")?.addEventListener("change", (e) => {
+        const syncEntryUI = (val) => {
+          const num = parseFloat(val);
+          if (!Number.isFinite(num) || num < 1.0) return;
+          if ($("badgeEntryMultiplier")) $("badgeEntryMultiplier").textContent = `${num.toFixed(2)}× basic`;
+        };
+        const syncExitUI = (val) => {
+          const num = parseFloat(val);
+          if (!Number.isFinite(num) || num < 1.0) return;
+          if ($("badgeExitMultiplier")) $("badgeExitMultiplier").textContent = `${num.toFixed(2)}× basic`;
+        };
+
+        $("rangeEntryMultiplier")?.addEventListener("input", (e) => {
+          if ($("inputEntryMultiplier")) $("inputEntryMultiplier").value = parseFloat(e.target.value).toFixed(2);
+          syncEntryUI(e.target.value);
+        });
+        $("rangeEntryMultiplier")?.addEventListener("change", (e) => {
+          const val = parseFloat(e.target.value);
+          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ entry_multiplier: val });
+        });
+        $("inputEntryMultiplier")?.addEventListener("input", (e) => {
           const val = parseFloat(e.target.value);
           if (Number.isFinite(val) && val >= 1.0) {
-            updateScalingLive({ entry_multiplier: val });
+            if ($("rangeEntryMultiplier")) $("rangeEntryMultiplier").value = Math.min(5.0, val).toFixed(2);
+            syncEntryUI(val);
           }
         });
+        $("inputEntryMultiplier")?.addEventListener("change", (e) => {
+          const val = parseFloat(e.target.value);
+          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ entry_multiplier: val });
+        });
+
         $("chkAutoEntryMultiplier")?.addEventListener("change", (e) => {
           const isChecked = e.target.checked;
           if ($("inputEntryMultiplier")) $("inputEntryMultiplier").disabled = isChecked;
+          if ($("rangeEntryMultiplier")) $("rangeEntryMultiplier").disabled = isChecked;
           updateScalingLive({ auto_entry_multiplier: isChecked });
+        });
+
+        $("rangeExitMultiplier")?.addEventListener("input", (e) => {
+          if ($("inputExitMultiplier")) $("inputExitMultiplier").value = parseFloat(e.target.value).toFixed(2);
+          syncExitUI(e.target.value);
+        });
+        $("rangeExitMultiplier")?.addEventListener("change", (e) => {
+          const val = parseFloat(e.target.value);
+          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ exit_multiplier: val });
+        });
+        $("inputExitMultiplier")?.addEventListener("input", (e) => {
+          const val = parseFloat(e.target.value);
+          if (Number.isFinite(val) && val >= 1.0) {
+            if ($("rangeExitMultiplier")) $("rangeExitMultiplier").value = Math.min(5.0, val).toFixed(2);
+            syncExitUI(val);
+          }
         });
         $("inputExitMultiplier")?.addEventListener("change", (e) => {
           const val = parseFloat(e.target.value);
-          if (Number.isFinite(val) && val >= 1.0) {
-            updateScalingLive({ exit_multiplier: val });
-          }
+          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ exit_multiplier: val });
         });
+
         $("btnSyncExitToEntry")?.addEventListener("click", () => {
-          const entryVal = parseFloat($("inputEntryMultiplier")?.value || "1.0");
+          const entryVal = parseFloat($("inputEntryMultiplier")?.value || $("rangeEntryMultiplier")?.value || "1.0");
           if (Number.isFinite(entryVal) && entryVal >= 1.0) {
             if ($("inputExitMultiplier")) $("inputExitMultiplier").value = entryVal.toFixed(2);
+            if ($("rangeExitMultiplier")) $("rangeExitMultiplier").value = Math.min(5.0, entryVal).toFixed(2);
+            syncExitUI(entryVal);
             updateScalingLive({ exit_multiplier: entryVal });
           }
         });
