@@ -120,6 +120,33 @@ class PairSizingTests(unittest.TestCase):
         self.assertEqual([m['adr_exit_qty'] for m in marker['pnl_models']], [.06, .1, .04])
         self.assertEqual([m['stock_exit_qty'] for m in marker['pnl_models']], [1.14, 1, 1.2])
 
+    def test_manual_entry_and_exit_multipliers(self):
+        # 1. Symmetric 2.0x entry and exit scaling
+        base_policy = policy_for_level(0)
+        base_policy['entry_multiplier'] = 2.0
+        base_policy['exit_multiplier'] = 2.0
+        p = size_policy(base_policy, 193.63, 5.378, REFERENCE_RULES)
+        self.assertEqual(p['entry_multiplier'], 2.0)
+        self.assertEqual(p['exit_multiplier'], 2.0)
+        self.assertEqual((p['adr_entry_qty'], p['stock_entry_qty']), (.12, 2.16))
+        self.assertEqual((p['adr_exit_qty'], p['stock_exit_qty']), (.12, 2.16))
+        self.assertEqual(p['adr_entry_qty'], p['adr_exit_qty'])
+        self.assertEqual(p['stock_entry_qty'], p['stock_exit_qty'])
+
+        # 2. Asymmetric scaling: 1.5x entry, 1.0x exit
+        asym_policy = policy_for_level(0)
+        asym_policy['entry_multiplier'] = 1.5
+        asym_policy['exit_multiplier'] = 1.0
+        p_asym = size_policy(asym_policy, 193.63, 5.378, REFERENCE_RULES)
+        self.assertEqual((p_asym['adr_entry_qty'], p_asym['stock_entry_qty']), (.09, 1.62))
+        self.assertEqual((p_asym['adr_exit_qty'], p_asym['stock_exit_qty']), (.06, 1.08))
+
+        # 3. Invalid multipliers < 1.0 fail closed
+        bad_exit = policy_for_level(0)
+        bad_exit['exit_multiplier'] = 0.5
+        with self.assertRaises(ValueError):
+            size_policy(bad_exit, 193.63, 5.378, REFERENCE_RULES)
+
 
 class LiveSizingTests(unittest.IsolatedAsyncioTestCase):
     async def test_filter_cache_is_bypassed_before_orders(self):

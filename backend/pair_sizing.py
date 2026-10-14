@@ -84,17 +84,27 @@ def size_policy(policy, adr_price, stock_price, rules):
     unit_a = round_step(max(amin, 2*smin*s/a), astep)
     unit_s = max(smin, round_step(unit_a*a/(2*s), sstep, ROUND_HALF_UP))
     multiplier = positive(policy['entry_multiplier'])
+    exit_multiplier = positive(policy.get('exit_multiplier', 1.0))
     if multiplier < 1:
-        raise ValueError('Entry multiplier cannot be smaller than the exit unit')
+        raise ValueError('Entry multiplier cannot be smaller than the basic unit (1.0x)')
+    if exit_multiplier < 1:
+        raise ValueError('Exit multiplier cannot be smaller than the basic unit (1.0x)')
     entry_a = round_step(unit_a*multiplier, astep)
     entry_s = max(unit_s, round_step(entry_a*a/(2*s), sstep, ROUND_HALF_UP))
+    exit_a = round_step(unit_a*exit_multiplier, astep)
+    exit_s = max(smin, round_step(exit_a*a/(2*s), sstep, ROUND_HALF_UP))
     if entry_a > positive(ar['max_qty']) or entry_s > positive(sr['max_qty']):
         raise ValueError('Balanced pair exceeds exchange market quantity limits')
+    if exit_a > positive(ar['max_qty']) or exit_s > positive(sr['max_qty']):
+        raise ValueError('Balanced exit pair exceeds exchange market quantity limits')
     delta = 2*entry_s*s - entry_a*a
     return {**policy, 'sizing_version': 'dollar_2x_v1', 'sizing_available': True,
             'adr_entry_qty': float(entry_a), 'stock_entry_qty': float(entry_s),
-            'adr_exit_qty': float(unit_a), 'stock_exit_qty': float(unit_s),
+            'adr_exit_qty': float(exit_a), 'stock_exit_qty': float(exit_s),
+            'unit_adr_qty': float(unit_a), 'unit_stock_qty': float(unit_s),
+            'entry_multiplier': float(multiplier), 'exit_multiplier': float(exit_multiplier),
             'sizing_adr_price': float(a), 'sizing_stock_price': float(s),
             'hedge_multiplier': 2.0, 'effective_entry_multiplier': float(entry_a/unit_a),
+            'effective_exit_multiplier': float(exit_a/unit_a),
             'entry_delta_usd': float(delta), 'entry_delta_pct': float(delta/(entry_a*a)*100),
             'exchange_rules': rules}

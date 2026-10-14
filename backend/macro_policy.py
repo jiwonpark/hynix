@@ -10,6 +10,7 @@ def policy_for_level(level=0):
         'level': level, 'score': level * 50,
         'regime': ('NORMAL', 'TOP_WATCH', 'TOPPING')[level],
         'entry_multiplier': multiplier,
+        'exit_multiplier': 1.0,
         'adr_entry_qty': round(.08 * multiplier, 2),
         'stock_entry_qty': round(1.4 * multiplier, 2),
         'adr_exit_qty': .07, 'stock_exit_qty': 1.2,

@@ -3528,6 +3528,50 @@
                 </div>
               </div>
 
+              <!-- 3.1b Tranche Sizing Multipliers (Manual/Auto Entry & Exit Multipliers) -->
+              <div id="trancheScalingBox" class="terminal-action-control" style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-top: 10px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 14px;">⚖️</span>
+                    <strong style="font-size: 12px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.3px;">Tranche Sizing Multipliers</strong>
+                    <span id="badgeTrancheScalingSymmetric" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #0369a1;">100% SYMMETRIC</span>
+                  </div>
+                  <div style="font-size: 11px; color: #64748b;">
+                    Basic unit: <strong id="lblBasicTradableUnit" style="color: #334155;">-- ADR / -- ETF</strong>
+                  </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px;">
+                  <!-- Entry Multiplier Control -->
+                  <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                      <span style="font-size: 11px; font-weight: 800; color: #0369a1;">ENTRY MULTIPLIER</span>
+                      <label style="display: flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: #64748b; cursor: pointer;" title="Automatically adjust entry size from 60h macro regime (1.0x / 1.25x / 1.5x)">
+                        <input type="checkbox" id="chkAutoEntryMultiplier">
+                        <span>Auto Macro</span>
+                      </label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <input id="inputEntryMultiplier" type="number" min="1.0" max="10.0" step="0.25" value="1.00" style="width: 72px; height: 28px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 6px; font-size: 12px; font-weight: 800; color: #0f172a;">
+                      <span style="font-size: 11.5px; font-weight: 700; color: #64748b;">× basic</span>
+                      <span id="lblEntryMultiplierQty" style="font-size: 10.5px; font-weight: 700; color: #0284c7; margin-left: auto;">-- ADR / -- ETF</span>
+                    </div>
+                  </div>
+
+                  <!-- Exit Multiplier Control -->
+                  <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                      <span style="font-size: 11px; font-weight: 800; color: #166534;">EXIT MULTIPLIER</span>
+                      <button id="btnSyncExitToEntry" type="button" style="height: 20px; padding: 0 6px; font-size: 10px; font-weight: 800; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 4px; cursor: pointer;" title="Set Exit Multiplier equal to Entry Multiplier for 100% full tranche exit">Match Entry (100%)</button>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <input id="inputExitMultiplier" type="number" min="1.0" max="10.0" step="0.25" value="1.00" style="width: 72px; height: 28px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 6px; font-size: 12px; font-weight: 800; color: #0f172a;">
+                      <span style="font-size: 11.5px; font-weight: 700; color: #64748b;">× basic</span>
+                      <span id="lblExitMultiplierQty" style="font-size: 10.5px; font-weight: 700; color: #16a34a; margin-left: auto;">-- ADR / -- ETF</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- 3.2 Manual Tranche Action Buttons -->
               <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-start; margin-top: 2px;">
                 <button id="btnStepTranche" class="terminal-action-control" type="button" style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #0284c7; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);">
@@ -12790,6 +12834,34 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (sizing) {
           const sizeText = sizing.sizing_available === false ? "Waiting for exchange sizing" : `${sizing.scale_in_skhy.toFixed(2)} ADR / ${sizing.scale_in_csop.toFixed(2)} ETF`;
           const exitText = `${Number(sizing.scale_out_skhy ?? criteria.exit_policy?.adr_exit_qty ?? 0).toFixed(2)} ADR / ${Number(sizing.scale_out_csop ?? criteria.exit_policy?.stock_exit_qty ?? 0).toFixed(2)} ETF`;
+          const unitText = `${Number(sizing.unit_skhy ?? 0).toFixed(2)} ADR / ${Number(sizing.unit_csop ?? 0).toFixed(2)} ETF`;
+          if ($("lblBasicTradableUnit")) $("lblBasicTradableUnit").textContent = unitText;
+
+          const isSymmetric = Math.abs((sizing.scale_in_skhy || 0) - (sizing.scale_out_skhy || 0)) < 1e-4;
+          const badgeSymmetric = $("badgeTrancheScalingSymmetric");
+          if (badgeSymmetric) {
+            badgeSymmetric.textContent = isSymmetric ? "100% SYMMETRIC" : `CORE DELTA: ${(sizing.residual_retained_skhy >= 0 ? "+" : "") + Number(sizing.residual_retained_skhy).toFixed(2)} ADR`;
+            badgeSymmetric.style.background = isSymmetric ? "#e0f2fe" : "#fef3c7";
+            badgeSymmetric.style.color = isSymmetric ? "#0369a1" : "#92400e";
+          }
+
+          const inpEntry = $("inputEntryMultiplier");
+          if (inpEntry && document.activeElement !== inpEntry) {
+            inpEntry.value = Number(sizing.entry_multiplier ?? 1.0).toFixed(2);
+          }
+          const chkAutoEntry = $("chkAutoEntryMultiplier");
+          if (chkAutoEntry && document.activeElement !== chkAutoEntry) {
+            chkAutoEntry.checked = Boolean(sizing.auto_entry_multiplier);
+            if (inpEntry) inpEntry.disabled = chkAutoEntry.checked;
+          }
+
+          const inpExit = $("inputExitMultiplier");
+          if (inpExit && document.activeElement !== inpExit) {
+            inpExit.value = Number(sizing.exit_multiplier ?? 1.0).toFixed(2);
+          }
+
+          if ($("lblEntryMultiplierQty")) $("lblEntryMultiplierQty").textContent = sizeText;
+          if ($("lblExitMultiplierQty")) $("lblExitMultiplierQty").textContent = exitText;
           if ($("valCritExitSize")) $("valCritExitSize").textContent = exitText;
           if ($("lblCritTPTitle")) $("lblCritTPTitle").textContent = `🎯 Anti-Churn Take-Profit (${exitText})`;
           if ($("lblStepTrancheSize")) $("lblStepTrancheSize").textContent = `➕ Scale In (${sizeText})`;
@@ -14493,6 +14565,55 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("btnStepTranche")) $("btnStepTranche").addEventListener("click", () => this.stepTrancheLive());
         if ($("btnReduceTranche")) $("btnReduceTranche").addEventListener("click", () => this.reduceTrancheLive());
         if ($("btnEmergencyFlatten")) $("btnEmergencyFlatten").addEventListener("click", () => this.emergencyFlattenLive());
+
+        const updateScalingLive = async (payload) => {
+          if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
+            const isKo = window.currentLang === "ko";
+            showToast(isKo ? "🔒 읽기 전용 모드에서는 배수 설정을 변경할 수 없습니다." : "🔒 Cannot adjust scaling in read-only mode.", "warn");
+            terminalLockManager.openPasswordModal();
+            return;
+          }
+          try {
+            const res = await fetch("/skhynix/api/trade/update_scaling", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+              await this.fetchHedgedStatus();
+            } else {
+              showToast(data.error || "Failed to update scaling", "danger");
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        };
+
+        $("inputEntryMultiplier")?.addEventListener("change", (e) => {
+          const val = parseFloat(e.target.value);
+          if (Number.isFinite(val) && val >= 1.0) {
+            updateScalingLive({ entry_multiplier: val });
+          }
+        });
+        $("chkAutoEntryMultiplier")?.addEventListener("change", (e) => {
+          const isChecked = e.target.checked;
+          if ($("inputEntryMultiplier")) $("inputEntryMultiplier").disabled = isChecked;
+          updateScalingLive({ auto_entry_multiplier: isChecked });
+        });
+        $("inputExitMultiplier")?.addEventListener("change", (e) => {
+          const val = parseFloat(e.target.value);
+          if (Number.isFinite(val) && val >= 1.0) {
+            updateScalingLive({ exit_multiplier: val });
+          }
+        });
+        $("btnSyncExitToEntry")?.addEventListener("click", () => {
+          const entryVal = parseFloat($("inputEntryMultiplier")?.value || "1.0");
+          if (Number.isFinite(entryVal) && entryVal >= 1.0) {
+            if ($("inputExitMultiplier")) $("inputExitMultiplier").value = entryVal.toFixed(2);
+            updateScalingLive({ exit_multiplier: entryVal });
+          }
+        });
 
         if ($("chkAutoPeriodic48h")) {
           $("chkAutoPeriodic48h").addEventListener("change", async (e) => {

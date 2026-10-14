@@ -2438,6 +2438,16 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             get_cached_parity_bars("1h", 61),
         )
         macro = macro_policy(closed_values(parity_bars_1h, 3600, time.time()))
+        auto_entry = bool(auto_state.get("auto_entry_multiplier", False))
+        auto_exit = bool(auto_state.get("auto_exit_multiplier", False))
+        manual_entry_mult = float(auto_state.get("entry_multiplier", 1.0))
+        manual_exit_mult = float(auto_state.get("exit_multiplier", 1.0))
+        if not auto_entry:
+            macro["entry_multiplier"] = max(1.0, manual_entry_mult)
+        if not auto_exit:
+            macro["exit_multiplier"] = max(1.0, manual_exit_mult)
+        else:
+            macro["exit_multiplier"] = 1.0
         try:
             rules = await exchange_rules(binance_client)
             if adr_mark <= 0 or stock_mark <= 0 or stock_sym != "CSOPSKHYNIX2LUSDT":
@@ -2846,8 +2856,14 @@ async def _compute_hedged_status() -> Dict[str, Any]:
                 "scale_out_skhy": exit_adr_qty,
                 "scale_out_csop": exit_stock_qty,
                 "scale_out_notional_usd": round(exit_adr_qty*adr_mark + exit_stock_qty*stock_mark, 2),
-                "residual_retained_skhy": round(entry_adr_qty-macro["adr_exit_qty"], 8),
-                "residual_retained_csop": round(entry_stock_qty-macro["stock_exit_qty"], 8),
+                "unit_skhy": macro.get("unit_adr_qty", macro["adr_exit_qty"]),
+                "unit_csop": macro.get("unit_stock_qty", macro["stock_exit_qty"]),
+                "entry_multiplier": macro.get("entry_multiplier", 1.0),
+                "exit_multiplier": macro.get("exit_multiplier", 1.0),
+                "auto_entry_multiplier": auto_entry,
+                "auto_exit_multiplier": auto_exit,
+                "residual_retained_skhy": round(entry_adr_qty - exit_adr_qty, 8),
+                "residual_retained_csop": round(entry_stock_qty - exit_stock_qty, 8),
                 "sizing_available": macro["sizing_available"],
                 "entry_delta_usd": macro.get("entry_delta_usd"),
                 "entry_delta_pct": macro.get("entry_delta_pct")
@@ -3633,6 +3649,41 @@ async def update_conditions(toggles_update: Dict[str, bool]) -> Dict[str, Any]:
     save_auto_tranche_state(state)
     logger.info(f"[Auto-Tranche] Batch updated {len(toggles_update)} condition toggles")
     return {"success": True, "condition_toggles": toggles}
+
+@app.post("/api/trade/update_scaling")
+async def update_scaling(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Updates manual scaling multipliers for entry and exit."""
+    state = load_auto_tranche_state()
+    if "entry_multiplier" in payload:
+        try:
+            val = float(payload["entry_multiplier"])
+            if val < 1.0 or val > 10.0:
+                return {"success": False, "error": "Entry multiplier must be between 1.0x and 10.0x"}
+            state["entry_multiplier"] = round(val, 2)
+        except (ValueError, TypeError):
+            return {"success": False, "error": "Invalid entry_multiplier"}
+    if "exit_multiplier" in payload:
+        try:
+            val = float(payload["exit_multiplier"])
+            if val < 1.0 or val > 10.0:
+                return {"success": False, "error": "Exit multiplier must be between 1.0x and 10.0x"}
+            state["exit_multiplier"] = round(val, 2)
+        except (ValueError, TypeError):
+            return {"success": False, "error": "Invalid exit_multiplier"}
+    if "auto_entry_multiplier" in payload:
+        state["auto_entry_multiplier"] = bool(payload["auto_entry_multiplier"])
+    if "auto_exit_multiplier" in payload:
+        state["auto_exit_multiplier"] = bool(payload["auto_exit_multiplier"])
+    state["last_action"] = f"SCALING_UPDATED: Entry {state.get('entry_multiplier', 1.0)}x (auto={state.get('auto_entry_multiplier', False)}), Exit {state.get('exit_multiplier', 1.0)}x (auto={state.get('auto_exit_multiplier', False)})"
+    state["last_action_time"] = time.time()
+    save_auto_tranche_state(state)
+    logger.info(f"[Auto-Tranche] Scaling multipliers updated: {state['last_action']}")
+    return {"success": True, "scaling": {
+        "entry_multiplier": state.get("entry_multiplier", 1.0),
+        "exit_multiplier": state.get("exit_multiplier", 1.0),
+        "auto_entry_multiplier": state.get("auto_entry_multiplier", False),
+        "auto_exit_multiplier": state.get("auto_exit_multiplier", False),
+    }}
 
 async def auto_tranche_worker():
     """
