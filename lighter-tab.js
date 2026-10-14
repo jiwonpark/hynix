@@ -665,6 +665,11 @@
         this.setText("valCalculatedMargin", "1x dollar-neutral pair");
       }
 
+      const hedgeScalingBox = lid("trancheScalingBox");
+      if (hedgeScalingBox) hedgeScalingBox.style.display = "none";
+      const cryptoScalingBox = lid("cryptoDirectionalScalingBox");
+      if (cryptoScalingBox) cryptoScalingBox.style.display = "none";
+
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput) {
         notionalInput.disabled = false;
@@ -913,6 +918,10 @@
       this.currentParadigm = mode;
       safeStorage.setItem(STRATEGY_STORAGE_KEY, mode);
       this.backtestMarkers = [];
+      const targets = lid("tradeMarkerTargets");
+      if (targets) targets.textContent = "";
+      const svg = lid("tradeTrianglesLayer");
+      if (svg) svg.innerHTML = "";
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       const p = this.paradigms[mode];
@@ -4520,6 +4529,10 @@
       if (button) button.disabled = true;
       if (summary) summary.textContent = "Running…";
       this.backtestMarkers = [];
+      const targets = lid("tradeMarkerTargets");
+      if (targets) targets.textContent = "";
+      const svg = lid("tradeTrianglesLayer");
+      if (svg) svg.innerHTML = "";
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       try {
