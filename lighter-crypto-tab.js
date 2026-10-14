@@ -2498,8 +2498,8 @@
     calculateTrendRanges(bars) {
       const points = [];
       let state = "SIDEWAYS", pending = null, pendingCount = 0;
-      for (let index = 19; index < bars.length; index += 1) {
-        const values = bars.slice(index - 19, index + 1).map((bar) => Number(bar.value));
+      for (let index = 23; index < bars.length; index += 1) {
+        const values = bars.slice(index - 23, index + 1).map((bar) => Number(bar.value));
         if (values.some((value) => !Number.isFinite(value))) continue;
         const score = this.trendScore(values);
         let target;
@@ -2511,7 +2511,7 @@
         } else {
           if (target === pending) pendingCount += 1;
           else { pending = target; pendingCount = 1; }
-          if (pendingCount >= 1) { state = target; pending = null; pendingCount = 0; }
+          if (pendingCount >= 2) { state = target; pending = null; pendingCount = 0; }
         }
         points.push({ direction: state, score, time: bars[index].time, index });
       }

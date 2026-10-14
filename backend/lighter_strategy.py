@@ -3,8 +3,8 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 OU_MIN_ABS_DEVIATION_PP = 0.25
-OU_MACRO_EMA_SPAN = 20
-OU_MACRO_SLOPE_BARS = 4
+OU_MACRO_EMA_SPAN = 60
+OU_MACRO_SLOPE_BARS = 12
 
 
 def _ou_macro_ema_slope(ratios: List[float], span: int = OU_MACRO_EMA_SPAN,
@@ -45,7 +45,7 @@ def _trend_score(window: List[float]) -> float:
     return max(-1.0, min(1.0, 0.45 * slope_score + 0.35 * ma_score + 0.20 * efficiency))
 
 
-def classify_trend_direction(values: List[float], window_size: int = 20) -> str:
+def classify_trend_direction(values: List[float], window_size: int = 24) -> str:
     """Return the causal 1-bar-confirmed fast trend regime (UPTREND / DOWNTREND / SIDEWAYS)."""
     clean = [float(value) for value in values if math.isfinite(float(value))]
     if len(clean) < window_size:
@@ -68,36 +68,35 @@ def classify_trend_direction(values: List[float], window_size: int = 20) -> str:
                 pending_count += 1
             else:
                 pending, pending_count = target, 1
-            if pending_count >= 1:
+            if pending_count >= 2:
                 state, pending, pending_count = target, None, 0
     return state
 
 
-def _macro_trend_aligned(values: List[float], candidate_side: int) -> bool:
+def _macro_trend_aligned(values: List[float], candidate_side: int,
+                         span: int = OU_MACRO_EMA_SPAN,
+                         slope_bars: int = OU_MACRO_SLOPE_BARS) -> bool:
     """Check Condition #5 (Macro trend / Green-Red range alignment).
 
-    Requires at least 20 completed bars before enforcing so short-window
-    unit tests without macro warmup remain unaffected.
-    Blocks Shorts (candidate_side < 0) during Green UPTREND ranges or positive
-    macro EMA slope, and blocks Longs (candidate_side > 0) during Red DOWNTREND
-    ranges or negative macro EMA slope.
+    Requires at least 60 completed bars (1h on 1m or 5h on 5m) before enforcing
+    so short-window unit tests without macro warmup remain unaffected.
+    Uses responsive 1-bar trend regime as primary directional filter:
+    Blocks Shorts during UPTREND and Longs during DOWNTREND. In SIDEWAYS regime,
+    checks macro EMA slope.
     """
-    if len(values) < 20:
+    if len(values) < 60:
         return True
     direction = classify_trend_direction(values)
-    macro_slope = _ou_macro_ema_slope(values[:-1], OU_MACRO_EMA_SPAN, OU_MACRO_SLOPE_BARS)
-    if candidate_side < 0:
-        if direction == "UPTREND":
+    if candidate_side < 0 and direction == "UPTREND":
+        return False
+    if candidate_side > 0 and direction == "DOWNTREND":
+        return False
+    if direction == "SIDEWAYS":
+        macro_slope = _ou_macro_ema_slope(values[:-1], span, slope_bars)
+        if candidate_side < 0 and macro_slope is not None and macro_slope > 0:
             return False
-        if macro_slope is not None and macro_slope > 0:
+        if candidate_side > 0 and macro_slope is not None and macro_slope < 0:
             return False
-        return True
-    if candidate_side > 0:
-        if direction == "DOWNTREND":
-            return False
-        if macro_slope is not None and macro_slope < 0:
-            return False
-        return True
     return True
 
 
