@@ -409,6 +409,10 @@
     async selectSymbol(sym) {
       if (!sym) return;
       this.selectedSymbol = sym;
+      this.backtestMarkers = [];
+      this.latestReplayConditionResult = null;
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
       ["BTC", "ETH", "SOL", "DOGE", "XRP"].forEach((s) => {
         const btn = $(`lighterCrypto_sym_${s}`);
         if (btn) {
@@ -787,8 +791,13 @@
         button.disabled = false;
         button.addEventListener("click", () => {
           this.interval = value;
+          this.backtestMarkers = [];
+          this.latestReplayConditionResult = null;
+          this.renderMarkers();
+          this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();
           this.refreshChart();
+          this.runBacktest();
         });
       });
 
@@ -1002,6 +1011,10 @@
       if (!this.paradigms[mode]) return;
       this.currentParadigm = mode;
       safeStorage.setItem(STRATEGY_STORAGE_KEY, mode);
+      this.backtestMarkers = [];
+      this.latestReplayConditionResult = null;
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
       const p = this.paradigms[mode];
 
       if (typeof document.querySelectorAll === "function") {
@@ -4675,6 +4688,11 @@
       const button = lid("btnRerunDynamicBacktest");
       if (button) button.disabled = true;
       if (summary) summary.textContent = "Running…";
+      this.backtestMarkers = [];
+      this.latestReplayConditionResult = null;
+      this.replayConditionSignature = null;
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
       try {
         if (this.currentParadigm === "ou_quant") {
           const controls = $("lighterCrypto_paradigmDetailSection")?.querySelectorAll?.("input[type=number]") || [];
@@ -4684,8 +4702,6 @@
           }
         }
         const settings = this.replaySettings();
-        this.latestReplayConditionResult = null;
-        this.replayConditionSignature = null;
         this.updateRulesMatchStatus();
         const trendSlope = settings.trend_slope_min;
         const trendPullback = settings.trend_pullback_dist;
@@ -4788,6 +4804,9 @@
       } catch (error) {
         if (requestId === this.backtestRequestId) {
           this.latestReplayConditionResult = null;
+          this.backtestMarkers = [];
+          this.renderMarkers();
+          this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();
           if (summary) summary.textContent = error.message;
         }

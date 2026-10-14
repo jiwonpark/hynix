@@ -640,8 +640,12 @@
         button.disabled = false;
         button.addEventListener("click", () => {
           this.interval = value;
+          this.backtestMarkers = [];
+          this.renderMarkers();
+          this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();
           this.refreshChart();
+          this.runBacktest();
         });
       });
 
@@ -908,6 +912,9 @@
       if (!this.paradigms[mode]) return;
       this.currentParadigm = mode;
       safeStorage.setItem(STRATEGY_STORAGE_KEY, mode);
+      this.backtestMarkers = [];
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
       const p = this.paradigms[mode];
 
       if (typeof document.querySelectorAll === "function") {
@@ -4512,6 +4519,9 @@
       const button = lid("btnRerunDynamicBacktest");
       if (button) button.disabled = true;
       if (summary) summary.textContent = "Running…";
+      this.backtestMarkers = [];
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
       try {
         if (this.currentParadigm === "ou_quant") {
           const controls = $("lighter_paradigmDetailSection")?.querySelectorAll?.("input[type=number]") || [];
@@ -4615,9 +4625,14 @@
           }
         }
       } catch (error) {
-        if (requestId === this.backtestRequestId && this.currentParadigm === "ou_quant")
-          this.renderOuConditionStatus(null);
-        if (summary && requestId === this.backtestRequestId) summary.textContent = error.message;
+        if (requestId === this.backtestRequestId) {
+          if (this.currentParadigm === "ou_quant") this.renderOuConditionStatus(null);
+          this.backtestMarkers = [];
+          this.renderMarkers();
+          this.renderCurrentPositionReferenceLines();
+          this.updateRulesMatchStatus();
+          if (summary) summary.textContent = error.message;
+        }
       } finally { if (button && requestId === this.backtestRequestId) button.disabled = false; }
     },
 

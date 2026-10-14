@@ -409,6 +409,10 @@
     async selectSymbol(sym) {
       if (!sym) return;
       this.selectedSymbol = sym;
+      this.backtestMarkers = [];
+      this.latestReplayConditionResult = null;
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
       ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"].forEach((s) => {
         const btn = $(`crypto_sym_${s}`);
         if (btn) {
@@ -775,8 +779,13 @@
         button.disabled = false;
         button.addEventListener("click", () => {
           this.interval = value;
+          this.backtestMarkers = [];
+          this.latestReplayConditionResult = null;
+          this.renderMarkers();
+          this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();
           this.refreshChart();
+          this.runBacktest();
         });
       });
 
@@ -988,6 +997,10 @@
       if (!this.paradigms[mode]) return;
       this.currentParadigm = mode;
       safeStorage.setItem(STRATEGY_STORAGE_KEY, mode);
+      this.backtestMarkers = [];
+      this.latestReplayConditionResult = null;
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
       const p = this.paradigms[mode];
 
       if (typeof document.querySelectorAll === "function") {
@@ -4459,6 +4472,11 @@
       const button = lid("btnRerunDynamicBacktest");
       if (button) button.disabled = true;
       if (summary) summary.textContent = "Running…";
+      this.backtestMarkers = [];
+      this.latestReplayConditionResult = null;
+      this.replayConditionSignature = null;
+      this.renderMarkers();
+      this.renderCurrentPositionReferenceLines();
       try {
         const settings = this.replaySettings();
         this.updateRulesMatchStatus();
@@ -4546,7 +4564,14 @@
           }
         }
       } catch (error) {
-        if (summary && requestId === this.backtestRequestId) summary.textContent = error.message;
+        if (requestId === this.backtestRequestId) {
+          this.latestReplayConditionResult = null;
+          this.backtestMarkers = [];
+          this.renderMarkers();
+          this.renderCurrentPositionReferenceLines();
+          this.updateRulesMatchStatus();
+          if (summary) summary.textContent = error.message;
+        }
       } finally { if (button && requestId === this.backtestRequestId) button.disabled = false; }
     },
 
