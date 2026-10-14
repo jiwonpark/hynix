@@ -83,28 +83,47 @@ def size_policy(policy, adr_price, stock_price, rules):
     smin = round_step(max(positive(sr['min_qty']), positive(sr['min_notional']) / s), sstep)
     unit_a = round_step(max(amin, 2*smin*s/a), astep)
     unit_s = max(smin, round_step(unit_a*a/(2*s), sstep, ROUND_HALF_UP))
-    multiplier = positive(policy['entry_multiplier'])
-    exit_multiplier = positive(policy.get('exit_multiplier', 1.0))
-    if multiplier < 1:
-        raise ValueError('Entry multiplier cannot be smaller than the basic unit (1.0x)')
-    if exit_multiplier < 1:
+    short_mult = positive(policy.get('short_spread_multiplier', policy.get('entry_multiplier', 1.0)))
+    long_mult = positive(policy.get('long_spread_multiplier', 1.0))
+    if short_mult < 1:
+        raise ValueError('Short spread multiplier cannot be smaller than the basic unit (1.0x)')
+    if long_mult < 1:
+        raise ValueError('Long spread multiplier cannot be smaller than the basic unit (1.0x)')
+    if 'exit_multiplier' in policy and positive(policy['exit_multiplier']) < 1:
         raise ValueError('Exit multiplier cannot be smaller than the basic unit (1.0x)')
-    entry_a = round_step(unit_a*multiplier, astep)
-    entry_s = max(unit_s, round_step(entry_a*a/(2*s), sstep, ROUND_HALF_UP))
-    exit_a = round_step(unit_a*exit_multiplier, astep)
-    exit_s = max(smin, round_step(exit_a*a/(2*s), sstep, ROUND_HALF_UP))
+    has_explicit_dir = 'short_spread_multiplier' in policy or 'long_spread_multiplier' in policy
+    has_legacy_exit = 'exit_multiplier' in policy and not has_explicit_dir
+    exit_multiplier = positive(policy.get('exit_multiplier', 1.0)) if has_legacy_exit else short_mult
+
+    short_a = round_step(unit_a * short_mult, astep)
+    short_s = max(unit_s, round_step(short_a * a / (2 * s), sstep, ROUND_HALF_UP))
+    long_a = round_step(unit_a * long_mult, astep)
+    long_s = max(unit_s, round_step(long_a * a / (2 * s), sstep, ROUND_HALF_UP))
+
+    is_long_dir = policy.get('spread_direction') == 'LONG_SPREAD'
+    active_mult = long_mult if is_long_dir else short_mult
+    entry_a = long_a if is_long_dir else short_a
+    entry_s = long_s if is_long_dir else short_s
+    exit_a = round_step(unit_a * exit_multiplier, astep) if has_legacy_exit else entry_a
+    exit_s = max(smin, round_step(exit_a * a / (2 * s), sstep, ROUND_HALF_UP)) if has_legacy_exit else entry_s
+
     if entry_a > positive(ar['max_qty']) or entry_s > positive(sr['max_qty']):
         raise ValueError('Balanced pair exceeds exchange market quantity limits')
     if exit_a > positive(ar['max_qty']) or exit_s > positive(sr['max_qty']):
         raise ValueError('Balanced exit pair exceeds exchange market quantity limits')
-    delta = 2*entry_s*s - entry_a*a
+    delta = 2 * entry_s * s - entry_a * a
     return {**policy, 'sizing_version': 'dollar_2x_v1', 'sizing_available': True,
             'adr_entry_qty': float(entry_a), 'stock_entry_qty': float(entry_s),
             'adr_exit_qty': float(exit_a), 'stock_exit_qty': float(exit_s),
             'unit_adr_qty': float(unit_a), 'unit_stock_qty': float(unit_s),
-            'entry_multiplier': float(multiplier), 'exit_multiplier': float(exit_multiplier),
+            'short_spread_multiplier': float(short_mult), 'long_spread_multiplier': float(long_mult),
+            'short_adr_qty': float(short_a), 'short_stock_qty': float(short_s),
+            'long_adr_qty': float(long_a), 'long_stock_qty': float(long_s),
+            'entry_multiplier': float(active_mult), 'exit_multiplier': float(exit_multiplier),
             'sizing_adr_price': float(a), 'sizing_stock_price': float(s),
-            'hedge_multiplier': 2.0, 'effective_entry_multiplier': float(entry_a/unit_a),
-            'effective_exit_multiplier': float(exit_a/unit_a),
-            'entry_delta_usd': float(delta), 'entry_delta_pct': float(delta/(entry_a*a)*100),
+            'hedge_multiplier': 2.0, 'effective_entry_multiplier': float(entry_a / unit_a),
+            'effective_exit_multiplier': float(exit_a / unit_a),
+            'effective_short_multiplier': float(short_a / unit_a),
+            'effective_long_multiplier': float(long_a / unit_a),
+            'entry_delta_usd': float(delta), 'entry_delta_pct': float(delta / (entry_a * a) * 100),
             'exchange_rules': rules}

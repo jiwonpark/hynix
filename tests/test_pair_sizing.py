@@ -147,6 +147,40 @@ class PairSizingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             size_policy(bad_exit, 193.63, 5.378, REFERENCE_RULES)
 
+    def test_two_way_directional_multipliers(self):
+        # Base unit at 193.63 / 5.378 is 0.06 ADR / 1.08 ETF
+        policy = policy_for_level(0)
+        policy['short_spread_multiplier'] = 2.0
+        policy['long_spread_multiplier'] = 1.5
+        p = size_policy(policy, 193.63, 5.378, REFERENCE_RULES)
+
+        # Check calculated directional sizes
+        self.assertEqual(p['short_adr_qty'], 0.12)
+        self.assertEqual(p['short_stock_qty'], 2.16)
+        self.assertEqual(p['long_adr_qty'], 0.09)
+        self.assertEqual(p['long_stock_qty'], 1.62)
+
+        # Default active direction is short spread (symmetric entry and exit)
+        self.assertEqual(p['adr_entry_qty'], 0.12)
+        self.assertEqual(p['stock_entry_qty'], 2.16)
+        self.assertEqual(p['adr_exit_qty'], 0.12)
+        self.assertEqual(p['stock_exit_qty'], 2.16)
+
+        # Explicit long direction activates long spread sizing (symmetric entry and exit)
+        policy_long = {**policy, 'spread_direction': 'LONG_SPREAD'}
+        p_long = size_policy(policy_long, 193.63, 5.378, REFERENCE_RULES)
+        self.assertEqual(p_long['adr_entry_qty'], 0.09)
+        self.assertEqual(p_long['stock_entry_qty'], 1.62)
+        self.assertEqual(p_long['adr_exit_qty'], 0.09)
+        self.assertEqual(p_long['stock_exit_qty'], 1.62)
+
+        # Fail closed on invalid multipliers
+        for key in ('short_spread_multiplier', 'long_spread_multiplier'):
+            bad = dict(policy)
+            bad[key] = 0.8
+            with self.assertRaises(ValueError):
+                size_policy(bad, 193.63, 5.378, REFERENCE_RULES)
+
 
 class LiveSizingTests(unittest.IsolatedAsyncioTestCase):
     async def test_filter_cache_is_bypassed_before_orders(self):

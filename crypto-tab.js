@@ -805,6 +805,11 @@
         this.setText("valCalculatedMargin", "Single-leg perpetual contract");
       }
 
+      const scalingBox = lid("cryptoDirectionalScalingBox");
+      if (scalingBox) scalingBox.style.display = "block";
+      const hedgeScalingBox = lid("trancheScalingBox");
+      if (hedgeScalingBox) hedgeScalingBox.style.display = "none";
+
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput) {
         notionalInput.disabled = false;
@@ -812,8 +817,71 @@
         notionalInput.max = "500";
         notionalInput.step = "5";
         notionalInput.value = "150";
-        notionalInput.addEventListener("input", () => this.updateLeverageMetrics());
+        notionalInput.addEventListener("input", () => {
+          this.updateLeverageMetrics();
+          this.renderCryptoNotionals();
+        });
       }
+
+      const syncCryptoLong = (val) => {
+        const num = parseFloat(val);
+        if (!Number.isFinite(num) || num < 0.1) return;
+        if (lid("badgeCryptoLongMultiplier")) lid("badgeCryptoLongMultiplier").textContent = `${num.toFixed(2)}×`;
+        this.renderCryptoNotionals();
+      };
+      const syncCryptoShort = (val) => {
+        const num = parseFloat(val);
+        if (!Number.isFinite(num) || num < 0.1) return;
+        if (lid("badgeCryptoShortMultiplier")) lid("badgeCryptoShortMultiplier").textContent = `${num.toFixed(2)}×`;
+        this.renderCryptoNotionals();
+      };
+
+      lid("rangeCryptoLongMultiplier")?.addEventListener("input", (e) => {
+        if (lid("inputCryptoLongMultiplier")) lid("inputCryptoLongMultiplier").value = parseFloat(e.target.value).toFixed(2);
+        syncCryptoLong(e.target.value);
+      });
+      lid("rangeCryptoLongMultiplier")?.addEventListener("change", (e) => {
+        this.saveCryptoScaling({ long_multiplier: parseFloat(e.target.value) });
+        this.requestBacktest();
+      });
+      lid("inputCryptoLongMultiplier")?.addEventListener("input", (e) => {
+        const val = parseFloat(e.target.value);
+        if (Number.isFinite(val) && val >= 0.1) {
+          if (lid("rangeCryptoLongMultiplier")) lid("rangeCryptoLongMultiplier").value = Math.min(5.0, val).toFixed(2);
+          syncCryptoLong(val);
+        }
+      });
+      lid("inputCryptoLongMultiplier")?.addEventListener("change", (e) => {
+        const val = parseFloat(e.target.value);
+        if (Number.isFinite(val) && val >= 0.1) {
+          this.saveCryptoScaling({ long_multiplier: val });
+          this.requestBacktest();
+        }
+      });
+
+      lid("rangeCryptoShortMultiplier")?.addEventListener("input", (e) => {
+        if (lid("inputCryptoShortMultiplier")) lid("inputCryptoShortMultiplier").value = parseFloat(e.target.value).toFixed(2);
+        syncCryptoShort(e.target.value);
+      });
+      lid("rangeCryptoShortMultiplier")?.addEventListener("change", (e) => {
+        this.saveCryptoScaling({ short_multiplier: parseFloat(e.target.value) });
+        this.requestBacktest();
+      });
+      lid("inputCryptoShortMultiplier")?.addEventListener("input", (e) => {
+        const val = parseFloat(e.target.value);
+        if (Number.isFinite(val) && val >= 0.1) {
+          if (lid("rangeCryptoShortMultiplier")) lid("rangeCryptoShortMultiplier").value = Math.min(5.0, val).toFixed(2);
+          syncCryptoShort(val);
+        }
+      });
+      lid("inputCryptoShortMultiplier")?.addEventListener("change", (e) => {
+        const val = parseFloat(e.target.value);
+        if (Number.isFinite(val) && val >= 0.1) {
+          this.saveCryptoScaling({ short_multiplier: val });
+          this.requestBacktest();
+        }
+      });
+      this.renderCryptoNotionals();
       const autoToggle = lid("chkAutoPeriodic48h");
       if (autoToggle) autoToggle.addEventListener("change", () => this.toggleLiveBot(autoToggle.checked));
       const switchPosTab = (activeTab) => {
@@ -919,7 +987,7 @@
           input.dataset.unsaved = "true";
           this.updateDeployButtonState();
           this.updateRulesMatchStatus();
-          this.runBacktest();
+          this.requestBacktest();
         });
       });
       const labels = {
@@ -999,6 +1067,12 @@
       safeStorage.setItem(STRATEGY_STORAGE_KEY, mode);
       this.backtestMarkers = [];
       this.latestReplayConditionResult = null;
+      const targets = lid("tradeMarkerTargets");
+      if (targets) targets.textContent = "";
+      const svg = lid("tradeTrianglesLayer");
+      if (svg) svg.innerHTML = "";
+      const summary = lid("dynamicBacktestStatus");
+      if (summary) summary.textContent = "Calculating strategy signals…";
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       const p = this.paradigms[mode];
@@ -1577,6 +1651,8 @@
         strategy_interval: this.interval || "5m",
         selected_symbol: this.selectedSymbol || "BTCUSDT",
         notional_usd: Number(this.orderNotional()),
+        long_multiplier: this.longMultiplier(),
+        short_multiplier: this.shortMultiplier(),
         max_tranches: numeric("crypto_inputLiveMaxTranches", Number(this.botState?.max_tranches ?? 5)),
         max_book_spread_bps: numeric("crypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45)),
       };
@@ -2065,6 +2141,8 @@
       return {
         symbol: this.selectedSymbol || "BTCUSDT",
         interval: this.interval, limit: 500, strategy_mode: mode,
+        long_multiplier: this.longMultiplier(),
+        short_multiplier: this.shortMultiplier(),
         entry_z: mode === "ou_quant" ? numeric("crypto_inpOuEntryZ", liveOuEntryFallback) :
           mode === "custom" ? numeric("crypto_inpCustomEntryZ", 1.5) :
           mode === "grid" ? Number(this.gridReplayEntryZ ?? 1.5) : 1.5,
@@ -2588,6 +2666,29 @@
         notionalInput.value = String(bot?.notional_usd || 25);
         notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5";
       }
+      if (bot?.long_multiplier != null) {
+        const lm = parseFloat(bot.long_multiplier);
+        if (Number.isFinite(lm) && lm >= 0.1) {
+          const inp = lid("inputCryptoLongMultiplier");
+          const rng = lid("rangeCryptoLongMultiplier");
+          if (inp && document.activeElement !== inp) inp.value = lm.toFixed(2);
+          if (rng && document.activeElement !== rng) rng.value = Math.min(5.0, Math.max(1.0, lm)).toFixed(2);
+          const badge = lid("badgeCryptoLongMultiplier");
+          if (badge) badge.textContent = `${lm.toFixed(2)}×`;
+        }
+      }
+      if (bot?.short_multiplier != null) {
+        const sm = parseFloat(bot.short_multiplier);
+        if (Number.isFinite(sm) && sm >= 0.1) {
+          const inp = lid("inputCryptoShortMultiplier");
+          const rng = lid("rangeCryptoShortMultiplier");
+          if (inp && document.activeElement !== inp) inp.value = sm.toFixed(2);
+          if (rng && document.activeElement !== rng) rng.value = Math.min(5.0, Math.max(1.0, sm)).toFixed(2);
+          const badge = lid("badgeCryptoShortMultiplier");
+          if (badge) badge.textContent = `${sm.toFixed(2)}×`;
+        }
+      }
+      this.renderCryptoNotionals();
       const tradeRateInput = lid("inputLiveTradeRate");
       if (tradeRateInput && document.activeElement !== tradeRateInput) {
         tradeRateInput.value = String(Math.round(tradeRate * 5) / 5);
@@ -3767,7 +3868,62 @@
       }
     },
 
-    orderNotional() { return Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25))); },
+    longMultiplier() {
+      const val = parseFloat(lid("inputCryptoLongMultiplier")?.value || lid("rangeCryptoLongMultiplier")?.value || 1.0);
+      return Number.isFinite(val) && val >= 0.1 ? val : 1.0;
+    },
+
+    shortMultiplier() {
+      const val = parseFloat(lid("inputCryptoShortMultiplier")?.value || lid("rangeCryptoShortMultiplier")?.value || 1.0);
+      return Number.isFinite(val) && val >= 0.1 ? val : 1.0;
+    },
+
+    orderNotional(side = 0) {
+      const base = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
+      if (side > 0) return Number((base * this.longMultiplier()).toFixed(2));
+      if (side < 0) return Number((base * this.shortMultiplier()).toFixed(2));
+      return base;
+    },
+
+    renderCryptoNotionals() {
+      const base = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
+      const longMul = this.longMultiplier();
+      const shortMul = this.shortMultiplier();
+      const longNotional = base * longMul;
+      const shortNotional = base * shortMul;
+      const longLbl = lid("lblCryptoLongNotional");
+      if (longLbl) longLbl.textContent = `Long: $${longNotional.toFixed(0)} (${longMul.toFixed(2)}×)`;
+      const shortLbl = lid("lblCryptoShortNotional");
+      if (shortLbl) shortLbl.textContent = `Short: $${shortNotional.toFixed(0)} (${shortMul.toFixed(2)}×)`;
+    },
+
+    async saveCryptoScaling(payload) {
+      if (window.terminalLockManager?.isLocked) {
+        return;
+      }
+      try {
+        const data = await apiPost("/api/crypto/bot/config", payload);
+        if (data?.bot) {
+          this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
+        }
+      } catch (err) {
+        console.warn("Failed to auto-save crypto directional scaling:", err);
+      }
+    },
+
+    requestBacktest() {
+      if (this.backtestDebounceTimer) clearTimeout(this.backtestDebounceTimer);
+      this.backtestMarkers = [];
+      const targets = lid("tradeMarkerTargets");
+      if (targets) targets.textContent = "";
+      const svg = lid("tradeTrianglesLayer");
+      if (svg) svg.innerHTML = "";
+      const summary = lid("dynamicBacktestStatus");
+      if (summary) summary.textContent = "Calculating strategy signals…";
+      this.renderMarkers();
+      this.backtestDebounceTimer = setTimeout(() => this.runBacktest(), 150);
+    },
+
     virtualPnl() { return this.entries.reduce((sum, entry) => sum + (this.currentRatio == null ? 0 : entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio), 0); },
     virtualPnlText() { const pnl = this.virtualPnl(); return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`; },
 
@@ -3919,7 +4075,7 @@
         window.showToast?.("Save this symbol to the live bot before ordering.", "warn");
         return;
       }
-      const notional = this.orderNotional();
+      const notional = this.orderNotional(side);
       if (!window.confirm(`Place a REAL ${side > 0 ? "BUY" : "SELL"} market order for approximately $${notional.toFixed(2)} of ${this.selectedSymbol} on Binance Futures?`)) return;
       const btn = lid("btnStepTranche");
       if (btn) btn.disabled = true;
@@ -4195,7 +4351,7 @@
         return;
       }
 
-      const notional = this.orderNotional();
+      const notional = this.orderNotional(side);
       const entry = { time: Date.now(), symbol: sym, ratio: this.currentRatio, notional, side };
       this.entries.push(entry);
       this.ledger.unshift({ ...entry, action: dirLabel, pnl: null });
@@ -4475,6 +4631,10 @@
       this.backtestMarkers = [];
       this.latestReplayConditionResult = null;
       this.replayConditionSignature = null;
+      const targets = lid("tradeMarkerTargets");
+      if (targets) targets.textContent = "";
+      const svg = lid("tradeTrianglesLayer");
+      if (svg) svg.innerHTML = "";
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       try {

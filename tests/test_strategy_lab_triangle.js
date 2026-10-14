@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+global.requestAnimationFrame = global.requestAnimationFrame || (() => 0);
 const Controller = require('../strategy-execution-chart.js');
 
 function createMockDom() {
@@ -138,6 +139,7 @@ const context = {
     StrategyExecutionChartFrame: Controller.Frame,
     StrategyExecutionChartController: Controller,
     LightweightCharts: mockLightweightCharts,
+    requestAnimationFrame: fn => fn(),
     localStorage: {
       getItem: key => savedSettings.get(key) || null,
       setItem: (key, value) => savedSettings.set(key, value),

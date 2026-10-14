@@ -3528,53 +3528,61 @@
                 </div>
               </div>
 
-              <!-- 3.1b Tranche Sizing Multipliers (Manual/Auto Entry & Exit Multipliers) -->
+              <!-- 3.1b Directional Two-Way Sizing Multipliers -->
               <div id="trancheScalingBox" class="terminal-action-control" style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-top: 10px; margin-bottom: 8px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
                   <div style="display: flex; align-items: center; gap: 6px;">
                     <span style="font-size: 14px;">⚖️</span>
-                    <strong style="font-size: 12px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.3px;">Tranche Sizing Multipliers</strong>
-                    <span id="badgeTrancheScalingSymmetric" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #0369a1;">100% SYMMETRIC</span>
+                    <strong style="font-size: 12px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.3px;">Two-Way Spread Direction Multipliers</strong>
+                    <span id="badgeTrancheScalingSymmetric" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #0369a1;">100% SYMMETRIC ROUND-TRIP</span>
                   </div>
-                  <div style="font-size: 11px; color: #64748b;">
-                    Basic unit: <strong id="lblBasicTradableUnit" style="color: #334155;">-- ADR / -- ETF</strong>
+                  <div style="display: flex; align-items: center; gap: 10px; font-size: 11px; color: #64748b;">
+                    <label style="display: flex; align-items: center; gap: 4px; font-weight: 700;">
+                      <span>Mode:</span>
+                      <select id="selSpreadDirectionMode" style="height: 22px; font-size: 11px; font-weight: 700; border: 1px solid #cbd5e1; border-radius: 4px; padding: 0 4px; background: #fff; color: #1e293b;">
+                        <option value="two_way" selected>Two-Way (Both Directions)</option>
+                        <option value="short_only">Short Spread Only (Harvest Premium)</option>
+                        <option value="long_only">Long Spread Only (Discount Recovery)</option>
+                      </select>
+                    </label>
+                    <span>Basic unit: <strong id="lblBasicTradableUnit" style="color: #334155;">-- ADR / -- ETF</strong></span>
                   </div>
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px;">
-                  <!-- Entry Multiplier Control -->
+                  <!-- Short Spread Multiplier (Sell ADR / Buy ETF) -->
                   <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                      <span style="font-size: 11px; font-weight: 800; color: #0369a1;">ENTRY MULTIPLIER</span>
-                      <label style="display: flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: #64748b; cursor: pointer;" title="Automatically adjust entry size from 60h macro regime (1.0x / 1.25x / 1.5x)">
-                        <input type="checkbox" id="chkAutoEntryMultiplier">
+                      <span style="font-size: 11px; font-weight: 800; color: #dc2626;">🔻 SHORT SPREAD (SELL ADR / BUY ETF)</span>
+                      <label style="display: flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; color: #64748b; cursor: pointer;" title="Automatically adjust short spread size from 60h macro regime (1.0x / 1.25x / 1.5x)">
+                        <input type="checkbox" id="chkAutoShortMultiplier">
                         <span>Auto Macro</span>
                       </label>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                      <input id="rangeEntryMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Entry Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #0284c7;">
-                      <input id="inputEntryMultiplier" type="number" min="1.0" max="10.0" step="0.05" value="1.00" style="width: 58px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11.5px; font-weight: 800; color: #0f172a; text-align: right;">
+                      <input id="rangeShortSpreadMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Short Spread Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #dc2626;">
+                      <input id="inputShortSpreadMultiplier" type="number" min="1.0" max="10.0" step="0.05" value="1.00" style="width: 58px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11.5px; font-weight: 800; color: #0f172a; text-align: right;">
                       <span style="font-size: 11px; font-weight: 700; color: #64748b;">×</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
-                      <span id="badgeEntryMultiplier" style="font-size: 10px; font-weight: 800; color: #0369a1; background: #e0f2fe; padding: 1px 6px; border-radius: 4px;">1.00× basic</span>
-                      <span id="lblEntryMultiplierQty" style="font-size: 10.5px; font-weight: 700; color: #0284c7;">-- ADR / -- ETF</span>
+                      <span id="badgeShortSpreadMultiplier" style="font-size: 10px; font-weight: 800; color: #dc2626; background: #fee2e2; padding: 1px 6px; border-radius: 4px;">1.00× basic</span>
+                      <span id="lblShortSpreadQty" style="font-size: 10.5px; font-weight: 700; color: #dc2626;">-- ADR / -- ETF (100% Symmetric)</span>
                     </div>
                   </div>
 
-                  <!-- Exit Multiplier Control -->
+                  <!-- Long Spread Multiplier (Buy ADR / Sell ETF) -->
                   <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                      <span style="font-size: 11px; font-weight: 800; color: #166534;">EXIT MULTIPLIER</span>
-                      <button id="btnSyncExitToEntry" type="button" style="height: 20px; padding: 0 6px; font-size: 10px; font-weight: 800; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 4px; cursor: pointer;" title="Set Exit Multiplier equal to Entry Multiplier for 100% full tranche exit">Match Entry (100%)</button>
+                      <span style="font-size: 11px; font-weight: 800; color: #166534;">🔺 LONG SPREAD (BUY ADR / SELL ETF)</span>
+                      <span style="font-size: 10px; font-weight: 700; color: #64748b;">Discount Recovery</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                      <input id="rangeExitMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Exit Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #16a34a;">
-                      <input id="inputExitMultiplier" type="number" min="1.0" max="10.0" step="0.05" value="1.00" style="width: 58px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11.5px; font-weight: 800; color: #0f172a; text-align: right;">
+                      <input id="rangeLongSpreadMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Long Spread Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #16a34a;">
+                      <input id="inputLongSpreadMultiplier" type="number" min="1.0" max="10.0" step="0.05" value="1.00" style="width: 58px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11.5px; font-weight: 800; color: #0f172a; text-align: right;">
                       <span style="font-size: 11px; font-weight: 700; color: #64748b;">×</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
-                      <span id="badgeExitMultiplier" style="font-size: 10px; font-weight: 800; color: #166534; background: #dcfce7; padding: 1px 6px; border-radius: 4px;">1.00× basic</span>
-                      <span id="lblExitMultiplierQty" style="font-size: 10.5px; font-weight: 700; color: #16a34a;">-- ADR / -- ETF</span>
+                      <span id="badgeLongSpreadMultiplier" style="font-size: 10px; font-weight: 800; color: #166534; background: #dcfce7; padding: 1px 6px; border-radius: 4px;">1.00× basic</span>
+                      <span id="lblLongSpreadQty" style="font-size: 10.5px; font-weight: 700; color: #16a34a;">-- ADR / -- ETF (100% Symmetric)</span>
                     </div>
                   </div>
                 </div>
@@ -3582,11 +3590,15 @@
 
               <!-- 3.2 Manual Tranche Action Buttons -->
               <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-start; margin-top: 2px;">
-                <button id="btnStepTranche" class="terminal-action-control" type="button" style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #0284c7; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);">
-                  <span id="lblStepTrancheSize">➕ Scale In (loading size…)</span>
+                <button id="btnStepTranche" class="terminal-action-control" type="button" style="height: 38px; padding: 0 14px; font-size: 12px; font-weight: 800; background: #dc2626; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(220, 38, 38, 0.25);">
+                  <span id="lblStepTrancheSize">🔻 Scale In Short Spread</span>
                   <span id="lblStepTrancheSub" style="font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 5px; border-radius: 4px;">—</span>
                 </button>
-                <button id="btnReduceTranche" class="terminal-action-control" type="button" disabled style="height: 38px; padding: 0 16px; font-size: 12.5px; font-weight: 800; background: #94a3b8; color: #fff; border: 0; border-radius: 6px; cursor: not-allowed; display: flex; align-items: center; gap: 6px;">
+                <button id="btnStepLongTranche" class="terminal-action-control" type="button" style="height: 38px; padding: 0 14px; font-size: 12px; font-weight: 800; background: #16a34a; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.25);">
+                  <span id="lblStepLongTrancheSize">🔺 Scale In Long Spread</span>
+                  <span id="lblStepLongTrancheSub" style="font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 5px; border-radius: 4px;">—</span>
+                </button>
+                <button id="btnReduceTranche" class="terminal-action-control" type="button" disabled style="height: 38px; padding: 0 16px; font-size: 12px; font-weight: 800; background: #94a3b8; color: #fff; border: 0; border-radius: 6px; cursor: not-allowed; display: flex; align-items: center; gap: 6px;">
                   <span id="lblReduceTrancheText">🔒 Latest tranche estimated net profit must exceed $0.02</span>
                 </button>
                 <button id="btnEmergencyFlatten" class="terminal-action-control" type="button" style="height: 38px; padding: 0 14px; font-size: 12px; font-weight: 700; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; cursor: pointer;">
@@ -3663,6 +3675,39 @@
                   <button class="presetBtn" data-val="5000">$5,000</button>
                 </div>
                 <input id="inputOrderNotional" type="number" min="50" max="50000" step="50" value="1000" style="margin-top: 4px; font-weight: 800; font-size: 14px;">
+                <!-- Directional Sizing Multipliers for Single-Leg Crypto -->
+                <div id="cryptoDirectionalScalingBox" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; margin-top: 8px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 11px; font-weight: 800; color: #334155;">DIRECTIONAL SIZING MULTIPLIERS</span>
+                    <span style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #0369a1;">100% SYMMETRIC ROUND-TRIP</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <!-- Long Multiplier -->
+                    <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 10.5px; font-weight: 800; color: #166534;">🟢 LONG MULTIPLIER</span>
+                        <span id="badgeCryptoLongMultiplier" style="font-size: 10px; font-weight: 800; color: #166534; background: #dcfce7; padding: 1px 5px; border-radius: 3px;">1.00×</span>
+                      </div>
+                      <div style="display: flex; align-items: center; gap: 6px;">
+                        <input id="rangeCryptoLongMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Crypto Long Multiplier slider" style="flex: 1; height: 20px; cursor: pointer; accent-color: #16a34a;">
+                        <input id="inputCryptoLongMultiplier" type="number" min="0.1" max="10.0" step="0.05" value="1.00" style="width: 50px; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11px; font-weight: 800; text-align: right;">
+                      </div>
+                      <div id="lblCryptoLongNotional" style="font-size: 10px; font-weight: 700; color: #166534; margin-top: 4px;">Long: $150 (1.00×)</div>
+                    </div>
+                    <!-- Short Multiplier -->
+                    <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 10.5px; font-weight: 800; color: #dc2626;">🔴 SHORT MULTIPLIER</span>
+                        <span id="badgeCryptoShortMultiplier" style="font-size: 10px; font-weight: 800; color: #dc2626; background: #fee2e2; padding: 1px 5px; border-radius: 3px;">1.00×</span>
+                      </div>
+                      <div style="display: flex; align-items: center; gap: 6px;">
+                        <input id="rangeCryptoShortMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Crypto Short Multiplier slider" style="flex: 1; height: 20px; cursor: pointer; accent-color: #dc2626;">
+                        <input id="inputCryptoShortMultiplier" type="number" min="0.1" max="10.0" step="0.05" value="1.00" style="width: 50px; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11px; font-weight: 800; text-align: right;">
+                      </div>
+                      <div id="lblCryptoShortNotional" style="font-size: 10px; font-weight: 700; color: #dc2626; margin-top: 4px;">Short: $150 (1.00×)</div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div class="ticketRow">
@@ -3902,7 +3947,7 @@
                       <input type="checkbox" id="chkCondExitNetPnl" checked onchange="tradingEngine.toggleCondition('exit_net_profit', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Net PnL must exceed the entry’s saved 0.10% ($0.02–$0.04 floor) threshold after fees, slippage and funding">3. Net Profit (≥ 0.10% after costs)</span>
+                    <span class="condLabel" title="Net PnL must exceed the entry’s saved 0.10% ($0.02–$0.04 floor) threshold after fees, slippage and funding">3. Net Profit (entry threshold) (≥ 0.10% after costs)</span>
                     <span class="condValue" id="valCondExitNetPnl"><strong id="valCritCombinedPnl">—</strong></span>
                     <span class="condBadge wait" id="badgeCondExitNetPnl">LOCKED</span>
                   </div>
@@ -12845,57 +12890,63 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const unitText = `${Number(sizing.unit_skhy ?? 0).toFixed(2)} ADR / ${Number(sizing.unit_csop ?? 0).toFixed(2)} ETF`;
           if ($("lblBasicTradableUnit")) $("lblBasicTradableUnit").textContent = unitText;
 
-          const isSymmetric = Math.abs((sizing.scale_in_skhy || 0) - (sizing.scale_out_skhy || 0)) < 1e-4;
-          const badgeSymmetric = $("badgeTrancheScalingSymmetric");
-          if (badgeSymmetric) {
-            badgeSymmetric.textContent = isSymmetric ? "100% SYMMETRIC" : `CORE DELTA: ${(sizing.residual_retained_skhy >= 0 ? "+" : "") + Number(sizing.residual_retained_skhy).toFixed(2)} ADR`;
-            badgeSymmetric.style.background = isSymmetric ? "#e0f2fe" : "#fef3c7";
-            badgeSymmetric.style.color = isSymmetric ? "#0369a1" : "#92400e";
+          const shortVal = Number(sizing.short_spread_multiplier ?? sizing.entry_multiplier ?? 1.0);
+          const longVal = Number(sizing.long_spread_multiplier ?? 1.0);
+          const shortSkhy = Number(sizing.short_skhy_qty ?? sizing.scale_in_skhy ?? 0.08);
+          const shortCsop = Number(sizing.short_csop_qty ?? sizing.scale_in_csop ?? 1.4);
+          const longSkhy = Number(sizing.long_skhy_qty ?? sizing.scale_in_skhy ?? 0.08);
+          const longCsop = Number(sizing.long_csop_qty ?? sizing.scale_in_csop ?? 1.4);
+
+          const rangeShort = $("rangeShortSpreadMultiplier");
+          const inpShort = $("inputShortSpreadMultiplier");
+          const badgeShort = $("badgeShortSpreadMultiplier");
+          const chkAutoShort = $("chkAutoShortMultiplier");
+          if (chkAutoShort && document.activeElement !== chkAutoShort) {
+            chkAutoShort.checked = Boolean(sizing.auto_short_multiplier ?? sizing.auto_entry_multiplier);
+            if (inpShort) inpShort.disabled = chkAutoShort.checked;
+            if (rangeShort) rangeShort.disabled = chkAutoShort.checked;
+          }
+          if (inpShort && document.activeElement !== inpShort && document.activeElement !== rangeShort) {
+            inpShort.value = shortVal.toFixed(2);
+          }
+          if (rangeShort && document.activeElement !== rangeShort && document.activeElement !== inpShort) {
+            rangeShort.value = Math.min(5.0, Math.max(1.0, shortVal)).toFixed(2);
+          }
+          if (badgeShort) {
+            badgeShort.textContent = `${shortVal.toFixed(2)}× basic${sizing.auto_short_multiplier ? " (Macro)" : ""}`;
+          }
+          if ($("lblShortSpreadQty")) $("lblShortSpreadQty").textContent = `${shortSkhy.toFixed(2)} ADR / ${shortCsop.toFixed(2)} ETF (100% Symmetric)`;
+
+          const rangeLong = $("rangeLongSpreadMultiplier");
+          const inpLong = $("inputLongSpreadMultiplier");
+          const badgeLong = $("badgeLongSpreadMultiplier");
+          if (inpLong && document.activeElement !== inpLong && document.activeElement !== rangeLong) {
+            inpLong.value = longVal.toFixed(2);
+          }
+          if (rangeLong && document.activeElement !== rangeLong && document.activeElement !== inpLong) {
+            rangeLong.value = Math.min(5.0, Math.max(1.0, longVal)).toFixed(2);
+          }
+          if (badgeLong) {
+            badgeLong.textContent = `${longVal.toFixed(2)}× basic`;
+          }
+          if ($("lblLongSpreadQty")) $("lblLongSpreadQty").textContent = `${longSkhy.toFixed(2)} ADR / ${longCsop.toFixed(2)} ETF (100% Symmetric)`;
+
+          const selMode = $("selSpreadDirectionMode");
+          if (selMode && document.activeElement !== selMode && sizing.spread_direction_mode) {
+            selMode.value = sizing.spread_direction_mode;
           }
 
-          const rangeEntry = $("rangeEntryMultiplier");
-          const inpEntry = $("inputEntryMultiplier");
-          const badgeEntry = $("badgeEntryMultiplier");
-          const chkAutoEntry = $("chkAutoEntryMultiplier");
-          const entryVal = Number(sizing.entry_multiplier ?? 1.0);
-          if (chkAutoEntry && document.activeElement !== chkAutoEntry) {
-            chkAutoEntry.checked = Boolean(sizing.auto_entry_multiplier);
-            if (inpEntry) inpEntry.disabled = chkAutoEntry.checked;
-            if (rangeEntry) rangeEntry.disabled = chkAutoEntry.checked;
-          }
-          if (inpEntry && document.activeElement !== inpEntry && document.activeElement !== rangeEntry) {
-            inpEntry.value = entryVal.toFixed(2);
-          }
-          if (rangeEntry && document.activeElement !== rangeEntry && document.activeElement !== inpEntry) {
-            rangeEntry.value = Math.min(5.0, Math.max(1.0, entryVal)).toFixed(2);
-          }
-          if (badgeEntry) {
-            badgeEntry.textContent = `${entryVal.toFixed(2)}× basic${sizing.auto_entry_multiplier ? " (Macro)" : ""}`;
-          }
-
-          const rangeExit = $("rangeExitMultiplier");
-          const inpExit = $("inputExitMultiplier");
-          const badgeExit = $("badgeExitMultiplier");
-          const exitVal = Number(sizing.exit_multiplier ?? 1.0);
-          if (inpExit && document.activeElement !== inpExit && document.activeElement !== rangeExit) {
-            inpExit.value = exitVal.toFixed(2);
-          }
-          if (rangeExit && document.activeElement !== rangeExit && document.activeElement !== inpExit) {
-            rangeExit.value = Math.min(5.0, Math.max(1.0, exitVal)).toFixed(2);
-          }
-          if (badgeExit) {
-            badgeExit.textContent = `${exitVal.toFixed(2)}× basic`;
-          }
-
-          if ($("lblEntryMultiplierQty")) $("lblEntryMultiplierQty").textContent = sizeText;
-          if ($("lblExitMultiplierQty")) $("lblExitMultiplierQty").textContent = exitText;
+          if ($("lblStepTrancheSize")) $("lblStepTrancheSize").textContent = `🔻 Short Spread (${shortSkhy.toFixed(2)} ADR / ${shortCsop.toFixed(2)} ETF)`;
+          if ($("lblStepLongTrancheSize")) $("lblStepLongTrancheSize").textContent = `🔺 Long Spread (${longSkhy.toFixed(2)} ADR / ${longCsop.toFixed(2)} ETF)`;
+          const adrPrice = Number(data.adr_position?.mark_price || 190);
+          const stockPrice = Number(data.stock_position?.mark_price || 5.5);
+          if ($("lblStepTrancheSub")) $("lblStepTrancheSub").textContent = `$${(shortSkhy * adrPrice + shortCsop * stockPrice).toFixed(2)}`;
+          if ($("lblStepLongTrancheSub")) $("lblStepLongTrancheSub").textContent = `$${(longSkhy * adrPrice + longCsop * stockPrice).toFixed(2)}`;
           if ($("valCritExitSize")) $("valCritExitSize").textContent = exitText;
           if ($("lblCritTPTitle")) $("lblCritTPTitle").textContent = `🎯 Anti-Churn Take-Profit (${exitText})`;
-          if ($("lblStepTrancheSize")) $("lblStepTrancheSize").textContent = `➕ Scale In (${sizeText})`;
-          if ($("lblCritScaleInTitle")) $("lblCritScaleInTitle").textContent = `➕ SPECULATIVE SCALE-IN (${sizeText})`;
+          if ($("lblCritScaleInTitle")) $("lblCritScaleInTitle").textContent = `➕ TWO-WAY SCALE-IN (Short: ${shortSkhy.toFixed(2)} / Long: ${longSkhy.toFixed(2)})`;
           if ($("valCritEntrySize")) $("valCritEntrySize").textContent = sizeText;
           if ($("valCritCycleCore")) $("valCritCycleCore").textContent = `${sizing.residual_retained_skhy.toFixed(2)} ADR / ${sizing.residual_retained_csop.toFixed(2)} ETF`;
-          if ($("lblStepTrancheSub")) $("lblStepTrancheSub").textContent = `$${sizing.scale_in_notional_usd.toFixed(2)}`;
         }
         const macro = criteria?.macro_policy;
         const exitPolicy = criteria?.exit_policy;
@@ -14181,17 +14232,22 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
       },
 
-      async stepTrancheLive() {
+      async stepTrancheLive(direction = "SHORT_SPREAD") {
         if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
           const isKo = window.currentLang === "ko";
           showToast(isKo ? "🔒 거래 터미널이 읽기 전용 모드입니다. 상단 스위치로 잠금을 해제하세요." : "🔒 Terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
           return;
         }
-        const btn = $("btnStepTranche");
+        const btn = direction === "LONG_SPREAD" ? $("btnStepLongTranche") : $("btnStepTranche");
         if (btn) btn.disabled = true;
-        showToast("Executing scale-in with the current macro entry size…", "info");
+        const dirLabel = direction === "LONG_SPREAD" ? "Long Spread (Buy ADR / Sell ETF)" : "Short Spread (Sell ADR / Buy ETF)";
+        showToast(`Executing ${dirLabel} scale-in…`, "info");
         try {
-          const res = await fetch("/skhynix/api/trade/step_tranche", { method: "POST" });
+          const res = await fetch("/skhynix/api/trade/step_tranche", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ direction })
+          });
           const json = await res.json();
           if (json.success) {
             showToast(`✅ ${json.message}`, "success");
@@ -14589,7 +14645,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         pollBackend();
 
         // Hedged Tranche Controller buttons & polling
-        if ($("btnStepTranche")) $("btnStepTranche").addEventListener("click", () => this.stepTrancheLive());
+        if ($("btnStepTranche")) $("btnStepTranche").addEventListener("click", () => this.stepTrancheLive("SHORT_SPREAD"));
+        if ($("btnStepLongTranche")) $("btnStepLongTranche").addEventListener("click", () => this.stepTrancheLive("LONG_SPREAD"));
         if ($("btnReduceTranche")) $("btnReduceTranche").addEventListener("click", () => this.reduceTrancheLive());
         if ($("btnEmergencyFlatten")) $("btnEmergencyFlatten").addEventListener("click", () => this.emergencyFlattenLive());
 
@@ -14617,72 +14674,66 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
         };
 
-        const syncEntryUI = (val) => {
+        const syncShortUI = (val) => {
           const num = parseFloat(val);
           if (!Number.isFinite(num) || num < 1.0) return;
-          if ($("badgeEntryMultiplier")) $("badgeEntryMultiplier").textContent = `${num.toFixed(2)}× basic`;
+          if ($("badgeShortSpreadMultiplier")) $("badgeShortSpreadMultiplier").textContent = `${num.toFixed(2)}× basic`;
         };
-        const syncExitUI = (val) => {
+        const syncLongUI = (val) => {
           const num = parseFloat(val);
           if (!Number.isFinite(num) || num < 1.0) return;
-          if ($("badgeExitMultiplier")) $("badgeExitMultiplier").textContent = `${num.toFixed(2)}× basic`;
+          if ($("badgeLongSpreadMultiplier")) $("badgeLongSpreadMultiplier").textContent = `${num.toFixed(2)}× basic`;
         };
 
-        $("rangeEntryMultiplier")?.addEventListener("input", (e) => {
-          if ($("inputEntryMultiplier")) $("inputEntryMultiplier").value = parseFloat(e.target.value).toFixed(2);
-          syncEntryUI(e.target.value);
+        $("rangeShortSpreadMultiplier")?.addEventListener("input", (e) => {
+          if ($("inputShortSpreadMultiplier")) $("inputShortSpreadMultiplier").value = parseFloat(e.target.value).toFixed(2);
+          syncShortUI(e.target.value);
         });
-        $("rangeEntryMultiplier")?.addEventListener("change", (e) => {
+        $("rangeShortSpreadMultiplier")?.addEventListener("change", (e) => {
           const val = parseFloat(e.target.value);
-          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ entry_multiplier: val });
+          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ short_spread_multiplier: val });
         });
-        $("inputEntryMultiplier")?.addEventListener("input", (e) => {
+        $("inputShortSpreadMultiplier")?.addEventListener("input", (e) => {
           const val = parseFloat(e.target.value);
           if (Number.isFinite(val) && val >= 1.0) {
-            if ($("rangeEntryMultiplier")) $("rangeEntryMultiplier").value = Math.min(5.0, val).toFixed(2);
-            syncEntryUI(val);
+            if ($("rangeShortSpreadMultiplier")) $("rangeShortSpreadMultiplier").value = Math.min(5.0, val).toFixed(2);
+            syncShortUI(val);
           }
         });
-        $("inputEntryMultiplier")?.addEventListener("change", (e) => {
+        $("inputShortSpreadMultiplier")?.addEventListener("change", (e) => {
           const val = parseFloat(e.target.value);
-          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ entry_multiplier: val });
+          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ short_spread_multiplier: val });
         });
 
-        $("chkAutoEntryMultiplier")?.addEventListener("change", (e) => {
+        $("chkAutoShortMultiplier")?.addEventListener("change", (e) => {
           const isChecked = e.target.checked;
-          if ($("inputEntryMultiplier")) $("inputEntryMultiplier").disabled = isChecked;
-          if ($("rangeEntryMultiplier")) $("rangeEntryMultiplier").disabled = isChecked;
-          updateScalingLive({ auto_entry_multiplier: isChecked });
+          if ($("inputShortSpreadMultiplier")) $("inputShortSpreadMultiplier").disabled = isChecked;
+          if ($("rangeShortSpreadMultiplier")) $("rangeShortSpreadMultiplier").disabled = isChecked;
+          updateScalingLive({ auto_short_multiplier: isChecked });
         });
 
-        $("rangeExitMultiplier")?.addEventListener("input", (e) => {
-          if ($("inputExitMultiplier")) $("inputExitMultiplier").value = parseFloat(e.target.value).toFixed(2);
-          syncExitUI(e.target.value);
+        $("rangeLongSpreadMultiplier")?.addEventListener("input", (e) => {
+          if ($("inputLongSpreadMultiplier")) $("inputLongSpreadMultiplier").value = parseFloat(e.target.value).toFixed(2);
+          syncLongUI(e.target.value);
         });
-        $("rangeExitMultiplier")?.addEventListener("change", (e) => {
+        $("rangeLongSpreadMultiplier")?.addEventListener("change", (e) => {
           const val = parseFloat(e.target.value);
-          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ exit_multiplier: val });
+          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ long_spread_multiplier: val });
         });
-        $("inputExitMultiplier")?.addEventListener("input", (e) => {
+        $("inputLongSpreadMultiplier")?.addEventListener("input", (e) => {
           const val = parseFloat(e.target.value);
           if (Number.isFinite(val) && val >= 1.0) {
-            if ($("rangeExitMultiplier")) $("rangeExitMultiplier").value = Math.min(5.0, val).toFixed(2);
-            syncExitUI(val);
+            if ($("rangeLongSpreadMultiplier")) $("rangeLongSpreadMultiplier").value = Math.min(5.0, val).toFixed(2);
+            syncLongUI(val);
           }
         });
-        $("inputExitMultiplier")?.addEventListener("change", (e) => {
+        $("inputLongSpreadMultiplier")?.addEventListener("change", (e) => {
           const val = parseFloat(e.target.value);
-          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ exit_multiplier: val });
+          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ long_spread_multiplier: val });
         });
 
-        $("btnSyncExitToEntry")?.addEventListener("click", () => {
-          const entryVal = parseFloat($("inputEntryMultiplier")?.value || $("rangeEntryMultiplier")?.value || "1.0");
-          if (Number.isFinite(entryVal) && entryVal >= 1.0) {
-            if ($("inputExitMultiplier")) $("inputExitMultiplier").value = entryVal.toFixed(2);
-            if ($("rangeExitMultiplier")) $("rangeExitMultiplier").value = Math.min(5.0, entryVal).toFixed(2);
-            syncExitUI(entryVal);
-            updateScalingLive({ exit_multiplier: entryVal });
-          }
+        $("selSpreadDirectionMode")?.addEventListener("change", (e) => {
+          updateScalingLive({ spread_direction_mode: e.target.value });
         });
 
         if ($("chkAutoPeriodic48h")) {

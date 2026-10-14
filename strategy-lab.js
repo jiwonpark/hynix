@@ -110,6 +110,10 @@
     async setStrategyMode(mode) {
       if (!STRATEGY_MODES.includes(mode)) return Promise.resolve();
       this.strategyMode = mode;
+      if (this.candles) this.candles.setMarkers([]);
+      const svg = el("tradeTrianglesLayer");
+      if (svg) svg.innerHTML = "";
+      if (this.controller) this.controller.setExecutions([]);
       try {
         window.localStorage?.setItem(STRATEGY_MODE_STORAGE_KEY, mode);
       } catch (_) {
@@ -252,6 +256,13 @@
 
     async run() {
       this.initChart();
+      if (this.candles) this.candles.setMarkers([]);
+      const svg = el("tradeTrianglesLayer");
+      if (svg) svg.innerHTML = "";
+      this.selectedMarkerTime = null;
+      this.hoveredMarkerTime = null;
+      if (typeof this.syncActiveReferenceLines === "function") this.syncActiveReferenceLines(null);
+      if (this.controller) this.controller.setExecutions([]);
       const conditions = this.conditions();
       const button = el("btnRerunDynamicBacktest");
       if (button) {

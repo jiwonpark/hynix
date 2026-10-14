@@ -40,6 +40,7 @@ DEFAULT_STATE = {
     "trend_macro_window": 24, "trend_pullback_dist": 0.15, "trend_tp_dist": 0.05, "trend_slope_min": 0.002,
     "use_ma_stretch": True, "use_base_spacing": True, "use_peak": True, "use_ma_stack": False,
     "use_ma_stack_1h": True,
+    "long_multiplier": 1.0, "short_multiplier": 1.0,
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
     "last_evaluated_candle": 0, "last_order_time": 0,
@@ -220,6 +221,7 @@ class CryptoBot:
             "trend_macro_window", "trend_pullback_dist", "trend_tp_dist", "trend_slope_min",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
+            "long_multiplier", "short_multiplier",
         }
         unknown = set(values) - permitted
         if unknown:
@@ -247,6 +249,7 @@ class CryptoBot:
         bounds = {
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0),
             "notional_usd": (10.0, 500.0), "max_tranches": (1, 5),
+            "long_multiplier": (0.1, 10.0), "short_multiplier": (0.1, 10.0),
             "min_seconds_between_orders": (6, 86400), "max_book_spread_bps": (1, 100),
             "ou_halflife_max": (0.5, 50.0), "ou_stop_z": (1.0, 10.0),
             "ou_min_abs_deviation_pp": (0.01, 10.0),
@@ -428,7 +431,9 @@ class CryptoBot:
             equity = float(account.get("summary", {}).get("total_equity_usd", 0))
             available = float(account.get("summary", {}).get("available_margin_usd", 0))
             selected_gross = abs(amount) * price
-            qty = self._entry_quantity(notional, price, step, minimum, min_notional)
+            mult = float(self.state.get("long_multiplier", 1.0)) if side > 0 else float(self.state.get("short_multiplier", 1.0))
+            effective_notional = notional * max(0.1, mult)
+            qty = self._entry_quantity(effective_notional, price, step, minimum, min_notional)
             actual_notional = float(qty) * price
             if actual_notional > available / 1.25 or selected_gross + actual_notional > equity:
                 raise ValueError("Selected-contract 1x equity cap or 125% available-margin reserve would be exceeded")

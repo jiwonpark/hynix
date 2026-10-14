@@ -1420,6 +1420,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
                               trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002,
                               base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
+                              long_multiplier: float = 1.0, short_multiplier: float = 1.0,
                               market_source: str = "binance") -> Dict[str, Any]:
     """Single-leg crypto strategy backtest engine across 5 quantitative regimes."""
     if market_source not in {"binance", "lighter"}:
@@ -1523,20 +1524,26 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
 
             if active_positions and exit_signal:
                 for open_pos in active_positions:
-                    pnl_pct = open_pos["side"] * (signal_price / open_pos["entry"] - 1) * 100
+                    mult = open_pos.get("multiplier", 1.0)
+                    raw_pnl_pct = open_pos["side"] * (signal_price / open_pos["entry"] - 1) * 100
+                    pnl_pct = raw_pnl_pct * mult
                     trades.append({
                         "side": open_pos["side"], "entry": open_pos["entry"],
                         "entry_time": open_pos["entry_time"],
-                        "exit": signal_price, "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "exit": signal_price, "exit_time": bar["time"],
+                        "pnl_pct": round(pnl_pct, 4),
+                        "multiplier": round(mult, 2),
                         "reason": reason,
                     })
                 active_positions = []
             elif entry_signal:
                 campaign_side = active_positions[0]["side"] if active_positions else None
                 if campaign_side is None or campaign_side == candidate_side:
+                    active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
                     active_positions.append({
                         "side": candidate_side, "entry": signal_price,
                         "entry_time": bar["time"], "entry_index": index,
+                        "multiplier": active_mult,
                     })
                     last_entry_value, last_entry_side = signal_price, candidate_side
             previous_zscore = zscore
@@ -1722,14 +1729,18 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
 
             if position is None:
                 if buy_signal:
+                    active_mult = max(0.1, float(long_multiplier))
                     position = {
                         "side": 1, "entry": bar["value"], "entry_time": bar["time"],
-                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta
+                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta,
+                        "multiplier": active_mult,
                     }
                 elif short_signal:
+                    active_mult = max(0.1, float(short_multiplier))
                     position = {
                         "side": -1, "entry": bar["value"], "entry_time": bar["time"],
-                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta
+                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta,
+                        "multiplier": active_mult,
                     }
             elif position is not None:
                 held = index - position["entry_index"]
@@ -1751,13 +1762,15 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                                          exit_stop_or_dwell=current_pnl <= -1.5 or held >= 32)
 
                 if tp_reached or (opposite_reversal and current_pnl > 0) or trend_invalidated or stop_loss:
+                    mult = position.get("multiplier", 1.0)
                     trades.append({
                         "side": position["side"],
                         "entry": position["entry"],
                         "entry_time": position["entry_time"],
                         "exit": bar["value"],
                         "exit_time": bar["time"],
-                        "pnl_pct": round(current_pnl, 4),
+                        "pnl_pct": round(current_pnl * mult, 4),
+                        "multiplier": round(mult, 2),
                         "reason": "tp_reached" if tp_reached else ("opposite_reversal" if opposite_reversal else ("trend_invalidation" if trend_invalidated else "stop_loss"))
                     })
                     position = None
@@ -1784,7 +1797,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     open_positions = [{
         "side": item["side"], "entry": item["entry"], "entry_time": item["entry_time"],
         "mark": mark,
-        "unrealized_pnl_pct": round(item["side"] * (mark / item["entry"] - 1) * 100, 4),
+        "multiplier": item.get("multiplier", 1.0),
+        "unrealized_pnl_pct": round(item["side"] * (mark / item["entry"] - 1) * 100 * item.get("multiplier", 1.0), 4),
     } for item in active_positions] if mark else []
     mode_metrics["open_tranches"] = len(open_positions)
     mode_metrics["capacity_mode"] = "SINGLE_LEG_CRYPTO"
@@ -2438,16 +2452,18 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             get_cached_parity_bars("1h", 61),
         )
         macro = macro_policy(closed_values(parity_bars_1h, 3600, time.time()))
-        auto_entry = bool(auto_state.get("auto_entry_multiplier", False))
-        auto_exit = bool(auto_state.get("auto_exit_multiplier", False))
-        manual_entry_mult = float(auto_state.get("entry_multiplier", 1.0))
-        manual_exit_mult = float(auto_state.get("exit_multiplier", 1.0))
-        if not auto_entry:
-            macro["entry_multiplier"] = max(1.0, manual_entry_mult)
-        if not auto_exit:
-            macro["exit_multiplier"] = max(1.0, manual_exit_mult)
+        auto_short = bool(auto_state.get("auto_short_multiplier", auto_state.get("auto_entry_multiplier", False)))
+        manual_short_mult = float(auto_state.get("short_spread_multiplier", auto_state.get("entry_multiplier", 1.0)))
+        manual_long_mult = float(auto_state.get("long_spread_multiplier", 1.0))
+        spread_direction_mode = str(auto_state.get("spread_direction_mode", "two_way"))
+        if not auto_short:
+            macro["short_spread_multiplier"] = max(1.0, manual_short_mult)
+            macro["entry_multiplier"] = max(1.0, manual_short_mult)
         else:
-            macro["exit_multiplier"] = 1.0
+            macro["short_spread_multiplier"] = max(1.0, float(macro.get("entry_multiplier", 1.0)))
+        macro["long_spread_multiplier"] = max(1.0, manual_long_mult)
+        macro["spread_direction_mode"] = spread_direction_mode
+        macro["exit_multiplier"] = macro["short_spread_multiplier"]
         try:
             rules = await exchange_rules(binance_client)
             if adr_mark <= 0 or stock_mark <= 0 or stock_sym != "CSOPSKHYNIX2LUSDT":
@@ -2858,10 +2874,18 @@ async def _compute_hedged_status() -> Dict[str, Any]:
                 "scale_out_notional_usd": round(exit_adr_qty*adr_mark + exit_stock_qty*stock_mark, 2),
                 "unit_skhy": macro.get("unit_adr_qty", macro["adr_exit_qty"]),
                 "unit_csop": macro.get("unit_stock_qty", macro["stock_exit_qty"]),
+                "short_spread_multiplier": macro.get("short_spread_multiplier", 1.0),
+                "long_spread_multiplier": macro.get("long_spread_multiplier", 1.0),
+                "short_skhy_qty": macro.get("short_adr_qty", entry_adr_qty),
+                "short_csop_qty": macro.get("short_stock_qty", entry_stock_qty),
+                "long_skhy_qty": macro.get("long_adr_qty", entry_adr_qty),
+                "long_csop_qty": macro.get("long_stock_qty", entry_stock_qty),
+                "spread_direction_mode": spread_direction_mode,
                 "entry_multiplier": macro.get("entry_multiplier", 1.0),
                 "exit_multiplier": macro.get("exit_multiplier", 1.0),
-                "auto_entry_multiplier": auto_entry,
-                "auto_exit_multiplier": auto_exit,
+                "auto_short_multiplier": auto_short,
+                "auto_entry_multiplier": auto_short,
+                "auto_exit_multiplier": False,
                 "residual_retained_skhy": round(entry_adr_qty - exit_adr_qty, 8),
                 "residual_retained_csop": round(entry_stock_qty - exit_stock_qty, 8),
                 "sizing_available": macro["sizing_available"],
@@ -3337,19 +3361,29 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
         return {"error": str(e), "bars": [], "markers": []}
 
 @app.post("/api/trade/step_tranche")
-async def step_tranche() -> Dict[str, Any]:
+async def step_tranche(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     async with scale_in_lock:
-        return await execute_scale_in()
+        direction = "SHORT_SPREAD"
+        if payload and isinstance(payload, dict):
+            direction = str(payload.get("direction", "SHORT_SPREAD")).upper()
+            if direction not in {"SHORT_SPREAD", "LONG_SPREAD"}:
+                direction = "SHORT_SPREAD"
+        return await execute_scale_in(direction=direction)
 
 
-async def execute_scale_in() -> Dict[str, Any]:
-    """Execute the current macro-sized pair; retain one fixed trim per entry.
+async def execute_scale_in(direction: str = "SHORT_SPREAD") -> Dict[str, Any]:
+    """Execute the current macro-sized pair in the requested direction.
 
+    SHORT_SPREAD = SELL SKHYUSDT + BUY CSOPSKHYNIX2LUSDT (Harvest premium)
+    LONG_SPREAD  = BUY SKHYUSDT + SELL CSOPSKHYNIX2LUSDT (Harvest discount)
     Full requested size is checked against live margin and gross leverage before
     either order. Pair IDs, sizing and exit policy are persisted for restart.
     """
     recovery = None
     try:
+        direction = str(direction).upper()
+        if direction not in {"SHORT_SPREAD", "LONG_SPREAD"}:
+            direction = "SHORT_SPREAD"
         state = load_auto_tranche_state()
         if state.get("execution_recovery"):
             return {"success": False, "error": "Scale-in paused: reconcile the previous order outcomes before resuming.", "recovery_required": True, "execution_recovery": state["execution_recovery"]}
@@ -3394,9 +3428,14 @@ async def execute_scale_in() -> Dict[str, Any]:
         # Refresh public marks and filters immediately before any order; never use
         # a stale preview or infer quantities from the existing position.
         adr_mark, stock_mark, rules = await live_sizing_inputs(binance_client)
-        entry_policy = size_policy(criteria.get("macro_policy") or policy_for_level(),
-                                   adr_mark, stock_mark, rules)
-        adr_qty, stock_qty = entry_policy["adr_entry_qty"], entry_policy["stock_entry_qty"]
+        macro_base = criteria.get("macro_policy") or policy_for_level()
+        policy_inputs = {**macro_base, "spread_direction": direction}
+        entry_policy = size_policy(policy_inputs, adr_mark, stock_mark, rules)
+        is_long_dir = direction == "LONG_SPREAD"
+        adr_qty = entry_policy["long_adr_qty"] if is_long_dir else entry_policy["short_adr_qty"]
+        stock_qty = entry_policy["long_stock_qty"] if is_long_dir else entry_policy["short_stock_qty"]
+        adr_side = "BUY" if is_long_dir else "SELL"
+        stock_side = "SELL" if is_long_dir else "BUY"
         next_notional = (adr_qty * adr_mark) + (stock_qty * stock_mark)
         required_margin = max(2.50, (next_notional / 10.0) * 1.25)
         projected_leverage = (current_notional + next_notional) / equity
@@ -3421,11 +3460,11 @@ async def execute_scale_in() -> Dict[str, Any]:
 
         recovery = {"started_at": time.time(), "phase": "ADR_SUBMITTING", "order_adr": None, "order_stock": None,
                     "entry_policy": entry_policy, "entry_spread": criteria.get("current_spread"),
-                    "signal_version": SIGNAL_VERSION,
+                    "signal_version": SIGNAL_VERSION, "spread_direction": direction,
                     "adr_quantity": adr_qty, "stock_quantity": stock_qty}
         state["execution_recovery"] = recovery
         save_auto_tranche_state(state)  # Persist before any order can reach the exchange.
-        order_adr = await binance_client.create_order("SKHYUSDT", "SELL", adr_qty, "MARKET")
+        order_adr = await binance_client.create_order("SKHYUSDT", adr_side, adr_qty, "MARKET")
         recovery["order_adr"] = order_adr
         if (order_adr.get("status") != "FILLED" or order_adr.get("orderId") is None
                 or not math.isfinite(float(order_adr.get("executedQty", 0)))
@@ -3433,7 +3472,7 @@ async def execute_scale_in() -> Dict[str, Any]:
             raise RuntimeError("ADR fill is incomplete or unconfirmed")
         recovery["phase"] = "ETF_SUBMITTING"
         save_auto_tranche_state(state)
-        order_stock = await binance_client.create_order("CSOPSKHYNIX2LUSDT", "BUY", stock_qty, "MARKET")
+        order_stock = await binance_client.create_order("CSOPSKHYNIX2LUSDT", stock_side, stock_qty, "MARKET")
 
         recovery["order_stock"] = order_stock
         if (order_stock.get("status") != "FILLED" or order_stock.get("orderId") is None
@@ -3447,6 +3486,7 @@ async def execute_scale_in() -> Dict[str, Any]:
                 "stock_order_id": str(order_stock["orderId"]),
                 "entry_spread": criteria.get("current_spread"),
                 "signal_version": SIGNAL_VERSION,
+                "spread_direction": direction,
                 "entry_policy": entry_policy,
                 "adr_quantity": float(order_adr["executedQty"]),
                 "stock_quantity": float(order_stock["executedQty"])})
@@ -3514,10 +3554,13 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         stock_sym = stock_pos.get("symbol", "CSOPSKHYNIX2LUSDT")
         adr_signed = float(adr_pos.get("position_amt", 0.0))
         stock_signed = float(stock_pos.get("position_amt", 0.0))
-        if not (math.isfinite(adr_signed) and math.isfinite(stock_signed)
-                and adr_signed < 0 and stock_signed > 0):
-            return {"success": False, "error": "Reduction requires a short ADR and long hedge position."}
+        is_opposing = (adr_signed < 0 and stock_signed > 0) or (adr_signed > 0 and stock_signed < 0)
+        if not (math.isfinite(adr_signed) and math.isfinite(stock_signed) and is_opposing):
+            return {"success": False, "error": "Reduction requires an active opposing hedged position (Short ADR/Long ETF or Long ADR/Short ETF)."}
         adr_pos_amt, stock_pos_amt = abs(adr_signed), abs(stock_signed)
+        is_long_spread = adr_signed > 0 and stock_signed < 0
+        adr_reduce_side = "SELL" if is_long_spread else "BUY"
+        stock_reduce_side = "BUY" if is_long_spread else "SELL"
 
         target_criteria = (status or {}).get("auto_tranche_criteria", {})
         if force and not status.get("authenticated") and any(
@@ -3553,7 +3596,7 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         save_auto_tranche_state(state)
 
         order_adr = await binance_client.create_order(
-            "SKHYUSDT", "BUY", adr_reduce_qty, "MARKET", reduce_only=True)
+            "SKHYUSDT", adr_reduce_side, adr_reduce_qty, "MARKET", reduce_only=True)
         recovery["order_adr"] = order_adr
         if (order_adr.get("status") != "FILLED"
                 or float(order_adr.get("executedQty", 0)) < adr_reduce_qty):
@@ -3562,7 +3605,7 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         recovery["phase"] = "ETF_SUBMITTING"
         save_auto_tranche_state(state)
         order_stock = await binance_client.create_order(
-            stock_sym, "SELL", stock_reduce_qty, "MARKET", reduce_only=True)
+            stock_sym, stock_reduce_side, stock_reduce_qty, "MARKET", reduce_only=True)
         recovery["order_stock"] = order_stock
         if (order_stock.get("status") != "FILLED"
                 or float(order_stock.get("executedQty", 0)) < stock_reduce_qty):
@@ -3652,37 +3695,48 @@ async def update_conditions(toggles_update: Dict[str, bool]) -> Dict[str, Any]:
 
 @app.post("/api/trade/update_scaling")
 async def update_scaling(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Updates manual scaling multipliers for entry and exit."""
+    """Updates manual scaling multipliers for directional two-way spread trading."""
     state = load_auto_tranche_state()
-    if "entry_multiplier" in payload:
+    if "short_spread_multiplier" in payload or "entry_multiplier" in payload:
         try:
-            val = float(payload["entry_multiplier"])
+            val = float(payload.get("short_spread_multiplier", payload.get("entry_multiplier")))
             if val < 1.0 or val > 10.0:
-                return {"success": False, "error": "Entry multiplier must be between 1.0x and 10.0x"}
+                return {"success": False, "error": "Short spread multiplier must be between 1.0x and 10.0x"}
+            state["short_spread_multiplier"] = round(val, 2)
             state["entry_multiplier"] = round(val, 2)
-        except (ValueError, TypeError):
-            return {"success": False, "error": "Invalid entry_multiplier"}
-    if "exit_multiplier" in payload:
-        try:
-            val = float(payload["exit_multiplier"])
-            if val < 1.0 or val > 10.0:
-                return {"success": False, "error": "Exit multiplier must be between 1.0x and 10.0x"}
             state["exit_multiplier"] = round(val, 2)
         except (ValueError, TypeError):
-            return {"success": False, "error": "Invalid exit_multiplier"}
-    if "auto_entry_multiplier" in payload:
+            return {"success": False, "error": "Invalid short_spread_multiplier"}
+    if "long_spread_multiplier" in payload:
+        try:
+            val = float(payload["long_spread_multiplier"])
+            if val < 1.0 or val > 10.0:
+                return {"success": False, "error": "Long spread multiplier must be between 1.0x and 10.0x"}
+            state["long_spread_multiplier"] = round(val, 2)
+        except (ValueError, TypeError):
+            return {"success": False, "error": "Invalid long_spread_multiplier"}
+    if "spread_direction_mode" in payload:
+        mode = str(payload["spread_direction_mode"]).lower()
+        if mode in {"two_way", "short_only", "long_only"}:
+            state["spread_direction_mode"] = mode
+    if "auto_short_multiplier" in payload:
+        state["auto_short_multiplier"] = bool(payload["auto_short_multiplier"])
+        state["auto_entry_multiplier"] = bool(payload["auto_short_multiplier"])
+    elif "auto_entry_multiplier" in payload:
+        state["auto_short_multiplier"] = bool(payload["auto_entry_multiplier"])
         state["auto_entry_multiplier"] = bool(payload["auto_entry_multiplier"])
-    if "auto_exit_multiplier" in payload:
-        state["auto_exit_multiplier"] = bool(payload["auto_exit_multiplier"])
-    state["last_action"] = f"SCALING_UPDATED: Entry {state.get('entry_multiplier', 1.0)}x (auto={state.get('auto_entry_multiplier', False)}), Exit {state.get('exit_multiplier', 1.0)}x (auto={state.get('auto_exit_multiplier', False)})"
+    state["last_action"] = f"SCALING_UPDATED: Short Spread {state.get('short_spread_multiplier', 1.0)}x (auto={state.get('auto_short_multiplier', False)}), Long Spread {state.get('long_spread_multiplier', 1.0)}x, Mode={state.get('spread_direction_mode', 'two_way')}"
     state["last_action_time"] = time.time()
     save_auto_tranche_state(state)
     logger.info(f"[Auto-Tranche] Scaling multipliers updated: {state['last_action']}")
     return {"success": True, "scaling": {
-        "entry_multiplier": state.get("entry_multiplier", 1.0),
-        "exit_multiplier": state.get("exit_multiplier", 1.0),
-        "auto_entry_multiplier": state.get("auto_entry_multiplier", False),
-        "auto_exit_multiplier": state.get("auto_exit_multiplier", False),
+        "short_spread_multiplier": state.get("short_spread_multiplier", 1.0),
+        "long_spread_multiplier": state.get("long_spread_multiplier", 1.0),
+        "spread_direction_mode": state.get("spread_direction_mode", "two_way"),
+        "auto_short_multiplier": state.get("auto_short_multiplier", False),
+        "entry_multiplier": state.get("short_spread_multiplier", 1.0),
+        "exit_multiplier": state.get("short_spread_multiplier", 1.0),
+        "auto_entry_multiplier": state.get("auto_short_multiplier", False),
     }}
 
 async def auto_tranche_worker():

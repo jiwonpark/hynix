@@ -42,6 +42,7 @@ DEFAULT_STATE = {
     "trend_macro_window": 24, "trend_pullback_dist": 0.15, "trend_tp_dist": 0.05, "trend_slope_min": 0.002,
     "use_ma_stretch": True, "use_base_spacing": True, "use_peak": True, "use_ma_stack": False,
     "use_ma_stack_1h": True,
+    "long_multiplier": 1.0, "short_multiplier": 1.0,
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
     "last_evaluated_candle": 0, "last_order_time": 0,
@@ -153,6 +154,7 @@ class LighterCryptoBot:
             "trend_macro_window", "trend_pullback_dist", "trend_tp_dist", "trend_slope_min",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
+            "long_multiplier", "short_multiplier",
         }
         unknown = set(values) - permitted
         if unknown:
@@ -180,6 +182,7 @@ class LighterCryptoBot:
         bounds = {
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0),
             "notional_usd": (10.0, 500.0), "max_tranches": (1, 5),
+            "long_multiplier": (0.1, 10.0), "short_multiplier": (0.1, 10.0),
             "min_seconds_between_orders": (6, 86400), "max_book_spread_bps": (1, 100),
             "ou_halflife_max": (0.5, 50.0), "ou_stop_z": (1.0, 10.0),
             "ou_min_abs_deviation_pp": (0.01, 10.0),
@@ -387,7 +390,9 @@ class LighterCryptoBot:
                     raise ValueError("Tranche capacity reached")
                 if amount and amount * side < 0:
                     raise ValueError("Cannot reverse an active campaign")
-                qty = self._entry_quantity(notional, price, detail)
+                mult = float(self.state.get("long_multiplier", 1.0)) if side > 0 else float(self.state.get("short_multiplier", 1.0))
+                effective_notional = notional * max(0.1, mult)
+                qty = self._entry_quantity(effective_notional, price, detail)
                 self._check_entry_capacity(account, positions, qty * price)
             order_index = secrets.randbelow(self.client.MAX_CLIENT_ORDER_INDEX - 1) + 1
             pending = {"client_order_index": order_index, "symbol": symbol, "market_id": market_id,
