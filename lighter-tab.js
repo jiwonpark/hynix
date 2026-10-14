@@ -618,9 +618,9 @@
         entry._boundClick = true;
         entry.addEventListener("click", () => {
           if (this.mode === "live" || this.mode === "semi_auto") {
-            this.stepTrancheLive();
+            this.stepTrancheLive(-1);
           } else {
-            this.addVirtualEntry();
+            this.addVirtualEntry(-1);
           }
         });
       }
@@ -683,6 +683,15 @@
       if (hedgeScalingBox) hedgeScalingBox.style.display = "none";
       const cryptoScalingBox = lid("cryptoDirectionalScalingBox");
       if (cryptoScalingBox) cryptoScalingBox.style.display = "block";
+
+      const titleScaling = lid("lblTitleCryptoScaling");
+      if (titleScaling) titleScaling.textContent = "Pair Directional Sizing Multipliers";
+      const subScaling = lid("lblCryptoScalingSubtitle");
+      if (subScaling) subScaling.textContent = "1x Dollar-Neutral Tranche Sizing";
+      const shortTitle = lid("lblTitleShortMultiplier");
+      if (shortTitle) shortTitle.textContent = "🔴 SHORT PAIR (SELL ADR / BUY KR)";
+      const longTitle = lid("lblTitleLongMultiplier");
+      if (longTitle) longTitle.textContent = "🟢 LONG PAIR (BUY ADR / SELL KR)";
 
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput) {
@@ -3977,6 +3986,22 @@
       if (longLbl) longLbl.textContent = `Long: $${longNotional.toFixed(0)} (${longMul.toFixed(2)}×)`;
       const shortLbl = lid("lblCryptoShortNotional");
       if (shortLbl) shortLbl.textContent = `Short: $${shortNotional.toFixed(0)} (${shortMul.toFixed(2)}×)`;
+      if (this.mode === "live") {
+        this.setText("lblStepTrancheSize", "🔻 Scale In Short Pair");
+        this.setText("lblStepTrancheSub", `$${shortNotional.toFixed(0)} (${shortMul.toFixed(2)}×)`);
+        this.setText("lblStepLongTrancheSize", "🔺 Scale In Long Pair");
+        this.setText("lblStepLongTrancheSub", `$${longNotional.toFixed(0)} (${longMul.toFixed(2)}×)`);
+      } else if (this.mode === "semi_auto") {
+        this.setText("lblStepTrancheSize", "🔻 Approve Short Pair");
+        this.setText("lblStepTrancheSub", `$${shortNotional.toFixed(0)} (${shortMul.toFixed(2)}×)`);
+        this.setText("lblStepLongTrancheSize", "🔺 Approve Long Pair");
+        this.setText("lblStepLongTrancheSub", `$${longNotional.toFixed(0)} (${longMul.toFixed(2)}×)`);
+      } else {
+        this.setText("lblStepTrancheSize", "🔻 Paper Short Pair");
+        this.setText("lblStepTrancheSub", `$${shortNotional.toFixed(0)} (${shortMul.toFixed(2)}×)`);
+        this.setText("lblStepLongTrancheSize", "🔺 Paper Long Pair");
+        this.setText("lblStepLongTrancheSub", `$${longNotional.toFixed(0)} (${longMul.toFixed(2)}×)`);
+      }
     },
 
     async saveCryptoScaling(payload) {
@@ -4093,6 +4118,7 @@
       }
 
       this.renderVirtualState();
+      this.renderCryptoNotionals();
 
       const isLive = (mode === "live");
       if (liveBtn) liveBtn.classList.toggle("botActiveLive", isLive);

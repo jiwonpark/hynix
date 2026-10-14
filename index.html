@@ -3588,6 +3588,53 @@
                 </div>
               </div>
 
+              <!-- 3.1c Directional Sizing Multipliers for Pair / Crypto -->
+              <div id="cryptoDirectionalScalingBox" class="terminal-action-control" style="display: none; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-top: 10px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 14px;">⚖️</span>
+                    <strong id="lblTitleCryptoScaling" style="font-size: 12px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.3px;">Directional Sizing Multipliers</strong>
+                    <span style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #0369a1;">100% SYMMETRIC ROUND-TRIP</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 10px; font-size: 11px; color: #64748b;">
+                    <span id="lblCryptoScalingSubtitle">Base Order Notional Multiplier</span>
+                  </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px;">
+                  <!-- Short Multiplier (Sell / Short Rip, Red) -->
+                  <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                      <span id="lblTitleShortMultiplier" style="font-size: 11px; font-weight: 800; color: #dc2626;">🔴 SHORT MULTIPLIER</span>
+                      <span id="badgeCryptoShortMultiplier" style="font-size: 10px; font-weight: 800; color: #dc2626; background: #fee2e2; padding: 1px 6px; border-radius: 4px;">1.00×</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <input id="rangeCryptoShortMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Short Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #dc2626;">
+                      <input id="inputCryptoShortMultiplier" type="number" min="0.1" max="10.0" step="0.05" value="1.00" style="width: 58px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11.5px; font-weight: 800; color: #0f172a; text-align: right;">
+                      <span style="font-size: 11px; font-weight: 700; color: #64748b;">×</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                      <span id="lblCryptoShortNotional" style="font-size: 10.5px; font-weight: 700; color: #dc2626;">Short: $150 (1.00×)</span>
+                    </div>
+                  </div>
+
+                  <!-- Long Multiplier (Buy / Long Dip, Green) -->
+                  <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                      <span id="lblTitleLongMultiplier" style="font-size: 11px; font-weight: 800; color: #166534;">🟢 LONG MULTIPLIER</span>
+                      <span id="badgeCryptoLongMultiplier" style="font-size: 10px; font-weight: 800; color: #166534; background: #dcfce7; padding: 1px 6px; border-radius: 4px;">1.00×</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <input id="rangeCryptoLongMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Long Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #16a34a;">
+                      <input id="inputCryptoLongMultiplier" type="number" min="0.1" max="10.0" step="0.05" value="1.00" style="width: 58px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11.5px; font-weight: 800; color: #0f172a; text-align: right;">
+                      <span style="font-size: 11px; font-weight: 700; color: #64748b;">×</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                      <span id="lblCryptoLongNotional" style="font-size: 10.5px; font-weight: 700; color: #166534;">Long: $150 (1.00×)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- 3.2 Manual Tranche Action Buttons -->
               <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-start; margin-top: 2px;">
                 <button id="btnStepTranche" class="terminal-action-control" type="button" style="height: 38px; padding: 0 14px; font-size: 12px; font-weight: 800; background: #dc2626; color: #fff; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(220, 38, 38, 0.25);">
@@ -3675,39 +3722,6 @@
                   <button class="presetBtn" data-val="5000">$5,000</button>
                 </div>
                 <input id="inputOrderNotional" type="number" min="50" max="50000" step="50" value="1000" style="margin-top: 4px; font-weight: 800; font-size: 14px;">
-                <!-- Directional Sizing Multipliers for Single-Leg Crypto -->
-                <div id="cryptoDirectionalScalingBox" style="display: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; margin-top: 8px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-size: 11px; font-weight: 800; color: #334155;">DIRECTIONAL SIZING MULTIPLIERS</span>
-                    <span style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #0369a1;">100% SYMMETRIC ROUND-TRIP</span>
-                  </div>
-                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                    <!-- Long Multiplier -->
-                    <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;">
-                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <span style="font-size: 10.5px; font-weight: 800; color: #166534;">🟢 LONG MULTIPLIER</span>
-                        <span id="badgeCryptoLongMultiplier" style="font-size: 10px; font-weight: 800; color: #166534; background: #dcfce7; padding: 1px 5px; border-radius: 3px;">1.00×</span>
-                      </div>
-                      <div style="display: flex; align-items: center; gap: 6px;">
-                        <input id="rangeCryptoLongMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Crypto Long Multiplier slider" style="flex: 1; height: 20px; cursor: pointer; accent-color: #16a34a;">
-                        <input id="inputCryptoLongMultiplier" type="number" min="0.1" max="10.0" step="0.05" value="1.00" style="width: 50px; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11px; font-weight: 800; text-align: right;">
-                      </div>
-                      <div id="lblCryptoLongNotional" style="font-size: 10px; font-weight: 700; color: #166534; margin-top: 4px;">Long: $150 (1.00×)</div>
-                    </div>
-                    <!-- Short Multiplier -->
-                    <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;">
-                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <span style="font-size: 10.5px; font-weight: 800; color: #dc2626;">🔴 SHORT MULTIPLIER</span>
-                        <span id="badgeCryptoShortMultiplier" style="font-size: 10px; font-weight: 800; color: #dc2626; background: #fee2e2; padding: 1px 5px; border-radius: 3px;">1.00×</span>
-                      </div>
-                      <div style="display: flex; align-items: center; gap: 6px;">
-                        <input id="rangeCryptoShortMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Crypto Short Multiplier slider" style="flex: 1; height: 20px; cursor: pointer; accent-color: #dc2626;">
-                        <input id="inputCryptoShortMultiplier" type="number" min="0.1" max="10.0" step="0.05" value="1.00" style="width: 50px; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11px; font-weight: 800; text-align: right;">
-                      </div>
-                      <div id="lblCryptoShortNotional" style="font-size: 10px; font-weight: 700; color: #dc2626; margin-top: 4px;">Short: $150 (1.00×)</div>
-                    </div>
-                  </div>
-                </div>
               </div>
 
               <div class="ticketRow">
@@ -12905,12 +12919,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const inpShort = $("inputShortSpreadMultiplier");
           const badgeShort = $("badgeShortSpreadMultiplier");
           const chkAutoShort = $("chkAutoShortMultiplier");
-          if (chkAutoShort && document.activeElement !== chkAutoShort) {
+          const activeEl = (typeof document !== "undefined") ? document.activeElement : null;
+          if (chkAutoShort && activeEl !== chkAutoShort) {
             chkAutoShort.checked = Boolean(sizing.auto_short_multiplier ?? sizing.auto_entry_multiplier);
             if (inpShort) inpShort.disabled = chkAutoShort.checked;
             if (rangeShort) rangeShort.disabled = chkAutoShort.checked;
           }
-          const isInteractingShort = document.activeElement === inpShort || document.activeElement === rangeShort || (Date.now() - (this.lastUserScalingUpdateShort || 0) < 4000);
+          const isInteractingShort = activeEl === inpShort || activeEl === rangeShort || (Date.now() - (this.lastUserScalingUpdateShort || 0) < 4000);
           if (inpShort && !isInteractingShort) {
             inpShort.value = shortVal.toFixed(2);
           }
@@ -12925,7 +12940,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const rangeLong = $("rangeLongSpreadMultiplier");
           const inpLong = $("inputLongSpreadMultiplier");
           const badgeLong = $("badgeLongSpreadMultiplier");
-          const isInteractingLong = document.activeElement === inpLong || document.activeElement === rangeLong || (Date.now() - (this.lastUserScalingUpdateLong || 0) < 4000);
+          const isInteractingLong = activeEl === inpLong || activeEl === rangeLong || (Date.now() - (this.lastUserScalingUpdateLong || 0) < 4000);
           if (inpLong && !isInteractingLong) {
             inpLong.value = longVal.toFixed(2);
           }
@@ -12938,7 +12953,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if ($("lblLongSpreadQty") && !isInteractingLong) $("lblLongSpreadQty").textContent = `${longSkhy.toFixed(2)} ADR / ${longCsop.toFixed(2)} ETF (100% Symmetric)`;
 
           const selMode = $("selSpreadDirectionMode");
-          if (selMode && document.activeElement !== selMode && sizing.spread_direction_mode) {
+          if (selMode && activeEl !== selMode && sizing.spread_direction_mode) {
             selMode.value = sizing.spread_direction_mode;
           }
 

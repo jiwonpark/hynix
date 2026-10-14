@@ -709,6 +709,7 @@
       }
 
       const entry = lid("btnStepTranche");
+      const longEntry = lid("btnStepLongTranche");
       const exit = lid("btnReduceTranche");
       const flatten = lid("btnEmergencyFlatten");
 
@@ -741,7 +742,7 @@
         entry.parentNode.appendChild(enforceLabel);
       }
 
-      [entry, exit, flatten].forEach((button) => {
+      [entry, longEntry, exit, flatten].forEach((button) => {
         if (button) {
           button.disabled = false;
           button.classList.remove("terminal-action-control");
@@ -757,9 +758,19 @@
         entry._boundClick = true;
         entry.addEventListener("click", () => {
           if (this.mode === "live" || this.mode === "semi_auto") {
-            this.stepTrancheLive();
+            this.stepTrancheLive(-1);
           } else {
-            this.addVirtualEntry();
+            this.addVirtualEntry(-1);
+          }
+        });
+      }
+      if (longEntry && !longEntry._boundClick) {
+        longEntry._boundClick = true;
+        longEntry.addEventListener("click", () => {
+          if (this.mode === "live" || this.mode === "semi_auto") {
+            this.stepTrancheLive(1);
+          } else {
+            this.addVirtualEntry(1);
           }
         });
       }
@@ -809,6 +820,15 @@
       if (scalingBox) scalingBox.style.display = "block";
       const hedgeScalingBox = lid("trancheScalingBox");
       if (hedgeScalingBox) hedgeScalingBox.style.display = "none";
+
+      const titleScaling = lid("lblTitleCryptoScaling");
+      if (titleScaling) titleScaling.textContent = "Directional Sizing Multipliers";
+      const subScaling = lid("lblCryptoScalingSubtitle");
+      if (subScaling) subScaling.textContent = "Single-Leg Perpetual Notional Sizing";
+      const shortTitle = lid("lblTitleShortMultiplier");
+      if (shortTitle) shortTitle.textContent = "🔴 SHORT MULTIPLIER (SELL RIP)";
+      const longTitle = lid("lblTitleLongMultiplier");
+      if (longTitle) longTitle.textContent = "🟢 LONG MULTIPLIER (BUY DIP)";
 
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput) {
@@ -3908,6 +3928,22 @@
       if (longLbl) longLbl.textContent = `Long: $${longNotional.toFixed(0)} (${longMul.toFixed(2)}×)`;
       const shortLbl = lid("lblCryptoShortNotional");
       if (shortLbl) shortLbl.textContent = `Short: $${shortNotional.toFixed(0)} (${shortMul.toFixed(2)}×)`;
+      if (this.mode === "live") {
+        this.setText("lblStepTrancheSize", "🔻 Scale In Short");
+        this.setText("lblStepTrancheSub", `$${shortNotional.toFixed(0)} (${shortMul.toFixed(2)}×)`);
+        this.setText("lblStepLongTrancheSize", "🔺 Scale In Long");
+        this.setText("lblStepLongTrancheSub", `$${longNotional.toFixed(0)} (${longMul.toFixed(2)}×)`);
+      } else if (this.mode === "semi_auto") {
+        this.setText("lblStepTrancheSize", "🔻 Order Short");
+        this.setText("lblStepTrancheSub", `$${shortNotional.toFixed(0)} (${shortMul.toFixed(2)}×)`);
+        this.setText("lblStepLongTrancheSize", "🔺 Order Long");
+        this.setText("lblStepLongTrancheSub", `$${longNotional.toFixed(0)} (${longMul.toFixed(2)}×)`);
+      } else {
+        this.setText("lblStepTrancheSize", "🔻 Paper Short");
+        this.setText("lblStepTrancheSub", `$${shortNotional.toFixed(0)} (${shortMul.toFixed(2)}×)`);
+        this.setText("lblStepLongTrancheSize", "🔺 Paper Long");
+        this.setText("lblStepLongTrancheSub", `$${longNotional.toFixed(0)} (${longMul.toFixed(2)}×)`);
+      }
     },
 
     async saveCryptoScaling(payload) {
@@ -4029,6 +4065,7 @@
       }
 
       this.renderVirtualState();
+      this.renderCryptoNotionals();
 
       const isLive = (mode === "live");
       if (liveBtn) liveBtn.classList.toggle("botActiveLive", isLive);
@@ -4069,16 +4106,20 @@
       }
     },
 
-    async stepTrancheLive() {
+    async stepTrancheLive(explicitSide = null) {
       if (window.terminalLockManager?.isLocked) {
         window.showToast?.("🔒 Terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
         return;
       }
-      const dirSelect = lid("selTrancheDirection");
       let side = 0;
-      if (dirSelect) {
-        if (dirSelect.value === "short") side = -1;
-        else if (dirSelect.value === "long") side = 1;
+      if (explicitSide === 1 || explicitSide === -1) {
+        side = explicitSide;
+      } else {
+        const dirSelect = lid("selTrancheDirection");
+        if (dirSelect) {
+          if (dirSelect.value === "short") side = -1;
+          else if (dirSelect.value === "long") side = 1;
+        }
       }
       if (!side) {
         window.showToast?.("Choose Long or Short explicitly for a real order.", "warn");
@@ -4092,6 +4133,8 @@
       if (!window.confirm(`Place a REAL ${side > 0 ? "BUY" : "SELL"} market order for approximately $${notional.toFixed(2)} of ${this.selectedSymbol} on Binance Futures?`)) return;
       const btn = lid("btnStepTranche");
       if (btn) btn.disabled = true;
+      const longBtn = lid("btnStepLongTranche");
+      if (longBtn) longBtn.disabled = true;
       window.showToast?.(`Submitting real ${this.selectedSymbol} Futures order...`, "info");
       try {
         const res = await apiPost("/api/crypto/step_tranche", { side, notional_usd: notional, confirm_live_trading: true });
@@ -4105,6 +4148,7 @@
         window.showToast?.(`Error: ${e.message}`, "danger");
       } finally {
         if (btn) btn.disabled = false;
+        if (longBtn) longBtn.disabled = false;
       }
     },
 
@@ -4330,7 +4374,7 @@
       return { ok: true };
     },
 
-    addVirtualEntry() {
+    addVirtualEntry(explicitSide = null) {
       if (!Number.isFinite(this.currentRatio)) {
         if (typeof window.showToast === "function") {
           window.showToast("Asset price not available yet — awaiting market feed", "warning");
@@ -4338,21 +4382,30 @@
         return;
       }
       const sym = this.selectedSymbol || "BTCUSDT";
-      const dirSelect = lid("selTrancheDirection");
-      const metrics = this.computePriceMetrics();
-      let side = (metrics && metrics.zScore > 0) ? -1 : 1;
-      let dirLabel = side < 0 ? `SHORT ${sym}` : `LONG ${sym}`;
-      let dirToast = side < 0 ? `⚡ Auto: Short ${sym} (Rip Harvester)` : `⚡ Auto: Long ${sym} (Dip Buyer)`;
+      let side = 0;
+      let dirLabel = "";
+      let dirToast = "";
+      if (explicitSide === 1 || explicitSide === -1) {
+        side = explicitSide;
+        dirLabel = side < 0 ? `SHORT ${sym}` : `LONG ${sym}`;
+        dirToast = side < 0 ? `▼ Short ${sym} (Sell Rip)` : `▲ Long ${sym} (Buy Dip)`;
+      } else {
+        const dirSelect = lid("selTrancheDirection");
+        const metrics = this.computePriceMetrics();
+        side = (metrics && metrics.zScore > 0) ? -1 : 1;
+        dirLabel = side < 0 ? `SHORT ${sym}` : `LONG ${sym}`;
+        dirToast = side < 0 ? `⚡ Auto: Short ${sym} (Rip Harvester)` : `⚡ Auto: Long ${sym} (Dip Buyer)`;
 
-      if (dirSelect) {
-        if (dirSelect.value === "short") {
-          side = -1;
-          dirLabel = `SHORT ${sym}`;
-          dirToast = `▼ Short ${sym} (Sell Rip)`;
-        } else if (dirSelect.value === "long") {
-          side = 1;
-          dirLabel = `LONG ${sym}`;
-          dirToast = `▲ Long ${sym} (Buy Dip)`;
+        if (dirSelect) {
+          if (dirSelect.value === "short") {
+            side = -1;
+            dirLabel = `SHORT ${sym}`;
+            dirToast = `▼ Short ${sym} (Sell Rip)`;
+          } else if (dirSelect.value === "long") {
+            side = 1;
+            dirLabel = `LONG ${sym}`;
+            dirToast = `▲ Long ${sym} (Buy Dip)`;
+          }
         }
       }
 
