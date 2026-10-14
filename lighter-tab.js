@@ -624,6 +624,20 @@
           }
         });
       }
+      const longEntry = lid("btnStepLongTranche");
+      if (longEntry && !longEntry._boundClick) {
+        longEntry._boundClick = true;
+        longEntry.disabled = false;
+        longEntry.classList.remove("terminal-action-control");
+        longEntry.style.cursor = "pointer";
+        longEntry.addEventListener("click", () => {
+          if (this.mode === "live" || this.mode === "semi_auto") {
+            this.stepTrancheLive(1);
+          } else {
+            this.addVirtualEntry(1);
+          }
+        });
+      }
       if (exit && !exit._boundClick) {
         exit._boundClick = true;
         exit.addEventListener("click", () => {
@@ -668,7 +682,7 @@
       const hedgeScalingBox = lid("trancheScalingBox");
       if (hedgeScalingBox) hedgeScalingBox.style.display = "none";
       const cryptoScalingBox = lid("cryptoDirectionalScalingBox");
-      if (cryptoScalingBox) cryptoScalingBox.style.display = "none";
+      if (cryptoScalingBox) cryptoScalingBox.style.display = "block";
 
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput) {
@@ -677,8 +691,83 @@
         notionalInput.max = "500";
         notionalInput.step = "5";
         notionalInput.value = "25";
-        notionalInput.addEventListener("input", () => this.updateLeverageMetrics());
+        notionalInput.addEventListener("input", () => {
+          this.updateLeverageMetrics();
+          this.renderCryptoNotionals();
+        });
       }
+
+      const syncCryptoLong = (val) => {
+        const num = parseFloat(val);
+        if (!Number.isFinite(num) || num < 0.1) return;
+        if (lid("badgeCryptoLongMultiplier")) lid("badgeCryptoLongMultiplier").textContent = `${num.toFixed(2)}×`;
+        this.renderCryptoNotionals();
+      };
+      const syncCryptoShort = (val) => {
+        const num = parseFloat(val);
+        if (!Number.isFinite(num) || num < 0.1) return;
+        if (lid("badgeCryptoShortMultiplier")) lid("badgeCryptoShortMultiplier").textContent = `${num.toFixed(2)}×`;
+        this.renderCryptoNotionals();
+      };
+
+      lid("rangeCryptoLongMultiplier")?.addEventListener("input", (e) => {
+        if (lid("inputCryptoLongMultiplier")) lid("inputCryptoLongMultiplier").value = parseFloat(e.target.value).toFixed(2);
+        syncCryptoLong(e.target.value);
+        this.lastUserMultiplierUpdate = Date.now();
+        this.requestBacktest();
+      });
+      lid("rangeCryptoLongMultiplier")?.addEventListener("change", (e) => {
+        this.lastUserMultiplierUpdate = Date.now();
+        this.saveCryptoScaling({ long_multiplier: parseFloat(e.target.value) });
+        this.requestBacktest();
+      });
+      lid("inputCryptoLongMultiplier")?.addEventListener("input", (e) => {
+        const val = parseFloat(e.target.value);
+        if (Number.isFinite(val) && val >= 0.1) {
+          if (lid("rangeCryptoLongMultiplier")) lid("rangeCryptoLongMultiplier").value = Math.min(5.0, val).toFixed(2);
+          syncCryptoLong(val);
+          this.lastUserMultiplierUpdate = Date.now();
+          this.requestBacktest();
+        }
+      });
+      lid("inputCryptoLongMultiplier")?.addEventListener("change", (e) => {
+        const val = parseFloat(e.target.value);
+        if (Number.isFinite(val) && val >= 0.1) {
+          this.lastUserMultiplierUpdate = Date.now();
+          this.saveCryptoScaling({ long_multiplier: val });
+          this.requestBacktest();
+        }
+      });
+
+      lid("rangeCryptoShortMultiplier")?.addEventListener("input", (e) => {
+        if (lid("inputCryptoShortMultiplier")) lid("inputCryptoShortMultiplier").value = parseFloat(e.target.value).toFixed(2);
+        syncCryptoShort(e.target.value);
+        this.lastUserMultiplierUpdate = Date.now();
+        this.requestBacktest();
+      });
+      lid("rangeCryptoShortMultiplier")?.addEventListener("change", (e) => {
+        this.lastUserMultiplierUpdate = Date.now();
+        this.saveCryptoScaling({ short_multiplier: parseFloat(e.target.value) });
+        this.requestBacktest();
+      });
+      lid("inputCryptoShortMultiplier")?.addEventListener("input", (e) => {
+        const val = parseFloat(e.target.value);
+        if (Number.isFinite(val) && val >= 0.1) {
+          if (lid("rangeCryptoShortMultiplier")) lid("rangeCryptoShortMultiplier").value = Math.min(5.0, val).toFixed(2);
+          syncCryptoShort(val);
+          this.lastUserMultiplierUpdate = Date.now();
+          this.requestBacktest();
+        }
+      });
+      lid("inputCryptoShortMultiplier")?.addEventListener("change", (e) => {
+        const val = parseFloat(e.target.value);
+        if (Number.isFinite(val) && val >= 0.1) {
+          this.lastUserMultiplierUpdate = Date.now();
+          this.saveCryptoScaling({ short_multiplier: val });
+          this.requestBacktest();
+        }
+      });
+      this.renderCryptoNotionals();
       const autoToggle = lid("chkAutoPeriodic48h");
       if (autoToggle) autoToggle.addEventListener("change", () => this.toggleLiveBot(autoToggle.checked));
       const guard = lid("hedgedControllerCard")?.querySelector(".zeroLossInvariantBanner p");
@@ -2000,6 +2089,8 @@
         use_convergence: lid("chkCondExitConvergence")?.checked !== false,
         use_dwell: lid("chkCondExitDwell")?.checked !== false,
         use_bottoming: lid("chkCondExitBottoming")?.checked === true,
+        long_multiplier: this.longMultiplier(),
+        short_multiplier: this.shortMultiplier(),
       };
     },
 
@@ -2605,6 +2696,30 @@
         notionalInput.value = String(bot?.notional_usd || 25);
         notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5";
       }
+      const isInteractingMult = (Date.now() - (this.lastUserMultiplierUpdate || 0) < 5000);
+      if (!isInteractingMult && bot?.long_multiplier != null) {
+        const lm = parseFloat(bot.long_multiplier);
+        if (Number.isFinite(lm) && lm >= 0.1) {
+          const inp = lid("inputCryptoLongMultiplier");
+          const rng = lid("rangeCryptoLongMultiplier");
+          if (inp && document.activeElement !== inp && document.activeElement !== rng) inp.value = lm.toFixed(2);
+          if (rng && document.activeElement !== rng && document.activeElement !== inp) rng.value = Math.min(5.0, Math.max(1.0, lm)).toFixed(2);
+          const badge = lid("badgeCryptoLongMultiplier");
+          if (badge) badge.textContent = `${lm.toFixed(2)}×`;
+        }
+      }
+      if (!isInteractingMult && bot?.short_multiplier != null) {
+        const sm = parseFloat(bot.short_multiplier);
+        if (Number.isFinite(sm) && sm >= 0.1) {
+          const inp = lid("inputCryptoShortMultiplier");
+          const rng = lid("rangeCryptoShortMultiplier");
+          if (inp && document.activeElement !== inp && document.activeElement !== rng) inp.value = sm.toFixed(2);
+          if (rng && document.activeElement !== rng && document.activeElement !== inp) rng.value = Math.min(5.0, Math.max(1.0, sm)).toFixed(2);
+          const badge = lid("badgeCryptoShortMultiplier");
+          if (badge) badge.textContent = `${sm.toFixed(2)}×`;
+        }
+      }
+      this.renderCryptoNotionals();
       const tradeRateInput = lid("inputLiveTradeRate");
       if (tradeRateInput && document.activeElement !== tradeRateInput) {
         tradeRateInput.value = String(Math.round(tradeRate * 5) / 5);
@@ -3835,7 +3950,57 @@
       }
     },
 
-    orderNotional() { return Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25))); },
+    longMultiplier() {
+      const val = parseFloat(lid("inputCryptoLongMultiplier")?.value || lid("rangeCryptoLongMultiplier")?.value || 1.0);
+      return Number.isFinite(val) && val >= 0.1 ? val : 1.0;
+    },
+
+    shortMultiplier() {
+      const val = parseFloat(lid("inputCryptoShortMultiplier")?.value || lid("rangeCryptoShortMultiplier")?.value || 1.0);
+      return Number.isFinite(val) && val >= 0.1 ? val : 1.0;
+    },
+
+    orderNotional(side = 0) {
+      const base = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
+      if (side > 0) return Number((base * this.longMultiplier()).toFixed(2));
+      if (side < 0) return Number((base * this.shortMultiplier()).toFixed(2));
+      return base;
+    },
+
+    renderCryptoNotionals() {
+      const base = Math.max(10, Math.min(500, Number(lid("inputOrderNotional")?.value || 25)));
+      const longMul = this.longMultiplier();
+      const shortMul = this.shortMultiplier();
+      const longNotional = base * longMul;
+      const shortNotional = base * shortMul;
+      const longLbl = lid("lblCryptoLongNotional");
+      if (longLbl) longLbl.textContent = `Long: $${longNotional.toFixed(0)} (${longMul.toFixed(2)}×)`;
+      const shortLbl = lid("lblCryptoShortNotional");
+      if (shortLbl) shortLbl.textContent = `Short: $${shortNotional.toFixed(0)} (${shortMul.toFixed(2)}×)`;
+    },
+
+    async saveCryptoScaling(payload) {
+      if (window.terminalLockManager?.isLocked) {
+        return;
+      }
+      try {
+        const data = await apiPost("/api/lighter/bot/config", payload);
+        if (data?.bot) {
+          this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
+        }
+      } catch (err) {
+        console.warn("Failed to auto-save lighter directional scaling:", err);
+      }
+    },
+
+    requestBacktest() {
+      if (this.backtestDebounceTimer) clearTimeout(this.backtestDebounceTimer);
+      this.backtestMarkers = [];
+      this.backtestDebounceTimer = setTimeout(() => {
+        this.runBacktest();
+      }, 150);
+    },
+
     virtualPnl() { return this.entries.reduce((sum, entry) => sum + (this.currentRatio == null ? 0 : entry.notional * entry.side * (this.currentRatio - entry.ratio) / entry.ratio), 0); },
     virtualPnlText() { const pnl = this.virtualPnl(); return `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`; },
 
@@ -3968,21 +4133,29 @@
       }
     },
 
-    async stepTrancheLive() {
+    async stepTrancheLive(explicitSide = null) {
       if (window.terminalLockManager?.isLocked) {
         window.showToast?.("🔒 Terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
         return;
       }
-      const dirSelect = lid("selTrancheDirection");
-      let side = this.currentRatio >= 100 ? -1 : 1;
-      if (dirSelect) {
-        if (dirSelect.value === "short") side = -1;
-        else if (dirSelect.value === "long") side = 1;
+      let side;
+      if (explicitSide === 1 || explicitSide === -1) {
+        side = explicitSide;
+      } else {
+        const dirSelect = lid("selTrancheDirection");
+        side = this.currentRatio >= 100 ? -1 : 1;
+        if (dirSelect) {
+          if (dirSelect.value === "short") side = -1;
+          else if (dirSelect.value === "long") side = 1;
+        }
       }
-      const notional = this.orderNotional();
+      const notional = this.orderNotional(side);
       const btn = lid("btnStepTranche");
       if (btn) btn.disabled = true;
-      window.showToast?.(`Submitting live 1x dollar-neutral pair (~$${notional} per leg) on Lighter DEX...`, "info");
+      const longBtn = lid("btnStepLongTranche");
+      if (longBtn) longBtn.disabled = true;
+      const mult = side > 0 ? this.longMultiplier() : this.shortMultiplier();
+      window.showToast?.(`Submitting live 1x dollar-neutral pair (~$${notional} per leg, ${mult.toFixed(2)}×) on Lighter DEX...`, "info");
       try {
         const res = await apiPost("/api/lighter/step_tranche", { side, notional_usd: notional });
         if (res.success) {
@@ -3995,6 +4168,7 @@
         window.showToast?.(`Error: ${e.message}`, "danger");
       } finally {
         if (btn) btn.disabled = false;
+        if (longBtn) longBtn.disabled = false;
       }
     },
 
@@ -4219,27 +4393,36 @@
       return { ok: true };
     },
 
-    addVirtualEntry() {
+    addVirtualEntry(explicitSide = null) {
       if (!Number.isFinite(this.currentRatio)) {
         if (typeof window.showToast === "function") {
           window.showToast("Parity ratio not available yet — awaiting market feed", "warning");
         }
         return;
       }
-      const dirSelect = lid("selTrancheDirection");
-      let side = this.currentRatio >= 100 ? -1 : 1;
-      let dirLabel = side < 0 ? "SHORT RATIO" : "LONG RATIO";
-      let dirToast = side < 0 ? "⚡ Auto: Short Parity (ADR Premium)" : "⚡ Auto: Long Parity (ADR Discount)";
+      let side;
+      let dirLabel;
+      let dirToast;
+      if (explicitSide === 1 || explicitSide === -1) {
+        side = explicitSide;
+        dirLabel = side < 0 ? "SHORT RATIO" : "LONG RATIO";
+        dirToast = side < 0 ? "▼ Short Parity (Short ADR / Long KR)" : "▲ Long Parity (Long ADR / Short KR)";
+      } else {
+        const dirSelect = lid("selTrancheDirection");
+        side = this.currentRatio >= 100 ? -1 : 1;
+        dirLabel = side < 0 ? "SHORT RATIO" : "LONG RATIO";
+        dirToast = side < 0 ? "⚡ Auto: Short Parity (ADR Premium)" : "⚡ Auto: Long Parity (ADR Discount)";
 
-      if (dirSelect) {
-        if (dirSelect.value === "short") {
-          side = -1;
-          dirLabel = "SHORT RATIO";
-          dirToast = "▼ Short Parity (Short ADR / Long KR)";
-        } else if (dirSelect.value === "long") {
-          side = 1;
-          dirLabel = "LONG RATIO";
-          dirToast = "▲ Long Parity (Long ADR / Short KR)";
+        if (dirSelect) {
+          if (dirSelect.value === "short") {
+            side = -1;
+            dirLabel = "SHORT RATIO";
+            dirToast = "▼ Short Parity (Short ADR / Long KR)";
+          } else if (dirSelect.value === "long") {
+            side = 1;
+            dirLabel = "LONG RATIO";
+            dirToast = "▲ Long Parity (Long ADR / Short KR)";
+          }
         }
       }
 
@@ -4251,8 +4434,9 @@
         return;
       }
 
-      const notional = this.orderNotional();
-      const entry = { time: Date.now(), ratio: this.currentRatio, notional, side };
+      const notional = this.orderNotional(side);
+      const mult = side > 0 ? this.longMultiplier() : this.shortMultiplier();
+      const entry = { time: Date.now(), ratio: this.currentRatio, notional, side, multiplier: mult };
       this.entries.push(entry);
       this.ledger.unshift({ ...entry, action: dirLabel, pnl: null });
       this.save();
@@ -4263,7 +4447,7 @@
 
       if (typeof window.showToast === "function") {
         window.showToast(
-          `📄 Paper Tranche #${this.entries.length} Added: ${dirToast} @ ${this.currentRatio.toFixed(3)}% ($${notional} virtual)`,
+          `📄 Paper Tranche #${this.entries.length} Added: ${dirToast} @ ${this.currentRatio.toFixed(3)}% ($${notional} virtual, ${mult.toFixed(2)}×)`,
           "info"
         );
       }

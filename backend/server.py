@@ -534,7 +534,8 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                                ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
                                min_consensus_votes: int = 3,
                                trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
-                               trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002) -> Dict[str, Any]:
+                               trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002,
+                               long_multiplier: float = 1.0, short_multiplier: float = 1.0) -> Dict[str, Any]:
     data = await get_lighter_parity(interval, min(500, limit))
     bars = data.get("bars", [])
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
@@ -617,20 +618,25 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
 
             if active_positions and exit_signal:
                 for open_position in active_positions:
-                    pnl_pct = open_position["side"] * (signal_price / open_position["entry"] - 1) * 100
+                    mult = open_position.get("multiplier", 1.0)
+                    raw_pnl_pct = open_position["side"] * (signal_price / open_position["entry"] - 1) * 100
+                    pnl_pct = raw_pnl_pct * mult
                     trades.append({
                         "side": open_position["side"], "entry": open_position["entry"],
                         "entry_time": open_position["entry_time"],
                         "exit": signal_price, "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "multiplier": round(mult, 2),
                         "reason": reason,
                     })
                 active_positions = []
             elif entry_signal:
                 campaign_side = active_positions[0]["side"] if active_positions else None
                 if campaign_side is None or campaign_side == candidate_side:
+                    active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
                     active_positions.append({
                         "side": candidate_side, "entry": signal_price,
                         "entry_time": bar["time"], "entry_index": index,
+                        "multiplier": active_mult,
                     })
                     last_entry_value, last_entry_side = signal_price, candidate_side
             previous_zscore = zscore
@@ -673,7 +679,8 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                             and (not use_ma_stack_1h or macro_aligned))
 
             if position is None and entry_signal:
-                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "max_favorable": 0.0}
+                active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
+                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "max_favorable": 0.0, "multiplier": active_mult}
             elif position is not None:
                 held = index - position["entry_index"]
                 current_pnl = position["side"] * (bar["value"] - position["entry"])
@@ -681,10 +688,12 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                 golden_cross = (position["side"] > 0 and ma7 >= ma24) or (position["side"] < 0 and ma7 <= ma24)
                 trailing_stop = position["max_favorable"] >= 0.20 and (position["max_favorable"] - current_pnl) >= ma_trailing_stop
                 if golden_cross or trailing_stop or held >= 16 or index == len(bars) - 1:
-                    pnl_pct = current_pnl
+                    mult = position.get("multiplier", 1.0)
+                    pnl_pct = current_pnl * mult
                     trades.append({
                         "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],
                         "exit": bar["value"], "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "multiplier": round(mult, 2),
                         "reason": "golden_cross" if golden_cross else ("trailing_stop" if trailing_stop else "max_dwell")
                     })
                     position = None
@@ -718,7 +727,8 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                             and (not use_ma_stack_1h or macro_aligned))
 
             if position is None and entry_signal:
-                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index}
+                active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
+                position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "multiplier": active_mult}
             elif position is not None:
                 held = index - position["entry_index"]
                 current_votes = sum([
@@ -730,10 +740,12 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                 consensus_drop = current_votes < 2
                 convergence = abs(zscore) <= exit_z
                 if (consensus_drop and held >= 3) or convergence or held >= 20 or index == len(bars) - 1:
-                    pnl_pct = position["side"] * (bar["value"] - position["entry"])
+                    mult = position.get("multiplier", 1.0)
+                    pnl_pct = position["side"] * (bar["value"] - position["entry"]) * mult
                     trades.append({
                         "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],
                         "exit": bar["value"], "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
+                        "multiplier": round(mult, 2),
                         "reason": "convergence" if convergence else "consensus_demotion"
                     })
                     position = None
@@ -782,14 +794,18 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
 
             if position is None:
                 if buy_signal:
+                    active_mult = max(0.1, float(long_multiplier))
                     position = {
                         "side": 1, "entry": bar["value"], "entry_time": bar["time"],
-                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta
+                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta,
+                        "multiplier": active_mult
                     }
                 elif short_signal:
+                    active_mult = max(0.1, float(short_multiplier))
                     position = {
                         "side": -1, "entry": bar["value"], "entry_time": bar["time"],
-                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta
+                        "entry_index": index, "trendline_at_entry": trendline_val, "beta_at_entry": beta,
+                        "multiplier": active_mult
                     }
             elif position is not None:
                 held = index - position["entry_index"]
@@ -807,13 +823,15 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                 stop_loss = current_pnl <= -0.45 or held >= 32 or index == len(bars) - 1
 
                 if tp_reached or (opposite_reversal and current_pnl > 0) or trend_invalidated or stop_loss:
+                    mult = position.get("multiplier", 1.0)
                     trades.append({
                         "side": position["side"],
                         "entry": position["entry"],
                         "entry_time": position["entry_time"],
                         "exit": bar["value"],
                         "exit_time": bar["time"],
-                        "pnl_pct": round(current_pnl, 4),
+                        "pnl_pct": round(current_pnl * mult, 4),
+                        "multiplier": round(mult, 2),
                         "reason": "tp_reached" if tp_reached else ("opposite_reversal" if opposite_reversal else ("trend_invalidation" if trend_invalidated else "stop_loss"))
                     })
                     position = None
@@ -842,7 +860,8 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
     open_positions = [{
         "side": item["side"], "entry": item["entry"], "entry_time": item["entry_time"],
         "mark": mark,
-        "unrealized_pnl_pct": round(item["side"] * (mark / item["entry"] - 1) * 100, 4),
+        "multiplier": round(item.get("multiplier", 1.0), 2),
+        "unrealized_pnl_pct": round(item["side"] * (mark / item["entry"] - 1) * 100 * item.get("multiplier", 1.0), 4),
     } for item in active_positions]
     mode_metrics["open_tranches"] = len(open_positions)
     mode_metrics["capacity_mode"] = "PRICE_SIGNALS_ONLY"
@@ -879,8 +898,8 @@ async def step_lighter_tranche(request: Request) -> JSONResponse:
     try:
         notional = float(body.get("notional_usd") or lighter_pair_bot.state.get("notional_usd", 25.0))
         side = int(body.get("side", -1))
-        if not math.isfinite(notional) or not 10.0 <= notional <= 500.0:
-            raise ValueError("notional_usd must be between 10 and 500")
+        if not math.isfinite(notional) or not 10.0 <= notional <= 5000.0:
+            raise ValueError("notional_usd must be between 10 and 5000")
         if side not in {-1, 1}:
             raise ValueError("side must be -1 or 1")
         async with lighter_client.execution_lock:

@@ -151,6 +151,8 @@ class LighterPairBot:
         "base_spacing_pct": 0.2,
         "min_dwell_bars": 4,
         "notional_usd": 50.0,
+        "long_multiplier": 1.0,
+        "short_multiplier": 1.0,
         "hedge_mode": "DOLLAR_NEUTRAL",
         "capacity_mode": "DYNAMIC_SAFE_LEVERAGE",
         "max_tranches": None,
@@ -731,6 +733,7 @@ class LighterPairBot:
             "trend_pullback_dist": (0.01, 2.0), "trend_tp_dist": (0.01, 1.0),
             "trend_slope_min": (0.0001, 0.05),
             "base_spacing_pct": (0.01, 10.0), "min_dwell_bars": (0, 100),
+            "long_multiplier": (0.1, 10.0), "short_multiplier": (0.1, 10.0),
         }
         async with self.lock:
             updated = dict(self.state)
@@ -1549,12 +1552,14 @@ class LighterPairBot:
                    for quote in (adr_quote, domestic_quote)):
                 self.state["last_action"] = "ENTRY_BLOCKED_BOOK_SPREAD"
                 return
-            refreshed_risk = self._risk_capacity(status, open_pos, adr_quote, domestic_quote)
+            mult = float(self.state.get("long_multiplier", 1.0)) if side > 0 else float(self.state.get("short_multiplier", 1.0))
+            active_notional = float(self.state.get("notional_usd", 25.0)) * mult
+            refreshed_risk = self._risk_capacity(status, open_pos, adr_quote, domestic_quote, active_notional)
             if not refreshed_risk["can_add_tranche"]:
                 self.state["last_action"] = "ENTRY_BLOCKED_RISK_CAPACITY"
                 return
             adr_qty, domestic_qty = self._dollar_neutral_quantities(
-                self.state["notional_usd"], adr_quote["mid"], domestic_quote["mid"])
+                active_notional, adr_quote["mid"], domestic_quote["mid"])
             execution = await self._trade_pair(side, adr_qty, domestic_qty, adr_quote, domestic_quote, reduce_only=False)
             entry_fee = self._execution_fees(execution)
             entry_ratio = self._execution_ratio(execution, ratios[-1])
@@ -1570,9 +1575,9 @@ class LighterPairBot:
                            "entry_quote_check": evaluation.get("executable_entry_check"),
                            "entry_strategy": evaluation.get("strategy", self.state.get("strategy_mode", "grid")),
                            "time": int(time.time()),
-                           "notional_usd": self.state["notional_usd"], "is_entry": True,
+                           "notional_usd": active_notional, "multiplier": mult, "is_entry": True,
                            "fee_usd": round(entry_fee, 8),
-                           "fee_bps": round(entry_fee / self.state["notional_usd"] * 10_000, 4),
+                           "fee_bps": round(entry_fee / active_notional * 10_000, 4) if active_notional else 0.0,
                            "adr_price": execution["first_leg"]["fill_price"],
                            "domestic_price": execution["second_leg"]["fill_price"],
                            "execution_source": "LIGHTER_FILLS",
@@ -1622,8 +1627,8 @@ class LighterPairBot:
         async with self.lock:
             if side not in {-1, 1}:
                 raise ValueError("side must be -1 or 1")
-            if not math.isfinite(notional_usd) or not 10.0 <= notional_usd <= 500.0:
-                raise ValueError("notional_usd must be between 10 and 500")
+            if not math.isfinite(notional_usd) or not 10.0 <= notional_usd <= 5000.0:
+                raise ValueError("notional_usd must be between 10 and 5000")
             if self.state.get("pending_execution"):
                 raise RuntimeError("Resolve the pending paired execution before placing another order")
             status = await self.client.account_status()
