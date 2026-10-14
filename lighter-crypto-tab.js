@@ -851,8 +851,11 @@
       lid("rangeCryptoLongMultiplier")?.addEventListener("input", (e) => {
         if (lid("inputCryptoLongMultiplier")) lid("inputCryptoLongMultiplier").value = parseFloat(e.target.value).toFixed(2);
         syncCryptoLong(e.target.value);
+        this.lastUserMultiplierUpdate = Date.now();
+        this.requestBacktest();
       });
       lid("rangeCryptoLongMultiplier")?.addEventListener("change", (e) => {
+        this.lastUserMultiplierUpdate = Date.now();
         this.saveCryptoScaling({ long_multiplier: parseFloat(e.target.value) });
         this.requestBacktest();
       });
@@ -861,11 +864,14 @@
         if (Number.isFinite(val) && val >= 0.1) {
           if (lid("rangeCryptoLongMultiplier")) lid("rangeCryptoLongMultiplier").value = Math.min(5.0, val).toFixed(2);
           syncCryptoLong(val);
+          this.lastUserMultiplierUpdate = Date.now();
+          this.requestBacktest();
         }
       });
       lid("inputCryptoLongMultiplier")?.addEventListener("change", (e) => {
         const val = parseFloat(e.target.value);
         if (Number.isFinite(val) && val >= 0.1) {
+          this.lastUserMultiplierUpdate = Date.now();
           this.saveCryptoScaling({ long_multiplier: val });
           this.requestBacktest();
         }
@@ -874,8 +880,11 @@
       lid("rangeCryptoShortMultiplier")?.addEventListener("input", (e) => {
         if (lid("inputCryptoShortMultiplier")) lid("inputCryptoShortMultiplier").value = parseFloat(e.target.value).toFixed(2);
         syncCryptoShort(e.target.value);
+        this.lastUserMultiplierUpdate = Date.now();
+        this.requestBacktest();
       });
       lid("rangeCryptoShortMultiplier")?.addEventListener("change", (e) => {
+        this.lastUserMultiplierUpdate = Date.now();
         this.saveCryptoScaling({ short_multiplier: parseFloat(e.target.value) });
         this.requestBacktest();
       });
@@ -884,11 +893,14 @@
         if (Number.isFinite(val) && val >= 0.1) {
           if (lid("rangeCryptoShortMultiplier")) lid("rangeCryptoShortMultiplier").value = Math.min(5.0, val).toFixed(2);
           syncCryptoShort(val);
+          this.lastUserMultiplierUpdate = Date.now();
+          this.requestBacktest();
         }
       });
       lid("inputCryptoShortMultiplier")?.addEventListener("change", (e) => {
         const val = parseFloat(e.target.value);
         if (Number.isFinite(val) && val >= 0.1) {
+          this.lastUserMultiplierUpdate = Date.now();
           this.saveCryptoScaling({ short_multiplier: val });
           this.requestBacktest();
         }
@@ -2871,24 +2883,25 @@
         notionalInput.value = String(bot?.notional_usd || 25);
         notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5";
       }
-      if (bot?.long_multiplier != null) {
+      const isInteractingMult = (Date.now() - (this.lastUserMultiplierUpdate || 0) < 5000);
+      if (!isInteractingMult && bot?.long_multiplier != null) {
         const lm = parseFloat(bot.long_multiplier);
         if (Number.isFinite(lm) && lm >= 0.1) {
           const inp = lid("inputCryptoLongMultiplier");
           const rng = lid("rangeCryptoLongMultiplier");
-          if (inp && document.activeElement !== inp) inp.value = lm.toFixed(2);
-          if (rng && document.activeElement !== rng) rng.value = Math.min(5.0, Math.max(1.0, lm)).toFixed(2);
+          if (inp && document.activeElement !== inp && document.activeElement !== rng) inp.value = lm.toFixed(2);
+          if (rng && document.activeElement !== rng && document.activeElement !== inp) rng.value = Math.min(5.0, Math.max(1.0, lm)).toFixed(2);
           const badge = lid("badgeCryptoLongMultiplier");
           if (badge) badge.textContent = `${lm.toFixed(2)}×`;
         }
       }
-      if (bot?.short_multiplier != null) {
+      if (!isInteractingMult && bot?.short_multiplier != null) {
         const sm = parseFloat(bot.short_multiplier);
         if (Number.isFinite(sm) && sm >= 0.1) {
           const inp = lid("inputCryptoShortMultiplier");
           const rng = lid("rangeCryptoShortMultiplier");
-          if (inp && document.activeElement !== inp) inp.value = sm.toFixed(2);
-          if (rng && document.activeElement !== rng) rng.value = Math.min(5.0, Math.max(1.0, sm)).toFixed(2);
+          if (inp && document.activeElement !== inp && document.activeElement !== rng) inp.value = sm.toFixed(2);
+          if (rng && document.activeElement !== rng && document.activeElement !== inp) rng.value = Math.min(5.0, Math.max(1.0, sm)).toFixed(2);
           const badge = lid("badgeCryptoShortMultiplier");
           if (badge) badge.textContent = `${sm.toFixed(2)}×`;
         }

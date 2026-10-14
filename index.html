@@ -12889,13 +12889,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const exitText = `${Number(sizing.scale_out_skhy ?? criteria.exit_policy?.adr_exit_qty ?? 0).toFixed(2)} ADR / ${Number(sizing.scale_out_csop ?? criteria.exit_policy?.stock_exit_qty ?? 0).toFixed(2)} ETF`;
           const unitText = `${Number(sizing.unit_skhy ?? 0).toFixed(2)} ADR / ${Number(sizing.unit_csop ?? 0).toFixed(2)} ETF`;
           if ($("lblBasicTradableUnit")) $("lblBasicTradableUnit").textContent = unitText;
+          this.baseUnitSkhy = Number(sizing.unit_skhy ?? sizing.scale_in_skhy ?? 0.08);
+          this.baseUnitCsop = Number(sizing.unit_csop ?? sizing.scale_in_csop ?? 1.4);
+          this.adrMarkPrice = Number(data.adr_position?.mark_price || 190);
+          this.stockMarkPrice = Number(data.stock_position?.mark_price || 5.5);
 
           const shortVal = Number(sizing.short_spread_multiplier ?? sizing.entry_multiplier ?? 1.0);
           const longVal = Number(sizing.long_spread_multiplier ?? 1.0);
-          const shortSkhy = Number(sizing.short_skhy_qty ?? sizing.scale_in_skhy ?? 0.08);
-          const shortCsop = Number(sizing.short_csop_qty ?? sizing.scale_in_csop ?? 1.4);
-          const longSkhy = Number(sizing.long_skhy_qty ?? sizing.scale_in_skhy ?? 0.08);
-          const longCsop = Number(sizing.long_csop_qty ?? sizing.scale_in_csop ?? 1.4);
+          const shortSkhy = Number(sizing.short_skhy_qty ?? (this.baseUnitSkhy * shortVal));
+          const shortCsop = Number(sizing.short_csop_qty ?? (this.baseUnitCsop * shortVal));
+          const longSkhy = Number(sizing.long_skhy_qty ?? (this.baseUnitSkhy * longVal));
+          const longCsop = Number(sizing.long_csop_qty ?? (this.baseUnitCsop * longVal));
 
           const rangeShort = $("rangeShortSpreadMultiplier");
           const inpShort = $("inputShortSpreadMultiplier");
@@ -12906,42 +12910,45 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             if (inpShort) inpShort.disabled = chkAutoShort.checked;
             if (rangeShort) rangeShort.disabled = chkAutoShort.checked;
           }
-          if (inpShort && document.activeElement !== inpShort && document.activeElement !== rangeShort) {
+          const isInteractingShort = document.activeElement === inpShort || document.activeElement === rangeShort || (Date.now() - (this.lastUserScalingUpdateShort || 0) < 4000);
+          if (inpShort && !isInteractingShort) {
             inpShort.value = shortVal.toFixed(2);
           }
-          if (rangeShort && document.activeElement !== rangeShort && document.activeElement !== inpShort) {
+          if (rangeShort && !isInteractingShort) {
             rangeShort.value = Math.min(5.0, Math.max(1.0, shortVal)).toFixed(2);
           }
-          if (badgeShort) {
+          if (badgeShort && !isInteractingShort) {
             badgeShort.textContent = `${shortVal.toFixed(2)}× basic${sizing.auto_short_multiplier ? " (Macro)" : ""}`;
           }
-          if ($("lblShortSpreadQty")) $("lblShortSpreadQty").textContent = `${shortSkhy.toFixed(2)} ADR / ${shortCsop.toFixed(2)} ETF (100% Symmetric)`;
+          if ($("lblShortSpreadQty") && !isInteractingShort) $("lblShortSpreadQty").textContent = `${shortSkhy.toFixed(2)} ADR / ${shortCsop.toFixed(2)} ETF (100% Symmetric)`;
 
           const rangeLong = $("rangeLongSpreadMultiplier");
           const inpLong = $("inputLongSpreadMultiplier");
           const badgeLong = $("badgeLongSpreadMultiplier");
-          if (inpLong && document.activeElement !== inpLong && document.activeElement !== rangeLong) {
+          const isInteractingLong = document.activeElement === inpLong || document.activeElement === rangeLong || (Date.now() - (this.lastUserScalingUpdateLong || 0) < 4000);
+          if (inpLong && !isInteractingLong) {
             inpLong.value = longVal.toFixed(2);
           }
-          if (rangeLong && document.activeElement !== rangeLong && document.activeElement !== inpLong) {
+          if (rangeLong && !isInteractingLong) {
             rangeLong.value = Math.min(5.0, Math.max(1.0, longVal)).toFixed(2);
           }
-          if (badgeLong) {
+          if (badgeLong && !isInteractingLong) {
             badgeLong.textContent = `${longVal.toFixed(2)}× basic`;
           }
-          if ($("lblLongSpreadQty")) $("lblLongSpreadQty").textContent = `${longSkhy.toFixed(2)} ADR / ${longCsop.toFixed(2)} ETF (100% Symmetric)`;
+          if ($("lblLongSpreadQty") && !isInteractingLong) $("lblLongSpreadQty").textContent = `${longSkhy.toFixed(2)} ADR / ${longCsop.toFixed(2)} ETF (100% Symmetric)`;
 
           const selMode = $("selSpreadDirectionMode");
           if (selMode && document.activeElement !== selMode && sizing.spread_direction_mode) {
             selMode.value = sizing.spread_direction_mode;
           }
 
-          if ($("lblStepTrancheSize")) $("lblStepTrancheSize").textContent = `🔻 Short Spread (${shortSkhy.toFixed(2)} ADR / ${shortCsop.toFixed(2)} ETF)`;
-          if ($("lblStepLongTrancheSize")) $("lblStepLongTrancheSize").textContent = `🔺 Long Spread (${longSkhy.toFixed(2)} ADR / ${longCsop.toFixed(2)} ETF)`;
-          const adrPrice = Number(data.adr_position?.mark_price || 190);
-          const stockPrice = Number(data.stock_position?.mark_price || 5.5);
-          if ($("lblStepTrancheSub")) $("lblStepTrancheSub").textContent = `$${(shortSkhy * adrPrice + shortCsop * stockPrice).toFixed(2)}`;
-          if ($("lblStepLongTrancheSub")) $("lblStepLongTrancheSub").textContent = `$${(longSkhy * adrPrice + longCsop * stockPrice).toFixed(2)}`;
+          if ($("lblStepTrancheSize") && !isInteractingShort) $("lblStepTrancheSize").textContent = `🔻 Short Spread (${shortSkhy.toFixed(2)} ADR / ${shortCsop.toFixed(2)} ETF)`;
+          if ($("lblStepLongTrancheSize") && !isInteractingLong) $("lblStepLongTrancheSize").textContent = `🔺 Long Spread (${longSkhy.toFixed(2)} ADR / ${longCsop.toFixed(2)} ETF)`;
+          const adrPrice = this.adrMarkPrice;
+          const stockPrice = this.stockMarkPrice;
+          if ($("lblStepTrancheSub") && !isInteractingShort) $("lblStepTrancheSub").textContent = `$${(shortSkhy * adrPrice + shortCsop * stockPrice).toFixed(2)}`;
+          if ($("lblStepLongTrancheSub") && !isInteractingLong) $("lblStepLongTrancheSub").textContent = `$${(longSkhy * adrPrice + longCsop * stockPrice).toFixed(2)}`;
+          if ($("valCritExitSize")) $("valCritExitSize").textContent = exitText;
           if ($("valCritExitSize")) $("valCritExitSize").textContent = exitText;
           if ($("lblCritTPTitle")) $("lblCritTPTitle").textContent = `🎯 Anti-Churn Take-Profit (${exitText})`;
           if ($("lblCritScaleInTitle")) $("lblCritScaleInTitle").textContent = `➕ TWO-WAY SCALE-IN (Short: ${shortSkhy.toFixed(2)} / Long: ${longSkhy.toFixed(2)})`;
@@ -14651,12 +14658,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("btnEmergencyFlatten")) $("btnEmergencyFlatten").addEventListener("click", () => this.emergencyFlattenLive());
 
         const updateScalingLive = async (payload) => {
-          if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
-            const isKo = window.currentLang === "ko";
-            showToast(isKo ? "🔒 읽기 전용 모드에서는 배수 설정을 변경할 수 없습니다." : "🔒 Cannot adjust scaling in read-only mode.", "warn");
-            terminalLockManager.openPasswordModal();
-            return;
-          }
           try {
             const res = await fetch("/skhynix/api/trade/update_scaling", {
               method: "POST",
@@ -14677,12 +14678,32 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const syncShortUI = (val) => {
           const num = parseFloat(val);
           if (!Number.isFinite(num) || num < 1.0) return;
+          this.lastUserScalingUpdateShort = Date.now();
           if ($("badgeShortSpreadMultiplier")) $("badgeShortSpreadMultiplier").textContent = `${num.toFixed(2)}× basic`;
+          const baseSkhy = this.baseUnitSkhy || 0.08;
+          const baseCsop = this.baseUnitCsop || 1.4;
+          const shortSkhy = (baseSkhy * num).toFixed(2);
+          const shortCsop = (baseCsop * num).toFixed(2);
+          if ($("lblShortSpreadQty")) $("lblShortSpreadQty").textContent = `${shortSkhy} ADR / ${shortCsop} ETF (100% Symmetric)`;
+          if ($("lblStepTrancheSize")) $("lblStepTrancheSize").textContent = `🔻 Short Spread (${shortSkhy} ADR / ${shortCsop} ETF)`;
+          const adrP = this.adrMarkPrice || 190;
+          const stkP = this.stockMarkPrice || 5.5;
+          if ($("lblStepTrancheSub")) $("lblStepTrancheSub").textContent = `$${(shortSkhy * adrP + shortCsop * stkP).toFixed(2)}`;
         };
         const syncLongUI = (val) => {
           const num = parseFloat(val);
           if (!Number.isFinite(num) || num < 1.0) return;
+          this.lastUserScalingUpdateLong = Date.now();
           if ($("badgeLongSpreadMultiplier")) $("badgeLongSpreadMultiplier").textContent = `${num.toFixed(2)}× basic`;
+          const baseSkhy = this.baseUnitSkhy || 0.08;
+          const baseCsop = this.baseUnitCsop || 1.4;
+          const longSkhy = (baseSkhy * num).toFixed(2);
+          const longCsop = (baseCsop * num).toFixed(2);
+          if ($("lblLongSpreadQty")) $("lblLongSpreadQty").textContent = `${longSkhy} ADR / ${longCsop} ETF (100% Symmetric)`;
+          if ($("lblStepLongTrancheSize")) $("lblStepLongTrancheSize").textContent = `🔺 Long Spread (${longSkhy} ADR / ${longCsop} ETF)`;
+          const adrP = this.adrMarkPrice || 190;
+          const stkP = this.stockMarkPrice || 5.5;
+          if ($("lblStepLongTrancheSub")) $("lblStepLongTrancheSub").textContent = `$${(longSkhy * adrP + longCsop * stkP).toFixed(2)}`;
         };
 
         $("rangeShortSpreadMultiplier")?.addEventListener("input", (e) => {
@@ -14691,7 +14712,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
         $("rangeShortSpreadMultiplier")?.addEventListener("change", (e) => {
           const val = parseFloat(e.target.value);
-          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ short_spread_multiplier: val });
+          if (Number.isFinite(val) && val >= 1.0) {
+            syncShortUI(val);
+            updateScalingLive({ short_spread_multiplier: val });
+          }
         });
         $("inputShortSpreadMultiplier")?.addEventListener("input", (e) => {
           const val = parseFloat(e.target.value);
@@ -14702,7 +14726,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
         $("inputShortSpreadMultiplier")?.addEventListener("change", (e) => {
           const val = parseFloat(e.target.value);
-          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ short_spread_multiplier: val });
+          if (Number.isFinite(val) && val >= 1.0) {
+            syncShortUI(val);
+            updateScalingLive({ short_spread_multiplier: val });
+          }
         });
 
         $("chkAutoShortMultiplier")?.addEventListener("change", (e) => {
@@ -14718,7 +14745,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
         $("rangeLongSpreadMultiplier")?.addEventListener("change", (e) => {
           const val = parseFloat(e.target.value);
-          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ long_spread_multiplier: val });
+          if (Number.isFinite(val) && val >= 1.0) {
+            syncLongUI(val);
+            updateScalingLive({ long_spread_multiplier: val });
+          }
         });
         $("inputLongSpreadMultiplier")?.addEventListener("input", (e) => {
           const val = parseFloat(e.target.value);
@@ -14729,7 +14759,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         });
         $("inputLongSpreadMultiplier")?.addEventListener("change", (e) => {
           const val = parseFloat(e.target.value);
-          if (Number.isFinite(val) && val >= 1.0) updateScalingLive({ long_spread_multiplier: val });
+          if (Number.isFinite(val) && val >= 1.0) {
+            syncLongUI(val);
+            updateScalingLive({ long_spread_multiplier: val });
+          }
         });
 
         $("selSpreadDirectionMode")?.addEventListener("change", (e) => {
