@@ -805,7 +805,10 @@
         const warning = document.createElement("div");
         warning.id = "crypto_failClosedWarning";
         warning.style.cssText = "grid-column:1/-1;padding:9px 11px;border-radius:6px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;margin-bottom:8px";
-        warning.textContent = "Real Binance Futures orders require terminal unlock and confirmation. Grid supports automatic execution; other strategies are paper replay only.";
+        const isKo = window.currentLang === "ko";
+        warning.textContent = isKo
+          ? "바이낸스 선물 실거래는 터미널 잠금 해제와 확인이 필요합니다. 일시정지 상태에서 선택한 전략을 실시간 봇에 배포할 수 있습니다."
+          : "Real Binance Futures orders require terminal unlock and confirmation. The selected quantitative strategy can be deployed to the live bot while it is paused.";
         ticket.prepend(warning);
       }
       if (ticket) {
