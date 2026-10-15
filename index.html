@@ -7021,7 +7021,10 @@
           }
           const span = to - from;
           const zoomExceeds = totalBars > 0 && (span / totalBars) > 0.60;
-          if ((from < 150 || zoomExceeds) && !olderHistoryExhausted) {
+          if (from < 25) {
+            window.pendingLogicalRangeBeforePrepend = { from, to };
+            prependOlderBars();
+          } else if ((from < 150 || zoomExceeds) && !olderHistoryExhausted) {
             window.pendingLogicalRangeBeforePrepend = { from, to };
             prependOlderBars();
           }
