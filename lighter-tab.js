@@ -2014,13 +2014,16 @@
         this.bars = [...newBars, ...this.bars];
         this.trendRanges = this.calculateTrendRanges(this.bars);
 
+        const currentRange = this.chart?.timeScale()?.getVisibleLogicalRange?.();
+        const assetRange = this.assetChart?.timeScale()?.getVisibleLogicalRange?.();
+
         this.chartSync?.pause();
         try {
           this.series.setData(this.bars.map((bar) => ({ time: bar.time, value: bar.value })));
           [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(this.bars, w)));
 
-          StrategyExecutionChartController.applyPrependedRange(this.chart, addedCount);
-          if (this.assetChart) StrategyExecutionChartController.applyPrependedRange(this.assetChart, addedCount);
+          StrategyExecutionChartController.applyPrependedRange(this.chart, addedCount, currentRange);
+          if (this.assetChart) StrategyExecutionChartController.applyPrependedRange(this.assetChart, addedCount, assetRange);
         } finally {
           this.chartSync?.resume();
         }
@@ -3114,7 +3117,7 @@
       const request = this.chartRequest = (this.chartRequest || 0) + 1;
       let data;
       try {
-        data = await api(`/api/lighter/parity?interval=${interval}&limit=300`);
+        data = await api(`/api/lighter/parity?interval=${interval}&limit=500`);
       } catch (_) {
         data = await api(`/api/trade/short_term_parity?interval=${interval}&limit=120`);
       }
@@ -3201,6 +3204,11 @@
           if (button) button.classList.toggle("active", value === this.interval);
         });
         this.updateGridLadderData();
+        setTimeout(() => {
+          if (!this._historyExhausted && !this._loadingOlderBars) {
+            this.loadOlderBars(500);
+          }
+        }, 1200);
       } finally { this.chartSync?.resume(); }
     },
 

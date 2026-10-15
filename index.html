@@ -7034,17 +7034,18 @@
               return;
             }
           }
-          if (to > totalBars + 8) {
+          if (from > totalBars + 5) {
             const span = Math.max(10, to - from);
-            window.spreadChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, totalBars + 8 - span), to: totalBars + 8 });
+            const maxRight = totalBars + 8;
+            window.spreadChart.timeScale().setVisibleLogicalRange({ from: maxRight - span, to: maxRight });
             return;
           }
           const span = to - from;
-          const zoomExceeds = totalBars > 0 && (span / totalBars) > 0.60;
+          const zoomExceeds = totalBars > 0 && (span / totalBars) > 0.40;
           if (from < 25) {
             window.pendingLogicalRangeBeforePrepend = { from, to };
             prependOlderBars();
-          } else if ((from < 150 || zoomExceeds) && !olderHistoryExhausted) {
+          } else if ((from < 150 || zoomExceeds || from < 0) && !olderHistoryExhausted) {
             window.pendingLogicalRangeBeforePrepend = { from, to };
             prependOlderBars();
           }
@@ -8536,9 +8537,9 @@
         try {
           renderCached(cachedRows);
           if (added && window.spreadChart) {
-            StrategyExecutionChartController.applyPrependedRange(window.spreadChart, added);
-            if (window.assetPriceChart) StrategyExecutionChartController.applyPrependedRange(window.assetPriceChart, added);
-            if (window.positionChart) StrategyExecutionChartController.applyPrependedRange(window.positionChart, added);
+            StrategyExecutionChartController.applyPrependedRange(window.spreadChart, added, currentRange);
+            if (window.assetPriceChart) StrategyExecutionChartController.applyPrependedRange(window.assetPriceChart, added, currentRange);
+            if (window.positionChart) StrategyExecutionChartController.applyPrependedRange(window.positionChart, added, currentRange);
           }
         } finally {
           window.isPrependingOlderBars = false;
@@ -8816,7 +8817,11 @@
         $("status").textContent = `WebSocket live: ${rows.length.toLocaleString()} bars (${spanDays.toFixed(1)}d) | ${formatTime(lastTime, interval)} KST`;
 
         // Background History Backfill: Asynchronously fetch older pages without blocking UI
-        // Older pages load on demand when the viewport approaches the left edge.
+        setTimeout(() => {
+          if (!olderHistoryExhausted && !loadingOlder) {
+            prependOlderBars();
+          }
+        }, 1000);
       } catch (error) {
         if (refreshId !== refreshVersion) return;
         console.error("Dashboard refresh failed", error);
@@ -13354,7 +13359,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           });
 
           this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-            if (range && range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
+            if (!range) return;
+            const span = range.to - range.from;
+            const totalBars = this.shortTermHistory?.bars?.length || 0;
+            const zoomExceeds = totalBars > 0 && (span > totalBars * 0.40 || range.from < 0);
+            if (range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
+              this.fetchShortTermParity(true);
+            } else if (zoomExceeds && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
               this.fetchShortTermParity(true);
             }
           });
@@ -13799,6 +13810,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               } finally { this.shortTermRendering = false; }
               this.scheduleDynamicBacktest();
               if (older && !history.hasMore && $("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Start of available history";
+              if (!older && history.hasMore && typeof setTimeout === "function") {
+                setTimeout(() => {
+                  if (this.shortTermHistory === history && history.hasMore && !history.loadingOlder) {
+                    this.fetchShortTermParity(true);
+                  }
+                }, 1500);
+              }
               return;
             } catch (e) { console.warn("Parity page request failed", e); }
           }

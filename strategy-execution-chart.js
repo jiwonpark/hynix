@@ -419,10 +419,10 @@
   };
 
   // Keep visible candles and zoom span invariant when older candles are prepended.
-  StrategyExecutionChartController.applyPrependedRange = function (chart, addedCount) {
+  StrategyExecutionChartController.applyPrependedRange = function (chart, addedCount, baseRange = null) {
     if (!chart || !Number.isFinite(addedCount) || addedCount <= 0) return null;
-    const current = chart.timeScale().getVisibleLogicalRange();
-    if (current) {
+    const current = baseRange || chart.timeScale().getVisibleLogicalRange();
+    if (current && Number.isFinite(current.from) && Number.isFinite(current.to)) {
       const updated = {
         from: current.from + addedCount,
         to: current.to + addedCount,
@@ -468,32 +468,12 @@
       if (totalBars < 10) return;
       const span = range.to - range.from;
 
-      // Boundary clamp: if all history is loaded and user zooms/scrolls past bar 0 into negative void, clamp left
-      if (range.from < 0 && !checkHasMore() && options.clampLeft !== false) {
-        isClamping = true;
-        try {
-          chart.timeScale().setVisibleLogicalRange({ from: 0, to: Math.max(5, span) });
-        } catch (_) {}
-        isClamping = false;
-        return;
-      }
-
-      // Boundary clamp: prevent drifting multiple screens into infinite future void
-      const maxRight = totalBars + futureOffset;
-      if (options.clampRight !== false && range.to > maxRight) {
-        isClamping = true;
-        try {
-          chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, maxRight - span), to: maxRight });
-        } catch (_) {}
-        isClamping = false;
-        return;
-      }
-
-      // Zoom-aware prefetch: triggers if near left edge OR if visible span exceeds 60% of loaded bars
+      // 1. Zoom-aware prefetch: triggers if near left edge, below zero, OR if visible span exceeds 40% of loaded bars
       if (!isFetching && checkHasMore()) {
-        if (range.from < threshold || span > totalBars * 0.6) {
+        const zoomExceeds = span > totalBars * 0.40;
+        if (range.from < threshold || zoomExceeds || range.from < 0) {
           isFetching = true;
-          const needed = Math.max(300, Math.ceil(span * 1.2));
+          const needed = Math.max(300, Math.ceil(span * 1.5));
           const p = triggerPrefetch(needed);
           Promise.resolve(p)
             .catch(() => {})
@@ -503,6 +483,27 @@
               if (cooldownTimer && typeof cooldownTimer.unref === "function") cooldownTimer.unref();
             });
         }
+      }
+
+      // 2. Boundary clamp: if all history is loaded and user zooms/scrolls past bar 0 into negative void, clamp left
+      if (range.from < 0 && !checkHasMore() && options.clampLeft !== false) {
+        isClamping = true;
+        try {
+          chart.timeScale().setVisibleLogicalRange({ from: 0, to: Math.max(5, span) });
+        } catch (_) {}
+        isClamping = false;
+        return;
+      }
+
+      // 3. Boundary clamp: prevent drifting entirely into empty future void
+      const maxRight = totalBars + futureOffset;
+      if (options.clampRight !== false && range.from > totalBars + 5) {
+        isClamping = true;
+        try {
+          chart.timeScale().setVisibleLogicalRange({ from: maxRight - span, to: maxRight });
+        } catch (_) {}
+        isClamping = false;
+        return;
       }
     };
 

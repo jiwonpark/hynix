@@ -30,6 +30,10 @@ assert.deepEqual(shifted, { from: 60, to: 130 });
 assert.equal(shifted.to - shifted.from, 70, 'span must remain invariant after prepending older bars');
 assert.deepEqual(mockTimeScale.getVisibleLogicalRange(), { from: 60, to: 130 });
 
+// Test applyPrependedRange with baseRange argument
+const shiftedWithBase = Controller.applyPrependedRange(mockChart, 20, { from: 5, to: 45 });
+assert.deepEqual(shiftedWithBase, { from: 25, to: 65 });
+
 // 3. Test attachZoomAwarePrefetch triggering prefetch on zoom
 let prefetchTriggeredCount = 0;
 let neededRequested = 0;
@@ -47,12 +51,12 @@ const detach = Controller.attachZoomAwarePrefetch(mockChart, {
 
 assert.ok(typeof detach === 'function', 'must return detach function');
 
-// Trigger callback with wide zoom span (span 150 on 200 bars = 75% > 60%)
-mockTimeScale._sub({ from: 20, to: 170 });
-assert.equal(prefetchTriggeredCount, 1, 'must trigger prefetch when zoom span > 60% of total bars');
+// Trigger callback with wide zoom span (span 100 on 200 bars = 50% > 40%)
+mockTimeScale._sub({ from: 20, to: 120 });
+assert.equal(prefetchTriggeredCount, 1, 'must trigger prefetch when zoom span > 40% of total bars');
 
 // Trigger again while loading - should NOT duplicate
-mockTimeScale._sub({ from: 10, to: 160 });
+mockTimeScale._sub({ from: 10, to: 110 });
 assert.equal(prefetchTriggeredCount, 1, 'must not trigger concurrent prefetch while prior fetch is in flight');
 
 // 4. Test boundary clamping
@@ -63,9 +67,9 @@ mockTimeScale._sub({ from: -40, to: 60 });
 assert.equal(mockTimeScale.getVisibleLogicalRange().from, 0, 'must clamp left edge to 0 when history exhausted');
 assert.equal(mockTimeScale.getVisibleLogicalRange().to, 100, 'span must be preserved during left clamp');
 
-// Right boundary clamp:
-mockTimeScale._range = { from: 150, to: 250 }; // totalBars = 200, maxRight = 208
-mockTimeScale._sub({ from: 150, to: 250 });
+// Right boundary clamp: drifting into future void
+mockTimeScale._range = { from: 210, to: 310 }; // totalBars = 200, from > 205
+mockTimeScale._sub({ from: 210, to: 310 });
 assert.equal(mockTimeScale.getVisibleLogicalRange().to, 208, 'must clamp right edge to totalBars + 8');
 
 // 5. Test TerminalCommon candle caching

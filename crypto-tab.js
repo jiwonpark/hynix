@@ -2104,6 +2104,9 @@
         this.bars = [...newBars, ...this.bars];
         this.trendRanges = this.calculateTrendRanges(this.bars);
 
+        const currentRange = this.chart?.timeScale()?.getVisibleLogicalRange?.();
+        const assetRange = this.assetChart?.timeScale()?.getVisibleLogicalRange?.();
+
         this.chartSync?.pause();
         try {
           this.series.setData(this.bars.map((bar) => ({ time: bar.time, value: bar.value })));
@@ -2111,8 +2114,8 @@
           if (this.assetSeries?.stock) this.assetSeries.stock.setData(TerminalCommon.movingAverage(this.bars, 24));
           [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(this.bars, w)));
 
-          StrategyExecutionChartController.applyPrependedRange(this.chart, addedCount);
-          if (this.assetChart) StrategyExecutionChartController.applyPrependedRange(this.assetChart, addedCount);
+          StrategyExecutionChartController.applyPrependedRange(this.chart, addedCount, currentRange);
+          if (this.assetChart) StrategyExecutionChartController.applyPrependedRange(this.assetChart, addedCount, assetRange);
         } finally {
           this.chartSync?.resume();
         }
@@ -3079,9 +3082,9 @@
       const request = this.chartRequest = (this.chartRequest || 0) + 1;
       let data;
       try {
-        data = await api(`/api/crypto/price?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=300`);
+        data = await api(`/api/crypto/price?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=1000`);
       } catch (_) {
-        data = await api(`/api/crypto/candles?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=300`);
+        data = await api(`/api/crypto/candles?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=1000`);
       }
       if (interval !== this.interval || request !== this.chartRequest) return;
       if (!data || !data.success || !data.bars || !data.bars.length) return;
@@ -3159,6 +3162,11 @@
           if (button) button.classList.toggle("active", value === this.interval);
         });
         this.updateGridLadderData();
+        setTimeout(() => {
+          if (!this._historyExhausted && !this._loadingOlderBars) {
+            this.loadOlderBars(500);
+          }
+        }, 1200);
       } finally { this.chartSync?.resume(); }
     },
 
