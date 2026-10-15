@@ -400,6 +400,119 @@
     return chart;
   };
 
+  // Configure standardized timeScale across all terminal tabs.
+  StrategyExecutionChartController.configureStandardTimeScale = function (chart, options = {}) {
+    if (!chart) return;
+    chart.applyOptions({
+      timeScale: {
+        borderColor: options.borderColor || "#e2e8f0",
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: Number.isFinite(options.rightOffset) ? options.rightOffset : 4,
+        minBarSpacing: options.minBarSpacing || 0.5,
+        fixLeftEdge: options.fixLeftEdge ?? false,
+        fixRightEdge: options.fixRightEdge ?? false,
+        lockVisibleTimeRangeOnResize: true,
+        shiftVisibleRangeOnNewBar: false,
+      }
+    });
+  };
+
+  // Keep visible candles and zoom span invariant when older candles are prepended.
+  StrategyExecutionChartController.applyPrependedRange = function (chart, addedCount) {
+    if (!chart || !Number.isFinite(addedCount) || addedCount <= 0) return null;
+    const current = chart.timeScale().getVisibleLogicalRange();
+    if (current) {
+      const updated = {
+        from: current.from + addedCount,
+        to: current.to + addedCount,
+      };
+      chart.timeScale().setVisibleLogicalRange(updated);
+      return updated;
+    }
+    return null;
+  };
+
+  // Zoom-aware prefetcher and boundary clamp:
+  // Detects when user scrolls or zooms near earliest loaded bars, proactively fetches more,
+  // and prevents scrolling or zooming out into empty unloaded space when at history limits.
+  StrategyExecutionChartController.attachZoomAwarePrefetch = function (chart, options = {}) {
+    if (!chart) return () => {};
+    let isFetching = false;
+    let isClamping = false;
+    let cooldownTimer = null;
+    const threshold = options.threshold || 150;
+    const futureOffset = Number.isFinite(options.futureOffset) ? options.futureOffset : 8;
+
+    const getCount = () => {
+      if (typeof options.getTotalBars === "function") return options.getTotalBars();
+      if (typeof options.getBars === "function") return options.getBars()?.length || 0;
+      if (Number.isFinite(options.totalBars)) return options.totalBars;
+      return 0;
+    };
+    const checkHasMore = () => {
+      if (typeof options.hasMore === "function") return options.hasMore();
+      if (typeof options.isExhausted === "function") return !options.isExhausted();
+      if (typeof options.hasMore === "boolean") return options.hasMore;
+      return true;
+    };
+    const triggerPrefetch = (needed) => {
+      if (typeof options.onPrefetchNeeded === "function") return options.onPrefetchNeeded(needed);
+      if (typeof options.onNeedOlder === "function") return options.onNeedOlder(needed);
+      return null;
+    };
+
+    const handler = (range) => {
+      if (!range || isClamping) return;
+      const totalBars = getCount();
+      if (totalBars < 10) return;
+      const span = range.to - range.from;
+
+      // Boundary clamp: if all history is loaded and user zooms/scrolls past bar 0 into negative void, clamp left
+      if (range.from < 0 && !checkHasMore() && options.clampLeft !== false) {
+        isClamping = true;
+        try {
+          chart.timeScale().setVisibleLogicalRange({ from: 0, to: Math.max(5, span) });
+        } catch (_) {}
+        isClamping = false;
+        return;
+      }
+
+      // Boundary clamp: prevent drifting multiple screens into infinite future void
+      const maxRight = totalBars + futureOffset;
+      if (options.clampRight !== false && range.to > maxRight) {
+        isClamping = true;
+        try {
+          chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, maxRight - span), to: maxRight });
+        } catch (_) {}
+        isClamping = false;
+        return;
+      }
+
+      // Zoom-aware prefetch: triggers if near left edge OR if visible span exceeds 60% of loaded bars
+      if (!isFetching && checkHasMore()) {
+        if (range.from < threshold || span > totalBars * 0.6) {
+          isFetching = true;
+          const needed = Math.max(300, Math.ceil(span * 1.2));
+          const p = triggerPrefetch(needed);
+          Promise.resolve(p)
+            .catch(() => {})
+            .finally(() => {
+              if (cooldownTimer) clearTimeout(cooldownTimer);
+              cooldownTimer = setTimeout(() => { isFetching = false; }, 300);
+              if (cooldownTimer && typeof cooldownTimer.unref === "function") cooldownTimer.unref();
+            });
+        }
+      }
+    };
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+    return () => {
+      if (cooldownTimer) clearTimeout(cooldownTimer);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
+    };
+  };
+
   StrategyExecutionChartController.Frame = StrategyExecutionChartFrame;
 
   return StrategyExecutionChartController;

@@ -424,6 +424,7 @@
     async selectSymbol(sym) {
       if (!sym) return;
       this.selectedSymbol = sym;
+      this._historyExhausted = false;
       this.backtestMarkers = [];
       this.latestReplayConditionResult = null;
       this.renderMarkers();
@@ -817,6 +818,7 @@
         button.disabled = false;
         button.addEventListener("click", () => {
           this.interval = value;
+          this._historyExhausted = false;
           this.backtestMarkers = [];
           this.latestReplayConditionResult = null;
           this.renderMarkers();
@@ -1959,6 +1961,7 @@
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
       });
       StrategyExecutionChartController.compactCrosshairMarkers(this.chart);
+      StrategyExecutionChartController.configureStandardTimeScale(this.chart);
       this.series = this.chart.addAreaSeries({ topColor: "rgba(2,132,199,.25)", bottomColor: "rgba(2,132,199,.02)", lineColor: "#0284c7", lineWidth: 1,
         priceFormat: { type: "price", precision: 2, minMove: .01 } });
 
@@ -2044,6 +2047,7 @@
           crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
         });
         StrategyExecutionChartController.compactCrosshairMarkers(this.assetChart);
+        StrategyExecutionChartController.configureStandardTimeScale(this.assetChart);
         this.assetSeries = {
           adr: this.assetChart.addLineSeries({ priceScaleId: 'right', color: '#2563eb', lineWidth: 2, title: 'Price' }),
           stock: this.assetChart.addLineSeries({ priceScaleId: 'left', color: '#7c3aed', lineWidth: 2, title: 'MA24 Benchmark' }),
@@ -2052,7 +2056,73 @@
         this.chartSync = StrategyExecutionChartController.linkTimeScales(this.chart, this.assetChart);
       }
 
+      // Optimistic instant paint from cached candles
+      const cacheKey = `lighter_crypto_candles_${this.selectedSymbol || "BTC"}_${this.interval || "1m"}`;
+      const cached = typeof TerminalCommon !== "undefined" ? TerminalCommon.getCachedCandles(cacheKey) : null;
+      if (cached && cached.length) {
+        this.bars = cached;
+        this.trendRanges = this.calculateTrendRanges(cached);
+        this.series.setData(cached.map((bar) => ({ time: bar.time, value: bar.value })));
+        if (this.assetSeries?.adr) this.assetSeries.adr.setData(cached.map((b) => ({ time: b.time, value: b.value })));
+        if (this.assetSeries?.stock) this.assetSeries.stock.setData(TerminalCommon.movingAverage(cached, 24));
+        [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(cached, w)));
+        const initial = StrategyExecutionChartController.initialRange(cached.length);
+        if (this.chartSync) this.chartSync.setRange(initial);
+        else this.chart.timeScale().setVisibleLogicalRange(initial);
+      }
+
+      // Attach zoom-aware prefetcher and edge clamping
+      this.prefetchDetach = StrategyExecutionChartController.attachZoomAwarePrefetch(this.chart, {
+        getTotalBars: () => this.bars?.length || 0,
+        onPrefetchNeeded: async (needed) => this.loadOlderBars(needed),
+        isExhausted: () => Boolean(this._historyExhausted),
+      });
+
       window.addEventListener("resize", () => this.resize());
+    },
+
+    async loadOlderBars(needed = 300) {
+      if (this._loadingOlderBars || this._historyExhausted || !this.bars?.length) return 0;
+      this._loadingOlderBars = true;
+      try {
+        const oldestBarTime = this.bars[0].time;
+        const sym = this.selectedSymbol || "BTC";
+        const interval = this.interval || "1m";
+        const endMs = Math.floor(oldestBarTime * 1000) - 1;
+        const data = await api(`/api/lighter-crypto/candles?symbol=${encodeURIComponent(sym)}&interval=${interval}&end_timestamp=${endMs}&limit=${needed}`);
+        if (!data || !data.success || !data.bars || !data.bars.length) {
+          this._historyExhausted = true;
+          return 0;
+        }
+        const existingTimes = new Set(this.bars.map((b) => b.time));
+        const newBars = data.bars.filter((b) => !existingTimes.has(b.time) && b.time < oldestBarTime);
+        if (!newBars.length) {
+          this._historyExhausted = true;
+          return 0;
+        }
+        const addedCount = newBars.length;
+        this.bars = [...newBars, ...this.bars];
+        this.trendRanges = this.calculateTrendRanges(this.bars);
+
+        this.chartSync?.pause();
+        try {
+          this.series.setData(this.bars.map((bar) => ({ time: bar.time, value: bar.value })));
+          if (this.assetSeries?.adr) this.assetSeries.adr.setData(this.bars.map((b) => ({ time: b.time, value: b.value })));
+          if (this.assetSeries?.stock) this.assetSeries.stock.setData(TerminalCommon.movingAverage(this.bars, 24));
+          [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(this.bars, w)));
+
+          StrategyExecutionChartController.applyPrependedRange(this.chart, addedCount);
+          if (this.assetChart) StrategyExecutionChartController.applyPrependedRange(this.assetChart, addedCount);
+        } finally {
+          this.chartSync?.resume();
+        }
+        return addedCount;
+      } catch (err) {
+        console.warn("Lighter crypto loadOlderBars failed:", err);
+        return 0;
+      } finally {
+        this._loadingOlderBars = false;
+      }
     },
 
     async onTabActivated() {
@@ -2064,7 +2134,7 @@
       this.ensureChart();
       this.resize();
       await this.refresh();
-      await this.runBacktest();
+      this.runBacktest().catch((e) => console.warn("Background backtest error:", e));
     },
 
     resize() {
@@ -3239,6 +3309,9 @@
       try {
         this.currentRatio = Number(data.bars[data.bars.length - 1].value);
         this.bars = data.bars;
+        if (typeof TerminalCommon !== "undefined") {
+          TerminalCommon.setCachedCandles(`lighter_crypto_candles_${sym}_${interval}`, data.bars);
+        }
         this.trendRanges = this.calculateTrendRanges(data.bars);
         this.series.setData(data.bars.map((bar) => ({ time: bar.time, value: bar.value })));
 

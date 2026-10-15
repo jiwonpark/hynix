@@ -5200,7 +5200,12 @@
   <!-- Universal Floating Tooltip for Truncated & Ellipsized Texts -->
   <div id="ellipsisHoverTooltip" class="ellipsisTooltip" style="display: none;" role="tooltip"></div>
 
-  <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="lightweight-charts.standalone.production.js?v=4.2.3"></script>
+  <script>
+    if (!window.LightweightCharts) {
+      document.write('<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"><\\/script>');
+    }
+  </script>
   <script src="held-pair-pnl.js?v=20261011_fee_only"></script>
   <script src="strategy-execution-chart.js?v=20261011_price_scale"></script>
   <script src="strategy-lab.js?v=20261011_price_scale"></script>
@@ -7002,7 +7007,21 @@
           }
 
           if (loadingOlder) return;
-          if (from < 25) {
+          if (olderHistoryExhausted) {
+            if (from < 0) {
+              const span = Math.max(10, to - from);
+              window.spreadChart.timeScale().setVisibleLogicalRange({ from: 0, to: span });
+              return;
+            }
+          }
+          if (to > totalBars + 8) {
+            const span = Math.max(10, to - from);
+            window.spreadChart.timeScale().setVisibleLogicalRange({ from: Math.max(0, totalBars + 8 - span), to: totalBars + 8 });
+            return;
+          }
+          const span = to - from;
+          const zoomExceeds = totalBars > 0 && (span / totalBars) > 0.60;
+          if ((from < 150 || zoomExceeds) && !olderHistoryExhausted) {
             window.pendingLogicalRangeBeforePrepend = { from, to };
             prependOlderBars();
           }
@@ -8493,11 +8512,10 @@
         window.isPrependingOlderBars = true;
         try {
           renderCached(cachedRows);
-          if (added && window.spreadChart && currentRange) {
-            window.spreadChart.timeScale().setVisibleLogicalRange({
-              from: currentRange.from + added,
-              to: currentRange.to + added
-            });
+          if (added && window.spreadChart) {
+            StrategyExecutionChartController.applyPrependedRange(window.spreadChart, added);
+            if (window.assetPriceChart) StrategyExecutionChartController.applyPrependedRange(window.assetPriceChart, added);
+            if (window.positionChart) StrategyExecutionChartController.applyPrependedRange(window.positionChart, added);
           }
         } finally {
           window.isPrependingOlderBars = false;

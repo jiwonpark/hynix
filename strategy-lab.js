@@ -186,6 +186,7 @@
         },
       });
       StrategyExecutionChartController.compactCrosshairMarkers(this.chart);
+      StrategyExecutionChartController.configureStandardTimeScale(this.chart);
       this.candles = this.chart.addCandlestickSeries({
         upColor: "#16a34a", downColor: "#dc2626", borderVisible: false,
         wickUpColor: "#16a34a", wickDownColor: "#dc2626",
@@ -197,6 +198,27 @@
         this.bbSeries.push({ key, series: this.chart.addLineSeries({ color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false }) });
       });
       this.controller = new StrategyExecutionChartController({ series: this.candles, lineStyle: LightweightCharts.LineStyle });
+
+      // Attach zoom-aware prefetcher and edge clamping
+      this.prefetchDetach = StrategyExecutionChartController.attachZoomAwarePrefetch(this.chart, {
+        getTotalBars: () => this.data?.bars?.length || 0,
+        onPrefetchNeeded: async () => {
+          const daysSelect = document.getElementById("strategyLabDays");
+          if (!daysSelect) return 0;
+          const currentDays = Number(daysSelect.value);
+          if (currentDays < 14) {
+            const nextDays = currentDays === 3 ? "7" : "14";
+            daysSelect.value = nextDays;
+            await this.loadData();
+            return 1;
+          }
+          return 0;
+        },
+        isExhausted: () => {
+          const daysSelect = document.getElementById("strategyLabDays");
+          return daysSelect ? Number(daysSelect.value) >= 14 : true;
+        },
+      });
       if (!el("tradeTrianglesLayer") && typeof document.createElementNS === "function") {
         const svgLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         svgLayer.id = rootId("tradeTrianglesLayer");

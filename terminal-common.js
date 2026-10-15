@@ -47,6 +47,27 @@
     )).time;
   }
 
+  function getCachedCandles(key) {
+    try {
+      const raw = localStorage.getItem(`skhynix_candles_${key}`);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.bars) && parsed.bars.length > 0) return parsed.bars;
+    } catch (_) {}
+    return null;
+  }
+
+  function setCachedCandles(key, bars) {
+    try {
+      if (!Array.isArray(bars) || !bars.length) return;
+      const slice = bars.slice(-500);
+      localStorage.setItem(`skhynix_candles_${key}`, JSON.stringify({
+        saved_at: Date.now(),
+        bars: slice
+      }));
+    } catch (_) {}
+  }
+
   function renderAll() {
     const trading = document.getElementById("tabContentTrading");
     const lighter = document.getElementById("tabContentLighter");
@@ -65,6 +86,14 @@
     }
   }
 
-  window.TerminalCommon = { alignTime, movingAverage, namespaceFragment, renderTerminal };
-  renderAll();
+  const TerminalCommon = { alignTime, movingAverage, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles };
+  if (typeof window !== "undefined") {
+    window.TerminalCommon = TerminalCommon;
+    if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {
+      renderAll();
+    }
+  }
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = TerminalCommon;
+  }
 })();

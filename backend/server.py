@@ -301,15 +301,28 @@ async def get_lighter_status() -> Dict[str, Any]:
                 "server_time_ms": int(time.time() * 1000)}
 
 
+_lighter_parity_cache: Dict[str, tuple[float, Any]] = {}
+
 @app.get("/api/lighter/parity")
 async def get_lighter_parity(interval: str = "15m", limit: int = 200,
-                             end_time: Optional[int] = None) -> Dict[str, Any]:
+                             end_time: Optional[int] = None,
+                             endTime: Optional[int] = None) -> Dict[str, Any]:
     interval = interval if interval in {"1m", "5m", "15m", "1h", "4h", "1d"} else "15m"
     limit = min(500, max(20, limit))
+    target_end = end_time or endTime
+    if target_end and target_end < 100_000_000_000:
+        target_end *= 1000
+    cache_key = f"{interval}:{limit}:{target_end or 'latest'}"
+    now = time.time()
+    ttl = 4.0 if not target_end else 3600.0
+    if cache_key in _lighter_parity_cache:
+        cached_time, cached_data = _lighter_parity_cache[cache_key]
+        if now - cached_time < ttl:
+            return cached_data
     try:
         adr_raw, domestic_raw = await asyncio.gather(
-            lighter_client.candles(216, interval, limit, end_time),
-            lighter_client.candles(161, interval, limit, end_time),
+            lighter_client.candles(216, interval, limit, target_end),
+            lighter_client.candles(161, interval, limit, target_end),
         )
         domestic = {int(row["t"]): float(row["c"]) for row in domestic_raw if float(row.get("c", 0)) > 0}
         bars = []
@@ -465,7 +478,10 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
                     pair_seq += 1
                     marker["pairKey"] = f"live:{m_dir}:unmatched:{pair_seq}"
 
-        return {"success": True, "interval": interval, "bars": bars, "markers": markers}
+        res = {"success": True, "interval": interval, "bars": bars, "markers": markers}
+        if bars:
+            _lighter_parity_cache[cache_key] = (now, res)
+        return res
     except Exception as error:
         logger.warning("Lighter parity unavailable: %s", error)
         return {"success": False, "interval": interval, "bars": [], "markers": [], "error": str(error)}
@@ -937,14 +953,25 @@ async def flatten_lighter(request: Request) -> JSONResponse:
 async def create_lighter_order(request: Request) -> JSONResponse:
     return await step_lighter_tranche(request)
 
+_klines_cache: Dict[str, tuple[float, Any]] = {}
+
 @app.get("/api/klines")
 async def get_klines(symbol: str, interval: str = "15m", limit: int = 1000, endTime: Optional[int] = None):
-    """Proxy Binance Futures klines endpoint to bypass browser CORS / ISP blocks with server-side speed."""
+    """Proxy Binance Futures klines endpoint with in-memory caching to bypass browser CORS / ISP blocks with server-side speed."""
     params = {"symbol": symbol, "interval": interval, "limit": min(1500, max(1, limit))}
     if endTime:
         params["endTime"] = endTime
+    cache_key = f"{symbol}:{interval}:{limit}:{endTime or 'latest'}"
+    now = time.time()
+    ttl = 4.0 if not endTime else 3600.0
+    if cache_key in _klines_cache:
+        cached_time, cached_data = _klines_cache[cache_key]
+        if now - cached_time < ttl:
+            return cached_data
     try:
         data = await binance_client.request("GET", "/fapi/v1/klines", params=params)
+        if isinstance(data, list) and data:
+            _klines_cache[cache_key] = (now, data)
         return data
     except Exception as e:
         logger.error(f"Error fetching klines for {symbol}: {e}")
@@ -1017,10 +1044,14 @@ async def get_crypto_status(symbol: str = "BTCUSDT") -> Dict[str, Any]:
 
 @app.get("/api/crypto/candles")
 async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 300,
-                             include_markers: bool = True) -> Dict[str, Any]:
-    """Candles & price bars for single-leg crypto terminal."""
+                             include_markers: bool = True, endTime: Optional[int] = None,
+                             end_timestamp: Optional[int] = None) -> Dict[str, Any]:
+    """Candles & price bars for single-leg crypto terminal with historical pagination."""
     try:
-        raw_klines = await get_klines(symbol, interval=interval, limit=limit)
+        target_end = endTime or end_timestamp
+        if target_end and target_end < 100_000_000_000:
+            target_end *= 1000
+        raw_klines = await get_klines(symbol, interval=interval, limit=limit, endTime=target_end)
         bars = []
         for row in raw_klines:
             t = int(row[0]) // 1000
@@ -1069,9 +1100,10 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
         return {"success": False, "symbol": symbol, "interval": interval, "bars": [], "markers": [], "error": str(error)}
 
 @app.get("/api/crypto/price")
-async def get_crypto_price(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 300) -> Dict[str, Any]:
-    """Candles & price bars for single-leg crypto pricing."""
-    return await get_crypto_candles(symbol=symbol, interval=interval, limit=limit)
+async def get_crypto_price(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 300,
+                           endTime: Optional[int] = None, end_timestamp: Optional[int] = None) -> Dict[str, Any]:
+    """Candles & price bars for single-leg crypto pricing with historical pagination."""
+    return await get_crypto_candles(symbol=symbol, interval=interval, limit=limit, endTime=endTime, end_timestamp=end_timestamp)
 
 @app.get("/api/crypto/trends")
 async def get_crypto_trends(symbol: str = "BTCUSDT", small: str = "5m", big: str = "1h") -> Dict[str, Any]:
@@ -1271,16 +1303,30 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
                 "server_time_ms": int(time.time() * 1000)}
 
 
+_lighter_crypto_cache: Dict[str, tuple[float, Any]] = {}
+
 @app.get("/api/lighter-crypto/candles")
 async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
-                                     limit: int = 300) -> Dict[str, Any]:
+                                     limit: int = 300,
+                                     end_timestamp: Optional[int] = None,
+                                     endTime: Optional[int] = None) -> Dict[str, Any]:
     try:
         if symbol not in LIGHTER_CRYPTO_MARKETS:
             raise ValueError("Unsupported Lighter crypto symbol")
         if interval not in {"1m", "5m", "15m", "1h", "4h", "1d"}:
             raise ValueError("Unsupported candle interval")
+        target_end = end_timestamp or endTime
+        if target_end and target_end < 100_000_000_000:
+            target_end *= 1000
+        cache_key = f"{symbol}:{interval}:{limit}:{target_end or 'latest'}"
+        now = time.time()
+        ttl = 4.0 if not target_end else 3600.0
+        if cache_key in _lighter_crypto_cache:
+            cached_time, cached_data = _lighter_crypto_cache[cache_key]
+            if now - cached_time < ttl:
+                return cached_data
         rows = await lighter_client.candles(LIGHTER_CRYPTO_MARKETS[symbol], interval,
-                                            min(500, max(20, limit)))
+                                            min(500, max(20, limit)), end_timestamp=target_end)
         bars = [{"time": int(row["t"]) // 1000, "value": float(row["c"]),
                  "open": float(row["o"]), "high": float(row["h"]),
                  "low": float(row["l"]), "close": float(row["c"]),
@@ -1309,8 +1355,11 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
                                 "notional": float(event.get("notional_usd", 0)),
                                 "pairKey": str(event.get("entry_order_id") or event.get("order_id")),
                                 "hoverText": f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {symbol} @ {price:.6f} · {event.get('qty')} filled"})
-        return {"success": True, "symbol": symbol, "interval": interval,
-                "bars": bars, "markers": markers}
+        result = {"success": True, "symbol": symbol, "interval": interval,
+                  "bars": bars, "markers": markers}
+        if bars:
+            _lighter_crypto_cache[cache_key] = (now, result)
+        return result
     except Exception as error:
         return {"success": False, "symbol": symbol, "interval": interval,
                 "bars": [], "markers": [], "error": str(error)}
@@ -1319,8 +1368,10 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
 @app.get("/api/lighter-crypto/price")
 @app.get("/api/lighter-crypto/parity")
 async def get_lighter_crypto_price(symbol: str = "BTC", interval: str = "15m",
-                                   limit: int = 300) -> Dict[str, Any]:
-    return await get_lighter_crypto_candles(symbol, interval, limit)
+                                   limit: int = 300,
+                                   end_timestamp: Optional[int] = None,
+                                   endTime: Optional[int] = None) -> Dict[str, Any]:
+    return await get_lighter_crypto_candles(symbol, interval, limit, end_timestamp=end_timestamp, endTime=endTime)
 
 
 @app.get("/api/lighter-crypto/trends")
@@ -2092,15 +2143,23 @@ async def get_upbit_coin_chart(
         "actual_trades_error": actual_error,
     }
 
+_upbit_stack_cache: Dict[str, tuple[float, Any]] = {}
+
 @app.get("/api/strategy-lab/upbit-ma-stack")
 async def get_upbit_ma_stack_backtest(
     request: Request,
     strategy_mode: str = Query("ma_stack"),
-    days: int = Query(7, ge=3, le=14),
+    days: int = Query(7, ge=1, le=30),
     fee_bps: float = Query(5.0, ge=0.0, le=100.0),
     max_tranches: int = Query(5, ge=1, le=20),
 ) -> Dict[str, Any]:
-    """Read-only BTC/KRW quantitative strategy research backtest."""
+    """Read-only BTC/KRW quantitative strategy research backtest with fast TTL caching."""
+    cache_key = str(request.url.query)
+    now = time.time()
+    if cache_key in _upbit_stack_cache:
+        cached_time, cached_data = _upbit_stack_cache[cache_key]
+        if now - cached_time < 5.0:
+            return cached_data
     try:
         count_5m = days * 24 * 12 + 2
         count_1h = max(days * 24 + 62, 200)
@@ -2127,6 +2186,7 @@ async def get_upbit_ma_stack_backtest(
         result["bot_status"] = bot_status
         result["actual_trades"] = bot_status.get("recent_trades", [])
         result["active_tranches"] = bot_status.get("active_tranches", [])
+        _upbit_stack_cache[cache_key] = (now, result)
         return result
     except Exception as e:
         logger.exception("Error running Upbit quantitative strategy lab")
