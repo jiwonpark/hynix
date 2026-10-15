@@ -802,7 +802,7 @@ class TestLighterPairBot(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "side"):
                     await bot.execute_manual_tranche(0, 25.0)
                 with self.assertRaisesRegex(ValueError, "notional_usd"):
-                    await bot.execute_manual_tranche(-1, 501.0)
+                    await bot.execute_manual_tranche(-1, 5001.0)
                 client.account_status.assert_not_called()
 
         asyncio.run(run())

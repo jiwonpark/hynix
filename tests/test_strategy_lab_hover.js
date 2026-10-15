@@ -28,15 +28,21 @@ lab.chart = { timeScale: () => ({ getVisibleLogicalRange: () => ({ from: 0, to: 
   timeToCoordinate: time => time }) };
 let cursor = { time: 100, point: { x: 100, y: 10 } };
 let updates = 0;
+let depth = 0;
 let rendered;
 const lines = new Set();
 lab.candles = {
   setMarkers(markers) {
     rendered = markers;
     updates++;
+    depth++;
     // Reproduce Lightweight Charts' synchronous crosshair notification.
-    if (updates > 20) throw new Error('recursive crosshair updates');
-    lab.onCrosshair(cursor);
+    if (depth > 5) throw new Error('recursive crosshair updates');
+    try {
+      lab.onCrosshair(cursor);
+    } finally {
+      depth--;
+    }
   },
   createPriceLine(options) { lines.add(options); lab.onCrosshair(cursor); return options; },
   removePriceLine(line) { lines.delete(line); lab.onCrosshair(cursor); },
