@@ -12289,8 +12289,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         body.innerHTML = assets.map(a => {
           const pnlColor = a.unrealized_pnl_krw >= 0 ? "#10b981" : "#ef4444";
           const pnlSign = a.unrealized_pnl_krw >= 0 ? "+" : "";
-          const isKrw = a.currency === "KRW";
-          const roeStr = isKrw ? "—" : `${pnlSign}₩${a.unrealized_pnl_krw.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${pnlSign}${a.return_rate_percent.toFixed(2)}%)`;
+          const retSign = a.return_rate_percent > 0 ? "+" : (a.return_rate_percent < 0 ? "-" : (a.unrealized_pnl_krw < 0 ? "-" : (a.unrealized_pnl_krw > 0 ? "+" : "")));
+          const retStr = `${retSign}${Math.abs(Number(a.return_rate_percent || 0)).toFixed(2)}%`;
+          const roeStr = isKrw ? "—" : `${a.unrealized_pnl_krw >= 0 ? '+' : '-'}₩${Math.abs(a.unrealized_pnl_krw).toLocaleString('en-US', { maximumFractionDigits: 0 })} (${retStr})`;
           const buyStr = isKrw ? "—" : `₩${a.avg_buy_price.toLocaleString('en-US', { maximumFractionDigits: a.avg_buy_price < 100 ? 2 : 0 })}`;
           const curStr = isKrw ? "1.00" : `₩${a.current_price_krw.toLocaleString('en-US', { maximumFractionDigits: a.current_price_krw < 100 ? 2 : 0 })}`;
 
@@ -12324,6 +12325,17 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const adrPos = this.state.backendPositions.find(p => p.symbol === "SKHYUSDT");
             const stockPos = this.state.backendPositions.find(p => p.symbol === "CSOPSKHYNIX2LUSDT" || p.symbol === "SKHYNIXUSDT");
             const otherPositions = this.state.backendPositions.filter(p => p.symbol !== "SKHYUSDT" && p.symbol !== "CSOPSKHYNIX2LUSDT" && p.symbol !== "SKHYNIXUSDT");
+            const formatPosRoe = (roe, pnl, margin, notional) => {
+              let r = Number(roe);
+              const p = Number(pnl || 0);
+              if (!Number.isFinite(r) || (r === 0 && p !== 0)) {
+                const m = Number(margin || 0);
+                const n = Number(notional || 0);
+                r = m > 0 ? (p / m) * 100 : (n > 0 ? (p / n) * 100 : 0);
+              }
+              const sign = r > 0 ? '+' : (r < 0 ? '-' : (p < 0 ? '-' : (p > 0 ? '+' : '')));
+              return `${sign}${Math.abs(r).toFixed(2)}%`;
+            };
 
             let html = "";
             if (adrPos && stockPos) {
@@ -12389,7 +12401,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <td>$${adrPos.entry_price.toFixed(4)}</td>
                 <td style="font-weight: 700;">$${adrPos.mark_price.toFixed(4)}</td>
                 <td style="font-weight: 800; color: ${adrPos.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'};">
-                  ${adrPos.unrealized_pnl >= 0 ? '+' : ''}$${adrPos.unrealized_pnl.toFixed(2)} (${adrPos.unrealized_pnl >= 0 ? '+' : ''}${adrPos.roe_percent.toFixed(2)}%)
+                  ${adrPos.unrealized_pnl >= 0 ? '+' : '-'}$${Math.abs(adrPos.unrealized_pnl).toFixed(2)} (${formatPosRoe(adrPos.roe_percent, adrPos.unrealized_pnl, adrPos.initial_margin, adrPos.notional)})
                 </td>
                 <td style="color: #64748b; font-size: 11px;">
                   ${adrPos.liquidation_price ? `$${adrPos.liquidation_price.toFixed(2)} (${adrPos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : '—'}
@@ -12412,7 +12424,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <td>$${stockPos.entry_price.toFixed(4)}</td>
                 <td style="font-weight: 700;">$${stockPos.mark_price.toFixed(4)}</td>
                 <td style="font-weight: 800; color: ${stockPos.unrealized_pnl >= 0 ? '#10b981' : '#ef4444'};">
-                  ${stockPos.unrealized_pnl >= 0 ? '+' : ''}$${stockPos.unrealized_pnl.toFixed(2)} (${stockPos.unrealized_pnl >= 0 ? '+' : ''}${stockPos.roe_percent.toFixed(2)}%)
+                  ${stockPos.unrealized_pnl >= 0 ? '+' : '-'}$${Math.abs(stockPos.unrealized_pnl).toFixed(2)} (${formatPosRoe(stockPos.roe_percent, stockPos.unrealized_pnl, stockPos.initial_margin, stockPos.notional)})
                 </td>
                 <td style="color: #64748b; font-size: 11px;">
                   ${stockPos.liquidation_price ? `$${stockPos.liquidation_price.toFixed(2)} (${stockPos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : '—'}
@@ -12423,7 +12435,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               const singlePositions = [adrPos, stockPos].filter(Boolean);
               html += singlePositions.map(pos => {
                 const pnlColor = pos.unrealized_pnl >= 0 ? "#10b981" : "#ef4444";
-                const pnlSign = pos.unrealized_pnl >= 0 ? "+" : "";
                 const dirLabel = pos.side === "LONG" ? (isKo ? "🟢 롱 (LONG)" : "🟢 LONG") : (isKo ? "🔴 숏 (SHORT)" : "🔴 SHORT");
                 const liqStr = pos.liquidation_price ? `$${pos.liquidation_price.toFixed(4)} (${pos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : "—";
                 const skhySharesStr = pos.skhy_shares != null ? `<div style="font-size: 11px; color: #0284c7; font-weight: 700; margin-top: 2px;">${pos.skhy_shares >= 0 ? '+' : ''}${pos.skhy_shares.toFixed(3)} SKHY shares</div>` : '';
@@ -12435,7 +12446,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   <td>$${pos.notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${krxSharesStr}</td>
                   <td>$${pos.entry_price.toFixed(4)}</td>
                   <td style="font-weight: 700;">$${pos.mark_price.toFixed(4)}</td>
-                  <td style="font-weight: 800; color: ${pnlColor};">${pnlSign}$${pos.unrealized_pnl.toFixed(2)} (${pnlSign}${pos.roe_percent.toFixed(2)}%)</td>
+                  <td style="font-weight: 800; color: ${pnlColor};">${pos.unrealized_pnl >= 0 ? '+' : '-'}$${Math.abs(pos.unrealized_pnl).toFixed(2)} (${formatPosRoe(pos.roe_percent, pos.unrealized_pnl, pos.initial_margin, pos.notional)})</td>
                   <td style="color: #64748b; font-size: 11px;">${liqStr}</td>
                   <td><span style="font-size: 11px; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 700; border: 1px solid #bbf7d0;">LIVE BINANCE</span></td>
                 </tr>`;
@@ -12445,7 +12456,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             if (otherPositions.length > 0) {
               html += otherPositions.map(pos => {
                 const pnlColor = pos.unrealized_pnl >= 0 ? "#10b981" : "#ef4444";
-                const pnlSign = pos.unrealized_pnl >= 0 ? "+" : "";
                 const dirLabel = pos.side === "LONG" ? (isKo ? "🟢 롱 (LONG)" : "🟢 LONG") : (isKo ? "🔴 숏 (SHORT)" : "🔴 SHORT");
                 const liqStr = pos.liquidation_price ? `$${pos.liquidation_price.toFixed(4)} (${pos.distance_to_liq_percent?.toFixed(1)}% ${isKo ? '버퍼' : 'Buffer'})` : "—";
                 return `<tr>
@@ -12454,7 +12464,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   <td>$${pos.notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td>$${pos.entry_price.toFixed(4)}</td>
                   <td style="font-weight: 700;">$${pos.mark_price.toFixed(4)}</td>
-                  <td style="font-weight: 800; color: ${pnlColor};">${pnlSign}$${pos.unrealized_pnl.toFixed(2)} (${pnlSign}${pos.roe_percent.toFixed(2)}%)</td>
+                  <td style="font-weight: 800; color: ${pnlColor};">${pos.unrealized_pnl >= 0 ? '+' : '-'}$${Math.abs(pos.unrealized_pnl).toFixed(2)} (${formatPosRoe(pos.roe_percent, pos.unrealized_pnl, pos.initial_margin, pos.notional)})</td>
                   <td style="color: #64748b; font-size: 11px;">${liqStr}</td>
                   <td><span style="font-size: 11px; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 700; border: 1px solid #bbf7d0;">LIVE BINANCE</span></td>
                 </tr>`;

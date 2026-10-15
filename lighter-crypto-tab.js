@@ -5100,9 +5100,16 @@
         const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : null;
         const validTranches = (this.botState?.tranches || []).filter(t => Number(t.qty) > 0);
         const liveUnrealized = (this.livePositions || []).reduce((acc, pos) => acc + Number(pos.unrealized_pnl || 0), 0);
-        const pnlPct = col > 0 ? (liveUnrealized / col) * 100 : 0;
-        const pnlSign = liveUnrealized >= 0 ? "+" : "";
-        const pnlText = `${pnlSign}$${liveUnrealized.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
+        const openLive = (this.livePositions || []).filter(p => Math.abs(Number(p.position_amt ?? p.size ?? 0)) > 1e-6);
+        const liveGross = openLive.reduce((sum, pos) => {
+          const quantity = Math.abs(Number(pos.position_amt ?? pos.size ?? 0));
+          const mark = Number(pos.mark_price || pos.avg_entry_price || pos.entry_price || pos.price || 0);
+          return sum + (Math.abs(Number(pos.notional || 0)) || quantity * mark);
+        }, 0);
+        const pnlPct = col > 0 ? (liveUnrealized / col) * 100 : (liveGross > 0 ? (liveUnrealized / liveGross) * 100 : 0);
+        const pnlPctSign = pnlPct > 0 ? "+" : (pnlPct < 0 ? "-" : (liveUnrealized < 0 ? "-" : (liveUnrealized > 0 ? "+" : "")));
+        const pnlAmountSign = liveUnrealized >= 0 ? "+" : "-";
+        const pnlText = `${pnlAmountSign}$${Math.abs(liveUnrealized).toFixed(2)} (${pnlPctSign}${Math.abs(pnlPct).toFixed(2)}%)`;
         const realized = this.verifiedRealizedSummary();
         const estimatedClosed = (this.botState?.execution_history || []).filter(
           (trade) => trade.event === "EXIT" && Number.isFinite(Number(trade.net_pnl_usd)));
@@ -5110,12 +5117,6 @@
         const realizedSign = realized.pnl >= 0 ? "+" : "";
         this.setText("valAccountEquity", col != null ? `$${col.toFixed(2)}` : "—");
         this.setText("badgeEquitySource", col != null ? "REAL FUTURES" : "UNAVAILABLE");
-        const openLive = (this.livePositions || []).filter(p => Math.abs(Number(p.position_amt ?? p.size ?? 0)) > 1e-6);
-        const liveGross = openLive.reduce((sum, pos) => {
-          const quantity = Math.abs(Number(pos.position_amt ?? pos.size ?? 0));
-          const mark = Number(pos.mark_price || pos.avg_entry_price || pos.entry_price || pos.price || 0);
-          return sum + (Math.abs(Number(pos.notional || 0)) || quantity * mark);
-        }, 0);
         const actualFreeMargin = this.liveVenue?.available_margin;
         this.setText("valActivePairs", `${openLive.length} Open on Exchange`);
         const maxTranches = Number(this.botState?.max_tranches || 8);
@@ -5156,12 +5157,18 @@
               const price = Number(pos.avg_entry_price || pos.entry_price || pos.price || 0);
               const mark = Number(pos.mark_price || pos.price || price);
               const notional = Math.abs(Number(pos.notional || 0)) || Math.abs(rawSize) * mark;
-              const margin = Math.abs(Number(pos.initial_margin || 0));
-              const roePct = margin > 0 ? pnl / margin * 100 : 0;
+              const levCap = Number(this.botState?.risk_capacity?.gross_leverage_cap || 8);
+              const margin = Math.abs(Number(pos.initial_margin || pos.allocated_margin || 0)) || (levCap > 0 ? notional / levCap : notional);
+              let roePct = Number(pos.roe_percent);
+              if (!Number.isFinite(roePct) || (roePct === 0 && pnl !== 0)) {
+                roePct = margin > 0 ? (pnl / margin) * 100 : (notional > 0 ? (pnl / notional) * 100 : 0);
+              }
+              const roeSign = roePct > 0 ? "+" : (roePct < 0 ? "-" : (pnl < 0 ? "-" : (pnl > 0 ? "+" : "")));
+              const roeFormatted = `${roeSign}${Math.abs(roePct).toFixed(3)}%`;
               const sideBadge = isLong
                 ? '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG</span>'
                 : '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">SHORT</span>';
-              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td><b>$${notional.toFixed(2)}</b> USD</td><td>$${margin.toFixed(2)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(4)}<br><small>${roePct >= 0 ? "+" : ""}${roePct.toFixed(3)}%</small></td></tr>`;
+              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td><b>$${notional.toFixed(2)}</b> USD</td><td>$${margin.toFixed(2)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : "-"}$${Math.abs(pnl).toFixed(4)}<br><small>${roeFormatted}</small></td></tr>`;
             }).join("");
           } else {
             body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px 16px;line-height:1.6;">No selected-contract Futures position on the exchange.</td></tr>';

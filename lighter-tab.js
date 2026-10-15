@@ -4948,12 +4948,17 @@
               const mark = Number(pos.mark_price || pos.price || price);
               const notional = Math.abs(Number(pos.position_value || 0)) || Math.abs(rawSize) * mark;
               const liveLevCap = Number(this.botState?.risk_capacity?.gross_leverage_cap || 8);
-              const margin = Math.abs(Number(pos.allocated_margin || 0)) || notional / liveLevCap;
-              const roePct = margin > 0 ? pnl / margin * 100 : 0;
+              const margin = Math.abs(Number(pos.allocated_margin || pos.initial_margin || 0)) || (liveLevCap > 0 ? notional / liveLevCap : notional);
+              let roePct = Number(pos.roe_percent);
+              if (!Number.isFinite(roePct) || (roePct === 0 && pnl !== 0)) {
+                roePct = margin > 0 ? (pnl / margin) * 100 : (notional > 0 ? (pnl / notional) * 100 : 0);
+              }
+              const roeSign = roePct > 0 ? "+" : (roePct < 0 ? "-" : (pnl < 0 ? "-" : (pnl > 0 ? "+" : "")));
+              const roeFormatted = `${roeSign}${Math.abs(roePct).toFixed(3)}%`;
               const sideBadge = isLong
                 ? '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG</span>'
                 : '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">SHORT</span>';
-              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td><b>$${notional.toFixed(2)}</b> USDT</td><td>$${margin.toFixed(2)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : ""}$${pnl.toFixed(4)}<br><small>${roePct >= 0 ? "+" : ""}${roePct.toFixed(3)}%</small></td></tr>`;
+              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td><b>$${notional.toFixed(2)}</b> USDT</td><td>$${margin.toFixed(2)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : "-"}$${Math.abs(pnl).toFixed(4)}<br><small>${roeFormatted}</small></td></tr>`;
             }).join("");
           } else {
             body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px 16px;line-height:1.6;">🛡️ All positions closed / flat (Take-profit mean-reversion executed)<br><small style="color:#059669;font-weight:700;">Check Execution History tab below for filled orders</small></td></tr>';

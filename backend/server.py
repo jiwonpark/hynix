@@ -1221,8 +1221,8 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
         for position in positions:
             size = abs(float(position.get("position", 0) or position.get("size", 0) or 0))
             value = abs(float(position.get("position_value", 0) or 0))
+            mark_price = float(position.get("mark_price", 0) or position.get("avg_entry_price", 0) or detail.get("mark_price", 0) or 0)
             if size and not value:
-                mark_price = float(position.get("mark_price", 0) or position.get("avg_entry_price", 0) or 0)
                 value = size * mark_price
             account_gross += value
             if int(position.get("market_id", -1)) != market_id:
@@ -1231,13 +1231,22 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
             raw = float(position.get("position", 0) or position.get("size", 0) or 0)
             sign = int(position.get("sign", 1 if raw >= 0 else -1))
             amount = abs(raw) * (1 if sign > 0 else -1)
+            notional = value or (abs(amount) * mark_price)
+            allocated_margin = abs(float(position.get("allocated_margin", 0) or 0))
+            leverage_cap = float(lighter_crypto_bot.GROSS_LEVERAGE_CAP or 8.0)
+            initial_margin = allocated_margin or ((notional / leverage_cap) if leverage_cap > 0 else notional)
+            unrealized_pnl = float(position.get("unrealized_pnl", 0) or 0)
+            roe_percent = (unrealized_pnl / initial_margin * 100.0) if initial_margin > 0 else (
+                (unrealized_pnl / notional * 100.0) if notional > 0 else 0.0
+            )
             selected.append({"symbol": symbol, "market_id": market_id,
                              "position_amt": amount, "size": abs(amount),
-                             "notional": abs(float(position.get("position_value", 0) or 0)),
+                             "notional": notional,
                              "entry_price": float(position.get("avg_entry_price", 0) or 0),
-                             "mark_price": float(position.get("mark_price", 0) or detail.get("mark_price", 0) or 0),
-                             "unrealized_pnl": float(position.get("unrealized_pnl", 0) or 0),
-                             "initial_margin": float(position.get("allocated_margin", 0) or 0)})
+                             "mark_price": mark_price,
+                             "unrealized_pnl": unrealized_pnl,
+                             "initial_margin": initial_margin,
+                             "roe_percent": round(roe_percent, 4)})
         collateral = float(account.get("collateral", 0) or 0) if account.get("authenticated") else None
         mark = float(quote["mid"] or 0)
         previous_open = float(candles[-2]["o"]) if len(candles) > 1 else mark
