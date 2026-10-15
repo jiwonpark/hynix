@@ -7,6 +7,7 @@ grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 import asyncio
 import copy
 import json
+import logging
 import math
 import os
 import time
@@ -14,6 +15,8 @@ import uuid
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 from .lighter_strategy import (
     evaluate_strategy_signal,
@@ -559,12 +562,59 @@ class CryptoBot:
         async with self.lock:
             self.state["enabled"] = False
             self._save()
-            if self.state["recovery_required"] or self.state["pending_order"]:
-                raise ValueError("Bot paused; reconcile uncertain order before flattening")
+            symbol = self.state["selected_symbol"]
+            step, minimum, _ = await self._exchange_rules(symbol)
+            if self.state["pending_order"]:
+                pending = self.state["pending_order"]
+                try:
+                    order = await self.client.request("GET", "/fapi/v1/order",
+                                                      {"symbol": pending["symbol"],
+                                                       "origClientOrderId": pending["client_order_id"]}, signed=True)
+                    if order.get("status") in {"CANCELED", "EXPIRED", "REJECTED"} or float(order.get("executedQty", 0)) == 0:
+                        self.state["pending_order"] = None
+                        self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None)
+                        self._save()
+                except Exception as err:
+                    logger.warning("Error checking pending order during flatten: %s", err)
             events = []
             while self.state["tranches"]:
-                events.append(await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
-                                                 reduce_only=True, reason="emergency_flatten"))
+                try:
+                    events.append(await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
+                                                     reduce_only=True, reason="emergency_flatten"))
+                except Exception as err:
+                    logger.warning("Error reducing tranche during flatten: %s", err)
+                    break
+            try:
+                account, amount = await self._account_position(symbol)
+                step_f = float(step)
+                if abs(amount) >= step_f:
+                    bid, ask = await self._book(symbol, enforce_spread=False)
+                    close_side = 1 if amount < 0 else -1
+                    close_price = ask if close_side > 0 else bid
+                    quant = Decimal(str(abs(amount))).quantize(step, rounding=ROUND_DOWN)
+                    if quant >= minimum:
+                        await self.client.request(
+                            "POST", "/fapi/v1/order",
+                            {
+                                "symbol": symbol,
+                                "side": "BUY" if close_side > 0 else "SELL",
+                                "type": "MARKET",
+                                "quantity": str(quant),
+                                "reduceOnly": "true",
+                                "newOrderRespType": "RESULT",
+                            },
+                            signed=True,
+                        )
+                        events.append({
+                            "event": "EXIT", "symbol": symbol, "side": close_side,
+                            "qty": float(quant), "price": close_price, "reason": "emergency_flatten_residual",
+                            "time": int(time.time()), "pnl_authoritative": False,
+                        })
+            except Exception as exc:
+                logger.warning("Error flattening residual exchange position: %s", exc)
+            self.state["tranches"] = []
+            self.state.update(pending_order=None, recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
+            self._save()
             return {"events": events, "bot": self.public_state()}
 
     async def run_once(self) -> None:

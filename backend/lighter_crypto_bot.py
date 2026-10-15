@@ -341,13 +341,17 @@ class LighterCryptoBot:
             self._save()
             return self.public_state()
 
-    def _record_fill(self, order: Dict[str, Any], pending: Dict[str, Any]) -> Dict[str, Any]:
+    def _record_fill(self, order: Dict[str, Any], pending: Dict[str, Any], allow_partial: bool = False) -> Dict[str, Any]:
         filled = float(order.get("filled_size", 0) or 0)
         price = float(order.get("fill_price", 0) or 0)
         step = float(pending["size_step"])
         expected = float(pending["qty"])
-        if not order.get("fill_confirmed") or price <= 0 or abs(filled - expected) > max(step / 2, expected * 0.00001):
-            raise ValueError("Lighter order did not confirm the complete intended fill")
+        if not allow_partial:
+            if not order.get("fill_confirmed") or price <= 0 or abs(filled - expected) > max(step / 2, expected * 0.00001):
+                raise ValueError("Lighter order did not confirm the complete intended fill")
+        else:
+            if price <= 0 or filled <= 0:
+                raise ValueError("Lighter order has no valid filled price or quantity")
         side = int(pending["side"])
         is_exit = bool(pending["reduce_only"])
         event = {"event": "EXIT" if is_exit else "ENTRY", "symbol": pending["symbol"],
@@ -359,12 +363,17 @@ class LighterCryptoBot:
                  "fee_usd": float(order.get("fee_usd", 0) or 0),
                  "pnl_authoritative": False}
         if is_exit:
-            closed = self.state["tranches"].pop()
-            gross = int(closed["side"]) * filled * (price - float(closed["price"]))
-            net = gross - float(closed.get("fee_usd", 0)) - event["fee_usd"]
-            event.update(entry_price=closed["price"], entry_order_id=closed["order_id"],
-                         original_side=closed["side"], gross_pnl_usd=gross,
-                         net_pnl_usd=net, pnl_source="ESTIMATED_EX_FUNDING")
+            closed = self.state["tranches"].pop() if self.state["tranches"] else None
+            if closed:
+                gross = int(closed["side"]) * filled * (price - float(closed["price"]))
+                net = gross - float(closed.get("fee_usd", 0)) - event["fee_usd"]
+                event.update(entry_price=closed["price"], entry_order_id=closed["order_id"],
+                             original_side=closed["side"], gross_pnl_usd=gross,
+                             net_pnl_usd=net, pnl_source="ESTIMATED_EX_FUNDING")
+            else:
+                event.update(entry_price=price, entry_order_id="external",
+                             original_side=-side, gross_pnl_usd=0.0,
+                             net_pnl_usd=-event["fee_usd"], pnl_source="ESTIMATED_EX_FUNDING")
         else:
             self.state["tranches"].append({"side": side, "qty": filled, "price": price,
                                             "fee_usd": event["fee_usd"],
@@ -443,26 +452,68 @@ class LighterCryptoBot:
                 fill = await self.client.execution_fill(idx, int(pending["market_id"]), float(pending["qty"]))
                 if fill.get("fill_confirmed"):
                     event = self._record_fill(fill, pending)
-                elif str(order.get("status", "")).lower() in {"cancelled", "canceled", "expired", "rejected"} and not float(order.get("filled_base_amount", 0) or 0):
-                    self.state["pending_order"] = None
-                    self._save()
                 else:
-                    raise ValueError("Lighter order may be open or partially filled; manual recovery required")
+                    status_str = str(order.get("status", "")).lower()
+                    filled_base = float(order.get("filled_base_amount", 0) or 0)
+                    rem_base = float(order.get("remaining_base_amount", 0) or 0)
+                    is_terminal_canceled = status_str.startswith("cancel") or status_str in {"cancelled", "canceled", "expired", "rejected"}
+                    if is_terminal_canceled and rem_base == 0:
+                        if filled_base > 0:
+                            px = float(order.get("filled_quote_amount", 0) or 0) / filled_base if filled_base else float(order.get("price", 0) or 0)
+                            partial_record = {
+                                "fill_confirmed": True,
+                                "filled_size": filled_base,
+                                "fill_price": px,
+                                "fee_usd": float(order.get("integrator_taker_fee", 0) or 0),
+                                "fill_time_ms": int(order.get("timestamp", 0) or 0) * 1000 or int(time.time() * 1000),
+                            }
+                            event = self._record_fill(partial_record, pending, allow_partial=True)
+                        else:
+                            self.state["pending_order"] = None
+                            self._save()
+                    else:
+                        raise ValueError("Lighter order may be open or partially filled; manual recovery required")
             symbol = self.state["selected_symbol"]
-            _, _, step = await self._market(symbol)
+            market_id, detail, step = await self._market(symbol)
             _, amount, _ = await self._account_position(symbol)
-            self._check_position(amount, step)
+            expected = sum(float(item["qty"]) * int(item["side"]) for item in self.state["tranches"])
+            if abs(amount - expected) > max(step / 2, abs(expected) * 0.00001):
+                logger.warning("Reconciling position mismatch: expected %s, exchange has %s", expected, amount)
+                if abs(amount) < step:
+                    self.state["tranches"] = []
+                else:
+                    mark_px = float(detail.get("mark_price", 0) or 0)
+                    self.state["tranches"] = [{
+                        "side": 1 if amount > 0 else -1,
+                        "qty": abs(amount),
+                        "price": mark_px,
+                        "fee_usd": 0.0,
+                        "order_id": f"reconciled_{int(time.time())}",
+                        "time": int(time.time()),
+                    }]
             self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
             self._save()
             return {"event": event, "bot": self.public_state()}
 
     async def verify_startup(self) -> None:
-        if not self.state["enabled"] and not self.state["tranches"]:
+        if not self.state["enabled"] and not self.state["tranches"] and not self.state["pending_order"]:
             return
         async with self.lock:
             try:
                 if self.state["pending_order"]:
-                    raise ValueError("Pending order requires reconciliation")
+                    idx = int(self.state["pending_order"].get("client_order_index", 0))
+                    order = await self.client.account_order(idx) if idx else None
+                    if order:
+                        status_str = str(order.get("status", "")).lower()
+                        rem_base = float(order.get("remaining_base_amount", 0) or 0)
+                        if (status_str.startswith("cancel") or status_str in {"cancelled", "canceled", "expired", "rejected"}) and rem_base == 0:
+                            self.state["pending_order"] = None
+                            self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
+                            self._save()
+                        else:
+                            raise ValueError("Pending order requires reconciliation")
+                    else:
+                        raise ValueError("Pending order requires reconciliation")
                 symbol = self.state["selected_symbol"]
                 _, _, step = await self._market(symbol)
                 _, amount, _ = await self._account_position(symbol)
@@ -494,12 +545,52 @@ class LighterCryptoBot:
         async with self.lock:
             self.state["enabled"] = False
             self._save()
-            if self.state["recovery_required"] or self.state["pending_order"]:
-                raise ValueError("Bot paused; reconcile uncertain order before flattening")
+            symbol = self.state["selected_symbol"]
+            market_id, detail, step = await self._market(symbol, fresh=True)
+            if self.state["pending_order"]:
+                idx = int(self.state["pending_order"].get("client_order_index", 0))
+                try:
+                    order = await self.client.account_order(idx) if idx else None
+                    if order:
+                        status_str = str(order.get("status", "")).lower()
+                        rem_base = float(order.get("remaining_base_amount", 0) or 0)
+                        if status_str.startswith("cancel") or status_str in {"cancelled", "canceled", "expired", "rejected"} or rem_base == 0:
+                            self.state["pending_order"] = None
+                            self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None)
+                            self._save()
+                except Exception as err:
+                    logger.warning("Error checking pending order during flatten: %s", err)
             events = []
             while self.state["tranches"]:
-                events.append(await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
-                                                 reduce_only=True, reason="emergency_flatten"))
+                try:
+                    events.append(await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
+                                                     reduce_only=True, reason="emergency_flatten"))
+                except Exception as err:
+                    logger.warning("Error reducing tranche during flatten: %s", err)
+                    break
+            try:
+                _, amount, _ = await self._account_position(symbol)
+                if abs(amount) >= step:
+                    bid, ask = await self._book(market_id, enforce_spread=False)
+                    close_side = 1 if amount < 0 else -1
+                    close_price = ask if close_side > 0 else bid
+                    order_index = secrets.randbelow(self.client.MAX_CLIENT_ORDER_INDEX - 1) + 1
+                    await self.client.create_market_order(
+                        market_id, abs(amount), close_price, is_ask=(close_side < 0),
+                        reduce_only=True, client_order_index=order_index
+                    )
+                    events.append({
+                        "event": "EXIT", "symbol": symbol, "market_id": market_id,
+                        "side": close_side, "qty": abs(amount), "price": close_price,
+                        "reason": "emergency_flatten_residual",
+                        "time": int(time.time()),
+                        "pnl_authoritative": False,
+                    })
+            except Exception as exc:
+                logger.warning("Error flattening residual exchange position: %s", exc)
+            self.state["tranches"] = []
+            self.state.update(pending_order=None, recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
+            self._save()
             return {"events": events, "bot": self.public_state()}
 
     async def run_once(self) -> None:

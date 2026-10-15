@@ -30,35 +30,50 @@
     }).replace(",", "");
   }
 
+  function getApiPrefix() {
+    return (typeof window !== "undefined" && window.location && window.location.pathname && window.location.pathname.startsWith("/skhynix")) ? "/skhynix" : "";
+  }
+
   async function api(path) {
-    let lastError;
-    for (const prefix of ["/skhynix", ""]) {
-      try {
-        const response = await fetch(`${prefix}${path}`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.json();
-      } catch (error) { lastError = error; }
+    const prefix = getApiPrefix();
+    const response = await fetch(`${prefix}${path}`);
+    const ct = (response.headers && typeof response.headers.get === "function" ? response.headers.get("content-type") : "application/json") || "";
+    let payload = null;
+    if (ct.includes("application/json")) {
+      payload = await response.json().catch(() => null);
     }
-    throw lastError || new Error("API unavailable");
+    if (!response.ok) {
+      const errText = (payload && (payload.error || payload.message || payload.detail)) || `HTTP ${response.status}`;
+      throw new Error(errText);
+    }
+    if (payload === null) {
+      throw new Error("Invalid API response format (non-JSON)");
+    }
+    return payload;
   }
 
   async function apiPost(path, body) {
     const token = window.terminalLockManager?.token;
     if (!token) throw new Error("Unlock the terminal first");
-    let lastError;
-    for (const prefix of ["/skhynix", ""]) {
-      try {
-        const response = await fetch(`${prefix}${path}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify(body),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-        return payload;
-      } catch (error) { lastError = error; }
+    const prefix = getApiPrefix();
+    const response = await fetch(`${prefix}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    const ct = (response.headers && typeof response.headers.get === "function" ? response.headers.get("content-type") : "application/json") || "";
+    let payload = null;
+    if (ct.includes("application/json")) {
+      payload = await response.json().catch(() => null);
     }
-    throw lastError || new Error("API unavailable");
+    if (!response.ok) {
+      const errText = (payload && (payload.error || payload.message || payload.detail)) || `HTTP ${response.status}`;
+      throw new Error(errText);
+    }
+    if (payload === null) {
+      throw new Error("Invalid API response format (non-JSON)");
+    }
+    return payload;
   }
 
   const lighterCryptoEngine = {
@@ -4373,10 +4388,10 @@
       try {
         const res = await apiPost("/api/lighter-crypto/step_tranche", { side, notional_usd: notional, confirm_live_trading: true });
         if (res.success) {
-          window.showToast?.(`✅ ${res.message}`, "success");
+          window.showToast?.(`✅ ${res.message || "Tranche stepped"}`, "success");
           await this.refresh();
         } else {
-          window.showToast?.(`Execution Error: ${res.error}`, "danger");
+          window.showToast?.(`Execution Error: ${res.error || res.message || res.detail || "Request failed"}`, "danger");
         }
       } catch (e) {
         window.showToast?.(`Error: ${e.message}`, "danger");
@@ -4398,10 +4413,10 @@
       try {
         const res = await apiPost("/api/lighter-crypto/reduce_tranche", { confirm_live_trading: true });
         if (res.success) {
-          window.showToast?.(`✅ ${res.message}`, "success");
+          window.showToast?.(`✅ ${res.message || "Tranche reduced"}`, "success");
           await this.refresh();
         } else {
-          window.showToast?.(`Reduce Error: ${res.error}`, "danger");
+          window.showToast?.(`Reduce Error: ${res.error || res.message || res.detail || "Request failed"}`, "danger");
         }
       } catch (e) {
         window.showToast?.(`Error: ${e.message}`, "danger");
@@ -4425,7 +4440,7 @@
             window.showToast?.("✅ Bot-owned Lighter Perpetuals inventory flattened and bot paused.", "success");
             await this.refresh();
           } else {
-            window.showToast?.(`Error: ${res.error}`, "danger");
+            window.showToast?.(`Error: ${res.error || res.message || res.detail || "Flatten failed"}`, "danger");
           }
         } catch (e) {
           window.showToast?.(`Flatten failed: ${e.message}`, "danger");
