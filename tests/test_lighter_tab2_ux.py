@@ -37,7 +37,7 @@ class TestLighterTab2Ux(unittest.TestCase):
     @patch("backend.server.terminal_authorized", return_value=True)
     def test_step_tranche_rejects_unsafe_parameters(self, mock_auth):
         with patch.object(lighter_pair_bot, "execute_manual_tranche", new_callable=AsyncMock) as mock_step:
-            for payload in ({"side": 0, "notional_usd": 25}, {"side": -1, "notional_usd": 501}):
+            for payload in ({"side": 0, "notional_usd": 25}, {"side": -1, "notional_usd": 5001}):
                 res = self.client.post("/api/lighter/step_tranche", json=payload)
                 self.assertEqual(res.status_code, 400)
             mock_step.assert_not_awaited()

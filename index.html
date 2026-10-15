@@ -1610,6 +1610,11 @@
       position: relative;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
+    .autoTradeMasterBanner.paused,
+    .autoTradeMasterBanner:not(.active):not(.recovery) {
+      border-color: #fde68a;
+      background: linear-gradient(135deg, #fffdfa 0%, #fefce8 100%);
+    }
     .autoTradeMasterBanner.active {
       background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
       border-color: #10b981;
@@ -3791,8 +3796,9 @@
                 <button id="btnShortInterval4h" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('4h')">4h</button>
                 <button id="btnShortInterval1d" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('1d')">1d</button>
               </div>
-              <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a;">
-                ADR / √CSOP signal: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong>
+              <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                <span>ADR / √CSOP signal: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong></span>
+                <span id="badgeShortTermReplayMode" style="font-size: 9.5px; font-weight: 800; padding: 1px 7px; border-radius: 4px; background: #fef3c7; color: #b45309; border: 1px solid #fde68a;">○ REPLAY ONLY (AUTO-TRADE OFF)</span>
               </div>
               <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
             </div>
@@ -12591,10 +12597,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 card.className = (bAuth || uAuth) ? "backendTelemetryCard connected" : "backendTelemetryCard unauth";
               }
               if (mainLbl) {
+                const isAutoOn = Boolean(this.state.daemonAutoEnabled || this.state.hedgedStatus?.auto_tranche_criteria?.backend_auto_tranche_enabled);
                 mainLbl.textContent = (bAuth && uAuth) 
-                  ? "Daemon: Dual-Exchange Active" 
+                  ? (isAutoOn ? "Daemon: Dual-Exchange Active" : "Daemon: Dual-Exchange · Auto-Trade: OFF")
                   : (bAuth || uAuth) 
-                  ? "Daemon: Connected & Active" 
+                  ? (isAutoOn ? "Daemon: Connected · Auto-Trade: ACTIVE" : "Daemon: Connected · Auto-Trade: STANDBY (OFF)")
                   : "Daemon: Online (Unauthenticated)";
               }
 
@@ -13081,9 +13088,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 badge.style.display = "inline-flex";
                 badge.className = "badgeAutoPeriodicStatus";
                 badge.textContent = "○ EC2 DAEMON PAUSED";
-                badge.style.background = "#f1f5f9";
-                badge.style.color = "#475569";
-                badge.style.borderColor = "#cbd5e1";
+                badge.style.background = "#fef3c7";
+                badge.style.color = "#92400e";
+                badge.style.borderColor = "#fde68a";
                 badge.title = "Autonomous daemon is paused on EC2";
               }
               if (headingEl) headingEl.textContent = "EC2 DAEMON: STANDBY";
@@ -13093,6 +13100,28 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 navPill.textContent = "○ AUTO PAUSED";
               }
               if ($("modeLive")) $("modeLive").classList.remove("botActiveLive");
+            }
+
+            const mainLbl = $("lblDaemonMainStatus");
+            if (mainLbl && (this.state.backendAuthenticated || this.state.upbitAuthenticated)) {
+              mainLbl.textContent = isDaemonOn 
+                ? "Daemon: Connected · Auto-Trade: ACTIVE" 
+                : "Daemon: Connected · Auto-Trade: STANDBY (OFF)";
+            }
+
+            const replayBadge = $("badgeShortTermReplayMode");
+            if (replayBadge) {
+              if (isDaemonOn) {
+                replayBadge.textContent = isKo ? "● 실시간 자동매매 가동 중" : "● LIVE AUTO-TRADE ACTIVE";
+                replayBadge.style.background = "#dcfce7";
+                replayBadge.style.color = "#166534";
+                replayBadge.style.borderColor = "#bbf7d0";
+              } else {
+                replayBadge.textContent = isKo ? "○ 시뮬레이션 리플레이 (자동매매 OFF)" : "○ REPLAY ONLY (AUTO-TRADE OFF)";
+                replayBadge.style.background = "#fef3c7";
+                replayBadge.style.color = "#b45309";
+                replayBadge.style.borderColor = "#fde68a";
+              }
             }
 
             const authoritativeMode = isDaemonOn ? "live" : (this.state.mode === "live" ? "paper" : this.state.mode);
@@ -13917,7 +13946,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const mandatory = (criteria.mandatory_live_conditions || ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state", "exit_speculative_tranche", "exit_position_qty"]).includes(key);
           const liveOn = mandatory || on;
           const chk = $(chkId);
-          const checkedState = mandatory && ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state"].includes(key) ? true : on;
+          const checkedState = (key === "entry_worker_state")
+            ? Boolean(criteria.backend_auto_tranche_enabled && !criteria.has_execution_recovery && !criteria.backend_auto_tranche_state?.execution_recovery)
+            : (mandatory && ["entry_capacity", "entry_gross_leverage", "entry_margin_buffer"].includes(key) ? true : on);
           if (chk) {
             if (!this.pendingConditionWrites && this.pendingWarningKey !== key && chk.checked !== checkedState) {
               chk.checked = checkedState;
@@ -14031,9 +14062,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         syncCondRow("entry_margin_buffer", "rowCondEntryMargin", "chkCondEntryMargin", "badgeCondEntryMargin", hasMargin, isKo ? "충족" : "PASS", isKo ? "증거금부족" : "LOW MARGIN", "fail");
 
         if ($("valCondEntryEngine")) {
-          $("valCondEntryEngine").textContent = isEngineReady ? (isKo ? "가동 중" : "ACTIVE · READY") : (hasRecovery ? (isKo ? "복구 대기" : "RECOVERY LOCK") : (isKo ? "비활성화" : "DISABLED"));
+          $("valCondEntryEngine").textContent = isEngineReady 
+            ? (isKo ? "가동 중" : "ACTIVE · READY") 
+            : (hasRecovery ? (isKo ? "복구 대기" : "RECOVERY LOCK") : (isKo ? "비활성화 (자동매매 OFF)" : "DISABLED (AUTO-TRADE OFF)"));
         }
-        syncCondRow("entry_worker_state", "rowCondEntryEngine", "chkCondEntryEngine", "badgeCondEntryEngine", isEngineReady, isKo ? "가동" : "READY", isKo ? "대기" : "PAUSED", "wait");
+        syncCondRow("entry_worker_state", "rowCondEntryEngine", "chkCondEntryEngine", "badgeCondEntryEngine", isEngineReady, isKo ? "가동" : "READY", hasRecovery ? (isKo ? "복구대기" : "RECOVERY") : (isKo ? "자동매매 OFF" : "AUTO OFF"), "wait");
 
         const newClosedBar = Boolean(criteria.is_new_closed_entry_bar);
         const rateOk = Boolean(criteria.has_entry_rate_capacity);
@@ -14046,10 +14079,19 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         // Scale-In Top Badge
         if ($("badgeCriteriaScaleIn")) {
+          const isDaemonOn = Boolean(criteria.backend_auto_tranche_enabled);
           if (scaleInArmed) {
-            $("badgeCriteriaScaleIn").textContent = isKo ? "피크반전 체결대기" : "PEAK REVERSAL ARMED";
-            $("badgeCriteriaScaleIn").style.background = "#dcfce7";
-            $("badgeCriteriaScaleIn").style.color = "#166534";
+            if (!isDaemonOn) {
+              $("badgeCriteriaScaleIn").textContent = isKo ? "피크반전 신호 (자동매매 OFF)" : "SIGNAL ARMED · AUTO-TRADE OFF";
+              $("badgeCriteriaScaleIn").style.background = "#fef3c7";
+              $("badgeCriteriaScaleIn").style.color = "#b45309";
+              $("badgeCriteriaScaleIn").title = "Market criteria passed in price replay, but background auto-tranche execution is disabled";
+            } else {
+              $("badgeCriteriaScaleIn").textContent = isKo ? "피크반전 체결대기" : "PEAK REVERSAL ARMED";
+              $("badgeCriteriaScaleIn").style.background = "#dcfce7";
+              $("badgeCriteriaScaleIn").style.color = "#166534";
+              $("badgeCriteriaScaleIn").title = "Signal armed and live background auto-tranche daemon is actively trading";
+            }
           } else if (!canScaleIn) {
             $("badgeCriteriaScaleIn").textContent = isKo ? "최대 한도 도달" : "MAX CAPACITY";
             $("badgeCriteriaScaleIn").style.background = "#fee2e2";
@@ -14183,9 +14225,18 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         // One decision and reason are shared by the worker, button, and checklist.
         if ($("badgeCriteriaTP")) {
-          $("badgeCriteriaTP").textContent = canTP ? (isKo ? "수렴 익절 가능" : "TRIM READY") : (criteria.status_take_profit || "HOLDING");
-          $("badgeCriteriaTP").style.background = canTP ? "#dcfce7" : "#f1f5f9";
-          $("badgeCriteriaTP").style.color = canTP ? "#166534" : "#475569";
+          const isDaemonOn = Boolean(criteria.backend_auto_tranche_enabled);
+          if (canTP) {
+            $("badgeCriteriaTP").textContent = isDaemonOn 
+              ? (isKo ? "수렴 익절 가능" : "TRIM READY") 
+              : (isKo ? "수렴 익절 가능 (자동매매 OFF)" : "TRIM READY · AUTO OFF");
+            $("badgeCriteriaTP").style.background = isDaemonOn ? "#dcfce7" : "#fef3c7";
+            $("badgeCriteriaTP").style.color = isDaemonOn ? "#166534" : "#b45309";
+          } else {
+            $("badgeCriteriaTP").textContent = criteria.status_take_profit || "HOLDING";
+            $("badgeCriteriaTP").style.background = "#f1f5f9";
+            $("badgeCriteriaTP").style.color = "#475569";
+          }
         }
 
         // LIFO Tranche Stack

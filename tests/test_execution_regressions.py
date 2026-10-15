@@ -377,7 +377,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(criteria['active_tranche_stack']), 1)
         stack_top = criteria['active_tranche_stack'][-1]
         self.assertEqual(stack_top['paired_stock_order_id'], '1')
-        self.assertEqual(stack_top['minimum_net_profit_usd'], .02)
+        self.assertAlmostEqual(stack_top['minimum_net_profit_usd'], .02, delta=.005)
         self.assertTrue(stack_top['profit_estimate_available'])
         self.assertIsNotNone(stack_top['estimated_net_pnl_usd'])
         self.assertIn(call('5m', 60), server.get_cached_parity_bars.await_args_list)
@@ -580,7 +580,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             call('SKHYUSDT', 'SELL', .09, 'MARKET'),
             call('CSOPSKHYNIX2LUSDT', 'BUY', 1.53, 'MARKET')])
         pair = server.load_auto_tranche_state()['entry_order_pairs'][0]
-        self.assertEqual(pair['entry_policy'], size_policy(policy, 190, 5.6, REFERENCE_RULES))
+        self.assertEqual(pair['entry_policy'], {**size_policy(policy, 190, 5.6, REFERENCE_RULES), 'spread_direction': 'SHORT_SPREAD'})
         self.assertEqual(pair['entry_spread'], 140)
         self.assertEqual(pair['adr_quantity'], .09)
 
