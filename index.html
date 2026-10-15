@@ -969,6 +969,12 @@
       border-color: #b45309 !important;
       animation: navPillGlow 1.2s infinite ease-in-out;
     }
+    .mainNavBtn .navLivePill.blocked {
+      background: #d97706 !important;
+      color: #ffffff !important;
+      border-color: #b45309 !important;
+      animation: navPillGlow 1.8s infinite ease-in-out;
+    }
     @keyframes navPillGlow {
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.85; transform: scale(1.05); }
@@ -1808,6 +1814,13 @@
     .autoTradePulseIndicator.recovery .pulseRing {
       border-color: #f59e0b;
       animation: autoPulseRing 1.2s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .autoTradePulseIndicator.blocked .pulseDot {
+      background: #f59e0b;
+    }
+    .autoTradePulseIndicator.blocked .pulseRing {
+      border-color: #f59e0b;
+      animation: autoPulseRing 1.8s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
     }
     @keyframes autoPulseRing {
       0% { transform: scale(0.7); opacity: 1; }
@@ -13028,6 +13041,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             this.state.daemonAutoEnabled = isDaemonOn;
             $("chkAutoPeriodic48h").checked = isDaemonOn;
             const recovery = data.auto_tranche_criteria.backend_auto_tranche_state?.execution_recovery;
+            const isBlocked = Boolean(data.auto_tranche_criteria.backend_auto_tranche_state?.execution_blocked);
+            const blockedReason = data.auto_tranche_criteria.backend_auto_tranche_state?.blocked_reason || recovery?.error || "";
             const banner = $("autoTradeMasterBanner");
             const pulseEl = $("autoTradePulseIndicator");
             const titleEl = $("lblAutoTradeStateTitle");
@@ -13037,30 +13052,52 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const navPill = $("navLivePill");
             const isKo = window.currentLang === "ko";
 
-            if (banner) banner.classList.remove("active", "recovery");
+            if (banner) banner.classList.remove("active", "recovery", "blocked");
             if (pulseEl) pulseEl.className = "autoTradePulseIndicator";
-            if (badge) badge.classList.remove("active", "recovery");
+            if (badge) badge.classList.remove("active", "recovery", "blocked");
 
             if (recovery) {
               if (banner) banner.classList.add("recovery");
               if (pulseEl) pulseEl.className = "autoTradePulseIndicator recovery";
-              if (titleEl) titleEl.textContent = isKo ? "⚠️ 자동 매매: 중단됨 (복구 필요)" : "⚠️ AUTONOMOUS TRADING: HALTED (RECOVERY REQUIRED)";
+              if (titleEl) titleEl.textContent = isDaemonOn
+                ? (isKo ? "⚠️ 자동 매매: 활성 (복구 필요)" : "⚠️ AUTONOMOUS TRADING: ARMED (RECOVERY REQUIRED)")
+                : (isKo ? "⚠️ 자동 매매: 중단됨 (복구 필요)" : "⚠️ AUTONOMOUS TRADING: HALTED (RECOVERY REQUIRED)");
               if (badge) {
                 badge.style.display = "inline-flex";
                 badge.className = "badgeAutoPeriodicStatus recovery";
-                badge.textContent = "⚠ PAUSED — CHECK ORDER OUTCOMES";
+                badge.textContent = isDaemonOn ? "⚠ ARMED · RECOVERY REQUIRED" : "⚠ PAUSED — CHECK ORDER OUTCOMES";
                 badge.style.background = "#fee2e2";
                 badge.style.color = "#b91c1c";
                 badge.style.borderColor = "#fca5a5";
                 badge.title = recovery.error || "An order outcome needs reconciliation before trading resumes.";
               }
-              if (headingEl) headingEl.textContent = "ORDER RECOVERY REQUIRED";
+              if (headingEl) headingEl.textContent = isDaemonOn ? "EC2 DAEMON: ARMED (RECOVERY)" : "ORDER RECOVERY REQUIRED";
               if (detailEl) detailEl.textContent = recovery.error ? recovery.error.substring(0, 48) : (isKo ? "오더 복구 필요 (재개 전 확인)" : "Order reconciliation required before resuming");
               if (navPill) {
                 navPill.className = "navLivePill recovery";
                 navPill.textContent = "⚠ RECOVERY";
               }
-              if ($("modeLive")) $("modeLive").classList.remove("botActiveLive");
+              if ($("modeLive")) $("modeLive").classList.toggle("botActiveLive", isDaemonOn);
+            } else if (isDaemonOn && isBlocked) {
+              if (banner) banner.classList.add("recovery");
+              if (pulseEl) pulseEl.className = "autoTradePulseIndicator blocked";
+              if (titleEl) titleEl.textContent = isKo ? "⚡ 자동 매매: 가동 대기 (실행 차단됨)" : "⚡ AUTONOMOUS TRADING: ARMED (EXECUTION BLOCKED)";
+              if (badge) {
+                badge.style.display = "inline-flex";
+                badge.className = "badgeAutoPeriodicStatus blocked";
+                badge.textContent = "● ARMED · BLOCKED";
+                badge.style.background = "#fef3c7";
+                badge.style.color = "#92400e";
+                badge.style.borderColor = "#fde68a";
+                badge.title = blockedReason || "Order execution temporarily blocked by safeguards";
+              }
+              if (headingEl) headingEl.textContent = "EC2 DAEMON: ARMED (BLOCKED)";
+              if (detailEl) detailEl.textContent = blockedReason ? blockedReason.substring(0, 48) : "Order execution temporarily blocked by safeguards";
+              if (navPill) {
+                navPill.className = "navLivePill blocked";
+                navPill.textContent = "● ARMED (BLOCKED)";
+              }
+              if ($("modeLive")) $("modeLive").classList.add("botActiveLive");
             } else if (isDaemonOn) {
               if (banner) banner.classList.add("active");
               if (pulseEl) pulseEl.className = "autoTradePulseIndicator active";
@@ -13104,9 +13141,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
             const mainLbl = $("lblDaemonMainStatus");
             if (mainLbl && (this.state.backendAuthenticated || this.state.upbitAuthenticated)) {
-              mainLbl.textContent = isDaemonOn 
-                ? "Daemon: Connected · Auto-Trade: ACTIVE" 
-                : "Daemon: Connected · Auto-Trade: STANDBY (OFF)";
+              mainLbl.textContent = (isDaemonOn && (recovery || isBlocked))
+                ? "Daemon: Connected · Auto-Trade: ARMED (BLOCKED)"
+                : (isDaemonOn 
+                    ? "Daemon: Connected · Auto-Trade: ACTIVE" 
+                    : "Daemon: Connected · Auto-Trade: STANDBY (OFF)");
             }
 
             const replayBadge = $("badgeShortTermReplayMode");

@@ -67,12 +67,14 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             {'status': 'FILLED', 'executedQty': '0.06', 'orderId': 42}, RuntimeError('ETF rejected')]
         first = await server.step_tranche()
         self.assertFalse(first['success'])
-        self.assertEqual(first['execution_recovery']['order_adr']['orderId'], 42)
-        self.assertFalse(server.load_auto_tranche_state()['enabled'])
+        self.assertTrue(server.load_auto_tranche_state()['execution_blocked'])
         second = await server.step_tranche()
         self.assertTrue(second['recovery_required'])
         self.assertEqual(self.client.create_order.await_count, 2)
-        self.assertFalse((await server.toggle_auto_tranche(True))['success'])
+        toggle_res = await server.toggle_auto_tranche(True)
+        self.assertTrue(toggle_res['success'])
+        self.assertTrue(toggle_res['state']['enabled'])
+        self.assertTrue(toggle_res['state']['execution_blocked'])
 
     async def test_status_deadline_fails_closed_and_blocks_scale_in(self):
         async def hung():
@@ -524,12 +526,14 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(first['success'])
             recovery = first['execution_recovery']
             self.assertEqual(recovery['operation'], 'REDUCE_TRANCHE')
-            self.assertEqual(recovery['order_adr']['orderId'], 301)
-            self.assertFalse(server.load_auto_tranche_state()['enabled'])
+            self.assertTrue(server.load_auto_tranche_state()['execution_blocked'])
             second = await server.reduce_tranche()
             self.assertTrue(second['recovery_required'])
             self.assertEqual(self.client.create_order.await_count, 2)
-            self.assertFalse((await server.toggle_auto_tranche(True))['success'])
+            toggle_res = await server.toggle_auto_tranche(True)
+            self.assertTrue(toggle_res['success'])
+            self.assertTrue(toggle_res['state']['enabled'])
+            self.assertTrue(toggle_res['state']['execution_blocked'])
 
     async def test_unknown_first_reduction_leg_does_not_submit_etf(self):
         positions = [

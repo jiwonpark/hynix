@@ -45,6 +45,7 @@ DEFAULT_STATE = {
     "tranches": [], "execution_history": [], "pending_order": None,
     "last_evaluated_candle": 0, "last_order_time": 0,
     "last_evaluation": None, "last_error": None, "recovery_required": False,
+    "execution_blocked": False, "blocked_reason": None,
 }
 
 
@@ -72,10 +73,12 @@ class CryptoBot:
                 not isinstance(self.state["tranches"], list)):
                 raise ValueError("Unsupported persisted crypto configuration")
             if self.state["pending_order"]:
-                self.state.update(enabled=False, recovery_required=True,
+                self.state.update(recovery_required=True, execution_blocked=True,
+                                  blocked_reason="An order was pending during restart; reconcile its client order ID on Binance",
                                   last_error="An order was pending during restart; reconcile its client order ID on Binance")
         except Exception as exc:
-            self.state.update(enabled=False, recovery_required=True,
+            self.state.update(recovery_required=True, execution_blocked=True,
+                              blocked_reason=f"Cannot load crypto execution state: {exc}",
                               last_error=f"Cannot load crypto execution state: {exc}")
 
     def _save(self) -> None:
@@ -128,6 +131,10 @@ class CryptoBot:
             "trend_slope_min": float(self.state.get("trend_slope_min", 0.002)),
         }
         result["history_event_count"] = len(result["execution_history"])
+        result["execution_blocked"] = bool(self.state.get("execution_blocked") or self.state.get("recovery_required") or self.state.get("pending_order"))
+        result["blocked_reason"] = self.state.get("blocked_reason") or self.state.get("last_error")
+        result["can_execute_entry"] = bool(self.state.get("enabled") and not result["execution_blocked"])
+        result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
         return result
 
     async def reconciled_public_state(self) -> Dict[str, Any]:
@@ -371,6 +378,8 @@ class CryptoBot:
         async with self.lock:
             if not enabled:
                 self.state["enabled"] = False
+                self.state["execution_blocked"] = False
+                self.state["blocked_reason"] = None
                 self._save()
                 return self.public_state()
             if self.state["recovery_required"] or self.state["pending_order"]:
@@ -380,14 +389,22 @@ class CryptoBot:
             symbol = self.state["selected_symbol"]
             account, amount = await self._account_position(symbol)
             self._check_position(amount)
+            blocked = False
+            blocked_reason = None
             if float(account.get("summary", {}).get("available_margin_usd", 0)) <= 0:
-                raise ValueError("No available Futures margin")
-            step, minimum, min_notional = await self._exchange_rules(symbol)
-            _, ask = await self._book(symbol)
-            self._entry_quantity(self.state["notional_usd"], ask, step, minimum, min_notional)
-            # Arming never executes a historical signal; wait for the next completed bar.
-            self.state["last_evaluated_candle"] = int(time.time()) // INTERVAL_SECONDS[self.state["strategy_interval"]] * INTERVAL_SECONDS[self.state["strategy_interval"]] - INTERVAL_SECONDS[self.state["strategy_interval"]]
-            self.state.update(enabled=True, last_error=None)
+                blocked = True
+                blocked_reason = "No available Futures margin for new entries"
+            else:
+                try:
+                    step, minimum, min_notional = await self._exchange_rules(symbol)
+                    _, ask = await self._book(symbol)
+                    self._entry_quantity(self.state["notional_usd"], ask, step, minimum, min_notional)
+                except Exception as exc:
+                    blocked = True
+                    blocked_reason = f"Entry sizing blocked: {exc}"
+            seconds = INTERVAL_SECONDS[self.state["strategy_interval"]]
+            self.state["last_evaluated_candle"] = int(time.time()) // seconds * seconds - seconds
+            self.state.update(enabled=True, execution_blocked=blocked, blocked_reason=blocked_reason, last_error=None)
             self._save()
             return self.public_state()
 
@@ -473,7 +490,8 @@ class CryptoBot:
         except Exception as exc:
             # Binance may have filled an order even if its response timed out.
             # Never retry or trade again until the client ID is reconciled.
-            self.state.update(enabled=False, recovery_required=True,
+            self.state.update(recovery_required=True, execution_blocked=True,
+                              blocked_reason=f"Order outcome uncertain; check {client_id} on Binance: {exc}",
                               last_error=f"Order outcome uncertain; check {client_id} on Binance: {exc}")
             self._save()
             raise
@@ -481,7 +499,7 @@ class CryptoBot:
     async def reconcile(self) -> Dict[str, Any]:
         """Read exchange order/position history to resolve a stopped executor."""
         async with self.lock:
-            if self.state["enabled"]:
+            if self.state["enabled"] and not self.state["recovery_required"]:
                 raise ValueError("Pause the bot before reconciliation")
             pending = self.state["pending_order"]
             event = None
@@ -498,7 +516,7 @@ class CryptoBot:
                     raise ValueError("Order is still open, partially filled, or not conclusively canceled")
             account, amount = await self._account_position(self.state["selected_symbol"])
             self._check_position(amount)
-            self.state.update(recovery_required=False, last_error=None)
+            self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
             self._save()
             return {"event": event, "bot": self.public_state()}
 
@@ -513,7 +531,8 @@ class CryptoBot:
                 _, amount = await self._account_position(self.state["selected_symbol"])
                 self._check_position(amount)
             except Exception as exc:
-                self.state.update(enabled=False, recovery_required=True,
+                self.state.update(recovery_required=True, execution_blocked=True,
+                                  blocked_reason=f"Startup reconciliation failed: {exc}",
                                   last_error=f"Startup reconciliation failed: {exc}")
                 self._save()
 
@@ -601,11 +620,16 @@ class CryptoBot:
                 elif entry and len(self.state["tranches"]) < self.state["max_tranches"]:
                     if time.time() - self.state["last_order_time"] < self.state["min_seconds_between_orders"]:
                         return
+                    if position_side and position_side * side < 0:
+                        self.state["blocked_reason"] = "Opposite entry blocked: campaign must exit before reversing"
+                        self._save()
+                        return
                     await self._submit(side, self.state["notional_usd"], reduce_only=False,
                                        reason="closed_bar_signal", signal_values=values)
             except Exception as exc:
                 if not self.state["recovery_required"]:
                     self.state["last_error"] = str(exc)
                 if "differs from the bot" in str(exc):
-                    self.state.update(enabled=False, recovery_required=True)
+                    self.state.update(recovery_required=True, execution_blocked=True,
+                                      blocked_reason=f"Inventory desync: {exc}")
                 self._save()

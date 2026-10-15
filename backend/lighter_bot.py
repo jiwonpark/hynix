@@ -198,10 +198,12 @@ class LighterPairBot:
                         state["max_tranches"] = None
                     state["gross_leverage_cap"] = self.TAB2_GROSS_LEVERAGE_CAP
         except Exception as error:
-            state["enabled"] = False
+            state["execution_blocked"] = True
+            state["blocked_reason"] = f"State recovery failed: {error}"
             state["last_error"] = f"State recovery failed: {error}"
         if state.get("pending_execution"):
-            state["enabled"] = False
+            state["execution_blocked"] = True
+            state["blocked_reason"] = "Unresolved paired execution; manual reconciliation required"
             state["last_error"] = "Unresolved paired execution; manual reconciliation required"
         return state
 
@@ -1193,9 +1195,10 @@ class LighterPairBot:
                     self.state["last_action"] = "RETRYING_TRANSIENT_ERROR"
                     logger.warning("Lighter pair bot will retry transient read error: %s", error)
                 else:
-                    self.state["enabled"] = False
-                    self.state["last_action"] = "FAIL_CLOSED"
-                    logger.exception("Lighter pair bot paused: %s", error)
+                    self.state["execution_blocked"] = True
+                    self.state["blocked_reason"] = str(error)[:500]
+                    self.state["last_action"] = "BLOCKED_FAIL_CLOSED"
+                    logger.exception("Lighter pair bot execution blocked: %s", error)
             finally:
                 self.save()
 

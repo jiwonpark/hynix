@@ -83,7 +83,8 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         self.client.amount = 0.001
         restored = CryptoBot(self.client, self.path)
         await restored.verify_startup()
-        self.assertFalse(restored.state["enabled"])
+        self.assertTrue(restored.state["enabled"])
+        self.assertTrue(restored.state["execution_blocked"])
         self.assertTrue(restored.state["recovery_required"])
         self.assertEqual(self.client.orders, [])
 

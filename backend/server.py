@@ -3517,6 +3517,8 @@ async def execute_scale_in(direction: str = "SHORT_SPREAD") -> Dict[str, Any]:
             if now - float(t) < 3600
         ] + [now]
         state.pop("execution_recovery", None)
+        state["execution_blocked"] = False
+        state["blocked_reason"] = None
         save_auto_tranche_state(state)
         return {
             "success": True,
@@ -3531,7 +3533,7 @@ async def execute_scale_in(direction: str = "SHORT_SPREAD") -> Dict[str, Any]:
         if recovery is not None:
             recovery["error"] = str(e)
             state = load_auto_tranche_state()
-            state.update(enabled=False, execution_recovery=recovery, last_error=str(e), last_action="EXECUTION_RECONCILIATION_REQUIRED")
+            state.update(execution_blocked=True, execution_recovery=recovery, last_error=str(e), last_action="EXECUTION_RECONCILIATION_REQUIRED")
             save_auto_tranche_state(state)
         return {"success": False, "error": str(e), "recovery_required": recovery is not None, "execution_recovery": recovery}
 
@@ -3632,6 +3634,8 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
 
         state = load_auto_tranche_state()
         state.pop("execution_recovery", None)
+        state["execution_blocked"] = False
+        state["blocked_reason"] = None
         if order_adr.get("orderId") is not None and order_stock.get("orderId") is not None:
             state.setdefault("exit_order_pairs", []).append({
                 "adr_order_id": str(order_adr["orderId"]),
@@ -3657,7 +3661,7 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
             recovery["error"] = str(e)
             state = load_auto_tranche_state()
             state.update(
-                enabled=False,
+                execution_blocked=True,
                 execution_recovery=recovery,
                 last_error=str(e),
                 last_action="EXECUTION_RECONCILIATION_REQUIRED",
@@ -3680,12 +3684,17 @@ async def get_auto_tranche_status() -> Dict[str, Any]:
 async def toggle_auto_tranche(enabled: Optional[bool] = None) -> Dict[str, Any]:
     """Toggles or sets the 24/7 EC2 server-side auto-tranche execution daemon."""
     state = load_auto_tranche_state()
-    if state.get("execution_recovery") and enabled is not False:
-        return {"success": False, "error": "Reconcile the recorded order outcomes before resuming auto-trading.", "state": state}
     if enabled is None:
-        state["enabled"] = not state.get("enabled", False)
+        new_enabled = not state.get("enabled", False)
     else:
-        state["enabled"] = bool(enabled)
+        new_enabled = bool(enabled)
+    state["enabled"] = new_enabled
+    if state.get("execution_recovery"):
+        state["execution_blocked"] = True
+        state["blocked_reason"] = "Reconcile the recorded order outcomes before resuming execution."
+    elif not new_enabled:
+        state["execution_blocked"] = False
+        state["blocked_reason"] = None
     state["last_action"] = f"TOGGLED_{'ENABLED' if state['enabled'] else 'DISABLED'}"
     state["last_action_time"] = time.time()
     save_auto_tranche_state(state)

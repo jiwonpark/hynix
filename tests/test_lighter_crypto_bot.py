@@ -118,12 +118,14 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
 
     async def test_enable_checks_actual_next_order_capacity(self):
         self.client.collateral = 140.0
-        with self.assertRaisesRegex(ValueError, "gross exposure"):
-            await self.bot.toggle(True)
-        self.assertFalse(self.bot.state["enabled"])
+        toggled = await self.bot.toggle(True)
+        self.assertTrue(toggled["enabled"])
+        self.assertTrue(toggled["execution_blocked"])
+        self.assertIn("gross exposure", toggled["blocked_reason"])
         self.client.collateral = 170.0
         enabled = await self.bot.toggle(True)
         self.assertTrue(enabled["enabled"])
+        self.assertFalse(enabled["execution_blocked"])
         self.assertEqual(self.client.orders, {})
 
     async def test_current_executable_quote_must_still_support_signal(self):

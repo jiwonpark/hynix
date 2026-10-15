@@ -75,7 +75,8 @@ class OrderSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.client.create_order.side_effect = TimeoutError('lost response')
         await self.step()
         pending = self.engine.load_state()['pending_order']
-        self.assertFalse(self.engine.get_status()['enabled'])
+        self.assertTrue(self.engine.get_status()['enabled'])
+        self.assertTrue(self.engine.get_status()['execution_blocked'])
         self.assertIsNone(pending['uuid'])
         self.client.get_order.return_value = fill(1, 100, .05, 'cancel')
         self.engine = UpbitStrategyExecutionEngine(self.path)

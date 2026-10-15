@@ -256,7 +256,8 @@ class TestLighterPairBot(unittest.TestCase):
             state_file = Path(directory) / "state.json"
             state_file.write_text(json.dumps({"enabled": True, "pending_execution": {"first_leg": {}}}))
             bot = LighterPairBot(Mock(), state_file)
-            self.assertFalse(bot.public_state()["enabled"])
+            self.assertTrue(bot.public_state()["enabled"])
+            self.assertTrue(bot.public_state()["execution_blocked"])
             self.assertTrue(bot.public_state()["recovery_required"])
 
     def test_unsubmitted_pending_intent_clears_only_when_positions_match(self):
@@ -723,8 +724,9 @@ class TestLighterPairBot(unittest.TestCase):
                 bot.state.update(enabled=True, pending_execution={"first_leg": {"client_order_index": 1}})
                 bot._evaluate = AsyncMock(side_effect=RuntimeError("Lighter API error (429)"))
                 await bot.run_once()
-                self.assertFalse(bot.state["enabled"])
-                self.assertEqual(bot.state["last_action"], "FAIL_CLOSED")
+                self.assertTrue(bot.state["enabled"])
+                self.assertTrue(bot.state["execution_blocked"])
+                self.assertEqual(bot.state["last_action"], "BLOCKED_FAIL_CLOSED")
 
         asyncio.run(run())
 
@@ -735,8 +737,9 @@ class TestLighterPairBot(unittest.TestCase):
                 bot.state["enabled"] = True
                 bot._evaluate = AsyncMock(side_effect=RuntimeError("Invalid account configuration"))
                 await bot.run_once()
-                self.assertFalse(bot.state["enabled"])
-                self.assertEqual(bot.state["last_action"], "FAIL_CLOSED")
+                self.assertTrue(bot.state["enabled"])
+                self.assertTrue(bot.state["execution_blocked"])
+                self.assertEqual(bot.state["last_action"], "BLOCKED_FAIL_CLOSED")
 
         asyncio.run(run())
 

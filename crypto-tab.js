@@ -1662,7 +1662,7 @@
       const botEnabled = Boolean(this.botState?.enabled);
       const recovering = Boolean(this.botState?.recovery_required);
       const toggle = lid("chkAutoPeriodic48h");
-      if (toggle) toggle.disabled = locked || (!this.liveVenue?.execution_enabled && !botEnabled) || (recovering && !botEnabled);
+      if (toggle) toggle.disabled = locked || (!this.liveVenue?.execution_enabled && !botEnabled);
       ["btnDeployLiveStrategy", "inputLiveGridEntryZ", "inputLiveGridExitZ",
        "inputLiveMaxTranches"].forEach((id) => {
         const control = lid(id);
@@ -2519,10 +2519,12 @@
         safeStorage.setItem("skhynix_crypto_mode", authoritativeMode);
         this.applyMode(authoritativeMode, false);
       }
+      const isBlocked = Boolean(bot?.execution_blocked);
+      const blockedReason = bot?.blocked_reason || bot?.last_error || "";
       const toggle = lid("chkAutoPeriodic48h");
       if (toggle) {
         toggle.checked = isEnabled;
-        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || (!venue?.execution_enabled && !isEnabled) || (isRecovery && !isEnabled);
+        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || (!venue?.execution_enabled && !isEnabled);
       }
       const banner = lid("autoTradeMasterBanner");
       const pulseEl = lid("autoTradePulseIndicator");
@@ -2532,23 +2534,36 @@
       const detailEl = lid("lblAutoTradeStatusDetail");
       const isKo = window.currentLang === "ko";
 
-      if (banner) banner.classList.remove("active", "recovery");
+      if (banner) banner.classList.remove("active", "recovery", "blocked");
       if (pulseEl) pulseEl.className = "autoTradePulseIndicator";
-      if (badge) badge.classList.remove("active", "recovery");
+      if (badge) badge.classList.remove("active", "recovery", "blocked");
 
       if (isRecovery) {
         if (banner) banner.classList.add("recovery");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator recovery";
-        if (titleEl) titleEl.textContent = isKo ? "⚠️ 그리드 봇: 중단됨 (복구 필요)" : "⚠️ INSTITUTIONAL GRID BOT: HALTED (RECOVERY)";
+        if (titleEl) titleEl.textContent = isKo ? "⚠️ 그리드 봇: 활성 (복구 필요)" : "⚠️ INSTITUTIONAL GRID BOT: ARMED (RECOVERY REQUIRED)";
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus recovery";
-          badge.textContent = "⚠ RECOVERY REQUIRED";
+          badge.textContent = "⚠ ARMED · RECOVERY REQUIRED";
           badge.style.background = "#fee2e2";
           badge.style.color = "#991b1b";
         }
-        if (headingEl) headingEl.textContent = "GRID BOT: RECOVERY";
-        if (detailEl) detailEl.textContent = "Check the pending order and exchange position before resuming";
+        if (headingEl) headingEl.textContent = "GRID BOT: ARMED (RECOVERY)";
+        if (detailEl) detailEl.textContent = blockedReason || "Check the pending order and exchange position before resuming";
+      } else if (isEnabled && isBlocked) {
+        if (banner) banner.classList.add("recovery");
+        if (pulseEl) pulseEl.className = "autoTradePulseIndicator blocked";
+        if (titleEl) titleEl.textContent = isKo ? "⚡ 그리드 봇: 가동 대기 (실행 차단됨)" : "⚡ INSTITUTIONAL GRID BOT: ARMED (EXECUTION BLOCKED)";
+        if (badge) {
+          badge.style.display = "inline-flex";
+          badge.className = "badgeAutoPeriodicStatus blocked";
+          badge.textContent = "● ARMED · BLOCKED";
+          badge.style.background = "#fef3c7";
+          badge.style.color = "#92400e";
+        }
+        if (headingEl) headingEl.textContent = "EC2 DAEMON: ARMED (BLOCKED)";
+        if (detailEl) detailEl.textContent = blockedReason || "Order execution temporarily blocked by safeguards";
       } else if (isEnabled) {
         if (banner) banner.classList.add("active");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator active";
@@ -2588,6 +2603,9 @@
         if (isRecovery) {
           navLighterPill.classList.add("recovery");
           navLighterPill.textContent = "⚠ RECOVERY";
+        } else if (isEnabled && isBlocked) {
+          navLighterPill.classList.add("blocked");
+          navLighterPill.textContent = `● ${stratShort} BLOCKED`;
         } else if (isEnabled) {
           navLighterPill.classList.add("active");
           navLighterPill.textContent = `● ${stratShort} AUTO ON`;
@@ -4865,12 +4883,12 @@
         const maxTranches = Number(this.botState?.max_tranches || 8);
         this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Campaign Slots`);
         this.setText("valHedgedQuantities", `Selected contract $${liveGross.toFixed(2)} USDT`);
-        const pausedError = this.botState?.last_error && !this.botState?.enabled;
-        this.setText("valHedgedCombinedPnl", pausedError ? `Error: ${this.botState.last_error}` : pnlText);
+        this.setText("valHedgedCombinedPnl", pnlText);
         const pnlEl = lid("valHedgedCombinedPnl");
         if (pnlEl) pnlEl.style.color = liveUnrealized > 0 ? "#16a34a" : (liveUnrealized < 0 ? "#dc2626" : "#0f172a");
-        this.setText("valHedgedPnlSubtitle", this.botState?.last_error
-          ? `Execution status: ${this.botState.last_error}`
+        const execStatus = this.botState?.blocked_reason || this.botState?.last_error;
+        this.setText("valHedgedPnlSubtitle", execStatus
+          ? `Execution status: ${execStatus}`
           : (validTranches.length > 0 ? "Exchange unrealized PnL; fees excluded" : "No bot-owned open tranche"));
         const totalExits = Number(this.botState?.pnl_reconciliation?.total_exits ?? realized.count);
         this.setText("valUnrealizedPnl", realized.count

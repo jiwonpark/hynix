@@ -767,6 +767,8 @@ class UpbitStrategyExecutionEngine:
             "recent_trades": list(reversed(history[-30:])),
             "last_signal": state.get("last_signal"),
             "last_error": state.get("last_error"),
+            "execution_blocked": bool(state.get("execution_blocked") or state.get("pending_order")),
+            "blocked_reason": state.get("blocked_reason") or state.get("last_error"),
             "last_eval_time": state.get("last_eval_time", 0),
             "pending_order": ({k: v for k, v in state["pending_order"].items()
                                if k != "original_tranches"} if state.get("pending_order") else None),
@@ -999,8 +1001,9 @@ class UpbitStrategyExecutionEngine:
             # Definitive API rejections can release the pending intent, but pause the bot.
             if getattr(e, "definitive_rejection", False):
                 state["pending_order"] = None
-            state["enabled"] = False
-            state["last_error"] = f"Order submission failed; bot paused: {e}"
+            state["execution_blocked"] = True
+            state["blocked_reason"] = f"Order submission failed: {e}"
+            state["last_error"] = f"Order submission failed: {e}"
             self.save_state(state)
             return
         pending["uuid"] = result.get("uuid")
@@ -1019,7 +1022,7 @@ class UpbitStrategyExecutionEngine:
             try:
                 self._validate_inventory(state)
             except ValueError as e:
-                state.update(enabled=False, last_error=str(e))
+                state.update(execution_blocked=True, blocked_reason=str(e), last_error=str(e))
                 self.save_state(state)
                 return self.get_status()
             now = time.time()

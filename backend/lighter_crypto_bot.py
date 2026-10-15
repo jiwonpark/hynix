@@ -47,6 +47,7 @@ DEFAULT_STATE = {
     "tranches": [], "execution_history": [], "pending_order": None,
     "last_evaluated_candle": 0, "last_order_time": 0,
     "last_evaluation": None, "last_error": None, "recovery_required": False,
+    "execution_blocked": False, "blocked_reason": None,
 }
 
 
@@ -81,10 +82,12 @@ class LighterCryptoBot:
                     not isinstance(self.state["tranches"], list)):
                 raise ValueError("Unsupported persisted Lighter crypto configuration")
             if self.state["pending_order"]:
-                self.state.update(enabled=False, recovery_required=True,
+                self.state.update(recovery_required=True, execution_blocked=True,
+                                  blocked_reason="Pending Lighter order requires reconciliation",
                                   last_error="Pending Lighter order requires reconciliation")
         except Exception as exc:
-            self.state.update(enabled=False, recovery_required=True,
+            self.state.update(recovery_required=True, execution_blocked=True,
+                              blocked_reason=f"Cannot load Lighter crypto state: {exc}",
                               last_error=f"Cannot load Lighter crypto state: {exc}")
 
     def _save(self) -> None:
@@ -140,6 +143,10 @@ class LighterCryptoBot:
                           "trend_tp_dist": float(self.state.get("trend_tp_dist", 0.05)),
                           "trend_slope_min": float(self.state.get("trend_slope_min", 0.002)),
                       })
+        result["execution_blocked"] = bool(self.state.get("execution_blocked") or self.state.get("recovery_required") or self.state.get("pending_order"))
+        result["blocked_reason"] = self.state.get("blocked_reason") or self.state.get("last_error")
+        result["can_execute_entry"] = bool(self.state.get("enabled") and not result["execution_blocked"])
+        result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
         return result
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -305,6 +312,8 @@ class LighterCryptoBot:
         async with self.lock:
             if not enabled:
                 self.state["enabled"] = False
+                self.state["execution_blocked"] = False
+                self.state["blocked_reason"] = None
                 self._save()
                 return self.public_state()
             if self.state["recovery_required"] or self.state["pending_order"]:
@@ -313,14 +322,22 @@ class LighterCryptoBot:
             market_id, detail, step = await self._market(symbol, fresh=True)
             account, amount, positions = await self._account_position(symbol)
             self._check_position(amount, step)
-            _, ask = await self._book(market_id)
-            qty = self._entry_quantity(self.state["notional_usd"], ask, detail)
-            self._check_entry_capacity(account, positions, qty * ask)
+            blocked = False
+            blocked_reason = None
             if float(account.get("collateral", 0)) <= 0:
-                raise ValueError("No available Lighter collateral")
+                blocked = True
+                blocked_reason = "No available Lighter collateral for new entries"
+            else:
+                try:
+                    _, ask = await self._book(market_id)
+                    qty = self._entry_quantity(self.state["notional_usd"], ask, detail)
+                    self._check_entry_capacity(account, positions, qty * ask)
+                except Exception as exc:
+                    blocked = True
+                    blocked_reason = str(exc)
             seconds = INTERVAL_SECONDS[self.state["strategy_interval"]]
             self.state["last_evaluated_candle"] = int(time.time()) // seconds * seconds - seconds
-            self.state.update(enabled=True, last_error=None)
+            self.state.update(enabled=True, execution_blocked=blocked, blocked_reason=blocked_reason, last_error=None)
             self._save()
             return self.public_state()
 
@@ -406,14 +423,15 @@ class LighterCryptoBot:
                     client_order_index=order_index)
                 return self._record_fill(result, pending)
             except Exception as exc:
-                self.state.update(enabled=False, recovery_required=True,
+                self.state.update(recovery_required=True, execution_blocked=True,
+                                  blocked_reason=f"Lighter order outcome uncertain; reconcile {order_index}: {exc}",
                                   last_error=f"Lighter order outcome uncertain; reconcile {order_index}: {exc}")
                 self._save()
                 raise
 
     async def reconcile(self) -> Dict[str, Any]:
         async with self.lock:
-            if self.state["enabled"]:
+            if self.state["enabled"] and not self.state["recovery_required"]:
                 raise ValueError("Pause the bot before reconciliation")
             pending = self.state["pending_order"]
             event = None
@@ -434,7 +452,7 @@ class LighterCryptoBot:
             _, _, step = await self._market(symbol)
             _, amount, _ = await self._account_position(symbol)
             self._check_position(amount, step)
-            self.state.update(recovery_required=False, last_error=None)
+            self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
             self._save()
             return {"event": event, "bot": self.public_state()}
 
@@ -450,7 +468,8 @@ class LighterCryptoBot:
                 _, amount, _ = await self._account_position(symbol)
                 self._check_position(amount, step)
             except Exception as exc:
-                self.state.update(enabled=False, recovery_required=True,
+                self.state.update(recovery_required=True, execution_blocked=True,
+                                  blocked_reason=f"Startup reconciliation failed: {exc}",
                                   last_error=f"Startup reconciliation failed: {exc}")
                 self._save()
 
@@ -533,11 +552,16 @@ class LighterCryptoBot:
                                        reduce_only=True, reason="signal_exit")
                 elif entry and len(self.state["tranches"]) < self.state["max_tranches"]:
                     if time.time() - self.state["last_order_time"] >= self.state["min_seconds_between_orders"]:
+                        if position_side and position_side * side < 0:
+                            self.state["blocked_reason"] = "Opposite entry blocked: Active campaign must exit before reversing"
+                            self._save()
+                            return
                         await self._submit(side, self.state["notional_usd"], reduce_only=False,
                                            reason="closed_bar_signal", signal_values=values)
             except Exception as exc:
                 if not self.state["recovery_required"]:
                     self.state["last_error"] = str(exc)
                 if "differs from the bot" in str(exc):
-                    self.state.update(enabled=False, recovery_required=True)
+                    self.state.update(recovery_required=True, execution_blocked=True,
+                                      blocked_reason=f"Inventory desync: {exc}")
                 self._save()
