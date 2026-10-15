@@ -2812,24 +2812,24 @@
       if (isRecovery) {
         if (banner) banner.classList.add("recovery");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator recovery";
-        if (titleEl) titleEl.textContent = isKo ? "⚠️ 그리드 봇: 활성 (복구 필요)" : "⚠️ INSTITUTIONAL GRID BOT: ARMED (RECOVERY REQUIRED)";
+        if (titleEl) titleEl.textContent = isKo ? "⚠️ 그리드 봇: 복구 필요" : "⚠️ INSTITUTIONAL GRID BOT: ARMED";
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus recovery";
-          badge.textContent = "⚠ ARMED · RECOVERY REQUIRED";
+          badge.textContent = isKo ? "⚠ 복구 대기" : "⚠ RECOVERY REQUIRED";
           badge.style.background = "#fee2e2";
           badge.style.color = "#991b1b";
         }
         if (headingEl) headingEl.textContent = "GRID BOT: ARMED (RECOVERY)";
-        if (detailEl) detailEl.textContent = blockedReason || "Check the pending order and exchange position before execution resumes";
+        if (detailEl) detailEl.textContent = blockedReason || "Check pending orders & exchange position before execution resumes";
       } else if (isEnabled && isBlocked) {
         if (banner) banner.classList.add("recovery");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator blocked";
-        if (titleEl) titleEl.textContent = isKo ? "⚡ 그리드 봇: 가동 대기 (실행 차단됨)" : "⚡ INSTITUTIONAL GRID BOT: ARMED (EXECUTION BLOCKED)";
+        if (titleEl) titleEl.textContent = isKo ? "⚡ 그리드 봇: 가동 대기" : "⚡ INSTITUTIONAL GRID BOT: ARMED";
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus blocked";
-          badge.textContent = "● ARMED · BLOCKED";
+          badge.textContent = isKo ? "● 차단됨" : "● BLOCKED";
           badge.style.background = "#fef3c7";
           badge.style.color = "#92400e";
         }
@@ -2842,12 +2842,12 @@
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus active";
-          badge.textContent = "● EC2 LIVE BOT ACTIVE";
+          badge.textContent = isKo ? "● 실시간 봇 가동 중" : "● EC2 LIVE BOT ACTIVE";
           badge.style.background = "#dcfce7";
           badge.style.color = "#166534";
         }
         if (headingEl) headingEl.textContent = "EC2 DAEMON: ACTIVE";
-        if (detailEl) detailEl.textContent = isKo ? "바이낸스 선물 단일 종목 자동매매 가동 중" : "Single-leg Lighter Perpetuals bot running on EC2";
+        if (detailEl) detailEl.textContent = isKo ? "Lighter 선물 단일 종목 자동매매 가동 중" : "Single-leg Lighter Perpetuals bot running on EC2";
       } else {
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator paused";
         if (titleEl) titleEl.textContent = isKo ? "○ 그리드 봇: 대기 (일시정지)" : "○ INSTITUTIONAL GRID BOT: PAUSED";

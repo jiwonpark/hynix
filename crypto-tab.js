@@ -2626,24 +2626,24 @@
       if (isRecovery) {
         if (banner) banner.classList.add("recovery");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator recovery";
-        if (titleEl) titleEl.textContent = isKo ? "⚠️ 그리드 봇: 활성 (복구 필요)" : "⚠️ INSTITUTIONAL GRID BOT: ARMED (RECOVERY REQUIRED)";
+        if (titleEl) titleEl.textContent = isKo ? "⚠️ 그리드 봇: 복구 필요" : "⚠️ INSTITUTIONAL GRID BOT: ARMED";
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus recovery";
-          badge.textContent = "⚠ ARMED · RECOVERY REQUIRED";
+          badge.textContent = isKo ? "⚠ 복구 대기" : "⚠ RECOVERY REQUIRED";
           badge.style.background = "#fee2e2";
           badge.style.color = "#991b1b";
         }
         if (headingEl) headingEl.textContent = "GRID BOT: ARMED (RECOVERY)";
-        if (detailEl) detailEl.textContent = blockedReason || "Check the pending order and exchange position before resuming";
+        if (detailEl) detailEl.textContent = blockedReason || "Check pending orders & exchange position before execution resumes";
       } else if (isEnabled && isBlocked) {
         if (banner) banner.classList.add("recovery");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator blocked";
-        if (titleEl) titleEl.textContent = isKo ? "⚡ 그리드 봇: 가동 대기 (실행 차단됨)" : "⚡ INSTITUTIONAL GRID BOT: ARMED (EXECUTION BLOCKED)";
+        if (titleEl) titleEl.textContent = isKo ? "⚡ 그리드 봇: 가동 대기" : "⚡ INSTITUTIONAL GRID BOT: ARMED";
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus blocked";
-          badge.textContent = "● ARMED · BLOCKED";
+          badge.textContent = isKo ? "● 차단됨" : "● BLOCKED";
           badge.style.background = "#fef3c7";
           badge.style.color = "#92400e";
         }
@@ -2656,7 +2656,7 @@
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus active";
-          badge.textContent = "● EC2 LIVE BOT ACTIVE";
+          badge.textContent = isKo ? "● 실시간 봇 가동 중" : "● EC2 LIVE BOT ACTIVE";
           badge.style.background = "#dcfce7";
           badge.style.color = "#166534";
         }
