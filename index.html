@@ -11635,6 +11635,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!this.shortTermHistory || !this.shortTermHistory.bars || !this.shortTermHistory.bars.length) {
           this.fetchShortTermParity();
         }
+        this.syncWithBackend();
+        this.fetchHedgedStatus();
+        this.renderAccountStrip();
       },
 
       init() {
@@ -12194,9 +12197,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
           return;
         }
-        const eq = this.state.equity + this.state.binanceSpotStablecoinUsd;
+        const eq = Number(this.state.equity || 0) + Number(this.state.binanceSpotStablecoinUsd || 0);
         if ($("valAccountEquity")) $("valAccountEquity").textContent = `$${eq.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        if ($("valAvailMargin")) $("valAvailMargin").textContent = `$${Math.max(0, this.state.availableMargin).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        if ($("valAvailMargin")) $("valAvailMargin").textContent = `$${Math.max(0, Number(this.state.availableMargin || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
         // Equity Source Badge
         if ($("badgeEquitySource")) {
@@ -12211,25 +12214,25 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
         }
 
-        const pnl = this.state.unrealizedPnl;
-        const pnlPct = this.state.equity > 0 ? (pnl / this.state.equity) * 100 : 0;
+        const pnl = Number(this.state.unrealizedPnl || 0);
+        const pnlPct = eq > 0 ? (pnl / eq) * 100 : 0;
         const pnlColor = pnl >= 0 ? "#10b981" : "#ef4444";
-        const pnlSign = pnl >= 0 ? "+" : "";
+        const pnlSign = pnl >= 0 ? "+" : "-";
         if ($("valUnrealizedPnl")) {
           $("valUnrealizedPnl").style.color = pnlColor;
-          $("valUnrealizedPnl").textContent = `${pnlSign}$${pnl.toFixed(2)} (${pnlSign}${pnlPct.toFixed(2)}%)`;
+          $("valUnrealizedPnl").textContent = `${pnlSign}$${Math.abs(pnl).toFixed(2)} (${pnlSign}${Math.abs(pnlPct).toFixed(2)}%)`;
         }
 
         const openCount = (this.state.backendPositions && this.state.backendPositions.length > 0) 
           ? this.state.backendPositions.length 
-          : this.state.positions.length;
+          : (this.state.positions || []).length;
         if ($("valActivePairs")) {
           $("valActivePairs").textContent = openCount > 0 ? `${openCount} ${isKo ? '개 포지션 보유' : 'Open Positions'}` : `${isKo ? '0개 (무포지션)' : '0 (Flat)'}`;
         }
 
         const marginRiskPct = Number.isFinite(this.state.marginRatio) 
           ? this.state.marginRatio 
-          : (this.state.equity > 0 ? Math.min(100, (Math.max(0, this.state.equity - this.state.availableMargin) / this.state.equity) * 100) : 0);
+          : (eq > 0 ? Math.min(100, (Math.max(0, eq - Number(this.state.availableMargin || 0)) / eq) * 100) : 0);
         const riskColor = marginRiskPct > 65 ? "#dc2626" : marginRiskPct > 35 ? "#ea580c" : "#16a34a";
         const riskLabel = marginRiskPct > 65 ? (isKo ? "위험" : "High") : marginRiskPct > 35 ? (isKo ? "주의" : "Moderate") : (isKo ? "안전" : "Safe");
         if ($("valMarginRisk")) {
@@ -12243,18 +12246,20 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (this.state.backendAuthenticated) {
             const futuresUsdt = (this.state.backendAssets || []).find(a => a.asset === "USDT")?.margin_balance || this.state.equity;
             pillsHost.innerHTML = [
-              `<span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 700;">Futures USDT: $${futuresUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`,
-              `<span style="font-size: 10px; background: #dcfce7; color: #166534; padding: 1px 5px; border-radius: 3px; font-weight: 700;">Spot USDT: $${this.state.binanceSpotUsdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
+              `<span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 1px 5px; border-radius: 3px; font-weight: 700;">Futures USDT: $${Number(futuresUsdt || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`,
+              `<span style="font-size: 10px; background: #dcfce7; color: #166534; padding: 1px 5px; border-radius: 3px; font-weight: 700;">Spot USDT: $${Number(this.state.binanceSpotUsdt || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
             ].join("");
           } else {
-            pillsHost.innerHTML = `<span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $${this.state.equity.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>`;
+            pillsHost.innerHTML = `<span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $${Number(this.state.equity || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>`;
           }
         }
 
         // Render Upbit Equity Quick Stat
         if ($("valUpbitEquity")) {
           if (this.state.upbitAuthenticated) {
-            $("valUpbitEquity").textContent = `₩${this.state.upbitEquityKrw.toLocaleString('en-US', { maximumFractionDigits: 0 })} (~$${this.state.upbitEquityUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`;
+            const krwVal = Number(this.state.upbitEquityKrw || 0);
+            const usdVal = Number(this.state.upbitEquityUsd || 0);
+            $("valUpbitEquity").textContent = `₩${krwVal.toLocaleString('en-US', { maximumFractionDigits: 0 })} (~$${usdVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`;
             if ($("badgeUpbitSource")) {
               const src = this.state.upbitAuthSource || "SERVER";
               const srcLabel = src.includes("midas") ? "MIDAS" : src.includes("arbiter") ? "ARBITER" : "LIVE UPBIT";
@@ -12285,15 +12290,20 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
 
         body.innerHTML = assets.map(a => {
-          const unPnlColor = a.unrealized_profit >= 0 ? "#10b981" : "#ef4444";
-          const unPnlSign = a.unrealized_profit >= 0 ? "+" : "";
+          const unPnl = Number(a.unrealized_profit || 0);
+          const unPnlColor = unPnl >= 0 ? "#10b981" : "#ef4444";
+          const unPnlSign = unPnl >= 0 ? "+" : "";
+          const walletBal = Number(a.wallet_balance || 0);
+          const marginBal = Number(a.margin_balance || 0);
+          const availBal = Number(a.available_balance || 0);
+          const maxWithdraw = Number(a.max_withdraw_amount || 0);
           return `<tr>
-            <td style="font-weight: 800; color: #0f172a;"><span style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${a.asset}</span></td>
-            <td style="font-weight: 700;">${a.wallet_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
-            <td style="font-weight: 700; color: ${unPnlColor};">${unPnlSign}$${a.unrealized_profit.toFixed(2)}</td>
-            <td style="font-weight: 700; color: #0284c7;">$${a.margin_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-            <td style="font-weight: 700; color: #16a34a;">$${a.available_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-            <td style="color: #64748b;">$${a.max_withdraw_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td style="font-weight: 800; color: #0f172a;"><span style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${a.asset || ''}</span></td>
+            <td style="font-weight: 700;">${walletBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+            <td style="font-weight: 700; color: ${unPnlColor};">${unPnlSign}$${unPnl.toFixed(2)}</td>
+            <td style="font-weight: 700; color: #0284c7;">$${marginBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td style="font-weight: 700; color: #16a34a;">$${availBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td style="color: #64748b;">$${maxWithdraw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
           </tr>`;
         }).join("");
       },
@@ -12304,10 +12314,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (!body) return;
         if ($("countUpbitAssets")) $("countUpbitAssets").textContent = assets ? assets.length : 0;
 
-        const totalKrw = summary.total_equity_krw || this.state.upbitEquityKrw || 0;
-        const totalUsd = summary.total_equity_usd || this.state.upbitEquityUsd || 0;
-        const cashKrw = summary.cash_krw || this.state.upbitCashKrw || 0;
-        const rate = summary.usdt_krw_rate || this.state.usdtKrwRate || 1400.0;
+        const totalKrw = Number(summary.total_equity_krw || this.state.upbitEquityKrw || 0);
+        const totalUsd = Number(summary.total_equity_usd || this.state.upbitEquityUsd || 0);
+        const cashKrw = Number(summary.cash_krw || this.state.upbitCashKrw || 0);
+        const rate = Number(summary.usdt_krw_rate || this.state.usdtKrwRate || 1400.0);
 
         if ($("valUpbitPaneTotalKrw")) $("valUpbitPaneTotalKrw").textContent = `₩${totalKrw.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
         if ($("valUpbitPaneTotalUsd")) $("valUpbitPaneTotalUsd").textContent = `($${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
@@ -12333,24 +12343,32 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
 
         body.innerHTML = assets.map(a => {
-          const pnlColor = a.unrealized_pnl_krw >= 0 ? "#10b981" : "#ef4444";
-          const pnlSign = a.unrealized_pnl_krw >= 0 ? "+" : "";
-          const retSign = a.return_rate_percent > 0 ? "+" : (a.return_rate_percent < 0 ? "-" : (a.unrealized_pnl_krw < 0 ? "-" : (a.unrealized_pnl_krw > 0 ? "+" : "")));
-          const retStr = `${retSign}${Math.abs(Number(a.return_rate_percent || 0)).toFixed(2)}%`;
-          const roeStr = isKrw ? "—" : `${a.unrealized_pnl_krw >= 0 ? '+' : '-'}₩${Math.abs(a.unrealized_pnl_krw).toLocaleString('en-US', { maximumFractionDigits: 0 })} (${retStr})`;
-          const buyStr = isKrw ? "—" : `₩${a.avg_buy_price.toLocaleString('en-US', { maximumFractionDigits: a.avg_buy_price < 100 ? 2 : 0 })}`;
-          const curStr = isKrw ? "1.00" : `₩${a.current_price_krw.toLocaleString('en-US', { maximumFractionDigits: a.current_price_krw < 100 ? 2 : 0 })}`;
+          const isKrw = a.currency === "KRW";
+          const pnlKrw = Number(a.unrealized_pnl_krw || 0);
+          const pnlColor = pnlKrw >= 0 ? "#10b981" : "#ef4444";
+          const pnlSign = pnlKrw >= 0 ? "+" : "";
+          const retRate = Number(a.return_rate_percent || 0);
+          const retSign = retRate > 0 ? "+" : (retRate < 0 ? "-" : (pnlKrw < 0 ? "-" : (pnlKrw > 0 ? "+" : "")));
+          const retStr = `${retSign}${Math.abs(retRate).toFixed(2)}%`;
+          const roeStr = isKrw ? "—" : `${pnlKrw >= 0 ? '+' : '-'}₩${Math.abs(pnlKrw).toLocaleString('en-US', { maximumFractionDigits: 0 })} (${retStr})`;
+          const buyPrice = Number(a.avg_buy_price || 0);
+          const buyStr = isKrw ? "—" : `₩${buyPrice.toLocaleString('en-US', { maximumFractionDigits: buyPrice < 100 ? 2 : 0 })}`;
+          const curPrice = Number(a.current_price_krw || 0);
+          const curStr = isKrw ? "1.00" : `₩${curPrice.toLocaleString('en-US', { maximumFractionDigits: curPrice < 100 ? 2 : 0 })}`;
+          const evalKrw = Number(a.eval_amount_krw || 0);
+          const evalUsd = Number(a.eval_amount_usd || 0);
+          const qty = Number(a.total_quantity || 0);
 
           return `<tr>
             <td style="font-weight: 800; color: #0f172a;">
-              <span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${a.currency}</span>
+              <span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${a.currency || ''}</span>
               <span style="font-size: 11px; color: #64748b; margin-left: 4px;">${a.name || ''}</span>
             </td>
-            <td style="font-weight: 700;">${a.total_quantity.toLocaleString('en-US', { minimumFractionDigits: a.currency === 'KRW' ? 0 : 2, maximumFractionDigits: 6 })}</td>
+            <td style="font-weight: 700;">${qty.toLocaleString('en-US', { minimumFractionDigits: isKrw ? 0 : 2, maximumFractionDigits: 6 })}</td>
             <td style="color: #64748b;">${buyStr}</td>
             <td style="font-weight: 700; color: #0f172a;">${curStr}</td>
-            <td style="font-weight: 700; color: #0284c7;">₩${a.eval_amount_krw.toLocaleString('en-US', { maximumFractionDigits: 0 })}</td>
-            <td style="font-weight: 700; color: #16a34a;">$${a.eval_amount_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td style="font-weight: 700; color: #0284c7;">₩${evalKrw.toLocaleString('en-US', { maximumFractionDigits: 0 })}</td>
+            <td style="font-weight: 700; color: #16a34a;">$${evalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
             <td style="font-weight: 800; color: ${pnlColor};">${roeStr}</td>
           </tr>`;
         }).join("");
@@ -12731,10 +12749,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 this.state.upbitAssets = uDetails.assets;
               }
 
-              this.renderAssetsTable(this.state.backendAssets);
-              this.renderUpbitTable(this.state.upbitAssets, uDetails.summary || {});
               this.renderAccountStrip();
-              this.renderPositionsAndLogs();
+              try { this.renderAssetsTable(this.state.backendAssets); } catch (e) { console.warn("Assets table render error:", e); }
+              try { this.renderUpbitTable(this.state.upbitAssets, uDetails.summary || {}); } catch (e) { console.warn("Upbit table render error:", e); }
+              try { this.renderPositionsAndLogs(); } catch (e) { console.warn("Positions render error:", e); }
               break;
             }
           } catch (err) {
@@ -12799,9 +12817,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   this.state.binanceSpotStablecoinUsd = Number(data.spot?.summary?.stablecoin_equity_usd ?? this.state.binanceSpotStablecoinUsd);
                   if (data.positions) this.state.backendPositions = data.positions;
                   if (data.assets) this.state.backendAssets = data.assets;
-                  this.renderAssetsTable(this.state.backendAssets);
                   this.renderAccountStrip();
-                  this.renderPositionsAndLogs();
+                  try { this.renderAssetsTable(this.state.backendAssets); } catch (e) { console.warn("Assets table render error:", e); }
+                  try { this.renderPositionsAndLogs(); } catch (e) { console.warn("Positions render error:", e); }
                 }
                 break;
               }
@@ -12835,6 +12853,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (syncTime) syncTime.textContent = "Last Sync: Standalone";
           if (latencyLbl) latencyLbl.textContent = "Ping: —";
           if (statsLbl) statsLbl.textContent = `${this.state.positions.length} Paper Pos`;
+          this.renderAccountStrip();
         }
       },
 
