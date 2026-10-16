@@ -2066,7 +2066,7 @@
         if (this.assetSeries?.adr) this.assetSeries.adr.setData(cached.map((b) => ({ time: b.time, value: b.value })));
         if (this.assetSeries?.stock) this.assetSeries.stock.setData(TerminalCommon.movingAverage(cached, 24));
         [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(cached, w)));
-        const initial = StrategyExecutionChartController.initialRange(cached.length);
+        const initial = StrategyExecutionChartController.initialRange(cached.length, 48);
         if (this.chartSync) this.chartSync.setRange(initial);
         else this.chart.timeScale().setVisibleLogicalRange(initial);
       }
@@ -3175,7 +3175,7 @@
           }) : [];
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
-        const viewport = range || StrategyExecutionChartController.initialRange(data.bars.length);
+        const viewport = range || StrategyExecutionChartController.initialRange(data.bars.length, 48);
         if (this.chartSync) this.chartSync.setRange(viewport);
         else this.chart.timeScale().setVisibleLogicalRange(viewport);
         this.chartInterval = interval;

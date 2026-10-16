@@ -361,10 +361,12 @@
     };
   };
 
-  // Fit the newest 90% of loaded candles, with half-bar edges and no empty future space.
-  StrategyExecutionChartController.initialRange = function (barCount) {
+  // Fit recent candles up to targetVisibleBars (e.g. 48 for comfortable candle spacing, or newest 90%), with half-bar edges and no empty future space.
+  StrategyExecutionChartController.initialRange = function (barCount, targetVisibleBars = null) {
     if (!Number.isFinite(barCount) || barCount < 1) return null;
-    const visibleBars = Math.max(1, Math.ceil(barCount * 0.9));
+    const visibleBars = Number.isFinite(targetVisibleBars) && targetVisibleBars > 0
+      ? Math.min(barCount, Math.round(targetVisibleBars))
+      : Math.max(1, Math.ceil(barCount * 0.9));
     return { from: barCount - visibleBars - 0.5, to: barCount - 0.5 };
   };
 

@@ -11633,6 +11633,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (assetHost && this.shortTermAssetChart && assetHost.clientWidth > 0) {
           this.shortTermAssetChart.applyOptions({ width: assetHost.clientWidth });
         }
+        if (this.shortTermHistory && this.shortTermHistory.bars && this.shortTermHistory.bars.length) {
+          const initial = typeof this.getInitialViewport === "function"
+            ? this.getInitialViewport(this.shortTermHistory.bars.length)
+            : StrategyExecutionChartController.initialRange(this.shortTermHistory.bars.length, 48);
+          if (initial) {
+            if (this.shortTermChartSync) this.shortTermChartSync.setRange(initial);
+            else if (this.shortTermChart) this.shortTermChart.timeScale().setVisibleLogicalRange(initial);
+          }
+        }
         this.renderAccountStrip();
         if (this.state.backendAssets && this.state.backendAssets.length) {
           try { this.renderAssetsTable(this.state.backendAssets); } catch(e) {}
@@ -13461,10 +13470,24 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             lineStyle: LightweightCharts.LineStyle
           });
 
+          let tab2SaveRangeTimer = 0;
           this.shortTermChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
             if (!range) return;
             const span = range.to - range.from;
             const totalBars = this.shortTermHistory?.bars?.length || 0;
+            if (totalBars > 0 && !this.shortTermRendering && Number.isFinite(range.from) && Number.isFinite(range.to)) {
+              const barSpan = Math.max(10, Math.round(span));
+              const barsFromRight = Math.round(totalBars - range.to);
+              this.userViewport = { barSpan, barsFromRight };
+              if (typeof window !== "undefined" && window.clearTimeout) {
+                clearTimeout(tab2SaveRangeTimer);
+                tab2SaveRangeTimer = setTimeout(() => {
+                  try {
+                    localStorage.setItem("skhynix_tab2_viewport", JSON.stringify(this.userViewport));
+                  } catch (e) {}
+                }, 300);
+              }
+            }
             const zoomExceeds = totalBars > 0 && (span > totalBars * 0.40 || range.from < 0);
             if (range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
               this.fetchShortTermParity(true);
@@ -13589,6 +13612,25 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             this.shortTermChartSync?.sync();
           });
         }
+      },
+
+      getInitialViewport(totalBars) {
+        if (!totalBars || totalBars < 1) return null;
+        let vp = this.userViewport;
+        if (!vp) {
+          try {
+            const raw = localStorage.getItem("skhynix_tab2_viewport");
+            if (raw) vp = JSON.parse(raw);
+          } catch (e) {}
+        }
+        if (vp && Number.isFinite(vp.barSpan) && Number.isFinite(vp.barsFromRight)) {
+          const barSpan = Math.min(totalBars, Math.max(10, vp.barSpan));
+          const barsFromRight = vp.barsFromRight <= 3 ? 0 : Math.max(0, vp.barsFromRight);
+          const to = totalBars - barsFromRight - 0.5;
+          const from = to - barSpan;
+          return { from, to };
+        }
+        return StrategyExecutionChartController.initialRange(totalBars, 48);
       },
 
       setupShortTermChartSync() {
@@ -13906,7 +13948,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   if (this.shortTermChartSync) this.shortTermChartSync.setRange(restored);
                   else this.shortTermChart.timeScale().setVisibleLogicalRange(restored);
                 } else if (history.bars.length) {
-                  const initial = StrategyExecutionChartController.initialRange(history.bars.length);
+                  const initial = typeof this.getInitialViewport === "function"
+                    ? this.getInitialViewport(history.bars.length)
+                    : StrategyExecutionChartController.initialRange(history.bars.length, 48);
                   if (this.shortTermChartSync) this.shortTermChartSync.setRange(initial);
                   else this.shortTermChart.timeScale().setVisibleLogicalRange(initial);
                 }

@@ -148,4 +148,32 @@ assert.match($('upbitAssetsTableBody').innerHTML, /KRW/);
 assert.match($('upbitAssetsTableBody').innerHTML, /BTC/);
 assert.match($('upbitAssetsTableBody').innerHTML, /\+₩25,000/);
 
-console.log("✅ Tab 2 balance and account info sync tests passed successfully!");
+// Test 4: Tab 2 getInitialViewport and viewport persistence
+assert(html.includes('getInitialViewport(totalBars) {'), "getInitialViewport must be defined");
+assert(html.includes('skhynix_tab2_viewport'), "skhynix_tab2_viewport persistence key must be used");
+assert(html.includes('this.getInitialViewport(this.shortTermHistory.bars.length)'), "onTabActivated must apply getInitialViewport");
+
+const vpStart = lines.findIndex(l => l.includes('getInitialViewport(totalBars) {'));
+const vpEnd = lines.findIndex((l, idx) => idx > vpStart && l.includes('setupShortTermChartSync() {'));
+const vpCode = lines.slice(vpStart + 1, vpEnd - 2).join('\n');
+const Controller = require('../strategy-execution-chart.js');
+global.StrategyExecutionChartController = Controller;
+global.localStorage = {
+  _map: new Map(),
+  getItem: (k) => global.localStorage._map.get(k) || null,
+  setItem: (k, v) => global.localStorage._map.set(k, String(v)),
+  removeItem: (k) => global.localStorage._map.delete(k)
+};
+
+tradingEngine.getInitialViewport = new Function('totalBars', vpCode).bind(tradingEngine);
+
+// Without saved viewport, default to 48 bars
+const defaultVp = tradingEngine.getInitialViewport(120);
+assert.deepEqual(defaultVp, { from: 71.5, to: 119.5 }, "default initial viewport must show 48 bars");
+
+// With saved viewport in localStorage
+global.localStorage.setItem('skhynix_tab2_viewport', JSON.stringify({ barSpan: 30, barsFromRight: 0 }));
+const savedVp = tradingEngine.getInitialViewport(120);
+assert.deepEqual(savedVp, { from: 89.5, to: 119.5 }, "saved viewport must be respected");
+
+console.log("✅ Tab 2 balance, account info, and initial viewport sync tests passed successfully!");
