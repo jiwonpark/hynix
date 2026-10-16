@@ -70,14 +70,23 @@ tradingEngine.renderAccountStrip = new Function('$', 'window', stripCode).bind(t
 tradingEngine.renderAssetsTable = new Function('$', 'window', 'assets', assetsCode).bind(tradingEngine, $, window);
 tradingEngine.renderUpbitTable = new Function('$', 'window', 'assets', 'summary', upbitCode).bind(tradingEngine, $, window);
 
-// Test 1: accountSyncPending = true
+// Test 1: Cold start (accountSyncPending = true, cachedLiveLoaded = false)
 tradingEngine.state.accountSyncPending = true;
+tradingEngine.state.cachedLiveLoaded = false;
 tradingEngine.renderAccountStrip();
 assert.equal($('valAccountEquity').textContent, '—');
 assert.equal($('valAvailMargin').textContent, '—');
 assert.equal($('badgeEquitySource').textContent, 'SYNCING');
 
-// Test 2: accountSyncPending = false
+// Test 2: Cached start (accountSyncPending = true, cachedLiveLoaded = true)
+tradingEngine.state.accountSyncPending = true;
+tradingEngine.state.cachedLiveLoaded = true;
+tradingEngine.renderAccountStrip();
+assert.equal($('valAccountEquity').textContent, '$852.14');
+assert.equal($('valAvailMargin').textContent, '$454.38');
+assert.equal($('badgeEquitySource').textContent, 'FUTURES (SYNCING)');
+
+// Test 3: Synced (accountSyncPending = false)
 tradingEngine.state.accountSyncPending = false;
 tradingEngine.renderAccountStrip();
 assert.equal($('valAccountEquity').textContent, '$852.14');

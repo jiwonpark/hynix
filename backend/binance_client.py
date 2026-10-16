@@ -22,6 +22,9 @@ class BinanceFuturesClient:
         self._overview_cache_time = 0.0
         self._overview_cache_ttl = 2.5
         self._overview_fail_ttl = 1.0
+        self._spot_overview_task: Optional[asyncio.Task] = None
+        self._spot_overview_cache: Optional[Dict[str, Any]] = None
+        self._spot_overview_cache_time = 0.0
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -33,6 +36,9 @@ class BinanceFuturesClient:
         if self._overview_task and not self._overview_task.done():
             self._overview_task.cancel()
             await asyncio.gather(self._overview_task, return_exceptions=True)
+        if self._spot_overview_task and not self._spot_overview_task.done():
+            self._spot_overview_task.cancel()
+            await asyncio.gather(self._spot_overview_task, return_exceptions=True)
         if self._session and not self._session.closed:
             await self._session.close()
 
@@ -108,6 +114,39 @@ class BinanceFuturesClient:
         return await self.request("GET", "/fapi/v2/positionRisk", signed=True)
 
     async def get_spot_account_overview(self) -> Dict[str, Any]:
+        """Return one shared, briefly cached Binance Spot account snapshot."""
+        now = time.monotonic()
+        if self._spot_overview_cache is not None:
+            ttl = self._overview_cache_ttl if self._spot_overview_cache.get("authenticated") else self._overview_fail_ttl
+            if now - self._spot_overview_cache_time < ttl:
+                return copy.deepcopy(self._spot_overview_cache)
+
+        task = self._spot_overview_task
+        if task is None or task.done():
+            task = asyncio.create_task(self._refresh_spot_account_overview())
+            self._spot_overview_task = task
+        try:
+            result = await asyncio.shield(task)
+            return copy.deepcopy(result)
+        finally:
+            if task.done() and self._spot_overview_task is task:
+                self._spot_overview_task = None
+
+    async def _refresh_spot_account_overview(self) -> Dict[str, Any]:
+        try:
+            result = await asyncio.wait_for(self._fetch_spot_account_overview(), ACCOUNT_REFRESH_TIMEOUT)
+        except Exception as error:
+            result = {
+                "authenticated": False,
+                "error": str(error) or "Binance spot account refresh timed out",
+                "summary": {"usdt_balance": 0.0, "stablecoin_equity_usd": 0.0},
+                "assets": [],
+            }
+        self._spot_overview_cache = result
+        self._spot_overview_cache_time = time.monotonic()
+        return result
+
+    async def _fetch_spot_account_overview(self) -> Dict[str, Any]:
         """Fetch non-zero Binance Spot balances without treating them as Futures margin."""
         if not self.api_key or not self.api_secret:
             return {

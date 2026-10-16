@@ -11576,6 +11576,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         backendConnected: false,
         backendAuthenticated: false,
         accountSyncPending: true,
+        cachedLiveLoaded: false,
         backendAuthSource: "none",
         backendLatencyMs: 0,
         daemonAutoEnabled: false,
@@ -11632,12 +11633,18 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (assetHost && this.shortTermAssetChart && assetHost.clientWidth > 0) {
           this.shortTermAssetChart.applyOptions({ width: assetHost.clientWidth });
         }
+        this.renderAccountStrip();
+        if (this.state.backendAssets && this.state.backendAssets.length) {
+          try { this.renderAssetsTable(this.state.backendAssets); } catch(e) {}
+        }
+        if (this.state.upbitAssets && this.state.upbitAssets.length) {
+          try { this.renderUpbitTable(this.state.upbitAssets, { total_equity_krw: this.state.upbitEquityKrw, total_equity_usd: this.state.upbitEquityUsd, cash_krw: this.state.upbitCashKrw }); } catch(e) {}
+        }
         if (!this.shortTermHistory || !this.shortTermHistory.bars || !this.shortTermHistory.bars.length) {
           this.fetchShortTermParity();
         }
         this.syncWithBackend();
         this.fetchHedgedStatus();
-        this.renderAccountStrip();
       },
 
       init() {
@@ -11650,6 +11657,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.renderDeployedStrategyCard();
         this.renderAccountStrip();
         this.renderPositionsAndLogs();
+        if (this.state.backendAssets && this.state.backendAssets.length) {
+          try { this.renderAssetsTable(this.state.backendAssets); } catch(e) {}
+        }
+        if (this.state.upbitAssets && this.state.upbitAssets.length) {
+          try { this.renderUpbitTable(this.state.upbitAssets, { total_equity_krw: this.state.upbitEquityKrw, total_equity_usd: this.state.upbitEquityUsd, cash_krw: this.state.upbitCashKrw }); } catch(e) {}
+        }
         this.updateSignalApprover();
         this.initShortTermChart();
         this.fetchShortTermParity();
@@ -11835,6 +11848,54 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (togglesSaved) {
             this.state.conditionToggles = JSON.parse(togglesSaved);
           }
+          const liveSaved = localStorage.getItem("skhynix_live_account");
+          if (liveSaved) {
+            const liveData = JSON.parse(liveSaved);
+            if (Number.isFinite(liveData.equity)) this.state.equity = liveData.equity;
+            if (Number.isFinite(liveData.availableMargin)) this.state.availableMargin = liveData.availableMargin;
+            if (Number.isFinite(liveData.unrealizedPnl)) this.state.unrealizedPnl = liveData.unrealizedPnl;
+            if (Number.isFinite(liveData.marginRatio)) this.state.marginRatio = liveData.marginRatio;
+            if (Number.isFinite(liveData.binanceSpotUsdt)) this.state.binanceSpotUsdt = liveData.binanceSpotUsdt;
+            if (Number.isFinite(liveData.binanceSpotStablecoinUsd)) this.state.binanceSpotStablecoinUsd = liveData.binanceSpotStablecoinUsd;
+            if (Number.isFinite(liveData.upbitEquityKrw)) this.state.upbitEquityKrw = liveData.upbitEquityKrw;
+            if (Number.isFinite(liveData.upbitEquityUsd)) this.state.upbitEquityUsd = liveData.upbitEquityUsd;
+            if (Number.isFinite(liveData.upbitCashKrw)) this.state.upbitCashKrw = liveData.upbitCashKrw;
+            if (liveData.backendAuthenticated) this.state.backendAuthenticated = true;
+            if (liveData.binanceSpotAuthenticated) this.state.binanceSpotAuthenticated = true;
+            if (liveData.upbitAuthenticated) this.state.upbitAuthenticated = true;
+            if (liveData.backendAuthSource) this.state.backendAuthSource = liveData.backendAuthSource;
+            if (liveData.upbitAuthSource) this.state.upbitAuthSource = liveData.upbitAuthSource;
+            if (Array.isArray(liveData.backendPositions)) this.state.backendPositions = liveData.backendPositions;
+            if (Array.isArray(liveData.backendAssets)) this.state.backendAssets = liveData.backendAssets;
+            if (Array.isArray(liveData.upbitAssets)) this.state.upbitAssets = liveData.upbitAssets;
+            this.state.cachedLiveLoaded = true;
+          }
+        } catch (e) {}
+      },
+
+      saveLiveAccountStorage() {
+        try {
+          const liveData = {
+            equity: this.state.equity,
+            availableMargin: this.state.availableMargin,
+            unrealizedPnl: this.state.unrealizedPnl,
+            marginRatio: this.state.marginRatio,
+            binanceSpotUsdt: this.state.binanceSpotUsdt,
+            binanceSpotStablecoinUsd: this.state.binanceSpotStablecoinUsd,
+            upbitEquityKrw: this.state.upbitEquityKrw,
+            upbitEquityUsd: this.state.upbitEquityUsd,
+            upbitCashKrw: this.state.upbitCashKrw,
+            backendAuthenticated: this.state.backendAuthenticated,
+            binanceSpotAuthenticated: this.state.binanceSpotAuthenticated,
+            upbitAuthenticated: this.state.upbitAuthenticated,
+            backendAuthSource: this.state.backendAuthSource,
+            upbitAuthSource: this.state.upbitAuthSource,
+            backendPositions: this.state.backendPositions,
+            backendAssets: this.state.backendAssets,
+            upbitAssets: this.state.upbitAssets,
+            savedAt: Date.now()
+          };
+          localStorage.setItem("skhynix_live_account", JSON.stringify(liveData));
         } catch (e) {}
       },
 
@@ -12176,7 +12237,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       renderAccountStrip() {
         const isKo = window.currentLang === "ko";
-        if (this.state.accountSyncPending) {
+        if (this.state.accountSyncPending && !this.state.cachedLiveLoaded) {
           if ($("valAccountEquity")) $("valAccountEquity").textContent = "—";
           if ($("valAvailMargin")) $("valAvailMargin").textContent = "—";
           if ($("valUnrealizedPnl")) {
@@ -12204,9 +12265,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // Equity Source Badge
         if ($("badgeEquitySource")) {
           if (this.state.backendAuthenticated) {
-            $("badgeEquitySource").textContent = this.state.binanceSpotAuthenticated ? "SPOT + FUTURES" : "FUTURES";
-            $("badgeEquitySource").style.background = "#dcfce7";
-            $("badgeEquitySource").style.color = "#166534";
+            const isSyncing = this.state.accountSyncPending;
+            const baseLabel = this.state.binanceSpotAuthenticated ? "SPOT + FUTURES" : "FUTURES";
+            $("badgeEquitySource").textContent = isSyncing ? `${baseLabel} (SYNCING)` : baseLabel;
+            $("badgeEquitySource").style.background = isSyncing ? "#fef3c7" : "#dcfce7";
+            $("badgeEquitySource").style.color = isSyncing ? "#92400e" : "#166534";
           } else {
             $("badgeEquitySource").textContent = this.state.mode === "paper" ? "PAPER SIM" : "OFFLINE";
             $("badgeEquitySource").style.background = "#f1f5f9";
@@ -12753,6 +12816,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               try { this.renderAssetsTable(this.state.backendAssets); } catch (e) { console.warn("Assets table render error:", e); }
               try { this.renderUpbitTable(this.state.upbitAssets, uDetails.summary || {}); } catch (e) { console.warn("Upbit table render error:", e); }
               try { this.renderPositionsAndLogs(); } catch (e) { console.warn("Positions render error:", e); }
+              this.saveLiveAccountStorage();
               break;
             }
           } catch (err) {
@@ -12878,6 +12942,26 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             if (res.ok) {
               const data = await res.json();
               this.state.hedgedStatus = data;
+              if (data && data.authenticated) {
+                this.state.backendConnected = true;
+                this.state.backendAuthenticated = true;
+                if (Number.isFinite(data.equity_usd)) {
+                  this.state.equity = Number(data.equity_usd);
+                }
+                if (Number.isFinite(data.available_margin_usd)) {
+                  this.state.availableMargin = Number(data.available_margin_usd);
+                }
+                if (Number.isFinite(data.combined_unrealized_pnl_usd)) {
+                  this.state.unrealizedPnl = Number(data.combined_unrealized_pnl_usd);
+                }
+                if (Number.isFinite(data.margin_ratio_percent)) {
+                  this.state.marginRatio = Number(data.margin_ratio_percent);
+                }
+                this.state.accountSyncPending = false;
+                this.state.cachedLiveLoaded = true;
+                if (typeof this.renderAccountStrip === "function") this.renderAccountStrip();
+                if (typeof this.saveLiveAccountStorage === "function") this.saveLiveAccountStorage();
+              }
               if (!this.pendingConditionWrites && data.auto_tranche_criteria) {
                 this.state.conditionToggles = {...data.auto_tranche_criteria.condition_toggles};
               }

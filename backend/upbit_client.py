@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import time
 import uuid
 import hmac
@@ -33,6 +34,11 @@ class UpbitClient:
         self._rate_limiter_lock = asyncio.Lock()
         self._last_request_time = 0.0
         self._candle_cache: Dict[tuple, Dict[int, Dict[str, Any]]] = {}
+        self._overview_task: Optional[asyncio.Task] = None
+        self._overview_cache: Optional[Dict[str, Any]] = None
+        self._overview_cache_time = 0.0
+        self._overview_cache_ttl = 2.5
+        self._overview_fail_ttl = 1.0
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -41,6 +47,9 @@ class UpbitClient:
         return self._session
 
     async def close(self):
+        if self._overview_task and not self._overview_task.done():
+            self._overview_task.cancel()
+            await asyncio.gather(self._overview_task, return_exceptions=True)
         if self._session and not self._session.closed:
             await self._session.close()
 
@@ -309,6 +318,50 @@ class UpbitClient:
         return [cached[key] for key in sorted(cached) if key + interval_seconds <= boundary][-count:]
 
     async def get_detailed_account_overview(self) -> Dict[str, Any]:
+        """Return one shared, briefly cached Upbit account snapshot to all callers."""
+        now = time.monotonic()
+        if self._overview_cache is not None:
+            ttl = self._overview_cache_ttl if self._overview_cache.get("authenticated") else self._overview_fail_ttl
+            if now - self._overview_cache_time < ttl:
+                return copy.deepcopy(self._overview_cache)
+
+        task = self._overview_task
+        if task is None or task.done():
+            task = asyncio.create_task(self._refresh_account_overview())
+            self._overview_task = task
+        try:
+            result = await asyncio.shield(task)
+            return copy.deepcopy(result)
+        finally:
+            if task.done() and self._overview_task is task:
+                self._overview_task = None
+
+    async def _refresh_account_overview(self) -> Dict[str, Any]:
+        try:
+            result = await asyncio.wait_for(self._fetch_detailed_account_overview(), 10.0)
+        except Exception as error:
+            result = {
+                "authenticated": False,
+                "auth_source": config.UPBIT_AUTH_SOURCE,
+                "exchange": "UPBIT",
+                "error": str(error) or "Upbit account refresh timed out",
+                "summary": {
+                    "total_equity_krw": 0.0,
+                    "total_equity_usd": 0.0,
+                    "cash_krw": 0.0,
+                    "locked_krw": 0.0,
+                    "crypto_eval_krw": 0.0,
+                    "total_unrealized_pnl_krw": 0.0,
+                    "total_return_pct": 0.0,
+                    "usdt_krw_rate": 1400.0
+                },
+                "assets": []
+            }
+        self._overview_cache = result
+        self._overview_cache_time = time.monotonic()
+        return result
+
+    async def _fetch_detailed_account_overview(self) -> Dict[str, Any]:
         """
         Fetch and synthesize all Upbit balances, KRW/USD valuations, and asset breakdown
         into a structured payload for multi-exchange monitoring and arbitrage analysis.
