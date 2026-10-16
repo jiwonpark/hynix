@@ -7,6 +7,7 @@ grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 import asyncio
 import copy
 import json
+import logging
 import math
 import os
 import secrets
@@ -14,6 +15,8 @@ import time
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 from .crypto_bot import INTERVAL_SECONDS
 from .lighter_strategy import (

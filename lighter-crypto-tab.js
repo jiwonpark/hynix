@@ -2865,6 +2865,30 @@
         if (detailEl) detailEl.textContent = isKo ? "실계좌 확인 후 스위치로 자동매매 시작" : "Review the real account, then enable automatic trading";
       }
 
+      let bannerActions = lid("autoTradeBannerRecoveryActions");
+      if (!bannerActions && banner) {
+        bannerActions = document.createElement("div");
+        bannerActions.id = "lighterCrypto_autoTradeBannerRecoveryActions";
+        bannerActions.style.cssText = "display:none;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;";
+        bannerActions.innerHTML = `
+          <button id="lighterCrypto_btnBannerReconcile" type="button" class="terminal-action-control" style="height:28px;padding:0 12px;background:#b45309;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">
+            <span>⚡</span> <span>${isKo ? "거래소 상태 동기화 (복구)" : "Reconcile Bot State"}</span>
+          </button>
+          <button id="lighterCrypto_btnBannerFlatten" type="button" class="terminal-action-control" style="height:28px;padding:0 12px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">
+            <span>🚨</span> <span>${isKo ? "거래소 포지션 긴급 청산" : "Emergency Flatten Live Position"}</span>
+          </button>
+        `;
+        const bannerInfo = banner.querySelector(".autoTradeBannerInfo");
+        if (bannerInfo) bannerInfo.appendChild(bannerActions);
+        else banner.appendChild(bannerActions);
+
+        bannerActions.querySelector("#lighterCrypto_btnBannerReconcile")?.addEventListener("click", () => this.reconcileLiveBot());
+        bannerActions.querySelector("#lighterCrypto_btnBannerFlatten")?.addEventListener("click", () => this.emergencyFlatten());
+      }
+      if (bannerActions) {
+        bannerActions.style.display = isRecovery ? "flex" : "none";
+      }
+
       const stratMode = bot?.strategy_mode || "grid";
       const stratName = bot?.strategy_name || this.paradigms[stratMode]?.name || "Dynamic Grid";
       const stratInterval = bot?.strategy_interval || "5m";
@@ -4391,7 +4415,13 @@
         this.setText("lblStepTrancheSub", "SIMULATED");
         this.setText("lblReduceTrancheText", "Close All Paper Tranches");
         const flatten = lid("btnEmergencyFlatten");
-        if (flatten) flatten.textContent = "🚨 Reset Paper State";
+        const hasLivePosition = (this.botState?.tranches || []).length > 0 ||
+          Math.abs(Number(this.currentPositionAmount || 0)) > 0 ||
+          (Array.isArray(this.venuePositions) && this.venuePositions.some(p => Math.abs(Number(p.position_amt || p.size || p.position || 0)) > 0));
+        if (flatten) {
+          flatten.textContent = hasLivePosition ? "🚨 Emergency Flatten (Live)" : "🚨 Reset Paper State";
+          flatten.title = hasLivePosition ? "Close live exchange positions and pause bot" : "Reset simulated paper state";
+        }
       }
 
       this.renderVirtualState();
@@ -4507,18 +4537,22 @@
     },
 
     async emergencyFlatten() {
-      if (this.mode === "live" || this.mode === "semi_auto" || (this.botState?.tranches || []).length > 0) {
+      const hasLivePosition = (this.botState?.tranches || []).length > 0 ||
+        Math.abs(Number(this.currentPositionAmount || 0)) > 0 ||
+        (Array.isArray(this.venuePositions) && this.venuePositions.some(p => Math.abs(Number(p.position_amt || p.size || p.position || 0)) > 0));
+      if (this.mode === "live" || this.mode === "semi_auto" || hasLivePosition) {
         if (window.terminalLockManager?.isLocked) {
           window.showToast?.("🔒 Terminal is in read-only mode. Unlock before emergency flatten.", "warn");
           return;
         }
-        const confirmed = window.confirm(`REAL Lighter Perpetuals flatten: pause the bot and close only its recorded ${this.botState?.selected_symbol || "crypto"} tranches at market?`);
+        const sym = this.botState?.selected_symbol || this.selectedSymbol || "crypto";
+        const confirmed = window.confirm(`REAL Lighter Perpetuals flatten: pause the bot and close all open ${sym} positions at market on Lighter exchange?`);
         if (!confirmed) return;
-        window.showToast?.("Closing bot-owned Lighter Perpetuals inventory and pausing bot...", "info");
+        window.showToast?.(`Closing real Lighter Perpetuals ${sym} inventory and pausing bot...`, "info");
         try {
           const res = await apiPost("/api/lighter-crypto/flatten", {});
           if (res.success) {
-            window.showToast?.("✅ Bot-owned Lighter Perpetuals inventory flattened and bot paused.", "success");
+            window.showToast?.("✅ Lighter Perpetuals inventory flattened and bot paused.", "success");
             await this.refresh();
           } else {
             window.showToast?.(`Error: ${res.error || res.message || res.detail || "Flatten failed"}`, "danger");
