@@ -3878,7 +3878,7 @@
                       <input type="checkbox" id="chkCondEntryBase" checked onchange="tradingEngine.toggleCondition('entry_base_spread', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Current spread must exceed base entry by +0.10% points if tranches are active">2. Base Entry Spread (+0.10%)</span>
+                    <span class="condLabel" title="Current spread must exceed latest entry spacing (+0.10%) and adaptive volatility floor (MA + max(0.25%, 1.25σ))">2. Base Entry Spread (+0.10% / Adaptive Floor)</span>
                     <span class="condValue" id="valCondEntryBase">--</span>
                     <span class="condBadge wait" id="badgeCondEntryBase">WAIT</span>
                   </div>
@@ -4861,7 +4861,7 @@
                       <input type="checkbox" id="lab_chkCondEntryBase" checked>
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Current spread must exceed base entry by +0.10% points if tranches are active">2. Base Entry Spread (+0.10%)</span>
+                    <span class="condLabel" title="Current spread must exceed latest entry spacing (+0.10%) and adaptive volatility floor (MA + max(0.25%, 1.25σ))">2. Base Entry Spread (+0.10% / Adaptive Floor)</span>
                     <span class="condValue" id="lab_valCondEntryBase">--</span>
                     <span class="condBadge wait" id="lab_badgeCondEntryBase">WAIT</span>
                   </div>
