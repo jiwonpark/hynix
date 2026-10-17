@@ -7,6 +7,7 @@ from .macro_policy import macro_policy, confirmed_rebound
 from .nominal_signal import nominal_premium
 
 ENTRY_FEE_BPS = 5.0
+ENTRY_MIN_MA_STRETCH_PTS = 0.25
 STEP = 300
 
 
@@ -130,7 +131,7 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
             if aq and sq and stock_avg > 0:
                 baseline = nominal_premium(adr_avg, stock_avg) or spread
             setup = all((
-                passes('entry_ma_stretch', len(vals) >= 6 and spread-ma24 >= .10),
+                passes('entry_ma_stretch', len(vals) >= 6 and spread-ma24 >= ENTRY_MIN_MA_STRETCH_PTS),
                 passes('entry_base_spread', not aq or spread >= baseline + .10),
                 passes('entry_peak_rollover', peak_out),
                 ma_pass('entry_ma_stack_5m', five, True, spread),
