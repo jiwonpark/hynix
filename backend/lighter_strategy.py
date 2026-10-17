@@ -487,7 +487,124 @@ def evaluate_custom_signals(
     return entry_signal, candidate_side, exit_signal, evaluation
 
 
-LIVE_STRATEGIES = {"grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom"}
+def evaluate_ma_acceleration_signals(
+    prices: List[float],
+    *,
+    ma_accel_period: int = 24,
+    ma_accel_min_slope: float = 0.0,
+    ma_accel_min_accel: float = 0.0,
+    use_ma_slope: bool = True,
+    use_ma_accel: bool = True,
+    use_ma_pullback: bool = True,
+    use_ma_cross_exit: bool = True,
+    use_ma_stack_1h: bool = True,
+    evaluation_time: Optional[int] = None,
+    position_side: int = 0,
+    entry_price: float = 0.0,
+    held_bars: int = 0,
+) -> Tuple[bool, int, bool, Dict[str, Any]]:
+    """Newtonian Moving Average Velocity & Acceleration Strategy.
+
+    For a given 5m MA:
+    - Long Setup:
+      1. MA is rising (V_t > min_slope >= 0)
+      2. MA is accelerating (A_t > min_accel >= 0)
+      3. Price is below the MA (Price < MA)
+      Exit: Price recovers and crosses above the MA (Price >= MA)
+    - Short Setup (opposite):
+      1. MA is falling (V_t < -min_slope <= 0)
+      2. MA is decelerating / accelerating downward (A_t < -min_accel <= 0)
+      3. Price is above the MA (Price > MA)
+      Exit: Price drops and crosses below the MA (Price <= MA)
+    """
+    w = max(3, int(ma_accel_period))
+    if len(prices) < w + 2:
+        raise ValueError(f"MA Acceleration evaluation requires at least {w + 2} completed bars")
+
+    current_price = prices[-1]
+
+    # Compute 3 consecutive MA values to get first derivative (velocity) and second derivative (acceleration)
+    ma_curr = sum(prices[-w:]) / w
+    ma_prev = sum(prices[-w-1:-1]) / w
+    ma_prev2 = sum(prices[-w-2:-2]) / w
+
+    # Velocity (first derivative / slope per bar)
+    slope_curr = ma_curr - ma_prev
+    slope_prev = ma_prev - ma_prev2
+
+    # Acceleration (second derivative / curvature per bar)
+    accel_curr = slope_curr - slope_prev
+
+    min_slope = max(0.0, float(ma_accel_min_slope))
+    min_accel = max(0.0, float(ma_accel_min_accel))
+
+    # Long condition components:
+    long_rising = slope_curr > min_slope
+    long_accel = accel_curr > min_accel
+    long_pullback = current_price < ma_curr
+
+    # Short condition components:
+    short_falling = slope_curr < -min_slope
+    short_decel = accel_curr < -min_accel
+    short_bounce = current_price > ma_curr
+
+    # Determine candidate side based on active momentum regime
+    candidate_side = 1 if (long_rising and long_accel) else (-1 if (short_falling and short_decel) else (1 if current_price < ma_curr else -1))
+
+    macro_aligned = _macro_trend_aligned(prices, candidate_side)
+    macro_pass = not use_ma_stack_1h or macro_aligned
+
+    if candidate_side > 0:
+        slope_pass = not use_ma_slope or long_rising
+        accel_pass = not use_ma_accel or long_accel
+        pullback_pass = not use_ma_pullback or long_pullback
+        entry_signal = bool(slope_pass and accel_pass and pullback_pass and macro_pass)
+    else:
+        slope_pass = not use_ma_slope or short_falling
+        accel_pass = not use_ma_accel or short_decel
+        pullback_pass = not use_ma_pullback or short_bounce
+        entry_signal = bool(slope_pass and accel_pass and pullback_pass and macro_pass)
+
+    # Exit conditions:
+    tp_exit = False
+    if position_side > 0:
+        tp_exit = current_price >= ma_curr if use_ma_cross_exit else False
+    elif position_side < 0:
+        tp_exit = current_price <= ma_curr if use_ma_cross_exit else False
+
+    current_pnl = position_side * (current_price / entry_price - 1) * 100 if (position_side != 0 and entry_price > 0) else 0.0
+    emergency_stop = current_pnl <= -2.0 or held_bars >= 32
+    exit_signal = bool((tp_exit or emergency_stop) if position_side != 0 else False)
+
+    condition_pass = {
+        "entry_ma_slope": slope_pass,
+        "entry_ma_accel": accel_pass,
+        "entry_ma_pullback": pullback_pass,
+        "entry_ma_stack_1h": macro_aligned,
+        "exit_ma_cross": tp_exit if position_side else None,
+        "exit_emergency_stop": emergency_stop if position_side else None,
+    }
+
+    evaluation = {
+        "time": evaluation_time,
+        "ratio": round(current_price, 4),
+        "mean": round(ma_curr, 4),
+        "z": round((current_price - ma_curr) / max(1e-6, ma_curr * 0.01), 3),
+        "signal_mean": ma_curr,
+        "strategy": "ma_acceleration",
+        "ma_period": w,
+        "slope": round(slope_curr, 5),
+        "prev_slope": round(slope_prev, 5),
+        "acceleration": round(accel_curr, 6),
+        "price_vs_ma": round(current_price - ma_curr, 4),
+        "price_vs_ma_pct": round((current_price / ma_curr - 1) * 100, 3),
+        "candidate_side": candidate_side,
+        "condition_pass": condition_pass,
+    }
+    return entry_signal, candidate_side, exit_signal, evaluation
+
+
+LIVE_STRATEGIES = {"grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration"}
 
 
 def evaluate_strategy_signal(
@@ -553,6 +670,22 @@ def evaluate_strategy_signal(
             trend_pullback_dist=float(config.get("trend_pullback_dist", 0.15)),
             trend_tp_dist=float(config.get("trend_tp_dist", 0.05)),
             trend_slope_min=float(config.get("trend_slope_min", 0.002)),
+            use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
+            evaluation_time=evaluation_time,
+            position_side=position_side,
+            entry_price=entry_price,
+            held_bars=held_bars,
+        )
+    elif strategy_mode == "ma_acceleration":
+        return evaluate_ma_acceleration_signals(
+            prices,
+            ma_accel_period=int(config.get("ma_accel_period", 24)),
+            ma_accel_min_slope=float(config.get("ma_accel_min_slope", 0.0)),
+            ma_accel_min_accel=float(config.get("ma_accel_min_accel", 0.0)),
+            use_ma_slope=bool(config.get("use_ma_slope", True)),
+            use_ma_accel=bool(config.get("use_ma_accel", True)),
+            use_ma_pullback=bool(config.get("use_ma_pullback", True)),
+            use_ma_cross_exit=bool(config.get("use_ma_cross_exit", True)),
             use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
             evaluation_time=evaluation_time,
             position_side=position_side,

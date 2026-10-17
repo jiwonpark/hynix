@@ -45,6 +45,8 @@ DEFAULT_STATE = {
     "trend_macro_window": 24, "trend_pullback_dist": 0.15, "trend_tp_dist": 0.05, "trend_slope_min": 0.002,
     "use_ma_stretch": True, "use_base_spacing": True, "use_peak": True, "use_ma_stack": False,
     "use_ma_stack_1h": True,
+    "ma_accel_period": 24, "ma_accel_min_slope": 0.0, "ma_accel_min_accel": 0.0,
+    "use_ma_slope": True, "use_ma_accel": True, "use_ma_pullback": True, "use_ma_cross_exit": True,
     "long_multiplier": 1.0, "short_multiplier": 1.0,
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
@@ -145,6 +147,13 @@ class LighterCryptoBot:
                           "trend_pullback_dist": float(self.state.get("trend_pullback_dist", 0.15)),
                           "trend_tp_dist": float(self.state.get("trend_tp_dist", 0.05)),
                           "trend_slope_min": float(self.state.get("trend_slope_min", 0.002)),
+                          "ma_accel_period": int(self.state.get("ma_accel_period", 24)),
+                          "ma_accel_min_slope": float(self.state.get("ma_accel_min_slope", 0.0)),
+                          "ma_accel_min_accel": float(self.state.get("ma_accel_min_accel", 0.0)),
+                          "use_ma_slope": bool(self.state.get("use_ma_slope", True)),
+                          "use_ma_accel": bool(self.state.get("use_ma_accel", True)),
+                          "use_ma_pullback": bool(self.state.get("use_ma_pullback", True)),
+                          "use_ma_cross_exit": bool(self.state.get("use_ma_cross_exit", True)),
                       })
         result["execution_blocked"] = bool(self.state.get("execution_blocked") or self.state.get("recovery_required") or self.state.get("pending_order"))
         result["blocked_reason"] = self.state.get("blocked_reason") or self.state.get("last_error")
@@ -162,6 +171,8 @@ class LighterCryptoBot:
             "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
             "ma_stretch_min", "ma_trailing_stop", "min_consensus_votes",
             "trend_macro_window", "trend_pullback_dist", "trend_tp_dist", "trend_slope_min",
+            "ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel",
+            "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
             "long_multiplier", "short_multiplier",
@@ -174,12 +185,14 @@ class LighterCryptoBot:
             if key in {"selected_symbol", "strategy_mode", "strategy_interval"}:
                 candidate[key] = str(value)
             elif key in {"max_tranches", "min_seconds_between_orders", "ou_macro_ema_span",
-                        "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars"}:
+                        "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars",
+                        "ma_accel_period"}:
                 candidate[key] = int(value)
             elif key in {"ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
                         "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
                         "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
-                        "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming"}:
+                        "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming",
+                        "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)

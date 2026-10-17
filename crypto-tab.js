@@ -354,6 +354,48 @@
         },
         defaultParams: { entry_z: 1.5, exit_z: 0.25 }
       },
+      ma_acceleration: {
+        id: "ma_acceleration",
+        name: "MA Velocity & Acceleration",
+        icon: "🚀",
+        badge: "NEWTONIAN MA · VELOCITY & CURVATURE",
+        title: "➕ MA Acceleration Pullback Entry",
+        desc: "Kinetic Trigger: 5m MA rising & accelerating (dMA/dt > 0, d²MA/dt² > 0) with price below MA (Long); or MA falling & decelerating with price above MA (Short)",
+        tpTitle: "🎯 MA Crossing Take-Profit Exit",
+        tpDesc: "Exit: Price recovers and crosses above MA (Long exit) or crosses below MA (Short exit)",
+        entryLabels: {
+          rowCondEntryMaStretch: "1. 5m MA Direction (Slope > 0 Long / Slope < 0 Short)",
+          rowCondEntryBase: "2. 5m MA Curvature Acceleration (d²MA/dt² > 0 / < 0)",
+          rowCondEntryPeak: "3. Price Pullback (Price < MA Long / Price > MA Short)",
+          rowCondEntryMaStack5m: "4. Minimum Velocity Threshold Filter",
+          rowCondEntryMaStack1h: "5. 1h Macro Trend Support Alignment",
+          rowCondEntryCapacity: "6. Kinetic Velocity Scaling Cap",
+          rowCondEntryLeverage: "7. Trend Acceleration Leverage Allowance",
+          rowCondEntryMargin: "8. Curvature Volatility Margin Guard",
+          rowCondEntryEngine: "9. Acceleration Engine State Active",
+          rowCondEntryGuard: "10. Anti-Whipsaw Gap Cadence",
+        },
+        exitLabels: {
+          rowCondExitConvergence: "1. MA Neutral Line Crossing (Price crosses MA)",
+          rowCondExitDwell: "2. Minimum Acceleration Dwell (≥ 2 Candles)",
+          rowCondExitBottoming: "3. Trailing Momentum Inflection",
+          rowCondExitNetPnl: "4. Zero-Loss Guaranteed Lock (> +$0.02)",
+          rowCondExitActive: "5. Active Acceleration Lot Retention",
+          rowCondExitMaStack5m: "6. Fast MA Mean Reversion Touch",
+          rowCondExitMaStack1h: "7. Macro Resistance Rejection Exit",
+          rowCondExitPosition: "8. Directional Hedged Position Balance",
+        },
+        researchLabels: {
+          valCondEntryMaStretch: "Replay: require MA slope direction",
+          valCondEntryBase: "Replay: require MA acceleration curvature",
+          valCondEntryPeak: "Replay: require price pullback/bounce",
+          valCondEntryMaStack5m: "Replay: require velocity threshold",
+          valCondExitConvergence: "Replay: exit when price crosses MA",
+          valCondExitDwell: "Replay: require minimum candle hold",
+          valCondExitBottoming: "Replay: require momentum inflection",
+        },
+        defaultParams: { ma_accel_period: 24, ma_accel_min_slope: 0.0, ma_accel_min_accel: 0.0 }
+      },
       custom: {
         id: "custom",
         name: "Rule Composer",
@@ -1091,6 +1133,7 @@
             <button id="crypto_tabParadigm_ma_stack" class="lighterParadigmBtn" type="button" data-mode="ma_stack" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">📈 Trend MA Stack</button>
             <button id="crypto_tabParadigm_multi_factor" class="lighterParadigmBtn" type="button" data-mode="multi_factor" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚖️ Multi-Factor Gate</button>
             <button id="crypto_tabParadigm_trend_pullback" class="lighterParadigmBtn" type="button" data-mode="trend_pullback" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🌊 Macro Trend Reversion</button>
+            <button id="crypto_tabParadigm_ma_acceleration" class="lighterParadigmBtn" type="button" data-mode="ma_acceleration" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🚀 MA Acceleration</button>
             <button id="crypto_tabParadigm_custom" class="lighterParadigmBtn" type="button" data-mode="custom" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🛠️ Rule Composer</button>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -1103,7 +1146,7 @@
           </div>
         `;
         criteriaGrid.parentNode.insertBefore(nav, criteriaGrid);
-        ["grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom"].forEach((mode) => {
+        ["grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "ma_acceleration", "custom"].forEach((mode) => {
           const btn = $(`crypto_tabParadigm_${mode}`);
           if (btn) btn.addEventListener("click", () => {
             this._userSelectedParadigm = true;
@@ -1420,6 +1463,47 @@
           </div>
         `;
       }
+      if (mode === "ma_acceleration") {
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:18px;">🚀</span>
+                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Newtonian MA Velocity & Acceleration Engine</strong>
+                <span id="crypto_valMaAccelRegimeBadge" style="background:#ecfdf5;color:#065f46;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #a7f3d0;">2ND ORDER DERIVATIVE</span>
+              </div>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Kinetic Trigger: MA rising & accelerating (dMA/dt &gt; 0, d²MA/dt² &gt; 0) + price pullback below MA for Long; or MA falling & decelerating (dMA/dt &lt; 0, d²MA/dt² &lt; 0) + price bounce above MA for Short.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">MA Window:</span>
+              <input id="crypto_inpMaAccelPeriod" type="number" step="1" value="24" style="width:52px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Min Velocity (V):</span>
+              <input id="crypto_inpMaAccelMinSlope" type="number" step="0.001" value="0.0" style="width:64px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Min Accel (A):</span>
+              <input id="crypto_inpMaAccelMinAccel" type="number" step="0.0001" value="0.0" style="width:68px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <button id="crypto_btnMaAccelReplay" type="button" style="border:1px solid #0284c7;background:#0284c7;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun MA Accel</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">1st Derivative (Velocity dMA/dt)</small>
+              <strong id="crypto_valMaVelocity" style="font-size:15px;color:#0f172a;">Awaiting replay</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">2nd Derivative (Curvature d²MA/dt²)</small>
+              <strong id="crypto_valMaAcceleration" style="font-size:15px;color:#0284c7;">Awaiting replay</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Current Moving Average (MA)</small>
+              <strong id="crypto_valMaCurrentLevel" style="font-size:15px;color:#16a34a;">Awaiting replay</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Price Pullback vs MA Gap (Δ)</small>
+              <strong id="crypto_valMaPriceGap" style="font-size:15px;color:#7c3aed;">Awaiting replay</strong>
+            </div>
+          </div>
+        `;
+      }
       return `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
           <div>
@@ -1523,6 +1607,8 @@
         $("crypto_btnFactorReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "trend_pullback") {
         $("crypto_btnTrendReplay")?.addEventListener("click", () => this.runBacktest());
+      } else if (mode === "ma_acceleration") {
+        $("crypto_btnMaAccelReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "custom") {
         $("crypto_btnCustomSave")?.addEventListener("click", () => {
           const ez = $("crypto_inpCustomEntryZ")?.value || "1.5";
@@ -1750,6 +1836,14 @@
         payload.trend_pullback_dist = numeric("crypto_inpTrendPullbackDist", Number(this.botState?.trend_pullback_dist ?? 0.15));
         payload.trend_tp_dist = numeric("crypto_inpTrendTpDist", Number(this.botState?.trend_tp_dist ?? 0.05));
         payload.trend_macro_window = numeric("crypto_inpTrendMacroWindow", Number(this.botState?.trend_macro_window ?? 24));
+      } else if (mode === "ma_acceleration") {
+        payload.ma_accel_period = numeric("crypto_inpMaAccelPeriod", Number(this.botState?.ma_accel_period ?? 24));
+        payload.ma_accel_min_slope = numeric("crypto_inpMaAccelMinSlope", Number(this.botState?.ma_accel_min_slope ?? 0.0));
+        payload.ma_accel_min_accel = numeric("crypto_inpMaAccelMinAccel", Number(this.botState?.ma_accel_min_accel ?? 0.0));
+        payload.use_ma_slope = lid("chkCondEntryMaStretch")?.checked !== false;
+        payload.use_ma_accel = lid("chkCondEntryBase")?.checked !== false;
+        payload.use_ma_pullback = lid("chkCondEntryPeak")?.checked !== false;
+        payload.use_ma_cross_exit = lid("chkCondExitConvergence")?.checked !== false;
       } else if (mode === "custom") {
         payload.entry_z = numeric("crypto_inpCustomEntryZ", Number(this.botState?.entry_z ?? 1.5));
         payload.exit_z = numeric("crypto_inpCustomExitZ", Number(this.botState?.exit_z ?? 0.25));
@@ -2324,6 +2418,13 @@
         trend_tp_dist: numeric("crypto_inpTrendTpDist", 0.05),
         trend_macro_window: numeric("crypto_inpTrendMacroWindow", 24),
         trend_slope_min: numeric("crypto_replayTrendSlope", 0.002),
+        ma_accel_period: numeric("crypto_inpMaAccelPeriod", 24),
+        ma_accel_min_slope: numeric("crypto_inpMaAccelMinSlope", 0.0),
+        ma_accel_min_accel: numeric("crypto_inpMaAccelMinAccel", 0.0),
+        use_ma_slope: lid("chkCondEntryMaStretch")?.checked !== false,
+        use_ma_accel: lid("chkCondEntryBase")?.checked !== false,
+        use_ma_pullback: lid("chkCondEntryPeak")?.checked !== false,
+        use_ma_cross_exit: lid("chkCondExitConvergence")?.checked !== false,
         use_ma_stretch: lid("chkCondEntryMaStretch")?.checked !== false,
         use_base_spacing: lid("chkCondEntryBase")?.checked !== false,
         use_peak: lid("chkCondEntryPeak")?.checked !== false,
@@ -2400,6 +2501,7 @@
         ma_stack: ["ma_stretch_min", "ma_trailing_stop"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
+        ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel"],
       };
       const liveParams = { ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
       if (isParadigmMatch) (parameterKeys[currentMode] || []).forEach((key) => {
@@ -2410,15 +2512,17 @@
       const defaultConditionToggles = {
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
         use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
+        use_ma_slope: true, use_ma_accel: true, use_ma_pullback: true, use_ma_cross_exit: true,
       };
       const usesFilters = true;
+      const isMaAccel = currentMode === "ma_acceleration";
       const rules = [
-        ["EntryMaStretch", "use_ma_stretch", "Entry trigger"],
-        ["EntryBase", "use_base_spacing", "Spacing"],
-        ["EntryPeak", "use_peak", "Peak rollover"],
+        ["EntryMaStretch", isMaAccel ? "use_ma_slope" : "use_ma_stretch", isMaAccel ? "MA Slope" : "Entry trigger"],
+        ["EntryBase", isMaAccel ? "use_ma_accel" : "use_base_spacing", isMaAccel ? "MA Curvature Accel" : "Spacing"],
+        ["EntryPeak", isMaAccel ? "use_ma_pullback" : "use_peak", isMaAccel ? "Price Pullback" : "Peak rollover"],
         ["EntryMaStack5m", "use_ma_stack", "Trend stack"],
         ["EntryMaStack1h", "use_ma_stack_1h", "Macro trend 1h"],
-        ["ExitConvergence", "use_convergence", "Convergence"],
+        ["ExitConvergence", isMaAccel ? "use_ma_cross_exit" : "use_convergence", isMaAccel ? "MA Crossing Exit" : "Convergence"],
         ["ExitDwell", "use_dwell", "Dwell"],
         ["ExitBottoming", "use_bottoming", "Bottoming"],
       ];
@@ -2432,9 +2536,20 @@
           input.title = `${name} strategy condition`;
         }
         if (badge) {
-          const conditionKey = {EntryMaStretch:"entry_z", EntryBase:"entry_spacing", EntryPeak:"entry_rollover",
+          const conditionKey = isMaAccel ? {
+            EntryMaStretch: "entry_ma_slope",
+            EntryBase: "entry_ma_accel",
+            EntryPeak: "entry_ma_pullback",
+            EntryMaStack5m: "entry_ma_slope",
+            EntryMaStack1h: "entry_ma_stack_1h",
+            ExitConvergence: "exit_ma_cross",
+            ExitDwell: "exit_ma_cross",
+            ExitBottoming: "exit_ma_cross"
+          }[suffix] : {
+            EntryMaStretch:"entry_z", EntryBase:"entry_spacing", EntryPeak:"entry_rollover",
             EntryMaStack5m:"entry_ma_stack", EntryMaStack1h:"entry_ma_stack_1h", ExitConvergence:"exit_convergence",
-            ExitDwell:"exit_dwell", ExitBottoming:"exit_bottoming"}[suffix];
+            ExitDwell:"exit_dwell", ExitBottoming:"exit_bottoming"
+          }[suffix];
           const result = this.latestReplayConditionResult;
           const value = result?.latest_conditions?.[conditionKey];
           const state = !settings[key] ? "OFF"
@@ -2523,6 +2638,13 @@
           entry_micro_reversal:"Entry · micro reversal", exit_target:"Exit · target reached",
           exit_opposite_reversal:"Exit · profitable opposite reversal",
           exit_trend_invalidation:"Exit · trend invalidation", exit_stop_or_dwell:"Exit · stop loss / 32-bar limit"},
+        ma_acceleration: {
+          entry_ma_slope: "Entry · 5m MA Direction (Slope)",
+          entry_ma_accel: "Entry · 5m MA Acceleration (Curvature)",
+          entry_ma_pullback: "Entry · Price vs MA Pullback",
+          entry_ma_stack_1h: "Entry · 1h Macro Trend Alignment",
+          exit_ma_cross: "Exit · MA Cross (Mean Reversion)",
+        },
       }[this.currentParadigm];
       if (!labels) return;
       const heading = document.createElement("strong");
@@ -2565,6 +2687,12 @@
         entry_z:"ou_use_entry_z", entry_halflife:"ou_use_halflife",
         entry_min_deviation:"ou_use_min_abs_deviation", entry_macro_trend:"ou_use_macro_trend",
         entry_stop_zone:"ou_use_stop_zone", exit_z:"ou_use_exit_z",
+      } : bot?.strategy_mode === "ma_acceleration" ? {
+        entry_ma_slope: "use_ma_slope",
+        entry_ma_accel: "use_ma_accel",
+        entry_ma_pullback: "use_ma_pullback",
+        entry_ma_stack_1h: "use_ma_stack_1h",
+        exit_ma_cross: "use_ma_cross_exit",
       } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
         entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
         entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
@@ -2579,6 +2707,7 @@
         ma_stack:["entry_ma_stack","entry_stretch","entry_ma_stack_1h","exit_ma_cross","exit_trailing_stop","exit_max_dwell"],
         multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","entry_ma_stack_1h","exit_consensus","exit_convergence","exit_max_dwell"],
         trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
+        ma_acceleration:["entry_ma_slope","entry_ma_accel","entry_ma_pullback","entry_ma_stack_1h","exit_ma_cross"],
       };
       (keysByMode[bot?.strategy_mode] || Object.keys(checks)).forEach((key) => {
         const value = checks[key];
@@ -2634,8 +2763,18 @@
       const defaultConditionToggles = {
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
         use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
+        use_ma_slope: true, use_ma_accel: true, use_ma_pullback: true, use_ma_cross_exit: true,
       };
-      const filterKeys = {
+      const filterKeys = liveMode === "ma_acceleration" ? {
+        chkCondEntryMaStretch: "use_ma_slope",
+        chkCondEntryBase: "use_ma_accel",
+        chkCondEntryPeak: "use_ma_pullback",
+        chkCondEntryMaStack5m: "use_ma_stack",
+        chkCondEntryMaStack1h: "use_ma_stack_1h",
+        chkCondExitConvergence: "use_ma_cross_exit",
+        chkCondExitDwell: "use_dwell",
+        chkCondExitBottoming: "use_bottoming",
+      } : {
         chkCondEntryMaStretch: "use_ma_stretch",
         chkCondEntryBase: "use_base_spacing",
         chkCondEntryPeak: "use_peak",
@@ -2713,6 +2852,17 @@
         [["crypto_inpTrendPullbackDist", "trend_pullback_dist"],
          ["crypto_inpTrendTpDist", "trend_tp_dist"],
          ["crypto_inpTrendMacroWindow", "trend_macro_window"]].forEach(([id, key]) => {
+          const input = $(id);
+          if (input && params[key] != null) {
+            input.value = String(params[key]);
+            input._userModified = false;
+          }
+        });
+      }
+      if (liveMode === "ma_acceleration") {
+        [["crypto_inpMaAccelPeriod", "ma_accel_period"],
+         ["crypto_inpMaAccelMinSlope", "ma_accel_min_slope"],
+         ["crypto_inpMaAccelMinAccel", "ma_accel_min_accel"]].forEach(([id, key]) => {
           const input = $(id);
           if (input && params[key] != null) {
             input.value = String(params[key]);
@@ -5215,6 +5365,39 @@
             badgeEl.textContent = `REGIME: ${data.metrics.macro_regime}`;
             badgeEl.style.background = data.metrics.macro_regime === "UPTREND" ? "#dcfce7" : (data.metrics.macro_regime === "DOWNTREND" ? "#fee2e2" : "#f1f5f9");
             badgeEl.style.color = data.metrics.macro_regime === "UPTREND" ? "#166534" : (data.metrics.macro_regime === "DOWNTREND" ? "#991b1b" : "#475569");
+          }
+        } else if (data.metrics && this.currentParadigm === "ma_acceleration") {
+          const velEl = $("crypto_valMaVelocity");
+          if (velEl && data.metrics.latest_slope != null) {
+            const slope = Number(data.metrics.latest_slope);
+            velEl.textContent = `${slope >= 0 ? "+" : ""}${slope.toFixed(4)} / bar`;
+            velEl.style.color = slope > 0 ? "#16a34a" : (slope < 0 ? "#dc2626" : "#475569");
+          }
+          const accEl = $("crypto_valMaAcceleration");
+          if (accEl && data.metrics.latest_acceleration != null) {
+            const accel = Number(data.metrics.latest_acceleration);
+            accEl.textContent = `${accel >= 0 ? "+" : ""}${accel.toFixed(5)} / bar²`;
+            accEl.style.color = accel > 0 ? "#0284c7" : (accel < 0 ? "#dc2626" : "#475569");
+          }
+          const maEl = $("crypto_valMaCurrentLevel");
+          if (maEl && data.metrics.latest_ma != null) {
+            maEl.textContent = this.formatCryptoPrice(data.metrics.latest_ma);
+          }
+          const gapEl = $("crypto_valMaPriceGap");
+          if (gapEl && data.metrics.price_vs_ma_pct != null) {
+            const gap = Number(data.metrics.price_vs_ma_pct);
+            gapEl.textContent = `${gap >= 0 ? "+" : ""}${gap.toFixed(3)}%`;
+            gapEl.style.color = gap < 0 ? "#16a34a" : "#dc2626";
+          }
+          const badgeEl = $("crypto_valMaAccelRegimeBadge");
+          if (badgeEl && data.metrics.latest_slope != null && data.metrics.latest_acceleration != null) {
+            const slope = Number(data.metrics.latest_slope);
+            const accel = Number(data.metrics.latest_acceleration);
+            const isRisingAcc = slope > 0 && accel > 0;
+            const isFallingDec = slope < 0 && accel < 0;
+            badgeEl.textContent = isRisingAcc ? "🚀 RISING & ACCELERATING" : (isFallingDec ? "🔻 FALLING & DECELERATING" : "⚖️ DRIFTING / FLAT");
+            badgeEl.style.background = isRisingAcc ? "#dcfce7" : (isFallingDec ? "#fee2e2" : "#f1f5f9");
+            badgeEl.style.color = isRisingAcc ? "#166534" : (isFallingDec ? "#991b1b" : "#475569");
           }
         }
       } catch (error) {
