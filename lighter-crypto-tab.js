@@ -548,10 +548,10 @@
       if (syncBacktest) syncBacktest.style.display = "none";
       const minProfitLabel = lid("valDeployedMinProfit")?.parentElement;
       if (minProfitLabel) minProfitLabel.firstChild.textContent = "Exit Rule: ";
-      this.setText("lblAccountEquity", "Real Futures Equity");
+      this.setText("lblAccountEquity", "Lighter Account Equity");
       this.setText("badgeEquitySource", "SYNCING");
       this.setText("valAccountEquity", "—");
-      this.setText("lblAvailMargin", "Real Available Margin");
+      this.setText("lblAvailMargin", "Lighter Available Margin");
       this.setText("valAvailMargin", "—");
       this.setText("lblUnrealizedPnl", "Bot Realized Net PnL (unverified)");
       this.setText("lblActivePairs", "Active Crypto Tranches");
@@ -564,8 +564,8 @@
       this.setText("badgeUpbitSource", "SINGLE-LEG");
       this.setText("valUpbitEquity", `${sym} (${base} / USD)`);
       this.setText("titleExecutionTerminal", `⚡ 1-Click ${sym} Quantitative Execution`);
-      this.setText("badgeExecMode", "SINGLE-LEG PERPETUAL QUANTITATIVE ENGINE");
-      this.setText("lblHedgedSyncBadge", "CRYPTO BOT PAUSED");
+      this.setText("badgeExecMode", "LIGHTER DEX LIVE ENGINE · SINGLE-LEG PERP");
+      this.setText("lblHedgedSyncBadge", "LIGHTER CRYPTO BOT PAUSED");
       this.setText("lblShortTermTitle", "Paper Replay Conditions — Single-Leg Crypto Simulation");
       this.setText("lblShortTermSubtitle", "Chart interval, strategy regimes, condition switches, and Rerun affect the historical paper simulation only.");
       const replayBadge = [...(lid("shortTermExecutionSection")?.querySelectorAll("span") || [])]
@@ -1021,9 +1021,26 @@
 
       const tab = $("tabContentLighterCrypto");
       if (tab) {
+        const walker = document.createTreeWalker(tab, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          walker.currentNode.nodeValue = walker.currentNode.nodeValue
+            .replace(/Binance Total Equity/g, "Lighter Account Equity")
+            .replace(/Binance Wallet Split/g, "Lighter Collateral Breakdown")
+            .replace(/BINANCE FUTURES LIVE ENGINE/g, "LIGHTER DEX LIVE ENGINE")
+            .replace(/Syncing with Binance Futures\.\.\./g, "Syncing with Lighter DEX...")
+            .replace(/LIVE BINANCE EXECUTION/g, "LIGHTER DEX LIVE ENGINE")
+            .replace(/Binance Collateral/g, "Lighter Collateral")
+            .replace(/Binance/g, "Lighter")
+            .replace(/BINANCE/g, "LIGHTER");
+        }
         Array.from(tab.querySelectorAll("span")).forEach((element) => {
           if (element.textContent.trim() === "LIVE LIGHTER EXECUTION") element.textContent = "PAPER / BACKTEST ONLY";
           if (element.textContent.trim() === "ARMED & LIVE") element.textContent = "PAPER LADDER";
+        });
+        tab.querySelectorAll("[title]").forEach((element) => {
+          element.title = element.title
+            .replace(/Binance/g, "Lighter")
+            .replace(/BINANCE/g, "LIGHTER");
         });
       }
 

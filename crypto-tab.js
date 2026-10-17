@@ -698,7 +698,7 @@
           const overlay = document.createElement("div");
           overlay.id = "cryptoTrendOverlay";
           overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
-          overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
+          overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="cryptoTrendSmall" class="cryptoTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="cryptoTrendBig" class="cryptoTrendBadge" style="pointer-events:none">1h —</span></div>';
           chartHost.appendChild(overlay);
           this.bindMatchPill(overlay.querySelector("#cryptoMatchPill"));
 
@@ -1219,6 +1219,12 @@
       if (mode === "ou_quant") {
         const liveEntryZ = Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4).toFixed(1);
         const liveExitZ = Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20).toFixed(2);
+        const liveOu = this.botState?.strategy_mode === "ou_quant" ? this.botState : {};
+        const ouChecked = (key) => liveOu[key] !== false ? "checked" : "";
+        const ouNumber = (key, fallback) => Number(liveOu[key] ?? fallback);
+        const ouRowStyle = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
+        const ouToggleStyle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
+        const ouNumberStyle = "display:inline-block;width:62px;height:26px;margin:0;padding:2px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;";
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div>
@@ -1245,22 +1251,38 @@
               <button id="crypto_btnOuReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun SDE</button>
             </div>
           </div>
+          <div id="crypto_ouEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+            <strong style="font-size:12px;color:#0f172a;">Entry conditions · switches and values apply to replay; Deploy saves them to the live bot</strong>
+            <div style="${ouRowStyle}"><input id="crypto_ouUseEntryZ" type="checkbox" aria-label="Enable minimum entry Z" style="${ouToggleStyle}" ${ouChecked("ou_use_entry_z")}><span>1. Minimum |Z| (Entry Z above)</span><span class="condBadge neutral" id="crypto_ouStatusEntryZ">WAITING</span></div>
+            <div style="${ouRowStyle}"><input id="crypto_ouUseHalflife" type="checkbox" aria-label="Enable maximum half-life" style="${ouToggleStyle}" ${ouChecked("ou_use_halflife")}><span>2. Maximum half-life</span><input id="crypto_ouHalflifeMax" type="number" aria-label="Maximum half-life parameter" min="1" max="50" step="0.5" value="${ouNumber("ou_halflife_max", 8)}" style="${ouNumberStyle}"><span>× 4 bars</span><span class="condBadge neutral" id="crypto_ouStatusHalflife">WAITING</span></div>
+            <div style="${ouRowStyle}"><input id="crypto_ouUseMinDeviation" type="checkbox" aria-label="Enable minimum OU deviation" style="${ouToggleStyle}" ${ouChecked("ou_use_min_abs_deviation")}><span>3. Minimum deviation from OU mean</span><input id="crypto_ouMinDeviation" type="number" aria-label="Minimum OU deviation in percentage points" min="0" max="5" step="0.01" value="${ouNumber("ou_min_abs_deviation_pp", 0.25)}" style="${ouNumberStyle}"><span>pp</span><span class="condBadge neutral" id="crypto_ouStatusMinDeviation">WAITING</span></div>
+            <div style="${ouRowStyle}"><input id="crypto_ouUseMacroTrend" type="checkbox" aria-label="Enable macro EMA alignment" style="${ouToggleStyle}" ${ouChecked("ou_use_macro_trend")}><span>4. Macro EMA slope aligned · EMA</span><input id="crypto_ouMacroSpan" type="number" aria-label="Macro EMA span" min="5" max="120" step="1" value="${ouNumber("ou_macro_ema_span", 20)}" style="${ouNumberStyle}"><span>over</span><input id="crypto_ouMacroSlopeBars" type="number" aria-label="Macro EMA slope comparison bars" min="1" max="60" step="1" value="${ouNumber("ou_macro_slope_bars", 4)}" style="${ouNumberStyle}"><span>bars</span><span class="condBadge neutral" id="crypto_ouStatusMacroTrend">WAITING</span></div>
+            <div style="${ouRowStyle}"><input id="crypto_ouUseStopZone" type="checkbox" aria-label="Enable upper entry Z limit" style="${ouToggleStyle}" ${ouChecked("ou_use_stop_zone")}><span>5. Entry below emergency |Z| limit</span><input id="crypto_ouStopZ" type="number" aria-label="Emergency Z limit" min="1.5" max="6" step="0.05" value="${ouNumber("ou_stop_z", 3.5)}" style="${ouNumberStyle}"><span>σ</span><span class="condBadge neutral" id="crypto_ouStatusStopZone">WAITING</span></div>
+            <small style="color:#64748b;">Live order-book quote confirmation and account safety checks are separate. Historical replay has no order-book quotes.</small>
+          </div>
+          <div id="crypto_ouExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+            <strong style="font-size:12px;color:#0f172a;">Exit condition</strong>
+            <div style="${ouRowStyle}"><input id="crypto_ouUseExitZ" type="checkbox" aria-label="Enable neutral Z exit" style="${ouToggleStyle}" ${ouChecked("ou_use_exit_z")}><span>1. OU neutral |Z| target (Exit Z above)</span><span class="condBadge neutral" id="crypto_ouStatusExitZ">WAITING</span></div>
+            <div style="${ouRowStyle}"><span>Emergency stop (always active)</span><span class="condBadge neutral" id="crypto_ouStatusEmergencyStop">WAITING</span></div>
+            <small id="crypto_ouStatusSource" style="color:#64748b;">PAPER · Awaiting completed-candle replay</small>
+            <small style="color:#64748b;">Emergency stop at the upper Z limit remains active. Replay uses price signals only; live execution also checks current quotes and positions.</small>
+          </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Reversion Speed (θ)</small>
-              <strong id="crypto_valOuTheta" style="font-size:15px;color:#0f172a;">0.0418 / bar</strong>
+              <strong id="crypto_valOuTheta" style="font-size:15px;color:#0f172a;">Awaiting replay</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Equilibrium Half-Life (τ)</small>
-              <strong id="crypto_valOuHalfLife" style="font-size:15px;color:#0284c7;">16.5 bars (4.1h)</strong>
+              <strong id="crypto_valOuHalfLife" style="font-size:15px;color:#0284c7;">Awaiting replay</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
-              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">ADF Stationarity</small>
-              <strong style="font-size:15px;color:#16a34a;">p = 0.012 (Stationary ✓)</strong>
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Replay macro EMA slope</small>
+              <strong id="crypto_valOuMacroSlope" style="font-size:15px;color:#16a34a;">Awaiting completed bars</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
               <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Current SDE Divergence</small>
-              <strong id="crypto_valOuZScore" style="font-size:15px;color:#7c3aed;">+1.84σ (Reversion Zone)</strong>
+              <strong id="crypto_valOuZScore" style="font-size:15px;color:#7c3aed;">Awaiting replay</strong>
             </div>
           </div>
         `;
@@ -1569,20 +1591,26 @@
             <b>Execution Data & Interval</b><br>
             <span id="cryptoLiveInterval">Completed 5m candles</span> · 24-bar window
           </div>
-          <div>
+          <div id="cryptoLiveGridEntryRule">
             <b>Entry Trigger</b><br>
             |Z| ≥ <input id="crypto_inputLiveGridEntryZ" type="number" min="0.1" max="10" step="0.1" value="1.5" aria-label="Live Grid entry Z threshold" style="width:65px;font-weight:800">
+            <span id="crypto_liveEntryVerdict" class="condBadge neutral">UNAVAILABLE</span>
             <div id="cryptoLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short selected contract<br>Z low: long selected contract</div>
           </div>
-          <div>
+          <div id="cryptoLiveGridExitRule">
             <b>Exit Target</b><br>
             |Z| ≤ <input id="crypto_inputLiveGridExitZ" type="number" min="0" max="5" step="0.05" value="0.25" aria-label="Live Grid exit Z threshold" style="width:65px;font-weight:800"> · no separate PnL gate
+            <span id="crypto_liveExitVerdict" class="condBadge neutral">UNAVAILABLE</span>
             <div id="cryptoLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Reduce one bot-owned tranche per closed-bar convergence signal</div>
           </div>
           <div>
             <b>Size / dynamic capacity</b><br>
             Single-leg target $<span id="cryptoLiveNotional">50</span> · gross ≈ $<span id="cryptoLivePairGross">—</span><br>
             <span id="cryptoLiveMaxTranches">—</span> bot-owned tranches · max <input id="crypto_inputLiveMaxTranches" type="number" min="1" max="5" step="1" value="5" aria-label="Maximum live Grid tranches" style="width:45px;font-weight:800"> · selected contract ≤1x Futures equity
+          </div>
+          <div>
+            <b>Next-entry risk estimate</b><br>
+            <span id="crypto_LiveRiskBudget">Awaiting account equity and order size</span>
           </div>
           <div>
             <b>Execution guards</b><br>
@@ -1599,6 +1627,7 @@
             <span id="cryptoLiveEvaluation">Awaiting completed bar</span>
           </div>
         </div>
+        <div id="cryptoLiveConditions" style="display:grid;gap:6px;margin-top:10px;"></div>
         <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#f0fdf4;color:#166534;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
           <span>All testable quantitative strategies can be deployed to live execution. Manual live orders require separate confirmation.</span>
           <span style="font-size:10px;font-weight:700;color:#15803d;">Causal completed-candle &amp; executable-quote validation enforced.</span>
@@ -1711,6 +1740,7 @@
       if (mode === "ou_quant") {
         payload.entry_z = numeric("crypto_inpOuEntryZ", Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4));
         payload.exit_z = numeric("crypto_inpOuExitZ", Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20));
+        Object.assign(payload, this.ouConditionSettings());
       } else if (mode === "ma_stack") {
         payload.ma_stretch_min = numeric("crypto_inpMaStretchMin", Number(this.botState?.ma_stretch_min ?? 0.30));
         payload.ma_trailing_stop = numeric("crypto_inpMaTrailingStop", Number(this.botState?.ma_trailing_stop ?? 0.15));
@@ -2228,9 +2258,9 @@
     renderTrends(trends) {
       const sInt = this.smallTrendInterval || "5m";
       const bInt = this.bigTrendInterval || "1h";
-      [[sInt, "lighterTrendSmall", "lighterTrend5m"], [bInt, "lighterTrendBig", "lighterTrend1h"]].forEach(([interval, id, fallbackId]) => {
-        const trend = trends?.[interval] || trends?.[id === "lighterTrendSmall" ? "small" : "big"] || {};
-        const badge = $(id) || $(fallbackId) || $(id.replace("lighter", "crypto"));
+      [[sInt, "cryptoTrendSmall"], [bInt, "cryptoTrendBig"]].forEach(([interval, id]) => {
+        const trend = trends?.[interval] || trends?.[id === "cryptoTrendSmall" ? "small" : "big"] || {};
+        const badge = $(id);
         if (!badge) return;
         const direction = trend.regime || trend.direction || "FLAT";
         const icon = direction === "BULL" || direction === "UPTREND" ? "▲" : ((direction === "BEAR" || direction === "DOWNTREND") ? "▼" : "◆");
@@ -2284,14 +2314,16 @@
         exit_z: mode === "ou_quant" ? numeric("crypto_inpOuExitZ", liveOuExitFallback) :
           mode === "custom" ? numeric("crypto_inpCustomExitZ", 0.25) :
           mode === "grid" ? Number(this.gridReplayExitZ ?? 0.25) : 0.25,
-        ou_halflife_max: 8.0, ou_stop_z: 3.5,
+        ...this.ouConditionSettings(),
+        base_spacing_pct: numeric("crypto_replaySpacingPct", 0.2),
+        min_dwell_bars: numeric("crypto_replayDwellBars", 4),
         ma_stretch_min: numeric("crypto_inpMaStretchMin", 0.30),
         ma_trailing_stop: numeric("crypto_inpMaTrailingStop", 0.15),
         min_consensus_votes: numeric("crypto_selFactorQuorum", 3),
         trend_pullback_dist: numeric("crypto_inpTrendPullbackDist", 0.15),
         trend_tp_dist: numeric("crypto_inpTrendTpDist", 0.05),
         trend_macro_window: numeric("crypto_inpTrendMacroWindow", 24),
-        trend_slope_min: 0.002,
+        trend_slope_min: numeric("crypto_replayTrendSlope", 0.002),
         use_ma_stretch: lid("chkCondEntryMaStretch")?.checked !== false,
         use_base_spacing: lid("chkCondEntryBase")?.checked !== false,
         use_peak: lid("chkCondEntryPeak")?.checked !== false,
@@ -2300,6 +2332,28 @@
         use_convergence: lid("chkCondExitConvergence")?.checked !== false,
         use_dwell: lid("chkCondExitDwell")?.checked !== false,
         use_bottoming: lid("chkCondExitBottoming")?.checked === true,
+      };
+    },
+
+    ouConditionSettings() {
+      const saved = this.botState?.strategy_mode === "ou_quant" ? this.botState : {};
+      const number = (id, fallback) => {
+        const value = Number($(id)?.value);
+        return $(id) && Number.isFinite(value) ? value : Number(fallback);
+      };
+      const enabled = (id, key) => $(id)?.checked ?? (saved[key] !== false);
+      return {
+        ou_halflife_max: number("crypto_ouHalflifeMax", saved.ou_halflife_max ?? 8),
+        ou_stop_z: number("crypto_ouStopZ", saved.ou_stop_z ?? 3.5),
+        ou_min_abs_deviation_pp: number("crypto_ouMinDeviation", saved.ou_min_abs_deviation_pp ?? 0.25),
+        ou_macro_ema_span: number("crypto_ouMacroSpan", saved.ou_macro_ema_span ?? 20),
+        ou_macro_slope_bars: number("crypto_ouMacroSlopeBars", saved.ou_macro_slope_bars ?? 4),
+        ou_use_entry_z: enabled("crypto_ouUseEntryZ", "ou_use_entry_z"),
+        ou_use_halflife: enabled("crypto_ouUseHalflife", "ou_use_halflife"),
+        ou_use_min_abs_deviation: enabled("crypto_ouUseMinDeviation", "ou_use_min_abs_deviation"),
+        ou_use_macro_trend: enabled("crypto_ouUseMacroTrend", "ou_use_macro_trend"),
+        ou_use_stop_zone: enabled("crypto_ouUseStopZone", "ou_use_stop_zone"),
+        ou_use_exit_z: enabled("crypto_ouUseExitZ", "ou_use_exit_z"),
       };
     },
 
@@ -2324,6 +2378,8 @@
       if (!pill) return;
       this.bindMatchPill(pill);
       const settings = this.replaySettings();
+      const signature = new URLSearchParams(settings).toString();
+      if (this.replayConditionSignature !== signature) this.latestReplayConditionResult = null;
       const liveMode = this.botState?.strategy_mode || "grid";
       const liveInterval = this.botState?.strategy_interval || "5m";
       const liveName = this.botState?.strategy_name || this.paradigms[liveMode]?.name || liveMode;
@@ -2337,7 +2393,10 @@
       if (!isParadigmMatch) diffs.push(`Strategy ${currentMode} ≠ ${liveMode}`);
       const parameterKeys = {
         grid: ["entry_z", "exit_z"], custom: ["entry_z", "exit_z"],
-        ou_quant: ["entry_z", "exit_z", "ou_halflife_max", "ou_stop_z"],
+        ou_quant: ["entry_z", "exit_z", "ou_halflife_max", "ou_stop_z",
+          "ou_min_abs_deviation_pp", "ou_macro_ema_span", "ou_macro_slope_bars",
+          "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
+          "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z"],
         ma_stack: ["ma_stretch_min", "ma_trailing_stop"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
@@ -2373,8 +2432,17 @@
           input.title = `${name} strategy condition`;
         }
         if (badge) {
-          badge.textContent = settings[key] ? "ON" : "OFF";
-          badge.className = "condBadge neutral";
+          const conditionKey = {EntryMaStretch:"entry_z", EntryBase:"entry_spacing", EntryPeak:"entry_rollover",
+            EntryMaStack5m:"entry_ma_stack", EntryMaStack1h:"entry_ma_stack_1h", ExitConvergence:"exit_convergence",
+            ExitDwell:"exit_dwell", ExitBottoming:"exit_bottoming"}[suffix];
+          const result = this.latestReplayConditionResult;
+          const value = result?.latest_conditions?.[conditionKey];
+          const state = !settings[key] ? "OFF"
+            : value == null ? "N/A" : value ? "PASS" : "WAITING";
+          badge.textContent = state;
+          badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+          badge.title = value == null ? "No completed replay evaluation or open position" :
+            `PAPER · ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()}`;
         }
         if (settings[key] !== liveEnabled)
           diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
@@ -2404,6 +2472,134 @@
       pill.style.background = matched ? (active ? "#dcfce7" : "#fef3c7") : "#fff7ed";
       pill.style.color = matched ? (active ? "#166534" : "#92400e") : "#c2410c";
       pill.style.borderColor = matched ? (active ? "#86efac" : "#fcd34d") : "#fdba74";
+      this.renderReplayConditionStatus(this.latestReplayConditionResult, settings);
+    },
+
+    renderReplayConditionStatus(result, settings = this.replaySettings()) {
+      const checks = result?.latest_conditions || {};
+      if (this.currentParadigm === "ou_quant") {
+        const evaluation = result?.latest_evaluation;
+        const ouChecks = evaluation?.condition_pass || {};
+        const rows = [
+          ["EntryZ", "entry_z", "ou_use_entry_z", `|Z| ${Number(evaluation?.z).toFixed(3)} ≥ ${Number(settings.entry_z).toFixed(2)}`],
+          ["Halflife", "entry_halflife", "ou_use_halflife", `${Number(evaluation?.half_life_bars).toFixed(1)} ≤ ${(Number(settings.ou_halflife_max) * 4).toFixed(1)} bars`],
+          ["MinDeviation", "entry_min_deviation", "ou_use_min_abs_deviation", `${Number(evaluation?.abs_deviation_pp).toFixed(4)} ≥ ${Number(settings.ou_min_abs_deviation_pp).toFixed(2)} pp`],
+          ["MacroTrend", "entry_macro_trend", "ou_use_macro_trend", `EMA slope ${evaluation?.macro_ema_slope == null ? "unavailable" : Number(evaluation.macro_ema_slope).toFixed(4)} pp`],
+          ["StopZone", "entry_stop_zone", "ou_use_stop_zone", `|Z| ${Number(evaluation?.z).toFixed(3)} < ${Number(settings.ou_stop_z).toFixed(2)}`],
+          ["ExitZ", "exit_z", "ou_use_exit_z", `|Z| ${Number(evaluation?.z).toFixed(3)} ≤ ${Number(settings.exit_z).toFixed(2)}`],
+          ["EmergencyStop", "exit_emergency_stop", null, `|Z| ${Number(evaluation?.z).toFixed(3)} ≥ ${Number(settings.ou_stop_z).toFixed(2)}`],
+        ];
+        rows.forEach(([id, key, toggle, detail]) => {
+          const badge = $(`crypto_ouStatus${id}`);
+          if (!badge) return;
+          const enabled = toggle == null || settings[toggle] !== false;
+          const available = evaluation && Object.hasOwn(ouChecks, key)
+            && (key !== "entry_macro_trend" || evaluation.macro_ema_slope != null);
+          const state = !enabled ? "OFF" : !available ? "UNAVAILABLE" : ouChecks[key] ? "PASS" : "WAITING";
+          badge.textContent = state;
+          badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+          badge.title = available ? `PAPER · ${detail}` : "Awaiting completed-candle replay";
+        });
+        const source = $("crypto_ouStatusSource");
+        if (source) source.textContent = evaluation?.time
+          ? `PAPER · Completed candle ${new Date(Number(evaluation.time) * 1000).toLocaleString()} · Tab 4 live bot executes deployed strategy`
+          : "PAPER · Awaiting completed-candle replay";
+        return;
+      }
+      const panel = $("crypto_replayConditions");
+      if (!panel) return;
+      const labels = {
+        ma_stack: {entry_ma_stack:"Entry · MA7/24/60 stack", entry_stretch:"Entry · MA60 stretch",
+          entry_ma_stack_1h:"Entry · 1h macro trend alignment",
+          exit_ma_cross:"Exit · MA cross", exit_trailing_stop:"Exit · trailing stop", exit_max_dwell:"Exit · 16-bar limit"},
+        multi_factor: {entry_factor_z:"Entry · Z factor", entry_factor_velocity:"Entry · velocity factor",
+          entry_factor_ma:"Entry · MA distance factor", entry_factor_extremum:"Entry · local extremum factor",
+          entry_quorum:"Entry · vote quorum", entry_min_z:"Entry · minimum |Z| 0.8",
+          entry_ma_stack_1h:"Entry · 1h macro trend alignment",
+          exit_consensus:"Exit · consensus drop + 3 bars", exit_convergence:"Exit · Z convergence",
+          exit_max_dwell:"Exit · 20-bar limit"},
+        trend_pullback: {entry_macro_trend:"Entry · macro trend", entry_ma_stack_1h:"Entry · 1h macro trend alignment",
+          entry_pullback:"Entry · pullback distance",
+          entry_micro_reversal:"Entry · micro reversal", exit_target:"Exit · target reached",
+          exit_opposite_reversal:"Exit · profitable opposite reversal",
+          exit_trend_invalidation:"Exit · trend invalidation", exit_stop_or_dwell:"Exit · stop loss / 32-bar limit"},
+      }[this.currentParadigm];
+      if (!labels) return;
+      const heading = document.createElement("strong");
+      heading.textContent = result?.latest_condition_time
+        ? `PAPER · Conditions at completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()}`
+        : "PAPER · Awaiting completed-candle replay";
+      panel.replaceChildren(heading);
+      Object.entries(labels).forEach(([key, label]) => {
+        const row = document.createElement("div");
+        row.className = "condRow";
+        const name = document.createElement("span");
+        name.className = "condLabel";
+        name.textContent = label;
+        const badge = document.createElement("span");
+        const value = checks[key];
+        const state = value == null ? "N/A" : value ? "PASS" : "WAITING";
+        badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+        badge.textContent = state;
+        badge.title = value == null ? "No open paper position or completed replay evaluation" : "Evaluated by paper replay";
+        row.append(name, badge);
+        panel.append(row);
+      });
+    },
+
+    renderLiveConditionStatus(bot = this.botState) {
+      const panel = $("cryptoLiveConditions");
+      if (!panel) return;
+      const evaluation = bot?.last_evaluation;
+      const time = Number(evaluation?.time);
+      const seconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[bot?.strategy_interval] || 300;
+      const fresh = bot?.enabled && evaluation?.strategy === bot?.strategy_mode
+        && Number.isFinite(time) && time > 0 && Date.now() / 1000 - time <= seconds * 2 + 60;
+      const checks = evaluation?.condition_pass || {};
+      const heading = document.createElement("strong");
+      heading.textContent = fresh
+        ? `LIVE · ${bot.strategy_mode} conditions at completed candle ${new Date(time * 1000).toLocaleString()}`
+        : `LIVE · ${bot?.strategy_mode || "strategy"} conditions unavailable (paused, stale, or awaiting a completed candle)`;
+      panel.replaceChildren(heading);
+      const toggleByKey = bot?.strategy_mode === "ou_quant" ? {
+        entry_z:"ou_use_entry_z", entry_halflife:"ou_use_halflife",
+        entry_min_deviation:"ou_use_min_abs_deviation", entry_macro_trend:"ou_use_macro_trend",
+        entry_stop_zone:"ou_use_stop_zone", exit_z:"ou_use_exit_z",
+      } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
+        entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
+        entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
+        exit_dwell:"use_dwell", exit_bottoming:"use_bottoming",
+      } : {
+        entry_ma_stack_1h:"use_ma_stack_1h",
+      };
+      const keysByMode = {
+        grid:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
+        custom:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
+        ou_quant:["entry_z","entry_halflife","entry_min_deviation","entry_macro_trend","entry_stop_zone","exit_z","exit_emergency_stop"],
+        ma_stack:["entry_ma_stack","entry_stretch","entry_ma_stack_1h","exit_ma_cross","exit_trailing_stop","exit_max_dwell"],
+        multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","entry_ma_stack_1h","exit_consensus","exit_convergence","exit_max_dwell"],
+        trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
+      };
+      (keysByMode[bot?.strategy_mode] || Object.keys(checks)).forEach((key) => {
+        const value = checks[key];
+        const row = document.createElement("div");
+        row.className = "condRow";
+        const label = document.createElement("span");
+        label.className = "condLabel";
+        label.textContent = key.replace(/^entry_/, "Entry · ").replace(/^exit_/, "Exit · ").replaceAll("_", " ");
+        const badge = document.createElement("span");
+        const toggle = toggleByKey[key];
+        const hasPosition = Array.isArray(bot?.tranches) && bot.tranches.length > 0;
+        const state = !fresh ? "UNAVAILABLE" : toggle && bot[toggle] === false ? "OFF"
+          : key.startsWith("exit_") && !hasPosition ? "N/A"
+            : value == null ? "UNAVAILABLE" : value ? "PASS" : "WAITING";
+        badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+        badge.textContent = state;
+        badge.title = fresh ? `LIVE · ${new Date(time * 1000).toLocaleString()} · saved bot rules`
+          : "No current live evaluation";
+        row.append(label, badge);
+        panel.append(row);
+      });
     },
 
     alignReplayToLive() {
@@ -2458,6 +2654,26 @@
         }
       });
       if (liveMode === "ou_quant") {
+        const ouControls = {
+          ou_halflife_max: "crypto_ouHalflifeMax",
+          ou_stop_z: "crypto_ouStopZ",
+          ou_min_abs_deviation_pp: "crypto_ouMinDeviation",
+          ou_macro_ema_span: "crypto_ouMacroSpan",
+          ou_macro_slope_bars: "crypto_ouMacroSlopeBars",
+          ou_use_entry_z: "crypto_ouUseEntryZ",
+          ou_use_halflife: "crypto_ouUseHalflife",
+          ou_use_min_abs_deviation: "crypto_ouUseMinDeviation",
+          ou_use_macro_trend: "crypto_ouUseMacroTrend",
+          ou_use_stop_zone: "crypto_ouUseStopZone",
+          ou_use_exit_z: "crypto_ouUseExitZ",
+        };
+        Object.entries(ouControls).forEach(([key, id]) => {
+          const input = $(id);
+          if (!input || params[key] == null) return;
+          if (input.type === "checkbox") input.checked = Boolean(params[key]);
+          else input.value = String(params[key]);
+          delete input.dataset.unsaved;
+        });
         const inpEntry = $("crypto_inpOuEntryZ");
         const rangeEntry = $("crypto_rangeOuEntryZ");
         const badgeEntry = $("crypto_valOuEntryZBadge");
@@ -2838,6 +3054,30 @@
       writeRule("cryptoLiveEvaluation", bot?.last_evaluation
         ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · price ${this.formatCryptoPrice(Number(bot.last_evaluation.ratio || 0))} · mean ${this.formatCryptoPrice(Number(bot.last_evaluation.mean || 0))}`
         : "Awaiting completed bar");
+      const liveEval = bot?.last_evaluation;
+      const evaluatedAt = Number(liveEval?.time);
+      const intervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[bot?.strategy_interval] || 300;
+      const fresh = isEnabled && liveEval?.strategy === "grid" && Number.isFinite(evaluatedAt)
+        && evaluatedAt > 0 && Date.now() / 1000 - evaluatedAt <= intervalSeconds * 2 + 60;
+      [["crypto_liveEntryVerdict", Number(bot?.entry_z), true],
+        ["crypto_liveExitVerdict", Number(bot?.exit_z), false]].forEach(([id, threshold, isEntry]) => {
+        const badge = $(id);
+        if (!badge) return;
+        const z = Number(liveEval?.signal_z ?? liveEval?.z);
+        const hasPosition = tranches.length > 0;
+        const state = !fresh ? "UNAVAILABLE" : !isEntry && !hasPosition ? "N/A"
+          : !Number.isFinite(z) || !Number.isFinite(threshold) ? "UNAVAILABLE"
+            : (isEntry ? Math.abs(z) >= threshold : Math.abs(z) <= threshold) ? "PASS" : "WAITING";
+        badge.textContent = state;
+        badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+        badge.title = fresh ? `LIVE · completed candle ${new Date(evaluatedAt * 1000).toLocaleString()} · |Z| ${Math.abs(z).toFixed(3)} ${isEntry ? "≥" : "≤"} ${threshold.toFixed(2)}`
+          : "LIVE · Paused, stale, or missing completed-candle evaluation";
+      });
+      ["cryptoLiveGridEntryRule", "cryptoLiveGridExitRule"].forEach((id) => {
+        const row = $(id);
+        if (row) row.style.display = bot?.strategy_mode === "grid" ? "" : "none";
+      });
+      this.renderLiveConditionStatus(bot);
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput && document.activeElement !== notionalInput) {
         notionalInput.value = String(bot?.notional_usd || 25);
@@ -2931,12 +3171,19 @@
       }
 
       const grossLev = collateral > 0 ? (grossNotional / collateral) : 0;
+      const isLiveAccount = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
+      const venueGross = this.liveVenue?.selected_gross_notional ?? this.liveVenue?.account_gross_notional;
+      const accountGross = isLiveAccount && Number.isFinite(Number(venueGross))
+        ? Number(venueGross) : grossNotional;
       const dynamicCapUsd = collateral * levCap;
-      const headroomUsd = Math.max(0, dynamicCapUsd - grossNotional);
-      const freeMarginUsd = this.mode === "live" || this.botState?.enabled || hasLiveExposure
+      const headroomUsd = Math.max(0, dynamicCapUsd - accountGross);
+      const freeMarginUsd = isLiveAccount
         ? Number(this.liveVenue?.available_margin ?? 0)
         : Math.max(0, collateral - (grossNotional / levCap));
-      const hasLeverage = grossLev <= levCap;
+      const nextOrderUsd = Number(this.orderNotional() || 25);
+      const projectedGross = accountGross + nextOrderUsd;
+      const projectedLeverage = collateral > 0 ? projectedGross / collateral : Infinity;
+      const hasLeverage = projectedLeverage <= levCap;
       const netDeltaUsd = grossNotional;
       const netShares = adrQty;
       const loss10 = grossNotional * 0.10;
@@ -2977,7 +3224,7 @@
       }
 
       // 5. Conditions & Criteria Checklist
-      this.setText("valCondEntryLeverage", `${grossLev.toFixed(2)}x ≤ ${levCap.toFixed(1)}x`);
+      this.setText("valCondEntryLeverage", `${Number.isFinite(projectedLeverage) ? projectedLeverage.toFixed(2) : "—"}x projected ≤ ${levCap.toFixed(1)}x`);
       const chkLev = lid("chkCondEntryLeverage");
       if (chkLev) chkLev.checked = hasLeverage;
       const badgeLev = lid("badgeCondEntryLeverage");
@@ -3001,10 +3248,18 @@
         badgeCap.style.color = hasCapacity ? "#166534" : "#dc2626";
       }
 
-      const sizingRatio = Number(this.botState?.last_evaluation?.ratio || this.currentRatio || 0);
-      const nextPairGross = Number(this.orderNotional() || 25);
-      const reqMarginPerTranche = nextPairGross * 1.25;
+      const riskMarginLeverage = Number(riskCapacity.margin_leverage_assumption || 10);
+      const riskMarginMultiplier = Number(riskCapacity.margin_buffer_multiplier || 1.25);
+      const minimumMargin = Number(riskCapacity.min_margin_buffer_usd || 2.50);
+      const reqMarginPerTranche = Math.max(minimumMargin, nextOrderUsd / riskMarginLeverage * riskMarginMultiplier);
       const hasMargin = freeMarginUsd >= reqMarginPerTranche;
+      const stressMovePct = Number(riskCapacity.stress_move_pct || 10);
+      const stressBudgetPct = Number(riskCapacity.stress_loss_budget_pct_equity || 10);
+      const projectedLossUsd = projectedGross * stressMovePct / 100;
+      const projectedLossEquityPct = collateral > 0 ? projectedLossUsd / collateral * 100 : 0;
+      this.setText("LiveRiskBudget", collateral > 0
+        ? `Next $${nextOrderUsd.toFixed(2)} → ${projectedLeverage.toFixed(2)}x account gross; ${stressMovePct.toFixed(0)}% adverse move ≈ −$${projectedLossUsd.toFixed(2)} (${projectedLossEquityPct.toFixed(1)}% of equity, limit ${stressBudgetPct.toFixed(0)}%). Buffered 10× margin estimate: $${reqMarginPerTranche.toFixed(2)}. Pre-rounding estimate.`
+        : "Account equity unavailable");
       this.setText("valCondEntryMargin", `$${freeMarginUsd.toFixed(2)} ≥ $${reqMarginPerTranche.toFixed(2)}`);
       const chkMargin = lid("chkCondEntryMargin");
       if (chkMargin) chkMargin.checked = hasMargin;
@@ -4932,6 +5187,16 @@
           if (thetaEl && data.metrics.avg_theta) thetaEl.textContent = `${data.metrics.avg_theta.toFixed(4)} / bar`;
           const hlEl = $("crypto_valOuHalfLife");
           if (hlEl && data.metrics.avg_half_life_bars) hlEl.textContent = `${data.metrics.avg_half_life_bars} bars (${data.metrics.half_life_mins}m)`;
+          const slopeEl = $("crypto_valOuMacroSlope");
+          if (slopeEl) {
+            const slope = data.latest_evaluation?.macro_ema_slope;
+            slopeEl.textContent = slope == null ? "Insufficient bars" : `${Number(slope).toFixed(4)} pp`;
+          }
+          const zEl = $("crypto_valOuZScore");
+          if (zEl) {
+            const z = data.latest_evaluation?.z;
+            zEl.textContent = z == null ? "Insufficient bars" : `${Number(z) >= 0 ? "+" : ""}${Number(z).toFixed(3)}σ`;
+          }
         } else if (data.metrics && this.currentParadigm === "trend_pullback") {
           const slopeEl = $("crypto_valTrendSlope");
           if (slopeEl && data.metrics.latest_slope != null) {

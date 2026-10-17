@@ -11620,6 +11620,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         fillReadout.style.color = "#475569";
         fillReadout.textContent = "Actual arrows: paired fills · gray dot: unpaired";
         $("shortTermChartLegend")?.appendChild(fillReadout);
+
+        const chartHost = $("shortTermSpreadChartHost");
+        if (chartHost && !$("tradeMatchPill")) {
+          chartHost.style.position = "relative";
+          const overlay = document.createElement("div");
+          overlay.id = "tradeTrendOverlay";
+          overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
+          overlay.innerHTML = '<span id="tradeMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #86efac;background:#dcfce7;color:#166534;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">● BINANCE FUTURES LIVE ENGINE</span>';
+          chartHost.appendChild(overlay);
+        }
       },
 
       onTabActivated() {

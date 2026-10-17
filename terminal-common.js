@@ -25,6 +25,20 @@
     const fragment = namespaceFragment(
       template.content.cloneNode(true), options.prefix || "", Boolean(options.stripHandlers)
     );
+    if (options.venue && options.venue.toLowerCase().includes("lighter")) {
+      const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        walker.currentNode.nodeValue = walker.currentNode.nodeValue
+          .replace(/Binance Total Equity/g, "Lighter Account Equity")
+          .replace(/Binance Wallet Split/g, "Lighter Collateral Breakdown")
+          .replace(/BINANCE FUTURES LIVE ENGINE/g, "LIGHTER DEX LIVE ENGINE")
+          .replace(/Syncing with Binance Futures\.\.\./g, "Syncing with Lighter DEX...")
+          .replace(/LIVE BINANCE EXECUTION/g, "LIGHTER DEX LIVE ENGINE")
+          .replace(/Binance Collateral/g, "Lighter Collateral")
+          .replace(/Binance/g, "Lighter")
+          .replace(/BINANCE/g, "LIGHTER");
+      }
+    }
     target.replaceChildren(fragment);
     target.dataset.terminalInstance = options.venue;
   }

@@ -426,13 +426,18 @@
       this.setText("lblActivePairs", "Active Grid Rungs");
       this.setText("lblMarginRisk", "Target Leverage");
       this.setText("valMarginRisk", "8.0x cap");
-      this.setText("lblCollateralSummary", "Grid Mode");
+      this.setText("lblCollateralSummary", "Lighter Collateral Breakdown");
       this.setText("lblUpbitEquity", "Grid Underlying Pair");
       this.setText("badgeUpbitSource", "DUAL-LEG");
       this.setText("valUpbitEquity", "SKHY (ADR) ↔ SKHYNIXUSD (Korean underlying)");
       this.setText("titleExecutionTerminal", "🏛️ 1-Click Institutional Grid Execution & Virtual Orders");
-      this.setText("badgeExecMode", "INSTITUTIONAL GRID REBALANCING · DUAL-LEG ARB");
-      this.setText("lblHedgedSyncBadge", "GRID ENGINE ACTIVE");
+      this.setText("badgeExecMode", "LIGHTER DEX LIVE ENGINE · DUAL-LEG ARB");
+      this.setText("lblHedgedSyncBadge", "LIGHTER GRID ENGINE ACTIVE");
+      const collateralTab = lid("tabAssets");
+      if (collateralTab) {
+        const collateralLabel = [...(collateralTab.childNodes || [])].find((node) => node.nodeType === 3);
+        if (collateralLabel) collateralLabel.textContent = "Lighter Collateral (";
+      }
       this.setText("lblShortTermTitle", "Paper Replay Conditions — Do Not Control the Real Bot");
       this.setText("lblShortTermSubtitle", "Chart interval, strategy tabs, condition switches, and Rerun affect the historical paper simulation only.");
       this.setText("lblCritScaleInTitle", "➕ Grid Band Scale-In (Upper Harvester)");
@@ -588,18 +593,8 @@
       const exit = lid("btnReduceTranche");
       const flatten = lid("btnEmergencyFlatten");
 
-      // Inject Direction Dropdown & Paper Indicator if not already present
-      if (entry && !lid("selTrancheDirection") && entry.parentNode) {
-        const dirSelect = document.createElement("select");
-        dirSelect.id = "lighter_selTrancheDirection";
-        dirSelect.style.cssText = "height:38px;padding:0 10px;font-size:12px;font-weight:700;background:#fff;color:#0f172a;border:1.5px solid #0284c7;border-radius:6px;cursor:pointer;";
-        dirSelect.innerHTML = `
-          <option value="auto">⚡ Auto (Ratio Parity)</option>
-          <option value="short">▼ Short Parity (Short ADR / Long KR)</option>
-          <option value="long">▲ Long Parity (Long ADR / Short KR)</option>
-        `;
-        entry.parentNode.insertBefore(dirSelect, entry);
-
+      // Inject Paper Indicator & Enforce Conditions if not already present
+      if (entry && !lid("paperBadge") && entry.parentNode) {
         const paperBadge = document.createElement("span");
         paperBadge.id = "lighter_paperBadge";
         paperBadge.style.cssText = "display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:800;background:#fef3c7;color:#92400e;border:1px solid #fde68a;";
@@ -615,6 +610,16 @@
           <span>Enforce Live Conditions</span>
         `;
         entry.parentNode.appendChild(enforceLabel);
+
+        const dirSelect = document.createElement("select");
+        dirSelect.id = "lighter_selTrancheDirection";
+        dirSelect.style.display = "none";
+        dirSelect.innerHTML = `
+          <option value="auto">⚡ Auto (Ratio Parity)</option>
+          <option value="short">▼ Short Parity (Short ADR / Long KR)</option>
+          <option value="long">▲ Long Parity (Long ADR / Short KR)</option>
+        `;
+        entry.parentNode.appendChild(dirSelect);
       }
 
       [entry, exit, flatten].forEach((button) => {
@@ -875,6 +880,14 @@
         const walker = document.createTreeWalker(tab, NodeFilter.SHOW_TEXT);
         while (walker.nextNode()) {
           walker.currentNode.nodeValue = walker.currentNode.nodeValue
+            .replace(/Binance Total Equity/g, "Lighter Account Collateral")
+            .replace(/Binance Wallet Split/g, "Lighter Collateral Breakdown")
+            .replace(/BINANCE FUTURES LIVE ENGINE/g, "LIGHTER DEX LIVE ENGINE")
+            .replace(/Syncing with Binance Futures\.\.\./g, "Syncing with Lighter DEX...")
+            .replace(/LIVE BINANCE EXECUTION/g, "LIGHTER DEX LIVE ENGINE")
+            .replace(/Binance Collateral/g, "Lighter Collateral")
+            .replace(/Binance/g, "Lighter")
+            .replace(/BINANCE/g, "LIGHTER")
             .replace(/CSOP 2L ETF \/ Domestic/g, "SKHYNIXUSD Korean underlying")
             .replace(/CSOP 2L/g, "SKHYNIXUSD")
             .replace(/\bCSOP\b/g, "SKHYNIXUSD");
@@ -884,7 +897,11 @@
           if (element.textContent.trim() === "ARMED & LIVE") element.textContent = "PAPER LADDER";
         });
         tab.querySelectorAll("[title]").forEach((element) => {
-          element.title = element.title.replace(/CSOP/g, "SKHYNIXUSD").replace(/8\.00x/g, "1.00x");
+          element.title = element.title
+            .replace(/Binance/g, "Lighter")
+            .replace(/BINANCE/g, "LIGHTER")
+            .replace(/CSOP/g, "SKHYNIXUSD")
+            .replace(/8\.00x/g, "1.00x");
         });
       }
 
@@ -1486,14 +1503,16 @@
             <b>Execution Data & Interval</b><br>
             <span id="lighterLiveInterval">Completed 5m candles</span> · 24-bar window
           </div>
-          <div>
+          <div id="lighterLiveGridEntryRule">
             <b>Entry Trigger</b><br>
             |Z| ≥ <span id="lighterLiveEntryZ">1.50</span>
+            <span id="lighter_liveEntryVerdict" class="condBadge neutral">UNAVAILABLE</span>
             <div id="lighterLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short SKHY / long KR<br>Z low: long SKHY / short KR</div>
           </div>
-          <div>
+          <div id="lighterLiveGridExitRule">
             <b>Exit Target</b><br>
             |Z| ≤ <span id="lighterLiveExitZ">0.25</span> · Zero-Loss Guard
+            <span id="lighter_liveExitVerdict" class="condBadge neutral">UNAVAILABLE</span>
             <div id="lighterLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Full pair unwind at convergence</div>
           </div>
           <div>
@@ -1526,6 +1545,7 @@
             <span id="lighterLiveEvaluation">Awaiting completed bar</span>
           </div>
         </div>
+        <div id="lighterLiveConditions" style="display:grid;gap:6px;margin-top:10px;"></div>
         <div style="margin-top:10px;padding:8px 10px;border-radius:6px;background:#fff7ed;color:#9a3412;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
           <span>Live execution parameters and active engine are managed directly in this STRATEGY REGIME command center.</span>
           <span style="font-size:10px;font-weight:700;color:#c2410c;">Simulations in chart/backtest remain paper-only until deployed.</span>
@@ -2309,6 +2329,7 @@
       pill.style.color = matched ? (active ? "#166534" : "#92400e") : "#c2410c";
       pill.style.borderColor = matched ? (active ? "#86efac" : "#fcd34d") : "#fdba74";
       this.renderLiveOuConditionStatus();
+      this.renderReplayConditionStatus(this.latestReplayConditionResult, settings);
     },
 
     renderOuConditionStatus(evaluation, settings = this.replaySettings()) {
@@ -2374,6 +2395,133 @@
         badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
         badge.title = fresh ? `LIVE · saved bot settings · completed candle ${new Date(time * 1000).toLocaleString()}`
           : "LIVE · Paused, different strategy, stale, or missing completed-candle evaluation";
+      });
+    },
+
+    renderReplayConditionStatus(result, settings = this.replaySettings()) {
+      const checks = result?.latest_conditions || {};
+      if (this.currentParadigm === "ou_quant") {
+        const evaluation = result?.latest_evaluation;
+        const ouChecks = evaluation?.condition_pass || {};
+        const rows = [
+          ["EntryZ", "entry_z", "ou_use_entry_z", `|Z| ${Number(evaluation?.z).toFixed(3)} ≥ ${Number(settings.entry_z).toFixed(2)}`],
+          ["Halflife", "entry_halflife", "ou_use_halflife", `${Number(evaluation?.half_life_bars).toFixed(1)} ≤ ${(Number(settings.ou_halflife_max) * 4).toFixed(1)} bars`],
+          ["MinDeviation", "entry_min_deviation", "ou_use_min_abs_deviation", `${Number(evaluation?.abs_deviation_pp).toFixed(4)} ≥ ${Number(settings.ou_min_abs_deviation_pp).toFixed(2)} pp`],
+          ["MacroTrend", "entry_macro_trend", "ou_use_macro_trend", `EMA slope ${evaluation?.macro_ema_slope == null ? "unavailable" : Number(evaluation.macro_ema_slope).toFixed(4)} pp`],
+          ["StopZone", "entry_stop_zone", "ou_use_stop_zone", `|Z| ${Number(evaluation?.z).toFixed(3)} < ${Number(settings.ou_stop_z).toFixed(2)}`],
+          ["ExitZ", "exit_z", "ou_use_exit_z", `|Z| ${Number(evaluation?.z).toFixed(3)} ≤ ${Number(settings.exit_z).toFixed(2)}`],
+          ["EmergencyStop", "exit_emergency_stop", null, `|Z| ${Number(evaluation?.z).toFixed(3)} ≥ ${Number(settings.ou_stop_z).toFixed(2)}`],
+        ];
+        rows.forEach(([id, key, toggle, detail]) => {
+          const badge = $(`lighter_ouStatus${id}`);
+          if (!badge) return;
+          const enabled = toggle == null || settings[toggle] !== false;
+          const available = evaluation && Object.hasOwn(ouChecks, key)
+            && (key !== "entry_macro_trend" || evaluation.macro_ema_slope != null);
+          const state = !enabled ? "OFF" : !available ? "UNAVAILABLE" : ouChecks[key] ? "PASS" : "WAITING";
+          badge.textContent = state;
+          badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+          badge.title = available ? `PAPER · ${detail}` : "Awaiting completed-candle replay";
+        });
+        const source = $("lighter_ouStatusSource");
+        if (source) source.textContent = evaluation?.time
+          ? `PAPER · Completed candle ${new Date(Number(evaluation.time) * 1000).toLocaleString()} · Tab 3 live bot executes deployed strategy`
+          : "PAPER · Awaiting completed-candle replay";
+        return;
+      }
+      const panel = $("lighter_replayConditions");
+      if (!panel) return;
+      const labels = {
+        ma_stack: {entry_ma_stack:"Entry · MA7/24/60 stack", entry_stretch:"Entry · MA60 stretch",
+          entry_ma_stack_1h:"Entry · 1h macro trend alignment",
+          exit_ma_cross:"Exit · MA cross", exit_trailing_stop:"Exit · trailing stop", exit_max_dwell:"Exit · 16-bar limit"},
+        multi_factor: {entry_factor_z:"Entry · Z factor", entry_factor_velocity:"Entry · velocity factor",
+          entry_factor_ma:"Entry · MA distance factor", entry_factor_extremum:"Entry · local extremum factor",
+          entry_quorum:"Entry · vote quorum", entry_min_z:"Entry · minimum |Z| 0.8",
+          entry_ma_stack_1h:"Entry · 1h macro trend alignment",
+          exit_consensus:"Exit · consensus drop + 3 bars", exit_convergence:"Exit · Z convergence",
+          exit_max_dwell:"Exit · 20-bar limit"},
+        trend_pullback: {entry_macro_trend:"Entry · macro trend", entry_ma_stack_1h:"Entry · 1h macro trend alignment",
+          entry_pullback:"Entry · pullback distance",
+          entry_micro_reversal:"Entry · micro reversal", exit_target:"Exit · target reached",
+          exit_opposite_reversal:"Exit · profitable opposite reversal",
+          exit_trend_invalidation:"Exit · trend invalidation", exit_stop_or_dwell:"Exit · stop loss / 32-bar limit"},
+      }[this.currentParadigm];
+      if (!labels) return;
+      const heading = document.createElement("strong");
+      heading.textContent = result?.latest_condition_time
+        ? `PAPER · Conditions at completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()}`
+        : "PAPER · Awaiting completed-candle replay";
+      panel.replaceChildren(heading);
+      Object.entries(labels).forEach(([key, label]) => {
+        const row = document.createElement("div");
+        row.className = "condRow";
+        const name = document.createElement("span");
+        name.className = "condLabel";
+        name.textContent = label;
+        const badge = document.createElement("span");
+        const value = checks[key];
+        const state = value == null ? "N/A" : value ? "PASS" : "WAITING";
+        badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+        badge.textContent = state;
+        badge.title = value == null ? "No open paper position or completed replay evaluation" : "Evaluated by paper replay";
+        row.append(name, badge);
+        panel.append(row);
+      });
+    },
+
+    renderLiveConditionStatus(bot = this.botState) {
+      const panel = $("lighterLiveConditions");
+      if (!panel) return;
+      const evaluation = bot?.last_evaluation;
+      const time = Number(evaluation?.time);
+      const seconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[bot?.strategy_interval] || 300;
+      const fresh = bot?.enabled && evaluation?.strategy === bot?.strategy_mode
+        && Number.isFinite(time) && time > 0 && Date.now() / 1000 - time <= seconds * 2 + 60;
+      const checks = evaluation?.condition_pass || {};
+      const heading = document.createElement("strong");
+      heading.textContent = fresh
+        ? `LIVE · ${bot.strategy_mode} conditions at completed candle ${new Date(time * 1000).toLocaleString()}`
+        : `LIVE · ${bot?.strategy_mode || "strategy"} conditions unavailable (paused, stale, or awaiting a completed candle)`;
+      panel.replaceChildren(heading);
+      const toggleByKey = bot?.strategy_mode === "ou_quant" ? {
+        entry_z:"ou_use_entry_z", entry_halflife:"ou_use_halflife",
+        entry_min_deviation:"ou_use_min_abs_deviation", entry_macro_trend:"ou_use_macro_trend",
+        entry_stop_zone:"ou_use_stop_zone", exit_z:"ou_use_exit_z",
+      } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
+        entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
+        entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
+        exit_dwell:"use_dwell", exit_bottoming:"use_bottoming",
+      } : {
+        entry_ma_stack_1h:"use_ma_stack_1h",
+      };
+      const keysByMode = {
+        grid:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
+        custom:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
+        ou_quant:["entry_z","entry_halflife","entry_min_deviation","entry_macro_trend","entry_stop_zone","exit_z","exit_emergency_stop"],
+        ma_stack:["entry_ma_stack","entry_stretch","entry_ma_stack_1h","exit_ma_cross","exit_trailing_stop","exit_max_dwell"],
+        multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","entry_ma_stack_1h","exit_consensus","exit_convergence","exit_max_dwell"],
+        trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
+      };
+      (keysByMode[bot?.strategy_mode] || Object.keys(checks)).forEach((key) => {
+        const value = checks[key];
+        const row = document.createElement("div");
+        row.className = "condRow";
+        const label = document.createElement("span");
+        label.className = "condLabel";
+        label.textContent = key.replace(/^entry_/, "Entry · ").replace(/^exit_/, "Exit · ").replaceAll("_", " ");
+        const badge = document.createElement("span");
+        const toggle = toggleByKey[key];
+        const hasPosition = Array.isArray(bot?.tranches) && bot.tranches.length > 0;
+        const state = !fresh ? "UNAVAILABLE" : toggle && bot[toggle] === false ? "OFF"
+          : key.startsWith("exit_") && !hasPosition ? "N/A"
+            : value == null ? "UNAVAILABLE" : value ? "PASS" : "WAITING";
+        badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+        badge.textContent = state;
+        badge.title = fresh ? `LIVE · ${new Date(time * 1000).toLocaleString()} · saved bot rules`
+          : "No current live evaluation";
+        row.append(label, badge);
+        panel.append(row);
       });
     },
 
@@ -2794,6 +2942,30 @@
       writeRule("lighterLiveEvaluation", bot?.last_evaluation
         ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · ratio ${Number(bot.last_evaluation.ratio || 0).toFixed(3)}% · mean ${Number(bot.last_evaluation.mean || 0).toFixed(3)}%`
         : "Awaiting completed bar");
+      const liveEval = bot?.last_evaluation;
+      const evaluatedAt = Number(liveEval?.time);
+      const intervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[bot?.strategy_interval] || 300;
+      const fresh = isEnabled && liveEval?.strategy === "grid" && Number.isFinite(evaluatedAt)
+        && evaluatedAt > 0 && Date.now() / 1000 - evaluatedAt <= intervalSeconds * 2 + 60;
+      [["lighter_liveEntryVerdict", Number(bot?.entry_z), true],
+        ["lighter_liveExitVerdict", Number(bot?.exit_z), false]].forEach(([id, threshold, isEntry]) => {
+        const badge = $(id);
+        if (!badge) return;
+        const z = Number(liveEval?.signal_z ?? liveEval?.z);
+        const hasPosition = tranches.length > 0;
+        const state = !fresh ? "UNAVAILABLE" : !isEntry && !hasPosition ? "N/A"
+          : !Number.isFinite(z) || !Number.isFinite(threshold) ? "UNAVAILABLE"
+            : (isEntry ? Math.abs(z) >= threshold : Math.abs(z) <= threshold) ? "PASS" : "WAITING";
+        badge.textContent = state;
+        badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+        badge.title = fresh ? `LIVE · completed candle ${new Date(evaluatedAt * 1000).toLocaleString()} · |Z| ${Math.abs(z).toFixed(3)} ${isEntry ? "≥" : "≤"} ${threshold.toFixed(2)}`
+          : "LIVE · Paused, stale, or missing completed-candle evaluation";
+      });
+      ["lighterLiveGridEntryRule", "lighterLiveGridExitRule"].forEach((id) => {
+        const row = $(id);
+        if (row) row.style.display = bot?.strategy_mode === "grid" ? "" : "none";
+      });
+      this.renderLiveConditionStatus(bot);
       const notionalInput = lid("inputOrderNotional");
       if (notionalInput && document.activeElement !== notionalInput) {
         notionalInput.value = String(bot?.notional_usd || 25);
@@ -4862,7 +5034,9 @@
         const toggles = new URLSearchParams(settings);
         const data = await api(`/api/lighter/backtest?${toggles}`);
         if (requestId !== this.backtestRequestId) return;
+        this.latestReplayConditionResult = data;
         if (this.currentParadigm === "ou_quant") this.renderOuConditionStatus(data.latest_evaluation, settings);
+        this.renderReplayConditionStatus(data, settings);
         const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
         this.backtestMarkers = data.trades.flatMap((trade, tradeIndex) => [
           {
@@ -4951,6 +5125,7 @@
         }
       } catch (error) {
         if (requestId === this.backtestRequestId) {
+          this.latestReplayConditionResult = null;
           if (this.currentParadigm === "ou_quant") this.renderOuConditionStatus(null);
           this.backtestMarkers = [];
           this.renderMarkers();
