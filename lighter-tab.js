@@ -1854,6 +1854,18 @@
       this.applyMode(this.mode, false);
       this.initialized = true;
       this.renderVirtualState();
+      this.syncBotStatus();
+    },
+
+    async syncBotStatus() {
+      try {
+        const data = await api("/api/lighter/bot/status");
+        if (data?.bot) {
+          this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
+        }
+      } catch (err) {
+        console.warn("Lighter bot status sync failed:", err);
+      }
     },
 
     ensureChart() {

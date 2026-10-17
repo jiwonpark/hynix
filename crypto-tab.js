@@ -1936,11 +1936,23 @@
       } catch (_) {}
       const selectedStrategy = safeStorage.getItem(STRATEGY_STORAGE_KEY);
       if (this.paradigms[selectedStrategy]) this.currentParadigm = selectedStrategy;
-      this.mode = safeStorage.getItem("skhynix_crypto_mode") === "semi_auto" ? "semi_auto" : "paper";
+      this.mode = safeStorage.getItem("skhynix_crypto_mode") || "paper";
       this.labelTerminal();
       this.applyMode(this.mode, false);
       this.initialized = true;
       this.renderVirtualState();
+      this.syncBotStatus();
+    },
+
+    async syncBotStatus() {
+      try {
+        const data = await api("/api/crypto/bot/status");
+        if (data?.bot) {
+          this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
+        }
+      } catch (err) {
+        console.warn("Crypto bot status sync failed:", err);
+      }
     },
 
     ensureChart() {
