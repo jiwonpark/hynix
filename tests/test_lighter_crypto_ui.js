@@ -19,7 +19,12 @@ assert.doesNotMatch(lighter, /\/api\/crypto\//);
 
 const context = {
   window: {},
-  document: { readyState: 'loading', addEventListener() {}, getElementById() { return null; } },
+  document: {
+    readyState: 'loading',
+    addEventListener() {},
+    getElementById() { return null; },
+    createElement() { return { querySelector() { return null; }, style: {} }; },
+  },
   URLSearchParams, console,
 };
 vm.createContext(context);
@@ -50,4 +55,27 @@ tab5.updateLeverageMetrics();
 assert.match(nodes.get('lighterCrypto_valCondEntryMargin').textContent, /\$170\.00 ≥ \$18\.75/);
 assert.match(nodes.get('lighterCrypto_LiveRiskBudget').textContent, /−\$15\.00 \(8\.8% of equity, limit 10%\)/);
 assert.match(nodes.get('lighterCrypto_valCondEntryLeverage').textContent, /0\.88x projected ≤ 1\.0x/);
+
+// Test updateBotStatus runs without error and detects mismatch
+nodes.set('lighterCrypto_chkAutoPeriodic48h', { checked: false, disabled: false });
+nodes.set('lighterCrypto_autoTradeMasterBanner', { classList: { add() {}, remove() {} }, querySelector() { return null; }, appendChild() {} });
+nodes.set('lighterCrypto_autoTradePulseIndicator', { className: '' });
+nodes.set('lighterCrypto_lblAutoTradeStateTitle', { textContent: '' });
+nodes.set('lighterCrypto_badgeAutoPeriodicStatus', { style: {}, textContent: '', className: '', classList: { remove() {}, add() {} } });
+nodes.set('lighterCrypto_lblAutoTradeStatusHeading', { textContent: '' });
+nodes.set('lighterCrypto_lblAutoTradeStatusDetail', { textContent: '' });
+nodes.set('lighterCrypto_btnReconcileBot', { style: {} });
+nodes.set('lighterCrypto_activePositionsBody', { innerHTML: '' });
+nodes.set('lighterCrypto_activePositionsSummary', { innerHTML: '' });
+nodes.set('lighterCrypto_executionHistoryBody', { innerHTML: '' });
+nodes.set('lighterCrypto_executionHistorySummary', { innerHTML: '' });
+
+tab5.updateBotStatus({ enabled: false, tranches: [] }, { positions: [{ market_id: 1, position_amt: 0.00026 }] });
+assert.equal(nodes.get('lighterCrypto_btnReconcileBot').style.display, 'inline-flex');
+assert.match(nodes.get('lighterCrypto_lblAutoTradeStatusDetail').textContent, /differs from bot/);
+
+tab5.renderVirtualState();
+assert.ok(nodes.get('lighterCrypto_activePositionsBody').innerHTML.length > 0);
+
 console.log('Independent Binance Tab 4 and Lighter Tab 5 UI checks passed');
+

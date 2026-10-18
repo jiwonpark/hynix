@@ -2957,6 +2957,7 @@
     updateBotStatus(bot, venue) {
       if (!bot) return;
       this.botState = bot;
+      const isEnabled = Boolean(bot?.enabled);
       const symbol = bot?.selected_symbol || this.selectedSymbol || "BTC";
       const venuePositions = Array.isArray(venue?.positions) ? venue.positions : (Array.isArray(this.venuePositions) ? this.venuePositions : []);
       const venuePos = venuePositions.find(p => (p.symbol === symbol || String(p.market_id) === String(this.currentMarketId || 1)));
