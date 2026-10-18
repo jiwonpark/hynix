@@ -2957,11 +2957,16 @@
     updateBotStatus(bot, venue) {
       if (!bot) return;
       this.botState = bot;
-      const isEnabled = Boolean(bot?.enabled);
-      const isRecovery = Boolean(bot?.recovery_required);
+      const symbol = bot?.selected_symbol || this.selectedSymbol || "BTC";
+      const venuePositions = Array.isArray(venue?.positions) ? venue.positions : (Array.isArray(this.venuePositions) ? this.venuePositions : []);
+      const venuePos = venuePositions.find(p => (p.symbol === symbol || String(p.market_id) === String(this.currentMarketId || 1)));
+      const venueAmt = Math.abs(Number(venuePos?.position_amt || venuePos?.size || venuePos?.position || 0));
+      const tranches = Array.isArray(bot?.tranches) ? bot.tranches : [];
+      const expectedAmt = Math.abs(tranches.reduce((sum, t) => sum + (Number(t.qty) || 0) * (Number(t.side) || 1), 0));
+      const hasMismatch = Math.abs(venueAmt - expectedAmt) > 0.00005;
+      const isRecovery = Boolean(bot?.recovery_required || (hasMismatch && !isEnabled) || (bot?.blocked_reason && bot.blocked_reason.toLowerCase().includes("reconcil")));
       const reconcileButton = $("lighterCrypto_btnReconcileBot");
       if (reconcileButton) reconcileButton.style.display = isRecovery ? "inline-flex" : "none";
-      const tranches = Array.isArray(bot?.tranches) ? bot.tranches : [];
       // The EC2 bot is shared across browsers; per-browser localStorage is not
       // authoritative. Reconcile the visible execution mode to persisted server
       // state so a fresh profile/session cannot look like paper mode while the
@@ -3002,8 +3007,8 @@
           badge.style.background = "#fee2e2";
           badge.style.color = "#991b1b";
         }
-        if (headingEl) headingEl.textContent = "GRID BOT: ARMED (RECOVERY)";
-        if (detailEl) detailEl.textContent = blockedReason || "Check pending orders & exchange position before execution resumes";
+        if (headingEl) headingEl.textContent = isKo ? "그리드 봇: 복구/동기화 대기" : "BOT: RECONCILIATION REQUIRED";
+        if (detailEl) detailEl.textContent = blockedReason || (hasMismatch ? (isKo ? `거래소 포지션(${venueAmt} ${symbol})과 봇 포지션(${expectedAmt} ${symbol})이 일치하지 않습니다. 복구 동기화 또는 청산 후 시작하세요.` : `Exchange position (${venueAmt} ${symbol}) differs from bot's inventory (${expectedAmt} ${symbol}); reconcile or flatten required.`) : "Check pending orders & exchange position before execution resumes");
       } else if (isEnabled && isBlocked) {
         if (banner) banner.classList.add("recovery");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator blocked";

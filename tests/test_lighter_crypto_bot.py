@@ -183,6 +183,22 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(restored.state["recovery_required"])
         self.assertEqual(len(self.client.orders), 1)
 
+    async def test_position_mismatch_flags_recovery_and_reconciles(self):
+        self.client.amount = 0.05
+        with self.assertRaisesRegex(ValueError, "Lighter position differs from the bot's persisted fills; reconciliation required"):
+            await self.bot.toggle(True)
+        self.assertFalse(self.bot.state["enabled"])
+        self.assertTrue(self.bot.state["recovery_required"])
+        self.assertTrue(self.bot.state["execution_blocked"])
+        self.assertIn("reconciliation required", self.bot.state["blocked_reason"])
+
+        reconcile_res = await self.bot.reconcile()
+        self.assertFalse(self.bot.state["recovery_required"])
+        self.assertFalse(self.bot.state["execution_blocked"])
+        self.assertEqual(len(self.bot.state["tranches"]), 1)
+        self.assertAlmostEqual(self.bot.state["tranches"][0]["qty"], 0.05)
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -404,7 +404,17 @@ class CryptoBot:
                 raise ValueError("Selected strategy is replay-only")
             symbol = self.state["selected_symbol"]
             account, amount = await self._account_position(symbol)
-            self._check_position(amount)
+            try:
+                self._check_position(amount)
+            except Exception as exc:
+                self.state.update(
+                    recovery_required=True,
+                    execution_blocked=True,
+                    blocked_reason=str(exc),
+                    last_error=str(exc),
+                )
+                self._save()
+                raise
             blocked = False
             blocked_reason = None
             if float(account.get("summary", {}).get("available_margin_usd", 0)) <= 0:

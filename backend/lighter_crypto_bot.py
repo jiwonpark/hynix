@@ -337,7 +337,17 @@ class LighterCryptoBot:
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol, fresh=True)
             account, amount, positions = await self._account_position(symbol)
-            self._check_position(amount, step)
+            try:
+                self._check_position(amount, step)
+            except Exception as exc:
+                self.state.update(
+                    recovery_required=True,
+                    execution_blocked=True,
+                    blocked_reason=str(exc),
+                    last_error=str(exc),
+                )
+                self._save()
+                raise
             blocked = False
             blocked_reason = None
             if float(account.get("collateral", 0)) <= 0:
