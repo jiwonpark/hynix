@@ -496,9 +496,15 @@ class LighterClient:
                     params=params or {},
                     headers={"User-Agent": "SKHynix-QuantEngine/1.0", **(headers or {})},
                 ) as response:
-                    payload = await response.json(content_type=None)
-                    if response.status == 200 and payload.get("code") == 200:
-                        return payload
+                    if response.status == 200:
+                        try:
+                            payload = await response.json(content_type=None)
+                        except Exception as json_err:
+                            raise RuntimeError(f"Lighter API returned invalid JSON: {json_err}")
+                        if isinstance(payload, dict) and payload.get("code") == 200:
+                            return payload
+                        code = payload.get("code") if isinstance(payload, dict) else None
+                        raise RuntimeError(f"Lighter API error: code={code}")
                     retryable = response.status == 429 or response.status >= 500
                     if retryable and attempt < 2:
                         retry_after = response.headers.get("Retry-After")

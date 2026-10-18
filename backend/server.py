@@ -320,23 +320,39 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
         if now - cached_time < ttl:
             return cached_data
     try:
-        adr_raw, domestic_raw = await asyncio.gather(
-            lighter_client.candles(216, interval, limit, target_end),
-            lighter_client.candles(161, interval, limit, target_end),
-        )
-        domestic = {int(row["t"]): float(row["c"]) for row in domestic_raw if float(row.get("c", 0)) > 0}
         bars = []
-        for row in adr_raw:
-            timestamp = int(row["t"])
-            if timestamp not in domestic:
-                continue
-            adr_close = float(row["c"])
-            domestic_close = domestic[timestamp]
-            signal_value = adr_close / (domestic_close / 10) * 100
-            bars.append({"time": timestamp // 1000, "value": round(signal_value, 4),
-                         "signal_value": signal_value,
-                         "adr": adr_close, "domestic": domestic_close})
-        bars = bars[-limit:]
+        try:
+            adr_raw, domestic_raw = await asyncio.gather(
+                lighter_client.candles(216, interval, limit, target_end),
+                lighter_client.candles(161, interval, limit, target_end),
+            )
+            domestic = {int(row["t"]): float(row["c"]) for row in domestic_raw if float(row.get("c", 0)) > 0}
+            for row in adr_raw:
+                timestamp = int(row["t"])
+                if timestamp not in domestic:
+                    continue
+                adr_close = float(row["c"])
+                domestic_close = domestic[timestamp]
+                signal_value = adr_close / (domestic_close / 10) * 100
+                bars.append({"time": timestamp // 1000, "value": round(signal_value, 4),
+                             "signal_value": signal_value,
+                             "adr": adr_close, "domestic": domestic_close})
+            bars = bars[-limit:]
+        except Exception as lighter_err:
+            logger.warning("Lighter candles unavailable: %s", lighter_err)
+
+        if not bars:
+            stale = _lighter_parity_cache.get(cache_key) or _lighter_parity_cache.get(f"{interval}:{limit}:latest")
+            if stale and stale[1].get("bars"):
+                logger.info("Serving stale cached Lighter parity data for %s", cache_key)
+                return stale[1]
+            try:
+                fallback_feed = await get_short_term_parity(interval, limit, end_time=target_end)
+                if fallback_feed and fallback_feed.get("bars"):
+                    bars = fallback_feed["bars"]
+                    logger.info("Serving Binance short-term parity fallback (%d bars)", len(bars))
+            except Exception as fb_err:
+                logger.warning("Short term parity fallback unavailable: %s", fb_err)
 
         # Build trade markers for executed live tranches and history
         markers = []

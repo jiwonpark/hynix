@@ -1163,13 +1163,26 @@ class LighterPairBot:
         }
         for interval in target_intervals:
             interval_ms = self.INTERVAL_MS[interval]
-            adr, domestic = await asyncio.gather(
-                self.client.candles(216, interval, 90), self.client.candles(161, interval, 90)
-            )
-            now_ms = int(time.time() * 1000)
-            adr = [row for row in adr if int(row["t"]) + interval_ms <= now_ms]
-            domestic = [row for row in domestic if int(row["t"]) + interval_ms <= now_ms]
-            result[interval] = classify_trend(self._aligned_ratio(adr, domestic))
+            try:
+                adr, domestic = await asyncio.gather(
+                    self.client.candles(216, interval, 90), self.client.candles(161, interval, 90)
+                )
+                now_ms = int(time.time() * 1000)
+                adr = [row for row in adr if int(row["t"]) + interval_ms <= now_ms]
+                domestic = [row for row in domestic if int(row["t"]) + interval_ms <= now_ms]
+                result[interval] = classify_trend(self._aligned_ratio(adr, domestic))
+            except Exception as trend_err:
+                logger.warning("Lighter trends unavailable for interval %s: %s", interval, trend_err)
+                result[interval] = {
+                    "trend": "neutral",
+                    "adx": 0.0,
+                    "di_plus": 0.0,
+                    "di_minus": 0.0,
+                    "slope": 0.0,
+                    "fast_ema": 0.0,
+                    "slow_ema": 0.0,
+                    "regime": "ranging",
+                }
 
         result["small"] = result[small_res]
         result["big"] = result[big_res]
