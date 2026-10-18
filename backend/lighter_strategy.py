@@ -601,10 +601,139 @@ def evaluate_ma_acceleration_signals(
         "candidate_side": candidate_side,
         "condition_pass": condition_pass,
     }
+
+def evaluate_golden_death_cross_signals(
+    prices: List[float],
+    *,
+    fast_ma_period: int = 9,
+    slow_ma_period: int = 21,
+    min_cross_spread_bps: float = 0.0,
+    use_golden_cross: bool = True,
+    use_death_cross: bool = True,
+    use_cross_spread: bool = True,
+    use_cross_exit: bool = True,
+    use_ma_stack_1h: bool = True,
+    use_dwell: bool = False,
+    min_dwell_bars: int = 2,
+    evaluation_time: Optional[int] = None,
+    position_side: int = 0,
+    entry_price: float = 0.0,
+    held_bars: int = 0,
+) -> Tuple[bool, int, bool, Dict[str, Any]]:
+    """Dual Moving Average Crossover Strategy (Golden & Death Cross).
+
+    Evaluates completed price candles for MA crossovers:
+    - Golden Cross: Fast MA crosses above Slow MA (Bullish -> Long Entry / Short Exit)
+    - Death Cross: Fast MA crosses below Slow MA (Bearish -> Short Entry / Long Exit)
+    """
+    fast_w = max(2, int(fast_ma_period))
+    slow_w = max(fast_w + 1, int(slow_ma_period))
+    if len(prices) < slow_w + 1:
+        raise ValueError(f"Golden & Death Cross evaluation requires at least {slow_w + 1} completed bars")
+
+    current_price = prices[-1]
+
+    # Current moving averages
+    fast_curr = sum(prices[-fast_w:]) / fast_w
+    slow_curr = sum(prices[-slow_w:]) / slow_w
+
+    # Previous bar moving averages
+    fast_prev = sum(prices[-fast_w - 1 : -1]) / fast_w
+    slow_prev = sum(prices[-slow_w - 1 : -1]) / slow_w
+
+    # Crossover occurrences
+    golden_cross = (fast_prev <= slow_prev) and (fast_curr > slow_curr)
+    death_cross = (fast_prev >= slow_prev) and (fast_curr < slow_curr)
+
+    # Spread calculation
+    spread_diff = fast_curr - slow_curr
+    spread_pct = (spread_diff / slow_curr) * 100.0 if slow_curr > 1e-9 else 0.0
+    spread_bps = abs(spread_pct) * 100.0
+    min_bps = max(0.0, float(min_cross_spread_bps))
+    spread_pass = (not use_cross_spread) or (spread_bps >= min_bps)
+
+    # Candidate side determination
+    if golden_cross:
+        candidate_side = 1
+        macro_aligned = _macro_trend_aligned(prices, 1)
+        macro_pass = not use_ma_stack_1h or macro_aligned
+        entry_signal = bool(use_golden_cross and spread_pass and macro_pass)
+    elif death_cross:
+        candidate_side = -1
+        macro_aligned = _macro_trend_aligned(prices, -1)
+        macro_pass = not use_ma_stack_1h or macro_aligned
+        entry_signal = bool(use_death_cross and spread_pass and macro_pass)
+    else:
+        candidate_side = 1 if fast_curr >= slow_curr else -1
+        macro_aligned = _macro_trend_aligned(prices, candidate_side)
+        macro_pass = not use_ma_stack_1h or macro_aligned
+        entry_signal = False
+
+    # Exit conditions
+    tp_exit = False
+    dwell_pass = held_bars >= max(1, int(min_dwell_bars))
+    if position_side > 0:
+        if use_cross_exit:
+            # Long exits when Death Cross occurs or Fast MA falls below Slow MA
+            tp_exit = (fast_curr <= slow_curr) and (not use_dwell or dwell_pass)
+    elif position_side < 0:
+        if use_cross_exit:
+            # Short exits when Golden Cross occurs or Fast MA rises above Slow MA
+            tp_exit = (fast_curr >= slow_curr) and (not use_dwell or dwell_pass)
+
+    current_pnl = (
+        position_side * (current_price / entry_price - 1) * 100
+        if (position_side != 0 and entry_price > 0)
+        else 0.0
+    )
+    emergency_stop = current_pnl <= -2.0 or held_bars >= 48
+    exit_signal = bool((tp_exit or emergency_stop) if position_side != 0 else False)
+
+    condition_pass = {
+        "entry_golden_cross": golden_cross if candidate_side > 0 else (not use_golden_cross),
+        "entry_death_cross": death_cross if candidate_side < 0 else (not use_death_cross),
+        "entry_cross_spread": spread_pass,
+        "entry_ma_stack_1h": macro_aligned,
+        "exit_cross": tp_exit if position_side else None,
+        "exit_dwell": dwell_pass if position_side else None,
+        "exit_emergency_stop": emergency_stop if position_side else None,
+    }
+
+    regime = (
+        "GOLDEN_CROSS"
+        if golden_cross
+        else (
+            "DEATH_CROSS"
+            if death_cross
+            else ("FAST > SLOW (BULL)" if fast_curr >= slow_curr else "FAST < SLOW (BEAR)")
+        )
+    )
+
+    evaluation = {
+        "time": evaluation_time,
+        "ratio": round(current_price, 4),
+        "mean": round(slow_curr, 4),
+        "signal_mean": slow_curr,
+        "z": round((fast_curr - slow_curr) / max(1e-6, slow_curr * 0.001), 3),
+        "strategy": "golden_death_cross",
+        "fast_ma_period": fast_w,
+        "slow_ma_period": slow_w,
+        "fast_ma": round(fast_curr, 4),
+        "slow_ma": round(slow_curr, 4),
+        "prev_fast_ma": round(fast_prev, 4),
+        "prev_slow_ma": round(slow_prev, 4),
+        "spread_bps": round(spread_bps, 2),
+        "spread_pct": round(spread_pct, 4),
+        "golden_cross": bool(golden_cross),
+        "death_cross": bool(death_cross),
+        "regime": regime,
+        "candidate_side": candidate_side,
+        "condition_pass": condition_pass,
+    }
     return entry_signal, candidate_side, exit_signal, evaluation
 
 
-LIVE_STRATEGIES = {"grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration"}
+LIVE_STRATEGIES = {"grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross"}
 
 
 def evaluate_strategy_signal(
@@ -687,6 +816,24 @@ def evaluate_strategy_signal(
             use_ma_pullback=bool(config.get("use_ma_pullback", True)),
             use_ma_cross_exit=bool(config.get("use_ma_cross_exit", True)),
             use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
+            evaluation_time=evaluation_time,
+            position_side=position_side,
+            entry_price=entry_price,
+            held_bars=held_bars,
+        )
+    elif strategy_mode == "golden_death_cross":
+        return evaluate_golden_death_cross_signals(
+            prices,
+            fast_ma_period=int(config.get("fast_ma_period", 9)),
+            slow_ma_period=int(config.get("slow_ma_period", 21)),
+            min_cross_spread_bps=float(config.get("min_cross_spread_bps", 0.0)),
+            use_golden_cross=bool(config.get("use_golden_cross", True)),
+            use_death_cross=bool(config.get("use_death_cross", True)),
+            use_cross_spread=bool(config.get("use_cross_spread", True)),
+            use_cross_exit=bool(config.get("use_cross_exit", True)),
+            use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
+            use_dwell=bool(config.get("use_dwell", False)),
+            min_dwell_bars=int(config.get("min_dwell_bars", 2)),
             evaluation_time=evaluation_time,
             position_side=position_side,
             entry_price=entry_price,

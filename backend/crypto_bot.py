@@ -45,6 +45,8 @@ DEFAULT_STATE = {
     "use_ma_stack_1h": True,
     "ma_accel_period": 24, "ma_accel_min_slope": 0.0, "ma_accel_min_accel": 0.0,
     "use_ma_slope": True, "use_ma_accel": True, "use_ma_pullback": True, "use_ma_cross_exit": True,
+    "fast_ma_period": 9, "slow_ma_period": 21, "min_cross_spread_bps": 0.0,
+    "use_golden_cross": True, "use_death_cross": True, "use_cross_spread": True, "use_cross_exit": True,
     "long_multiplier": 1.0, "short_multiplier": 1.0,
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
@@ -240,6 +242,8 @@ class CryptoBot:
             "trend_macro_window", "trend_pullback_dist", "trend_tp_dist", "trend_slope_min",
             "ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel",
             "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
+            "fast_ma_period", "slow_ma_period", "min_cross_spread_bps",
+            "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
             "long_multiplier", "short_multiplier",
@@ -253,13 +257,14 @@ class CryptoBot:
                 candidate[key] = str(value)
             elif key in {"max_tranches", "min_seconds_between_orders", "ou_macro_ema_span",
                         "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars",
-                        "ma_accel_period"}:
+                        "ma_accel_period", "fast_ma_period", "slow_ma_period"}:
                 candidate[key] = int(value)
             elif key in {"ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
                         "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
                         "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
                         "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming",
-                        "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit"}:
+                        "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
+                        "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
@@ -280,6 +285,8 @@ class CryptoBot:
             "min_consensus_votes": (1, 4),
             "trend_macro_window": (12, 100), "trend_pullback_dist": (0.01, 10.0),
             "trend_tp_dist": (0.01, 10.0), "trend_slope_min": (0.0001, 1.0),
+            "fast_ma_period": (2, 100), "slow_ma_period": (3, 200),
+            "min_cross_spread_bps": (0.0, 100.0),
         }
         for key, (low, high) in bounds.items():
             if key in candidate:
@@ -289,6 +296,9 @@ class CryptoBot:
         if candidate["strategy_mode"] in {"grid", "custom", "ou_quant"}:
             if candidate["exit_z"] >= candidate["entry_z"]:
                 raise ValueError("Exit Z must be below Entry Z")
+        if candidate["strategy_mode"] == "golden_death_cross":
+            if candidate.get("fast_ma_period", 9) >= candidate.get("slow_ma_period", 21):
+                raise ValueError("Slow MA period must be greater than Fast MA period")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
                 ("selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",

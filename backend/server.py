@@ -41,7 +41,13 @@ from .crypto_bot import CryptoBot
 from .lighter_client import LighterClient
 from .lighter_crypto_bot import LighterCryptoBot, MARKETS as LIGHTER_CRYPTO_MARKETS
 from .lighter_bot import LighterPairBot
-from .lighter_strategy import _macro_trend_aligned, evaluate_ou_signals, evaluate_grid_signals, evaluate_ma_acceleration_signals
+from .lighter_strategy import (
+    _macro_trend_aligned,
+    evaluate_ou_signals,
+    evaluate_grid_signals,
+    evaluate_ma_acceleration_signals,
+    evaluate_golden_death_cross_signals,
+)
 from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
 from starlette.responses import JSONResponse
@@ -1537,6 +1543,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002,
                               ma_accel_period: int = 24, ma_accel_min_slope: float = 0.0, ma_accel_min_accel: float = 0.0,
                               use_ma_slope: bool = True, use_ma_accel: bool = True, use_ma_pullback: bool = True, use_ma_cross_exit: bool = True,
+                              fast_ma_period: int = 9, slow_ma_period: int = 21, min_cross_spread_bps: float = 0.0,
+                              use_golden_cross: bool = True, use_death_cross: bool = True, use_cross_spread: bool = True,
                               base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
                               long_multiplier: float = 1.0, short_multiplier: float = 1.0,
                               market_source: str = "binance") -> Dict[str, Any]:
@@ -1975,6 +1983,98 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
             "latest_ma": latest_evaluation.get("mean"),
             "price_vs_ma_pct": latest_evaluation.get("price_vs_ma_pct"),
             "ma_period": w,
+        }
+
+    elif strategy_mode == "golden_death_cross":
+        fast_w = max(2, int(fast_ma_period))
+        slow_w = max(fast_w + 1, int(slow_ma_period))
+        for index, bar in enumerate(bars):
+            if index < slow_w + 1:
+                continue
+            prefix = [item["value"] for item in bars[:index + 1]]
+            held = (index - position["entry_index"]) if position is not None else 0
+            pos_side = position["side"] if position is not None else 0
+            ent_price = position["entry"] if position is not None else 0.0
+            entry_signal, candidate_side, exit_signal, eval_info = evaluate_golden_death_cross_signals(
+                prefix,
+                fast_ma_period=fast_w,
+                slow_ma_period=slow_w,
+                min_cross_spread_bps=min_cross_spread_bps,
+                use_golden_cross=use_golden_cross,
+                use_death_cross=use_death_cross,
+                use_cross_spread=use_cross_spread,
+                use_cross_exit=use_ma_cross_exit,
+                use_ma_stack_1h=use_ma_stack_1h,
+                use_dwell=use_dwell,
+                min_dwell_bars=min_dwell_bars,
+                evaluation_time=int(bar["time"]),
+                position_side=pos_side,
+                entry_price=ent_price,
+                held_bars=held,
+            )
+            latest_evaluation = eval_info
+            latest_conditions = eval_info.get("condition_pass", {})
+            latest_condition_time = int(bar["time"])
+            series.append({
+                "time": bar["time"],
+                "value": bar["value"],
+                "mean": eval_info["slow_ma"],
+                "z": eval_info["z"],
+                "fast_ma": eval_info["fast_ma"],
+                "slow_ma": eval_info["slow_ma"],
+            })
+
+            # Check exit on open position
+            if position is not None and exit_signal:
+                current_pnl = position["side"] * (bar["value"] / position["entry"] - 1) * 100
+                mult = position.get("multiplier", 1.0)
+                tp_hit = eval_info.get("condition_pass", {}).get("exit_cross")
+                trades.append({
+                    "side": position["side"],
+                    "entry": position["entry"],
+                    "entry_time": position["entry_time"],
+                    "exit": bar["value"],
+                    "exit_time": bar["time"],
+                    "pnl_pct": round(current_pnl * mult, 4),
+                    "multiplier": round(mult, 2),
+                    "reason": "crossover_exit" if tp_hit else "stop_or_dwell"
+                })
+                position = None
+
+            # Check new entry
+            if position is None and entry_signal:
+                active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
+                position = {
+                    "side": candidate_side,
+                    "entry": bar["value"],
+                    "entry_time": bar["time"],
+                    "entry_index": index,
+                    "multiplier": active_mult,
+                }
+            elif position is not None and index == len(bars) - 1:
+                current_pnl = position["side"] * (bar["value"] / position["entry"] - 1) * 100
+                mult = position.get("multiplier", 1.0)
+                trades.append({
+                    "side": position["side"],
+                    "entry": position["entry"],
+                    "entry_time": position["entry_time"],
+                    "exit": bar["value"],
+                    "exit_time": bar["time"],
+                    "pnl_pct": round(current_pnl * mult, 4),
+                    "multiplier": round(mult, 2),
+                    "reason": "last_bar"
+                })
+                position = None
+
+        mode_metrics = {
+            "signal_engine": "golden_death_cross",
+            "fast_ma": latest_evaluation.get("fast_ma"),
+            "slow_ma": latest_evaluation.get("slow_ma"),
+            "spread_bps": latest_evaluation.get("spread_bps"),
+            "spread_pct": latest_evaluation.get("spread_pct"),
+            "regime": latest_evaluation.get("regime"),
+            "fast_ma_period": fast_w,
+            "slow_ma_period": slow_w,
         }
 
     if position is not None:

@@ -443,6 +443,48 @@
           valCondExitBottoming: "Replay: require momentum inflection",
         },
         defaultParams: { ma_accel_period: 24, ma_accel_min_slope: 0.0, ma_accel_min_accel: 0.0 }
+      },
+      golden_death_cross: {
+        id: "golden_death_cross",
+        name: "Golden & Death Cross",
+        icon: "⚔️",
+        badge: "DUAL MA CROSSOVER · BULL/BEAR REVERSAL",
+        title: "➕ Golden Cross Bullish Long (or Death Cross Bearish Short)",
+        desc: "Dual MA Crossover: Fast MA crosses above Slow MA (Golden Cross) for Long scale-in; Fast MA crosses below Slow MA (Death Cross) for Short scale-in.",
+        tpTitle: "🎯 Opposite MA Crossover Exit",
+        tpDesc: "Crossover Exit: Position closes when opposite MA cross occurs (Death Cross closes Long / Golden Cross closes Short) or max dwell / stop triggers.",
+        entryLabels: {
+          rowCondEntryMaStretch: "1. Golden Cross (Fast MA crosses above Slow MA)",
+          rowCondEntryBase: "2. Death Cross (Fast MA crosses below Slow MA)",
+          rowCondEntryPeak: "3. Minimum Cross Spread Gap (≥ threshold bps)",
+          rowCondEntryMaStack5m: "4. Moving Average Trend Alignment",
+          rowCondEntryMaStack1h: "5. 1h Macro Trend Support Alignment",
+          rowCondEntryCapacity: "6. Cross Tier Scaling Cap (≤ 5 Tranches)",
+          rowCondEntryLeverage: "7. Crossover Leverage Allowance (≤ 8.0x)",
+          rowCondEntryMargin: "8. Crossover Volatility Margin Guard",
+          rowCondEntryEngine: "9. Dual MA Cross Engine State Active",
+          rowCondEntryGuard: "10. Anti-Whipsaw Candle Close Cadence",
+        },
+        exitLabels: {
+          rowCondExitConvergence: "1. Opposite MA Cross Exit (Death Cross for Long / Golden Cross for Short)",
+          rowCondExitDwell: "2. Minimum Cross Dwell (≥ 2 Bars)",
+          rowCondExitBottoming: "3. Momentum Inflection Exhaustion",
+          rowCondExitNetPnl: "4. Zero-Loss Guaranteed Lock (> +$0.02)",
+          rowCondExitActive: "5. Core Cross Inventory Retention",
+          rowCondExitMaStack5m: "6. Fast MA Touch Reversion",
+          rowCondExitMaStack1h: "7. Macro Resistance Rejection Exit",
+          rowCondExitPosition: "8. Cross Hedged Position Balance",
+        },
+        researchLabels: {
+          valCondEntryMaStretch: "Replay: require Golden Cross",
+          valCondEntryBase: "Replay: require Death Cross",
+          valCondEntryPeak: "Replay: require min spread gap",
+          valCondEntryMaStack5m: "Replay: require MA alignment",
+          valCondExitConvergence: "Replay: exit on opposite MA cross",
+          valCondExitDwell: "Replay: require minimum candle hold",
+          valCondExitBottoming: "Replay: require momentum inflection",
+        },
+        defaultParams: { fast_ma_period: 9, slow_ma_period: 21, min_cross_spread_bps: 0.0 }
       }
     },
 
@@ -1168,6 +1210,7 @@
             <button id="lighterCrypto_tabParadigm_multi_factor" class="lighterParadigmBtn" type="button" data-mode="multi_factor" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚖️ Multi-Factor Gate</button>
             <button id="lighterCrypto_tabParadigm_trend_pullback" class="lighterParadigmBtn" type="button" data-mode="trend_pullback" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🌊 Macro Trend Reversion</button>
             <button id="lighterCrypto_tabParadigm_ma_acceleration" class="lighterParadigmBtn" type="button" data-mode="ma_acceleration" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🚀 MA Acceleration</button>
+            <button id="lighterCrypto_tabParadigm_golden_death_cross" class="lighterParadigmBtn" type="button" data-mode="golden_death_cross" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚔️ Golden & Death Cross</button>
             <button id="lighterCrypto_tabParadigm_custom" class="lighterParadigmBtn" type="button" data-mode="custom" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🛠️ Rule Composer</button>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -1180,7 +1223,7 @@
           </div>
         `;
         criteriaGrid.parentNode.insertBefore(nav, criteriaGrid);
-        ["grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "ma_acceleration", "custom"].forEach((mode) => {
+        ["grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "ma_acceleration", "golden_death_cross", "custom"].forEach((mode) => {
           const btn = $(`lighterCrypto_tabParadigm_${mode}`);
           if (btn) btn.addEventListener("click", () => {
             this._userSelectedParadigm = true;
@@ -1494,6 +1537,47 @@
           </div>
         `;
       }
+      if (mode === "golden_death_cross") {
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:18px;">⚔️</span>
+                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Dual Moving Average Crossover Engine</strong>
+                <span id="lighterCrypto_valCrossStateBadge" style="background:#ecfdf5;color:#065f46;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #a7f3d0;">GOLDEN / DEATH CROSS</span>
+              </div>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Crossover Trigger: Fast MA crosses above Slow MA (Golden Cross) for Long; Fast MA crosses below Slow MA (Death Cross) for Short. Opposite cross closes position.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Fast MA:</span>
+              <input id="lighterCrypto_inpCrossFastPeriod" type="number" step="1" value="9" min="2" max="100" style="width:52px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Slow MA:</span>
+              <input id="lighterCrypto_inpCrossSlowPeriod" type="number" step="1" value="21" min="3" max="200" style="width:56px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Min Spread (bps):</span>
+              <input id="lighterCrypto_inpCrossMinSpreadBps" type="number" step="0.1" value="0.0" min="0" style="width:60px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <button id="lighterCrypto_btnCrossReplay" type="button" style="border:1px solid #0284c7;background:#0284c7;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Cross</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Fast Moving Average</small>
+              <strong id="lighterCrypto_valCrossFastMa" style="font-size:15px;color:#0284c7;">Awaiting replay</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Slow Moving Average</small>
+              <strong id="lighterCrypto_valCrossSlowMa" style="font-size:15px;color:#7c3aed;">Awaiting replay</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">MA Gap Spread</small>
+              <strong id="lighterCrypto_valCrossSpread" style="font-size:15px;color:#0f172a;">Awaiting replay</strong>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">Crossover Signal Regime</small>
+              <strong id="lighterCrypto_valCrossRegime" style="font-size:15px;color:#16a34a;">Awaiting replay</strong>
+            </div>
+          </div>
+        `;
+      }
       return `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
           <div>
@@ -1599,6 +1683,8 @@
         $("lighterCrypto_btnTrendReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "ma_acceleration") {
         $("lighterCrypto_btnMaAccelReplay")?.addEventListener("click", () => this.runBacktest());
+      } else if (mode === "golden_death_cross") {
+        $("lighterCrypto_btnCrossReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "custom") {
         $("lighterCrypto_btnCustomSave")?.addEventListener("click", () => {
           const ez = $("lighterCrypto_inpCustomEntryZ")?.value || "1.5";
@@ -1800,7 +1886,8 @@
 
     liveStrategyPayload(mode = this.currentParadigm || "grid") {
       const numeric = (id, fallback) => {
-        const value = Number($(id)?.value);
+        const raw = $(id)?.value;
+        const value = raw == null || raw === "" ? NaN : Number(raw);
         return Number.isFinite(value) ? value : fallback;
       };
       const payload = {
@@ -1834,6 +1921,14 @@
         payload.use_ma_accel = lid("chkCondEntryBase")?.checked !== false;
         payload.use_ma_pullback = lid("chkCondEntryPeak")?.checked !== false;
         payload.use_ma_cross_exit = lid("chkCondExitConvergence")?.checked !== false;
+      } else if (mode === "golden_death_cross") {
+        payload.fast_ma_period = numeric("lighterCrypto_inpCrossFastPeriod", Number(this.botState?.fast_ma_period ?? 9));
+        payload.slow_ma_period = numeric("lighterCrypto_inpCrossSlowPeriod", Number(this.botState?.slow_ma_period ?? 21));
+        payload.min_cross_spread_bps = numeric("lighterCrypto_inpCrossMinSpreadBps", Number(this.botState?.min_cross_spread_bps ?? 0.0));
+        payload.use_golden_cross = lid("chkCondEntryMaStretch")?.checked !== false;
+        payload.use_death_cross = lid("chkCondEntryBase")?.checked !== false;
+        payload.use_cross_spread = lid("chkCondEntryPeak")?.checked !== false;
+        payload.use_cross_exit = lid("chkCondExitConvergence")?.checked !== false;
       } else if (mode === "custom") {
         payload.entry_z = numeric("lighterCrypto_inpCustomEntryZ", Number(this.botState?.entry_z ?? 1.5));
         payload.exit_z = numeric("lighterCrypto_inpCustomExitZ", Number(this.botState?.exit_z ?? 0.25));
@@ -2447,6 +2542,13 @@
         ma_accel_period: numeric("lighterCrypto_inpMaAccelPeriod", 24),
         ma_accel_min_slope: numeric("lighterCrypto_inpMaAccelMinSlope", 0.0),
         ma_accel_min_accel: numeric("lighterCrypto_inpMaAccelMinAccel", 0.0),
+        fast_ma_period: numeric("lighterCrypto_inpCrossFastPeriod", 9),
+        slow_ma_period: numeric("lighterCrypto_inpCrossSlowPeriod", 21),
+        min_cross_spread_bps: numeric("lighterCrypto_inpCrossMinSpreadBps", 0.0),
+        use_golden_cross: lid("chkCondEntryMaStretch")?.checked !== false,
+        use_death_cross: lid("chkCondEntryBase")?.checked !== false,
+        use_cross_spread: lid("chkCondEntryPeak")?.checked !== false,
+        use_cross_exit: lid("chkCondExitConvergence")?.checked !== false,
         use_ma_slope: lid("chkCondEntryMaStretch")?.checked !== false,
         use_ma_accel: lid("chkCondEntryBase")?.checked !== false,
         use_ma_pullback: lid("chkCondEntryPeak")?.checked !== false,
@@ -2528,6 +2630,7 @@
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel"],
+        golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
       };
       const liveParams = { ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
       if (isParadigmMatch) (parameterKeys[currentMode] || []).forEach((key) => {
@@ -2539,16 +2642,18 @@
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
         use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
         use_ma_slope: true, use_ma_accel: true, use_ma_pullback: true, use_ma_cross_exit: true,
+        use_golden_cross: true, use_death_cross: true, use_cross_spread: true, use_cross_exit: true,
       };
       const usesFilters = true;
+      const isCross = currentMode === "golden_death_cross";
       const isMaAccel = currentMode === "ma_acceleration";
       const rules = [
-        ["EntryMaStretch", isMaAccel ? "use_ma_slope" : "use_ma_stretch", isMaAccel ? "MA Slope" : "Entry trigger"],
-        ["EntryBase", isMaAccel ? "use_ma_accel" : "use_base_spacing", isMaAccel ? "MA Curvature Accel" : "Spacing"],
-        ["EntryPeak", isMaAccel ? "use_ma_pullback" : "use_peak", isMaAccel ? "Price Pullback" : "Peak rollover"],
+        ["EntryMaStretch", isCross ? "use_golden_cross" : (isMaAccel ? "use_ma_slope" : "use_ma_stretch"), isCross ? "Golden Cross" : (isMaAccel ? "MA Slope" : "Entry trigger")],
+        ["EntryBase", isCross ? "use_death_cross" : (isMaAccel ? "use_ma_accel" : "use_base_spacing"), isCross ? "Death Cross" : (isMaAccel ? "MA Curvature Accel" : "Spacing")],
+        ["EntryPeak", isCross ? "use_cross_spread" : (isMaAccel ? "use_ma_pullback" : "use_peak"), isCross ? "Min Cross Spread" : (isMaAccel ? "Price Pullback" : "Peak rollover")],
         ["EntryMaStack5m", "use_ma_stack", "Trend stack"],
         ["EntryMaStack1h", "use_ma_stack_1h", "Macro trend 1h"],
-        ["ExitConvergence", isMaAccel ? "use_ma_cross_exit" : "use_convergence", isMaAccel ? "MA Crossing Exit" : "Convergence"],
+        ["ExitConvergence", isCross ? "use_cross_exit" : (isMaAccel ? "use_ma_cross_exit" : "use_convergence"), isCross ? "Opposite Cross Exit" : (isMaAccel ? "MA Crossing Exit" : "Convergence")],
         ["ExitDwell", "use_dwell", "Dwell"],
         ["ExitBottoming", "use_bottoming", "Bottoming"],
       ];
@@ -2562,7 +2667,16 @@
           input.title = `${name} strategy condition`;
         }
         if (badge) {
-          const conditionKey = isMaAccel ? {
+          const conditionKey = isCross ? {
+            EntryMaStretch: "entry_golden_cross",
+            EntryBase: "entry_death_cross",
+            EntryPeak: "entry_cross_spread",
+            EntryMaStack5m: "entry_golden_cross",
+            EntryMaStack1h: "entry_ma_stack_1h",
+            ExitConvergence: "exit_cross",
+            ExitDwell: "exit_dwell",
+            ExitBottoming: "exit_cross"
+          }[suffix] : isMaAccel ? {
             EntryMaStretch: "entry_ma_slope",
             EntryBase: "entry_ma_accel",
             EntryPeak: "entry_ma_pullback",
@@ -2671,6 +2785,14 @@
           entry_ma_stack_1h: "Entry · 1h Macro Trend Alignment",
           exit_ma_cross: "Exit · MA Cross (Mean Reversion)",
         },
+        golden_death_cross: {
+          entry_golden_cross: "Entry · Golden Cross (Fast > Slow)",
+          entry_death_cross: "Entry · Death Cross (Fast < Slow)",
+          entry_cross_spread: "Entry · Minimum Cross Spread Gap",
+          entry_ma_stack_1h: "Entry · 1h Macro Trend Alignment",
+          exit_cross: "Exit · Opposite MA Cross",
+          exit_dwell: "Exit · Minimum Dwell Bars",
+        },
       }[this.currentParadigm];
       if (!labels) return;
       const heading = document.createElement("strong");
@@ -2719,6 +2841,13 @@
         entry_ma_pullback: "use_ma_pullback",
         entry_ma_stack_1h: "use_ma_stack_1h",
         exit_ma_cross: "use_ma_cross_exit",
+      } : bot?.strategy_mode === "golden_death_cross" ? {
+        entry_golden_cross: "use_golden_cross",
+        entry_death_cross: "use_death_cross",
+        entry_cross_spread: "use_cross_spread",
+        entry_ma_stack_1h: "use_ma_stack_1h",
+        exit_cross: "use_cross_exit",
+        exit_dwell: "use_dwell",
       } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
         entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
         entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
@@ -2734,6 +2863,7 @@
         multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","entry_ma_stack_1h","exit_consensus","exit_convergence","exit_max_dwell"],
         trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
         ma_acceleration:["entry_ma_slope","entry_ma_accel","entry_ma_pullback","entry_ma_stack_1h","exit_ma_cross"],
+        golden_death_cross:["entry_golden_cross","entry_death_cross","entry_cross_spread","entry_ma_stack_1h","exit_cross","exit_dwell"],
       };
       (keysByMode[bot?.strategy_mode] || Object.keys(checks)).forEach((key) => {
         const value = checks[key];
@@ -2791,7 +2921,16 @@
         use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
         use_ma_slope: true, use_ma_accel: true, use_ma_pullback: true, use_ma_cross_exit: true,
       };
-      const filterKeys = liveMode === "ma_acceleration" ? {
+      const filterKeys = liveMode === "golden_death_cross" ? {
+        chkCondEntryMaStretch: "use_golden_cross",
+        chkCondEntryBase: "use_death_cross",
+        chkCondEntryPeak: "use_cross_spread",
+        chkCondEntryMaStack5m: "use_ma_stack",
+        chkCondEntryMaStack1h: "use_ma_stack_1h",
+        chkCondExitConvergence: "use_cross_exit",
+        chkCondExitDwell: "use_dwell",
+        chkCondExitBottoming: "use_bottoming",
+      } : liveMode === "ma_acceleration" ? {
         chkCondEntryMaStretch: "use_ma_slope",
         chkCondEntryBase: "use_ma_accel",
         chkCondEntryPeak: "use_ma_pullback",
@@ -2889,6 +3028,17 @@
         [["lighterCrypto_inpMaAccelPeriod", "ma_accel_period"],
          ["lighterCrypto_inpMaAccelMinSlope", "ma_accel_min_slope"],
          ["lighterCrypto_inpMaAccelMinAccel", "ma_accel_min_accel"]].forEach(([id, key]) => {
+          const input = $(id);
+          if (input && params[key] != null) {
+            input.value = String(params[key]);
+            input._userModified = false;
+          }
+        });
+      }
+      if (liveMode === "golden_death_cross") {
+        [["lighterCrypto_inpCrossFastPeriod", "fast_ma_period"],
+         ["lighterCrypto_inpCrossSlowPeriod", "slow_ma_period"],
+         ["lighterCrypto_inpCrossMinSpreadBps", "min_cross_spread_bps"]].forEach(([id, key]) => {
           const input = $(id);
           if (input && params[key] != null) {
             input.value = String(params[key]);
@@ -5471,6 +5621,36 @@
             badgeEl.textContent = isRisingAcc ? "🚀 RISING & ACCELERATING" : (isFallingDec ? "🔻 FALLING & DECELERATING" : "⚖️ DRIFTING / FLAT");
             badgeEl.style.background = isRisingAcc ? "#dcfce7" : (isFallingDec ? "#fee2e2" : "#f1f5f9");
             badgeEl.style.color = isRisingAcc ? "#166534" : (isFallingDec ? "#991b1b" : "#475569");
+          }
+        } else if (data.metrics && this.currentParadigm === "golden_death_cross") {
+          const fastMaEl = $("lighterCrypto_valCrossFastMa");
+          if (fastMaEl && data.metrics.fast_ma != null) {
+            fastMaEl.textContent = this.formatCryptoPrice(data.metrics.fast_ma);
+          }
+          const slowMaEl = $("lighterCrypto_valCrossSlowMa");
+          if (slowMaEl && data.metrics.slow_ma != null) {
+            slowMaEl.textContent = this.formatCryptoPrice(data.metrics.slow_ma);
+          }
+          const spreadEl = $("lighterCrypto_valCrossSpread");
+          if (spreadEl && data.metrics.spread_bps != null) {
+            const spreadBps = Number(data.metrics.spread_bps);
+            const spreadPct = Number(data.metrics.spread_pct ?? 0);
+            spreadEl.textContent = `${spreadBps >= 0 ? "+" : ""}${spreadBps.toFixed(1)} bps (${spreadPct >= 0 ? "+" : ""}${spreadPct.toFixed(2)}%)`;
+            spreadEl.style.color = spreadBps > 0 ? "#16a34a" : (spreadBps < 0 ? "#dc2626" : "#475569");
+          }
+          const regimeEl = $("lighterCrypto_valCrossRegime");
+          if (regimeEl && data.metrics.regime != null) {
+            regimeEl.textContent = data.metrics.regime;
+            regimeEl.style.color = data.metrics.regime === "GOLDEN_CROSS" ? "#16a34a" : (data.metrics.regime === "DEATH_CROSS" ? "#dc2626" : "#475569");
+          }
+          const badgeEl = $("lighterCrypto_valCrossStateBadge");
+          if (badgeEl && data.metrics.regime != null) {
+            const isGolden = data.metrics.regime === "GOLDEN_CROSS";
+            const isDeath = data.metrics.regime === "DEATH_CROSS";
+            badgeEl.textContent = isGolden ? "⚔️ GOLDEN CROSS (BULLISH)" : (isDeath ? "💀 DEATH CROSS (BEARISH)" : "⚖️ PARALLEL / NEUTRAL");
+            badgeEl.style.background = isGolden ? "#dcfce7" : (isDeath ? "#fee2e2" : "#f1f5f9");
+            badgeEl.style.color = isGolden ? "#166534" : (isDeath ? "#991b1b" : "#475569");
+            badgeEl.style.borderColor = isGolden ? "#86efac" : (isDeath ? "#fca5a5" : "#cbd5e1");
           }
         }
       } catch (error) {
