@@ -35,7 +35,7 @@ MARKETS = {"BTC": 1, "ETH": 0, "SOL": 2, "DOGE": 3, "XRP": 7}
 DEFAULT_STATE = {
     "enabled": False, "selected_symbol": "BTC", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
-    "notional_usd": 150.0, "max_tranches": 5,
+    "notional_usd": 150.0, "max_tranches": 5, "gross_leverage_cap": 8.0,
     "min_seconds_between_orders": 300, "max_book_spread_bps": 45.0,
     "ou_halflife_max": 8.0, "ou_stop_z": 3.5, "ou_min_abs_deviation_pp": 0.25,
     "ou_macro_ema_span": OU_MACRO_EMA_SPAN, "ou_macro_slope_bars": OU_MACRO_SLOPE_BARS,
@@ -57,11 +57,11 @@ DEFAULT_STATE = {
 
 
 class LighterCryptoBot:
-    # A 10% adverse single-leg move may consume at most 10% of account equity.
+    # Standard 8.0x gross leverage cap matching Tab 2 and Tab 3.
     # Tab 2's margin buffer applies to estimated initial margin, not gross value.
     STRESS_MOVE_PCT = 10.0
-    MAX_STRESS_LOSS_PCT_EQUITY = 10.0
-    GROSS_LEVERAGE_CAP = MAX_STRESS_LOSS_PCT_EQUITY / STRESS_MOVE_PCT
+    MAX_STRESS_LOSS_PCT_EQUITY = 80.0
+    GROSS_LEVERAGE_CAP = 8.0
     MARGIN_LEVERAGE_ASSUMPTION = 10.0
     MARGIN_BUFFER_MULTIPLIER = 1.25
     MIN_MARGIN_BUFFER_USD = 2.50
@@ -112,7 +112,7 @@ class LighterCryptoBot:
                       venue="Lighter", history_event_count=len(result["execution_history"]),
                       risk_capacity={"active_tranches": len(result["tranches"]),
                                      "max_tranches": result["max_tranches"],
-                                     "gross_leverage_cap": self.GROSS_LEVERAGE_CAP,
+                                     "gross_leverage_cap": float(self.state.get("gross_leverage_cap", self.GROSS_LEVERAGE_CAP)),
                                      "margin_leverage_assumption": self.MARGIN_LEVERAGE_ASSUMPTION,
                                      "margin_buffer_multiplier": self.MARGIN_BUFFER_MULTIPLIER,
                                      "min_margin_buffer_usd": self.MIN_MARGIN_BUFFER_USD,
@@ -157,8 +157,9 @@ class LighterCryptoBot:
                           "use_ma_pullback": bool(self.state.get("use_ma_pullback", True)),
                           "use_ma_cross_exit": bool(self.state.get("use_ma_cross_exit", True)),
                       })
+        result["gross_leverage_cap"] = float(self.state.get("gross_leverage_cap", self.GROSS_LEVERAGE_CAP))
         result["execution_blocked"] = bool(self.state.get("execution_blocked") or self.state.get("recovery_required") or self.state.get("pending_order"))
-        result["blocked_reason"] = self.state.get("blocked_reason") or self.state.get("last_error")
+        result["blocked_reason"] = (self.state.get("blocked_reason") or self.state.get("last_error")) if result["execution_blocked"] else None
         result["can_execute_entry"] = bool(self.state.get("enabled") and not result["execution_blocked"])
         result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
         return result
@@ -278,7 +279,7 @@ class LighterCryptoBot:
             "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
-            "long_multiplier", "short_multiplier",
+            "long_multiplier", "short_multiplier", "gross_leverage_cap",
         }
         unknown = set(values) - permitted
         if unknown:
@@ -309,6 +310,7 @@ class LighterCryptoBot:
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0),
             "notional_usd": (10.0, 500.0), "max_tranches": (1, 5),
             "long_multiplier": (0.1, 10.0), "short_multiplier": (0.1, 10.0),
+            "gross_leverage_cap": (1.0, 20.0),
             "min_seconds_between_orders": (6, 86400), "max_book_spread_bps": (1, 100),
             "ou_halflife_max": (0.5, 50.0), "ou_stop_z": (1.0, 10.0),
             "ou_min_abs_deviation_pp": (0.01, 10.0),
@@ -410,10 +412,11 @@ class LighterCryptoBot:
                 value = size * mark
             gross += value
         projected_gross = gross + order_usd
-        if projected_gross > collateral * self.GROSS_LEVERAGE_CAP:
+        leverage_cap = float(self.state.get("gross_leverage_cap", self.GROSS_LEVERAGE_CAP))
+        if projected_gross > collateral * leverage_cap:
             raise ValueError(
                 f"Selected-contract gross exposure ${projected_gross:.2f} exceeds "
-                f"{self.GROSS_LEVERAGE_CAP:.1f}x collateral cap ${collateral * self.GROSS_LEVERAGE_CAP:.2f}"
+                f"{leverage_cap:.1f}x collateral cap ${collateral * leverage_cap:.2f}"
             )
         allocated = sum(abs(float(p.get("allocated_margin", 0) or 0)) for p in positions)
         required_margin = max(
@@ -509,7 +512,8 @@ class LighterCryptoBot:
                                             "order_id": event["order_id"], "time": event["time"]})
         self.state["execution_history"].append(event)
         self.state["execution_history"] = self.state["execution_history"][-500:]
-        self.state.update(pending_order=None, last_order_time=event["time"], last_error=None)
+        self.state.update(pending_order=None, last_order_time=event["time"], last_error=None,
+                          execution_blocked=False, blocked_reason=None)
         self._save()
         return event
 
@@ -755,7 +759,21 @@ class LighterCryptoBot:
             interval = self.state["strategy_interval"]
             seconds = INTERVAL_SECONDS[interval]
             try:
-                market_id, _, step = await self._market(symbol)
+                market_id, detail, step = await self._market(symbol)
+                account, amount, positions = await self._account_position(symbol)
+                self._check_position(amount, step)
+
+                if self.state.get("execution_blocked") and not self.state.get("recovery_required"):
+                    try:
+                        _, ask = await self._book(market_id, enforce_spread=False)
+                        qty = self._entry_quantity(self.state["notional_usd"], ask, detail)
+                        self._check_entry_capacity(account, positions, qty * ask)
+                        self.state["execution_blocked"] = False
+                        self.state["blocked_reason"] = None
+                        self._save()
+                    except Exception as cap_err:
+                        self.state["blocked_reason"] = str(cap_err)
+
                 rows = await self.client.candles(market_id, interval, 130, fresh=True)
                 now_ms = int(time.time() * 1000)
                 closed = [row for row in rows if int(row["t"]) + seconds * 1000 <= now_ms - 1000]
@@ -770,8 +788,6 @@ class LighterCryptoBot:
                     self._save()
                     return
                 values = [float(row["c"]) for row in closed]
-                _, amount, _ = await self._account_position(symbol)
-                self._check_position(amount, step)
                 position_side = int(self.state["tranches"][-1]["side"]) if self.state["tranches"] else 0
                 entry_price = float(self.state["tranches"][-1]["price"]) if self.state["tranches"] else 0.0
                 entry_time = int(self.state["tranches"][-1].get("time", 0)) if self.state["tranches"] else 0
@@ -804,7 +820,10 @@ class LighterCryptoBot:
             except Exception as exc:
                 if not self.state["recovery_required"]:
                     self.state["last_error"] = str(exc)
-                if "differs from the bot" in str(exc):
+                if "Selected-contract gross exposure" in str(exc) or "Available margin" in str(exc) or "collateral cap" in str(exc):
+                    self.state["execution_blocked"] = True
+                    self.state["blocked_reason"] = str(exc)
+                elif "differs from the bot" in str(exc):
                     self.state.update(recovery_required=True, execution_blocked=True,
                                       blocked_reason=f"Inventory desync: {exc}")
                 self._save()

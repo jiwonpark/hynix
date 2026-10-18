@@ -3262,7 +3262,7 @@
 
     updateLeverageMetrics() {
       const riskCapacity = this.botState?.risk_capacity || {};
-      const levCap = Number(riskCapacity.gross_leverage_cap || 1.0);
+      const levCap = Number(riskCapacity.gross_leverage_cap || 8.0);
       let grossNotional = 0;
       let collateral = 0;
       let adrQty = 0;

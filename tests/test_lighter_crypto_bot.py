@@ -35,7 +35,7 @@ class FakeLighter:
             rows.append({"market_id": 1, "position": str(abs(self.amount)),
                          "sign": 1 if self.amount > 0 else -1,
                          "position_value": str(abs(self.amount) * 100),
-                         "allocated_margin": str(abs(self.amount) * 100)})
+                         "allocated_margin": str(abs(self.amount) * 10)})
         return rows
 
     async def order_book(self, market_id, limit, *, fresh=False):
@@ -92,13 +92,14 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.orders, {})
 
     async def test_account_wide_exposure_blocks_entry(self):
-        # Unrelated market position (SKHY market 216) with sufficient free margin does not block BTC 1.0x cap
+        # Unrelated market position (SKHY market 216) with sufficient free margin does not block BTC 8.0x cap
         self.client.extra_positions = [{"market_id": 216, "position": "5", "sign": 1,
                                         "position_value": "970", "allocated_margin": "97"}]
         entry = await self.bot.manual_entry(1, 50)
         self.assertEqual(entry["event"], "ENTRY")
-        # Same-market (BTC market 1) gross exposure exceeding 1.0x collateral cap blocks entry
-        self.client.collateral = 80.0
+        # Same-market (BTC market 1) gross exposure exceeding 8.0x collateral cap blocks entry
+        self.client.extra_positions = []
+        self.client.collateral = 12.0
         with self.assertRaisesRegex(ValueError, "Selected-contract gross exposure"):
             await self.bot.manual_entry(1, 50)
 
@@ -110,7 +111,7 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.client.orders), 1)
 
     async def test_projected_account_wide_gross_cap_blocks_entry(self):
-        self.client.collateral = 140.0
+        self.client.collateral = 15.0
         with self.assertRaisesRegex(ValueError, "gross exposure"):
             await self.bot.manual_entry(1, 150.0)
         self.assertEqual(self.client.orders, {})
@@ -123,7 +124,7 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.orders, {})
 
     async def test_enable_checks_actual_next_order_capacity(self):
-        self.client.collateral = 140.0
+        self.client.collateral = 15.0
         toggled = await self.bot.toggle(True)
         self.assertTrue(toggled["enabled"])
         self.assertTrue(toggled["execution_blocked"])
