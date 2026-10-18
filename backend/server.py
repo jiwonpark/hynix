@@ -3244,6 +3244,10 @@ async def get_compounding_stats() -> Dict[str, Any]:
     }
 
 
+_short_term_parity_cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
+_short_term_trades_cache: Dict[str, tuple[float, list, list]] = {}
+
+
 @app.get("/api/trade/short_term_parity")
 async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time: Optional[int] = None) -> Dict[str, Any]:
     """
@@ -3258,6 +3262,14 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
             "1h": 3600000, "4h": 14400000, "1d": 86400000,
         }[interval]
 
+        cache_key = f"{interval}_{limit}_{end_time or 'latest'}"
+        now = time.time()
+        ttl = 3.0 if end_time is None else 600.0
+        if cache_key in _short_term_parity_cache:
+            cached_time, cached_res = _short_term_parity_cache[cache_key]
+            if now - cached_time < ttl:
+                return copy.deepcopy(cached_res)
+
         page_params = {"interval": interval, "limit": limit}
         if end_time is not None:
             page_params["endTime"] = max(0, end_time)
@@ -3270,6 +3282,9 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
         )
 
         if not isinstance(k1, list) or not isinstance(k3, list):
+            if cache_key in _short_term_parity_cache:
+                logger.warning("Binance klines fetch failed; serving cached parity data for %s", cache_key)
+                return copy.deepcopy(_short_term_parity_cache[cache_key][1])
             return {"error": "Failed to fetch klines from Binance", "bars": [], "markers": []}
 
         m2 = {x[0]: float(x[4]) for x in k2} if isinstance(k2, list) else {}
@@ -3300,14 +3315,20 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
             bounded_start_ms = max(start_ms, history_end_ms - 7 * 86400000 + 1)
             trade_window = ({"limit": 1000} if unbounded_wide_history else
                             {"startTime": bounded_start_ms, "endTime": history_end_ms, "limit": 1000})
-            trades = await binance_client.request(
-                "GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", **trade_window}, signed=True)
-            if not unbounded_wide_history and end_time is None and (not isinstance(trades, list) or len(trades) == 0):
-                trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
 
-            if isinstance(trades, list) and bars:
-                stock_trades = []
-                if trades:
+            trades_key = f"{unbounded_wide_history}_{bounded_start_ms}_{history_end_ms}" if end_time else "latest"
+            trades_cached = _short_term_trades_cache.get(trades_key)
+            trades = None
+            stock_trades = []
+            if trades_cached and (now - trades_cached[0] < (10.0 if not end_time else 600.0)):
+                trades, stock_trades = trades_cached[1], trades_cached[2]
+            else:
+                trades = await binance_client.request(
+                    "GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", **trade_window}, signed=True)
+                if not unbounded_wide_history and end_time is None and (not isinstance(trades, list) or len(trades) == 0):
+                    trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
+
+                if isinstance(trades, list) and bars and trades:
                     try:
                         result = await binance_client.request(
                             "GET", "/fapi/v1/userTrades",
@@ -3316,6 +3337,8 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                             stock_trades = result
                     except Exception:
                         logger.exception("Error loading paired hedge trades for chart markers")
+                if isinstance(trades, list):
+                    _short_term_trades_cache[trades_key] = (now, trades, stock_trades)
 
                 pair_executions = []
                 for symbol, raw_trades in (("SKHYUSDT", trades), ("CSOPSKHYNIX2LUSDT", stock_trades)):
@@ -3505,7 +3528,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
 
         markers.sort(key=lambda marker: marker["time"])
 
-        return {
+        res_payload = {
             "success": True,
             "interval": interval,
             "bars": bars,
@@ -3515,6 +3538,11 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
             "has_more": bool(bars) and len(k1) >= limit and len(k3) >= limit,
             "latest_parity": bars[-1]["value"] if bars else None
         }
+        if bars:
+            _short_term_parity_cache[cache_key] = (now, copy.deepcopy(res_payload))
+            while len(_short_term_parity_cache) > 80:
+                _short_term_parity_cache.pop(next(iter(_short_term_parity_cache)))
+        return res_payload
     except Exception as e:
         logger.exception("Error in get_short_term_parity")
         return {"error": str(e), "bars": [], "markers": []}

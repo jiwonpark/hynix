@@ -13498,10 +13498,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 }, 300);
               }
             }
-            const zoomExceeds = totalBars > 0 && (span > totalBars * 0.40 || range.from < 0);
             if (range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
-              this.fetchShortTermParity(true);
-            } else if (zoomExceeds && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
               this.fetchShortTermParity(true);
             }
           });
@@ -13918,18 +13915,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const query = `interval=${interval}&limit=120${older ? `&end_time=${endTime}` : ""}`;
         const origin = window.location.origin;
         const proxyPrefix = (window.location && window.location.pathname && window.location.pathname.startsWith("/skhynix")) ? "/skhynix" : "";
-        const endpoints = [...new Set([
-          `${origin}${proxyPrefix}/api/trade/short_term_parity?${query}`,
-          `${origin}/skhynix/api/trade/short_term_parity?${query}`,
-          `${origin}/api/trade/short_term_parity?${query}`,
-          `http://localhost:8000/api/trade/short_term_parity?${query}`
-        ])];
+        const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+        const endpoints = isLocal
+          ? [`${origin}${proxyPrefix}/api/trade/short_term_parity?${query}`, `http://localhost:8000/api/trade/short_term_parity?${query}`]
+          : [`${origin}${proxyPrefix}/api/trade/short_term_parity?${query}`];
         if (older && $("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Loading older data…";
         try {
           for (const url of endpoints) {
             if (this.shortTermHistory !== history) return;
             try {
-              const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+              const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
               const contentType = res.headers && typeof res.headers.get === "function" ? (res.headers.get("content-type") || "") : "application/json";
               if (!res.ok || (contentType && !contentType.includes("application/json") && !contentType.includes("text/json"))) continue;
               const data = await res.json();
@@ -13967,13 +13962,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               } finally { this.shortTermRendering = false; }
               this.scheduleDynamicBacktest();
               if (older && !history.hasMore && $("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Start of available history";
-              if (!older && history.hasMore && typeof setTimeout === "function") {
-                setTimeout(() => {
-                  if (this.shortTermHistory === history && history.hasMore && !history.loadingOlder) {
-                    this.fetchShortTermParity(true);
-                  }
-                }, 1500);
-              }
               return;
             } catch (e) { console.warn("Parity page request failed", e); }
           }
@@ -14003,7 +13991,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.dynamicBacktestMarkers = [];
         this.redrawDynamicBacktest();
         if ($("dynamicBacktestStatus")) $("dynamicBacktestStatus").textContent = "Running backtest…";
-        this.dynamicBacktestTimer = setTimeout(() => this.runDynamicBacktest(payload, key, history), 200);
+        this.dynamicBacktestTimer = setTimeout(() => this.runDynamicBacktest(payload, key, history), 600);
       },
 
       redrawDynamicBacktest() {
@@ -14023,9 +14011,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       async runDynamicBacktest(payload, key, history) {
         const controller = new AbortController();
         this.dynamicBacktestController = controller;
-        const timeout = setTimeout(() => controller.abort(), 120000);
+        const timeout = setTimeout(() => controller.abort(), 60000);
         try {
-          const res = await fetch(`${window.location.origin}/skhynix/api/trade/dynamic_backtest`, {
+          const proxyPrefix = (window.location && window.location.pathname && window.location.pathname.startsWith("/skhynix")) ? "/skhynix" : "";
+          const res = await fetch(`${window.location.origin}${proxyPrefix}/api/trade/dynamic_backtest`, {
             method: "POST", headers: {"Content-Type": "application/json"},
             body: JSON.stringify(payload), signal: controller.signal
           });
