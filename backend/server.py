@@ -1336,7 +1336,8 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
             interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
                                 "4h": 14400, "1d": 86400}[interval]
             first, last = bars[0]["time"], bars[-1]["time"]
-            for event in lighter_crypto_bot.state.get("execution_history", []):
+            rec_bot = await lighter_crypto_bot.reconciled_public_state()
+            for event in rec_bot.get("execution_history", []):
                 if event.get("symbol") != symbol:
                     continue
                 trade_time = int(event.get("time", 0))
@@ -1399,7 +1400,7 @@ async def get_lighter_crypto_trends(symbol: str = "BTC", small: str = "5m",
 
 @app.get("/api/lighter-crypto/bot/status")
 async def get_lighter_crypto_bot_status() -> Dict[str, Any]:
-    return {"success": True, "bot": lighter_crypto_bot.public_state()}
+    return {"success": True, "bot": await lighter_crypto_bot.reconciled_public_state()}
 
 
 @app.post("/api/lighter-crypto/bot/config")

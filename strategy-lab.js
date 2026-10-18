@@ -338,6 +338,7 @@
     setChartInterval(interval) {
       if (interval !== "5m" && interval !== "1h") return;
       const prevInterval = this.chartInterval;
+      if (prevInterval !== interval) this._previousRows = null;
       this.chartInterval = interval;
       ["5m", "1h"].forEach((value) => el(`btnShortInterval${value}`)?.classList.toggle("active", value === interval));
       if (this.data) {
@@ -491,6 +492,8 @@
 
     renderChartData() {
       const rows = this.chartInterval === "1h" ? (this.data?.hourly || []) : (this.data?.bars || []);
+      const currentRange = this.chart.timeScale().getVisibleLogicalRange();
+      const previousRows = this._previousRows;
       this.candles.setData(rows.map((bar) => ({ time: bar.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close })));
       this.maSeries.forEach(({ key, series }) => series.setData(rows.filter((bar) => Number.isFinite(bar[key])).map((bar) => ({ time: bar.time, value: bar[key] }))));
       this.bbSeries.forEach(({ key, series }) => {
@@ -502,6 +505,14 @@
       });
       this.controller.setExecutions(this.executionsForInterval());
       this.syncMarkerState();
+      this._previousRows = rows;
+      if (previousRows && previousRows.length && currentRange) {
+        const preserved = StrategyExecutionChartController.preserveRange(currentRange, previousRows, rows);
+        if (preserved) {
+          this.chart.timeScale().setVisibleLogicalRange(preserved);
+          return;
+        }
+      }
       this.chart.timeScale().fitContent();
     },
 

@@ -70,6 +70,8 @@ class LighterCryptoBot:
         self.client = client
         self.state_path = state_path or Path(__file__).with_name("lighter_crypto_bot_state.json")
         self.lock = asyncio.Lock()
+        self._trade_cache: Optional[tuple] = None
+        self._trade_lock = asyncio.Lock()
         self.state = copy.deepcopy(DEFAULT_STATE)
         self._load()
 
@@ -159,6 +161,107 @@ class LighterCryptoBot:
         result["blocked_reason"] = self.state.get("blocked_reason") or self.state.get("last_error")
         result["can_execute_entry"] = bool(self.state.get("enabled") and not result["execution_blocked"])
         result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
+        return result
+
+    async def reconciled_public_state(self) -> Dict[str, Any]:
+        """Annotate public state with Lighter exchange trade history and verified exits."""
+        result = self.public_state()
+        symbol = self.state["selected_symbol"]
+        now = time.monotonic()
+        async with self._trade_lock:
+            cached = self._trade_cache
+            if cached and cached[0] == symbol and now - cached[1] < cached[2]:
+                exchange_events = list(cached[3])
+            else:
+                exchange_events = []
+                try:
+                    market_id, _, _ = await self._market(symbol)
+                    creds = getattr(self.client, "get_credentials", lambda: None)() or {}
+                    account_id = int(creds.get("account_index", -1) or -1)
+                    if account_id >= 0 and hasattr(self.client, "account_trades"):
+                        raw_trades = await self.client.account_trades(market_id, limit=100)
+                        for trade in reversed(raw_trades or []):
+                            is_buyer = int(trade.get("bid_account_id", -1) or -1) == account_id
+                            side = 1 if is_buyer else -1
+                            qty = float(trade.get("size", 0) or 0)
+                            px = float(trade.get("price", 0) or 0)
+                            usd = float(trade.get("usd_amount", 0) or 0) or (qty * px)
+                            t_ms = int(trade.get("timestamp", 0) or 0)
+                            pnl_field = "bid_account_pnl" if is_buyer else "ask_account_pnl"
+                            pnl_val = trade.get(pnl_field)
+                            is_exit = pnl_val is not None
+                            pnl = float(pnl_val or 0.0) if is_exit else None
+                            pos_before = abs(float(trade.get("taker_position_size_before", 0) or 0))
+                            quote_before = abs(float(trade.get("taker_entry_quote_before", 0) or 0))
+                            entry_px = (quote_before / pos_before) if (pos_before > 0 and quote_before > 0) else px
+                            raw_fee = float(trade.get("taker_fee", 0.0) or 0.0)
+                            fee_rate = raw_fee / 1_000_000.0 if raw_fee >= 1.0 else raw_fee
+                            fee_usd = usd * fee_rate
+                            trade_id = str(trade.get("trade_id_str") or trade.get("trade_id") or "")
+                            original_side = -side if is_exit else side
+                            exchange_events.append({
+                                "event": "EXIT" if is_exit else "ENTRY",
+                                "symbol": symbol,
+                                "market_id": market_id,
+                                "side": side,
+                                "original_side": original_side,
+                                "qty": qty,
+                                "price": px,
+                                "entry_price": entry_px,
+                                "notional_usd": usd,
+                                "net_pnl_usd": pnl,
+                                "gross_pnl_usd": (pnl + fee_usd) if is_exit else None,
+                                "fee_usd": fee_usd,
+                                "time": t_ms // 1000 if t_ms else int(time.time()),
+                                "order_id": trade_id,
+                                "client_order_index": trade_id,
+                                "status": "CLOSED" if is_exit else "OPEN",
+                                "pnl_authoritative": is_exit,
+                                "pnl_source": "LIGHTER_REALIZED_PNL" if is_exit else "ESTIMATED_EX_FUNDING",
+                                "reason": "lighter_trade",
+                            })
+                    self._trade_cache = (symbol, now, 5.0, list(exchange_events))
+                except Exception as exc:
+                    logger.warning("Could not fetch Lighter trades for status reconciliation: %s", exc)
+                    self._trade_cache = (symbol, now, 10.0, [])
+
+        if exchange_events:
+            # Merge with bot execution history by order_id
+            seen_orders = {str(e.get("order_id")) for e in exchange_events}
+            for local in result["execution_history"]:
+                if str(local.get("order_id")) not in seen_orders:
+                    exchange_events.append(local)
+            exchange_events.sort(key=lambda e: int(e.get("time", 0)))
+            result["execution_history"] = exchange_events[-500:]
+            result["history_event_count"] = len(result["execution_history"])
+
+        # If execution history is still empty but tranches exist, represent them
+        if not result["execution_history"] and result.get("tranches"):
+            for t in result["tranches"]:
+                t_side = int(t.get("side", 1))
+                t_qty = float(t.get("qty", 0))
+                t_px = float(t.get("price", 0))
+                result["execution_history"].append({
+                    "event": "ENTRY",
+                    "symbol": symbol,
+                    "side": t_side,
+                    "original_side": t_side,
+                    "qty": t_qty,
+                    "price": t_px,
+                    "entry_price": t_px,
+                    "notional_usd": t_qty * t_px,
+                    "fee_usd": float(t.get("fee_usd", 0)),
+                    "time": int(t.get("time", int(time.time()))),
+                    "order_id": str(t.get("order_id", f"tranche_{int(time.time())}")),
+                    "status": "OPEN",
+                    "pnl_authoritative": False,
+                    "reason": "active_tranche",
+                })
+            result["history_event_count"] = len(result["execution_history"])
+
+        verified_exits = [e for e in result["execution_history"] if e.get("event") == "EXIT" and e.get("pnl_authoritative")]
+        result["verified_exit_count"] = len(verified_exits)
+        result["verified_realized_pnl_usd"] = sum(float(e.get("net_pnl_usd", 0) or 0) for e in verified_exits)
         return result
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -509,17 +612,40 @@ class LighterCryptoBot:
                     self.state["tranches"] = []
                 else:
                     mark_px = float(detail.get("mark_price", 0) or 0)
-                    self.state["tranches"] = [{
-                        "side": 1 if amount > 0 else -1,
+                    now_ts = int(time.time())
+                    side = 1 if amount > 0 else -1
+                    reconciled_tranche = {
+                        "side": side,
                         "qty": abs(amount),
                         "price": mark_px,
                         "fee_usd": 0.0,
-                        "order_id": f"reconciled_{int(time.time())}",
-                        "time": int(time.time()),
-                    }]
+                        "order_id": f"reconciled_{now_ts}",
+                        "time": now_ts,
+                    }
+                    self.state["tranches"] = [reconciled_tranche]
+                    entry_event = {
+                        "event": "ENTRY",
+                        "symbol": symbol,
+                        "market_id": market_id,
+                        "side": side,
+                        "original_side": side,
+                        "qty": abs(amount),
+                        "price": mark_px,
+                        "entry_price": mark_px,
+                        "notional_usd": abs(amount) * mark_px,
+                        "order_id": reconciled_tranche["order_id"],
+                        "client_order_index": reconciled_tranche["order_id"],
+                        "reason": "exchange_reconciliation",
+                        "time": now_ts,
+                        "fee_usd": 0.0,
+                        "pnl_authoritative": False,
+                        "status": "OPEN",
+                    }
+                    self.state["execution_history"].append(entry_event)
+                    self.state["execution_history"] = self.state["execution_history"][-500:]
             self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
             self._save()
-            return {"event": event, "bot": self.public_state()}
+            return {"event": event, "bot": await self.reconciled_public_state()}
 
     async def verify_startup(self) -> None:
         if not self.state["enabled"] and not self.state["tranches"] and not self.state["pending_order"]:

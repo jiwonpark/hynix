@@ -55,6 +55,12 @@ class FakeLighter:
     async def account_order(self, index):
         return self.orders.get(index)
 
+    def get_credentials(self):
+        return {"account_index": 749609, "api_key_index": 0}
+
+    async def account_trades(self, market_id, limit=100):
+        return getattr(self, "trades", [])
+
     async def execution_fill(self, index, market_id, expected_size):
         return self.orders.get(index, {"fill_confirmed": False})
 
@@ -197,6 +203,63 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.bot.state["execution_blocked"])
         self.assertEqual(len(self.bot.state["tranches"]), 1)
         self.assertAlmostEqual(self.bot.state["tranches"][0]["qty"], 0.05)
+        # Execution history should now reflect the reconciled entry
+        self.assertEqual(len(self.bot.state["execution_history"]), 1)
+        entry = self.bot.state["execution_history"][0]
+        self.assertEqual(entry["event"], "ENTRY")
+        self.assertEqual(entry["side"], 1)
+        self.assertAlmostEqual(entry["qty"], 0.05)
+        self.assertEqual(entry["reason"], "exchange_reconciliation")
+
+    async def test_reconciled_public_state_parses_exchange_trades(self):
+        self.client.trades = [
+            {
+                "trade_id": 101,
+                "trade_id_str": "101",
+                "market_id": 1,
+                "size": "0.00013",
+                "price": "81500.0",
+                "usd_amount": "10.595",
+                "bid_account_id": 749609,
+                "ask_account_id": 27927,
+                "timestamp": 1792236000000,
+                "taker_fee": "500",
+            },
+            {
+                "trade_id": 102,
+                "trade_id_str": "102",
+                "market_id": 1,
+                "size": "0.00013",
+                "price": "81600.0",
+                "usd_amount": "10.608",
+                "bid_account_id": 27927,
+                "ask_account_id": 749609,
+                "timestamp": 1792236600000,
+                "ask_account_pnl": "0.013",
+                "taker_fee": "500",
+                "taker_position_size_before": "0.00013",
+                "taker_entry_quote_before": "10.595",
+            },
+        ]
+        state = await self.bot.reconciled_public_state()
+        history = state["execution_history"]
+        self.assertEqual(len(history), 2)
+        entry = history[0]
+        self.assertEqual(entry["event"], "ENTRY")
+        self.assertEqual(entry["side"], 1)
+        self.assertEqual(entry["order_id"], "101")
+        self.assertAlmostEqual(entry["price"], 81500.0)
+
+        exit_evt = history[1]
+        self.assertEqual(exit_evt["event"], "EXIT")
+        self.assertEqual(exit_evt["side"], -1)
+        self.assertEqual(exit_evt["original_side"], 1)
+        self.assertEqual(exit_evt["order_id"], "102")
+        self.assertTrue(exit_evt["pnl_authoritative"])
+        self.assertAlmostEqual(exit_evt["net_pnl_usd"], 0.013)
+        self.assertAlmostEqual(exit_evt["entry_price"], 81500.0)
+        self.assertEqual(state["verified_exit_count"], 1)
+        self.assertAlmostEqual(state["verified_realized_pnl_usd"], 0.013)
 
 
 if __name__ == "__main__":

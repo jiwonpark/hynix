@@ -2029,7 +2029,7 @@
       this._loadingOlderBars = true;
       try {
         const oldestBarTime = this.bars[0].time;
-        const interval = this.interval || "1m";
+        const interval = this.interval || "5m";
         const endMs = Math.floor(oldestBarTime * 1000) - 1;
         const data = await api(`/api/lighter/parity?interval=${interval}&endTime=${endMs}&limit=${needed}`);
         if (!data || !data.success || !data.bars || !data.bars.length) {
@@ -3307,25 +3307,31 @@
       }
       if (interval !== this.interval || request !== this.chartRequest) return;
       if (!data || !data.success || !data.bars || !data.bars.length) return;
+      const oldestNewTime = data.bars[0]?.time;
+      const prependedOlder = (this.chartInterval === interval && oldestNewTime != null)
+        ? (this.bars || []).filter((b) => b.time < oldestNewTime)
+        : [];
+      const mergedBars = [...prependedOlder, ...data.bars];
+      const previousBars = this.bars;
       const range = this.chartInterval === interval
-        ? StrategyExecutionChartController.preserveRange(this.chartSync?.getRange() || this.chart.timeScale().getVisibleLogicalRange(), this.bars, data.bars)
+        ? StrategyExecutionChartController.preserveRange(this.chartSync?.getRange() || this.chart.timeScale().getVisibleLogicalRange(), previousBars, mergedBars)
         : null;
       this.chartSync?.pause();
       try {
-        this.currentRatio = Number(data.bars[data.bars.length - 1].value);
-        this.bars = data.bars;
+        this.currentRatio = Number(mergedBars[mergedBars.length - 1].value);
+        this.bars = mergedBars;
         if (typeof TerminalCommon !== "undefined") {
-          TerminalCommon.setCachedCandles(`lighter_parity_candles_${interval}`, data.bars);
+          TerminalCommon.setCachedCandles(`lighter_parity_candles_${interval}`, mergedBars);
         }
-        this.trendRanges = this.calculateTrendRanges(data.bars);
-        this.series.setData(data.bars.map((bar) => ({ time: bar.time, value: bar.value })));
+        this.trendRanges = this.calculateTrendRanges(mergedBars);
+        this.series.setData(mergedBars.map((bar) => ({ time: bar.time, value: bar.value })));
 
-        if (this.assetSeries?.adr && data.bars.length) {
+        if (this.assetSeries?.adr && mergedBars.length) {
           const adrPoints = [];
           const stockPoints = [];
           let lastT = -1;
-          for (let i = 0; i < data.bars.length; i++) {
-            const b = data.bars[i];
+          for (let i = 0; i < mergedBars.length; i++) {
+            const b = mergedBars[i];
             if (b.time <= lastT) continue;
             lastT = b.time;
             if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) adrPoints.push({ time: b.time, value: Number(b.adr) });
@@ -3338,14 +3344,14 @@
           if (this.assetSeries?.stock) this.assetSeries.stock.setData(stockPoints);
         }
 
-        [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(TerminalCommon.movingAverage(data.bars, windowSize)));
+        [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(TerminalCommon.movingAverage(mergedBars, windowSize)));
         [7, 24, 60].forEach((windowSize) => {
-          const value = TerminalCommon.movingAverage(data.bars, windowSize).at(-1)?.value;
+          const value = TerminalCommon.movingAverage(mergedBars, windowSize).at(-1)?.value;
           this.setText(`valShortTermMa${windowSize}`, Number.isFinite(value) ? `${value.toFixed(2)}%` : "--%");
         });
 
-        const firstBarTime = Number(data.bars[0]?.time);
-        const lastBarTime = Number(data.bars.at(-1)?.time);
+        const firstBarTime = Number(mergedBars[0]?.time);
+        const lastBarTime = Number(mergedBars.at(-1)?.time);
         this.actualMarkers = Array.isArray(data.markers) ? data.markers
           .filter((marker) => Number(marker.time) >= firstBarTime && Number(marker.time) <= lastBarTime)
           .map((marker) => {
@@ -3377,7 +3383,7 @@
           }) : [];
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
-        const viewport = range || StrategyExecutionChartController.initialRange(data.bars.length, 48);
+        const viewport = range || StrategyExecutionChartController.initialRange(mergedBars.length, 48);
         if (this.chartSync) this.chartSync.setRange(viewport);
         else this.chart.timeScale().setVisibleLogicalRange(viewport);
         this.chartInterval = interval;
@@ -3389,7 +3395,7 @@
         });
         this.updateGridLadderData();
         setTimeout(() => {
-          if (!this._historyExhausted && !this._loadingOlderBars) {
+          if (!this._historyExhausted && !this._loadingOlderBars && (!this.bars || this.bars.length <= 500)) {
             this.loadOlderBars(500);
           }
         }, 1200);

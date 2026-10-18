@@ -452,6 +452,38 @@ class LighterClient:
                 await asyncio.sleep(0.25)
         return {"fill_confirmed": False}
 
+    async def account_trades(
+        self, market_id: int, limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Return authoritative trades from Lighter exchange for an account."""
+        creds = self.get_credentials() or {}
+        account_index = creds.get("account_index")
+        signer = self.get_signer()
+        if account_index is None or signer is None:
+            return []
+        auth, error = signer.create_auth_token_with_expiry(
+            api_key_index=int(creds.get("api_key_index", 0))
+        )
+        if error:
+            logger.warning("Could not authenticate Lighter trade history: %s", error)
+            return []
+        try:
+            payload = await self.request(
+                "/api/v1/trades",
+                {
+                    "account_index": int(account_index),
+                    "market_id": int(market_id),
+                    "sort_by": "timestamp",
+                    "sort_dir": "desc",
+                    "limit": min(100, max(1, limit)),
+                },
+                headers={"authorization": auth},
+            )
+            return payload.get("trades") or []
+        except Exception as exc:
+            logger.warning("Failed to fetch Lighter trades for market %s: %s", market_id, exc)
+            return []
+
     async def request(
         self, endpoint: str, params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
