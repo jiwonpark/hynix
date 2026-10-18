@@ -34,6 +34,12 @@
     return (typeof window !== "undefined" && window.location && window.location.pathname && window.location.pathname.startsWith("/skhynix")) ? "/skhynix" : "";
   }
 
+  function safeAlignTime(bars, timestamp) {
+    return (typeof TerminalCommon !== "undefined" && typeof TerminalCommon.alignTime === "function")
+      ? TerminalCommon.alignTime(bars, timestamp)
+      : Number(timestamp);
+  }
+
   async function api(path) {
     const prefix = getApiPrefix();
     const response = await fetch(`${prefix}${path}`);
@@ -3559,7 +3565,7 @@
             const markerColor = isSell ? "#dc2626" : "#16a34a";
             const markerShape = isEntry ? "arrowRight" : "arrowLeft";
             return {
-              time: TerminalCommon.alignTime(mergedBars, Number(marker.time)),
+              time: safeAlignTime(mergedBars, Number(marker.time)),
               rawTime: Number(marker.time),
               position: marker.position || (isSell ? "aboveBar" : "belowBar"),
               color: marker.color || (isSell ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
@@ -3662,16 +3668,14 @@
           ? (this.rawExecutionMarkers || []).find((marker) => marker.markerKey === this.activeHoveredExecutionMarkerKey)
           : null)
         || this.selectedExecutionMarker();
-      if (this.executionChartController) {
-        // DOM markers are the single visual and interaction surface. Keeping a
-        // second canvas marker underneath makes per-trade hover impossible.
-        this.series.setMarkers([]);
-        this.syncHoveredMarkerDetails(hoveredTime, activeMarker);
-        this.updateTradeHoverOverlay(hoveredTime, activeMarker);
-      } else {
-        this.series.setMarkers([]);
-        this.updateTradeHoverOverlay(hoveredTime, activeMarker);
+      const activeTime = hoveredTime ?? activeMarker?.time ?? this.selectedExecutionMarkerTime;
+      if (this.executionChartController && typeof this.series.setMarkers === "function") {
+        try {
+          this.series.setMarkers(this.executionChartController.markersForRender(activeTime));
+        } catch (_) {}
       }
+      this.syncHoveredMarkerDetails(hoveredTime, activeMarker);
+      this.updateTradeHoverOverlay(hoveredTime, activeMarker);
     },
 
     updateTradeHoverOverlay(hoveredTime = null, exactMarker = null) {
@@ -4983,6 +4987,7 @@
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       this.updateGridLadderData();
+      this.executionChartFrame?.setStatus(`📄 Paper: ${this.entries.length} open tranches`);
 
       if (typeof window.showToast === "function") {
         window.showToast(
@@ -5047,6 +5052,7 @@
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       this.updateGridLadderData();
+      this.executionChartFrame?.setStatus(`📄 Paper: ${count} tranches exited · PnL ${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}`);
 
       if (typeof window.showToast === "function") {
         const pnlText = `${totalPnl >= 0 ? "+" : ""}$${totalPnl.toFixed(2)}`;
@@ -5124,7 +5130,7 @@
         const markerShape = isExit ? "arrowLeft" : "arrowRight";
         const cntStr = (row.count && row.count > 1) ? ` (${row.count}x)` : "";
         return {
-          time: TerminalCommon.alignTime(this.bars, (row.time || 0) / 1000),
+          time: safeAlignTime(this.bars, (row.time || 0) / 1000),
           rawTime: (row.time || 0) / 1000,
           position: isSell ? "aboveBar" : "belowBar",
           color: isSell ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)",
@@ -5272,7 +5278,8 @@
       const summary = lid("dynamicBacktestStatus");
       const button = lid("btnRerunDynamicBacktest");
       if (button) button.disabled = true;
-      if (summary) summary.textContent = "Running…";
+      if (summary) summary.textContent = "Calculating strategy signals…";
+      this.executionChartFrame?.setStatus("⏳ Calculating paper replay…");
       this.backtestMarkers = [];
       this.latestReplayConditionResult = null;
       this.replayConditionSignature = null;
@@ -5301,12 +5308,13 @@
         this.replayConditionSignature = new URLSearchParams(settings).toString();
         this.updateRulesMatchStatus();
         const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
-        this.backtestMarkers = data.trades.flatMap((trade, tradeIndex) => [
+        this.backtestMarkers = (data.trades || []).flatMap((trade, tradeIndex) => [
           {
-            time: trade.entry_time,
+            time: safeAlignTime(this.bars, trade.entry_time),
+            rawTime: trade.entry_time,
             position: trade.side < 0 ? "aboveBar" : "belowBar",
-            color: trade.side < 0 ? "rgba(220,38,38,.55)" : "rgba(22,163,74,.55)",
-            shape: "arrowRight",
+            color: trade.side < 0 ? "rgba(220,38,38,.85)" : "rgba(22,163,74,.85)",
+            shape: trade.side < 0 ? "arrowDown" : "arrowUp",
             text: "",
             hoverText: `${trade.side < 0 ? "SHORT" : "BUY"} ${trade.entry ? this.formatCryptoPrice(trade.entry) : ""}`,
             source: "virtual",
@@ -5319,10 +5327,11 @@
             ratio: trade.entry,
           },
           {
-            time: trade.exit_time,
+            time: safeAlignTime(this.bars, trade.exit_time),
+            rawTime: trade.exit_time,
             position: trade.side < 0 ? "belowBar" : "aboveBar",
-            color: trade.side < 0 ? "rgba(22,163,74,.55)" : "rgba(220,38,38,.55)",
-            shape: "arrowLeft",
+            color: trade.side < 0 ? "rgba(22,163,74,.85)" : "rgba(220,38,38,.85)",
+            shape: trade.side < 0 ? "arrowUp" : "arrowDown",
             text: "",
             hoverText: `${trade.side < 0 ? "COVER" : "SELL"} ${trade.exit ? this.formatCryptoPrice(trade.exit) : ""} · ${trade.pnl_pct >= 0 ? "+" : ""}${trade.pnl_pct.toFixed(2)}% net`,
             source: "virtual",
@@ -5338,10 +5347,11 @@
           },
         ]);
         this.backtestMarkers.push(...(data.open_positions || []).map((entry, index) => ({
-          time: entry.entry_time,
+          time: safeAlignTime(this.bars, entry.entry_time),
+          rawTime: entry.entry_time,
           position: entry.side < 0 ? "aboveBar" : "belowBar",
-          color: entry.side < 0 ? "rgba(220,38,38,.55)" : "rgba(22,163,74,.55)",
-          shape: "arrowRight", text: "", source: "virtual", hypothetical: true, backtest: true,
+          color: entry.side < 0 ? "rgba(220,38,38,.85)" : "rgba(22,163,74,.85)",
+          shape: entry.side < 0 ? "arrowDown" : "arrowUp", text: "", source: "virtual", hypothetical: true, backtest: true,
           pairKey: `backtest:open:${entry.entry_time}:${index}`,
           direction: entry.side < 0 ? "short" : "long", is_entry: true, is_open: true,
           entry_price: entry.entry, ratio: entry.entry,
@@ -5350,6 +5360,14 @@
         })));
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
+        const tradesCount = (data.trades || []).length;
+        const openCount = (data.open_positions || []).length;
+        if (tradesCount + openCount > 0) {
+          const winRate = Number(data.summary?.win_rate || 0).toFixed(0);
+          this.executionChartFrame?.setStatus(`✓ ${tradesCount} paper trades (${winRate}% win) · ${openCount} open`);
+        } else {
+          this.executionChartFrame?.setStatus("0 paper replay trades in window (conditions not met)");
+        }
         const sharedSignal = ["shared_live_ou", "shared_live_grid"].includes(data.metrics?.signal_engine);
         if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.selectedSymbol || "BTC"} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> closed trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · realized return sum <strong>${data.summary.net_pct.toFixed(3)}%</strong> · <strong>${data.open_positions?.length || 0}</strong> open · unrealized return sum <strong>${Number(data.summary.unrealized_pct || 0).toFixed(3)}%</strong> · <em>${sharedSignal ? "shared live signal timing" : "paper replay"}; price signals only, costs excluded</em>`;
 
@@ -5431,6 +5449,7 @@
           this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();
           if (summary) summary.textContent = error.message;
+          this.executionChartFrame?.setStatus(`⚠️ Replay failed: ${error.message || "error"}`);
         }
       } finally { if (button && requestId === this.backtestRequestId) button.disabled = false; }
     },

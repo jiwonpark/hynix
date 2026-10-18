@@ -55,7 +55,7 @@
   }
 
   function alignTime(bars, timestampSeconds) {
-    if (!bars.length) return timestampSeconds;
+    if (!Array.isArray(bars) || !bars.length) return timestampSeconds;
     return bars.reduce((best, bar) => (
       Math.abs(bar.time - timestampSeconds) < Math.abs(best.time - timestampSeconds) ? bar : best
     )).time;

@@ -36,8 +36,8 @@ controller.setExecutions(executions);
 const rendered = controller.markersForRender();
 
 assert.equal(rendered.length, 2, "Both actual and paper trades on the same candle must render without collision");
-const actualMarker = rendered.find((m) => m.color.includes("rgba(220, 38, 38, 0.75)"));
-const paperMarker = rendered.find((m) => m.color.includes("rgba(220, 38, 38, 0.45)"));
+const actualMarker = rendered.find((m) => m.color.includes("0.70"));
+const paperMarker = rendered.find((m) => m.color.includes("0.35"));
 assert.ok(actualMarker, "Actual marker must be present with actual opacity");
 assert.ok(paperMarker, "Paper marker must be present with hypothetical opacity");
 

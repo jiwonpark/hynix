@@ -240,15 +240,21 @@
           ? m.direction === "short"
           : (m.shape ? m.shape === "arrowDown" : (m.is_entry || m.color === "#dc2626"
             || (typeof m.color === "string" && m.color.includes("220"))));
-        const dimAlpha = m.hypothetical ? "0.45" : "0.75";
+        const isEntry = m.is_entry !== false;
+        const isSell = isShort ? isEntry : !isEntry;
+        const dimAlpha = m.hypothetical ? "0.35" : "0.70";
+        const shape = (m.shape && (m.shape === "arrowUp" || m.shape === "arrowDown" || m.shape === "circle" || m.shape === "square"))
+          ? m.shape
+          : (isSell ? "arrowDown" : "arrowUp");
+        const position = m.position || (isSell ? "aboveBar" : "belowBar");
         return {
           time: m.time,
-          position: m.position || (isShort ? "aboveBar" : "belowBar"),
-          shape: isShort ? "arrowDown" : "arrowUp",
+          position,
+          shape,
           color: isMatch
-            ? (isShort ? "#dc2626" : "#16a34a")
-            : (isShort ? `rgba(220, 38, 38, ${dimAlpha})` : `rgba(22, 163, 74, ${dimAlpha})`),
-          size: 1.2,
+            ? (isSell ? "#dc2626" : "#16a34a")
+            : (isSell ? `rgba(220, 38, 38, ${dimAlpha})` : `rgba(22, 163, 74, ${dimAlpha})`),
+          size: 1.4,
           text: isMatch ? (m.hoverText || m.text || "") : (m.text || "")
         };
       });
