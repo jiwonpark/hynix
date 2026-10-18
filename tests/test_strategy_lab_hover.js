@@ -11,7 +11,9 @@ const context = {
       getItem: key => savedSettings.get(key) || null,
       setItem: (key, value) => savedSettings.set(key, value),
     },
+    StrategyExecutionChartController: Controller,
   },
+  StrategyExecutionChartController: Controller,
   document: { getElementById: () => host },
 };
 vm.runInNewContext(fs.readFileSync(require.resolve('../strategy-lab.js'), 'utf8'), context);
@@ -25,6 +27,7 @@ const buy = { time: 100, entry_price: 1000, exit_price: 1100, net_return_pct: 9.
 const sell = { ...buy, time: 200, is_entry: false, shape: 'arrowDown', hoverText: 'SELL' };
 lab.data = { markers: [buy, sell], fee_bps: 5, open_position: { price: 1200 } };
 lab.chart = { timeScale: () => ({ getVisibleLogicalRange: () => ({ from: 0, to: 60 }),
+  setVisibleLogicalRange: () => {},
   timeToCoordinate: time => time }) };
 let cursor = { time: 100, point: { x: 100, y: 10 } };
 let updates = 0;
@@ -92,6 +95,7 @@ lab.maSeries = [];
 lab.chart = {
   timeScale: () => ({
     getVisibleLogicalRange: () => ({ from: 0, to: 60 }),
+    setVisibleLogicalRange: () => {},
     timeToCoordinate: (time) => time,
     fitContent: () => {},
   }),

@@ -703,7 +703,7 @@
       }
 
       const frame = lid("shortTermExecutionChartFrame");
-      if (frame) {
+      if (frame && !lid("shortTermSpreadChartHost")) {
         frame.innerHTML = "";
         this.executionChartFrame = StrategyExecutionChartFrame.mount({
           container: frame,
@@ -2086,10 +2086,14 @@
     },
 
     ensureChart() {
+      if (!lid("shortTermSpreadChartHost")) {
+        this.labelTerminal();
+      }
       const host = lid("shortTermSpreadChartHost");
       if (this.chart || !host || !window.LightweightCharts) return;
+      const initialWidth = Math.max(host.clientWidth || host.parentElement?.clientWidth || host.parentElement?.parentElement?.clientWidth || 0, 320);
       this.chart = LightweightCharts.createChart(host, {
-        width: host.clientWidth, height: 420,
+        width: initialWidth, height: 420,
         layout: { background: { color: "#f8fafc" }, textColor: "#475569" },
         localization: {
           timeFormatter: (time) => formatKstDateTime(Number(time) * 1000, false),
@@ -2179,8 +2183,9 @@
 
       const assetHost = lid("shortTermAssetHost");
       if (assetHost && !this.assetChart) {
+        const initialAssetWidth = Math.max(assetHost.clientWidth || assetHost.parentElement?.clientWidth || 0, 320);
         this.assetChart = LightweightCharts.createChart(assetHost, {
-          width: assetHost.clientWidth, height: 185,
+          width: initialAssetWidth, height: 185,
           layout: { background: { color: "#ffffff" }, textColor: "#475569" },
           grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
           leftPriceScale: { visible: true, borderColor: "#e2e8f0" },
@@ -2196,6 +2201,27 @@
         };
 
         this.chartSync = StrategyExecutionChartController.linkTimeScales(this.chart, this.assetChart);
+      }
+
+      // Attach ResizeObserver to guarantee chart redraws whenever container width changes
+      if (typeof ResizeObserver !== "undefined" && host) {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            const w = Math.floor(entry.contentRect.width || host.clientWidth);
+            if (w > 0 && this.chart) {
+              this.chart.applyOptions({ width: w });
+              if (this.assetChart && assetHost) {
+                this.assetChart.applyOptions({ width: w });
+              }
+              this.renderTrendRanges();
+              this.renderTradeMarkerTargets();
+              this.renderTradeTriangles();
+              this.chartSync?.sync();
+            }
+          }
+        });
+        this.resizeObserver.observe(host);
       }
 
       // Optimistic instant paint from cached candles
@@ -2278,20 +2304,27 @@
       this.renderLiveRulesPanel();
       this.ensureChart();
       this.resize();
+      window.requestAnimationFrame(() => this.resize());
+      setTimeout(() => this.resize(), 50);
+      setTimeout(() => this.resize(), 200);
       await this.refresh();
       this.runBacktest().catch((e) => console.warn("Background backtest error:", e));
     },
 
     resize() {
       const host = lid("shortTermSpreadChartHost");
-      if (host && this.chart && host.clientWidth > 0) {
-        this.chart.applyOptions({ width: host.clientWidth });
+      const targetWidth = Math.max(host?.clientWidth || host?.parentElement?.clientWidth || 0, 0);
+      if (host && this.chart && targetWidth > 0) {
+        this.chart.applyOptions({ width: targetWidth });
         this.renderTrendRanges();
         this.renderTradeMarkerTargets();
         this.renderTradeTriangles();
       }
       const assetHost = lid("shortTermAssetHost");
-      if (assetHost && this.assetChart && assetHost.clientWidth > 0) this.assetChart.applyOptions({ width: assetHost.clientWidth });
+      const targetAssetWidth = Math.max(assetHost?.clientWidth || assetHost?.parentElement?.clientWidth || 0, 0);
+      if (assetHost && this.assetChart && targetAssetWidth > 0) {
+        this.assetChart.applyOptions({ width: targetAssetWidth });
+      }
       this.chartSync?.sync();
     },
 

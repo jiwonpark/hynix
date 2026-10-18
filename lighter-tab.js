@@ -93,6 +93,7 @@
     maVisibility: { 7: true, 24: true, 60: true },
     executionChartFrame: null,
     executionChartController: null,
+    resizeObserver: null,
     activeHoveredExecutionMarkerTime: null,
     activeHoveredExecutionMarkerKey: null,
     activeHoveredPairKey: null,
@@ -409,6 +410,73 @@
     },
 
     setText(id, text) { const element = lid(id); if (element) element.textContent = text; },
+ 
+    mountExecutionChartFrame() {
+      const frame = lid("shortTermExecutionChartFrame");
+      if (!frame) return;
+      if (lid("shortTermSpreadChartHost") && this.executionChartFrame) return;
+      if (this.chart) {
+        try { this.chart.remove(); } catch (_) {}
+        this.chart = null;
+        this.series = null;
+        this.maSeries = {};
+      }
+      if (this.assetChart) {
+        try { this.assetChart.remove(); } catch (_) {}
+        this.assetChart = null;
+        this.assetSeries = null;
+      }
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = null;
+      frame.innerHTML = "";
+      this.executionChartFrame = StrategyExecutionChartFrame.mount({
+        container: frame,
+        id: "lighterShortTermSpreadChart",
+        showAssetPane: true,
+        assetHeight: 185,
+        ids: {
+          action: "lighter_btnRerunDynamicBacktest", actual: "lighter_legendActualTrades", virtual: "lighter_legendVirtualTrades",
+          status: "lighter_dynamicBacktestStatus", secondaryStatus: "lighter_macroPolicyStatus",
+          host: "lighter_shortTermSpreadChartHost", legend: "lighter_shortTermChartLegend", sync: "lighter_lblShortTermChartSync",
+          assetPaneShell: "lighter_shortTermAssetPaneShell", assetHost: "lighter_shortTermAssetHost", assetDetails: "lighter_shortTermAssetDetails"
+        },
+        title: "PAPER REPLAY · INTERVAL-DEPENDENT · NOT LIVE EXECUTION",
+        action: { label: "Rerun Paper", onClick: () => this.runBacktest() },
+        actual: { label: "Actual", onToggle: () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
+        virtual: { label: "Virtual", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
+        grouping: {
+          asRange: this.groupTradesAsRange,
+          onChange: (asRange) => this.setTradeGrouping(asRange),
+        },
+        status: "PAPER ONLY · Select a strategy and interval, then rerun",
+        description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
+        legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
+      });
+      [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
+      const chartHost = lid("shortTermSpreadChartHost");
+      if (chartHost && !$("lighterTrendOverlay")) {
+        chartHost.style.position = "relative";
+        const bands = document.createElement("div");
+        bands.id = "lighterTrendBandLayer";
+        bands.style.cssText = "position:absolute;z-index:2;inset:0 0 26px 0;overflow:hidden;pointer-events:none";
+        chartHost.appendChild(bands);
+        const overlay = document.createElement("div");
+        overlay.id = "lighterTrendOverlay";
+        overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
+        overlay.innerHTML = '<span id="lighterMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="lighterSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="lighterSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
+        chartHost.appendChild(overlay);
+        this.bindMatchPill(overlay.querySelector("#lighterMatchPill"));
+
+        $("lighterSelSmallTrend")?.addEventListener("change", (e) => {
+          this.smallTrendInterval = e.target.value;
+          this.fetchAndRenderTrends();
+        });
+        $("lighterSelBigTrend")?.addEventListener("change", (e) => {
+          this.bigTrendInterval = e.target.value;
+          this.fetchAndRenderTrends();
+        });
+      }
+    },
 
     labelTerminal() {
       this.setText("lblDaemonMainStatus", "Daemon: Institutional Grid Engine Active");
@@ -532,57 +600,7 @@
         resetPaper.addEventListener("click", () => this.resetPaperBalance());
       }
 
-      const frame = lid("shortTermExecutionChartFrame");
-      if (frame) {
-        frame.innerHTML = "";
-        this.executionChartFrame = StrategyExecutionChartFrame.mount({
-          container: frame,
-          id: "lighterShortTermSpreadChart",
-          showAssetPane: true,
-          assetHeight: 185,
-          ids: {
-            action: "lighter_btnRerunDynamicBacktest", actual: "lighter_legendActualTrades", virtual: "lighter_legendVirtualTrades",
-            status: "lighter_dynamicBacktestStatus", secondaryStatus: "lighter_macroPolicyStatus",
-            host: "lighter_shortTermSpreadChartHost", legend: "lighter_shortTermChartLegend", sync: "lighter_lblShortTermChartSync",
-            assetPaneShell: "lighter_shortTermAssetPaneShell", assetHost: "lighter_shortTermAssetHost", assetDetails: "lighter_shortTermAssetDetails"
-          },
-          title: "PAPER REPLAY · INTERVAL-DEPENDENT · NOT LIVE EXECUTION",
-          action: { label: "Rerun Paper", onClick: () => this.runBacktest() },
-          actual: { label: "Actual", onToggle: () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
-          virtual: { label: "Virtual", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
-          grouping: {
-            asRange: this.groupTradesAsRange,
-            onChange: (asRange) => this.setTradeGrouping(asRange),
-          },
-          status: "PAPER ONLY · Select a strategy and interval, then rerun",
-          description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
-          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
-        });
-        [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
-        const chartHost = lid("shortTermSpreadChartHost");
-        if (chartHost && !$("lighterTrendOverlay")) {
-          chartHost.style.position = "relative";
-          const bands = document.createElement("div");
-          bands.id = "lighterTrendBandLayer";
-          bands.style.cssText = "position:absolute;z-index:2;inset:0 0 26px 0;overflow:hidden;pointer-events:none";
-          chartHost.appendChild(bands);
-          const overlay = document.createElement("div");
-          overlay.id = "lighterTrendOverlay";
-          overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
-          overlay.innerHTML = '<span id="lighterMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="lighterSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="lighterSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
-          chartHost.appendChild(overlay);
-          this.bindMatchPill(overlay.querySelector("#lighterMatchPill"));
-
-          $("lighterSelSmallTrend")?.addEventListener("change", (e) => {
-            this.smallTrendInterval = e.target.value;
-            this.fetchAndRenderTrends();
-          });
-          $("lighterSelBigTrend")?.addEventListener("change", (e) => {
-            this.bigTrendInterval = e.target.value;
-            this.fetchAndRenderTrends();
-          });
-        }
-      }
+      this.mountExecutionChartFrame();
 
       const replayControls = lid("shortTermExecutionSection")?.firstElementChild?.lastElementChild;
       if (replayControls && !$("lighter_btnMatchLiveReplay")) {
@@ -1895,10 +1913,14 @@
     },
 
     ensureChart() {
+      if (!lid("shortTermSpreadChartHost")) {
+        this.mountExecutionChartFrame();
+      }
       const host = lid("shortTermSpreadChartHost");
       if (this.chart || !host || !window.LightweightCharts) return;
+      const initialWidth = Math.max(host.clientWidth || host.parentElement?.clientWidth || host.parentElement?.parentElement?.clientWidth || 0, 320);
       this.chart = LightweightCharts.createChart(host, {
-        width: host.clientWidth, height: 420,
+        width: initialWidth, height: 420,
         layout: { background: { color: "#f8fafc" }, textColor: "#475569" },
         localization: {
           timeFormatter: (time) => formatKstDateTime(Number(time) * 1000, false),
@@ -1988,8 +2010,9 @@
 
       const assetHost = lid("shortTermAssetHost");
       if (assetHost && !this.assetChart) {
+        const initialAssetWidth = Math.max(assetHost.clientWidth || assetHost.parentElement?.clientWidth || 0, 320);
         this.assetChart = LightweightCharts.createChart(assetHost, {
-          width: assetHost.clientWidth, height: 185,
+          width: initialAssetWidth, height: 185,
           layout: { background: { color: "#ffffff" }, textColor: "#475569" },
           grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
           leftPriceScale: { visible: true, borderColor: "#e2e8f0" },
@@ -2007,8 +2030,29 @@
         this.chartSync = StrategyExecutionChartController.linkTimeScales(this.chart, this.assetChart);
       }
 
+      // Attach ResizeObserver to guarantee chart redraws whenever container width changes
+      if (typeof ResizeObserver !== "undefined" && host) {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            const w = Math.floor(entry.contentRect.width || host.clientWidth);
+            if (w > 0 && this.chart) {
+              this.chart.applyOptions({ width: w });
+              if (this.assetChart && assetHost) {
+                this.assetChart.applyOptions({ width: w });
+              }
+              this.renderTrendRanges();
+              this.renderTradeMarkerTargets();
+              this.renderTradeTriangles();
+              this.chartSync?.sync();
+            }
+          }
+        });
+        this.resizeObserver.observe(host);
+      }
+
       // Optimistic instant paint from cached candles
-      const cacheKey = `lighter_parity_candles_${this.interval || "1m"}`;
+      const cacheKey = `lighter_parity_candles_${this.interval || "5m"}`;
       const cached = typeof TerminalCommon !== "undefined" ? TerminalCommon.getCachedCandles(cacheKey) : null;
       if (cached && cached.length) {
         this.bars = cached;
@@ -2075,7 +2119,13 @@
     },
 
     async onTabActivated() {
-      this.init(); this.ensureChart(); this.resize();
+      this.init();
+      this.mountExecutionChartFrame();
+      this.ensureChart();
+      this.resize();
+      window.requestAnimationFrame(() => this.resize());
+      setTimeout(() => this.resize(), 50);
+      setTimeout(() => this.resize(), 200);
       if (!this.bars || !this.bars.length) {
         const cacheKey = `lighter_parity_candles_${this.interval || "5m"}`;
         const cached = typeof TerminalCommon !== "undefined" ? TerminalCommon.getCachedCandles(cacheKey) : null;
@@ -2094,14 +2144,18 @@
 
     resize() {
       const host = lid("shortTermSpreadChartHost");
-      if (host && this.chart && host.clientWidth > 0) {
-        this.chart.applyOptions({ width: host.clientWidth });
+      const targetWidth = Math.max(host?.clientWidth || host?.parentElement?.clientWidth || 0, 0);
+      if (host && this.chart && targetWidth > 0) {
+        this.chart.applyOptions({ width: targetWidth });
         this.renderTrendRanges();
         this.renderTradeMarkerTargets();
         this.renderTradeTriangles();
       }
       const assetHost = lid("shortTermAssetHost");
-      if (assetHost && this.assetChart && assetHost.clientWidth > 0) this.assetChart.applyOptions({ width: assetHost.clientWidth });
+      const targetAssetWidth = Math.max(assetHost?.clientWidth || assetHost?.parentElement?.clientWidth || 0, 0);
+      if (assetHost && this.assetChart && targetAssetWidth > 0) {
+        this.assetChart.applyOptions({ width: targetAssetWidth });
+      }
       this.chartSync?.sync();
     },
 
@@ -3316,6 +3370,7 @@
 
     async refreshChart() {
       this.ensureChart();
+      this.resize();
       const interval = this.interval;
       const request = this.chartRequest = (this.chartRequest || 0) + 1;
       let data;
@@ -3330,6 +3385,10 @@
       }
       if (interval !== this.interval || request !== this.chartRequest) return;
       if (!data || !data.success || !data.bars || !data.bars.length) return;
+      if (!this.chart || !this.series) {
+        this.ensureChart();
+        if (!this.chart || !this.series) return;
+      }
       const oldestNewTime = data.bars[0]?.time;
       const prependedOlder = (this.chartInterval === interval && oldestNewTime != null)
         ? (this.bars || []).filter((b) => b.time < oldestNewTime)
