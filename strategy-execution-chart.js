@@ -228,21 +228,22 @@
       );
       const seenKeys = new Set();
       return visible.filter((m) => {
-        const key = `${m.time}_${m.is_entry ? 1 : 0}_${m.backtest ? "backtest" : "actual"}`;
-        if (m.hypothetical && !m.backtest && confirmedKeys.has(`${m.time}_${m.is_entry ? 1 : 0}`)) return false;
+        const streamKind = m.backtest ? "backtest" : (m.is_paper || m.source === "virtual" ? "paper" : "actual");
+        const key = `${m.time}_${m.is_entry ? 1 : 0}_${streamKind}`;
+        if (m.hypothetical && !m.backtest && !m.is_paper && confirmedKeys.has(`${m.time}_${m.is_entry ? 1 : 0}`)) return false;
         if (seenKeys.has(key)) return false;
         seenKeys.add(key);
         return true;
       }).map((m) => {
         const isMatch = hoveredTime !== null && m.time === hoveredTime;
-        const isShort = m.shape
-          ? m.shape === "arrowDown"
-          : (m.direction ? m.direction === "short" : (m.is_entry || m.color === "#dc2626"
+        const isShort = m.direction
+          ? m.direction === "short"
+          : (m.shape ? m.shape === "arrowDown" : (m.is_entry || m.color === "#dc2626"
             || (typeof m.color === "string" && m.color.includes("220"))));
-        const dimAlpha = m.hypothetical ? "0.35" : "0.70";
+        const dimAlpha = m.hypothetical ? "0.45" : "0.75";
         return {
           time: m.time,
-          position: m.position,
+          position: m.position || (isShort ? "aboveBar" : "belowBar"),
           shape: isShort ? "arrowDown" : "arrowUp",
           color: isMatch
             ? (isShort ? "#dc2626" : "#16a34a")

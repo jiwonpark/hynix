@@ -271,7 +271,7 @@ class LighterClient:
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8, connect=3))
+            self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6, connect=3))
         return self._session
 
     async def close(self) -> None:
@@ -572,7 +572,7 @@ class LighterClient:
             ttl = 3600.0
             cache_suffix = str(end_timestamp)
         else:
-            ttl = min(5.0, max(1.0, ((end_ms // interval_ms + 1) * interval_ms - end_ms) / 1000.0 + 1.0))
+            ttl = min(15.0, max(5.0, ((end_ms // interval_ms + 1) * interval_ms - end_ms) / 1000.0 + 1.0))
             cache_suffix = "latest"
         rows = await load() if fresh else await self._cached(
             f"candles:{market_id}:{resolution}:{fetch_count}:{cache_suffix}", ttl, load

@@ -3549,8 +3549,9 @@
 
         const firstBarTime = Number(mergedBars[0]?.time);
         const lastBarTime = Number(mergedBars.at(-1)?.time);
+        const intervalSec = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}[interval] || 300;
         this.actualMarkers = Array.isArray(data.markers) ? data.markers
-          .filter((marker) => Number(marker.time) >= firstBarTime && Number(marker.time) <= lastBarTime)
+          .filter((marker) => Number(marker.time) >= (firstBarTime - intervalSec) && Number(marker.time) <= (lastBarTime + intervalSec * 2))
           .map((marker) => {
             const isEntry = marker.is_entry !== false;
             const isShort = marker.direction ? marker.direction === "short" : (isEntry ? (marker.side < 0) : (marker.side > 0));
@@ -3558,7 +3559,8 @@
             const markerColor = isSell ? "#dc2626" : "#16a34a";
             const markerShape = isEntry ? "arrowRight" : "arrowLeft";
             return {
-              time: marker.time,
+              time: TerminalCommon.alignTime(mergedBars, Number(marker.time)),
+              rawTime: Number(marker.time),
               position: marker.position || (isSell ? "aboveBar" : "belowBar"),
               color: marker.color || (isSell ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
               activeColor: marker.activeColor || markerColor,
@@ -5064,14 +5066,28 @@
       // Consolidate simultaneous/legacy paper exit rows into single campaign markers
       const paperRows = [];
       const exitBucketMap = new Map();
+      const sym = this.selectedSymbol || "BTC";
+      const openTimesInLedger = new Set();
       (this.ledger || []).forEach((row) => {
+        if (row.symbol && this.selectedSymbol && row.symbol !== this.selectedSymbol) return;
         if (row.action === "EXIT") {
           const bucket = Math.floor((row.time || 0) / 1000);
           const group = exitBucketMap.get(bucket) || [];
           group.push(row);
           exitBucketMap.set(bucket, group);
         } else {
+          openTimesInLedger.add(row.time);
           paperRows.push(row);
+        }
+      });
+      (this.entries || []).forEach((entry) => {
+        if (entry.symbol && this.selectedSymbol && entry.symbol !== this.selectedSymbol) return;
+        if (!openTimesInLedger.has(entry.time)) {
+          paperRows.push({
+            ...entry,
+            action: entry.side < 0 ? `SHORT ${entry.symbol || sym}` : `LONG ${entry.symbol || sym}`,
+            pnl: null,
+          });
         }
       });
       exitBucketMap.forEach((rows) => {
@@ -5090,26 +5106,34 @@
         }
       });
 
+      const intervalSec = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}[this.interval] || 300;
+      const minTime = firstBarTime - intervalSec;
+      const maxTime = lastBarTime + intervalSec * 2;
+
       const paperMarkers = paperRows
-        .filter((row) => (row.time / 1000) >= firstBarTime && (row.time / 1000) <= lastBarTime)
+        .filter((row) => {
+          const tSec = (row.time || 0) / 1000;
+          return tSec >= minTime && tSec <= maxTime;
+        })
         .slice(0, 40)
         .map((row) => {
         const isExit = row.action === "EXIT";
-        const isShort = row.side < 0 || row.action === "SHORT RATIO";
+        const isShort = row.side < 0 || (typeof row.action === "string" && row.action.includes("SHORT"));
         const isSell = isShort ? !isExit : isExit;
         const markerColor = isSell ? "#dc2626" : "#16a34a";
         const markerShape = isExit ? "arrowLeft" : "arrowRight";
         const cntStr = (row.count && row.count > 1) ? ` (${row.count}x)` : "";
         return {
-          time: TerminalCommon.alignTime(this.bars, row.time / 1000),
+          time: TerminalCommon.alignTime(this.bars, (row.time || 0) / 1000),
+          rawTime: (row.time || 0) / 1000,
           position: isSell ? "aboveBar" : "belowBar",
           color: isSell ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)",
           activeColor: markerColor,
           shape: markerShape,
           text: "",
           hoverText: isExit
-            ? `${isShort ? "COVER" : "SELL"}${cntStr} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""}${row.pnl != null ? " · " + (row.pnl >= 0 ? "+" : "") + "$" + row.pnl.toFixed(2) : ""}`
-            : `${isShort ? "SHORT" : "BUY"} ${row.ratio ? row.ratio.toFixed(2) + "%" : ""} ($${(row.notional || 0).toFixed(0)})`,
+            ? `${isShort ? "COVER" : "SELL"}${cntStr} ${row.ratio ? this.formatCryptoPrice(row.ratio) : ""}${row.pnl != null ? " · " + (row.pnl >= 0 ? "+" : "") + "$" + row.pnl.toFixed(2) : ""}`
+            : `${isShort ? "SHORT" : "BUY"} ${row.ratio ? this.formatCryptoPrice(row.ratio) : ""} ($${(row.notional || 0).toFixed(0)})`,
           source: "virtual",
           hypothetical: true,
           is_paper: true,

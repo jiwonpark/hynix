@@ -2070,6 +2070,19 @@
 
     async onTabActivated() {
       this.init(); this.ensureChart(); this.resize();
+      if (!this.bars || !this.bars.length) {
+        const cacheKey = `lighter_parity_candles_${this.interval || "5m"}`;
+        const cached = typeof TerminalCommon !== "undefined" ? TerminalCommon.getCachedCandles(cacheKey) : null;
+        if (cached && cached.length && this.series) {
+          this.bars = cached;
+          this.trendRanges = this.calculateTrendRanges(cached);
+          this.series.setData(cached.map((bar) => ({ time: bar.time, value: bar.value })));
+          [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(cached, w)));
+          const initial = StrategyExecutionChartController.initialRange(cached.length, 48);
+          if (this.chartSync) this.chartSync.setRange(initial);
+          else this.chart.timeScale().setVisibleLogicalRange(initial);
+        }
+      }
       await this.refresh();
     },
 
@@ -3302,7 +3315,11 @@
       let data;
       try {
         data = await api(`/api/lighter/parity?interval=${interval}&limit=500`);
-      } catch (_) {
+        if (!data || !data.success || !data.bars || !data.bars.length) {
+          throw new Error(data?.error || "No parity bars returned");
+        }
+      } catch (err) {
+        console.warn("Lighter parity fetch failed, trying short_term_parity fallback:", err);
         data = await api(`/api/trade/short_term_parity?interval=${interval}&limit=120`);
       }
       if (interval !== this.interval || request !== this.chartRequest) return;
@@ -3334,11 +3351,13 @@
             const b = mergedBars[i];
             if (b.time <= lastT) continue;
             lastT = b.time;
-            if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) adrPoints.push({ time: b.time, value: Number(b.adr) });
-            else adrPoints.push({ time: b.time });
+            if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) {
+              adrPoints.push({ time: b.time, value: Number(b.adr) });
+            }
             const sVal = b.domestic != null ? b.domestic : b.csop;
-            if (sVal != null && Number.isFinite(sVal) && sVal > 0) stockPoints.push({ time: b.time, value: Number(sVal) });
-            else stockPoints.push({ time: b.time });
+            if (sVal != null && Number.isFinite(sVal) && sVal > 0) {
+              stockPoints.push({ time: b.time, value: Number(sVal) });
+            }
           }
           this.assetSeries.adr.setData(adrPoints);
           if (this.assetSeries?.stock) this.assetSeries.stock.setData(stockPoints);
@@ -3352,8 +3371,9 @@
 
         const firstBarTime = Number(mergedBars[0]?.time);
         const lastBarTime = Number(mergedBars.at(-1)?.time);
+        const intervalSec = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}[interval] || 300;
         this.actualMarkers = Array.isArray(data.markers) ? data.markers
-          .filter((marker) => Number(marker.time) >= firstBarTime && Number(marker.time) <= lastBarTime)
+          .filter((marker) => Number(marker.time) >= (firstBarTime - intervalSec) && Number(marker.time) <= (lastBarTime + intervalSec * 2))
           .map((marker) => {
             const isEntry = marker.is_entry !== false;
             const isShort = marker.direction ? marker.direction === "short" : (isEntry ? (marker.side < 0) : (marker.side > 0));
@@ -3361,7 +3381,8 @@
             const markerColor = isSell ? "#dc2626" : "#16a34a";
             const markerShape = isEntry ? "arrowRight" : "arrowLeft";
             return {
-              time: marker.time,
+              time: TerminalCommon.alignTime(mergedBars, Number(marker.time)),
+              rawTime: Number(marker.time),
               position: marker.position || (isSell ? "aboveBar" : "belowBar"),
               color: marker.color || (isSell ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)"),
               activeColor: marker.activeColor || markerColor,
@@ -4833,6 +4854,7 @@
       // Consolidate simultaneous/legacy paper exit rows into single campaign markers
       const paperRows = [];
       const exitBucketMap = new Map();
+      const openTimesInLedger = new Set();
       (this.ledger || []).forEach((row) => {
         if (row.action === "EXIT") {
           const bucket = Math.floor((row.time || 0) / 1000);
@@ -4840,7 +4862,17 @@
           group.push(row);
           exitBucketMap.set(bucket, group);
         } else {
+          openTimesInLedger.add(row.time);
           paperRows.push(row);
+        }
+      });
+      (this.entries || []).forEach((entry) => {
+        if (!openTimesInLedger.has(entry.time)) {
+          paperRows.push({
+            ...entry,
+            action: entry.side < 0 ? "SHORT RATIO" : "LONG RATIO",
+            pnl: null,
+          });
         }
       });
       exitBucketMap.forEach((rows) => {
@@ -4859,18 +4891,26 @@
         }
       });
 
+      const intervalSec = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}[this.interval] || 300;
+      const minTime = firstBarTime - intervalSec;
+      const maxTime = lastBarTime + intervalSec * 2;
+
       const paperMarkers = paperRows
-        .filter((row) => (row.time / 1000) >= firstBarTime && (row.time / 1000) <= lastBarTime)
+        .filter((row) => {
+          const tSec = (row.time || 0) / 1000;
+          return tSec >= minTime && tSec <= maxTime;
+        })
         .slice(0, 40)
         .map((row) => {
         const isExit = row.action === "EXIT";
-        const isShort = row.side < 0 || row.action === "SHORT RATIO";
+        const isShort = row.side < 0 || (typeof row.action === "string" && row.action.includes("SHORT"));
         const isSell = isShort ? !isExit : isExit;
         const markerColor = isSell ? "#dc2626" : "#16a34a";
         const markerShape = isExit ? "arrowLeft" : "arrowRight";
         const cntStr = (row.count && row.count > 1) ? ` (${row.count}x)` : "";
         return {
-          time: TerminalCommon.alignTime(this.bars, row.time / 1000),
+          time: TerminalCommon.alignTime(this.bars, (row.time || 0) / 1000),
+          rawTime: (row.time || 0) / 1000,
           position: isSell ? "aboveBar" : "belowBar",
           color: isSell ? "rgba(220, 38, 38, 0.70)" : "rgba(22, 163, 74, 0.85)",
           activeColor: markerColor,

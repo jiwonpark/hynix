@@ -314,7 +314,7 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
         target_end *= 1000
     cache_key = f"{interval}:{limit}:{target_end or 'latest'}"
     now = time.time()
-    ttl = 4.0 if not target_end else 3600.0
+    ttl = 10.0 if not target_end else 3600.0
     if cache_key in _lighter_parity_cache:
         cached_time, cached_data = _lighter_parity_cache[cache_key]
         if now - cached_time < ttl:
@@ -481,9 +481,16 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
         res = {"success": True, "interval": interval, "bars": bars, "markers": markers}
         if bars:
             _lighter_parity_cache[cache_key] = (now, res)
+            if not target_end:
+                _lighter_parity_cache[f"{interval}:{limit}:latest"] = (now, res)
         return res
     except Exception as error:
         logger.warning("Lighter parity unavailable: %s", error)
+        fallback_key = f"{interval}:{limit}:latest"
+        stale = _lighter_parity_cache.get(cache_key) or _lighter_parity_cache.get(fallback_key)
+        if stale:
+            logger.info("Serving stale cached Lighter parity data for %s", cache_key)
+            return stale[1]
         return {"success": False, "interval": interval, "bars": [], "markers": [], "error": str(error)}
 
 
