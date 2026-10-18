@@ -490,6 +490,80 @@
 
     setText(id, text) { const element = lid(id); if (element) element.textContent = text; },
 
+    mountExecutionChartFrame() {
+      const frame = lid("shortTermExecutionChartFrame");
+      if (!frame) return;
+      if (lid("shortTermSpreadChartHost") && this.executionChartFrame) return;
+      if (this.chart) {
+        try { this.chart.remove(); } catch (_) {}
+        this.chart = null;
+        this.series = null;
+        this.maSeries = {};
+      }
+      if (this.assetChart) {
+        try { this.assetChart.remove(); } catch (_) {}
+        this.assetChart = null;
+        this.assetSeries = null;
+      }
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = null;
+      frame.innerHTML = "";
+      this.executionChartFrame = StrategyExecutionChartFrame.mount({
+        container: frame,
+        id: "lighterCryptoShortTermSpreadChart",
+        showAssetPane: true,
+        assetHeight: 185,
+        ids: {
+          action: "lighterCrypto_btnRerunDynamicBacktest", actual: "lighterCrypto_legendActualTrades", virtual: "lighterCrypto_legendVirtualTrades",
+          status: "lighterCrypto_dynamicBacktestStatus", secondaryStatus: "lighterCrypto_macroPolicyStatus",
+          host: "lighterCrypto_shortTermSpreadChartHost", legend: "lighterCrypto_shortTermChartLegend", sync: "lighterCrypto_lblShortTermChartSync",
+          assetPaneShell: "lighterCrypto_shortTermAssetPaneShell", assetHost: "lighterCrypto_shortTermAssetHost", assetDetails: "lighterCrypto_shortTermAssetDetails"
+        },
+        title: "PAPER REPLAY · INTERVAL-DEPENDENT · NOT LIVE EXECUTION",
+        action: { label: "Rerun Paper", onClick: () => this.runBacktest() },
+        actual: { label: "Actual", onToggle: () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
+        virtual: { label: "Virtual", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
+        grouping: {
+          asRange: this.groupTradesAsRange,
+          onChange: (asRange) => this.setTradeGrouping(asRange),
+        },
+        status: "PAPER ONLY · Select a strategy and interval, then rerun",
+        description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
+        legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="lighterCrypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighterCrypto_valShortTermMa7">—</strong></span><span id="lighterCrypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighterCrypto_valShortTermMa24">—</strong></span><span id="lighterCrypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighterCrypto_valShortTermMa60">—</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="lighterCrypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="lighterCrypto_valSelectedMinProfit">—</strong></span>',
+      });
+      const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
+      if (replayAssetLegend) {
+        const spans = replayAssetLegend.querySelectorAll("span");
+        if (spans[0]) spans[0].textContent = "📊 CONTRACT PRICE:";
+        if (spans[1]) spans[1].textContent = `● ${this.selectedSymbol} perpetual`;
+        if (spans[2]) spans[2].style.display = "none";
+      }
+      [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
+      const chartHost = lid("shortTermSpreadChartHost");
+      if (chartHost && !$("lighterCryptoTrendOverlay")) {
+        chartHost.style.position = "relative";
+        const bands = document.createElement("div");
+        bands.id = "lighterCryptoTrendBandLayer";
+        bands.style.cssText = "position:absolute;z-index:2;inset:0 0 26px 0;overflow:hidden;pointer-events:none";
+        chartHost.appendChild(bands);
+        const overlay = document.createElement("div");
+        overlay.id = "lighterCryptoTrendOverlay";
+        overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
+        overlay.innerHTML = '<span id="lighterCryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="lighterCryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterCryptoTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="lighterCryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterCryptoTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
+        chartHost.appendChild(overlay);
+        this.bindMatchPill(overlay.querySelector("#lighterCryptoMatchPill"));
+
+        $("lighterCryptoSelSmallTrend")?.addEventListener("change", (e) => {
+          this.smallTrendInterval = e.target.value;
+          this.fetchAndRenderTrends();
+        });
+        $("lighterCryptoSelBigTrend")?.addEventListener("change", (e) => {
+          this.bigTrendInterval = e.target.value;
+          this.fetchAndRenderTrends();
+        });
+      }
+    },
+
     formatCryptoPrice(price, symbol = this.selectedSymbol) {
       const p = Number(price);
       if (!Number.isFinite(p)) return "$—";
@@ -750,65 +824,7 @@
         resetPaper.addEventListener("click", () => this.resetPaperBalance());
       }
 
-      const frame = lid("shortTermExecutionChartFrame");
-      // Keep the mounted chart and its event handlers when changing markets.
-      if (frame && !lid("shortTermSpreadChartHost")) {
-        frame.innerHTML = "";
-        this.executionChartFrame = StrategyExecutionChartFrame.mount({
-          container: frame,
-          id: "lighterCryptoShortTermSpreadChart",
-          showAssetPane: true,
-          assetHeight: 185,
-          ids: {
-            action: "lighterCrypto_btnRerunDynamicBacktest", actual: "lighterCrypto_legendActualTrades", virtual: "lighterCrypto_legendVirtualTrades",
-            status: "lighterCrypto_dynamicBacktestStatus", secondaryStatus: "lighterCrypto_macroPolicyStatus",
-            host: "lighterCrypto_shortTermSpreadChartHost", legend: "lighterCrypto_shortTermChartLegend", sync: "lighterCrypto_lblShortTermChartSync",
-            assetPaneShell: "lighterCrypto_shortTermAssetPaneShell", assetHost: "lighterCrypto_shortTermAssetHost", assetDetails: "lighterCrypto_shortTermAssetDetails"
-          },
-          title: "PAPER REPLAY · INTERVAL-DEPENDENT · NOT LIVE EXECUTION",
-          action: { label: "Rerun Paper", onClick: () => this.runBacktest() },
-          actual: { label: "Actual", onToggle: () => { this.showActualMarkers = !this.showActualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
-          virtual: { label: "Virtual", onToggle: () => { this.showVirtualMarkers = !this.showVirtualMarkers; this.updateMarkerButtons(); this.renderMarkers(); } },
-          grouping: {
-            asRange: this.groupTradesAsRange,
-            onChange: (asRange) => this.setTradeGrouping(asRange),
-          },
-          status: "PAPER ONLY · Select a strategy and interval, then rerun",
-          description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
-          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="lighterCrypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighterCrypto_valShortTermMa7">—</strong></span><span id="lighterCrypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighterCrypto_valShortTermMa24">—</strong></span><span id="lighterCrypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighterCrypto_valShortTermMa60">—</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="lighterCrypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="lighterCrypto_valSelectedMinProfit">—</strong></span>',
-        });
-        const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
-        if (replayAssetLegend) {
-          const spans = replayAssetLegend.querySelectorAll("span");
-          if (spans[0]) spans[0].textContent = "📊 CONTRACT PRICE:";
-          if (spans[1]) spans[1].textContent = `● ${this.selectedSymbol} perpetual`;
-          if (spans[2]) spans[2].style.display = "none";
-        }
-        [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
-        const chartHost = lid("shortTermSpreadChartHost");
-        if (chartHost && !$("lighterCryptoTrendOverlay")) {
-          chartHost.style.position = "relative";
-          const bands = document.createElement("div");
-          bands.id = "lighterCryptoTrendBandLayer";
-          bands.style.cssText = "position:absolute;z-index:2;inset:0 0 26px 0;overflow:hidden;pointer-events:none";
-          chartHost.appendChild(bands);
-          const overlay = document.createElement("div");
-          overlay.id = "lighterCryptoTrendOverlay";
-          overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
-          overlay.innerHTML = '<span id="lighterCryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="lighterCryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterCryptoTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="lighterCryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterCryptoTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
-          chartHost.appendChild(overlay);
-          this.bindMatchPill(overlay.querySelector("#lighterCryptoMatchPill"));
-
-          $("lighterCryptoSelSmallTrend")?.addEventListener("change", (e) => {
-            this.smallTrendInterval = e.target.value;
-            this.fetchAndRenderTrends();
-          });
-          $("lighterCryptoSelBigTrend")?.addEventListener("change", (e) => {
-            this.bigTrendInterval = e.target.value;
-            this.fetchAndRenderTrends();
-          });
-        }
-      }
+      this.mountExecutionChartFrame();
       const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
       if (replayAssetLegend) {
         const spans = replayAssetLegend.querySelectorAll("span");
@@ -2168,8 +2184,8 @@
     },
 
     ensureChart() {
-      if (!lid("shortTermSpreadChartHost")) {
-        this.labelTerminal();
+      if (!lid("shortTermSpreadChartHost") || !this.executionChartFrame) {
+        this.mountExecutionChartFrame();
       }
       const host = lid("shortTermSpreadChartHost");
       if (this.chart || !host || !window.LightweightCharts) return;
@@ -2307,7 +2323,7 @@
       }
 
       // Optimistic instant paint from cached candles
-      const cacheKey = `lighter_crypto_candles_${this.selectedSymbol || "BTC"}_${this.interval || "1m"}`;
+      const cacheKey = `lighter_crypto_candles_${this.selectedSymbol || "BTC"}_${this.interval || "5m"}`;
       const cached = typeof TerminalCommon !== "undefined" ? TerminalCommon.getCachedCandles(cacheKey) : null;
       if (cached && cached.length) {
         this.bars = cached;
@@ -2380,6 +2396,7 @@
 
     async onTabActivated() {
       this.init();
+      this.mountExecutionChartFrame();
       this.renderSymbolSelector();
       this.renderParadigmNav();
       this.renderGridLadderSection();
@@ -2389,6 +2406,21 @@
       window.requestAnimationFrame(() => this.resize());
       setTimeout(() => this.resize(), 50);
       setTimeout(() => this.resize(), 200);
+      if (!this.bars || !this.bars.length) {
+        const cacheKey = `lighter_crypto_candles_${this.selectedSymbol || "BTC"}_${this.interval || "5m"}`;
+        const cached = typeof TerminalCommon !== "undefined" ? TerminalCommon.getCachedCandles(cacheKey) : null;
+        if (cached && cached.length && this.series) {
+          this.bars = cached;
+          this.trendRanges = this.calculateTrendRanges(cached);
+          this.series.setData(cached.map((bar) => ({ time: bar.time, value: bar.value })));
+          if (this.assetSeries?.adr) this.assetSeries.adr.setData(cached.map((b) => ({ time: b.time, value: b.value })));
+          if (this.assetSeries?.stock) this.assetSeries.stock.setData(TerminalCommon.movingAverage(cached, 24));
+          [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(cached, w)));
+          const initial = StrategyExecutionChartController.initialRange(cached.length, 48);
+          if (this.chartSync) this.chartSync.setRange(initial);
+          else this.chart.timeScale().setVisibleLogicalRange(initial);
+        }
+      }
       await this.refresh();
       this.runBacktest().catch((e) => console.warn("Background backtest error:", e));
     },
@@ -3692,14 +3724,23 @@
 
     async refreshChart() {
       this.ensureChart();
+      this.resize();
+      if (!this.chart || !this.series) return;
       const interval = this.interval;
       const sym = this.selectedSymbol || "BTC";
       const request = this.chartRequest = (this.chartRequest || 0) + 1;
-      let data;
+      let data = null;
       try {
-        data = await api(`/api/lighter-crypto/price?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=500`);
-      } catch (_) {
         data = await api(`/api/lighter-crypto/candles?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=500`);
+      } catch (_) {
+        data = null;
+      }
+      if (!data || !data.success || !data.bars || !data.bars.length) {
+        try {
+          data = await api(`/api/lighter-crypto/price?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=500`);
+        } catch (_) {
+          data = null;
+        }
       }
       if (interval !== this.interval || request !== this.chartRequest) return;
       if (!data || !data.success || !data.bars || !data.bars.length) return;

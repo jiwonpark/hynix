@@ -601,6 +601,7 @@ def evaluate_ma_acceleration_signals(
         "candidate_side": candidate_side,
         "condition_pass": condition_pass,
     }
+    return entry_signal, candidate_side, exit_signal, evaluation
 
 def evaluate_golden_death_cross_signals(
     prices: List[float],

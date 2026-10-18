@@ -5205,13 +5205,13 @@
       document.write('<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"><\\/script>');
     }
   </script>
-  <script src="held-pair-pnl.js?v=20261018_tab3_chart_fix"></script>
-  <script src="strategy-execution-chart.js?v=20261018_tab3_chart_fix"></script>
-  <script src="strategy-lab.js?v=20261018_tab3_chart_fix"></script>
-  <script src="terminal-common.js?v=20261018_tab3_chart_fix"></script>
-  <script src="lighter-tab.js?v=20261018_tab3_chart_fix"></script>
-  <script src="crypto-tab.js?v=20261018_tab3_chart_fix"></script>
-  <script src="lighter-crypto-tab.js?v=20261018_tab3_chart_fix"></script>
+  <script src="held-pair-pnl.js?v=20261019_chart_fix"></script>
+  <script src="strategy-execution-chart.js?v=20261019_chart_fix"></script>
+  <script src="strategy-lab.js?v=20261019_chart_fix"></script>
+  <script src="terminal-common.js?v=20261019_chart_fix"></script>
+  <script src="lighter-tab.js?v=20261019_chart_fix"></script>
+  <script src="crypto-tab.js?v=20261019_chart_fix"></script>
+  <script src="lighter-crypto-tab.js?v=20261019_chart_fix"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -11639,6 +11639,19 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           try { this.renderUpbitTable(this.state.upbitAssets, { total_equity_krw: this.state.upbitEquityKrw, total_equity_usd: this.state.upbitEquityUsd, cash_krw: this.state.upbitCashKrw }); } catch(e) {}
         }
         if (!this.shortTermHistory || !this.shortTermHistory.bars || !this.shortTermHistory.bars.length) {
+          const cacheKey = `skhynix_tab2_parity_${this.state.shortTermInterval || "5m"}`;
+          const cached = typeof TerminalCommon !== "undefined" ? TerminalCommon.getCachedCandles(cacheKey) : null;
+          if (cached && Array.isArray(cached) && cached.length) {
+            this.shortTermHistory = { interval: this.state.shortTermInterval || "5m", bars: cached, markers: [], hasMore: true, loading: false, loadingOlder: false };
+            this.renderShortTermChart({ bars: cached, markers: [] });
+            const initial = typeof this.getInitialViewport === "function"
+              ? this.getInitialViewport(cached.length)
+              : StrategyExecutionChartController.initialRange(cached.length, 48);
+            if (initial) {
+              if (this.shortTermChartSync) this.shortTermChartSync.setRange(initial);
+              else if (this.shortTermChart) this.shortTermChart.timeScale().setVisibleLogicalRange(initial);
+            }
+          }
           this.fetchShortTermParity();
         }
         this.syncWithBackend();
@@ -13916,6 +13929,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               const byTime = new Map(previous.map(b => [b.time, b]));
               page.forEach(b => byTime.set(b.time, b));
               history.bars = [...byTime.values()].sort((a, b) => a.time - b.time);
+              if (typeof TerminalCommon !== "undefined" && history.bars.length && !older) {
+                TerminalCommon.setCachedCandles(`skhynix_tab2_parity_${interval}`, history.bars);
+              }
               const added = previous.length ? history.bars.filter(b => b.time < previous[0].time).length : 0;
               if (older || !previous.length) history.hasMore = data.has_more !== false && page.length > 0 && (!older || added > 0);
               const min = page[0]?.time, max = page.at(-1)?.time;
