@@ -3692,11 +3692,8 @@
           ? (this.rawExecutionMarkers || []).find((marker) => marker.markerKey === this.activeHoveredExecutionMarkerKey)
           : null)
         || this.selectedExecutionMarker();
-      const activeTime = hoveredTime ?? activeMarker?.time ?? this.selectedExecutionMarkerTime;
-      if (this.executionChartController && typeof this.series.setMarkers === "function") {
-        try {
-          this.series.setMarkers(this.executionChartController.markersForRender(activeTime));
-        } catch (_) {}
+      if (typeof this.series.setMarkers === "function") {
+        try { this.series.setMarkers([]); } catch (_) {}
       }
       this.syncHoveredMarkerDetails(hoveredTime, activeMarker);
       this.updateTradeHoverOverlay(hoveredTime, activeMarker);
@@ -4111,9 +4108,11 @@
           const isShort = this.isShortTrade(marker);
           const markerColor = this.tradeMarkerColor(marker);
           const glyph = this.tradeMarkerGlyph(marker);
-          const baseOpacity = marker.hypothetical ? 0.65 : 0.90;
           const isHypo = Boolean(marker.hypothetical);
-          const fill = isHypo ? "transparent" : markerColor;
+          const isSell = this.isTradeSell(marker);
+          const baseOpacity = isHypo ? 0.85 : 0.95;
+          const fill = isHypo ? (isSell ? "rgba(220, 38, 38, 0.40)" : "rgba(22, 163, 74, 0.40)") : markerColor;
+          const strokeWidth = isHypo ? "1" : "0.75";
 
           const target = document.createElement("button");
           target.type = "button";
@@ -4128,10 +4127,10 @@
           // Tip is at (0.5, 4). Position button at left: finalX, top: finalY, translate(0, -50%).
           // The leftmost tip aligns exactly to (finalX, finalY).
           if (isEntry) {
-            target.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,0.5 7.5,4 0.5,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/></svg>`;
+            target.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,0.5 7.5,4 0.5,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></svg>`;
             target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(-100%,-50%);width:8px;height:8px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
           } else {
-            target.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="7.5,0.5 0.5,4 7.5,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="0.75" stroke-linejoin="round"/></svg>`;
+            target.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="7.5,0.5 0.5,4 7.5,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></svg>`;
             target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(0,-50%);width:8px;height:8px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
           }
 
