@@ -494,13 +494,26 @@ async def get_lighter_parity(interval: str = "15m", limit: int = 200,
         return {"success": False, "interval": interval, "bars": [], "markers": [], "error": str(error)}
 
 
+_lighter_trends_cache: Dict[str, tuple[float, Any]] = {}
+
 @app.get("/api/lighter/trends")
 async def get_lighter_trends(small: str = "5m", big: str = "1h") -> Dict[str, Any]:
+    cache_key = f"{small}:{big}"
+    now = time.time()
+    if cache_key in _lighter_trends_cache:
+        cached_time, cached_data = _lighter_trends_cache[cache_key]
+        if now - cached_time < 15.0:
+            return cached_data
     try:
-        return {"success": True, "trends": await lighter_pair_bot.trends(small=small, big=big),
-                "server_time_ms": int(time.time() * 1000)}
+        trends = await lighter_pair_bot.trends(small=small, big=big)
+        res = {"success": True, "trends": trends, "server_time_ms": int(now * 1000)}
+        if trends:
+            _lighter_trends_cache[cache_key] = (now, res)
+        return res
     except Exception as error:
         logger.warning("Lighter trends unavailable: %s", error)
+        if cache_key in _lighter_trends_cache:
+            return _lighter_trends_cache[cache_key][1]
         return {"success": False, "trends": {}, "error": str(error)}
 
 
