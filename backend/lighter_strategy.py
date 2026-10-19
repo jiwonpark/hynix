@@ -291,6 +291,7 @@ def evaluate_grid_signals(
     use_bottoming: bool = False, base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
     evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
     held_bars: int = 0,
+    macro_alignment: Optional[Tuple[bool, bool]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Grid signals with full user-configurable condition switches."""
     if len(ratios) < 25:
@@ -322,7 +323,7 @@ def evaluate_grid_signals(
     stack_pass = ((zscore > 0 and current_price > ma7 > mean)
                   or (zscore < 0 and current_price < ma7 < mean))
     ma_stack_pass = not use_ma_stack or stack_pass
-    macro_aligned = _macro_trend_aligned(ratios, candidate_side)
+    macro_aligned = (macro_alignment[0 if candidate_side > 0 else 1] if macro_alignment is not None else _macro_trend_aligned(ratios, candidate_side))
     ma_stack_1h_pass = not use_ma_stack_1h or macro_aligned
 
     entry_signal = bool(entry_z_pass and spacing_pass and peak_pass and ma_stack_pass and ma_stack_1h_pass)
@@ -720,6 +721,7 @@ def evaluate_ma_acceleration_signals(
     position_side: int = 0,
     entry_price: float = 0.0,
     held_bars: int = 0,
+    macro_alignment: Optional[Tuple[bool, bool]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Newtonian Moving Average Velocity & Acceleration Strategy.
 
@@ -769,7 +771,7 @@ def evaluate_ma_acceleration_signals(
     # Determine candidate side based on active momentum regime
     candidate_side = 1 if (long_rising and long_accel) else (-1 if (short_falling and short_decel) else (1 if current_price < ma_curr else -1))
 
-    macro_aligned = _macro_trend_aligned(prices, candidate_side)
+    macro_aligned = (macro_alignment[0 if candidate_side > 0 else 1] if macro_alignment is not None else _macro_trend_aligned(prices, candidate_side))
     macro_pass = not use_ma_stack_1h or macro_aligned
 
     if candidate_side > 0:
@@ -838,6 +840,7 @@ def evaluate_golden_death_cross_signals(
     position_side: int = 0,
     entry_price: float = 0.0,
     held_bars: int = 0,
+    macro_alignment: Optional[Tuple[bool, bool]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Dual Moving Average Crossover Strategy (Golden & Death Cross).
 
@@ -874,17 +877,17 @@ def evaluate_golden_death_cross_signals(
     # Candidate side determination
     if golden_cross:
         candidate_side = 1
-        macro_aligned = _macro_trend_aligned(prices, 1)
+        macro_aligned = (macro_alignment[0] if macro_alignment is not None else _macro_trend_aligned(prices, 1))
         macro_pass = not use_ma_stack_1h or macro_aligned
         entry_signal = bool(use_golden_cross and spread_pass and macro_pass)
     elif death_cross:
         candidate_side = -1
-        macro_aligned = _macro_trend_aligned(prices, -1)
+        macro_aligned = (macro_alignment[1] if macro_alignment is not None else _macro_trend_aligned(prices, -1))
         macro_pass = not use_ma_stack_1h or macro_aligned
         entry_signal = bool(use_death_cross and spread_pass and macro_pass)
     else:
         candidate_side = 1 if fast_curr >= slow_curr else -1
-        macro_aligned = _macro_trend_aligned(prices, candidate_side)
+        macro_aligned = (macro_alignment[0 if candidate_side > 0 else 1] if macro_alignment is not None else _macro_trend_aligned(prices, candidate_side))
         macro_pass = not use_ma_stack_1h or macro_aligned
         entry_signal = False
 

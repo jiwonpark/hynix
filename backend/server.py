@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from collections import OrderedDict
+from .chart_cache import ChartResponseCache
 from .dynamic_backtest import replay, replay_markers
 from .pair_sizing import exchange_rules, live_sizing_inputs, size_policy
 from .macro_policy import macro_policy, policy_for_level, closed_values, confirmed_rebound
@@ -1481,10 +1482,9 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
                 "server_time_ms": int(time.time() * 1000)}
 
 
-_lighter_crypto_cache: Dict[str, tuple[float, Any]] = {}
+_lighter_crypto_chart_cache = ChartResponseCache()
 
-@app.get("/api/lighter-crypto/candles")
-async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
+async def _load_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
                                      limit: int = 300,
                                      end_timestamp: Optional[int] = None,
                                      endTime: Optional[int] = None) -> Dict[str, Any]:
@@ -1496,15 +1496,8 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
         target_end = end_timestamp or endTime
         if target_end and target_end < 100_000_000_000:
             target_end *= 1000
-        cache_key = f"{symbol}:{interval}:{limit}:{target_end or 'latest'}"
-        now = time.time()
-        ttl = 15.0 if not target_end else 3600.0
-        if cache_key in _lighter_crypto_cache:
-            cached_time, cached_data = _lighter_crypto_cache[cache_key]
-            if now - cached_time < ttl:
-                return cached_data
         rows = await lighter_client.candles(LIGHTER_CRYPTO_MARKETS[symbol], interval,
-                                            min(500, max(20, limit)), end_timestamp=target_end)
+                                            min(500, max(20, limit)), end_timestamp=target_end, allow_stale=False)
         bars = [{"time": int(row["t"]) // 1000, "value": float(row["c"]),
                  "open": float(row["o"]), "high": float(row["h"]),
                  "low": float(row["l"]), "close": float(row["c"]),
@@ -1514,10 +1507,7 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
             interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
                                 "4h": 14400, "1d": 86400}[interval]
             first, last = bars[0]["time"], bars[-1]["time"]
-            try:
-                rec_bot = await asyncio.wait_for(lighter_crypto_bot.reconciled_public_state(), timeout=2.0)
-            except Exception:
-                rec_bot = lighter_crypto_bot.public_state()
+            rec_bot = lighter_crypto_bot.public_state()
             for event in rec_bot.get("execution_history", []):
                 if event.get("symbol") != symbol:
                     continue
@@ -1537,19 +1527,30 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
                                 "notional": float(event.get("notional_usd", 0)),
                                 "pairKey": str(event.get("entry_order_id") or event.get("order_id")),
                                 "hoverText": f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {symbol} @ {price:.6f} · {event.get('qty')} filled"})
-        if not bars and cache_key in _lighter_crypto_cache:
-            return _lighter_crypto_cache[cache_key][1]
-        result = {"success": True, "symbol": symbol, "interval": interval,
-                  "bars": bars, "markers": markers}
-        if bars:
-            _lighter_crypto_cache[cache_key] = (now, result)
-        return result
+        return {"success": True, "symbol": symbol, "interval": interval,
+                "bars": bars, "markers": markers}
     except Exception as error:
-        if cache_key in _lighter_crypto_cache:
-            logger.warning(f"Error fetching lighter crypto candles, returning stale cache: {error}")
-            return _lighter_crypto_cache[cache_key][1]
         return {"success": False, "symbol": symbol, "interval": interval,
                 "bars": [], "markers": [], "error": str(error)}
+
+
+@app.get("/api/lighter-crypto/candles")
+async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
+                                     limit: int = 300, end_timestamp: Optional[int] = None,
+                                     endTime: Optional[int] = None) -> Dict[str, Any]:
+    target_end = end_timestamp or endTime
+    if target_end and target_end < 100_000_000_000:
+        target_end *= 1000
+    count = min(500, max(20, limit))
+    key = (symbol, interval, count, target_end)
+    try:
+        return await _lighter_crypto_chart_cache.get(
+            key, lambda: _load_lighter_crypto_candles(symbol, interval, count, target_end),
+            ttl=3600 if target_end else 15,
+        )
+    except Exception as error:
+        return {"success": False, "symbol": symbol, "interval": interval,
+                "bars": [], "markers": [], "error": str(error) or "Candle request timed out"}
 
 
 @app.get("/api/lighter-crypto/price")
@@ -1740,6 +1741,9 @@ def _run_crypto_backtest_sync(
     bars_values = [item["value"] for item in bars]
     macro_aligned_list = macro_trend_aligned_series(bars_values, span=ou_macro_ema_span, slope_bars=ou_macro_slope_bars) if bars_values else []
 
+    evaluator_macro_alignment = (macro_aligned_list if (ou_macro_ema_span, ou_macro_slope_bars) == (60, 12)
+                                 else macro_trend_aligned_series(bars_values))
+
     if strategy_mode in {"ou_quant", "grid", "custom"}:
         ou_thetas = []
         ou_halflives = []
@@ -1769,7 +1773,8 @@ def _run_crypto_backtest_sync(
                 latest_conditions = evaluation.get("condition_pass", {})
             else:
                 entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
-                    prefix, entry_z=entry_z if use_ma_stretch else 0.0,
+                    prefix,
+                    macro_alignment=evaluator_macro_alignment[index], entry_z=entry_z if use_ma_stretch else 0.0,
                     exit_z=exit_z, use_peak=False, use_base_spacing=False,
                     use_ma_stack_1h=False,
                     use_dwell=False, use_bottoming=False,
@@ -2179,6 +2184,7 @@ def _run_crypto_backtest_sync(
             # position-aware exit state for the trade/P&L simulation only.
             entry_signal, candidate_side, _, entry_eval = evaluate_ma_acceleration_signals(
                 prefix,
+                    macro_alignment=evaluator_macro_alignment[index],
                 ma_accel_period=w,
                 ma_accel_min_slope=ma_accel_min_slope,
                 ma_accel_min_accel=ma_accel_min_accel,
@@ -2194,6 +2200,7 @@ def _run_crypto_backtest_sync(
             )
             _, _, exit_signal, exit_eval = evaluate_ma_acceleration_signals(
                 prefix,
+                    macro_alignment=evaluator_macro_alignment[index],
                 ma_accel_period=w,
                 ma_accel_min_slope=ma_accel_min_slope,
                 ma_accel_min_accel=ma_accel_min_accel,
@@ -2275,6 +2282,7 @@ def _run_crypto_backtest_sync(
             ent_price = position["entry"] if position is not None else 0.0
             entry_signal, candidate_side, _, entry_eval = evaluate_golden_death_cross_signals(
                 prefix,
+                    macro_alignment=evaluator_macro_alignment[index],
                 fast_ma_period=fast_w,
                 slow_ma_period=slow_w,
                 min_cross_spread_bps=min_cross_spread_bps,
@@ -2292,6 +2300,7 @@ def _run_crypto_backtest_sync(
             )
             _, _, exit_signal, exit_eval = evaluate_golden_death_cross_signals(
                 prefix,
+                    macro_alignment=evaluator_macro_alignment[index],
                 fast_ma_period=fast_w,
                 slow_ma_period=slow_w,
                 min_cross_spread_bps=min_cross_spread_bps,

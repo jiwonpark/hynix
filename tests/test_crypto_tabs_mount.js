@@ -163,7 +163,7 @@ const ctx = {
   setTimeout: (fn) => setTimeout(fn, 1),
   requestAnimationFrame: (fn) => setTimeout(fn, 16),
   cancelAnimationFrame: (id) => clearTimeout(id),
-  URLSearchParams,
+  URLSearchParams, AbortSignal, clearTimeout,
 };
 ctx.window = ctx;
 ctx.globalThis = ctx;

@@ -49,3 +49,14 @@ root-level frontend assets as arguments (for example, `strategy-lab.js`). The
 script always stages `index.html`, stamps a unique Git SHA + KST build version
 and deployment time, inspects production, uploads the files, and verifies the
 live metadata. Do not copy `index.html` directly because that bypasses stamping.
+
+
+## Basic UI verification (required for every deployment)
+
+Open every affected tab on the live site after deployment. Verify that actual
+price data and MA lines are visible, with populated values and usable controls,
+then check a fresh reload, navigation away/back, and interval switching. A chart
+container, canvas, HTTP 200, or nonzero API bar count alone is not proof that a
+chart rendered. Capture and inspect the chart itself. Treat empty charts,
+JavaScript exceptions, and indefinite loading as failed verification. Never
+place orders while checking the UI.

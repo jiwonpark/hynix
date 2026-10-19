@@ -109,11 +109,11 @@ async function run() {
   }
 
   const tabs = [
-    { name: "backtest", navId: "navTabBacktest", hostId: "chartSvg", getBars: "(window.dailyData?.length || 1)" },
-    { name: "trading", navId: "navTabTrading", hostId: "shortTermSpreadChartHost", getBars: "window.tradingEngine?.shortTermHistory?.bars?.length" },
-    { name: "lighter", navId: "navTabLighter", hostId: "lighter_shortTermSpreadChartHost", getBars: "window.lighterEngine?.bars?.length" },
-    { name: "crypto", navId: "navTabCrypto", hostId: "crypto_shortTermSpreadChartHost", getBars: "window.cryptoEngine?.bars?.length" },
-    { name: "lighterCrypto", navId: "navTabLighterCrypto", hostId: "lighterCrypto_shortTermSpreadChartHost", getBars: "window.lighterCryptoEngine?.bars?.length" },
+    { name: "backtest", navId: "navTabBacktest", hostId: "chartSvg", svg: true },
+    { name: "trading", navId: "navTabTrading", hostId: "shortTermSpreadChartHost", engine: "window.tradingEngine", series: "shortTermSeries", chart: "shortTermChart", data: "shortTermHistory?.bars" },
+    { name: "lighter", navId: "navTabLighter", hostId: "lighter_shortTermSpreadChartHost", engine: "window.lighterEngine", series: "series", chart: "chart", data: "bars" },
+    { name: "crypto", navId: "navTabCrypto", hostId: "crypto_shortTermSpreadChartHost", engine: "window.cryptoEngine", series: "series", chart: "chart", data: "bars" },
+    { name: "lighterCrypto", navId: "navTabLighterCrypto", hostId: "lighterCrypto_shortTermSpreadChartHost", engine: "window.lighterCryptoEngine", series: "series", chart: "chart", data: "bars" },
   ];
 
   const failures = [];
@@ -124,7 +124,7 @@ async function run() {
       await evaluate(`switchMainTab("${t.name}")`);
       let diag = null;
       const pollStart = Date.now();
-      const pollTimeoutMs = 35000;
+      const pollTimeoutMs = 45000;
 
       while (Date.now() - pollStart < pollTimeoutMs) {
         diag = await evaluate(`(() => {
@@ -142,7 +142,22 @@ async function run() {
               } catch(e) { return "error: " + e.message; }
             })()
           }));
+          const engine = ${t.engine || "null"};
+          const bars = engine?.${t.data || "bars"} || [];
+          const series = engine?.${t.series || "series"};
+          const chart = engine?.${t.chart || "chart"};
+          const range = chart?.timeScale().getVisibleLogicalRange();
+          const index = Math.max(0, Math.min(bars.length - 1, Math.floor(((range?.from || 0) + (range?.to || 0)) / 2)));
+          const point = series?.dataByIndex?.(index);
+          const price = Number(point?.value ?? point?.close);
+          const x = point ? chart?.timeScale().timeToCoordinate(point.time) : null;
+          const y = Number.isFinite(price) ? series?.priceToCoordinate(price) : null;
+          const seriesVisible = bars.length > 1 && Number.isFinite(x) && Number.isFinite(y)
+            && x >= 0 && x <= host?.clientWidth && y >= 0 && y <= host?.clientHeight;
+          const svgVisible = ${!!t.svg} && !!host?.querySelector('path[d]')
+            && (host?.querySelectorAll('text').length || 0) > 1;
           return {
+            seriesVisible, svgVisible, price: Number.isFinite(price) ? price : null, x, y,
             tab: "${t.name}",
             activeTabDisplay: document.getElementById("tabContent" + "${t.name.charAt(0).toUpperCase() + t.name.slice(1)}")?.style.display,
             hostExists: !!host,
@@ -150,14 +165,12 @@ async function run() {
             hostHeight: host?.clientHeight,
             canvasCount: canvases.length,
             canvases: canvasDetails,
-            bars: ${t.getBars || "null"}
+            bars: bars.length
           };
         })()`);
 
-        const isHealthy = diag && diag.hostExists &&
-          diag.canvasCount > 0 &&
-          diag.canvases.some(c => c.hasContent === true) &&
-          (typeof diag.bars !== "number" || diag.bars > 0);
+        const isHealthy = diag && diag.hostExists && diag.hostWidth > 0 && diag.hostHeight > 0 &&
+          (t.svg ? diag.svgVisible : diag.seriesVisible && diag.canvases.some(c => c.hasContent === true));
 
         if (isHealthy) {
           break;
@@ -166,17 +179,14 @@ async function run() {
       }
 
       console.log("Tab Diagnostic:", JSON.stringify(diag, null, 2));
+      await evaluate(`document.getElementById("${t.hostId}")?.scrollIntoView({block: "center"})`);
+      await new Promise(r => setTimeout(r, 200));
       await captureScreenshot(`/tmp/live_${t.name}.png`);
 
       if (!diag.hostExists) {
         failures.push(`Tab ${t.name}: host ${t.hostId} not found`);
-      } else if (diag.canvasCount === 0) {
-        failures.push(`Tab ${t.name}: 0 canvases rendered in ${t.hostId}`);
-      } else if (!diag.canvases.some(c => c.hasContent === true)) {
-        failures.push(`Tab ${t.name}: all canvases empty`);
-      } else if (typeof diag.bars === "number" && diag.bars <= 0) {
-        failures.push(`Tab ${t.name}: bars count is ${diag.bars}`);
-      } else {
+      } else if (t.svg ? !diag.svgVisible : !diag.seriesVisible || !diag.canvases.some(c => c.hasContent === true)) {
+        failures.push(`Tab ${t.name}: price series is missing or outside the visible chart (bars: ${diag.bars})`);      } else {
         console.log(`>>> TAB ${t.name.toUpperCase()} CHART VERIFIED HEALTHY (bars: ${diag.bars}) <<<`);
       }
     }

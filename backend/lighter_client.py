@@ -64,7 +64,7 @@ class LighterClient:
                     logger.warning("Using stale cached Lighter data for %s", key)
                     return self._clone(cached["value"])
                 raise
-            self._cache[key] = {"value": self._clone(value), "expires": now + max(0.1, ttl)}
+            self._cache[key] = {"value": self._clone(value), "expires": time.monotonic() + max(0.1, ttl)}
             return self._clone(value)
 
     def stream_status(self) -> Dict[str, Any]:
@@ -551,7 +551,7 @@ class LighterClient:
 
     async def candles(
         self, market_id: int, resolution: str, count: int, end_timestamp: Optional[int] = None,
-        *, fresh: bool = False,
+        *, fresh: bool = False, allow_stale: bool = True,
     ) -> List[Dict[str, Any]]:
         interval_ms = {
             "1m": 60_000, "5m": 300_000, "15m": 900_000,
@@ -581,6 +581,6 @@ class LighterClient:
             ttl = min(15.0, max(5.0, ((end_ms // interval_ms + 1) * interval_ms - end_ms) / 1000.0 + 1.0))
             cache_suffix = "latest"
         rows = await load() if fresh else await self._cached(
-            f"candles:{market_id}:{resolution}:{fetch_count}:{cache_suffix}", ttl, load
+            f"candles:{market_id}:{resolution}:{fetch_count}:{cache_suffix}", ttl, load, allow_stale=allow_stale
         )
         return rows[-bounded_count:]

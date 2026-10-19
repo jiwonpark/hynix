@@ -49,7 +49,7 @@
 
   async function api(path) {
     const prefix = getApiPrefix();
-    const response = await fetch(`${prefix}${path}`);
+    const response = await fetch(`${prefix}${path}`, { signal: AbortSignal.timeout(20000) });
     const ct = (response.headers && typeof response.headers.get === "function" ? response.headers.get("content-type") : "application/json") || "";
     let payload = null;
     if (ct.includes("application/json")) {
@@ -2693,6 +2693,7 @@
           this.trendRanges = this.calculateTrendRanges(cached);
           this.series.setData(cached.map((bar) => ({ time: bar.time, value: bar.value })));
           this.updateMaAndDiffs(cached);
+          this.executionChartFrame?.setSync(`Cached candles · last bar ${formatKstDateTime(Number(cached.at(-1).time) * 1000)} · refreshing`);
           const initial = StrategyExecutionChartController.initialRange(cached.length, 48);
           if (this.chartSync) this.chartSync.setRange(initial);
           else this.chart.timeScale().setVisibleLogicalRange(initial);
@@ -4092,34 +4093,40 @@
     },
 
     async refreshChart() {
+      const key = `${this.selectedSymbol}:${this.interval}`;
+      if (this.chartLoad?.key === key) return this.chartLoad.promise;
+      const load = { key };
+      this.chartLoad = load;
+      load.promise = this.loadChart().finally(() => {
+        if (this.chartLoad === load) this.chartLoad = null;
+      });
+      return load.promise;
+    },
+
+    async loadChart() {
       this.ensureChart();
       this.resize();
       if (!this.chart || !this.series) return;
       const interval = this.interval;
       const sym = this.selectedSymbol || "BTC";
       const request = this.chartRequest = (this.chartRequest || 0) + 1;
-      let data = null;
+      this.executionChartFrame?.setSync("Loading Lighter candles…");
+      let data;
       try {
         data = await api(`/api/lighter-crypto/candles?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=500`);
-      } catch (_) {
-        data = null;
-      }
-      if (!data || !data.success || !data.bars || !data.bars.length) {
-        try {
-          data = await api(`/api/lighter-crypto/price?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=500`);
-        } catch (_) {
-          data = null;
-        }
-      }
-      if (interval !== this.interval || request !== this.chartRequest) return;
-      if (!data || !data.success || !data.bars || !data.bars.length) {
-        if (!this.bars || !this.bars.length) {
-          setTimeout(() => {
-            if (!this.bars || !this.bars.length) this.refreshChart();
-          }, 2500);
-        }
+        if (!data?.success || !data.bars?.length) throw new Error(data?.error || "No candle data returned");
+      } catch (error) {
+        if (interval !== this.interval || sym !== this.selectedSymbol || request !== this.chartRequest) return;
+        this.executionChartFrame?.setSync(`⚠️ Chart unavailable: ${error.message}. Retrying…`);
+        clearTimeout(this.chartRetryTimer);
+        this.chartRetryTimer = setTimeout(() => {
+          if (interval === this.interval && sym === this.selectedSymbol) this.refreshChart();
+        }, 5000);
         return;
       }
+      if (interval !== this.interval || sym !== this.selectedSymbol || request !== this.chartRequest) return;
+      clearTimeout(this.chartRetryTimer);
+      this.chartDataStale = !!data.stale;
       const oldestNewTime = data.bars[0]?.time;
       const prependedOlder = (this.chartInterval === interval && oldestNewTime != null)
         ? (this.bars || []).filter((b) => b.time < oldestNewTime)
@@ -4140,6 +4147,14 @@
         this.series.setData(mergedBars.map((bar) => ({ time: bar.time, value: bar.value })));
 
         this.updateMaAndDiffs(mergedBars);
+        const syncLabel = lid("lblShortTermChartSync");
+        if (syncLabel) syncLabel.textContent = data.stale
+          ? `Cached candles · fetched ${formatKstDateTime(Number(data.fetched_at) * 1000)} · refreshing`
+          : `Lighter candles · ${formatKstDateTime(Number(data.fetched_at || Date.now() / 1000) * 1000)}`;
+        if (data.stale) {
+          clearTimeout(this.chartRetryTimer);
+          this.chartRetryTimer = setTimeout(() => this.refreshChart(), 15000);
+        }
 
         const firstBarTime = Number(mergedBars[0]?.time);
         const lastBarTime = Number(mergedBars.at(-1)?.time);
