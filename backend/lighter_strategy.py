@@ -358,6 +358,7 @@ def evaluate_ma_stack_signals(
     prices: List[float], *, ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
     use_ma_stretch: bool = True, use_ma_stack: bool = True, use_ma_stack_1h: bool = True,
     use_convergence: bool = True, use_dwell: bool = True, use_bottoming: bool = False,
+    ma_stack_opposite_only: bool = False, use_opposite_stack_exit: bool = True,
     evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
     held_bars: int = 0,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
@@ -380,6 +381,26 @@ def evaluate_ma_stack_signals(
     bearish_stack = current_price < ma7 < ma24 < ma60
     bullish_stack = current_price > ma7 > ma24 > ma60
     candidate_side = 1 if bearish_stack else -1
+
+    if ma_stack_opposite_only:
+        # Tab 5's Trend MA Stack is intentionally a single long-only rule:
+        # enter the bearish full stack and leave only on its exact inverse.
+        # Legacy MA stretch, macro, cross, dwell and trailing switches must not
+        # silently gate this mode after their controls have been removed.
+        entry_signal = bool(use_ma_stack and bearish_stack)
+        opposite_stack = bullish_stack if position_side >= 0 else bearish_stack
+        exit_signal = bool(position_side != 0 and use_opposite_stack_exit and opposite_stack)
+        condition_pass = {
+            "entry_ma_stack": bearish_stack,
+            "exit_opposite_stack": opposite_stack if position_side else None,
+        }
+        return entry_signal, 1, exit_signal, {
+            "time": evaluation_time, "ratio": round(current_price, 4), "mean": round(ma24, 4),
+            "z": round(zscore, 3), "signal_z": zscore, "signal_mean": ma24, "strategy": "ma_stack",
+            "stretch_pct": round(stretch_pct, 4), "ma7": round(ma7, 4), "ma24": round(ma24, 4),
+            "ma60": round(ma60, 4), "bearish_stack": bearish_stack, "bullish_stack": bullish_stack,
+            "condition_pass": condition_pass,
+        }
 
     stack_pass = (bearish_stack or bullish_stack) if use_ma_stack else True
     stretch_pass = stretch_pct >= ma_stretch_min if use_ma_stretch else True
@@ -890,6 +911,8 @@ def evaluate_strategy_signal(
             use_convergence=bool(config.get("use_convergence", True)),
             use_dwell=bool(config.get("use_dwell", True)),
             use_bottoming=bool(config.get("use_bottoming", False)),
+            ma_stack_opposite_only=bool(config.get("ma_stack_opposite_only", False)),
+            use_opposite_stack_exit=bool(config.get("use_opposite_stack_exit", True)),
             evaluation_time=evaluation_time,
             position_side=position_side,
             entry_price=entry_price,
@@ -996,24 +1019,25 @@ def evaluate_strategy_signal(
         )
 
     current_price = prices[-1] if prices else 0.0
+    opposite_stack_only = strategy_mode == "ma_stack" and bool(config.get("ma_stack_opposite_only", False))
     use_base_spacing = bool(config.get("use_base_spacing", True))
     base_spacing_pct = float(config.get("base_spacing_pct", 0.2))
     step_dist = current_price * max(0.0, min(10.0, base_spacing_pct)) / 100.0
     spacing_pass = True
-    if position_side != 0 and entry_price > 0:
+    if not opposite_stack_only and position_side != 0 and entry_price > 0:
         spacing_pass = (not use_base_spacing
                         or (candidate_side < 0 and current_price >= entry_price + step_dist)
                         or (candidate_side > 0 and current_price <= entry_price - step_dist))
     if not spacing_pass:
         entry_signal = False
 
-    use_dwell = bool(config.get("use_dwell", True))
+    use_dwell = bool(config.get("use_dwell", True)) and not opposite_stack_only
     min_dwell_bars = int(config.get("min_dwell_bars", 4))
     dwell_pass = not use_dwell or held_bars >= max(0, min(100, min_dwell_bars))
     if position_side != 0 and not dwell_pass:
         exit_signal = False
 
-    if isinstance(details.get("condition_pass"), dict):
+    if isinstance(details.get("condition_pass"), dict) and not opposite_stack_only:
         details["condition_pass"]["entry_spacing"] = spacing_pass
         details["condition_pass"]["exit_dwell"] = dwell_pass
     return entry_signal, candidate_side, exit_signal, details

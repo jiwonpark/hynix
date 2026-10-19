@@ -43,6 +43,22 @@ const nodes = new Map([
 ]);
 context.document.getElementById = (id) => nodes.get(id) || null;
 const tab5 = context.window.lighterCryptoEngine;
+const maMarkup = tab5.renderParadigmDetail('ma_stack');
+assert.match(maMarkup, /2\. 5m Full MA Stack \(Price &lt; MA7 &lt; MA24 &lt; MA60\)/);
+assert.match(maMarkup, /Opposite 5m Full MA Stack \(Price &gt; MA7 &gt; MA24 &gt; MA60\)/);
+assert.doesNotMatch(maMarkup, /Stretch Discount|Maximum Dwell|Trailing Stop Ratchet|Golden Cross Reversal|1h Macro Trend/);
+nodes.set('lighterCrypto_maUseStack5m', { checked: true });
+nodes.set('lighterCrypto_maUseOppositeExit', { checked: true });
+tab5.currentParadigm = 'ma_stack';
+const maReplay = tab5.replaySettings();
+assert.equal(maReplay.ma_stack_opposite_only, true);
+assert.equal(maReplay.use_ma_stack, true);
+assert.equal(maReplay.use_opposite_stack_exit, true);
+assert.equal(maReplay.use_ma_stretch, false);
+assert.equal(maReplay.use_ma_stack_1h, false);
+assert.equal(maReplay.use_convergence, false);
+assert.equal(maReplay.use_dwell, false);
+assert.equal(maReplay.use_bottoming, false);
 tab5.mode = 'live';
 tab5.liveVenue = { collateral: 170, available_margin: 170, account_gross_notional: 0 };
 tab5.livePositions = [];
@@ -78,4 +94,3 @@ tab5.renderVirtualState();
 assert.ok(nodes.get('lighterCrypto_activePositionsBody').innerHTML.length > 0);
 
 console.log('Independent Binance Tab 4 and Lighter Tab 5 UI checks passed');
-

@@ -245,11 +245,11 @@
         id: "ma_stack",
         name: "Trend MA Stack",
         icon: "📈",
-        badge: "MOMENTUM DIP-BUYING · MA STACK",
-        title: "➕ Multi-Timeframe MA Stack Dip Entry",
-        desc: "Trigger: 5m & 1h Bearish Alignment (Price < MA7 < MA24 < MA60) + MA Stretch ≥ 0.35%",
-        tpTitle: "🎯 Trend Golden Cross & Trailing Exit",
-        tpDesc: "Exit: 5m MA7 crosses above MA24 or Trailing Profit Stop (0.15% drawdown from peak)",
+        badge: "5m FULL-STACK REVERSAL",
+        title: "➕ Bearish Full-Stack Entry",
+        desc: "Entry: completed 5m candle satisfies Price < MA7 < MA24 < MA60",
+        tpTitle: "🎯 Opposite Full-Stack Exit",
+        tpDesc: "Exit: completed 5m candle satisfies Price > MA7 > MA24 > MA60",
         entryLabels: {
           rowCondEntryMaStretch: "1. 60-MA Stretch Discount (≥ 0.35% Gap)",
           rowCondEntryBase: "2. Minimum Dip Cadence Spacing (≥ 0.15pt)",
@@ -1315,14 +1315,7 @@
         rowCondExitConvergence: "Paper exit: Z-score convergence (adjust Exit Z in replay)",
         rowCondExitDwell: "Paper exit: minimum configured completed bars",
         rowCondExitBottoming: "Paper exit: Z-score no longer converging",
-      } : (mode === "ma_stack" ? {
-        rowCondEntryMaStretch: "Paper entry: 60-MA stretch discount (≥ Min Stretch %)",
-        rowCondEntryMaStack5m: "Paper entry: 5m MA7/24/60 full stack (Price < MA7 < MA24 < MA60)",
-        rowCondEntryMaStack1h: "Paper entry: 1h macro trend support alignment",
-        rowCondExitConvergence: "Paper exit: MA7 / MA24 golden cross reversal",
-        rowCondExitDwell: "Paper exit: 16-bar maximum dwell limit",
-        rowCondExitBottoming: "Paper exit: Trailing stop ratchet (≥ Trailing Stop %)",
-      } : {});
+      } : {};
       [...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels)].forEach((id) => {
         const row = lid(id);
         if (!row) return;
@@ -1332,28 +1325,6 @@
           if (label) label.textContent = wiredReplayRows[id];
         }
       });
-      if (mode === "ma_stack") {
-        const liveMa = (this.botState?.strategy_mode === "ma_stack") ? { ...this.botState, ...(this.botState.strategy_params || {}) } : {};
-        if (lid("chkCondEntryMaStretch") && !lid("chkCondEntryMaStretch").dataset.unsaved) {
-          lid("chkCondEntryMaStretch").checked = liveMa.use_ma_stretch != null ? Boolean(liveMa.use_ma_stretch) : true;
-        }
-        if (lid("chkCondEntryMaStack5m") && !lid("chkCondEntryMaStack5m").dataset.unsaved) {
-          lid("chkCondEntryMaStack5m").checked = liveMa.use_ma_stack != null ? Boolean(liveMa.use_ma_stack) : true;
-        }
-        if (lid("chkCondEntryMaStack1h") && !lid("chkCondEntryMaStack1h").dataset.unsaved) {
-          lid("chkCondEntryMaStack1h").checked = liveMa.use_ma_stack_1h != null ? Boolean(liveMa.use_ma_stack_1h) : true;
-        }
-        if (lid("chkCondExitConvergence") && !lid("chkCondExitConvergence").dataset.unsaved) {
-          lid("chkCondExitConvergence").checked = liveMa.use_convergence != null ? Boolean(liveMa.use_convergence) : true;
-        }
-        if (lid("chkCondExitDwell") && !lid("chkCondExitDwell").dataset.unsaved) {
-          lid("chkCondExitDwell").checked = liveMa.use_dwell != null ? Boolean(liveMa.use_dwell) : true;
-        }
-        if (lid("chkCondExitBottoming") && !lid("chkCondExitBottoming").dataset.unsaved) {
-          lid("chkCondExitBottoming").checked = liveMa.use_bottoming != null ? Boolean(liveMa.use_bottoming) : false;
-        }
-      }
-
       const ladderSec = $("lighterCrypto_gridMatrixSection");
       let detailSec = $("lighterCrypto_paradigmDetailSection");
       const rulesPanel = $("lighterCryptoLiveRulesPanel");
@@ -1469,37 +1440,27 @@
         };
         const maRowStyle = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
         const maToggleStyle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
-        const stretchVal = Number(liveMa.ma_stretch_min ?? 0.30).toFixed(2);
-        const trailVal = Number(liveMa.ma_trailing_stop ?? 0.15).toFixed(2);
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div>
               <div style="display:flex;align-items:center;gap:8px;">
                 <span style="font-size:18px;">📈</span>
-                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">Multi-Timeframe Trend & Momentum Exhaustion Tracker</strong>
-                <span style="background:#fef3c7;color:#b45309;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #fde68a;">MOMENTUM DIP MONITOR</span>
+                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">5m Full-Stack Reversal Tracker</strong>
+                <span style="background:#fef3c7;color:#b45309;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #fde68a;">BEARISH ENTRY · BULLISH EXIT</span>
               </div>
-              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Tracks 5m & 1h moving average cascade (MA7 / MA24 / MA60) · Filters out violent trend crashes with counter-leg absorption.</p>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Enters long only when Price &lt; MA7 &lt; MA24 &lt; MA60; exits only when the completed 5m candle forms the exact opposite stack.</p>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-size:11px;font-weight:700;color:#475569;">Min Stretch %:</span>
-              <input id="lighterCrypto_inpMaStretchMin" type="number" step="0.05" value="${stretchVal}" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
-              <span style="font-size:11px;font-weight:700;color:#475569;">Trailing Stop %:</span>
-              <input id="lighterCrypto_inpMaTrailingStop" type="number" step="0.05" value="${trailVal}" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <button id="lighterCrypto_btnMaReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
             </div>
           </div>
           <div id="lighterCrypto_maEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
-            <strong style="font-size:12px;color:#0f172a;">Entry conditions · switches and values apply to replay; Deploy saves them to the live bot</strong>
-            <div style="${maRowStyle}"><input id="lighterCrypto_maUseStretch" type="checkbox" aria-label="Enable MA60 stretch discount condition" style="${maToggleStyle}" ${maChecked("use_ma_stretch", true)}><span>1. 60-MA Stretch Discount (≥ Min Stretch % Gap below/above MA60)</span><span class="condBadge neutral" id="lighterCrypto_maStatusStretch">WAITING</span></div>
-            <div style="${maRowStyle}"><input id="lighterCrypto_maUseStack5m" type="checkbox" aria-label="Enable 5m MA stack alignment condition" style="${maToggleStyle}" ${maChecked("use_ma_stack", true)}><span>2. 5m Full MA Stack (Price &lt; MA7 &lt; MA24 &lt; MA60)</span><span class="condBadge neutral" id="lighterCrypto_maStatusStack5m">WAITING</span></div>
-            <div style="${maRowStyle}"><input id="lighterCrypto_maUseStack1h" type="checkbox" aria-label="Enable 1h macro trend alignment condition" style="${maToggleStyle}" ${maChecked("use_ma_stack_1h", true)}><span>3. 1h Macro Trend Support Alignment</span><span class="condBadge neutral" id="lighterCrypto_maStatusStack1h">WAITING</span></div>
+            <strong style="font-size:12px;color:#0f172a;">Entry condition · applies identically to paper replay and the deployed live bot</strong>
+            <div style="${maRowStyle}"><input id="lighterCrypto_maUseStack5m" type="checkbox" aria-label="Enable 5m bearish full MA stack entry" style="${maToggleStyle}" ${maChecked("use_ma_stack", true)}><span>2. 5m Full MA Stack (Price &lt; MA7 &lt; MA24 &lt; MA60)</span><span class="condBadge neutral" id="lighterCrypto_maStatusStack5m">WAITING</span></div>
           </div>
           <div id="lighterCrypto_maExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
-            <strong style="font-size:12px;color:#0f172a;">Exit conditions</strong>
-            <div style="${maRowStyle}"><input id="lighterCrypto_maUseCrossExit" type="checkbox" aria-label="Enable MA cross exit condition" style="${maToggleStyle}" ${maChecked("use_convergence", true)}><span>1. MA7 / MA24 Golden Cross Reversal</span><span class="condBadge neutral" id="lighterCrypto_maStatusCrossExit">WAITING</span></div>
-            <div style="${maRowStyle}"><input id="lighterCrypto_maUseDwell" type="checkbox" aria-label="Enable dwell time limit exit condition" style="${maToggleStyle}" ${maChecked("use_dwell", true)}><span>2. 16-Bar Maximum Dwell Time Limit</span><span class="condBadge neutral" id="lighterCrypto_maStatusDwell">WAITING</span></div>
-            <div style="${maRowStyle}"><input id="lighterCrypto_maUseTrailing" type="checkbox" aria-label="Enable trailing stop ratchet exit condition" style="${maToggleStyle}" ${maChecked("use_bottoming", false)}><span>3. Trailing Stop Ratchet (≥ Trailing Stop % Drawdown)</span><span class="condBadge neutral" id="lighterCrypto_maStatusTrailing">WAITING</span></div>
+            <strong style="font-size:12px;color:#0f172a;">Exit condition</strong>
+            <div style="${maRowStyle}"><input id="lighterCrypto_maUseOppositeExit" type="checkbox" aria-label="Enable opposite bullish full MA stack exit" style="${maToggleStyle}" ${maChecked("use_opposite_stack_exit", true)}><span>Opposite 5m Full MA Stack (Price &gt; MA7 &gt; MA24 &gt; MA60)</span><span class="condBadge neutral" id="lighterCrypto_maStatusOppositeExit">WAITING</span></div>
             <small id="lighterCrypto_maStatusSource" style="color:#64748b;">PAPER · Awaiting completed-candle replay</small>
           </div>
         `;
@@ -1764,39 +1725,15 @@
         }
       } else if (mode === "ma_stack") {
         $("lighterCrypto_btnMaReplay")?.addEventListener("click", () => this.runBacktest());
-        const pairs = [
-          ["lighterCrypto_maUseStretch", "chkCondEntryMaStretch"],
-          ["lighterCrypto_maUseStack5m", "chkCondEntryMaStack5m"],
-          ["lighterCrypto_maUseStack1h", "chkCondEntryMaStack1h"],
-          ["lighterCrypto_maUseCrossExit", "chkCondExitConvergence"],
-          ["lighterCrypto_maUseDwell", "chkCondExitDwell"],
-          ["lighterCrypto_maUseTrailing", "chkCondExitBottoming"],
-        ];
-        pairs.forEach(([detailId, checkId]) => {
+        ["lighterCrypto_maUseStack5m", "lighterCrypto_maUseOppositeExit"].forEach((detailId) => {
           const detailInput = $(detailId);
-          const checkInput = lid(checkId);
-          if (detailInput && checkInput) {
-            detailInput.checked = checkInput.checked;
+          if (detailInput) {
             detailInput.addEventListener("change", () => {
-              checkInput.checked = detailInput.checked;
-              checkInput.dataset.unsaved = "true";
               detailInput.dataset.unsaved = "true";
               this.updateDeployButtonState();
               this.updateRulesMatchStatus();
               this.runBacktest();
             });
-            if (!checkInput._boundMaDetailSync) {
-              checkInput._boundMaDetailSync = true;
-              checkInput.addEventListener("change", () => {
-                const curDetail = $(detailId);
-                if (curDetail) {
-                  curDetail.checked = checkInput.checked;
-                  curDetail.dataset.unsaved = "true";
-                }
-                this.updateDeployButtonState();
-                this.updateRulesMatchStatus();
-              });
-            }
           }
         });
       } else if (mode === "multi_factor") {
@@ -2027,14 +1964,13 @@
         payload.exit_z = numeric("lighterCrypto_inpOuExitZ", Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20));
         Object.assign(payload, this.ouConditionSettings());
       } else if (mode === "ma_stack") {
-        payload.ma_stretch_min = numeric("lighterCrypto_inpMaStretchMin", Number(this.botState?.ma_stretch_min ?? 0.30));
-        payload.ma_trailing_stop = numeric("lighterCrypto_inpMaTrailingStop", Number(this.botState?.ma_trailing_stop ?? 0.15));
-        payload.use_ma_stretch = $("lighterCrypto_maUseStretch") ? $("lighterCrypto_maUseStretch").checked : (lid("chkCondEntryMaStretch")?.checked !== false);
         payload.use_ma_stack = $("lighterCrypto_maUseStack5m") ? $("lighterCrypto_maUseStack5m").checked : (lid("chkCondEntryMaStack5m") ? lid("chkCondEntryMaStack5m").checked : true);
-        payload.use_ma_stack_1h = $("lighterCrypto_maUseStack1h") ? $("lighterCrypto_maUseStack1h").checked : (lid("chkCondEntryMaStack1h")?.checked !== false);
-        payload.use_convergence = $("lighterCrypto_maUseCrossExit") ? $("lighterCrypto_maUseCrossExit").checked : (lid("chkCondExitConvergence")?.checked !== false);
-        payload.use_dwell = $("lighterCrypto_maUseDwell") ? $("lighterCrypto_maUseDwell").checked : (lid("chkCondExitDwell") ? lid("chkCondExitDwell").checked : true);
-        payload.use_bottoming = $("lighterCrypto_maUseTrailing") ? $("lighterCrypto_maUseTrailing").checked : (lid("chkCondExitBottoming")?.checked === true);
+        payload.ma_stack_opposite_only = true;
+        payload.use_opposite_stack_exit = $("lighterCrypto_maUseOppositeExit")?.checked !== false;
+        Object.assign(payload, {
+          use_ma_stretch: false, use_ma_stack_1h: false, use_convergence: false,
+          use_dwell: false, use_bottoming: false, use_base_spacing: false,
+        });
       } else if (mode === "multi_factor") {
         payload.min_consensus_votes = numeric("lighterCrypto_selFactorQuorum", Number(this.botState?.min_consensus_votes ?? 3));
       } else if (mode === "trend_pullback") {
@@ -2102,9 +2038,7 @@
           [
             "lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
             "lighterCrypto_inputLiveMaxSpread", "lighterCrypto_inpOuEntryZ", "lighterCrypto_inpOuExitZ",
-            "lighterCrypto_inpMaStretchMin", "lighterCrypto_inpMaTrailingStop",
-            "lighterCrypto_maUseStretch", "lighterCrypto_maUseStack5m", "lighterCrypto_maUseStack1h",
-            "lighterCrypto_maUseCrossExit", "lighterCrypto_maUseDwell", "lighterCrypto_maUseTrailing"
+            "lighterCrypto_maUseStack5m", "lighterCrypto_maUseOppositeExit"
           ].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
           [
             "chkCondEntryMaStretch", "chkCondEntryBase", "chkCondEntryPeak", "chkCondEntryMaStack5m",
@@ -2705,7 +2639,7 @@
         use_ma_pullback: lid("chkCondEntryPeak")?.checked !== false,
         use_ma_cross_exit: lid("chkCondExitConvergence")?.checked !== false,
         use_ma_stretch: mode === "ma_stack"
-          ? ($("lighterCrypto_maUseStretch") ? $("lighterCrypto_maUseStretch").checked : (lid("chkCondEntryMaStretch")?.checked !== false))
+          ? false
           : (lid("chkCondEntryMaStretch")?.checked !== false),
         use_base_spacing: lid("chkCondEntryBase")?.checked !== false,
         use_peak: lid("chkCondEntryPeak")?.checked !== false,
@@ -2713,17 +2647,19 @@
           ? ($("lighterCrypto_maUseStack5m") ? $("lighterCrypto_maUseStack5m").checked : (lid("chkCondEntryMaStack5m") ? lid("chkCondEntryMaStack5m").checked : true))
           : (lid("chkCondEntryMaStack5m")?.checked === true),
         use_ma_stack_1h: mode === "ma_stack"
-          ? ($("lighterCrypto_maUseStack1h") ? $("lighterCrypto_maUseStack1h").checked : (lid("chkCondEntryMaStack1h")?.checked !== false))
+          ? false
           : (lid("chkCondEntryMaStack1h")?.checked !== false),
         use_convergence: mode === "ma_stack"
-          ? ($("lighterCrypto_maUseCrossExit") ? $("lighterCrypto_maUseCrossExit").checked : (lid("chkCondExitConvergence")?.checked !== false))
+          ? false
           : (lid("chkCondExitConvergence")?.checked !== false),
         use_dwell: mode === "ma_stack"
-          ? ($("lighterCrypto_maUseDwell") ? $("lighterCrypto_maUseDwell").checked : (lid("chkCondExitDwell") ? lid("chkCondExitDwell").checked : true))
+          ? false
           : (lid("chkCondExitDwell")?.checked !== false),
         use_bottoming: mode === "ma_stack"
-          ? ($("lighterCrypto_maUseTrailing") ? $("lighterCrypto_maUseTrailing").checked : (lid("chkCondExitBottoming")?.checked === true))
+          ? false
           : (lid("chkCondExitBottoming")?.checked === true),
+        ma_stack_opposite_only: mode === "ma_stack",
+        use_opposite_stack_exit: mode === "ma_stack" ? ($("lighterCrypto_maUseOppositeExit")?.checked !== false) : true,
       };
     },
 
@@ -2789,7 +2725,7 @@
           "ou_min_abs_deviation_pp", "ou_macro_ema_span", "ou_macro_slope_bars",
           "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
           "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z"],
-        ma_stack: ["ma_stretch_min", "ma_trailing_stop"],
+        ma_stack: [],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel"],
@@ -2802,8 +2738,7 @@
           diffs.push(`${key}: ${settings[key]} ≠ ${live ?? "unknown"}`);
       });
       const defaultConditionToggles = currentMode === "ma_stack" ? {
-        use_ma_stretch: true, use_base_spacing: false, use_peak: false,
-        use_ma_stack: true, use_ma_stack_1h: true, use_convergence: true, use_dwell: true, use_bottoming: false,
+        use_ma_stack: true, use_opposite_stack_exit: true,
       } : {
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
         use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
@@ -2814,7 +2749,7 @@
       const isCross = currentMode === "golden_death_cross";
       const isMaAccel = currentMode === "ma_acceleration";
       const isMaStack = currentMode === "ma_stack";
-      const rules = [
+      const rules = isMaStack ? [] : [
         ["EntryMaStretch", isCross ? "use_golden_cross" : (isMaAccel ? "use_ma_slope" : "use_ma_stretch"), isCross ? "Golden Cross" : (isMaAccel ? "MA Slope" : (isMaStack ? "60-MA Stretch" : "Entry trigger"))],
         ["EntryBase", isCross ? "use_death_cross" : (isMaAccel ? "use_ma_accel" : "use_base_spacing"), isCross ? "Death Cross" : (isMaAccel ? "MA Curvature Accel" : "Spacing")],
         ["EntryPeak", isCross ? "use_cross_spread" : (isMaAccel ? "use_ma_pullback" : "use_peak"), isCross ? "Min Cross Spread" : (isMaAccel ? "Price Pullback" : "Peak rollover")],
@@ -2878,6 +2813,14 @@
         if (settings[key] !== liveEnabled)
           diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
       });
+      if (isMaStack) {
+        [["use_ma_stack", "5m bearish full-stack entry"],
+         ["use_opposite_stack_exit", "5m bullish opposite-stack exit"]].forEach(([key, name]) => {
+          const liveEnabled = liveParams[key] != null ? Boolean(liveParams[key]) : Boolean(defaultConditionToggles[key]);
+          if (settings[key] !== liveEnabled)
+            diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
+        });
+      }
       const matched = diffs.length === 0;
       const canAlign = Boolean(this.botState && parameterKeys[liveMode]
         && (parameterKeys[liveMode] || []).every((key) => liveParams[key] != null));
@@ -2939,12 +2882,8 @@
       }
       if (this.currentParadigm === "ma_stack") {
         const maRows = [
-          ["Stretch", "entry_stretch", "use_ma_stretch", "60-MA Stretch Discount"],
-          ["Stack5m", "entry_ma_stack", "use_ma_stack", "5m Full MA Stack"],
-          ["Stack1h", "entry_ma_stack_1h", "use_ma_stack_1h", "1h Macro Trend Support Alignment"],
-          ["CrossExit", "exit_ma_cross", "use_convergence", "MA7 / MA24 Golden Cross Reversal"],
-          ["Dwell", "exit_max_dwell", "use_dwell", "16-Bar Maximum Dwell Time Limit"],
-          ["Trailing", "exit_trailing_stop", "use_bottoming", "Trailing Stop Ratchet"],
+          ["Stack5m", "entry_ma_stack", "use_ma_stack", "Bearish 5m Full MA Stack"],
+          ["OppositeExit", "exit_opposite_stack", "use_opposite_stack_exit", "Opposite Bullish 5m Full MA Stack"],
         ];
         maRows.forEach(([id, key, toggle, detail]) => {
           const badge = $(`lighterCrypto_maStatus${id}`);
@@ -2965,9 +2904,8 @@
       const panel = $("lighterCrypto_replayConditions");
       if (!panel) return;
       const labels = {
-        ma_stack: {entry_ma_stack:"Entry · MA7/24/60 stack", entry_stretch:"Entry · MA60 stretch",
-          entry_ma_stack_1h:"Entry · 1h macro trend alignment",
-          exit_ma_cross:"Exit · MA cross", exit_trailing_stop:"Exit · trailing stop", exit_max_dwell:"Exit · 16-bar limit"},
+        ma_stack: {entry_ma_stack:"Entry · Price < MA7 < MA24 < MA60",
+          exit_opposite_stack:"Exit · Price > MA7 > MA24 > MA60"},
         multi_factor: {entry_factor_z:"Entry · Z factor", entry_factor_velocity:"Entry · velocity factor",
           entry_factor_ma:"Entry · MA distance factor", entry_factor_extremum:"Entry · local extremum factor",
           entry_quorum:"Entry · vote quorum", entry_min_z:"Entry · minimum |Z| 0.8",
@@ -3051,11 +2989,7 @@
         exit_dwell: "use_dwell",
       } : bot?.strategy_mode === "ma_stack" ? {
         entry_ma_stack: "use_ma_stack",
-        entry_stretch: "use_ma_stretch",
-        entry_ma_stack_1h: "use_ma_stack_1h",
-        exit_ma_cross: "use_convergence",
-        exit_trailing_stop: "use_bottoming",
-        exit_max_dwell: "use_dwell",
+        exit_opposite_stack: "use_opposite_stack_exit",
       } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
         entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
         entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
@@ -3067,7 +3001,7 @@
         grid:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
         custom:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
         ou_quant:["entry_z","entry_halflife","entry_min_deviation","entry_macro_trend","entry_stop_zone","exit_z","exit_emergency_stop"],
-        ma_stack:["entry_ma_stack","entry_stretch","entry_ma_stack_1h","exit_ma_cross","exit_trailing_stop","exit_max_dwell"],
+        ma_stack:["entry_ma_stack","exit_opposite_stack"],
         multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","entry_ma_stack_1h","exit_consensus","exit_convergence","exit_max_dwell"],
         trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
         ma_acceleration:["entry_ma_slope","entry_ma_accel","entry_ma_pullback","entry_ma_stack_1h","exit_ma_cross"],
@@ -3125,8 +3059,9 @@
         });
       }
       const defaultConditionToggles = liveMode === "ma_stack" ? {
-        use_ma_stretch: true, use_base_spacing: false, use_peak: false,
-        use_ma_stack: true, use_ma_stack_1h: true, use_convergence: true, use_dwell: true, use_bottoming: false,
+        use_ma_stretch: false, use_base_spacing: false, use_peak: false,
+        use_ma_stack: true, use_ma_stack_1h: false, use_convergence: false, use_dwell: false, use_bottoming: false,
+        ma_stack_opposite_only: true, use_opposite_stack_exit: true,
       } : {
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
         use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
@@ -3209,37 +3144,13 @@
         }
       }
       if (liveMode === "ma_stack") {
-        if (params.ma_stretch_min != null && $("lighterCrypto_inpMaStretchMin")) {
-          $("lighterCrypto_inpMaStretchMin").value = String(params.ma_stretch_min);
-          $("lighterCrypto_inpMaStretchMin")._userModified = false;
-        }
-        if (params.ma_trailing_stop != null && $("lighterCrypto_inpMaTrailingStop")) {
-          $("lighterCrypto_inpMaTrailingStop").value = String(params.ma_trailing_stop);
-          $("lighterCrypto_inpMaTrailingStop")._userModified = false;
-        }
-        if ($("lighterCrypto_maUseStretch") && params.use_ma_stretch != null) {
-          $("lighterCrypto_maUseStretch").checked = Boolean(params.use_ma_stretch);
-          $("lighterCrypto_maUseStretch")._userModified = false;
-        }
         if ($("lighterCrypto_maUseStack5m") && params.use_ma_stack != null) {
           $("lighterCrypto_maUseStack5m").checked = Boolean(params.use_ma_stack);
           $("lighterCrypto_maUseStack5m")._userModified = false;
         }
-        if ($("lighterCrypto_maUseStack1h") && params.use_ma_stack_1h != null) {
-          $("lighterCrypto_maUseStack1h").checked = Boolean(params.use_ma_stack_1h);
-          $("lighterCrypto_maUseStack1h")._userModified = false;
-        }
-        if ($("lighterCrypto_maUseCrossExit") && params.use_convergence != null) {
-          $("lighterCrypto_maUseCrossExit").checked = Boolean(params.use_convergence);
-          $("lighterCrypto_maUseCrossExit")._userModified = false;
-        }
-        if ($("lighterCrypto_maUseDwell") && params.use_dwell != null) {
-          $("lighterCrypto_maUseDwell").checked = Boolean(params.use_dwell);
-          $("lighterCrypto_maUseDwell")._userModified = false;
-        }
-        if ($("lighterCrypto_maUseTrailing") && params.use_bottoming != null) {
-          $("lighterCrypto_maUseTrailing").checked = Boolean(params.use_bottoming);
-          $("lighterCrypto_maUseTrailing")._userModified = false;
+        if ($("lighterCrypto_maUseOppositeExit") && params.use_opposite_stack_exit != null) {
+          $("lighterCrypto_maUseOppositeExit").checked = Boolean(params.use_opposite_stack_exit);
+          $("lighterCrypto_maUseOppositeExit")._userModified = false;
         }
       }
       if (liveMode === "multi_factor") {

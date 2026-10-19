@@ -46,6 +46,7 @@ DEFAULT_STATE = {
     "trend_macro_window": 24, "trend_pullback_dist": 0.15, "trend_tp_dist": 0.05, "trend_slope_min": 0.002,
     "use_ma_stretch": True, "use_base_spacing": True, "use_peak": True, "use_ma_stack": False,
     "use_ma_stack_1h": True,
+    "ma_stack_opposite_only": True, "use_opposite_stack_exit": True,
     "ma_accel_period": 24, "ma_accel_min_slope": 0.0, "ma_accel_min_accel": 0.0,
     "use_ma_slope": True, "use_ma_accel": True, "use_ma_pullback": True, "use_ma_cross_exit": True,
     "fast_ma_period": 9, "slow_ma_period": 21, "min_cross_spread_bps": 0.0,
@@ -86,6 +87,18 @@ class LighterCryptoBot:
             if not isinstance(saved, dict):
                 raise ValueError("State must be an object")
             self.state.update({key: saved[key] for key in DEFAULT_STATE if key in saved})
+            if self.state.get("strategy_mode") == "ma_stack":
+                self.state.update(
+                    ma_stack_opposite_only=True,
+                    use_ma_stretch=False,
+                    use_ma_stack_1h=False,
+                    use_convergence=False,
+                    use_dwell=False,
+                    use_bottoming=False,
+                    use_base_spacing=False,
+                )
+                if "ma_stack_opposite_only" not in saved:
+                    self.state.update(use_ma_stack=True, use_opposite_stack_exit=True)
             if (self.state["selected_symbol"] not in MARKETS or
                     self.state["strategy_mode"] not in LIVE_STRATEGIES or
                     self.state["strategy_interval"] not in INTERVAL_SECONDS or
@@ -129,6 +142,8 @@ class LighterCryptoBot:
                           "use_peak": bool(self.state.get("use_peak", True)),
                           "use_ma_stack": bool(self.state.get("use_ma_stack", False)),
                           "use_ma_stack_1h": bool(self.state.get("use_ma_stack_1h", True)),
+                          "ma_stack_opposite_only": bool(self.state.get("ma_stack_opposite_only", True)),
+                          "use_opposite_stack_exit": bool(self.state.get("use_opposite_stack_exit", True)),
                           "use_convergence": bool(self.state.get("use_convergence", True)),
                           "use_dwell": bool(self.state.get("use_dwell", True)),
                           "use_bottoming": bool(self.state.get("use_bottoming", False)),
@@ -284,6 +299,7 @@ class LighterCryptoBot:
             "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
+            "ma_stack_opposite_only", "use_opposite_stack_exit",
             "long_multiplier", "short_multiplier", "gross_leverage_cap",
         }
         unknown = set(values) - permitted
@@ -301,6 +317,7 @@ class LighterCryptoBot:
                         "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
                         "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
                         "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming",
+                        "ma_stack_opposite_only", "use_opposite_stack_exit",
                         "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
                         "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit"}:
                 candidate[key] = bool(value)
@@ -312,6 +329,16 @@ class LighterCryptoBot:
             raise ValueError(f"Unsupported live strategy: {candidate['strategy_mode']}")
         if candidate["strategy_interval"] not in INTERVAL_SECONDS:
             raise ValueError("Unsupported candle interval")
+        if candidate["strategy_mode"] == "ma_stack":
+            candidate.update(
+                ma_stack_opposite_only=True,
+                use_ma_stretch=False,
+                use_ma_stack_1h=False,
+                use_convergence=False,
+                use_dwell=False,
+                use_bottoming=False,
+                use_base_spacing=False,
+            )
         bounds = {
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0),
             "notional_usd": (10.0, 500.0), "max_tranches": (1, 5),

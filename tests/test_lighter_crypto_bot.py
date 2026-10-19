@@ -328,6 +328,35 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(evaluation["ma24"], (2300.0 + 110.0) / 24, places=4)
         self.assertAlmostEqual(evaluation["ma60"], (5900.0 + 110.0) / 60, places=4)
 
+    async def test_tab5_ma_stack_uses_bearish_entry_and_inverse_stack_exit_only(self):
+        from backend.lighter_strategy import evaluate_strategy_signal
+
+        bearish = [160.0 - i for i in range(61)]
+        entry, side, no_exit, entry_eval = evaluate_strategy_signal(
+            "ma_stack", bearish,
+            {"ma_stack_opposite_only": True, "use_ma_stack": True,
+             "use_opposite_stack_exit": True, "use_ma_stretch": True,
+             "use_ma_stack_1h": True, "use_convergence": True,
+             "use_dwell": True, "use_bottoming": True},
+        )
+        self.assertTrue(entry)
+        self.assertEqual(side, 1)
+        self.assertFalse(no_exit)
+        self.assertEqual(set(entry_eval["condition_pass"]),
+                         {"entry_ma_stack", "exit_opposite_stack"})
+
+        bullish = [100.0 + i for i in range(61)]
+        blocked_short, side, exit_signal, exit_eval = evaluate_strategy_signal(
+            "ma_stack", bullish,
+            {"ma_stack_opposite_only": True, "use_ma_stack": True,
+             "use_opposite_stack_exit": True, "use_dwell": True},
+            position_side=1, entry_price=100.0, held_bars=1,
+        )
+        self.assertFalse(blocked_short)
+        self.assertEqual(side, 1)
+        self.assertTrue(exit_signal)
+        self.assertTrue(exit_eval["condition_pass"]["exit_opposite_stack"])
+
     async def test_update_config_ma_stack_toggles(self):
         updated = await self.bot.configure({
             "strategy_mode": "ma_stack",
@@ -345,8 +374,10 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(updated["use_ma_stack"])
         self.assertFalse(updated["use_ma_stack_1h"])
         self.assertFalse(updated["use_convergence"])
-        self.assertTrue(updated["use_dwell"])
-        self.assertTrue(updated["use_bottoming"])
+        self.assertFalse(updated["use_dwell"])
+        self.assertFalse(updated["use_bottoming"])
+        self.assertTrue(updated["ma_stack_opposite_only"])
+        self.assertTrue(updated["use_opposite_stack_exit"])
         self.assertAlmostEqual(updated["ma_stretch_min"], 0.45)
     async def test_insignificant_dust_position_does_not_block_trading(self):
         # Dust position (-0.0001 BTC, notional $0.01 < $5.0) on exchange does not raise mismatch

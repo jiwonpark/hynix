@@ -70,6 +70,32 @@ class TestCryptoTab(unittest.TestCase):
         self.assertEqual(result["open_positions"][0]["entry_time"], bars[-1]["time"])
         self.assertEqual(result["open_positions"][0]["side"], -1)
 
+    def test_tab5_ma_stack_paper_exits_only_on_opposite_full_stack(self):
+        from backend.server import _run_crypto_backtest_sync
+
+        values = [160.0 - i for i in range(61)] + [101.0 + i for i in range(60)]
+        bars = [{"time": 1000 + i * 300, "value": value}
+                for i, value in enumerate(values)]
+        result = _run_crypto_backtest_sync(
+            bars, True, strategy_mode="ma_stack", market_source="lighter",
+            use_ma_stack=True, ma_stack_opposite_only=True,
+            use_opposite_stack_exit=True,
+            # These legacy switches must not affect Tab 5's simplified rule.
+            use_ma_stretch=True, use_ma_stack_1h=True,
+            use_convergence=True, use_dwell=True, use_bottoming=True,
+            interval_seconds=300,
+        )
+        self.assertGreaterEqual(len(result["trades"]), 1)
+        first = result["trades"][0]
+        self.assertEqual(first["side"], 1)
+        self.assertEqual(first["reason"], "opposite_stack")
+        exit_index = next(i for i, bar in enumerate(bars) if bar["time"] == first["exit_time"])
+        price = values[exit_index]
+        ma7 = sum(values[exit_index - 6:exit_index + 1]) / 7
+        ma24 = sum(values[exit_index - 23:exit_index + 1]) / 24
+        ma60 = sum(values[exit_index - 59:exit_index + 1]) / 60
+        self.assertTrue(price > ma7 > ma24 > ma60)
+
     def test_crypto_live_auth_and_paper_distinction(self):
         script = (ROOT / "crypto-tab.js").read_text(encoding="utf-8")
         server = (ROOT / "backend/server.py").read_text(encoding="utf-8")
