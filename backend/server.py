@@ -44,6 +44,8 @@ from .lighter_bot import LighterPairBot
 from .lighter_strategy import (
     _macro_trend_aligned,
     macro_trend_aligned_series,
+    compute_ma_diff_series,
+    check_ma_diff_hook,
     evaluate_ou_signals,
     evaluate_grid_signals,
     evaluate_ma_acceleration_signals,
@@ -1671,6 +1673,9 @@ def _run_crypto_backtest_sync(
     use_bottoming: bool = False,
     ma_stack_opposite_only: bool = False,
     use_opposite_stack_exit: bool = True,
+    use_ma_diff_hook: bool = False,
+    use_ma_diff_exit: bool = False,
+    min_diff_bars: int = 2,
     ou_halflife_max: float = 8.0,
     ou_stop_z: float = 3.5,
     ou_min_abs_deviation_pp: float = 0.25,
@@ -1844,6 +1849,7 @@ def _run_crypto_backtest_sync(
             })
 
     elif strategy_mode == "ma_stack":
+        all_diffs = compute_ma_diff_series([b["value"] for b in bars])
         for index, bar in enumerate(bars):
             if index < 60:
                 continue
@@ -1865,25 +1871,40 @@ def _run_crypto_backtest_sync(
             bullish_stack = bar["value"] > ma7 > ma24 > ma60
             candidate_side = 1 if bearish_stack else -1
             macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
+            diff_entry_hook, diff_exit_hook = check_ma_diff_hook(all_diffs, index, min_diff_bars=min_diff_bars)
             stack_pass = ((bearish_stack if ma_stack_opposite_only else (bearish_stack or bullish_stack))
                           if use_ma_stack else (False if ma_stack_opposite_only else True))
             stretch_pass = stretch_pct >= ma_stretch_min if use_ma_stretch else True
             macro_pass = macro_aligned if use_ma_stack_1h else True
+            diff_hook_pass = (diff_entry_hook if candidate_side > 0 else diff_exit_hook) if use_ma_diff_hook else True
 
-            latest_conditions = ({
-                "entry_ma_stack": stack_pass,
-                "exit_opposite_stack": None,
-            } if ma_stack_opposite_only else {
-                "entry_ma_stack": stack_pass,
-                "entry_stretch": stretch_pass,
-                "entry_ma_stack_1h": macro_pass,
-                "exit_ma_cross": None,
-                "exit_trailing_stop": None,
-                "exit_max_dwell": None,
-            })
+            if ma_stack_opposite_only:
+                entry_conditions = []
+                if use_ma_stack:
+                    entry_conditions.append(bearish_stack)
+                if use_ma_diff_hook:
+                    entry_conditions.append(diff_entry_hook)
+                entry_signal = bool(entry_conditions and all(entry_conditions))
+                latest_conditions = {
+                    "entry_ma_stack": bearish_stack if use_ma_stack else None,
+                    "entry_ma_diff_hook": diff_entry_hook if use_ma_diff_hook else None,
+                    "exit_opposite_stack": None,
+                    "exit_ma_diff_hook": None,
+                }
+            else:
+                entry_signal = bool(stack_pass and stretch_pass and macro_pass and diff_hook_pass)
+                latest_conditions = {
+                    "entry_ma_stack": stack_pass,
+                    "entry_stretch": stretch_pass,
+                    "entry_macro_trend": macro_pass,
+                    "entry_ma_stack_1h": macro_pass,
+                    "entry_ma_diff_hook": diff_hook_pass if use_ma_diff_hook else None,
+                    "exit_ma_cross": None,
+                    "exit_trailing_stop": None,
+                    "exit_max_dwell": None,
+                    "exit_ma_diff_hook": None,
+                }
             latest_condition_time = int(bar["time"])
-            entry_signal = (bool(stack_pass) if ma_stack_opposite_only
-                            else bool(stack_pass and stretch_pass and macro_pass))
 
             if entry_signal:
                 entry_signals.append({
@@ -1906,22 +1927,34 @@ def _run_crypto_backtest_sync(
                 exit_cross_pass = golden_cross if use_convergence else False
                 exit_trail_pass = trailing_stop if use_bottoming else False
                 exit_dwell_pass = dwell_exit if use_dwell else False
+                exit_diff_pass = (diff_exit_hook if position["side"] > 0 else diff_entry_hook) if use_ma_diff_exit else False
 
                 if ma_stack_opposite_only:
-                    latest_conditions.update(exit_opposite_stack=opposite_stack)
-                    should_exit = bool(use_opposite_stack_exit and opposite_stack)
+                    latest_conditions.update(
+                        exit_opposite_stack=opposite_stack if use_opposite_stack_exit else None,
+                        exit_ma_diff_hook=diff_exit_hook if use_ma_diff_exit else None,
+                    )
+                    exit_reasons = []
+                    if use_opposite_stack_exit and opposite_stack:
+                        exit_reasons.append("opposite_stack")
+                    if use_ma_diff_exit and diff_exit_hook:
+                        exit_reasons.append("diff_hook_exit")
+                    should_exit = bool(exit_reasons)
+                    exit_reason = "/".join(exit_reasons) if exit_reasons else "opposite_stack"
                 else:
                     latest_conditions.update(exit_ma_cross=golden_cross,
                                              exit_trailing_stop=trailing_stop,
-                                             exit_max_dwell=dwell_exit)
-                    should_exit = exit_cross_pass or exit_trail_pass or exit_dwell_pass or index == len(bars) - 1
+                                             exit_max_dwell=dwell_exit,
+                                             exit_ma_diff_hook=exit_diff_pass if use_ma_diff_exit else None)
+                    should_exit = exit_cross_pass or exit_trail_pass or exit_dwell_pass or exit_diff_pass or index == len(bars) - 1
+                    exit_reason = ("diff_hook_exit" if exit_diff_pass else
+                                   ("golden_cross" if golden_cross else ("trailing_stop" if trailing_stop else "max_dwell")))
                 if should_exit:
                     pnl_pct = current_pnl
                     trades.append({
                         "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],
                         "exit": bar["value"], "exit_time": bar["time"], "pnl_pct": round(pnl_pct, 4),
-                        "reason": ("opposite_stack" if ma_stack_opposite_only else
-                                   ("golden_cross" if golden_cross else ("trailing_stop" if trailing_stop else "max_dwell")))
+                        "reason": exit_reason,
                     })
                     position = None
 
@@ -2388,6 +2421,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_base_spacing: bool = True, use_ma_stack: bool = False, use_ma_stack_1h: bool = True, use_convergence: bool = True,
                               use_dwell: bool = True, use_bottoming: bool = False,
                               ma_stack_opposite_only: bool = False, use_opposite_stack_exit: bool = True,
+                              use_ma_diff_hook: bool = False, use_ma_diff_exit: bool = False, min_diff_bars: int = 2,
                               ou_halflife_max: float = 8.0, ou_stop_z: float = 3.5,
                               ou_min_abs_deviation_pp: float = 0.25,
                               ou_macro_ema_span: int = 60, ou_macro_slope_bars: int = 12,
@@ -2429,6 +2463,9 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         use_convergence=use_convergence, use_dwell=use_dwell, use_bottoming=use_bottoming,
         ma_stack_opposite_only=ma_stack_opposite_only,
         use_opposite_stack_exit=use_opposite_stack_exit,
+        use_ma_diff_hook=use_ma_diff_hook,
+        use_ma_diff_exit=use_ma_diff_exit,
+        min_diff_bars=min_diff_bars,
         ou_halflife_max=ou_halflife_max, ou_stop_z=ou_stop_z,
         ou_min_abs_deviation_pp=ou_min_abs_deviation_pp,
         ou_macro_ema_span=ou_macro_ema_span, ou_macro_slope_bars=ou_macro_slope_bars,

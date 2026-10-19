@@ -1458,6 +1458,8 @@
               <input id="crypto_inpMaStretchMin" type="number" step="0.05" value="0.30" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Trailing Stop %:</span>
               <input id="crypto_inpMaTrailingStop" type="number" step="0.05" value="0.15" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Min Neg Bars:</span>
+              <input id="crypto_inpMaMinDiffBars" type="number" min="1" max="10" step="1" value="2" style="width:50px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;" aria-label="Minimum consecutive bars in MA diff series">
               <button id="crypto_btnMaReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
             </div>
           </div>
@@ -1770,6 +1772,11 @@
         }
       } else if (mode === "ma_stack") {
         $("crypto_btnMaReplay")?.addEventListener("click", () => this.runBacktest());
+        $("crypto_inpMaMinDiffBars")?.addEventListener("change", () => {
+          this.updateDeployButtonState();
+          this.updateRulesMatchStatus();
+          this.runBacktest();
+        });
       } else if (mode === "multi_factor") {
         $("crypto_btnFactorReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "trend_pullback") {
@@ -2000,6 +2007,9 @@
       } else if (mode === "ma_stack") {
         payload.ma_stretch_min = numeric("crypto_inpMaStretchMin", Number(this.botState?.ma_stretch_min ?? 0.30));
         payload.ma_trailing_stop = numeric("crypto_inpMaTrailingStop", Number(this.botState?.ma_trailing_stop ?? 0.15));
+        payload.min_diff_bars = numeric("crypto_inpMaMinDiffBars", Number(this.botState?.min_diff_bars ?? 2));
+        payload.use_ma_diff_hook = true;
+        payload.use_ma_diff_exit = true;
       } else if (mode === "multi_factor") {
         payload.min_consensus_votes = numeric("crypto_selFactorQuorum", Number(this.botState?.min_consensus_votes ?? 3));
       } else if (mode === "trend_pullback") {
@@ -2839,6 +2849,9 @@
         use_convergence: lid("chkCondExitConvergence")?.checked !== false,
         use_dwell: lid("chkCondExitDwell")?.checked !== false,
         use_bottoming: lid("chkCondExitBottoming")?.checked === true,
+        use_ma_diff_hook: mode === "ma_stack",
+        use_ma_diff_exit: mode === "ma_stack",
+        min_diff_bars: mode === "ma_stack" ? (Number($("crypto_inpMaMinDiffBars")?.value) || 2) : 2,
       };
     },
 
@@ -2904,7 +2917,7 @@
           "ou_min_abs_deviation_pp", "ou_macro_ema_span", "ou_macro_slope_bars",
           "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
           "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z"],
-        ma_stack: ["ma_stretch_min", "ma_trailing_stop"],
+        ma_stack: ["ma_stretch_min", "ma_trailing_stop", "min_diff_bars"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel"],
@@ -3043,8 +3056,10 @@
       if (!panel) return;
       const labels = {
         ma_stack: {entry_ma_stack:"Entry · MA7/24/60 stack", entry_stretch:"Entry · MA60 stretch",
+          entry_ma_diff_hook:"Entry · MA diff turnaround (hook)",
           entry_ma_stack_1h:"Entry · 1h macro trend alignment",
-          exit_ma_cross:"Exit · MA cross", exit_trailing_stop:"Exit · trailing stop", exit_max_dwell:"Exit · 16-bar limit"},
+          exit_ma_cross:"Exit · MA cross", exit_trailing_stop:"Exit · trailing stop", exit_max_dwell:"Exit · 16-bar limit",
+          exit_ma_diff_hook:"Exit · MA diff turnaround (hook)"},
         multi_factor: {entry_factor_z:"Entry · Z factor", entry_factor_velocity:"Entry · velocity factor",
           entry_factor_ma:"Entry · MA distance factor", entry_factor_extremum:"Entry · local extremum factor",
           entry_quorum:"Entry · vote quorum", entry_min_z:"Entry · minimum |Z| 0.8",
@@ -3126,6 +3141,12 @@
         entry_ma_stack_1h: "use_ma_stack_1h",
         exit_cross: "use_cross_exit",
         exit_dwell: "use_dwell",
+      } : bot?.strategy_mode === "ma_stack" ? {
+        entry_ma_stack: "use_ma_stack",
+        entry_ma_diff_hook: "use_ma_diff_hook",
+        entry_ma_stack_1h: "use_ma_stack_1h",
+        exit_ma_cross: "use_ma_cross_exit",
+        exit_ma_diff_hook: "use_ma_diff_exit",
       } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
         entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
         entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
@@ -3137,7 +3158,7 @@
         grid:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
         custom:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
         ou_quant:["entry_z","entry_halflife","entry_min_deviation","entry_macro_trend","entry_stop_zone","exit_z","exit_emergency_stop"],
-        ma_stack:["entry_ma_stack","entry_stretch","entry_ma_stack_1h","exit_ma_cross","exit_trailing_stop","exit_max_dwell"],
+        ma_stack:["entry_ma_stack","entry_stretch","entry_ma_diff_hook","entry_ma_stack_1h","exit_ma_cross","exit_trailing_stop","exit_max_dwell","exit_ma_diff_hook"],
         multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","entry_ma_stack_1h","exit_consensus","exit_convergence","exit_max_dwell"],
         trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
         ma_acceleration:["entry_ma_slope","entry_ma_accel","entry_ma_pullback","entry_ma_stack_1h","exit_ma_cross"],
@@ -3283,6 +3304,10 @@
         if (params.ma_trailing_stop != null && $("crypto_inpMaTrailingStop")) {
           $("crypto_inpMaTrailingStop").value = String(params.ma_trailing_stop);
           $("crypto_inpMaTrailingStop")._userModified = false;
+        }
+        if (params.min_diff_bars != null && $("crypto_inpMaMinDiffBars")) {
+          $("crypto_inpMaMinDiffBars").value = String(params.min_diff_bars);
+          $("crypto_inpMaMinDiffBars")._userModified = false;
         }
       }
       if (liveMode === "multi_factor") {

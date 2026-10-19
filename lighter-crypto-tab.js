@@ -1478,27 +1478,33 @@
         };
         const maRowStyle = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
         const maToggleStyle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
+        const maNumberStyle = "display:inline-block;width:54px;height:26px;margin:0;padding:2px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;";
+        const minDiffBars = Number(liveMa.min_diff_bars ?? 2);
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div>
               <div style="display:flex;align-items:center;gap:8px;">
                 <span style="font-size:18px;">📈</span>
-                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">5m Full-Stack Reversal Tracker</strong>
+                <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">5m Full-Stack Reversal & MA Diff Inflection Tracker</strong>
                 <span style="background:#fef3c7;color:#b45309;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #fde68a;">BEARISH ENTRY · BULLISH EXIT</span>
               </div>
-              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Enters long only when Price &lt; MA7 &lt; MA24 &lt; MA60; exits only when the completed 5m candle forms the exact opposite stack.</p>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Enters long on bearish stack and/or MA diff deceleration hook (Δ(7-24) less negative after series of more negative bars); exits on opposite stack or diff hook (less positive).</p>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:11px;font-weight:700;color:#475569;">Min Neg Bars:</span>
+              <input id="lighterCrypto_maMinDiffBars" type="number" min="1" max="10" step="1" value="${minDiffBars}" style="${maNumberStyle}" aria-label="Minimum consecutive bars in MA diff series">
               <button id="lighterCrypto_btnMaReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
             </div>
           </div>
           <div id="lighterCrypto_maEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
-            <strong style="font-size:12px;color:#0f172a;">Entry condition · applies identically to paper replay and the deployed live bot</strong>
+            <strong style="font-size:12px;color:#0f172a;">Entry conditions · apply identically to paper replay and the deployed live bot</strong>
             <div style="${maRowStyle}"><input id="lighterCrypto_maUseStack5m" type="checkbox" aria-label="Enable 5m bearish full MA stack entry" style="${maToggleStyle}" ${maChecked("use_ma_stack", true)}><span>2. 5m Full MA Stack (Price &lt; MA7 &lt; MA24 &lt; MA60)</span><span class="condBadge neutral" id="lighterCrypto_maStatusStack5m">WAITING</span></div>
+            <div style="${maRowStyle}"><input id="lighterCrypto_maUseDiffHook" type="checkbox" aria-label="Enable MA diff inflection hook entry" style="${maToggleStyle}" ${maChecked("use_ma_diff_hook", true)}><span>3. MA Diff Turnaround (Δ(7-24) less negative for 1st time after series of more negative)</span><span class="condBadge neutral" id="lighterCrypto_maStatusDiffHook">WAITING</span></div>
           </div>
           <div id="lighterCrypto_maExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
-            <strong style="font-size:12px;color:#0f172a;">Exit condition</strong>
+            <strong style="font-size:12px;color:#0f172a;">Exit conditions</strong>
             <div style="${maRowStyle}"><input id="lighterCrypto_maUseOppositeExit" type="checkbox" aria-label="Enable opposite bullish full MA stack exit" style="${maToggleStyle}" ${maChecked("use_opposite_stack_exit", true)}><span>Opposite 5m Full MA Stack (Price &gt; MA7 &gt; MA24 &gt; MA60)</span><span class="condBadge neutral" id="lighterCrypto_maStatusOppositeExit">WAITING</span></div>
+            <div style="${maRowStyle}"><input id="lighterCrypto_maUseDiffExit" type="checkbox" aria-label="Enable MA diff inflection hook exit" style="${maToggleStyle}" ${maChecked("use_ma_diff_exit", true)}><span>MA Diff Turnaround Exit (Δ(7-24) less positive for 1st time after series of more positive)</span><span class="condBadge neutral" id="lighterCrypto_maStatusDiffExit">WAITING</span></div>
             <small id="lighterCrypto_maStatusSource" style="color:#64748b;">PAPER · Awaiting completed-candle replay</small>
           </div>
         `;
@@ -1763,7 +1769,7 @@
         }
       } else if (mode === "ma_stack") {
         $("lighterCrypto_btnMaReplay")?.addEventListener("click", () => this.runBacktest());
-        ["lighterCrypto_maUseStack5m", "lighterCrypto_maUseOppositeExit"].forEach((detailId) => {
+        ["lighterCrypto_maUseStack5m", "lighterCrypto_maUseDiffHook", "lighterCrypto_maUseOppositeExit", "lighterCrypto_maUseDiffExit"].forEach((detailId) => {
           const detailInput = $(detailId);
           if (detailInput) {
             detailInput.addEventListener("change", () => {
@@ -1774,6 +1780,15 @@
             });
           }
         });
+        const minBarsInput = $("lighterCrypto_maMinDiffBars");
+        if (minBarsInput) {
+          minBarsInput.addEventListener("change", () => {
+            minBarsInput.dataset.unsaved = "true";
+            this.updateDeployButtonState();
+            this.updateRulesMatchStatus();
+            this.runBacktest();
+          });
+        }
       } else if (mode === "multi_factor") {
         $("lighterCrypto_btnFactorReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "trend_pullback") {
@@ -2005,6 +2020,9 @@
         payload.use_ma_stack = $("lighterCrypto_maUseStack5m") ? $("lighterCrypto_maUseStack5m").checked : (lid("chkCondEntryMaStack5m") ? lid("chkCondEntryMaStack5m").checked : true);
         payload.ma_stack_opposite_only = true;
         payload.use_opposite_stack_exit = $("lighterCrypto_maUseOppositeExit")?.checked !== false;
+        payload.use_ma_diff_hook = $("lighterCrypto_maUseDiffHook") ? $("lighterCrypto_maUseDiffHook").checked : true;
+        payload.use_ma_diff_exit = $("lighterCrypto_maUseDiffExit") ? $("lighterCrypto_maUseDiffExit").checked : true;
+        payload.min_diff_bars = numeric("lighterCrypto_maMinDiffBars", Number(this.botState?.strategy_params?.min_diff_bars ?? 2));
         Object.assign(payload, {
           use_ma_stretch: false, use_ma_stack_1h: false, use_convergence: false,
           use_dwell: false, use_bottoming: false, use_base_spacing: false,
@@ -2868,6 +2886,9 @@
           : (lid("chkCondExitBottoming")?.checked === true),
         ma_stack_opposite_only: mode === "ma_stack",
         use_opposite_stack_exit: mode === "ma_stack" ? ($("lighterCrypto_maUseOppositeExit")?.checked !== false) : true,
+        use_ma_diff_hook: mode === "ma_stack" ? ($("lighterCrypto_maUseDiffHook") ? $("lighterCrypto_maUseDiffHook").checked : true) : false,
+        use_ma_diff_exit: mode === "ma_stack" ? ($("lighterCrypto_maUseDiffExit") ? $("lighterCrypto_maUseDiffExit").checked : true) : false,
+        min_diff_bars: mode === "ma_stack" ? (Number($("lighterCrypto_maMinDiffBars")?.value) || 2) : 2,
       };
     },
 
@@ -2947,6 +2968,7 @@
       });
       const defaultConditionToggles = currentMode === "ma_stack" ? {
         use_ma_stack: true, use_opposite_stack_exit: true,
+        use_ma_diff_hook: true, use_ma_diff_exit: true, min_diff_bars: 2,
       } : {
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
         use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
@@ -3023,7 +3045,9 @@
       });
       if (isMaStack) {
         [["use_ma_stack", "5m bearish full-stack entry"],
-         ["use_opposite_stack_exit", "5m bullish opposite-stack exit"]].forEach(([key, name]) => {
+         ["use_ma_diff_hook", "MA diff turnaround entry"],
+         ["use_opposite_stack_exit", "5m bullish opposite-stack exit"],
+         ["use_ma_diff_exit", "MA diff turnaround exit"]].forEach(([key, name]) => {
           const liveEnabled = liveParams[key] != null ? Boolean(liveParams[key]) : Boolean(defaultConditionToggles[key]);
           if (settings[key] !== liveEnabled)
             diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
@@ -3091,7 +3115,9 @@
       if (this.currentParadigm === "ma_stack") {
         const maRows = [
           ["Stack5m", "entry_ma_stack", "use_ma_stack", "Bearish 5m Full MA Stack"],
+          ["DiffHook", "entry_ma_diff_hook", "use_ma_diff_hook", "MA Diff Hook (Δ(7-24) less negative)"],
           ["OppositeExit", "exit_opposite_stack", "use_opposite_stack_exit", "Opposite Bullish 5m Full MA Stack"],
+          ["DiffExit", "exit_ma_diff_hook", "use_ma_diff_exit", "MA Diff Hook Exit (Δ(7-24) less positive)"],
         ];
         maRows.forEach(([id, key, toggle, detail]) => {
           const badge = $(`lighterCrypto_maStatus${id}`);
@@ -3113,7 +3139,9 @@
       if (!panel) return;
       const labels = {
         ma_stack: {entry_ma_stack:"Entry · Price < MA7 < MA24 < MA60",
-          exit_opposite_stack:"Exit · Price > MA7 > MA24 > MA60"},
+          entry_ma_diff_hook:"Entry · MA Diff Hook (Δ(7-24) turned less negative)",
+          exit_opposite_stack:"Exit · Price > MA7 > MA24 > MA60",
+          exit_ma_diff_hook:"Exit · MA Diff Hook Exit (Δ(7-24) turned less positive)"},
         multi_factor: {entry_factor_z:"Entry · Z factor", entry_factor_velocity:"Entry · velocity factor",
           entry_factor_ma:"Entry · MA distance factor", entry_factor_extremum:"Entry · local extremum factor",
           entry_quorum:"Entry · vote quorum", entry_min_z:"Entry · minimum |Z| 0.8",
@@ -3197,7 +3225,9 @@
         exit_dwell: "use_dwell",
       } : bot?.strategy_mode === "ma_stack" ? {
         entry_ma_stack: "use_ma_stack",
+        entry_ma_diff_hook: "use_ma_diff_hook",
         exit_opposite_stack: "use_opposite_stack_exit",
+        exit_ma_diff_hook: "use_ma_diff_exit",
       } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
         entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
         entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
@@ -3209,7 +3239,7 @@
         grid:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
         custom:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
         ou_quant:["entry_z","entry_halflife","entry_min_deviation","entry_macro_trend","entry_stop_zone","exit_z","exit_emergency_stop"],
-        ma_stack:["entry_ma_stack","exit_opposite_stack"],
+        ma_stack:["entry_ma_stack","entry_ma_diff_hook","exit_opposite_stack","exit_ma_diff_hook"],
         multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","entry_ma_stack_1h","exit_consensus","exit_convergence","exit_max_dwell"],
         trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
         ma_acceleration:["entry_ma_slope","entry_ma_accel","entry_ma_pullback","entry_ma_stack_1h","exit_ma_cross"],
@@ -3356,9 +3386,21 @@
           $("lighterCrypto_maUseStack5m").checked = Boolean(params.use_ma_stack);
           $("lighterCrypto_maUseStack5m")._userModified = false;
         }
+        if ($("lighterCrypto_maUseDiffHook") && params.use_ma_diff_hook != null) {
+          $("lighterCrypto_maUseDiffHook").checked = Boolean(params.use_ma_diff_hook);
+          $("lighterCrypto_maUseDiffHook")._userModified = false;
+        }
         if ($("lighterCrypto_maUseOppositeExit") && params.use_opposite_stack_exit != null) {
           $("lighterCrypto_maUseOppositeExit").checked = Boolean(params.use_opposite_stack_exit);
           $("lighterCrypto_maUseOppositeExit")._userModified = false;
+        }
+        if ($("lighterCrypto_maUseDiffExit") && params.use_ma_diff_exit != null) {
+          $("lighterCrypto_maUseDiffExit").checked = Boolean(params.use_ma_diff_exit);
+          $("lighterCrypto_maUseDiffExit")._userModified = false;
+        }
+        if ($("lighterCrypto_maMinDiffBars") && params.min_diff_bars != null) {
+          $("lighterCrypto_maMinDiffBars").value = String(params.min_diff_bars);
+          $("lighterCrypto_maMinDiffBars")._userModified = false;
         }
       }
       if (liveMode === "multi_factor") {

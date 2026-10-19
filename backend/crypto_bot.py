@@ -44,6 +44,7 @@ DEFAULT_STATE = {
     "trend_macro_window": 24, "trend_pullback_dist": 0.15, "trend_tp_dist": 0.05, "trend_slope_min": 0.002,
     "use_ma_stretch": True, "use_base_spacing": True, "use_peak": True, "use_ma_stack": False,
     "use_ma_stack_1h": True,
+    "use_ma_diff_hook": True, "use_ma_diff_exit": True, "min_diff_bars": 2,
     "ma_accel_period": 24, "ma_accel_min_slope": 0.0, "ma_accel_min_accel": 0.0,
     "use_ma_slope": True, "use_ma_accel": True, "use_ma_pullback": True, "use_ma_cross_exit": True,
     "fast_ma_period": 9, "slow_ma_period": 21, "min_cross_spread_bps": 0.0,
@@ -114,6 +115,9 @@ class CryptoBot:
             "use_peak": bool(self.state.get("use_peak", True)),
             "use_ma_stack": bool(self.state.get("use_ma_stack", False)),
             "use_ma_stack_1h": bool(self.state.get("use_ma_stack_1h", True)),
+            "use_ma_diff_hook": bool(self.state.get("use_ma_diff_hook", True)),
+            "use_ma_diff_exit": bool(self.state.get("use_ma_diff_exit", True)),
+            "min_diff_bars": int(self.state.get("min_diff_bars", 2)),
             "use_convergence": bool(self.state.get("use_convergence", True)),
             "use_dwell": bool(self.state.get("use_dwell", True)),
             "use_bottoming": bool(self.state.get("use_bottoming", False)),
@@ -247,6 +251,7 @@ class CryptoBot:
             "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
+            "use_ma_diff_hook", "use_ma_diff_exit", "min_diff_bars",
             "long_multiplier", "short_multiplier",
         }
         unknown = set(values) - permitted
@@ -258,12 +263,13 @@ class CryptoBot:
                 candidate[key] = str(value)
             elif key in {"max_tranches", "min_seconds_between_orders", "ou_macro_ema_span",
                         "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars",
-                        "ma_accel_period", "fast_ma_period", "slow_ma_period"}:
+                        "ma_accel_period", "fast_ma_period", "slow_ma_period", "min_diff_bars"}:
                 candidate[key] = int(value)
             elif key in {"ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
                         "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
                         "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
                         "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming",
+                        "use_ma_diff_hook", "use_ma_diff_exit",
                         "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
                         "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit"}:
                 candidate[key] = bool(value)

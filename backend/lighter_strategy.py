@@ -1,6 +1,6 @@
 """Pure strategy evaluators shared by Lighter live trading and replay."""
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 OU_MIN_ABS_DEVIATION_PP = 0.25
 OU_MACRO_EMA_SPAN = 60
@@ -354,15 +354,92 @@ def evaluate_grid_signals(
     }
 
 
+def compute_ma_diff_series(prices: Sequence[float]) -> List[float]:
+    """Computes MA7 - MA24 difference series across all completed bars."""
+    diffs: List[float] = []
+    n = len(prices)
+    for i in range(n):
+        if i < 23:
+            diffs.append(0.0)
+        else:
+            ma7_i = sum(prices[i - 6 : i + 1]) / 7.0
+            ma24_i = sum(prices[i - 23 : i + 1]) / 24.0
+            diffs.append(ma7_i - ma24_i)
+    return diffs
+
+
+def check_ma_diff_hook(
+    diffs: Sequence[float],
+    index: int = -1,
+    min_diff_bars: int = 2,
+) -> Tuple[bool, bool]:
+    """
+    Evaluates MA difference turnaround / hook at a given index.
+
+    Returns (entry_hook, exit_hook):
+    - entry_hook: diff is less negative than previous for the first time
+      after a series of >= min_diff_bars consecutive more negative bars.
+      (i.e. diff[i] > diff[i-1], diff[i-1] < 0, and prior streak of diff[k] < diff[k-1] < 0 >= min_diff_bars)
+    - exit_hook: diff is less positive than previous for the first time
+      after a series of >= min_diff_bars consecutive more positive bars.
+      (i.e. diff[i] < diff[i-1], diff[i-1] > 0, and prior streak of diff[k] > diff[k-1] > 0 >= min_diff_bars)
+    """
+    total = len(diffs)
+    if total < 2:
+        return False, False
+    actual_idx = total + index if index < 0 else index
+    min_bars = max(1, int(min_diff_bars))
+    if actual_idx < min_bars + 1 or actual_idx >= total:
+        return False, False
+
+    d0 = diffs[actual_idx]
+    d1 = diffs[actual_idx - 1]
+    if d0 is None or d1 is None:
+        return False, False
+
+    entry_hook = False
+    if d0 > d1 and d1 < 0:
+        neg_streak = 0
+        for k in range(1, actual_idx):
+            curr_d = diffs[actual_idx - k]
+            prev_d = diffs[actual_idx - k - 1]
+            if curr_d is None or prev_d is None:
+                break
+            if curr_d < prev_d and curr_d < 0:
+                neg_streak += 1
+            else:
+                break
+        if neg_streak >= min_bars:
+            entry_hook = True
+
+    exit_hook = False
+    if d0 < d1 and d1 > 0:
+        pos_streak = 0
+        for k in range(1, actual_idx):
+            curr_d = diffs[actual_idx - k]
+            prev_d = diffs[actual_idx - k - 1]
+            if curr_d is None or prev_d is None:
+                break
+            if curr_d > prev_d and curr_d > 0:
+                pos_streak += 1
+            else:
+                break
+        if pos_streak >= min_bars:
+            exit_hook = True
+
+    return entry_hook, exit_hook
+
+
 def evaluate_ma_stack_signals(
     prices: List[float], *, ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
     use_ma_stretch: bool = True, use_ma_stack: bool = True, use_ma_stack_1h: bool = True,
     use_convergence: bool = True, use_dwell: bool = True, use_bottoming: bool = False,
     ma_stack_opposite_only: bool = False, use_opposite_stack_exit: bool = True,
+    use_ma_diff_hook: bool = False, use_ma_diff_exit: bool = False, min_diff_bars: int = 2,
     evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
     held_bars: int = 0,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
-    """Causal Trend MA Stack evaluation (MA7 / MA24 / MA60)."""
+    """Causal Trend MA Stack evaluation (MA7 / MA24 / MA60) with MA diff inflection hook."""
     if len(prices) < 61:
         raise ValueError("MA stack evaluation requires at least 61 completed bars")
     current_price = prices[-1]
@@ -382,23 +459,40 @@ def evaluate_ma_stack_signals(
     bullish_stack = current_price > ma7 > ma24 > ma60
     candidate_side = 1 if bearish_stack else -1
 
+    diff_series = compute_ma_diff_series(prices)
+    diff_entry_hook, diff_exit_hook = check_ma_diff_hook(diff_series, -1, min_diff_bars=min_diff_bars)
+    current_diff = diff_series[-1] if diff_series else (ma7 - ma24)
+
     if ma_stack_opposite_only:
-        # Tab 5's Trend MA Stack is intentionally a single long-only rule:
-        # enter the bearish full stack and leave only on its exact inverse.
-        # Legacy MA stretch, macro, cross, dwell and trailing switches must not
-        # silently gate this mode after their controls have been removed.
-        entry_signal = bool(use_ma_stack and bearish_stack)
+        # Tab 5's Trend MA Stack supports 5m full stack and/or MA diff hook
+        entry_conditions = []
+        if use_ma_stack:
+            entry_conditions.append(bearish_stack)
+        if use_ma_diff_hook:
+            entry_conditions.append(diff_entry_hook)
+        entry_signal = bool(entry_conditions and all(entry_conditions))
+
         opposite_stack = bullish_stack if position_side >= 0 else bearish_stack
-        exit_signal = bool(position_side != 0 and use_opposite_stack_exit and opposite_stack)
+        exit_conditions = []
+        if use_opposite_stack_exit:
+            exit_conditions.append(opposite_stack)
+        if use_ma_diff_exit:
+            exit_conditions.append(diff_exit_hook)
+        exit_signal = bool(position_side != 0 and any(exit_conditions))
+
         condition_pass = {
-            "entry_ma_stack": bearish_stack,
-            "exit_opposite_stack": opposite_stack if position_side else None,
+            "entry_ma_stack": bearish_stack if use_ma_stack else None,
+            "entry_ma_diff_hook": diff_entry_hook if use_ma_diff_hook else None,
+            "exit_opposite_stack": (opposite_stack if position_side else None) if use_opposite_stack_exit else None,
+            "exit_ma_diff_hook": (diff_exit_hook if position_side else None) if use_ma_diff_exit else None,
         }
         return entry_signal, 1, exit_signal, {
             "time": evaluation_time, "ratio": round(current_price, 4), "mean": round(ma24, 4),
             "z": round(zscore, 3), "signal_z": zscore, "signal_mean": ma24, "strategy": "ma_stack",
             "stretch_pct": round(stretch_pct, 4), "ma7": round(ma7, 4), "ma24": round(ma24, 4),
-            "ma60": round(ma60, 4), "bearish_stack": bearish_stack, "bullish_stack": bullish_stack,
+            "ma60": round(ma60, 4), "ma_diff": round(current_diff, 4),
+            "diff_entry_hook": diff_entry_hook, "diff_exit_hook": diff_exit_hook,
+            "bearish_stack": bearish_stack, "bullish_stack": bullish_stack,
             "condition_pass": condition_pass,
         }
 
@@ -408,7 +502,9 @@ def evaluate_ma_stack_signals(
     macro_aligned = _macro_trend_aligned(prices, candidate_side)
     macro_pass = macro_aligned if use_ma_stack_1h else True
 
-    entry_signal = bool(stack_pass and stretch_pass and macro_pass)
+    diff_hook_pass = (diff_entry_hook if candidate_side > 0 else diff_exit_hook) if use_ma_diff_hook else True
+
+    entry_signal = bool(stack_pass and stretch_pass and macro_pass and diff_hook_pass)
 
     golden_cross = bool((position_side > 0 and ma7 >= ma24) or (position_side < 0 and ma7 <= ma24))
     trailing_stop = False
@@ -416,26 +512,31 @@ def evaluate_ma_stack_signals(
         pnl_pct = position_side * (current_price / entry_price - 1) * 100
         trailing_stop = pnl_pct <= -ma_trailing_stop
     dwell_pass = held_bars >= 16
+    diff_exit_pass = (diff_exit_hook if position_side > 0 else diff_entry_hook) if use_ma_diff_exit else False
 
     exit_cross = golden_cross if use_convergence else False
     exit_trail = trailing_stop if use_bottoming else False
     exit_dwell = dwell_pass if use_dwell else False
-    exit_signal = bool(exit_cross or exit_trail or exit_dwell) if position_side != 0 else False
+    exit_signal = bool(exit_cross or exit_trail or exit_dwell or diff_exit_pass) if position_side != 0 else False
 
     condition_pass = {
         "entry_ma_stack": stack_pass,
         "entry_stretch": stretch_pass,
         "entry_macro_trend": macro_pass,
         "entry_ma_stack_1h": macro_aligned,
+        "entry_ma_diff_hook": diff_hook_pass if use_ma_diff_hook else None,
         "exit_ma_cross": golden_cross if position_side else None,
         "exit_trailing_stop": trailing_stop if position_side else None,
         "exit_max_dwell": dwell_pass if position_side else None,
+        "exit_ma_diff_hook": diff_exit_pass if (use_ma_diff_exit and position_side) else None,
     }
     evaluation = {
         "time": evaluation_time, "ratio": round(current_price, 4), "mean": round(ma24, 4),
         "z": round(zscore, 3), "signal_z": zscore, "signal_mean": ma24, "strategy": "ma_stack",
         "stretch_pct": round(stretch_pct, 4), "ma7": round(ma7, 4), "ma24": round(ma24, 4),
-        "ma60": round(ma60, 4), "bearish_stack": bearish_stack, "bullish_stack": bullish_stack,
+        "ma60": round(ma60, 4), "ma_diff": round(current_diff, 4),
+        "diff_entry_hook": diff_entry_hook, "diff_exit_hook": diff_exit_hook,
+        "bearish_stack": bearish_stack, "bullish_stack": bullish_stack,
         "condition_pass": condition_pass,
     }
     return entry_signal, candidate_side, exit_signal, evaluation
@@ -913,6 +1014,9 @@ def evaluate_strategy_signal(
             use_bottoming=bool(config.get("use_bottoming", False)),
             ma_stack_opposite_only=bool(config.get("ma_stack_opposite_only", False)),
             use_opposite_stack_exit=bool(config.get("use_opposite_stack_exit", True)),
+            use_ma_diff_hook=bool(config.get("use_ma_diff_hook", False)),
+            use_ma_diff_exit=bool(config.get("use_ma_diff_exit", False)),
+            min_diff_bars=int(config.get("min_diff_bars", 2)),
             evaluation_time=evaluation_time,
             position_side=position_side,
             entry_price=entry_price,
