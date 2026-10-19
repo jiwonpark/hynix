@@ -343,7 +343,9 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(side, 1)
         self.assertFalse(no_exit)
         self.assertEqual(set(entry_eval["condition_pass"]),
-                         {"entry_ma_stack", "exit_opposite_stack"})
+                         {"entry_ma_stack", "exit_opposite_stack", "entry_ma_diff_hook", "exit_ma_diff_hook"})
+        self.assertIsNone(entry_eval["condition_pass"]["entry_ma_diff_hook"])
+        self.assertIsNone(entry_eval["condition_pass"]["exit_ma_diff_hook"])
 
         bullish = [100.0 + i for i in range(61)]
         blocked_short, side, exit_signal, exit_eval = evaluate_strategy_signal(
