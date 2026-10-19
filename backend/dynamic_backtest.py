@@ -4,7 +4,6 @@ from collections import deque
 from .tranche_accounting import EXIT_FEE_BPS, EXIT_SLIPPAGE_BPS, FUNDING_RESERVE_BPS_DAY
 from .pair_sizing import size_policy, REFERENCE_RULES
 from .macro_policy import macro_policy, confirmed_rebound
-from .nominal_signal import nominal_premium
 
 ENTRY_FEE_BPS = 5.0
 ENTRY_MIN_MA_STRETCH_PTS = 0.25
@@ -38,11 +37,12 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
     pnl = peak = peak_notional = current_notional = 0.0
     drawdown = fees = slippage = funding = 0.0
     aq = sq = adr_avg = stock_avg = 0.0
-    stack, trades, events = [], [], []
+    stack, trades, events, entry_signals = [], [], [], []
     five, hourly = deque(maxlen=60), deque(maxlen=60)
     hour_parts = []
     previous = None
-    last_entry = last_exit = -math.inf
+    last_exit = last_signal_time = -math.inf
+    last_signal_spread = None
     evaluated = missing = 0
     entry_rate = ENTRY_FEE_BPS / 10000
     exit_rate = EXIT_FEE_BPS / 10000
@@ -90,6 +90,21 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
         peak_out = len(vals) >= 3 and (vals[-1] <= vals[-2] or vals[-1] < max(vals[-3:-1]))
         bottoming = len(vals) >= 3 and (vals[-1] >= vals[-2] or vals[-1] > min(vals[-3:-1]) or vals[-1] <= ma24)
         next_notional = entry_adr * adr + entry_stock * stock
+        signal_setup = all((
+            passes('entry_ma_stretch', len(vals) >= 6 and spread-ma24 >= ENTRY_MIN_MA_STRETCH_PTS),
+            passes('entry_base_spread', last_signal_spread is None or spread >= last_signal_spread + .10),
+            passes('entry_peak_rollover', peak_out),
+            ma_pass('entry_ma_stack_5m', five, True, spread),
+            ma_pass('entry_ma_stack_1h', hourly, True, spread),
+            close-last_signal_time >= 60,
+        ))
+        if signal_setup:
+            entry_signals.append({
+                'time': t, 'price': spread, 'side': -1, 'reason': 'pair_entry',
+                'conditions': {'entry_conditions': True},
+            })
+            last_signal_spread = spread
+            last_signal_time = close
         target = stack[-1] if stack else None
         sold = False
         if target:
@@ -126,19 +141,7 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
                 last_exit = close
                 sold = True
         if not sold:
-            # Compare nominal prices; position quantities only size fills and P&L.
-            baseline = spread
-            if aq and sq and stock_avg > 0:
-                baseline = nominal_premium(adr_avg, stock_avg) or spread
-            setup = all((
-                passes('entry_ma_stretch', len(vals) >= 6 and spread-ma24 >= ENTRY_MIN_MA_STRETCH_PTS),
-                passes('entry_base_spread', not aq or spread >= baseline + .10),
-                passes('entry_peak_rollover', peak_out),
-                ma_pass('entry_ma_stack_5m', five, True, spread),
-                ma_pass('entry_ma_stack_1h', hourly, True, spread),
-                close-last_entry >= 60,
-            ))
-            if setup:
+            if signal_setup:
                 fee, slip = next_notional*entry_rate, next_notional*slip_rate
                 pnl -= fee+slip
                 fees += fee; slippage += slip
@@ -150,16 +153,16 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
                          'adr_entry_qty': entry_adr, 'stock_entry_qty': entry_stock, 'exit_policy': macro}
                 trades.append(trade); stack.append(trade)
                 events.append({'time': t, 'is_entry': True, 'trade_id': trade['id']})
-                last_entry = close
         current_notional = aq*adr + sq*stock
         peak_notional = max(peak_notional, current_notional)
         peak = max(peak, pnl)
         drawdown = max(drawdown, peak-pnl)
-    return {'trades': trades, 'events': events, 'summary': {
+    return {'trades': trades, 'events': events, 'entry_signals': entry_signals, 'summary': {
         'mode': 'price_signals', 'capital_constrained': False,
         'sizing_mode': 'dollar_2x_v1', 'sizing_rules_basis': 'current_exchange_filters' if sizing_rules else 'reference_filters_2026_10_03',
         'net_pnl_usd': round(pnl, 6),
-        'entries': len(trades), 'exits': len(trades)-len(stack), 'open_tranches': len(stack),
+        'entries': len(trades), 'entry_signals': len(entry_signals),
+        'exits': len(trades)-len(stack), 'open_tranches': len(stack),
         'adr_short_qty': aq, 'stock_long_qty': sq,
         'core_adr_qty': round(aq-sum(t['adr_entry_qty'] for t in stack), 8),
         'core_stock_qty': round(sq-sum(t['stock_entry_qty'] for t in stack), 8),
@@ -175,8 +178,26 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
 def replay_markers(result, interval_seconds):
     trades = {t['id']: t for t in result['trades']}
     markers = {}
+    for index, signal in enumerate(result.get('entry_signals', [])):
+        t = (signal['time'] + (240 if interval_seconds == 60 else 0))//interval_seconds*interval_seconds
+        key = (t, True)
+        if key not in markers:
+            markers[key] = {
+                'time': t, 'raw_time': signal['time'], 'is_entry': True,
+                'is_signal': True, 'hypothetical': True, 'backtest': True,
+                'position': 'aboveBar', 'shape': 'arrowDown', 'color': '#dc2626',
+                'text': '', 'count': 0, 'qty': 0,
+                'entry_spread': signal['price'],
+                'pairKey': f"signal:{signal['time']}:{index}",
+            }
+        marker = markers[key]
+        marker['count'] += 1
+        marker['entry_spread'] = signal['price']
+        marker['hoverText'] = f"BACKTEST ENTRY CONDITIONS {marker['count']}x · latest {signal['price']:.3f}%"
     for event in result['events']:
         entry = event['is_entry']
+        if entry:
+            continue
         t = (event['time'] + (240 if interval_seconds == 60 else 0))//interval_seconds*interval_seconds
         key = (t, entry)
         trade = trades[event['trade_id']]

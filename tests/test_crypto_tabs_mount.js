@@ -194,6 +194,8 @@ ctx.window.LightweightCharts = {
         createPriceLine() {}, removePriceLine() {}, setMarkers() {},
       }),
       addLineSeries: () => ({ setData() {}, applyOptions() {}, setMarkers() {} }),
+      addHistogramSeries: () => ({ setData() {}, applyOptions() {}, setMarkers() {} }),
+      priceScale: () => ({ applyOptions() {} }),
       subscribeClick() {},
       subscribeCrosshairMove() {},
     };

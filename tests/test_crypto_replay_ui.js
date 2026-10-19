@@ -24,6 +24,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, '../crypto-tab.js'), 'utf8'
 const engine = context.window.cryptoEngine;
 engine.currentParadigm = 'grid';
 engine.interval = '5m';
+engine.bars = [{ time: 100, value: 50000 }];
 engine.botState = {
   enabled: false, strategy_mode: 'grid', strategy_interval: '5m',
   strategy_params: {entry_z: 1.5, exit_z: .25},

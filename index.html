@@ -14023,7 +14023,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const s = data.summary;
           const coverage = s.evaluated_bars < s.expected_bars ? ` · ${s.evaluated_bars}/${s.expected_bars} candles available` : "";
           if ($("dynamicBacktestStatus")) {
-            $("dynamicBacktestStatus").textContent = `${s.entries} entries (${s.boosted_entries} boosted) · ${s.exits} exits · ${s.open_tranches} open · Net $${s.net_pnl_usd.toFixed(2)} · Max drawdown $${s.max_drawdown_usd.toFixed(2)} · Peak exposure $${s.peak_gross_exposure_usd.toFixed(2)} · Holding ${s.adr_short_qty.toFixed(2)} short ADR / ${s.stock_long_qty.toFixed(2)} long ETF · Retained core ${s.core_adr_qty.toFixed(2)} / ${s.core_stock_qty.toFixed(2)}${coverage} · Dynamic 2× dollar sizing (current exchange filters)`;
+            $("dynamicBacktestStatus").textContent = `${s.entry_signals ?? s.entries} entry signals · ${s.entries} simulated fills (${s.boosted_entries} boosted) · ${s.exits} exits · ${s.open_tranches} open · Net $${s.net_pnl_usd.toFixed(2)} · Max drawdown $${s.max_drawdown_usd.toFixed(2)} · Peak exposure $${s.peak_gross_exposure_usd.toFixed(2)} · Holding ${s.adr_short_qty.toFixed(2)} short ADR / ${s.stock_long_qty.toFixed(2)} long ETF · Retained core ${s.core_adr_qty.toFixed(2)} / ${s.core_stock_qty.toFixed(2)}${coverage} · Entry signals ignore simulated positions; Dynamic 2× dollar sizing (current exchange filters)`;
           }
         } catch (e) {
           if (controller === this.dynamicBacktestController && key === this.dynamicBacktestKey && history === this.shortTermHistory) {

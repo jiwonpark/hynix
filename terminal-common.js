@@ -54,6 +54,32 @@
     }).filter(Boolean);
   }
 
+  function movingAverageDiff(maFast, maSlow) {
+    if (!Array.isArray(maFast) || !Array.isArray(maSlow)) return [];
+    const slowMap = new Map();
+    for (let i = 0; i < maSlow.length; i++) {
+      const item = maSlow[i];
+      if (item && item.time !== undefined) {
+        slowMap.set(item.time, item.value);
+      }
+    }
+    const result = [];
+    for (let i = 0; i < maFast.length; i++) {
+      const fast = maFast[i];
+      if (!fast || fast.time === undefined) continue;
+      const slowVal = slowMap.get(fast.time);
+      if (slowVal !== undefined && Number.isFinite(fast.value) && Number.isFinite(slowVal)) {
+        const diff = fast.value - slowVal;
+        result.push({
+          time: fast.time,
+          value: diff,
+          color: diff >= 0 ? "rgba(22, 163, 74, 0.75)" : "rgba(220, 38, 38, 0.75)",
+        });
+      }
+    }
+    return result;
+  }
+
   function alignTime(bars, timestampSeconds) {
     if (!Array.isArray(bars) || !bars.length) return timestampSeconds;
     return bars.reduce((best, bar) => (
@@ -100,7 +126,7 @@
     }
   }
 
-  const TerminalCommon = { alignTime, movingAverage, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles };
+  const TerminalCommon = { alignTime, movingAverage, movingAverageDiff, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

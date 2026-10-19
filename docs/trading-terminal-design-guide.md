@@ -15,3 +15,19 @@ For single-leg Tab 5, distinguish **exposure** from **margin**. Exchange leverag
 Check available margin separately. As in Tab 2, apply the 25% buffer to estimated **initial margin**, not to full order notional: `required margin = max($2.50, next order notional ÷ 10 × 1.25)`. A $150 order therefore needs an estimated $18.75 of available margin, while the exposure check still requires projected account-wide gross notional to stay within the 1× cap. The 10× value is a conservative margin-estimation assumption, not a target leverage or permission to exceed the exposure cap. These are execution/account safeguards, shown separately from optional strategy conditions and without fake switches.
 
 Show projected next-entry account-wide gross leverage, the buffered margin requirement, and estimated account-equity loss under the 10% adverse-move scenario. Label the scenario as an estimate, not a worst-case loss or liquidation threshold; gaps, fees, and liquidation can produce different outcomes. The UI preview may use the requested order notional, but the final server-side checks must use the rounded executable quantity, current quote, fresh collateral, and fresh account positions before ordering.
+# Paper/backtest entry signals
+
+Paper and backtest charts have two separate event streams:
+
+- `entry_signals`: every completed candle where all enabled entry conditions pass.
+  This stream is evaluated as flat and is independent of positions, tranches,
+  account capacity, balances, margin, recovery, and order state.
+- simulated fills/trades: the position-aware accounting stream used for exits,
+  P&L, fees, and open-position summaries.
+
+Render entry arrows from `entry_signals`, never by inferring them from trades or
+open positions. Label counts separately (for example, “12 entry signals · 3
+simulated fills”). A strategy may use prior signal history for an enabled spacing
+or cooldown rule; it may not use open-position history to suppress a marker.
+Regression coverage for every new replay strategy must demonstrate that a second
+qualifying candle is still returned while the simulated position remains open.

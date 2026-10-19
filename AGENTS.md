@@ -15,6 +15,18 @@ optional strategy conditions instead of presenting disabled fake switches.
 Follow [the trading terminal design guide](docs/trading-terminal-design-guide.md)
 for per-condition PASS/WAITING states and source/timestamp display.
 
+## Paper/backtest entry-signal invariant
+
+Across every current and future strategy, evaluate and return entry-condition
+signals on every completed candle without consulting simulated or live position
+state, tranche count, capacity, balances, margin, or recovery state. Expose these
+matches as a distinct `entry_signals` stream and use that stream for chart entry
+markers. Positions may still drive simulated exits, fills, P&L, and execution
+safeguards, but they must never suppress or fabricate an entry-condition marker.
+Stateful strategy conditions based on prior signals (for example configured entry
+spacing) may use signal history, but never open-position history. UI summaries
+must distinguish entry signals from simulated fills/trades.
+
 The user wants implementation changes committed, pushed, and deployed by default.
 After completing the appropriate checks, commit the changes, push to origin, deploy
 both affected frontend and backend files, and verify the live site. Do not stop at

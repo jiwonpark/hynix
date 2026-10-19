@@ -433,6 +433,7 @@ def run_ma_stack_backtest(
     tranche_stack: List[Dict[str, Any]] = []
     trades: List[Dict[str, Any]] = []
     markers: List[Dict[str, Any]] = []
+    entry_signals: List[Dict[str, Any]] = []
     equity_curve: List[Dict[str, float]] = []
     total_fees = 0.0
 
@@ -474,6 +475,16 @@ def run_ma_stack_backtest(
             mode, bar, hourly,
             **options,
         )
+
+        if should_enter:
+            entry_signals.append({
+                "time": int(next_bar["time"]),
+                "signal_time": int(bar["time"]),
+                "price": fill_price,
+                "side": 1,
+                "reason": reason or mode,
+                "conditions": {"entry_conditions": True},
+            })
 
         if should_exit and tranche_stack:
             popped = tranche_stack.pop()
@@ -595,6 +606,7 @@ def run_ma_stack_backtest(
         "bars": bars,
         "hourly": hours,
         "markers": markers,
+        "entry_signals": entry_signals,
         "trades": trades,
         "active_tranche_stack": active_stack_serialized,
         "open_position": tranche_stack[-1] if tranche_stack else None,
@@ -1113,4 +1125,3 @@ class UpbitStrategyExecutionEngine:
 
 # Global singleton engine instance
 strategy_execution_engine = UpbitStrategyExecutionEngine()
-

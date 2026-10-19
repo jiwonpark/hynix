@@ -614,6 +614,7 @@ def _run_lighter_backtest_sync(
 ) -> Dict[str, Any]:
     window = 24
     trades = []
+    entry_signals: List[Dict[str, Any]] = []
     position = None
     series = []
     previous_zscore = None
@@ -688,6 +689,15 @@ def _run_lighter_backtest_sync(
                     bottoming_pass = not use_bottoming or (previous_zscore is not None and abs(zscore) >= abs(previous_zscore))
                     exit_signal = convergence_pass and dwell_pass and bottoming_pass
 
+            if entry_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": signal_price,
+                    "side": int(candidate_side), "reason": strategy_mode,
+                    "conditions": dict(evaluation.get("condition_pass", {})),
+                })
+                # Entry spacing is signal history, not simulated inventory state.
+                last_entry_value, last_entry_side = signal_price, candidate_side
+
             if active_positions and exit_signal:
                 for open_position in active_positions:
                     mult = open_position.get("multiplier", 1.0)
@@ -710,7 +720,6 @@ def _run_lighter_backtest_sync(
                         "entry_time": bar["time"], "entry_index": index,
                         "multiplier": active_mult,
                     })
-                    last_entry_value, last_entry_side = signal_price, candidate_side
             previous_zscore = zscore
 
         mode_metrics = {"signal_engine": "shared_live_ou" if is_ou else "shared_live_grid"}
@@ -752,6 +761,15 @@ def _run_lighter_backtest_sync(
             stretch_pass = stretch_pct >= ma_stretch_min if use_ma_stretch else True
             macro_pass = macro_aligned if use_ma_stack_1h else True
             entry_signal = bool(stack_pass and stretch_pass and macro_pass)
+
+            if entry_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": float(bar["value"]),
+                    "side": int(candidate_side), "reason": "ma_stack",
+                    "conditions": {"entry_ma_stack": stack_pass,
+                                   "entry_stretch": stretch_pass,
+                                   "entry_ma_stack_1h": macro_pass},
+                })
 
             if position is None and entry_signal:
                 active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
@@ -807,6 +825,17 @@ def _run_lighter_backtest_sync(
             macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
             entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8
                             and (not use_ma_stack_1h or macro_aligned))
+
+            if entry_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": float(bar["value"]),
+                    "side": int(candidate_side), "reason": "multi_factor",
+                    "conditions": {"entry_factor_z": f1, "entry_factor_velocity": f2,
+                                   "entry_factor_ma": f3, "entry_factor_extremum": f4,
+                                   "entry_quorum": votes >= min_consensus_votes,
+                                   "entry_min_z": abs(zscore) >= 0.8,
+                                   "entry_ma_stack_1h": macro_aligned},
+                })
 
             if position is None and entry_signal:
                 active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
@@ -873,6 +902,16 @@ def _run_lighter_backtest_sync(
             macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
             buy_signal = raw_buy and (not use_ma_stack_1h or macro_aligned)
             short_signal = raw_short and (not use_ma_stack_1h or macro_aligned)
+
+            if buy_signal or short_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": float(bar["value"]),
+                    "side": 1 if buy_signal else -1, "reason": "trend_pullback",
+                    "conditions": {"entry_macro_trend": is_uptrend or is_downtrend,
+                                   "entry_ma_stack_1h": macro_aligned,
+                                   "entry_pullback": raw_buy or raw_short,
+                                   "entry_micro_reversal": micro_reverting_up if buy_signal else micro_reverting_down},
+                })
 
             if position is None:
                 if buy_signal:
@@ -953,6 +992,7 @@ def _run_lighter_backtest_sync(
         "success": success,
         "strategy_mode": strategy_mode,
         "series": series,
+        "entry_signals": entry_signals,
         "trades": trades,
         "open_positions": open_positions,
         "metrics": mode_metrics,
@@ -1670,6 +1710,7 @@ def _run_crypto_backtest_sync(
 ) -> Dict[str, Any]:
     window = 24
     trades = []
+    entry_signals: List[Dict[str, Any]] = []
     position = None
     series = []
     previous_zscore = None
@@ -1760,6 +1801,15 @@ def _run_crypto_backtest_sync(
                     exit_signal = convergence_pass and dwell_pass and bottoming_pass
             latest_condition_time = int(bar["time"])
 
+            if entry_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": signal_price,
+                    "side": int(candidate_side), "reason": strategy_mode,
+                    "conditions": dict(latest_conditions),
+                })
+                # Spacing is based on prior entry signals, never open-position state.
+                last_entry_value, last_entry_side = signal_price, candidate_side
+
             if active_positions and exit_signal:
                 for open_pos in active_positions:
                     mult = open_pos.get("multiplier", 1.0)
@@ -1783,7 +1833,6 @@ def _run_crypto_backtest_sync(
                         "entry_time": bar["time"], "entry_index": index,
                         "multiplier": active_mult,
                     })
-                    last_entry_value, last_entry_side = signal_price, candidate_side
             previous_zscore = zscore
 
         mode_metrics = {"signal_engine": "single_leg_ou" if is_ou else "single_leg_grid"}
@@ -1835,6 +1884,13 @@ def _run_crypto_backtest_sync(
             latest_condition_time = int(bar["time"])
             entry_signal = (bool(stack_pass) if ma_stack_opposite_only
                             else bool(stack_pass and stretch_pass and macro_pass))
+
+            if entry_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": float(bar["value"]),
+                    "side": int(candidate_side), "reason": "ma_stack",
+                    "conditions": dict(latest_conditions),
+                })
 
             if position is None and entry_signal:
                 position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "max_favorable": 0.0}
@@ -1908,6 +1964,13 @@ def _run_crypto_backtest_sync(
             latest_condition_time = int(bar["time"])
             entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8
                             and (not use_ma_stack_1h or macro_aligned))
+
+            if entry_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": float(bar["value"]),
+                    "side": int(candidate_side), "reason": "multi_factor",
+                    "conditions": dict(latest_conditions),
+                })
 
             if position is None and entry_signal:
                 position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index}
@@ -1987,6 +2050,13 @@ def _run_crypto_backtest_sync(
             }
             latest_condition_time = int(bar["time"])
 
+            if buy_signal or short_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": float(bar["value"]),
+                    "side": 1 if buy_signal else -1, "reason": "trend_pullback",
+                    "conditions": dict(latest_conditions),
+                })
+
             if position is None:
                 if buy_signal:
                     active_mult = max(0.1, float(long_multiplier))
@@ -2060,7 +2130,24 @@ def _run_crypto_backtest_sync(
             held = (index - position["entry_index"]) if position is not None else 0
             pos_side = position["side"] if position is not None else 0
             ent_price = position["entry"] if position is not None else 0.0
-            entry_signal, candidate_side, exit_signal, eval_info = evaluate_ma_acceleration_signals(
+            # Entry evaluation is always flat. A second evaluation below supplies
+            # position-aware exit state for the trade/P&L simulation only.
+            entry_signal, candidate_side, _, entry_eval = evaluate_ma_acceleration_signals(
+                prefix,
+                ma_accel_period=w,
+                ma_accel_min_slope=ma_accel_min_slope,
+                ma_accel_min_accel=ma_accel_min_accel,
+                use_ma_slope=use_ma_slope,
+                use_ma_accel=use_ma_accel,
+                use_ma_pullback=use_ma_pullback,
+                use_ma_cross_exit=use_ma_cross_exit,
+                use_ma_stack_1h=use_ma_stack_1h,
+                evaluation_time=int(bar["time"]),
+                position_side=0,
+                entry_price=0.0,
+                held_bars=0,
+            )
+            _, _, exit_signal, exit_eval = evaluate_ma_acceleration_signals(
                 prefix,
                 ma_accel_period=w,
                 ma_accel_min_slope=ma_accel_min_slope,
@@ -2075,6 +2162,12 @@ def _run_crypto_backtest_sync(
                 entry_price=ent_price,
                 held_bars=held,
             )
+            eval_info = dict(entry_eval)
+            if pos_side:
+                eval_info["condition_pass"] = {
+                    **entry_eval.get("condition_pass", {}),
+                    **{k: v for k, v in exit_eval.get("condition_pass", {}).items() if k.startswith("exit_")},
+                }
             latest_evaluation = eval_info
             latest_conditions = eval_info.get("condition_pass", {})
             latest_condition_time = int(bar["time"])
@@ -2084,6 +2177,12 @@ def _run_crypto_backtest_sync(
                 "mean": eval_info["mean"],
                 "z": eval_info["z"]
             })
+            if entry_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": float(bar["value"]),
+                    "side": int(candidate_side), "reason": "ma_acceleration",
+                    "conditions": dict(entry_eval.get("condition_pass", {})),
+                })
             if position is None and entry_signal:
                 active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
                 position = {
@@ -2129,7 +2228,24 @@ def _run_crypto_backtest_sync(
             held = (index - position["entry_index"]) if position is not None else 0
             pos_side = position["side"] if position is not None else 0
             ent_price = position["entry"] if position is not None else 0.0
-            entry_signal, candidate_side, exit_signal, eval_info = evaluate_golden_death_cross_signals(
+            entry_signal, candidate_side, _, entry_eval = evaluate_golden_death_cross_signals(
+                prefix,
+                fast_ma_period=fast_w,
+                slow_ma_period=slow_w,
+                min_cross_spread_bps=min_cross_spread_bps,
+                use_golden_cross=use_golden_cross,
+                use_death_cross=use_death_cross,
+                use_cross_spread=use_cross_spread,
+                use_cross_exit=use_ma_cross_exit,
+                use_ma_stack_1h=use_ma_stack_1h,
+                use_dwell=use_dwell,
+                min_dwell_bars=min_dwell_bars,
+                evaluation_time=int(bar["time"]),
+                position_side=0,
+                entry_price=0.0,
+                held_bars=0,
+            )
+            _, _, exit_signal, exit_eval = evaluate_golden_death_cross_signals(
                 prefix,
                 fast_ma_period=fast_w,
                 slow_ma_period=slow_w,
@@ -2146,6 +2262,12 @@ def _run_crypto_backtest_sync(
                 entry_price=ent_price,
                 held_bars=held,
             )
+            eval_info = dict(entry_eval)
+            if pos_side:
+                eval_info["condition_pass"] = {
+                    **entry_eval.get("condition_pass", {}),
+                    **{k: v for k, v in exit_eval.get("condition_pass", {}).items() if k.startswith("exit_")},
+                }
             latest_evaluation = eval_info
             latest_conditions = eval_info.get("condition_pass", {})
             latest_condition_time = int(bar["time"])
@@ -2157,6 +2279,13 @@ def _run_crypto_backtest_sync(
                 "fast_ma": eval_info["fast_ma"],
                 "slow_ma": eval_info["slow_ma"],
             })
+
+            if entry_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": float(bar["value"]),
+                    "side": int(candidate_side), "reason": "golden_death_cross",
+                    "conditions": dict(entry_eval.get("condition_pass", {})),
+                })
 
             # Check exit on open position
             if position is not None and exit_signal:
@@ -2229,6 +2358,7 @@ def _run_crypto_backtest_sync(
         "symbol": symbol,
         "strategy_mode": strategy_mode,
         "series": series,
+        "entry_signals": entry_signals,
         "trades": trades,
         "open_positions": open_positions,
         "metrics": mode_metrics,

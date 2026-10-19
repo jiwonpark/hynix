@@ -321,7 +321,7 @@
       this.hoveredMarkerTime = null;
       this.renderChartData();
       const stats = data.stats || {};
-      el("dynamicBacktestStatus").textContent = `${stats.completed_trades || 0} trades · Net ${pct(stats.net_return_pct)} · Buy & Hold ${pct(stats.buy_hold_pct)} · Max drawdown ${pct(stats.max_drawdown_pct)} · Win rate ${pct(stats.win_rate_pct)} · Ending ${krw(stats.ending_equity_krw)}`;
+      el("dynamicBacktestStatus").textContent = `${(data.entry_signals || []).length} entry signals · ${stats.completed_trades || 0} trades · Net ${pct(stats.net_return_pct)} · Buy & Hold ${pct(stats.buy_hold_pct)} · Max drawdown ${pct(stats.max_drawdown_pct)} · Win rate ${pct(stats.win_rate_pct)} · Ending ${krw(stats.ending_equity_krw)}`;
       const latest = data.bars.at(-1);
       const latestHour = data.hourly.at(-1);
       el("macroPolicyStatus").textContent = `[${data.strategy_badge || "QUANT"}] ${data.strategy_desc || ""} · next-open fills · ${data.fee_bps}bp/side`;
@@ -438,7 +438,15 @@
     },
 
     executionsForInterval() {
-      const virtualMarkers = this.data?.markers || [];
+      const exitMarkers = (this.data?.markers || []).filter((marker) => !marker.is_entry);
+      const signalMarkers = (this.data?.entry_signals || []).map((signal, index) => ({
+        time: Number(signal.time), source: "virtual", hypothetical: true, backtest: true,
+        is_entry: true, is_signal: true, action: "entry", direction: "long",
+        position: "belowBar", shape: "arrowUp", color: "#16a34a",
+        entry_price: Number(signal.price), pairKey: `signal:${signal.time}:${index}`,
+        hoverText: `BUY CONDITION ₩${Math.round(signal.price).toLocaleString()}`,
+      }));
+      const virtualMarkers = [...signalMarkers, ...exitMarkers];
       const actualMarkers = this.getActualTradeMarkers();
       const allMarkers = [...virtualMarkers, ...actualMarkers];
       const bars = this.chartInterval === "1h" ? (this.data?.hourly || []) : (this.data?.bars || []);

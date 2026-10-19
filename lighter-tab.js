@@ -5201,18 +5201,32 @@
           unrealized_pnl_pct: entry.unrealized_pnl_pct,
           hoverText: `${entry.side < 0 ? "SHORT" : "BUY"} ${entry.entry.toFixed(2)}% · OPEN · unrealized ${entry.unrealized_pnl_pct >= 0 ? "+" : ""}${entry.unrealized_pnl_pct.toFixed(2)}%`,
         })));
+        // Entry arrows represent condition matches, not position fills.
+        this.backtestMarkers = this.backtestMarkers.filter((marker) => !marker.is_entry);
+        this.backtestMarkers.push(...(data.entry_signals || []).map((signal, index) => ({
+          time: safeAlignTime(this.bars, signal.time), rawTime: signal.time,
+          position: signal.side < 0 ? "aboveBar" : "belowBar",
+          color: signal.side < 0 ? "rgba(220,38,38,.85)" : "rgba(22,163,74,.85)",
+          shape: signal.side < 0 ? "arrowDown" : "arrowUp", text: "",
+          source: "virtual", hypothetical: true, backtest: true,
+          pairKey: `backtest:signal:${signal.time}:${index}`,
+          direction: signal.side < 0 ? "short" : "long", is_entry: true, is_signal: true,
+          entry_price: signal.price, ratio: signal.price,
+          hoverText: `${signal.side < 0 ? "SHORT" : "BUY"} CONDITION ${Number(signal.price).toFixed(2)}%`,
+        })));
         this.renderMarkers();
         this.renderCurrentPositionReferenceLines();
         const tradesCount = (data.trades || []).length;
         const openCount = (data.open_positions || []).length;
-        if (tradesCount + openCount > 0) {
+        const signalCount = (data.entry_signals || []).length;
+        if (signalCount + tradesCount + openCount > 0) {
           const winRate = Number(data.summary?.win_rate || 0).toFixed(0);
-          this.executionChartFrame?.setStatus(`✓ ${tradesCount} paper trades (${winRate}% win) · ${openCount} open`);
+          this.executionChartFrame?.setStatus(`✓ ${signalCount} entry signals · ${tradesCount} paper trades (${winRate}% win) · ${openCount} open`);
         } else {
           this.executionChartFrame?.setStatus("0 paper replay trades in window (conditions not met)");
         }
         const sharedSignal = ["shared_live_ou", "shared_live_grid"].includes(data.metrics?.signal_engine);
-        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.interval}</strong>] <strong>${data.summary.trades}</strong> closed trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · realized return sum <strong>${data.summary.net_pct.toFixed(3)}%</strong> · <strong>${data.open_positions?.length || 0}</strong> open · unrealized return sum <strong>${Number(data.summary.unrealized_pct || 0).toFixed(3)}%</strong> · <em>${sharedSignal ? "shared live signal timing" : "paper replay"}; price signals only, costs excluded</em>`;
+        if (summary) summary.innerHTML = `[<strong>PAPER · ${pName} · ${this.interval}</strong>] <strong>${signalCount}</strong> entry signals · <strong>${data.summary.trades}</strong> closed trades · <strong>${data.summary.win_rate.toFixed(1)}%</strong> wins · realized return sum <strong>${data.summary.net_pct.toFixed(3)}%</strong> · <strong>${data.open_positions?.length || 0}</strong> open · unrealized return sum <strong>${Number(data.summary.unrealized_pct || 0).toFixed(3)}%</strong> · <em>${sharedSignal ? "shared live signal timing" : "paper replay"}; price signals only, costs excluded</em>`;
 
         if (data.metrics && this.currentParadigm === "ou_quant") {
           const thetaEl = $("lighter_valOuTheta");
