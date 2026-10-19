@@ -576,7 +576,6 @@ async def toggle_lighter_bot(request: Request) -> JSONResponse:
         return JSONResponse({"success": False, "error": str(error)}, status_code=409)
 
 
-@app.get("/api/lighter/backtest")
 def _run_lighter_backtest_sync(
     bars: List[Dict[str, Any]],
     success: bool,
@@ -1083,6 +1082,11 @@ async def get_klines(symbol: str, interval: str = "15m", limit: int = 1000, endT
         return data
     except Exception as e:
         logger.error(f"Error fetching klines for {symbol}: {e}")
+        if cache_key in _klines_cache:
+            return _klines_cache[cache_key][1]
+        for k in list(_klines_cache.keys()):
+            if k.startswith(f"{symbol}:{interval}:"):
+                return _klines_cache[k][1]
         return []
 
 # ==============================================================================
@@ -1211,6 +1215,11 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
                                   f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {symbol} @ {price:.6f} · "
                                   + (f"{event.get('qty')} filled" if is_entry else "realized P&L unverified")),
                 })
+        if not bars and cache_key in _crypto_candles_cache:
+            return _crypto_candles_cache[cache_key][1]
+        for k in list(_crypto_candles_cache.keys()):
+            if k.startswith(f"{symbol}:{interval}:") and _crypto_candles_cache[k][1].get("bars"):
+                return _crypto_candles_cache[k][1]
         result = {"success": True, "symbol": symbol, "interval": interval, "bars": bars, "markers": markers}
         if bars:
             _crypto_candles_cache[cache_key] = (now, result)

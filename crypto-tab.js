@@ -3756,13 +3756,13 @@
       const request = this.chartRequest = (this.chartRequest || 0) + 1;
       let data = null;
       try {
-        data = await api(`/api/crypto/candles?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=1000`);
+        data = await api(`/api/crypto/candles?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=500`);
       } catch (_) {
         data = null;
       }
       if (!data || !data.success || !data.bars || !data.bars.length) {
         try {
-          data = await api(`/api/crypto/price?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=1000`);
+          data = await api(`/api/crypto/price?symbol=${encodeURIComponent(sym)}&interval=${interval}&limit=500`);
         } catch (_) {
           data = null;
         }

@@ -4,18 +4,29 @@ import fs from "node:fs";
 async function run() {
   const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
     "--headless=new",
-    "--remote-debugging-port=9222",
+    "--remote-debugging-port=0",
     "--no-sandbox",
     "--disable-gpu",
     "--window-size=1600,1200",
     "about:blank",
   ]);
 
+  const cleanup = () => {
+    try { chrome.kill(); } catch (_) {}
+  };
+  process.on("exit", cleanup);
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
+
   let wsUrl = null;
+  let port = null;
   chrome.stderr.on("data", (chunk) => {
     const text = chunk.toString();
-    const m = text.match(/DevTools listening on (ws:\/\/127\.0\.0\.1:9222\/[^\s]+)/);
-    if (m && !wsUrl) wsUrl = m[1];
+    const m = text.match(/DevTools listening on (ws:\/\/127\.0\.0\.1:(\d+)\/[^\s]+)/);
+    if (m && !wsUrl) {
+      wsUrl = m[1];
+      port = m[2];
+    }
   });
 
   const start = Date.now();
@@ -23,12 +34,12 @@ async function run() {
     await new Promise((r) => setTimeout(r, 100));
   }
 
-  if (!wsUrl) {
-    chrome.kill();
+  if (!wsUrl || !port) {
+    cleanup();
     throw new Error("Could not get Chrome DevTools WebSocket URL");
   }
 
-  const target = await fetch("http://127.0.0.1:9222/json/new", { method: "PUT" }).then((r) => r.json());
+  const target = await fetch(`http://127.0.0.1:${port}/json/new`, { method: "PUT" }).then((r) => r.json());
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve) => ws.onopen = resolve);
 
@@ -107,77 +118,79 @@ async function run() {
 
   const failures = [];
 
-  for (const t of tabs) {
-    console.log(`\n=================== SWITCHING TO TAB: ${t.name.toUpperCase()} ===================`);
-    await evaluate(`switchMainTab("${t.name}")`);
-    let diag = null;
-    const pollStart = Date.now();
-    const pollTimeoutMs = 20000;
+  try {
+    for (const t of tabs) {
+      console.log(`\n=================== SWITCHING TO TAB: ${t.name.toUpperCase()} ===================`);
+      await evaluate(`switchMainTab("${t.name}")`);
+      let diag = null;
+      const pollStart = Date.now();
+      const pollTimeoutMs = 20000;
 
-    while (Date.now() - pollStart < pollTimeoutMs) {
-      diag = await evaluate(`(() => {
-        const host = document.getElementById("${t.hostId}");
-        const canvases = host ? host.querySelectorAll("canvas") : [];
-        const canvasDetails = Array.from(canvases).map(c => ({
-          width: c.width,
-          height: c.height,
-          hasContent: (() => {
-            try {
-              const ctx = c.getContext("2d");
-              if (!ctx) return false;
-              const imgData = ctx.getImageData(0, 0, Math.min(c.width, 200), Math.min(c.height, 200));
-              return imgData.data.some((p, i) => i % 4 === 3 && p > 0);
-            } catch(e) { return "error: " + e.message; }
-          })()
-        }));
-        return {
-          tab: "${t.name}",
-          activeTabDisplay: document.getElementById("tabContent" + "${t.name.charAt(0).toUpperCase() + t.name.slice(1)}")?.style.display,
-          hostExists: !!host,
-          hostWidth: host?.clientWidth,
-          hostHeight: host?.clientHeight,
-          canvasCount: canvases.length,
-          canvases: canvasDetails,
-          bars: ${t.getBars || "null"}
-        };
-      })()`);
+      while (Date.now() - pollStart < pollTimeoutMs) {
+        diag = await evaluate(`(() => {
+          const host = document.getElementById("${t.hostId}");
+          const canvases = host ? host.querySelectorAll("canvas") : [];
+          const canvasDetails = Array.from(canvases).map(c => ({
+            width: c.width,
+            height: c.height,
+            hasContent: (() => {
+              try {
+                const ctx = c.getContext("2d");
+                if (!ctx) return false;
+                const imgData = ctx.getImageData(0, 0, Math.min(c.width, 200), Math.min(c.height, 200));
+                return imgData.data.some((p, i) => i % 4 === 3 && p > 0);
+              } catch(e) { return "error: " + e.message; }
+            })()
+          }));
+          return {
+            tab: "${t.name}",
+            activeTabDisplay: document.getElementById("tabContent" + "${t.name.charAt(0).toUpperCase() + t.name.slice(1)}")?.style.display,
+            hostExists: !!host,
+            hostWidth: host?.clientWidth,
+            hostHeight: host?.clientHeight,
+            canvasCount: canvases.length,
+            canvases: canvasDetails,
+            bars: ${t.getBars || "null"}
+          };
+        })()`);
 
-      const isHealthy = diag && diag.hostExists &&
-        diag.canvasCount > 0 &&
-        diag.canvases.some(c => c.hasContent === true) &&
-        (typeof diag.bars !== "number" || diag.bars > 0);
+        const isHealthy = diag && diag.hostExists &&
+          diag.canvasCount > 0 &&
+          diag.canvases.some(c => c.hasContent === true) &&
+          (typeof diag.bars !== "number" || diag.bars > 0);
 
-      if (isHealthy) {
-        break;
+        if (isHealthy) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 600));
       }
-      await new Promise((r) => setTimeout(r, 600));
+
+      console.log("Tab Diagnostic:", JSON.stringify(diag, null, 2));
+      await captureScreenshot(`/tmp/live_${t.name}.png`);
+
+      if (!diag.hostExists) {
+        failures.push(`Tab ${t.name}: host ${t.hostId} not found`);
+      } else if (diag.canvasCount === 0) {
+        failures.push(`Tab ${t.name}: 0 canvases rendered in ${t.hostId}`);
+      } else if (!diag.canvases.some(c => c.hasContent === true)) {
+        failures.push(`Tab ${t.name}: all canvases empty`);
+      } else if (typeof diag.bars === "number" && diag.bars <= 0) {
+        failures.push(`Tab ${t.name}: bars count is ${diag.bars}`);
+      } else {
+        console.log(`>>> TAB ${t.name.toUpperCase()} CHART VERIFIED HEALTHY (bars: ${diag.bars}) <<<`);
+      }
     }
 
-    console.log("Tab Diagnostic:", JSON.stringify(diag, null, 2));
-    await captureScreenshot(`/tmp/live_${t.name}.png`);
-
-    if (!diag.hostExists) {
-      failures.push(`Tab ${t.name}: host ${t.hostId} not found`);
-    } else if (diag.canvasCount === 0) {
-      failures.push(`Tab ${t.name}: 0 canvases rendered in ${t.hostId}`);
-    } else if (!diag.canvases.some(c => c.hasContent === true)) {
-      failures.push(`Tab ${t.name}: all canvases empty`);
-    } else if (typeof diag.bars === "number" && diag.bars <= 0) {
-      failures.push(`Tab ${t.name}: bars count is ${diag.bars}`);
-    } else {
-      console.log(`>>> TAB ${t.name.toUpperCase()} CHART VERIFIED HEALTHY (bars: ${diag.bars}) <<<`);
+    if (failures.length > 0) {
+      console.error("\n❌ CHART VERIFICATION FAILED FOR:", failures);
+      throw new Error(`Chart verification failed: ${failures.join("; ")}`);
     }
+
+    console.log("\n=== ALL TABS DIAGNOSED ===");
+  } finally {
+    try { ws.close(); } catch (_) {}
+    cleanup();
   }
-
-  if (failures.length > 0) {
-    console.error("\n❌ CHART VERIFICATION FAILED FOR:", failures);
-    throw new Error(`Chart verification failed: ${failures.join("; ")}`);
-  }
-
-
-  ws.close();
-  chrome.kill();
-  console.log("\n=== ALL TABS DIAGNOSED ===");
 }
 
 run().catch((e) => {
