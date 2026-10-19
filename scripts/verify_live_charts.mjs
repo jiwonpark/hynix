@@ -110,34 +110,48 @@ async function run() {
   for (const t of tabs) {
     console.log(`\n=================== SWITCHING TO TAB: ${t.name.toUpperCase()} ===================`);
     await evaluate(`switchMainTab("${t.name}")`);
-    await new Promise((r) => setTimeout(r, 6000));
+    let diag = null;
+    const pollStart = Date.now();
+    const pollTimeoutMs = 20000;
 
-    const diag = await evaluate(`(() => {
-      const host = document.getElementById("${t.hostId}");
-      const canvases = host ? host.querySelectorAll("canvas") : [];
-      const canvasDetails = Array.from(canvases).map(c => ({
-        width: c.width,
-        height: c.height,
-        hasContent: (() => {
-          try {
-            const ctx = c.getContext("2d");
-            if (!ctx) return false;
-            const imgData = ctx.getImageData(0, 0, Math.min(c.width, 200), Math.min(c.height, 200));
-            return imgData.data.some((p, i) => i % 4 === 3 && p > 0);
-          } catch(e) { return "error: " + e.message; }
-        })()
-      }));
-      return {
-        tab: "${t.name}",
-        activeTabDisplay: document.getElementById("tabContent" + "${t.name.charAt(0).toUpperCase() + t.name.slice(1)}")?.style.display,
-        hostExists: !!host,
-        hostWidth: host?.clientWidth,
-        hostHeight: host?.clientHeight,
-        canvasCount: canvases.length,
-        canvases: canvasDetails,
-        bars: ${t.getBars || "null"}
-      };
-    })()`);
+    while (Date.now() - pollStart < pollTimeoutMs) {
+      diag = await evaluate(`(() => {
+        const host = document.getElementById("${t.hostId}");
+        const canvases = host ? host.querySelectorAll("canvas") : [];
+        const canvasDetails = Array.from(canvases).map(c => ({
+          width: c.width,
+          height: c.height,
+          hasContent: (() => {
+            try {
+              const ctx = c.getContext("2d");
+              if (!ctx) return false;
+              const imgData = ctx.getImageData(0, 0, Math.min(c.width, 200), Math.min(c.height, 200));
+              return imgData.data.some((p, i) => i % 4 === 3 && p > 0);
+            } catch(e) { return "error: " + e.message; }
+          })()
+        }));
+        return {
+          tab: "${t.name}",
+          activeTabDisplay: document.getElementById("tabContent" + "${t.name.charAt(0).toUpperCase() + t.name.slice(1)}")?.style.display,
+          hostExists: !!host,
+          hostWidth: host?.clientWidth,
+          hostHeight: host?.clientHeight,
+          canvasCount: canvases.length,
+          canvases: canvasDetails,
+          bars: ${t.getBars || "null"}
+        };
+      })()`);
+
+      const isHealthy = diag && diag.hostExists &&
+        diag.canvasCount > 0 &&
+        diag.canvases.some(c => c.hasContent === true) &&
+        (typeof diag.bars !== "number" || diag.bars > 0);
+
+      if (isHealthy) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 600));
+    }
 
     console.log("Tab Diagnostic:", JSON.stringify(diag, null, 2));
     await captureScreenshot(`/tmp/live_${t.name}.png`);

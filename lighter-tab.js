@@ -2716,8 +2716,9 @@
         });
       }
       this.updateRulesMatchStatus();
-      this.refreshChart();
-      this.runBacktest();
+      if (this.bars && this.bars.length) {
+        this.runBacktest();
+      }
     },
 
     trendScore(values) {
@@ -3480,6 +3481,7 @@
           if (button) button.classList.toggle("active", value === this.interval);
         });
         this.updateGridLadderData();
+        this.runBacktest();
         setTimeout(() => {
           if (!this._historyExhausted && !this._loadingOlderBars && (!this.bars || this.bars.length <= 500)) {
             this.loadOlderBars(500);

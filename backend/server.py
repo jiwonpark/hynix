@@ -1163,7 +1163,7 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
             target_end *= 1000
         cache_key = f"{symbol}:{interval}:{limit}:{include_markers}:{target_end or 'latest'}"
         now = time.time()
-        ttl = 3.0 if not target_end else 3600.0
+        ttl = 10.0 if not target_end else 3600.0
         if cache_key in _crypto_candles_cache:
             cached_time, cached_data = _crypto_candles_cache[cache_key]
             if now - cached_time < ttl:
@@ -3570,7 +3570,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
 
         cache_key = f"{interval}_{limit}_{end_time or 'latest'}"
         now = time.time()
-        ttl = 3.0 if end_time is None else 600.0
+        ttl = 10.0 if end_time is None else 600.0
         if cache_key in _short_term_parity_cache:
             cached_time, cached_res = _short_term_parity_cache[cache_key]
             if now - cached_time < ttl:
