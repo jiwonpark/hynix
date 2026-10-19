@@ -1,5 +1,11 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const Controller = require('../strategy-execution-chart.js');
+
+const frameSource = fs.readFileSync(path.join(__dirname, '../strategy-execution-chart.js'), 'utf8');
+assert.match(frameSource, /options\.legendPosition === "top" \? legendMarkup/,
+  'chart frame must support placing the legend above the chart');
 
 const created = [];
 const removed = [];

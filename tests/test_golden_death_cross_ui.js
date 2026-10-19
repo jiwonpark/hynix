@@ -107,6 +107,16 @@ const lighterCryptoTabCode = fs.readFileSync(path.join(root, 'lighter-crypto-tab
   assert.match(markup, new RegExp(`${prefix}valCrossSlowMa`));
   assert.match(markup, new RegExp(`${prefix}valCrossSpread`));
   assert.match(markup, new RegExp(`${prefix}valCrossRegime`));
+  assert.match(markup, /<select[^>]+inpCrossFastPeriod/);
+  assert.match(markup, /MA7 · chart line/);
+  assert.match(markup, /MA24 · chart line/);
+  assert.match(markup, /MA60 · chart line/);
+
+  const accelMarkup = engine.renderParadigmDetail('ma_acceleration');
+  assert.match(accelMarkup, /<select[^>]+inpMaAccelPeriod/);
+  assert.match(accelMarkup, /MA7 · chart line/);
+  assert.match(accelMarkup, /MA24 · chart line/);
+  assert.match(accelMarkup, /MA60 · chart line/);
 
   // 5. Test alignReplayToLive()
   engine.botState = {

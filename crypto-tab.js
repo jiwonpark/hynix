@@ -40,6 +40,13 @@
       : Number(timestamp);
   }
 
+  function chartMaPeriodOptions(selected, chartPeriods = [7, 24, 60]) {
+    const value = Number(selected);
+    const periods = [...chartPeriods];
+    if (Number.isFinite(value) && !periods.includes(value)) periods.push(value);
+    return periods.map((period) => `<option value="${period}"${period === value ? " selected" : ""}>MA${period}${[7, 24, 60].includes(period) ? " · chart line" : " · saved custom"}</option>`).join("");
+  }
+
   async function api(path) {
     const prefix = getApiPrefix();
     const response = await fetch(`${prefix}${path}`);
@@ -529,6 +536,7 @@
         },
         status: "PAPER ONLY · Select a strategy and interval, then rerun",
         description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
+        legendPosition: "top",
         legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="crypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="crypto_valShortTermMa7">—</strong></span><span id="crypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="crypto_valShortTermMa24">—</strong></span><span id="crypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="crypto_valShortTermMa60">—</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="crypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="crypto_valSelectedMinProfit">—</strong></span>',
       });
       const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
@@ -1530,6 +1538,7 @@
         `;
       }
       if (mode === "ma_acceleration") {
+        const selectedMaPeriod = this.botState?.strategy_mode === mode ? Number(this.botState.ma_accel_period ?? 24) : 24;
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div>
@@ -1542,7 +1551,7 @@
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <span style="font-size:11px;font-weight:700;color:#475569;">MA Window:</span>
-              <input id="crypto_inpMaAccelPeriod" type="number" step="1" value="24" style="width:52px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <select id="crypto_inpMaAccelPeriod" aria-label="MA acceleration chart period" style="width:118px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">${chartMaPeriodOptions(selectedMaPeriod)}</select>
               <span style="font-size:11px;font-weight:700;color:#475569;">Min Velocity (V):</span>
               <input id="crypto_inpMaAccelMinSlope" type="number" step="0.001" value="0.0" style="width:64px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Min Accel (A):</span>
@@ -1571,6 +1580,8 @@
         `;
       }
       if (mode === "golden_death_cross") {
+        const selectedFastPeriod = this.botState?.strategy_mode === mode ? Number(this.botState.fast_ma_period ?? 7) : 7;
+        const selectedSlowPeriod = this.botState?.strategy_mode === mode ? Number(this.botState.slow_ma_period ?? 24) : 24;
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div>
@@ -1583,9 +1594,9 @@
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Fast MA:</span>
-              <input id="crypto_inpCrossFastPeriod" type="number" step="1" value="9" min="2" max="100" style="width:52px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <select id="crypto_inpCrossFastPeriod" aria-label="Fast MA chart period" style="width:118px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">${chartMaPeriodOptions(selectedFastPeriod, [7, 24])}</select>
               <span style="font-size:11px;font-weight:700;color:#475569;">Slow MA:</span>
-              <input id="crypto_inpCrossSlowPeriod" type="number" step="1" value="21" min="3" max="200" style="width:56px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <select id="crypto_inpCrossSlowPeriod" aria-label="Slow MA chart period" style="width:118px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">${chartMaPeriodOptions(selectedSlowPeriod, [24, 60])}</select>
               <span style="font-size:11px;font-weight:700;color:#475569;">Min Spread (bps):</span>
               <input id="crypto_inpCrossMinSpreadBps" type="number" step="0.1" value="0.0" min="0" style="width:60px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <button id="crypto_btnCrossReplay" type="button" style="border:1px solid #0284c7;background:#0284c7;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Cross</button>
@@ -1645,6 +1656,17 @@
 
     bindParadigmDetailEvents(mode) {
       const detailSec = $("crypto_paradigmDetailSection");
+      if (mode === "golden_death_cross") {
+        const fast = $("crypto_inpCrossFastPeriod");
+        const slow = $("crypto_inpCrossSlowPeriod");
+        const keepOrdered = (changed) => {
+          if (!fast || !slow || Number(fast.value) < Number(slow.value)) return;
+          if (changed === fast) slow.value = "60";
+          else fast.value = "7";
+        };
+        fast?.addEventListener("change", () => keepOrdered(fast));
+        slow?.addEventListener("change", () => keepOrdered(slow));
+      }
       if (detailSec && typeof detailSec.querySelectorAll === "function") {
         detailSec.querySelectorAll("input, select").forEach((input) => {
           if (typeof input.addEventListener === "function") {

@@ -25,6 +25,10 @@
       const virtual = options.virtual || {};
       const action = options.action || {};
       const grouping = options.grouping || null;
+      const legendMarkup = `<div class="executionChartFooter">
+          <div id="${ids.legend}" class="executionChartLegend">${options.legend || ""}</div>
+          <span id="${ids.sync}" class="executionChartSync">${options.syncText || ""}</span>
+        </div>`;
       if (grouping) {
         ids.individualTrades = ids.individualTrades || `${id}IndividualTrades`;
         ids.rangeTrades = ids.rangeTrades || `${id}RangeTrades`;
@@ -49,6 +53,7 @@
         </div>
         ${options.description ? `<div class="executionChartDescription">${options.description}</div>` : ""}
         ${options.secondaryStatus ? `<div id="${ids.secondaryStatus}" class="executionChartSecondaryStatus">${options.secondaryStatus}</div>` : ""}
+        ${options.legendPosition === "top" ? legendMarkup : ""}
         <div id="${ids.host}" class="executionChartHost" style="height:${Number(options.height) || 420}px"></div>
         ${options.showAssetPane ? `
         <div id="${ids.assetPaneShell}" class="assetPricePaneShell" style="position:relative;height:${Number(options.assetHeight) || 185}px;border-top:2px solid #cbd5e1;background:#fff;width:100%;display:block;">
@@ -60,10 +65,7 @@
           </div>
           <div id="${ids.assetHost}" style="height:${Number(options.assetHeight) || 185}px;min-height:150px;width:100%;display:block;"></div>
         </div>` : ""}
-        <div class="executionChartFooter">
-          <div id="${ids.legend}" class="executionChartLegend">${options.legend || ""}</div>
-          <span id="${ids.sync}" class="executionChartSync">${options.syncText || ""}</span>
-        </div>`;
+        ${options.legendPosition === "top" ? "" : legendMarkup}`;
 
       const elements = {
         action: document.getElementById(ids.action),
