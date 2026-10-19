@@ -55,6 +55,6 @@ echo "Verified HTTP 200 text/html and live build $BUILD_VERSION"
 
 if [[ -f "$ROOT_DIR/scripts/verify_live_charts.mjs" ]] && command -v node >/dev/null 2>&1; then
   echo "Running automated headless Chrome verification across all tabs..."
-  node "$ROOT_DIR/scripts/verify_live_charts.mjs"
+  node --experimental-websocket "$ROOT_DIR/scripts/verify_live_charts.mjs"
 fi
 
