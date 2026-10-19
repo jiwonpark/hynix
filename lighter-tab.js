@@ -5014,6 +5014,7 @@
       const openPairs = new Map();
       let pairSequence = 0;
       rawMarkers.forEach((marker, index) => {
+        if (marker.is_signal && !marker.is_simulated_fill) return;
         const dir = marker.direction || (marker.shape === "arrowDown" ? (marker.is_entry !== false ? "short" : "long") : (marker.is_entry !== false ? "long" : "short"));
         const stream = `${marker.source || "trade"}:${marker.backtest ? "backtest" : (marker.is_paper ? "paper" : "live")}:${dir}`;
         const stack = openPairs.get(stream) || [];
@@ -5210,6 +5211,7 @@
         })));
         // Entry arrows represent condition matches, not position fills.
         this.backtestMarkers = this.backtestMarkers.filter((marker) => !marker.is_entry);
+        const signalLinks = TerminalCommon.replaySignalLinks(data);
         this.backtestMarkers.push(...(data.entry_signals || []).map((signal, index) => ({
           time: safeAlignTime(this.bars, signal.time), rawTime: signal.time,
           position: signal.side < 0 ? "aboveBar" : "belowBar",
@@ -5217,6 +5219,7 @@
           shape: signal.side < 0 ? "arrowDown" : "arrowUp", text: "",
           source: "virtual", hypothetical: true, backtest: true,
           pairKey: `backtest:signal:${signal.time}:${index}`,
+          ...signalLinks.get(`${Number(signal.time)}:${Number(signal.side)}`),
           direction: signal.side < 0 ? "short" : "long", is_entry: true, is_signal: true,
           entry_price: signal.price, ratio: signal.price,
           hoverText: `${signal.side < 0 ? "SHORT" : "BUY"} CONDITION ${Number(signal.price).toFixed(2)}%`,

@@ -439,13 +439,20 @@
 
     executionsForInterval() {
       const exitMarkers = (this.data?.markers || []).filter((marker) => !marker.is_entry);
-      const signalMarkers = (this.data?.entry_signals || []).map((signal, index) => ({
-        time: Number(signal.time), source: "virtual", hypothetical: true, backtest: true,
-        is_entry: true, is_signal: true, action: "entry", direction: "long",
-        position: "belowBar", shape: "arrowUp", color: "#16a34a",
-        entry_price: Number(signal.price), pairKey: `signal:${signal.time}:${index}`,
-        hoverText: `BUY CONDITION ₩${Math.round(signal.price).toLocaleString()}`,
-      }));
+      const fillsBySignal = new Map((this.data?.markers || []).filter((marker) => marker.is_entry)
+        .map((marker) => [Number(marker.signal_time ?? marker.time), marker]));
+      const signalMarkers = (this.data?.entry_signals || []).map((signal, index) => {
+        const fill = fillsBySignal.get(Number(signal.time));
+        return {
+          time: Number(signal.time), source: "virtual", hypothetical: true, backtest: true,
+          is_entry: true, is_signal: true, action: "entry", direction: "long",
+          position: "belowBar", shape: "arrowUp", color: "#16a34a",
+          entry_price: Number(signal.price), pairKey: fill?.pairKey || `signal:${signal.time}:${index}`,
+          fill_entry_price: fill?.entry_price, exit_price: fill?.exit_price,
+          net_return_pct: fill?.net_return_pct,
+          hoverText: `BUY CONDITION ₩${Math.round(signal.price).toLocaleString()}`,
+        };
+      });
       const virtualMarkers = [...signalMarkers, ...exitMarkers];
       const actualMarkers = this.getActualTradeMarkers();
       const allMarkers = [...virtualMarkers, ...actualMarkers];
@@ -1031,6 +1038,7 @@
               id: t.id,
               pairKey: t.pairKey || `${t.id || 'V'}_${t.entry_time}_${t.exit_time}`,
               entry_time: Number(t.entry_time),
+              signal_time: Number(t.signal_time ?? t.entry_time),
               exit_time: Number(t.exit_time),
               entry_price: Number(t.entry_price),
               exit_price: Number(t.exit_price),
@@ -1123,7 +1131,7 @@
         const { entry_time, exit_time, entry_price, exit_price, direction } = pair;
         if (!entry_time || !exit_time) return;
 
-        const isEntryMatch = hasActive && this.isTimeMatch(activeTime, entry_time);
+        const isEntryMatch = hasActive && (this.isTimeMatch(activeTime, entry_time) || this.isTimeMatch(activeTime, pair.signal_time));
         const isExitMatch = hasActive && this.isTimeMatch(activeTime, exit_time);
         const isHighlighted = isEntryMatch || isExitMatch;
 
@@ -1224,14 +1232,14 @@
       const targetTime = this.selectedMarkerTime !== null ? this.selectedMarkerTime : hoverTime;
       const marker = this.findMarkerForTime(targetTime);
       if (marker && marker.entry_price) {
-        this.renderEntryReferenceLines(marker.entry_price, true, marker.exit_price || null, marker);
+        this.renderEntryReferenceLines(marker.fill_entry_price ?? marker.entry_price, true, marker.exit_price || null, marker);
       } else if (this.data?.open_position?.price && this.controller.visibility.virtual !== false) {
         this.renderEntryReferenceLines(this.data.open_position.price, false);
       } else {
         const visibleMarkers = this.controller.visibleExecutions();
         const lastMarker = visibleMarkers.filter(m => m.entry_price).at(-1);
         if (lastMarker?.entry_price) {
-          this.renderEntryReferenceLines(lastMarker.entry_price, false, lastMarker.exit_price || null, lastMarker);
+          this.renderEntryReferenceLines(lastMarker.fill_entry_price ?? lastMarker.entry_price, false, lastMarker.exit_price || null, lastMarker);
         } else {
           this.controller.clearReferenceLines();
         }

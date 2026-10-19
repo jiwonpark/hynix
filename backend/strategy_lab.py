@@ -461,16 +461,9 @@ def run_ma_stack_backtest(
         open_quantity = sum(t["quantity"] for t in tranche_stack)
         current_equity = cash + open_quantity * close
         equity_curve.append({"time": int(bar["time"]), "value": current_equity})
-        if index + 1 >= len(bars):
-            continue
         hourly = hour_at(int(bar["time"]) + 300)
         if hourly is None or not is_warmed_up(bar, hourly):
             continue
-        next_bar = bars[index + 1]
-        fill_price = float(next_bar["open"])
-        if fill_price <= 0:
-            continue
-
         should_enter, should_exit, reason = evaluate_strategy_signals(
             mode, bar, hourly,
             **options,
@@ -478,13 +471,21 @@ def run_ma_stack_backtest(
 
         if should_enter:
             entry_signals.append({
-                "time": int(next_bar["time"]),
+                "time": int(bar["time"]),
                 "signal_time": int(bar["time"]),
-                "price": fill_price,
+                "price": close,
                 "side": 1,
                 "reason": reason or mode,
                 "conditions": {"entry_conditions": True},
             })
+
+        # A finalized candle can signal even when no next-open fill exists yet.
+        if index + 1 >= len(bars):
+            continue
+        next_bar = bars[index + 1]
+        fill_price = float(next_bar["open"])
+        if fill_price <= 0:
+            continue
 
         if should_exit and tranche_stack:
             popped = tranche_stack.pop()
@@ -497,6 +498,7 @@ def run_ma_stack_backtest(
             pair_key = f"{popped['id']}_{popped['time']}_{int(next_bar['time'])}"
             trade = {
                 "id": popped["id"],
+                "signal_time": popped.get("signal_time", popped["time"]),
                 "pairKey": pair_key,
                 "entry_time": popped["time"],
                 "exit_time": int(next_bar["time"]),
@@ -542,6 +544,7 @@ def run_ma_stack_backtest(
             tranche_id = f"T{len(tranche_stack) + 1}"
             tranche = {
                 "id": tranche_id,
+                "signal_time": int(bar["time"]),
                 "time": int(next_bar["time"]),
                 "price": fill_price,
                 "quantity": qty,
@@ -551,6 +554,7 @@ def run_ma_stack_backtest(
             }
             entry_marker = {
                 "time": int(next_bar["time"]),
+                "signal_time": int(bar["time"]),
                 "source": "virtual",
                 "hypothetical": True,
                 "backtest": True,

@@ -29,5 +29,11 @@ Render entry arrows from `entry_signals`, never by inferring them from trades or
 open positions. Label counts separately (for example, “12 entry signals · 3
 simulated fills”). A strategy may use prior signal history for an enabled spacing
 or cooldown rule; it may not use open-position history to suppress a marker.
+Use the evaluated candle's timestamp and price for the signal, including the
+latest completed candle even when its next-open simulated fill is unavailable.
+Link a signal to an exit only through its corresponding simulated fill; unfilled
+signals must never consume or replace a trade's entry in chart pairing. Profit
+references and trade connectors use fill prices, while signal arrows keep the
+condition candle's price.
 Regression coverage for every new replay strategy must demonstrate that a second
 qualifying candle is still returned while the simulated position remains open.

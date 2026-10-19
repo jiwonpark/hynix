@@ -80,6 +80,25 @@
     return result;
   }
 
+  // Only signals that actually produced simulated inventory may link to exits.
+  // Other qualifying candles remain standalone condition markers.
+  function replaySignalLinks(data) {
+    const links = new Map();
+    (data.trades || []).forEach((trade, index) => {
+      links.set(`${Number(trade.entry_time)}:${Number(trade.side)}`, {
+        pairKey: `backtest:${index}`, is_simulated_fill: true,
+        exit_price: trade.exit, pnl_pct: trade.pnl_pct,
+      });
+    });
+    (data.open_positions || []).forEach((entry, index) => {
+      links.set(`${Number(entry.entry_time)}:${Number(entry.side)}`, {
+        pairKey: `backtest:open:${entry.entry_time}:${index}`, is_simulated_fill: true,
+        is_open: true, unrealized_pnl_pct: entry.unrealized_pnl_pct,
+      });
+    });
+    return links;
+  }
+
   function alignTime(bars, timestampSeconds) {
     if (!Array.isArray(bars) || !bars.length) return timestampSeconds;
     return bars.reduce((best, bar) => (
@@ -126,7 +145,7 @@
     }
   }
 
-  const TerminalCommon = { alignTime, movingAverage, movingAverageDiff, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles };
+  const TerminalCommon = { alignTime, movingAverage, movingAverageDiff, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

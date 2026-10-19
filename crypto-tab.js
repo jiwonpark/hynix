@@ -1443,6 +1443,7 @@
         `;
       }
       if (mode === "ma_stack") {
+        const savedMa = this.botState?.strategy_mode === "ma_stack" ? this.botState : {};
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div>
@@ -1462,6 +1463,11 @@
               <input id="crypto_inpMaMinDiffBars" type="number" min="1" max="10" step="1" value="2" style="width:50px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;" aria-label="Minimum consecutive bars in MA diff series">
               <button id="crypto_btnMaReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
             </div>
+          </div>
+          <div style="display:grid;gap:8px;margin-bottom:12px;">
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;"><input id="crypto_maUseDiffHook" type="checkbox" style="width:16px;height:16px;" ${savedMa.use_ma_diff_hook !== false ? "checked" : ""}>Entry · MA diff turnaround after the configured streak<span class="condBadge neutral" id="crypto_maStatusDiffHook">UNAVAILABLE</span></label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;"><input id="crypto_maUseDiffExit" type="checkbox" style="width:16px;height:16px;" ${savedMa.use_ma_diff_exit !== false ? "checked" : ""}>Exit · Opposite MA diff turnaround<span class="condBadge neutral" id="crypto_maStatusDiffExit">N/A</span></label>
+            <small id="crypto_maDiffStatusSource" style="color:#64748b;">PAPER · Awaiting completed-candle replay</small>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
@@ -1772,6 +1778,15 @@
         }
       } else if (mode === "ma_stack") {
         $("crypto_btnMaReplay")?.addEventListener("click", () => this.runBacktest());
+        ["crypto_maUseDiffHook", "crypto_maUseDiffExit"].forEach((id) => {
+          const input = $(id);
+          input?.addEventListener("change", () => {
+            input.dataset.unsaved = "true";
+            this.updateDeployButtonState();
+            this.updateRulesMatchStatus();
+            this.runBacktest();
+          });
+        });
         $("crypto_inpMaMinDiffBars")?.addEventListener("change", () => {
           this.updateDeployButtonState();
           this.updateRulesMatchStatus();
@@ -2008,8 +2023,7 @@
         payload.ma_stretch_min = numeric("crypto_inpMaStretchMin", Number(this.botState?.ma_stretch_min ?? 0.30));
         payload.ma_trailing_stop = numeric("crypto_inpMaTrailingStop", Number(this.botState?.ma_trailing_stop ?? 0.15));
         payload.min_diff_bars = numeric("crypto_inpMaMinDiffBars", Number(this.botState?.min_diff_bars ?? 2));
-        payload.use_ma_diff_hook = true;
-        payload.use_ma_diff_exit = true;
+        Object.assign(payload, this.maDiffConditionSettings());
       } else if (mode === "multi_factor") {
         payload.min_consensus_votes = numeric("crypto_selFactorQuorum", Number(this.botState?.min_consensus_votes ?? 3));
       } else if (mode === "trend_pullback") {
@@ -2849,9 +2863,17 @@
         use_convergence: lid("chkCondExitConvergence")?.checked !== false,
         use_dwell: lid("chkCondExitDwell")?.checked !== false,
         use_bottoming: lid("chkCondExitBottoming")?.checked === true,
-        use_ma_diff_hook: mode === "ma_stack",
-        use_ma_diff_exit: mode === "ma_stack",
+        use_ma_diff_hook: mode === "ma_stack" && this.maDiffConditionSettings().use_ma_diff_hook,
+        use_ma_diff_exit: mode === "ma_stack" && this.maDiffConditionSettings().use_ma_diff_exit,
         min_diff_bars: mode === "ma_stack" ? (Number($("crypto_inpMaMinDiffBars")?.value) || 2) : 2,
+      };
+    },
+
+    maDiffConditionSettings() {
+      const saved = this.botState?.strategy_mode === "ma_stack" ? this.botState : {};
+      return {
+        use_ma_diff_hook: $("crypto_maUseDiffHook")?.checked ?? (saved.use_ma_diff_hook !== false),
+        use_ma_diff_exit: $("crypto_maUseDiffExit")?.checked ?? (saved.use_ma_diff_exit !== false),
       };
     },
 
@@ -2993,6 +3015,11 @@
         if (settings[key] !== liveEnabled)
           diffs.push(`${name} ${settings[key] ? "ON" : "OFF"} (live ${liveEnabled ? "ON" : "OFF"})`);
       });
+      if (currentMode === "ma_stack") {
+        for (const key of ["use_ma_diff_hook", "use_ma_diff_exit"]) {
+          if (settings[key] !== (liveParams[key] !== false)) diffs.push(`${key} differs from saved bot`);
+        }
+      }
       const matched = diffs.length === 0;
       const canAlign = Boolean(this.botState && parameterKeys[liveMode]
         && (parameterKeys[liveMode] || []).every((key) => liveParams[key] != null));
@@ -3023,6 +3050,24 @@
 
     renderReplayConditionStatus(result, settings = this.replaySettings()) {
       const checks = result?.latest_conditions || {};
+      if (this.currentParadigm === "ma_stack") {
+        for (const [suffix, key, toggle] of [
+          ["DiffHook", "entry_ma_diff_hook", "use_ma_diff_hook"],
+          ["DiffExit", "exit_ma_diff_hook", "use_ma_diff_exit"],
+        ]) {
+          const badge = $(`crypto_maStatus${suffix}`);
+          if (!badge) continue;
+          const state = !settings[toggle] ? "OFF" : checks[key] == null
+            ? (key.startsWith("exit_") ? "N/A" : "UNAVAILABLE") : checks[key] ? "PASS" : "WAITING";
+          badge.textContent = state;
+          badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+          badge.title = `PAPER · MA7 − MA24 · streak ≥ ${settings.min_diff_bars} completed bars`;
+        }
+        const source = $("crypto_maDiffStatusSource");
+        if (source) source.textContent = result?.latest_condition_time
+          ? `PAPER · Completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()}`
+          : "PAPER · Awaiting completed-candle replay";
+      }
       if (this.currentParadigm === "ou_quant") {
         const evaluation = result?.latest_evaluation;
         const ouChecks = evaluation?.condition_pass || {};
@@ -3101,7 +3146,8 @@
         name.textContent = label;
         const badge = document.createElement("span");
         const value = checks[key];
-        const state = value == null ? "N/A" : value ? "PASS" : "WAITING";
+        const diffToggle = {entry_ma_diff_hook: "use_ma_diff_hook", exit_ma_diff_hook: "use_ma_diff_exit"}[key];
+        const state = diffToggle && !settings[diffToggle] ? "OFF" : value == null ? "N/A" : value ? "PASS" : "WAITING";
         badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
         badge.textContent = state;
         badge.title = value == null ? "No open paper position or completed replay evaluation" : "Evaluated by paper replay";
@@ -3297,6 +3343,12 @@
         }
       }
       if (liveMode === "ma_stack") {
+        for (const [id, key] of [["crypto_maUseDiffHook", "use_ma_diff_hook"], ["crypto_maUseDiffExit", "use_ma_diff_exit"]]) {
+          if ($(id)) {
+            $(id).checked = params[key] !== false;
+            delete $(id).dataset.unsaved;
+          }
+        }
         if (params.ma_stretch_min != null && $("crypto_inpMaStretchMin")) {
           $("crypto_inpMaStretchMin").value = String(params.ma_stretch_min);
           $("crypto_inpMaStretchMin")._userModified = false;
@@ -5665,6 +5717,7 @@
       const openPairs = new Map();
       let pairSequence = 0;
       rawMarkers.forEach((marker, index) => {
+        if (marker.is_signal && !marker.is_simulated_fill) return;
         const dir = marker.direction || (marker.shape === "arrowDown" ? (marker.is_entry !== false ? "short" : "long") : (marker.is_entry !== false ? "long" : "short"));
         const stream = `${marker.source || "trade"}:${marker.backtest ? "backtest" : (marker.is_paper ? "paper" : "live")}:${dir}`;
         const stack = openPairs.get(stream) || [];
@@ -5853,6 +5906,7 @@
         })));
         // Entry arrows represent condition matches, not position fills.
         this.backtestMarkers = this.backtestMarkers.filter((marker) => !marker.is_entry);
+        const signalLinks = TerminalCommon.replaySignalLinks(data);
         this.backtestMarkers.push(...(data.entry_signals || []).map((signal, index) => ({
           time: safeAlignTime(this.bars, signal.time), rawTime: signal.time,
           position: signal.side < 0 ? "aboveBar" : "belowBar",
@@ -5860,6 +5914,7 @@
           shape: signal.side < 0 ? "arrowDown" : "arrowUp", text: "",
           source: "virtual", hypothetical: true, backtest: true,
           pairKey: `backtest:signal:${signal.time}:${index}`,
+          ...signalLinks.get(`${Number(signal.time)}:${Number(signal.side)}`),
           direction: signal.side < 0 ? "short" : "long", is_entry: true, is_signal: true,
           entry_price: signal.price, ratio: signal.price,
           hoverText: `${signal.side < 0 ? "SHORT" : "BUY"} CONDITION ${this.formatCryptoPrice(signal.price)}`,

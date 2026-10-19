@@ -1890,6 +1890,7 @@ def _run_crypto_backtest_sync(
             diff_hook_pass = (diff_entry_hook if candidate_side > 0 else diff_exit_hook) if use_ma_diff_hook else True
 
             if ma_stack_opposite_only:
+                candidate_side = 1
                 entry_conditions = []
                 if use_ma_stack:
                     entry_conditions.append(bearish_stack)

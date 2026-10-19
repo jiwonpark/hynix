@@ -25,7 +25,8 @@ assert.equal(savedSettings.get('hyperion_strategy_lab_selected_strategy'), 'ou_q
 const buy = { time: 100, entry_price: 1000, exit_price: 1100, net_return_pct: 9.89,
   hypothetical: true, backtest: true, is_entry: true, shape: 'arrowUp', hoverText: 'BUY' };
 const sell = { ...buy, time: 200, is_entry: false, shape: 'arrowDown', hoverText: 'SELL' };
-lab.data = { markers: [buy, sell], fee_bps: 5, open_position: { price: 1200 } };
+lab.data = { markers: [buy, sell], entry_signals: [{time: buy.time, price: buy.entry_price - 25, side: 1}],
+  fee_bps: 5, open_position: { price: 1200 } };
 lab.chart = { timeScale: () => ({ getVisibleLogicalRange: () => ({ from: 0, to: 60 }),
   setVisibleLogicalRange: () => {},
   timeToCoordinate: time => time }) };
@@ -117,6 +118,7 @@ assert.equal(lab.selectedMarkerTime, 0, 'clicking tranche on 1h must select the 
 assert.equal([...lines][0].price, buy.entry_price, 'tranche click on 1h must draw entry and profit lines');
 
 lab.setChartInterval('5m');
+assert.equal(lab.executionsForInterval()[0].entry_price, buy.entry_price - 25, 'signal arrow retains completed-candle price');
 assert.equal(lab.chartInterval, '5m');
 assert.equal(rendered[0].time, 100, '5m marker time restored on 5m interval');
 assert.equal(rendered[1].time, 200, '5m marker time restored on 5m interval');

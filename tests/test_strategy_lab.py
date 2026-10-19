@@ -19,6 +19,18 @@ def candles(start, count, step, prices):
 
 
 class StrategyLabTests(unittest.TestCase):
+    def test_signals_include_latest_completed_candle_without_next_open(self):
+        five = candles(0, 80, 300, list(range(180, 100, -1)))
+        hourly = candles(-60 * 3600, 80, 3600, list(range(180, 100, -1)))
+        result = run_ma_stack_backtest(five, hourly, max_tranches=1)
+        signals = result["entry_signals"]
+        entries = [m for m in result["markers"] if m["is_entry"]]
+        self.assertGreater(len(signals), len(entries))
+        self.assertEqual(signals[-1]["time"], five[-1]["time"])
+        self.assertEqual(signals[-1]["price"], five[-1]["close"])
+        self.assertEqual(signals[0]["time"] + 300, entries[0]["time"])
+        self.assertEqual(entries[0]["signal_time"], signals[0]["time"])
+
     def test_dual_stack_enters_at_next_five_minute_open(self):
         five_prices = list(range(180, 100, -1))
         hour_prices = list(range(180, 100, -1))

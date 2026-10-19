@@ -20,7 +20,7 @@ elements.set('lighter_inpMaStretchMin', {value:'0.3'});
 elements.set('lighter_inpMaTrailingStop', {value:'0.15'});
 let response, requestUrl;
 const ctx = {window:{}, document:{getElementById:id=>elements.get(id),readyState:'loading',addEventListener(){}},
-  URLSearchParams, console, fetch:async url=>{requestUrl=url; return {ok:true,json:async()=>response};}};
+  TerminalCommon: require('../terminal-common.js'), URLSearchParams, console, fetch:async url=>{requestUrl=url; return {ok:true,json:async()=>response};}};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../lighter-tab.js'),'utf8'),ctx);
 const engine = ctx.window.lighterEngine;
@@ -98,6 +98,7 @@ engine.botState.strategy_mode='ou_quant';
 engine.botState.strategy_params=liveOuParams;
 engine.setParadigm=(mode)=>{engine.currentParadigm=mode;};
 engine.refreshChart=()=>{};
+engine.bars=[{time:100,value:140},{time:200,value:141},{time:300,value:142}];
 const runBacktest=engine.runBacktest;
 let replayCalls=0;
 engine.runBacktest=()=>{replayCalls++;};
@@ -139,7 +140,8 @@ async function main() {
   engine.currentParadigm='ou_quant';
   engine.renderMarkers=()=>{}; engine.renderCurrentPositionReferenceLines=()=>{};
   elements.get('lighter_inpOuExitZ').value='0';
-  response={trades:[{entry_time:100,entry:140,exit_time:200,exit:141,side:1,pnl_pct:.7143}],
+  response={entry_signals:[{time:100,price:140,side:1},{time:300,price:142,side:-1}],
+    trades:[{entry_time:100,entry:140,exit_time:200,exit:141,side:1,pnl_pct:.7143}],
     open_positions:[{entry_time:300,entry:142,side:-1,unrealized_pnl_pct:.2}],
     summary:{trades:1,win_rate:100,net_pct:.7143,unrealized_pct:.2},metrics:{signal_engine:'shared_live_ou'}};
   await engine.runBacktest();
@@ -148,7 +150,7 @@ async function main() {
   const open = engine.backtestMarkers.find(m=>m.is_open);
   assert.equal(open.time,300); assert.equal(open.is_entry,true); assert.equal(open.direction,'short');
   assert.equal(open.exit_price,undefined); assert.equal(open.pnl_pct,undefined);
-  assert.equal(open.unrealized_pnl_pct,.2); assert.match(open.hoverText,/OPEN · unrealized/);
+  assert.equal(open.unrealized_pnl_pct,.2); assert.match(open.hoverText,/CONDITION/);
   assert.match(elements.get('lighter_dynamicBacktestStatus').innerHTML,/1<\/strong> open/);
   assert.match(elements.get('lighter_dynamicBacktestStatus').innerHTML,/unrealized return sum/);
   assert.equal(elements.get('lighter_btnRerunDynamicBacktest').disabled,false);

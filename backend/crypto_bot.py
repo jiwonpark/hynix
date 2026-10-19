@@ -294,6 +294,7 @@ class CryptoBot:
             "trend_tp_dist": (0.01, 10.0), "trend_slope_min": (0.0001, 1.0),
             "fast_ma_period": (2, 100), "slow_ma_period": (3, 200),
             "min_cross_spread_bps": (0.0, 100.0),
+            "min_diff_bars": (1, 10),
         }
         for key, (low, high) in bounds.items():
             if key in candidate:
