@@ -73,6 +73,87 @@ def classify_trend_direction(values: List[float], window_size: int = 24) -> str:
     return state
 
 
+def classify_trend_series(values: List[float], window_size: int = 24) -> List[str]:
+    """Return the causal 1-bar-confirmed fast trend regime for every bar in values."""
+    clean = [float(value) for value in values if math.isfinite(float(value))]
+    n = len(clean)
+    results = ["UNKNOWN"] * n
+    if n < window_size:
+        return results
+    state = "SIDEWAYS"
+    pending: Optional[str] = None
+    pending_count = 0
+    for index in range(window_size - 1, n):
+        score = _trend_score(clean[index - (window_size - 1):index + 1])
+        if state == "UPTREND":
+            target = "DOWNTREND" if score <= -0.20 else ("SIDEWAYS" if score < 0.05 else "UPTREND")
+        elif state == "DOWNTREND":
+            target = "UPTREND" if score >= 0.20 else ("SIDEWAYS" if score > -0.05 else "DOWNTREND")
+        else:
+            target = "UPTREND" if score >= 0.20 else ("DOWNTREND" if score <= -0.20 else "SIDEWAYS")
+        if target == state:
+            pending, pending_count = None, 0
+        else:
+            if target == pending:
+                pending_count += 1
+            else:
+                pending, pending_count = target, 1
+            if pending_count >= 2:
+                state, pending, pending_count = target, None, 0
+        results[index] = state
+    return results
+
+
+def ou_macro_ema_slope_series(ratios: List[float], span: int = OU_MACRO_EMA_SPAN,
+                              slope_bars: int = OU_MACRO_SLOPE_BARS) -> List[Optional[float]]:
+    """Causal EMA change over completed bars for every bar in ratios."""
+    n = len(ratios)
+    results: List[Optional[float]] = [None] * n
+    min_len = max(span * 2, slope_bars + 2)
+    if n < min_len:
+        return results
+    alpha = 2.0 / (span + 1)
+    ema = ratios[0]
+    ema_vals = [ema]
+    for r in ratios[1:]:
+        ema += alpha * (r - ema)
+        ema_vals.append(ema)
+    for i in range(min_len - 1, n):
+        earlier = ema_vals[i - slope_bars]
+        results[i] = ema_vals[i] - earlier
+    return results
+
+
+def macro_trend_aligned_series(values: List[float], span: int = OU_MACRO_EMA_SPAN,
+                               slope_bars: int = OU_MACRO_SLOPE_BARS) -> List[Tuple[bool, bool]]:
+    """Returns for each bar (long_aligned, short_aligned)."""
+    n = len(values)
+    if n < 60:
+        return [(True, True)] * n
+    trends = classify_trend_series(values)
+    slopes = ou_macro_ema_slope_series(values, span, slope_bars)
+    results: List[Tuple[bool, bool]] = []
+    for i in range(n):
+        if i + 1 < 60:
+            results.append((True, True))
+            continue
+        direction = trends[i]
+        long_ok = True
+        short_ok = True
+        if direction == "UPTREND":
+            short_ok = False
+        elif direction == "DOWNTREND":
+            long_ok = False
+        elif direction == "SIDEWAYS":
+            prev_slope = slopes[i - 1] if i > 0 else None
+            if prev_slope is not None and prev_slope > 0:
+                short_ok = False
+            if prev_slope is not None and prev_slope < 0:
+                long_ok = False
+        results.append((long_ok, short_ok))
+    return results
+
+
 def _macro_trend_aligned(values: List[float], candidate_side: int,
                          span: int = OU_MACRO_EMA_SPAN,
                          slope_bars: int = OU_MACRO_SLOPE_BARS) -> bool:
@@ -98,6 +179,7 @@ def _macro_trend_aligned(values: List[float], candidate_side: int,
         if candidate_side > 0 and macro_slope is not None and macro_slope < 0:
             return False
     return True
+
 
 
 def evaluate_ou_signals(

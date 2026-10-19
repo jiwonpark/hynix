@@ -271,7 +271,7 @@ class LighterClient:
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6, connect=3))
+            self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10, connect=4))
         return self._session
 
     async def close(self) -> None:

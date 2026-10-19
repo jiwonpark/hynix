@@ -43,6 +43,7 @@ from .lighter_crypto_bot import LighterCryptoBot, MARKETS as LIGHTER_CRYPTO_MARK
 from .lighter_bot import LighterPairBot
 from .lighter_strategy import (
     _macro_trend_aligned,
+    macro_trend_aligned_series,
     evaluate_ou_signals,
     evaluate_grid_signals,
     evaluate_ma_acceleration_signals,
@@ -576,30 +577,42 @@ async def toggle_lighter_bot(request: Request) -> JSONResponse:
 
 
 @app.get("/api/lighter/backtest")
-async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
-                               strategy_mode: str = "grid",
-                               entry_z: float = 1.5, exit_z: float = 0.25,
-                               use_ma_stretch: bool = True, use_peak: bool = True,
-                               use_base_spacing: bool = True, use_ma_stack: bool = False, use_ma_stack_1h: bool = True, use_convergence: bool = True,
-                               use_dwell: bool = True, use_bottoming: bool = False,
-                               ou_halflife_max: float = 8.0, ou_stop_z: float = 3.5,
-                               ou_min_abs_deviation_pp: float = 0.25,
-                               ou_macro_ema_span: int = 60, ou_macro_slope_bars: int = 12,
-                               ou_use_entry_z: bool = True, ou_use_halflife: bool = True,
-                               ou_use_min_abs_deviation: bool = True,
-                               ou_use_macro_trend: bool = True, ou_use_stop_zone: bool = True,
-                               ou_use_exit_z: bool = True,
-                               ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
-                               min_consensus_votes: int = 3,
-                               trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
-                               trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002,
-                               long_multiplier: float = 1.0, short_multiplier: float = 1.0) -> Dict[str, Any]:
-    data = await get_lighter_parity(interval, min(500, limit))
-    bars = data.get("bars", [])
-    interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
-                        "4h": 14400, "1d": 86400}.get(interval, 900)
-    now_seconds = int(time.time())
-    bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]
+def _run_lighter_backtest_sync(
+    bars: List[Dict[str, Any]],
+    success: bool,
+    strategy_mode: str = "grid",
+    entry_z: float = 1.5,
+    exit_z: float = 0.25,
+    use_ma_stretch: bool = True,
+    use_peak: bool = True,
+    use_base_spacing: bool = True,
+    use_ma_stack: bool = False,
+    use_ma_stack_1h: bool = True,
+    use_convergence: bool = True,
+    use_dwell: bool = True,
+    use_bottoming: bool = False,
+    ou_halflife_max: float = 8.0,
+    ou_stop_z: float = 3.5,
+    ou_min_abs_deviation_pp: float = 0.25,
+    ou_macro_ema_span: int = 60,
+    ou_macro_slope_bars: int = 12,
+    ou_use_entry_z: bool = True,
+    ou_use_halflife: bool = True,
+    ou_use_min_abs_deviation: bool = True,
+    ou_use_macro_trend: bool = True,
+    ou_use_stop_zone: bool = True,
+    ou_use_exit_z: bool = True,
+    ma_stretch_min: float = 0.30,
+    ma_trailing_stop: float = 0.15,
+    min_consensus_votes: int = 3,
+    trend_macro_window: int = 24,
+    trend_pullback_dist: float = 0.15,
+    trend_tp_dist: float = 0.05,
+    trend_slope_min: float = 0.002,
+    long_multiplier: float = 1.0,
+    short_multiplier: float = 1.0,
+    interval_seconds: int = 900,
+) -> Dict[str, Any]:
     window = 24
     trades = []
     position = None
@@ -609,6 +622,8 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
     last_entry_side = None
     mode_metrics: Dict[str, Any] = {}
     latest_evaluation: Dict[str, Any] = {}
+    bars_values = [item.get("signal_value", item["value"]) for item in bars]
+    macro_aligned_list = macro_trend_aligned_series(bars_values, span=ou_macro_ema_span, slope_bars=ou_macro_slope_bars) if bars_values else []
 
     active_positions = []
     if strategy_mode in {"ou_quant", "grid", "custom"}:
@@ -657,7 +672,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                 mean = evaluation["signal_mean"]
                 stack_pass = ((zscore > 0 and signal_price > ma7 > mean)
                               or (zscore < 0 and signal_price < ma7 < mean))
-                macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+                macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
                 peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
                 spacing_pass = (not use_base_spacing or last_entry_value is None
                                 or candidate_side != last_entry_side
@@ -731,7 +746,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
             bearish_stack = bar["value"] < ma7 < ma24 < ma60
             bullish_stack = bar["value"] > ma7 > ma24 > ma60
             candidate_side = 1 if bearish_stack else -1
-            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+            macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
             entry_signal = ((bearish_stack or bullish_stack)
                             and stretch_pct >= ma_stretch_min
                             and (not use_ma_stack_1h or macro_aligned))
@@ -780,7 +795,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
 
             votes = sum([f1, f2, f3, f4])
             candidate_side = -1 if zscore > 0 else 1
-            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+            macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
             entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8
                             and (not use_ma_stack_1h or macro_aligned))
 
@@ -846,7 +861,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
             raw_buy = is_uptrend and (trendline_val - bar["value"] >= trend_pullback_dist) and micro_reverting_up
             raw_short = is_downtrend and (bar["value"] - trendline_val >= trend_pullback_dist) and micro_reverting_down
             candidate_side = 1 if raw_buy else -1
-            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+            macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
             buy_signal = raw_buy and (not use_ma_stack_1h or macro_aligned)
             short_signal = raw_short and (not use_ma_stack_1h or macro_aligned)
 
@@ -926,7 +941,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
 
     wins = sum(1 for trade in trades if trade["pnl_pct"] > 0)
     return {
-        "success": data.get("success", False),
+        "success": success,
         "strategy_mode": strategy_mode,
         "series": series,
         "trades": trades,
@@ -943,6 +958,57 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
         },
         "assumptions": "Public Lighter candles; zero advertised venue fees; slippage and funding excluded."
     }
+
+
+@app.get("/api/lighter/backtest")
+async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
+                               strategy_mode: str = "grid",
+                               entry_z: float = 1.5, exit_z: float = 0.25,
+                               use_ma_stretch: bool = True, use_peak: bool = True,
+                               use_base_spacing: bool = True, use_ma_stack: bool = False, use_ma_stack_1h: bool = True, use_convergence: bool = True,
+                               use_dwell: bool = True, use_bottoming: bool = False,
+                               ou_halflife_max: float = 8.0, ou_stop_z: float = 3.5,
+                               ou_min_abs_deviation_pp: float = 0.25,
+                               ou_macro_ema_span: int = 60, ou_macro_slope_bars: int = 12,
+                               ou_use_entry_z: bool = True, ou_use_halflife: bool = True,
+                               ou_use_min_abs_deviation: bool = True,
+                               ou_use_macro_trend: bool = True, ou_use_stop_zone: bool = True,
+                               ou_use_exit_z: bool = True,
+                               ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
+                               min_consensus_votes: int = 3,
+                               trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
+                               trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002,
+                               long_multiplier: float = 1.0, short_multiplier: float = 1.0) -> Dict[str, Any]:
+    data = await get_lighter_parity(interval, min(500, limit))
+    bars = data.get("bars", [])
+    interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
+                        "4h": 14400, "1d": 86400}.get(interval, 900)
+    now_seconds = int(time.time())
+    bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]
+    return await asyncio.to_thread(
+        _run_lighter_backtest_sync,
+        bars=bars,
+        success=data.get("success", False),
+        strategy_mode=strategy_mode,
+        entry_z=entry_z, exit_z=exit_z,
+        use_ma_stretch=use_ma_stretch, use_peak=use_peak,
+        use_base_spacing=use_base_spacing, use_ma_stack=use_ma_stack, use_ma_stack_1h=use_ma_stack_1h,
+        use_convergence=use_convergence, use_dwell=use_dwell, use_bottoming=use_bottoming,
+        ou_halflife_max=ou_halflife_max, ou_stop_z=ou_stop_z,
+        ou_min_abs_deviation_pp=ou_min_abs_deviation_pp,
+        ou_macro_ema_span=ou_macro_ema_span, ou_macro_slope_bars=ou_macro_slope_bars,
+        ou_use_entry_z=ou_use_entry_z, ou_use_halflife=ou_use_halflife,
+        ou_use_min_abs_deviation=ou_use_min_abs_deviation,
+        ou_use_macro_trend=ou_use_macro_trend, ou_use_stop_zone=ou_use_stop_zone,
+        ou_use_exit_z=ou_use_exit_z,
+        ma_stretch_min=ma_stretch_min, ma_trailing_stop=ma_trailing_stop,
+        min_consensus_votes=min_consensus_votes,
+        trend_macro_window=trend_macro_window, trend_pullback_dist=trend_pullback_dist,
+        trend_tp_dist=trend_tp_dist, trend_slope_min=trend_slope_min,
+        long_multiplier=long_multiplier, short_multiplier=short_multiplier,
+        interval_seconds=interval_seconds,
+    )
+
 
 
 @app.post("/api/lighter/step_tranche")
@@ -1084,6 +1150,8 @@ async def get_crypto_status(symbol: str = "BTCUSDT") -> Dict[str, Any]:
         logger.warning(f"Crypto status error for {symbol}: {error}")
         return {"success": False, "symbol": symbol, "error": str(error), "server_time_ms": int(time.time() * 1000)}
 
+_crypto_candles_cache: Dict[str, tuple[float, Any]] = {}
+
 @app.get("/api/crypto/candles")
 async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 300,
                              include_markers: bool = True, endTime: Optional[int] = None,
@@ -1093,6 +1161,13 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
         target_end = endTime or end_timestamp
         if target_end and target_end < 100_000_000_000:
             target_end *= 1000
+        cache_key = f"{symbol}:{interval}:{limit}:{include_markers}:{target_end or 'latest'}"
+        now = time.time()
+        ttl = 3.0 if not target_end else 3600.0
+        if cache_key in _crypto_candles_cache:
+            cached_time, cached_data = _crypto_candles_cache[cache_key]
+            if now - cached_time < ttl:
+                return cached_data
         raw_klines = await get_klines(symbol, interval=interval, limit=limit, endTime=target_end)
         bars = []
         for row in raw_klines:
@@ -1136,7 +1211,10 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
                                   f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {symbol} @ {price:.6f} · "
                                   + (f"{event.get('qty')} filled" if is_entry else "realized P&L unverified")),
                 })
-        return {"success": True, "symbol": symbol, "interval": interval, "bars": bars, "markers": markers}
+        result = {"success": True, "symbol": symbol, "interval": interval, "bars": bars, "markers": markers}
+        if bars:
+            _crypto_candles_cache[cache_key] = (now, result)
+        return result
     except Exception as error:
         logger.error(f"Error fetching crypto candles: {error}")
         return {"success": False, "symbol": symbol, "interval": interval, "bars": [], "markers": [], "error": str(error)}
@@ -1522,42 +1600,59 @@ async def flatten_lighter_crypto(request: Request) -> JSONResponse:
         return JSONResponse({"success": False, "error": str(error),
                              "bot": lighter_crypto_bot.public_state()}, status_code=400)
 
-@app.get("/api/crypto/backtest")
-@app.get("/api/lighter-crypto/backtest")
-async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 500,
-                              strategy_mode: str = "grid",
-                              entry_z: float = 1.5, exit_z: float = 0.25,
-                              use_ma_stretch: bool = True, use_peak: bool = True,
-                              use_base_spacing: bool = True, use_ma_stack: bool = False, use_ma_stack_1h: bool = True, use_convergence: bool = True,
-                              use_dwell: bool = True, use_bottoming: bool = False,
-                              ou_halflife_max: float = 8.0, ou_stop_z: float = 3.5,
-                              ou_min_abs_deviation_pp: float = 0.25,
-                              ou_macro_ema_span: int = 60, ou_macro_slope_bars: int = 12,
-                              ou_use_entry_z: bool = True, ou_use_halflife: bool = True,
-                              ou_use_min_abs_deviation: bool = True,
-                              ou_use_macro_trend: bool = True, ou_use_stop_zone: bool = True,
-                              ou_use_exit_z: bool = True,
-                              ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
-                              min_consensus_votes: int = 3,
-                              trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
-                              trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002,
-                              ma_accel_period: int = 24, ma_accel_min_slope: float = 0.0, ma_accel_min_accel: float = 0.0,
-                              use_ma_slope: bool = True, use_ma_accel: bool = True, use_ma_pullback: bool = True, use_ma_cross_exit: bool = True,
-                              fast_ma_period: int = 9, slow_ma_period: int = 21, min_cross_spread_bps: float = 0.0,
-                              use_golden_cross: bool = True, use_death_cross: bool = True, use_cross_spread: bool = True,
-                              base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
-                              long_multiplier: float = 1.0, short_multiplier: float = 1.0,
-                              market_source: str = "binance") -> Dict[str, Any]:
-    """Single-leg crypto strategy backtest engine across 5 quantitative regimes."""
-    if market_source not in {"binance", "lighter"}:
-        raise ValueError("Unsupported crypto replay market source")
-    candle_res = (await get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit))
-                  if market_source == "lighter" else
-                  await get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False))
-    bars = candle_res.get("bars", [])
-    interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
-    now_seconds = int(time.time())
-    bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]
+def _run_crypto_backtest_sync(
+    bars: List[Dict[str, Any]],
+    candle_success: bool,
+    symbol: str = "BTCUSDT",
+    strategy_mode: str = "grid",
+    market_source: str = "binance",
+    entry_z: float = 1.5,
+    exit_z: float = 0.25,
+    use_ma_stretch: bool = True,
+    use_peak: bool = True,
+    use_base_spacing: bool = True,
+    use_ma_stack: bool = False,
+    use_ma_stack_1h: bool = True,
+    use_convergence: bool = True,
+    use_dwell: bool = True,
+    use_bottoming: bool = False,
+    ou_halflife_max: float = 8.0,
+    ou_stop_z: float = 3.5,
+    ou_min_abs_deviation_pp: float = 0.25,
+    ou_macro_ema_span: int = 60,
+    ou_macro_slope_bars: int = 12,
+    ou_use_entry_z: bool = True,
+    ou_use_halflife: bool = True,
+    ou_use_min_abs_deviation: bool = True,
+    ou_use_macro_trend: bool = True,
+    ou_use_stop_zone: bool = True,
+    ou_use_exit_z: bool = True,
+    ma_stretch_min: float = 0.30,
+    ma_trailing_stop: float = 0.15,
+    min_consensus_votes: int = 3,
+    trend_macro_window: int = 24,
+    trend_pullback_dist: float = 0.15,
+    trend_tp_dist: float = 0.05,
+    trend_slope_min: float = 0.002,
+    ma_accel_period: int = 24,
+    ma_accel_min_slope: float = 0.0,
+    ma_accel_min_accel: float = 0.0,
+    use_ma_slope: bool = True,
+    use_ma_accel: bool = True,
+    use_ma_pullback: bool = True,
+    use_ma_cross_exit: bool = True,
+    fast_ma_period: int = 9,
+    slow_ma_period: int = 21,
+    min_cross_spread_bps: float = 0.0,
+    use_golden_cross: bool = True,
+    use_death_cross: bool = True,
+    use_cross_spread: bool = True,
+    base_spacing_pct: float = 0.2,
+    min_dwell_bars: int = 4,
+    long_multiplier: float = 1.0,
+    short_multiplier: float = 1.0,
+    interval_seconds: int = 900,
+) -> Dict[str, Any]:
     window = 24
     trades = []
     position = None
@@ -1570,6 +1665,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     latest_conditions: Dict[str, Optional[bool]] = {}
     latest_condition_time: Optional[int] = None
     active_positions = []
+    bars_values = [item["value"] for item in bars]
+    macro_aligned_list = macro_trend_aligned_series(bars_values, span=ou_macro_ema_span, slope_bars=ou_macro_slope_bars) if bars_values else []
 
     if strategy_mode in {"ou_quant", "grid", "custom"}:
         ou_thetas = []
@@ -1617,7 +1714,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                 mean = evaluation["signal_mean"]
                 stack_pass = ((zscore > 0 and signal_price > ma7 > mean)
                               or (zscore < 0 and signal_price < ma7 < mean))
-                macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+                macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
                 peak_pass = previous_zscore is not None and abs(zscore) <= abs(previous_zscore)
                 step_dist = signal_price * max(0.0, min(10.0, base_spacing_pct)) / 100.0
                 spacing_pass = (not use_base_spacing or last_entry_value is None
@@ -1701,7 +1798,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
             bearish_stack = bar["value"] < ma7 < ma24 < ma60
             bullish_stack = bar["value"] > ma7 > ma24 > ma60
             candidate_side = 1 if bearish_stack else -1
-            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+            macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
             latest_conditions = {
                 "entry_ma_stack": bearish_stack or bullish_stack,
                 "entry_stretch": stretch_pct >= ma_stretch_min,
@@ -1758,7 +1855,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
 
             votes = sum([f1, f2, f3, f4])
             candidate_side = -1 if zscore > 0 else 1
-            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+            macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
             latest_conditions = {
                 "entry_factor_z": f1,
                 "entry_factor_velocity": f2,
@@ -1836,7 +1933,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
             raw_buy = is_uptrend and (trendline_val - bar["value"] >= pullback_dist) and micro_reverting_up
             raw_short = is_downtrend and (bar["value"] - trendline_val >= pullback_dist) and micro_reverting_down
             candidate_side = 1 if raw_buy else -1
-            macro_aligned = _macro_trend_aligned(prefix, candidate_side)
+            macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
             buy_signal = raw_buy and (not use_ma_stack_1h or macro_aligned)
             short_signal = raw_short and (not use_ma_stack_1h or macro_aligned)
             latest_conditions = {
@@ -2091,7 +2188,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
 
     wins = sum(1 for trade in trades if trade["pnl_pct"] > 0)
     return {
-        "success": candle_res.get("success", False),
+        "success": candle_success,
         "symbol": symbol,
         "strategy_mode": strategy_mode,
         "series": series,
@@ -2113,6 +2210,79 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                         if market_source == "lighter" else
                         "Binance Futures perpetual single-leg candles; maker fee 0.02%, taker 0.05%.")
     }
+
+
+@app.get("/api/crypto/backtest")
+@app.get("/api/lighter-crypto/backtest")
+async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 500,
+                              strategy_mode: str = "grid",
+                              entry_z: float = 1.5, exit_z: float = 0.25,
+                              use_ma_stretch: bool = True, use_peak: bool = True,
+                              use_base_spacing: bool = True, use_ma_stack: bool = False, use_ma_stack_1h: bool = True, use_convergence: bool = True,
+                              use_dwell: bool = True, use_bottoming: bool = False,
+                              ou_halflife_max: float = 8.0, ou_stop_z: float = 3.5,
+                              ou_min_abs_deviation_pp: float = 0.25,
+                              ou_macro_ema_span: int = 60, ou_macro_slope_bars: int = 12,
+                              ou_use_entry_z: bool = True, ou_use_halflife: bool = True,
+                              ou_use_min_abs_deviation: bool = True,
+                              ou_use_macro_trend: bool = True, ou_use_stop_zone: bool = True,
+                              ou_use_exit_z: bool = True,
+                              ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
+                              min_consensus_votes: int = 3,
+                              trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
+                              trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002,
+                              ma_accel_period: int = 24, ma_accel_min_slope: float = 0.0, ma_accel_min_accel: float = 0.0,
+                              use_ma_slope: bool = True, use_ma_accel: bool = True, use_ma_pullback: bool = True, use_ma_cross_exit: bool = True,
+                              fast_ma_period: int = 9, slow_ma_period: int = 21, min_cross_spread_bps: float = 0.0,
+                              use_golden_cross: bool = True, use_death_cross: bool = True, use_cross_spread: bool = True,
+                              base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
+                              long_multiplier: float = 1.0, short_multiplier: float = 1.0,
+                              market_source: str = "binance") -> Dict[str, Any]:
+    """Single-leg crypto strategy backtest engine across 5 quantitative regimes."""
+    if market_source not in {"binance", "lighter"}:
+        raise ValueError("Unsupported crypto replay market source")
+    candle_res = (await get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit))
+                  if market_source == "lighter" else
+                  await get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False))
+    bars = candle_res.get("bars", [])
+    interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
+    now_seconds = int(time.time())
+    bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]
+    return await asyncio.to_thread(
+        _run_crypto_backtest_sync,
+        bars=bars,
+        candle_success=candle_res.get("success", False),
+        symbol=symbol,
+        strategy_mode=strategy_mode,
+        market_source=market_source,
+        entry_z=entry_z, exit_z=exit_z,
+        use_ma_stretch=use_ma_stretch, use_peak=use_peak,
+        use_base_spacing=use_base_spacing, use_ma_stack=use_ma_stack, use_ma_stack_1h=use_ma_stack_1h,
+        use_convergence=use_convergence, use_dwell=use_dwell, use_bottoming=use_bottoming,
+        ou_halflife_max=ou_halflife_max, ou_stop_z=ou_stop_z,
+        ou_min_abs_deviation_pp=ou_min_abs_deviation_pp,
+        ou_macro_ema_span=ou_macro_ema_span, ou_macro_slope_bars=ou_macro_slope_bars,
+        ou_use_entry_z=ou_use_entry_z, ou_use_halflife=ou_use_halflife,
+        ou_use_min_abs_deviation=ou_use_min_abs_deviation,
+        ou_use_macro_trend=ou_use_macro_trend, ou_use_stop_zone=ou_use_stop_zone,
+        ou_use_exit_z=ou_use_exit_z,
+        ma_stretch_min=ma_stretch_min, ma_trailing_stop=ma_trailing_stop,
+        min_consensus_votes=min_consensus_votes,
+        trend_macro_window=trend_macro_window, trend_pullback_dist=trend_pullback_dist,
+        trend_tp_dist=trend_tp_dist, trend_slope_min=trend_slope_min,
+        ma_accel_period=ma_accel_period, ma_accel_min_slope=ma_accel_min_slope,
+        ma_accel_min_accel=ma_accel_min_accel,
+        use_ma_slope=use_ma_slope, use_ma_accel=use_ma_accel,
+        use_ma_pullback=use_ma_pullback, use_ma_cross_exit=use_ma_cross_exit,
+        fast_ma_period=fast_ma_period, slow_ma_period=slow_ma_period,
+        min_cross_spread_bps=min_cross_spread_bps,
+        use_golden_cross=use_golden_cross, use_death_cross=use_death_cross,
+        use_cross_spread=use_cross_spread,
+        base_spacing_pct=base_spacing_pct, min_dwell_bars=min_dwell_bars,
+        long_multiplier=long_multiplier, short_multiplier=short_multiplier,
+        interval_seconds=interval_seconds,
+    )
+
 
 _PAIRS_CACHE: Dict[str, Any] = {
     "timestamp": 0,
@@ -3421,7 +3591,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
             if cache_key in _short_term_parity_cache:
                 logger.warning("Binance klines fetch failed; serving cached parity data for %s", cache_key)
                 return copy.deepcopy(_short_term_parity_cache[cache_key][1])
-            return {"error": "Failed to fetch klines from Binance", "bars": [], "markers": []}
+            return {"success": False, "error": "Failed to fetch klines from Binance", "bars": [], "markers": []}
 
         m2 = {x[0]: float(x[4]) for x in k2} if isinstance(k2, list) else {}
         m3 = {x[0]: float(x[4]) for x in k3}

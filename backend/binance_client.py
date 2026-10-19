@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 import aiohttp
 from .config import config
 
-READ_TIMEOUT = aiohttp.ClientTimeout(total=4, connect=2, sock_read=3)
+READ_TIMEOUT = aiohttp.ClientTimeout(total=10, connect=4, sock_read=8)
 ACCOUNT_REFRESH_TIMEOUT = 6.0
 
 class BinanceFuturesClient:

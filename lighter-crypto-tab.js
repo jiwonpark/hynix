@@ -2422,7 +2422,9 @@
         }
       }
       await this.refresh();
-      this.runBacktest().catch((e) => console.warn("Background backtest error:", e));
+      setTimeout(() => {
+        this.runBacktest().catch((e) => console.warn("Background backtest error:", e));
+      }, 300);
     },
 
     resize() {
