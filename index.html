@@ -13916,7 +13916,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           for (const url of endpoints) {
             if (this.shortTermHistory !== history) return;
             try {
-              const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+              const res = await fetch(url, { signal: AbortSignal.timeout(25000) });
               const contentType = res.headers && typeof res.headers.get === "function" ? (res.headers.get("content-type") || "") : "application/json";
               if (!res.ok || (contentType && !contentType.includes("application/json") && !contentType.includes("text/json"))) continue;
               const data = await res.json();
