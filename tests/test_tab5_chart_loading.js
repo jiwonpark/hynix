@@ -29,5 +29,25 @@ const engine = context.window.lighterCryptoEngine;
   assert.match(statuses[1],/Chart unavailable.*Retrying/);
   assert.equal(scheduled.at(-1).ms,5000,'failed initial load must retry');
   assert.equal(failing.chartLoad,null,'failed request must not block subsequent attempts');
-  console.log('Tab 5 chart request coalescing, visible failure and retry passed');
+  // GET reads work without the newer AbortSignal.timeout browser API.
+  let synced=false;
+  failing.updateBotStatus=()=>{synced=true;};
+  context.fetch=async()=>({ok:true,json:async()=>({bot:{enabled:false}})});
+  await failing.syncBotStatus();
+  assert(synced, 'older browsers must still fetch chart/account APIs');
+
+  // Account timeouts must recover, never fabricate a current Last Sync time.
+  failing.refreshChart=async()=>{};
+  failing.renderVirtualState=()=>{};
+  failing.updateGridLadderData=()=>{};
+  failing.scheduleTrendRetry=()=>{};
+  failing.virtualPnlText=()=>'';
+  const labels=new Map(); failing.setText=(id,text)=>labels.set(id,text);
+  context.fetch=async url=>({ok:true,json:async()=>url.includes('/status?')
+    ? {success:false,error:'Temporary account outage'} : {}});
+  await failing.refresh();
+  assert.match(labels.get('lblDaemonSyncTime'), /Temporary account outage.*retrying/);
+  assert.equal(scheduled.at(-1).ms,5000);
+  assert.equal(failing.liveVenue.success,false);
+  console.log('Tab 5 chart loading, browser compatibility and account retry passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});

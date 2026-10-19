@@ -48,21 +48,26 @@
   }
 
   async function api(path) {
-    const prefix = getApiPrefix();
-    const response = await fetch(`${prefix}${path}`, { signal: AbortSignal.timeout(20000) });
-    const ct = (response.headers && typeof response.headers.get === "function" ? response.headers.get("content-type") : "application/json") || "";
-    let payload = null;
-    if (ct.includes("application/json")) {
-      payload = await response.json().catch(() => null);
-    }
-    if (!response.ok) {
-      const errText = (payload && (payload.error || payload.message || payload.detail)) || `HTTP ${response.status}`;
-      throw new Error(errText);
-    }
-    if (payload === null) {
-      throw new Error("Invalid API response format (non-JSON)");
-    }
-    return payload;
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    let timeout;
+    try {
+      return await Promise.race([
+        (async () => {
+          const response = await fetch(`${getApiPrefix()}${path}`, controller ? { signal: controller.signal } : {});
+          const ct = response.headers?.get?.("content-type") || "application/json";
+          const payload = ct.includes("application/json") ? await response.json().catch(() => null) : null;
+          if (!response.ok) throw new Error(payload?.error || payload?.message || payload?.detail || `HTTP ${response.status}`);
+          if (payload === null) throw new Error("Invalid API response format (non-JSON)");
+          return payload;
+        })(),
+        new Promise((_, reject) => {
+          timeout = setTimeout(() => {
+            controller?.abort();
+            reject(new Error("Request timed out after 20 seconds"));
+          }, 20000);
+        }),
+      ]);
+    } finally { clearTimeout(timeout); }
   }
 
   async function apiPost(path, body) {
@@ -546,6 +551,18 @@
         legendPosition: "top",
         legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="lighterCrypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighterCrypto_valShortTermMa7">—</strong></span><span id="lighterCrypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighterCrypto_valShortTermMa24">—</strong></span><span id="lighterCrypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighterCrypto_valShortTermMa60">—</strong></span><span id="lighterCrypto_legendMaDiff7_24" style="cursor:pointer;color:#16a34a;background:rgba(22,163,74,0.08);padding:1px 6px;border-radius:4px;border:1px solid rgba(22,163,74,0.3);font-size:11px;" title="Click to toggle MA(7−24) difference histogram overlay on price chart">📊 Δ(7−24): <strong id="lighterCrypto_valMaDiff7_24">—</strong></span><span id="lighterCrypto_legendMaDiff24_60" style="cursor:pointer;color:#8b5cf6;background:rgba(139,92,246,0.08);padding:1px 6px;border-radius:4px;border:1px solid rgba(139,92,246,0.3);font-size:11px;" title="MA(24−60) spread">Δ(24−60): <strong id="lighterCrypto_valMaDiff24_60">—</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="lighterCrypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="lighterCrypto_valSelectedMinProfit">—</strong></span>',
       });
+      const action = lid("btnRerunDynamicBacktest");
+      if (action?.parentElement && !lid("btnResetChartView")) {
+        const reset = document.createElement("button");
+        reset.id = "lighterCrypto_btnResetChartView";
+        reset.type = "button";
+        reset.className = action.className;
+        reset.textContent = "Reset chart";
+        reset.title = "Restore price and time scales, and retry candle loading";
+        reset.addEventListener("click", () => this.resetChartView());
+        action.parentElement.appendChild(reset);
+      }
+
       const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
       if (replayAssetLegend) {
         replayAssetLegend.innerHTML = `
@@ -2262,7 +2279,7 @@
       if (!window.TerminalCommon || $("tabContentLighterCrypto").dataset.terminalInstance !== "lighterCrypto") {
         throw new Error("Shared terminal module did not initialize the Crypto instance");
       }
-      $("tabContentLighterCrypto").querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
+      $("tabContentLighterCrypto").querySelectorAll("button,input,select").forEach((element) => { element.disabled = !element.classList?.contains("section-collapse-btn"); });
       $("tabContentLighterCrypto").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
       try {
         const saved = JSON.parse(safeStorage.getItem(STORAGE_KEY) || "{}");
@@ -2675,6 +2692,7 @@
 
     async onTabActivated() {
       this.init();
+      TerminalCommon.revealChartSection(lid("shortTermExecutionSection"));
       this.mountExecutionChartFrame();
       this.renderSymbolSelector();
       this.renderParadigmNav();
@@ -2705,6 +2723,20 @@
       }, 300);
     },
 
+    resetChartView() {
+      this.ensureChart();
+      this.resize();
+      this.chart?.priceScale("right")?.applyOptions({ autoScale: true });
+      this.assetChart?.priceScale("right")?.applyOptions({ autoScale: true });
+      this.assetChart?.priceScale("left")?.applyOptions({ autoScale: true });
+      if (this.bars?.length) {
+        const range = StrategyExecutionChartController.initialRange(this.bars.length, 48);
+        if (this.chartSync) this.chartSync.setRange(range);
+        else this.chart?.timeScale().setVisibleLogicalRange(range);
+      }
+      return this.refreshChart();
+    },
+
     resize() {
       const host = lid("shortTermSpreadChartHost");
       const targetWidth = Math.max(host?.clientWidth || host?.parentElement?.clientWidth || 0, 0);
@@ -2725,18 +2757,25 @@
     async refresh() {
       const sym = this.selectedSymbol || "BTC";
       const chartRefresh = this.refreshChart().catch((error) => {
-        this.setText("lblShortTermChartStatus", `Chart unavailable: ${error.message}`);
+        this.executionChartFrame?.setSync(`Chart unavailable: ${error.message}. Use Reset chart to retry.`);
         return false;
       });
       try {
         const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
         const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
         const [statusResult, botStatus, trendStatus] = await Promise.all([
-          api(`/api/lighter-crypto/status?symbol=${encodeURIComponent(sym)}`).catch(() => null),
+          api(`/api/lighter-crypto/status?symbol=${encodeURIComponent(sym)}`).catch(error => ({success: false, error: error.message})),
           api("/api/lighter-crypto/bot/status").catch(() => null),
           api(`/api/lighter-crypto/trends?symbol=${encodeURIComponent(sym)}&small=${sParam}&big=${bParam}`).catch(() => null),
         ]);
-        const status = statusResult || { success: false, server_time_ms: Date.now(), positions: [] };
+        if (sym !== this.selectedSymbol) return;
+        const status = statusResult || { success: false, error: "Account response unavailable", positions: [] };
+        clearTimeout(this.accountRetryTimer);
+        if (!status.success) {
+          this.accountRetryTimer = setTimeout(() => {
+            if (sym === this.selectedSymbol && $("tabContentLighterCrypto")?.style.display !== "none") this.refresh();
+          }, 5000);
+        }
         this.liveVenue = status;
         this.livePositions = Array.isArray(status?.positions) ? status.positions : [];
         if (status && (status.mark_price != null || status.price_ratio != null)) {
@@ -2750,7 +2789,9 @@
             priceBadge.style.borderColor = (status.change_pct ?? 0) >= 0 ? "#bbf7d0" : "#fecaca";
           }
         }
-        this.setText("lblDaemonSyncTime", `Last Sync: ${formatKstDateTime(status.server_time_ms || Date.now(), false)}`);
+        this.setText("lblDaemonSyncTime", status.success && status.server_time_ms
+          ? `Last Sync: ${formatKstDateTime(status.server_time_ms, false)}`
+          : `Account unavailable: ${status.error || "No response"} · retrying`);
       this.setText("lblDaemonLatency", botStatus?.bot?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Paused");
         this.setText("lblDaemonStats", `Lighter Perpetuals · ${sym}`);
       this.setText("lblHedgedSyncBadge", botStatus?.bot?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT PAUSED");

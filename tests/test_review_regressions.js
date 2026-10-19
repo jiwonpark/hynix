@@ -6,7 +6,7 @@ const TerminalCommon = require('../terminal-common.js');
 function load(file, name, elements = new Map(), data = {}) {
   const context = {window: {requestAnimationFrame() {}},
     document: {readyState: 'loading', addEventListener() {}, getElementById: id => elements.get(id)},
-    fetch: async () => ({ok: true, json: async () => data}), TerminalCommon, URLSearchParams, AbortSignal, console};
+    fetch: async () => ({ok: true, json: async () => data}), TerminalCommon, URLSearchParams, AbortController, setTimeout, clearTimeout, console};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(require.resolve(`../${file}`), 'utf8'), context);
   return context.window[name];

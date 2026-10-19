@@ -54,7 +54,10 @@ this checklist before reporting that the work is complete.
 - **Actual chart rendering:** Inspect a screenshot of the price series, MA lines,
   populated price/legend values, and any affected secondary pane or markers.
   A mounted container, canvas, HTTP 200, or API bar count is insufficient. Check
-  a fresh load, reload, navigation away/back, and interval switching. Ensure the
+  a fresh load, reload, navigation away/back, and interval switching. Include a
+  returning user with saved collapsed chart/ancestor sections: entering the tab
+  must reveal its main chart, and expand/collapse controls must work while locked.
+  Ensure the
   displayed symbol and interval match the loaded data and the plot is visible
   within its price/time scales. Check for JavaScript errors.
 - **Loading time:** Measure elapsed wall-clock seconds from the user action to

@@ -11633,6 +11633,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       onTabActivated() {
+        TerminalCommon.revealChartSection($("shortTermExecutionSection"));
         this.mountExecutionChartFrame();
         this.initShortTermChart();
         const host = $("shortTermSpreadChartHost");

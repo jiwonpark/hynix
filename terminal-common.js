@@ -43,6 +43,22 @@
     target.dataset.terminalInstance = options.venue;
   }
 
+  function revealChartSection(section) {
+    // Chart visibility is a viewing preference, never an execution permission.
+    for (let node = section; node; node = node.parentElement) {
+      if (!node.classList?.contains("collapsible-section")) continue;
+      node.classList.remove("is-collapsed");
+      const button = node.querySelector(":scope > .collapsible-header .section-collapse-btn");
+      if (button) {
+        button.disabled = false;
+        button.setAttribute("aria-expanded", "true");
+      }
+      if (node.id) {
+        try { localStorage.setItem(`hynix_collapse_${node.id}`, "0"); } catch (_) {}
+      }
+    }
+  }
+
   function movingAverage(bars, windowSize) {
     if (!Array.isArray(bars) || windowSize < 1) return [];
     let rolling = 0;
@@ -145,7 +161,7 @@
     }
   }
 
-  const TerminalCommon = { alignTime, movingAverage, movingAverageDiff, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles };
+  const TerminalCommon = { revealChartSection, alignTime, movingAverage, movingAverageDiff, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

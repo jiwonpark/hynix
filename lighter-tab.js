@@ -1884,7 +1884,7 @@
       if (!window.TerminalCommon || $("tabContentLighter").dataset.terminalInstance !== "lighter") {
         throw new Error("Shared terminal module did not initialize the Lighter instance");
       }
-      $("tabContentLighter").querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
+      $("tabContentLighter").querySelectorAll("button,input,select").forEach((element) => { element.disabled = !element.classList?.contains("section-collapse-btn"); });
       $("tabContentLighter").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
       try {
         const saved = JSON.parse(safeStorage.getItem(STORAGE_KEY) || "{}");
@@ -2120,6 +2120,7 @@
 
     async onTabActivated() {
       this.init();
+      TerminalCommon.revealChartSection(lid("shortTermExecutionSection"));
       this.mountExecutionChartFrame();
       this.ensureChart();
       this.resize();

@@ -2253,7 +2253,7 @@
       if (!window.TerminalCommon || $("tabContentCrypto").dataset.terminalInstance !== "crypto") {
         throw new Error("Shared terminal module did not initialize the Crypto instance");
       }
-      $("tabContentCrypto").querySelectorAll("button,input,select").forEach((element) => { element.disabled = true; });
+      $("tabContentCrypto").querySelectorAll("button,input,select").forEach((element) => { element.disabled = !element.classList?.contains("section-collapse-btn"); });
       $("tabContentCrypto").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
       try {
         const saved = JSON.parse(safeStorage.getItem(STORAGE_KEY) || "{}");
@@ -2666,6 +2666,7 @@
 
     async onTabActivated() {
       this.init();
+      TerminalCommon.revealChartSection(lid("shortTermExecutionSection"));
       this.mountExecutionChartFrame();
       this.renderSymbolSelector();
       this.renderParadigmNav();

@@ -1,15 +1,21 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 async function run() {
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "hynix-chart-verify-"));
   const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
     "--headless=new",
+    `--user-data-dir=${profile}`,
     "--remote-debugging-port=0",
     "--no-sandbox",
     "--disable-gpu",
     "--window-size=1600,1200",
     "about:blank",
   ]);
+
+  chrome.on("exit", () => { try { fs.rmSync(profile, {recursive: true, force: true}); } catch (_) {} });
 
   const cleanup = () => {
     try { chrome.kill(); } catch (_) {}
@@ -86,6 +92,12 @@ async function run() {
   await send("Runtime.enable");
   await send("Network.enable");
 
+  // Reproduce a returning user whose chart and enclosing terminal were collapsed.
+  await send("Page.addScriptToEvaluateOnNewDocument", {source: `
+    localStorage.setItem("skhynix_active_tab", "lighterCrypto");
+    localStorage.setItem("hynix_collapse_lighterCrypto_shortTermExecutionSection", "1");
+    localStorage.setItem("hynix_collapse_lighterCrypto_secExecutionTerminal", "1");
+  `});
   console.log("Navigating to https://control.jiwonova.com/skhynix/ ...");
   await send("Page.navigate", { url: "https://control.jiwonova.com/skhynix/" });
 
@@ -119,12 +131,15 @@ async function run() {
   const failures = [];
 
   try {
-    for (const t of tabs) {
+    const requestedTabs = process.env.HYPERION_VERIFY_TABS?.split(",");
+    for (const t of tabs.filter(t => !requestedTabs || requestedTabs.includes(t.name))) {
       console.log(`\n=================== SWITCHING TO TAB: ${t.name.toUpperCase()} ===================`);
       await evaluate(`switchMainTab("${t.name}")`);
       let diag = null;
+      let firstChartMs = null;
+      let firstAccountMs = null;
       const pollStart = Date.now();
-      const pollTimeoutMs = 45000;
+      const pollTimeoutMs = t.name === "lighterCrypto" ? 60000 : 45000;
 
       while (Date.now() - pollStart < pollTimeoutMs) {
         diag = await evaluate(`(() => {
@@ -157,6 +172,12 @@ async function run() {
           const svgVisible = ${!!t.svg} && !!host?.querySelector('path[d]')
             && (host?.querySelectorAll('text').length || 0) > 1;
           return {
+            accountReady: Number.isFinite(engine?.liveVenue?.collateral) && engine?.liveVenue?.authenticated === true,
+            accountSourceTime: engine?.liveVenue?.server_time_ms || null,
+            accountError: engine?.liveVenue?.error || null,
+            collapsedAncestors: host ? Array.from(document.querySelectorAll(".is-collapsed")).filter(node => node.contains(host)).map(node => node.id) : [],
+            lastCandleTime: bars.at(-1)?.time || null,
+            chartSource: document.getElementById("${t.name === "lighterCrypto" ? "lighterCrypto_" : t.name === "crypto" ? "crypto_" : t.name === "lighter" ? "lighter_" : ""}lblShortTermChartSync")?.textContent,
             seriesVisible, svgVisible, price: Number.isFinite(price) ? price : null, x, y,
             tab: "${t.name}",
             activeTabDisplay: document.getElementById("tabContent" + "${t.name.charAt(0).toUpperCase() + t.name.slice(1)}")?.style.display,
@@ -172,21 +193,24 @@ async function run() {
         const isHealthy = diag && diag.hostExists && diag.hostWidth > 0 && diag.hostHeight > 0 &&
           (t.svg ? diag.svgVisible : diag.seriesVisible && diag.canvases.some(c => c.hasContent === true));
 
-        if (isHealthy) {
-          break;
-        }
+        if (isHealthy && firstChartMs === null) firstChartMs = Date.now() - pollStart;
+        if (diag?.accountReady && firstAccountMs === null) firstAccountMs = Date.now() - pollStart;
+        if (isHealthy && (t.name !== "lighterCrypto" || diag.accountReady)) break;
         await new Promise((r) => setTimeout(r, 600));
       }
 
+      console.log("Cold-profile loading timings:", {tab: t.name, chartMs: firstChartMs, accountMs: firstAccountMs});
       console.log("Tab Diagnostic:", JSON.stringify(diag, null, 2));
       await evaluate(`document.getElementById("${t.hostId}")?.scrollIntoView({block: "center"})`);
       await new Promise(r => setTimeout(r, 200));
       await captureScreenshot(`/tmp/live_${t.name}.png`);
 
-      if (!diag.hostExists) {
+      if (t.name === "lighterCrypto" && !diag?.accountReady) failures.push("Tab lighterCrypto: real account data did not load");
+      if (!diag?.hostExists) {
         failures.push(`Tab ${t.name}: host ${t.hostId} not found`);
       } else if (t.svg ? !diag.svgVisible : !diag.seriesVisible || !diag.canvases.some(c => c.hasContent === true)) {
-        failures.push(`Tab ${t.name}: price series is missing or outside the visible chart (bars: ${diag.bars})`);      } else {
+        failures.push(`Tab ${t.name}: price series is missing or outside the visible chart (bars: ${diag.bars})`);
+      } else {
         console.log(`>>> TAB ${t.name.toUpperCase()} CHART VERIFIED HEALTHY (bars: ${diag.bars}) <<<`);
       }
     }
