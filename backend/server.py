@@ -746,9 +746,10 @@ def _run_lighter_backtest_sync(
             bullish_stack = bar["value"] > ma7 > ma24 > ma60
             candidate_side = 1 if bearish_stack else -1
             macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
-            entry_signal = ((bearish_stack or bullish_stack)
-                            and stretch_pct >= ma_stretch_min
-                            and (not use_ma_stack_1h or macro_aligned))
+            stack_pass = (bearish_stack or bullish_stack) if use_ma_stack else True
+            stretch_pass = stretch_pct >= ma_stretch_min if use_ma_stretch else True
+            macro_pass = macro_aligned if use_ma_stack_1h else True
+            entry_signal = bool(stack_pass and stretch_pass and macro_pass)
 
             if position is None and entry_signal:
                 active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
@@ -759,7 +760,14 @@ def _run_lighter_backtest_sync(
                 position["max_favorable"] = max(position.get("max_favorable", 0.0), current_pnl)
                 golden_cross = (position["side"] > 0 and ma7 >= ma24) or (position["side"] < 0 and ma7 <= ma24)
                 trailing_stop = position["max_favorable"] >= 0.20 and (position["max_favorable"] - current_pnl) >= ma_trailing_stop
-                if golden_cross or trailing_stop or held >= 16 or index == len(bars) - 1:
+                dwell_exit = held >= 16
+
+                exit_cross_pass = golden_cross if use_convergence else False
+                exit_trail_pass = trailing_stop if use_bottoming else False
+                exit_dwell_pass = dwell_exit if use_dwell else False
+                should_exit = exit_cross_pass or exit_trail_pass or exit_dwell_pass or index == len(bars) - 1
+
+                if should_exit:
                     mult = position.get("multiplier", 1.0)
                     pnl_pct = current_pnl * mult
                     trades.append({
@@ -1802,18 +1810,20 @@ def _run_crypto_backtest_sync(
             bullish_stack = bar["value"] > ma7 > ma24 > ma60
             candidate_side = 1 if bearish_stack else -1
             macro_aligned = (macro_aligned_list[index][0] if candidate_side > 0 else macro_aligned_list[index][1]) if index < len(macro_aligned_list) else True
+            stack_pass = (bearish_stack or bullish_stack) if use_ma_stack else True
+            stretch_pass = stretch_pct >= ma_stretch_min if use_ma_stretch else True
+            macro_pass = macro_aligned if use_ma_stack_1h else True
+
             latest_conditions = {
-                "entry_ma_stack": bearish_stack or bullish_stack,
-                "entry_stretch": stretch_pct >= ma_stretch_min,
-                "entry_ma_stack_1h": macro_aligned,
+                "entry_ma_stack": stack_pass,
+                "entry_stretch": stretch_pass,
+                "entry_ma_stack_1h": macro_pass,
                 "exit_ma_cross": None,
                 "exit_trailing_stop": None,
                 "exit_max_dwell": None,
             }
             latest_condition_time = int(bar["time"])
-            entry_signal = ((bearish_stack or bullish_stack)
-                            and stretch_pct >= ma_stretch_min
-                            and (not use_ma_stack_1h or macro_aligned))
+            entry_signal = bool(stack_pass and stretch_pass and macro_pass)
 
             if position is None and entry_signal:
                 position = {"side": candidate_side, "entry": bar["value"], "entry_time": bar["time"], "entry_index": index, "max_favorable": 0.0}
@@ -1823,10 +1833,17 @@ def _run_crypto_backtest_sync(
                 position["max_favorable"] = max(position.get("max_favorable", 0.0), current_pnl)
                 golden_cross = (position["side"] > 0 and ma7 >= ma24) or (position["side"] < 0 and ma7 <= ma24)
                 trailing_stop = position["max_favorable"] >= 0.20 and (position["max_favorable"] - current_pnl) >= ma_trailing_stop
+                dwell_exit = held >= 16
+
+                exit_cross_pass = golden_cross if use_convergence else False
+                exit_trail_pass = trailing_stop if use_bottoming else False
+                exit_dwell_pass = dwell_exit if use_dwell else False
+
                 latest_conditions.update(exit_ma_cross=golden_cross,
                                          exit_trailing_stop=trailing_stop,
-                                         exit_max_dwell=held >= 16)
-                if golden_cross or trailing_stop or held >= 16 or index == len(bars) - 1:
+                                         exit_max_dwell=dwell_exit)
+                should_exit = exit_cross_pass or exit_trail_pass or exit_dwell_pass or index == len(bars) - 1
+                if should_exit:
                     pnl_pct = current_pnl
                     trades.append({
                         "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],

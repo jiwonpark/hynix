@@ -357,6 +357,7 @@ def evaluate_grid_signals(
 def evaluate_ma_stack_signals(
     prices: List[float], *, ma_stretch_min: float = 0.30, ma_trailing_stop: float = 0.15,
     use_ma_stretch: bool = True, use_ma_stack: bool = True, use_ma_stack_1h: bool = True,
+    use_convergence: bool = True, use_dwell: bool = True, use_bottoming: bool = False,
     evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
     held_bars: int = 0,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
@@ -386,15 +387,25 @@ def evaluate_ma_stack_signals(
     entry_signal = bool(stack_pass and stretch_pass and macro_pass)
 
     golden_cross = bool((position_side > 0 and ma7 >= ma24) or (position_side < 0 and ma7 <= ma24))
-    exit_signal = bool(golden_cross or held_bars >= 16) if position_side != 0 else False
+    trailing_stop = False
+    if position_side != 0 and entry_price > 0:
+        pnl_pct = position_side * (current_price / entry_price - 1) * 100
+        trailing_stop = pnl_pct <= -ma_trailing_stop
+    dwell_pass = held_bars >= 16
+
+    exit_cross = golden_cross if use_convergence else False
+    exit_trail = trailing_stop if use_bottoming else False
+    exit_dwell = dwell_pass if use_dwell else False
+    exit_signal = bool(exit_cross or exit_trail or exit_dwell) if position_side != 0 else False
+
     condition_pass = {
         "entry_ma_stack": stack_pass,
         "entry_stretch": stretch_pass,
         "entry_macro_trend": macro_pass,
         "entry_ma_stack_1h": macro_aligned,
         "exit_ma_cross": golden_cross if position_side else None,
-        "exit_trailing_stop": None,
-        "exit_max_dwell": held_bars >= 16 if position_side else None,
+        "exit_trailing_stop": trailing_stop if position_side else None,
+        "exit_max_dwell": dwell_pass if position_side else None,
     }
     evaluation = {
         "time": evaluation_time, "ratio": round(current_price, 4), "mean": round(ma24, 4),
@@ -873,6 +884,9 @@ def evaluate_strategy_signal(
             use_ma_stretch=bool(config.get("use_ma_stretch", True)),
             use_ma_stack=bool(config.get("use_ma_stack", True)),
             use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
+            use_convergence=bool(config.get("use_convergence", True)),
+            use_dwell=bool(config.get("use_dwell", True)),
+            use_bottoming=bool(config.get("use_bottoming", False)),
             evaluation_time=evaluation_time,
             position_side=position_side,
             entry_price=entry_price,

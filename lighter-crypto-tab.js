@@ -1315,7 +1315,14 @@
         rowCondExitConvergence: "Paper exit: Z-score convergence (adjust Exit Z in replay)",
         rowCondExitDwell: "Paper exit: minimum configured completed bars",
         rowCondExitBottoming: "Paper exit: Z-score no longer converging",
-      } : {};
+      } : (mode === "ma_stack" ? {
+        rowCondEntryMaStretch: "Paper entry: 60-MA stretch discount (≥ Min Stretch %)",
+        rowCondEntryMaStack5m: "Paper entry: 5m MA7/24/60 full stack (Price < MA7 < MA24 < MA60)",
+        rowCondEntryMaStack1h: "Paper entry: 1h macro trend support alignment",
+        rowCondExitConvergence: "Paper exit: MA7 / MA24 golden cross reversal",
+        rowCondExitDwell: "Paper exit: 16-bar maximum dwell limit",
+        rowCondExitBottoming: "Paper exit: Trailing stop ratchet (≥ Trailing Stop %)",
+      } : {});
       [...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels)].forEach((id) => {
         const row = lid(id);
         if (!row) return;
@@ -1325,6 +1332,27 @@
           if (label) label.textContent = wiredReplayRows[id];
         }
       });
+      if (mode === "ma_stack") {
+        const liveMa = (this.botState?.strategy_mode === "ma_stack") ? { ...this.botState, ...(this.botState.strategy_params || {}) } : {};
+        if (lid("chkCondEntryMaStretch") && !lid("chkCondEntryMaStretch").dataset.unsaved) {
+          lid("chkCondEntryMaStretch").checked = liveMa.use_ma_stretch != null ? Boolean(liveMa.use_ma_stretch) : true;
+        }
+        if (lid("chkCondEntryMaStack5m") && !lid("chkCondEntryMaStack5m").dataset.unsaved) {
+          lid("chkCondEntryMaStack5m").checked = liveMa.use_ma_stack != null ? Boolean(liveMa.use_ma_stack) : true;
+        }
+        if (lid("chkCondEntryMaStack1h") && !lid("chkCondEntryMaStack1h").dataset.unsaved) {
+          lid("chkCondEntryMaStack1h").checked = liveMa.use_ma_stack_1h != null ? Boolean(liveMa.use_ma_stack_1h) : true;
+        }
+        if (lid("chkCondExitConvergence") && !lid("chkCondExitConvergence").dataset.unsaved) {
+          lid("chkCondExitConvergence").checked = liveMa.use_convergence != null ? Boolean(liveMa.use_convergence) : true;
+        }
+        if (lid("chkCondExitDwell") && !lid("chkCondExitDwell").dataset.unsaved) {
+          lid("chkCondExitDwell").checked = liveMa.use_dwell != null ? Boolean(liveMa.use_dwell) : true;
+        }
+        if (lid("chkCondExitBottoming") && !lid("chkCondExitBottoming").dataset.unsaved) {
+          lid("chkCondExitBottoming").checked = liveMa.use_bottoming != null ? Boolean(liveMa.use_bottoming) : false;
+        }
+      }
 
       const ladderSec = $("lighterCrypto_gridMatrixSection");
       let detailSec = $("lighterCrypto_paradigmDetailSection");
@@ -1348,7 +1376,7 @@
         if (detailSec) {
           detailSec.style.display = "block";
           detailSec.innerHTML = this.renderParadigmDetail(mode);
-          if (mode !== "ou_quant") detailSec.insertAdjacentHTML("beforeend",
+          if (!["ou_quant", "ma_stack"].includes(mode)) detailSec.insertAdjacentHTML("beforeend",
             '<div id="lighterCrypto_replayConditions" style="display:grid;gap:6px;margin-top:14px;"></div>');
           this.bindParadigmDetailEvents(mode);
         }
@@ -1434,6 +1462,15 @@
         `;
       }
       if (mode === "ma_stack") {
+        const liveMa = this.botState?.strategy_mode === "ma_stack" ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {};
+        const maChecked = (key, fallback = true) => {
+          if (liveMa[key] != null) return liveMa[key] ? "checked" : "";
+          return fallback ? "checked" : "";
+        };
+        const maRowStyle = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
+        const maToggleStyle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
+        const stretchVal = Number(liveMa.ma_stretch_min ?? 0.30).toFixed(2);
+        const trailVal = Number(liveMa.ma_trailing_stop ?? 0.15).toFixed(2);
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div>
@@ -1446,13 +1483,25 @@
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Min Stretch %:</span>
-              <input id="lighterCrypto_inpMaStretchMin" type="number" step="0.05" value="0.30" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <input id="lighterCrypto_inpMaStretchMin" type="number" step="0.05" value="${stretchVal}" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Trailing Stop %:</span>
-              <input id="lighterCrypto_inpMaTrailingStop" type="number" step="0.05" value="0.15" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <input id="lighterCrypto_inpMaTrailingStop" type="number" step="0.05" value="${trailVal}" style="width:58px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <button id="lighterCrypto_btnMaReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
             </div>
           </div>
-          <p style="font-size:11px;color:#64748b;">Individual replay condition verdicts appear below.</p>
+          <div id="lighterCrypto_maEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+            <strong style="font-size:12px;color:#0f172a;">Entry conditions · switches and values apply to replay; Deploy saves them to the live bot</strong>
+            <div style="${maRowStyle}"><input id="lighterCrypto_maUseStretch" type="checkbox" aria-label="Enable MA60 stretch discount condition" style="${maToggleStyle}" ${maChecked("use_ma_stretch", true)}><span>1. 60-MA Stretch Discount (≥ Min Stretch % Gap below/above MA60)</span><span class="condBadge neutral" id="lighterCrypto_maStatusStretch">WAITING</span></div>
+            <div style="${maRowStyle}"><input id="lighterCrypto_maUseStack5m" type="checkbox" aria-label="Enable 5m MA stack alignment condition" style="${maToggleStyle}" ${maChecked("use_ma_stack", true)}><span>2. 5m Full MA Stack (Price &lt; MA7 &lt; MA24 &lt; MA60)</span><span class="condBadge neutral" id="lighterCrypto_maStatusStack5m">WAITING</span></div>
+            <div style="${maRowStyle}"><input id="lighterCrypto_maUseStack1h" type="checkbox" aria-label="Enable 1h macro trend alignment condition" style="${maToggleStyle}" ${maChecked("use_ma_stack_1h", true)}><span>3. 1h Macro Trend Support Alignment</span><span class="condBadge neutral" id="lighterCrypto_maStatusStack1h">WAITING</span></div>
+          </div>
+          <div id="lighterCrypto_maExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+            <strong style="font-size:12px;color:#0f172a;">Exit conditions</strong>
+            <div style="${maRowStyle}"><input id="lighterCrypto_maUseCrossExit" type="checkbox" aria-label="Enable MA cross exit condition" style="${maToggleStyle}" ${maChecked("use_convergence", true)}><span>1. MA7 / MA24 Golden Cross Reversal</span><span class="condBadge neutral" id="lighterCrypto_maStatusCrossExit">WAITING</span></div>
+            <div style="${maRowStyle}"><input id="lighterCrypto_maUseDwell" type="checkbox" aria-label="Enable dwell time limit exit condition" style="${maToggleStyle}" ${maChecked("use_dwell", true)}><span>2. 16-Bar Maximum Dwell Time Limit</span><span class="condBadge neutral" id="lighterCrypto_maStatusDwell">WAITING</span></div>
+            <div style="${maRowStyle}"><input id="lighterCrypto_maUseTrailing" type="checkbox" aria-label="Enable trailing stop ratchet exit condition" style="${maToggleStyle}" ${maChecked("use_bottoming", false)}><span>3. Trailing Stop Ratchet (≥ Trailing Stop % Drawdown)</span><span class="condBadge neutral" id="lighterCrypto_maStatusTrailing">WAITING</span></div>
+            <small id="lighterCrypto_maStatusSource" style="color:#64748b;">PAPER · Awaiting completed-candle replay</small>
+          </div>
         `;
       }
       if (mode === "multi_factor") {
@@ -1715,6 +1764,41 @@
         }
       } else if (mode === "ma_stack") {
         $("lighterCrypto_btnMaReplay")?.addEventListener("click", () => this.runBacktest());
+        const pairs = [
+          ["lighterCrypto_maUseStretch", "chkCondEntryMaStretch"],
+          ["lighterCrypto_maUseStack5m", "chkCondEntryMaStack5m"],
+          ["lighterCrypto_maUseStack1h", "chkCondEntryMaStack1h"],
+          ["lighterCrypto_maUseCrossExit", "chkCondExitConvergence"],
+          ["lighterCrypto_maUseDwell", "chkCondExitDwell"],
+          ["lighterCrypto_maUseTrailing", "chkCondExitBottoming"],
+        ];
+        pairs.forEach(([detailId, checkId]) => {
+          const detailInput = $(detailId);
+          const checkInput = lid(checkId);
+          if (detailInput && checkInput) {
+            detailInput.checked = checkInput.checked;
+            detailInput.addEventListener("change", () => {
+              checkInput.checked = detailInput.checked;
+              checkInput.dataset.unsaved = "true";
+              detailInput.dataset.unsaved = "true";
+              this.updateDeployButtonState();
+              this.updateRulesMatchStatus();
+              this.runBacktest();
+            });
+            if (!checkInput._boundMaDetailSync) {
+              checkInput._boundMaDetailSync = true;
+              checkInput.addEventListener("change", () => {
+                const curDetail = $(detailId);
+                if (curDetail) {
+                  curDetail.checked = checkInput.checked;
+                  curDetail.dataset.unsaved = "true";
+                }
+                this.updateDeployButtonState();
+                this.updateRulesMatchStatus();
+              });
+            }
+          }
+        });
       } else if (mode === "multi_factor") {
         $("lighterCrypto_btnFactorReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "trend_pullback") {
@@ -1945,6 +2029,12 @@
       } else if (mode === "ma_stack") {
         payload.ma_stretch_min = numeric("lighterCrypto_inpMaStretchMin", Number(this.botState?.ma_stretch_min ?? 0.30));
         payload.ma_trailing_stop = numeric("lighterCrypto_inpMaTrailingStop", Number(this.botState?.ma_trailing_stop ?? 0.15));
+        payload.use_ma_stretch = $("lighterCrypto_maUseStretch") ? $("lighterCrypto_maUseStretch").checked : (lid("chkCondEntryMaStretch")?.checked !== false);
+        payload.use_ma_stack = $("lighterCrypto_maUseStack5m") ? $("lighterCrypto_maUseStack5m").checked : (lid("chkCondEntryMaStack5m") ? lid("chkCondEntryMaStack5m").checked : true);
+        payload.use_ma_stack_1h = $("lighterCrypto_maUseStack1h") ? $("lighterCrypto_maUseStack1h").checked : (lid("chkCondEntryMaStack1h")?.checked !== false);
+        payload.use_convergence = $("lighterCrypto_maUseCrossExit") ? $("lighterCrypto_maUseCrossExit").checked : (lid("chkCondExitConvergence")?.checked !== false);
+        payload.use_dwell = $("lighterCrypto_maUseDwell") ? $("lighterCrypto_maUseDwell").checked : (lid("chkCondExitDwell") ? lid("chkCondExitDwell").checked : true);
+        payload.use_bottoming = $("lighterCrypto_maUseTrailing") ? $("lighterCrypto_maUseTrailing").checked : (lid("chkCondExitBottoming")?.checked === true);
       } else if (mode === "multi_factor") {
         payload.min_consensus_votes = numeric("lighterCrypto_selFactorQuorum", Number(this.botState?.min_consensus_votes ?? 3));
       } else if (mode === "trend_pullback") {
@@ -1974,17 +2064,19 @@
         payload.entry_z = numeric("lighterCrypto_inputLiveGridEntryZ", Number(this.botState?.entry_z ?? 1.5));
         payload.exit_z = numeric("lighterCrypto_inputLiveGridExitZ", Number(this.botState?.exit_z ?? 0.25));
       }
-      payload.use_ma_stretch = lid("chkCondEntryMaStretch")?.checked !== false;
-      payload.use_base_spacing = lid("chkCondEntryBase")?.checked !== false;
-      payload.use_peak = lid("chkCondEntryPeak")?.checked !== false;
-      payload.use_ma_stack = lid("chkCondEntryMaStack5m")?.checked === true;
-      payload.use_ma_stack_1h = lid("chkCondEntryMaStack1h")?.checked !== false;
-      if (mode === "ou_quant") {
-        payload.ou_use_macro_trend = lid("chkCondEntryMaStack1h")?.checked !== false;
+      if (mode !== "ma_stack") {
+        payload.use_ma_stretch = lid("chkCondEntryMaStretch")?.checked !== false;
+        payload.use_base_spacing = lid("chkCondEntryBase")?.checked !== false;
+        payload.use_peak = lid("chkCondEntryPeak")?.checked !== false;
+        payload.use_ma_stack = lid("chkCondEntryMaStack5m")?.checked === true;
+        payload.use_ma_stack_1h = lid("chkCondEntryMaStack1h")?.checked !== false;
+        if (mode === "ou_quant") {
+          payload.ou_use_macro_trend = lid("chkCondEntryMaStack1h")?.checked !== false;
+        }
+        payload.use_convergence = lid("chkCondExitConvergence")?.checked !== false;
+        payload.use_dwell = lid("chkCondExitDwell")?.checked !== false;
+        payload.use_bottoming = lid("chkCondExitBottoming")?.checked === true;
       }
-      payload.use_convergence = lid("chkCondExitConvergence")?.checked !== false;
-      payload.use_dwell = lid("chkCondExitDwell")?.checked !== false;
-      payload.use_bottoming = lid("chkCondExitBottoming")?.checked === true;
       return payload;
     },
 
@@ -2009,7 +2101,10 @@
         if (data?.bot) {
           [
             "lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
-            "lighterCrypto_inputLiveMaxSpread", "lighterCrypto_inpOuEntryZ", "lighterCrypto_inpOuExitZ"
+            "lighterCrypto_inputLiveMaxSpread", "lighterCrypto_inpOuEntryZ", "lighterCrypto_inpOuExitZ",
+            "lighterCrypto_inpMaStretchMin", "lighterCrypto_inpMaTrailingStop",
+            "lighterCrypto_maUseStretch", "lighterCrypto_maUseStack5m", "lighterCrypto_maUseStack1h",
+            "lighterCrypto_maUseCrossExit", "lighterCrypto_maUseDwell", "lighterCrypto_maUseTrailing"
           ].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
           [
             "chkCondEntryMaStretch", "chkCondEntryBase", "chkCondEntryPeak", "chkCondEntryMaStack5m",
@@ -2609,14 +2704,26 @@
         use_ma_accel: lid("chkCondEntryBase")?.checked !== false,
         use_ma_pullback: lid("chkCondEntryPeak")?.checked !== false,
         use_ma_cross_exit: lid("chkCondExitConvergence")?.checked !== false,
-        use_ma_stretch: lid("chkCondEntryMaStretch")?.checked !== false,
+        use_ma_stretch: mode === "ma_stack"
+          ? ($("lighterCrypto_maUseStretch") ? $("lighterCrypto_maUseStretch").checked : (lid("chkCondEntryMaStretch")?.checked !== false))
+          : (lid("chkCondEntryMaStretch")?.checked !== false),
         use_base_spacing: lid("chkCondEntryBase")?.checked !== false,
         use_peak: lid("chkCondEntryPeak")?.checked !== false,
-        use_ma_stack: lid("chkCondEntryMaStack5m")?.checked === true,
-        use_ma_stack_1h: lid("chkCondEntryMaStack1h")?.checked !== false,
-        use_convergence: lid("chkCondExitConvergence")?.checked !== false,
-        use_dwell: lid("chkCondExitDwell")?.checked !== false,
-        use_bottoming: lid("chkCondExitBottoming")?.checked === true,
+        use_ma_stack: mode === "ma_stack"
+          ? ($("lighterCrypto_maUseStack5m") ? $("lighterCrypto_maUseStack5m").checked : (lid("chkCondEntryMaStack5m") ? lid("chkCondEntryMaStack5m").checked : true))
+          : (lid("chkCondEntryMaStack5m")?.checked === true),
+        use_ma_stack_1h: mode === "ma_stack"
+          ? ($("lighterCrypto_maUseStack1h") ? $("lighterCrypto_maUseStack1h").checked : (lid("chkCondEntryMaStack1h")?.checked !== false))
+          : (lid("chkCondEntryMaStack1h")?.checked !== false),
+        use_convergence: mode === "ma_stack"
+          ? ($("lighterCrypto_maUseCrossExit") ? $("lighterCrypto_maUseCrossExit").checked : (lid("chkCondExitConvergence")?.checked !== false))
+          : (lid("chkCondExitConvergence")?.checked !== false),
+        use_dwell: mode === "ma_stack"
+          ? ($("lighterCrypto_maUseDwell") ? $("lighterCrypto_maUseDwell").checked : (lid("chkCondExitDwell") ? lid("chkCondExitDwell").checked : true))
+          : (lid("chkCondExitDwell")?.checked !== false),
+        use_bottoming: mode === "ma_stack"
+          ? ($("lighterCrypto_maUseTrailing") ? $("lighterCrypto_maUseTrailing").checked : (lid("chkCondExitBottoming")?.checked === true))
+          : (lid("chkCondExitBottoming")?.checked === true),
       };
     },
 
@@ -2694,7 +2801,10 @@
         if (live == null || !Number.isFinite(Number(live)) || Math.abs(settings[key] - Number(live)) > 1e-9)
           diffs.push(`${key}: ${settings[key]} ≠ ${live ?? "unknown"}`);
       });
-      const defaultConditionToggles = {
+      const defaultConditionToggles = currentMode === "ma_stack" ? {
+        use_ma_stretch: true, use_base_spacing: false, use_peak: false,
+        use_ma_stack: true, use_ma_stack_1h: true, use_convergence: true, use_dwell: true, use_bottoming: false,
+      } : {
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
         use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
         use_ma_slope: true, use_ma_accel: true, use_ma_pullback: true, use_ma_cross_exit: true,
@@ -2703,15 +2813,16 @@
       const usesFilters = true;
       const isCross = currentMode === "golden_death_cross";
       const isMaAccel = currentMode === "ma_acceleration";
+      const isMaStack = currentMode === "ma_stack";
       const rules = [
-        ["EntryMaStretch", isCross ? "use_golden_cross" : (isMaAccel ? "use_ma_slope" : "use_ma_stretch"), isCross ? "Golden Cross" : (isMaAccel ? "MA Slope" : "Entry trigger")],
+        ["EntryMaStretch", isCross ? "use_golden_cross" : (isMaAccel ? "use_ma_slope" : "use_ma_stretch"), isCross ? "Golden Cross" : (isMaAccel ? "MA Slope" : (isMaStack ? "60-MA Stretch" : "Entry trigger"))],
         ["EntryBase", isCross ? "use_death_cross" : (isMaAccel ? "use_ma_accel" : "use_base_spacing"), isCross ? "Death Cross" : (isMaAccel ? "MA Curvature Accel" : "Spacing")],
         ["EntryPeak", isCross ? "use_cross_spread" : (isMaAccel ? "use_ma_pullback" : "use_peak"), isCross ? "Min Cross Spread" : (isMaAccel ? "Price Pullback" : "Peak rollover")],
-        ["EntryMaStack5m", "use_ma_stack", "Trend stack"],
-        ["EntryMaStack1h", "use_ma_stack_1h", "Macro trend 1h"],
-        ["ExitConvergence", isCross ? "use_cross_exit" : (isMaAccel ? "use_ma_cross_exit" : "use_convergence"), isCross ? "Opposite Cross Exit" : (isMaAccel ? "MA Crossing Exit" : "Convergence")],
-        ["ExitDwell", "use_dwell", "Dwell"],
-        ["ExitBottoming", "use_bottoming", "Bottoming"],
+        ["EntryMaStack5m", "use_ma_stack", isMaStack ? "5m MA Stack" : "Trend stack"],
+        ["EntryMaStack1h", "use_ma_stack_1h", isMaStack ? "1h Macro Trend" : "Macro trend 1h"],
+        ["ExitConvergence", isCross ? "use_cross_exit" : (isMaAccel ? "use_ma_cross_exit" : "use_convergence"), isCross ? "Opposite Cross Exit" : (isMaAccel ? "MA Crossing Exit" : (isMaStack ? "MA Cross Exit" : "Convergence"))],
+        ["ExitDwell", "use_dwell", isMaStack ? "16-Bar Dwell Exit" : "Dwell"],
+        ["ExitBottoming", "use_bottoming", isMaStack ? "Trailing Stop Ratchet" : "Bottoming"],
       ];
       rules.forEach(([suffix, key, name]) => {
         const input = lid(`chkCond${suffix}`);
@@ -2741,6 +2852,15 @@
             ExitConvergence: "exit_ma_cross",
             ExitDwell: "exit_ma_cross",
             ExitBottoming: "exit_ma_cross"
+          }[suffix] : isMaStack ? {
+            EntryMaStretch: "entry_stretch",
+            EntryBase: "entry_stretch",
+            EntryPeak: "entry_stretch",
+            EntryMaStack5m: "entry_ma_stack",
+            EntryMaStack1h: "entry_ma_stack_1h",
+            ExitConvergence: "exit_ma_cross",
+            ExitDwell: "exit_max_dwell",
+            ExitBottoming: "exit_trailing_stop"
           }[suffix] : {
             EntryMaStretch:"entry_z", EntryBase:"entry_spacing", EntryPeak:"entry_rollover",
             EntryMaStack5m:"entry_ma_stack", EntryMaStack1h:"entry_ma_stack_1h", ExitConvergence:"exit_convergence",
@@ -2814,6 +2934,31 @@
         const source = $("lighterCrypto_ouStatusSource");
         if (source) source.textContent = evaluation?.time
           ? `PAPER · Completed candle ${new Date(Number(evaluation.time) * 1000).toLocaleString()} · Tab 5 live bot executes deployed strategy`
+          : "PAPER · Awaiting completed-candle replay";
+        return;
+      }
+      if (this.currentParadigm === "ma_stack") {
+        const maRows = [
+          ["Stretch", "entry_stretch", "use_ma_stretch", "60-MA Stretch Discount"],
+          ["Stack5m", "entry_ma_stack", "use_ma_stack", "5m Full MA Stack"],
+          ["Stack1h", "entry_ma_stack_1h", "use_ma_stack_1h", "1h Macro Trend Support Alignment"],
+          ["CrossExit", "exit_ma_cross", "use_convergence", "MA7 / MA24 Golden Cross Reversal"],
+          ["Dwell", "exit_max_dwell", "use_dwell", "16-Bar Maximum Dwell Time Limit"],
+          ["Trailing", "exit_trailing_stop", "use_bottoming", "Trailing Stop Ratchet"],
+        ];
+        maRows.forEach(([id, key, toggle, detail]) => {
+          const badge = $(`lighterCrypto_maStatus${id}`);
+          if (!badge) return;
+          const enabled = settings[toggle] !== false;
+          const value = checks[key];
+          const state = !enabled ? "OFF" : value == null ? "N/A" : value ? "PASS" : "WAITING";
+          badge.textContent = state;
+          badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+          badge.title = `PAPER · ${detail}`;
+        });
+        const source = $("lighterCrypto_maStatusSource");
+        if (source) source.textContent = result?.latest_condition_time
+          ? `PAPER · Completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · Tab 5 live bot executes deployed strategy`
           : "PAPER · Awaiting completed-candle replay";
         return;
       }
@@ -2904,6 +3049,13 @@
         entry_ma_stack_1h: "use_ma_stack_1h",
         exit_cross: "use_cross_exit",
         exit_dwell: "use_dwell",
+      } : bot?.strategy_mode === "ma_stack" ? {
+        entry_ma_stack: "use_ma_stack",
+        entry_stretch: "use_ma_stretch",
+        entry_ma_stack_1h: "use_ma_stack_1h",
+        exit_ma_cross: "use_convergence",
+        exit_trailing_stop: "use_bottoming",
+        exit_max_dwell: "use_dwell",
       } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
         entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
         entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
@@ -2972,7 +3124,10 @@
           }
         });
       }
-      const defaultConditionToggles = {
+      const defaultConditionToggles = liveMode === "ma_stack" ? {
+        use_ma_stretch: true, use_base_spacing: false, use_peak: false,
+        use_ma_stack: true, use_ma_stack_1h: true, use_convergence: true, use_dwell: true, use_bottoming: false,
+      } : {
         use_ma_stretch: true, use_base_spacing: false, use_peak: false,
         use_ma_stack: false, use_ma_stack_1h: true, use_convergence: true, use_dwell: false, use_bottoming: false,
         use_ma_slope: true, use_ma_accel: true, use_ma_pullback: true, use_ma_cross_exit: true,
@@ -3061,6 +3216,30 @@
         if (params.ma_trailing_stop != null && $("lighterCrypto_inpMaTrailingStop")) {
           $("lighterCrypto_inpMaTrailingStop").value = String(params.ma_trailing_stop);
           $("lighterCrypto_inpMaTrailingStop")._userModified = false;
+        }
+        if ($("lighterCrypto_maUseStretch") && params.use_ma_stretch != null) {
+          $("lighterCrypto_maUseStretch").checked = Boolean(params.use_ma_stretch);
+          $("lighterCrypto_maUseStretch")._userModified = false;
+        }
+        if ($("lighterCrypto_maUseStack5m") && params.use_ma_stack != null) {
+          $("lighterCrypto_maUseStack5m").checked = Boolean(params.use_ma_stack);
+          $("lighterCrypto_maUseStack5m")._userModified = false;
+        }
+        if ($("lighterCrypto_maUseStack1h") && params.use_ma_stack_1h != null) {
+          $("lighterCrypto_maUseStack1h").checked = Boolean(params.use_ma_stack_1h);
+          $("lighterCrypto_maUseStack1h")._userModified = false;
+        }
+        if ($("lighterCrypto_maUseCrossExit") && params.use_convergence != null) {
+          $("lighterCrypto_maUseCrossExit").checked = Boolean(params.use_convergence);
+          $("lighterCrypto_maUseCrossExit")._userModified = false;
+        }
+        if ($("lighterCrypto_maUseDwell") && params.use_dwell != null) {
+          $("lighterCrypto_maUseDwell").checked = Boolean(params.use_dwell);
+          $("lighterCrypto_maUseDwell")._userModified = false;
+        }
+        if ($("lighterCrypto_maUseTrailing") && params.use_bottoming != null) {
+          $("lighterCrypto_maUseTrailing").checked = Boolean(params.use_bottoming);
+          $("lighterCrypto_maUseTrailing")._userModified = false;
         }
       }
       if (liveMode === "multi_factor") {
@@ -3210,8 +3389,12 @@
       const venueAmt = Math.abs(Number(venuePos?.position_amt || venuePos?.size || venuePos?.position || 0));
       const tranches = Array.isArray(bot?.tranches) ? bot.tranches : [];
       const expectedAmt = Math.abs(tranches.reduce((sum, t) => sum + (Number(t.qty) || 0) * (Number(t.side) || 1), 0));
-      const hasMismatch = Math.abs(venueAmt - expectedAmt) > 0.00005;
-      const isRecovery = Boolean(bot?.recovery_required || (hasMismatch && !isEnabled) || (bot?.blocked_reason && bot.blocked_reason.toLowerCase().includes("reconcil")));
+      const diff = Math.abs(venueAmt - expectedAmt);
+      const markPx = Number(this.marketDetail?.mark_price || bot?.last_evaluation?.ratio || this.currentPrice || 0);
+      const diffNotional = markPx > 0 ? diff * markPx : 0;
+      const isDust = diffNotional > 0 ? diffNotional < 5.0 : diff <= 0.00005;
+      const hasMismatch = !isDust && diff > 0.00005;
+      const isRecovery = Boolean(bot?.recovery_required || (hasMismatch && !isEnabled) || (bot?.blocked_reason && bot.blocked_reason.toLowerCase().includes("reconcil") && !isDust));
       const reconcileButton = $("lighterCrypto_btnReconcileBot");
       if (reconcileButton) reconcileButton.style.display = isRecovery ? "inline-flex" : "none";
       // The EC2 bot is shared across browsers; per-browser localStorage is not

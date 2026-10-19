@@ -366,10 +366,44 @@ class LighterCryptoBot:
             amount = abs(raw) * (1 if sign > 0 else -1)
         return account, amount, positions
 
-    def _check_position(self, amount: float, size_step: float) -> None:
+    DUST_NOTIONAL_THRESHOLD_USD = 5.0
+
+    def _check_position(
+        self,
+        amount: float,
+        size_step: float,
+        *,
+        mark_price: float = 0.0,
+        min_base_amount: float = 0.0,
+    ) -> None:
         expected = sum(float(item["qty"]) * int(item["side"]) for item in self.state["tranches"])
-        if abs(amount - expected) > max(size_step / 2, abs(expected) * 0.00001):
-            raise ValueError("Lighter position differs from the bot's persisted fills; reconciliation required")
+        diff = abs(amount - expected)
+        tolerance = max(size_step / 2, abs(expected) * 0.00001)
+        if diff <= tolerance:
+            return
+
+        px = mark_price
+        if px <= 0:
+            px = float((self.state.get("last_evaluation") or {}).get("ratio", 0) or 0)
+        if px <= 0 and self.state.get("tranches"):
+            px = float(self.state["tranches"][-1].get("price", 0) or 0)
+
+        notional_diff = diff * px if px > 0 else 0.0
+        is_dust = False
+        if notional_diff > 0 and notional_diff < self.DUST_NOTIONAL_THRESHOLD_USD:
+            is_dust = True
+        elif min_base_amount > 0 and diff < min_base_amount:
+            if notional_diff == 0.0 or notional_diff < self.DUST_NOTIONAL_THRESHOLD_USD * 2:
+                is_dust = True
+
+        if is_dust:
+            logger.info(
+                "Ignoring insignificant exchange dust: expected=%s, exchange=%s, diff=%s (~$%.2f)",
+                expected, amount, diff, notional_diff,
+            )
+            return
+
+        raise ValueError("Lighter position differs from the bot's persisted fills; reconciliation required")
 
     async def _market(self, symbol: str, *, fresh: bool = False) -> tuple[int, Dict[str, Any], float]:
         market_id = MARKETS[symbol]
@@ -449,13 +483,23 @@ class LighterCryptoBot:
                 self.state["blocked_reason"] = None
                 self._save()
                 return self.public_state()
-            if self.state["recovery_required"] or self.state["pending_order"]:
-                raise ValueError("Resolve Lighter execution recovery before enabling")
+            if self.state["pending_order"]:
+                resolved, _ = await self._resolve_pending_order()
+                if not resolved:
+                    raise ValueError("Resolve Lighter execution recovery before enabling")
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol, fresh=True)
             account, amount, positions = await self._account_position(symbol)
+            mark_px = float(detail.get("mark_price", 0) or 0)
+            min_base = float(detail.get("min_base_amount", 0) or 0)
             try:
-                self._check_position(amount, step)
+                self._check_position(amount, step, mark_price=mark_px, min_base_amount=min_base)
+                if self.state.get("recovery_required") and not self.state.get("pending_order"):
+                    self.state["recovery_required"] = False
+                    self.state["execution_blocked"] = False
+                    self.state["blocked_reason"] = None
+                    self.state["last_error"] = None
+                    self._save()
             except Exception as exc:
                 self.state.update(
                     recovery_required=True,
@@ -534,7 +578,9 @@ class LighterCryptoBot:
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol, fresh=True)
             account, amount, positions = await self._account_position(symbol)
-            self._check_position(amount, step)
+            mark_px = float(detail.get("mark_price", 0) or 0)
+            min_base = float(detail.get("min_base_amount", 0) or 0)
+            self._check_position(amount, step, mark_price=mark_px, min_base_amount=min_base)
             bid, ask = await self._book(market_id, enforce_spread=not reduce_only)
             price = ask if side > 0 else bid
             if signal_values is not None and not reduce_only:
@@ -558,7 +604,8 @@ class LighterCryptoBot:
                     raise ValueError("Execution recovery required")
                 if len(self.state["tranches"]) >= self.state["max_tranches"]:
                     raise ValueError("Tranche capacity reached")
-                if amount and amount * side < 0:
+                is_dust_pos = (abs(amount) * mark_px < self.DUST_NOTIONAL_THRESHOLD_USD) or (min_base > 0 and abs(amount) < min_base)
+                if not is_dust_pos and amount and amount * side < 0:
                     raise ValueError("Cannot reverse an active campaign")
                 mult = float(self.state.get("long_multiplier", 1.0)) if side > 0 else float(self.state.get("short_multiplier", 1.0))
                 effective_notional = notional * max(0.1, mult)
@@ -582,6 +629,111 @@ class LighterCryptoBot:
                 self._save()
                 raise
 
+    async def _resolve_pending_order(self) -> tuple[bool, Optional[Dict[str, Any]]]:
+        """Verify and safely resolve an in-flight, unfilled, or rejected pending order.
+
+        Returns (resolved: bool, fill_event: Optional[Dict]).
+        """
+        pending = self.state.get("pending_order")
+        if not pending:
+            return True, None
+
+        idx = int(pending.get("client_order_index", 0))
+        market_id = int(pending.get("market_id", 1))
+        qty = float(pending.get("qty", 0.0))
+        created_at = int(pending.get("created_at", 0) or 0)
+        age_s = time.time() - created_at if created_at > 0 else 9999
+
+        try:
+            # 1. Check if execution fill can be confirmed
+            fill = await self.client.execution_fill(idx, market_id, qty)
+            if fill.get("fill_confirmed"):
+                event = self._record_fill(fill, pending)
+                logger.info("Pending order %s confirmed filled during resolution", idx)
+                return True, event
+
+            # 2. Check account_order status on the exchange
+            order = await self.client.account_order(idx) if idx else None
+            if order:
+                status_str = str(order.get("status", "")).lower()
+                filled_base = float(order.get("filled_base_amount", 0) or 0)
+                is_terminal = (
+                    status_str.startswith("cancel")
+                    or status_str in {"cancelled", "canceled", "expired", "rejected"}
+                )
+                if is_terminal:
+                    if filled_base > 0:
+                        px = (
+                            float(order.get("filled_quote_amount", 0) or 0) / filled_base
+                            if filled_base
+                            else float(order.get("price", 0) or 0)
+                        )
+                        partial_record = {
+                            "fill_confirmed": True,
+                            "filled_size": filled_base,
+                            "fill_price": px,
+                            "fee_usd": float(order.get("integrator_taker_fee", 0) or 0),
+                            "fill_time_ms": int(order.get("timestamp", 0) or 0) * 1000
+                            or int(time.time() * 1000),
+                        }
+                        event = self._record_fill(partial_record, pending, allow_partial=True)
+                        logger.info("Pending order %s was cancelled with partial fill %s; recorded fill", idx, filled_base)
+                        return True, event
+                    else:
+                        logger.info("Pending order %s was cancelled/expired UNFILLED; safely clearing", idx)
+                        self.state["pending_order"] = None
+                        self.state.update(
+                            recovery_required=False,
+                            execution_blocked=False,
+                            blocked_reason=None,
+                            last_error=None,
+                        )
+                        self._save()
+                        return True, None
+                elif status_str in {"filled", "success"}:
+                    px = (
+                        float(order.get("filled_quote_amount", 0) or 0) / filled_base
+                        if filled_base
+                        else float(order.get("price", 0) or 0)
+                    )
+                    fill_size = filled_base if filled_base > 0 else qty
+                    record = {
+                        "fill_confirmed": True,
+                        "filled_size": fill_size,
+                        "fill_price": px,
+                        "fee_usd": float(order.get("integrator_taker_fee", 0) or 0),
+                        "fill_time_ms": int(order.get("timestamp", 0) or 0) * 1000
+                        or int(time.time() * 1000),
+                    }
+                    event = self._record_fill(record, pending, allow_partial=True)
+                    return True, event
+
+            # 3. If order not found on exchange after 15 seconds:
+            if not order and age_s > 15:
+                symbol = self.state["selected_symbol"]
+                _, amount, _ = await self._account_position(symbol)
+                expected = sum(float(item["qty"]) * int(item["side"]) for item in self.state["tranches"])
+                step = float(pending.get("size_step", 0.00001))
+                diff = abs(amount - expected)
+                if diff <= max(step / 2, abs(expected) * 0.00001):
+                    logger.warning(
+                        "Pending order %s not found on exchange after %.0fs and position matches expected (%s); clearing ghost pending order",
+                        idx, age_s, expected,
+                    )
+                    self.state["pending_order"] = None
+                    self.state.update(
+                        recovery_required=False,
+                        execution_blocked=False,
+                        blocked_reason=None,
+                        last_error=None,
+                    )
+                    self._save()
+                    return True, None
+        except Exception as exc:
+            logger.warning("Error resolving pending order %s: %s", idx, exc)
+
+        return False, None
+
     async def reconcile(self) -> Dict[str, Any]:
         async with self.lock:
             if self.state["enabled"] and not self.state["recovery_required"]:
@@ -589,44 +741,64 @@ class LighterCryptoBot:
             pending = self.state["pending_order"]
             event = None
             if pending:
-                idx = int(pending["client_order_index"])
-                order = await self.client.account_order(idx)
-                if not order:
-                    raise ValueError("Lighter order is not found; outcome remains uncertain")
-                fill = await self.client.execution_fill(idx, int(pending["market_id"]), float(pending["qty"]))
-                if fill.get("fill_confirmed"):
-                    event = self._record_fill(fill, pending)
-                else:
-                    status_str = str(order.get("status", "")).lower()
-                    filled_base = float(order.get("filled_base_amount", 0) or 0)
-                    rem_base = float(order.get("remaining_base_amount", 0) or 0)
-                    is_terminal_canceled = status_str.startswith("cancel") or status_str in {"cancelled", "canceled", "expired", "rejected"}
-                    if is_terminal_canceled and rem_base == 0:
-                        if filled_base > 0:
-                            px = float(order.get("filled_quote_amount", 0) or 0) / filled_base if filled_base else float(order.get("price", 0) or 0)
-                            partial_record = {
-                                "fill_confirmed": True,
-                                "filled_size": filled_base,
-                                "fill_price": px,
-                                "fee_usd": float(order.get("integrator_taker_fee", 0) or 0),
-                                "fill_time_ms": int(order.get("timestamp", 0) or 0) * 1000 or int(time.time() * 1000),
-                            }
-                            event = self._record_fill(partial_record, pending, allow_partial=True)
-                        else:
-                            self.state["pending_order"] = None
-                            self._save()
+                resolved, event = await self._resolve_pending_order()
+                if not resolved:
+                    idx = int(pending.get("client_order_index", 0))
+                    order = await self.client.account_order(idx) if idx else None
+                    if not order:
+                        logger.warning("Order %s not found on exchange during reconcile; clearing pending order", idx)
+                        self.state["pending_order"] = None
+                        self._save()
                     else:
-                        raise ValueError("Lighter order may be open or partially filled; manual recovery required")
+                        status_str = str(order.get("status", "")).lower()
+                        filled_base = float(order.get("filled_base_amount", 0) or 0)
+                        is_terminal_canceled = (
+                            status_str.startswith("cancel")
+                            or status_str in {"cancelled", "canceled", "expired", "rejected"}
+                        )
+                        if is_terminal_canceled:
+                            if filled_base > 0:
+                                px = (
+                                    float(order.get("filled_quote_amount", 0) or 0) / filled_base
+                                    if filled_base
+                                    else float(order.get("price", 0) or 0)
+                                )
+                                partial_record = {
+                                    "fill_confirmed": True,
+                                    "filled_size": filled_base,
+                                    "fill_price": px,
+                                    "fee_usd": float(order.get("integrator_taker_fee", 0) or 0),
+                                    "fill_time_ms": int(order.get("timestamp", 0) or 0) * 1000 or int(time.time() * 1000),
+                                }
+                                event = self._record_fill(partial_record, pending, allow_partial=True)
+                            else:
+                                self.state["pending_order"] = None
+                                self._save()
+                        else:
+                            raise ValueError(f"Lighter order {idx} status is '{status_str}'; cancel on exchange before reconciling")
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol)
             _, amount, _ = await self._account_position(symbol)
+            mark_px = float(detail.get("mark_price", 0) or 0)
+            if mark_px <= 0:
+                try:
+                    bid, ask = await self._book(market_id, enforce_spread=False)
+                    mark_px = (bid + ask) / 2
+                except Exception:
+                    mark_px = 0.0
+            min_base = float(detail.get("min_base_amount", 0) or 0)
             expected = sum(float(item["qty"]) * int(item["side"]) for item in self.state["tranches"])
-            if abs(amount - expected) > max(step / 2, abs(expected) * 0.00001):
+            diff = abs(amount - expected)
+            tolerance = max(step / 2, abs(expected) * 0.00001)
+            diff_notional = diff * mark_px if mark_px > 0 else 0.0
+
+            if diff > tolerance:
                 logger.warning("Reconciling position mismatch: expected %s, exchange has %s", expected, amount)
-                if abs(amount) < step:
+                is_dust = (diff_notional > 0 and diff_notional < self.DUST_NOTIONAL_THRESHOLD_USD) or (min_base > 0 and diff < min_base and diff_notional < 10.0)
+                if is_dust or abs(amount) < step or (abs(amount) * mark_px < self.DUST_NOTIONAL_THRESHOLD_USD and abs(amount) < min_base):
+                    logger.info("Exchange position %s is negligible dust (< $%.1f / min lot); clearing bot tranches", amount, self.DUST_NOTIONAL_THRESHOLD_USD)
                     self.state["tranches"] = []
                 else:
-                    mark_px = float(detail.get("mark_price", 0) or 0)
                     now_ts = int(time.time())
                     side = 1 if amount > 0 else -1
                     reconciled_tranche = {
@@ -668,23 +840,36 @@ class LighterCryptoBot:
         async with self.lock:
             try:
                 if self.state["pending_order"]:
-                    idx = int(self.state["pending_order"].get("client_order_index", 0))
-                    order = await self.client.account_order(idx) if idx else None
-                    if order:
-                        status_str = str(order.get("status", "")).lower()
-                        rem_base = float(order.get("remaining_base_amount", 0) or 0)
-                        if (status_str.startswith("cancel") or status_str in {"cancelled", "canceled", "expired", "rejected"}) and rem_base == 0:
-                            self.state["pending_order"] = None
-                            self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
-                            self._save()
+                    resolved, _ = await self._resolve_pending_order()
+                    if not resolved:
+                        idx = int(self.state["pending_order"].get("client_order_index", 0))
+                        order = await self.client.account_order(idx) if idx else None
+                        if order:
+                            status_str = str(order.get("status", "")).lower()
+                            filled_base = float(order.get("filled_base_amount", 0) or 0)
+                            if status_str.startswith("cancel") or status_str in {"cancelled", "canceled", "expired", "rejected"}:
+                                if filled_base == 0:
+                                    self.state["pending_order"] = None
+                                    self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
+                                    self._save()
+                                else:
+                                    raise ValueError("Pending order requires reconciliation")
+                            else:
+                                raise ValueError("Pending order requires reconciliation")
                         else:
-                            raise ValueError("Pending order requires reconciliation")
-                    else:
-                        raise ValueError("Pending order requires reconciliation")
+                            created_at = int(self.state["pending_order"].get("created_at", 0) or 0)
+                            if created_at > 0 and (time.time() - created_at) > 15:
+                                self.state["pending_order"] = None
+                                self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
+                                self._save()
+                            else:
+                                raise ValueError("Pending order requires reconciliation")
                 symbol = self.state["selected_symbol"]
-                _, _, step = await self._market(symbol)
+                _, detail, step = await self._market(symbol)
                 _, amount, _ = await self._account_position(symbol)
-                self._check_position(amount, step)
+                mark_px = float(detail.get("mark_price", 0) or 0)
+                min_base = float(detail.get("min_base_amount", 0) or 0)
+                self._check_position(amount, step, mark_price=mark_px, min_base_amount=min_base)
             except Exception as exc:
                 self.state.update(recovery_required=True, execution_blocked=True,
                                   blocked_reason=f"Startup reconciliation failed: {exc}",
@@ -715,18 +900,11 @@ class LighterCryptoBot:
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol, fresh=True)
             if self.state["pending_order"]:
-                idx = int(self.state["pending_order"].get("client_order_index", 0))
                 try:
-                    order = await self.client.account_order(idx) if idx else None
-                    if order:
-                        status_str = str(order.get("status", "")).lower()
-                        rem_base = float(order.get("remaining_base_amount", 0) or 0)
-                        if status_str.startswith("cancel") or status_str in {"cancelled", "canceled", "expired", "rejected"} or rem_base == 0:
-                            self.state["pending_order"] = None
-                            self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None)
-                            self._save()
+                    await self._resolve_pending_order()
                 except Exception as err:
                     logger.warning("Error checking pending order during flatten: %s", err)
+                self.state["pending_order"] = None
             events = []
             while self.state["tranches"]:
                 try:
@@ -737,7 +915,10 @@ class LighterCryptoBot:
                     break
             try:
                 _, amount, _ = await self._account_position(symbol)
-                if abs(amount) >= step:
+                mark_px = float(detail.get("mark_price", 0) or 0)
+                min_base = float(detail.get("min_base_amount", 0) or 0)
+                is_dust = (abs(amount) * mark_px < self.DUST_NOTIONAL_THRESHOLD_USD) or (min_base > 0 and abs(amount) < min_base)
+                if abs(amount) >= step and not is_dust:
                     bid, ask = await self._book(market_id, enforce_spread=False)
                     close_side = 1 if amount < 0 else -1
                     close_price = ask if close_side > 0 else bid
@@ -764,26 +945,42 @@ class LighterCryptoBot:
         if not self.state["enabled"]:
             return
         async with self.lock:
-            if not self.state["enabled"] or self.state["pending_order"] or self.state["recovery_required"]:
+            if not self.state["enabled"]:
                 return
+            if self.state["pending_order"]:
+                resolved, _ = await self._resolve_pending_order()
+                if not resolved:
+                    return
             symbol = self.state["selected_symbol"]
             interval = self.state["strategy_interval"]
             seconds = INTERVAL_SECONDS[interval]
             try:
                 market_id, detail, step = await self._market(symbol)
                 account, amount, positions = await self._account_position(symbol)
-                self._check_position(amount, step)
+                mark_px = float(detail.get("mark_price", 0) or 0)
+                min_base = float(detail.get("min_base_amount", 0) or 0)
+                self._check_position(amount, step, mark_price=mark_px, min_base_amount=min_base)
+
+                if self.state.get("recovery_required") and not self.state.get("pending_order"):
+                    logger.info("Auto-clearing recovery_required: verified position with dust tolerance and no pending orders")
+                    self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
+                    self._save()
 
                 if self.state.get("execution_blocked") and not self.state.get("recovery_required"):
-                    try:
-                        _, ask = await self._book(market_id, enforce_spread=False)
-                        qty = self._entry_quantity(self.state["notional_usd"], ask, detail)
-                        self._check_entry_capacity(account, positions, qty * ask)
+                    if self.state.get("blocked_reason") and ("reconcil" in self.state["blocked_reason"].lower() or "dust" in self.state["blocked_reason"].lower()):
                         self.state["execution_blocked"] = False
                         self.state["blocked_reason"] = None
                         self._save()
-                    except Exception as cap_err:
-                        self.state["blocked_reason"] = str(cap_err)
+                    else:
+                        try:
+                            _, ask = await self._book(market_id, enforce_spread=False)
+                            qty = self._entry_quantity(self.state["notional_usd"], ask, detail)
+                            self._check_entry_capacity(account, positions, qty * ask)
+                            self.state["execution_blocked"] = False
+                            self.state["blocked_reason"] = None
+                            self._save()
+                        except Exception as cap_err:
+                            self.state["blocked_reason"] = str(cap_err)
 
                 required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
                 request_limit = min(500, max(130, required_bars + 1))

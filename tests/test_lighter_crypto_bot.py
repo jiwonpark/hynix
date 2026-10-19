@@ -262,6 +262,149 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["verified_exit_count"], 1)
         self.assertAlmostEqual(state["verified_realized_pnl_usd"], 0.013)
 
+    async def test_ma_stack_condition_toggles(self):
+        from backend.lighter_strategy import evaluate_strategy_signal
+        # 65 bars with bearish stack (Price < MA7 < MA24 < MA60)
+        prices = [100.0 - i * 0.1 for i in range(60)] + [93.0, 92.0, 91.0, 90.0, 89.0]
+        # With stretch on and use_ma_stack_1h off (macro filter bypassed)
+        entry, side, exit_sig, eval_data = evaluate_strategy_signal(
+            "ma_stack", prices,
+            {"use_ma_stretch": True, "use_ma_stack": True, "use_ma_stack_1h": False,
+             "ma_stretch_min": 0.30, "ma_trailing_stop": 0.15,
+             "use_convergence": True, "use_dwell": True, "use_bottoming": False}
+        )
+        self.assertEqual(side, 1)
+        self.assertTrue(entry)
+        self.assertTrue(eval_data["condition_pass"]["entry_stretch"])
+        self.assertTrue(eval_data["condition_pass"]["entry_ma_stack"])
+
+        # When use_ma_stretch is False, stretch is bypassed even if stretch_min is impossibly high
+        entry_bypassed, _, _, _ = evaluate_strategy_signal(
+            "ma_stack", prices,
+            {"use_ma_stretch": False, "use_ma_stack": True, "use_ma_stack_1h": False,
+             "ma_stretch_min": 99.0, "use_convergence": True, "use_dwell": True}
+        )
+        self.assertTrue(entry_bypassed)
+
+        # When use_ma_stretch is True with impossibly high threshold, entry is blocked
+        entry_blocked, _, _, _ = evaluate_strategy_signal(
+            "ma_stack", prices,
+            {"use_ma_stretch": True, "use_ma_stack": True, "use_ma_stack_1h": False,
+             "ma_stretch_min": 99.0, "use_convergence": True, "use_dwell": True}
+        )
+        self.assertFalse(entry_blocked)
+
+        # Exit signal toggles: test dwell exit toggling
+        # position_side=1, held_bars=16: with use_dwell=True -> exit=True; with use_dwell=False and use_convergence=False -> exit=False
+        _, _, exit_dwell_on, _ = evaluate_strategy_signal(
+            "ma_stack", prices,
+            {"use_convergence": False, "use_dwell": True, "use_bottoming": False},
+            position_side=1, entry_price=90.0, held_bars=16
+        )
+        self.assertTrue(exit_dwell_on)
+
+        _, _, exit_dwell_off, _ = evaluate_strategy_signal(
+            "ma_stack", prices,
+            {"use_convergence": False, "use_dwell": False, "use_bottoming": False},
+            position_side=1, entry_price=90.0, held_bars=16
+        )
+        self.assertFalse(exit_dwell_off)
+
+    async def test_update_config_ma_stack_toggles(self):
+        updated = await self.bot.configure({
+            "strategy_mode": "ma_stack",
+            "use_ma_stretch": False,
+            "use_ma_stack": True,
+            "use_ma_stack_1h": False,
+            "use_convergence": False,
+            "use_dwell": True,
+            "use_bottoming": True,
+            "ma_stretch_min": 0.45,
+            "ma_trailing_stop": 0.20,
+        })
+        self.assertEqual(updated["strategy_mode"], "ma_stack")
+        self.assertFalse(updated["use_ma_stretch"])
+        self.assertTrue(updated["use_ma_stack"])
+        self.assertFalse(updated["use_ma_stack_1h"])
+        self.assertFalse(updated["use_convergence"])
+        self.assertTrue(updated["use_dwell"])
+        self.assertTrue(updated["use_bottoming"])
+        self.assertAlmostEqual(updated["ma_stretch_min"], 0.45)
+    async def test_insignificant_dust_position_does_not_block_trading(self):
+        # Dust position (-0.0001 BTC, notional $0.01 < $5.0) on exchange does not raise mismatch
+        self.client.amount = -0.0001
+        self.client.collateral = 200.0
+        # toggle(True) should succeed without ValueError
+        state = await self.bot.toggle(True)
+        self.assertTrue(state["enabled"])
+        self.assertFalse(state["recovery_required"])
+        self.assertFalse(state["execution_blocked"])
+
+        # manual entry also succeeds without position mismatch error after pausing
+        await self.bot.toggle(False)
+        entry = await self.bot.manual_entry(1, 20.0)
+        self.assertEqual(entry["event"], "ENTRY")
+
+    async def test_reconcile_with_dust_flattens_without_creating_dust_tranche(self):
+        # When exchange has dust (-0.0001 BTC), reconcile flattens bot tranches rather than creating a dust tranche
+        self.client.amount = -0.0001
+        res = await self.bot.reconcile()
+        self.assertFalse(self.bot.state["recovery_required"])
+        self.assertFalse(self.bot.state["execution_blocked"])
+        self.assertEqual(len(self.bot.state["tranches"]), 0)
+
+    async def test_unfilled_cancelled_pending_order_auto_clears(self):
+        import time
+        self.bot.state["pending_order"] = {
+            "client_order_index": 99991,
+            "symbol": "BTC",
+            "market_id": 1,
+            "side": 1,
+            "qty": 0.01,
+            "size_step": 0.001,
+            "reduce_only": False,
+            "reason": "test",
+            "created_at": int(time.time()),
+        }
+        self.bot.state["recovery_required"] = True
+        self.bot.state["execution_blocked"] = True
+        self.bot.state["blocked_reason"] = "Lighter order outcome uncertain"
+
+        # Exchange says order 99991 was cancelled with 0 filled base
+        self.client.orders[99991] = {
+            "status": "cancelled",
+            "filled_base_amount": "0",
+            "remaining_base_amount": "0.01",
+        }
+
+        # Verify startup or toggle auto-resolves and clears the unfilled order
+        await self.bot.verify_startup()
+        self.assertIsNone(self.bot.state["pending_order"])
+        self.assertFalse(self.bot.state["recovery_required"])
+        self.assertFalse(self.bot.state["execution_blocked"])
+
+    async def test_ghost_pending_order_auto_clears(self):
+        import time
+        # Pending order not found on exchange after 20 seconds
+        self.bot.state["pending_order"] = {
+            "client_order_index": 88882,
+            "symbol": "BTC",
+            "market_id": 1,
+            "side": 1,
+            "qty": 0.01,
+            "size_step": 0.001,
+            "reduce_only": False,
+            "reason": "test",
+            "created_at": int(time.time()) - 25,
+        }
+        self.bot.state["recovery_required"] = True
+        self.bot.state["execution_blocked"] = True
+
+        await self.bot.verify_startup()
+        self.assertIsNone(self.bot.state["pending_order"])
+        self.assertFalse(self.bot.state["recovery_required"])
+        self.assertFalse(self.bot.state["execution_blocked"])
+
 
 if __name__ == "__main__":
     unittest.main()
