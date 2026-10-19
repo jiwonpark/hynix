@@ -1495,7 +1495,7 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
             target_end *= 1000
         cache_key = f"{symbol}:{interval}:{limit}:{target_end or 'latest'}"
         now = time.time()
-        ttl = 4.0 if not target_end else 3600.0
+        ttl = 15.0 if not target_end else 3600.0
         if cache_key in _lighter_crypto_cache:
             cached_time, cached_data = _lighter_crypto_cache[cache_key]
             if now - cached_time < ttl:
@@ -1531,12 +1531,17 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
                                 "notional": float(event.get("notional_usd", 0)),
                                 "pairKey": str(event.get("entry_order_id") or event.get("order_id")),
                                 "hoverText": f"ACTUAL {'ENTRY' if is_entry else 'EXIT'} {symbol} @ {price:.6f} · {event.get('qty')} filled"})
+        if not bars and cache_key in _lighter_crypto_cache:
+            return _lighter_crypto_cache[cache_key][1]
         result = {"success": True, "symbol": symbol, "interval": interval,
                   "bars": bars, "markers": markers}
         if bars:
             _lighter_crypto_cache[cache_key] = (now, result)
         return result
     except Exception as error:
+        if cache_key in _lighter_crypto_cache:
+            logger.warning(f"Error fetching lighter crypto candles, returning stale cache: {error}")
+            return _lighter_crypto_cache[cache_key][1]
         return {"success": False, "symbol": symbol, "interval": interval,
                 "bars": [], "markers": [], "error": str(error)}
 

@@ -5209,9 +5209,9 @@
   <script src="strategy-execution-chart.js?v=20261019_chart_fix"></script>
   <script src="strategy-lab.js?v=20261019_chart_fix"></script>
   <script src="terminal-common.js?v=20261019_chart_fix"></script>
-  <script src="lighter-tab.js?v=20261019_chart_fix"></script>
-  <script src="crypto-tab.js?v=20261019_chart_fix"></script>
-  <script src="lighter-crypto-tab.js?v=20261019_chart_fix"></script>
+  <script src="lighter-tab.js?v=20261019_chart_fix2"></script>
+  <script src="crypto-tab.js?v=20261019_chart_fix2"></script>
+  <script src="lighter-crypto-tab.js?v=20261019_chart_fix2"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -11140,16 +11140,37 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (typeof tradingEngine !== "undefined" && isTrading) {
           tradingEngine.onTabActivated();
         }
-        if (window.lighterEngine && isLighter) window.lighterEngine.onTabActivated();
-        if (window.cryptoEngine && isCrypto) window.cryptoEngine.onTabActivated();
-        if (window.lighterCryptoEngine && isLighterCrypto) window.lighterCryptoEngine.onTabActivated();
+        const activateEngineWhenReady = (getEngine, isCurrentTab, tabId) => {
+          if (!isCurrentTab) return;
+          const engine = getEngine();
+          if (engine && typeof engine.onTabActivated === "function") {
+            engine.onTabActivated();
+            return;
+          }
+          let attempts = 0;
+          const timer = setInterval(() => {
+            attempts++;
+            const eng = getEngine();
+            const tabEl = $(tabId);
+            const stillActive = tabEl && tabEl.style.display !== "none";
+            if (eng && typeof eng.onTabActivated === "function") {
+              clearInterval(timer);
+              if (stillActive) eng.onTabActivated();
+            } else if (attempts >= 60 || !stillActive) {
+              clearInterval(timer);
+            }
+          }, 50);
+        };
+        activateEngineWhenReady(() => window.lighterEngine, isLighter, "tabContentLighter");
+        activateEngineWhenReady(() => window.cryptoEngine, isCrypto, "tabContentCrypto");
+        activateEngineWhenReady(() => window.lighterCryptoEngine, isLighterCrypto, "tabContentLighterCrypto");
         if (typeof pairsExplorer !== "undefined" && isPairs) {
           pairsExplorer.onTabActivated();
         }
         if (typeof compoundingEngine !== "undefined" && isCompound) {
           compoundingEngine.onTabActivated();
         }
-        if (window.strategyLab && isStrategyLab) window.strategyLab.onTabActivated();
+        activateEngineWhenReady(() => window.strategyLab, isStrategyLab, "tabContentStrategyLab");
         if (isUpbitScanner) upbitCoinScanner.onTabActivated();
       }, 60);
     }

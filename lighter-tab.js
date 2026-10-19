@@ -3385,7 +3385,14 @@
         data = await api(`/api/trade/short_term_parity?interval=${interval}&limit=120`);
       }
       if (interval !== this.interval || request !== this.chartRequest) return;
-      if (!data || !data.success || !data.bars || !data.bars.length) return;
+      if (!data || !data.success || !data.bars || !data.bars.length) {
+        if (!this.bars || !this.bars.length) {
+          setTimeout(() => {
+            if (!this.bars || !this.bars.length) this.refreshChart();
+          }, 2500);
+        }
+        return;
+      }
       if (!this.chart || !this.series) {
         this.ensureChart();
         if (!this.chart || !this.series) return;
@@ -5509,9 +5516,16 @@
   };
 
   window.lighterEngine = lighterEngine;
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => lighterEngine.init());
-  } else {
+  const startEngine = () => {
     lighterEngine.init();
+    const tabEl = document.getElementById("tabContentLighter");
+    if (tabEl && tabEl.style.display !== "none") {
+      lighterEngine.onTabActivated();
+    }
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", startEngine);
+  } else {
+    startEngine();
   }
 })();

@@ -4112,7 +4112,14 @@
         }
       }
       if (interval !== this.interval || request !== this.chartRequest) return;
-      if (!data || !data.success || !data.bars || !data.bars.length) return;
+      if (!data || !data.success || !data.bars || !data.bars.length) {
+        if (!this.bars || !this.bars.length) {
+          setTimeout(() => {
+            if (!this.bars || !this.bars.length) this.refreshChart();
+          }, 2500);
+        }
+        return;
+      }
       const oldestNewTime = data.bars[0]?.time;
       const prependedOlder = (this.chartInterval === interval && oldestNewTime != null)
         ? (this.bars || []).filter((b) => b.time < oldestNewTime)
@@ -6333,9 +6340,16 @@
   };
 
   window.lighterCryptoEngine = lighterCryptoEngine;
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => lighterCryptoEngine.init());
-  } else {
+  const startEngine = () => {
     lighterCryptoEngine.init();
+    const tabEl = document.getElementById("tabContentLighterCrypto");
+    if (tabEl && tabEl.style.display !== "none") {
+      lighterCryptoEngine.onTabActivated();
+    }
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", startEngine);
+  } else {
+    startEngine();
   }
 })();
