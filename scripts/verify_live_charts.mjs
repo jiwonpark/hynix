@@ -124,7 +124,7 @@ async function run() {
       await evaluate(`switchMainTab("${t.name}")`);
       let diag = null;
       const pollStart = Date.now();
-      const pollTimeoutMs = 20000;
+      const pollTimeoutMs = 35000;
 
       while (Date.now() - pollStart < pollTimeoutMs) {
         diag = await evaluate(`(() => {

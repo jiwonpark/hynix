@@ -1230,8 +1230,11 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
         markers = []
         if bars and include_markers:
             # Use the same exchange-reconciled fills as the execution list.
-            # A favorable price move can still lose money after both commissions.
-            execution_history = (await crypto_bot.reconciled_public_state()).get("execution_history", [])
+            try:
+                rec_crypto = await asyncio.wait_for(crypto_bot.reconciled_public_state(), timeout=2.0)
+            except Exception:
+                rec_crypto = crypto_bot.public_state()
+            execution_history = rec_crypto.get("execution_history", [])
             interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
                                 "4h": 14400, "1d": 86400}.get(interval, 900)
             first, last = bars[0]["time"], bars[-1]["time"]
@@ -1511,7 +1514,10 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
             interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600,
                                 "4h": 14400, "1d": 86400}[interval]
             first, last = bars[0]["time"], bars[-1]["time"]
-            rec_bot = await lighter_crypto_bot.reconciled_public_state()
+            try:
+                rec_bot = await asyncio.wait_for(lighter_crypto_bot.reconciled_public_state(), timeout=2.0)
+            except Exception:
+                rec_bot = lighter_crypto_bot.public_state()
             for event in rec_bot.get("execution_history", []):
                 if event.get("symbol") != symbol:
                     continue
