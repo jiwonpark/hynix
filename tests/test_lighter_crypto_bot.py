@@ -310,6 +310,24 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(exit_dwell_off)
 
+    async def test_ma_stack_uses_same_completed_candle_ma_as_chart(self):
+        from backend.lighter_strategy import evaluate_strategy_signal
+
+        # The final completed close creates a bullish Price > MA7 > MA24 > MA60
+        # stack only when that same close is included, matching chart overlays.
+        prices = [100.0] * 60 + [110.0]
+        entry, side, _, evaluation = evaluate_strategy_signal(
+            "ma_stack", prices,
+            {"use_ma_stretch": False, "use_ma_stack": True, "use_ma_stack_1h": False,
+             "use_convergence": False, "use_dwell": False, "use_bottoming": False},
+        )
+        self.assertTrue(entry)
+        self.assertEqual(side, -1)
+        self.assertTrue(evaluation["condition_pass"]["entry_ma_stack"])
+        self.assertAlmostEqual(evaluation["ma7"], (600.0 + 110.0) / 7, places=4)
+        self.assertAlmostEqual(evaluation["ma24"], (2300.0 + 110.0) / 24, places=4)
+        self.assertAlmostEqual(evaluation["ma60"], (5900.0 + 110.0) / 60, places=4)
+
     async def test_update_config_ma_stack_toggles(self):
         updated = await self.bot.configure({
             "strategy_mode": "ma_stack",
@@ -408,4 +426,3 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -731,10 +731,12 @@ def _run_lighter_backtest_sync(
             if index < 60:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
-            ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
-            ma24 = sum(item["value"] for item in bars[index-24:index]) / 24
-            ma60 = sum(item["value"] for item in bars[index-60:index]) / 60
-            sample = [item["value"] for item in bars[index-24:index]]
+            # Match the chart overlays: the current bar is finalized before
+            # evaluation and is therefore part of its displayed MA values.
+            ma7 = sum(item["value"] for item in bars[index-6:index+1]) / 7
+            ma24 = sum(item["value"] for item in bars[index-23:index+1]) / 24
+            ma60 = sum(item["value"] for item in bars[index-59:index+1]) / 60
+            sample = [item["value"] for item in bars[index-23:index+1]]
             mean = sum(sample) / len(sample)
             variance = sum((v - mean) ** 2 for v in sample) / len(sample)
             std = math.sqrt(variance)
@@ -1795,10 +1797,12 @@ def _run_crypto_backtest_sync(
             if index < 60:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
-            ma7 = sum(item["value"] for item in bars[index-7:index]) / 7
-            ma24 = sum(item["value"] for item in bars[index-24:index]) / 24
-            ma60 = sum(item["value"] for item in bars[index-60:index]) / 60
-            sample = [item["value"] for item in bars[index-24:index]]
+            # Match the chart overlays: the current bar is finalized before
+            # evaluation and is therefore part of its displayed MA values.
+            ma7 = sum(item["value"] for item in bars[index-6:index+1]) / 7
+            ma24 = sum(item["value"] for item in bars[index-23:index+1]) / 24
+            ma60 = sum(item["value"] for item in bars[index-59:index+1]) / 60
+            sample = [item["value"] for item in bars[index-23:index+1]]
             mean = sum(sample) / len(sample)
             variance = sum((v - mean) ** 2 for v in sample) / len(sample)
             std = math.sqrt(variance)

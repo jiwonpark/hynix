@@ -365,10 +365,13 @@ def evaluate_ma_stack_signals(
     if len(prices) < 61:
         raise ValueError("MA stack evaluation requires at least 61 completed bars")
     current_price = prices[-1]
-    ma7 = sum(prices[-8:-1]) / 7
-    ma24 = sum(prices[-25:-1]) / 24
-    ma60 = sum(prices[-61:-1]) / 60
-    sample = prices[-25:-1]
+    # The evaluated price is a finalized candle close, so include it in each
+    # MA exactly as the chart overlays do. Excluding it shifted every paper and
+    # live stack signal one bar later than the condition visible on the chart.
+    ma7 = sum(prices[-7:]) / 7
+    ma24 = sum(prices[-24:]) / 24
+    ma60 = sum(prices[-60:]) / 60
+    sample = prices[-24:]
     mean = sum(sample) / len(sample)
     variance = sum((v - mean) ** 2 for v in sample) / len(sample)
     std = math.sqrt(variance)

@@ -54,6 +54,22 @@ class TestCryptoTab(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_ma_stack_paper_entry_matches_chart_candle(self):
+        from backend.server import _run_crypto_backtest_sync
+
+        bars = [{"time": 1000 + i * 300, "value": 100.0} for i in range(60)]
+        bars.append({"time": 1000 + 60 * 300, "value": 110.0})
+        result = _run_crypto_backtest_sync(
+            bars, True, strategy_mode="ma_stack", market_source="lighter",
+            use_ma_stretch=False, use_ma_stack=True, use_ma_stack_1h=False,
+            use_convergence=False, use_dwell=False, use_bottoming=False,
+            interval_seconds=300,
+        )
+        self.assertTrue(result["latest_conditions"]["entry_ma_stack"])
+        self.assertEqual(len(result["open_positions"]), 1)
+        self.assertEqual(result["open_positions"][0]["entry_time"], bars[-1]["time"])
+        self.assertEqual(result["open_positions"][0]["side"], -1)
+
     def test_crypto_live_auth_and_paper_distinction(self):
         script = (ROOT / "crypto-tab.js").read_text(encoding="utf-8")
         server = (ROOT / "backend/server.py").read_text(encoding="utf-8")
