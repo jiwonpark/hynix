@@ -3788,7 +3788,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
 
         cache_key = f"{interval}_{limit}_{end_time or 'latest'}"
         now = time.time()
-        ttl = 10.0 if end_time is None else 600.0
+        ttl = 30.0 if end_time is None else 600.0
         if cache_key in _short_term_parity_cache:
             cached_time, cached_res = _short_term_parity_cache[cache_key]
             if now - cached_time < ttl:
