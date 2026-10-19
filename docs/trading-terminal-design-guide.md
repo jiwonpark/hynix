@@ -37,3 +37,43 @@ references and trade connectors use fill prices, while signal arrows keep the
 condition candle's price.
 Regression coverage for every new replay strategy must demonstrate that a second
 qualifying candle is still returned while the simulated position remains open.
+
+
+# Account, chart, and time verification
+
+These are mandatory basic checks for every affected trading tab after deployment,
+including tabs that share a changed component or backend. Other agents must use
+this checklist before reporting that the work is complete.
+
+- **Account data:** Open the real account panel and compare equity, available
+  margin, position quantities, entry prices, and applicable P&L with the
+  authenticated read-only API for the same venue/account. Check dollar values,
+  currency, units, and signs. Confirm that legitimate zero balances and no open
+  positions are distinguishable from missing, failed, or stale account data.
+  Cached or unavailable data must carry an explicit source/status and timestamp.
+- **Actual chart rendering:** Inspect a screenshot of the price series, MA lines,
+  populated price/legend values, and any affected secondary pane or markers.
+  A mounted container, canvas, HTTP 200, or API bar count is insufficient. Check
+  a fresh load, reload, navigation away/back, and interval switching. Ensure the
+  displayed symbol and interval match the loaded data and the plot is visible
+  within its price/time scales. Check for JavaScript errors.
+- **Loading time:** Measure elapsed wall-clock seconds from the user action to
+  usable account values and separately to visible chart data. Record the action,
+  tab, symbol/interval, timings, and outcome in verification evidence. Measure a
+  fresh load as well as a cached reload; cached content alone cannot establish
+  that live data refreshed. Enforce any configured loading budget. Otherwise
+  report the measured delays rather than silently accepting a slow response.
+- **Clock and freshness:** Compare the current time with account update times,
+  market/candle times, and displayed source timestamps. Check timezone conversion
+  and seconds/milliseconds handling; use KST where the UI promises KST. Verify
+  that candle spacing matches the selected interval and strategy signals use the
+  latest completed candle, not a forming candle. Fetch time, market-data time,
+  strategy evaluation time, and deployment time describe different events and
+  must not substitute for one another. Expose cache age/staleness explicitly;
+  unexplained future timestamps or old data shown as current fail verification.
+- **Completion and failure:** Loading must resolve to usable data or an explicit
+  bounded timeout/error with retry. Observe recovery after a transient failure.
+  Empty charts, indefinite spinners, stale account values shown as current, and
+  silent fallback to placeholder values are failures. Document unresolved issues
+  instead of reporting a successful deployment. Never submit test orders or
+  change live trading settings as part of these checks.

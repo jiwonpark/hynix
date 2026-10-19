@@ -58,5 +58,21 @@ price data and MA lines are visible, with populated values and usable controls,
 then check a fresh reload, navigation away/back, and interval switching. A chart
 container, canvas, HTTP 200, or nonzero API bar count alone is not proof that a
 chart rendered. Capture and inspect the chart itself. Treat empty charts,
-JavaScript exceptions, and indefinite loading as failed verification. Never
-place orders while checking the UI.
+JavaScript exceptions, and indefinite loading as failed verification.
+
+For every affected trading tab, also verify that real account data loads: equity,
+available margin, positions, and applicable P&L must agree with the authenticated
+read-only API, with correct currency and units. Missing, failed, stale, or cached
+responses must never be presented as a fresh zero balance or an empty account.
+
+Measure elapsed wall-clock time from opening/reloading the tab until usable
+account data appears and until actual chart prices/MA lines appear; record these
+separately in verification evidence. HTTP response time alone is insufficient.
+Check the current time, displayed timezone (KST where specified), account update
+and candle timestamps, selected candle interval, and data age. Distinguish the
+latest forming candle from the latest completed candle used for strategy signals.
+Do not mistake an old cached chart or a newly stamped fetch time for fresh market
+data. Verify that loading finishes or shows a bounded timeout/error and retry;
+report measured delays and unresolved stale/unavailable data instead of claiming
+success. Follow the detailed checks in the design guide. Never place orders while
+checking the UI.
