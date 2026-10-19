@@ -109,7 +109,7 @@ async function run() {
   }
 
   const tabs = [
-    { name: "backtest", navId: "navTabBacktest", hostId: "chartSvg", svg: true },
+    { name: "backtest", navId: "navTabBacktest", hostId: "chartSvg", engine: "window", series: "spreadSeries?.value", chart: "spreadChart", data: "spreadSeries?.value?.data?.()" },
     { name: "trading", navId: "navTabTrading", hostId: "shortTermSpreadChartHost", engine: "window.tradingEngine", series: "shortTermSeries", chart: "shortTermChart", data: "shortTermHistory?.bars" },
     { name: "lighter", navId: "navTabLighter", hostId: "lighter_shortTermSpreadChartHost", engine: "window.lighterEngine", series: "series", chart: "chart", data: "bars" },
     { name: "crypto", navId: "navTabCrypto", hostId: "crypto_shortTermSpreadChartHost", engine: "window.cryptoEngine", series: "series", chart: "chart", data: "bars" },
