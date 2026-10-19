@@ -1084,9 +1084,6 @@ async def get_klines(symbol: str, interval: str = "15m", limit: int = 1000, endT
         logger.error(f"Error fetching klines for {symbol}: {e}")
         if cache_key in _klines_cache:
             return _klines_cache[cache_key][1]
-        for k in list(_klines_cache.keys()):
-            if k.startswith(f"{symbol}:{interval}:"):
-                return _klines_cache[k][1]
         return []
 
 # ==============================================================================
@@ -1217,9 +1214,6 @@ async def get_crypto_candles(symbol: str = "BTCUSDT", interval: str = "15m", lim
                 })
         if not bars and cache_key in _crypto_candles_cache:
             return _crypto_candles_cache[cache_key][1]
-        for k in list(_crypto_candles_cache.keys()):
-            if k.startswith(f"{symbol}:{interval}:") and _crypto_candles_cache[k][1].get("bars"):
-                return _crypto_candles_cache[k][1]
         result = {"success": True, "symbol": symbol, "interval": interval, "bars": bars, "markers": markers}
         if bars:
             _crypto_candles_cache[cache_key] = (now, result)

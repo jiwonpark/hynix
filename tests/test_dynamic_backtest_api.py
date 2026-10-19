@@ -5,6 +5,32 @@ from backend.pair_sizing import REFERENCE_RULES
 
 
 class BacktestAPITests(unittest.IsolatedAsyncioTestCase):
+    async def test_crypto_candle_refresh_uses_new_data_after_cache_ttl(self):
+        client = AsyncMock()
+        client.request.side_effect = [
+            [[1_000, "1", "1", "1", "100", "1"]],
+            [[2_000, "2", "2", "2", "200", "2"]],
+        ]
+        with patch.object(server, "binance_client", client), \
+             patch.object(server, "_klines_cache", {}), \
+             patch.object(server, "_crypto_candles_cache", {}), \
+             patch.object(server.time, "time", side_effect=[100.0, 100.0, 111.0, 111.0]):
+            first = await server.get_crypto_candles(include_markers=False)
+            refreshed = await server.get_crypto_candles(include_markers=False)
+        self.assertEqual(first["bars"][0]["value"], 100.0)
+        self.assertEqual(refreshed["bars"][0]["value"], 200.0)
+        self.assertEqual(client.request.await_count, 2)
+
+    async def test_klines_failure_does_not_substitute_an_incompatible_cache_key(self):
+        client = AsyncMock()
+        client.request.side_effect = RuntimeError("market data unavailable")
+        incompatible = {"BTCUSDT:5m:500:latest": (100.0, [[1_000, "1", "1", "1", "100", "1"]])}
+        with patch.object(server, "binance_client", client), \
+             patch.object(server, "_klines_cache", incompatible), \
+             patch.object(server.time, "time", return_value=200.0):
+            result = await server.get_klines("BTCUSDT", interval="5m", limit=2)
+        self.assertEqual(result, [])
+
     async def test_simulation_does_not_read_or_write_account_state(self):
         start = 1704067200
         data = [dict(time=start+i*300, value=140, adr=100, domestic=100/1.4, csop=5) for i in range(20)]

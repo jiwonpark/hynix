@@ -819,6 +819,21 @@ def evaluate_golden_death_cross_signals(
 LIVE_STRATEGIES = {"grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross"}
 
 
+def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
+    """Return the completed-candle history required by a live strategy."""
+    if strategy_mode == "ma_stack":
+        return 61
+    if strategy_mode == "trend_pullback":
+        return max(12, min(60, int(params.get("trend_macro_window", 24)))) + 1
+    if strategy_mode == "ma_acceleration":
+        return max(3, min(120, int(params.get("ma_accel_period", 24)))) + 2
+    if strategy_mode == "golden_death_cross":
+        fast = max(2, int(params.get("fast_ma_period", 9)))
+        slow = max(fast + 1, int(params.get("slow_ma_period", 21)))
+        return slow + 1
+    return 25
+
+
 def evaluate_strategy_signal(
     strategy_mode: str,
     prices: List[float],
@@ -985,4 +1000,3 @@ def evaluate_strategy_signal(
         details["condition_pass"]["entry_spacing"] = spacing_pass
         details["condition_pass"]["exit_dwell"] = dwell_pass
     return entry_signal, candidate_side, exit_signal, details
-

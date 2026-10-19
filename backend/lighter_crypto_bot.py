@@ -26,6 +26,7 @@ from .lighter_strategy import (
     OU_MIN_ABS_DEVIATION_PP,
     OU_MACRO_EMA_SPAN,
     OU_MACRO_SLOPE_BARS,
+    required_strategy_bars,
 )
 
 
@@ -784,11 +785,12 @@ class LighterCryptoBot:
                     except Exception as cap_err:
                         self.state["blocked_reason"] = str(cap_err)
 
-                rows = await self.client.candles(market_id, interval, 130, fresh=True)
+                required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
+                request_limit = min(500, max(130, required_bars + 1))
+                rows = await self.client.candles(market_id, interval, request_limit, fresh=True)
                 now_ms = int(time.time() * 1000)
                 closed = [row for row in rows if int(row["t"]) + seconds * 1000 <= now_ms - 1000]
-                min_bars = 65 if self.state["strategy_mode"] in {"ma_stack", "ou_quant"} else 25
-                if len(closed) < min_bars:
+                if len(closed) < required_bars:
                     raise ValueError("Insufficient completed Lighter candles")
                 last_candle = int(closed[-1]["t"]) // 1000
                 if last_candle <= self.state["last_evaluated_candle"]:

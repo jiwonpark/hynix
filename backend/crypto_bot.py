@@ -25,6 +25,7 @@ from .lighter_strategy import (
     OU_MIN_ABS_DEVIATION_PP,
     OU_MACRO_EMA_SPAN,
     OU_MACRO_SLOPE_BARS,
+    required_strategy_bars,
 )
 
 
@@ -660,12 +661,13 @@ class CryptoBot:
             seconds = INTERVAL_SECONDS[interval]
             symbol = self.state["selected_symbol"]
             try:
+                required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
+                request_limit = min(1500, max(125, required_bars + 1))
                 raw = await self.client.request("GET", "/fapi/v1/klines",
-                                                {"symbol": symbol, "interval": interval, "limit": 125})
+                                                {"symbol": symbol, "interval": interval, "limit": request_limit})
                 now_ms = int(time.time() * 1000)
                 closed = [row for row in raw if int(row[6]) < now_ms]
-                min_bars = 65 if self.state["strategy_mode"] in {"ma_stack", "ou_quant"} else 25
-                if len(closed) < min_bars:
+                if len(closed) < required_bars:
                     raise ValueError("Insufficient completed Binance candles")
                 last_candle = int(closed[-1][0]) // 1000
                 if last_candle <= self.state["last_evaluated_candle"]:

@@ -6,12 +6,22 @@ from backend.lighter_strategy import (
     evaluate_golden_death_cross_signals,
     evaluate_strategy_signal,
     LIVE_STRATEGIES,
+    required_strategy_bars,
 )
 from backend.crypto_bot import CryptoBot
 from backend.lighter_crypto_bot import LighterCryptoBot
 
 
 class TestGoldenDeathCrossStrategy(unittest.TestCase):
+    def test_required_history_tracks_configured_slow_period(self):
+        self.assertEqual(
+            required_strategy_bars(
+                "golden_death_cross",
+                {"fast_ma_period": 50, "slow_ma_period": 200},
+            ),
+            201,
+        )
+
     def test_golden_death_cross_live_strategies_registration(self):
         self.assertIn("golden_death_cross", LIVE_STRATEGIES)
 
