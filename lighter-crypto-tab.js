@@ -1806,7 +1806,11 @@
       if (detailSec && typeof detailSec.querySelectorAll === "function") {
         detailSec.querySelectorAll("input, select").forEach((input) => {
           if (typeof input.addEventListener === "function") {
-            input.addEventListener("input", () => { input._userModified = true; this.updateRulesMatchStatus(); });
+            input.addEventListener("input", () => {
+              input._userModified = true;
+              this.updateRulesMatchStatus();
+              if (mode === "macd_reversal") this.updateMaAndDiffs(this.bars);
+            });
             input.addEventListener("change", () => this.runBacktest());
           }
         });
@@ -2168,9 +2172,7 @@
         payload.use_cross_spread = lid("chkCondEntryPeak")?.checked !== false;
         payload.use_cross_exit = lid("chkCondExitConvergence")?.checked !== false;
       } else if (mode === "macd_reversal") {
-        payload.macd_fast_period = numeric("lighterCrypto_macdFastPeriod", Number(this.botState?.macd_fast_period ?? 12));
-        payload.macd_slow_period = numeric("lighterCrypto_macdSlowPeriod", Number(this.botState?.macd_slow_period ?? 26));
-        payload.macd_signal_period = numeric("lighterCrypto_macdSignalPeriod", Number(this.botState?.macd_signal_period ?? 9));
+        Object.assign(payload, this.macdSettings());
         payload.use_macd_signal_negative = $("lighterCrypto_macdUseEntrySignalNegative")?.checked !== false;
         payload.use_macd_hist_negative = $("lighterCrypto_macdUseEntryHistogramNegative")?.checked !== false;
         payload.use_macd_hist_reversal = $("lighterCrypto_macdUseEntryReversal")?.checked !== false;
@@ -2482,9 +2484,8 @@
         this.maSeries[w]?.setData(data);
       });
 
-      const macdFast = this.currentParadigm === "macd_reversal" ? (Number($("lighterCrypto_macdFastPeriod")?.value) || 12) : 12;
-      const macdSlow = this.currentParadigm === "macd_reversal" ? (Number($("lighterCrypto_macdSlowPeriod")?.value) || 26) : 26;
-      const macdSignal = this.currentParadigm === "macd_reversal" ? (Number($("lighterCrypto_macdSignalPeriod")?.value) || 9) : 9;
+      const { macd_fast_period: macdFast, macd_slow_period: macdSlow,
+        macd_signal_period: macdSignal } = this.macdSettings();
       const macd = TerminalCommon.macd(bars, macdFast, macdSlow, macdSignal);
       const macdLegendPeriods = $("lighterCrypto_macdLegendPeriods");
       if (macdLegendPeriods) macdLegendPeriods.textContent = `MACD (${macdFast}, ${macdSlow}, ${macdSignal}):`;
@@ -2932,6 +2933,20 @@
       }, 5000);
     },
 
+    macdSettings() {
+      const read = (id, key, fallback) => {
+        const raw = $(id)?.value;
+        const saved = this.botState?.[key] ?? this.botState?.strategy_params?.[key] ?? fallback;
+        const value = Number(raw == null || raw === "" ? saved : raw);
+        return Number.isFinite(value) ? Math.trunc(value) : fallback;
+      };
+      // Match the effective periods used by the shared strategy evaluator.
+      const fast = Math.max(2, read("lighterCrypto_macdFastPeriod", "macd_fast_period", 12));
+      const slow = Math.max(fast + 1, read("lighterCrypto_macdSlowPeriod", "macd_slow_period", 26));
+      const signal = Math.max(2, read("lighterCrypto_macdSignalPeriod", "macd_signal_period", 9));
+      return { macd_fast_period: fast, macd_slow_period: slow, macd_signal_period: signal };
+    },
+
     replaySettings() {
       const mode = this.currentParadigm || "adaptive_tranche";
       const numeric = (id, fallback) => {
@@ -2968,9 +2983,7 @@
         fast_ma_period: numeric("lighterCrypto_inpCrossFastPeriod", 9),
         slow_ma_period: numeric("lighterCrypto_inpCrossSlowPeriod", 21),
         min_cross_spread_bps: numeric("lighterCrypto_inpCrossMinSpreadBps", 0.0),
-        macd_fast_period: numeric("lighterCrypto_macdFastPeriod", 12),
-        macd_slow_period: numeric("lighterCrypto_macdSlowPeriod", 26),
-        macd_signal_period: numeric("lighterCrypto_macdSignalPeriod", 9),
+        ...this.macdSettings(),
         use_macd_signal_negative: $("lighterCrypto_macdUseEntrySignalNegative")?.checked !== false,
         use_macd_hist_negative: $("lighterCrypto_macdUseEntryHistogramNegative")?.checked !== false,
         use_macd_hist_reversal: $("lighterCrypto_macdUseEntryReversal")?.checked !== false,
@@ -6096,6 +6109,7 @@
           }
         }
         const settings = this.replaySettings();
+        this.updateMaAndDiffs(this.bars);
         this.updateRulesMatchStatus();
         const trendSlope = settings.trend_slope_min;
         const trendPullback = settings.trend_pullback_dist;

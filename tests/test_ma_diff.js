@@ -75,8 +75,8 @@ assert.ok(flatMacd.histogram.every((point) => Math.abs(point.value) < 1e-12));
 
 for (const file of ['crypto-tab.js', 'lighter-crypto-tab.js']) {
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-  assert.match(source, /TerminalCommon\.macd\(bars, 12, 26, 9\)/,
-    `${file} must render standard MACD (12, 26, 9)`);
+  if (file === 'crypto-tab.js') assert.match(source, /TerminalCommon\.macd\(bars, 12, 26, 9\)/,
+    'Tab 4 renders standard MACD (12, 26, 9)');
   assert.match(source, /title: "MACD"/);
   assert.match(source, /title: "Signal"/);
   assert.doesNotMatch(source, /title: "Price \(Ref\)"/,
