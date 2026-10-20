@@ -96,6 +96,48 @@
     return result;
   }
 
+  function exponentialMovingAverage(bars, period) {
+    if (!Array.isArray(bars) || period < 1 || bars.length < period) return [];
+    const values = bars.map((bar) => Number(bar?.value));
+    if (values.some((value) => !Number.isFinite(value))) return [];
+    const multiplier = 2 / (period + 1);
+    let ema = values.slice(0, period).reduce((sum, value) => sum + value, 0) / period;
+    const result = [{ time: bars[period - 1].time, value: ema }];
+    for (let index = period; index < bars.length; index += 1) {
+      ema = (values[index] - ema) * multiplier + ema;
+      result.push({ time: bars[index].time, value: ema });
+    }
+    return result;
+  }
+
+  function macd(bars, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+    if (!Array.isArray(bars) || fastPeriod < 1 || slowPeriod <= fastPeriod || signalPeriod < 1) {
+      return { macd: [], signal: [], histogram: [] };
+    }
+    const fast = exponentialMovingAverage(bars, fastPeriod);
+    const slow = exponentialMovingAverage(bars, slowPeriod);
+    const fastByTime = new Map(fast.map((point) => [point.time, point.value]));
+    const macdLine = slow.flatMap((point) => {
+      const fastValue = fastByTime.get(point.time);
+      return Number.isFinite(fastValue)
+        ? [{ time: point.time, value: fastValue - point.value }]
+        : [];
+    });
+    const signalLine = exponentialMovingAverage(macdLine, signalPeriod);
+    const signalByTime = new Map(signalLine.map((point) => [point.time, point.value]));
+    const histogram = macdLine.flatMap((point) => {
+      const signalValue = signalByTime.get(point.time);
+      if (!Number.isFinite(signalValue)) return [];
+      const value = point.value - signalValue;
+      return [{
+        time: point.time,
+        value,
+        color: value >= 0 ? "rgba(22, 163, 74, 0.75)" : "rgba(220, 38, 38, 0.75)",
+      }];
+    });
+    return { macd: macdLine, signal: signalLine, histogram };
+  }
+
   // Only signals that actually produced simulated inventory may link to exits.
   // Other qualifying candles remain standalone condition markers.
   function replaySignalLinks(data) {
@@ -161,7 +203,7 @@
     }
   }
 
-  const TerminalCommon = { revealChartSection, alignTime, movingAverage, movingAverageDiff, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles };
+  const TerminalCommon = { revealChartSection, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

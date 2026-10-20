@@ -415,6 +415,8 @@
       const frame = lid("shortTermExecutionChartFrame");
       if (!frame) return;
       if (lid("shortTermSpreadChartHost") && this.executionChartFrame) return;
+      this.crosshairSync?.dispose?.();
+      this.crosshairSync = null;
       if (this.chart) {
         try { this.chart.remove(); } catch (_) {}
         this.chart = null;
@@ -2028,6 +2030,11 @@
         };
 
         this.chartSync = StrategyExecutionChartController.linkTimeScales(this.chart, this.assetChart);
+        this.crosshairSync?.dispose?.();
+        this.crosshairSync = StrategyExecutionChartController.linkCrosshairs([
+          { chart: this.chart, series: this.series, valueAtTime: (time) => this.bars?.find((bar) => bar.time === time)?.value },
+          { chart: this.assetChart, series: this.assetSeries.adr, valueAtTime: (time) => this.bars?.find((bar) => bar.time === time)?.adr },
+        ]);
       }
 
       // Attach ResizeObserver to guarantee chart redraws whenever container width changes

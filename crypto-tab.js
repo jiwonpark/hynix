@@ -96,10 +96,8 @@
     assetChart: null,
     assetSeries: null,
     maSeries: {},
-    maDiffOverlaySeries: null,
-    showMaDiffOverlay: false,
     _currentMaData: null,
-    _currentMaDiffs: null,
+    _currentMacd: null,
     trendRanges: [],
     maVisibility: { 7: true, 24: true, 60: true },
     executionChartFrame: null,
@@ -505,14 +503,15 @@
       const frame = lid("shortTermExecutionChartFrame");
       if (!frame) return;
       if (lid("shortTermSpreadChartHost") && this.executionChartFrame) return;
+      this.crosshairSync?.dispose?.();
+      this.crosshairSync = null;
       if (this.chart) {
         try { this.chart.remove(); } catch (_) {}
         this.chart = null;
         this.series = null;
         this.maSeries = {};
-        this.maDiffOverlaySeries = null;
         this._currentMaData = null;
-        this._currentMaDiffs = null;
+        this._currentMacd = null;
       }
       if (this.assetChart) {
         try { this.assetChart.remove(); } catch (_) {}
@@ -544,20 +543,19 @@
         status: "PAPER ONLY · Select a strategy and interval, then rerun",
         description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
         legendPosition: "top",
-        legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="crypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="crypto_valShortTermMa7">—</strong></span><span id="crypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="crypto_valShortTermMa24">—</strong></span><span id="crypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="crypto_valShortTermMa60">—</strong></span><span id="crypto_legendMaDiff7_24" style="cursor:pointer;color:#16a34a;background:rgba(22,163,74,0.08);padding:1px 6px;border-radius:4px;border:1px solid rgba(22,163,74,0.3);font-size:11px;" title="Click to toggle MA(7−24) difference histogram overlay on price chart">📊 Δ(7−24): <strong id="crypto_valMaDiff7_24">—</strong></span><span id="crypto_legendMaDiff24_60" style="cursor:pointer;color:#8b5cf6;background:rgba(139,92,246,0.08);padding:1px 6px;border-radius:4px;border:1px solid rgba(139,92,246,0.3);font-size:11px;" title="MA(24−60) spread">Δ(24−60): <strong id="crypto_valMaDiff24_60">—</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="crypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="crypto_valSelectedMinProfit">—</strong></span>',
+        legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="crypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="crypto_valShortTermMa7">—</strong></span><span id="crypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="crypto_valShortTermMa24">—</strong></span><span id="crypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="crypto_valShortTermMa60">—</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="crypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="crypto_valSelectedMinProfit">—</strong></span>',
       });
       const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
       if (replayAssetLegend) {
         replayAssetLegend.innerHTML = `
-          <span style="font-weight:800;color:#0f172a;">📊 MA DIFFERENCE & SPREAD:</span>
-          <span style="color:#16a34a;font-weight:700;">■ Δ(7−24) Fast-Mid</span>
-          <span style="color:#8b5cf6;font-weight:700;">● Δ(24−60) Mid-Slow</span>
-          <span style="color:#0891b2;font-weight:700;">┄ Δ(7−60) Macro</span>
+          <span style="font-weight:800;color:#0f172a;">MACD (12, 26, 9):</span>
+          <span style="color:#2563eb;font-weight:700;">● MACD</span>
+          <span style="color:#f59e0b;font-weight:700;">● Signal</span>
+          <span style="color:#16a34a;font-weight:700;">■ Histogram</span>
           <span id="crypto_shortTermAssetDetails" style="color:#334155;font-family:monospace;font-size:11px;margin-left:6px;font-weight:700;"></span>
         `;
       }
       [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
-      lid("legendMaDiff7_24")?.addEventListener("click", () => this.toggleMaDiffOverlay());
       const chartHost = lid("shortTermSpreadChartHost");
       if (chartHost && !$("cryptoTrendOverlay")) {
         chartHost.style.position = "relative";
@@ -606,19 +604,6 @@
       else if (sym.startsWith("SOL")) formatted = abs.toFixed(2);
       else if (abs >= 1000) formatted = abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       return `${sign}$${formatted}`;
-    },
-
-    toggleMaDiffOverlay() {
-      this.showMaDiffOverlay = !this.showMaDiffOverlay;
-      if (this.maDiffOverlaySeries) {
-        this.maDiffOverlaySeries.applyOptions?.({ visible: this.showMaDiffOverlay });
-      }
-      const el = lid("legendMaDiff7_24");
-      if (el) {
-        el.style.opacity = this.showMaDiffOverlay ? "1" : ".7";
-        el.style.background = this.showMaDiffOverlay ? "rgba(22,163,74,0.18)" : "rgba(22,163,74,0.08)";
-        el.style.boxShadow = this.showMaDiffOverlay ? "0 0 0 1px #16a34a" : "none";
-      }
     },
 
     formatCryptoQty(qty, symbol = this.selectedSymbol) {
@@ -2306,44 +2291,14 @@
       this.setText("valShortTermMa24", Number.isFinite(v24) ? this.formatCryptoPrice(v24) : "$—");
       this.setText("valShortTermMa60", Number.isFinite(v60) ? this.formatCryptoPrice(v60) : "$—");
 
-      const d7_24 = (Number.isFinite(v7) && Number.isFinite(v24)) ? (v7 - v24) : null;
-      const d24_60 = (Number.isFinite(v24) && Number.isFinite(v60)) ? (v24 - v60) : null;
-      const d7_60 = (Number.isFinite(v7) && Number.isFinite(v60)) ? (v7 - v60) : null;
-
-      const elDiff7_24 = lid("valMaDiff7_24");
-      if (elDiff7_24) {
-        if (d7_24 != null) {
-          const pct = v24 ? (d7_24 / v24 * 100) : 0;
-          elDiff7_24.textContent = `${this.formatCryptoDiff(d7_24)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
-          elDiff7_24.style.color = d7_24 >= 0 ? "#16a34a" : "#dc2626";
-        } else {
-          elDiff7_24.textContent = "—";
-          elDiff7_24.style.color = "";
-        }
-      }
-
-      const elDiff24_60 = lid("valMaDiff24_60");
-      if (elDiff24_60) {
-        if (d24_60 != null) {
-          const pct = v60 ? (d24_60 / v60 * 100) : 0;
-          elDiff24_60.textContent = `${this.formatCryptoDiff(d24_60)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
-          elDiff24_60.style.color = d24_60 >= 0 ? "#16a34a" : "#dc2626";
-        } else {
-          elDiff24_60.textContent = "—";
-          elDiff24_60.style.color = "";
-        }
-      }
-
       const assetDetails = lid("shortTermAssetDetails");
       if (assetDetails) {
-        if (d7_24 != null) {
-          const d7_24Str = `${this.formatCryptoDiff(d7_24)}`;
-          const d24_60Str = d24_60 != null ? `${this.formatCryptoDiff(d24_60)}` : "—";
-          const d7_60Str = d7_60 != null ? `${this.formatCryptoDiff(d7_60)}` : "—";
-          assetDetails.textContent = `| Δ(7−24): ${d7_24Str} | Δ(24−60): ${d24_60Str} | Δ(7−60): ${d7_60Str}`;
-        } else {
-          assetDetails.textContent = "";
-        }
+        const macdValue = getVal(this._currentMacd?.macd, targetTime);
+        const signalValue = getVal(this._currentMacd?.signal, targetTime);
+        const histogramValue = getVal(this._currentMacd?.histogram, targetTime);
+        assetDetails.textContent = Number.isFinite(histogramValue)
+          ? `| MACD: ${this.formatCryptoDiff(macdValue)} | Signal: ${this.formatCryptoDiff(signalValue)} | Hist: ${this.formatCryptoDiff(histogramValue)}`
+          : "";
       }
     },
 
@@ -2360,25 +2315,15 @@
         this.maSeries[w]?.setData(data);
       });
 
-      const diff7_24 = TerminalCommon.movingAverageDiff(ma7, ma24);
-      const diff24_60 = TerminalCommon.movingAverageDiff(ma24, ma60);
-      const diff7_60 = TerminalCommon.movingAverageDiff(ma7, ma60);
-
-      this._currentMaDiffs = { diff7_24, diff24_60, diff7_60 };
-
-      if (this.maDiffOverlaySeries) {
-        this.maDiffOverlaySeries.setData(diff7_24);
-      }
+      const macd = TerminalCommon.macd(bars, 12, 26, 9);
+      this._currentMacd = macd;
 
       if (this.assetSeries) {
-        if (this.assetSeries.diff7_24) this.assetSeries.diff7_24.setData(diff7_24);
-        if (this.assetSeries.diff24_60) this.assetSeries.diff24_60.setData(diff24_60);
-        if (this.assetSeries.diff7_60) this.assetSeries.diff7_60.setData(diff7_60);
+        if (this.assetSeries.macd) this.assetSeries.macd.setData(macd.macd);
+        if (this.assetSeries.signal) this.assetSeries.signal.setData(macd.signal);
+        if (this.assetSeries.histogram) this.assetSeries.histogram.setData(macd.histogram);
         if (this.assetSeries.zeroLine && bars.length) {
           this.assetSeries.zeroLine.setData(bars.map((b) => ({ time: b.time, value: 0 })));
-        }
-        if (this.assetSeries.adr) {
-          this.assetSeries.adr.setData(bars.map((b) => ({ time: b.time, value: b.value })));
         }
       }
 
@@ -2481,22 +2426,6 @@
         60: this.chart.addLineSeries({ color: "#06b6d4", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
       };
 
-      if (typeof this.chart.addHistogramSeries === "function") {
-        this.maDiffOverlaySeries = this.chart.addHistogramSeries({
-          priceScaleId: "maDiff",
-          priceLineVisible: false,
-          lastValueVisible: false,
-          base: 0,
-        });
-        if (typeof this.chart.priceScale === "function") {
-          this.chart.priceScale("maDiff")?.applyOptions({
-            visible: false,
-            scaleMargins: { top: 0.82, bottom: 0.02 },
-          });
-        }
-        this.maDiffOverlaySeries.applyOptions?.({ visible: Boolean(this.showMaDiffOverlay) });
-      }
-
       const assetHost = lid("shortTermAssetHost");
       if (assetHost && !this.assetChart) {
         const initialAssetWidth = Math.max(assetHost.clientWidth || assetHost.parentElement?.clientWidth || 0, 320);
@@ -2512,33 +2441,32 @@
         StrategyExecutionChartController.compactCrosshairMarkers(this.assetChart);
         StrategyExecutionChartController.configureStandardTimeScale(this.assetChart);
         this.assetSeries = {
-          diff7_24: typeof this.assetChart.addHistogramSeries === "function" ? this.assetChart.addHistogramSeries({
+          histogram: typeof this.assetChart.addHistogramSeries === "function" ? this.assetChart.addHistogramSeries({
             priceScaleId: "right",
             priceLineVisible: false,
-            lastValueVisible: true,
+            lastValueVisible: false,
             base: 0,
-            title: "Δ(7−24)",
+            title: "Histogram",
             priceFormat: {
               type: "custom",
               formatter: (p) => `${Number(p) >= 0 ? "+" : ""}${Number(p).toFixed(2)}`,
             },
           }) : null,
-          diff24_60: this.assetChart.addLineSeries({
+          macd: this.assetChart.addLineSeries({
             priceScaleId: "right",
-            color: "#8b5cf6",
+            color: "#2563eb",
             lineWidth: 2,
             priceLineVisible: false,
             lastValueVisible: true,
-            title: "Δ(24−60)",
+            title: "MACD",
           }),
-          diff7_60: this.assetChart.addLineSeries({
+          signal: this.assetChart.addLineSeries({
             priceScaleId: "right",
-            color: "#06b6d4",
-            lineWidth: 1.5,
-            lineStyle: LightweightCharts.LineStyle?.Dashed || 2,
+            color: "#f59e0b",
+            lineWidth: 2,
             priceLineVisible: false,
-            lastValueVisible: false,
-            title: "Δ(7−60)",
+            lastValueVisible: true,
+            title: "Signal",
           }),
           zeroLine: this.assetChart.addLineSeries({
             priceScaleId: "right",
@@ -2548,18 +2476,14 @@
             priceLineVisible: false,
             lastValueVisible: false,
           }),
-          adr: this.assetChart.addLineSeries({
-            priceScaleId: "left",
-            color: "rgba(37, 99, 235, 0.25)",
-            lineWidth: 1,
-            lineStyle: 2,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            title: "Price (Ref)",
-          }),
         };
 
         this.chartSync = StrategyExecutionChartController.linkTimeScales(this.chart, this.assetChart);
+        this.crosshairSync?.dispose?.();
+        this.crosshairSync = StrategyExecutionChartController.linkCrosshairs([
+          { chart: this.chart, series: this.series, valueAtTime: (time) => this.bars?.find((bar) => bar.time === time)?.value },
+          { chart: this.assetChart, series: this.assetSeries.macd, valueAtTime: (time) => this._currentMacd?.macd?.find((point) => point.time === time)?.value },
+        ]);
       }
 
       const handleCrosshair = (param) => {

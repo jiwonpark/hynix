@@ -7058,6 +7058,15 @@
         window.spreadChart.subscribeCrosshairMove(updateAssetPriceHover);
         if (window.assetPriceChart) window.assetPriceChart.subscribeCrosshairMove(updateAssetPriceHover);
         window.positionChart.subscribeCrosshairMove(updateAssetPriceHover);
+        window.backtestCrosshairSync?.dispose?.();
+        window.backtestCrosshairSync = StrategyExecutionChartController.linkCrosshairs([
+          { chart: window.spreadChart, series: window.spreadSeries.value, valueAtTime: (time) => cachedRows.find((row) => Math.floor(row.time / 1000) === time)?.normalized },
+          { chart: window.assetPriceChart, series: window.assetPriceSeries.adr, valueAtTime: (time) => cachedRows.find((row) => Math.floor(row.time / 1000) === time)?.adr },
+          { chart: window.positionChart, series: window.positionSeries.pnl, valueAtTime: (time) => {
+            const row = cachedRows.find((item) => Math.floor(item.time / 1000) === time);
+            return row ? row.equity - 100 : null;
+          } },
+        ]);
 
         window.spreadChart.subscribeCrosshairMove((param) => {
           const tooltip = $("newsTooltip");
@@ -11598,9 +11607,23 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           description: "Starts flat at the beginning of loaded history · 5m closes / completed 1h macro sizing · capital, margin and leverage do not suppress simulated trades · fees, slippage and estimated funding included. LIVE ONLY checks protect real orders; BACKTEST ONLY switches affect the simulation.",
           secondaryStatus: "Macro sizing: waiting for completed hourly prices…",
           height: 420,
+          assetHeight: 300,
           legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> ADR / √CSOP signal</span><span style="color:#64748b"><span style="display:inline-block;width:10px;border-top:2px dashed #64748b"></span> ADR / domestic reference: <strong id="valDomesticPremiumRef">—</strong></span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">—</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">—</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">—</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected trim net (est.): <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>',
           syncText: "Updated 0s ago",
         });
+        const assetPaneShell = $("shortTermAssetPaneShell");
+        if (assetPaneShell) {
+          assetPaneShell.style.height = "300px";
+          assetPaneShell.innerHTML = `
+            <div style="height:150px;position:relative;border-bottom:1px solid #e2e8f0;">
+              <div class="assetPriceLegendBar"><strong style="color:#2563eb;">SKHYUSDT · ADR PRICE</strong><span id="shortTermAdrDetails"></span></div>
+              <div id="shortTermAssetHost" style="height:150px;min-height:140px;width:100%;"></div>
+            </div>
+            <div style="height:150px;position:relative;">
+              <div class="assetPriceLegendBar"><strong style="color:#d97706;">CSOP 2L ETF PRICE</strong><span id="shortTermStockDetails"></span></div>
+              <div id="shortTermStockHost" style="height:150px;min-height:140px;width:100%;"></div>
+            </div>`;
+        }
         const fillReadout = document.createElement("span");
         fillReadout.id = "shortTermExactFillReadout";
         fillReadout.style.color = "#475569";
@@ -11629,6 +11652,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const assetHost = $("shortTermAssetHost");
         if (assetHost && this.shortTermAssetChart && assetHost.clientWidth > 0) {
           this.shortTermAssetChart.applyOptions({ width: assetHost.clientWidth });
+        }
+        const stockHost = $("shortTermStockHost");
+        if (stockHost && this.shortTermStockChart && stockHost.clientWidth > 0) {
+          this.shortTermStockChart.applyOptions({ width: stockHost.clientWidth });
         }
         if (this.shortTermHistory && this.shortTermHistory.bars && this.shortTermHistory.bars.length) {
           const initial = typeof this.getInitialViewport === "function"
@@ -13535,7 +13562,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const assetHost = $("shortTermAssetHost");
         if (assetHost && !this.shortTermAssetChart) {
           this.shortTermAssetChart = LightweightCharts.createChart(assetHost, {
-            height: 185,
+            height: 150,
             layout: { background: { color: "#ffffff" }, textColor: "#475569" },
             localization: {
               locale: "ko-KR",
@@ -13552,12 +13579,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               }
             },
             grid: { vertLines: { color: "#e2e8f0" }, horzLines: { color: "#e2e8f0" } },
-            leftPriceScale: {
-              visible: true,
-              borderVisible: false,
-              autoScale: true,
-              scaleMargins: { top: 0.1, bottom: 0.1 }
-            },
             rightPriceScale: {
               visible: true,
               borderVisible: false,
@@ -13585,9 +13606,39 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               priceLineColor: '#2563eb',
               priceLineStyle: LightweightCharts.LineStyle.Dotted,
               priceFormat: { type: 'price', precision: 2, minMove: 0.01 }
-            }),
-            stock: this.shortTermAssetChart.addLineSeries({
-              priceScaleId: 'left',
+            })
+          };
+        }
+
+        const stockHost = $("shortTermStockHost");
+        if (stockHost && !this.shortTermStockChart) {
+          this.shortTermStockChart = LightweightCharts.createChart(stockHost, {
+            height: 150,
+            layout: { background: { color: "#ffffff" }, textColor: "#475569" },
+            localization: {
+              locale: "ko-KR",
+              timeFormatter: (time) => {
+                const t = typeof time === "number" ? (time < 1e11 ? time * 1000 : time) : Number(time);
+                return new Date(t).toLocaleString("ko-KR", {
+                  timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit",
+                  hour: "2-digit", minute: "2-digit", hour12: false
+                }) + " KST";
+              }
+            },
+            grid: { vertLines: { color: "#e2e8f0" }, horzLines: { color: "#e2e8f0" } },
+            rightPriceScale: {
+              visible: true, borderVisible: false, autoScale: true,
+              scaleMargins: { top: 0.1, bottom: 0.1 }
+            },
+            timeScale: {
+              visible: false, borderVisible: false, rightOffset: 0,
+              barSpacing: 8, minBarSpacing: 0.5, lockVisibleTimeRangeOnResize: true
+            },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+          });
+          StrategyExecutionChartController.compactCrosshairMarkers(this.shortTermStockChart);
+          this.shortTermStockSeries = this.shortTermStockChart.addLineSeries({
+              priceScaleId: 'right',
               color: '#d97706',
               lineWidth: 1,
               title: 'CSOP 2L',
@@ -13595,11 +13646,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               priceLineColor: '#d97706',
               priceLineStyle: LightweightCharts.LineStyle.Dotted,
               priceFormat: { type: 'price', precision: 3, minMove: 0.001 }
-            })
-          };
+          });
         }
 
-        if (this.shortTermChart && this.shortTermAssetChart && !this._shortTermChartsSynced) {
+        if (this.shortTermChart && this.shortTermAssetChart && this.shortTermStockChart && !this._shortTermChartsSynced) {
           this.setupShortTermChartSync();
         }
 
@@ -13618,6 +13668,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const ah = $("shortTermAssetHost");
             if (this.shortTermAssetChart && ah && ah.clientWidth > 0) {
               this.shortTermAssetChart.applyOptions({ width: ah.clientWidth });
+            }
+            const sh = $("shortTermStockHost");
+            if (this.shortTermStockChart && sh && sh.clientWidth > 0) {
+              this.shortTermStockChart.applyOptions({ width: sh.clientWidth });
             }
             this.shortTermChartSync?.sync();
           });
@@ -13644,17 +13698,38 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       setupShortTermChartSync() {
-        if (!this.shortTermChart || !this.shortTermAssetChart || this._shortTermChartsSynced) return;
+        if (!this.shortTermChart || !this.shortTermAssetChart || !this.shortTermStockChart || this._shortTermChartsSynced) return;
         this._shortTermChartsSynced = true;
 
-        this.shortTermChartSync = StrategyExecutionChartController.linkTimeScales(
-          this.shortTermChart, this.shortTermAssetChart);
+        const adrSync = StrategyExecutionChartController.linkTimeScales(this.shortTermChart, this.shortTermAssetChart);
+        const stockSync = StrategyExecutionChartController.linkTimeScales(this.shortTermChart, this.shortTermStockChart);
+        this.shortTermAssetChart.applyOptions({ leftPriceScale: { visible: false } });
+        this.shortTermStockChart.applyOptions({ leftPriceScale: { visible: false } });
+        this.shortTermChartSync = {
+          sync() { adrSync.sync(); stockSync.sync(); },
+          getRange() { return adrSync.getRange(); },
+          setRange(range) { adrSync.setRange(range); stockSync.setRange(range); },
+          pause() { adrSync.pause(); stockSync.pause(); },
+          resume() { adrSync.resume(); stockSync.resume(); },
+          dispose() { adrSync.dispose(); stockSync.dispose(); },
+        };
+
+        this.shortTermCrosshairSync?.dispose?.();
+        this.shortTermCrosshairSync = StrategyExecutionChartController.linkCrosshairs([
+          { chart: this.shortTermChart, series: this.shortTermSeries, valueAtTime: (time) => this.shortTermHistory?.bars?.find((bar) => bar.time === time)?.value },
+          { chart: this.shortTermAssetChart, series: this.shortTermAssetSeries.adr, valueAtTime: (time) => this.shortTermHistory?.bars?.find((bar) => bar.time === time)?.adr },
+          { chart: this.shortTermStockChart, series: this.shortTermStockSeries, valueAtTime: (time) => {
+            const bar = this.shortTermHistory?.bars?.find((item) => item.time === time);
+            return bar?.csop ?? (bar?.domestic ? bar.domestic * 10 : null);
+          } },
+        ]);
 
         const updateShortTermAssetHover = (param) => {
-          const details = $("shortTermAssetDetails");
-          if (!details) return;
+          const adrDetails = $("shortTermAdrDetails");
+          const stockDetails = $("shortTermStockDetails");
           if (!param || !param.time || !this.shortTermHistory?.bars?.length) {
-            details.textContent = "";
+            if (adrDetails) adrDetails.textContent = "";
+            if (stockDetails) stockDetails.textContent = "";
             return;
           }
           const tSec = typeof param.time === "number" ? param.time : param.time.timestamp || param.time;
@@ -13667,11 +13742,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const domesticPremium = Number(bar.adr) > 0 && Number(bar.domestic) > 0
               ? Number(bar.adr) / Number(bar.domestic) * 100 : null;
             const domesticStr = Number.isFinite(domesticPremium) ? `${domesticPremium.toFixed(2)}%` : "--";
-            details.textContent = `| ADR: ${adrStr} | ETF: ${csopStr} | Signal: ${parStr} | Stock ref: ${domesticStr}`;
+            if (adrDetails) adrDetails.textContent = `ADR ${adrStr} · Signal ${parStr}`;
+            if (stockDetails) stockDetails.textContent = `ETF ${csopStr} · Stock ref ${domesticStr}`;
           }
         };
         this.shortTermChart.subscribeCrosshairMove(updateShortTermAssetHover);
         this.shortTermAssetChart.subscribeCrosshairMove(updateShortTermAssetHover);
+        this.shortTermStockChart.subscribeCrosshairMove(updateShortTermAssetHover);
 
         if (this.shortTermHistory && this.shortTermHistory.bars && this.shortTermHistory.bars.length) {
           this.renderShortTermChart(this.shortTermHistory);
@@ -14124,9 +14201,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               } else stockPoints.push({ time: t });
             }
             this.shortTermAssetSeries.adr.setData(adrPoints);
-            if (this.shortTermAssetSeries?.stock) {
-              this.shortTermAssetSeries.stock.setData(stockPoints);
-            }
+            this.shortTermStockSeries?.setData(stockPoints);
           }
 
           const ma7Data = this.calcMovingAverage(data.bars, 7);

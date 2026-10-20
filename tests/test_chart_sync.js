@@ -83,3 +83,32 @@ linked.resume();
 while (frames.length) frames.shift()();
 assert.deepEqual(primary.timeScale().getVisibleLogicalRange(), initial);
 assert.deepEqual(secondary.timeScale().getVisibleLogicalRange(), initial);
+
+function crosshairChart() {
+  const listeners = new Set();
+  return {
+    positioned: [], cleared: 0,
+    subscribeCrosshairMove(listener) { listeners.add(listener); },
+    unsubscribeCrosshairMove(listener) { listeners.delete(listener); },
+    emit(param) { listeners.forEach((listener) => listener(param)); },
+    setCrosshairPosition(value, time, series) {
+      this.positioned.push({value, time, series});
+      this.emit({time});
+    },
+    clearCrosshairPosition() { this.cleared += 1; },
+  };
+}
+const crossA = crosshairChart(), crossB = crosshairChart(), seriesA = {}, seriesB = {};
+const crosshairSync = Controller.linkCrosshairs([
+  {chart: crossA, series: seriesA, valueAtTime: (time) => time * 2},
+  {chart: crossB, series: seriesB, valueAtTime: (time) => time * 3},
+]);
+crossA.emit({time: 10});
+assert.deepEqual(crossB.positioned, [{value: 30, time: 10, series: seriesB}],
+  'focus time must propagate to the matching value in the other pane');
+assert.equal(crossA.positioned.length, 0, 'programmatic crosshair updates must not recurse');
+crossA.emit({});
+assert.equal(crossB.cleared, 1, 'leaving one pane must clear the linked focus line');
+crosshairSync.dispose();
+crossA.emit({time: 20});
+assert.equal(crossB.positioned.length, 1, 'disposed crosshair groups must stop syncing');

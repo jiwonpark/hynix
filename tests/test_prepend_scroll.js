@@ -94,9 +94,9 @@ console.log('Prepend scroll regression checks passed');
 
 let adrData, stockData;
 testEngine.shortTermAssetSeries = {
-  adr: {setData: data => {adrData = data;}},
-  stock: {setData: data => {stockData = data;}}
+  adr: {setData: data => {adrData = data;}}
 };
+testEngine.shortTermStockSeries = {setData: data => {stockData = data;}};
 testEngine.renderShortTermChart({bars:[
   {time:100, value:139.2, adr:190, csop:5.5},
   {time:200, value:139.3},

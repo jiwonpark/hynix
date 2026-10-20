@@ -370,6 +370,51 @@
     };
   };
 
+  // Synchronize the vertical focus line between related chart panes. Each pane
+  // supplies the series that should anchor the target crosshair and a value
+  // lookup for a timestamp; this keeps price, indicator, and PnL scales separate.
+  StrategyExecutionChartController.linkCrosshairs = function (panes = []) {
+    const linked = panes.filter((pane) => pane?.chart && pane?.series && typeof pane.valueAtTime === "function");
+    if (linked.length < 2) return { dispose() {} };
+    let syncing = false;
+    const subscriptions = [];
+    const clearTargets = (source) => {
+      linked.forEach((pane) => {
+        if (pane !== source && typeof pane.chart.clearCrosshairPosition === "function") {
+          pane.chart.clearCrosshairPosition();
+        }
+      });
+    };
+    linked.forEach((source) => {
+      const handler = (param) => {
+        if (syncing) return;
+        syncing = true;
+        try {
+          if (!param?.time) {
+            clearTargets(source);
+            return;
+          }
+          const rawTime = typeof param.time === "number" ? param.time : (param.time.timestamp ?? param.time);
+          linked.forEach((target) => {
+            if (target === source || typeof target.chart.setCrosshairPosition !== "function") return;
+            const value = Number(target.valueAtTime(rawTime));
+            if (Number.isFinite(value)) target.chart.setCrosshairPosition(value, param.time, target.series);
+            else if (typeof target.chart.clearCrosshairPosition === "function") target.chart.clearCrosshairPosition();
+          });
+        } finally {
+          syncing = false;
+        }
+      };
+      source.chart.subscribeCrosshairMove(handler);
+      subscriptions.push([source.chart, handler]);
+    });
+    return {
+      dispose() {
+        subscriptions.forEach(([chart, handler]) => chart.unsubscribeCrosshairMove?.(handler));
+      },
+    };
+  };
+
   // Fit recent candles up to targetVisibleBars (e.g. 48 for comfortable candle spacing, or newest 90%), with half-bar edges and no empty future space.
   StrategyExecutionChartController.initialRange = function (barCount, targetVisibleBars = null) {
     if (!Number.isFinite(barCount) || barCount < 1) return null;

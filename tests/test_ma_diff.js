@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const TerminalCommon = require('../terminal-common.js');
 
 // Test 1: TerminalCommon.movingAverageDiff
@@ -55,4 +57,36 @@ assert.equal(ma3[0].value, 20); // (10+20+30)/3
 assert.equal(ma3[2].time, 50);
 assert.equal(ma3[2].value, 40); // (30+40+50)/3
 
-console.log('All MA difference unit tests passed successfully');
+// Test 3: Standard MACD uses EMA(12) - EMA(26), EMA(9) signal, and their histogram.
+const trendBars = Array.from({length: 60}, (_, index) => ({time: index + 1, value: 100 + index}));
+const macd = TerminalCommon.macd(trendBars);
+assert.equal(macd.macd[0].time, 26);
+assert.equal(macd.signal[0].time, 34);
+assert.equal(macd.histogram[0].time, 34);
+assert.equal(macd.macd.length, 35);
+assert.equal(macd.signal.length, 27);
+assert.equal(macd.histogram.length, 27);
+assert.ok(macd.histogram.every((point) => Number.isFinite(point.value)));
+
+const flatMacd = TerminalCommon.macd(Array.from({length: 40}, (_, index) => ({time: index + 1, value: 100})));
+assert.ok(flatMacd.macd.every((point) => Math.abs(point.value) < 1e-12));
+assert.ok(flatMacd.signal.every((point) => Math.abs(point.value) < 1e-12));
+assert.ok(flatMacd.histogram.every((point) => Math.abs(point.value) < 1e-12));
+
+for (const file of ['crypto-tab.js', 'lighter-crypto-tab.js']) {
+  const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+  assert.match(source, /TerminalCommon\.macd\(bars, 12, 26, 9\)/,
+    `${file} must render standard MACD (12, 26, 9)`);
+  assert.match(source, /title: "MACD"/);
+  assert.match(source, /title: "Signal"/);
+  assert.doesNotMatch(source, /title: "Price \(Ref\)"/,
+    `${file} MACD pane must not duplicate the price chart`);
+}
+
+const indexSource = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+assert.match(indexSource, /id="shortTermStockHost"/,
+  'Tab 2 must render ETF price in a separate pane');
+assert.match(indexSource, /linkCrosshairs\(\[/,
+  'multi-pane charts must synchronize their focus line');
+
+console.log('All MA difference and MACD unit tests passed successfully');
