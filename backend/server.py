@@ -4046,6 +4046,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         "text": "",
                         "hoverText": hover_lbl,
                         "is_entry": is_entry,
+                        "direction": "short",
                         "avg_price": round(avg_px, 2),
                         "qty": round(m_data["total_qty"], 2),
                         "entry_spread": round(exact_signal, 4) if is_entry and exact_signal is not None else None,

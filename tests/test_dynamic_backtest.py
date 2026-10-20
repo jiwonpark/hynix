@@ -102,6 +102,7 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(sum(m['count'] for m in five), sum(m['count'] for m in hourly))
         self.assertTrue(all(m.get('entry_spread', 0) > 0 for m in five))
         self.assertTrue(any(not m['is_entry'] and m.get('exit_spread', 0) > 0 for m in five))
+        self.assertTrue(all(m['direction'] == 'short' for m in five))
 
     def test_bucketed_replay_keeps_signals_separate_from_fill_models(self):
         result = self.run_replay(bars([140]*8+[139,139], [100,101,102,103,104,105,106,107,95,95]))

@@ -290,6 +290,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.client.request.side_effect = request
         marker = (await server.get_short_term_parity('5m', 20))['markers'][0]
         self.assertFalse(marker['is_entry'])
+        self.assertEqual(marker['direction'], 'short')
         self.assertAlmostEqual(marker['exit_spread'], server.nominal_premium(190.5, 5.65), places=4)
         self.assertEqual(marker['fill_signals'][0]['paired_order_id'], '22')
 

@@ -185,6 +185,7 @@ def replay_markers(result, interval_seconds):
             markers[key] = {
                 'time': t, 'raw_time': signal['time'], 'is_entry': True,
                 'is_signal': True, 'hypothetical': True, 'backtest': True,
+                'direction': 'short',
                 'position': 'aboveBar', 'shape': 'arrowDown', 'color': '#dc2626',
                 'text': '', 'count': 0, 'qty': 0,
                 'entry_spread': signal['price'],
@@ -205,6 +206,7 @@ def replay_markers(result, interval_seconds):
         exit_adr, exit_stock = policy['adr_exit_qty'], policy['stock_exit_qty']
         if key not in markers:
             markers[key] = {'time': t, 'is_entry': entry, 'hypothetical': True, 'backtest': True,
+                'direction': 'short',
                 'position': 'aboveBar' if entry else 'belowBar', 'shape': 'arrowDown' if entry else 'arrowUp',
                 'color': '#dc2626' if entry else '#16a34a', 'text': '', 'count': 0, 'qty': 0,
                 'estimated_net_pnl_usd': 0.0,
