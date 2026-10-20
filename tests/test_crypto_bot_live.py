@@ -65,7 +65,7 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         restored = CryptoBot(self.client, self.path)
         self.assertEqual(restored.state["entry_z"], 2.0)
         self.assertFalse(restored.state["enabled"])
-        for strat in ["ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "grid"]:
+        for strat in ["adaptive_tranche", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "grid"]:
             await self.bot.configure({"strategy_mode": strat})
             self.assertEqual(self.bot.state["strategy_mode"], strat)
         with self.assertRaisesRegex(ValueError, "Unsupported live strategy"):
@@ -198,7 +198,7 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         ]
         self.bot.state["enabled"] = True
         self.bot.state["strategy_interval"] = "1m"
-        for strat in ["ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "grid"]:
+        for strat in ["adaptive_tranche", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "grid"]:
             self.bot.state["strategy_mode"] = strat
             self.bot.state["last_evaluated_candle"] = 0
             with patch("backend.crypto_bot.time.time", return_value=now):
@@ -213,7 +213,7 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         prices[-1] = 90.0
         # When use_base_spacing is True and spacing distance not satisfied, entry is blocked
         entry, side, exit_sig, eval_info = evaluate_strategy_signal(
-            "grid", prices,
+            "adaptive_tranche", prices,
             {"entry_z": 1.5, "exit_z": 0.25, "use_base_spacing": True, "use_peak": False, "base_spacing_pct": 5.0},
             position_side=1, entry_price=92.0, held_bars=1,
         )
@@ -222,12 +222,33 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
 
         # When use_base_spacing is False, spacing is bypassed
         entry, side, exit_sig, eval_info = evaluate_strategy_signal(
-            "grid", prices,
+            "adaptive_tranche", prices,
             {"entry_z": 1.5, "exit_z": 0.25, "use_base_spacing": False, "use_peak": False, "base_spacing_pct": 5.0},
             position_side=1, entry_price=92.0, held_bars=1,
         )
         self.assertTrue(entry)
         self.assertTrue(eval_info["condition_pass"]["entry_spacing"])
+
+    async def test_adaptive_tranche_grid_uses_full_chart_ma_stack(self):
+        from backend.lighter_strategy import evaluate_strategy_signal
+
+        prices = [160.0 - i for i in range(60)]
+        entry, side, _, evaluation = evaluate_strategy_signal(
+            "adaptive_tranche", prices,
+            {"entry_z": 1.5, "exit_z": 0.25,
+             "use_ma_stretch": False, "use_base_spacing": False,
+             "use_peak": False, "use_ma_stack": True,
+             "use_ma_stack_1h": False, "use_convergence": False,
+             "use_dwell": False, "use_bottoming": False},
+        )
+
+        self.assertTrue(entry)
+        self.assertEqual(side, 1)
+        self.assertTrue(evaluation["bearish_stack"])
+        self.assertTrue(
+            prices[-1] < evaluation["ma7"] < evaluation["ma24"] < evaluation["ma60"]
+        )
+        self.assertTrue(evaluation["condition_pass"]["entry_ma_stack"])
 
 
 if __name__ == "__main__":

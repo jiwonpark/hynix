@@ -162,48 +162,82 @@
         minProfit: 2.00,
       }
     },
-    currentParadigm: "ou_quant",
+    currentParadigm: "adaptive_tranche",
     paradigms: {
-      grid: {
-        id: "grid",
-        name: "Dynamic Grid",
-        icon: "🏛️",
-        badge: "SINGLE-LEG VOLATILITY HARVESTER",
-        title: "➕ Dip Scale-In (Buy Rung / Lower Harvester)",
-        desc: "Paper entry: completed price is at least the selected Z-score distance from the prior 24-bar mean. Optional replay filters appear below.",
-        tpTitle: "🎯 Mean-Reversion Exit",
-        tpDesc: "Paper exit: price returns within the selected Z-score band. Optional replay filters appear below.",
+      adaptive_tranche: {
+        id: "adaptive_tranche",
+        name: "Adaptive Tranche",
+        icon: "📊",
+        badge: "TAB 2 MODEL · SINGLE-LEG ADAPTATION",
+        title: "➕ Completed-Bar Adaptive Tranche Entry",
+        desc: "The Tab 2 condition pipeline applied symmetrically to the selected crypto: deviation, same-side signal spacing, rollover, full MA stack, and macro alignment.",
+        tpTitle: "🎯 LIFO Tranche Mean-Reversion Exit",
+        tpDesc: "Each completed-bar exit closes only the newest tracked tranche after every enabled exit condition passes.",
         entryLabels: {
-          rowCondEntryMaStretch: "1. Grid Band Trigger (Upper Rung ≥ +0.12%)",
-          rowCondEntryBase: "2. ATR Dynamic Volatility Spacing",
-          rowCondEntryPeak: "3. 5m Peak Rollover Filter (Exhaustion Gate)",
-          rowCondEntryMaStack5m: "4. 5m Micro-Trend Neutrality Confirmation",
-          rowCondEntryMaStack1h: "5. 1h Macro Divergence Boundary",
-          rowCondEntryCapacity: "6. Max Active Grid Tiers (Cap: 8 Rungs)",
-          rowCondEntryLeverage: "7. Projected account-wide gross exposure (≤ 1.0×)",
+          rowCondEntryMaStretch: "1. 24-Bar Price Deviation (|Z| ≥ Entry Z)",
+          rowCondEntryBase: "2. Same-Side Signal Spacing (% of Price)",
+          rowCondEntryPeak: "3. Completed-Bar Deviation Rollover",
+          rowCondEntryMaStack5m: "4. Full MA Stack (Price / MA7 / MA24 / MA60)",
+          rowCondEntryMaStack1h: "5. Macro Direction Alignment",
+          rowCondEntryCapacity: "6. Maximum Active Tranches",
+          rowCondEntryLeverage: "7. Selected-Contract Gross Exposure Cap",
           rowCondEntryMargin: "8. Buffered initial margin (10× estimate + 25%)",
-          rowCondEntryEngine: "9. Grid Engine State & Configured Rate Limit",
-          rowCondEntryGuard: "10. Anti-Whipsaw Bar Cadence (1 bar/rung)",
+          rowCondEntryEngine: "9. Lighter Engine State & Configured Rate Limit",
+          rowCondEntryGuard: "10. Executable Quote Revalidation",
         },
         exitLabels: {
-          rowCondExitConvergence: "1. Benchmark Convergence (≤ Target Price)",
-          rowCondExitDwell: "2. Anti-Churn Dwell Time (≥ 4 Bars Hold)",
-          rowCondExitBottoming: "3. Bottoming-Out Momentum Inflection",
-          rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +$0.05 / tranche)",
-          rowCondExitActive: "5. Core Inventory Ratchet (+0.01 / +0.20)",
-          rowCondExitMaStack5m: "6. 5m Exit Stack Alignment",
-          rowCondExitMaStack1h: "7. 1h Macro Sizing Neutralization",
-          rowCondExitPosition: "8. Position Symmetry Gate",
+          rowCondExitConvergence: "1. Return to Mean (|Z| ≤ Exit Z)",
+          rowCondExitDwell: "2. Minimum Completed Bars Held",
+          rowCondExitBottoming: "3. Convergence Rollover Confirmation",
+          rowCondExitNetPnl: "LIVE ONLY · Fees and realized P&L are execution safeguards",
+          rowCondExitActive: "LIVE ONLY · LIFO tracked-tranche ownership",
+          rowCondExitMaStack5m: "LIVE ONLY · Reduce-only order validity",
+          rowCondExitMaStack1h: "LIVE ONLY · Executable quote validation",
+          rowCondExitPosition: "LIVE ONLY · Exchange position reconciliation",
         },
         researchLabels: {
-          valCondEntryMaStretch: "Replay: require selected Upper Rung Z",
-          valCondEntryBase: "Replay: require +0.10pt dynamic spacing",
-          valCondEntryPeak: "Replay: require z-score rollover",
-          valCondEntryMaStack5m: "Replay: require MA7 / MA24 alignment",
+          valCondEntryMaStretch: "Replay/live: require selected Entry Z",
+          valCondEntryBase: "Replay/live: spacing from prior same-side signal",
+          valCondEntryPeak: "Replay/live: completed-bar deviation rollover",
+          valCondEntryMaStack5m: "Replay/live: require full MA7 / MA24 / MA60 stack",
           valCondExitConvergence: "Replay: require selected Exit Z",
-          valCondExitDwell: "Replay: minimum four bars held",
-          valCondExitBottoming: "Replay: require convergence rollover",
+          valCondExitDwell: "Replay/live: minimum configured bars held",
+          valCondExitBottoming: "Replay/live: require convergence rollover",
         },
+        defaultParams: { entry_z: 1.5, exit_z: 0.25 }
+      },
+      grid: {
+        id: "grid",
+        name: "Legacy Dynamic Grid",
+        icon: "🏛️",
+        badge: "LEGACY SINGLE-LEG GRID",
+        title: "➕ Legacy Grid Scale-In",
+        desc: "Existing saved Grid behavior retained for compatibility. Use Adaptive Tranche for the Tab 2 condition pipeline.",
+        tpTitle: "🎯 Legacy Grid Mean-Reversion Exit",
+        tpDesc: "Legacy Grid exits all simulated fills together when its enabled exit filters pass.",
+        entryLabels: {
+          rowCondEntryMaStretch: "1. Grid Z-Score Trigger",
+          rowCondEntryBase: "2. Same-Side Entry Spacing",
+          rowCondEntryPeak: "3. Z-Score Rollover",
+          rowCondEntryMaStack5m: "4. Legacy MA7 / MA24 Alignment",
+          rowCondEntryMaStack1h: "5. Macro Direction Alignment",
+          rowCondEntryCapacity: "6. Maximum Active Tranches",
+          rowCondEntryLeverage: "7. Selected-Contract Gross Exposure Cap",
+          rowCondEntryMargin: "8. Buffered Initial Margin",
+          rowCondEntryEngine: "9. Lighter Engine State",
+          rowCondEntryGuard: "10. Executable Quote Revalidation",
+        },
+        exitLabels: {
+          rowCondExitConvergence: "1. Grid Mean Convergence",
+          rowCondExitDwell: "2. Minimum Bars Held",
+          rowCondExitBottoming: "3. Convergence Rollover",
+          rowCondExitNetPnl: "LIVE ONLY · Fee and P&L safeguard",
+          rowCondExitActive: "LIVE ONLY · Tracked inventory ownership",
+          rowCondExitMaStack5m: "LIVE ONLY · Reduce-only validity",
+          rowCondExitMaStack1h: "LIVE ONLY · Quote validation",
+          rowCondExitPosition: "LIVE ONLY · Position reconciliation",
+        },
+        researchLabels: {},
         defaultParams: { entry_z: 1.5, exit_z: 0.25 }
       },
       ou_quant: {
@@ -786,7 +820,7 @@
       const collateralTab = lid("tabAssets");
       const collateralLabel = [...(collateralTab?.childNodes || [])].find((node) => node.nodeType === 3);
       if (collateralLabel) collateralLabel.textContent = "Lighter Collateral (";
-      this.setText("lblCritScaleInTitle", "➕ Dip Scale-In (Buy Rung / Lower Harvester)");
+      this.setText("lblCritScaleInTitle", "➕ Completed-Bar Adaptive Tranche Entry");
       this.setText("lblCritTPTitle", "🎯 Rebalance & Take-Profit (Mean Reversion)");
       this.setText("lblOrderNotional", "Order Notional (USD)");
       this.setText("lblStepTrancheSize", `➕ Buy / Long ${sym}`);
@@ -797,34 +831,34 @@
       const utilizationHeading = lid("lblTranchePct")?.previousElementSibling;
       if (utilizationHeading) utilizationHeading.textContent = "Gross Leverage Utilization (separate from campaign slot cap):";
 
-      // Custom-labeled Scale-In Checklist for Grid Bands
+      // Tab 2-style adaptive tranche checklist for a single crypto price.
       const entryLabelMap = {
-        rowCondEntryMaStretch: "1. Grid Band Trigger (Upper Rung ≥ +0.12%)",
-        rowCondEntryBase: "2. ATR Dynamic Volatility Spacing",
-        rowCondEntryPeak: "3. 5m Peak Rollover Filter (Exhaustion Gate)",
-        rowCondEntryMaStack5m: "4. 5m Micro-Trend Neutrality Confirmation",
-        rowCondEntryMaStack1h: "5. 1h Macro Divergence Boundary",
-        rowCondEntryCapacity: "6. Max Active Grid Tiers (Cap: 8 Rungs)",
-        rowCondEntryLeverage: "7. Projected account-wide gross exposure (≤ 1.0×)",
+        rowCondEntryMaStretch: "1. 24-Bar Price Deviation (|Z| ≥ Entry Z)",
+        rowCondEntryBase: "2. Same-Side Signal Spacing (% of Price)",
+        rowCondEntryPeak: "3. Completed-Bar Deviation Rollover",
+        rowCondEntryMaStack5m: "4. Full MA Stack (Price / MA7 / MA24 / MA60)",
+        rowCondEntryMaStack1h: "5. Macro Direction Alignment",
+        rowCondEntryCapacity: "6. Maximum Active Tranches",
+        rowCondEntryLeverage: "7. Selected-Contract Gross Exposure Cap",
         rowCondEntryMargin: "8. Buffered initial margin (10× estimate + 25%)",
-        rowCondEntryEngine: "9. Grid Engine State & Configured Rate Limit",
-        rowCondEntryGuard: "10. Anti-Whipsaw Bar Cadence (1 bar/rung)",
+        rowCondEntryEngine: "9. Lighter Engine State & Configured Rate Limit",
+        rowCondEntryGuard: "10. Executable Quote Revalidation",
       };
       Object.entries(entryLabelMap).forEach(([id, text]) => {
         const el = lid(id)?.querySelector(".condLabel");
         if (el) el.textContent = text;
       });
 
-      // Custom-labeled Take-Profit Checklist for Grid Rebalancing
+      // Strategy exits above; execution-only safeguards below remain non-optional.
       const exitLabelMap = {
-        rowCondExitConvergence: "1. Benchmark Convergence (≤ Target Price)",
-        rowCondExitDwell: "2. Anti-Churn Dwell Time (≥ 120s Hold)",
-        rowCondExitBottoming: "3. Bottoming-Out Momentum Inflection",
-        rowCondExitNetPnl: "4. Zero-Loss Hurdle (> +$0.05 / tranche)",
-        rowCondExitActive: "5. Core Inventory Ratchet (+0.01 / +0.20)",
-        rowCondExitMaStack5m: "6. 5m Exit Stack Alignment",
-        rowCondExitMaStack1h: "7. 1h Macro Sizing Neutralization",
-        rowCondExitPosition: "8. Position Symmetry Gate",
+        rowCondExitConvergence: "1. Return to Mean (|Z| ≤ Exit Z)",
+        rowCondExitDwell: "2. Minimum Completed Bars Held",
+        rowCondExitBottoming: "3. Convergence Rollover Confirmation",
+        rowCondExitNetPnl: "LIVE ONLY · Fees and realized P&L safeguard",
+        rowCondExitActive: "LIVE ONLY · LIFO tracked-tranche ownership",
+        rowCondExitMaStack5m: "LIVE ONLY · Reduce-only order validity",
+        rowCondExitMaStack1h: "LIVE ONLY · Executable quote validation",
+        rowCondExitPosition: "LIVE ONLY · Exchange position reconciliation",
       };
       Object.entries(exitLabelMap).forEach(([id, text]) => {
         const el = lid(id)?.querySelector(".condLabel");
@@ -1201,7 +1235,7 @@
       this.bindResearchConditions();
       this.renderParadigmNav();
       this.renderGridLadderSection();
-      this.setParadigm(this.currentParadigm || "grid");
+      this.setParadigm(this.currentParadigm || "adaptive_tranche");
     },
 
     bindResearchConditions() {
@@ -1223,14 +1257,14 @@
         });
       });
       const labels = {
-        valCondEntryMaStretch: "Replay: require selected Entry Z",
-        valCondEntryBase: "Replay: require configured spacing from prior same-side entry",
-        valCondEntryPeak: "Replay: require z-score rollover",
-        valCondEntryMaStack5m: "Replay: require MA7 / MA24 alignment",
-        valCondEntryMaStack1h: "Replay: require 1h macro support alignment",
-        valCondExitConvergence: "Replay: require selected Exit Z",
-        valCondExitDwell: "Replay: minimum configured bars held",
-        valCondExitBottoming: "Replay: require convergence rollover",
+        valCondEntryMaStretch: "Replay/live: require selected Entry Z",
+        valCondEntryBase: "Replay/live: spacing from prior same-side signal",
+        valCondEntryPeak: "Replay/live: require completed-bar deviation rollover",
+        valCondEntryMaStack5m: "Replay/live: require full Price / MA7 / MA24 / MA60 stack",
+        valCondEntryMaStack1h: "Replay/live: require macro direction alignment",
+        valCondExitConvergence: "Replay/live: require selected Exit Z",
+        valCondExitDwell: "Replay/live: minimum configured bars held",
+        valCondExitBottoming: "Replay/live: require convergence rollover",
       };
       Object.entries(labels).forEach(([id, text]) => this.setText(id, text));
       ["chkCondEntryCapacity", "chkCondEntryLeverage",
@@ -1243,8 +1277,8 @@
     gridMatrixTemplate() {
       return `
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:9px">
-          <strong style="font-size:13px;color:#0f172a">Paper replay thresholds</strong>
-          <span style="font-size:10px;font-weight:800;color:#0369a1;background:#e0f2fe;padding:3px 8px;border-radius:5px">PAPER ONLY · no resting orders</span>
+          <strong id="lighterCrypto_gridMatrixTitle" style="font-size:13px;color:#0f172a">Adaptive tranche thresholds</strong>
+          <span id="lighterCrypto_gridMatrixScope" style="font-size:10px;font-weight:800;color:#0369a1;background:#e0f2fe;padding:3px 8px;border-radius:5px">PAPER + LIVE DEPLOY · no resting orders</span>
         </div>
         <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:11px;color:#334155">
           <label>Entry |Z| ≥ <input id="lighterCrypto_gridReplayEntryZ" type="number" min="0.1" max="10" step="0.1" value="${Number(this.gridReplayEntryZ ?? 1.5)}" style="width:62px;font-weight:800"></label>
@@ -1253,7 +1287,7 @@
           <label>Exit dwell ≥ <input id="lighterCrypto_replayDwellBars" type="number" min="0" max="100" step="1" value="4" style="width:50px;font-weight:800"> bars</label>
           <button id="lighterCrypto_gridReplayRerun" type="button" style="background:#0284c7;color:white;border:0;border-radius:5px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer">Rerun paper</button>
         </div>
-        <p style="margin:8px 0 0;font-size:10.5px;color:#64748b">These thresholds and the enabled replay filters determine the paper arrows. Live Grid settings are saved separately in the authenticated bot panel.</p>
+        <p id="lighterCrypto_gridMatrixDescription" style="margin:8px 0 0;font-size:10.5px;color:#64748b">Paper and live use the same completed-bar evaluator. Replay signals ignore simulated inventory; live fills remain subject to authenticated Lighter execution safeguards.</p>
       `;
     },
 
@@ -1268,7 +1302,7 @@
         nav.innerHTML = `
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span style="font-size:11px;font-weight:800;color:#475569;margin-right:2px;letter-spacing:0.5px;">STRATEGY REGIME:</span>
-            <button id="lighterCrypto_tabParadigm_grid" class="lighterParadigmBtn" type="button" data-mode="grid" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🏛️ Dynamic Grid</button>
+            <button id="lighterCrypto_tabParadigm_adaptive_tranche" class="lighterParadigmBtn" type="button" data-mode="adaptive_tranche" style="border:1.5px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">📊 Adaptive Tranche (Tab 2)</button>
             <button id="lighterCrypto_tabParadigm_ou_quant" class="lighterParadigmBtn" type="button" data-mode="ou_quant" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🔬 Ornstein-Uhlenbeck SDE</button>
             <button id="lighterCrypto_tabParadigm_ma_stack" class="lighterParadigmBtn" type="button" data-mode="ma_stack" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">📈 Trend MA Stack</button>
             <button id="lighterCrypto_tabParadigm_multi_factor" class="lighterParadigmBtn" type="button" data-mode="multi_factor" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚖️ Multi-Factor Gate</button>
@@ -1276,18 +1310,19 @@
             <button id="lighterCrypto_tabParadigm_ma_acceleration" class="lighterParadigmBtn" type="button" data-mode="ma_acceleration" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🚀 MA Acceleration</button>
             <button id="lighterCrypto_tabParadigm_golden_death_cross" class="lighterParadigmBtn" type="button" data-mode="golden_death_cross" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚔️ Golden & Death Cross</button>
             <button id="lighterCrypto_tabParadigm_custom" class="lighterParadigmBtn" type="button" data-mode="custom" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🛠️ Rule Composer</button>
+            <button id="lighterCrypto_tabParadigm_grid" class="lighterParadigmBtn" type="button" data-mode="grid" style="border:1.5px solid #cbd5e1;background:#fff;color:#64748b;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;">Legacy Grid</button>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span id="lighterCrypto_liveBotStrategyBadge" style="font-size:10px;font-weight:800;padding:4px 8px;border-radius:6px;background:#dcfce7;color:#166534;border:1px solid #86efac;display:none;">
-              ● LIVE BOT: DYNAMIC GRID
+              ● LIVE BOT: ADAPTIVE TRANCHE
             </span>
             <div id="lighterCrypto_paradigmBadge" style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:999px;background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;">
-              PARITY HARVESTING · GRID ARB
+              TAB 2 MODEL · SINGLE-LEG ADAPTATION
             </div>
           </div>
         `;
         criteriaGrid.parentNode.insertBefore(nav, criteriaGrid);
-        ["grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "ma_acceleration", "golden_death_cross", "custom"].forEach((mode) => {
+        ["adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "ma_acceleration", "golden_death_cross", "custom"].forEach((mode) => {
           const btn = $(`lighterCrypto_tabParadigm_${mode}`);
           if (btn) btn.addEventListener("click", () => {
             this._userSelectedParadigm = true;
@@ -1346,15 +1381,17 @@
       // The inherited paired-asset checklist contains rules that this
       // single-leg replay does not evaluate. Show only wired replay switches;
       // live-only exchange safeguards are reported in the separate bot panel.
-      const wiredReplayRows = ["grid", "custom"].includes(mode) ? {
-        rowCondEntryMaStretch: "Paper entry: Z-score stretch (adjust Entry Z in replay)",
-        rowCondEntryBase: "Paper entry: minimum spacing from prior entry",
-        rowCondEntryPeak: "Paper entry: Z-score rollover",
-        rowCondEntryMaStack5m: "Paper entry: price / MA7 / mean stack",
-        rowCondEntryMaStack1h: "Paper entry: 1h macro trend / green-red range alignment",
-        rowCondExitConvergence: "Paper exit: Z-score convergence (adjust Exit Z in replay)",
-        rowCondExitDwell: "Paper exit: minimum configured completed bars",
-        rowCondExitBottoming: "Paper exit: Z-score no longer converging",
+      const wiredReplayRows = ["adaptive_tranche", "grid", "custom"].includes(mode) ? {
+        rowCondEntryMaStretch: "Paper/live entry: Z-score stretch (adjust Entry Z below)",
+        rowCondEntryBase: "Paper/live entry: minimum spacing from prior same-side entry",
+        rowCondEntryPeak: "Paper/live entry: completed-bar Z-score rollover",
+        rowCondEntryMaStack5m: mode === "adaptive_tranche"
+          ? "Paper/live entry: full Price / MA7 / MA24 / MA60 stack"
+          : "Paper/live entry: legacy price / MA7 / mean alignment",
+        rowCondEntryMaStack1h: "Paper/live entry: macro direction alignment",
+        rowCondExitConvergence: "Paper/live exit: Z-score convergence (adjust Exit Z below)",
+        rowCondExitDwell: "Paper/live exit: minimum configured completed bars",
+        rowCondExitBottoming: "Paper/live exit: Z-score no longer converging",
       } : {};
       [...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels)].forEach((id) => {
         const row = lid(id);
@@ -1379,9 +1416,14 @@
         }
       }
 
-      if (mode === "grid") {
+      if (["adaptive_tranche", "grid"].includes(mode)) {
         if (ladderSec) ladderSec.style.display = "block";
         if (detailSec) detailSec.style.display = "none";
+        this.setText("gridMatrixTitle", mode === "adaptive_tranche" ? "Adaptive tranche thresholds" : "Legacy Grid thresholds");
+        this.setText("gridMatrixScope", mode === "adaptive_tranche" ? "PAPER + LIVE DEPLOY · no resting orders" : "LEGACY PAPER + LIVE DEPLOY");
+        this.setText("gridMatrixDescription", mode === "adaptive_tranche"
+          ? "Paper and live use the same completed-bar evaluator. Replay signals ignore simulated inventory; live fills remain subject to authenticated Lighter execution safeguards."
+          : "Legacy Grid replay controls. Saved legacy bots keep their existing all-fill convergence behavior.");
       } else {
         if (ladderSec) ladderSec.style.display = "none";
         if (detailSec) {
@@ -1860,7 +1902,7 @@
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;font-size:11px;line-height:1.4">
           <div>
             <b>Active Live Engine</b><br>
-            <span id="lighterCryptoLiveEngine">Dynamic Grid</span>
+            <span id="lighterCryptoLiveEngine">Adaptive Tranche</span>
             <div id="lighterCryptoLiveEngineDesc" style="font-size:10px;color:#047857;margin-top:2px;">Price harvesting mean-reversion</div>
           </div>
           <div>
@@ -1869,13 +1911,13 @@
           </div>
           <div id="lighterCryptoLiveGridEntryRule">
             <b>Entry Trigger</b><br>
-            |Z| ≥ <input id="lighterCrypto_inputLiveGridEntryZ" type="number" min="0.1" max="10" step="0.1" value="1.5" aria-label="Live Grid entry Z threshold" style="width:65px;font-weight:800">
+            |Z| ≥ <input id="lighterCrypto_inputLiveGridEntryZ" type="number" min="0.1" max="10" step="0.1" value="1.5" aria-label="Live mean-reversion entry Z threshold" style="width:65px;font-weight:800">
             <span id="lighterCrypto_liveEntryVerdict" class="condBadge neutral">UNAVAILABLE</span>
             <div id="lighterCryptoLiveEntryDetail" style="font-size:10px;color:#047857;margin-top:2px;">Z high: short selected contract<br>Z low: long selected contract</div>
           </div>
           <div id="lighterCryptoLiveGridExitRule">
             <b>Exit Target</b><br>
-            |Z| ≤ <input id="lighterCrypto_inputLiveGridExitZ" type="number" min="0" max="5" step="0.05" value="0.25" aria-label="Live Grid exit Z threshold" style="width:65px;font-weight:800"> · no separate PnL gate
+            |Z| ≤ <input id="lighterCrypto_inputLiveGridExitZ" type="number" min="0" max="5" step="0.05" value="0.25" aria-label="Live mean-reversion exit Z threshold" style="width:65px;font-weight:800"> · no separate PnL gate
             <span id="lighterCrypto_liveExitVerdict" class="condBadge neutral">UNAVAILABLE</span>
             <div id="lighterCryptoLiveExitDetail" style="font-size:10px;color:#047857;margin-top:2px;">Reduce one bot-owned tranche per closed-bar convergence signal</div>
           </div>
@@ -1939,7 +1981,24 @@
       ["lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
         "lighterCrypto_inputLiveMaxSpread"].forEach((id) => {
         const input = $(id);
-        if (input) input.addEventListener("input", () => { input.dataset.unsaved = "true"; });
+        if (input) input.addEventListener("input", () => {
+          input.dataset.unsaved = "true";
+          if (["adaptive_tranche", "grid"].includes(this.currentParadigm)) {
+            const sync = id === "lighterCrypto_inputLiveGridEntryZ"
+              ? ["gridReplayEntryZ", "lighterCrypto_gridReplayEntryZ"]
+              : id === "lighterCrypto_inputLiveGridExitZ"
+                ? ["gridReplayExitZ", "lighterCrypto_gridReplayExitZ"] : null;
+            const value = Number(input.value);
+            if (sync && Number.isFinite(value)) {
+              this[sync[0]] = value;
+              const replayInput = $(sync[1]);
+              if (replayInput) { replayInput.value = String(value); replayInput.dataset.unsaved = "true"; }
+              this.requestBacktest();
+              this.updateRulesMatchStatus();
+            }
+          }
+          this.updateDeployButtonState();
+        });
       });
       this.updateDeployButtonState();
       window.terminalLockManager?.applyState?.();
@@ -1949,7 +2008,7 @@
       const btnLabel = $("lighterCrypto_btnDeployLiveStrategyLabel");
       const btn = $("lighterCrypto_btnDeployLiveStrategy");
       if (!btn || !btnLabel) return;
-      const currentMode = this.currentParadigm || "grid";
+      const currentMode = this.currentParadigm || "adaptive_tranche";
       const liveMode = this.botState?.strategy_mode || "grid";
       const currentName = this.paradigms[currentMode]?.name || currentMode;
       if (this.botState?.enabled) {
@@ -1998,7 +2057,7 @@
       if (reconcile) reconcile.disabled = locked || !recovering;
     },
 
-    liveStrategyPayload(mode = this.currentParadigm || "grid") {
+    liveStrategyPayload(mode = this.currentParadigm || "adaptive_tranche") {
       const numeric = (id, fallback) => {
         const raw = $(id)?.value;
         const value = raw == null || raw === "" ? NaN : Number(raw);
@@ -2054,9 +2113,11 @@
       } else if (mode === "custom") {
         payload.entry_z = numeric("lighterCrypto_inpCustomEntryZ", Number(this.botState?.entry_z ?? 1.5));
         payload.exit_z = numeric("lighterCrypto_inpCustomExitZ", Number(this.botState?.exit_z ?? 0.25));
-      } else if (mode === "grid") {
-        payload.entry_z = numeric("lighterCrypto_inputLiveGridEntryZ", Number(this.botState?.entry_z ?? 1.5));
-        payload.exit_z = numeric("lighterCrypto_inputLiveGridExitZ", Number(this.botState?.exit_z ?? 0.25));
+      } else if (["adaptive_tranche", "grid"].includes(mode)) {
+        payload.entry_z = Number(this.gridReplayEntryZ ?? numeric("lighterCrypto_inputLiveGridEntryZ", Number(this.botState?.entry_z ?? 1.5)));
+        payload.exit_z = Number(this.gridReplayExitZ ?? numeric("lighterCrypto_inputLiveGridExitZ", Number(this.botState?.exit_z ?? 0.25)));
+        payload.base_spacing_pct = numeric("lighterCrypto_replaySpacingPct", Number(this.botState?.base_spacing_pct ?? 0.2));
+        payload.min_dwell_bars = numeric("lighterCrypto_replayDwellBars", Number(this.botState?.min_dwell_bars ?? 4));
       }
       if (mode !== "ma_stack") {
         payload.use_ma_stretch = lid("chkCondEntryMaStretch")?.checked !== false;
@@ -2080,7 +2141,7 @@
         window.terminalLockManager?.openPasswordModal?.();
         return false;
       }
-      const mode = this.currentParadigm || "grid";
+      const mode = this.currentParadigm || "adaptive_tranche";
       const pName = this.paradigms[mode]?.name || mode;
       const confirmed = options.skipConfirm || window.confirm(`Save ${pName} (${this.interval}) for real Lighter Perpetuals trading?\n\nPause the bot before changing strategy. Saving while paused places no order.`);
       if (!confirmed) return false;
@@ -2096,7 +2157,9 @@
           [
             "lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
             "lighterCrypto_inputLiveMaxSpread", "lighterCrypto_inpOuEntryZ", "lighterCrypto_inpOuExitZ",
-            "lighterCrypto_maUseStack5m", "lighterCrypto_maUseOppositeExit"
+            "lighterCrypto_maUseStack5m", "lighterCrypto_maUseOppositeExit",
+            "lighterCrypto_gridReplayEntryZ", "lighterCrypto_gridReplayExitZ",
+            "lighterCrypto_replaySpacingPct", "lighterCrypto_replayDwellBars"
           ].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
           [
             "chkCondEntryMaStretch", "chkCondEntryBase", "chkCondEntryPeak", "chkCondEntryMaStack5m",
@@ -2147,12 +2210,23 @@
             return;
           }
           this[field] = value;
+          input.dataset.unsaved = "true";
+          const liveId = field === "gridReplayEntryZ" ? "lighterCrypto_inputLiveGridEntryZ" : "lighterCrypto_inputLiveGridExitZ";
+          const liveInput = $(liveId);
+          if (liveInput) { liveInput.value = String(value); liveInput.dataset.unsaved = "true"; }
           this.runBacktest();
           this.updateRulesMatchStatus();
+          this.updateDeployButtonState();
         });
       });
       ["lighterCrypto_replaySpacingPct", "lighterCrypto_replayDwellBars"].forEach((id) => {
-        $(id)?.addEventListener("change", () => this.runBacktest());
+        const input = $(id);
+        input?.addEventListener("change", () => {
+          input.dataset.unsaved = "true";
+          this.runBacktest();
+          this.updateRulesMatchStatus();
+          this.updateDeployButtonState();
+        });
       });
       $("lighterCrypto_gridReplayRerun")?.addEventListener("click", () => this.runBacktest());
     },
@@ -2787,7 +2861,7 @@
     },
 
     replaySettings() {
-      const mode = this.currentParadigm || "grid";
+      const mode = this.currentParadigm || "adaptive_tranche";
       const numeric = (id, fallback) => {
         const raw = $(id)?.value;
         const value = raw == null || raw === "" ? NaN : Number(raw);
@@ -2802,10 +2876,10 @@
         short_multiplier: this.shortMultiplier(),
         entry_z: mode === "ou_quant" ? numeric("lighterCrypto_inpOuEntryZ", liveOuEntryFallback) :
           mode === "custom" ? numeric("lighterCrypto_inpCustomEntryZ", 1.5) :
-          mode === "grid" ? Number(this.gridReplayEntryZ ?? 1.5) : 1.5,
+          ["adaptive_tranche", "grid"].includes(mode) ? Number(this.gridReplayEntryZ ?? 1.5) : 1.5,
         exit_z: mode === "ou_quant" ? numeric("lighterCrypto_inpOuExitZ", liveOuExitFallback) :
           mode === "custom" ? numeric("lighterCrypto_inpCustomExitZ", 0.25) :
-          mode === "grid" ? Number(this.gridReplayExitZ ?? 0.25) : 0.25,
+          ["adaptive_tranche", "grid"].includes(mode) ? Number(this.gridReplayExitZ ?? 0.25) : 0.25,
         ...this.ouConditionSettings(),
         base_spacing_pct: numeric("lighterCrypto_replaySpacingPct", 0.2),
         min_dwell_bars: numeric("lighterCrypto_replayDwellBars", 4),
@@ -2915,7 +2989,8 @@
       if (!isIntervalMatch) diffs.push(`Interval ${currentInterval} ≠ ${liveInterval}`);
       if (!isParadigmMatch) diffs.push(`Strategy ${currentMode} ≠ ${liveMode}`);
       const parameterKeys = {
-        grid: ["entry_z", "exit_z"], custom: ["entry_z", "exit_z"],
+        adaptive_tranche: ["entry_z", "exit_z", "base_spacing_pct", "min_dwell_bars"],
+        grid: ["entry_z", "exit_z", "base_spacing_pct", "min_dwell_bars"], custom: ["entry_z", "exit_z"],
         ou_quant: ["entry_z", "exit_z", "ou_halflife_max", "ou_stop_z",
           "ou_min_abs_deviation_pp", "ou_macro_ema_span", "ou_macro_slope_bars",
           "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
@@ -3194,7 +3269,7 @@
         entry_ma_diff_hook: "use_ma_diff_hook",
         exit_opposite_stack: "use_opposite_stack_exit",
         exit_ma_diff_hook: "use_ma_diff_exit",
-      } : ["grid", "custom"].includes(bot?.strategy_mode) ? {
+      } : ["adaptive_tranche", "grid", "custom"].includes(bot?.strategy_mode) ? {
         entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
         entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
         exit_dwell:"use_dwell", exit_bottoming:"use_bottoming",
@@ -3202,6 +3277,7 @@
         entry_ma_stack_1h:"use_ma_stack_1h",
       };
       const keysByMode = {
+        adaptive_tranche:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
         grid:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
         custom:["entry_z","entry_spacing","entry_rollover","entry_ma_stack","entry_ma_stack_1h","exit_convergence","exit_dwell","exit_bottoming"],
         ou_quant:["entry_z","entry_halflife","entry_min_deviation","entry_macro_trend","entry_stop_zone","exit_z","exit_emergency_stop"],
@@ -3247,7 +3323,7 @@
         this.setParadigm(liveMode);
       }
       const params = { ...this.botState, ...(this.botState.strategy_params || {}) };
-      if (liveMode === "grid") {
+      if (["adaptive_tranche", "grid"].includes(liveMode)) {
         this.gridReplayEntryZ = Number(params.entry_z);
         this.gridReplayExitZ = Number(params.exit_z);
         if ($("lighterCrypto_gridReplayEntryZ")) $("lighterCrypto_gridReplayEntryZ").value = String(this.gridReplayEntryZ);
@@ -3631,9 +3707,9 @@
       }
 
       const stratMode = bot?.strategy_mode || "grid";
-      const stratName = bot?.strategy_name || this.paradigms[stratMode]?.name || "Dynamic Grid";
+      const stratName = bot?.strategy_name || this.paradigms[stratMode]?.name || "Adaptive Tranche";
       const stratInterval = bot?.strategy_interval || "5m";
-      const stratShort = stratMode === "grid" ? "GRID" : (stratMode === "ou_quant" ? "OU" : stratName.toUpperCase().slice(0, 8));
+      const stratShort = stratMode === "adaptive_tranche" ? "ADAPTIVE" : (stratMode === "grid" ? "GRID" : (stratMode === "ou_quant" ? "OU" : stratName.toUpperCase().slice(0, 8)));
 
       // Sync Tab 3 Top Nav Pill
       const navLighterPill = $("navLighterCryptoLivePill");
@@ -3695,6 +3771,18 @@
         const input = $(id);
         if (input && value != null && document.activeElement !== input && input.dataset.unsaved !== "true") input.value = String(value);
       });
+      if (["adaptive_tranche", "grid"].includes(bot?.strategy_mode)) {
+        [["lighterCrypto_gridReplayEntryZ", "gridReplayEntryZ", bot?.entry_z],
+          ["lighterCrypto_gridReplayExitZ", "gridReplayExitZ", bot?.exit_z],
+          ["lighterCrypto_replaySpacingPct", null, bot?.base_spacing_pct],
+          ["lighterCrypto_replayDwellBars", null, bot?.min_dwell_bars]].forEach(([id, field, value]) => {
+          const input = $(id);
+          if (input && value != null && document.activeElement !== input && input.dataset.unsaved !== "true") {
+            input.value = String(value);
+            if (field) this[field] = Number(value);
+          }
+        });
+      }
       const condCheckboxes = {
         chkCondEntryMaStretch: "use_ma_stretch",
         chkCondEntryBase: "use_base_spacing",
@@ -3748,7 +3836,7 @@
       const liveEval = bot?.last_evaluation;
       const evaluatedAt = Number(liveEval?.time);
       const intervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[bot?.strategy_interval] || 300;
-      const fresh = isEnabled && liveEval?.strategy === "grid" && Number.isFinite(evaluatedAt)
+      const fresh = isEnabled && liveEval?.strategy === bot?.strategy_mode && Number.isFinite(evaluatedAt)
         && evaluatedAt > 0 && Date.now() / 1000 - evaluatedAt <= intervalSeconds * 2 + 60;
       [["lighterCrypto_liveEntryVerdict", Number(bot?.entry_z), true],
         ["lighterCrypto_liveExitVerdict", Number(bot?.exit_z), false]].forEach(([id, threshold, isEntry]) => {
@@ -3766,7 +3854,7 @@
       });
       ["lighterCryptoLiveGridEntryRule", "lighterCryptoLiveGridExitRule"].forEach((id) => {
         const row = $(id);
-        if (row) row.style.display = bot?.strategy_mode === "grid" ? "" : "none";
+        if (row) row.style.display = ["adaptive_tranche", "grid"].includes(bot?.strategy_mode) ? "" : "none";
       });
       this.renderLiveConditionStatus(bot);
       const notionalInput = lid("inputOrderNotional");

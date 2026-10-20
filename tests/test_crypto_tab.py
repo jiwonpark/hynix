@@ -96,6 +96,27 @@ class TestCryptoTab(unittest.TestCase):
         ma60 = sum(values[exit_index - 59:exit_index + 1]) / 60
         self.assertTrue(price > ma7 > ma24 > ma60)
 
+    def test_tab5_adaptive_replay_signals_ignore_inventory_and_exits_lifo(self):
+        from backend.server import _run_crypto_backtest_sync
+
+        values = [100.0] * 25 + [90.0, 89.0, 88.0] + [100.0] * 30
+        bars = [{"time": 1000 + index * 300, "value": value}
+                for index, value in enumerate(values)]
+        result = _run_crypto_backtest_sync(
+            bars, True, strategy_mode="adaptive_tranche", market_source="lighter",
+            entry_z=0.5, exit_z=0.3,
+            use_ma_stretch=True, use_base_spacing=False, use_peak=False,
+            use_ma_stack=False, use_ma_stack_1h=False,
+            use_convergence=True, use_dwell=False, use_bottoming=False,
+            interval_seconds=300,
+        )
+
+        self.assertEqual(len(result["entry_signals"]), 2)
+        self.assertEqual(len(result["trades"]), 2)
+        # Tab 2 semantics: the later tranche exits first, one tranche per bar.
+        self.assertGreater(result["trades"][0]["entry_time"], result["trades"][1]["entry_time"])
+        self.assertLess(result["trades"][0]["exit_time"], result["trades"][1]["exit_time"])
+
     def test_crypto_live_auth_and_paper_distinction(self):
         script = (ROOT / "crypto-tab.js").read_text(encoding="utf-8")
         server = (ROOT / "backend/server.py").read_text(encoding="utf-8")

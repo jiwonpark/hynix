@@ -49,6 +49,7 @@ from .lighter_strategy import (
     check_ma_diff_hook,
     evaluate_ou_signals,
     evaluate_grid_signals,
+    evaluate_adaptive_tranche_signals,
     evaluate_ma_acceleration_signals,
     evaluate_golden_death_cross_signals,
 )
@@ -1744,12 +1745,14 @@ def _run_crypto_backtest_sync(
     evaluator_macro_alignment = (macro_aligned_list if (ou_macro_ema_span, ou_macro_slope_bars) == (60, 12)
                                  else macro_trend_aligned_series(bars_values))
 
-    if strategy_mode in {"ou_quant", "grid", "custom"}:
+    if strategy_mode in {"adaptive_tranche", "ou_quant", "grid", "custom"}:
         ou_thetas = []
         ou_halflives = []
         is_ou = strategy_mode == "ou_quant"
+        is_adaptive = strategy_mode == "adaptive_tranche"
         for index, bar in enumerate(bars):
-            if index < window:
+            required_index = 59 if (is_adaptive and use_ma_stack) else window
+            if index < required_index:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
             if is_ou:
@@ -1771,6 +1774,28 @@ def _run_crypto_backtest_sync(
                 ou_halflives.append(evaluation["half_life_bars"])
                 latest_evaluation = evaluation
                 latest_conditions = evaluation.get("condition_pass", {})
+            elif is_adaptive:
+                latest_position = active_positions[-1] if active_positions else None
+                entry_signal, candidate_side, exit_signal, evaluation = evaluate_adaptive_tranche_signals(
+                    prefix,
+                    macro_alignment=evaluator_macro_alignment[index],
+                    entry_z=entry_z, exit_z=exit_z,
+                    use_ma_stretch=use_ma_stretch,
+                    use_peak=use_peak, use_base_spacing=use_base_spacing,
+                    use_ma_stack=use_ma_stack, use_ma_stack_1h=use_ma_stack_1h,
+                    use_convergence=use_convergence,
+                    use_dwell=use_dwell, use_bottoming=use_bottoming,
+                    base_spacing_pct=base_spacing_pct,
+                    min_dwell_bars=min_dwell_bars,
+                    evaluation_time=int(bar["time"]),
+                    position_side=int(latest_position["side"]) if latest_position else 0,
+                    entry_price=float(latest_position["entry"]) if latest_position else 0.0,
+                    held_bars=index - int(latest_position["entry_index"]) if latest_position else 0,
+                    spacing_side=last_entry_side,
+                    spacing_price=last_entry_value,
+                )
+                latest_evaluation = evaluation
+                latest_conditions = evaluation.get("condition_pass", {})
             else:
                 entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
                     prefix,
@@ -1786,7 +1811,7 @@ def _run_crypto_backtest_sync(
             zscore = evaluation.get("signal_z", evaluation["z"])
             reason = "convergence" if not is_ou or abs(evaluation["z"]) <= exit_z else "structural_stop"
 
-            if not is_ou:
+            if not is_ou and not is_adaptive:
                 ma7 = sum(prefix[-8:-1]) / 7
                 mean = evaluation["signal_mean"]
                 stack_pass = ((zscore > 0 and signal_price > ma7 > mean)
@@ -1832,7 +1857,8 @@ def _run_crypto_backtest_sync(
                 last_entry_value, last_entry_side = signal_price, candidate_side
 
             if active_positions and exit_signal:
-                for open_pos in active_positions:
+                positions_to_close = [active_positions[-1]] if is_adaptive else active_positions
+                for open_pos in positions_to_close:
                     mult = open_pos.get("multiplier", 1.0)
                     raw_pnl_pct = open_pos["side"] * (signal_price / open_pos["entry"] - 1) * 100
                     pnl_pct = raw_pnl_pct * mult
@@ -1844,7 +1870,10 @@ def _run_crypto_backtest_sync(
                         "multiplier": round(mult, 2),
                         "reason": reason,
                     })
-                active_positions = []
+                if is_adaptive:
+                    active_positions.pop()
+                else:
+                    active_positions = []
             elif entry_signal:
                 campaign_side = active_positions[0]["side"] if active_positions else None
                 if campaign_side is None or campaign_side == candidate_side:
@@ -1856,7 +1885,8 @@ def _run_crypto_backtest_sync(
                     })
             previous_zscore = zscore
 
-        mode_metrics = {"signal_engine": "single_leg_ou" if is_ou else "single_leg_grid"}
+        mode_metrics = {"signal_engine": ("single_leg_ou" if is_ou else
+                                           "tab2_adaptive_tranche" if is_adaptive else "single_leg_grid")}
         if ou_thetas:
             mode_metrics.update({
                 "avg_theta": round(sum(ou_thetas) / len(ou_thetas), 4),

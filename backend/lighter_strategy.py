@@ -293,7 +293,7 @@ def evaluate_grid_signals(
     held_bars: int = 0,
     macro_alignment: Optional[Tuple[bool, bool]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
-    """Grid signals with full user-configurable condition switches."""
+    """Legacy Grid signals retained for Tab 4 and existing saved bots."""
     if len(ratios) < 25:
         raise ValueError("Grid evaluation requires at least 25 completed ratios")
     sample = ratios[-25:-1]
@@ -317,11 +317,88 @@ def evaluate_grid_signals(
         spacing_pass = (not use_base_spacing
                         or (candidate_side < 0 and current_price >= entry_price + step_dist)
                         or (candidate_side > 0 and current_price <= entry_price - step_dist))
-
     peak_pass = (not use_peak or prev_zscore is None or abs(zscore) <= abs(prev_zscore))
     ma7 = sum(ratios[-8:-1]) / 7 if len(ratios) >= 8 else mean
     stack_pass = ((zscore > 0 and current_price > ma7 > mean)
                   or (zscore < 0 and current_price < ma7 < mean))
+    macro_aligned = (macro_alignment[0 if candidate_side > 0 else 1]
+                     if macro_alignment is not None else _macro_trend_aligned(ratios, candidate_side))
+    entry_signal = bool(entry_z_pass and spacing_pass and peak_pass
+                        and (not use_ma_stack or stack_pass)
+                        and (not use_ma_stack_1h or macro_aligned))
+
+    convergence_pass = abs(zscore) <= exit_z if use_convergence else True
+    dwell_pass = not use_dwell or held_bars >= max(0, min(100, min_dwell_bars))
+    bottoming_pass = (not use_bottoming or prev_zscore is None or abs(zscore) >= abs(prev_zscore))
+    exit_signal = bool(convergence_pass and dwell_pass and bottoming_pass) if position_side else bool(convergence_pass)
+    condition_pass = {
+        "entry_z": entry_z_pass, "entry_spacing": spacing_pass,
+        "entry_rollover": peak_pass, "entry_ma_stack": stack_pass,
+        "entry_ma_stack_1h": macro_aligned,
+        "exit_convergence": convergence_pass if position_side else abs(zscore) <= exit_z,
+        "exit_dwell": dwell_pass if position_side else True,
+        "exit_bottoming": bottoming_pass if position_side else True,
+    }
+    return entry_signal, candidate_side, exit_signal, {
+        "time": evaluation_time, "ratio": round(current_price, 4),
+        "mean": round(mean, 4), "z": round(zscore, 3),
+        "signal_z": zscore, "signal_mean": mean, "strategy": "grid",
+        "condition_pass": condition_pass,
+    }
+
+
+def evaluate_adaptive_tranche_signals(
+    ratios: List[float], *, entry_z: float, exit_z: float,
+    use_ma_stretch: bool = True, use_base_spacing: bool = True, use_peak: bool = True,
+    use_ma_stack: bool = False, use_ma_stack_1h: bool = True,
+    use_convergence: bool = True, use_dwell: bool = True,
+    use_bottoming: bool = False, base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
+    evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
+    held_bars: int = 0,
+    macro_alignment: Optional[Tuple[bool, bool]] = None,
+    spacing_side: Optional[int] = None,
+    spacing_price: Optional[float] = None,
+) -> Tuple[bool, int, bool, Dict[str, Any]]:
+    """Tab 2-style adaptive tranche signals for a single crypto price.
+
+    Entry conditions are evaluated on every completed bar independently from
+    simulated inventory. ``spacing_*`` tracks the preceding same-side signal;
+    ``position_*`` is reserved for exit evaluation and live campaign safety.
+    """
+    if len(ratios) < 25:
+        raise ValueError("Grid evaluation requires at least 25 completed ratios")
+    sample = ratios[-25:-1]
+    mean = sum(sample) / len(sample)
+    variance = sum((value - mean) ** 2 for value in sample) / len(sample)
+    zscore = (ratios[-1] - mean) / math.sqrt(variance) if variance > 1e-12 else 0.0
+    candidate_side = -1 if zscore > 0 else 1
+    current_price = ratios[-1]
+
+    prev_zscore = None
+    if len(ratios) >= 26:
+        prev_sample = ratios[-26:-2]
+        prev_mean = sum(prev_sample) / len(prev_sample)
+        prev_var = sum((v - prev_mean) ** 2 for v in prev_sample) / len(prev_sample)
+        prev_zscore = (ratios[-2] - prev_mean) / math.sqrt(prev_var) if prev_var > 1e-12 else 0.0
+
+    entry_z_pass = abs(zscore) >= entry_z if use_ma_stretch else True
+    step_dist = current_price * max(0.0, min(10.0, base_spacing_pct)) / 100.0
+    spacing_pass = True
+    spacing_ref_side = position_side if spacing_side is None else int(spacing_side or 0)
+    spacing_ref_price = entry_price if spacing_price is None else float(spacing_price or 0.0)
+    if spacing_ref_side != 0 and spacing_ref_price > 0:
+        spacing_pass = (not use_base_spacing
+                        or candidate_side != spacing_ref_side
+                        or (candidate_side < 0 and current_price >= spacing_ref_price + step_dist)
+                        or (candidate_side > 0 and current_price <= spacing_ref_price - step_dist))
+
+    peak_pass = (not use_peak or prev_zscore is None or abs(zscore) <= abs(prev_zscore))
+    ma7 = sum(ratios[-7:]) / 7 if len(ratios) >= 7 else mean
+    ma24 = sum(ratios[-24:]) / 24
+    ma60 = sum(ratios[-60:]) / 60 if len(ratios) >= 60 else None
+    bearish_stack = bool(ma60 is not None and current_price < ma7 < ma24 < ma60)
+    bullish_stack = bool(ma60 is not None and current_price > ma7 > ma24 > ma60)
+    stack_pass = bullish_stack if candidate_side < 0 else bearish_stack
     ma_stack_pass = not use_ma_stack or stack_pass
     macro_aligned = (macro_alignment[0 if candidate_side > 0 else 1] if macro_alignment is not None else _macro_trend_aligned(ratios, candidate_side))
     ma_stack_1h_pass = not use_ma_stack_1h or macro_aligned
@@ -350,7 +427,10 @@ def evaluate_grid_signals(
     return entry_signal, candidate_side, exit_signal, {
         "time": evaluation_time, "ratio": round(ratios[-1], 4),
         "mean": round(mean, 4), "z": round(zscore, 3),
-        "signal_z": zscore, "signal_mean": mean, "strategy": "grid",
+        "signal_z": zscore, "signal_mean": mean, "strategy": "adaptive_tranche",
+        "ma7": round(ma7, 4), "ma24": round(ma24, 4),
+        "ma60": round(ma60, 4) if ma60 is not None else None,
+        "bearish_stack": bearish_stack, "bullish_stack": bullish_stack,
         "condition_pass": condition_pass,
     }
 
@@ -955,7 +1035,7 @@ def evaluate_golden_death_cross_signals(
     return entry_signal, candidate_side, exit_signal, evaluation
 
 
-LIVE_STRATEGIES = {"grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross"}
+LIVE_STRATEGIES = {"adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross"}
 
 
 def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
@@ -970,6 +1050,8 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         fast = max(2, int(params.get("fast_ma_period", 9)))
         slow = max(fast + 1, int(params.get("slow_ma_period", 21)))
         return slow + 1
+    if strategy_mode == "adaptive_tranche" and bool(params.get("use_ma_stack", False)):
+        return 60
     return 25
 
 
@@ -986,7 +1068,27 @@ def evaluate_strategy_signal(
     """Dispatch evaluation to any live-deployable quantitative strategy regime."""
     if strategy_mode not in LIVE_STRATEGIES:
         raise ValueError(f"Unsupported strategy mode: {strategy_mode}")
-    if strategy_mode == "ou_quant":
+    if strategy_mode == "adaptive_tranche":
+        return evaluate_adaptive_tranche_signals(
+            prices,
+            entry_z=float(config.get("entry_z", 1.5)),
+            exit_z=float(config.get("exit_z", 0.25)),
+            use_ma_stretch=bool(config.get("use_ma_stretch", True)),
+            use_base_spacing=bool(config.get("use_base_spacing", True)),
+            use_peak=bool(config.get("use_peak", True)),
+            use_ma_stack=bool(config.get("use_ma_stack", False)),
+            use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
+            use_convergence=bool(config.get("use_convergence", True)),
+            use_dwell=bool(config.get("use_dwell", True)),
+            use_bottoming=bool(config.get("use_bottoming", False)),
+            base_spacing_pct=float(config.get("base_spacing_pct", 0.2)),
+            min_dwell_bars=int(config.get("min_dwell_bars", 4)),
+            evaluation_time=evaluation_time,
+            position_side=position_side,
+            entry_price=entry_price,
+            held_bars=held_bars,
+        )
+    elif strategy_mode == "ou_quant":
         entry_signal, candidate_side, exit_signal, details = evaluate_ou_signals(
             prices,
             entry_z=float(config.get("entry_z", 1.4)),
@@ -1131,7 +1233,7 @@ def evaluate_strategy_signal(
     base_spacing_pct = float(config.get("base_spacing_pct", 0.2))
     step_dist = current_price * max(0.0, min(10.0, base_spacing_pct)) / 100.0
     spacing_pass = True
-    if not opposite_stack_only and position_side != 0 and entry_price > 0:
+    if strategy_mode != "adaptive_tranche" and not opposite_stack_only and position_side != 0 and entry_price > 0:
         spacing_pass = (not use_base_spacing
                         or (candidate_side < 0 and current_price >= entry_price + step_dist)
                         or (candidate_side > 0 and current_price <= entry_price - step_dist))

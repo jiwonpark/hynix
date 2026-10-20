@@ -360,13 +360,14 @@ class LighterCryptoBot:
             "fast_ma_period": (2, 100), "slow_ma_period": (3, 200),
             "min_cross_spread_bps": (0.0, 100.0),
             "min_diff_bars": (1, 10),
+            "base_spacing_pct": (0.0, 10.0), "min_dwell_bars": (0, 100),
         }
         for key, (low, high) in bounds.items():
             if key in candidate:
                 value = candidate[key]
                 if not math.isfinite(value) or not low <= value <= high:
                     raise ValueError(f"{key} must be between {low} and {high}")
-        if candidate["strategy_mode"] in {"grid", "custom", "ou_quant"}:
+        if candidate["strategy_mode"] in {"adaptive_tranche", "grid", "custom", "ou_quant"}:
             if candidate["exit_z"] >= candidate["entry_z"]:
                 raise ValueError("Exit Z must be below Entry Z")
         if candidate["strategy_mode"] == "golden_death_cross":

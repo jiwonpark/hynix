@@ -79,9 +79,15 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         await self.bot.configure({"entry_z": 2.0, "max_tranches": 3})
         restored = LighterCryptoBot(self.client, self.path)
         self.assertEqual(restored.state["entry_z"], 2.0)
-        for strat in ["ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "grid"]:
+        for strat in ["adaptive_tranche", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "grid"]:
             await self.bot.configure({"strategy_mode": strat})
             self.assertEqual(self.bot.state["strategy_mode"], strat)
+        configured = await self.bot.configure({
+            "strategy_mode": "adaptive_tranche", "entry_z": 1.8, "exit_z": 0.2,
+            "base_spacing_pct": 0.35, "min_dwell_bars": 6,
+        })
+        self.assertEqual(configured["strategy_params"]["base_spacing_pct"], 0.35)
+        self.assertEqual(configured["strategy_params"]["min_dwell_bars"], 6)
         with self.assertRaisesRegex(ValueError, "Unsupported live strategy"):
             await self.bot.configure({"strategy_mode": "unsupported_unknown"})
 

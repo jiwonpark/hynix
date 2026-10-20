@@ -43,6 +43,11 @@ const nodes = new Map([
 ]);
 context.document.getElementById = (id) => nodes.get(id) || null;
 const tab5 = context.window.lighterCryptoEngine;
+assert.equal(tab5.currentParadigm, 'adaptive_tranche');
+assert.equal(tab5.paradigms.adaptive_tranche.name, 'Adaptive Tranche');
+assert.match(tab5.paradigms.adaptive_tranche.badge, /TAB 2 MODEL/);
+assert.match(tab5.paradigms.adaptive_tranche.entryLabels.rowCondEntryMaStack5m, /MA60/);
+assert.equal(tab5.paradigms.grid.name, 'Legacy Dynamic Grid');
 const maMarkup = tab5.renderParadigmDetail('ma_stack');
 assert.match(maMarkup, /2\. 5m Full MA Stack \(Price &lt; MA7 &lt; MA24 &lt; MA60\)/);
 assert.match(maMarkup, /Opposite 5m Full MA Stack \(Price &gt; MA7 &gt; MA24 &gt; MA60\)/);
