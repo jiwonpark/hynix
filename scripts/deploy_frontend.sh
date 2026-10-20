@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${HYPERION_DEPLOY_HOST:-thejiwon2025}"
+CONNECT_HOST="${HYPERION_DEPLOY_CONNECT_HOST:-}"
 REMOTE_WEB_DIR="${HYPERION_WEB_DIR:-/var/www/skhynix}"
 BASE_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/.VERSION")"
 GIT_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD)"
@@ -37,14 +38,21 @@ for relative_path in "$@"; do
   FILES+=("$STAGE_DIR/$relative_path")
 done
 
+SSH=(ssh)
+SCP=(scp)
+if [[ -n "$CONNECT_HOST" ]]; then
+  SSH+=(-o "Hostname=$CONNECT_HOST")
+  SCP+=(-o "Hostname=$CONNECT_HOST")
+fi
+
 echo "Inspecting production checkout and service..."
-ssh "$REMOTE_HOST" "cd /home/ubuntu/skhynix && git status --short && systemctl is-active skhynix-daemon"
+"${SSH[@]}" "$REMOTE_HOST" "cd /home/ubuntu/skhynix && git status --short && systemctl is-active skhynix-daemon"
 
 echo "Deploying $BUILD_VERSION ($DEPLOYED_AT)..."
-scp "${FILES[@]}" "$REMOTE_HOST:/tmp/"
+"${SCP[@]}" "${FILES[@]}" "$REMOTE_HOST:/tmp/"
 for staged_file in "${FILES[@]}"; do
   filename="$(basename "$staged_file")"
-  ssh "$REMOTE_HOST" "sudo install -o root -g root -m 0644 '/tmp/$filename' '$REMOTE_WEB_DIR/$filename'"
+  "${SSH[@]}" "$REMOTE_HOST" "sudo install -o root -g root -m 0644 '/tmp/$filename' '$REMOTE_WEB_DIR/$filename'"
 done
 
 headers="$(curl -fsSI https://control.jiwonova.com/skhynix/)"
@@ -57,4 +65,3 @@ if [[ -f "$ROOT_DIR/scripts/verify_live_charts.mjs" ]] && command -v node >/dev/
   echo "Running automated headless Chrome verification across all tabs..."
   node --experimental-websocket "$ROOT_DIR/scripts/verify_live_charts.mjs"
 fi
-
