@@ -451,7 +451,8 @@
     if (!chart) return () => {};
     let isFetching = false;
     let isClamping = false;
-    let cooldownTimer = null;
+    let detached = false;
+    let latestRange = null;
     const threshold = options.threshold || 150;
     const futureOffset = Number.isFinite(options.futureOffset) ? options.futureOffset : 8;
 
@@ -475,6 +476,7 @@
 
     const handler = (range) => {
       if (!range || isClamping) return;
+      latestRange = range;
       const totalBars = getCount();
       if (totalBars < 10) return;
       const span = range.to - range.from;
@@ -485,13 +487,17 @@
         if (range.from < threshold || zoomExceeds || range.from < 0) {
           isFetching = true;
           const needed = Math.max(300, Math.ceil(span * 1.5));
-          const p = triggerPrefetch(needed);
-          Promise.resolve(p)
+          Promise.resolve()
+            .then(() => triggerPrefetch(needed))
             .catch(() => {})
-            .finally(() => {
-              if (cooldownTimer) clearTimeout(cooldownTimer);
-              cooldownTimer = setTimeout(() => { isFetching = false; }, 300);
-              if (cooldownTimer && typeof cooldownTimer.unref === "function") cooldownTimer.unref();
+            .then((added) => {
+              isFetching = false;
+              if (detached || !(Number(added) > 0) || !checkHasMore()) return;
+              // setData/applyPrependedRange emits while the request is still marked
+              // busy. Re-check the final viewport after a successful prepend so a
+              // single large zoom-out can pull as many pages as it needs.
+              const current = chart.timeScale().getVisibleLogicalRange?.() || latestRange;
+              if (current) handler(current);
             });
         }
       }
@@ -520,7 +526,7 @@
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
     return () => {
-      if (cooldownTimer) clearTimeout(cooldownTimer);
+      detached = true;
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
     };
   };

@@ -8,12 +8,15 @@ const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 // Test 1: Ensure fixLeftEdge is false on both spreadChart and positionChart
 assert.ok(!html.includes('fixLeftEdge: true'), 'fixLeftEdge must not be true to enable smooth left-scrolling into past history');
 
-// Test 2: Ensure spreadChart threshold for prepending older bars is from < 25
-assert.ok(html.includes('if (from < 25) {'), 'spreadChart must trigger prepend when within 25 bars of the left edge');
+// Test 2: The research chart must use the shared zoom-aware loader.
+assert.ok(html.includes('window.backtestPrefetchDetach = StrategyExecutionChartController.attachZoomAwarePrefetch(window.spreadChart'),
+  'research chart must attach the shared zoom-aware history loader');
 
-// Test 3: Ensure tradingEngine threshold for prepending is from < 25 and checks hasMore/loadingOlder
-assert.ok(html.includes('range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore'),
-  'tradingEngine must trigger fetchShortTermParity(true) when from < 25');
+// Test 3: Tab 2 must use the same loader and pass its requested zoom span to the API.
+assert.ok(html.includes('this.shortTermPrefetchDetach = StrategyExecutionChartController.attachZoomAwarePrefetch(this.shortTermChart'),
+  'tradingEngine must attach the shared zoom-aware history loader');
+assert.ok(html.includes('onPrefetchNeeded: (needed) => this.fetchShortTermParity(true, needed)'),
+  'tradingEngine must request enough bars for the current zoom span');
 
 // Test 4: Verify renderShortTermChart defines activeTime and runs without throwing ReferenceError
 const renderStart = html.indexOf('      renderShortTermChart(data) {');

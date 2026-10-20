@@ -7005,29 +7005,13 @@
             }, 250);
           }
 
-          if (loadingOlder) return;
-          if (olderHistoryExhausted) {
-            if (from < 0) {
-              const span = Math.max(10, to - from);
-              window.spreadChart.timeScale().setVisibleLogicalRange({ from: 0, to: span });
-              return;
-            }
-          }
-          if (from > totalBars + 5) {
-            const span = Math.max(10, to - from);
-            const maxRight = totalBars + 8;
-            window.spreadChart.timeScale().setVisibleLogicalRange({ from: maxRight - span, to: maxRight });
-            return;
-          }
-          const span = to - from;
-          const zoomExceeds = totalBars > 0 && (span / totalBars) > 0.40;
-          if (from < 25) {
-            window.pendingLogicalRangeBeforePrepend = { from, to };
-            prependOlderBars();
-          } else if ((from < 150 || zoomExceeds || from < 0) && !olderHistoryExhausted) {
-            window.pendingLogicalRangeBeforePrepend = { from, to };
-            prependOlderBars();
-          }
+        });
+
+        window.backtestPrefetchDetach?.();
+        window.backtestPrefetchDetach = StrategyExecutionChartController.attachZoomAwarePrefetch(window.spreadChart, {
+          getTotalBars: () => cachedRows.length,
+          onPrefetchNeeded: () => prependOlderBars(),
+          isExhausted: () => olderHistoryExhausted,
         });
 
         if (window.assetPriceChart) {
@@ -8457,8 +8441,8 @@
       const assetKey = $("assetStrategy")?.value || "skhynix_arb";
       const assetConfig = ASSET_STRATEGIES[assetKey] || ASSET_STRATEGIES.skhynix_arb;
 
-      if (loadingOlder || olderHistoryExhausted || !cachedAdr.length) return;
-      if (assetConfig.symbolB && !cachedKorean.length) return;
+      if (loadingOlder || olderHistoryExhausted || !cachedAdr.length) return 0;
+      if (assetConfig.symbolB && !cachedKorean.length) return 0;
 
       loadingOlder = true;
       const requestVersion = refreshVersion;
@@ -8525,8 +8509,10 @@
         }
         window.pendingLogicalRangeBeforePrepend = null;
         $("status").textContent = added ? `Prepended ${added} older bars` : "No older aligned bars returned";
+        return added;
       } catch (error) {
         if (requestVersion === refreshVersion) $("status").textContent = error.message;
+        return 0;
       } finally {
         if (requestVersion === refreshVersion) loadingOlder = false;
       }
@@ -13512,9 +13498,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 }, 300);
               }
             }
-            if (range.from < 25 && !this.shortTermRendering && !this.shortTermHistory?.loadingOlder && this.shortTermHistory?.hasMore) {
-              this.fetchShortTermParity(true);
-            }
+          });
+          this.shortTermPrefetchDetach?.();
+          this.shortTermPrefetchDetach = StrategyExecutionChartController.attachZoomAwarePrefetch(this.shortTermChart, {
+            getTotalBars: () => this.shortTermHistory?.bars?.length || 0,
+            onPrefetchNeeded: (needed) => this.fetchShortTermParity(true, needed),
+            isExhausted: () => this.shortTermHistory ? !this.shortTermHistory.hasMore : false,
           });
           this.maVisibility = { ma7: true, ma24: true, ma60: true };
 
@@ -13916,17 +13905,18 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.fetchShortTermParity();
       },
 
-      async fetchShortTermParity(older = false) {
+      async fetchShortTermParity(older = false, needed = 120) {
         const interval = this.state.shortTermInterval || "5m";
         if (!this.shortTermHistory || this.shortTermHistory.interval !== interval) {
           this.shortTermHistory = { interval, bars: [], markers: [], hasMore: true, loading: false, loadingOlder: false };
         }
         const history = this.shortTermHistory;
         const flag = older ? "loadingOlder" : "loading";
-        if (history[flag] || (older && (!history.bars.length || !history.hasMore || Date.now() < (history.retryAfter || 0)))) return;
+        if (history[flag] || (older && (!history.bars.length || !history.hasMore || Date.now() < (history.retryAfter || 0)))) return 0;
         history[flag] = true;
         const endTime = older ? history.bars[0].time * 1000 - 1 : null;
-        const query = `interval=${interval}&limit=120${older ? `&end_time=${endTime}` : ""}`;
+        const requestLimit = older ? Math.max(120, Math.min(1500, Math.ceil(Number(needed) || 120))) : 120;
+        const query = `interval=${interval}&limit=${requestLimit}${older ? `&end_time=${endTime}` : ""}`;
         const origin = window.location.origin;
         const proxyPrefix = (window.location && window.location.pathname && window.location.pathname.startsWith("/skhynix")) ? "/skhynix" : "";
         const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
@@ -13936,13 +13926,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (older && $("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Loading older data…";
         try {
           for (const url of endpoints) {
-            if (this.shortTermHistory !== history) return;
+            if (this.shortTermHistory !== history) return 0;
             try {
               const res = await fetch(url, { signal: AbortSignal.timeout(35000) });
               const contentType = res.headers && typeof res.headers.get === "function" ? (res.headers.get("content-type") || "") : "application/json";
               if (!res.ok || (contentType && !contentType.includes("application/json") && !contentType.includes("text/json"))) continue;
               const data = await res.json();
-              if (this.shortTermHistory !== history) return;
+              if (this.shortTermHistory !== history) return 0;
               if (!data.success || !Array.isArray(data.bars)) continue;
               // Capture the viewport at response time so scrolling during the request is preserved.
               const previous = history.bars;
@@ -13979,7 +13969,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               } finally { this.shortTermRendering = false; }
               this.scheduleDynamicBacktest();
               if (older && !history.hasMore && $("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Start of available history";
-              return;
+              return older ? added : page.length;
             } catch (e) { console.warn("Parity page request failed", e); }
           }
           if (this.shortTermHistory === history) {
@@ -13987,6 +13977,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             if ($("lblShortTermChartSync")) $("lblShortTermChartSync").textContent = "Data unavailable — scroll to retry";
           }
         } finally { history[flag] = false; }
+        return 0;
       },
 
       scheduleDynamicBacktest(force = false) {

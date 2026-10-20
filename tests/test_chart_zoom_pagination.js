@@ -1,6 +1,10 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const Controller = require('../strategy-execution-chart.js');
 const TerminalCommon = require('../terminal-common.js');
+
+async function main() {
 
 // 1. Test configureStandardTimeScale
 let appliedOptions = null;
@@ -53,10 +57,10 @@ assert.ok(typeof detach === 'function', 'must return detach function');
 
 // Trigger callback with wide zoom span (span 100 on 200 bars = 50% > 40%)
 mockTimeScale._sub({ from: 20, to: 120 });
-assert.equal(prefetchTriggeredCount, 1, 'must trigger prefetch when zoom span > 40% of total bars');
-
 // Trigger again while loading - should NOT duplicate
 mockTimeScale._sub({ from: 10, to: 110 });
+await Promise.resolve();
+assert.equal(prefetchTriggeredCount, 1, 'must trigger prefetch when zoom span > 40% of total bars');
 assert.equal(prefetchTriggeredCount, 1, 'must not trigger concurrent prefetch while prior fetch is in flight');
 
 // 4. Test boundary clamping
@@ -89,4 +93,45 @@ const retrieved = TerminalCommon.getCachedCandles('test_key');
 assert.equal(retrieved.length, 2);
 assert.equal(retrieved[1].value, 55);
 detach();
+
+// 6. A single zoom-out must keep fetching until the enlarged viewport is backed
+// by enough candles, even though range-change events fire during the first fetch.
+let chainedBars = 200;
+let chainedFetches = 0;
+mockTimeScale._range = { from: 20, to: 120 };
+const detachChained = Controller.attachZoomAwarePrefetch(mockChart, {
+  getTotalBars: () => chainedBars,
+  onPrefetchNeeded: async () => {
+    chainedFetches += 1;
+    chainedBars += 100;
+    mockTimeScale._range = {
+      from: mockTimeScale._range.from + 100,
+      to: mockTimeScale._range.to + 100,
+    };
+    // Mirrors the callback emitted by applyPrependedRange while a request is active.
+    mockTimeScale._sub(mockTimeScale._range);
+    return 100;
+  },
+  hasMore: () => chainedFetches < 3,
+});
+mockTimeScale._sub(mockTimeScale._range);
+await new Promise((resolve) => setTimeout(resolve, 10));
+assert.equal(chainedFetches, 2, 'one zoom-out must chain older-page loads until the viewport is covered');
+detachChained();
+
+// 7. Every trading chart surface must inherit the shared zoom-aware loader.
+const root = path.join(__dirname, '..');
+for (const file of ['strategy-lab.js', 'lighter-tab.js', 'crypto-tab.js', 'lighter-crypto-tab.js']) {
+  assert.match(fs.readFileSync(path.join(root, file), 'utf8'), /attachZoomAwarePrefetch\(/,
+    `${file} must attach the shared zoom-aware history loader`);
+}
+const indexSource = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+assert.ok((indexSource.match(/attachZoomAwarePrefetch\(/g) || []).length >= 2,
+  'index charts (research and live/paper) must both attach the shared zoom-aware history loader');
 console.log('All chart zoom pagination, edge clamping, and candle caching tests passed!');
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

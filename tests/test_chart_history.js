@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync(require('node:path').join(__dirname, '../index.html'), 'utf8');
-const start = html.indexOf('      async fetchShortTermParity(older = false)');
+const start = html.indexOf('      async fetchShortTermParity(older = false, needed = 120)');
 const end = html.indexOf('      renderShortTermChart(data)', start);
 const method = html.slice(start, end);
 const label = {};
@@ -31,10 +31,11 @@ const response = (times, more = true) => ({ok: true, json: async () => ({success
   context.fetch = async url => {
     calls++;
     assert.ok(url.includes('end_time=299999'));
+    assert.ok(url.includes('limit=900'), 'zoom-aware requests must ask for enough older bars');
     return new Promise(resolve => {release = resolve;});
   };
-  const pending = engine.fetchShortTermParity(true);
-  await engine.fetchShortTermParity(true);
+  const pending = engine.fetchShortTermParity(true, 900);
+  await engine.fetchShortTermParity(true, 900);
   assert.equal(calls, 1, 'duplicate scrolling requests must be coalesced');
   range = {from: -1, to: 0}; // The user continues dragging while the request is pending.
   release(response([60, 120, 240]));
