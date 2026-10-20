@@ -533,6 +533,29 @@
           valCondExitBottoming: "Replay: require momentum inflection",
         },
         defaultParams: { fast_ma_period: 9, slow_ma_period: 21, min_cross_spread_bps: 0.0 }
+      },
+      macd_reversal: {
+        id: "macd_reversal", name: "MACD Reversal", icon: "〽️",
+        badge: "MACD · NEGATIVE TROUGH ENTRY · POSITIVE PEAK EXIT",
+        title: "➕ MACD Negative Histogram Reversal Entry",
+        desc: "Long entry when enabled conditions agree: Signal < 0, Histogram < 0, and the completed-bar histogram reverses upward from a local trough.",
+        tpTitle: "🎯 Opposite MACD Reversal Exit",
+        tpDesc: "Exit long when enabled opposite conditions agree: Signal > 0, Histogram > 0, and the completed-bar histogram reverses downward from a local peak.",
+        entryLabels: {
+          rowCondEntryMaStretch: "MACD entry controls are shown below", rowCondEntryBase: "MACD entry controls are shown below",
+          rowCondEntryPeak: "MACD entry controls are shown below", rowCondEntryMaStack5m: "MACD entry controls are shown below",
+          rowCondEntryMaStack1h: "MACD entry controls are shown below", rowCondEntryCapacity: "Execution safeguard",
+          rowCondEntryLeverage: "Execution safeguard", rowCondEntryMargin: "Execution safeguard",
+          rowCondEntryEngine: "Execution safeguard", rowCondEntryGuard: "Execution safeguard",
+        },
+        exitLabels: {
+          rowCondExitConvergence: "MACD exit controls are shown below", rowCondExitDwell: "MACD exit controls are shown below",
+          rowCondExitBottoming: "MACD exit controls are shown below", rowCondExitNetPnl: "Execution safeguard",
+          rowCondExitActive: "Execution safeguard", rowCondExitMaStack5m: "Execution safeguard",
+          rowCondExitMaStack1h: "Execution safeguard", rowCondExitPosition: "Execution safeguard",
+        },
+        researchLabels: {},
+        defaultParams: { macd_fast_period: 12, macd_slow_period: 26, macd_signal_period: 9 }
       }
     },
 
@@ -599,7 +622,7 @@
       const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
       if (replayAssetLegend) {
         replayAssetLegend.innerHTML = `
-          <span style="font-weight:800;color:#0f172a;">MACD (12, 26, 9):</span>
+          <span id="lighterCrypto_macdLegendPeriods" style="font-weight:800;color:#0f172a;">MACD (12, 26, 9):</span>
           <span style="color:#2563eb;font-weight:700;">● MACD</span>
           <span style="color:#f59e0b;font-weight:700;">● Signal</span>
           <span style="color:#16a34a;font-weight:700;">■ Histogram</span>
@@ -1309,6 +1332,7 @@
             <button id="lighterCrypto_tabParadigm_trend_pullback" class="lighterParadigmBtn" type="button" data-mode="trend_pullback" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🌊 Macro Trend Reversion</button>
             <button id="lighterCrypto_tabParadigm_ma_acceleration" class="lighterParadigmBtn" type="button" data-mode="ma_acceleration" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🚀 MA Acceleration</button>
             <button id="lighterCrypto_tabParadigm_golden_death_cross" class="lighterParadigmBtn" type="button" data-mode="golden_death_cross" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚔️ Golden & Death Cross</button>
+            <button id="lighterCrypto_tabParadigm_macd_reversal" class="lighterParadigmBtn" type="button" data-mode="macd_reversal" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">〽️ MACD Reversal</button>
             <button id="lighterCrypto_tabParadigm_custom" class="lighterParadigmBtn" type="button" data-mode="custom" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🛠️ Rule Composer</button>
             <button id="lighterCrypto_tabParadigm_grid" class="lighterParadigmBtn" type="button" data-mode="grid" style="border:1.5px solid #cbd5e1;background:#fff;color:#64748b;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;">Legacy Grid</button>
           </div>
@@ -1322,7 +1346,7 @@
           </div>
         `;
         criteriaGrid.parentNode.insertBefore(nav, criteriaGrid);
-        ["adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "ma_acceleration", "golden_death_cross", "custom"].forEach((mode) => {
+        ["adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "ma_acceleration", "golden_death_cross", "macd_reversal", "custom"].forEach((mode) => {
           const btn = $(`lighterCrypto_tabParadigm_${mode}`);
           if (btn) btn.addEventListener("click", () => {
             this._userSelectedParadigm = true;
@@ -1429,7 +1453,7 @@
         if (detailSec) {
           detailSec.style.display = "block";
           detailSec.innerHTML = this.renderParadigmDetail(mode);
-          if (!["ou_quant", "ma_stack"].includes(mode)) detailSec.insertAdjacentHTML("beforeend",
+          if (!["ou_quant", "ma_stack", "macd_reversal"].includes(mode)) detailSec.insertAdjacentHTML("beforeend",
             '<div id="lighterCrypto_replayConditions" style="display:grid;gap:6px;margin-top:14px;"></div>');
           this.bindParadigmDetailEvents(mode);
         }
@@ -1703,6 +1727,37 @@
           </div>
         `;
       }
+      if (mode === "macd_reversal") {
+        const live = this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {};
+        const checked = (key) => live[key] !== false ? "checked" : "";
+        const row = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
+        const toggle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
+            <div><strong style="font-size:14px;color:#0f172a;text-transform:uppercase;">〽️ MACD Histogram Reversal</strong>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed bars only. “Reversing” means a confirmed local histogram trough for entry and local peak for exit.</p></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;font-weight:700;color:#475569;">
+              <label>Fast <input id="lighterCrypto_macdFastPeriod" type="number" min="2" max="100" step="1" value="${Number(live.macd_fast_period ?? 12)}" style="width:52px"></label>
+              <label>Slow <input id="lighterCrypto_macdSlowPeriod" type="number" min="3" max="200" step="1" value="${Number(live.macd_slow_period ?? 26)}" style="width:52px"></label>
+              <label>Signal <input id="lighterCrypto_macdSignalPeriod" type="number" min="2" max="100" step="1" value="${Number(live.macd_signal_period ?? 9)}" style="width:52px"></label>
+              <button id="lighterCrypto_btnMacdReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun MACD</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
+            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Entry conditions · all enabled checks must pass</strong>
+              <div style="${row}"><input id="lighterCrypto_macdUseEntrySignalNegative" type="checkbox" style="${toggle}" ${checked("use_macd_signal_negative")}><span>Signal line &lt; 0</span><span id="lighterCrypto_macdStatusEntrySignal" class="condBadge neutral">WAITING</span></div>
+              <div style="${row}"><input id="lighterCrypto_macdUseEntryHistogramNegative" type="checkbox" style="${toggle}" ${checked("use_macd_hist_negative")}><span>Histogram &lt; 0</span><span id="lighterCrypto_macdStatusEntryHistogram" class="condBadge neutral">WAITING</span></div>
+              <div style="${row}"><input id="lighterCrypto_macdUseEntryReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal")}><span>Histogram reverses upward from local trough</span><span id="lighterCrypto_macdStatusEntryReversal" class="condBadge neutral">WAITING</span></div>
+            </div>
+            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Exit conditions · exact opposite</strong>
+              <div style="${row}"><input id="lighterCrypto_macdUseExitSignalPositive" type="checkbox" style="${toggle}" ${checked("use_macd_signal_positive")}><span>Signal line &gt; 0</span><span id="lighterCrypto_macdStatusExitSignal" class="condBadge neutral">N/A</span></div>
+              <div style="${row}"><input id="lighterCrypto_macdUseExitHistogramPositive" type="checkbox" style="${toggle}" ${checked("use_macd_hist_positive")}><span>Histogram &gt; 0</span><span id="lighterCrypto_macdStatusExitHistogram" class="condBadge neutral">N/A</span></div>
+              <div style="${row}"><input id="lighterCrypto_macdUseExitReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal_exit")}><span>Histogram reverses downward from local peak</span><span id="lighterCrypto_macdStatusExitReversal" class="condBadge neutral">N/A</span></div>
+            </div>
+          </div>
+          <small id="lighterCrypto_macdStatusSource" style="display:block;margin-top:10px;color:#64748b;">PAPER · Awaiting completed-candle replay</small>
+        `;
+      }
       return `
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
           <div>
@@ -1841,6 +1896,8 @@
         $("lighterCrypto_btnMaAccelReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "golden_death_cross") {
         $("lighterCrypto_btnCrossReplay")?.addEventListener("click", () => this.runBacktest());
+      } else if (mode === "macd_reversal") {
+        $("lighterCrypto_btnMacdReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "custom") {
         $("lighterCrypto_btnCustomSave")?.addEventListener("click", () => {
           const ez = $("lighterCrypto_inpCustomEntryZ")?.value || "1.5";
@@ -2110,6 +2167,16 @@
         payload.use_death_cross = lid("chkCondEntryBase")?.checked !== false;
         payload.use_cross_spread = lid("chkCondEntryPeak")?.checked !== false;
         payload.use_cross_exit = lid("chkCondExitConvergence")?.checked !== false;
+      } else if (mode === "macd_reversal") {
+        payload.macd_fast_period = numeric("lighterCrypto_macdFastPeriod", Number(this.botState?.macd_fast_period ?? 12));
+        payload.macd_slow_period = numeric("lighterCrypto_macdSlowPeriod", Number(this.botState?.macd_slow_period ?? 26));
+        payload.macd_signal_period = numeric("lighterCrypto_macdSignalPeriod", Number(this.botState?.macd_signal_period ?? 9));
+        payload.use_macd_signal_negative = $("lighterCrypto_macdUseEntrySignalNegative")?.checked !== false;
+        payload.use_macd_hist_negative = $("lighterCrypto_macdUseEntryHistogramNegative")?.checked !== false;
+        payload.use_macd_hist_reversal = $("lighterCrypto_macdUseEntryReversal")?.checked !== false;
+        payload.use_macd_signal_positive = $("lighterCrypto_macdUseExitSignalPositive")?.checked !== false;
+        payload.use_macd_hist_positive = $("lighterCrypto_macdUseExitHistogramPositive")?.checked !== false;
+        payload.use_macd_hist_reversal_exit = $("lighterCrypto_macdUseExitReversal")?.checked !== false;
       } else if (mode === "custom") {
         payload.entry_z = numeric("lighterCrypto_inpCustomEntryZ", Number(this.botState?.entry_z ?? 1.5));
         payload.exit_z = numeric("lighterCrypto_inpCustomExitZ", Number(this.botState?.exit_z ?? 0.25));
@@ -2415,7 +2482,12 @@
         this.maSeries[w]?.setData(data);
       });
 
-      const macd = TerminalCommon.macd(bars, 12, 26, 9);
+      const macdFast = this.currentParadigm === "macd_reversal" ? (Number($("lighterCrypto_macdFastPeriod")?.value) || 12) : 12;
+      const macdSlow = this.currentParadigm === "macd_reversal" ? (Number($("lighterCrypto_macdSlowPeriod")?.value) || 26) : 26;
+      const macdSignal = this.currentParadigm === "macd_reversal" ? (Number($("lighterCrypto_macdSignalPeriod")?.value) || 9) : 9;
+      const macd = TerminalCommon.macd(bars, macdFast, macdSlow, macdSignal);
+      const macdLegendPeriods = $("lighterCrypto_macdLegendPeriods");
+      if (macdLegendPeriods) macdLegendPeriods.textContent = `MACD (${macdFast}, ${macdSlow}, ${macdSignal}):`;
       this._currentMacd = macd;
 
       if (this.assetSeries) {
@@ -2896,6 +2968,15 @@
         fast_ma_period: numeric("lighterCrypto_inpCrossFastPeriod", 9),
         slow_ma_period: numeric("lighterCrypto_inpCrossSlowPeriod", 21),
         min_cross_spread_bps: numeric("lighterCrypto_inpCrossMinSpreadBps", 0.0),
+        macd_fast_period: numeric("lighterCrypto_macdFastPeriod", 12),
+        macd_slow_period: numeric("lighterCrypto_macdSlowPeriod", 26),
+        macd_signal_period: numeric("lighterCrypto_macdSignalPeriod", 9),
+        use_macd_signal_negative: $("lighterCrypto_macdUseEntrySignalNegative")?.checked !== false,
+        use_macd_hist_negative: $("lighterCrypto_macdUseEntryHistogramNegative")?.checked !== false,
+        use_macd_hist_reversal: $("lighterCrypto_macdUseEntryReversal")?.checked !== false,
+        use_macd_signal_positive: $("lighterCrypto_macdUseExitSignalPositive")?.checked !== false,
+        use_macd_hist_positive: $("lighterCrypto_macdUseExitHistogramPositive")?.checked !== false,
+        use_macd_hist_reversal_exit: $("lighterCrypto_macdUseExitReversal")?.checked !== false,
         use_golden_cross: lid("chkCondEntryMaStretch")?.checked !== false,
         use_death_cross: lid("chkCondEntryBase")?.checked !== false,
         use_cross_spread: lid("chkCondEntryPeak")?.checked !== false,
@@ -3000,6 +3081,7 @@
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel"],
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
+        macd_reversal: ["macd_fast_period", "macd_slow_period", "macd_signal_period"],
       };
       const liveParams = { ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
       if (isParadigmMatch) (parameterKeys[currentMode] || []).forEach((key) => {
@@ -3007,6 +3089,12 @@
         if (live == null || !Number.isFinite(Number(live)) || Math.abs(settings[key] - Number(live)) > 1e-9)
           diffs.push(`${key}: ${settings[key]} ≠ ${live ?? "unknown"}`);
       });
+      if (isParadigmMatch && currentMode === "macd_reversal") {
+        ["use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
+         "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit"].forEach((key) => {
+          if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? true)) diffs.push(`${key}: paper ≠ live`);
+        });
+      }
       const defaultConditionToggles = currentMode === "ma_stack" ? {
         use_ma_stack: true, use_opposite_stack_exit: true,
         use_ma_diff_hook: true, use_ma_diff_exit: true, min_diff_bars: 2,
@@ -3020,7 +3108,8 @@
       const isCross = currentMode === "golden_death_cross";
       const isMaAccel = currentMode === "ma_acceleration";
       const isMaStack = currentMode === "ma_stack";
-      const rules = isMaStack ? [] : [
+      const isMacd = currentMode === "macd_reversal";
+      const rules = (isMaStack || isMacd) ? [] : [
         ["EntryMaStretch", isCross ? "use_golden_cross" : (isMaAccel ? "use_ma_slope" : "use_ma_stretch"), isCross ? "Golden Cross" : (isMaAccel ? "MA Slope" : (isMaStack ? "60-MA Stretch" : "Entry trigger"))],
         ["EntryBase", isCross ? "use_death_cross" : (isMaAccel ? "use_ma_accel" : "use_base_spacing"), isCross ? "Death Cross" : (isMaAccel ? "MA Curvature Accel" : "Spacing")],
         ["EntryPeak", isCross ? "use_cross_spread" : (isMaAccel ? "use_ma_pullback" : "use_peak"), isCross ? "Min Cross Spread" : (isMaAccel ? "Price Pullback" : "Peak rollover")],
@@ -3176,6 +3265,30 @@
           : "PAPER · Awaiting completed-candle replay";
         return;
       }
+      if (this.currentParadigm === "macd_reversal") {
+        const rows = [
+          ["EntrySignal", "entry_signal_negative", "use_macd_signal_negative", "Signal line < 0"],
+          ["EntryHistogram", "entry_histogram_negative", "use_macd_hist_negative", "Histogram < 0"],
+          ["EntryReversal", "entry_histogram_reversal", "use_macd_hist_reversal", "Histogram local trough confirmed"],
+          ["ExitSignal", "exit_signal_positive", "use_macd_signal_positive", "Signal line > 0"],
+          ["ExitHistogram", "exit_histogram_positive", "use_macd_hist_positive", "Histogram > 0"],
+          ["ExitReversal", "exit_histogram_reversal", "use_macd_hist_reversal_exit", "Histogram local peak confirmed"],
+        ];
+        rows.forEach(([id, key, toggle, detail]) => {
+          const badge = $(`lighterCrypto_macdStatus${id}`);
+          if (!badge) return;
+          const value = checks[key];
+          const state = settings[toggle] === false ? "OFF" : value == null ? "N/A" : value ? "PASS" : "WAITING";
+          badge.textContent = state;
+          badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+          badge.title = `PAPER · ${detail}`;
+        });
+        const source = $("lighterCrypto_macdStatusSource");
+        if (source) source.textContent = result?.latest_condition_time
+          ? `PAPER · Completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · same completed-bar rules deploy live`
+          : "PAPER · Awaiting completed-candle replay";
+        return;
+      }
       const panel = $("lighterCrypto_replayConditions");
       if (!panel) return;
       const labels = {
@@ -3264,6 +3377,13 @@
         entry_ma_stack_1h: "use_ma_stack_1h",
         exit_cross: "use_cross_exit",
         exit_dwell: "use_dwell",
+      } : bot?.strategy_mode === "macd_reversal" ? {
+        entry_signal_negative: "use_macd_signal_negative",
+        entry_histogram_negative: "use_macd_hist_negative",
+        entry_histogram_reversal: "use_macd_hist_reversal",
+        exit_signal_positive: "use_macd_signal_positive",
+        exit_histogram_positive: "use_macd_hist_positive",
+        exit_histogram_reversal: "use_macd_hist_reversal_exit",
       } : bot?.strategy_mode === "ma_stack" ? {
         entry_ma_stack: "use_ma_stack",
         entry_ma_diff_hook: "use_ma_diff_hook",
@@ -3286,6 +3406,7 @@
         trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
         ma_acceleration:["entry_ma_slope","entry_ma_accel","entry_ma_pullback","entry_ma_stack_1h","exit_ma_cross"],
         golden_death_cross:["entry_golden_cross","entry_death_cross","entry_cross_spread","entry_ma_stack_1h","exit_cross","exit_dwell"],
+        macd_reversal:["entry_signal_negative","entry_histogram_negative","entry_histogram_reversal","exit_signal_positive","exit_histogram_positive","exit_histogram_reversal"],
       };
       (keysByMode[bot?.strategy_mode] || Object.keys(checks)).forEach((key) => {
         const value = checks[key];
@@ -3482,6 +3603,26 @@
             input.value = String(params[key]);
             input._userModified = false;
           }
+        });
+      }
+      if (liveMode === "macd_reversal") {
+        const controls = {
+          macd_fast_period: "lighterCrypto_macdFastPeriod",
+          macd_slow_period: "lighterCrypto_macdSlowPeriod",
+          macd_signal_period: "lighterCrypto_macdSignalPeriod",
+          use_macd_signal_negative: "lighterCrypto_macdUseEntrySignalNegative",
+          use_macd_hist_negative: "lighterCrypto_macdUseEntryHistogramNegative",
+          use_macd_hist_reversal: "lighterCrypto_macdUseEntryReversal",
+          use_macd_signal_positive: "lighterCrypto_macdUseExitSignalPositive",
+          use_macd_hist_positive: "lighterCrypto_macdUseExitHistogramPositive",
+          use_macd_hist_reversal_exit: "lighterCrypto_macdUseExitReversal",
+        };
+        Object.entries(controls).forEach(([key, id]) => {
+          const input = $(id);
+          if (!input || params[key] == null) return;
+          if (typeof params[key] === "boolean") input.checked = params[key];
+          else input.value = String(params[key]);
+          input._userModified = false;
         });
       }
       this.updateRulesMatchStatus();

@@ -48,6 +48,33 @@ assert.equal(tab5.paradigms.adaptive_tranche.name, 'Adaptive Tranche');
 assert.match(tab5.paradigms.adaptive_tranche.badge, /TAB 2 MODEL/);
 assert.match(tab5.paradigms.adaptive_tranche.entryLabels.rowCondEntryMaStack5m, /MA60/);
 assert.equal(tab5.paradigms.grid.name, 'Legacy Dynamic Grid');
+assert.equal(tab5.paradigms.macd_reversal.name, 'MACD Reversal');
+const macdMarkup = tab5.renderParadigmDetail('macd_reversal');
+assert.match(macdMarkup, /Signal line &lt; 0/);
+assert.match(macdMarkup, /Histogram &lt; 0/);
+assert.match(macdMarkup, /reverses upward from local trough/);
+assert.match(macdMarkup, /Signal line &gt; 0/);
+assert.match(macdMarkup, /Histogram &gt; 0/);
+assert.match(macdMarkup, /reverses downward from local peak/);
+[
+  ['lighterCrypto_macdFastPeriod', { value: '12' }],
+  ['lighterCrypto_macdSlowPeriod', { value: '26' }],
+  ['lighterCrypto_macdSignalPeriod', { value: '9' }],
+  ['lighterCrypto_macdUseEntrySignalNegative', { checked: true }],
+  ['lighterCrypto_macdUseEntryHistogramNegative', { checked: true }],
+  ['lighterCrypto_macdUseEntryReversal', { checked: true }],
+  ['lighterCrypto_macdUseExitSignalPositive', { checked: true }],
+  ['lighterCrypto_macdUseExitHistogramPositive', { checked: true }],
+  ['lighterCrypto_macdUseExitReversal', { checked: true }],
+].forEach(([id, node]) => nodes.set(id, node));
+tab5.currentParadigm = 'macd_reversal';
+const macdReplay = tab5.replaySettings();
+assert.equal(macdReplay.strategy_mode, 'macd_reversal');
+assert.equal(macdReplay.macd_fast_period, 12);
+assert.equal(macdReplay.use_macd_hist_reversal_exit, true);
+const macdPayload = tab5.liveStrategyPayload('macd_reversal');
+assert.equal(macdPayload.macd_slow_period, 26);
+assert.equal(macdPayload.use_macd_signal_negative, true);
 const maMarkup = tab5.renderParadigmDetail('ma_stack');
 assert.match(maMarkup, /2\. 5m Full MA Stack \(Price &lt; MA7 &lt; MA24 &lt; MA60\)/);
 assert.match(maMarkup, /Opposite 5m Full MA Stack \(Price &gt; MA7 &gt; MA24 &gt; MA60\)/);

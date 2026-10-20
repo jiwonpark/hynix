@@ -52,6 +52,9 @@ DEFAULT_STATE = {
     "use_ma_slope": True, "use_ma_accel": True, "use_ma_pullback": True, "use_ma_cross_exit": True,
     "fast_ma_period": 9, "slow_ma_period": 21, "min_cross_spread_bps": 0.0,
     "use_golden_cross": True, "use_death_cross": True, "use_cross_spread": True, "use_cross_exit": True,
+    "macd_fast_period": 12, "macd_slow_period": 26, "macd_signal_period": 9,
+    "use_macd_signal_negative": True, "use_macd_hist_negative": True, "use_macd_hist_reversal": True,
+    "use_macd_signal_positive": True, "use_macd_hist_positive": True, "use_macd_hist_reversal_exit": True,
     "long_multiplier": 1.0, "short_multiplier": 1.0,
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
@@ -178,6 +181,15 @@ class LighterCryptoBot:
                           "use_ma_accel": bool(self.state.get("use_ma_accel", True)),
                           "use_ma_pullback": bool(self.state.get("use_ma_pullback", True)),
                           "use_ma_cross_exit": bool(self.state.get("use_ma_cross_exit", True)),
+                          "macd_fast_period": int(self.state.get("macd_fast_period", 12)),
+                          "macd_slow_period": int(self.state.get("macd_slow_period", 26)),
+                          "macd_signal_period": int(self.state.get("macd_signal_period", 9)),
+                          "use_macd_signal_negative": bool(self.state.get("use_macd_signal_negative", True)),
+                          "use_macd_hist_negative": bool(self.state.get("use_macd_hist_negative", True)),
+                          "use_macd_hist_reversal": bool(self.state.get("use_macd_hist_reversal", True)),
+                          "use_macd_signal_positive": bool(self.state.get("use_macd_signal_positive", True)),
+                          "use_macd_hist_positive": bool(self.state.get("use_macd_hist_positive", True)),
+                          "use_macd_hist_reversal_exit": bool(self.state.get("use_macd_hist_reversal_exit", True)),
                       })
         result["gross_leverage_cap"] = float(self.state.get("gross_leverage_cap", self.GROSS_LEVERAGE_CAP))
         result["execution_blocked"] = bool(self.state.get("execution_blocked") or self.state.get("recovery_required") or self.state.get("pending_order"))
@@ -301,6 +313,9 @@ class LighterCryptoBot:
             "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
             "fast_ma_period", "slow_ma_period", "min_cross_spread_bps",
             "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit",
+            "macd_fast_period", "macd_slow_period", "macd_signal_period",
+            "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
+            "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
             "ma_stack_opposite_only", "use_opposite_stack_exit",
@@ -316,7 +331,8 @@ class LighterCryptoBot:
                 candidate[key] = str(value)
             elif key in {"max_tranches", "min_seconds_between_orders", "ou_macro_ema_span",
                         "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars",
-                        "ma_accel_period", "fast_ma_period", "slow_ma_period", "min_diff_bars"}:
+                        "ma_accel_period", "fast_ma_period", "slow_ma_period", "min_diff_bars",
+                        "macd_fast_period", "macd_slow_period", "macd_signal_period"}:
                 candidate[key] = int(value)
             elif key in {"ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
                         "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
@@ -326,6 +342,9 @@ class LighterCryptoBot:
                         "use_ma_diff_hook", "use_ma_diff_exit",
                         "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
                         "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit"}:
+                candidate[key] = bool(value)
+            elif key in {"use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
+                          "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
@@ -358,6 +377,7 @@ class LighterCryptoBot:
             "trend_macro_window": (12, 100), "trend_pullback_dist": (0.01, 10.0),
             "trend_tp_dist": (0.01, 10.0), "trend_slope_min": (0.0001, 1.0),
             "fast_ma_period": (2, 100), "slow_ma_period": (3, 200),
+            "macd_fast_period": (2, 100), "macd_slow_period": (3, 200), "macd_signal_period": (2, 100),
             "min_cross_spread_bps": (0.0, 100.0),
             "min_diff_bars": (1, 10),
             "base_spacing_pct": (0.0, 10.0), "min_dwell_bars": (0, 100),
@@ -373,10 +393,16 @@ class LighterCryptoBot:
         if candidate["strategy_mode"] == "golden_death_cross":
             if candidate.get("fast_ma_period", 9) >= candidate.get("slow_ma_period", 21):
                 raise ValueError("Slow MA period must be greater than Fast MA period")
+        if candidate["strategy_mode"] == "macd_reversal":
+            if candidate.get("macd_fast_period", 12) >= candidate.get("macd_slow_period", 26):
+                raise ValueError("MACD slow period must be greater than MACD fast period")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
                 ("selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
-                 "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window")):
+                 "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
+                 "macd_fast_period", "macd_slow_period", "macd_signal_period",
+                 "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
+                 "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:
                 raise ValueError("Close tracked inventory before changing symbol")

@@ -52,6 +52,7 @@ from .lighter_strategy import (
     evaluate_adaptive_tranche_signals,
     evaluate_ma_acceleration_signals,
     evaluate_golden_death_cross_signals,
+    evaluate_macd_reversal_signals,
 )
 from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
@@ -1720,6 +1721,15 @@ def _run_crypto_backtest_sync(
     use_golden_cross: bool = True,
     use_death_cross: bool = True,
     use_cross_spread: bool = True,
+    macd_fast_period: int = 12,
+    macd_slow_period: int = 26,
+    macd_signal_period: int = 9,
+    use_macd_signal_negative: bool = True,
+    use_macd_hist_negative: bool = True,
+    use_macd_hist_reversal: bool = True,
+    use_macd_signal_positive: bool = True,
+    use_macd_hist_positive: bool = True,
+    use_macd_hist_reversal_exit: bool = True,
     base_spacing_pct: float = 0.2,
     min_dwell_bars: int = 4,
     long_multiplier: float = 1.0,
@@ -2424,6 +2434,83 @@ def _run_crypto_backtest_sync(
             "slow_ma_period": slow_w,
         }
 
+    elif strategy_mode == "macd_reversal":
+        fast_w = max(2, int(macd_fast_period))
+        slow_w = max(fast_w + 1, int(macd_slow_period))
+        signal_w = max(2, int(macd_signal_period))
+        required = slow_w + signal_w + 1
+        for index, bar in enumerate(bars):
+            if index + 1 < required:
+                continue
+            prefix = [item["value"] for item in bars[:index + 1]]
+            pos_side = position["side"] if position is not None else 0
+            entry_signal, candidate_side, _, entry_eval = evaluate_macd_reversal_signals(
+                prefix,
+                macd_fast_period=fast_w, macd_slow_period=slow_w, macd_signal_period=signal_w,
+                use_macd_signal_negative=use_macd_signal_negative,
+                use_macd_hist_negative=use_macd_hist_negative,
+                use_macd_hist_reversal=use_macd_hist_reversal,
+                use_macd_signal_positive=use_macd_signal_positive,
+                use_macd_hist_positive=use_macd_hist_positive,
+                use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
+                evaluation_time=int(bar["time"]), position_side=0,
+            )
+            _, _, exit_signal, exit_eval = evaluate_macd_reversal_signals(
+                prefix,
+                macd_fast_period=fast_w, macd_slow_period=slow_w, macd_signal_period=signal_w,
+                use_macd_signal_negative=use_macd_signal_negative,
+                use_macd_hist_negative=use_macd_hist_negative,
+                use_macd_hist_reversal=use_macd_hist_reversal,
+                use_macd_signal_positive=use_macd_signal_positive,
+                use_macd_hist_positive=use_macd_hist_positive,
+                use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
+                evaluation_time=int(bar["time"]), position_side=pos_side,
+            )
+            eval_info = dict(entry_eval)
+            if pos_side:
+                eval_info["condition_pass"] = {
+                    **entry_eval.get("condition_pass", {}),
+                    **{key: value for key, value in exit_eval.get("condition_pass", {}).items() if key.startswith("exit_")},
+                }
+            latest_evaluation = eval_info
+            latest_conditions = eval_info.get("condition_pass", {})
+            latest_condition_time = int(bar["time"])
+            series.append({
+                "time": bar["time"], "value": bar["value"], "mean": bar["value"],
+                "z": eval_info["histogram"], "macd": eval_info["macd"],
+                "signal": eval_info["signal"], "histogram": eval_info["histogram"],
+            })
+            if entry_signal:
+                entry_signals.append({
+                    "time": int(bar["time"]), "price": float(bar["value"]),
+                    "side": int(candidate_side), "reason": "macd_reversal",
+                    "conditions": dict(entry_eval.get("condition_pass", {})),
+                })
+            if position is not None and exit_signal:
+                current_pnl = (bar["value"] / position["entry"] - 1) * 100
+                mult = position.get("multiplier", 1.0)
+                trades.append({
+                    "side": 1, "entry": position["entry"], "entry_time": position["entry_time"],
+                    "exit": bar["value"], "exit_time": bar["time"],
+                    "pnl_pct": round(current_pnl * mult, 4), "multiplier": round(mult, 2),
+                    "reason": "macd_opposite_reversal",
+                })
+                position = None
+            if position is None and entry_signal:
+                position = {
+                    "side": 1, "entry": bar["value"], "entry_time": bar["time"],
+                    "entry_index": index, "multiplier": max(0.1, float(long_multiplier)),
+                }
+        mode_metrics = {
+            "signal_engine": "macd_reversal",
+            "macd": latest_evaluation.get("macd"),
+            "signal": latest_evaluation.get("signal"),
+            "histogram": latest_evaluation.get("histogram"),
+            "histogram_turn": latest_evaluation.get("histogram_turn"),
+            "macd_fast_period": fast_w, "macd_slow_period": slow_w,
+            "macd_signal_period": signal_w,
+        }
+
     if position is not None:
         active_positions.append(position)
     mark = bars[-1]["value"] if bars else None
@@ -2488,6 +2575,10 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_ma_slope: bool = True, use_ma_accel: bool = True, use_ma_pullback: bool = True, use_ma_cross_exit: bool = True,
                               fast_ma_period: int = 9, slow_ma_period: int = 21, min_cross_spread_bps: float = 0.0,
                               use_golden_cross: bool = True, use_death_cross: bool = True, use_cross_spread: bool = True,
+                              macd_fast_period: int = 12, macd_slow_period: int = 26, macd_signal_period: int = 9,
+                              use_macd_signal_negative: bool = True, use_macd_hist_negative: bool = True,
+                              use_macd_hist_reversal: bool = True, use_macd_signal_positive: bool = True,
+                              use_macd_hist_positive: bool = True, use_macd_hist_reversal_exit: bool = True,
                               base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
                               long_multiplier: float = 1.0, short_multiplier: float = 1.0,
                               market_source: str = "binance") -> Dict[str, Any]:
@@ -2536,6 +2627,14 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         min_cross_spread_bps=min_cross_spread_bps,
         use_golden_cross=use_golden_cross, use_death_cross=use_death_cross,
         use_cross_spread=use_cross_spread,
+        macd_fast_period=macd_fast_period, macd_slow_period=macd_slow_period,
+        macd_signal_period=macd_signal_period,
+        use_macd_signal_negative=use_macd_signal_negative,
+        use_macd_hist_negative=use_macd_hist_negative,
+        use_macd_hist_reversal=use_macd_hist_reversal,
+        use_macd_signal_positive=use_macd_signal_positive,
+        use_macd_hist_positive=use_macd_hist_positive,
+        use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
         base_spacing_pct=base_spacing_pct, min_dwell_bars=min_dwell_bars,
         long_multiplier=long_multiplier, short_multiplier=short_multiplier,
         interval_seconds=interval_seconds,

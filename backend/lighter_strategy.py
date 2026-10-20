@@ -1035,7 +1035,125 @@ def evaluate_golden_death_cross_signals(
     return entry_signal, candidate_side, exit_signal, evaluation
 
 
-LIVE_STRATEGIES = {"adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross"}
+def _ema_series(values: List[float], period: int) -> List[Optional[float]]:
+    """EMA seeded with an SMA, matching TerminalCommon.macd in the browser."""
+    result: List[Optional[float]] = [None] * len(values)
+    if period < 1 or len(values) < period:
+        return result
+    ema = sum(values[:period]) / period
+    result[period - 1] = ema
+    multiplier = 2.0 / (period + 1)
+    for index in range(period, len(values)):
+        ema = (values[index] - ema) * multiplier + ema
+        result[index] = ema
+    return result
+
+
+def evaluate_macd_reversal_signals(
+    prices: List[float],
+    *,
+    macd_fast_period: int = 12,
+    macd_slow_period: int = 26,
+    macd_signal_period: int = 9,
+    use_macd_signal_negative: bool = True,
+    use_macd_hist_negative: bool = True,
+    use_macd_hist_reversal: bool = True,
+    use_macd_signal_positive: bool = True,
+    use_macd_hist_positive: bool = True,
+    use_macd_hist_reversal_exit: bool = True,
+    evaluation_time: Optional[int] = None,
+    position_side: int = 0,
+    entry_price: float = 0.0,
+    held_bars: int = 0,
+) -> Tuple[bool, int, bool, Dict[str, Any]]:
+    """Long-only MACD histogram reversal strategy evaluated on completed bars.
+
+    Entry requires the enabled subset of: Signal < 0, Histogram < 0, and a
+    confirmed histogram trough. Exit is the exact opposite enabled subset:
+    Signal > 0, Histogram > 0, and a confirmed histogram peak.
+    """
+    del entry_price, held_bars
+    fast_w = max(2, int(macd_fast_period))
+    slow_w = max(fast_w + 1, int(macd_slow_period))
+    signal_w = max(2, int(macd_signal_period))
+    required = slow_w + signal_w + 1
+    if len(prices) < required:
+        raise ValueError(f"MACD reversal evaluation requires at least {required} completed bars")
+
+    fast = _ema_series(prices, fast_w)
+    slow = _ema_series(prices, slow_w)
+    macd_values: List[float] = []
+    for index, slow_value in enumerate(slow):
+        fast_value = fast[index]
+        if fast_value is not None and slow_value is not None:
+            macd_values.append(fast_value - slow_value)
+    signal_values = _ema_series(macd_values, signal_w)
+    histogram = [
+        macd_values[index] - signal_value
+        for index, signal_value in enumerate(signal_values)
+        if signal_value is not None
+    ]
+    if len(histogram) < 3:
+        raise ValueError("MACD reversal evaluation requires three completed histogram bars")
+
+    signal_line = float(next(value for value in reversed(signal_values) if value is not None))
+    macd_line = float(macd_values[-1])
+    hist_prev2, hist_prev, hist_current = map(float, histogram[-3:])
+    signal_negative = signal_line < 0.0
+    histogram_negative = hist_current < 0.0
+    histogram_reversal = hist_prev < hist_prev2 and hist_current > hist_prev
+    signal_positive = signal_line > 0.0
+    histogram_positive = hist_current > 0.0
+    histogram_reversal_exit = hist_prev > hist_prev2 and hist_current < hist_prev
+
+    entry_checks = []
+    if use_macd_signal_negative:
+        entry_checks.append(signal_negative)
+    if use_macd_hist_negative:
+        entry_checks.append(histogram_negative)
+    if use_macd_hist_reversal:
+        entry_checks.append(histogram_reversal)
+    exit_checks = []
+    if use_macd_signal_positive:
+        exit_checks.append(signal_positive)
+    if use_macd_hist_positive:
+        exit_checks.append(histogram_positive)
+    if use_macd_hist_reversal_exit:
+        exit_checks.append(histogram_reversal_exit)
+
+    entry_signal = bool(entry_checks and all(entry_checks))
+    exit_signal = bool(position_side > 0 and exit_checks and all(exit_checks))
+    condition_pass = {
+        "entry_signal_negative": signal_negative,
+        "entry_histogram_negative": histogram_negative,
+        "entry_histogram_reversal": histogram_reversal,
+        "exit_signal_positive": signal_positive if position_side else None,
+        "exit_histogram_positive": histogram_positive if position_side else None,
+        "exit_histogram_reversal": histogram_reversal_exit if position_side else None,
+    }
+    evaluation = {
+        "time": evaluation_time,
+        "ratio": round(float(prices[-1]), 4),
+        "mean": round(float(prices[-1]), 4),
+        "signal_mean": round(float(prices[-1]), 4),
+        "z": round(hist_current, 6),
+        "strategy": "macd_reversal",
+        "macd_fast_period": fast_w,
+        "macd_slow_period": slow_w,
+        "macd_signal_period": signal_w,
+        "macd": round(macd_line, 6),
+        "signal": round(signal_line, 6),
+        "histogram": round(hist_current, 6),
+        "previous_histogram": round(hist_prev, 6),
+        "previous_2_histogram": round(hist_prev2, 6),
+        "histogram_turn": "UP" if histogram_reversal else ("DOWN" if histogram_reversal_exit else "NONE"),
+        "candidate_side": 1,
+        "condition_pass": condition_pass,
+    }
+    return entry_signal, 1, exit_signal, evaluation
+
+
+LIVE_STRATEGIES = {"adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross", "macd_reversal"}
 
 
 def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
@@ -1050,6 +1168,11 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         fast = max(2, int(params.get("fast_ma_period", 9)))
         slow = max(fast + 1, int(params.get("slow_ma_period", 21)))
         return slow + 1
+    if strategy_mode == "macd_reversal":
+        fast = max(2, int(params.get("macd_fast_period", 12)))
+        slow = max(fast + 1, int(params.get("macd_slow_period", 26)))
+        signal = max(2, int(params.get("macd_signal_period", 9)))
+        return slow + signal + 1
     if strategy_mode == "adaptive_tranche" and bool(params.get("use_ma_stack", False)):
         return 60
     return 25
@@ -1181,6 +1304,23 @@ def evaluate_strategy_signal(
             use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
             use_dwell=bool(config.get("use_dwell", False)),
             min_dwell_bars=int(config.get("min_dwell_bars", 2)),
+            evaluation_time=evaluation_time,
+            position_side=position_side,
+            entry_price=entry_price,
+            held_bars=held_bars,
+        )
+    elif strategy_mode == "macd_reversal":
+        return evaluate_macd_reversal_signals(
+            prices,
+            macd_fast_period=int(config.get("macd_fast_period", 12)),
+            macd_slow_period=int(config.get("macd_slow_period", 26)),
+            macd_signal_period=int(config.get("macd_signal_period", 9)),
+            use_macd_signal_negative=bool(config.get("use_macd_signal_negative", True)),
+            use_macd_hist_negative=bool(config.get("use_macd_hist_negative", True)),
+            use_macd_hist_reversal=bool(config.get("use_macd_hist_reversal", True)),
+            use_macd_signal_positive=bool(config.get("use_macd_signal_positive", True)),
+            use_macd_hist_positive=bool(config.get("use_macd_hist_positive", True)),
+            use_macd_hist_reversal_exit=bool(config.get("use_macd_hist_reversal_exit", True)),
             evaluation_time=evaluation_time,
             position_side=position_side,
             entry_price=entry_price,
