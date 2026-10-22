@@ -8,6 +8,7 @@ from backend.lighter_crypto_bot import LighterCryptoBot
 from backend.lighter_strategy import (
     LIVE_STRATEGIES,
     evaluate_macd_reversal_signals,
+    evaluate_macd_strength_scaleout_signals,
     evaluate_strategy_signal,
     required_strategy_bars,
 )
@@ -65,6 +66,33 @@ def test_macd_entry_evaluation_is_independent_of_inventory():
     held_entry, _, _, _ = evaluate_macd_reversal_signals(prices(5.9), position_side=1)
     assert flat_entry is True
     assert held_entry is True
+
+
+def test_strength_scaleout_entry_filter_is_real_and_inventory_independent():
+    weak, _, _, weak_details = evaluate_macd_strength_scaleout_signals(
+        prices(5.9), macd_strength_min_pct=1000, position_side=0)
+    bypassed, _, _, _ = evaluate_macd_strength_scaleout_signals(
+        prices(5.9), macd_strength_min_pct=1000, use_macd_strength=False, position_side=1)
+    assert weak is False
+    assert weak_details["condition_pass"]["entry_strength"] is False
+    assert bypassed is True
+    assert "macd_strength_scaleout" in LIVE_STRATEGIES
+    assert required_strategy_bars("macd_strength_scaleout", {}) == 36
+
+
+def test_strength_scaleout_configuration_persists():
+    async def run():
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterCryptoBot(object(), Path(directory) / "state.json")
+            state = await bot.configure({
+                "strategy_mode": "macd_strength_scaleout",
+                "macd_strength_min_pct": 35,
+                "macd_first_exit_pct": 40,
+                "use_macd_two_stage_exit": True,
+            })
+            assert state["strategy_params"]["macd_strength_min_pct"] == 35
+            assert state["strategy_params"]["macd_first_exit_pct"] == 40
+    asyncio.run(run())
 
 
 def test_bots_accept_and_persist_macd_configuration():

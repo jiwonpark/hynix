@@ -55,6 +55,8 @@ DEFAULT_STATE = {
     "macd_fast_period": 12, "macd_slow_period": 26, "macd_signal_period": 9,
     "use_macd_signal_negative": True, "use_macd_hist_negative": True, "use_macd_hist_reversal": True,
     "use_macd_signal_positive": True, "use_macd_hist_positive": True, "use_macd_hist_reversal_exit": True,
+    "use_macd_strength": True, "macd_strength_min_pct": 30.0,
+    "use_macd_two_stage_exit": True, "macd_first_exit_pct": 50.0, "macd_exit_stage": 0,
     "long_multiplier": 1.0, "short_multiplier": 1.0,
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
@@ -190,6 +192,11 @@ class LighterCryptoBot:
                           "use_macd_signal_positive": bool(self.state.get("use_macd_signal_positive", True)),
                           "use_macd_hist_positive": bool(self.state.get("use_macd_hist_positive", True)),
                           "use_macd_hist_reversal_exit": bool(self.state.get("use_macd_hist_reversal_exit", True)),
+                          "use_macd_strength": bool(self.state.get("use_macd_strength", True)),
+                          "macd_strength_min_pct": float(self.state.get("macd_strength_min_pct", 30.0)),
+                          "use_macd_two_stage_exit": bool(self.state.get("use_macd_two_stage_exit", True)),
+                          "macd_first_exit_pct": float(self.state.get("macd_first_exit_pct", 50.0)),
+                          "macd_exit_stage": int(self.state.get("macd_exit_stage", 0)),
                       })
         result["gross_leverage_cap"] = float(self.state.get("gross_leverage_cap", self.GROSS_LEVERAGE_CAP))
         result["execution_blocked"] = bool(self.state.get("execution_blocked") or self.state.get("recovery_required") or self.state.get("pending_order"))
@@ -316,6 +323,7 @@ class LighterCryptoBot:
             "macd_fast_period", "macd_slow_period", "macd_signal_period",
             "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
             "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
+            "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
             "ma_stack_opposite_only", "use_opposite_stack_exit",
@@ -345,6 +353,8 @@ class LighterCryptoBot:
                 candidate[key] = bool(value)
             elif key in {"use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                           "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit"}:
+                candidate[key] = bool(value)
+            elif key in {"use_macd_strength", "use_macd_two_stage_exit"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
@@ -378,6 +388,7 @@ class LighterCryptoBot:
             "trend_tp_dist": (0.01, 10.0), "trend_slope_min": (0.0001, 1.0),
             "fast_ma_period": (2, 100), "slow_ma_period": (3, 200),
             "macd_fast_period": (2, 100), "macd_slow_period": (3, 200), "macd_signal_period": (2, 100),
+            "macd_strength_min_pct": (0.0, 1000.0), "macd_first_exit_pct": (1.0, 99.0),
             "min_cross_spread_bps": (0.0, 100.0),
             "min_diff_bars": (1, 10),
             "base_spacing_pct": (0.0, 10.0), "min_dwell_bars": (0, 100),
@@ -393,7 +404,7 @@ class LighterCryptoBot:
         if candidate["strategy_mode"] == "golden_death_cross":
             if candidate.get("fast_ma_period", 9) >= candidate.get("slow_ma_period", 21):
                 raise ValueError("Slow MA period must be greater than Fast MA period")
-        if candidate["strategy_mode"] == "macd_reversal":
+        if candidate["strategy_mode"] in {"macd_reversal", "macd_strength_scaleout"}:
             if candidate.get("macd_fast_period", 12) >= candidate.get("macd_slow_period", 26):
                 raise ValueError("MACD slow period must be greater than MACD fast period")
         async with self.lock:
@@ -402,10 +413,13 @@ class LighterCryptoBot:
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
-                 "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit")):
+                 "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
+                 "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:
                 raise ValueError("Close tracked inventory before changing symbol")
+            if self.state["tranches"] and candidate["strategy_mode"] != self.state["strategy_mode"]:
+                raise ValueError("Close tracked inventory before changing strategy")
             self.state.update({key: candidate[key] for key in values})
             self._save()
             return self.public_state()
@@ -611,8 +625,17 @@ class LighterCryptoBot:
                  "fee_usd": float(order.get("fee_usd", 0) or 0),
                  "pnl_authoritative": False}
         if is_exit:
-            closed = self.state["tranches"].pop() if self.state["tranches"] else None
+            closed = self.state["tranches"][-1] if self.state["tranches"] else None
             if closed:
+                original_qty = float(closed["qty"])
+                if filled >= original_qty - max(step / 2, original_qty * 0.00001):
+                    self.state["tranches"].pop()
+                else:
+                    closed = dict(closed)
+                    self.state["tranches"][-1]["qty"] = original_qty - filled
+                    fee_share = float(closed.get("fee_usd", 0)) * filled / original_qty
+                    self.state["tranches"][-1]["fee_usd"] = float(closed.get("fee_usd", 0)) - fee_share
+                    closed["fee_usd"] = fee_share
                 gross = int(closed["side"]) * filled * (price - float(closed["price"]))
                 net = gross - float(closed.get("fee_usd", 0)) - event["fee_usd"]
                 event.update(entry_price=closed["price"], entry_order_id=closed["order_id"],
@@ -626,6 +649,10 @@ class LighterCryptoBot:
             self.state["tranches"].append({"side": side, "qty": filled, "price": price,
                                             "fee_usd": event["fee_usd"],
                                             "order_id": event["order_id"], "time": event["time"]})
+            if self.state.get("strategy_mode") == "macd_strength_scaleout":
+                self.state["macd_exit_stage"] = 0
+        if pending.get("macd_exit_stage_after") is not None:
+            self.state["macd_exit_stage"] = int(pending["macd_exit_stage_after"])
         self.state["execution_history"].append(event)
         self.state["execution_history"] = self.state["execution_history"][-500:]
         self.state.update(pending_order=None, last_order_time=event["time"], last_error=None,
@@ -634,7 +661,8 @@ class LighterCryptoBot:
         return event
 
     async def _submit(self, side: int, notional: float, *, reduce_only: bool, reason: str,
-                      signal_values: Optional[list[float]] = None) -> Dict[str, Any]:
+                      signal_values: Optional[list[float]] = None,
+                      reduce_fraction: float = 1.0, exit_stage_after: Optional[int] = None) -> Dict[str, Any]:
         async with self.client.execution_lock:
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol, fresh=True)
@@ -659,7 +687,10 @@ class LighterCryptoBot:
             if reduce_only:
                 if not self.state["tranches"] or amount * side >= 0:
                     raise ValueError("No bot-owned tranche can be reduced in that direction")
-                qty = float(self.state["tranches"][-1]["qty"])
+                owned_qty = float(self.state["tranches"][-1]["qty"])
+                qty = math.floor((owned_qty * min(1.0, max(0.0, reduce_fraction))) / step) * step
+                if qty < step:
+                    qty = owned_qty
             else:
                 if self.state["pending_order"] or self.state["recovery_required"]:
                     raise ValueError("Execution recovery required")
@@ -676,6 +707,8 @@ class LighterCryptoBot:
             pending = {"client_order_index": order_index, "symbol": symbol, "market_id": market_id,
                        "side": side, "qty": qty, "size_step": step,
                        "reduce_only": reduce_only, "reason": reason, "created_at": int(time.time())}
+            if exit_stage_after is not None:
+                pending["macd_exit_stage_after"] = int(exit_stage_after)
             self.state["pending_order"] = pending
             self._save()
             try:
@@ -1077,9 +1110,17 @@ class LighterCryptoBot:
                 self.state["last_evaluated_candle"] = last_candle
                 self._save()
                 if self.state["tranches"] and exit_signal:
-                    await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
-                                       reduce_only=True, reason="signal_exit")
+                    if self.state["strategy_mode"] == "macd_strength_scaleout" and self.state.get("use_macd_two_stage_exit", True) and int(self.state.get("macd_exit_stage", 0)) == 0:
+                        fraction = float(self.state.get("macd_first_exit_pct", 50.0)) / 100.0
+                        await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
+                                           reduce_only=True, reason="macd_first_peak_exit",
+                                           reduce_fraction=fraction, exit_stage_after=1)
+                    else:
+                        await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
+                                           reduce_only=True, reason="macd_final_peak_exit", exit_stage_after=0)
                 elif entry and len(self.state["tranches"]) < self.state["max_tranches"]:
+                    if self.state["strategy_mode"] == "macd_strength_scaleout" and self.state["tranches"]:
+                        return
                     if time.time() - self.state["last_order_time"] >= self.state["min_seconds_between_orders"]:
                         if position_side and position_side * side < 0:
                             self.state["blocked_reason"] = "Opposite entry blocked: Active campaign must exit before reversing"

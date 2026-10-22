@@ -1153,7 +1153,31 @@ def evaluate_macd_reversal_signals(
     return entry_signal, 1, exit_signal, evaluation
 
 
-LIVE_STRATEGIES = {"adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross", "macd_reversal"}
+def evaluate_macd_strength_scaleout_signals(
+    prices: List[float], *, macd_strength_min_pct: float = 30.0,
+    use_macd_strength: bool = True, **kwargs: Any,
+) -> Tuple[bool, int, bool, Dict[str, Any]]:
+    """MACD trough entry with a configurable rebound-strength confirmation.
+
+    Exit signals remain confirmed positive histogram peaks.  The caller owns
+    the first/second-peak inventory state so this evaluator stays position
+    independent for the entry-signal stream.
+    """
+    entry, side, exit_signal, evaluation = evaluate_macd_reversal_signals(prices, **kwargs)
+    previous = float(evaluation["previous_histogram"])
+    current = float(evaluation["histogram"])
+    rebound_pct = ((current - previous) / abs(previous) * 100.0) if previous else 0.0
+    strength_pass = rebound_pct >= max(0.0, float(macd_strength_min_pct))
+    if use_macd_strength:
+        entry = entry and strength_pass
+    evaluation["strategy"] = "macd_strength_scaleout"
+    evaluation["macd_strength_pct"] = round(rebound_pct, 4)
+    evaluation["macd_strength_min_pct"] = float(macd_strength_min_pct)
+    evaluation["condition_pass"]["entry_strength"] = strength_pass
+    return bool(entry), side, exit_signal, evaluation
+
+
+LIVE_STRATEGIES = {"adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross", "macd_reversal", "macd_strength_scaleout"}
 
 
 def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
@@ -1168,7 +1192,7 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         fast = max(2, int(params.get("fast_ma_period", 9)))
         slow = max(fast + 1, int(params.get("slow_ma_period", 21)))
         return slow + 1
-    if strategy_mode == "macd_reversal":
+    if strategy_mode in {"macd_reversal", "macd_strength_scaleout"}:
         fast = max(2, int(params.get("macd_fast_period", 12)))
         slow = max(fast + 1, int(params.get("macd_slow_period", 26)))
         signal = max(2, int(params.get("macd_signal_period", 9)))
@@ -1309,8 +1333,9 @@ def evaluate_strategy_signal(
             entry_price=entry_price,
             held_bars=held_bars,
         )
-    elif strategy_mode == "macd_reversal":
-        return evaluate_macd_reversal_signals(
+    elif strategy_mode in {"macd_reversal", "macd_strength_scaleout"}:
+        evaluator = evaluate_macd_strength_scaleout_signals if strategy_mode == "macd_strength_scaleout" else evaluate_macd_reversal_signals
+        return evaluator(
             prices,
             macd_fast_period=int(config.get("macd_fast_period", 12)),
             macd_slow_period=int(config.get("macd_slow_period", 26)),
@@ -1321,6 +1346,9 @@ def evaluate_strategy_signal(
             use_macd_signal_positive=bool(config.get("use_macd_signal_positive", True)),
             use_macd_hist_positive=bool(config.get("use_macd_hist_positive", True)),
             use_macd_hist_reversal_exit=bool(config.get("use_macd_hist_reversal_exit", True)),
+            **({"macd_strength_min_pct": float(config.get("macd_strength_min_pct", 30.0)),
+                "use_macd_strength": bool(config.get("use_macd_strength", True))}
+               if strategy_mode == "macd_strength_scaleout" else {}),
             evaluation_time=evaluation_time,
             position_side=position_side,
             entry_price=entry_price,

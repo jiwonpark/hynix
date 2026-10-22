@@ -53,6 +53,7 @@ from .lighter_strategy import (
     evaluate_ma_acceleration_signals,
     evaluate_golden_death_cross_signals,
     evaluate_macd_reversal_signals,
+    evaluate_macd_strength_scaleout_signals,
 )
 from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
@@ -1730,6 +1731,10 @@ def _run_crypto_backtest_sync(
     use_macd_signal_positive: bool = True,
     use_macd_hist_positive: bool = True,
     use_macd_hist_reversal_exit: bool = True,
+    use_macd_strength: bool = True,
+    macd_strength_min_pct: float = 30.0,
+    use_macd_two_stage_exit: bool = True,
+    macd_first_exit_pct: float = 50.0,
     base_spacing_pct: float = 0.2,
     min_dwell_bars: int = 4,
     long_multiplier: float = 1.0,
@@ -2434,7 +2439,10 @@ def _run_crypto_backtest_sync(
             "slow_ma_period": slow_w,
         }
 
-    elif strategy_mode == "macd_reversal":
+    elif strategy_mode in {"macd_reversal", "macd_strength_scaleout"}:
+        macd_evaluator = evaluate_macd_strength_scaleout_signals if strategy_mode == "macd_strength_scaleout" else evaluate_macd_reversal_signals
+        extra_macd = ({"use_macd_strength": use_macd_strength, "macd_strength_min_pct": macd_strength_min_pct}
+                      if strategy_mode == "macd_strength_scaleout" else {})
         fast_w = max(2, int(macd_fast_period))
         slow_w = max(fast_w + 1, int(macd_slow_period))
         signal_w = max(2, int(macd_signal_period))
@@ -2444,7 +2452,7 @@ def _run_crypto_backtest_sync(
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
             pos_side = position["side"] if position is not None else 0
-            entry_signal, candidate_side, _, entry_eval = evaluate_macd_reversal_signals(
+            entry_signal, candidate_side, _, entry_eval = macd_evaluator(
                 prefix,
                 macd_fast_period=fast_w, macd_slow_period=slow_w, macd_signal_period=signal_w,
                 use_macd_signal_negative=use_macd_signal_negative,
@@ -2454,8 +2462,9 @@ def _run_crypto_backtest_sync(
                 use_macd_hist_positive=use_macd_hist_positive,
                 use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
                 evaluation_time=int(bar["time"]), position_side=0,
+                **extra_macd,
             )
-            _, _, exit_signal, exit_eval = evaluate_macd_reversal_signals(
+            _, _, exit_signal, exit_eval = macd_evaluator(
                 prefix,
                 macd_fast_period=fast_w, macd_slow_period=slow_w, macd_signal_period=signal_w,
                 use_macd_signal_negative=use_macd_signal_negative,
@@ -2465,6 +2474,7 @@ def _run_crypto_backtest_sync(
                 use_macd_hist_positive=use_macd_hist_positive,
                 use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
                 evaluation_time=int(bar["time"]), position_side=pos_side,
+                **extra_macd,
             )
             eval_info = dict(entry_eval)
             if pos_side:
@@ -2483,26 +2493,35 @@ def _run_crypto_backtest_sync(
             if entry_signal:
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
-                    "side": int(candidate_side), "reason": "macd_reversal",
+                    "side": int(candidate_side), "reason": strategy_mode,
                     "conditions": dict(entry_eval.get("condition_pass", {})),
                 })
             if position is not None and exit_signal:
                 current_pnl = (bar["value"] / position["entry"] - 1) * 100
                 mult = position.get("multiplier", 1.0)
+                first_stage = (strategy_mode == "macd_strength_scaleout" and use_macd_two_stage_exit
+                               and int(position.get("exit_stage", 0)) == 0)
+                exit_fraction = min(0.99, max(0.01, macd_first_exit_pct / 100.0)) if first_stage else float(position.get("remaining_fraction", 1.0))
                 trades.append({
                     "side": 1, "entry": position["entry"], "entry_time": position["entry_time"],
                     "exit": bar["value"], "exit_time": bar["time"],
-                    "pnl_pct": round(current_pnl * mult, 4), "multiplier": round(mult, 2),
-                    "reason": "macd_opposite_reversal",
+                    "pnl_pct": round(current_pnl * mult * exit_fraction, 4), "multiplier": round(mult, 2),
+                    "exit_fraction": round(exit_fraction, 4),
+                    "reason": "macd_first_peak_exit" if first_stage else "macd_final_peak_exit",
                 })
-                position = None
+                if first_stage:
+                    position["remaining_fraction"] = 1.0 - exit_fraction
+                    position["exit_stage"] = 1
+                else:
+                    position = None
             if position is None and entry_signal:
                 position = {
                     "side": 1, "entry": bar["value"], "entry_time": bar["time"],
                     "entry_index": index, "multiplier": max(0.1, float(long_multiplier)),
+                    "remaining_fraction": 1.0, "exit_stage": 0,
                 }
         mode_metrics = {
-            "signal_engine": "macd_reversal",
+            "signal_engine": strategy_mode,
             "macd": latest_evaluation.get("macd"),
             "signal": latest_evaluation.get("signal"),
             "histogram": latest_evaluation.get("histogram"),
@@ -2518,7 +2537,8 @@ def _run_crypto_backtest_sync(
         "side": item["side"], "entry": item["entry"], "entry_time": item["entry_time"],
         "mark": mark,
         "multiplier": item.get("multiplier", 1.0),
-        "unrealized_pnl_pct": round(item["side"] * (mark / item["entry"] - 1) * 100 * item.get("multiplier", 1.0), 4),
+        "unrealized_pnl_pct": round(item["side"] * (mark / item["entry"] - 1) * 100 * item.get("multiplier", 1.0) * item.get("remaining_fraction", 1.0), 4),
+        "remaining_fraction": item.get("remaining_fraction", 1.0),
     } for item in active_positions] if mark else []
     mode_metrics["open_tranches"] = len(open_positions)
     mode_metrics["capacity_mode"] = "SINGLE_LEG_CRYPTO"
@@ -2579,6 +2599,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_macd_signal_negative: bool = True, use_macd_hist_negative: bool = True,
                               use_macd_hist_reversal: bool = True, use_macd_signal_positive: bool = True,
                               use_macd_hist_positive: bool = True, use_macd_hist_reversal_exit: bool = True,
+                              use_macd_strength: bool = True, macd_strength_min_pct: float = 30.0,
+                              use_macd_two_stage_exit: bool = True, macd_first_exit_pct: float = 50.0,
                               base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
                               long_multiplier: float = 1.0, short_multiplier: float = 1.0,
                               market_source: str = "binance") -> Dict[str, Any]:
@@ -2635,6 +2657,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         use_macd_signal_positive=use_macd_signal_positive,
         use_macd_hist_positive=use_macd_hist_positive,
         use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
+        use_macd_strength=use_macd_strength, macd_strength_min_pct=macd_strength_min_pct,
+        use_macd_two_stage_exit=use_macd_two_stage_exit, macd_first_exit_pct=macd_first_exit_pct,
         base_spacing_pct=base_spacing_pct, min_dwell_bars=min_dwell_bars,
         long_multiplier=long_multiplier, short_multiplier=short_multiplier,
         interval_seconds=interval_seconds,

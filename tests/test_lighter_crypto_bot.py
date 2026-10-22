@@ -116,6 +116,22 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(entry["notional_usd"], 150.015)
         self.assertEqual(len(self.client.orders), 1)
 
+    async def test_scaleout_reduces_tracked_inventory_without_popping_it(self):
+        await self.bot.configure({"strategy_mode": "macd_strength_scaleout"})
+        await self.bot.manual_entry(1, 100)
+        original = self.bot.state["tranches"][0]["qty"]
+        event = await self.bot._submit(-1, 0, reduce_only=True,
+                                       reason="macd_first_peak_exit",
+                                       reduce_fraction=0.5, exit_stage_after=1)
+        self.assertEqual(event["event"], "EXIT")
+        self.assertEqual(self.bot.state["macd_exit_stage"], 1)
+        self.assertEqual(len(self.bot.state["tranches"]), 1)
+        self.assertAlmostEqual(self.bot.state["tranches"][0]["qty"], original - event["qty"])
+        await self.bot._submit(-1, 0, reduce_only=True,
+                               reason="macd_final_peak_exit", exit_stage_after=0)
+        self.assertEqual(self.bot.state["tranches"], [])
+        self.assertEqual(self.bot.state["macd_exit_stage"], 0)
+
     async def test_projected_account_wide_gross_cap_blocks_entry(self):
         self.client.collateral = 15.0
         with self.assertRaisesRegex(ValueError, "gross exposure"):
