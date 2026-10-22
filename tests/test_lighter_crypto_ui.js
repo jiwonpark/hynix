@@ -21,6 +21,7 @@ assert.ok(lighter.includes('notionalInput.dataset?.unsaved !== "true"'), 'status
 assert.ok(lighter.includes('liveTradeRate.dataset.unsaved = "true"'), 'edited trade rate must remain pending until explicitly saved or live start saves it');
 assert.ok(lighter.includes('tradeRateInput.dataset?.unsaved !== "true"'), 'status refresh must not overwrite a pending trade rate');
 assert.ok(lighter.includes('completed ${stratInterval} candles cap entries'), 'trade-rate display must disclose the completed-candle execution ceiling');
+assert.ok(lighter.includes('effective ≤${effectiveTradeRateText}/min on ${stratInterval} candles'), 'top speed summary must show the completed-candle effective rate');
 
 const context = {
   window: {},

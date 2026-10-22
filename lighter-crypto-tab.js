@@ -4054,7 +4054,7 @@
         tradeRateInput.value = String(Math.round(tradeRate * 5) / 5);
       }
       this.renderTradeRatePreview();
-      this.setText("valDeployedSpeed", `${tradeRateText} single-leg orders/min (${Math.round(cooldownSeconds)}s minimum)`);
+      this.setText("valDeployedSpeed", `Cooldown ${tradeRateText}/min · effective ≤${effectiveTradeRateText}/min on ${stratInterval} candles`);
       const engineCondition = lid("rowCondEntryEngine")?.querySelector(".condLabel");
       if (engineCondition) engineCondition.textContent = `9. ${stratName} State & ${tradeRateText}/min Rate Limit`;
       this.setText("valCritRetainedCore", `${tranches.length} bot-owned single-leg tranche${tranches.length === 1 ? "" : "s"}`);
