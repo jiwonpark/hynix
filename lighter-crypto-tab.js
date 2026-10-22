@@ -1078,6 +1078,7 @@
         notionalInput.step = "5";
         notionalInput.value = "150";
         notionalInput.addEventListener("input", () => {
+          notionalInput.dataset.unsaved = "true";
           this.updateLeverageMetrics();
           this.renderCryptoNotionals();
         });
@@ -1226,7 +1227,10 @@
       const liveTradeRate = lid("inputLiveTradeRate");
       if (liveTradeRate && !liveTradeRate._boundInput) {
         liveTradeRate._boundInput = true;
-        liveTradeRate.addEventListener("input", () => this.renderTradeRatePreview());
+        liveTradeRate.addEventListener("input", () => {
+          liveTradeRate.dataset.unsaved = "true";
+          this.renderTradeRatePreview();
+        });
       }
       window.terminalLockManager?.applyState?.();
 
@@ -2035,7 +2039,10 @@
       const rateInput = $("lighterCrypto_inputLiveTradeRate");
       if (rateInput && !rateInput._boundInput) {
         rateInput._boundInput = true;
-        rateInput.addEventListener("input", () => this.renderTradeRatePreview());
+        rateInput.addEventListener("input", () => {
+          rateInput.dataset.unsaved = "true";
+          this.renderTradeRatePreview();
+        });
       }
       const reconcileButton = $("lighterCrypto_btnReconcileBot");
       if (reconcileButton) reconcileButton.addEventListener("click", () => this.reconcileLiveBot());
@@ -3983,7 +3990,9 @@
       const cooldownSeconds = Math.max(6, Number(bot?.min_seconds_between_orders ?? 300));
       const tradeRate = Math.max(0.2, Math.min(10, 60 / cooldownSeconds));
       const tradeRateText = this.formatTradeRate(tradeRate);
-      writeRule("lighterCryptoLiveCooldown", `Current: ${tradeRateText} single-leg orders/min · ${Math.round(cooldownSeconds)}s minimum · unlock required`);
+      const strategyIntervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[stratInterval] || 300;
+      const effectiveTradeRateText = this.formatTradeRate(Math.min(tradeRate, 60 / strategyIntervalSeconds));
+      writeRule("lighterCryptoLiveCooldown", `Cooldown guard: ${tradeRateText}/min · completed ${stratInterval} candles cap entries at ${effectiveTradeRateText}/min · unlock required`);
       writeRule("lighterCryptoLiveEvaluation", bot?.last_evaluation
         ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · price ${this.formatCryptoPrice(Number(bot.last_evaluation.ratio || 0))} · mean ${this.formatCryptoPrice(Number(bot.last_evaluation.mean || 0))}`
         : "Awaiting completed bar");
@@ -4012,7 +4021,7 @@
       });
       this.renderLiveConditionStatus(bot);
       const notionalInput = lid("inputOrderNotional");
-      if (notionalInput && document.activeElement !== notionalInput) {
+      if (notionalInput && document.activeElement !== notionalInput && notionalInput.dataset?.unsaved !== "true") {
         notionalInput.value = String(bot?.notional_usd || 25);
         notionalInput.min = "10"; notionalInput.max = "500"; notionalInput.step = "5";
       }
@@ -4041,7 +4050,7 @@
       }
       this.renderCryptoNotionals();
       const tradeRateInput = lid("inputLiveTradeRate");
-      if (tradeRateInput && document.activeElement !== tradeRateInput) {
+      if (tradeRateInput && document.activeElement !== tradeRateInput && tradeRateInput.dataset?.unsaved !== "true") {
         tradeRateInput.value = String(Math.round(tradeRate * 5) / 5);
       }
       this.renderTradeRatePreview();
@@ -4236,9 +4245,17 @@
           const tradeRate = this.tradeRatePerMinute();
           const cooldownSeconds = this.cooldownSecondsForTradeRate(tradeRate);
           const symbol = this.botState?.selected_symbol || this.selectedSymbol || "BTC";
-          const confirmed = window.confirm(`Enable REAL Lighter Perpetuals trading on EC2?\n\nContract: ${symbol}\nStrategy: ${this.botState?.strategy_mode || "grid"} on completed ${this.botState?.strategy_interval || "5m"} bars\nOrder target: $${notional.toFixed(0)} single-leg, up to ${this.botState?.max_tranches || 5} tranches\nRate: up to ${this.formatTradeRate(tradeRate)} orders/min (${cooldownSeconds}s minimum)\n\nOrders can start after the next completed bar. No hedge leg is placed.`);
+          const interval = this.botState?.strategy_interval || "5m";
+          const intervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[interval] || 300;
+          const effectiveRate = Math.min(tradeRate, 60 / intervalSeconds);
+          const confirmed = window.confirm(`Enable REAL Lighter Perpetuals trading on EC2?\n\nContract: ${symbol}\nStrategy: ${this.botState?.strategy_mode || "grid"} on completed ${interval} bars\nOrder target: $${notional.toFixed(0)} single-leg, up to ${this.botState?.max_tranches || 5} tranches\nCooldown guard: ${this.formatTradeRate(tradeRate)} orders/min (${cooldownSeconds}s minimum)\nEffective completed-candle maximum: ${this.formatTradeRate(effectiveRate)} entries/min\n\nOrders can start after the next completed bar. No hedge leg is placed.`);
           if (!confirmed) { if (toggle) toggle.checked = false; return false; }
-          await apiPost("/api/lighter-crypto/bot/config", { notional_usd: notional, min_seconds_between_orders: cooldownSeconds });
+          const configData = await apiPost("/api/lighter-crypto/bot/config", { notional_usd: notional, min_seconds_between_orders: cooldownSeconds });
+          const notionalInput = lid("inputOrderNotional");
+          const rateInput = lid("inputLiveTradeRate");
+          if (notionalInput) delete notionalInput.dataset.unsaved;
+          if (rateInput) delete rateInput.dataset.unsaved;
+          if (configData?.bot) this.updateBotStatus(configData.bot, this.liveVenue || { execution_enabled: true });
         }
         const data = await apiPost("/api/lighter-crypto/bot/toggle", { enabled, confirm_live_trading: enabled });
         if (data?.bot) {
@@ -4272,8 +4289,15 @@
 
     renderTradeRatePreview() {
       const rate = this.tradeRatePerMinute();
+      const intervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[this.botState?.strategy_interval || this.interval] || 300;
+      const candleRate = 60 / intervalSeconds;
+      const effectiveRate = Math.min(rate, candleRate);
       const output = $("lighterCryptoLiveTradeRateValue");
       if (output) output.textContent = `${this.formatTradeRate(rate)}/min`;
+      const detail = $("lighterCryptoLiveCooldown");
+      if (detail && lid("inputLiveTradeRate")?.dataset.unsaved === "true") {
+        detail.textContent = `Pending: ${this.formatTradeRate(rate)}/min cooldown guard · completed ${this.botState?.strategy_interval || this.interval || "5m"} candles limit entries to ${this.formatTradeRate(effectiveRate)}/min`;
+      }
     },
 
     async saveLiveBotRate() {
@@ -4288,8 +4312,12 @@
       if (button) button.disabled = true;
       try {
         const data = await apiPost("/api/lighter-crypto/bot/config", { min_seconds_between_orders: cooldownSeconds });
+        const rateInput = lid("inputLiveTradeRate");
+        if (rateInput) delete rateInput.dataset.unsaved;
         if (data?.bot) this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
-        window.showToast?.(`Live bot rate saved: ${this.formatTradeRate(tradeRate)} single-leg orders/min (${cooldownSeconds}s minimum).`, "success");
+        const intervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[data?.bot?.strategy_interval || this.interval] || 300;
+        const effectiveRate = Math.min(tradeRate, 60 / intervalSeconds);
+        window.showToast?.(`Cooldown saved: ${this.formatTradeRate(tradeRate)}/min (${cooldownSeconds}s minimum). Completed candles currently cap entries at ${this.formatTradeRate(effectiveRate)}/min.`, "success");
         return true;
       } catch (error) {
         window.alert(error.message);

@@ -16,6 +16,11 @@ assert.match(lighter, /\/api\/lighter-crypto\/status/);
 assert.match(lighter, /\/api\/lighter-crypto\/bot\/toggle/);
 assert.match(lighter, /market_source=lighter/);
 assert.doesNotMatch(lighter, /\/api\/crypto\//);
+assert.ok(lighter.includes('notionalInput.dataset.unsaved = "true"'), 'edited order notional must remain pending until live start saves it');
+assert.ok(lighter.includes('notionalInput.dataset?.unsaved !== "true"'), 'status refresh must not overwrite a pending order notional');
+assert.ok(lighter.includes('liveTradeRate.dataset.unsaved = "true"'), 'edited trade rate must remain pending until explicitly saved or live start saves it');
+assert.ok(lighter.includes('tradeRateInput.dataset?.unsaved !== "true"'), 'status refresh must not overwrite a pending trade rate');
+assert.ok(lighter.includes('completed ${stratInterval} candles cap entries'), 'trade-rate display must disclose the completed-candle execution ceiling');
 
 const context = {
   window: {},
