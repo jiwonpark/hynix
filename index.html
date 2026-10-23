@@ -12811,8 +12811,25 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (!this.state.orderLog.length && !recentExecs.length) {
             logBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">${isKo ? '체결 내역이 없습니다.' : 'No recent executions logged.'}</td></tr>`;
           } else if (recentExecs.length) {
-            logBody.innerHTML = recentExecs.slice(-30).reverse().map((ex) => {
-              const timeStr = formatKstDateTime(ex.time);
+            const executionGroups = [];
+            const executionGroupsByKey = new Map();
+            recentExecs.slice(-60).forEach((ex, index) => {
+              const hasPairIndex = ex.verified_exit_leg && ex.verified_exit_pair_index != null;
+              const key = hasPairIndex
+                ? `verified-pair-${ex.verified_exit_pair_index}`
+                : `single-${ex.id || ex.order_id || index}`;
+              let group = executionGroupsByKey.get(key);
+              if (!group) {
+                group = { key, pairIndex: hasPairIndex ? Number(ex.verified_exit_pair_index) : null, legs: [] };
+                executionGroupsByKey.set(key, group);
+                executionGroups.push(group);
+              }
+              group.legs.push(ex);
+            });
+            executionGroups.forEach((group) => group.legs.sort((a, b) => Number(a.time || 0) - Number(b.time || 0)));
+            executionGroups.sort((a, b) => Math.max(...b.legs.map((leg) => Number(leg.time || 0))) - Math.max(...a.legs.map((leg) => Number(leg.time || 0))));
+
+            const renderExecutionLegCells = (ex) => {
               const isAdr = ex.symbol === "SKHYUSDT";
               let sideText = "";
               let sideColor = "#64748b";
@@ -12832,43 +12849,64 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               const netPnl = ex.realized_pnl ? (ex.realized_pnl - fee) : null;
               const netColor = (netPnl != null && netPnl > 0) ? "#16a34a" : ((netPnl != null && netPnl < 0) ? "#dc2626" : "#64748b");
               const netSign = (netPnl != null && netPnl > 0) ? "+" : "";
-
               const pnlCell = ex.realized_pnl ? `
                 <div style="color: ${pnlColor}; font-weight: 800;">${pnlSign}$${ex.realized_pnl.toFixed(4)}</div>
                 <div style="font-size: 10px; color: ${netColor}; font-weight: 700;">${isKo ? '청산 수수료 후' : 'After exit fee'}: ${netSign}$${netPnl.toFixed(4)}</div>
               ` : '—';
+              return `
+                <td style="font-weight: 700;">${ex.symbol}</td>
+                <td><span style="font-weight: 800; color: ${sideColor};">${sideText}</span></td>
+                <td>${ex.qty.toFixed(2)} ($${(ex.qty * ex.price).toFixed(2)})</td>
+                <td>$${ex.price.toFixed(2)}</td>
+                <td style="color: #d97706; font-family: monospace; font-size: 11px;">${feeStr}</td>
+                <td>${pnlCell}</td>`;
+            };
+            const signedPairPnl = (value) => {
+              const number = Number(value);
+              const color = number >= 0 ? "#16a34a" : "#dc2626";
+              const prefix = number > 0 ? "+" : (number < 0 ? "-" : "");
+              return `<b style="color:${color};">${prefix}$${Math.abs(number).toFixed(4)}</b>`;
+            };
 
-              const statusText = ex.verified_exit_leg
-                ? (isKo ? "검증된 청산 LEG" : "VERIFIED EXIT LEG")
-                : "FILLED";
-              const statusColor = ex.verified_exit_leg ? "#0369a1" : "#16a34a";
-              const pairRealized = ex.verified_exit_pair_realized_after_exit_fees_usd;
-              const pairVirtual = ex.virtual_lifo_after_commissions_usd;
-              const pairEngine = ex.engine_take_profit_estimate_usd;
-              const signedPairPnl = (value) => {
-                const number = Number(value);
-                const color = number >= 0 ? "#16a34a" : "#dc2626";
-                const prefix = number > 0 ? "+" : (number < 0 ? "-" : "");
-                return `<b style="color:${color};">${prefix}$${Math.abs(number).toFixed(4)}</b>`;
-              };
-              const pairComparison = ex.verified_exit_pair_anchor && pairRealized != null
-                ? `<div style="margin-top:4px; font-size:9.5px; line-height:1.45; white-space:nowrap;">`
+            logBody.innerHTML = executionGroups.slice(0, 30).map((group) => {
+              const pairAnchor = group.legs.find((leg) => leg.verified_exit_pair_anchor) || group.legs[0];
+              const isPaired = group.pairIndex != null && group.legs.length > 1;
+              const timeStr = formatKstDateTime(Math.max(...group.legs.map((leg) => Number(leg.time || 0))));
+              const pairRealized = pairAnchor.verified_exit_pair_realized_after_exit_fees_usd;
+              const pairVirtual = pairAnchor.virtual_lifo_after_commissions_usd;
+              const pairEngine = pairAnchor.engine_take_profit_estimate_usd;
+              const pairComparison = pairRealized != null
+                ? `<div style="margin-top:5px; font-size:9.5px; line-height:1.5; white-space:nowrap;">`
                   + `<span style="color:#64748b;">${isKo ? '페어 Binance 평균단가' : 'Pair Binance average'}:</span> ${signedPairPnl(pairRealized)}`
                   + (pairVirtual != null ? `<br><span style="color:#64748b;">${isKo ? '대응 진입 Virtual LIFO' : 'Corresponding-entry Virtual LIFO'}:</span> ${signedPairPnl(pairVirtual)}` : "")
                   + (pairEngine != null ? `<br><span style="color:#64748b;">${isKo ? '청산 직전 엔진 추정' : 'Pre-exit engine estimate'}:</span> ${signedPairPnl(pairEngine)}` : "")
                   + `</div>`
                 : "";
 
-              return `<tr>
-                <td style="color: #64748b; font-size: 11px;">${timeStr}</td>
-                <td style="font-weight: 700;">${ex.symbol}</td>
-                <td><span style="font-weight: 800; color: ${sideColor};">${sideText}</span></td>
-                <td>${ex.qty.toFixed(2)} ($${(ex.qty * ex.price).toFixed(2)})</td>
-                <td>$${ex.price.toFixed(2)}</td>
-                <td style="color: #d97706; font-family: monospace; font-size: 11px;">${feeStr}</td>
-                <td>${pnlCell}</td>
-                <td><span style="font-weight: 800; color: ${statusColor};">${statusText}</span>${pairComparison}</td>
-              </tr>`;
+              if (!isPaired) {
+                const statusText = pairAnchor.verified_exit_leg
+                  ? (isKo ? "검증된 청산 LEG" : "VERIFIED EXIT LEG")
+                  : "FILLED";
+                const statusColor = pairAnchor.verified_exit_leg ? "#0369a1" : "#16a34a";
+                return `<tr>
+                  <td style="color:#64748b; font-size:11px;">${timeStr}</td>
+                  ${renderExecutionLegCells(pairAnchor)}
+                  <td><span style="font-weight:800; color:${statusColor};">${statusText}</span>${pairComparison}</td>
+                </tr>`;
+              }
+
+              const pairNumber = group.pairIndex + 1;
+              const pairLabel = isKo ? `검증된 청산 페어 #${pairNumber}` : `VERIFIED EXIT PAIR #${pairNumber}`;
+              return group.legs.map((leg, legIndex) => `<tr style="${legIndex === 0 ? 'border-top:2px solid #cbd5e1;' : ''} background:${legIndex === 0 ? '#f8fafc' : '#fff'};">
+                ${legIndex === 0 ? `<td rowspan="${group.legs.length}" style="color:#475569; font-size:11px; vertical-align:middle; background:#f8fafc; border-right:2px solid #e2e8f0;">
+                  <div style="font-weight:800; color:#0369a1; margin-bottom:4px;">${isKo ? '듀얼레그 청산' : 'DUAL-LEG EXIT'}</div>
+                  <div>${timeStr}</div>
+                </td>` : ""}
+                ${renderExecutionLegCells(leg)}
+                ${legIndex === 0 ? `<td rowspan="${group.legs.length}" style="vertical-align:middle; background:#f8fafc; border-left:2px solid #e2e8f0;">
+                  <span style="font-weight:900; color:#0369a1;">${pairLabel}</span>${pairComparison}
+                </td>` : ""}
+              </tr>`).join("");
             }).join("");
           } else {
             logBody.innerHTML = this.state.orderLog.slice(-15).reverse().map((log) => {

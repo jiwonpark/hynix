@@ -69,6 +69,22 @@ const state = {
       commission_asset: 'USDT',
       realized_pnl: -1.25,
       verified_exit_leg: true,
+      verified_exit_pair_index: 18,
+      verified_exit_pair_anchor: false,
+      verified_exit_pair_realized_after_exit_fees_usd: -2.41,
+      virtual_lifo_after_commissions_usd: 0.148,
+      engine_take_profit_estimate_usd: 0.136,
+    }, {
+      symbol: 'CSOPSKHYNIX2LUSDT',
+      side: 'SELL',
+      qty: 2.48,
+      price: 2.159,
+      time: 2,
+      commission: 0.0021,
+      commission_asset: 'USDT',
+      realized_pnl: -1.16,
+      verified_exit_leg: true,
+      verified_exit_pair_index: 18,
       verified_exit_pair_anchor: true,
       verified_exit_pair_realized_after_exit_fees_usd: -2.41,
       virtual_lifo_after_commissions_usd: 0.148,
@@ -92,7 +108,11 @@ assert.match($('pairExecutionHistorySummary').innerHTML, /Corresponding-entry Vi
 assert.match($('pairExecutionHistorySummary').innerHTML, /\+\$2\.7182/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /Stored pre-exit engine estimate/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /last successful read \(retrying\)/);
-assert.match($('executionHistoryBody').innerHTML, /VERIFIED EXIT LEG/);
+assert.match($('executionHistoryBody').innerHTML, /VERIFIED EXIT PAIR #19/);
+assert.match($('executionHistoryBody').innerHTML, /DUAL-LEG EXIT/);
+assert.match($('executionHistoryBody').innerHTML, /rowspan="2"/);
+assert.equal(($('executionHistoryBody').innerHTML.match(/VERIFIED EXIT PAIR #19/g) || []).length, 1,
+  'the pair status and P&L comparison must render once for both legs');
 assert.match($('executionHistoryBody').innerHTML, /After exit fee/);
 assert.match($('executionHistoryBody').innerHTML, /Pair Binance average/);
 assert.match($('executionHistoryBody').innerHTML, /Corresponding-entry Virtual LIFO/);
