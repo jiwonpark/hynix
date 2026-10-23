@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+assert(html.includes('/api/trade/verified_exits'), 'Tab 2 must use the lightweight verified-exit fallback');
 assert.match(
   html,
   /try \{ this\.renderPositionsAndLogs\(\); \} catch \(e\) \{ console\.warn\("Positions and execution history render error:", e\); \}/,
@@ -33,6 +34,7 @@ const state = {
   positions: [],
   orderLog: [],
   hedgedStatus: {
+    verified_exits_stale: true,
     verified_exit_summary: {
       verified_exit_pairs: 19,
       total_recorded_exit_pairs: 19,
@@ -65,6 +67,7 @@ assert.match($('pairExecutionHistorySummary').innerHTML, /Verified exit pairs/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /19\/19/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /-\$42\.8983/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /entry commissions and funding excluded/);
+assert.match($('pairExecutionHistorySummary').innerHTML, /last successful read \(retrying\)/);
 assert.match($('executionHistoryBody').innerHTML, /VERIFIED EXIT LEG/);
 assert.match($('executionHistoryBody').innerHTML, /After exit fee/);
 

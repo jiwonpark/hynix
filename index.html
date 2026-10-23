@@ -12687,9 +12687,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const verifiedLabel = isKo ? "검증된 청산 페어" : "Verified exit pairs";
             const pnlLabel = isKo ? "검증분 실현손익(청산 수수료 후)" : "Verified realized P&L after exit fees";
             const feeLabel = isKo ? "청산 수수료" : "Exit fees";
-            const basis = isKo
+            const baseBasis = isKo
               ? "Binance 체결 기준 · 진입 수수료와 펀딩 제외"
               : "Binance fills · entry commissions and funding excluded";
+            const basis = this.state.hedgedStatus?.verified_exits_stale
+              ? `${baseBasis} · ${isKo ? '마지막 성공 조회(현재 재시도 중)' : 'last successful read (retrying)'}`
+              : baseBasis;
             logSummary.innerHTML = `${verifiedLabel} <b style="color:#0f172a;">${verifiedCount}/${totalCount}</b>`
               + ` · ${pnlLabel} <b style="color:${pnlColor};">${sign}$${Math.abs(realized).toFixed(4)}</b>`
               + ` · ${feeLabel} $${fees.toFixed(4)}<br><span style="color:#64748b;">${basis}</span>`;
@@ -13010,6 +13013,18 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
       },
 
+      async fetchVerifiedExitSnapshot() {
+        const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
+        try {
+          const res = await fetch(`${apiPrefix}/api/trade/verified_exits`, { signal: AbortSignal.timeout(10000) });
+          if (!res.ok) return null;
+          const data = await res.json();
+          return data && data.success ? data : null;
+        } catch (e) {
+          return null;
+        }
+      },
+
       async fetchHedgedStatusOnce() {
         const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
         const endpoints = [
@@ -13020,6 +13035,14 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
             if (res.ok) {
               const data = await res.json();
+              if (!data.authenticated) {
+                const exitSnapshot = await this.fetchVerifiedExitSnapshot();
+                if (exitSnapshot) {
+                  data.verified_exit_summary = exitSnapshot.verified_exit_summary;
+                  data.recent_executions = exitSnapshot.recent_executions;
+                  data.verified_exits_stale = Boolean(exitSnapshot.stale);
+                }
+              }
               this.state.hedgedStatus = data;
               if (data && data.authenticated) {
                 this.state.backendConnected = true;
@@ -13052,9 +13075,20 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             }
           } catch (e) {}
         }
-        this.state.hedgedStatus = {authenticated: false, status: "unavailable", error: "Status request failed"};
+        const exitSnapshot = await this.fetchVerifiedExitSnapshot();
+        this.state.hedgedStatus = {
+          authenticated: false,
+          status: "unavailable",
+          error: "Status request failed",
+          ...(exitSnapshot ? {
+            verified_exit_summary: exitSnapshot.verified_exit_summary,
+            recent_executions: exitSnapshot.recent_executions,
+            verified_exits_stale: Boolean(exitSnapshot.stale),
+          } : {}),
+        };
         this.renderHedgedController(this.state.hedgedStatus);
         this.renderHeldPairPnl();
+        this.renderPositionsAndLogs();
       },
 
       renderHedgedController(data) {

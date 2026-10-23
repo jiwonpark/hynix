@@ -13,6 +13,8 @@ from backend.nominal_signal import nominal_premium
 
 class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        server._verified_exits_cache = None
+        server._verified_exits_cache_time = 0.0
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.state_patch = patch.object(server, 'STATE_FILE', Path(self.tmp.name) / 'state.json')
@@ -146,6 +148,28 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(summary['realized_after_exit_fees_usd'], .72)
         self.assertTrue(summary['all_recorded_exits_verified'])
         self.assertTrue(all(fill['verified_exit_leg'] for fill in result['recent_executions']))
+
+    async def test_lightweight_verified_exit_endpoint_skips_full_status_dependencies(self):
+        server.save_auto_tranche_state({
+            'exit_order_pairs': [{'adr_order_id': '11', 'stock_order_id': '12'}]
+        })
+
+        async def request(method, path, params, **kwargs):
+            if params['symbol'] == 'SKHYUSDT':
+                return [{'id': 101, 'orderId': 11, 'side': 'BUY', 'qty': '.07',
+                         'price': '195', 'time': 1000, 'realizedPnl': '1.25',
+                         'commission': '.01', 'commissionAsset': 'USDT'}]
+            return [{'id': 102, 'orderId': 12, 'side': 'SELL', 'qty': '1.2',
+                     'price': '5.6', 'time': 1001, 'realizedPnl': '-.50',
+                     'commission': '.02', 'commissionAsset': 'USDT'}]
+
+        self.client.request.side_effect = request
+        result = await server.get_verified_exits_endpoint()
+        self.assertTrue(result['success'])
+        self.assertEqual(result['verified_exit_summary']['verified_exit_pairs'], 1)
+        self.assertAlmostEqual(
+            result['verified_exit_summary']['realized_after_exit_fees_usd'], .72)
+        self.client.get_detailed_account_overview.assert_not_awaited()
 
     async def test_split_entry_and_exit_fills_preserve_one_remaining_tranche(self):
         self.client.get_detailed_account_overview.return_value['positions'] = [

@@ -3108,6 +3108,94 @@ _hedged_status_cache: Optional[Dict[str, Any]] = None
 _hedged_status_cache_time = 0.0
 HEDGED_STATUS_CACHE_TTL = 2.5
 HEDGED_STATUS_TIMEOUT = 8.0
+_verified_exits_cache: Optional[Dict[str, Any]] = None
+_verified_exits_cache_time = 0.0
+VERIFIED_EXITS_CACHE_TTL = 10.0
+
+
+def _normalize_binance_trades(trades, symbol):
+    executions = []
+    is_adr = symbol == "SKHYUSDT"
+    for trade in trades:
+        side = trade.get("side", "")
+        is_entry = (is_adr and side == "SELL") or (not is_adr and side == "BUY")
+        executions.append({
+            "id": str(trade.get("id", "")),
+            "order_id": str(trade.get("orderId", trade.get("id", ""))),
+            "symbol": symbol,
+            "side": side,
+            "price": float(trade.get("price", 0.0)),
+            "qty": float(trade.get("qty", 0.0)),
+            "realized_pnl": float(trade.get("realizedPnl", 0.0)),
+            "commission": float(trade["commission"]) if trade.get("commission") is not None else None,
+            "commission_asset": str(trade.get("commissionAsset", "USDT")),
+            "time": int(trade.get("time", 0)),
+            "action_type": ("ENTRY_SHORT" if is_entry else "EXIT_SHORT") if is_adr
+                           else ("ENTRY_LONG" if is_entry else "EXIT_LONG"),
+        })
+    return executions
+
+
+def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs):
+    executions = [dict(execution) for execution in executions]
+    summary = summarize_verified_exit_pairs(executions, stock_symbol, exit_pairs)
+    verified_legs = {
+        ("SKHYUSDT", item["adr_order_id"], "BUY")
+        for item in summary["verified_exits"]
+    } | {
+        (stock_symbol, item["stock_order_id"], "SELL")
+        for item in summary["verified_exits"]
+    }
+    for execution in executions:
+        if (execution["symbol"], str(execution["order_id"]), execution["side"]) in verified_legs:
+            execution["pnl_authoritative"] = True
+            execution["pnl_source"] = "BINANCE_USER_TRADES"
+            execution["verified_exit_leg"] = True
+    return {"verified_exit_summary": summary, "recent_executions": executions}
+
+
+@app.get("/api/trade/verified_exits")
+async def get_verified_exits_endpoint() -> Dict[str, Any]:
+    """Return exit reconciliation without waiting for positions or market signals."""
+    global _verified_exits_cache, _verified_exits_cache_time
+    now = time.monotonic()
+    if (_verified_exits_cache is not None
+            and now - _verified_exits_cache_time < VERIFIED_EXITS_CACHE_TTL):
+        return copy.deepcopy(_verified_exits_cache)
+
+    async def account_trade_history(symbol):
+        return await binance_client.request(
+            "GET", "/fapi/v1/userTrades",
+            {"symbol": symbol, "limit": 1000}, signed=True)
+
+    try:
+        adr_trades, stock_trades = await asyncio.wait_for(asyncio.gather(
+            account_trade_history("SKHYUSDT"),
+            account_trade_history("CSOPSKHYNIX2LUSDT"),
+        ), 8.0)
+        if not isinstance(adr_trades, list) or not isinstance(stock_trades, list):
+            raise RuntimeError("Exchange trade history is unavailable")
+        executions = (_normalize_binance_trades(adr_trades, "SKHYUSDT")
+                      + _normalize_binance_trades(stock_trades, "CSOPSKHYNIX2LUSDT"))
+        executions.sort(key=lambda item: item["time"])
+        result = {
+            "success": True,
+            **_build_verified_exit_snapshot(
+                executions,
+                "CSOPSKHYNIX2LUSDT",
+                load_auto_tranche_state().get("exit_order_pairs", []),
+            ),
+        }
+        _verified_exits_cache = result
+        _verified_exits_cache_time = time.monotonic()
+        return copy.deepcopy(result)
+    except Exception as exc:
+        if _verified_exits_cache is not None:
+            stale = copy.deepcopy(_verified_exits_cache)
+            stale.update(stale=True, error=str(exc) or type(exc).__name__)
+            return stale
+        return {"success": False, "status": "unavailable",
+                "error": str(exc) or type(exc).__name__}
 
 
 @app.get("/api/trade/hedged_status")
@@ -3241,58 +3329,22 @@ async def _compute_hedged_status() -> Dict[str, Any]:
                 return_exceptions=True)
 
             if isinstance(res_skhy, list):
-                for t in res_skhy:
-                    executions.append({
-                        "id": str(t.get("id", "")),
-                        "order_id": str(t.get("orderId", t.get("id", ""))),
-                        "symbol": "SKHYUSDT",
-                        "side": t.get("side", ""),
-                        "price": float(t.get("price", 0.0)),
-                        "qty": float(t.get("qty", 0.0)),
-                        "realized_pnl": float(t.get("realizedPnl", 0.0)),
-                        "commission": float(t["commission"]) if t.get("commission") is not None else None,
-                        "commission_asset": str(t.get("commissionAsset", "USDT")),
-                        "time": int(t.get("time", 0)),
-                        "action_type": "ENTRY_SHORT" if t.get("side") == "SELL" else "EXIT_SHORT"
-                    })
+                executions.extend(_normalize_binance_trades(res_skhy, "SKHYUSDT"))
             if isinstance(res_stock, list):
-                for t in res_stock:
-                    executions.append({
-                        "id": str(t.get("id", "")),
-                        "order_id": str(t.get("orderId", t.get("id", ""))),
-                        "symbol": history_stock_sym,
-                        "side": t.get("side", ""),
-                        "price": float(t.get("price", 0.0)),
-                        "qty": float(t.get("qty", 0.0)),
-                        "realized_pnl": float(t.get("realizedPnl", 0.0)),
-                        "commission": float(t["commission"]) if t.get("commission") is not None else None,
-                        "commission_asset": str(t.get("commissionAsset", "USDT")),
-                        "time": int(t.get("time", 0)),
-                        "action_type": "ENTRY_LONG" if t.get("side") == "BUY" else "EXIT_LONG"
-                    })
+                executions.extend(_normalize_binance_trades(res_stock, history_stock_sym))
             executions.sort(key=lambda x: x["time"])
         except Exception:
             pass
 
         # Real-time criteria for speculative trend-reversal auto-tranching & anti-churn LIFO ratchet
         auto_state = load_auto_tranche_state()
-        verified_exit_summary = summarize_verified_exit_pairs(
+        verified_exit_snapshot = _build_verified_exit_snapshot(
             executions,
             history_stock_sym,
             auto_state.get("exit_order_pairs", []),
         )
-        verified_exit_legs = {
-            ("SKHYUSDT", item["adr_order_id"], "BUY")
-            for item in verified_exit_summary["verified_exits"]
-        } | {
-            (history_stock_sym, item["stock_order_id"], "SELL")
-            for item in verified_exit_summary["verified_exits"]
-        }
-        for execution in executions:
-            if (execution["symbol"], str(execution["order_id"]), execution["side"]) in verified_exit_legs:
-                execution["pnl_authoritative"] = True
-                execution["pnl_source"] = "BINANCE_USER_TRADES"
-                execution["verified_exit_leg"] = True
+        verified_exit_summary = verified_exit_snapshot["verified_exit_summary"]
+        executions = verified_exit_snapshot["recent_executions"]
         cond_toggles = auto_state.get("condition_toggles", {})
         def is_cond_enabled(k: str, default: bool = True) -> bool:
             if k in MANDATORY_LIVE_CONDITIONS:
