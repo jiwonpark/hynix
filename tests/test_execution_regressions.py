@@ -18,6 +18,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         server._verified_exits_task = None
         server._short_term_parity_cache.clear()
         server._short_term_trades_cache.clear()
+        server._historical_user_trades_cache.clear()
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.state_patch = patch.object(server, 'STATE_FILE', Path(self.tmp.name) / 'state.json')
