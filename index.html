@@ -2536,6 +2536,41 @@
       line-height: 1.35;
     }
 
+    [id^="tabContent"].mainTabLoading {
+      position: relative;
+      min-height: 320px;
+    }
+    [id^="tabContent"].mainTabLoading > * {
+      visibility: hidden !important;
+    }
+    [id^="tabContent"].mainTabLoading::before {
+      content: "";
+      position: absolute;
+      z-index: 20;
+      left: 50%;
+      top: 92px;
+      width: 28px;
+      height: 28px;
+      margin-left: -14px;
+      border: 3px solid #cbd5e1;
+      border-top-color: #0284c7;
+      border-radius: 50%;
+      animation: mainTabLoadingSpin 0.8s linear infinite;
+    }
+    [id^="tabContent"].mainTabLoading::after {
+      content: attr(data-loading-message);
+      position: absolute;
+      z-index: 20;
+      top: 136px;
+      left: 16px;
+      right: 16px;
+      color: #475569;
+      font-size: 13px;
+      font-weight: 700;
+      text-align: center;
+    }
+    @keyframes mainTabLoadingSpin { to { transform: rotate(360deg); } }
+
     @media (max-width: 860px) {
       main { width: min(100vw - 20px, 1280px); padding-top: 18px; }
       .top { grid-template-columns: minmax(0, 1fr); grid-template-areas: "meta" "title" "actions"; }
@@ -2915,7 +2950,7 @@
     <!-- ======================================================= -->
     <!-- TAB 1: BACKTEST & QUANTITATIVE RESEARCH                 -->
     <!-- ======================================================= -->
-    <div id="tabContentBacktest">
+    <div id="tabContentBacktest" class="mainTabLoading" data-loading-message="Loading market data and charts…" aria-busy="true">
       <section class="controls" aria-label="Chart controls">
       <!-- Section 1: Market Environment, Strategy & Execution Cost Parameters -->
       <div class="controlSection collapsible-section" id="secMarketEnvironment">
@@ -3315,7 +3350,7 @@
     <!-- ======================================================= -->
     <!-- TAB 2: LIVE & PAPER TRADING EXECUTION TERMINAL          -->
     <!-- ======================================================= -->
-    <div id="tabContentTrading" class="terminal-read-only" style="display: none;">
+    <div id="tabContentTrading" class="terminal-read-only mainTabLoading" data-loading-message="Loading live account, positions, and charts…" aria-busy="true" style="display: none;">
       <template id="tradingTerminalTemplate">
       
       <!-- Terminal Read-Only Safety Banner -->
@@ -4221,23 +4256,23 @@
     <!-- ======================================================= -->
     <!-- TAB 3: INSTITUTIONAL GRID ENGINE & LIGHTER DUAL-LEG ARB -->
     <!-- ======================================================= -->
-    <div id="tabContentLighter" class="terminal-read-only" style="display:none;">
+    <div id="tabContentLighter" class="terminal-read-only mainTabLoading" data-loading-message="Loading live account, strategy, and charts…" aria-busy="true" style="display:none;">
     </div><!-- End #tabContentLighter -->
 
     <!-- ======================================================= -->
     <!-- TAB 4: SINGLE-LEG CRYPTO TERMINAL                       -->
     <!-- ======================================================= -->
-    <div id="tabContentCrypto" class="terminal-read-only" style="display:none;">
+    <div id="tabContentCrypto" class="terminal-read-only mainTabLoading" data-loading-message="Loading live account, strategy, and charts…" aria-busy="true" style="display:none;">
     </div><!-- End #tabContentCrypto -->
 
     <!-- TAB 5: LIGHTER SINGLE-LEG CRYPTO TERMINAL -->
-    <div id="tabContentLighterCrypto" class="terminal-read-only" style="display:none;">
+    <div id="tabContentLighterCrypto" class="terminal-read-only mainTabLoading" data-loading-message="Loading live account, strategy, and charts…" aria-busy="true" style="display:none;">
     </div><!-- End #tabContentLighterCrypto -->
 
     <!-- ======================================================= -->
     <!-- TAB 3: HEDGE-WORTHY PAIRS EXPLORER (CROSS-MARKET ARB)   -->
     <!-- ======================================================= -->
-    <div id="tabContentPairs" style="display: none;">
+    <div id="tabContentPairs" class="mainTabLoading" data-loading-message="Loading pair prices and statistics…" aria-busy="true" style="display: none;">
       <!-- Overview & Controls Section -->
       <section class="controls" aria-label="Pairs screener controls">
         <div class="controlSection collapsible-section" id="secPairsControls">
@@ -4505,7 +4540,7 @@
     <!-- ======================================================= -->
     <!-- TAB 4: ULTRA-FREQUENT MICRO-COMPOUNDING ENGINE          -->
     <!-- ======================================================= -->
-    <div id="tabContentCompound" style="display: none;">
+    <div id="tabContentCompound" class="mainTabLoading" data-loading-message="Preparing compounding model…" aria-busy="true" style="display: none;">
       <!-- Section 1: Engine Controls & Framework Header -->
       <section class="controls" aria-label="Micro-compounding controls">
         <div class="controlSection collapsible-section" id="secCompoundControls">
@@ -4727,7 +4762,7 @@
       </section>
     </div><!-- End #tabContentCompound -->
 
-    <div id="tabContentStrategyLab" style="display:none;">
+    <div id="tabContentStrategyLab" class="mainTabLoading" data-loading-message="Loading replay candles and strategy results…" aria-busy="true" style="display:none;">
         <div class="shortTermExecutionSection collapsible-section" id="lab_shortTermExecutionSection">
           <!-- Section Header -->
           <div class="collapsible-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
@@ -5040,7 +5075,7 @@
         </div>
     </div>
 
-    <div id="tabContentUpbitScanner" style="display:none;">
+    <div id="tabContentUpbitScanner" class="mainTabLoading" data-loading-message="Scanning live Upbit markets…" aria-busy="true" style="display:none;">
       <section class="controls" aria-label="Upbit KRW coin ranking controls">
         <div class="controlSection collapsible-section" id="secUpbitRadarControls">
           <div class="controlSectionHeader collapsible-header">
@@ -11075,6 +11110,52 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     $("langKo").addEventListener("click", () => { setLanguage("ko"); saveSettings(); });
     $("langEn").addEventListener("click", () => { setLanguage("en"); saveSettings(); });
 
+    const mainTabLoadingConfig = {
+      backtest: { id: "tabContentBacktest", ready: () => Array.isArray(cachedRows) && cachedRows.length > 0 },
+      trading: { id: "tabContentTrading", ready: () => Boolean(tradingEngine?.state?.backendAuthenticated && tradingEngine?.shortTermHistory?.bars?.length) },
+      lighter: { id: "tabContentLighter", ready: () => Boolean(window.lighterEngine?.bars?.length && window.lighterEngine?.liveVenue?.success !== false && window.lighterEngine?.liveVenue) },
+      crypto: { id: "tabContentCrypto", ready: () => Boolean(window.cryptoEngine?.bars?.length && window.cryptoEngine?.liveVenue?.success !== false && window.cryptoEngine?.liveVenue) },
+      lightercrypto: { id: "tabContentLighterCrypto", ready: () => Boolean(window.lighterCryptoEngine?.bars?.length && window.lighterCryptoEngine?.liveVenue?.success) },
+      pairs: { id: "tabContentPairs", ready: () => Boolean(pairsExplorer?.pairs?.some((pair) => Number(pair.priceA) > 0 && Number(pair.priceB) > 0)) },
+      compound: { id: "tabContentCompound", ready: () => Boolean(compoundingEngine?.chart && compoundingEngine?.wealthSeries) },
+      strategylab: { id: "tabContentStrategyLab", ready: () => Boolean(window.strategyLab?.loaded && window.strategyLab?.data?.bars?.length) },
+      upbitscanner: { id: "tabContentUpbitScanner", ready: () => Boolean(upbitCoinScanner?.loaded && upbitCoinScanner?.rows?.length) },
+    };
+
+    function updateMainTabLoading(tab) {
+      const normalized = String(tab || "backtest").toLowerCase();
+      const config = mainTabLoadingConfig[normalized];
+      const container = config ? $(config.id) : null;
+      if (!container) return false;
+      let ready = false;
+      try { ready = Boolean(config.ready()); } catch (_) {}
+      container.classList.toggle("mainTabLoading", !ready);
+      container.setAttribute("aria-busy", ready ? "false" : "true");
+      return ready;
+    }
+
+    function beginMainTabLoading(tab) {
+      const normalized = String(tab || "backtest").toLowerCase();
+      const config = mainTabLoadingConfig[normalized];
+      const container = config ? $(config.id) : null;
+      if (!container || updateMainTabLoading(normalized)) return;
+      container.classList.add("mainTabLoading");
+      container.setAttribute("aria-busy", "true");
+      const startedAt = Date.now();
+      const timer = window.setInterval(() => {
+        if (updateMainTabLoading(normalized)) {
+          window.clearInterval(timer);
+          return;
+        }
+        if (Date.now() - startedAt >= 45000) {
+          container.dataset.loadingMessage = "Still loading live data… The terminal will keep retrying.";
+          window.clearInterval(timer);
+        }
+      }, 250);
+    }
+    window.updateMainTabLoading = updateMainTabLoading;
+    beginMainTabLoading("backtest");
+
     // Primary Navigation Tab Switcher
     function switchMainTab(tab) {
       const normalized = (tab || "backtest").toLowerCase();
@@ -11121,6 +11202,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       try {
         localStorage.setItem("skhynix_active_tab", tab);
       } catch (e) {}
+      beginMainTabLoading(normalized);
 
       setTimeout(() => {
         if (window.spreadChart && isBacktest) {
