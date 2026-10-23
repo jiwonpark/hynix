@@ -3,6 +3,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+assert.match(
+  html,
+  /try \{ this\.renderPositionsAndLogs\(\); \} catch \(e\) \{ console\.warn\("Positions and execution history render error:", e\); \}/,
+  'A different Tab 2 panel render failure must not discard a successful status response',
+);
 const lines = html.split('\n');
 const start = lines.findIndex((line) => line.includes('renderPositionsAndLogs() {'));
 const end = lines.findIndex((line, index) => index > start && line.includes('async syncWithBackend() {'));

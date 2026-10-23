@@ -13044,10 +13044,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               if (!this.pendingConditionWrites && data.auto_tranche_criteria) {
                 this.state.conditionToggles = {...data.auto_tranche_criteria.condition_toggles};
               }
-              this.renderHedgedController(data);
-              this.renderHeldPairPnl();
-              this.renderPositionsAndLogs();
-              this.scheduleDynamicBacktest();
+              try { this.renderHedgedController(data); } catch (e) { console.warn("Hedged controller render error:", e); }
+              try { this.renderHeldPairPnl(); } catch (e) { console.warn("Held-pair P&L render error:", e); }
+              try { this.renderPositionsAndLogs(); } catch (e) { console.warn("Positions and execution history render error:", e); }
+              try { this.scheduleDynamicBacktest(); } catch (e) { console.warn("Dynamic backtest schedule error:", e); }
               return;
             }
           } catch (e) {}
