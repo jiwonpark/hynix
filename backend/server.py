@@ -3145,6 +3145,20 @@ def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs, entry_pa
     for item in summary["verified_exits"]:
         verified_legs[("SKHYUSDT", item["adr_order_id"], "BUY")] = (item, False)
         verified_legs[(stock_symbol, item["stock_order_id"], "SELL")] = (item, True)
+    entry_legs = {}
+    if isinstance(entry_pairs, list):
+        for entry_index, pair in enumerate(entry_pairs):
+            if not isinstance(pair, dict):
+                continue
+            adr_id = str(pair.get("adr_order_id", ""))
+            stock_id = str(pair.get("stock_order_id", ""))
+            spread_dir = pair.get("spread_direction", "SHORT_SPREAD")
+            adr_side = "SELL" if spread_dir == "SHORT_SPREAD" else "BUY"
+            stock_side = "BUY" if spread_dir == "SHORT_SPREAD" else "SELL"
+            if adr_id and stock_id:
+                entry_legs[("SKHYUSDT", adr_id, adr_side)] = (pair, entry_index, False)
+                entry_legs[(stock_symbol, stock_id, stock_side)] = (pair, entry_index, True)
+
     for execution in executions:
         verified = verified_legs.get(
             (execution["symbol"], str(execution["order_id"]), execution["side"]))
@@ -3163,6 +3177,21 @@ def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs, entry_pa
             if item.get("engine_take_profit_estimate_usd") is not None:
                 execution["engine_take_profit_estimate_usd"] = item[
                     "engine_take_profit_estimate_usd"]
+            continue
+
+        entry_matched = entry_legs.get(
+            (execution["symbol"], str(execution["order_id"]), execution["side"]))
+        if entry_matched:
+            pair, entry_index, pair_anchor = entry_matched
+            execution["verified_entry_leg"] = True
+            execution["verified_entry_pair_index"] = entry_index
+            execution["verified_entry_pair_anchor"] = pair_anchor
+            if pair.get("entry_spread") is not None:
+                execution["entry_spread"] = pair["entry_spread"]
+            if pair.get("signal_version") is not None:
+                execution["signal_version"] = pair["signal_version"]
+            if pair.get("spread_direction") is not None:
+                execution["spread_direction"] = pair["spread_direction"]
     return {"verified_exit_summary": summary, "recent_executions": executions}
 
 

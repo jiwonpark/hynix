@@ -4237,7 +4237,7 @@
               <table class="positionsTable">
                 <thead>
                   <tr>
-                    <th>Timestamp (KST)</th>
+                    <th style="min-width: 250px;">Pair / Order & Execution Summary</th>
                     <th>Symbol</th>
                     <th>Side</th>
                     <th>Filled Size</th>
@@ -12819,21 +12819,82 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (!this.state.orderLog.length && !recentExecs.length) {
             logBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #94a3b8; padding: 32px 16px; font-family: sans-serif;">${isKo ? '체결 내역이 없습니다.' : 'No recent executions logged.'}</td></tr>`;
           } else if (recentExecs.length) {
+            const isEntryLeg = (ex) => {
+              if (ex.verified_entry_leg) return true;
+              if (ex.verified_exit_leg) return false;
+              if (ex.action_type) return ex.action_type.startsWith("ENTRY");
+              return (ex.symbol === "SKHYUSDT" && ex.side === "SELL") || (ex.symbol === "CSOPSKHYNIX2LUSDT" && ex.side === "BUY");
+            };
+
             const executionGroups = [];
             const executionGroupsByKey = new Map();
-            recentExecs.slice(-60).forEach((ex, index) => {
-              const hasPairIndex = ex.verified_exit_leg && ex.verified_exit_pair_index != null;
-              const key = hasPairIndex
-                ? `verified-pair-${ex.verified_exit_pair_index}`
-                : `single-${ex.id || ex.order_id || index}`;
-              let group = executionGroupsByKey.get(key);
-              if (!group) {
-                group = { key, pairIndex: hasPairIndex ? Number(ex.verified_exit_pair_index) : null, legs: [] };
+            const unassignedEntries = [];
+
+            const pool = recentExecs.slice(-80);
+            pool.forEach((ex, index) => {
+              const hasExitPair = ex.verified_exit_leg && ex.verified_exit_pair_index != null;
+              const hasEntryPair = ex.verified_entry_leg && ex.verified_entry_pair_index != null;
+              if (hasExitPair) {
+                const key = `verified-exit-${ex.verified_exit_pair_index}`;
+                let group = executionGroupsByKey.get(key);
+                if (!group) {
+                  group = { key, type: "exit", pairIndex: Number(ex.verified_exit_pair_index), legs: [] };
+                  executionGroupsByKey.set(key, group);
+                  executionGroups.push(group);
+                }
+                group.legs.push(ex);
+              } else if (hasEntryPair) {
+                const key = `verified-entry-${ex.verified_entry_pair_index}`;
+                let group = executionGroupsByKey.get(key);
+                if (!group) {
+                  group = { key, type: "entry", pairIndex: Number(ex.verified_entry_pair_index), legs: [] };
+                  executionGroupsByKey.set(key, group);
+                  executionGroups.push(group);
+                }
+                group.legs.push(ex);
+              } else if (isEntryLeg(ex)) {
+                unassignedEntries.push(ex);
+              } else {
+                const key = `single-${ex.id || ex.order_id || index}`;
+                const group = { key, type: "single", pairIndex: null, legs: [ex] };
                 executionGroupsByKey.set(key, group);
                 executionGroups.push(group);
               }
-              group.legs.push(ex);
             });
+
+            // Cluster unassigned entries executing together within 5000ms with complementary symbols
+            unassignedEntries.sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
+            const pairedEntryIndices = new Set();
+            for (let i = 0; i < unassignedEntries.length; i++) {
+              if (pairedEntryIndices.has(i)) continue;
+              const legA = unassignedEntries[i];
+              let matchIdx = -1;
+              for (let j = i + 1; j < unassignedEntries.length; j++) {
+                if (pairedEntryIndices.has(j)) continue;
+                const legB = unassignedEntries[j];
+                if (Math.abs(Number(legB.time || 0) - Number(legA.time || 0)) > 5000) break;
+                if (legB.symbol !== legA.symbol) {
+                  matchIdx = j;
+                  break;
+                }
+              }
+              if (matchIdx !== -1) {
+                pairedEntryIndices.add(i);
+                pairedEntryIndices.add(matchIdx);
+                const legB = unassignedEntries[matchIdx];
+                const key = `clustered-entry-${legA.time}-${legB.time}`;
+                const group = { key, type: "entry", pairIndex: null, legs: [legA, legB] };
+                executionGroupsByKey.set(key, group);
+                executionGroups.push(group);
+              } else {
+                pairedEntryIndices.add(i);
+                const key = `single-${legA.id || legA.order_id || i}`;
+                const group = { key, type: "single", pairIndex: null, legs: [legA] };
+                executionGroupsByKey.set(key, group);
+                executionGroups.push(group);
+              }
+            }
+
             executionGroups.forEach((group) => group.legs.sort((a, b) => Number(a.time || 0) - Number(b.time || 0)));
             executionGroups.sort((a, b) => Math.max(...b.legs.map((leg) => Number(leg.time || 0))) - Math.max(...a.legs.map((leg) => Number(leg.time || 0))));
 
@@ -12862,7 +12923,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <div style="font-size: 10px; color: ${netColor}; font-weight: 700;">${isKo ? '청산 수수료 후' : 'After exit fee'}: ${netSign}$${netPnl.toFixed(4)}</div>
               ` : '—';
               return `
-                <td style="font-weight: 700;">${ex.symbol}</td>
+                <td style="font-weight: 700; color: #0f172a;">${ex.symbol}</td>
                 <td><span style="font-weight: 800; color: ${sideColor};">${sideText}</span></td>
                 <td>${ex.qty.toFixed(2)} ($${(ex.qty * ex.price).toFixed(2)})</td>
                 <td>$${ex.price.toFixed(2)}</td>
@@ -12877,44 +12938,139 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             };
 
             logBody.innerHTML = executionGroups.slice(0, 30).map((group) => {
-              const pairAnchor = group.legs.find((leg) => leg.verified_exit_pair_anchor) || group.legs[0];
-              const isPaired = group.pairIndex != null && group.legs.length > 1;
+              const pairAnchor = group.legs.find((leg) => leg.verified_exit_pair_anchor || leg.verified_entry_pair_anchor) || group.legs[0];
+              const isPaired = group.legs.length > 1;
               const timeStr = formatKstDateTime(Math.max(...group.legs.map((leg) => Number(leg.time || 0))));
-              const pairRealized = pairAnchor.verified_exit_pair_realized_after_exit_fees_usd;
-              const pairVirtual = pairAnchor.virtual_lifo_after_commissions_usd;
-              const pairEngine = pairAnchor.engine_take_profit_estimate_usd;
-              const pairComparison = pairRealized != null
-                ? `<div style="margin-top:5px; font-size:9.5px; line-height:1.5; white-space:nowrap;">`
-                  + `<span style="color:#64748b;">${isKo ? '페어 Binance 평균단가' : 'Pair Binance average'}:</span> ${signedPairPnl(pairRealized)}`
-                  + (pairVirtual != null ? `<br><span style="color:#64748b;">${isKo ? '대응 진입 Virtual LIFO' : 'Corresponding-entry Virtual LIFO'}:</span> ${signedPairPnl(pairVirtual)}` : "")
-                  + (pairEngine != null ? `<br><span style="color:#64748b;">${isKo ? '청산 직전 엔진 추정' : 'Pre-exit engine estimate'}:</span> ${signedPairPnl(pairEngine)}` : "")
-                  + `</div>`
-                : "";
+              const totalFees = group.legs.reduce((acc, leg) => acc + (leg.commission != null ? leg.commission : 0.0054), 0);
+              const totalNotional = group.legs.reduce((acc, leg) => acc + (leg.qty * leg.price), 0);
 
               if (!isPaired) {
-                const statusText = pairAnchor.verified_exit_leg
+                const ex = group.legs[0];
+                const isExit = ex.verified_exit_leg;
+                const statusText = isExit
                   ? (isKo ? "검증된 청산 LEG" : "VERIFIED EXIT LEG")
-                  : "FILLED";
-                const statusColor = pairAnchor.verified_exit_leg ? "#0369a1" : "#16a34a";
-                return `<tr>
-                  <td style="color:#64748b; font-size:11px;">${timeStr}</td>
-                  ${renderExecutionLegCells(pairAnchor)}
-                  <td><span style="font-weight:800; color:${statusColor};">${statusText}</span>${pairComparison}</td>
+                  : (ex.verified_entry_leg ? (isKo ? "검증된 진입 LEG" : "VERIFIED ENTRY LEG") : "FILLED");
+                const statusColor = isExit ? "#0369a1" : "#16a34a";
+                return `<tr style="border-top: 1px solid #e2e8f0;">
+                  <td style="vertical-align: middle; background: #f8fafc; border-right: 2px solid #e2e8f0; min-width: 250px; padding: 10px 14px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;">
+                      <span style="font-size: 12.5px; font-weight: 800; color: #334155;">${ex.symbol}</span>
+                      <span style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 6px; border-radius: 4px; font-weight: 700;">SINGLE</span>
+                    </div>
+                    <div style="font-size: 10.5px; color: #64748b; font-family: monospace;">${timeStr}</div>
+                  </td>
+                  ${renderExecutionLegCells(ex)}
+                  <td style="vertical-align: middle;"><span style="font-weight: 800; color: ${statusColor};">${statusText}</span></td>
                 </tr>`;
               }
 
-              const pairNumber = group.pairIndex + 1;
-              const pairLabel = isKo ? `검증된 청산 페어 #${pairNumber}` : `VERIFIED EXIT PAIR #${pairNumber}`;
-              return group.legs.map((leg, legIndex) => `<tr style="${legIndex === 0 ? 'border-top:2px solid #cbd5e1;' : ''} background:${legIndex === 0 ? '#f8fafc' : '#fff'};">
-                ${legIndex === 0 ? `<td rowspan="${group.legs.length}" style="color:#475569; font-size:11px; vertical-align:middle; background:#f8fafc; border-right:2px solid #e2e8f0;">
-                  <div style="font-weight:800; color:#0369a1; margin-bottom:4px;">${isKo ? '듀얼레그 청산' : 'DUAL-LEG EXIT'}</div>
-                  <div>${timeStr}</div>
-                </td>` : ""}
-                ${renderExecutionLegCells(leg)}
-                ${legIndex === 0 ? `<td rowspan="${group.legs.length}" style="vertical-align:middle; background:#f8fafc; border-left:2px solid #e2e8f0;">
-                  <span style="font-weight:900; color:#0369a1;">${pairLabel}</span>${pairComparison}
-                </td>` : ""}
-              </tr>`).join("");
+              // Grouped Pair: Exit
+              if (group.type === "exit") {
+                const pairRealized = pairAnchor.verified_exit_pair_realized_after_exit_fees_usd;
+                const pairVirtual = pairAnchor.virtual_lifo_after_commissions_usd;
+                const pairEngine = pairAnchor.engine_take_profit_estimate_usd;
+                const isProfit = pairRealized != null ? pairRealized >= 0 : true;
+                const pnlSign = (pairRealized != null && pairRealized >= 0) ? "+" : "";
+                const pairNumber = group.pairIndex != null ? group.pairIndex + 1 : null;
+                const badgeText = pairNumber ? (isKo ? `청산 페어 #${pairNumber}` : `EXIT PAIR #${pairNumber}`) : (isKo ? "듀얼 청산" : "DUAL EXIT");
+
+                const leftKnotHtml = `
+                  <td rowspan="${group.legs.length}" style="font-weight: 700; color: #0f172a; vertical-align: middle; background: #f8fafc; border-right: 2px solid #e2e8f0; min-width: 250px; padding: 12px 14px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                      <span style="font-size: 13px; font-weight: 800; color: #0284c7;">⚡ ${isKo ? 'SK Hynix 듀얼 청산' : 'SK Hynix Dual Exit'}</span>
+                      <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">${badgeText}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #64748b; font-weight: 600; margin-bottom: 8px;">
+                      <span>SKHYUSDT + CSOP 2x</span>
+                      <span style="font-family: monospace; font-size: 10.5px; color: #64748b;">${timeStr}</span>
+                    </div>
+
+                    <div style="background: ${isProfit ? '#ecfdf5' : '#fff1f2'}; border: 1.5px solid ${isProfit ? '#86efac' : '#fecaca'}; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;">
+                      <div style="display: flex; justify-content: space-between; font-size: 9.5px; font-weight: 800; color: ${isProfit ? '#047857' : '#be123c'}; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <span>${isKo ? 'Binance 실현손익' : 'Binance Realized P&L'}</span>
+                        <span>${pairRealized != null ? (isProfit ? 'PROFIT' : 'LOSS') : 'NET'}</span>
+                      </div>
+                      <div style="font-size: 16px; font-weight: 900; color: ${isProfit ? '#16a34a' : '#dc2626'}; margin-top: 2px;">
+                        ${pairRealized != null ? `${pnlSign}$${Math.abs(pairRealized).toFixed(4)}` : '—'}
+                      </div>
+                      ${pairVirtual != null ? `
+                      <div style="font-size: 10.5px; color: ${isProfit ? '#065f46' : '#9f1239'}; margin-top: 3px; font-family: monospace;">
+                        ${isKo ? '대응 진입 Virtual LIFO' : 'Virtual LIFO'}: ${signedPairPnl(pairVirtual)}
+                      </div>` : ''}
+                      ${pairEngine != null ? `
+                      <div style="font-size: 10px; color: #64748b; margin-top: 2px; font-family: monospace;">
+                        ${isKo ? '청산 직전 엔진 추정' : 'Pre-exit engine'}: ${signedPairPnl(pairEngine)}
+                      </div>` : ''}
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-family: monospace; font-weight: 700; color: #64748b;">
+                      <span>${isKo ? '청산 수수료 합계' : 'Total Exit Fees'}:</span>
+                      <span style="color: #d97706;">-$${totalFees.toFixed(4)} USDT</span>
+                    </div>
+                  </td>`;
+
+                return group.legs.map((leg, legIndex) => {
+                  const statusLabel = leg.verified_exit_leg ? (isKo ? "검증된 청산" : "VERIFIED EXIT") : "FILLED";
+                  return `<tr style="${legIndex === 0 ? 'border-top: 2px solid #cbd5e1;' : ''} background: ${legIndex === 0 ? '#f8fafc' : '#ffffff'};">
+                    ${legIndex === 0 ? leftKnotHtml : ""}
+                    ${renderExecutionLegCells(leg)}
+                    <td style="vertical-align: middle;">
+                      <span style="font-weight: 800; color: #0369a1;">${statusLabel}</span>
+                    </td>
+                  </tr>`;
+                }).join("");
+              }
+
+              // Grouped Pair: Entry
+              const adrLeg = group.legs.find(l => l.symbol === "SKHYUSDT") || group.legs[0];
+              const stockLeg = group.legs.find(l => l.symbol !== "SKHYUSDT") || group.legs[1];
+              const entrySpread = pairAnchor.entry_spread != null ? pairAnchor.entry_spread : null;
+              const spreadDirection = pairAnchor.spread_direction || "SHORT_SPREAD";
+              const pairNumber = group.pairIndex != null ? group.pairIndex + 1 : null;
+              const badgeText = pairNumber ? (isKo ? `진입 페어 #${pairNumber}` : `ENTRY PAIR #${pairNumber}`) : (isKo ? "듀얼 진입" : "DUAL ENTRY");
+              const spreadLabel = spreadDirection.replace("_", " ");
+
+              const leftKnotHtml = `
+                <td rowspan="${group.legs.length}" style="font-weight: 700; color: #0f172a; vertical-align: middle; background: #f8fafc; border-right: 2px solid #e2e8f0; min-width: 250px; padding: 12px 14px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                    <span style="font-size: 13px; font-weight: 800; color: #0284c7;">⚡ ${isKo ? 'SK Hynix 듀얼 진입' : 'SK Hynix Dual Entry'}</span>
+                    <span style="font-size: 10px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">${badgeText}</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #64748b; font-weight: 600; margin-bottom: 8px;">
+                    <span>SKHYUSDT + CSOP 2x</span>
+                    <span style="font-family: monospace; font-size: 10.5px; color: #64748b;">${timeStr}</span>
+                  </div>
+
+                  <div style="background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 9.5px; font-weight: 800; color: #0369a1; text-transform: uppercase; letter-spacing: 0.5px;">
+                      <span>${isKo ? '진입 시그널 스프레드' : 'Entry Signal Spread'}</span>
+                      <span>${spreadLabel}</span>
+                    </div>
+                    <div style="font-size: 16px; font-weight: 900; color: #0284c7; margin-top: 2px;">
+                      ${entrySpread != null ? `${Number(entrySpread).toFixed(2)}%` : 'ADR / √CSOP'}
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 10px; color: #0369a1; margin-top: 3px; font-family: monospace;">
+                      <span>${isKo ? '체결 총액' : 'Total Filled'}: <strong>$${totalNotional.toFixed(2)}</strong></span>
+                      <span>${isKo ? '수수료' : 'Fee'}: <strong style="color: #d97706;">-$${totalFees.toFixed(4)}</strong></span>
+                    </div>
+                  </div>
+
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-family: monospace; font-weight: 700; color: #0284c7;">
+                    <span>${isKo ? '진입 레그 비중' : 'Leg Notional'}:</span>
+                    <span>$${(adrLeg.qty * adrLeg.price).toFixed(1)} / $${(stockLeg ? (stockLeg.qty * stockLeg.price) : 0).toFixed(1)}</span>
+                  </div>
+                </td>`;
+
+              return group.legs.map((leg, legIndex) => {
+                const statusLabel = leg.verified_entry_leg ? (isKo ? "검증된 진입" : "VERIFIED ENTRY") : "FILLED";
+                return `<tr style="${legIndex === 0 ? 'border-top: 2px solid #cbd5e1;' : ''} background: ${legIndex === 0 ? '#f8fafc' : '#ffffff'};">
+                  ${legIndex === 0 ? leftKnotHtml : ""}
+                  ${renderExecutionLegCells(leg)}
+                  <td style="vertical-align: middle;">
+                    <span style="font-weight: 800; color: #16a34a;">${statusLabel}</span>
+                  </td>
+                </tr>`;
+              }).join("");
             }).join("");
           } else {
             logBody.innerHTML = this.state.orderLog.slice(-15).reverse().map((log) => {
@@ -12922,8 +13078,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               const isShort = log.side && (log.side.includes("SELL") || log.side.includes("SHORT"));
               const sideColor = isShort ? "#dc2626" : "#16a34a";
               const sideIcon = isShort ? "🔴 " : "🟢 ";
-              return `<tr>
-                <td style="color: #64748b; font-size: 11px;">${log.timestamp}</td>
+              return `<tr style="border-top: 1px solid #e2e8f0;">
+                <td style="vertical-align: middle; background: #f8fafc; border-right: 2px solid #e2e8f0; min-width: 250px; padding: 10px 14px;">
+                  <div style="font-weight: 700; color: #0f172a; font-size: 12px;">${log.pair}</div>
+                  <div style="font-size: 10.5px; color: #64748b; font-family: monospace;">${log.timestamp}</div>
+                </td>
                 <td style="font-weight: 700;">${log.pair}</td>
                 <td><span style="font-weight: 800; color: ${sideColor};">${sideIcon}${log.side}</span></td>
                 <td>$${log.sizeUsdt.toLocaleString()}</td>
