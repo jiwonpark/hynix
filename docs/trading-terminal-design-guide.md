@@ -80,3 +80,17 @@ this checklist before reporting that the work is complete.
   silent fallback to placeholder values are failures. Document unresolved issues
   instead of reporting a successful deployment. Never submit test orders or
   change live trading settings as part of these checks.
+
+
+# Optional entry-count cap
+
+The Binance and Lighter single-leg crypto terminals allow every integer entry
+count from 1 through 100, plus Unlimited. This is a cap on simultaneously open
+bot-owned entry tranches, not a limit on exchange position rows. Unlimited is
+persisted and returned as `max_tranches: null`; it removes only the count cap.
+Leverage/exposure, available margin, exchange validity, executable-quote checks,
+order reconciliation, and recovery safeguards still apply to every entry.
+Display Unlimited explicitly in the selector, status, and capacity summaries;
+never substitute five, eight, zero, or the active count for a null limit. Save
+through authenticated live configuration, preserve the existing configured value
+on deployment, and never change live settings or place orders to verify this UI.

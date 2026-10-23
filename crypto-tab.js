@@ -1868,7 +1868,7 @@
           <div>
             <b>Size / dynamic capacity</b><br>
             Single-leg target $<span id="cryptoLiveNotional">50</span> · gross ≈ $<span id="cryptoLivePairGross">—</span><br>
-            <span id="cryptoLiveMaxTranches">—</span> bot-owned tranches · max <input id="crypto_inputLiveMaxTranches" type="number" min="1" max="5" step="1" value="5" aria-label="Maximum live Grid tranches" style="width:45px;font-weight:800"> · selected contract ≤1x Futures equity
+            <span id="cryptoLiveMaxTranches">—</span> bot-owned tranches · max <select id="crypto_inputLiveMaxTranches" aria-label="Maximum live entry count" style="width:95px;font-weight:800">${Array.from({length:100}, (_, i) => `<option value="${i + 1}"${i === 4 ? " selected" : ""}>${i + 1}</option>`).join("")}<option value="unlimited">Unlimited</option></select> · selected contract ≤1x Futures equity
           </div>
           <div>
             <b>Next-entry risk estimate</b><br>
@@ -1984,6 +1984,16 @@
       if (reconcile) reconcile.disabled = locked || !recovering;
     },
 
+    entryCountLimit() {
+      const raw = lid("inputLiveMaxTranches")?.value;
+      if (raw === "unlimited" || (raw == null && this.botState?.max_tranches === null)) return null;
+      return Number(raw == null || raw === "" ? (this.botState?.max_tranches ?? 5) : raw);
+    },
+
+    entryCountLabel(value = this.botState?.max_tranches) {
+      return value === null ? "Unlimited" : String(value ?? 5);
+    },
+
     liveStrategyPayload(mode = this.currentParadigm || "grid") {
       const numeric = (id, fallback) => {
         const raw = $(id)?.value;
@@ -1997,7 +2007,7 @@
         notional_usd: Number(this.orderNotional()),
         long_multiplier: this.longMultiplier(),
         short_multiplier: this.shortMultiplier(),
-        max_tranches: numeric("crypto_inputLiveMaxTranches", Number(this.botState?.max_tranches ?? 5)),
+        max_tranches: this.entryCountLimit(),
         max_book_spread_bps: numeric("crypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45)),
       };
       if (mode === "ou_quant") {
@@ -3572,7 +3582,7 @@
       if (liveBtn) liveBtn.classList.toggle("botActiveLive", isEnabled);
 
       this.setText("lblDaemonLatency", isEnabled ? "Binance Crypto Bot: Running on EC2" : "Binance Crypto Bot: Paused");
-      this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${bot?.max_tranches ?? tranches.length} safe tranches` : "Awaiting first closed-bar evaluation");
+      this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${this.entryCountLabel(bot?.max_tranches)} safe tranches` : "Awaiting first closed-bar evaluation");
       const rulesPanel = $("cryptoLiveRulesPanel");
       if (rulesPanel) {
         rulesPanel.style.borderColor = isEnabled ? "#059669" : "#94a3b8";
@@ -3613,10 +3623,15 @@
       writeRule("cryptoLiveEntryZ", Number(bot?.entry_z ?? 1.4).toFixed(2));
       writeRule("cryptoLiveExitZ", Number(bot?.exit_z ?? 0.2).toFixed(2));
       [["crypto_inputLiveGridEntryZ", bot?.entry_z], ["crypto_inputLiveGridExitZ", bot?.exit_z],
-        ["crypto_inputLiveMaxTranches", bot?.max_tranches], ["crypto_inputLiveMaxSpread", bot?.max_book_spread_bps]].forEach(([id, value]) => {
+        ["crypto_inputLiveMaxSpread", bot?.max_book_spread_bps]].forEach(([id, value]) => {
         const input = $(id);
         if (input && value != null && document.activeElement !== input && input.dataset.unsaved !== "true") input.value = String(value);
       });
+      const countControl = lid("inputLiveMaxTranches");
+      if (countControl && bot?.max_tranches !== undefined && document.activeElement !== countControl && countControl.dataset.unsaved !== "true") {
+        countControl.value = bot.max_tranches === null ? "unlimited" : String(bot.max_tranches);
+      }
+
       const condCheckboxes = {
         chkCondEntryMaStretch: "use_ma_stretch",
         chkCondEntryBase: "use_base_spacing",
@@ -3658,7 +3673,7 @@
       writeRule("cryptoLiveNotional", configuredAdrNotional.toFixed(0));
       writeRule("cryptoLivePairGross", estimatedPairGross.toFixed(2));
       const capacity = bot?.risk_capacity || {};
-      writeRule("cryptoLiveMaxTranches", `${capacity.active_tranches ?? tranches.length}/${capacity.max_tranches ?? bot?.max_tranches ?? tranches.length} campaign slots`);
+      writeRule("cryptoLiveMaxTranches", `${capacity.active_tranches ?? tranches.length}/${this.entryCountLabel(capacity.max_tranches !== undefined ? capacity.max_tranches : bot?.max_tranches)} campaign slots`);
       writeRule("cryptoLiveMaxSpread", Number(bot?.max_book_spread_bps ?? 45).toFixed(0));
       const cooldownSeconds = Math.max(6, Number(bot?.min_seconds_between_orders ?? 300));
       const tradeRate = Math.max(0.2, Math.min(10, 60 / cooldownSeconds));
@@ -3768,7 +3783,7 @@
 
         const validTranches = (this.botState?.tranches || []).filter((t) => Number(t.qty) > 0);
         tranchesCount = validTranches.length;
-        maxTranches = Number(this.botState?.max_tranches || 8);
+        maxTranches = (this.botState?.max_tranches === null ? Infinity : Number(this.botState?.max_tranches ?? 5));
 
         // Fallback to tranche notional if livePositions hasn't returned yet or is zero
         if (grossNotional === 0 && tranchesCount > 0) {
@@ -3828,7 +3843,7 @@
 
       // 4. Sizing Progress Bar & Utilization
       const capacityBlock = riskCapacity.blocked_reason === "CAMPAIGN_CAPACITY"
-        ? ` · ENTRY BLOCKED: ${tranchesCount}/${maxTranches} slot hard cap`
+        ? ` · ENTRY BLOCKED: ${tranchesCount}/${Number.isFinite(maxTranches) ? maxTranches : "Unlimited"} slot hard cap`
         : "";
       this.setText("lblTranchePct", `${utilPct.toFixed(1)}% (${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x)${capacityBlock}`);
       const progressBar = lid("barTrancheProgress");
@@ -3850,7 +3865,7 @@
 
       const remCapacity = Math.max(0, maxTranches - tranchesCount);
       const hasCapacity = tranchesCount < maxTranches;
-      this.setText("valCondEntryCapacity", `${tranchesCount} / ${maxTranches} (${remCapacity} Left)`);
+      this.setText("valCondEntryCapacity", `${tranchesCount} / ${Number.isFinite(maxTranches) ? maxTranches : "Unlimited"} (${Number.isFinite(remCapacity) ? `${remCapacity} Left` : "leverage/margin limits apply"})`);
       const chkCap = lid("chkCondEntryCapacity");
       if (chkCap) chkCap.checked = hasCapacity;
       const badgeCap = lid("badgeCondEntryCapacity");
@@ -3916,7 +3931,7 @@
           const tradeRate = this.tradeRatePerMinute();
           const cooldownSeconds = this.cooldownSecondsForTradeRate(tradeRate);
           const symbol = this.botState?.selected_symbol || this.selectedSymbol || "BTCUSDT";
-          const confirmed = window.confirm(`Enable REAL Binance Futures trading on EC2?\n\nContract: ${symbol}\nStrategy: ${this.botState?.strategy_mode || "grid"} on completed ${this.botState?.strategy_interval || "5m"} bars\nOrder target: $${notional.toFixed(0)} single-leg, up to ${this.botState?.max_tranches || 5} tranches\nRate: up to ${this.formatTradeRate(tradeRate)} orders/min (${cooldownSeconds}s minimum)\n\nOrders can start after the next completed bar. No hedge leg is placed.`);
+          const confirmed = window.confirm(`Enable REAL Binance Futures trading on EC2?\n\nContract: ${symbol}\nStrategy: ${this.botState?.strategy_mode || "grid"} on completed ${this.botState?.strategy_interval || "5m"} bars\nOrder target: $${notional.toFixed(0)} single-leg, up to ${this.entryCountLabel()} tranches\nRate: up to ${this.formatTradeRate(tradeRate)} orders/min (${cooldownSeconds}s minimum)\n\nOrders can start after the next completed bar. No hedge leg is placed.`);
           if (!confirmed) { if (toggle) toggle.checked = false; return false; }
           await apiPost("/api/crypto/bot/config", { notional_usd: notional, min_seconds_between_orders: cooldownSeconds });
         }
@@ -6028,8 +6043,8 @@
         this.setText("badgeEquitySource", col != null ? "REAL FUTURES" : "UNAVAILABLE");
         const actualFreeMargin = this.liveVenue?.available_margin;
         this.setText("valActivePairs", `${openLive.length} Open on Exchange`);
-        const maxTranches = Number(this.botState?.max_tranches || 8);
-        this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Campaign Slots`);
+        const maxTranches = (this.botState?.max_tranches === null ? Infinity : Number(this.botState?.max_tranches ?? 5));
+        this.setText("valHedgedTranches", `${validTranches.length} / ${Number.isFinite(maxTranches) ? maxTranches : "Unlimited"} Campaign Slots`);
         this.setText("valHedgedQuantities", `Selected contract $${liveGross.toFixed(2)} USDT`);
         this.setText("valHedgedCombinedPnl", pnlText);
         const pnlEl = lid("valHedgedCombinedPnl");

@@ -148,3 +148,9 @@ tab5.renderVirtualState();
 assert.ok(nodes.get('lighterCrypto_activePositionsBody').innerHTML.length > 0);
 
 console.log('Independent Binance Tab 4 and Lighter Tab 5 UI checks passed');
+
+// Null is the persisted Unlimited setting, not a missing value or a default five.
+nodes.set('lighterCrypto_inputLiveMaxTranches', {value: '5', dataset: {}});
+tab5.updateBotStatus({enabled: false, tranches: [], max_tranches: null}, {positions: []});
+assert.equal(nodes.get('lighterCrypto_inputLiveMaxTranches').value, 'unlimited');
+assert.equal(tab5.liveStrategyPayload().max_tranches, null);

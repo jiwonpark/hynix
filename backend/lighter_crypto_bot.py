@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+from .entry_count_limit import parse_entry_count_limit, has_entry_slot
 from .crypto_bot import INTERVAL_SECONDS
 from .lighter_strategy import (
     evaluate_strategy_signal,
@@ -337,7 +338,9 @@ class LighterCryptoBot:
         for key, value in values.items():
             if key in {"selected_symbol", "strategy_mode", "strategy_interval"}:
                 candidate[key] = str(value)
-            elif key in {"max_tranches", "min_seconds_between_orders", "ou_macro_ema_span",
+            elif key == "max_tranches":
+                candidate[key] = parse_entry_count_limit(value)
+            elif key in {"min_seconds_between_orders", "ou_macro_ema_span",
                         "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars",
                         "ma_accel_period", "fast_ma_period", "slow_ma_period", "min_diff_bars",
                         "macd_fast_period", "macd_slow_period", "macd_signal_period"}:
@@ -376,7 +379,7 @@ class LighterCryptoBot:
             )
         bounds = {
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0),
-            "notional_usd": (10.0, 500.0), "max_tranches": (1, 5),
+            "notional_usd": (10.0, 500.0),
             "long_multiplier": (0.1, 10.0), "short_multiplier": (0.1, 10.0),
             "gross_leverage_cap": (1.0, 20.0),
             "min_seconds_between_orders": (6, 86400), "max_book_spread_bps": (1, 100),
@@ -694,7 +697,7 @@ class LighterCryptoBot:
             else:
                 if self.state["pending_order"] or self.state["recovery_required"]:
                     raise ValueError("Execution recovery required")
-                if len(self.state["tranches"]) >= self.state["max_tranches"]:
+                if not has_entry_slot(self.state):
                     raise ValueError("Tranche capacity reached")
                 is_dust_pos = (abs(amount) * mark_px < self.DUST_NOTIONAL_THRESHOLD_USD) or (min_base > 0 and abs(amount) < min_base)
                 if not is_dust_pos and amount and amount * side < 0:
@@ -1118,7 +1121,7 @@ class LighterCryptoBot:
                     else:
                         await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
                                            reduce_only=True, reason="macd_final_peak_exit", exit_stage_after=0)
-                elif entry and len(self.state["tranches"]) < self.state["max_tranches"]:
+                elif entry and has_entry_slot(self.state):
                     if self.state["strategy_mode"] == "macd_strength_scaleout" and self.state["tranches"]:
                         return
                     if time.time() - self.state["last_order_time"] >= self.state["min_seconds_between_orders"]:
