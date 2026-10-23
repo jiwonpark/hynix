@@ -250,7 +250,7 @@
         icon: "📈",
         badge: "MOMENTUM DIP-BUYING · MA STACK",
         title: "➕ Multi-Timeframe MA Stack Dip Entry",
-        desc: "Trigger: 5m & 1h Bearish Alignment (Price < MA7 < MA24 < MA60) + MA Stretch ≥ 0.35%",
+        desc: "Trigger: selected-interval MA7/24/60 stack + MA stretch + 60-bar macro trend alignment",
         tpTitle: "🎯 Trend Golden Cross & Trailing Exit",
         tpDesc: "Exit: 5m MA7 crosses above MA24 or Trailing Profit Stop (0.15% drawdown from peak)",
         entryLabels: {
@@ -258,7 +258,7 @@
           rowCondEntryBase: "2. Minimum Dip Cadence Spacing (≥ 0.15pt)",
           rowCondEntryPeak: "3. Momentum Climax Exhaustion Rollover",
           rowCondEntryMaStack5m: "4. 5m Full MA Stack (Price < MA7 < MA24 < MA60)",
-          rowCondEntryMaStack1h: "5. 1h Macro Trend Support Alignment",
+          rowCondEntryMaStack1h: "5. 60-Bar Macro Trend Alignment",
           rowCondEntryCapacity: "6. Trend Tier Scaling Cap (≤ 5 Tranches)",
           rowCondEntryLeverage: "7. Trend Leverage Allowance (≤ 4.0x)",
           rowCondEntryMargin: "8. Trend Volatility Margin Guard",
@@ -965,7 +965,7 @@
         valCondEntryBase: "Replay: require +0.10pt spacing from prior same-side entry",
         valCondEntryPeak: "Replay: require z-score rollover",
         valCondEntryMaStack5m: "Replay: require MA7 / MA24 alignment",
-        valCondEntryMaStack1h: "Replay: require 1h macro support alignment",
+        valCondEntryMaStack1h: "Replay: require 60-bar macro trend alignment",
         valCondExitConvergence: "Replay: require selected Exit Z",
         valCondExitDwell: "Replay: minimum four bars held",
         valCondExitBottoming: "Replay: require convergence rollover",
@@ -1259,7 +1259,7 @@
               <strong id="lighter_valMaStretchGap" style="font-size:15px;color:#7c3aed;">-0.38% (Oversold Dip)</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
-              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">1h Macro Trend Anchor</small>
+              <small style="color:#64748b;font-weight:700;font-size:10px;display:block;text-transform:uppercase;">60-Bar Macro Trend Anchor</small>
               <strong style="font-size:15px;color:#16a34a;">Bullish Support ($138.80)</strong>
             </div>
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
@@ -2399,7 +2399,7 @@
         ["EntryBase", "use_base_spacing", "Spacing"],
         ["EntryPeak", "use_peak", "Peak rollover"],
         ["EntryMaStack5m", "use_ma_stack", "Trend stack"],
-        ["EntryMaStack1h", "use_ma_stack_1h", "Macro trend 1h"],
+        ["EntryMaStack1h", "use_ma_stack_1h", "Macro trend (60 strategy bars)"],
         ["ExitConvergence", "use_convergence", "Convergence"],
         ["ExitDwell", "use_dwell", "Dwell"],
         ["ExitBottoming", "use_bottoming", "Bottoming"],
@@ -2551,15 +2551,15 @@
       if (!panel) return;
       const labels = {
         ma_stack: {entry_ma_stack:"Entry · MA7/24/60 stack", entry_stretch:"Entry · MA60 stretch",
-          entry_ma_stack_1h:"Entry · 1h macro trend alignment",
+          entry_ma_stack_1h:"Entry · 60-bar macro trend alignment",
           exit_ma_cross:"Exit · MA cross", exit_trailing_stop:"Exit · trailing stop", exit_max_dwell:"Exit · 16-bar limit"},
         multi_factor: {entry_factor_z:"Entry · Z factor", entry_factor_velocity:"Entry · velocity factor",
           entry_factor_ma:"Entry · MA distance factor", entry_factor_extremum:"Entry · local extremum factor",
           entry_quorum:"Entry · vote quorum", entry_min_z:"Entry · minimum |Z| 0.8",
-          entry_ma_stack_1h:"Entry · 1h macro trend alignment",
+          entry_ma_stack_1h:"Entry · 60-bar macro trend alignment",
           exit_consensus:"Exit · consensus drop + 3 bars", exit_convergence:"Exit · Z convergence",
           exit_max_dwell:"Exit · 20-bar limit"},
-        trend_pullback: {entry_macro_trend:"Entry · macro trend", entry_ma_stack_1h:"Entry · 1h macro trend alignment",
+        trend_pullback: {entry_macro_trend:"Entry · macro trend", entry_ma_stack_1h:"Entry · 60-bar macro trend alignment",
           entry_pullback:"Entry · pullback distance",
           entry_micro_reversal:"Entry · micro reversal", exit_target:"Exit · target reached",
           exit_opposite_reversal:"Exit · profitable opposite reversal",
@@ -2625,13 +2625,21 @@
         multi_factor:["entry_factor_z","entry_factor_velocity","entry_factor_ma","entry_factor_extremum","entry_quorum","entry_min_z","entry_ma_stack_1h","exit_consensus","exit_convergence","exit_max_dwell"],
         trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
       };
+      const labelByKey = bot?.strategy_mode === "ma_stack" ? {
+        entry_ma_stack:"Entry · MA7/24/60 stack",
+        entry_stretch:"Entry · MA60 stretch",
+        entry_ma_stack_1h:"Entry · 60-bar macro trend alignment",
+        exit_ma_cross:"Exit · MA7/MA24 cross",
+        exit_trailing_stop:"Exit · trailing profit stop",
+        exit_max_dwell:"Exit · 16-bar limit",
+      } : {};
       (keysByMode[bot?.strategy_mode] || Object.keys(checks)).forEach((key) => {
         const value = checks[key];
         const row = document.createElement("div");
         row.className = "condRow";
         const label = document.createElement("span");
         label.className = "condLabel";
-        label.textContent = key.replace(/^entry_/, "Entry · ").replace(/^exit_/, "Exit · ").replaceAll("_", " ");
+        label.textContent = labelByKey[key] || key.replace(/^entry_/, "Entry · ").replace(/^exit_/, "Exit · ").replaceAll("_", " ");
         const badge = document.createElement("span");
         const toggle = toggleByKey[key];
         const hasPosition = Array.isArray(bot?.tranches) && bot.tranches.length > 0;
@@ -3001,6 +3009,7 @@
         this.setParadigm(stratMode);
       }
       this.setText("valDeployedInterval", `${stratInterval} completed candles`);
+      this.setText("valDeployedWindow", stratMode === "ma_stack" ? "60 completed bars" : "24 completed bars");
       this.setText("valDeployedEdge", stratMode === "ma_stack"
         ? `MA stack${bot?.use_ma_stack === false ? " OFF" : " ON"} · stretch ${bot?.use_ma_stretch === false ? "OFF" : `≥ ${Number(bot?.ma_stretch_min ?? 0.30).toFixed(2)}%`}`
         : `Entry |Z| ≥ ${Number(bot?.entry_z ?? 1.4).toFixed(2)}`);

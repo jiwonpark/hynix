@@ -591,7 +591,12 @@ def evaluate_ma_stack_signals(
     trailing_stop = False
     if position_side != 0 and entry_price > 0:
         pnl_pct = position_side * (current_price / entry_price - 1) * 100
-        trailing_stop = pnl_pct <= -ma_trailing_stop
+        held_window = prices[-min(len(prices), max(1, held_bars + 1)):]
+        max_favorable = max(
+            (position_side * (price / entry_price - 1) * 100 for price in held_window),
+            default=pnl_pct,
+        )
+        trailing_stop = max_favorable >= 0.20 and (max_favorable - pnl_pct) >= ma_trailing_stop
     dwell_pass = held_bars >= 16
     diff_exit_pass = (diff_exit_hook if position_side > 0 else diff_entry_hook) if use_ma_diff_exit else False
 

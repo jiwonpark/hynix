@@ -1014,6 +1014,25 @@ class TestLighterPairBot(unittest.TestCase):
             )
             self.assertEqual(live, replay)
 
+    def test_live_ma_stack_trailing_exit_matches_replay_drawdown_rule(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = LighterPairBot(Mock(), Path(directory) / "state.json")
+            evaluation_time = 1_791_500_000
+            bot.state.update({
+                "strategy_mode": "ma_stack",
+                "strategy_interval": "5m",
+                "use_bottoming": True,
+                "use_convergence": False,
+                "use_dwell": False,
+                "ma_trailing_stop": 0.15,
+                "tranches": [{"side": 1, "entry_ratio": 100.0, "time": evaluation_time - 600}],
+            })
+            prices = ([100.0] * 58) + [100.1, 100.3, 100.1]
+            _, _, exit_signal, evaluation = bot._evaluate_strategy_signals(
+                prices, side_if_open=1, evaluation_time=evaluation_time)
+            self.assertTrue(exit_signal)
+            self.assertTrue(evaluation["condition_pass"]["exit_trailing_stop"])
+
     def test_ou_entry_requires_absolute_edge_and_macro_alignment(self):
         def evaluate(slope, adjustment):
             ratios = [140 + slope * index + .2 * math.sin(index * .7) for index in range(200)]
