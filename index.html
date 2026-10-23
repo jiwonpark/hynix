@@ -12830,7 +12830,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const executionGroupsByKey = new Map();
             const unassignedEntries = [];
 
-            const pool = recentExecs.slice(-80);
+            const pool = recentExecs.slice(-150);
             pool.forEach((ex, index) => {
               const hasExitPair = ex.verified_exit_leg && ex.verified_exit_pair_index != null;
               const hasEntryPair = ex.verified_entry_leg && ex.verified_entry_pair_index != null;
@@ -12937,7 +12937,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               return `<b style="color:${color};">${prefix}$${Math.abs(number).toFixed(4)}</b>`;
             };
 
-            logBody.innerHTML = executionGroups.slice(0, 30).map((group) => {
+            logBody.innerHTML = executionGroups.slice(0, 80).map((group) => {
               const pairAnchor = group.legs.find((leg) => leg.verified_exit_pair_anchor || leg.verified_entry_pair_anchor) || group.legs[0];
               const isPaired = group.legs.length > 1;
               const timeStr = formatKstDateTime(Math.max(...group.legs.map((leg) => Number(leg.time || 0))));
