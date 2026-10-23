@@ -16,6 +16,8 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         server._verified_exits_cache = None
         server._verified_exits_cache_time = 0.0
         server._verified_exits_task = None
+        server._short_term_parity_cache.clear()
+        server._short_term_trades_cache.clear()
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.state_patch = patch.object(server, 'STATE_FILE', Path(self.tmp.name) / 'state.json')
@@ -427,6 +429,24 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.client.request.side_effect = request
         marker = (await server.get_short_term_parity('5m', 20))['markers'][0]
         self.assertEqual(marker['fill_signals'][0]['paired_order_id'], '42')
+
+    async def test_trades_cache_hit_still_builds_chart_markers(self):
+        times = [300000 * i for i in range(1, 21)]
+        async def request(method, path, params, **kwargs):
+            if 'klines' in path:
+                return [[t, 0, 0, 0, '100'] for t in times]
+            if params['symbol'] == 'CSOPSKHYNIX2LUSDT':
+                return [{'id': 22, 'orderId': 22, 'time': times[5] + 2000,
+                         'side': 'SELL', 'price': '5.65', 'qty': '1.08', 'commission': '.001'}]
+            return [{'id': 21, 'orderId': 21, 'time': times[5] + 1000,
+                     'side': 'BUY', 'price': '190.5', 'qty': '.06', 'commission': '.001'}]
+        self.client.request.side_effect = request
+        first = await server.get_short_term_parity('5m', 20)
+        self.assertEqual(len(first['markers']), 1)
+        server._short_term_parity_cache.clear()
+        second = await server.get_short_term_parity('5m', 20)
+        self.assertEqual(len(second['markers']), 1)
+        self.assertFalse(second['markers'][0]['is_entry'])
 
     def ma_bars(self, values):
         end = int(time.time() // 300) * 300

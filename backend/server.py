@@ -4188,23 +4188,28 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
             trade_window = ({"limit": 1000} if unbounded_wide_history else
                             {"startTime": bounded_start_ms, "endTime": history_end_ms, "limit": 1000})
 
-            trades_key = f"{unbounded_wide_history}_{bounded_start_ms}_{history_end_ms}" if end_time else "latest"
+            trades_key = (
+                f"{interval}_{limit}_{unbounded_wide_history}_{bounded_start_ms}_{history_end_ms}"
+                if end_time else f"{interval}_{limit}_latest"
+            )
             trades_cached = _short_term_trades_cache.get(trades_key)
             trades = None
             stock_trades = []
             if trades_cached and (now - trades_cached[0] < (10.0 if not end_time else 600.0)):
                 trades, stock_trades = trades_cached[1], trades_cached[2]
             else:
+                hedge_window = trade_window
                 trades = await binance_client.request(
                     "GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", **trade_window}, signed=True)
                 if not unbounded_wide_history and end_time is None and (not isinstance(trades, list) or len(trades) == 0):
                     trades = await binance_client.request("GET", "/fapi/v1/userTrades", {"symbol": "SKHYUSDT", "limit": 100}, signed=True)
+                    hedge_window = {"limit": 100}
 
                 if isinstance(trades, list) and bars and trades:
                     try:
                         result = await binance_client.request(
                             "GET", "/fapi/v1/userTrades",
-                            {"symbol": "CSOPSKHYNIX2LUSDT", **trade_window}, signed=True)
+                            {"symbol": "CSOPSKHYNIX2LUSDT", **hedge_window}, signed=True)
                         if isinstance(result, list):
                             stock_trades = result
                     except Exception:
@@ -4212,6 +4217,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                 if isinstance(trades, list):
                     _short_term_trades_cache[trades_key] = (now, trades, stock_trades)
 
+            if isinstance(trades, list) and bars and trades:
                 pair_executions = []
                 for symbol, raw_trades in (("SKHYUSDT", trades), ("CSOPSKHYNIX2LUSDT", stock_trades)):
                     for raw in raw_trades:
