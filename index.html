@@ -4188,6 +4188,9 @@
 
             <!-- Tab Pane 4: Execution History Log -->
             <div id="paneOrderLog" style="display: none; width: 100%; overflow-x: auto;">
+              <div id="pairExecutionHistorySummary" style="margin: 0 0 10px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; color: #475569; font-size: 11px; line-height: 1.5;">
+                Verified exit reconciliation will appear after Binance account history loads.
+              </div>
               <table class="positionsTable">
                 <thead>
                   <tr>
@@ -12671,6 +12674,31 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         // 2. Order Log Body
         const logBody = $("executionHistoryBody");
+        const logSummary = $("pairExecutionHistorySummary");
+        const verifiedExitSummary = this.state.hedgedStatus && this.state.hedgedStatus.verified_exit_summary;
+        if (logSummary) {
+          if (verifiedExitSummary && verifiedExitSummary.pnl_authoritative) {
+            const verifiedCount = Number(verifiedExitSummary.verified_exit_pairs || 0);
+            const totalCount = Number(verifiedExitSummary.total_recorded_exit_pairs || 0);
+            const realized = Number(verifiedExitSummary.realized_after_exit_fees_usd || 0);
+            const fees = Number(verifiedExitSummary.exit_fees_usd || 0);
+            const pnlColor = realized >= 0 ? "#16a34a" : "#dc2626";
+            const sign = realized > 0 ? "+" : (realized < 0 ? "-" : "");
+            const verifiedLabel = isKo ? "검증된 청산 페어" : "Verified exit pairs";
+            const pnlLabel = isKo ? "검증분 실현손익(청산 수수료 후)" : "Verified realized P&L after exit fees";
+            const feeLabel = isKo ? "청산 수수료" : "Exit fees";
+            const basis = isKo
+              ? "Binance 체결 기준 · 진입 수수료와 펀딩 제외"
+              : "Binance fills · entry commissions and funding excluded";
+            logSummary.innerHTML = `${verifiedLabel} <b style="color:#0f172a;">${verifiedCount}/${totalCount}</b>`
+              + ` · ${pnlLabel} <b style="color:${pnlColor};">${sign}$${Math.abs(realized).toFixed(4)}</b>`
+              + ` · ${feeLabel} $${fees.toFixed(4)}<br><span style="color:#64748b;">${basis}</span>`;
+          } else {
+            logSummary.textContent = isKo
+              ? "Binance 계정 체결 내역을 불러오면 검증된 청산 요약이 표시됩니다."
+              : "Verified exit reconciliation will appear after Binance account history loads.";
+          }
+        }
         if (logBody) {
           const recentExecs = (this.state.hedgedStatus && Array.isArray(this.state.hedgedStatus.recent_executions)) ? this.state.hedgedStatus.recent_executions : [];
           if (!this.state.orderLog.length && !recentExecs.length) {
@@ -12700,8 +12728,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
               const pnlCell = ex.realized_pnl ? `
                 <div style="color: ${pnlColor}; font-weight: 800;">${pnlSign}$${ex.realized_pnl.toFixed(4)}</div>
-                <div style="font-size: 10px; color: ${netColor}; font-weight: 700;">Net: ${netSign}$${netPnl.toFixed(4)}</div>
+                <div style="font-size: 10px; color: ${netColor}; font-weight: 700;">${isKo ? '청산 수수료 후' : 'After exit fee'}: ${netSign}$${netPnl.toFixed(4)}</div>
               ` : '—';
+
+              const statusText = ex.verified_exit_leg
+                ? (isKo ? "검증된 청산 LEG" : "VERIFIED EXIT LEG")
+                : "FILLED";
+              const statusColor = ex.verified_exit_leg ? "#0369a1" : "#16a34a";
 
               return `<tr>
                 <td style="color: #64748b; font-size: 11px;">${timeStr}</td>
@@ -12711,7 +12744,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <td>$${ex.price.toFixed(2)}</td>
                 <td style="color: #d97706; font-family: monospace; font-size: 11px;">${feeStr}</td>
                 <td>${pnlCell}</td>
-                <td><span style="font-weight: 800; color: #16a34a;">FILLED</span></td>
+                <td><span style="font-weight: 800; color: ${statusColor};">${statusText}</span></td>
               </tr>`;
             }).join("");
           } else {

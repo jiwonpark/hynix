@@ -1,5 +1,11 @@
 import unittest
-from backend.tranche_accounting import aggregate_orders, estimate_tranche_exit, infer_exit_pairs, prepare_exit_context
+from backend.tranche_accounting import (
+    aggregate_orders,
+    estimate_tranche_exit,
+    infer_exit_pairs,
+    prepare_exit_context,
+    summarize_verified_exit_pairs,
+)
 
 
 class TrancheAccountingTests(unittest.TestCase):
@@ -30,7 +36,35 @@ class TrancheAccountingTests(unittest.TestCase):
 
     def trade(self, symbol, order, side, qty, price, time, fee=.001, fill=None):
         return dict(symbol=symbol, order_id=str(order), id=str(fill if fill is not None else order),
-                    side=side, qty=qty, price=price, time=time, commission=fee, commission_asset='USDT')
+                    side=side, qty=qty, price=price, time=time, commission=fee,
+                    commission_asset='USDT', realized_pnl=0.0)
+
+    def test_verified_exit_summary_aggregates_split_fills_and_rejects_missing_leg(self):
+        trades = [
+            self.trade('SKHYUSDT', 11, 'BUY', .03, 190, 1000, fee=.01, fill=111),
+            self.trade('SKHYUSDT', 11, 'BUY', .04, 191, 1001, fee=.02, fill=112),
+            self.trade('CSOPSKHYNIX2LUSDT', 12, 'SELL', 1.2, 6, 1002, fee=.03),
+        ]
+        trades[0]['realized_pnl'] = 1.2
+        trades[1]['realized_pnl'] = .8
+        trades[2]['realized_pnl'] = -.5
+        summary = summarize_verified_exit_pairs(
+            trades,
+            'CSOPSKHYNIX2LUSDT',
+            [
+                {'adr_order_id': '11', 'stock_order_id': '12'},
+                {'adr_order_id': '21', 'stock_order_id': '22'},
+            ],
+        )
+        self.assertEqual(summary['verified_exit_pairs'], 1)
+        self.assertEqual(summary['total_recorded_exit_pairs'], 2)
+        self.assertEqual(summary['unverified_exit_pairs'], 1)
+        self.assertFalse(summary['all_recorded_exits_verified'])
+        self.assertAlmostEqual(summary['gross_realized_pnl_usd'], 1.5)
+        self.assertAlmostEqual(summary['exit_fees_usd'], .06)
+        self.assertAlmostEqual(summary['realized_after_exit_fees_usd'], 1.44)
+        self.assertTrue(summary['pnl_authoritative'])
+        self.assertIn('entry commissions and funding excluded', summary['pnl_basis'])
 
     def entries(self, adr_price=196, etf_price=5.6, order=1, time=1000000):
         return [self.trade('SKHYUSDT', order, 'SELL', .08, adr_price, time),

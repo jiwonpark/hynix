@@ -31,6 +31,7 @@ from .tranche_accounting import (
     entry_profiles,
     reconstruct_leg_stack,
     prepare_exit_context,
+    summarize_verified_exit_pairs,
 )
 from .counterfactual_trades import (
     reconcile_counterfactual_trades,
@@ -3227,13 +3228,13 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         # Fetch the latest account trade history for both legs. This history is
         # sufficient to restore the bounded active LIFO stack after a restart.
         executions = []
+        history_stock_sym = stock_sym or "CSOPSKHYNIX2LUSDT"
         try:
             async def account_trade_history(symbol):
                 return await binance_client.request(
                     "GET", "/fapi/v1/userTrades",
                     {"symbol": symbol, "limit": 1000}, signed=True)
 
-            history_stock_sym = stock_sym or "CSOPSKHYNIX2LUSDT"
             res_skhy, res_stock = await asyncio.gather(
                 account_trade_history("SKHYUSDT"),
                 account_trade_history(history_stock_sym),
@@ -3275,6 +3276,23 @@ async def _compute_hedged_status() -> Dict[str, Any]:
 
         # Real-time criteria for speculative trend-reversal auto-tranching & anti-churn LIFO ratchet
         auto_state = load_auto_tranche_state()
+        verified_exit_summary = summarize_verified_exit_pairs(
+            executions,
+            history_stock_sym,
+            auto_state.get("exit_order_pairs", []),
+        )
+        verified_exit_legs = {
+            ("SKHYUSDT", item["adr_order_id"], "BUY")
+            for item in verified_exit_summary["verified_exits"]
+        } | {
+            (history_stock_sym, item["stock_order_id"], "SELL")
+            for item in verified_exit_summary["verified_exits"]
+        }
+        for execution in executions:
+            if (execution["symbol"], str(execution["order_id"]), execution["side"]) in verified_exit_legs:
+                execution["pnl_authoritative"] = True
+                execution["pnl_source"] = "BINANCE_USER_TRADES"
+                execution["verified_exit_leg"] = True
         cond_toggles = auto_state.get("condition_toggles", {})
         def is_cond_enabled(k: str, default: bool = True) -> bool:
             if k in MANDATORY_LIVE_CONDITIONS:
@@ -3778,6 +3796,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             "eligible_for_take_profit": eligible_for_take_profit,
             "target_tranche_profit": tranche_profit,
             "recent_executions": executions,
+            "verified_exit_summary": verified_exit_summary,
             "auto_tranche_criteria": auto_criteria,
             "zero_loss_rule": {
                 "rule_name": "LIFO Tranche Estimated Net Profit Guard",

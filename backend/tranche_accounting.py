@@ -21,7 +21,8 @@ def aggregate_orders(executions):
         seen.add(fill_key)
         key = (trade['symbol'], trade['order_id'], trade['side'])
         order = orders.setdefault(key, {**trade, 'qty': 0.0, 'cost': 0.0,
-                                        'fee': 0.0, 'fee_known': True})
+                                        'fee': 0.0, 'fee_known': True,
+                                        'realized_pnl': 0.0, 'realized_pnl_known': True})
         order['qty'] += trade['qty']
         order['cost'] += trade['qty'] * trade['price']
         order['time'] = max(order['time'], trade['time'])
@@ -30,7 +31,71 @@ def aggregate_orders(executions):
             order['fee_known'] = False
         else:
             order['fee'] += max(0.0, fee)
+        realized_pnl = trade.get('realized_pnl')
+        if realized_pnl is None or not math.isfinite(realized_pnl):
+            order['realized_pnl_known'] = False
+        else:
+            order['realized_pnl'] += realized_pnl
     return sorted(orders.values(), key=lambda order: order['time'])
+
+
+def summarize_verified_exit_pairs(executions, stock_symbol, exit_pairs):
+    """Reconcile saved two-leg exits against authoritative exchange fills.
+
+    The resulting P&L is Binance realized P&L less commissions paid on the two
+    exit orders. Entry commissions and funding are intentionally out of scope.
+    """
+    recorded_pairs = exit_pairs if isinstance(exit_pairs, list) else []
+    orders = aggregate_orders(executions)
+    order_index = {
+        (order['symbol'], str(order['order_id']), order['side']): order
+        for order in orders
+    }
+    verified = []
+    for pair_index, pair in enumerate(recorded_pairs):
+        if not isinstance(pair, dict):
+            continue
+        adr_order_id = str(pair.get('adr_order_id', ''))
+        stock_order_id = str(pair.get('stock_order_id', ''))
+        if not adr_order_id or not stock_order_id:
+            continue
+        adr = order_index.get(('SKHYUSDT', adr_order_id, 'BUY'))
+        stock = order_index.get((stock_symbol, stock_order_id, 'SELL'))
+        if not adr or not stock:
+            continue
+        if (adr['qty'] <= 0 or stock['qty'] <= 0 or not adr['fee_known']
+                or not stock['fee_known'] or not adr['realized_pnl_known']
+                or not stock['realized_pnl_known']):
+            continue
+        gross_pnl = adr['realized_pnl'] + stock['realized_pnl']
+        exit_fees = adr['fee'] + stock['fee']
+        verified.append({
+            'recorded_pair_index': pair_index,
+            'time': max(adr['time'], stock['time']),
+            'adr_order_id': adr_order_id,
+            'stock_order_id': stock_order_id,
+            'gross_realized_pnl_usd': gross_pnl,
+            'exit_fees_usd': exit_fees,
+            'realized_after_exit_fees_usd': gross_pnl - exit_fees,
+            'pnl_authoritative': True,
+            'pnl_source': 'BINANCE_USER_TRADES',
+        })
+
+    gross_pnl = sum(pair['gross_realized_pnl_usd'] for pair in verified)
+    exit_fees = sum(pair['exit_fees_usd'] for pair in verified)
+    return {
+        'total_recorded_exit_pairs': len(recorded_pairs),
+        'verified_exit_pairs': len(verified),
+        'unverified_exit_pairs': len(recorded_pairs) - len(verified),
+        'all_recorded_exits_verified': len(verified) == len(recorded_pairs),
+        'gross_realized_pnl_usd': gross_pnl,
+        'exit_fees_usd': exit_fees,
+        'realized_after_exit_fees_usd': gross_pnl - exit_fees,
+        'pnl_authoritative': True,
+        'pnl_source': 'BINANCE_USER_TRADES',
+        'pnl_basis': 'Binance realized P&L minus exit-order commissions; entry commissions and funding excluded.',
+        'verified_exits': verified,
+    }
 
 
 def infer_entry_pairs(orders, stock_symbol):
