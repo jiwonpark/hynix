@@ -117,6 +117,11 @@
     bigTrendInterval: "1h",
     currentTier: 2,
     botState: null,
+    livePositions: [],
+    accountPositions: [],
+    livePollTimer: null,
+    livePollInFlight: false,
+    chartPollCount: 0,
 
     tiers: {
       1: {
@@ -481,11 +486,11 @@
     },
 
     labelTerminal() {
-      this.setText("lblDaemonMainStatus", "Daemon: Institutional Grid Engine Active");
-      this.setText("lblDaemonAuthBadge", "GRID ARB: READY");
+      this.setText("lblDaemonMainStatus", "Daemon: Lighter Strategy Engine Syncing");
+      this.setText("lblDaemonAuthBadge", "PAIR BOT: SYNCING");
       this.setText("lblDaemonUpbitBadge", "RISK TIER: TIER 2 (1x NEUTRAL)");
-      this.setText("valDeployedStrategyName", "🏛️ Institutional Grid Engine (Multi-Tier Parity Bands)");
-      this.setText("valDeployedEngine", "Asymmetric Delta-Neutral Parity Grid Harvester");
+      this.setText("valDeployedStrategyName", "⚙️ Loading deployed strategy…");
+      this.setText("valDeployedEngine", "Waiting for authenticated bot status");
       this.setText("valDeployedInterval", "5m completed candles");
       this.setText("valDeployedWindow", "24 completed bars");
       this.setText("valDeployedEdge", "Entry |Z| ≥ 1.40");
@@ -499,16 +504,16 @@
       this.setText("lblAvailMargin", "Free Grid Margin");
       this.setText("valAvailMargin", "$8,240.00");
       this.setText("lblUnrealizedPnl", "Verified Realized PnL");
-      this.setText("lblActivePairs", "Active Grid Rungs");
+      this.setText("lblActivePairs", "Active Pair Positions");
       this.setText("lblMarginRisk", "Target Leverage");
       this.setText("valMarginRisk", "8.0x cap");
       this.setText("lblCollateralSummary", "Lighter Collateral Breakdown");
       this.setText("lblUpbitEquity", "Grid Underlying Pair");
       this.setText("badgeUpbitSource", "DUAL-LEG");
       this.setText("valUpbitEquity", "SKHY (ADR) ↔ SKHYNIXUSD (Korean underlying)");
-      this.setText("titleExecutionTerminal", "🏛️ 1-Click Institutional Grid Execution & Virtual Orders");
-      this.setText("badgeExecMode", "LIGHTER DEX LIVE ENGINE · DUAL-LEG ARB");
-      this.setText("lblHedgedSyncBadge", "LIGHTER GRID ENGINE ACTIVE");
+      this.setText("titleExecutionTerminal", "⚙️ Lighter Pair Strategy Execution & Virtual Orders");
+      this.setText("badgeExecMode", "LIGHTER DEX LIVE ENGINE · DUAL-LEG PAIR");
+      this.setText("lblHedgedSyncBadge", "LIGHTER ENGINE SYNCING");
       const collateralTab = lid("tabAssets");
       if (collateralTab) {
         const collateralLabel = [...(collateralTab.childNodes || [])].find((node) => node.nodeType === 3);
@@ -1901,6 +1906,33 @@
       this.initialized = true;
       this.renderVirtualState();
       this.syncBotStatus();
+      this.startLivePolling();
+    },
+
+    startLivePolling() {
+      if (this.livePollTimer || typeof window.setInterval !== "function") return;
+      this.livePollTimer = window.setInterval(async () => {
+        const tab = $("tabContentLighter");
+        if (document.hidden || !tab || tab.style.display === "none" || this.livePollInFlight) return;
+        this.livePollInFlight = true;
+        try {
+          await this.refreshLiveStatus();
+          this.chartPollCount += 1;
+          if (this.chartPollCount % 12 === 0) {
+            await this.refreshChart();
+          }
+        } catch (error) {
+          this.setText("lblHedgedSyncBadge", `LIVE REFRESH: ${error.message}`);
+        } finally {
+          this.livePollInFlight = false;
+        }
+      }, 5000);
+    },
+
+    isPairPosition(position) {
+      const marketId = Number(position?.market_id);
+      const symbol = String(position?.symbol || position?.market || "").toUpperCase();
+      return marketId === 216 || marketId === 161 || symbol === "SKHY" || symbol === "SKHYNIXUSD";
     },
 
     async syncBotStatus() {
@@ -2172,6 +2204,11 @@
         this.setText("lblShortTermChartStatus", `Chart unavailable: ${error.message}`);
         return false;
       });
+      await this.refreshLiveStatus();
+      await chartRefresh;
+    },
+
+    async refreshLiveStatus() {
       try {
         const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
         const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
@@ -2182,14 +2219,15 @@
         ]);
         const status = statusResult || { success: false, server_time_ms: Date.now(), positions: [] };
         this.liveVenue = status;
-        this.livePositions = Array.isArray(status?.positions) ? status.positions : [];
+        this.accountPositions = Array.isArray(status?.positions) ? status.positions : [];
+        this.livePositions = this.accountPositions.filter((position) => this.isPairPosition(position));
         if (status && status.parity_ratio) {
           this.currentRatio = Number(status.parity_ratio);
         }
         this.setText("lblDaemonSyncTime", `Last Sync: ${formatKstDateTime(status.server_time_ms || Date.now(), false)}`);
-        this.setText("lblDaemonLatency", "Grid Engine: Active");
-        this.setText("lblDaemonStats", "Multi-Tier Grid · Live Telemetry");
-        this.setText("lblHedgedSyncBadge", "INSTITUTIONAL GRID ACTIVE");
+        this.setText("lblDaemonLatency", "Lighter Engine: Syncing");
+        this.setText("lblDaemonStats", "Live strategy telemetry");
+        this.setText("lblHedgedSyncBadge", "LIGHTER LIVE SYNCED");
         if (status && status.l1_address) {
           const shortAddr = `${status.l1_address.slice(0, 6)}...${status.l1_address.slice(-4)}`;
           if (status.authenticated && status.account_index) {
@@ -2205,7 +2243,7 @@
         }
         this.setText("valShortTermCurrentParity", `${this.currentRatio.toFixed(3)}%`);
         this.setText("valHedgedCombinedPnl", this.virtualPnlText());
-        this.setText("valCollateralPills", `Tier ${this.currentTier} · 0.00% Maker · Dynamic Volatility Grid`);
+        this.setText("valCollateralPills", `Pair engine · 0.00% advertised maker fee · account-wide safeguards`);
         this.setText("valAutoCurrentEdge", `${this.currentRatio.toFixed(3)}%`);
         this.setText("valCritCurrentSpread", `${this.currentRatio.toFixed(3)}%`);
         this.setText("valCritTpCurrentSpread", `${this.currentRatio.toFixed(3)}%`);
@@ -2217,9 +2255,8 @@
         this.renderVirtualState();
         this.updateGridLadderData();
       } catch (error) {
-        this.setText("lblHedgedSyncBadge", `GRID ENGINE: ${error.message}`);
+        this.setText("lblHedgedSyncBadge", `LIGHTER ENGINE: ${error.message}`);
       }
-      await chartRefresh;
     },
 
     renderTrends(trends) {
@@ -2573,6 +2610,10 @@
         entry_z:"use_ma_stretch", entry_spacing:"use_base_spacing", entry_rollover:"use_peak",
         entry_ma_stack:"use_ma_stack", entry_ma_stack_1h:"use_ma_stack_1h", exit_convergence:"use_convergence",
         exit_dwell:"use_dwell", exit_bottoming:"use_bottoming",
+      } : bot?.strategy_mode === "ma_stack" ? {
+        entry_ma_stack:"use_ma_stack", entry_stretch:"use_ma_stretch",
+        entry_ma_stack_1h:"use_ma_stack_1h", exit_ma_cross:"use_convergence",
+        exit_trailing_stop:"use_bottoming", exit_max_dwell:"use_dwell",
       } : {
         entry_ma_stack_1h:"use_ma_stack_1h",
       };
@@ -2826,7 +2867,13 @@
       this.botState = bot;
       const isEnabled = Boolean(bot?.enabled);
       const isRecovery = Boolean(bot?.recovery_required);
+      const isBlocked = Boolean(bot?.execution_blocked);
+      const isHalted = isRecovery || isBlocked;
       const tranches = Array.isArray(bot?.tranches) ? bot.tranches : [];
+      const stratMode = bot?.strategy_mode || "grid";
+      const stratName = bot?.strategy_name || this.paradigms[stratMode]?.name || "Dynamic Grid";
+      const stratInterval = bot?.strategy_interval || "5m";
+      const stratShort = stratMode === "grid" ? "GRID" : (stratMode === "ou_quant" ? "OU" : stratName.toUpperCase().slice(0, 8));
       // The EC2 bot is shared across browsers; per-browser localStorage is not
       // authoritative. Reconcile the visible execution mode to persisted server
       // state so a fresh profile/session cannot look like paper mode while the
@@ -2840,7 +2887,7 @@
       const toggle = lid("chkAutoPeriodic48h");
       if (toggle) {
         toggle.checked = isEnabled;
-        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || !venue?.execution_enabled || isRecovery;
+        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || !venue?.execution_enabled || isHalted;
       }
       const banner = lid("autoTradeMasterBanner");
       const pulseEl = lid("autoTradePulseIndicator");
@@ -2854,23 +2901,25 @@
       if (pulseEl) pulseEl.className = "autoTradePulseIndicator";
       if (badge) badge.classList.remove("active", "recovery");
 
-      if (isRecovery) {
+      if (isHalted) {
         if (banner) banner.classList.add("recovery");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator recovery";
-        if (titleEl) titleEl.textContent = isKo ? "⚠️ 그리드 봇: 중단됨 (복구 필요)" : "⚠️ INSTITUTIONAL GRID BOT: HALTED (RECOVERY)";
+        if (titleEl) titleEl.textContent = isKo ? `⚠️ ${stratName}: 중단됨` : `⚠️ ${stratName.toUpperCase()}: HALTED`;
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus recovery";
-          badge.textContent = "⚠ RECOVERY REQUIRED";
+          badge.textContent = isRecovery ? "⚠ RECOVERY REQUIRED" : "⚠ EXECUTION BLOCKED";
           badge.style.background = "#fee2e2";
           badge.style.color = "#991b1b";
         }
-        if (headingEl) headingEl.textContent = "GRID BOT: RECOVERY";
-        if (detailEl) detailEl.textContent = "Order reconciliation required on Lighter/EC2";
+        if (headingEl) headingEl.textContent = `${stratName.toUpperCase()}: HALTED`;
+        if (detailEl) detailEl.textContent = isRecovery
+          ? "Order reconciliation required on Lighter/EC2"
+          : (bot?.blocked_reason || "Execution safeguard is blocking new orders");
       } else if (isEnabled) {
         if (banner) banner.classList.add("active");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator active";
-        if (titleEl) titleEl.textContent = isKo ? "⚡ 그리드 봇: 실시간 가동 중" : "⚡ INSTITUTIONAL GRID BOT: ACTIVE";
+        if (titleEl) titleEl.textContent = isKo ? `⚡ ${stratName}: 실시간 가동 중` : `⚡ ${stratName.toUpperCase()}: ACTIVE`;
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus active";
@@ -2879,10 +2928,10 @@
           badge.style.color = "#166534";
         }
         if (headingEl) headingEl.textContent = "EC2 DAEMON: ACTIVE";
-        if (detailEl) detailEl.textContent = isKo ? "실시간 그리드 차익거래 가동 중" : "Running 24/7 institutional grid engine on EC2";
+        if (detailEl) detailEl.textContent = isKo ? `실시간 ${stratName} 가동 중` : `Running ${stratName} on EC2`;
       } else {
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator paused";
-        if (titleEl) titleEl.textContent = isKo ? "○ 그리드 봇: 대기 (일시정지)" : "○ INSTITUTIONAL GRID BOT: PAUSED";
+        if (titleEl) titleEl.textContent = isKo ? `○ ${stratName}: 대기 (일시정지)` : `○ ${stratName.toUpperCase()}: PAUSED`;
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus";
@@ -2891,21 +2940,16 @@
           badge.style.color = "#475569";
         }
         if (headingEl) headingEl.textContent = "EC2 DAEMON: STANDBY";
-        if (detailEl) detailEl.textContent = isKo ? "토글 스위치를 켜서 24/7 그리드 매매를 시작하세요" : "Click toggle switch to start 24/7 grid bot";
+        if (detailEl) detailEl.textContent = isKo ? "토글 스위치를 켜서 실시간 전략을 시작하세요" : `Click toggle switch to start ${stratName}`;
       }
-
-      const stratMode = bot?.strategy_mode || "grid";
-      const stratName = bot?.strategy_name || this.paradigms[stratMode]?.name || "Dynamic Grid";
-      const stratInterval = bot?.strategy_interval || "5m";
-      const stratShort = stratMode === "grid" ? "GRID" : (stratMode === "ou_quant" ? "OU" : stratName.toUpperCase().slice(0, 8));
 
       // Sync Tab 3 Top Nav Pill
       const navLighterPill = $("navLighterLivePill");
       if (navLighterPill) {
         navLighterPill.className = "navLivePill";
-        if (isRecovery) {
+        if (isHalted) {
           navLighterPill.classList.add("recovery");
-          navLighterPill.textContent = "⚠ RECOVERY";
+          navLighterPill.textContent = isRecovery ? "⚠ RECOVERY" : "⚠ BLOCKED";
         } else if (isEnabled) {
           navLighterPill.classList.add("active");
           navLighterPill.textContent = `● ${stratShort} AUTO ON`;
@@ -2918,21 +2962,32 @@
       const liveBtn = lid("modeLive");
       if (liveBtn) liveBtn.classList.toggle("botActiveLive", isEnabled);
 
-      this.setText("lblDaemonLatency", isEnabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused");
+      this.setText("lblDaemonLatency", isHalted ? "Lighter Bot: Execution blocked" : (isEnabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused"));
       this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${bot?.max_tranches ?? tranches.length} safe tranches` : "Awaiting first closed-bar evaluation");
       const rulesPanel = $("lighterLiveRulesPanel");
       if (rulesPanel) {
-        rulesPanel.style.borderColor = isEnabled ? "#059669" : "#94a3b8";
-        rulesPanel.style.background = isEnabled ? "#ecfdf5" : "#f8fafc";
+        rulesPanel.style.borderColor = isHalted ? "#dc2626" : (isEnabled ? "#059669" : "#94a3b8");
+        rulesPanel.style.background = isHalted ? "#fef2f2" : (isEnabled ? "#ecfdf5" : "#f8fafc");
       }
       const rulesState = $("lighterLiveRulesState");
       if (rulesState) {
-        rulesState.textContent = isEnabled ? "● REAL BOT ACTIVE" : "○ REAL BOT PAUSED";
-        rulesState.style.background = isEnabled ? "#dcfce7" : "#e2e8f0";
-        rulesState.style.color = isEnabled ? "#166534" : "#475569";
+        rulesState.textContent = isHalted ? "⚠ REAL BOT BLOCKED" : (isEnabled ? "● REAL BOT ACTIVE" : "○ REAL BOT PAUSED");
+        rulesState.style.background = isHalted ? "#fee2e2" : (isEnabled ? "#dcfce7" : "#e2e8f0");
+        rulesState.style.color = isHalted ? "#991b1b" : (isEnabled ? "#166534" : "#475569");
       }
       const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
       writeRule("lighterLiveEngine", `${stratName} (${stratInterval})`);
+      const engineDescriptions = {
+        grid: "Dynamic parity grid with configurable entry and exit gates",
+        ou_quant: "Ornstein-Uhlenbeck mean-reversion signal engine",
+        ma_stack: "MA7/24/60 trend-stack signal engine",
+        multi_factor: "Four-factor consensus signal engine",
+        trend_pullback: "Macro trendline pullback signal engine",
+        custom: "Custom condition-composer signal engine",
+      };
+      this.setText("valDeployedStrategyName", `⚙️ ${stratName}`);
+      this.setText("valDeployedEngine", engineDescriptions[stratMode] || `${stratName} signal engine`);
+      this.setText("lblActivePairs", "Active Pair Positions");
       const enginePill = $("lighter_liveBotEnginePill");
       if (enginePill) enginePill.textContent = `LIVE: ${stratName.toUpperCase()}`;
       const navLiveBadge = $("lighter_liveBotStrategyBadge");
@@ -2946,7 +3001,9 @@
         this.setParadigm(stratMode);
       }
       this.setText("valDeployedInterval", `${stratInterval} completed candles`);
-      this.setText("valDeployedEdge", `Entry |Z| ≥ ${Number(bot?.entry_z ?? 1.4).toFixed(2)}`);
+      this.setText("valDeployedEdge", stratMode === "ma_stack"
+        ? `MA stack${bot?.use_ma_stack === false ? " OFF" : " ON"} · stretch ${bot?.use_ma_stretch === false ? "OFF" : `≥ ${Number(bot?.ma_stretch_min ?? 0.30).toFixed(2)}%`}`
+        : `Entry |Z| ≥ ${Number(bot?.entry_z ?? 1.4).toFixed(2)}`);
       this.setText("valDeployedMinProfit", `Exit |Z| ≤ ${Number(bot?.exit_z ?? 0.2).toFixed(2)}`);
 
       writeRule("lighterLiveEntryZ", Number(bot?.entry_z ?? 1.4).toFixed(2));
@@ -3163,26 +3220,28 @@
         grossNotional = this.entries.reduce((sum, entry) => sum + (Number(entry.notional) || 0) * 2, 0);
       }
 
-      const grossLev = collateral > 0 ? (grossNotional / collateral) : 0;
+      const pairGrossLev = collateral > 0 ? (grossNotional / collateral) : 0;
+      const accountGrossNotional = Number(riskCapacity.current_gross_usd ?? grossNotional);
+      const accountGrossLev = Number(riskCapacity.gross_leverage ?? (collateral > 0 ? accountGrossNotional / collateral : 0));
       const dynamicCapUsd = collateral * levCap;
-      const headroomUsd = Math.max(0, dynamicCapUsd - grossNotional);
-      const freeMarginUsd = Number(riskCapacity.available_margin_usd ?? Math.max(0, collateral - (grossNotional / levCap)));
-      const hasLeverage = grossLev <= levCap;
+      const headroomUsd = Math.max(0, dynamicCapUsd - accountGrossNotional);
+      const freeMarginUsd = Number(riskCapacity.available_margin_usd ?? Math.max(0, collateral - (accountGrossNotional / levCap)));
+      const hasLeverage = accountGrossLev <= levCap;
       const netDeltaUsd = adrNotional - domesticNotional;
       const netShares = domesticQty - adrQty;
       const loss10 = grossNotional * 0.10 * 0.5;
       const maxDiv = grossNotional > 0 ? ((collateral / grossNotional) * 100) : 999;
-      const utilPct = Math.min(100, Math.max(0, (grossLev / levCap) * 100));
+      const utilPct = Math.min(100, Math.max(0, (accountGrossLev / levCap) * 100));
 
       // 1. Gross Leverage Card
-      this.setText("valHedgedLeverage", `${grossLev.toFixed(2)}x`);
+      this.setText("valHedgedLeverage", `${pairGrossLev.toFixed(2)}x`);
       const levEl = lid("valHedgedLeverage");
       if (levEl) {
-        levEl.style.color = grossLev > levCap ? "#dc2626" : (grossLev > levCap * 0.75 ? "#d97706" : "#0284c7");
+        levEl.style.color = pairGrossLev > levCap ? "#dc2626" : (pairGrossLev > levCap * 0.75 ? "#d97706" : "#0284c7");
       }
-      this.setText("valHedgedNotional", `Gross Size: $${grossNotional.toFixed(2)} USDT · Est. ${levCap.toFixed(0)}x Margin: $${(grossNotional / levCap).toFixed(2)}`);
+      this.setText("valHedgedNotional", `Tab 3 pair gross: $${grossNotional.toFixed(2)} USDT · Account gross: $${accountGrossNotional.toFixed(2)}`);
       this.setText("valDeployedMaxLeverage", `${(levCap * 100).toFixed(0)}% (${levCap.toFixed(1)}x account cap)`);
-      this.setText("valMarginRisk", `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x cap`);
+      this.setText("valMarginRisk", `${accountGrossLev.toFixed(2)}x / ${levCap.toFixed(1)}x account cap`);
 
       // 2. Telemetry Cards
       this.setText("valHedgedDelta", `$${Math.abs(netDeltaUsd).toFixed(2)}`);
@@ -3201,14 +3260,14 @@
       const capacityBlock = riskCapacity.blocked_reason === "CAMPAIGN_CAPACITY"
         ? ` · ENTRY BLOCKED: ${tranchesCount}/${maxTranches} slot hard cap`
         : "";
-      this.setText("lblTranchePct", `${utilPct.toFixed(1)}% (${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x)${capacityBlock}`);
+      this.setText("lblTranchePct", `${utilPct.toFixed(1)}% (${accountGrossLev.toFixed(2)}x account / ${levCap.toFixed(1)}x)${capacityBlock}`);
       const progressBar = lid("barTrancheProgress");
       if (progressBar) {
         progressBar.style.width = `${utilPct.toFixed(1)}%`;
       }
 
       // 5. Conditions & Criteria Checklist
-      this.setText("valCondEntryLeverage", `${grossLev.toFixed(2)}x ≤ ${levCap.toFixed(1)}x`);
+      this.setText("valCondEntryLeverage", `${accountGrossLev.toFixed(2)}x ≤ ${levCap.toFixed(1)}x (account-wide)`);
       const chkLev = lid("chkCondEntryLeverage");
       if (chkLev) chkLev.checked = hasLeverage;
       const badgeLev = lid("badgeCondEntryLeverage");
@@ -3249,7 +3308,7 @@
       }
 
       // 6. Leverage & Capacity Breakdown Section
-      this.setText("valCritGrossLev", `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x`);
+      this.setText("valCritGrossLev", `${accountGrossLev.toFixed(2)}x / ${levCap.toFixed(1)}x account`);
       this.setText("valCritGrossCap", `$${dynamicCapUsd.toFixed(2)} (${levCap.toFixed(1)}x)`);
       this.setText("valCritGrossHeadroom", `$${headroomUsd.toFixed(2)} free`);
       this.setText("valAvailMargin", `$${freeMarginUsd.toFixed(2)} free`);
@@ -5345,7 +5404,7 @@
           return sum + (Math.abs(Number(pos.position_value || 0)) || quantity * mark);
         }, 0);
         const estimatedFreeMargin = Math.max(0, col - liveGross);
-        this.setText("valActivePairs", `${openLive.length} Open on Exchange`);
+        this.setText("valActivePairs", `${openLive.length} Pair Leg${openLive.length === 1 ? "" : "s"} Open`);
         const maxTranches = Number(this.botState?.max_tranches || 8);
         this.setText("valHedgedTranches", `${validTranches.length} / ${maxTranches} Campaign Slots`);
         this.setText("valHedgedQuantities", `Gross $${liveGross.toFixed(2)} USDT · Est. 1x Margin $${liveGross.toFixed(2)}`);
@@ -5367,7 +5426,8 @@
           const liveRisk = this.botState?.risk_capacity || {};
           const liveLevCap = Number(liveRisk.gross_leverage_cap || 8);
           const displayedFreeMargin = Number(liveRisk.available_margin_usd ?? estimatedFreeMargin);
-          positionSummary.innerHTML = `<span>Gross pair size <b>$${liveGross.toFixed(2)} USDT</b></span><span>Est. margin at ${liveLevCap.toFixed(0)}x <b>$${(liveGross / liveLevCap).toFixed(2)}</b></span><span>Collateral <b>$${col.toFixed(2)}</b></span><span>Available margin <b>$${displayedFreeMargin.toFixed(2)}</b></span><span style="color:#64748b">Exchange position values · cross-margin estimate</span>`;
+          const accountGross = Number(liveRisk.current_gross_usd ?? liveGross);
+          positionSummary.innerHTML = `<span>Tab 3 pair gross <b>$${liveGross.toFixed(2)} USDT</b></span><span>Est. margin at ${liveLevCap.toFixed(0)}x <b>$${(liveGross / liveLevCap).toFixed(2)}</b></span><span>Account-wide gross <b>$${accountGross.toFixed(2)} USDT</b></span><span>Collateral <b>$${col.toFixed(2)}</b></span><span>Available margin <b>$${displayedFreeMargin.toFixed(2)}</b></span><span style="color:#64748b">Pair P&amp;L is isolated; leverage safeguard remains account-wide</span>`;
         }
         if (body) {
           if (openLive.length) {

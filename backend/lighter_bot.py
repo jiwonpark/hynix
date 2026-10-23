@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from .lighter_strategy import (
     OU_MACRO_EMA_SPAN, OU_MACRO_SLOPE_BARS, OU_MIN_ABS_DEVIATION_PP,
     _macro_trend_aligned, evaluate_ou_signals, evaluate_grid_signals,
+    evaluate_ma_stack_signals,
 )
 
 from .lighter_client import LighterClient
@@ -1196,6 +1197,12 @@ class LighterPairBot:
                 await self._evaluate()
                 self.state["last_error"] = None
                 self.state["transient_error_count"] = 0
+                # A completed evaluation proves a previous transport/runtime
+                # failure is no longer blocking execution. Pending paired
+                # executions still fail at the start of _evaluate and cannot
+                # be cleared by this path.
+                self.state["execution_blocked"] = False
+                self.state["blocked_reason"] = None
             except Exception as error:
                 self.state["last_error"] = str(error)[:500]
                 safely_rolled_back = str(error).startswith("Paired execution failed; confirmed leg rolled back")
@@ -1225,10 +1232,25 @@ class LighterPairBot:
             "connection refused", "server disconnected",
         ))
 
-    def _evaluate_strategy_signals(self, ratios: List[float], side_if_open: Optional[int] = None) -> tuple[bool, int, bool, Dict[str, Any]]:
+    def _evaluate_strategy_signals(
+        self, ratios: List[float], side_if_open: Optional[int] = None,
+        evaluation_time: Optional[int] = None,
+    ) -> tuple[bool, int, bool, Dict[str, Any]]:
         mode = self.state.get("strategy_mode", "grid")
         entry_z = float(self.state.get("entry_z", 1.5))
         exit_z = float(self.state.get("exit_z", 0.25))
+        evaluation_time = int(evaluation_time if evaluation_time is not None else time.time())
+
+        position_side = int(side_if_open or 0)
+        entry_price = 0.0
+        held_bars = 0
+        if position_side and self.state.get("tranches"):
+            latest_t = self.state["tranches"][-1]
+            entry_price = float(latest_t.get("entry_ratio", latest_t.get("ratio", 0.0)))
+            interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600}.get(
+                self.state.get("strategy_interval", "5m"), 300)
+            held_seconds = max(0, evaluation_time - int(latest_t.get("entry_time", latest_t.get("time", 0))))
+            held_bars = held_seconds // interval_seconds
 
         if mode == "ou_quant":
             return evaluate_ou_signals(
@@ -1243,36 +1265,27 @@ class LighterPairBot:
                 **{key: self.state.get(key, True) for key in (
                     "ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
                     "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z")},
-                evaluation_time=int(time.time()),
+                evaluation_time=evaluation_time,
             )
 
         elif mode == "ma_stack":
-            ma7 = sum(ratios[-7:]) / 7
-            ma24 = sum(ratios[-24:]) / 24
-            ma60 = sum(ratios[-60:]) / 60 if len(ratios) >= 60 else ma24
-            stretch_pct = abs(ratios[-1] - ma60) / ma60 * 100 if ma60 else 0.0
-            bearish_stack = ratios[-1] < ma7 < ma24 < ma60
-            bullish_stack = ratios[-1] > ma7 > ma24 > ma60
-            min_stretch = float(self.state.get("ma_stretch_min", 0.30))
-            trailing_stop = float(self.state.get("ma_trailing_stop", 0.15))
-            candidate_side = 1 if bearish_stack else -1
-            macro_aligned = _macro_trend_aligned(ratios, candidate_side)
-            macro_pass = not bool(self.state.get("use_ma_stack_1h", True)) or macro_aligned
-            entry_signal = bool((bearish_stack or bullish_stack) and stretch_pct >= min_stretch and macro_pass)
-            if side_if_open is not None:
-                exit_signal = bool((side_if_open > 0 and ma7 >= ma24) or (side_if_open < 0 and ma7 <= ma24) or stretch_pct <= trailing_stop)
-            else:
-                exit_signal = bool(stretch_pct <= trailing_stop)
-            sample = ratios[-24:]
-            mean = sum(sample) / len(sample)
-            variance = sum((v - mean) ** 2 for v in sample) / len(sample)
-            zscore = (ratios[-1] - mean) / math.sqrt(variance) if variance > 1e-12 else 0.0
-            eval_info = {
-                "time": int(time.time()), "ratio": round(ratios[-1], 4), "mean": round(ma24, 4),
-                "z": round(zscore, 3), "strategy": "ma_stack", "stretch_pct": round(stretch_pct, 3),
-                "trailing_stop": trailing_stop,
-            }
-            return entry_signal, candidate_side, exit_signal, eval_info
+            result = evaluate_ma_stack_signals(
+                ratios,
+                ma_stretch_min=float(self.state.get("ma_stretch_min", 0.30)),
+                ma_trailing_stop=float(self.state.get("ma_trailing_stop", 0.15)),
+                use_ma_stretch=bool(self.state.get("use_ma_stretch", True)),
+                use_ma_stack=bool(self.state.get("use_ma_stack", True)),
+                use_ma_stack_1h=bool(self.state.get("use_ma_stack_1h", True)),
+                use_convergence=bool(self.state.get("use_convergence", True)),
+                use_dwell=bool(self.state.get("use_dwell", True)),
+                use_bottoming=bool(self.state.get("use_bottoming", False)),
+                evaluation_time=evaluation_time,
+                position_side=position_side,
+                entry_price=entry_price,
+                held_bars=held_bars,
+            )
+            result[3]["trailing_stop"] = float(self.state.get("ma_trailing_stop", 0.15))
+            return result
 
         elif mode == "multi_factor":
             sample = ratios[-24:]
@@ -1345,15 +1358,6 @@ class LighterPairBot:
             return entry_signal, candidate_side, exit_signal, eval_info
 
         else:
-            position_side = 0
-            entry_price = 0.0
-            held_bars = 0
-            if self.state.get("tranches"):
-                latest_t = self.state["tranches"][-1]
-                position_side = int(latest_t.get("side", 0))
-                entry_price = float(latest_t.get("entry_ratio", latest_t.get("ratio", 0.0)))
-                held_seconds = max(0, int(time.time()) - int(latest_t.get("entry_time", latest_t.get("time", 0))))
-                held_bars = held_seconds // 300
             return evaluate_grid_signals(
                 ratios, entry_z=entry_z, exit_z=exit_z,
                 use_ma_stretch=bool(self.state.get("use_ma_stretch", True)),
@@ -1366,7 +1370,7 @@ class LighterPairBot:
                 use_bottoming=bool(self.state.get("use_bottoming", False)),
                 base_spacing_pct=float(self.state.get("base_spacing_pct", 0.2)),
                 min_dwell_bars=int(self.state.get("min_dwell_bars", 4)),
-                evaluation_time=int(time.time()),
+                evaluation_time=evaluation_time,
                 position_side=position_side,
                 entry_price=entry_price,
                 held_bars=held_bars,
@@ -1418,7 +1422,8 @@ class LighterPairBot:
 
         tranches = self.state["tranches"]
         campaign_side = int(tranches[0]["side"]) if tranches else None
-        entry_signal, candidate_side, exit_signal, evaluation = self._evaluate_strategy_signals(ratios, campaign_side)
+        entry_signal, candidate_side, exit_signal, evaluation = self._evaluate_strategy_signals(
+            ratios, campaign_side, signal_bar_time // 1000)
         self.state["last_evaluation"] = evaluation
 
         adr_quote = _book_summary(adr_book)

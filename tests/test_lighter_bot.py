@@ -743,6 +743,28 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_successful_evaluation_clears_stale_execution_block(self):
+        async def run():
+            with tempfile.TemporaryDirectory() as directory:
+                state_file = Path(directory) / "state.json"
+                bot = LighterPairBot(Mock(), state_file)
+                bot.state.update({
+                    "enabled": True,
+                    "execution_blocked": True,
+                    "blocked_reason": "Cannot write to closing transport",
+                    "last_error": "Cannot write to closing transport",
+                })
+                bot._evaluate = AsyncMock(return_value=None)
+                await bot.run_once()
+                self.assertFalse(bot.state["execution_blocked"])
+                self.assertIsNone(bot.state["blocked_reason"])
+                self.assertIsNone(bot.state["last_error"])
+                persisted = json.loads(state_file.read_text())
+                self.assertFalse(persisted["execution_blocked"])
+                self.assertIsNone(persisted["blocked_reason"])
+
+        asyncio.run(run())
+
     def test_second_leg_failure_keeps_durable_recovery_intent(self):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
@@ -940,7 +962,7 @@ class TestLighterPairBot(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     await bot.configure({"strategy_mode": "non_existent"})
 
-                ratios = [140.0 + (i * 0.05) for i in range(40)]
+                ratios = [140.0 + (i * 0.05) for i in range(80)]
                 entry_sig, side, exit_sig, eval_info = bot._evaluate_strategy_signals(ratios)
                 self.assertEqual(eval_info["strategy"], "ou_quant")
 
@@ -949,8 +971,13 @@ class TestLighterPairBot(unittest.TestCase):
                 self.assertEqual(eval_info["strategy"], "grid")
 
                 await bot.configure({"strategy_mode": "ma_stack"})
-                entry_sig, side, exit_sig, eval_info = bot._evaluate_strategy_signals(ratios)
+                entry_sig, side, exit_sig, eval_info = bot._evaluate_strategy_signals(
+                    ratios, evaluation_time=1_791_500_000)
                 self.assertEqual(eval_info["strategy"], "ma_stack")
+                self.assertEqual(eval_info["time"], 1_791_500_000)
+                self.assertIn("condition_pass", eval_info)
+                self.assertIn("entry_ma_stack", eval_info["condition_pass"])
+                self.assertIn("entry_stretch", eval_info["condition_pass"])
 
                 await bot.configure({"strategy_mode": "multi_factor"})
                 entry_sig, side, exit_sig, eval_info = bot._evaluate_strategy_signals(ratios)
@@ -1270,7 +1297,7 @@ class TestLighterPairBot(unittest.TestCase):
                     "entry_ratio": 140.0,
                     "notional_usd": 25.0,
                     "fee_usd": 0.0,
-                    "time": timestamps[-2] // 1000,
+                    "time": timestamps[-20] // 1000,
                 }]
                 bot._trade_pair = AsyncMock()
 

@@ -10,7 +10,7 @@ function load(file, name) {
   const context = {window:{}, document, URLSearchParams, console};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
-  return {engine:context.window[name], elements};
+  return {engine:context.window[name], elements, context};
 }
 
 const ouChecks = {entry_z:true, entry_halflife:false, entry_min_deviation:true,
@@ -91,4 +91,36 @@ engine.updateRulesMatchStatus();
 assert.equal(elements.get('lighterCrypto_badgeCondEntryBase').textContent,'OFF');
 assert.equal(elements.get('lighterCrypto_badgeCondEntryMaStretch').textContent,'N/A',
   'changing settings clears all verdicts from the prior replay');
+
+const tab3 = load('lighter-tab.js','lighterEngine');
+const tab3Panel={children:[],replaceChildren(...items){this.children=items},append(...items){this.children.push(...items)}};
+tab3.elements.set('lighterLiveConditions',tab3Panel);
+tab3.engine.renderLiveConditionStatus({
+  enabled:true,strategy_mode:'ma_stack',strategy_interval:'5m',tranches:[],
+  use_ma_stack:true,use_ma_stretch:true,use_ma_stack_1h:true,
+  use_convergence:true,use_bottoming:false,use_dwell:true,
+  last_evaluation:{time:Math.floor(Date.now()/1000)-300,strategy:'ma_stack',condition_pass:{
+    entry_ma_stack:false,entry_stretch:true,entry_ma_stack_1h:true,
+    exit_ma_cross:null,exit_trailing_stop:null,exit_max_dwell:null,
+  }},
+});
+assert.equal(tab3Panel.children[1].children[1].textContent,'WAITING');
+assert.equal(tab3Panel.children[2].children[1].textContent,'PASS');
+assert.equal(tab3Panel.children[5].children[1].textContent,'OFF',
+  'disabled MA trailing-stop condition must be labelled OFF');
+assert.equal(tab3.engine.isPairPosition({market_id:216,symbol:'SKHY'}),true);
+assert.equal(tab3.engine.isPairPosition({market_id:161,symbol:'SKHYNIXUSD'}),true);
+assert.equal(tab3.engine.isPairPosition({market_id:1,symbol:'BTC'}),false,
+  'Tab 5 BTC exposure must not appear as a Tab 3 pair position');
+let pollCallback=null;
+let pollInterval=null;
+let liveRefreshes=0;
+tab3.context.window.setInterval=(callback,ms)=>{pollCallback=callback;pollInterval=ms;return 99;};
+tab3.elements.set('tabContentLighter',{style:{display:'block'}});
+tab3.engine.refreshLiveStatus=async()=>{liveRefreshes++;};
+tab3.engine.startLivePolling();
+assert.equal(pollInterval,5000);
+assert.equal(typeof pollCallback,'function');
+pollCallback();
+assert.equal(liveRefreshes,1,'visible Tab 3 must poll live status without a hard reload');
 console.log('Lighter per-condition PASS, WAITING, OFF, and stale-result checks passed');
