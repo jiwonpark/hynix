@@ -5,6 +5,8 @@ const path = require('node:path');
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 assert(html.includes('/api/trade/verified_exits'), 'Tab 2 must use the lightweight verified-exit fallback');
 assert(html.includes('this.lastVerifiedExitSnapshot = data'), 'Tab 2 must retain the last successful verified history');
+assert(html.includes('if (this.verifiedExitSnapshotInFlight) return this.verifiedExitSnapshotInFlight;'), 'Tab 2 must coalesce slow verified-history requests');
+assert(html.includes('AbortSignal.timeout(30000)'), 'Verified history must allow the production endpoint time to return');
 assert(html.includes('const exitSnapshotPromise = this.fetchVerifiedExitSnapshot();'), 'Tab 2 must fetch verified history independently of account status');
 assert(html.includes('this.applyVerifiedExitSnapshot(this.state.hedgedStatus, exitSnapshot);'), 'A delayed verified-history response must restore the current view');
 assert.match(

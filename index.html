@@ -13050,9 +13050,19 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       },
 
       async fetchVerifiedExitSnapshot() {
+        if (this.verifiedExitSnapshotInFlight) return this.verifiedExitSnapshotInFlight;
+        this.verifiedExitSnapshotInFlight = this.fetchVerifiedExitSnapshotOnce();
+        try {
+          return await this.verifiedExitSnapshotInFlight;
+        } finally {
+          this.verifiedExitSnapshotInFlight = null;
+        }
+      },
+
+      async fetchVerifiedExitSnapshotOnce() {
         const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
         try {
-          const res = await fetch(`${apiPrefix}/api/trade/verified_exits`, { signal: AbortSignal.timeout(10000) });
+          const res = await fetch(`${apiPrefix}/api/trade/verified_exits`, { signal: AbortSignal.timeout(30000) });
           if (!res.ok) return this.lastVerifiedExitSnapshot || null;
           const data = await res.json();
           if (data && data.success) {
