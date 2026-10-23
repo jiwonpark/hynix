@@ -13053,16 +13053,29 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
         try {
           const res = await fetch(`${apiPrefix}/api/trade/verified_exits`, { signal: AbortSignal.timeout(10000) });
-          if (!res.ok) return null;
+          if (!res.ok) return this.lastVerifiedExitSnapshot || null;
           const data = await res.json();
-          return data && data.success ? data : null;
+          if (data && data.success) {
+            this.lastVerifiedExitSnapshot = data;
+            return data;
+          }
+          return this.lastVerifiedExitSnapshot || null;
         } catch (e) {
-          return null;
+          return this.lastVerifiedExitSnapshot || null;
         }
+      },
+
+      applyVerifiedExitSnapshot(data, snapshot, forceStale = false) {
+        if (!data || !snapshot) return false;
+        data.verified_exit_summary = snapshot.verified_exit_summary;
+        data.recent_executions = snapshot.recent_executions;
+        data.verified_exits_stale = Boolean(snapshot.stale || forceStale);
+        return true;
       },
 
       async fetchHedgedStatusOnce() {
         const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
+        const exitSnapshotPromise = this.fetchVerifiedExitSnapshot();
         const endpoints = [
           `${apiPrefix}/api/trade/hedged_status`
         ];
@@ -13071,14 +13084,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
             if (res.ok) {
               const data = await res.json();
-              if (!data.authenticated) {
-                const exitSnapshot = await this.fetchVerifiedExitSnapshot();
-                if (exitSnapshot) {
-                  data.verified_exit_summary = exitSnapshot.verified_exit_summary;
-                  data.recent_executions = exitSnapshot.recent_executions;
-                  data.verified_exits_stale = Boolean(exitSnapshot.stale);
-                }
-              }
+              // Never let a partial account response erase the last verified history.
+              this.applyVerifiedExitSnapshot(data, this.lastVerifiedExitSnapshot, true);
               this.state.hedgedStatus = data;
               if (data && data.authenticated) {
                 this.state.backendConnected = true;
@@ -13107,21 +13114,22 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               try { this.renderHeldPairPnl(); } catch (e) { console.warn("Held-pair P&L render error:", e); }
               try { this.renderPositionsAndLogs(); } catch (e) { console.warn("Positions and execution history render error:", e); }
               try { this.scheduleDynamicBacktest(); } catch (e) { console.warn("Dynamic backtest schedule error:", e); }
+              exitSnapshotPromise.then((exitSnapshot) => {
+                if (!exitSnapshot || !this.state.hedgedStatus) return;
+                this.applyVerifiedExitSnapshot(this.state.hedgedStatus, exitSnapshot);
+                try { this.renderPositionsAndLogs(); } catch (e) { console.warn("Verified execution history render error:", e); }
+              });
               return;
             }
           } catch (e) {}
         }
-        const exitSnapshot = await this.fetchVerifiedExitSnapshot();
+        const exitSnapshot = await exitSnapshotPromise;
         this.state.hedgedStatus = {
           authenticated: false,
           status: "unavailable",
           error: "Status request failed",
-          ...(exitSnapshot ? {
-            verified_exit_summary: exitSnapshot.verified_exit_summary,
-            recent_executions: exitSnapshot.recent_executions,
-            verified_exits_stale: Boolean(exitSnapshot.stale),
-          } : {}),
         };
+        this.applyVerifiedExitSnapshot(this.state.hedgedStatus, exitSnapshot);
         this.renderHedgedController(this.state.hedgedStatus);
         this.renderHeldPairPnl();
         this.renderPositionsAndLogs();

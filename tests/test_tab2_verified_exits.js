@@ -4,6 +4,9 @@ const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 assert(html.includes('/api/trade/verified_exits'), 'Tab 2 must use the lightweight verified-exit fallback');
+assert(html.includes('this.lastVerifiedExitSnapshot = data'), 'Tab 2 must retain the last successful verified history');
+assert(html.includes('const exitSnapshotPromise = this.fetchVerifiedExitSnapshot();'), 'Tab 2 must fetch verified history independently of account status');
+assert(html.includes('this.applyVerifiedExitSnapshot(this.state.hedgedStatus, exitSnapshot);'), 'A delayed verified-history response must restore the current view');
 assert.match(
   html,
   /try \{ this\.renderPositionsAndLogs\(\); \} catch \(e\) \{ console\.warn\("Positions and execution history render error:", e\); \}/,
