@@ -13062,7 +13062,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       async fetchVerifiedExitSnapshotOnce() {
         const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
         try {
-          const res = await fetch(`${apiPrefix}/api/trade/verified_exits`, { signal: AbortSignal.timeout(30000) });
+          const res = await fetch(`${apiPrefix}/api/trade/verified_exits`, {
+            signal: AbortSignal.timeout(30000),
+            priority: "high",
+            cache: "no-store",
+          });
           if (!res.ok) return this.lastVerifiedExitSnapshot || null;
           const data = await res.json();
           if (data && data.success) {
@@ -13073,6 +13077,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         } catch (e) {
           return this.lastVerifiedExitSnapshot || null;
         }
+      },
+
+      async refreshVerifiedExitHistory() {
+        const exitSnapshot = await this.fetchVerifiedExitSnapshot();
+        if (!exitSnapshot) return false;
+        if (!this.state.hedgedStatus) this.state.hedgedStatus = { authenticated: false };
+        this.applyVerifiedExitSnapshot(this.state.hedgedStatus, exitSnapshot);
+        this.renderPositionsAndLogs();
+        return true;
       },
 
       applyVerifiedExitSnapshot(data, snapshot, forceStale = false) {
@@ -15168,7 +15181,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("tabAssets")) $("tabAssets").addEventListener("click", () => switchPosTab("tabAssets"));
         if ($("tabUpbit")) $("tabUpbit").addEventListener("click", () => switchPosTab("tabUpbit"));
         if ($("tabDaemonActivity")) $("tabDaemonActivity").addEventListener("click", () => switchPosTab("tabDaemonActivity"));
-        if ($("tabOrderLog")) $("tabOrderLog").addEventListener("click", () => switchPosTab("tabOrderLog"));
+        if ($("tabOrderLog")) $("tabOrderLog").addEventListener("click", async () => {
+          switchPosTab("tabOrderLog");
+          const summary = $("pairExecutionHistorySummary");
+          if (summary && !this.lastVerifiedExitSnapshot) {
+            summary.textContent = window.currentLang === "ko"
+              ? "검증된 체결 이력을 불러오는 중…"
+              : "Loading verified execution history…";
+          }
+          await this.refreshVerifiedExitHistory();
+        });
 
         // Periodically sync with backend daemon
         const pollBackend = async () => {
