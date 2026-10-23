@@ -13061,6 +13061,27 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       async fetchVerifiedExitSnapshotOnce() {
         const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
+        const livePromise = this.fetchVerifiedExitSnapshotLive(apiPrefix);
+        try {
+          const res = await fetch(`${apiPrefix}/verified-exits.json`, {
+            signal: AbortSignal.timeout(5000),
+            priority: "high",
+            cache: "no-store",
+          });
+          if (!res.ok) throw new Error("Verified-history bootstrap unavailable");
+          const data = await res.json();
+          if (data && data.success) {
+            const bootstrap = {...data, stale: true};
+            this.lastVerifiedExitSnapshot = bootstrap;
+            return bootstrap;
+          }
+          throw new Error("Verified-history bootstrap invalid");
+        } catch (e) {
+          return await livePromise;
+        }
+      },
+
+      async fetchVerifiedExitSnapshotLive(apiPrefix) {
         try {
           const res = await fetch(`${apiPrefix}/api/trade/verified_exits`, {
             signal: AbortSignal.timeout(30000),
