@@ -15,6 +15,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         server._verified_exits_cache = None
         server._verified_exits_cache_time = 0.0
+        server._verified_exits_task = None
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.state_patch = patch.object(server, 'STATE_FILE', Path(self.tmp.name) / 'state.json')
@@ -170,6 +171,20 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(
             result['verified_exit_summary']['realized_after_exit_fees_usd'], .72)
         self.client.get_detailed_account_overview.assert_not_awaited()
+
+    async def test_stale_verified_exit_cache_returns_before_background_refresh(self):
+        server._verified_exits_cache = {"success": True, "marker": "last-good"}
+        server._verified_exits_cache_time = time.monotonic() - 30
+
+        with patch.object(
+                server, "_refresh_verified_exits_cache",
+                AsyncMock(return_value={"success": True, "marker": "fresh"})) as refresh:
+            result = await server.get_verified_exits_endpoint()
+            self.assertEqual(result["marker"], "last-good")
+            self.assertTrue(result["stale"])
+            self.assertGreaterEqual(result["cache_age_seconds"], 30)
+            await asyncio.sleep(0)
+            refresh.assert_awaited_once()
 
     async def test_lightweight_exit_endpoint_annotates_virtual_lifo_pair(self):
         server.save_auto_tranche_state({

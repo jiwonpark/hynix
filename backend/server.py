@@ -3110,6 +3110,7 @@ HEDGED_STATUS_CACHE_TTL = 2.5
 HEDGED_STATUS_TIMEOUT = 8.0
 _verified_exits_cache: Optional[Dict[str, Any]] = None
 _verified_exits_cache_time = 0.0
+_verified_exits_task: Optional[asyncio.Task] = None
 VERIFIED_EXITS_CACHE_TTL = 10.0
 
 
@@ -3165,15 +3166,9 @@ def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs, entry_pa
     return {"verified_exit_summary": summary, "recent_executions": executions}
 
 
-@app.get("/api/trade/verified_exits")
-async def get_verified_exits_endpoint() -> Dict[str, Any]:
-    """Return exit reconciliation without waiting for positions or market signals."""
+async def _refresh_verified_exits_cache() -> Dict[str, Any]:
+    """Refresh exchange history while preserving the last successful snapshot."""
     global _verified_exits_cache, _verified_exits_cache_time
-    now = time.monotonic()
-    if (_verified_exits_cache is not None
-            and now - _verified_exits_cache_time < VERIFIED_EXITS_CACHE_TTL):
-        return copy.deepcopy(_verified_exits_cache)
-
     async def account_trade_history(symbol):
         return await binance_client.request(
             "GET", "/fapi/v1/userTrades",
@@ -3209,6 +3204,26 @@ async def get_verified_exits_endpoint() -> Dict[str, Any]:
             return stale
         return {"success": False, "status": "unavailable",
                 "error": str(exc) or type(exc).__name__}
+
+
+@app.get("/api/trade/verified_exits")
+async def get_verified_exits_endpoint() -> Dict[str, Any]:
+    """Return reconciliation immediately, refreshing stale history in background."""
+    global _verified_exits_task
+    now = time.monotonic()
+    cache_age = now - _verified_exits_cache_time
+    if _verified_exits_cache is not None:
+        cached = copy.deepcopy(_verified_exits_cache)
+        if cache_age < VERIFIED_EXITS_CACHE_TTL:
+            return cached
+        if _verified_exits_task is None or _verified_exits_task.done():
+            _verified_exits_task = asyncio.create_task(_refresh_verified_exits_cache())
+        cached.update(stale=True, cache_age_seconds=cache_age)
+        return cached
+
+    if _verified_exits_task is None or _verified_exits_task.done():
+        _verified_exits_task = asyncio.create_task(_refresh_verified_exits_cache())
+    return await _verified_exits_task
 
 
 @app.get("/api/trade/hedged_status")
