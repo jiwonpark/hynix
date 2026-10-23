@@ -4226,6 +4226,9 @@
 
       const remCapacity = Math.max(0, maxTranches - tranchesCount);
       const hasCapacity = tranchesCount < maxTranches;
+      this.setText("valCritRemainingTranches", Number.isFinite(maxTranches)
+        ? `${remCapacity} / ${maxTranches} ${isLiveAccount ? "COUNT" : "PAPER"} SLOTS LEFT`
+        : "UNLIMITED COUNT · RISK LIMITS APPLY");
       this.setText("valCondEntryCapacity", `${tranchesCount} / ${Number.isFinite(maxTranches) ? maxTranches : "Unlimited"} (${Number.isFinite(remCapacity) ? `${remCapacity} Left` : "leverage/margin limits apply"})`);
       const chkCap = lid("chkCondEntryCapacity");
       if (chkCap) chkCap.checked = hasCapacity;
