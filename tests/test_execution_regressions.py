@@ -171,6 +171,45 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             result['verified_exit_summary']['realized_after_exit_fees_usd'], .72)
         self.client.get_detailed_account_overview.assert_not_awaited()
 
+    async def test_lightweight_exit_endpoint_annotates_virtual_lifo_pair(self):
+        server.save_auto_tranche_state({
+            'entry_order_pairs': [{'adr_order_id': '1', 'stock_order_id': '2'}],
+            'exit_order_pairs': [{'adr_order_id': '11', 'stock_order_id': '12'}],
+        })
+
+        async def request(method, path, params, **kwargs):
+            if params['symbol'] == 'SKHYUSDT':
+                return [
+                    {'id': 1, 'orderId': 1, 'side': 'SELL', 'qty': '.08',
+                     'price': '200', 'time': 500, 'realizedPnl': '0',
+                     'commission': '.001', 'commissionAsset': 'USDT'},
+                    {'id': 11, 'orderId': 11, 'side': 'BUY', 'qty': '.07',
+                     'price': '195', 'time': 1000, 'realizedPnl': '1.25',
+                     'commission': '.01', 'commissionAsset': 'USDT'},
+                ]
+            return [
+                {'id': 2, 'orderId': 2, 'side': 'BUY', 'qty': '1.4',
+                 'price': '5', 'time': 501, 'realizedPnl': '0',
+                 'commission': '.001', 'commissionAsset': 'USDT'},
+                {'id': 12, 'orderId': 12, 'side': 'SELL', 'qty': '1.2',
+                 'price': '5.6', 'time': 1001, 'realizedPnl': '-.50',
+                 'commission': '.02', 'commissionAsset': 'USDT'},
+            ]
+
+        self.client.request.side_effect = request
+        result = await server.get_verified_exits_endpoint()
+        summary = result['verified_exit_summary']
+        self.assertEqual(summary['virtual_lifo_pairs'], 1)
+        self.assertGreater(summary['virtual_lifo_after_commissions_usd'], 1.03)
+        anchor = next(fill for fill in result['recent_executions']
+                      if fill.get('verified_exit_pair_anchor'))
+        self.assertEqual(anchor['order_id'], '12')
+        self.assertAlmostEqual(
+            anchor['verified_exit_pair_realized_after_exit_fees_usd'], .72)
+        self.assertAlmostEqual(
+            anchor['virtual_lifo_after_commissions_usd'],
+            summary['virtual_lifo_after_commissions_usd'])
+
     async def test_split_entry_and_exit_fills_preserve_one_remaining_tranche(self):
         self.client.get_detailed_account_overview.return_value['positions'] = [
             {'symbol': 'SKHYUSDT', 'position_amt': -.09, 'mark_price': 195, 'entry_price': 196},
@@ -561,6 +600,36 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.client.create_order.await_count, 2)
             status['auto_tranche_criteria']['can_take_profit'] = False
             self.assertTrue((await server.reduce_tranche(force=True))['success'])
+
+    async def test_successful_exit_persists_pre_exit_engine_estimate(self):
+        positions = [
+            {'symbol': 'SKHYUSDT', 'position_amt': -.08},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 1.4},
+        ]
+        estimate = {
+            'available': True, 'net_pnl_usd': .1356, 'gross_pnl_usd': .1678,
+            'threshold_usd': .03, 'slippage_reserve_usd': .0048,
+            'funding_reserve_usd': .0127,
+        }
+        status = {
+            'authenticated': True,
+            'adr_position': positions[0], 'stock_position': positions[1],
+            'target_tranche_profit': estimate,
+            'auto_tranche_criteria': {'can_take_profit': True},
+        }
+        self.client.create_order.side_effect = [
+            {'status': 'FILLED', 'executedQty': '.07', 'orderId': 301},
+            {'status': 'FILLED', 'executedQty': '1.2', 'orderId': 302},
+        ]
+        with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
+            result = await server.reduce_tranche()
+        self.assertTrue(result['success'])
+        pair = server.load_auto_tranche_state()['exit_order_pairs'][0]
+        self.assertEqual(pair['adr_order_id'], '301')
+        self.assertEqual(pair['stock_order_id'], '302')
+        self.assertAlmostEqual(
+            pair['engine_take_profit_estimate']['net_pnl_usd'], .1356)
+        self.assertIn('captured_at', pair['engine_take_profit_estimate'])
 
     async def test_failed_second_reduction_leg_records_fill_and_blocks_retry(self):
         positions = [

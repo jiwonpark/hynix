@@ -12682,20 +12682,40 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const totalCount = Number(verifiedExitSummary.total_recorded_exit_pairs || 0);
             const realized = Number(verifiedExitSummary.realized_after_exit_fees_usd || 0);
             const fees = Number(verifiedExitSummary.exit_fees_usd || 0);
+            const virtualLifoCount = Number(verifiedExitSummary.virtual_lifo_pairs || 0);
+            const virtualLifo = Number(verifiedExitSummary.virtual_lifo_after_commissions_usd || 0);
+            const engineEstimateCount = Number(verifiedExitSummary.engine_estimate_pairs || 0);
+            const engineEstimate = Number(verifiedExitSummary.engine_estimated_net_pnl_usd || 0);
             const pnlColor = realized >= 0 ? "#16a34a" : "#dc2626";
             const sign = realized > 0 ? "+" : (realized < 0 ? "-" : "");
+            const virtualColor = virtualLifo >= 0 ? "#16a34a" : "#dc2626";
+            const virtualSign = virtualLifo > 0 ? "+" : (virtualLifo < 0 ? "-" : "");
+            const engineColor = engineEstimate >= 0 ? "#16a34a" : "#dc2626";
+            const engineSign = engineEstimate > 0 ? "+" : (engineEstimate < 0 ? "-" : "");
             const verifiedLabel = isKo ? "검증된 청산 페어" : "Verified exit pairs";
             const pnlLabel = isKo ? "검증분 실현손익(청산 수수료 후)" : "Verified realized P&L after exit fees";
             const feeLabel = isKo ? "청산 수수료" : "Exit fees";
+            const virtualLabel = isKo ? "대응 진입 기준 Virtual LIFO 손익" : "Corresponding-entry Virtual LIFO P&L";
+            const engineLabel = isKo ? "저장된 청산 직전 엔진 추정" : "Stored pre-exit engine estimate";
             const baseBasis = isKo
               ? "Binance 체결 기준 · 진입 수수료와 펀딩 제외"
               : "Binance fills · entry commissions and funding excluded";
+            const virtualBasis = isKo
+              ? "Virtual LIFO는 기록된 대응 진입·청산 체결과 양쪽 수수료 기준 · 과거 슬리피지와 펀딩 제외"
+              : "Virtual LIFO uses recorded corresponding entry/exit fills and both commissions · historical slippage and funding excluded";
             const basis = this.state.hedgedStatus?.verified_exits_stale
               ? `${baseBasis} · ${isKo ? '마지막 성공 조회(현재 재시도 중)' : 'last successful read (retrying)'}`
               : baseBasis;
             logSummary.innerHTML = `${verifiedLabel} <b style="color:#0f172a;">${verifiedCount}/${totalCount}</b>`
               + ` · ${pnlLabel} <b style="color:${pnlColor};">${sign}$${Math.abs(realized).toFixed(4)}</b>`
-              + ` · ${feeLabel} $${fees.toFixed(4)}<br><span style="color:#64748b;">${basis}</span>`;
+              + ` · ${feeLabel} $${fees.toFixed(4)}`
+              + (virtualLifoCount > 0
+                ? `<br>${virtualLabel} <b style="color:${virtualColor};">${virtualSign}$${Math.abs(virtualLifo).toFixed(4)}</b> <span style="color:#64748b;">(${virtualLifoCount}/${totalCount})</span>`
+                : "")
+              + (engineEstimateCount > 0
+                ? ` · ${engineLabel} <b style="color:${engineColor};">${engineSign}$${Math.abs(engineEstimate).toFixed(4)}</b> <span style="color:#64748b;">(${engineEstimateCount})</span>`
+                : "")
+              + `<br><span style="color:#64748b;">${basis}${virtualLifoCount > 0 ? `<br>${virtualBasis}` : ""}</span>`;
           } else {
             logSummary.textContent = isKo
               ? "Binance 계정 체결 내역을 불러오면 검증된 청산 요약이 표시됩니다."
@@ -12738,6 +12758,22 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 ? (isKo ? "검증된 청산 LEG" : "VERIFIED EXIT LEG")
                 : "FILLED";
               const statusColor = ex.verified_exit_leg ? "#0369a1" : "#16a34a";
+              const pairRealized = ex.verified_exit_pair_realized_after_exit_fees_usd;
+              const pairVirtual = ex.virtual_lifo_after_commissions_usd;
+              const pairEngine = ex.engine_take_profit_estimate_usd;
+              const signedPairPnl = (value) => {
+                const number = Number(value);
+                const color = number >= 0 ? "#16a34a" : "#dc2626";
+                const prefix = number > 0 ? "+" : (number < 0 ? "-" : "");
+                return `<b style="color:${color};">${prefix}$${Math.abs(number).toFixed(4)}</b>`;
+              };
+              const pairComparison = ex.verified_exit_pair_anchor && pairRealized != null
+                ? `<div style="margin-top:4px; font-size:9.5px; line-height:1.45; white-space:nowrap;">`
+                  + `<span style="color:#64748b;">${isKo ? '페어 Binance 평균단가' : 'Pair Binance average'}:</span> ${signedPairPnl(pairRealized)}`
+                  + (pairVirtual != null ? `<br><span style="color:#64748b;">${isKo ? '대응 진입 Virtual LIFO' : 'Corresponding-entry Virtual LIFO'}:</span> ${signedPairPnl(pairVirtual)}` : "")
+                  + (pairEngine != null ? `<br><span style="color:#64748b;">${isKo ? '청산 직전 엔진 추정' : 'Pre-exit engine estimate'}:</span> ${signedPairPnl(pairEngine)}` : "")
+                  + `</div>`
+                : "";
 
               return `<tr>
                 <td style="color: #64748b; font-size: 11px;">${timeStr}</td>
@@ -12747,7 +12783,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 <td>$${ex.price.toFixed(2)}</td>
                 <td style="color: #d97706; font-family: monospace; font-size: 11px;">${feeStr}</td>
                 <td>${pnlCell}</td>
-                <td><span style="font-weight: 800; color: ${statusColor};">${statusText}</span></td>
+                <td><span style="font-weight: 800; color: ${statusColor};">${statusText}</span>${pairComparison}</td>
               </tr>`;
             }).join("");
           } else {

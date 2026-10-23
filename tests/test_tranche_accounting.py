@@ -66,6 +66,68 @@ class TrancheAccountingTests(unittest.TestCase):
         self.assertTrue(summary['pnl_authoritative'])
         self.assertIn('entry commissions and funding excluded', summary['pnl_basis'])
 
+    def test_verified_exit_summary_shows_corresponding_entry_virtual_lifo_pnl(self):
+        policy = {
+            'sizing_version': 'dollar_2x_v1',
+            'adr_entry_qty': .08, 'stock_entry_qty': 1.4,
+            'adr_exit_qty': .08, 'stock_exit_qty': 1.4,
+        }
+        trades = [
+            *self.entries(200, 5, 1, 1000),
+            *self.entries(190, 6, 2, 2000),
+            self.trade('SKHYUSDT', 11, 'BUY', .08, 185, 3000, fee=.01),
+            self.trade('CSOPSKHYNIX2LUSDT', 12, 'SELL', 1.4, 6.2, 3001, fee=.02),
+        ]
+        trades[-2]['realized_pnl'] = 1.0
+        trades[-1]['realized_pnl'] = -2.0
+        summary = summarize_verified_exit_pairs(
+            trades,
+            'CSOPSKHYNIX2LUSDT',
+            [{'adr_order_id': '11', 'stock_order_id': '12',
+              'engine_take_profit_estimate': {'net_pnl_usd': .55}}],
+            [
+                {'adr_order_id': '1', 'stock_order_id': '1', 'entry_policy': policy},
+                {'adr_order_id': '2', 'stock_order_id': '2', 'entry_policy': policy},
+            ],
+        )
+        pair = summary['verified_exits'][0]
+        self.assertAlmostEqual(pair['realized_after_exit_fees_usd'], -1.03)
+        self.assertAlmostEqual(pair['virtual_lifo_gross_pnl_usd'], .68)
+        self.assertAlmostEqual(pair['virtual_lifo_entry_fees_usd'], .002)
+        self.assertAlmostEqual(pair['virtual_lifo_after_commissions_usd'], .648)
+        self.assertEqual(pair['virtual_lifo_allocations'][0]['adr_order_id'], '2')
+        self.assertAlmostEqual(pair['engine_take_profit_estimate_usd'], .55)
+        self.assertEqual(summary['virtual_lifo_pairs'], 1)
+        self.assertAlmostEqual(summary['virtual_lifo_after_commissions_usd'], .648)
+        self.assertEqual(summary['engine_estimate_pairs'], 1)
+        self.assertAlmostEqual(summary['engine_estimated_net_pnl_usd'], .55)
+
+    def test_unrecorded_older_exit_still_advances_virtual_lifo_stack(self):
+        policy = {
+            'sizing_version': 'dollar_2x_v1',
+            'adr_entry_qty': .08, 'stock_entry_qty': 1.4,
+            'adr_exit_qty': .08, 'stock_exit_qty': 1.4,
+        }
+        trades = [
+            *self.entries(200, 5, 1, 1000),
+            *self.entries(190, 6, 2, 2000),
+            self.trade('SKHYUSDT', 11, 'BUY', .08, 185, 3000),
+            self.trade('CSOPSKHYNIX2LUSDT', 12, 'SELL', 1.4, 6.2, 3001),
+            self.trade('SKHYUSDT', 21, 'BUY', .08, 195, 4000),
+            self.trade('CSOPSKHYNIX2LUSDT', 22, 'SELL', 1.4, 5.2, 4001),
+        ]
+        summary = summarize_verified_exit_pairs(
+            trades,
+            'CSOPSKHYNIX2LUSDT',
+            [{'adr_order_id': '21', 'stock_order_id': '22'}],
+            [
+                {'adr_order_id': '1', 'stock_order_id': '1', 'entry_policy': policy},
+                {'adr_order_id': '2', 'stock_order_id': '2', 'entry_policy': policy},
+            ],
+        )
+        allocation = summary['verified_exits'][0]['virtual_lifo_allocations'][0]
+        self.assertEqual(allocation['adr_order_id'], '1')
+
     def entries(self, adr_price=196, etf_price=5.6, order=1, time=1000000):
         return [self.trade('SKHYUSDT', order, 'SELL', .08, adr_price, time),
                 self.trade('CSOPSKHYNIX2LUSDT', order, 'BUY', 1.4, etf_price, time+1000)]

@@ -3136,21 +3136,32 @@ def _normalize_binance_trades(trades, symbol):
     return executions
 
 
-def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs):
+def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs, entry_pairs=None):
     executions = [dict(execution) for execution in executions]
-    summary = summarize_verified_exit_pairs(executions, stock_symbol, exit_pairs)
-    verified_legs = {
-        ("SKHYUSDT", item["adr_order_id"], "BUY")
-        for item in summary["verified_exits"]
-    } | {
-        (stock_symbol, item["stock_order_id"], "SELL")
-        for item in summary["verified_exits"]
-    }
+    summary = summarize_verified_exit_pairs(
+        executions, stock_symbol, exit_pairs, entry_pairs)
+    verified_legs = {}
+    for item in summary["verified_exits"]:
+        verified_legs[("SKHYUSDT", item["adr_order_id"], "BUY")] = (item, False)
+        verified_legs[(stock_symbol, item["stock_order_id"], "SELL")] = (item, True)
     for execution in executions:
-        if (execution["symbol"], str(execution["order_id"]), execution["side"]) in verified_legs:
+        verified = verified_legs.get(
+            (execution["symbol"], str(execution["order_id"]), execution["side"]))
+        if verified:
+            item, pair_anchor = verified
             execution["pnl_authoritative"] = True
             execution["pnl_source"] = "BINANCE_USER_TRADES"
             execution["verified_exit_leg"] = True
+            execution["verified_exit_pair_index"] = item["recorded_pair_index"]
+            execution["verified_exit_pair_anchor"] = pair_anchor
+            execution["verified_exit_pair_realized_after_exit_fees_usd"] = item[
+                "realized_after_exit_fees_usd"]
+            if item.get("virtual_lifo_after_commissions_usd") is not None:
+                execution["virtual_lifo_after_commissions_usd"] = item[
+                    "virtual_lifo_after_commissions_usd"]
+            if item.get("engine_take_profit_estimate_usd") is not None:
+                execution["engine_take_profit_estimate_usd"] = item[
+                    "engine_take_profit_estimate_usd"]
     return {"verified_exit_summary": summary, "recent_executions": executions}
 
 
@@ -3178,12 +3189,14 @@ async def get_verified_exits_endpoint() -> Dict[str, Any]:
         executions = (_normalize_binance_trades(adr_trades, "SKHYUSDT")
                       + _normalize_binance_trades(stock_trades, "CSOPSKHYNIX2LUSDT"))
         executions.sort(key=lambda item: item["time"])
+        auto_state = load_auto_tranche_state()
         result = {
             "success": True,
             **_build_verified_exit_snapshot(
                 executions,
                 "CSOPSKHYNIX2LUSDT",
-                load_auto_tranche_state().get("exit_order_pairs", []),
+                auto_state.get("exit_order_pairs", []),
+                auto_state.get("entry_order_pairs", []),
             ),
         }
         _verified_exits_cache = result
@@ -3342,6 +3355,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             executions,
             history_stock_sym,
             auto_state.get("exit_order_pairs", []),
+            auto_state.get("entry_order_pairs", []),
         )
         verified_exit_summary = verified_exit_snapshot["verified_exit_summary"]
         executions = verified_exit_snapshot["recent_executions"]
@@ -4511,6 +4525,7 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         stock_reduce_side = "BUY" if is_long_spread else "SELL"
 
         target_criteria = (status or {}).get("auto_tranche_criteria", {})
+        target_profit = (status or {}).get("target_tranche_profit")
         if force and not status.get("authenticated") and any(
                 p.get("entry_policy", {}).get("sizing_version") for p in state.get("entry_order_pairs", [])):
             return {"success": False, "error": "Cannot verify the saved dynamic exit quantities; retry when history is available."}
@@ -4564,10 +4579,23 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         state["execution_blocked"] = False
         state["blocked_reason"] = None
         if order_adr.get("orderId") is not None and order_stock.get("orderId") is not None:
-            state.setdefault("exit_order_pairs", []).append({
+            exit_pair_record = {
                 "adr_order_id": str(order_adr["orderId"]),
                 "stock_order_id": str(order_stock["orderId"]),
-            })
+            }
+            if isinstance(target_profit, dict) and target_profit.get("available"):
+                estimate_keys = (
+                    "net_pnl_usd", "gross_pnl_usd", "threshold_usd", "net_return_pct",
+                    "adr_order_id", "stock_order_id", "adr_entry_price", "stock_entry_price",
+                    "adr_exit_qty", "stock_exit_qty", "adr_pnl_usd", "stock_pnl_usd",
+                    "entry_fees_usd", "estimated_exit_fee_usd", "slippage_reserve_usd",
+                    "funding_reserve_usd", "valuation", "pairing",
+                )
+                exit_pair_record["engine_take_profit_estimate"] = {
+                    key: target_profit.get(key) for key in estimate_keys if target_profit.get(key) is not None
+                }
+                exit_pair_record["engine_take_profit_estimate"]["captured_at"] = time.time()
+            state.setdefault("exit_order_pairs", []).append(exit_pair_record)
         if status:
             state["last_exit_spread"] = status.get("auto_tranche_criteria", {}).get("current_spread")
             state["last_exit_signal_version"] = SIGNAL_VERSION
@@ -4578,7 +4606,7 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         return {
             "success": True,
             "message": "Tranche reduction filled" if not force else "Forced tranche reduction filled",
-            "target_tranche_profit": status.get("target_tranche_profit") if status else None,
+            "target_tranche_profit": target_profit,
             "order_adr": order_adr,
             "order_stock": order_stock
         }

@@ -39,7 +39,142 @@ def aggregate_orders(executions):
     return sorted(orders.values(), key=lambda order: order['time'])
 
 
-def summarize_verified_exit_pairs(executions, stock_symbol, exit_pairs):
+def _reconstruct_virtual_lifo_exits(orders, stock_symbol, entry_pairs, verified_by_index):
+    """Attribute verified reductions to recorded entry lots using engine LIFO rules.
+
+    Binance reports realized P&L against the exchange-wide average position cost.
+    This reconstruction is deliberately separate: it shows the strategy engine's
+    virtual-lot view using the corresponding recorded entry fills.  It includes
+    recorded entry and exit commissions, but cannot recover historical funding or
+    the pre-order slippage reserve unless the estimate was saved with the exit.
+    """
+    recorded_entries = entry_pairs if isinstance(entry_pairs, list) else []
+    if not recorded_entries or not verified_by_index:
+        return {}
+
+    order_index = {
+        (order['symbol'], str(order['order_id']), order['side']): order
+        for order in orders
+    }
+    profiles = entry_profiles(orders, stock_symbol, recorded_entries)
+    events = []
+    for pair_index, pair in enumerate(recorded_entries):
+        if not isinstance(pair, dict):
+            continue
+        adr_id = str(pair.get('adr_order_id', ''))
+        stock_id = str(pair.get('stock_order_id', ''))
+        adr = order_index.get(('SKHYUSDT', adr_id, 'SELL'))
+        stock = order_index.get((stock_symbol, stock_id, 'BUY'))
+        profile = profiles.get(adr_id)
+        if not adr or not stock or not profile:
+            continue
+        policy = profile.get('policy') or {}
+        try:
+            adr_trim = float(policy['adr_exit_qty'])
+            stock_trim = float(policy['stock_exit_qty'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (adr['qty'] <= 0 or stock['qty'] <= 0 or adr_trim <= 0 or stock_trim <= 0
+                or adr_trim > adr['qty'] + 1e-8 or stock_trim > stock['qty'] + 1e-8
+                or not adr['fee_known'] or not stock['fee_known']):
+            continue
+        events.append((max(adr['time'], stock['time']), 0, {
+            'recorded_entry_pair_index': pair_index,
+            'adr_order': adr,
+            'stock_order': stock,
+            'remaining_adr_qty': adr_trim,
+            'remaining_stock_qty': stock_trim,
+        }))
+
+    verified_keys = {
+        (item['adr_order_id'], item['stock_order_id']): (exit_index, item)
+        for exit_index, item in verified_by_index.items()
+    }
+    seen_exit_keys = set()
+    for adr_id, stock_id in infer_exit_pairs(orders, stock_symbol).items():
+        adr_exit = order_index.get(('SKHYUSDT', str(adr_id), 'BUY'))
+        stock_exit = order_index.get((stock_symbol, str(stock_id), 'SELL'))
+        if not adr_exit or not stock_exit:
+            continue
+        key = (str(adr_id), str(stock_id))
+        exit_index, item = verified_keys.get(key, (None, None))
+        events.append((max(adr_exit['time'], stock_exit['time']), 1, {
+            'exit_index': exit_index, 'item': item,
+            'adr_exit': adr_exit, 'stock_exit': stock_exit,
+        }))
+        seen_exit_keys.add(key)
+    for key, (exit_index, item) in verified_keys.items():
+        if key in seen_exit_keys:
+            continue
+        events.append((item['time'], 1, {
+            'exit_index': exit_index, 'item': item,
+            'adr_exit': item['_adr_order'], 'stock_exit': item['_stock_order'],
+        }))
+    events.sort(key=lambda event: (event[0], event[1]))
+
+    stack = []
+    reconstructed = {}
+    for _, event_type, payload in events:
+        if event_type == 0:
+            stack.append(payload)
+            continue
+
+        item = payload['item']
+        adr_exit = payload['adr_exit']
+        stock_exit = payload['stock_exit']
+        adr_remaining = adr_exit['qty']
+        stock_remaining = stock_exit['qty']
+        adr_exit_price = adr_exit['cost'] / adr_exit['qty']
+        stock_exit_price = stock_exit['cost'] / stock_exit['qty']
+        virtual_gross = 0.0
+        entry_fees = 0.0
+        allocations = []
+        while (adr_remaining > 1e-8 or stock_remaining > 1e-8) and stack:
+            lot = stack[-1]
+            adr_entry = lot['adr_order']
+            stock_entry = lot['stock_order']
+            adr_use = min(adr_remaining, lot['remaining_adr_qty'])
+            stock_use = min(stock_remaining, lot['remaining_stock_qty'])
+            if adr_use <= 1e-8 and stock_use <= 1e-8:
+                stack.pop()
+                continue
+            adr_entry_price = adr_entry['cost'] / adr_entry['qty']
+            stock_entry_price = stock_entry['cost'] / stock_entry['qty']
+            virtual_gross += adr_use * (adr_entry_price - adr_exit_price)
+            virtual_gross += stock_use * (stock_exit_price - stock_entry_price)
+            entry_fees += adr_entry['fee'] * adr_use / adr_entry['qty']
+            entry_fees += stock_entry['fee'] * stock_use / stock_entry['qty']
+            allocations.append({
+                'recorded_entry_pair_index': lot['recorded_entry_pair_index'],
+                'adr_order_id': str(adr_entry['order_id']),
+                'stock_order_id': str(stock_entry['order_id']),
+                'adr_qty': adr_use,
+                'stock_qty': stock_use,
+                'adr_entry_price': adr_entry_price,
+                'stock_entry_price': stock_entry_price,
+            })
+            lot['remaining_adr_qty'] = round(lot['remaining_adr_qty'] - adr_use, 8)
+            lot['remaining_stock_qty'] = round(lot['remaining_stock_qty'] - stock_use, 8)
+            adr_remaining = round(adr_remaining - adr_use, 8)
+            stock_remaining = round(stock_remaining - stock_use, 8)
+            if lot['remaining_adr_qty'] <= 1e-8 and lot['remaining_stock_qty'] <= 1e-8:
+                stack.pop()
+
+        if (item is None or payload['exit_index'] is None
+                or adr_remaining > 1e-8 or stock_remaining > 1e-8 or not allocations):
+            continue
+        exit_fees = item['exit_fees_usd']
+        reconstructed[payload['exit_index']] = {
+            'virtual_lifo_gross_pnl_usd': virtual_gross,
+            'virtual_lifo_entry_fees_usd': entry_fees,
+            'virtual_lifo_exit_fees_usd': exit_fees,
+            'virtual_lifo_after_commissions_usd': virtual_gross - entry_fees - exit_fees,
+            'virtual_lifo_allocations': allocations,
+        }
+    return reconstructed
+
+
+def summarize_verified_exit_pairs(executions, stock_symbol, exit_pairs, entry_pairs=None):
     """Reconcile saved two-leg exits against authoritative exchange fills.
 
     The resulting P&L is Binance realized P&L less commissions paid on the two
@@ -79,10 +214,27 @@ def summarize_verified_exit_pairs(executions, stock_symbol, exit_pairs):
             'realized_after_exit_fees_usd': gross_pnl - exit_fees,
             'pnl_authoritative': True,
             'pnl_source': 'BINANCE_USER_TRADES',
+            '_adr_order': adr,
+            '_stock_order': stock,
         })
+
+    verified_by_index = {item['recorded_pair_index']: item for item in verified}
+    reconstructed = _reconstruct_virtual_lifo_exits(
+        orders, stock_symbol, entry_pairs, verified_by_index)
+    for item in verified:
+        item.update(reconstructed.get(item['recorded_pair_index'], {}))
+        saved_pair = recorded_pairs[item['recorded_pair_index']]
+        saved_estimate = saved_pair.get('engine_take_profit_estimate') if isinstance(saved_pair, dict) else None
+        if isinstance(saved_estimate, dict) and saved_estimate.get('net_pnl_usd') is not None:
+            item['engine_take_profit_estimate_usd'] = float(saved_estimate['net_pnl_usd'])
+            item['engine_take_profit_estimate'] = saved_estimate
+        item.pop('_adr_order', None)
+        item.pop('_stock_order', None)
 
     gross_pnl = sum(pair['gross_realized_pnl_usd'] for pair in verified)
     exit_fees = sum(pair['exit_fees_usd'] for pair in verified)
+    virtual_lifo = [pair for pair in verified if pair.get('virtual_lifo_after_commissions_usd') is not None]
+    engine_estimates = [pair for pair in verified if pair.get('engine_take_profit_estimate_usd') is not None]
     return {
         'total_recorded_exit_pairs': len(recorded_pairs),
         'verified_exit_pairs': len(verified),
@@ -94,6 +246,19 @@ def summarize_verified_exit_pairs(executions, stock_symbol, exit_pairs):
         'pnl_authoritative': True,
         'pnl_source': 'BINANCE_USER_TRADES',
         'pnl_basis': 'Binance realized P&L minus exit-order commissions; entry commissions and funding excluded.',
+        'virtual_lifo_pairs': len(virtual_lifo),
+        'virtual_lifo_gross_pnl_usd': sum(pair['virtual_lifo_gross_pnl_usd'] for pair in virtual_lifo),
+        'virtual_lifo_entry_fees_usd': sum(pair['virtual_lifo_entry_fees_usd'] for pair in virtual_lifo),
+        'virtual_lifo_exit_fees_usd': sum(pair['virtual_lifo_exit_fees_usd'] for pair in virtual_lifo),
+        'virtual_lifo_after_commissions_usd': sum(
+            pair['virtual_lifo_after_commissions_usd'] for pair in virtual_lifo),
+        'virtual_lifo_basis': ('Recorded corresponding entry fills attributed LIFO; entry and exit commissions included; '
+                               'historical slippage and funding excluded.'),
+        'engine_estimate_pairs': len(engine_estimates),
+        'engine_estimated_net_pnl_usd': sum(
+            pair['engine_take_profit_estimate_usd'] for pair in engine_estimates),
+        'engine_estimate_basis': ('Pre-exit engine estimate after its configured fee, slippage, and funding reserves; '
+                                  'available for newly recorded exits.'),
         'verified_exits': verified,
     }
 

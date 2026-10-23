@@ -40,6 +40,10 @@ const state = {
       total_recorded_exit_pairs: 19,
       realized_after_exit_fees_usd: -42.89830268,
       exit_fees_usd: 0.1266299,
+      virtual_lifo_pairs: 19,
+      virtual_lifo_after_commissions_usd: 2.7182,
+      engine_estimate_pairs: 2,
+      engine_estimated_net_pnl_usd: 0.2763,
       pnl_authoritative: true,
     },
     recent_executions: [{
@@ -52,6 +56,10 @@ const state = {
       commission_asset: 'USDT',
       realized_pnl: -1.25,
       verified_exit_leg: true,
+      verified_exit_pair_anchor: true,
+      verified_exit_pair_realized_after_exit_fees_usd: -2.41,
+      virtual_lifo_after_commissions_usd: 0.148,
+      engine_take_profit_estimate_usd: 0.136,
     }],
   },
 };
@@ -67,8 +75,14 @@ assert.match($('pairExecutionHistorySummary').innerHTML, /Verified exit pairs/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /19\/19/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /-\$42\.8983/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /entry commissions and funding excluded/);
+assert.match($('pairExecutionHistorySummary').innerHTML, /Corresponding-entry Virtual LIFO P&L/);
+assert.match($('pairExecutionHistorySummary').innerHTML, /\+\$2\.7182/);
+assert.match($('pairExecutionHistorySummary').innerHTML, /Stored pre-exit engine estimate/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /last successful read \(retrying\)/);
 assert.match($('executionHistoryBody').innerHTML, /VERIFIED EXIT LEG/);
 assert.match($('executionHistoryBody').innerHTML, /After exit fee/);
+assert.match($('executionHistoryBody').innerHTML, /Pair Binance average/);
+assert.match($('executionHistoryBody').innerHTML, /Corresponding-entry Virtual LIFO/);
+assert.match($('executionHistoryBody').innerHTML, /Pre-exit engine estimate/);
 
 console.log('✅ Tab 2 verified-exit summary and authoritative leg labels passed');
