@@ -12785,29 +12785,25 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const engineColor = engineEstimate >= 0 ? "#16a34a" : "#dc2626";
             const engineSign = engineEstimate > 0 ? "+" : (engineEstimate < 0 ? "-" : "");
             const verifiedLabel = isKo ? "검증된 청산 페어" : "Verified exit pairs";
-            const pnlLabel = isKo ? "검증분 실현손익(청산 수수료 후)" : "Verified realized P&L after exit fees";
+            const pnlLabel = isKo ? "Binance 계정 평균단가 기준" : "Binance pooled average basis";
             const feeLabel = isKo ? "청산 수수료" : "Exit fees";
-            const virtualLabel = isKo ? "대응 진입 기준 Virtual LIFO 손익" : "Corresponding-entry Virtual LIFO P&L";
-            const engineLabel = isKo ? "저장된 청산 직전 엔진 추정" : "Stored pre-exit engine estimate";
-            const baseBasis = isKo
-              ? "Binance 체결 기준 · 진입 수수료와 펀딩 제외"
-              : "Binance fills · entry commissions and funding excluded";
+            const virtualLabel = isKo ? "대응 진입 기준 Virtual LIFO 실현손익" : "Corresponding-entry Virtual LIFO Net P&L";
+            const engineLabel = isKo ? "청산 직전 엔진 추정" : "Pre-exit engine estimate";
             const virtualBasis = isKo
               ? "Virtual LIFO는 기록된 대응 진입·청산 체결과 양쪽 수수료 기준 · 과거 슬리피지와 펀딩 제외"
               : "Virtual LIFO uses recorded corresponding entry/exit fills and both commissions · historical slippage and funding excluded";
             const basis = this.state.hedgedStatus?.verified_exits_stale
-              ? `${baseBasis} · ${isKo ? '마지막 성공 조회(현재 재시도 중)' : 'last successful read (retrying)'}`
-              : baseBasis;
-            logSummary.innerHTML = `${verifiedLabel} <b style="color:#0f172a;">${verifiedCount}/${totalCount}</b>`
-              + ` · ${pnlLabel} <b style="color:${pnlColor};">${sign}$${Math.abs(realized).toFixed(4)}</b>`
+              ? `${virtualBasis} · ${isKo ? '마지막 성공 조회(현재 재시도 중)' : 'last successful read (retrying)'}`
+              : virtualBasis;
+            logSummary.innerHTML = `${virtualLabel}: <b style="color:${virtualColor}; font-size:12px;">${virtualSign}$${Math.abs(virtualLifo).toFixed(4)}</b> <span style="color:#64748b;">(${virtualLifoCount}/${totalCount})</span>`
               + ` · ${feeLabel} $${fees.toFixed(4)}`
-              + (virtualLifoCount > 0
-                ? `<br>${virtualLabel} <b style="color:${virtualColor};">${virtualSign}$${Math.abs(virtualLifo).toFixed(4)}</b> <span style="color:#64748b;">(${virtualLifoCount}/${totalCount})</span>`
-                : "")
+              + ` · ${verifiedLabel} <b style="color:#0f172a;">${verifiedCount}/${totalCount}</b>`
+              + `<br><span style="color:#64748b;">${pnlLabel}: <strong style="color:${pnlColor};">${sign}$${Math.abs(realized).toFixed(4)}</strong>`
               + (engineEstimateCount > 0
-                ? ` · ${engineLabel} <b style="color:${engineColor};">${engineSign}$${Math.abs(engineEstimate).toFixed(4)}</b> <span style="color:#64748b;">(${engineEstimateCount})</span>`
+                ? ` · ${engineLabel}: <strong style="color:${engineColor};">${engineSign}$${Math.abs(engineEstimate).toFixed(4)}</strong>`
                 : "")
-              + `<br><span style="color:#64748b;">${basis}${virtualLifoCount > 0 ? `<br>${virtualBasis}` : ""}</span>`;
+              + `</span>`
+              + `<br><span style="color:#64748b;">${basis}</span>`;
           } else {
             logSummary.textContent = isKo
               ? "Binance 계정 체결 내역을 불러오면 검증된 청산 요약이 표시됩니다."
@@ -12969,8 +12965,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                 const pairRealized = pairAnchor.verified_exit_pair_realized_after_exit_fees_usd;
                 const pairVirtual = pairAnchor.virtual_lifo_after_commissions_usd;
                 const pairEngine = pairAnchor.engine_take_profit_estimate_usd;
-                const isProfit = pairRealized != null ? pairRealized >= 0 : true;
-                const pnlSign = (pairRealized != null && pairRealized >= 0) ? "+" : "";
+                const mainPnl = pairVirtual != null ? pairVirtual : pairRealized;
+                const isProfit = mainPnl != null ? mainPnl >= 0 : true;
+                const pnlSign = (mainPnl != null && mainPnl > 0) ? "+" : (mainPnl != null && mainPnl < 0 ? "-" : "");
+                const mainPnlTitle = pairVirtual != null
+                  ? (isKo ? "Virtual LIFO 실현손익" : "Virtual LIFO Net P&L")
+                  : (isKo ? "Binance 실현손익" : "Binance Realized P&L");
                 const pairNumber = group.pairIndex != null ? group.pairIndex + 1 : null;
                 const badgeText = pairNumber ? (isKo ? `청산 페어 #${pairNumber}` : `EXIT PAIR #${pairNumber}`) : (isKo ? "듀얼 청산" : "DUAL EXIT");
 
@@ -12987,15 +12987,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
                     <div style="background: ${isProfit ? '#ecfdf5' : '#fff1f2'}; border: 1.5px solid ${isProfit ? '#86efac' : '#fecaca'}; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px;">
                       <div style="display: flex; justify-content: space-between; font-size: 9.5px; font-weight: 800; color: ${isProfit ? '#047857' : '#be123c'}; text-transform: uppercase; letter-spacing: 0.5px;">
-                        <span>${isKo ? 'Binance 실현손익' : 'Binance Realized P&L'}</span>
-                        <span>${pairRealized != null ? (isProfit ? 'PROFIT' : 'LOSS') : 'NET'}</span>
+                        <span>${mainPnlTitle}</span>
+                        <span>${mainPnl != null ? (isProfit ? 'PROFIT' : 'LOSS') : 'NET'}</span>
                       </div>
                       <div style="font-size: 16px; font-weight: 900; color: ${isProfit ? '#16a34a' : '#dc2626'}; margin-top: 2px;">
-                        ${pairRealized != null ? `${pnlSign}$${Math.abs(pairRealized).toFixed(4)}` : '—'}
+                        ${mainPnl != null ? `${pnlSign}$${Math.abs(mainPnl).toFixed(4)}` : '—'}
                       </div>
-                      ${pairVirtual != null ? `
-                      <div style="font-size: 10.5px; color: ${isProfit ? '#065f46' : '#9f1239'}; margin-top: 3px; font-family: monospace;">
-                        ${isKo ? '대응 진입 Virtual LIFO' : 'Virtual LIFO'}: ${signedPairPnl(pairVirtual)}
+                      ${pairVirtual != null && pairRealized != null ? `
+                      <div style="font-size: 10px; color: #64748b; margin-top: 3px; font-family: monospace;">
+                        ${isKo ? 'Binance 계정 평균단가' : 'Binance pooled avg'}: ${signedPairPnl(pairRealized)}
                       </div>` : ''}
                       ${pairEngine != null ? `
                       <div style="font-size: 10px; color: #64748b; margin-top: 2px; font-family: monospace;">
