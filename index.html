@@ -13061,7 +13061,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       async fetchVerifiedExitSnapshotOnce() {
         const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
-        const livePromise = this.fetchVerifiedExitSnapshotLive(apiPrefix);
         try {
           const res = await fetch(`${apiPrefix}/verified-exits.json`, {
             signal: AbortSignal.timeout(5000),
@@ -13073,11 +13072,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (data && data.success) {
             const bootstrap = {...data, stale: true};
             this.lastVerifiedExitSnapshot = bootstrap;
+            this.fetchVerifiedExitSnapshotLive(apiPrefix).then((live) => {
+              if (!live || !this.state.hedgedStatus) return;
+              this.applyVerifiedExitSnapshot(this.state.hedgedStatus, live);
+              this.renderPositionsAndLogs();
+            });
             return bootstrap;
           }
           throw new Error("Verified-history bootstrap invalid");
         } catch (e) {
-          return await livePromise;
+          return await this.fetchVerifiedExitSnapshotLive(apiPrefix);
         }
       },
 

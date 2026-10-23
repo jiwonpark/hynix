@@ -11,6 +11,10 @@ assert(html.includes('priority: "high"'), 'Verified history must be prioritized 
 assert(html.includes('await this.refreshVerifiedExitHistory();'), 'Opening Execution History must explicitly refresh its data');
 assert(html.includes('`${apiPrefix}/verified-exits.json`'), 'Tab 2 must have a fast static verified-history bootstrap');
 assert(html.includes('const bootstrap = {...data, stale: true};'), 'The static bootstrap must be labeled as a last successful read');
+assert(
+  html.indexOf('`${apiPrefix}/verified-exits.json`') < html.indexOf('this.fetchVerifiedExitSnapshotLive(apiPrefix).then'),
+  'Static history must load before the live refresh starts',
+);
 assert(html.includes('const exitSnapshotPromise = this.fetchVerifiedExitSnapshot();'), 'Tab 2 must fetch verified history independently of account status');
 assert(html.includes('this.applyVerifiedExitSnapshot(this.state.hedgedStatus, exitSnapshot);'), 'A delayed verified-history response must restore the current view');
 assert.match(
