@@ -28,6 +28,18 @@ class WindowedFakeClient:
         return [row for row in self.fills if params["startTime"] <= row["time"] <= params["endTime"]]
 
 
+class DelayedEventFakeClient(WindowedFakeClient):
+    def __init__(self, fills, order_times):
+        super().__init__(fills)
+        self.order_times = order_times
+
+    async def request(self, method, endpoint, params=None, signed=False):
+        if endpoint == "/fapi/v1/order":
+            self.calls.append(params)
+            return {"status": "FILLED", "updateTime": self.order_times[str(params["orderId"])]}
+        return await super().request(method, endpoint, params, signed)
+
+
 def fill(order_id, side, qty, commission, pnl="0", asset="USDT", timestamp=None):
     result = {"symbol": "BTCUSDT", "orderId": order_id, "side": side, "qty": qty,
               "commission": commission, "commissionAsset": asset, "realizedPnl": pnl}
@@ -135,6 +147,32 @@ class CryptoPnlReconciliationTest(unittest.TestCase):
                             for call in client.calls))
         self.assertLessEqual(client.calls[0]["startTime"], old_entry * 1000)
         self.assertGreaterEqual(client.calls[-1]["endTime"], recent_exit * 1000)
+
+    def test_recovers_fill_when_persisted_event_timestamp_lags_exchange(self):
+        exchange_entry = 1_790_000_000
+        recorded_entry = exchange_entry + 8 * 60 * 60
+        recorded_exit = recorded_entry + 60 * 60
+        client = DelayedEventFakeClient([
+            fill(10, "BUY", "2", "0.10", timestamp=exchange_entry * 1000),
+            fill(11, "SELL", "2", "0.10", "2.00", timestamp=recorded_exit * 1000),
+        ], {"10": exchange_entry * 1000})
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        bot = CryptoBot(client, Path(directory.name) / "state.json")
+        bot.state["execution_history"] = [
+            {"event": "ENTRY", "symbol": "BTCUSDT", "order_id": "10", "qty": 2,
+             "price": 100, "side": 1, "time": recorded_entry, "pnl_authoritative": False},
+            {"event": "EXIT", "symbol": "BTCUSDT", "order_id": "11", "entry_order_id": "10",
+             "qty": 2, "price": 101, "entry_price": 100, "original_side": 1,
+             "time": recorded_exit, "pnl_authoritative": False},
+        ]
+
+        result = self.loop.run_until_complete(bot.reconciled_public_state())
+
+        self.assertEqual(result["verified_exit_count"], 1)
+        self.assertAlmostEqual(result["verified_realized_pnl_usd"], 1.8)
+        order_lookups = [call for call in client.calls if "orderId" in call]
+        self.assertEqual(order_lookups, [{"symbol": "BTCUSDT", "orderId": "10"}])
 
 
 if __name__ == "__main__":

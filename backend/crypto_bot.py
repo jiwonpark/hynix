@@ -227,6 +227,29 @@ class CryptoBot:
         ))
         return [fill for chunk in chunks for fill in chunk]
 
+    async def _fetch_missing_order_fills(self, symbol: str, order_ids: set[str]) -> list[Dict[str, Any]]:
+        """Recover fills whose exchange time falls outside a delayed persisted event timestamp."""
+        fills = []
+        now_ms = int(time.time() * 1000)
+        for order_id in sorted(order_ids):
+            try:
+                order = await self.client.request(
+                    "GET", "/fapi/v1/order", {"symbol": symbol, "orderId": order_id}, signed=True,
+                )
+                if not isinstance(order, dict) or order.get("status") != "FILLED":
+                    continue
+                exchange_time = int(order.get("updateTime") or order.get("time") or 0)
+                if exchange_time <= 0:
+                    continue
+                fills.extend(await self._fetch_user_trade_window(
+                    symbol,
+                    max(0, exchange_time - BINANCE_FILL_TIME_BUFFER_MS),
+                    min(now_ms, exchange_time + BINANCE_FILL_TIME_BUFFER_MS),
+                ))
+            except Exception:
+                logger.warning("Could not recover Binance fills for persisted order %s", order_id)
+        return fills
+
     async def reconciled_public_state(self) -> Dict[str, Any]:
         """Annotate a status snapshot with Binance fills; never alter trading state."""
         result = self.public_state()
@@ -250,9 +273,25 @@ class CryptoBot:
                     symbols = {row["symbol"] for row in exits}
                     for symbol in symbols:
                         fills = await self._fetch_user_trades_for_history(symbol, history)
+                        required_order_ids = {
+                            str(row.get(key))
+                            for row in exits if row["symbol"] == symbol
+                            for key in ("entry_order_id", "order_id") if row.get(key)
+                        }
+                        found_order_ids = {str(fill.get("orderId")) for fill in fills}
+                        missing_order_ids = required_order_ids - found_order_ids
+                        if missing_order_ids:
+                            fills.extend(await self._fetch_missing_order_fills(symbol, missing_order_ids))
                         by_order = {}
+                        seen_fills = set()
                         for fill in fills:
                             if fill.get("symbol") == symbol:
+                                fill_key = str(fill.get("id") or "|".join(str(fill.get(key, "")) for key in (
+                                    "orderId", "time", "side", "qty", "price", "commission", "realizedPnl",
+                                )))
+                                if fill_key in seen_fills:
+                                    continue
+                                seen_fills.add(fill_key)
                                 by_order.setdefault(str(fill.get("orderId")), []).append(fill)
                         for row in exits:
                             if row["symbol"] != symbol:
