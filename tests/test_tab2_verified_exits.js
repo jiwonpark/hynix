@@ -8,6 +8,8 @@ assert.match(
   /try \{ this\.renderPositionsAndLogs\(\); \} catch \(e\) \{ console\.warn\("Positions and execution history render error:", e\); \}/,
   'A different Tab 2 panel render failure must not discard a successful status response',
 );
+assert(!html.includes('$("valCritCombinedPnl").style.color = col;'), 'Tab 2 P&L color must not reference an undefined variable');
+assert(html.includes('`${pnlSign}$${pnl.toFixed(3)} net'), 'Tab 2 P&L sign must use the scoped P&L sign variable');
 const lines = html.split('\n');
 const start = lines.findIndex((line) => line.includes('renderPositionsAndLogs() {'));
 const end = lines.findIndex((line, index) => index > start && line.includes('async syncWithBackend() {'));

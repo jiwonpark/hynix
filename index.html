@@ -14511,6 +14511,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const hasExitPos = criteria.has_exit_position_qty != null ? Boolean(criteria.has_exit_position_qty) : (adrQty >= (topTranche?.exit_policy?.adr_exit_qty ?? Infinity) && stockQty >= (topTranche?.exit_policy?.stock_exit_qty ?? Infinity));
         const coreSkhy = criteria.core_accumulated_skhy != null ? criteria.core_accumulated_skhy : 0.0;
         const coreCsop = criteria.core_accumulated_csop != null ? criteria.core_accumulated_csop : 0.0;
+        const pnlSign = pnl != null && pnl > 0 ? "+" : "";
+        const pnlColor = pnl == null ? "#64748b" : (pnl > 0 ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#64748b"));
 
         if ($("valCritLatestInSpread")) $("valCritLatestInSpread").textContent = `${latestIn.toFixed(2)}%`;
         if ($("valCritOutTargetSpread")) $("valCritOutTargetSpread").textContent = `${outTarget.toFixed(2)}%`;
@@ -14540,8 +14542,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("valCritCombinedPnl")) {
           const threshUsd = Number(trancheProfit?.threshold_usd ?? .02);
           const minPct = Number(trancheProfit?.min_profit_pct ?? 0.10);
-          $("valCritCombinedPnl").style.color = col;
-          $("valCritCombinedPnl").textContent = pnl == null ? (isKo ? "미확인" : "Unverified") : `${sign}$${pnl.toFixed(3)} net (> +${minPct.toFixed(2)}% / $${threshUsd.toFixed(3)})`;
+          $("valCritCombinedPnl").style.color = pnlColor;
+          $("valCritCombinedPnl").textContent = pnl == null ? (isKo ? "미확인" : "Unverified") : `${pnlSign}$${pnl.toFixed(3)} net (> +${minPct.toFixed(2)}% / $${threshUsd.toFixed(3)})`;
           $("valCritCombinedPnl").title = pnl == null ? (trancheProfit?.reason || "No matched tranche") : `Latest paired fills only. Min hurdle: ${minPct.toFixed(2)}% notional ($${threshUsd.toFixed(3)}). Entry fees + estimated exit fee (${trancheProfit.exit_fee_bps} bps), slippage (${trancheProfit.slippage_bps} bps), and funding reserve (${trancheProfit.funding_reserve_bps_day} bps/day) deducted. Actual PnL may differ.`;
         }
         syncCondRow("exit_net_profit", "rowCondExitNetPnl", "chkCondExitNetPnl", "badgeCondExitNetPnl", isNetProfitable, isKo ? "충족" : "PASS", isKo ? "수익미달" : "LOCKED", "wait");
