@@ -26,17 +26,30 @@ async function run() {
 
   let wsUrl = null;
   let port = null;
-  chrome.stderr.on("data", (chunk) => {
+  const handleChunk = (chunk) => {
     const text = chunk.toString();
     const m = text.match(/DevTools listening on (ws:\/\/127\.0\.0\.1:(\d+)\/[^\s]+)/);
     if (m && !wsUrl) {
       wsUrl = m[1];
       port = m[2];
     }
-  });
+  };
+  chrome.stderr.on("data", handleChunk);
+  chrome.stdout.on("data", handleChunk);
 
   const start = Date.now();
-  while (!wsUrl && Date.now() - start < 10000) {
+  const portFile = path.join(profile, "DevToolsActivePort");
+  while ((!port || !wsUrl) && Date.now() - start < 10000) {
+    if (fs.existsSync(portFile)) {
+      try {
+        const lines = fs.readFileSync(portFile, "utf8").trim().split(/\r?\n/);
+        if (lines[0] && lines[1]) {
+          port = lines[0].trim();
+          wsUrl = `ws://127.0.0.1:${port}${lines[1].trim()}`;
+          break;
+        }
+      } catch (_) {}
+    }
     await new Promise((r) => setTimeout(r, 100));
   }
 
