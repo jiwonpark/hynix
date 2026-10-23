@@ -12824,10 +12824,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
             const executionGroups = [];
             const executionGroupsByKey = new Map();
-            const unassignedEntries = [];
+            const unassignedOrderMap = new Map();
 
-            const pool = recentExecs.slice(-150);
-            pool.forEach((ex, index) => {
+            recentExecs.forEach((ex, index) => {
               const hasExitPair = ex.verified_exit_leg && ex.verified_exit_pair_index != null;
               const hasEntryPair = ex.verified_entry_leg && ex.verified_entry_pair_index != null;
               if (hasExitPair) {
@@ -12848,44 +12847,54 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   executionGroups.push(group);
                 }
                 group.legs.push(ex);
-              } else if (isEntryLeg(ex)) {
-                unassignedEntries.push(ex);
               } else {
-                const key = `single-${ex.id || ex.order_id || index}`;
-                const group = { key, type: "single", pairIndex: null, legs: [ex] };
-                executionGroupsByKey.set(key, group);
-                executionGroups.push(group);
+                const entryFlag = isEntryLeg(ex);
+                const orderKey = `${ex.symbol || ""}:${ex.order_id || ex.id || index}:${entryFlag ? "entry" : "exit"}`;
+                let orderBucket = unassignedOrderMap.get(orderKey);
+                if (!orderBucket) {
+                  orderBucket = {
+                    orderKey,
+                    symbol: ex.symbol,
+                    isEntry: entryFlag,
+                    time: Number(ex.time || 0),
+                    legs: [],
+                  };
+                  unassignedOrderMap.set(orderKey, orderBucket);
+                }
+                orderBucket.time = Math.min(orderBucket.time, Number(ex.time || 0));
+                orderBucket.legs.push(ex);
               }
             });
 
-            // Cluster unassigned entries executing together within 5000ms with complementary symbols
-            unassignedEntries.sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
-            const pairedEntryIndices = new Set();
-            for (let i = 0; i < unassignedEntries.length; i++) {
-              if (pairedEntryIndices.has(i)) continue;
-              const legA = unassignedEntries[i];
+            // Cluster unassigned orders (including multi-fill orders) executing within 5000ms with complementary symbols
+            const unassignedOrders = Array.from(unassignedOrderMap.values()).sort((a, b) => a.time - b.time);
+            const pairedOrderIndices = new Set();
+            for (let i = 0; i < unassignedOrders.length; i++) {
+              if (pairedOrderIndices.has(i)) continue;
+              const orderA = unassignedOrders[i];
               let matchIdx = -1;
-              for (let j = i + 1; j < unassignedEntries.length; j++) {
-                if (pairedEntryIndices.has(j)) continue;
-                const legB = unassignedEntries[j];
-                if (Math.abs(Number(legB.time || 0) - Number(legA.time || 0)) > 5000) break;
-                if (legB.symbol !== legA.symbol) {
+              for (let j = i + 1; j < unassignedOrders.length; j++) {
+                if (pairedOrderIndices.has(j)) continue;
+                const orderB = unassignedOrders[j];
+                if (Math.abs(orderB.time - orderA.time) > 5000) break;
+                if (orderB.symbol !== orderA.symbol && orderB.isEntry === orderA.isEntry) {
                   matchIdx = j;
                   break;
                 }
               }
               if (matchIdx !== -1) {
-                pairedEntryIndices.add(i);
-                pairedEntryIndices.add(matchIdx);
-                const legB = unassignedEntries[matchIdx];
-                const key = `clustered-entry-${legA.time}-${legB.time}`;
-                const group = { key, type: "entry", pairIndex: null, legs: [legA, legB] };
+                pairedOrderIndices.add(i);
+                pairedOrderIndices.add(matchIdx);
+                const orderB = unassignedOrders[matchIdx];
+                const groupType = orderA.isEntry ? "entry" : "exit";
+                const key = `clustered-${groupType}-${orderA.orderKey}-${orderB.orderKey}`;
+                const group = { key, type: groupType, pairIndex: null, legs: [...orderA.legs, ...orderB.legs] };
                 executionGroupsByKey.set(key, group);
                 executionGroups.push(group);
               } else {
-                pairedEntryIndices.add(i);
-                const key = `single-${legA.id || legA.order_id || i}`;
-                const group = { key, type: "single", pairIndex: null, legs: [legA] };
+                pairedOrderIndices.add(i);
+                const key = `single-${orderA.orderKey}`;
+                const group = { key, type: "single", pairIndex: null, legs: [...orderA.legs] };
                 executionGroupsByKey.set(key, group);
                 executionGroups.push(group);
               }
@@ -12935,7 +12944,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
             logBody.innerHTML = executionGroups.slice(0, 80).map((group) => {
               const pairAnchor = group.legs.find((leg) => leg.verified_exit_pair_anchor || leg.verified_entry_pair_anchor) || group.legs[0];
-              const isPaired = group.legs.length > 1;
+              const isPaired = group.type === "exit" || group.type === "entry" || new Set(group.legs.map((l) => l.symbol)).size > 1;
               const timeStr = formatKstDateTime(Math.max(...group.legs.map((leg) => Number(leg.time || 0))));
               const totalFees = group.legs.reduce((acc, leg) => acc + (leg.commission != null ? leg.commission : 0.0054), 0);
               const totalNotional = group.legs.reduce((acc, leg) => acc + (leg.qty * leg.price), 0);
@@ -12962,7 +12971,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
               // Grouped Pair: Exit
               if (group.type === "exit") {
-                const pairRealized = pairAnchor.verified_exit_pair_realized_after_exit_fees_usd;
+                const fallbackRealized = group.legs.reduce((acc, leg) => acc + Number(leg.realized_pnl || 0), 0) - totalFees;
+                const pairRealized = pairAnchor.verified_exit_pair_realized_after_exit_fees_usd != null
+                  ? pairAnchor.verified_exit_pair_realized_after_exit_fees_usd
+                  : fallbackRealized;
                 const pairVirtual = pairAnchor.virtual_lifo_after_commissions_usd;
                 const pairEngine = pairAnchor.engine_take_profit_estimate_usd;
                 const mainPnl = pairVirtual != null ? pairVirtual : pairRealized;
@@ -13022,8 +13034,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               }
 
               // Grouped Pair: Entry
-              const adrLeg = group.legs.find(l => l.symbol === "SKHYUSDT") || group.legs[0];
-              const stockLeg = group.legs.find(l => l.symbol !== "SKHYUSDT") || group.legs[1];
+              const adrNotional = group.legs.filter(l => l.symbol === "SKHYUSDT").reduce((acc, l) => acc + (l.qty * l.price), 0);
+              const stockNotional = group.legs.filter(l => l.symbol !== "SKHYUSDT").reduce((acc, l) => acc + (l.qty * l.price), 0);
               const entrySpread = pairAnchor.entry_spread != null ? pairAnchor.entry_spread : null;
               const spreadDirection = pairAnchor.spread_direction || "SHORT_SPREAD";
               const pairNumber = group.pairIndex != null ? group.pairIndex + 1 : null;
@@ -13057,7 +13069,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
                   <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-family: monospace; font-weight: 700; color: #0284c7;">
                     <span>${isKo ? '진입 레그 비중' : 'Leg Notional'}:</span>
-                    <span>$${(adrLeg.qty * adrLeg.price).toFixed(1)} / $${(stockLeg ? (stockLeg.qty * stockLeg.price) : 0).toFixed(1)}</span>
+                    <span>$${adrNotional.toFixed(1)} / $${stockNotional.toFixed(1)}</span>
                   </div>
                 </td>`;
 
