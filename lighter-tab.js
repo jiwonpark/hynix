@@ -828,6 +828,9 @@
           this.requestBacktest();
         }
       });
+      $("selLighterSpreadDirectionMode")?.addEventListener("change", (e) => {
+        this.saveCryptoScaling({ spread_direction_mode: e.target.value });
+      });
       this.renderCryptoNotionals();
       const autoToggle = lid("chkAutoPeriodic48h");
       if (autoToggle) autoToggle.addEventListener("change", () => this.toggleLiveBot(autoToggle.checked));
@@ -1891,7 +1894,11 @@
       if (!window.TerminalCommon || $("tabContentLighter").dataset.terminalInstance !== "lighter") {
         throw new Error("Shared terminal module did not initialize the Lighter instance");
       }
-      $("tabContentLighter").querySelectorAll("button,input,select").forEach((element) => { element.disabled = !element.classList?.contains("section-collapse-btn"); });
+      $("tabContentLighter").querySelectorAll("button,input,select").forEach((element) => {
+        if (!element.classList?.contains("section-collapse-btn")) {
+          element.disabled = true;
+        }
+      });
       $("tabContentLighter").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
       try {
         const saved = JSON.parse(safeStorage.getItem(STORAGE_KEY) || "{}");
@@ -3143,6 +3150,10 @@
         }
       }
       this.renderCryptoNotionals();
+      const selDirMode = $("selLighterSpreadDirectionMode");
+      if (selDirMode && document.activeElement !== selDirMode && bot?.spread_direction_mode) {
+        selDirMode.value = bot.spread_direction_mode;
+      }
       const tradeRateInput = lid("inputLiveTradeRate");
       if (tradeRateInput && document.activeElement !== tradeRateInput) {
         tradeRateInput.value = String(Math.round(tradeRate * 5) / 5);

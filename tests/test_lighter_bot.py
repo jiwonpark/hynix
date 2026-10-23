@@ -1394,6 +1394,31 @@ class TestLighterPairBot(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_spread_direction_mode_enforcement(self):
+        client = Mock(spec=LighterClient)
+        with tempfile.NamedTemporaryFile("w+", suffix=".json") as handle:
+            bot = LighterPairBot(client, state_file=Path(handle.name))
+            # Default in DEFAULTS is two_way
+            self.assertEqual(bot.state.get("spread_direction_mode"), "two_way")
+            self.assertTrue(bot._campaign_allows_side(-1))
+            self.assertTrue(bot._campaign_allows_side(1))
+
+            # Switch to short_only
+            asyncio.run(bot.configure({"spread_direction_mode": "short_only"}))
+            self.assertEqual(bot.state.get("spread_direction_mode"), "short_only")
+            self.assertTrue(bot._campaign_allows_side(-1))
+            self.assertFalse(bot._campaign_allows_side(1))
+
+            # Switch to long_only
+            asyncio.run(bot.configure({"spread_direction_mode": "long_only"}))
+            self.assertEqual(bot.state.get("spread_direction_mode"), "long_only")
+            self.assertFalse(bot._campaign_allows_side(-1))
+            self.assertTrue(bot._campaign_allows_side(1))
+
+            # Invalid mode rejects with ValueError
+            with self.assertRaises(ValueError):
+                asyncio.run(bot.configure({"spread_direction_mode": "invalid_mode"}))
+
 
 if __name__ == "__main__":
     unittest.main()

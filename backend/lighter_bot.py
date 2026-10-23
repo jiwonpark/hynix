@@ -119,10 +119,11 @@ class LighterPairBot:
         "symbol_pair": ["SKHY", "SKHYNIXUSD"],
         "strategy_mode": "grid",
         "strategy_interval": "5m",
+        "spread_direction_mode": "two_way",
         "entry_z": 1.4,
         "exit_z": 0.20,
-        "min_profit_pct": 0.10,
-        "min_profit_usd": 0.02,
+        "min_profit_pct": 0.50,
+        "min_profit_usd": 0.10,
         "ou_halflife_max": 8.0,
         "ou_stop_z": 3.5,
         "ou_min_abs_deviation_pp": OU_MIN_ABS_DEVIATION_PP,
@@ -195,6 +196,8 @@ class LighterPairBot:
                     # Migrate legacy fixed-limit states (e.g. 3, 12, 20) to pure dynamic capacity matching Tab 2.
                     if "capacity_mode" not in raw:
                         state["capacity_mode"] = "DYNAMIC_SAFE_LEVERAGE"
+                    if "spread_direction_mode" not in raw:
+                        state["spread_direction_mode"] = "short_only"
                     if raw.get("max_tranches") in (3, 12, 20):
                         state["max_tranches"] = None
                     state["gross_leverage_cap"] = self.TAB2_GROSS_LEVERAGE_CAP
@@ -236,6 +239,7 @@ class LighterPairBot:
             "strategy_mode": strat_mode,
             "strategy_name": self.STRATEGY_NAMES.get(strat_mode, "Dynamic Grid"),
             "strategy_interval": self.state.get("strategy_interval", "5m"),
+            "spread_direction_mode": str(self.state.get("spread_direction_mode", "short_only")),
             "strategy_params": {
                 "entry_z": self.state.get("entry_z", 1.5),
                 "exit_z": self.state.get("exit_z", 0.25),
@@ -677,6 +681,11 @@ class LighterPairBot:
         return True
 
     def _campaign_allows_side(self, side: int) -> bool:
+        mode = str(self.state.get("spread_direction_mode", "short_only")).lower()
+        if mode == "short_only" and int(side) > 0:
+            return False
+        if mode == "long_only" and int(side) < 0:
+            return False
         tracked_sides = {int(tranche.get("side", 0) or 0) for tranche in self.state.get("tranches") or []}
         tracked_sides.discard(0)
         return not tracked_sides or tracked_sides == {int(side)}
@@ -750,6 +759,11 @@ class LighterPairBot:
                 if interval not in {"1m", "5m", "15m", "1h"}:
                     raise ValueError(f"Invalid strategy_interval: {interval}")
                 updated["strategy_interval"] = interval
+            if "spread_direction_mode" in values:
+                dir_mode = str(values["spread_direction_mode"]).strip().lower()
+                if dir_mode not in {"two_way", "short_only", "long_only"}:
+                    raise ValueError(f"spread_direction_mode must be one of: two_way, short_only, long_only (got {dir_mode})")
+                updated["spread_direction_mode"] = dir_mode
             for key, (low, high) in bounds.items():
                 if key not in values:
                     continue
