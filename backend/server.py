@@ -3195,38 +3195,69 @@ def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs, entry_pa
     return {"verified_exit_summary": summary, "recent_executions": executions}
 
 
+_historical_user_trades_cache: Dict[str, Dict[str, Any]] = {}
+HISTORICAL_USER_TRADES_TTL = 1800.0
+
+
 async def _fetch_multichunk_user_trades(symbol: str, chunks: int = 4) -> List[Dict[str, Any]]:
     """Fetch trade history across multiple 7-day windows from Binance Futures.
 
     Binance /fapi/v1/userTrades defaults to only returning the last 7 days of trades
-    when startTime is omitted. To reliably reconstruct Virtual LIFO across older
-    scale-in entry tranches, we fetch consecutive 7-day chunks and deduplicate.
+    when startTime is omitted. Historical chunks (>7 days old) are cached in memory
+    while the latest 7-day window is fetched fresh on every refresh.
     """
+    now_mono = time.monotonic()
     now_ms = int(time.time() * 1000)
-    chunk_tasks = []
-    for i in range(chunks):
-        end_t = now_ms - i * 7 * 86400 * 1000
-        start_t = end_t - 7 * 86400 * 1000
-        chunk_tasks.append(binance_client.request(
-            "GET", "/fapi/v1/userTrades",
-            {"symbol": symbol, "startTime": start_t, "endTime": end_t, "limit": 1000},
-            signed=True,
-        ))
-    chunk_tasks.append(binance_client.request(
+    cached_hist = _historical_user_trades_cache.get(symbol)
+    need_hist = (
+        cached_hist is None
+        or (now_mono - cached_hist["time"]) > HISTORICAL_USER_TRADES_TTL
+    )
+
+    latest_task = binance_client.request(
         "GET", "/fapi/v1/userTrades",
         {"symbol": symbol, "limit": 1000},
         signed=True,
-    ))
-    results = await asyncio.gather(*chunk_tasks, return_exceptions=True)
+    )
+
+    if need_hist and chunks > 1:
+        hist_tasks = []
+        for i in range(1, chunks):
+            end_t = now_ms - i * 7 * 86400 * 1000
+            start_t = end_t - 7 * 86400 * 1000
+            hist_tasks.append(binance_client.request(
+                "GET", "/fapi/v1/userTrades",
+                {"symbol": symbol, "startTime": start_t, "endTime": end_t, "limit": 1000},
+                signed=True,
+            ))
+        results = await asyncio.gather(latest_task, *hist_tasks, return_exceptions=True)
+        latest_res = results[0]
+        hist_results = results[1:]
+        if all(isinstance(r, list) for r in hist_results):
+            hist_trades = [t for r in hist_results for t in r]
+            _historical_user_trades_cache[symbol] = {
+                "time": now_mono,
+                "trades": hist_trades,
+            }
+        else:
+            hist_trades = [t for r in hist_results if isinstance(r, list) for t in r]
+            if not hist_trades and cached_hist:
+                hist_trades = cached_hist["trades"]
+    else:
+        latest_res = await latest_task
+        hist_trades = cached_hist["trades"] if cached_hist else []
+
+    if not isinstance(latest_res, list):
+        return latest_res
+
     all_trades = []
     seen_ids = set()
-    for res in results:
-        if isinstance(res, list):
-            for t in res:
-                trade_id = t.get("id")
-                if trade_id and trade_id not in seen_ids:
-                    seen_ids.add(trade_id)
-                    all_trades.append(t)
+    for t in hist_trades + latest_res:
+        trade_id = t.get("id")
+        if trade_id and trade_id not in seen_ids:
+            seen_ids.add(trade_id)
+            all_trades.append(t)
+    all_trades.sort(key=lambda item: int(item.get("time", 0)))
     return all_trades
 
 
