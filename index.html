@@ -11139,19 +11139,21 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       const config = mainTabLoadingConfig[normalized];
       const container = config ? $(config.id) : null;
       if (!container || updateMainTabLoading(normalized)) return;
+      if (container._mainTabLoadingTimer) return;
       container.classList.add("mainTabLoading");
       container.setAttribute("aria-busy", "true");
       const startedAt = Date.now();
       const timer = window.setInterval(() => {
         if (updateMainTabLoading(normalized)) {
           window.clearInterval(timer);
+          container._mainTabLoadingTimer = null;
           return;
         }
         if (Date.now() - startedAt >= 45000) {
           container.dataset.loadingMessage = "Still loading live data… The terminal will keep retrying.";
-          window.clearInterval(timer);
         }
       }, 250);
+      container._mainTabLoadingTimer = timer;
     }
     window.updateMainTabLoading = updateMainTabLoading;
     beginMainTabLoading("backtest");

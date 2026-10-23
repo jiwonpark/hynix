@@ -32,5 +32,7 @@ assert.match(html, /container\.setAttribute\("aria-busy", ready \? "false" : "tr
   "the loading gate must publish its resolved state");
 assert.match(html, /Still loading live data… The terminal will keep retrying\./,
   "slow tabs must retain an explicit bounded loading message");
+assert.match(html, /container\._mainTabLoadingTimer = timer;/,
+  "slow tabs must keep watching for late data instead of becoming permanently blocked");
 
 console.log("All main tabs have a real-data loading gate");
