@@ -525,11 +525,19 @@
       position: absolute;
       top: 6px;
       left: 12px;
+      max-width: calc(100% - 24px);
+      height: 24px;
+      box-sizing: border-box;
       z-index: 10;
       display: flex;
       align-items: center;
+      flex-wrap: nowrap;
       gap: 10px;
       font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-variant-numeric: tabular-nums;
       pointer-events: none;
       background: rgba(255, 255, 255, 0.92);
       backdrop-filter: blur(4px);
@@ -1296,28 +1304,33 @@
       flex-direction: column;
       min-width: 0;
     }
-    .executionChartToolbar { display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:12px;margin-bottom:8px; }
-    .executionChartTitle { color:#475569; }
-    .executionChartAction { width:auto;height:28px;padding:0 10px; }
-    .executionChartVisibility { display:inline-flex;align-items:center;gap:4px;padding:2px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px; }
+    .executionChartToolbar { display:flex;align-items:center;flex-wrap:nowrap;gap:8px;font-size:12px;margin-bottom:8px;min-height:30px;height:30px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;font-variant-numeric:tabular-nums; }
+    .executionChartToolbar::-webkit-scrollbar { display:none; }
+    .executionChartToolbar > * { flex-shrink:0; }
+    .executionChartTitle { color:#475569;white-space:nowrap; }
+    .executionChartAction { width:auto;height:28px;padding:0 10px;white-space:nowrap; }
+    .executionChartVisibility { display:inline-flex;align-items:center;gap:4px;padding:2px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;flex-shrink:0; }
     .executionChartVisibility > span { padding:0 4px;color:#64748b;font-size:9.5px;font-weight:800; }
-    .executionChartVisibility button { width:auto;height:24px;padding:0 8px;border:1px solid #0284c7;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:800; }
+    .executionChartVisibility button { width:auto;height:24px;padding:0 8px;border:1px solid #0284c7;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:800;white-space:nowrap; }
     .executionChartVisibility button + button { border-color:#8b5cf6;background:#f5f3ff;color:#6d28d9; }
     .executionChartVisibility button.isHidden { opacity:.58;background:#fff;color:#64748b; }
     .executionChartVisibility button:disabled { opacity:.38;cursor:not-allowed; }
-    .executionChartGrouping { display:inline-flex;align-items:center;gap:4px;padding:2px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px; }
+    .executionChartGrouping { display:inline-flex;align-items:center;gap:4px;padding:2px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;flex-shrink:0; }
     .executionChartGrouping > span { padding:0 4px;color:#64748b;font-size:9.5px;font-weight:800; }
-    .executionChartGrouping button { width:auto;height:24px;padding:0 8px;border:1px solid #0284c7;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:800;cursor:pointer; }
+    .executionChartGrouping button { width:auto;height:24px;padding:0 8px;border:1px solid #0284c7;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap; }
     .executionChartGrouping button + button { border-color:#8b5cf6;background:#f5f3ff;color:#6d28d9; }
     .executionChartGrouping button:not(.isActive) { opacity:.58;background:#fff;color:#64748b; }
     .executionChartGrouping button:hover:not(.isActive) { opacity:1;background:#f8fafc; }
-    .executionChartStatus { color:#475569; }
-    .executionChartDescription { font-size:11px;color:#64748b;margin-bottom:6px; }
-    .executionChartSecondaryStatus { font-size:12px;color:#475569;margin-bottom:8px; }
+    .executionChartStatus { color:#475569;min-width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums; }
+    .executionChartDescription { font-size:11px;color:#64748b;margin-bottom:6px;min-height:17px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .executionChartSecondaryStatus { font-size:12px;color:#475569;margin-bottom:8px;min-height:18px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums; }
     .executionChartHost { width:100%;position:relative; }
-    .executionChartFooter { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:8px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:10.5px;color:#475569; }
-    .executionChartLegend { display:flex;gap:8px;flex-wrap:wrap;font-weight:600;align-items:center; }
-    .executionChartSync { font-size:10px;color:#94a3b8; }
+    .executionChartFooter { display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;gap:8px;min-height:26px;height:26px;margin-top:6px;margin-bottom:4px;padding-top:4px;border-top:1px solid #e2e8f0;font-size:10.5px;color:#475569;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;font-variant-numeric:tabular-nums; }
+    .executionChartFooter::-webkit-scrollbar { display:none; }
+    .executionChartLegend { display:flex;gap:8px;flex-wrap:nowrap;font-weight:600;align-items:center;min-width:0;flex:1 1 auto;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;font-variant-numeric:tabular-nums; }
+    .executionChartLegend::-webkit-scrollbar { display:none; }
+    .executionChartLegend > * { white-space:nowrap;flex-shrink:0; }
+    .executionChartSync { font-size:10px;color:#94a3b8;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums; }
     .shortTermCriteriaGrid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3184,8 +3197,8 @@
     </section>
 
     <section class="panel collapsible-section" id="secParityChart">
-      <div class="chartHeader collapsible-header">
-        <div class="legend" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+      <div class="chartHeader collapsible-header" style="align-items: center; flex-wrap: nowrap; min-height: 32px; gap: 10px;">
+        <div class="legend" style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; flex: 1 1 auto; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; white-space: nowrap; font-variant-numeric: tabular-nums;">
           <span id="legSpread" class="black" style="color: #0f172a; font-weight: 700;">Spread (Price)</span>
           <span id="legPrediction" class="cyan" style="color: #00d2ff; font-weight: 700;">Rolling Prediction</span>
           <span id="legNaiveForecast" style="color: #d97706; font-weight: 700;">No-change baseline</span>
@@ -3194,13 +3207,13 @@
           <span id="legLongAdr" class="green" style="color: #16a34a; font-weight: 700;">Long ADR (▲)</span>
           <span id="legShortAdr" class="red" style="color: #dc2626; font-weight: 700;">Short ADR (▼)</span>
           <span id="legPnl" style="color: #10b981; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; border-left: 1px solid #cbd5e1; padding-left: 8px;"><span style="display:inline-block;width:10px;height:3px;background:#10b981;border-radius:1px;"></span> 누적 손익 (Acc PnL %)</span>
-          <button id="btnJumpToPriceChart" type="button" class="btnPriceChartPill" onclick="document.getElementById('assetPricePaneShell')?.scrollIntoView({behavior:'smooth',block:'center'});" title="Scroll directly to the synchronized 2-asset price pane">
+          <button id="btnJumpToPriceChart" type="button" class="btnPriceChartPill" style="flex-shrink: 0; white-space: nowrap;" onclick="document.getElementById('assetPricePaneShell')?.scrollIntoView({behavior:'smooth',block:'center'});" title="Scroll directly to the synchronized 2-asset price pane">
             <span>📈 2-Asset Prices (ADR vs ETF)</span>
           </button>
-          <span id="simulationPeriodBadge" style="background: #f1f5f9; color: #1e293b; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; border: 1px solid #cbd5e1; font-family: monospace;">📅 --</span>
+          <span id="simulationPeriodBadge" style="background: #f1f5f9; color: #1e293b; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 11px; border: 1px solid #cbd5e1; font-family: monospace; flex-shrink: 0; white-space: nowrap;">📅 --</span>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <p id="status" style="margin: 0;">Loading Binance Futures data...</p>
+        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; white-space: nowrap; font-variant-numeric: tabular-nums;">
+          <p id="status" style="margin: 0; white-space: nowrap;">Loading Binance Futures data...</p>
           <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
         </div>
       </div>
@@ -3850,21 +3863,21 @@
         <!-- Short-Term Parity Execution Tracker & Real-Time Auto-Tranche Criteria Section -->
         <div class="shortTermExecutionSection collapsible-section" id="shortTermExecutionSection">
           <!-- Section Header -->
-          <div class="collapsible-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-            <div>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 16px;">📈</span>
-                <strong style="font-size: 13.5px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;" id="lblShortTermTitle">ADR / √CSOP Signal & Auto-Tranche Criteria</strong>
-                <span style="font-size: 10.5px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800;">LIVE BINANCE EXECUTION</span>
+          <div class="collapsible-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: nowrap; gap: 8px; min-height: 38px;">
+            <div style="min-width: 0; flex: 1 1 auto; overflow: hidden;">
+              <div style="display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <span style="font-size: 16px; flex-shrink: 0;">📈</span>
+                <strong style="font-size: 13.5px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="lblShortTermTitle">ADR / √CSOP Signal & Auto-Tranche Criteria</strong>
+                <span style="font-size: 10.5px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800; flex-shrink: 0; white-space: nowrap;">LIVE BINANCE EXECUTION</span>
               </div>
-              <div style="font-size: 11.5px; color: #64748b; margin-top: 2px;" id="lblShortTermSubtitle">
+              <div style="font-size: 11.5px; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="lblShortTermSubtitle">
                 Solid arrows show actual fills. Faded arrows show the dynamic backtest using the condition switches below.
               </div>
             </div>
 
             <!-- Controls & Live Status -->
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-              <div class="pillGroup" style="display: inline-flex; background: #f1f5f9; padding: 2px; border-radius: 6px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; flex-shrink: 0; white-space: nowrap; font-variant-numeric: tabular-nums;">
+              <div class="pillGroup" style="display: inline-flex; background: #f1f5f9; padding: 2px; border-radius: 6px; flex-shrink: 0;">
                 <button id="btnShortInterval1m" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('1m')">1m</button>
                 <button id="btnShortInterval5m" class="btnShortInterval active" type="button" onclick="tradingEngine.setShortTermInterval('5m')">5m</button>
                 <button id="btnShortInterval15m" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('15m')">15m</button>
@@ -3872,9 +3885,9 @@
                 <button id="btnShortInterval4h" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('4h')">4h</button>
                 <button id="btnShortInterval1d" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('1d')">1d</button>
               </div>
-              <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a; display: flex; align-items: center; gap: 8px;">
-                <span>ADR / √CSOP signal: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong></span>
-                <span id="badgeShortTermReplayMode" style="font-size: 9.5px; font-weight: 800; padding: 1px 7px; border-radius: 4px; background: #fef3c7; color: #b45309; border: 1px solid #fde68a;">○ REPLAY ONLY (AUTO-TRADE OFF)</span>
+              <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a; display: flex; align-items: center; gap: 8px; flex-shrink: 0; white-space: nowrap;">
+                <span style="white-space: nowrap;">ADR / √CSOP signal: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong></span>
+                <span id="badgeShortTermReplayMode" style="font-size: 9.5px; font-weight: 800; padding: 1px 7px; border-radius: 4px; background: #fef3c7; color: #b45309; border: 1px solid #fde68a; white-space: nowrap;">○ REPLAY ONLY (AUTO-TRADE OFF)</span>
               </div>
               <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
             </div>

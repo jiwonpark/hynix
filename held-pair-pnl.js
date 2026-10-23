@@ -63,12 +63,12 @@
       const shell = document.createElement("section");
       shell.id = "heldPairPnlPane";
       shell.style.cssText = "padding:8px 12px;background:#fff;";
-      shell.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;font-size:12px">
+      shell.innerHTML = `<div style="display:flex;flex-wrap:nowrap;align-items:center;height:20px;min-height:20px;gap:8px;justify-content:space-between;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums">
         <strong>PAIRED P&amp;L</strong><strong id="heldPairLivePnl">Waiting for positions…</strong></div>
-        <div id="heldPairBasis" style="padding:5px 0;font-size:11px;color:#475569"></div>
-        <div style="font-size:11px;color:#64748b">Main chart: nominal ADR / √CSOP signal (fixed scale; no order quantities). Entry size uses dollar exposure. Selected-entry net P&amp;L uses paired ADR/ETF fills and costs. Profit lines hold the latest ETF price fixed; they update with prices. Total held-pair figures exclude fees and funding.</div>
-        <div id="heldPairEntryRow" style="display:flex;align-items:center;gap:6px;height:24px;min-height:24px;overflow:hidden;white-space:nowrap;font-size:11px;color:#475569"><label id="heldPairEntryLabel" style="display:none;flex:none">Selected entry <select id="heldPairEntrySelect" aria-label="LIFO entry at selected candle" style="max-width:160px;height:22px"></select></label><span id="heldPairEntryNote" style="min-width:0;overflow:hidden;text-overflow:ellipsis"></span></div>
-        <div id="heldPairPnlHover" style="height:18px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:11px;color:#475569"></div>`;
+        <div id="heldPairBasis" style="height:20px;min-height:20px;line-height:20px;padding:0;font-size:11px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums"></div>
+        <div style="height:18px;min-height:18px;line-height:18px;font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Main chart: nominal ADR / √CSOP signal (fixed scale; no order quantities). Entry size uses dollar exposure. Selected-entry net P&amp;L uses paired ADR/ETF fills and costs. Profit lines hold the latest ETF price fixed; they update with prices. Total held-pair figures exclude fees and funding.</div>
+        <div id="heldPairEntryRow" style="display:flex;align-items:center;gap:6px;height:24px;min-height:24px;overflow:hidden;white-space:nowrap;font-size:11px;color:#475569;font-variant-numeric:tabular-nums"><label id="heldPairEntryLabel" style="display:none;flex:none">Selected entry <select id="heldPairEntrySelect" aria-label="LIFO entry at selected candle" style="max-width:160px;height:22px"></select></label><span id="heldPairEntryNote" style="min-width:0;overflow:hidden;text-overflow:ellipsis"></span></div>
+        <div id="heldPairPnlHover" style="height:18px;min-height:18px;line-height:18px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:11px;color:#475569;font-variant-numeric:tabular-nums"></div>`;
       host.insertAdjacentElement("beforebegin", shell);
       this.liveLabel = shell.querySelector("#heldPairLivePnl");
       this.basisLabel = shell.querySelector("#heldPairBasis");

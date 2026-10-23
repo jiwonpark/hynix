@@ -57,11 +57,11 @@
         <div id="${ids.host}" class="executionChartHost" style="height:${Number(options.height) || 420}px"></div>
         ${options.showAssetPane ? `
         <div id="${ids.assetPaneShell}" class="assetPricePaneShell" style="position:relative;height:${Number(options.assetHeight) || 185}px;border-top:2px solid #cbd5e1;background:#fff;width:100%;display:block;">
-          <div class="assetPriceLegendBar" style="position:absolute;top:6px;left:12px;z-index:10;display:flex;align-items:center;gap:10px;font-size:11px;background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);padding:3px 8px;border-radius:4px;border:1px solid #cbd5e1;pointer-events:none;">
-            <span style="font-weight:800;color:#0f172a;">📊 2-ASSET PRICES:</span>
-            <span style="color:#2563eb;font-weight:700;">● SKHYUSDT (ADR, Right Scale)</span>
-            <span style="color:#d97706;font-weight:700;">● CSOP 2L ETF / Domestic (Left Scale)</span>
-            <span id="${ids.assetDetails}" style="color:#475569;font-family:monospace;font-size:11px;"></span>
+          <div class="assetPriceLegendBar" style="position:absolute;top:6px;left:12px;max-width:calc(100% - 24px);height:24px;box-sizing:border-box;z-index:10;display:flex;align-items:center;flex-wrap:nowrap;gap:10px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);padding:3px 8px;border-radius:4px;border:1px solid #cbd5e1;pointer-events:none;">
+            <span style="font-weight:800;color:#0f172a;flex-shrink:0;">📊 2-ASSET PRICES:</span>
+            <span style="color:#2563eb;font-weight:700;flex-shrink:0;">● SKHYUSDT (ADR, Right Scale)</span>
+            <span style="color:#d97706;font-weight:700;flex-shrink:0;">● CSOP 2L ETF / Domestic (Left Scale)</span>
+            <span id="${ids.assetDetails}" style="color:#475569;font-family:monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
           </div>
           <div id="${ids.assetHost}" style="height:${Number(options.assetHeight) || 185}px;min-height:150px;width:100%;display:block;"></div>
         </div>` : ""}
@@ -115,9 +115,9 @@
             elements.rangeTrades.classList.toggle("isActive", Boolean(asRange));
           }
         },
-        setStatus(text) { if (elements.status) elements.status.textContent = text; },
-        setSecondaryStatus(text) { if (elements.secondaryStatus) elements.secondaryStatus.textContent = text; },
-        setSync(text) { if (elements.sync) elements.sync.textContent = text; },
+        setStatus(text) { if (elements.status) { elements.status.textContent = text; elements.status.title = text || ""; } },
+        setSecondaryStatus(text) { if (elements.secondaryStatus) { elements.secondaryStatus.textContent = text; elements.secondaryStatus.title = text || ""; } },
+        setSync(text) { if (elements.sync) { elements.sync.textContent = text; elements.sync.title = text || ""; } },
       };
       frame.setVisibility("actual", actual.visible !== false);
       frame.setVisibility("virtual", virtual.visible !== false);
