@@ -32,6 +32,8 @@ from .lighter_strategy import (
 
 SUPPORTED = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"}
 INTERVAL_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
+BINANCE_USER_TRADES_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+BINANCE_FILL_TIME_BUFFER_MS = 5 * 60 * 1000
 DEFAULT_STATE = {
     "enabled": False, "selected_symbol": "BTCUSDT", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
@@ -169,6 +171,62 @@ class CryptoBot:
         result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
         return result
 
+    async def _fetch_user_trade_window(self, symbol: str, start_ms: int, end_ms: int) -> list[Dict[str, Any]]:
+        """Fetch a complete Binance trade window, splitting a full page to avoid truncation."""
+        fills = await self.client.request(
+            "GET", "/fapi/v1/userTrades",
+            {"symbol": symbol, "startTime": start_ms, "endTime": end_ms, "limit": 1000},
+            signed=True,
+        )
+        if not isinstance(fills, list):
+            raise ValueError("Binance trade history response is not a list")
+        if len(fills) < 1000:
+            return fills
+        if start_ms >= end_ms:
+            raise ValueError("Binance trade history is too dense to reconcile without truncation")
+        midpoint = (start_ms + end_ms) // 2
+        left, right = await asyncio.gather(
+            self._fetch_user_trade_window(symbol, start_ms, midpoint),
+            self._fetch_user_trade_window(symbol, midpoint + 1, end_ms),
+        )
+        return left + right
+
+    async def _fetch_user_trades_for_history(
+        self, symbol: str, history: list[Dict[str, Any]],
+    ) -> list[Dict[str, Any]]:
+        """Load fills across the persisted history instead of Binance's default recent seven days."""
+        event_times = []
+        for row in history:
+            if row.get("symbol") != symbol or row.get("time") is None:
+                continue
+            try:
+                event_time = int(float(row["time"]) * 1000)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if event_time > 0:
+                event_times.append(event_time)
+        if not event_times:
+            fills = await self.client.request(
+                "GET", "/fapi/v1/userTrades", {"symbol": symbol, "limit": 1000}, signed=True,
+            )
+            if not isinstance(fills, list):
+                raise ValueError("Binance trade history response is not a list")
+            return fills
+
+        start_ms = max(0, min(event_times) - BINANCE_FILL_TIME_BUFFER_MS)
+        end_ms = min(int(time.time() * 1000), max(event_times) + BINANCE_FILL_TIME_BUFFER_MS)
+        windows = []
+        cursor = start_ms
+        while cursor <= end_ms:
+            window_end = min(end_ms, cursor + BINANCE_USER_TRADES_WINDOW_MS - 1)
+            windows.append((cursor, window_end))
+            cursor = window_end + 1
+        chunks = await asyncio.gather(*(
+            self._fetch_user_trade_window(symbol, window_start, window_end)
+            for window_start, window_end in windows
+        ))
+        return [fill for chunk in chunks for fill in chunk]
+
     async def reconciled_public_state(self) -> Dict[str, Any]:
         """Annotate a status snapshot with Binance fills; never alter trading state."""
         result = self.public_state()
@@ -180,7 +238,7 @@ class CryptoBot:
                                          "basis": "Binance realized PnL minus entry and exit commissions; funding excluded"}
         if not exits:
             return result
-        signature = tuple((row.get("symbol"), row.get("order_id"), row.get("entry_order_id")) for row in exits)
+        signature = tuple((row.get("symbol"), row.get("order_id"), row.get("entry_order_id"), row.get("time")) for row in exits)
         async with self._pnl_lock:
             now = time.monotonic()
             cached = self._pnl_cache
@@ -191,10 +249,7 @@ class CryptoBot:
                 try:
                     symbols = {row["symbol"] for row in exits}
                     for symbol in symbols:
-                        fills = await self.client.request("GET", "/fapi/v1/userTrades",
-                                                          {"symbol": symbol, "limit": 1000}, signed=True)
-                        if not isinstance(fills, list):
-                            raise ValueError("Binance trade history response is not a list")
+                        fills = await self._fetch_user_trades_for_history(symbol, history)
                         by_order = {}
                         for fill in fills:
                             if fill.get("symbol") == symbol:
