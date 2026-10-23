@@ -122,6 +122,31 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(params['limit'] == 1000 for params in requested))
         self.assertTrue(all('startTime' not in params for params in requested))
 
+    async def test_saved_exit_pair_is_verified_from_both_exchange_fills(self):
+        server.save_auto_tranche_state({
+            'exit_order_pairs': [{'adr_order_id': '11', 'stock_order_id': '12'}]
+        })
+
+        async def request(method, path, params, **kwargs):
+            if params['symbol'] == 'SKHYUSDT':
+                return [{'id': 101, 'orderId': 11, 'side': 'BUY', 'qty': '.07',
+                         'price': '195', 'time': 1000, 'realizedPnl': '1.25',
+                         'commission': '.01', 'commissionAsset': 'USDT'}]
+            return [{'id': 102, 'orderId': 12, 'side': 'SELL', 'qty': '1.2',
+                     'price': '5.6', 'time': 1001, 'realizedPnl': '-.50',
+                     'commission': '.02', 'commissionAsset': 'USDT'}]
+
+        self.client.request.side_effect = request
+        result = await server.get_hedged_status()
+        summary = result['verified_exit_summary']
+        self.assertEqual(summary['verified_exit_pairs'], 1)
+        self.assertEqual(summary['total_recorded_exit_pairs'], 1)
+        self.assertAlmostEqual(summary['gross_realized_pnl_usd'], .75)
+        self.assertAlmostEqual(summary['exit_fees_usd'], .03)
+        self.assertAlmostEqual(summary['realized_after_exit_fees_usd'], .72)
+        self.assertTrue(summary['all_recorded_exits_verified'])
+        self.assertTrue(all(fill['verified_exit_leg'] for fill in result['recent_executions']))
+
     async def test_split_entry_and_exit_fills_preserve_one_remaining_tranche(self):
         self.client.get_detailed_account_overview.return_value['positions'] = [
             {'symbol': 'SKHYUSDT', 'position_amt': -.09, 'mark_price': 195, 'entry_price': 196},
