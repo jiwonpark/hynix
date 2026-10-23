@@ -3195,19 +3195,49 @@ def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs, entry_pa
     return {"verified_exit_summary": summary, "recent_executions": executions}
 
 
+async def _fetch_multichunk_user_trades(symbol: str, chunks: int = 4) -> List[Dict[str, Any]]:
+    """Fetch trade history across multiple 7-day windows from Binance Futures.
+
+    Binance /fapi/v1/userTrades defaults to only returning the last 7 days of trades
+    when startTime is omitted. To reliably reconstruct Virtual LIFO across older
+    scale-in entry tranches, we fetch consecutive 7-day chunks and deduplicate.
+    """
+    now_ms = int(time.time() * 1000)
+    chunk_tasks = []
+    for i in range(chunks):
+        end_t = now_ms - i * 7 * 86400 * 1000
+        start_t = end_t - 7 * 86400 * 1000
+        chunk_tasks.append(binance_client.request(
+            "GET", "/fapi/v1/userTrades",
+            {"symbol": symbol, "startTime": start_t, "endTime": end_t, "limit": 1000},
+            signed=True,
+        ))
+    chunk_tasks.append(binance_client.request(
+        "GET", "/fapi/v1/userTrades",
+        {"symbol": symbol, "limit": 1000},
+        signed=True,
+    ))
+    results = await asyncio.gather(*chunk_tasks, return_exceptions=True)
+    all_trades = []
+    seen_ids = set()
+    for res in results:
+        if isinstance(res, list):
+            for t in res:
+                trade_id = t.get("id")
+                if trade_id and trade_id not in seen_ids:
+                    seen_ids.add(trade_id)
+                    all_trades.append(t)
+    return all_trades
+
+
 async def _refresh_verified_exits_cache() -> Dict[str, Any]:
     """Refresh exchange history while preserving the last successful snapshot."""
     global _verified_exits_cache, _verified_exits_cache_time
-    async def account_trade_history(symbol):
-        return await binance_client.request(
-            "GET", "/fapi/v1/userTrades",
-            {"symbol": symbol, "limit": 1000}, signed=True)
-
     try:
         adr_trades, stock_trades = await asyncio.wait_for(asyncio.gather(
-            account_trade_history("SKHYUSDT"),
-            account_trade_history("CSOPSKHYNIX2LUSDT"),
-        ), 8.0)
+            _fetch_multichunk_user_trades("SKHYUSDT"),
+            _fetch_multichunk_user_trades("CSOPSKHYNIX2LUSDT"),
+        ), 10.0)
         if not isinstance(adr_trades, list) or not isinstance(stock_trades, list):
             raise RuntimeError("Exchange trade history is unavailable")
         executions = (_normalize_binance_trades(adr_trades, "SKHYUSDT")
@@ -3375,14 +3405,9 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         executions = []
         history_stock_sym = stock_sym or "CSOPSKHYNIX2LUSDT"
         try:
-            async def account_trade_history(symbol):
-                return await binance_client.request(
-                    "GET", "/fapi/v1/userTrades",
-                    {"symbol": symbol, "limit": 1000}, signed=True)
-
             res_skhy, res_stock = await asyncio.gather(
-                account_trade_history("SKHYUSDT"),
-                account_trade_history(history_stock_sym),
+                _fetch_multichunk_user_trades("SKHYUSDT"),
+                _fetch_multichunk_user_trades(history_stock_sym),
                 return_exceptions=True)
 
             if isinstance(res_skhy, list):

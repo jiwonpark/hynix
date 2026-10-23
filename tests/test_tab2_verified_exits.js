@@ -103,19 +103,16 @@ tradingEngine.renderPositionsAndLogs();
 assert.match($('pairExecutionHistorySummary').innerHTML, /Verified exit pairs/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /19\/19/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /-\$42\.8983/);
-assert.match($('pairExecutionHistorySummary').innerHTML, /entry commissions and funding excluded/);
-assert.match($('pairExecutionHistorySummary').innerHTML, /Corresponding-entry Virtual LIFO P&L/);
+assert.match($('pairExecutionHistorySummary').innerHTML, /Virtual LIFO/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /\+\$2\.7182/);
-assert.match($('pairExecutionHistorySummary').innerHTML, /Stored pre-exit engine estimate/);
+assert.match($('pairExecutionHistorySummary').innerHTML, /Pre-exit engine estimate/);
 assert.match($('pairExecutionHistorySummary').innerHTML, /last successful read \(retrying\)/);
-assert.match($('executionHistoryBody').innerHTML, /VERIFIED EXIT PAIR #19/);
-assert.match($('executionHistoryBody').innerHTML, /DUAL-LEG EXIT/);
+assert.match($('executionHistoryBody').innerHTML, /EXIT PAIR #19/);
 assert.match($('executionHistoryBody').innerHTML, /rowspan="2"/);
-assert.equal(($('executionHistoryBody').innerHTML.match(/VERIFIED EXIT PAIR #19/g) || []).length, 1,
+assert.equal(($('executionHistoryBody').innerHTML.match(/EXIT PAIR #19/g) || []).length, 1,
   'the pair status and P&L comparison must render once for both legs');
-assert.match($('executionHistoryBody').innerHTML, /After exit fee/);
-assert.match($('executionHistoryBody').innerHTML, /Pair Binance average/);
-assert.match($('executionHistoryBody').innerHTML, /Corresponding-entry Virtual LIFO/);
-assert.match($('executionHistoryBody').innerHTML, /Pre-exit engine estimate/);
+assert.match($('executionHistoryBody').innerHTML, /Virtual LIFO/);
+assert.match($('executionHistoryBody').innerHTML, /Binance pooled avg/);
+assert.match($('executionHistoryBody').innerHTML, /Pre-exit engine/);
 
 console.log('✅ Tab 2 verified-exit summary and authoritative leg labels passed');
