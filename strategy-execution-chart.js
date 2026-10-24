@@ -318,54 +318,95 @@
 
   // Both panes must contain the same timestamps, including whitespace for missing prices.
   // Release the recursion guard synchronously: a frame-long guard loses wheel/drag events.
-  StrategyExecutionChartController.linkTimeScales = function (primary, secondary, scheduleFrame = requestAnimationFrame) {
+  const defaultScheduleFrame = typeof requestAnimationFrame !== "undefined"
+    ? requestAnimationFrame
+    : (cb) => setTimeout(cb, 0);
+
+  StrategyExecutionChartController.linkTimeScales = function (primary, secondary, scheduleFrame = defaultScheduleFrame, options = {}) {
+    let charts = [];
+    if (Array.isArray(primary)) {
+      charts = primary.filter(Boolean);
+      options = (typeof secondary === "object" && secondary !== null) ? secondary : {};
+      scheduleFrame = (typeof scheduleFrame === "function") ? scheduleFrame : defaultScheduleFrame;
+    } else {
+      charts = [primary, secondary].filter(Boolean);
+      if (typeof scheduleFrame === "object" && scheduleFrame !== null) {
+        options = scheduleFrame;
+        scheduleFrame = defaultScheduleFrame;
+      }
+    }
+    if (charts.length < 2) return { sync() {}, getRange() { return null; }, setRange() {}, pause() {}, resume() {}, dispose() {} };
+
     let syncing = false;
     let paused = 0;
     let pendingRange = null;
     let framePending = false;
     const same = (a, b) => a && b && Math.abs(a.from - b.from) < 1e-7 && Math.abs(a.to - b.to) < 1e-7;
-    const sync = (source = primary, target = secondary) => {
-      if (syncing || paused || pendingRange) return;
-      const range = source.timeScale().getVisibleLogicalRange();
-      if (!range || same(range, target.timeScale().getVisibleLogicalRange())) return;
-      syncing = true;
-      try { target.timeScale().setVisibleLogicalRange(range); }
-      finally { syncing = false; }
-    };
-    for (const chart of [primary, secondary]) {
+
+    const hasLeft = options.hasLeftScale ?? false;
+    const leftWidth = options.leftWidth ?? 80;
+    const rightWidth = options.rightWidth ?? 90;
+
+    for (const chart of charts) {
       chart.applyOptions({
-        leftPriceScale: { visible: true, minimumWidth: 80 },
-        rightPriceScale: { visible: true, minimumWidth: 90 },
-        timeScale: { minBarSpacing: 0.5, lockVisibleTimeRangeOnResize: true },
+        leftPriceScale: hasLeft ? { visible: true, minimumWidth: leftWidth } : { visible: false },
+        rightPriceScale: { visible: true, minimumWidth: rightWidth },
+        timeScale: { minBarSpacing: 0.5, rightOffset: 0, lockVisibleTimeRangeOnResize: true },
       });
     }
-    const forward = () => sync(primary, secondary);
-    const backward = () => sync(secondary, primary);
-    primary.timeScale().subscribeVisibleLogicalRangeChange(forward);
-    secondary.timeScale().subscribeVisibleLogicalRangeChange(backward);
+
+    const syncFrom = (source) => {
+      if (syncing || paused || pendingRange) return;
+      const range = source.timeScale().getVisibleLogicalRange();
+      if (!range) return;
+      syncing = true;
+      try {
+        for (const target of charts) {
+          if (target !== source) {
+            const current = target.timeScale().getVisibleLogicalRange();
+            if (!same(range, current)) {
+              target.timeScale().setVisibleLogicalRange(range);
+            }
+          }
+        }
+      } finally {
+        syncing = false;
+      }
+    };
+
+    const subscriptions = charts.map((chart) => {
+      const handler = () => syncFrom(chart);
+      chart.timeScale().subscribeVisibleLogicalRangeChange(handler);
+      return [chart, handler];
+    });
+
+    const syncAll = () => syncFrom(charts[0]);
+
     return {
-      sync: forward,
-      getRange() { return pendingRange || primary.timeScale().getVisibleLogicalRange(); },
+      sync: syncAll,
+      getRange() { return pendingRange || charts[0].timeScale().getVisibleLogicalRange(); },
       setRange(range) {
         // Lightweight Charts applies programmatic ranges on its next draw. Keep
         // the requested viewport authoritative until both panes have drawn it.
         pendingRange = { ...range };
-        primary.timeScale().setVisibleLogicalRange(range);
-        secondary.timeScale().setVisibleLogicalRange(range);
+        for (const chart of charts) {
+          chart.timeScale().setVisibleLogicalRange(range);
+        }
         if (!framePending) {
           framePending = true;
           scheduleFrame(() => {
             framePending = false;
             pendingRange = null;
-            forward();
+            syncAll();
           });
         }
       },
       pause() { paused++; },
-      resume() { paused = Math.max(0, paused - 1); forward(); },
+      resume() { paused = Math.max(0, paused - 1); syncAll(); },
       dispose() {
-        primary.timeScale().unsubscribeVisibleLogicalRangeChange(forward);
-        secondary.timeScale().unsubscribeVisibleLogicalRangeChange(backward);
+        subscriptions.forEach(([chart, handler]) => {
+          chart.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
+        });
       },
     };
   };

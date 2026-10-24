@@ -112,3 +112,41 @@ assert.equal(crossB.cleared, 1, 'leaving one pane must clear the linked focus li
 crosshairSync.dispose();
 crossA.emit({time: 20});
 assert.equal(crossB.positioned.length, 1, 'disposed crosshair groups must stop syncing');
+
+// Test 3-chart linkTimeScales with matching gutters and zero left-scale
+const c1 = chart(), c2 = chart(), c3 = chart();
+const multiSync = Controller.linkTimeScales([c1, c2, c3], { hasLeftScale: false, rightWidth: 90 });
+assert.deepEqual(c1.options, {
+  leftPriceScale: { visible: false },
+  rightPriceScale: { visible: true, minimumWidth: 90 },
+  timeScale: { minBarSpacing: 0.5, rightOffset: 0, lockVisibleTimeRangeOnResize: true }
+});
+assert.deepEqual(c1.options, c2.options);
+assert.deepEqual(c2.options, c3.options);
+
+// Zooming c1 updates c2 and c3
+c1.timeScale().setVisibleLogicalRange({ from: 10, to: 50 });
+assert.deepEqual(c2.timeScale().getVisibleLogicalRange(), { from: 10, to: 50 });
+assert.deepEqual(c3.timeScale().getVisibleLogicalRange(), { from: 10, to: 50 });
+
+// Scrolling c2 updates c1 and c3
+c2.timeScale().setVisibleLogicalRange({ from: 5, to: 45 });
+assert.deepEqual(c1.timeScale().getVisibleLogicalRange(), { from: 5, to: 45 });
+assert.deepEqual(c3.timeScale().getVisibleLogicalRange(), { from: 5, to: 45 });
+
+// Scrolling c3 updates c1 and c2
+c3.timeScale().setVisibleLogicalRange({ from: 0, to: 40 });
+assert.deepEqual(c1.timeScale().getVisibleLogicalRange(), { from: 0, to: 40 });
+assert.deepEqual(c2.timeScale().getVisibleLogicalRange(), { from: 0, to: 40 });
+
+// Programmatic setRange updates all 3
+multiSync.setRange({ from: 20, to: 80 });
+assert.deepEqual(c1.timeScale().getVisibleLogicalRange(), { from: 20, to: 80 });
+assert.deepEqual(c2.timeScale().getVisibleLogicalRange(), { from: 20, to: 80 });
+assert.deepEqual(c3.timeScale().getVisibleLogicalRange(), { from: 20, to: 80 });
+
+multiSync.dispose();
+c1.timeScale().setVisibleLogicalRange({ from: 1, to: 2 });
+assert.deepEqual(c2.timeScale().getVisibleLogicalRange(), { from: 20, to: 80 }, 'disposed multiSync does not leak');
+console.log('3-chart synchronization tests passed');
+

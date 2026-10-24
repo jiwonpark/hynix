@@ -2068,7 +2068,7 @@
           stock: this.assetChart.addLineSeries({ priceScaleId: 'left', color: '#d97706', lineWidth: 2, title: 'SKHYNIXUSD' }),
         };
 
-        this.chartSync = StrategyExecutionChartController.linkTimeScales(this.chart, this.assetChart);
+        this.chartSync = StrategyExecutionChartController.linkTimeScales(this.chart, this.assetChart, { hasLeftScale: true, leftWidth: 80, rightWidth: 90 });
         this.crosshairSync?.dispose?.();
         this.crosshairSync = StrategyExecutionChartController.linkCrosshairs([
           { chart: this.chart, series: this.series, valueAtTime: (time) => this.bars?.find((bar) => bar.time === time)?.value },
