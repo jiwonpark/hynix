@@ -11684,7 +11684,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         backendConnected: false,
         backendAuthenticated: false,
         accountSyncPending: true,
-        cachedLiveLoaded: false,
         backendAuthSource: "none",
         backendLatencyMs: 0,
         daemonAutoEnabled: false,
@@ -12007,55 +12006,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (togglesSaved) {
             this.state.conditionToggles = JSON.parse(togglesSaved);
           }
-          const liveSaved = localStorage.getItem("skhynix_live_account");
-          if (liveSaved) {
-            const liveData = JSON.parse(liveSaved);
-            if (Number.isFinite(liveData.equity)) this.state.equity = liveData.equity;
-            if (Number.isFinite(liveData.availableMargin)) this.state.availableMargin = liveData.availableMargin;
-            if (Number.isFinite(liveData.unrealizedPnl)) this.state.unrealizedPnl = liveData.unrealizedPnl;
-            if (Number.isFinite(liveData.marginRatio)) this.state.marginRatio = liveData.marginRatio;
-            if (Number.isFinite(liveData.binanceSpotUsdt)) this.state.binanceSpotUsdt = liveData.binanceSpotUsdt;
-            if (Number.isFinite(liveData.binanceSpotStablecoinUsd)) this.state.binanceSpotStablecoinUsd = liveData.binanceSpotStablecoinUsd;
-            if (Number.isFinite(liveData.upbitEquityKrw)) this.state.upbitEquityKrw = liveData.upbitEquityKrw;
-            if (Number.isFinite(liveData.upbitEquityUsd)) this.state.upbitEquityUsd = liveData.upbitEquityUsd;
-            if (Number.isFinite(liveData.upbitCashKrw)) this.state.upbitCashKrw = liveData.upbitCashKrw;
-            if (liveData.backendAuthenticated) this.state.backendAuthenticated = true;
-            if (liveData.binanceSpotAuthenticated) this.state.binanceSpotAuthenticated = true;
-            if (liveData.upbitAuthenticated) this.state.upbitAuthenticated = true;
-            if (liveData.backendAuthSource) this.state.backendAuthSource = liveData.backendAuthSource;
-            if (liveData.upbitAuthSource) this.state.upbitAuthSource = liveData.upbitAuthSource;
-            if (Array.isArray(liveData.backendPositions)) this.state.backendPositions = liveData.backendPositions;
-            if (Array.isArray(liveData.backendAssets)) this.state.backendAssets = liveData.backendAssets;
-            if (Array.isArray(liveData.upbitAssets)) this.state.upbitAssets = liveData.upbitAssets;
-            this.state.cachedLiveLoaded = true;
-          }
+          // Account balances are time-sensitive. Never hydrate financial values
+          // from a previous browser session; wait for an authenticated endpoint.
+          localStorage.removeItem("skhynix_live_account");
         } catch (e) {}
       },
 
       saveLiveAccountStorage() {
-        try {
-          const liveData = {
-            equity: this.state.equity,
-            availableMargin: this.state.availableMargin,
-            unrealizedPnl: this.state.unrealizedPnl,
-            marginRatio: this.state.marginRatio,
-            binanceSpotUsdt: this.state.binanceSpotUsdt,
-            binanceSpotStablecoinUsd: this.state.binanceSpotStablecoinUsd,
-            upbitEquityKrw: this.state.upbitEquityKrw,
-            upbitEquityUsd: this.state.upbitEquityUsd,
-            upbitCashKrw: this.state.upbitCashKrw,
-            backendAuthenticated: this.state.backendAuthenticated,
-            binanceSpotAuthenticated: this.state.binanceSpotAuthenticated,
-            upbitAuthenticated: this.state.upbitAuthenticated,
-            backendAuthSource: this.state.backendAuthSource,
-            upbitAuthSource: this.state.upbitAuthSource,
-            backendPositions: this.state.backendPositions,
-            backendAssets: this.state.backendAssets,
-            upbitAssets: this.state.upbitAssets,
-            savedAt: Date.now()
-          };
-          localStorage.setItem("skhynix_live_account", JSON.stringify(liveData));
-        } catch (e) {}
+        // Deliberately do not persist live balances or positions in the browser.
+        try { localStorage.removeItem("skhynix_live_account"); } catch (e) {}
       },
 
       saveStorage() {
@@ -12396,7 +12355,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       renderAccountStrip() {
         const isKo = window.currentLang === "ko";
-        if (this.state.accountSyncPending && !this.state.cachedLiveLoaded) {
+        if (this.state.accountSyncPending) {
           if ($("valAccountEquity")) $("valAccountEquity").textContent = "—";
           if ($("valAvailMargin")) $("valAvailMargin").textContent = "—";
           if ($("valUnrealizedPnl")) {
@@ -13380,28 +13339,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
       async fetchVerifiedExitSnapshotOnce() {
         const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
-        try {
-          const res = await fetch(`${apiPrefix}/verified-exits.json`, {
-            signal: AbortSignal.timeout(5000),
-            priority: "high",
-            cache: "no-store",
-          });
-          if (!res.ok) throw new Error("Verified-history bootstrap unavailable");
-          const data = await res.json();
-          if (data && data.success) {
-            const bootstrap = {...data, stale: true};
-            this.lastVerifiedExitSnapshot = bootstrap;
-            this.fetchVerifiedExitSnapshotLive(apiPrefix).then((live) => {
-              if (!live || !this.state.hedgedStatus) return;
-              this.applyVerifiedExitSnapshot(this.state.hedgedStatus, live);
-              this.renderPositionsAndLogs();
-            });
-            return bootstrap;
-          }
-          throw new Error("Verified-history bootstrap invalid");
-        } catch (e) {
-          return await this.fetchVerifiedExitSnapshotLive(apiPrefix);
-        }
+        return await this.fetchVerifiedExitSnapshotLive(apiPrefix);
       },
 
       async fetchVerifiedExitSnapshotLive(apiPrefix) {
@@ -13470,7 +13408,6 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   this.state.marginRatio = Number(data.margin_ratio_percent);
                 }
                 this.state.accountSyncPending = false;
-                this.state.cachedLiveLoaded = true;
                 if (typeof this.renderAccountStrip === "function") this.renderAccountStrip();
                 if (typeof this.saveLiveAccountStorage === "function") this.saveLiveAccountStorage();
               }

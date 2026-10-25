@@ -52,8 +52,9 @@ class StrategyLabUiTests(unittest.TestCase):
         self.assertIn('document.createElementNS("http://www.w3.org/2000/svg", "polygon")', self.js)
         self.assertIn('document.createElementNS("http://www.w3.org/2000/svg", "line")', self.js)
         self.assertIn("if (isShort)", self.js)
-        self.assertIn("rgba(34, 197, 94,", self.js)
-        self.assertIn("rgba(239, 68, 68,", self.js)
+        self.assertIn('polygon.setAttribute("fill", "none")', self.js)
+        self.assertIn("rgba(22, 163, 74,", self.js)
+        self.assertIn("rgba(220, 38, 38,", self.js)
         self.assertIn("Triangles and diagonal connectors show across completed trades and highlight on hover", self.js)
 
 

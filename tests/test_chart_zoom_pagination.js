@@ -119,7 +119,32 @@ await new Promise((resolve) => setTimeout(resolve, 10));
 assert.equal(chainedFetches, 2, 'one zoom-out must chain older-page loads until the viewport is covered');
 detachChained();
 
-// 7. Every trading chart surface must inherit the shared zoom-aware loader.
+// 7. A larger zoom demand received during an in-flight request must be queued,
+// not discarded or replaced by the smaller request which started first.
+let queuedBars = 200;
+let queuedCalls = [];
+let finishFirst;
+const firstPage = new Promise((resolve) => { finishFirst = resolve; });
+const detachQueued = Controller.attachZoomAwarePrefetch(mockChart, {
+  getTotalBars: () => queuedBars,
+  onPrefetchNeeded: async (needed) => {
+    queuedCalls.push(needed);
+    if (queuedCalls.length === 1) await firstPage;
+    queuedBars += 100;
+    return 100;
+  },
+  hasMore: () => queuedCalls.length < 2,
+});
+mockTimeScale._sub({ from: 20, to: 120 });
+await Promise.resolve();
+mockTimeScale._sub({ from: -500, to: 200 });
+finishFirst();
+await new Promise((resolve) => setTimeout(resolve, 10));
+assert.equal(queuedCalls.length, 2, 'rapid zoom-out must queue one follow-up page');
+assert.ok(queuedCalls[1] >= 1050, 'follow-up page must retain the largest requested zoom span');
+detachQueued();
+
+// 8. Every trading chart surface must inherit the shared zoom-aware loader.
 const root = path.join(__dirname, '..');
 for (const file of ['strategy-lab.js', 'lighter-tab.js', 'crypto-tab.js', 'lighter-crypto-tab.js']) {
   assert.match(fs.readFileSync(path.join(root, file), 'utf8'), /attachZoomAwarePrefetch\(/,

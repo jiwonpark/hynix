@@ -48,12 +48,6 @@ fi
 echo "Inspecting production checkout and service..."
 "${SSH[@]}" "$REMOTE_HOST" "cd /home/ubuntu/skhynix && git status --short && systemctl is-active skhynix-daemon"
 
-echo "Capturing verified execution-history bootstrap..."
-"${SSH[@]}" "$REMOTE_HOST" "curl -fsS http://127.0.0.1:8000/api/trade/verified_exits" \
-  > "$STAGE_DIR/verified-exits.json"
-"$PYTHON_BIN" -m json.tool "$STAGE_DIR/verified-exits.json" >/dev/null
-FILES+=("$STAGE_DIR/verified-exits.json")
-
 echo "Deploying $BUILD_VERSION ($DEPLOYED_AT)..."
 "${SCP[@]}" "${FILES[@]}" "$REMOTE_HOST:/tmp/"
 for staged_file in "${FILES[@]}"; do

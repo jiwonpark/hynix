@@ -5183,7 +5183,8 @@
         }
         const pts = `${x1.toFixed(1)},${y1.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
 
-        const fillColor = isProfit ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)";
+        const isActualPair = entry.source === "actual" && exit.source === "actual";
+        const fillColor = isActualPair ? (isProfit ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)") : "none";
         const strokeColor = isProfit ? "rgba(22, 163, 74, 0.65)" : "rgba(220, 38, 38, 0.65)";
         const diagStroke = isProfit ? "#16a34a" : "#dc2626";
 

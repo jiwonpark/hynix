@@ -57,4 +57,12 @@ assert.ok(inWindow, "Trade placed during current forming candle must fall within
 const oldBuggyCondition = tradeTimeSec <= lastBarTime;
 assert.equal(oldBuggyCondition, false, "Old condition incorrectly dropped all forming candle trades");
 
+// Paper/backtest trade ranges are outlines; only verified actual pairs may fill.
+const root = path.join(__dirname, "..");
+assert.match(fs.readFileSync(path.join(root, "strategy-lab.js"), "utf8"), /polygon\.setAttribute\("fill", "none"\)/);
+for (const file of ["lighter-tab.js", "crypto-tab.js", "lighter-crypto-tab.js"]) {
+  const source = fs.readFileSync(path.join(root, file), "utf8");
+  assert.match(source, /: "none";/, `${file} must render paper trade triangles without translucent fill`);
+}
+
 console.log("✅ Paper trade marker rendering and forming-candle range tests passed successfully!");

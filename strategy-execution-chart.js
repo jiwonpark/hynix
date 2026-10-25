@@ -539,6 +539,7 @@
     let isClamping = false;
     let detached = false;
     let latestRange = null;
+    let queuedNeeded = 0;
     const threshold = options.threshold || 150;
     const futureOffset = Number.isFinite(options.futureOffset) ? options.futureOffset : 8;
 
@@ -560,33 +561,46 @@
       return null;
     };
 
+    const demandForRange = (range) => {
+      if (!range) return 0;
+      const totalBars = getCount();
+      if (totalBars < 10 || !checkHasMore()) return 0;
+      const span = range.to - range.from;
+      const zoomExceeds = span > totalBars * 0.40;
+      return (range.from < threshold || zoomExceeds || range.from < 0)
+        ? Math.max(300, Math.ceil(span * 1.5))
+        : 0;
+    };
+    const drainPrefetch = () => {
+      if (detached || isFetching || !checkHasMore() || queuedNeeded <= 0) return;
+      const needed = queuedNeeded;
+      queuedNeeded = 0;
+      isFetching = true;
+      Promise.resolve()
+        .then(() => triggerPrefetch(needed))
+        .catch(() => 0)
+        .then((added) => {
+          isFetching = false;
+          if (detached || !(Number(added) > 0) || !checkHasMore()) return;
+          // Re-evaluate the most recent viewport, not the range which started
+          // the request. Rapid wheel events are coalesced into the next page.
+          const current = chart.timeScale().getVisibleLogicalRange?.() || latestRange;
+          queuedNeeded = Math.max(queuedNeeded, demandForRange(current));
+          drainPrefetch();
+        });
+    };
+
     const handler = (range) => {
       if (!range || isClamping) return;
-      latestRange = range;
+      latestRange = { from: range.from, to: range.to };
       const totalBars = getCount();
       if (totalBars < 10) return;
       const span = range.to - range.from;
 
-      // 1. Zoom-aware prefetch: triggers if near left edge, below zero, OR if visible span exceeds 40% of loaded bars
-      if (!isFetching && checkHasMore()) {
-        const zoomExceeds = span > totalBars * 0.40;
-        if (range.from < threshold || zoomExceeds || range.from < 0) {
-          isFetching = true;
-          const needed = Math.max(300, Math.ceil(span * 1.5));
-          Promise.resolve()
-            .then(() => triggerPrefetch(needed))
-            .catch(() => {})
-            .then((added) => {
-              isFetching = false;
-              if (detached || !(Number(added) > 0) || !checkHasMore()) return;
-              // setData/applyPrependedRange emits while the request is still marked
-              // busy. Re-check the final viewport after a successful prepend so a
-              // single large zoom-out can pull as many pages as it needs.
-              const current = chart.timeScale().getVisibleLogicalRange?.() || latestRange;
-              if (current) handler(current);
-            });
-        }
-      }
+      // 1. Zoom-aware prefetch. Keep the largest request observed while a page
+      // is in flight so rapid zoom-out gestures cannot be lost.
+      queuedNeeded = Math.max(queuedNeeded, demandForRange(range));
+      drainPrefetch();
 
       // 2. Boundary clamp: if all history is loaded and user zooms/scrolls past bar 0 into negative void, clamp left
       if (range.from < 0 && !checkHasMore() && options.clampLeft !== false) {

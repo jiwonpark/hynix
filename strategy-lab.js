@@ -72,7 +72,7 @@
         description: "Starts flat at the beginning of loaded history · completed 5m and 1h candles · next-open execution · entry and exit fees included.",
         secondaryStatus: "Completed 1h MA stack: waiting for data…",
         height: 420,
-        legend: '<span style="color:#0284c7">━ BTC/KRW</span><span style="color:#b45309">— 7-MA: <strong id="lab_valShortTermMa7">--</strong></span><span style="color:#6d28d9">— 24-MA: <strong id="lab_valShortTermMa24">--</strong></span><span style="color:#0891b2">— 60-MA: <strong id="lab_valShortTermMa60">--</strong></span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Actual</span><span><strong style="color:#16a34a;opacity:.45">⇧</strong>/<strong style="color:#dc2626;opacity:.45">⇩</strong> Virtual</span><span><span style="display:inline-block;width:9px;height:9px;background:rgba(34,197,94,0.3);border:1px solid #16a34a;clip-path:polygon(0 100%, 100% 100%, 100% 0);vertical-align:middle;margin-right:2px;"></span> PnL Triangles</span>',
+        legend: '<span style="color:#0284c7">━ BTC/KRW</span><span style="color:#b45309">— 7-MA: <strong id="lab_valShortTermMa7">--</strong></span><span style="color:#6d28d9">— 24-MA: <strong id="lab_valShortTermMa24">--</strong></span><span style="color:#0891b2">— 60-MA: <strong id="lab_valShortTermMa60">--</strong></span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Actual</span><span><strong style="color:#16a34a;opacity:.45">⇧</strong>/<strong style="color:#dc2626;opacity:.45">⇩</strong> Virtual</span><span><strong style="color:#16a34a">△</strong> PnL outline</span>',
         syncText: "Upbit public candles (KST)",
       });
       this.forked = true;
@@ -206,17 +206,23 @@
           const daysSelect = document.getElementById("strategyLabDays");
           if (!daysSelect) return 0;
           const currentDays = Number(daysSelect.value);
-          if (currentDays < 14) {
-            const nextDays = currentDays === 3 ? "7" : "14";
-            daysSelect.value = nextDays;
-            await this.loadData();
-            return 1;
-          }
-          return 0;
+          const availableDays = Array.from(daysSelect.options || [])
+            .map((option) => Number(option.value))
+            .filter((value) => Number.isFinite(value) && value > currentDays)
+            .sort((a, b) => a - b);
+          if (!availableDays.length) return 0;
+          const before = this.data?.bars?.length || 0;
+          daysSelect.value = String(availableDays[0]);
+          await this.run({ preserveViewport: true });
+          const added = Math.max(0, (this.data?.bars?.length || 0) - before);
+          if (!added) daysSelect.value = String(currentDays);
+          return added;
         },
         isExhausted: () => {
           const daysSelect = document.getElementById("strategyLabDays");
-          return daysSelect ? Number(daysSelect.value) >= 14 : true;
+          if (!daysSelect) return true;
+          const values = Array.from(daysSelect.options || []).map((option) => Number(option.value)).filter(Number.isFinite);
+          return !values.length || Number(daysSelect.value) >= Math.max(...values);
         },
       });
       if (!el("tradeTrianglesLayer") && typeof document.createElementNS === "function") {
@@ -276,7 +282,7 @@
       return result;
     },
 
-    async run() {
+    async run(options = {}) {
       this.initChart();
       if (this.candles) this.candles.setMarkers([]);
       const svg = el("tradeTrianglesLayer");
@@ -303,7 +309,7 @@
         const response = await fetch(`api/strategy-lab/upbit-ma-stack?${params}`);
         const data = await response.json();
         if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
-        this.render(data);
+        this.render(data, options);
       } catch (error) {
         el("dynamicBacktestStatus").textContent = `Backtest failed: ${error.message}`;
       } finally {
@@ -314,7 +320,7 @@
       }
     },
 
-    render(data) {
+    render(data, options = {}) {
       this.data = data;
       this.loaded = true;
       this.selectedMarkerTime = null;
@@ -332,7 +338,9 @@
       el("lblShortTermChartSync").textContent = `${data.days}d · ${data.bars.length.toLocaleString()} closed 5m bars · Sync ${formatKst(Date.now())}`;
       this.syncConditionBadges(latest, latestHour);
       this.syncCriteriaPanels(latest, latestHour);
-      this.chart.timeScale().fitContent();
+      // renderChartData preserves the logical viewport when more history is
+      // prepended. Only an explicit rerun should refit the full result.
+      if (!options.preserveViewport) this.chart.timeScale().fitContent();
     },
 
     setChartInterval(interval) {
@@ -1191,9 +1199,6 @@
         const pts = `${leftX.toFixed(1)},${leftY.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${rightX.toFixed(1)},${rightY.toFixed(1)}`;
 
         const opacity = hasActive ? (isHighlighted ? 1.0 : 0.20) : 0.85;
-        const fillColor = isProfit
-          ? (isHighlighted ? "rgba(34, 197, 94, 0.22)" : "rgba(34, 197, 94, 0.12)")
-          : (isHighlighted ? "rgba(239, 68, 68, 0.22)" : "rgba(239, 68, 68, 0.12)");
         const strokeColor = isProfit
           ? (isHighlighted ? "rgba(22, 163, 74, 0.95)" : "rgba(22, 163, 74, 0.65)")
           : (isHighlighted ? "rgba(220, 38, 38, 0.95)" : "rgba(220, 38, 38, 0.65)");
@@ -1201,7 +1206,7 @@
 
         const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
         polygon.setAttribute("points", pts);
-        polygon.setAttribute("fill", fillColor);
+        polygon.setAttribute("fill", "none");
         polygon.setAttribute("stroke", strokeColor);
         polygon.setAttribute("stroke-width", isHighlighted ? "2" : "1");
         polygon.style.opacity = String(opacity);

@@ -4,6 +4,11 @@ const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 
+assert(!html.includes('const liveSaved = localStorage.getItem("skhynix_live_account")'),
+  'live balances must not hydrate from a previous browser session');
+assert(!html.includes('localStorage.setItem("skhynix_live_account"'),
+  'live balances and positions must not be persisted in the browser');
+
 // Ensure isKrw is defined inside renderUpbitTable and onTabActivated triggers backend sync
 assert(html.includes('const isKrw = a.currency === "KRW";'), "isKrw must be defined in renderUpbitTable");
 assert(html.includes('this.syncWithBackend();'), "syncWithBackend must be called in onTabActivated");
@@ -70,23 +75,14 @@ tradingEngine.renderAccountStrip = new Function('$', 'window', stripCode).bind(t
 tradingEngine.renderAssetsTable = new Function('$', 'window', 'assets', assetsCode).bind(tradingEngine, $, window);
 tradingEngine.renderUpbitTable = new Function('$', 'window', 'assets', 'summary', upbitCode).bind(tradingEngine, $, window);
 
-// Test 1: Cold start (accountSyncPending = true, cachedLiveLoaded = false)
+// Test 1: Cold start never paints a prior-session account snapshot.
 tradingEngine.state.accountSyncPending = true;
-tradingEngine.state.cachedLiveLoaded = false;
 tradingEngine.renderAccountStrip();
 assert.equal($('valAccountEquity').textContent, '—');
 assert.equal($('valAvailMargin').textContent, '—');
 assert.equal($('badgeEquitySource').textContent, 'SYNCING');
 
-// Test 2: Cached start (accountSyncPending = true, cachedLiveLoaded = true)
-tradingEngine.state.accountSyncPending = true;
-tradingEngine.state.cachedLiveLoaded = true;
-tradingEngine.renderAccountStrip();
-assert.equal($('valAccountEquity').textContent, '$852.14');
-assert.equal($('valAvailMargin').textContent, '$454.38');
-assert.equal($('badgeEquitySource').textContent, 'FUTURES (SYNCING)');
-
-// Test 3: Synced (accountSyncPending = false)
+// Test 2: Synced (accountSyncPending = false)
 tradingEngine.state.accountSyncPending = false;
 tradingEngine.renderAccountStrip();
 assert.equal($('valAccountEquity').textContent, '$852.14');
