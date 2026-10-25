@@ -39,7 +39,7 @@ class TestLighterTab(unittest.TestCase):
         html = (ROOT / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
         self.assertIn('button,input,select', script)
-        self.assertIn('element.disabled = true', script)
+        self.assertIn('element.disabled = !element.classList?.contains("section-collapse-btn")', script)
         self.assertIn('Live execution is fail-closed', script)
         self.assertIn('confirm_live_trading', script)
         self.assertIn('SKHY / SKHYNIXUSD (no 2x ETF)', script)

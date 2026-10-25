@@ -116,9 +116,8 @@ class PairSizingTests(unittest.TestCase):
             'entry_ma_stretch', 'entry_peak_rollover', 'entry_base_spread')}
         result = replay(bars, start, start+900, toggles=toggles)
         self.assertEqual([t['adr_entry_qty'] for t in result['trades']], [.06, .1, .04])
-        marker = replay_markers(result, 3600)[0]
-        self.assertEqual([m['adr_exit_qty'] for m in marker['pnl_models']], [.06, .1, .04])
-        self.assertEqual([m['stock_exit_qty'] for m in marker['pnl_models']], [1.14, 1, 1.2])
+        self.assertEqual([t['exit_policy']['adr_exit_qty'] for t in result['trades']], [.06, .1, .04])
+        self.assertEqual([t['exit_policy']['stock_exit_qty'] for t in result['trades']], [1.14, 1, 1.2])
 
     def test_manual_entry_and_exit_multipliers(self):
         # 1. Symmetric 2.0x entry and exit scaling

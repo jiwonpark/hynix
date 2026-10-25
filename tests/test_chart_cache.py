@@ -32,7 +32,9 @@ class ChartCacheTests(unittest.IsolatedAsyncioTestCase):
         result = await cache.get("btc", slow, 15)
         self.assertTrue(result["stale"])
         self.assertEqual(result["fetched_at"], 1)
-        await asyncio.sleep(.03)
+        task = cache.tasks["btc"]
+        with self.assertRaises(asyncio.TimeoutError):
+            await task
         self.assertNotIn("btc", cache.tasks)
         self.assertGreater(cache.retry_after["btc"], 0)
 

@@ -1895,9 +1895,7 @@
         throw new Error("Shared terminal module did not initialize the Lighter instance");
       }
       $("tabContentLighter").querySelectorAll("button,input,select").forEach((element) => {
-        if (!element.classList?.contains("section-collapse-btn")) {
-          element.disabled = true;
-        }
+        element.disabled = !element.classList?.contains("section-collapse-btn");
       });
       $("tabContentLighter").querySelectorAll(".terminalLockBanner").forEach((element) => { element.style.display = "none"; });
       try {

@@ -124,9 +124,10 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.client.request.side_effect = request
         result = await server.get_hedged_status()
         self.assertEqual({t['symbol'] for t in result['recent_executions']}, {'SKHYUSDT', 'CSOPSKHYNIX2LUSDT'})
-        self.assertEqual(len(requested), 2)
+        self.assertEqual(len(requested), 8)
         self.assertTrue(all(params['limit'] == 1000 for params in requested))
-        self.assertTrue(all('startTime' not in params for params in requested))
+        self.assertTrue(all('startTime' in params and 'endTime' in params for params in requested))
+        self.assertEqual({params['symbol'] for params in requested}, {'SKHYUSDT', 'CSOPSKHYNIX2LUSDT'})
 
     async def test_saved_exit_pair_is_verified_from_both_exchange_fills(self):
         server.save_auto_tranche_state({

@@ -1,7 +1,16 @@
 from pathlib import Path
 import tempfile
 from unittest.mock import MagicMock
-import pytest
+try:
+    import pytest
+except ImportError:  # unittest discovery imports this module without pytest installed.
+    class _Mark:
+        @staticmethod
+        def asyncio(function):
+            return function
+    class _PytestFallback:
+        mark = _Mark()
+    pytest = _PytestFallback()
 from backend.lighter_strategy import (
     evaluate_ma_acceleration_signals,
     evaluate_strategy_signal,
@@ -149,9 +158,11 @@ def test_evaluate_strategy_signal_dispatch():
 
 @pytest.mark.asyncio
 async def test_crypto_bots_ma_acceleration_state_and_config():
-    with tempfile.NamedTemporaryFile() as tmp4, tempfile.NamedTemporaryFile() as tmp5:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        tmp4 = Path(temp_dir) / "crypto.json"
+        tmp5 = Path(temp_dir) / "lighter_crypto.json"
         client4 = MagicMock()
-        bot4 = CryptoBot(client4, Path(tmp4.name))
+        bot4 = CryptoBot(client4, tmp4)
         state4 = bot4.public_state()
         assert state4["ma_accel_period"] == 24
         assert state4["use_ma_slope"] is True
@@ -173,7 +184,7 @@ async def test_crypto_bots_ma_acceleration_state_and_config():
         assert cfg4["use_ma_pullback"] is False
 
         client5 = MagicMock()
-        bot5 = LighterCryptoBot(client5, Path(tmp5.name))
+        bot5 = LighterCryptoBot(client5, tmp5)
         state5 = bot5.public_state()
         assert state5["ma_accel_period"] == 24
         assert state5["use_ma_slope"] is True

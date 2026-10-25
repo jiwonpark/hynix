@@ -114,7 +114,8 @@ class StrategyLabAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Max-Age=86400', cookie)
         cookie_header = {'Cookie': cookie.split(';', 1)[0]}
         self.assertNotIn(cookie_header['Cookie'].split('=', 1)[1], self.remember_path.read_text())
-        self.assertEqual(self.remember_path.stat().st_mode & 0o777, 0o600)
+        if os.name != 'nt':
+            self.assertEqual(self.remember_path.stat().st_mode & 0o777, 0o600)
         old_headers = {'Authorization': 'Bearer ' + unlocked.json()['token']}
         await self.client.post('/api/terminal-auth/lock', headers=old_headers)
         self.assertFalse((await self.client.get('/api/terminal-auth/status', headers=old_headers)).json()['authorized'])

@@ -58,10 +58,12 @@ class MacroPolicyTests(unittest.TestCase):
                                entry['stock_entry_qty'] - entry['exit_policy']['stock_exit_qty'])
         self.assertEqual(after['trades'][0]['exit_policy']['minimum_net_profit_usd'], .04)
         markers = replay_markers(after, 300)
-        self.assertEqual(markers[0]['qty'], entry['adr_entry_qty'])
-        self.assertEqual(markers[1]['qty'], entry['exit_policy']['adr_exit_qty'])
-        self.assertEqual(markers[0]['pnl_model']['threshold_usd'], .04)
-        self.assertAlmostEqual(markers[0]['convergence_target_spread'], 105.74)
+        signal_marker = next(marker for marker in markers if marker.get('is_signal'))
+        exit_marker = next(marker for marker in markers if not marker['is_entry'])
+        self.assertEqual(signal_marker['qty'], 0)
+        self.assertEqual(exit_marker['qty'], entry['exit_policy']['adr_exit_qty'])
+        self.assertEqual(exit_marker['pnl_model']['threshold_usd'], .04)
+        self.assertAlmostEqual(exit_marker['convergence_target_spread'], 105.74)
 
     def test_history_restores_one_exit_unit_per_boosted_entry(self):
         def trade(symbol, order, side, qty, price, time):

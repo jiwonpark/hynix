@@ -169,9 +169,11 @@ class TestGoldenDeathCrossStrategy(unittest.TestCase):
         self.assertEqual(details["strategy"], "golden_death_cross")
 
     async def async_test_crypto_bots_golden_death_cross_state_and_config(self):
-        with tempfile.NamedTemporaryFile() as tmp4, tempfile.NamedTemporaryFile() as tmp5:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tmp4 = Path(temp_dir) / "crypto.json"
+            tmp5 = Path(temp_dir) / "lighter_crypto.json"
             client4 = MagicMock()
-            bot4 = CryptoBot(client4, Path(tmp4.name))
+            bot4 = CryptoBot(client4, tmp4)
             state4 = bot4.public_state()
             self.assertEqual(state4["fast_ma_period"], 9)
             self.assertEqual(state4["slow_ma_period"], 21)
@@ -193,7 +195,7 @@ class TestGoldenDeathCrossStrategy(unittest.TestCase):
             self.assertFalse(cfg4["use_death_cross"])
 
             client5 = MagicMock()
-            bot5 = LighterCryptoBot(client5, Path(tmp5.name))
+            bot5 = LighterCryptoBot(client5, tmp5)
             state5 = bot5.public_state()
             self.assertEqual(state5["fast_ma_period"], 9)
             self.assertEqual(state5["slow_ma_period"], 21)

@@ -15,7 +15,9 @@ const elements = {
 const context = vm.createContext({window: {location: {origin: 'https://test', pathname: '/skhynix/'}, terminalLockManager: {isLocked: false}},
   terminalLockManager: {isLocked: false}, $: id => elements[id], AbortSignal, console, formatKstTime: () => 'now'});
 const engine = vm.runInContext(`({state: {positions: [], orderLog: [], conditionToggles: {}},
-  ${['isConditionEnabled', 'renderPositionsAndLogs', 'fetchHedgedStatus', 'fetchHedgedStatusOnce', 'renderHedgedController', 'renderHeldPairPnl'].map(method).join('\n')}
+  ${['isConditionEnabled', 'renderPositionsAndLogs', 'fetchVerifiedExitSnapshot', 'fetchVerifiedExitSnapshotOnce',
+    'fetchVerifiedExitSnapshotLive', 'applyVerifiedExitSnapshot', 'fetchHedgedStatus', 'fetchHedgedStatusOnce',
+    'renderHedgedController', 'renderHeldPairPnl'].map(method).join('\n')}
 })`, context);
 engine.renderAutoTrancheCriteria = () => {};
 engine.fetchShortTermParity = () => {};

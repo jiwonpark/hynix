@@ -1396,8 +1396,8 @@ class TestLighterPairBot(unittest.TestCase):
 
     def test_spread_direction_mode_enforcement(self):
         client = Mock(spec=LighterClient)
-        with tempfile.NamedTemporaryFile("w+", suffix=".json") as handle:
-            bot = LighterPairBot(client, state_file=Path(handle.name))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bot = LighterPairBot(client, state_file=Path(temp_dir) / "lighter.json")
             # Default in DEFAULTS is two_way
             self.assertEqual(bot.state.get("spread_direction_mode"), "two_way")
             self.assertTrue(bot._campaign_allows_side(-1))

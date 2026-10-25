@@ -3294,7 +3294,7 @@ async def _fetch_multichunk_user_trades(symbol: str, chunks: int = 4) -> List[Di
     seen_ids = set()
     for t in hist_trades + latest_res:
         trade_id = t.get("id")
-        if trade_id and trade_id not in seen_ids:
+        if trade_id is not None and trade_id not in seen_ids:
             seen_ids.add(trade_id)
             all_trades.append(t)
     all_trades.sort(key=lambda item: int(item.get("time", 0)))

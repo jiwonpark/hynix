@@ -18,7 +18,7 @@ class TestTerminalLock(unittest.TestCase):
         self.assertIn('id="topLockLabel"', self.html)
 
         # Tab 2 container and read-only banner
-        self.assertIn('id="tabContentTrading" class="terminal-read-only"', self.html)
+        self.assertRegex(self.html, r'id="tabContentTrading" class="[^"]*terminal-read-only[^"]*"')
         self.assertIn('id="terminalLockBanner"', self.html)
         self.assertIn('id="lblTerminalLockBannerText"', self.html)
         self.assertIn('id="btnBannerUnlockPrompt"', self.html)

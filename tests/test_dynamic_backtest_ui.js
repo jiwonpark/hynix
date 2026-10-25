@@ -47,7 +47,7 @@ assert.equal(engine.dynamicBacktestMarkers.length,0,'old results clear while new
   };
   await engine.runDynamicBacktest(JSON.parse(key),key,history);
   assert.equal(engine.dynamicBacktestMarkers.length,1);
-  assert.match(elements.dynamicBacktestStatus.textContent,/2 entries \(1 boosted\) · 1 exits/);
+  assert.match(elements.dynamicBacktestStatus.textContent,/2 entry signals · 2 simulated fills \(1 boosted\) · 1 exits/);
   assert.match(elements.dynamicBacktestStatus.textContent, /Peak exposure \$42.00/);
   assert.doesNotMatch(elements.dynamicBacktestStatus.textContent, /%|Capital exhausted/);
   console.log('Dynamic backtest UI checks passed');

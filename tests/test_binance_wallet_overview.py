@@ -56,7 +56,7 @@ class BinanceSpotOverviewTests(unittest.IsolatedAsyncioTestCase):
         client.get_session = AsyncMock(return_value=session)
         with self.assertRaisesRegex(TimeoutError, 'Binance GET /fapi/v2/account timed out'):
             await client.get_raw_account()
-        self.assertEqual(session.request.call_args.kwargs['timeout'].total, 4)
+        self.assertEqual(session.request.call_args.kwargs['timeout'].total, 8)
         session.request.reset_mock()
         with self.assertRaisesRegex(TimeoutError, 'Binance POST /fapi/v1/order timed out'):
             await client.create_order('SKHYUSDT', 'SELL', .08)

@@ -62,7 +62,7 @@ assert.ok(code.includes('lighter_btnSaveLiveCooldown'), 'must expose a save butt
 assert.ok(code.includes('type="range" min="0.2" max="10" step="0.2"'), 'trade-rate slider must cover 0.2 through 10 paired trades per minute');
 assert.ok(code.includes('<div class="terminal-action-control"'), 'trade-rate slider must participate in terminal read-only locking');
 assert.ok(code.includes('window.terminalLockManager?.applyState?.()'), 'dynamic trade-rate controls must receive the current lock state');
-assert.ok(code.includes('async saveLiveBotRate() {\n      if (window.terminalLockManager?.isLocked)'), 'rate saving must fail closed when the terminal is locked');
+assert.match(code, /async saveLiveBotRate\(\) \{\s+if \(window\.terminalLockManager\?\.isLocked\)/, 'rate saving must fail closed when the terminal is locked');
 assert.ok(code.includes('cooldownSecondsForTradeRate'), 'must convert the selected rate into a server-side cooldown');
 assert.ok(code.includes('min_seconds_between_orders: cooldownSeconds'), 'must persist the selected rate as a cooldown');
 assert.ok(code.includes('lighterLiveCooldown'), 'must show the configured cooldown in the live rules panel');
