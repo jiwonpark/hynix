@@ -249,6 +249,7 @@
           ? m.shape
           : (isSell ? "arrowDown" : "arrowUp");
         const position = m.position || (isSell ? "aboveBar" : "belowBar");
+        const label = isMatch ? (m.hoverText || m.text || "") : (m.text || "");
         return {
           time: m.time,
           position,
@@ -256,8 +257,10 @@
           color: isMatch
             ? (isSell ? "#dc2626" : "#16a34a")
             : (isSell ? `rgba(220, 38, 38, ${dimAlpha})` : `rgba(22, 163, 74, ${dimAlpha})`),
-          size: 1.4,
-          text: isMatch ? (m.hoverText || m.text || "") : (m.text || "")
+          // Native shapes are solid. Hide the shape for paper events and use an
+          // outline glyph so shared charts follow the same hollow-marker style.
+          size: m.hypothetical ? 0 : 1.4,
+          text: [m.hypothetical ? (isEntry ? "▷" : "◁") : "", label].filter(Boolean).join(" ")
         };
       });
     }

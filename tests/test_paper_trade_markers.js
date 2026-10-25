@@ -57,12 +57,15 @@ assert.ok(inWindow, "Trade placed during current forming candle must fall within
 const oldBuggyCondition = tradeTimeSec <= lastBarTime;
 assert.equal(oldBuggyCondition, false, "Old condition incorrectly dropped all forming candle trades");
 
-// Paper/backtest trade ranges are outlines; only verified actual pairs may fill.
+// Paper markers remain hollow; P&L ranges use translucent profit/loss fills.
+assert.equal(paperMarker.size, 0, "Native paper shape must be hidden");
+assert.equal(paperMarker.text, "▷ Paper Fill", "Paper entry uses an outline glyph");
+assert.equal(actualMarker.size, 1.4, "Actual marker keeps its solid shape");
 const root = path.join(__dirname, "..");
-assert.match(fs.readFileSync(path.join(root, "strategy-lab.js"), "utf8"), /polygon\.setAttribute\("fill", "none"\)/);
 for (const file of ["lighter-tab.js", "crypto-tab.js", "lighter-crypto-tab.js"]) {
   const source = fs.readFileSync(path.join(root, file), "utf8");
-  assert.match(source, /: "none";/, `${file} must render paper trade triangles without translucent fill`);
+  assert.ok(source.includes('const fill = isHypo ? "none" : markerColor;'), `${file} paper markers must be hollow`);
+  assert.ok(source.includes('"rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)"'), `${file} triangles must have translucent green/red fills`);
 }
 
 console.log("✅ Paper trade marker rendering and forming-candle range tests passed successfully!");

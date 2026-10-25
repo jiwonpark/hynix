@@ -94,3 +94,13 @@ Display Unlimited explicitly in the selector, status, and capacity summaries;
 never substitute five, eight, zero, or the active count for a null limit. Save
 through authenticated live configuration, preserve the existing configured value
 on deployment, and never change live settings or place orders to verify this UI.
+
+# Trade marker and P&L triangle styles
+
+Paper, virtual, and backtest entry/exit markers have colored outlines with no
+fill. Actual execution markers keep solid fills. Entries point right (▷/▶),
+exits point left (◁/◀); marker color follows buy/cover green and sell/short red.
+P&L triangles have translucent green fills for profitable trades and translucent
+red fills for losing trades, for both paper and actual trades. Preserve the
+existing selection/hover behavior. When actual net P&L is unverified, use neutral
+gray rather than implying profit or loss.

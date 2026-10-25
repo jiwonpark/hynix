@@ -22,8 +22,8 @@ controller.setExecutions([
 assert.equal(controller.markersForRender().length, 2);
 controller.setVisibility('actual', false);
 assert.equal(controller.markersForRender().length, 1);
-assert.equal(controller.markersForRender()[0].text, '');
-assert.equal(controller.markersForRender(2000)[0].text, 'virtual');
+assert.equal(controller.markersForRender()[0].text, '▷');
+assert.equal(controller.markersForRender(2000)[0].text, '▷ virtual');
 
 controller.setVisibility('actual', true);
 controller.setExecutions([

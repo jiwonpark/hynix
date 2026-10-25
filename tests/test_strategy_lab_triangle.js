@@ -199,7 +199,7 @@ const polygon = svg.children[0];
 const diag = svg.children[1];
 assert.equal(polygon.tagName, 'polygon');
 assert.equal(diag.tagName, 'line');
-assert.equal(polygon.getAttribute('fill'), 'none', 'paper-trade triangles must be outline-only');
+assert.equal(polygon.getAttribute('fill'), 'rgba(34, 197, 94, 0.12)', 'profitable triangles must have translucent green fill');
 assert.equal(diag.getAttribute('stroke'), '#16a34a', 'profitable trade must have green diagonal');
 assert.equal(polygon.getAttribute('stroke-width'), '2', 'highlighted trade uses stroke width 2');
 
@@ -219,7 +219,7 @@ lab.data.trades = [
 svg.children = [];
 lab.renderTradeTriangles();
 assert.equal(svg.children.length, 2);
-assert.equal(svg.children[0].getAttribute('fill'), 'none', 'paper-trade loss triangles must be outline-only');
+assert.equal(svg.children[0].getAttribute('fill'), 'rgba(239, 68, 68, 0.12)', 'loss triangles must have translucent red fill');
 assert.equal(svg.children[1].getAttribute('stroke'), '#dc2626', 'loss trade must have red diagonal');
 
 // Test 5: Profitable short trade draws green upper triangle
@@ -229,7 +229,7 @@ lab.data.trades = [
 svg.children = [];
 lab.renderTradeTriangles();
 assert.equal(svg.children.length, 2);
-assert.equal(svg.children[0].getAttribute('fill'), 'none', 'paper-trade short triangles must be outline-only');
+assert.equal(svg.children[0].getAttribute('fill'), 'rgba(34, 197, 94, 0.12)', 'profitable short triangles must have translucent green fill');
 // Entry: p1=110 -> y1=300. Exit: p2=100 -> y2=400.
 // leftY (300) <= rightY (400)
 // For short: corner is (rightX, leftY) = (600, 300)

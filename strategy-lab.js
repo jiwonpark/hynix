@@ -1243,7 +1243,7 @@
 
         const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
         polygon.setAttribute("points", pts);
-        polygon.setAttribute("fill", "none");
+        polygon.setAttribute("fill", isProfit ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)");
         polygon.setAttribute("stroke", strokeColor);
         polygon.setAttribute("stroke-width", isHighlighted ? "2" : "1");
         polygon.style.opacity = String(opacity);

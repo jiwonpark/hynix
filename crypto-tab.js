@@ -4585,7 +4585,7 @@
           const isHypo = Boolean(marker.hypothetical);
           const isSell = this.isTradeSell(marker);
           const baseOpacity = isHypo ? 0.85 : 0.95;
-          const fill = isHypo ? (isSell ? "rgba(220, 38, 38, 0.40)" : "rgba(22, 163, 74, 0.40)") : markerColor;
+          const fill = isHypo ? "none" : markerColor;
           const strokeWidth = isHypo ? "1" : "0.75";
 
           const target = document.createElement("button");
@@ -4796,9 +4796,8 @@
         }
         const pts = `${x1.toFixed(1)},${y1.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`;
 
-        const fillColor = actualFill
-          ? (isProfit === null ? "rgba(100, 116, 139, 0.08)" : (isProfit ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)"))
-          : "none";
+        const fillColor = isProfit === null ? "rgba(100, 116, 139, 0.08)"
+          : (isProfit ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)");
         const strokeColor = isProfit === null ? "rgba(100, 116, 139, 0.65)" : (isProfit ? "rgba(22, 163, 74, 0.65)" : "rgba(220, 38, 38, 0.65)");
         const diagStroke = isProfit === null ? "#64748b" : (isProfit ? "#16a34a" : "#dc2626");
 
