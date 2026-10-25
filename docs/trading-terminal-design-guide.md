@@ -104,3 +104,16 @@ P&L triangles have translucent green fills for profitable trades and translucent
 red fills for losing trades, for both paper and actual trades. Preserve the
 existing selection/hover behavior. When actual net P&L is unverified, use neutral
 gray rather than implying profit or loss.
+
+# Entry-filter trend background
+
+In Tabs 4 and 5, chart background colors must come from the same causal wider-trend
+predicates that the selected strategy replay uses for entry, returned by the
+backend as `entry_trend`. Green allows longs only, red allows shorts only, and
+neutral allows both (or indicates OFF/UNAVAILABLE, explicitly labeled). Use OU's
+configured EMA slope for OU and the completed-hourly gate for other strategies.
+Show PAPER, venue, rule/timeframe, enabled state, and source candle time. Clear
+colors immediately when replay settings change, while loading, or on failure;
+never carry a prior strategy's trend shading into a new replay. Forming candles
+and candles outside the replay coverage have no evaluated background. Separate
+reference trend dropdowns must say reference; they do not configure live filters.

@@ -566,7 +566,7 @@
         const overlay = document.createElement("div");
         overlay.id = "cryptoTrendOverlay";
         overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
-        overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155">TREND SCORE −1 ← 0 → +1</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="cryptoTrendSmall" class="cryptoTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MACRO:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="cryptoTrendBig" class="cryptoTrendBadge" style="pointer-events:none">1h —</span></div>';
+        overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155" id="cryptoEntryTrendLegend">PAPER ENTRY TREND · awaiting replay</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="cryptoTrendSmall" class="cryptoTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span title="Reference display only; the entry-filter background uses the strategy rule shown in its legend">MACRO REF:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="cryptoTrendBig" class="cryptoTrendBadge" style="pointer-events:none">1h —</span></div>';
         chartHost.appendChild(overlay);
         this.bindMatchPill(overlay.querySelector("#cryptoMatchPill"));
 
@@ -621,6 +621,7 @@
       this.selectedSymbol = sym;
       this._historyExhausted = false;
       this.backtestMarkers = [];
+      this.clearEntryTrend();
       this.latestReplayConditionResult = null;
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
@@ -946,6 +947,7 @@
           this.interval = value;
           this._historyExhausted = false;
           this.backtestMarkers = [];
+      this.clearEntryTrend();
           this.latestReplayConditionResult = null;
           this.renderMarkers();
           this.renderCurrentPositionReferenceLines();
@@ -1258,6 +1260,7 @@
       this.currentParadigm = mode;
       safeStorage.setItem(STRATEGY_STORAGE_KEY, mode);
       this.backtestMarkers = [];
+      this.clearEntryTrend();
       this.latestReplayConditionResult = null;
       const targets = lid("tradeMarkerTargets");
       if (targets) targets.textContent = "";
@@ -3342,50 +3345,32 @@
       }
     },
 
-    trendScore(values) {
-      const logs = values.map((value) => Math.log(Math.max(Number(value), 1e-12)));
-      const returns = logs.slice(1).map((value, index) => value - logs[index]);
-      const meanReturn = returns.reduce((sum, value) => sum + value, 0) / returns.length;
-      const returnStd = Math.sqrt(returns.reduce((sum, value) => sum + ((value - meanReturn) ** 2), 0) / returns.length);
-      const xMean = (logs.length - 1) / 2;
-      const yMean = logs.reduce((sum, value) => sum + value, 0) / logs.length;
-      let numerator = 0, denominator = 0;
-      logs.forEach((value, index) => {
-        numerator += (index - xMean) * (value - yMean);
-        denominator += (index - xMean) ** 2;
-      });
-      const slope = numerator / denominator;
-      const slopeScore = Math.tanh(2 * slope / Math.max(returnStd, 1e-9));
-      const ma7 = values.slice(-7).reduce((sum, value) => sum + value, 0) / 7;
-      const maWindow = values.reduce((sum, value) => sum + value, 0) / values.length;
-      const priceStd = Math.sqrt(values.reduce((sum, value) => sum + ((value - maWindow) ** 2), 0) / values.length);
-      const maScore = Math.tanh((ma7 - maWindow) / Math.max(priceStd, 1e-9));
-      const travel = values.slice(1).reduce((sum, value, index) => sum + Math.abs(value - values[index]), 0);
-      const efficiency = travel > 1e-12 ? (values.at(-1) - values[0]) / travel : 0;
-      return Math.max(-1, Math.min(1, 0.45 * slopeScore + 0.35 * maScore + 0.20 * efficiency));
+    clearEntryTrend() {
+      this.entryTrendResult = null;
+      this.trendRanges = [];
+      const layer = $("cryptoTrendBandLayer");
+      if (layer) layer.innerHTML = "";
+      const legend = $("cryptoEntryTrendLegend");
+      if (legend) legend.textContent = "PAPER ENTRY TREND · awaiting replay";
     },
 
     calculateTrendRanges(bars) {
-      const points = [];
-      let state = "SIDEWAYS", pending = null, pendingCount = 0;
-      for (let index = 23; index < bars.length; index += 1) {
-        const values = bars.slice(index - 23, index + 1).map((bar) => Number(bar.value));
-        if (values.some((value) => !Number.isFinite(value))) continue;
-        const score = this.trendScore(values);
-        let target;
-        if (state === "UPTREND") target = score <= -0.20 ? "DOWNTREND" : (score < 0.05 ? "SIDEWAYS" : "UPTREND");
-        else if (state === "DOWNTREND") target = score >= 0.20 ? "UPTREND" : (score > -0.05 ? "SIDEWAYS" : "DOWNTREND");
-        else target = score >= 0.20 ? "UPTREND" : (score <= -0.20 ? "DOWNTREND" : "SIDEWAYS");
-        if (target === state) {
-          pending = null; pendingCount = 0;
-        } else {
-          if (target === pending) pendingCount += 1;
-          else { pending = target; pendingCount = 1; }
-          if (pendingCount >= 2) { state = target; pending = null; pendingCount = 0; }
-        }
-        points.push({ direction: state, score, time: bars[index].time, index });
-      }
-      return points;
+      const points = new Map((this.entryTrendResult?.points || []).map(point => [Number(point.time), point]));
+      return bars.flatMap((bar, index) => {
+        const point = points.get(Number(bar.time));
+        return point ? [{ ...point, index }] : [];
+      });
+    },
+
+    applyEntryTrend(result) {
+      this.entryTrendResult = result || null;
+      this.trendRanges = this.calculateTrendRanges(this.bars || []);
+      const legend = $("cryptoEntryTrendLegend");
+      const latest = result?.points?.at(-1);
+      if (legend) legend.textContent = result
+        ? `PAPER ENTRY FILTER ${result.enabled ? "ON" : "OFF"} · ${result.source} · ${result.basis} · ${latest?.direction || "UNAVAILABLE"}`
+        : "PAPER ENTRY TREND · unavailable";
+      this.renderTrendRanges();
     },
 
     alignChartOverlay(layer) {
@@ -3409,7 +3394,9 @@
     renderTrendRanges() {
       const layer = $("cryptoTrendBandLayer");
       const host = lid("shortTermSpreadChartHost");
-      if (!layer || !host || !this.chart || !this.trendRanges.length) return;
+      if (!layer || !host || !this.chart) return;
+      layer.innerHTML = "";
+      if (!this.trendRanges.length) return;
       const scale = this.chart.timeScale();
       const width = this.alignChartOverlay(layer);
       const html = [];
@@ -3423,13 +3410,11 @@
         const left = Math.max(0, x - barWidth / 2);
         const right = Math.min(width, x + barWidth / 2);
         if (right <= 0 || left >= width || right - left < 1) return;
-        const magnitude = Math.min(1, Math.abs(point.score));
-        const alpha = 0.025 + magnitude * 0.17;
-        const background = point.score > 0.03
-          ? `rgba(22,163,74,${alpha.toFixed(3)})`
-          : (point.score < -0.03 ? `rgba(220,38,38,${alpha.toFixed(3)})` : "rgba(100,116,139,.025)");
-        const strip = point.direction === "UPTREND" ? "#16a34a" : (point.direction === "DOWNTREND" ? "#dc2626" : "#94a3b8");
-        html.push(`<div title="${this.interval} score ${point.score >= 0 ? "+" : ""}${point.score.toFixed(2)} · stable ${point.direction}" style="position:absolute;top:0;bottom:0;left:${left.toFixed(1)}px;width:${Math.max(1, right - left).toFixed(1)}px;background:${background};border-top:4px solid ${strip}"></div>`);
+        const up = point.direction === "UPTREND", down = point.direction === "DOWNTREND";
+        const background = up ? "rgba(22,163,74,.12)" : down ? "rgba(220,38,38,.12)" : "rgba(100,116,139,.025)";
+        const strip = up ? "#16a34a" : down ? "#dc2626" : "#94a3b8";
+        const sourceTime = point.source_time == null ? "unavailable" : new Date(point.source_time * 1000).toLocaleString("en-GB", { timeZone: "Asia/Seoul" }) + " KST";
+        html.push(`<div title="PAPER entry filter ${point.direction} · ${this.entryTrendResult?.source || ""} · source candle ${sourceTime}" style="position:absolute;top:0;bottom:0;left:${left.toFixed(1)}px;width:${Math.max(1, right - left).toFixed(1)}px;background:${background};border-top:4px solid ${strip}"></div>`);
       });
       layer.innerHTML = html.join("");
     },
@@ -5013,6 +4998,7 @@
     requestBacktest() {
       if (this.backtestDebounceTimer) clearTimeout(this.backtestDebounceTimer);
       this.backtestMarkers = [];
+      this.clearEntryTrend();
       const targets = lid("tradeMarkerTargets");
       if (targets) targets.textContent = "";
       const svg = lid("tradeTrianglesLayer");
@@ -5781,6 +5767,7 @@
       if (summary) summary.textContent = "Calculating strategy signals…";
       this.executionChartFrame?.setStatus("⏳ Calculating paper replay…");
       this.backtestMarkers = [];
+      this.clearEntryTrend();
       this.latestReplayConditionResult = null;
       this.replayConditionSignature = null;
       const targets = lid("tradeMarkerTargets");
@@ -5796,7 +5783,9 @@
         const trendPullback = settings.trend_pullback_dist;
         const toggles = new URLSearchParams(settings);
         const data = await api(`/api/crypto/backtest?${toggles}`);
-        if (requestId !== this.backtestRequestId) return;
+        if (requestId !== this.backtestRequestId || JSON.stringify(settings) !== JSON.stringify(this.replaySettings())) return;
+        if (!data?.success) throw new Error(data?.error || "Replay data unavailable");
+        this.applyEntryTrend(data.entry_trend);
         const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
         this.backtestMarkers = (data.trades || []).flatMap((trade, tradeIndex) => [
           {
@@ -5979,6 +5968,7 @@
         if (requestId === this.backtestRequestId) {
           this.latestReplayConditionResult = null;
           this.backtestMarkers = [];
+      this.clearEntryTrend();
           this.renderMarkers();
           this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();

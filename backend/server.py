@@ -47,6 +47,7 @@ from .lighter_strategy import (
     _macro_trend_aligned,
     hourly_macro_alignment,
     macro_trend_aligned_series,
+    ou_macro_ema_slope_series,
     compute_ma_diff_series,
     check_ma_diff_hook,
     evaluate_ou_signals,
@@ -1695,6 +1696,35 @@ def _hourly_macro_alignment_for_bars(
     return mapped
 
 
+def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
+                        interval_seconds, market_source, macro_bars):
+    """Expose the same position-independent macro predicates used by replay."""
+    slopes = ou_macro_ema_slope_series([bar["value"] for bar in bars], span, slope_bars) if is_ou else []
+    hourly = sorted(macro_bars or [], key=lambda bar: bar["time"])
+    macro_index = -1
+    points = []
+    for index, bar in enumerate(bars):
+        while (macro_index + 1 < len(hourly)
+               and hourly[macro_index + 1]["time"] + 3600 <= bar["time"] + interval_seconds):
+            macro_index += 1
+        if is_ou:
+            slope = slopes[index]
+            long_ok, short_ok = (slope >= 0, slope <= 0) if slope is not None else (False, False)
+            source_time = bar["time"] if slope is not None else None
+        else:
+            long_ok, short_ok = alignment[index]
+            source_time = hourly[macro_index]["time"] if macro_index >= 0 else None
+        direction = ("OFF" if not enabled else "UPTREND" if long_ok and not short_ok else
+                     "DOWNTREND" if short_ok and not long_ok else
+                     "SIDEWAYS" if long_ok and short_ok else "UNAVAILABLE")
+        points.append({"time": bar["time"], "source_time": source_time,
+                       "direction": direction, "long_ok": bool(long_ok), "short_ok": bool(short_ok)})
+    return {"enabled": bool(enabled), "source": market_source.upper(),
+            "basis": f"EMA{span} slope / {slope_bars} chart bars" if is_ou else
+                     ("completed 1h · 30 closes · ±0.15%" if macro_bars is not None else "replay trend fallback"),
+            "points": points}
+
+
 def _run_crypto_backtest_sync(
     bars: List[Dict[str, Any]],
     candle_success: bool,
@@ -2589,6 +2619,12 @@ def _run_crypto_backtest_sync(
         "strategy_mode": strategy_mode,
         "series": series,
         "entry_signals": entry_signals,
+        "entry_trend": _crypto_entry_trend(
+            bars, macro_aligned_list,
+            enabled=ou_use_macro_trend if strategy_mode == "ou_quant" else use_ma_stack_1h,
+            is_ou=strategy_mode == "ou_quant", span=ou_macro_ema_span,
+            slope_bars=ou_macro_slope_bars, interval_seconds=interval_seconds,
+            market_source=market_source, macro_bars=macro_bars),
         "trades": trades,
         "open_positions": open_positions,
         "metrics": mode_metrics,
