@@ -5,7 +5,19 @@ import path from "node:path";
 
 async function run() {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "hynix-chart-verify-"));
-  const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
+  const chromeCandidates = process.platform === "win32"
+    ? [
+        process.env.CHROME_PATH,
+        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+        "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+        path.join(os.homedir(), "AppData", "Local", "Google", "Chrome", "Application", "chrome.exe"),
+      ]
+    : process.platform === "darwin"
+      ? [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
+      : [process.env.CHROME_PATH, "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
+  const chromePath = chromeCandidates.find((candidate) => candidate && fs.existsSync(candidate));
+  if (!chromePath) throw new Error("Chrome executable not found; set CHROME_PATH");
+  const chrome = spawn(chromePath, [
     "--headless=new",
     `--user-data-dir=${profile}`,
     "--remote-debugging-port=0",

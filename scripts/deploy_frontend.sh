@@ -5,10 +5,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${HYPERION_DEPLOY_HOST:-thejiwon2025}"
 CONNECT_HOST="${HYPERION_DEPLOY_CONNECT_HOST:-}"
 REMOTE_WEB_DIR="${HYPERION_WEB_DIR:-/var/www/skhynix}"
+PYTHON_BIN="python3"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 || ! "$PYTHON_BIN" --version >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+fi
 BASE_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/.VERSION")"
 GIT_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD)"
-BUILD_STAMP="$(TZ=Asia/Seoul date +%Y%m%d%H%M%S)"
-DEPLOYED_AT="$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M:%S KST')"
+BUILD_STAMP="$("$PYTHON_BIN" -c 'from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d%H%M%S"))')"
+DEPLOYED_AT="$("$PYTHON_BIN" -c 'from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S KST"))')"
 BUILD_VERSION="v${BASE_VERSION}+${GIT_SHA}.${BUILD_STAMP}"
 STAGE_DIR="$(mktemp -d)"
 
@@ -18,10 +22,6 @@ cleanup() {
 trap cleanup EXIT
 
 cp "$ROOT_DIR/index.html" "$STAGE_DIR/index.html"
-PYTHON_BIN="python3"
-if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 || ! "$PYTHON_BIN" --version >/dev/null 2>&1; then
-  PYTHON_BIN="python"
-fi
 "$PYTHON_BIN" "$ROOT_DIR/scripts/stamp_deployment_metadata.py" \
   "$STAGE_DIR/index.html" "$BUILD_VERSION" "$DEPLOYED_AT"
 
