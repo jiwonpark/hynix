@@ -3197,6 +3197,44 @@ def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs, entry_pa
 
 _historical_user_trades_cache: Dict[str, Dict[str, Any]] = {}
 HISTORICAL_USER_TRADES_TTL = 1800.0
+USER_TRADES_PAGE_LIMIT = 1000
+USER_TRADES_MAX_SPLIT_DEPTH = 20
+
+
+async def _fetch_user_trade_window(
+        symbol: str, start_ms: int, end_ms: int, depth: int = 0) -> List[Dict[str, Any]]:
+    """Fetch a complete Binance userTrades time window without silent truncation."""
+    result = await binance_client.request(
+        "GET", "/fapi/v1/userTrades",
+        {
+            "symbol": symbol,
+            "startTime": start_ms,
+            "endTime": end_ms,
+            "limit": USER_TRADES_PAGE_LIMIT,
+        },
+        signed=True,
+    )
+    if not isinstance(result, list):
+        return result
+    if len(result) < USER_TRADES_PAGE_LIMIT:
+        return result
+    if start_ms >= end_ms or depth >= USER_TRADES_MAX_SPLIT_DEPTH:
+        raise RuntimeError(
+            f"Binance userTrades window remained saturated for {symbol}: "
+            f"{start_ms}-{end_ms}"
+        )
+
+    # Binance does not allow fromId together with startTime/endTime. Bisecting
+    # the time window is deterministic, retains the seven-day API bound, and
+    # also handles multiple fills sharing an order ID.
+    midpoint = start_ms + (end_ms - start_ms) // 2
+    left, right = await asyncio.gather(
+        _fetch_user_trade_window(symbol, start_ms, midpoint, depth + 1),
+        _fetch_user_trade_window(symbol, midpoint + 1, end_ms, depth + 1),
+    )
+    if not isinstance(left, list) or not isinstance(right, list):
+        return left if not isinstance(left, list) else right
+    return left + right
 
 
 async def _fetch_multichunk_user_trades(symbol: str, chunks: int = 4) -> List[Dict[str, Any]]:
@@ -3214,22 +3252,15 @@ async def _fetch_multichunk_user_trades(symbol: str, chunks: int = 4) -> List[Di
         or (now_mono - cached_hist["time"]) > HISTORICAL_USER_TRADES_TTL
     )
 
-    latest_task = binance_client.request(
-        "GET", "/fapi/v1/userTrades",
-        {"symbol": symbol, "limit": 1000},
-        signed=True,
-    )
+    window_ms = 7 * 86400 * 1000
+    latest_task = _fetch_user_trade_window(symbol, now_ms - window_ms, now_ms)
 
     if need_hist and chunks > 1:
         hist_tasks = []
         for i in range(1, chunks):
-            end_t = now_ms - i * 7 * 86400 * 1000
-            start_t = end_t - 7 * 86400 * 1000
-            hist_tasks.append(binance_client.request(
-                "GET", "/fapi/v1/userTrades",
-                {"symbol": symbol, "startTime": start_t, "endTime": end_t, "limit": 1000},
-                signed=True,
-            ))
+            end_t = now_ms - i * window_ms
+            start_t = end_t - window_ms
+            hist_tasks.append(_fetch_user_trade_window(symbol, start_t, end_t))
         results = await asyncio.gather(latest_task, *hist_tasks, return_exceptions=True)
         latest_res = results[0]
         hist_results = results[1:]

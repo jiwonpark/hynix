@@ -195,7 +195,7 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
 
         async def request(method, path, params, **kwargs):
             nonlocal historical_call
-            if "startTime" not in params:
+            if params["endTime"] == 1_000_000_000:
                 return [{"id": 90 + phase, "time": 9000 + phase}]
             historical_call += 1
             if phase == 0:
@@ -205,13 +205,27 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             return [{"id": 100 + historical_call, "time": historical_call * 1000}]
 
         self.client.request.side_effect = request
-        first = await server._fetch_multichunk_user_trades("SKHYUSDT")
-        self.assertEqual([trade["id"] for trade in first], [1, 2, 3, 90])
+        with patch.object(server.time, "time", return_value=1_000_000):
+            first = await server._fetch_multichunk_user_trades("SKHYUSDT")
+            self.assertEqual([trade["id"] for trade in first], [1, 2, 3, 90])
 
-        server._historical_user_trades_cache["SKHYUSDT"]["time"] = 0.0
-        phase = 1
-        second = await server._fetch_multichunk_user_trades("SKHYUSDT")
+            server._historical_user_trades_cache["SKHYUSDT"]["time"] = 0.0
+            phase = 1
+            second = await server._fetch_multichunk_user_trades("SKHYUSDT")
         self.assertEqual([trade["id"] for trade in second], [1, 2, 3, 91])
+
+    async def test_saturated_user_trade_window_is_bisected_until_complete(self):
+        trades = [{"id": trade_id, "time": trade_id} for trade_id in range(1200)]
+
+        async def request(method, path, params, **kwargs):
+            matches = [trade for trade in trades
+                       if params["startTime"] <= trade["time"] <= params["endTime"]]
+            return matches[-params["limit"]:]
+
+        self.client.request.side_effect = request
+        result = await server._fetch_user_trade_window("SKHYUSDT", 0, 1199)
+        self.assertEqual([trade["id"] for trade in result], list(range(1200)))
+        self.assertEqual(self.client.request.await_count, 3)
 
     async def test_lightweight_exit_endpoint_annotates_virtual_lifo_pair(self):
         server.save_auto_tranche_state({
