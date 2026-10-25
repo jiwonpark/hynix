@@ -3240,9 +3240,18 @@ async def _fetch_multichunk_user_trades(symbol: str, chunks: int = 4) -> List[Di
                 "trades": hist_trades,
             }
         else:
-            hist_trades = [t for r in hist_results if isinstance(r, list) for t in r]
-            if not hist_trades and cached_hist:
+            # Never combine a successful latest window with an incomplete set of
+            # historical windows.  That would make the reconstructed LIFO stack
+            # depend on which Binance request happened to fail.  Preserve the
+            # last complete historical snapshot, or fail closed on a cold start.
+            if cached_hist:
                 hist_trades = cached_hist["trades"]
+            else:
+                failed_windows = sum(not isinstance(r, list) for r in hist_results)
+                raise RuntimeError(
+                    f"Incomplete Binance userTrades history for {symbol}: "
+                    f"{failed_windows} historical window(s) unavailable"
+                )
     else:
         latest_res = await latest_task
         hist_trades = cached_hist["trades"] if cached_hist else []

@@ -189,6 +189,30 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0)
             refresh.assert_awaited_once()
 
+    async def test_partial_historical_refresh_preserves_last_complete_snapshot(self):
+        phase = 0
+        historical_call = 0
+
+        async def request(method, path, params, **kwargs):
+            nonlocal historical_call
+            if "startTime" not in params:
+                return [{"id": 90 + phase, "time": 9000 + phase}]
+            historical_call += 1
+            if phase == 0:
+                return [{"id": historical_call, "time": historical_call * 1000}]
+            if historical_call == 4:
+                raise RuntimeError("one historical window failed")
+            return [{"id": 100 + historical_call, "time": historical_call * 1000}]
+
+        self.client.request.side_effect = request
+        first = await server._fetch_multichunk_user_trades("SKHYUSDT")
+        self.assertEqual([trade["id"] for trade in first], [1, 2, 3, 90])
+
+        server._historical_user_trades_cache["SKHYUSDT"]["time"] = 0.0
+        phase = 1
+        second = await server._fetch_multichunk_user_trades("SKHYUSDT")
+        self.assertEqual([trade["id"] for trade in second], [1, 2, 3, 91])
+
     async def test_lightweight_exit_endpoint_annotates_virtual_lifo_pair(self):
         server.save_auto_tranche_state({
             'entry_order_pairs': [{'adr_order_id': '1', 'stock_order_id': '2'}],
