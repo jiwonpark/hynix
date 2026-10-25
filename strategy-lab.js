@@ -417,6 +417,7 @@
             time: Number(t.entry_time),
             source: "actual",
             hypothetical: false,
+            is_paper: modeStr === "PAPER",
             backtest: false,
             is_entry: true,
             action: "entry",
@@ -439,6 +440,7 @@
             time: Number(t.exit_time),
             source: "actual",
             hypothetical: false,
+            is_paper: modeStr === "PAPER",
             backtest: false,
             is_entry: false,
             action: "exit",
@@ -466,6 +468,7 @@
             time: Number(t.entry_time),
             source: "actual",
             hypothetical: false,
+            is_paper: modeStr === "PAPER",
             backtest: false,
             is_entry: true,
             action: "entry",
@@ -483,7 +486,8 @@
     },
 
     executionsForInterval() {
-      const exitMarkers = (this.data?.markers || []).filter((marker) => !marker.is_entry);
+      const exitMarkers = (this.data?.markers || []).filter((marker) => !marker.is_entry)
+        .map((marker) => ({ ...marker, source: "virtual", hypothetical: true, backtest: true }));
       const fillsBySignal = new Map((this.data?.markers || []).filter((marker) => marker.is_entry)
         .map((marker) => [Number(marker.signal_time ?? marker.time), marker]));
       const signalMarkers = (this.data?.entry_signals || []).map((signal, index) => {

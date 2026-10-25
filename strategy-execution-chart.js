@@ -244,7 +244,8 @@
             || (typeof m.color === "string" && m.color.includes("220"))));
         const isEntry = m.is_entry !== false;
         const isSell = isShort ? isEntry : !isEntry;
-        const dimAlpha = m.hypothetical ? "0.35" : "0.70";
+        const isPaper = Boolean(m.hypothetical || m.is_paper || m.backtest || m.source === "virtual");
+        const dimAlpha = isPaper ? "0.35" : "0.70";
         const shape = (m.shape && (m.shape === "arrowUp" || m.shape === "arrowDown" || m.shape === "circle" || m.shape === "square"))
           ? m.shape
           : (isSell ? "arrowDown" : "arrowUp");
@@ -259,8 +260,8 @@
             : (isSell ? `rgba(220, 38, 38, ${dimAlpha})` : `rgba(22, 163, 74, ${dimAlpha})`),
           // Native shapes are solid. Hide the shape for paper events and use an
           // outline glyph so shared charts follow the same hollow-marker style.
-          size: m.hypothetical ? 0 : 1.4,
-          text: [m.hypothetical ? (isEntry ? "▷" : "◁") : "", label].filter(Boolean).join(" ")
+          size: isPaper ? 0 : 1.4,
+          text: [isPaper ? (isEntry ? "▷" : "◁") : "", label].filter(Boolean).join(" ")
         };
       });
     }
