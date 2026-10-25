@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from backend.strategy_lab import run_ma_stack_backtest
 
@@ -118,6 +120,39 @@ class StrategyLabTests(unittest.TestCase):
         result = run_ma_stack_backtest(five, hourly, strategy_mode="ou_quant")
         self.assertEqual(result["strategy"], "ou_quant")
         self.assertIn("OU", result["strategy_badge"])
+
+
+class StrategyLabPaginationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_history_page_replays_only_bounded_segment(self):
+        from backend import server
+
+        boundary = 2_000_000_000
+
+        async def page(market, unit, count, before=None):
+            self.assertEqual(before, boundary)
+            step = unit * 60
+            start = boundary - count * step
+            prices = [200.0 - index * 0.01 for index in range(count)]
+            return candles(start - step, count, step, prices)
+
+        request = SimpleNamespace(
+            url=SimpleNamespace(query="strategy_mode=ma_stack&before=2000000000&limit=120"),
+            query_params={"strategy_mode": "ma_stack", "before": str(boundary), "limit": "120"},
+        )
+        server._upbit_stack_cache.clear()
+        with patch.object(server.upbit_client, "get_minute_candles", AsyncMock(side_effect=page)), \
+             patch.object(server.strategy_execution_engine, "get_status", return_value={"recent_trades": [], "active_tranches": []}):
+            result = await server.get_upbit_ma_stack_backtest(
+                request, strategy_mode="ma_stack", days=7, fee_bps=5.0,
+                max_tranches=5, before=boundary, limit=120,
+            )
+
+        self.assertTrue(result["page_mode"])
+        self.assertEqual(len(result["bars"]), 120)
+        self.assertTrue(result["has_more"])
+        self.assertTrue(all(bar["time"] < boundary for bar in result["bars"]))
+        self.assertTrue(all(trade["entry_time"] >= result["bars"][0]["time"] for trade in result["trades"]))
+        self.assertTrue(all(trade["exit_time"] < boundary for trade in result["trades"]))
 
 
 if __name__ == "__main__":

@@ -612,6 +612,7 @@ def run_ma_stack_backtest(
         "markers": markers,
         "entry_signals": entry_signals,
         "trades": trades,
+        "equity_curve": equity_curve,
         "active_tranche_stack": active_stack_serialized,
         "open_position": tranche_stack[-1] if tranche_stack else None,
         "capacity": {

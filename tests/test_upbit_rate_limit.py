@@ -56,6 +56,23 @@ class TestUpbitRateLimit(unittest.TestCase):
             self.assertEqual(self.client.request.await_count, 2)
         asyncio.run(run())
 
+    def test_historical_page_respects_before_boundary(self):
+        async def run():
+            async def fake_request(method, endpoint, params=None, signed=False, max_retries=4):
+                self.assertEqual(params["to"], "2026-09-18T09:40:00Z")
+                return [
+                    {"candle_date_time_utc": "2026-09-18T09:35:00", "opening_price": 100, "high_price": 101, "low_price": 99, "trade_price": 100, "candle_acc_trade_volume": 1},
+                    {"candle_date_time_utc": "2026-09-18T09:30:00", "opening_price": 99, "high_price": 100, "low_price": 98, "trade_price": 99, "candle_acc_trade_volume": 1},
+                ]
+            self.client.request = fake_request
+            now = int(datetime(2026, 9, 18, 9, 45, 10, tzinfo=timezone.utc).timestamp())
+            before = int(datetime(2026, 9, 18, 9, 40, 0, tzinfo=timezone.utc).timestamp())
+            with patch("time.time", return_value=now):
+                candles = await self.client.get_minute_candles("KRW-BTC", 5, 2, before=before)
+            self.assertEqual(len(candles), 2)
+            self.assertTrue(all(candle["time"] < before for candle in candles))
+        asyncio.run(run())
+
     def test_mutations_never_retry_timeout_or_server_error(self):
         async def run():
             self.client._throttle = AsyncMock()

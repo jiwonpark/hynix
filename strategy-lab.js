@@ -202,28 +202,8 @@
       // Attach zoom-aware prefetcher and edge clamping
       this.prefetchDetach = StrategyExecutionChartController.attachZoomAwarePrefetch(this.chart, {
         getTotalBars: () => this.data?.bars?.length || 0,
-        onPrefetchNeeded: async () => {
-          const daysSelect = document.getElementById("strategyLabDays");
-          if (!daysSelect) return 0;
-          const currentDays = Number(daysSelect.value);
-          const availableDays = Array.from(daysSelect.options || [])
-            .map((option) => Number(option.value))
-            .filter((value) => Number.isFinite(value) && value > currentDays)
-            .sort((a, b) => a - b);
-          if (!availableDays.length) return 0;
-          const before = this.data?.bars?.length || 0;
-          daysSelect.value = String(availableDays[0]);
-          await this.run({ preserveViewport: true });
-          const added = Math.max(0, (this.data?.bars?.length || 0) - before);
-          if (!added) daysSelect.value = String(currentDays);
-          return added;
-        },
-        isExhausted: () => {
-          const daysSelect = document.getElementById("strategyLabDays");
-          if (!daysSelect) return true;
-          const values = Array.from(daysSelect.options || []).map((option) => Number(option.value)).filter(Number.isFinite);
-          return !values.length || Number(daysSelect.value) >= Math.max(...values);
-        },
+        onPrefetchNeeded: async (needed) => this.loadOlderPaperBars(needed),
+        isExhausted: () => Boolean(this._historyExhausted),
       });
       if (!el("tradeTrianglesLayer") && typeof document.createElementNS === "function") {
         const svgLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -310,6 +290,7 @@
         const data = await response.json();
         if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
         this.render(data, options);
+        this._historyExhausted = false;
       } catch (error) {
         el("dynamicBacktestStatus").textContent = `Backtest failed: ${error.message}`;
       } finally {
@@ -317,6 +298,62 @@
           button.disabled = false;
           button.textContent = "Rerun";
         }
+      }
+    },
+
+    async loadOlderPaperBars(needed = 600) {
+      if (this._loadingOlderPaper || this._historyExhausted || !this.data?.bars?.length) return 0;
+      this._loadingOlderPaper = true;
+      const previous = this.data;
+      const oldestTime = Number(previous.bars[0].time);
+      const requestLimit = Math.max(120, Math.min(1500, Math.ceil(Number(needed) || 600)));
+      const params = new URLSearchParams({
+        strategy_mode: this.strategyMode || "ma_stack",
+        fee_bps: document.getElementById("strategyLabFee")?.value || "5",
+        max_tranches: document.getElementById("strategyLabTranches")?.value || "5",
+        before: String(oldestTime),
+        limit: String(requestLimit),
+        ...Object.fromEntries(Object.entries(this.conditions()).map(([key, value]) => [key, String(value)])),
+      });
+      const syncLabel = el("lblShortTermChartSync");
+      if (syncLabel) syncLabel.textContent = "Loading older chart + paper trades…";
+      try {
+        const response = await fetch(`api/strategy-lab/upbit-ma-stack?${params}`);
+        const page = await response.json();
+        if (!response.ok || page.error || !page.page_mode || !Array.isArray(page.bars)) {
+          throw new Error(page.error || `HTTP ${response.status}`);
+        }
+        const olderBars = page.bars.filter((bar) => Number(bar.time) < oldestTime);
+        if (!olderBars.length) {
+          this._historyExhausted = page.has_more === false;
+          return 0;
+        }
+        const mergeBy = (current, incoming, keyOf) => {
+          const merged = new Map((current || []).map((item) => [keyOf(item), item]));
+          (incoming || []).forEach((item) => merged.set(keyOf(item), item));
+          return [...merged.values()].sort((a, b) => Number(a.time ?? a.entry_time) - Number(b.time ?? b.entry_time));
+        };
+        this.data = {
+          ...previous,
+          bars: mergeBy(previous.bars, olderBars, (bar) => Number(bar.time)),
+          hourly: mergeBy(previous.hourly, page.hourly, (bar) => Number(bar.time)),
+          entry_signals: mergeBy(previous.entry_signals, page.entry_signals, (signal) => Number(signal.time)),
+          markers: mergeBy(previous.markers, page.markers, (marker) => `${marker.pairKey || "signal"}:${marker.is_entry ? 1 : 0}:${marker.time}`),
+          trades: mergeBy(previous.trades, page.trades, (trade) => trade.pairKey || `${trade.entry_time}:${trade.exit_time}:${trade.id}`),
+          equity_curve: mergeBy(previous.equity_curve, page.equity_curve, (point) => Number(point.time)),
+        };
+        this._historyExhausted = page.has_more === false;
+        this.renderChartData();
+        this.renderTradeTriangles();
+        if (syncLabel) {
+          syncLabel.textContent = `${this.data.bars.length.toLocaleString()} bars · ${(this.data.trades || []).length.toLocaleString()} appended paper trades · Sync ${formatKst(Date.now())}`;
+        }
+        return olderBars.length;
+      } catch (error) {
+        if (syncLabel) syncLabel.textContent = `Older history unavailable · ${error.message}`;
+        return 0;
+      } finally {
+        this._loadingOlderPaper = false;
       }
     },
 

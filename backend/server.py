@@ -2911,6 +2911,8 @@ async def get_upbit_ma_stack_backtest(
     days: int = Query(7, ge=1, le=30),
     fee_bps: float = Query(5.0, ge=0.0, le=100.0),
     max_tranches: int = Query(5, ge=1, le=20),
+    before: Optional[int] = Query(None, gt=0),
+    limit: int = Query(600, ge=120, le=1500),
 ) -> Dict[str, Any]:
     """Read-only BTC/KRW quantitative strategy research backtest with fast TTL caching."""
     cache_key = str(request.url.query)
@@ -2920,14 +2922,16 @@ async def get_upbit_ma_stack_backtest(
         if now - cached_time < 5.0:
             return cached_data
     try:
-        count_5m = days * 24 * 12 + 2
-        count_1h = max(days * 24 + 62, 200)
-        candles_5m = await upbit_client.get_minute_candles("KRW-BTC", 5, count_5m)
-        candles_1h = await upbit_client.get_minute_candles("KRW-BTC", 60, count_1h)
+        page_mode = before is not None
+        warmup_5m = 240
+        count_5m = (limit + warmup_5m) if page_mode else (days * 24 * 12 + 2)
+        count_1h = max(math.ceil(count_5m / 12) + 62, 200)
+        candles_5m = await upbit_client.get_minute_candles("KRW-BTC", 5, count_5m, before=before)
+        candles_1h = await upbit_client.get_minute_candles("KRW-BTC", 60, count_1h, before=before)
 
         options: Dict[str, Any] = {}
         for k, v in request.query_params.items():
-            if k in ("strategy_mode", "days", "fee_bps", "max_tranches"):
+            if k in ("strategy_mode", "days", "fee_bps", "max_tranches", "before", "limit"):
                 continue
             options[k] = v.lower() in ("true", "1", "yes") if isinstance(v, str) else bool(v)
 
@@ -2945,6 +2949,38 @@ async def get_upbit_ma_stack_backtest(
         result["bot_status"] = bot_status
         result["actual_trades"] = bot_status.get("recent_trades", [])
         result["active_tranches"] = bot_status.get("active_tranches", [])
+        if page_mode:
+            page_bars = [bar for bar in result.get("bars", []) if int(bar["time"]) < int(before)][-limit:]
+            page_start = int(page_bars[0]["time"]) if page_bars else int(before)
+            page_trades = [
+                trade for trade in result.get("trades", [])
+                if int(trade.get("entry_time", 0)) >= page_start
+                and int(trade.get("exit_time", 0)) < int(before)
+            ]
+            pair_keys = {trade.get("pairKey") for trade in page_trades if trade.get("pairKey")}
+            result["bars"] = page_bars
+            result["hourly"] = [
+                bar for bar in result.get("hourly", [])
+                if int(bar["time"]) >= page_start - 3600 and int(bar["time"]) < int(before)
+            ]
+            result["trades"] = page_trades
+            result["markers"] = [
+                marker for marker in result.get("markers", [])
+                if marker.get("pairKey") in pair_keys
+            ]
+            result["entry_signals"] = [
+                signal for signal in result.get("entry_signals", [])
+                if page_start <= int(signal.get("time", 0)) < int(before)
+            ]
+            result["equity_curve"] = [
+                point for point in result.get("equity_curve", [])
+                if page_start <= int(point.get("time", 0)) < int(before)
+            ]
+            result["active_tranche_stack"] = []
+            result["open_position"] = None
+            result["page_mode"] = True
+            result["before"] = int(before)
+            result["has_more"] = len(page_bars) >= limit
         _upbit_stack_cache[cache_key] = (now, result)
         return result
     except Exception as e:

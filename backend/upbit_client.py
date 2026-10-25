@@ -250,17 +250,21 @@ class UpbitClient:
                 pass
         return all_tickers
 
-    async def get_minute_candles(self, market: str, unit: int, count: int) -> List[Dict[str, Any]]:
-        """Return completed candles, timestamped by OPEN time; never cache a partial bar."""
+    async def get_minute_candles(
+        self, market: str, unit: int, count: int, before: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return completed candles before a boundary, timestamped by OPEN time."""
         cache_key = (market, unit)
         cached = self._candle_cache.setdefault(cache_key, {})
         interval_seconds = int(unit) * 60
         now = int(time.time())
 
-        boundary = now // interval_seconds * interval_seconds
+        live_boundary = now // interval_seconds * interval_seconds
+        requested_boundary = int(before) if before is not None else live_boundary
+        boundary = min(live_boundary, requested_boundary // interval_seconds * interval_seconds)
 
         # Reuse only finalized candles through the latest completed interval.
-        sorted_times = sorted(cached.keys())
+        sorted_times = sorted(t for t in cached if t < boundary)
         if sorted_times and len(sorted_times) >= count:
             newest = sorted_times[-1]
             if newest == boundary - interval_seconds:
@@ -309,9 +313,9 @@ class UpbitClient:
                 "volume": float(row.get("candle_acc_trade_volume", 0.0)),
             }
 
-        # Keep cache bounded to last 6000 candles per timeframe
-        if len(cached) > 6000:
-            excess = len(cached) - 5000
+        # Cover the Strategy Lab's 30-day 5m history plus paging overlap.
+        if len(cached) > 12000:
+            excess = len(cached) - 10000
             for old_t in sorted(cached.keys())[:excess]:
                 cached.pop(old_t, None)
 
