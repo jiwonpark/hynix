@@ -1,10 +1,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+(async () => {
 for (const [file, prefix, name] of [['crypto-tab.js', 'crypto', 'cryptoEngine'], ['lighter-crypto-tab.js', 'lighterCrypto', 'lighterCryptoEngine']]) {
   const layer = {style: {}, innerHTML: ''}, legend = {};
   const elements = new Map([[`${prefix}TrendBandLayer`, layer], [`${prefix}EntryTrendLegend`, legend], [`${prefix}_shortTermSpreadChartHost`, {}]]);
-  const context = {window: {}, document: {getElementById: id => elements.get(id), readyState: 'loading', addEventListener() {}}, console, URLSearchParams};
+  const context = {setTimeout, clearTimeout, TerminalCommon: {replaySignalLinks: () => new Map()}, window: {}, document: {getElementById: id => elements.get(id), readyState: 'loading', addEventListener() {}}, console, URLSearchParams};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(file, 'utf8'), context);
   const engine = context.window[name];
@@ -27,5 +28,21 @@ for (const [file, prefix, name] of [['crypto-tab.js', 'crypto', 'cryptoEngine'],
   assert.equal(layer.innerHTML, '');
   assert.equal(engine.calculateTrendRanges(engine.bars).length, 0);
   assert.match(legend.textContent, /awaiting replay/);
+  // Exercise the actual async response path, not just the rendering helper.
+  engine.currentParadigm = 'grid';
+  engine.paradigms = {grid: {name: 'Grid'}};
+  let replayStatus = '';
+  engine.executionChartFrame = {setStatus: text => { replayStatus = text; }};
+  engine.replaySettings = () => ({strategy_mode: 'grid'});
+  for (const method of ['renderMarkers', 'renderCurrentPositionReferenceLines', 'updateRulesMatchStatus', 'updateMaAndDiffs']) engine[method] = () => {};
+  context.fetch = async () => ({ok: true, json: async () => ({success: true, entry_trend: result, trades: [], entry_signals: [], metrics: {}, summary: {trades: 0, win_rate: 0, net_pct: 0}})});
+  await engine.runBacktest();
+  assert.match(legend.textContent, /PAPER ENTRY FILTER ON/, `${file} must apply the replay response: ${replayStatus}`);
+  assert.match(layer.innerHTML, /rgba\(220,38,38,.12\)/);
+  context.fetch = async () => { throw new Error('test unavailable'); };
+  await engine.runBacktest();
+  assert.equal(layer.innerHTML, '', 'failed replay must clear its previous trend');
 }
 console.log('Both crypto tabs render authoritative entry-filter colors and clear stale shading');
+
+})().catch(error => { console.error(error); process.exitCode = 1; });

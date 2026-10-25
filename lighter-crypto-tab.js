@@ -1042,7 +1042,7 @@
           this.interval = value;
           this._historyExhausted = false;
           this.backtestMarkers = [];
-      this.clearEntryTrend();
+          this.clearEntryTrend();
           this.latestReplayConditionResult = null;
           this.renderMarkers();
           this.renderCurrentPositionReferenceLines();
@@ -6191,7 +6191,9 @@
         const trendPullback = settings.trend_pullback_dist;
         const toggles = new URLSearchParams(settings);
         const data = await api(`/api/lighter-crypto/backtest?${toggles}&market_source=lighter`);
-        if (requestId !== this.backtestRequestId) return;
+        if (requestId !== this.backtestRequestId || JSON.stringify(settings) !== JSON.stringify(this.replaySettings())) return;
+        if (!data?.success) throw new Error(data?.error || "Replay data unavailable");
+        this.applyEntryTrend(data.entry_trend);
         this.latestReplayConditionResult = data;
         this.replayConditionSignature = new URLSearchParams(settings).toString();
         this.updateRulesMatchStatus();
@@ -6379,7 +6381,7 @@
         if (requestId === this.backtestRequestId) {
           this.latestReplayConditionResult = null;
           this.backtestMarkers = [];
-      this.clearEntryTrend();
+          this.clearEntryTrend();
           this.renderMarkers();
           this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();

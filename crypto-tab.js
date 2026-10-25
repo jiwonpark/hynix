@@ -947,7 +947,7 @@
           this.interval = value;
           this._historyExhausted = false;
           this.backtestMarkers = [];
-      this.clearEntryTrend();
+          this.clearEntryTrend();
           this.latestReplayConditionResult = null;
           this.renderMarkers();
           this.renderCurrentPositionReferenceLines();
@@ -5968,7 +5968,7 @@
         if (requestId === this.backtestRequestId) {
           this.latestReplayConditionResult = null;
           this.backtestMarkers = [];
-      this.clearEntryTrend();
+          this.clearEntryTrend();
           this.renderMarkers();
           this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();
