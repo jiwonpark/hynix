@@ -56,12 +56,13 @@ assert.match(tab5.paradigms.adaptive_tranche.entryLabels.rowCondEntryMaStack5m, 
 assert.equal(tab5.paradigms.grid.name, 'Legacy Dynamic Grid');
 assert.equal(tab5.paradigms.macd_reversal.name, 'MACD Reversal');
 const macdMarkup = tab5.renderParadigmDetail('macd_reversal');
-assert.match(macdMarkup, /Signal line &lt; 0/);
-assert.match(macdMarkup, /Histogram &lt; 0/);
-assert.match(macdMarkup, /reverses upward from local trough/);
-assert.match(macdMarkup, /Signal line &gt; 0/);
-assert.match(macdMarkup, /Histogram &gt; 0/);
-assert.match(macdMarkup, /reverses downward from local peak/);
+assert.match(macdMarkup, /Long entry \/ short exit: Signal &lt; 0/);
+assert.match(macdMarkup, /Long entry \/ short exit: Histogram &lt; 0/);
+assert.match(macdMarkup, /trough turns up/);
+assert.match(macdMarkup, /Short entry \/ long exit: Signal &gt; 0/);
+assert.match(macdMarkup, /Short entry \/ long exit: Histogram &gt; 0/);
+assert.match(macdMarkup, /peak turns down/);
+assert.match(macdMarkup, /completed 1h macro trend/);
 [
   ['lighterCrypto_macdFastPeriod', { value: '12' }],
   ['lighterCrypto_macdSlowPeriod', { value: '26' }],

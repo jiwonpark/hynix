@@ -35,6 +35,14 @@ class FakeBinance:
         if path == "/fapi/v1/ticker/bookTicker":
             return {"bidPrice": "100", "askPrice": "100.01"}
         if path == "/fapi/v1/klines":
+            if params.get("interval") == "1h":
+                latest_close_ms = int(self.klines[-1][6])
+                return [
+                    [latest_close_ms - (124 - index) * 3600_000 - 3600_000 + 1,
+                     "100", "100", "100", "100", "1",
+                     latest_close_ms - (124 - index) * 3600_000]
+                    for index in range(125)
+                ]
             return self.klines
         if path == "/fapi/v1/order":
             return self.last_order
@@ -186,6 +194,33 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
             await self.bot.run_once()
         self.assertEqual(len(self.client.orders), 1)
         self.assertEqual(self.bot.state["last_evaluated_candle"], last_open)
+
+    async def test_opposite_signal_closes_then_reverses_instead_of_blocking(self):
+        now = 1000030
+        last_open = 999960
+        self.client.klines = [
+            [int((last_open - (24 - i) * 60) * 1000), "100", "100", "100", "100", "1",
+             int((last_open - (24 - i) * 60 + 60) * 1000 - 1)]
+            for i in range(25)
+        ]
+        self.client.amount = 0.5
+        self.bot.state.update(
+            enabled=True, strategy_interval="1m", strategy_mode="grid",
+            tranches=[{"side": 1, "qty": 0.5, "price": 100.0, "order_id": "old", "time": 1}],
+        )
+        evaluation = {"strategy": "grid", "condition_pass": {}}
+        with patch("backend.crypto_bot.time.time", return_value=now), patch(
+            "backend.crypto_bot.evaluate_strategy_signal",
+            side_effect=[(True, -1, False, evaluation), (True, -1, False, evaluation)],
+        ):
+            await self.bot.run_once()
+
+        self.assertEqual(len(self.client.orders), 2)
+        self.assertTrue(self.client.orders[0][3]["reduce_only"])
+        self.assertFalse(self.client.orders[1][3]["reduce_only"])
+        self.assertEqual(self.bot.state["tranches"][-1]["side"], -1)
+        self.assertEqual(self.bot.state["execution_history"][-2]["reason"], "opposite_signal_reversal")
+        self.assertEqual(self.bot.state["execution_history"][-1]["reason"], "reversal_entry")
 
     async def test_all_strategies_evaluate_in_live_worker(self):
         now = 1000030

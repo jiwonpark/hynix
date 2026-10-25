@@ -1,4 +1,5 @@
 import asyncio
+import math
 import pathlib
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -6,6 +7,24 @@ from unittest.mock import AsyncMock, patch
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 class TestCryptoTab(unittest.TestCase):
+    def test_macd_is_bidirectional_and_uses_displayed_hourly_regime(self):
+        from backend.lighter_strategy import (
+            evaluate_macd_reversal_signals,
+            hourly_macro_alignment,
+        )
+
+        declining_hourly = [100.0 - index * 0.1 for index in range(30)]
+        alignment = hourly_macro_alignment(declining_hourly)
+        self.assertEqual(alignment, (False, True))
+
+        prices = [100 + 0.03 * index + 4 * math.sin(index / 7 + 2.7)
+                  for index in range(120)]
+        entry, side, _, evaluation = evaluate_macd_reversal_signals(
+            prices, use_ma_stack_1h=True, macro_alignment=alignment)
+        self.assertTrue(entry)
+        self.assertEqual(side, -1)
+        self.assertTrue(evaluation["condition_pass"]["entry_ma_stack_1h"])
+
     def test_navigation_ordering_and_dom_elements(self):
         html = (ROOT / "index.html").read_text(encoding="utf-8")
         common = (ROOT / "terminal-common.js").read_text(encoding="utf-8")

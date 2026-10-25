@@ -7,6 +7,21 @@ OU_MACRO_EMA_SPAN = 60
 OU_MACRO_SLOPE_BARS = 12
 
 
+def hourly_macro_alignment(values: Sequence[float], lookback: int = 30,
+                           threshold_pct: float = 0.15) -> Tuple[bool, bool]:
+    """Return (long_ok, short_ok) using the same completed-1h regime shown in the UI."""
+    clean = [float(value) for value in values if math.isfinite(float(value))]
+    if len(clean) < 5:
+        return False, False
+    window = clean[-max(5, int(lookback)):]
+    pct_change = ((window[-1] - window[0]) / window[0] * 100.0) if window[0] else 0.0
+    if pct_change > float(threshold_pct):
+        return True, False
+    if pct_change < -float(threshold_pct):
+        return False, True
+    return True, True
+
+
 def _ou_macro_ema_slope(ratios: List[float], span: int = OU_MACRO_EMA_SPAN,
                         slope_bars: int = OU_MACRO_SLOPE_BARS) -> Optional[float]:
     """Causal EMA change over completed bars, with enough warmup for the span."""
@@ -290,8 +305,7 @@ def evaluate_grid_signals(
     use_convergence: bool = True, use_dwell: bool = True,
     use_bottoming: bool = False, base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
     evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
-    held_bars: int = 0,
-    macro_alignment: Optional[Tuple[bool, bool]] = None,
+    held_bars: int = 0, macro_alignment: Optional[Tuple[bool, bool]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Legacy Grid signals retained for Tab 4 and existing saved bots."""
     if len(ratios) < 25:
@@ -519,6 +533,7 @@ def evaluate_ma_stack_signals(
     use_ma_diff_hook: bool = False, use_ma_diff_exit: bool = False, min_diff_bars: int = 2,
     evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
     held_bars: int = 0,
+    macro_alignment: Optional[Tuple[bool, bool]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Causal Trend MA Stack evaluation (MA7 / MA24 / MA60) with MA diff inflection hook."""
     if len(prices) < 61:
@@ -580,7 +595,8 @@ def evaluate_ma_stack_signals(
     stack_pass = (bearish_stack or bullish_stack) if use_ma_stack else True
     stretch_pass = stretch_pct >= ma_stretch_min if use_ma_stretch else True
 
-    macro_aligned = _macro_trend_aligned(prices, candidate_side)
+    macro_aligned = (macro_alignment[0 if candidate_side > 0 else 1]
+                     if macro_alignment is not None else _macro_trend_aligned(prices, candidate_side))
     macro_pass = macro_aligned if use_ma_stack_1h else True
 
     diff_hook_pass = (diff_entry_hook if candidate_side > 0 else diff_exit_hook) if use_ma_diff_hook else True
@@ -633,6 +649,7 @@ def evaluate_multi_factor_signals(
     min_consensus_votes: int = 3, use_ma_stack_1h: bool = True,
     evaluation_time: Optional[int] = None,
     position_side: int = 0, entry_price: float = 0.0, held_bars: int = 0,
+    macro_alignment: Optional[Tuple[bool, bool]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Causal Multi-Factor Consensus Gate evaluation."""
     if len(prices) < 25:
@@ -655,7 +672,8 @@ def evaluate_multi_factor_signals(
 
     votes = sum([f1, f2, f3, f4])
     candidate_side = -1 if zscore > 0 else 1
-    macro_aligned = _macro_trend_aligned(prices, candidate_side)
+    macro_aligned = (macro_alignment[0 if candidate_side > 0 else 1]
+                     if macro_alignment is not None else _macro_trend_aligned(prices, candidate_side))
     macro_pass = not use_ma_stack_1h or macro_aligned
     entry_signal = bool(votes >= min_consensus_votes and abs(zscore) >= 0.8 and macro_pass)
 
@@ -693,6 +711,7 @@ def evaluate_trend_pullback_signals(
     trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002, use_ma_stack_1h: bool = True,
     evaluation_time: Optional[int] = None,
     position_side: int = 0, entry_price: float = 0.0, held_bars: int = 0,
+    macro_alignment: Optional[Tuple[bool, bool]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Causal Macro Trendline Reversion evaluation."""
     w = max(12, min(60, int(trend_macro_window)))
@@ -726,7 +745,8 @@ def evaluate_trend_pullback_signals(
     buy_signal = is_uptrend and (trendline_val - current_price >= pullback_gap) and micro_reverting_up
     short_signal = is_downtrend and (current_price - trendline_val >= pullback_gap) and micro_reverting_down
     candidate_side = 1 if buy_signal else -1
-    macro_aligned = _macro_trend_aligned(prices, candidate_side)
+    macro_aligned = (macro_alignment[0 if candidate_side > 0 else 1]
+                     if macro_alignment is not None else _macro_trend_aligned(prices, candidate_side))
     macro_pass = not use_ma_stack_1h or macro_aligned
     entry_signal = bool((buy_signal or short_signal) and macro_pass)
 
@@ -775,7 +795,7 @@ def evaluate_custom_signals(
     use_convergence: bool = True, use_dwell: bool = True,
     use_bottoming: bool = False, base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
     evaluation_time: Optional[int] = None, position_side: int = 0, entry_price: float = 0.0,
-    held_bars: int = 0,
+    held_bars: int = 0, macro_alignment: Optional[Tuple[bool, bool]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Custom Rule Composer signals."""
     entry_signal, candidate_side, exit_signal, evaluation = evaluate_grid_signals(
@@ -786,6 +806,7 @@ def evaluate_custom_signals(
         use_bottoming=use_bottoming, base_spacing_pct=base_spacing_pct,
         min_dwell_bars=min_dwell_bars, evaluation_time=evaluation_time,
         position_side=position_side, entry_price=entry_price, held_bars=held_bars,
+        macro_alignment=macro_alignment,
     )
     evaluation["strategy"] = "custom"
     return entry_signal, candidate_side, exit_signal, evaluation
@@ -1066,16 +1087,19 @@ def evaluate_macd_reversal_signals(
     use_macd_signal_positive: bool = True,
     use_macd_hist_positive: bool = True,
     use_macd_hist_reversal_exit: bool = True,
+    use_ma_stack_1h: bool = False,
+    macro_alignment: Optional[Tuple[bool, bool]] = None,
     evaluation_time: Optional[int] = None,
     position_side: int = 0,
     entry_price: float = 0.0,
     held_bars: int = 0,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
-    """Long-only MACD histogram reversal strategy evaluated on completed bars.
+    """Symmetric MACD reversal strategy evaluated on completed bars.
 
-    Entry requires the enabled subset of: Signal < 0, Histogram < 0, and a
-    confirmed histogram trough. Exit is the exact opposite enabled subset:
-    Signal > 0, Histogram > 0, and a confirmed histogram peak.
+    A negative trough is a long candidate and a positive peak is a short
+    candidate.  The opposite directional pattern exits an open position.  The
+    entry stream remains independent of inventory; position state is consulted
+    only for the exit verdict.
     """
     del entry_price, held_bars
     fast_w = max(2, int(macd_fast_period))
@@ -1111,30 +1135,43 @@ def evaluate_macd_reversal_signals(
     histogram_positive = hist_current > 0.0
     histogram_reversal_exit = hist_prev > hist_prev2 and hist_current < hist_prev
 
-    entry_checks = []
+    long_checks = []
     if use_macd_signal_negative:
-        entry_checks.append(signal_negative)
+        long_checks.append(signal_negative)
     if use_macd_hist_negative:
-        entry_checks.append(histogram_negative)
+        long_checks.append(histogram_negative)
     if use_macd_hist_reversal:
-        entry_checks.append(histogram_reversal)
-    exit_checks = []
+        long_checks.append(histogram_reversal)
+    short_checks = []
     if use_macd_signal_positive:
-        exit_checks.append(signal_positive)
+        short_checks.append(signal_positive)
     if use_macd_hist_positive:
-        exit_checks.append(histogram_positive)
+        short_checks.append(histogram_positive)
     if use_macd_hist_reversal_exit:
-        exit_checks.append(histogram_reversal_exit)
+        short_checks.append(histogram_reversal_exit)
 
-    entry_signal = bool(entry_checks and all(entry_checks))
-    exit_signal = bool(position_side > 0 and exit_checks and all(exit_checks))
+    long_pattern = bool(long_checks and all(long_checks))
+    short_pattern = bool(short_checks and all(short_checks))
+    if long_pattern != short_pattern:
+        candidate_side = 1 if long_pattern else -1
+    elif histogram_reversal != histogram_reversal_exit:
+        candidate_side = 1 if histogram_reversal else -1
+    else:
+        candidate_side = 1 if hist_current <= 0 else -1
+    macro_aligned = (macro_alignment[0 if candidate_side > 0 else 1]
+                     if macro_alignment is not None else _macro_trend_aligned(prices, candidate_side))
+    candidate_pattern = long_pattern if candidate_side > 0 else short_pattern
+    entry_signal = bool(candidate_pattern and (not use_ma_stack_1h or macro_aligned))
+    exit_pattern = short_pattern if position_side > 0 else long_pattern
+    exit_signal = bool(position_side != 0 and exit_pattern)
     condition_pass = {
-        "entry_signal_negative": signal_negative,
-        "entry_histogram_negative": histogram_negative,
-        "entry_histogram_reversal": histogram_reversal,
-        "exit_signal_positive": signal_positive if position_side else None,
-        "exit_histogram_positive": histogram_positive if position_side else None,
-        "exit_histogram_reversal": histogram_reversal_exit if position_side else None,
+        "entry_signal_zone": signal_negative if candidate_side > 0 else signal_positive,
+        "entry_histogram_zone": histogram_negative if candidate_side > 0 else histogram_positive,
+        "entry_histogram_reversal": histogram_reversal if candidate_side > 0 else histogram_reversal_exit,
+        "entry_ma_stack_1h": macro_aligned,
+        "exit_signal_zone": (signal_positive if position_side > 0 else signal_negative) if position_side else None,
+        "exit_histogram_zone": (histogram_positive if position_side > 0 else histogram_negative) if position_side else None,
+        "exit_histogram_reversal": (histogram_reversal_exit if position_side > 0 else histogram_reversal) if position_side else None,
     }
     evaluation = {
         "time": evaluation_time,
@@ -1152,10 +1189,20 @@ def evaluate_macd_reversal_signals(
         "previous_histogram": round(hist_prev, 6),
         "previous_2_histogram": round(hist_prev2, 6),
         "histogram_turn": "UP" if histogram_reversal else ("DOWN" if histogram_reversal_exit else "NONE"),
-        "candidate_side": 1,
+        "candidate_side": candidate_side,
+        "macro_aligned": macro_aligned,
+        "condition_enabled": {
+            "entry_signal_zone": use_macd_signal_negative if candidate_side > 0 else use_macd_signal_positive,
+            "entry_histogram_zone": use_macd_hist_negative if candidate_side > 0 else use_macd_hist_positive,
+            "entry_histogram_reversal": use_macd_hist_reversal if candidate_side > 0 else use_macd_hist_reversal_exit,
+            "entry_ma_stack_1h": use_ma_stack_1h,
+            "exit_signal_zone": use_macd_signal_positive if position_side > 0 else use_macd_signal_negative,
+            "exit_histogram_zone": use_macd_hist_positive if position_side > 0 else use_macd_hist_negative,
+            "exit_histogram_reversal": use_macd_hist_reversal_exit if position_side > 0 else use_macd_hist_reversal,
+        },
         "condition_pass": condition_pass,
     }
-    return entry_signal, 1, exit_signal, evaluation
+    return entry_signal, candidate_side, exit_signal, evaluation
 
 
 def evaluate_macd_strength_scaleout_signals(
@@ -1171,7 +1218,8 @@ def evaluate_macd_strength_scaleout_signals(
     entry, side, exit_signal, evaluation = evaluate_macd_reversal_signals(prices, **kwargs)
     previous = float(evaluation["previous_histogram"])
     current = float(evaluation["histogram"])
-    rebound_pct = ((current - previous) / abs(previous) * 100.0) if previous else 0.0
+    directional_change = (current - previous) if side > 0 else (previous - current)
+    rebound_pct = (directional_change / abs(previous) * 100.0) if previous else 0.0
     strength_pass = rebound_pct >= max(0.0, float(macd_strength_min_pct))
     if use_macd_strength:
         entry = entry and strength_pass
@@ -1179,6 +1227,7 @@ def evaluate_macd_strength_scaleout_signals(
     evaluation["macd_strength_pct"] = round(rebound_pct, 4)
     evaluation["macd_strength_min_pct"] = float(macd_strength_min_pct)
     evaluation["condition_pass"]["entry_strength"] = strength_pass
+    evaluation.setdefault("condition_enabled", {})["entry_strength"] = use_macd_strength
     return bool(entry), side, exit_signal, evaluation
 
 
@@ -1216,6 +1265,7 @@ def evaluate_strategy_signal(
     position_side: int = 0,
     entry_price: float = 0.0,
     held_bars: int = 0,
+    macro_alignment: Optional[Tuple[bool, bool]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Dispatch evaluation to any live-deployable quantitative strategy regime."""
     if strategy_mode not in LIVE_STRATEGIES:
@@ -1239,6 +1289,7 @@ def evaluate_strategy_signal(
             position_side=position_side,
             entry_price=entry_price,
             held_bars=held_bars,
+            macro_alignment=macro_alignment,
         )
     elif strategy_mode == "ou_quant":
         entry_signal, candidate_side, exit_signal, details = evaluate_ou_signals(
@@ -1278,6 +1329,7 @@ def evaluate_strategy_signal(
             position_side=position_side,
             entry_price=entry_price,
             held_bars=held_bars,
+            macro_alignment=macro_alignment,
         )
     elif strategy_mode == "multi_factor":
         entry_signal, candidate_side, exit_signal, details = evaluate_multi_factor_signals(
@@ -1290,6 +1342,7 @@ def evaluate_strategy_signal(
             position_side=position_side,
             entry_price=entry_price,
             held_bars=held_bars,
+            macro_alignment=macro_alignment,
         )
     elif strategy_mode == "trend_pullback":
         entry_signal, candidate_side, exit_signal, details = evaluate_trend_pullback_signals(
@@ -1303,6 +1356,7 @@ def evaluate_strategy_signal(
             position_side=position_side,
             entry_price=entry_price,
             held_bars=held_bars,
+            macro_alignment=macro_alignment,
         )
     elif strategy_mode == "ma_acceleration":
         return evaluate_ma_acceleration_signals(
@@ -1319,6 +1373,7 @@ def evaluate_strategy_signal(
             position_side=position_side,
             entry_price=entry_price,
             held_bars=held_bars,
+            macro_alignment=macro_alignment,
         )
     elif strategy_mode == "golden_death_cross":
         return evaluate_golden_death_cross_signals(
@@ -1337,6 +1392,7 @@ def evaluate_strategy_signal(
             position_side=position_side,
             entry_price=entry_price,
             held_bars=held_bars,
+            macro_alignment=macro_alignment,
         )
     elif strategy_mode in {"macd_reversal", "macd_strength_scaleout"}:
         evaluator = evaluate_macd_strength_scaleout_signals if strategy_mode == "macd_strength_scaleout" else evaluate_macd_reversal_signals
@@ -1351,6 +1407,8 @@ def evaluate_strategy_signal(
             use_macd_signal_positive=bool(config.get("use_macd_signal_positive", True)),
             use_macd_hist_positive=bool(config.get("use_macd_hist_positive", True)),
             use_macd_hist_reversal_exit=bool(config.get("use_macd_hist_reversal_exit", True)),
+            use_ma_stack_1h=bool(config.get("use_ma_stack_1h", True)),
+            macro_alignment=macro_alignment,
             **({"macd_strength_min_pct": float(config.get("macd_strength_min_pct", 30.0)),
                 "use_macd_strength": bool(config.get("use_macd_strength", True))}
                if strategy_mode == "macd_strength_scaleout" else {}),
@@ -1378,6 +1436,7 @@ def evaluate_strategy_signal(
             position_side=position_side,
             entry_price=entry_price,
             held_bars=held_bars,
+            macro_alignment=macro_alignment,
         )
     else:  # "grid"
         return evaluate_grid_signals(
@@ -1398,6 +1457,7 @@ def evaluate_strategy_signal(
             position_side=position_side,
             entry_price=entry_price,
             held_bars=held_bars,
+            macro_alignment=macro_alignment,
         )
 
     current_price = prices[-1] if prices else 0.0

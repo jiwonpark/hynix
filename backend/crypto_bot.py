@@ -26,6 +26,7 @@ from .lighter_strategy import (
     OU_MIN_ABS_DEVIATION_PP,
     OU_MACRO_EMA_SPAN,
     OU_MACRO_SLOPE_BARS,
+    hourly_macro_alignment,
     required_strategy_bars,
 )
 
@@ -91,6 +92,8 @@ class CryptoBot:
                 self.state.update(recovery_required=True, execution_blocked=True,
                                   blocked_reason="An order was pending during restart; reconcile its client order ID on Binance",
                                   last_error="An order was pending during restart; reconcile its client order ID on Binance")
+            elif str(self.state.get("blocked_reason") or "").startswith("Opposite entry blocked:"):
+                self.state.update(blocked_reason=None, last_error=None)
         except Exception as exc:
             self.state.update(recovery_required=True, execution_blocked=True,
                               blocked_reason=f"Cannot load crypto execution state: {exc}",
@@ -577,7 +580,8 @@ class CryptoBot:
             return self.public_state()
 
     async def _submit(self, side: int, notional: float, *, reduce_only: bool, reason: str,
-                      signal_values: Optional[list[float]] = None) -> Dict[str, Any]:
+                      signal_values: Optional[list[float]] = None,
+                      macro_alignment: Optional[tuple[bool, bool]] = None) -> Dict[str, Any]:
         symbol = self.state["selected_symbol"]
         account, amount = await self._account_position(symbol)
         self._check_position(amount)
@@ -596,6 +600,7 @@ class CryptoBot:
                 position_side=0,
                 entry_price=0.0,
                 held_bars=0,
+                macro_alignment=macro_alignment,
             )
             if not valid or quote_side != side:
                 raise ValueError("Current executable quote no longer supports the candle entry signal")
@@ -809,6 +814,21 @@ class CryptoBot:
                     self._save()
                     return
                 values = [float(row[4]) for row in closed]
+                macro_alignment = None
+                macro_candle_time = None
+                if (self.state["strategy_mode"] != "ou_quant"
+                        and self.state.get("use_ma_stack_1h", True)):
+                    macro_raw = await self.client.request(
+                        "GET", "/fapi/v1/klines",
+                        {"symbol": symbol, "interval": "1h", "limit": 125},
+                    )
+                    macro_closed = [row for row in macro_raw if int(row[6]) < now_ms]
+                    if len(macro_closed) < 60:
+                        raise ValueError("Insufficient completed Binance 1h candles for macro alignment")
+                    macro_alignment = hourly_macro_alignment(
+                        [float(row[4]) for row in macro_closed]
+                    )
+                    macro_candle_time = int(macro_closed[-1][0]) // 1000
                 account, amount = await self._account_position(symbol)
                 self._check_position(amount)
                 position_side = int(self.state["tranches"][-1]["side"]) if self.state["tranches"] else 0
@@ -825,23 +845,38 @@ class CryptoBot:
                     position_side=position_side,
                     entry_price=entry_price,
                     held_bars=held_bars,
+                    macro_alignment=macro_alignment,
                 )
                 self.state["last_evaluation"] = evaluation
+                if macro_candle_time is not None:
+                    evaluation["macro_source"] = "BINANCE_COMPLETED_1H"
+                    evaluation["macro_candle_time"] = macro_candle_time
                 self.state["last_evaluated_candle"] = last_candle
                 self._save()
                 if self.state["tranches"] and exit_signal:
                     # Exit one owned tranche per bar; all exits are reduce-only.
+                    reversing = bool(entry and position_side * side < 0)
                     await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
-                                       reduce_only=True, reason="signal_exit")
+                                       reduce_only=True,
+                                       reason="opposite_signal_reversal" if reversing else "signal_exit")
+                    if reversing and not self.state["tranches"]:
+                        await self._submit(side, self.state["notional_usd"], reduce_only=False,
+                                           reason="reversal_entry", signal_values=values,
+                                           macro_alignment=macro_alignment)
                 elif entry and has_entry_slot(self.state):
                     if time.time() - self.state["last_order_time"] < self.state["min_seconds_between_orders"]:
                         return
                     if position_side and position_side * side < 0:
-                        self.state["blocked_reason"] = "Opposite entry blocked: campaign must exit before reversing"
-                        self._save()
-                        return
-                    await self._submit(side, self.state["notional_usd"], reduce_only=False,
-                                       reason="closed_bar_signal", signal_values=values)
+                        await self._submit(-position_side, 0, reduce_only=True,
+                                           reason="opposite_signal_reversal")
+                        if not self.state["tranches"]:
+                            await self._submit(side, self.state["notional_usd"], reduce_only=False,
+                                               reason="reversal_entry", signal_values=values,
+                                               macro_alignment=macro_alignment)
+                    else:
+                        await self._submit(side, self.state["notional_usd"], reduce_only=False,
+                                           reason="closed_bar_signal", signal_values=values,
+                                           macro_alignment=macro_alignment)
             except Exception as exc:
                 if not self.state["recovery_required"]:
                     self.state["last_error"] = str(exc)

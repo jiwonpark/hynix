@@ -61,6 +61,13 @@ class FakeLighter:
     async def account_trades(self, market_id, limit=100):
         return getattr(self, "trades", [])
 
+    async def candles(self, market_id, interval, limit, *, fresh=False):
+        if interval == "1h":
+            latest_open_ms = int(self.candle_rows[-1]["t"])
+            return [{"t": latest_open_ms - (124 - index) * 3600_000, "c": 100.0}
+                    for index in range(125)]
+        return self.candle_rows[-limit:]
+
     async def execution_fill(self, index, market_id, expected_size):
         return self.orders.get(index, {"fill_confirmed": False})
 
@@ -164,6 +171,31 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
                 await self.bot._submit(1, 50, reduce_only=False, reason="closed_bar_signal",
                                        signal_values=[100.0] * 25)
         self.assertEqual(self.client.orders, {})
+
+    async def test_opposite_signal_closes_then_reverses_instead_of_blocking(self):
+        now = 1000030
+        last_open = 999960
+        self.client.candle_rows = [
+            {"t": int((last_open - (24 - index) * 60) * 1000), "c": 100.0}
+            for index in range(25)
+        ]
+        self.client.amount = 0.5
+        self.bot.state.update(
+            enabled=True, strategy_interval="1m", strategy_mode="grid",
+            tranches=[{"side": 1, "qty": 0.5, "price": 100.0,
+                       "fee_usd": 0.0, "order_id": "old", "time": 1}],
+        )
+        evaluation = {"strategy": "grid", "condition_pass": {}}
+        with patch("backend.lighter_crypto_bot.time.time", return_value=now), patch(
+            "backend.lighter_crypto_bot.evaluate_strategy_signal",
+            side_effect=[(True, -1, False, evaluation), (True, -1, False, evaluation)],
+        ):
+            await self.bot.run_once()
+
+        events = self.bot.state["execution_history"]
+        self.assertEqual(events[-2]["reason"], "opposite_signal_reversal")
+        self.assertEqual(events[-1]["reason"], "reversal_entry")
+        self.assertEqual(self.bot.state["tranches"][-1]["side"], -1)
 
     async def test_use_ma_stack_1h_blocks_short_in_uptrend_range(self):
         from backend.lighter_strategy import evaluate_strategy_signal

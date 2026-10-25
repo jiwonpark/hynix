@@ -27,6 +27,7 @@ from .lighter_strategy import (
     OU_MIN_ABS_DEVIATION_PP,
     OU_MACRO_EMA_SPAN,
     OU_MACRO_SLOPE_BARS,
+    hourly_macro_alignment,
     required_strategy_bars,
 )
 
@@ -115,6 +116,8 @@ class LighterCryptoBot:
                 self.state.update(recovery_required=True, execution_blocked=True,
                                   blocked_reason="Pending Lighter order requires reconciliation",
                                   last_error="Pending Lighter order requires reconciliation")
+            elif str(self.state.get("blocked_reason") or "").startswith("Opposite entry blocked:"):
+                self.state.update(blocked_reason=None, last_error=None)
         except Exception as exc:
             self.state.update(recovery_required=True, execution_blocked=True,
                               blocked_reason=f"Cannot load Lighter crypto state: {exc}",
@@ -665,7 +668,8 @@ class LighterCryptoBot:
 
     async def _submit(self, side: int, notional: float, *, reduce_only: bool, reason: str,
                       signal_values: Optional[list[float]] = None,
-                      reduce_fraction: float = 1.0, exit_stage_after: Optional[int] = None) -> Dict[str, Any]:
+                      reduce_fraction: float = 1.0, exit_stage_after: Optional[int] = None,
+                      macro_alignment: Optional[tuple[bool, bool]] = None) -> Dict[str, Any]:
         async with self.client.execution_lock:
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol, fresh=True)
@@ -684,6 +688,7 @@ class LighterCryptoBot:
                     position_side=0,
                     entry_price=0.0,
                     held_bars=0,
+                    macro_alignment=macro_alignment,
                 )
                 if not valid or quote_side != side:
                     raise ValueError("Current Lighter quote no longer supports the candle entry signal")
@@ -1094,6 +1099,19 @@ class LighterCryptoBot:
                     self._save()
                     return
                 values = [float(row["c"]) for row in closed]
+                macro_alignment = None
+                macro_candle_time = None
+                if (self.state["strategy_mode"] != "ou_quant"
+                        and self.state.get("use_ma_stack_1h", True)):
+                    macro_rows = await self.client.candles(market_id, "1h", 125, fresh=True)
+                    macro_closed = [row for row in macro_rows
+                                    if int(row["t"]) + 3600 * 1000 <= now_ms - 1000]
+                    if len(macro_closed) < 60:
+                        raise ValueError("Insufficient completed Lighter 1h candles for macro alignment")
+                    macro_alignment = hourly_macro_alignment(
+                        [float(row["c"]) for row in macro_closed]
+                    )
+                    macro_candle_time = int(macro_closed[-1]["t"]) // 1000
                 position_side = int(self.state["tranches"][-1]["side"]) if self.state["tranches"] else 0
                 entry_price = float(self.state["tranches"][-1]["price"]) if self.state["tranches"] else 0.0
                 entry_time = int(self.state["tranches"][-1].get("time", 0)) if self.state["tranches"] else 0
@@ -1108,29 +1126,47 @@ class LighterCryptoBot:
                     position_side=position_side,
                     entry_price=entry_price,
                     held_bars=held_bars,
+                    macro_alignment=macro_alignment,
                 )
                 self.state["last_evaluation"] = evaluation
+                if macro_candle_time is not None:
+                    evaluation["macro_source"] = "LIGHTER_COMPLETED_1H"
+                    evaluation["macro_candle_time"] = macro_candle_time
                 self.state["last_evaluated_candle"] = last_candle
                 self._save()
                 if self.state["tranches"] and exit_signal:
-                    if self.state["strategy_mode"] == "macd_strength_scaleout" and self.state.get("use_macd_two_stage_exit", True) and int(self.state.get("macd_exit_stage", 0)) == 0:
+                    reversing = bool(entry and position_side * side < 0)
+                    if (not reversing and self.state["strategy_mode"] == "macd_strength_scaleout"
+                            and self.state.get("use_macd_two_stage_exit", True)
+                            and int(self.state.get("macd_exit_stage", 0)) == 0):
                         fraction = float(self.state.get("macd_first_exit_pct", 50.0)) / 100.0
                         await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
                                            reduce_only=True, reason="macd_first_peak_exit",
                                            reduce_fraction=fraction, exit_stage_after=1)
                     else:
                         await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
-                                           reduce_only=True, reason="macd_final_peak_exit", exit_stage_after=0)
+                                           reduce_only=True,
+                                           reason="opposite_signal_reversal" if reversing else "macd_final_peak_exit",
+                                           exit_stage_after=0)
+                        if reversing and not self.state["tranches"]:
+                            await self._submit(side, self.state["notional_usd"], reduce_only=False,
+                                               reason="reversal_entry", signal_values=values,
+                                               macro_alignment=macro_alignment)
                 elif entry and has_entry_slot(self.state):
                     if self.state["strategy_mode"] == "macd_strength_scaleout" and self.state["tranches"]:
                         return
                     if time.time() - self.state["last_order_time"] >= self.state["min_seconds_between_orders"]:
                         if position_side and position_side * side < 0:
-                            self.state["blocked_reason"] = "Opposite entry blocked: Active campaign must exit before reversing"
-                            self._save()
-                            return
-                        await self._submit(side, self.state["notional_usd"], reduce_only=False,
-                                           reason="closed_bar_signal", signal_values=values)
+                            await self._submit(-position_side, 0, reduce_only=True,
+                                               reason="opposite_signal_reversal")
+                            if not self.state["tranches"]:
+                                await self._submit(side, self.state["notional_usd"], reduce_only=False,
+                                                   reason="reversal_entry", signal_values=values,
+                                                   macro_alignment=macro_alignment)
+                        else:
+                            await self._submit(side, self.state["notional_usd"], reduce_only=False,
+                                               reason="closed_bar_signal", signal_values=values,
+                                               macro_alignment=macro_alignment)
             except Exception as exc:
                 if not self.state["recovery_required"]:
                     self.state["last_error"] = str(exc)

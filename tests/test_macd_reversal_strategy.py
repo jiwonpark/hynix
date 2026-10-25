@@ -24,19 +24,41 @@ def test_macd_reversal_entry_and_exact_opposite_exit():
     assert side == 1
     assert exit_signal is False
     assert entry_details["condition_pass"] == {
-        "entry_signal_negative": True,
-        "entry_histogram_negative": True,
+        "entry_signal_zone": True,
+        "entry_histogram_zone": True,
         "entry_histogram_reversal": True,
-        "exit_signal_positive": None,
-        "exit_histogram_positive": None,
+        "entry_ma_stack_1h": False,
+        "exit_signal_zone": None,
+        "exit_histogram_zone": None,
         "exit_histogram_reversal": None,
     }
 
     _, _, exit_signal, exit_details = evaluate_macd_reversal_signals(prices(2.7), position_side=1)
     assert exit_signal is True
-    assert exit_details["condition_pass"]["exit_signal_positive"] is True
-    assert exit_details["condition_pass"]["exit_histogram_positive"] is True
+    assert exit_details["condition_pass"]["exit_signal_zone"] is True
+    assert exit_details["condition_pass"]["exit_histogram_zone"] is True
     assert exit_details["condition_pass"]["exit_histogram_reversal"] is True
+
+
+def test_macd_reversal_has_symmetric_short_entry_and_directional_macro_gate():
+    short_entry, side, _, details = evaluate_macd_reversal_signals(
+        prices(2.7), use_ma_stack_1h=True, macro_alignment=(True, True))
+    assert short_entry is True
+    assert side == -1
+    assert details["condition_pass"]["entry_signal_zone"] is True
+    assert details["condition_pass"]["entry_histogram_zone"] is True
+    assert details["condition_pass"]["entry_histogram_reversal"] is True
+
+    blocked_long, long_side, _, blocked_details = evaluate_macd_reversal_signals(
+        prices(5.9), use_ma_stack_1h=True, macro_alignment=(False, True))
+    assert long_side == 1
+    assert blocked_long is False
+    assert blocked_details["condition_pass"]["entry_ma_stack_1h"] is False
+
+    allowed_short, short_side, _, _ = evaluate_macd_reversal_signals(
+        prices(2.7), use_ma_stack_1h=True, macro_alignment=(False, True))
+    assert short_side == -1
+    assert allowed_short is True
 
 
 def test_macd_reversal_switches_are_real_and_empty_sets_do_not_fire():
@@ -55,7 +77,8 @@ def test_macd_reversal_switches_are_real_and_empty_sets_do_not_fire():
 def test_macd_reversal_registered_and_dispatched():
     assert "macd_reversal" in LIVE_STRATEGIES
     assert required_strategy_bars("macd_reversal", {}) == 36
-    entry, side, _, details = evaluate_strategy_signal("macd_reversal", prices(5.9), {})
+    entry, side, _, details = evaluate_strategy_signal(
+        "macd_reversal", prices(5.9), {"use_ma_stack_1h": False})
     assert entry is True
     assert side == 1
     assert details["strategy"] == "macd_reversal"

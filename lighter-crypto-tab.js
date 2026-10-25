@@ -536,11 +536,11 @@
       },
       macd_reversal: {
         id: "macd_reversal", name: "MACD Reversal", icon: "〽️",
-        badge: "MACD · NEGATIVE TROUGH ENTRY · POSITIVE PEAK EXIT",
-        title: "➕ MACD Negative Histogram Reversal Entry",
-        desc: "Long entry when enabled conditions agree: Signal < 0, Histogram < 0, and the completed-bar histogram reverses upward from a local trough.",
-        tpTitle: "🎯 Opposite MACD Reversal Exit",
-        tpDesc: "Exit long when enabled opposite conditions agree: Signal > 0, Histogram > 0, and the completed-bar histogram reverses downward from a local peak.",
+        badge: "MACD · BIDIRECTIONAL REVERSAL · 1H ALIGNED",
+        title: "↕ MACD Directional Reversal Entry",
+        desc: "Long a confirmed negative trough; short a confirmed positive peak. The enabled 1h macro rule must agree with the entry direction.",
+        tpTitle: "🎯 Opposite MACD Reversal / Campaign Flip",
+        tpDesc: "An opposite pattern exits owned inventory reduce-only, then permits the new direction after the campaign is flat.",
         entryLabels: {
           rowCondEntryMaStretch: "MACD entry controls are shown below", rowCondEntryBase: "MACD entry controls are shown below",
           rowCondEntryPeak: "MACD entry controls are shown below", rowCondEntryMaStack5m: "MACD entry controls are shown below",
@@ -1750,7 +1750,7 @@
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div><strong style="font-size:14px;color:#0f172a;text-transform:uppercase;">〽️ MACD Histogram Reversal</strong>
-              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed bars only. “Reversing” means a confirmed local histogram trough for entry and local peak for exit.</p></div>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed bars only. Negative trough = long; positive peak = short. The shared Macro Trend 1h switch is a real directional entry gate.</p></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;font-weight:700;color:#475569;">
               <label>Fast <input id="lighterCrypto_macdFastPeriod" type="number" min="2" max="100" step="1" value="${Number(live.macd_fast_period ?? 12)}" style="width:52px"></label>
               <label>Slow <input id="lighterCrypto_macdSlowPeriod" type="number" min="3" max="200" step="1" value="${Number(live.macd_slow_period ?? 26)}" style="width:52px"></label>
@@ -1759,16 +1759,17 @@
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Entry conditions · all enabled checks must pass</strong>
-              <div style="${row}"><input id="lighterCrypto_macdUseEntrySignalNegative" type="checkbox" style="${toggle}" ${checked("use_macd_signal_negative")}><span>Signal line &lt; 0</span><span id="lighterCrypto_macdStatusEntrySignal" class="condBadge neutral">WAITING</span></div>
-              <div style="${row}"><input id="lighterCrypto_macdUseEntryHistogramNegative" type="checkbox" style="${toggle}" ${checked("use_macd_hist_negative")}><span>Histogram &lt; 0</span><span id="lighterCrypto_macdStatusEntryHistogram" class="condBadge neutral">WAITING</span></div>
-              <div style="${row}"><input id="lighterCrypto_macdUseEntryReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal")}><span>Histogram reverses upward from local trough</span><span id="lighterCrypto_macdStatusEntryReversal" class="condBadge neutral">WAITING</span></div>
+            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
+              <div style="${row}"><input id="lighterCrypto_macdUseEntrySignalNegative" type="checkbox" style="${toggle}" ${checked("use_macd_signal_negative")}><span>Long entry / short exit: Signal &lt; 0</span><span id="lighterCrypto_macdStatusEntrySignal" class="condBadge neutral">WAITING</span></div>
+              <div style="${row}"><input id="lighterCrypto_macdUseEntryHistogramNegative" type="checkbox" style="${toggle}" ${checked("use_macd_hist_negative")}><span>Long entry / short exit: Histogram &lt; 0</span><span id="lighterCrypto_macdStatusEntryHistogram" class="condBadge neutral">WAITING</span></div>
+              <div style="${row}"><input id="lighterCrypto_macdUseEntryReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal")}><span>Long entry / short exit: trough turns up</span><span id="lighterCrypto_macdStatusEntryReversal" class="condBadge neutral">WAITING</span></div>
+              <div style="${row}"><span>Entry direction agrees with completed 1h macro trend</span><span id="lighterCrypto_macdStatusMacro" class="condBadge neutral">WAITING</span></div>
               ${mode === "macd_strength_scaleout" ? `<div style="${row}"><input id="lighterCrypto_macdUseStrength" type="checkbox" style="${toggle}" ${checked("use_macd_strength")}><span>Rebound ≥ <input id="lighterCrypto_macdStrengthPct" type="number" min="0" max="1000" step="1" value="${Number(live.macd_strength_min_pct ?? 30)}" style="width:58px">%</span><span id="lighterCrypto_macdStatusEntryStrength" class="condBadge neutral">WAITING</span></div>` : ""}
             </div>
-            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Exit conditions · exact opposite</strong>
-              <div style="${row}"><input id="lighterCrypto_macdUseExitSignalPositive" type="checkbox" style="${toggle}" ${checked("use_macd_signal_positive")}><span>Signal line &gt; 0</span><span id="lighterCrypto_macdStatusExitSignal" class="condBadge neutral">N/A</span></div>
-              <div style="${row}"><input id="lighterCrypto_macdUseExitHistogramPositive" type="checkbox" style="${toggle}" ${checked("use_macd_hist_positive")}><span>Histogram &gt; 0</span><span id="lighterCrypto_macdStatusExitHistogram" class="condBadge neutral">N/A</span></div>
-              <div style="${row}"><input id="lighterCrypto_macdUseExitReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal_exit")}><span>Histogram reverses downward from local peak</span><span id="lighterCrypto_macdStatusExitReversal" class="condBadge neutral">N/A</span></div>
+            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · positive set for short</strong>
+              <div style="${row}"><input id="lighterCrypto_macdUseExitSignalPositive" type="checkbox" style="${toggle}" ${checked("use_macd_signal_positive")}><span>Short entry / long exit: Signal &gt; 0</span><span id="lighterCrypto_macdStatusExitSignal" class="condBadge neutral">WAITING</span></div>
+              <div style="${row}"><input id="lighterCrypto_macdUseExitHistogramPositive" type="checkbox" style="${toggle}" ${checked("use_macd_hist_positive")}><span>Short entry / long exit: Histogram &gt; 0</span><span id="lighterCrypto_macdStatusExitHistogram" class="condBadge neutral">WAITING</span></div>
+              <div style="${row}"><input id="lighterCrypto_macdUseExitReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal_exit")}><span>Short entry / long exit: peak turns down</span><span id="lighterCrypto_macdStatusExitReversal" class="condBadge neutral">WAITING</span></div>
               ${mode === "macd_strength_scaleout" ? `<div style="${row}"><input id="lighterCrypto_macdUseTwoStageExit" type="checkbox" style="${toggle}" ${checked("use_macd_two_stage_exit")}><span>Two-stage: first peak closes <input id="lighterCrypto_macdFirstExitPct" type="number" min="1" max="99" step="1" value="${Number(live.macd_first_exit_pct ?? 50)}" style="width:58px">%; second closes remainder</span></div>` : ""}
             </div>
           </div>
@@ -3321,27 +3322,31 @@
         return;
       }
       if (["macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)) {
+        const enabled = result?.latest_evaluation?.condition_enabled || {};
         const rows = [
-          ["EntrySignal", "entry_signal_negative", "use_macd_signal_negative", "Signal line < 0"],
-          ["EntryHistogram", "entry_histogram_negative", "use_macd_hist_negative", "Histogram < 0"],
-          ["EntryReversal", "entry_histogram_reversal", "use_macd_hist_reversal", "Histogram local trough confirmed"],
+          ["EntrySignal", "entry_signal_zone", null, "Directional MACD signal zone"],
+          ["EntryHistogram", "entry_histogram_zone", null, "Directional histogram zone"],
+          ["EntryReversal", "entry_histogram_reversal", null, "Directional trough/peak reversal"],
+          ["Macro", "entry_ma_stack_1h", null, "Completed 1h macro trend aligns with candidate direction"],
           ...(this.currentParadigm === "macd_strength_scaleout" ? [["EntryStrength", "entry_strength", "use_macd_strength", "Configured rebound strength reached"]] : []),
-          ["ExitSignal", "exit_signal_positive", "use_macd_signal_positive", "Signal line > 0"],
-          ["ExitHistogram", "exit_histogram_positive", "use_macd_hist_positive", "Histogram > 0"],
-          ["ExitReversal", "exit_histogram_reversal", "use_macd_hist_reversal_exit", "Histogram local peak confirmed"],
+          ["ExitSignal", "exit_signal_zone", null, "Opposite directional MACD signal zone"],
+          ["ExitHistogram", "exit_histogram_zone", null, "Opposite directional histogram zone"],
+          ["ExitReversal", "exit_histogram_reversal", null, "Opposite directional reversal"],
         ];
         rows.forEach(([id, key, toggle, detail]) => {
           const badge = $(`lighterCrypto_macdStatus${id}`);
           if (!badge) return;
           const value = checks[key];
-          const state = settings[toggle] === false ? "OFF" : value == null ? "N/A" : value ? "PASS" : "WAITING";
+          const state = enabled[key] === false || (toggle && settings[toggle] === false)
+            ? "OFF" : value == null ? "N/A" : value ? "PASS" : "WAITING";
           badge.textContent = state;
           badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
           badge.title = `PAPER · ${detail}`;
         });
         const source = $("lighterCrypto_macdStatusSource");
+        const candidate = Number(result?.latest_evaluation?.candidate_side) > 0 ? "LONG" : "SHORT";
         if (source) source.textContent = result?.latest_condition_time
-          ? `PAPER · Completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · same completed-bar rules deploy live`
+          ? `PAPER · ${candidate} candidate · completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · same completed-bar rules deploy live`
           : "PAPER · Awaiting completed-candle replay";
         return;
       }
@@ -3412,8 +3417,10 @@
         && Number.isFinite(time) && time > 0 && Date.now() / 1000 - time <= seconds * 2 + 60;
       const checks = evaluation?.condition_pass || {};
       const heading = document.createElement("strong");
+      const candidate = ["macd_reversal", "macd_strength_scaleout"].includes(bot?.strategy_mode)
+        ? ` · ${Number(evaluation?.candidate_side) > 0 ? "LONG" : "SHORT"} candidate` : "";
       heading.textContent = fresh
-        ? `LIVE · ${bot.strategy_mode} conditions at completed candle ${new Date(time * 1000).toLocaleString()}`
+        ? `LIVE · ${bot.strategy_mode}${candidate} conditions at completed candle ${new Date(time * 1000).toLocaleString()}`
         : `LIVE · ${bot?.strategy_mode || "strategy"} conditions unavailable (paused, stale, or awaiting a completed candle)`;
       panel.replaceChildren(heading);
       const toggleByKey = bot?.strategy_mode === "ou_quant" ? {
@@ -3434,13 +3441,14 @@
         exit_cross: "use_cross_exit",
         exit_dwell: "use_dwell",
       } : ["macd_reversal", "macd_strength_scaleout"].includes(bot?.strategy_mode) ? {
-        entry_signal_negative: "use_macd_signal_negative",
-        entry_histogram_negative: "use_macd_hist_negative",
-        entry_histogram_reversal: "use_macd_hist_reversal",
+        entry_signal_zone: null,
+        entry_histogram_zone: null,
+        entry_histogram_reversal: null,
+        entry_ma_stack_1h: "use_ma_stack_1h",
         entry_strength: "use_macd_strength",
-        exit_signal_positive: "use_macd_signal_positive",
-        exit_histogram_positive: "use_macd_hist_positive",
-        exit_histogram_reversal: "use_macd_hist_reversal_exit",
+        exit_signal_zone: null,
+        exit_histogram_zone: null,
+        exit_histogram_reversal: null,
       } : bot?.strategy_mode === "ma_stack" ? {
         entry_ma_stack: "use_ma_stack",
         entry_ma_diff_hook: "use_ma_diff_hook",
@@ -3463,11 +3471,12 @@
         trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
         ma_acceleration:["entry_ma_slope","entry_ma_accel","entry_ma_pullback","entry_ma_stack_1h","exit_ma_cross"],
         golden_death_cross:["entry_golden_cross","entry_death_cross","entry_cross_spread","entry_ma_stack_1h","exit_cross","exit_dwell"],
-        macd_reversal:["entry_signal_negative","entry_histogram_negative","entry_histogram_reversal","exit_signal_positive","exit_histogram_positive","exit_histogram_reversal"],
-        macd_strength_scaleout:["entry_signal_negative","entry_histogram_negative","entry_histogram_reversal","entry_strength","exit_signal_positive","exit_histogram_positive","exit_histogram_reversal"],
+        macd_reversal:["entry_signal_zone","entry_histogram_zone","entry_histogram_reversal","entry_ma_stack_1h","exit_signal_zone","exit_histogram_zone","exit_histogram_reversal"],
+        macd_strength_scaleout:["entry_signal_zone","entry_histogram_zone","entry_histogram_reversal","entry_ma_stack_1h","entry_strength","exit_signal_zone","exit_histogram_zone","exit_histogram_reversal"],
       };
       (keysByMode[bot?.strategy_mode] || Object.keys(checks)).forEach((key) => {
         const value = checks[key];
+        const conditionEnabled = evaluation?.condition_enabled || {};
         const row = document.createElement("div");
         row.className = "condRow";
         const label = document.createElement("span");
@@ -3476,12 +3485,14 @@
         const badge = document.createElement("span");
         const toggle = toggleByKey[key];
         const hasPosition = Array.isArray(bot?.tranches) && bot.tranches.length > 0;
-        const state = !fresh ? "UNAVAILABLE" : toggle && bot[toggle] === false ? "OFF"
+        const state = !fresh ? "UNAVAILABLE" : (conditionEnabled[key] === false || (toggle && bot[toggle] === false)) ? "OFF"
           : key.startsWith("exit_") && !hasPosition ? "N/A"
             : value == null ? "UNAVAILABLE" : value ? "PASS" : "WAITING";
         badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
         badge.textContent = state;
-        badge.title = fresh ? `LIVE · ${new Date(time * 1000).toLocaleString()} · saved bot rules`
+        const macroDetail = key === "entry_ma_stack_1h" && evaluation?.macro_candle_time
+          ? ` · ${evaluation.macro_source || "completed 1h"} ${new Date(Number(evaluation.macro_candle_time) * 1000).toLocaleString()}` : "";
+        badge.title = fresh ? `LIVE · ${new Date(time * 1000).toLocaleString()} · saved bot rules${macroDetail}`
           : "No current live evaluation";
         row.append(label, badge);
         panel.append(row);

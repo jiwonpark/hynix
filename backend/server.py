@@ -45,6 +45,7 @@ from .lighter_crypto_bot import LighterCryptoBot, MARKETS as LIGHTER_CRYPTO_MARK
 from .lighter_bot import LighterPairBot
 from .lighter_strategy import (
     _macro_trend_aligned,
+    hourly_macro_alignment,
     macro_trend_aligned_series,
     compute_ma_diff_series,
     check_ma_diff_hook,
@@ -1671,6 +1672,29 @@ async def flatten_lighter_crypto(request: Request) -> JSONResponse:
         return JSONResponse({"success": False, "error": str(error),
                              "bot": lighter_crypto_bot.public_state()}, status_code=400)
 
+def _hourly_macro_alignment_for_bars(
+    bars: List[Dict[str, Any]], hourly_bars: List[Dict[str, Any]], interval_seconds: int,
+) -> List[tuple[bool, bool]]:
+    """Map each signal candle to the latest completed 1h macro verdict."""
+    if not bars or not hourly_bars:
+        return [(False, False)] * len(bars)
+    hourly = sorted(hourly_bars, key=lambda item: int(item["time"]))
+    hourly_values = [float(item["value"]) for item in hourly]
+    verdicts = [
+        hourly_macro_alignment(hourly_values[max(0, index - 29):index + 1])
+        for index in range(len(hourly_values))
+    ]
+    mapped: List[tuple[bool, bool]] = []
+    macro_index = -1
+    for bar in bars:
+        signal_close = int(bar["time"]) + int(interval_seconds)
+        while (macro_index + 1 < len(hourly)
+               and int(hourly[macro_index + 1]["time"]) + 3600 <= signal_close):
+            macro_index += 1
+        mapped.append(verdicts[macro_index] if macro_index >= 4 else (False, False))
+    return mapped
+
+
 def _run_crypto_backtest_sync(
     bars: List[Dict[str, Any]],
     candle_success: bool,
@@ -1741,6 +1765,7 @@ def _run_crypto_backtest_sync(
     long_multiplier: float = 1.0,
     short_multiplier: float = 1.0,
     interval_seconds: int = 900,
+    macro_bars: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     window = 24
     trades = []
@@ -1756,10 +1781,14 @@ def _run_crypto_backtest_sync(
     latest_condition_time: Optional[int] = None
     active_positions = []
     bars_values = [item["value"] for item in bars]
-    macro_aligned_list = macro_trend_aligned_series(bars_values, span=ou_macro_ema_span, slope_bars=ou_macro_slope_bars) if bars_values else []
+    macro_aligned_list = (
+        _hourly_macro_alignment_for_bars(bars, macro_bars, interval_seconds)
+        if macro_bars is not None
+        else macro_trend_aligned_series(bars_values, span=ou_macro_ema_span,
+                                        slope_bars=ou_macro_slope_bars)
+    )
 
-    evaluator_macro_alignment = (macro_aligned_list if (ou_macro_ema_span, ou_macro_slope_bars) == (60, 12)
-                                 else macro_trend_aligned_series(bars_values))
+    evaluator_macro_alignment = macro_aligned_list
 
     if strategy_mode in {"adaptive_tranche", "ou_quant", "grid", "custom"}:
         ou_thetas = []
@@ -2462,6 +2491,8 @@ def _run_crypto_backtest_sync(
                 use_macd_signal_positive=use_macd_signal_positive,
                 use_macd_hist_positive=use_macd_hist_positive,
                 use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
+                use_ma_stack_1h=use_ma_stack_1h,
+                macro_alignment=macro_aligned_list[index],
                 evaluation_time=int(bar["time"]), position_side=0,
                 **extra_macd,
             )
@@ -2474,6 +2505,8 @@ def _run_crypto_backtest_sync(
                 use_macd_signal_positive=use_macd_signal_positive,
                 use_macd_hist_positive=use_macd_hist_positive,
                 use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
+                use_ma_stack_1h=use_ma_stack_1h,
+                macro_alignment=macro_aligned_list[index],
                 evaluation_time=int(bar["time"]), position_side=pos_side,
                 **extra_macd,
             )
@@ -2482,6 +2515,10 @@ def _run_crypto_backtest_sync(
                 eval_info["condition_pass"] = {
                     **entry_eval.get("condition_pass", {}),
                     **{key: value for key, value in exit_eval.get("condition_pass", {}).items() if key.startswith("exit_")},
+                }
+                eval_info["condition_enabled"] = {
+                    **entry_eval.get("condition_enabled", {}),
+                    **{key: value for key, value in exit_eval.get("condition_enabled", {}).items() if key.startswith("exit_")},
                 }
             latest_evaluation = eval_info
             latest_conditions = eval_info.get("condition_pass", {})
@@ -2498,13 +2535,13 @@ def _run_crypto_backtest_sync(
                     "conditions": dict(entry_eval.get("condition_pass", {})),
                 })
             if position is not None and exit_signal:
-                current_pnl = (bar["value"] / position["entry"] - 1) * 100
+                current_pnl = position["side"] * (bar["value"] / position["entry"] - 1) * 100
                 mult = position.get("multiplier", 1.0)
                 first_stage = (strategy_mode == "macd_strength_scaleout" and use_macd_two_stage_exit
                                and int(position.get("exit_stage", 0)) == 0)
                 exit_fraction = min(0.99, max(0.01, macd_first_exit_pct / 100.0)) if first_stage else float(position.get("remaining_fraction", 1.0))
                 trades.append({
-                    "side": 1, "entry": position["entry"], "entry_time": position["entry_time"],
+                    "side": position["side"], "entry": position["entry"], "entry_time": position["entry_time"],
                     "exit": bar["value"], "exit_time": bar["time"],
                     "pnl_pct": round(current_pnl * mult * exit_fraction, 4), "multiplier": round(mult, 2),
                     "exit_fraction": round(exit_fraction, 4),
@@ -2517,8 +2554,9 @@ def _run_crypto_backtest_sync(
                     position = None
             if position is None and entry_signal:
                 position = {
-                    "side": 1, "entry": bar["value"], "entry_time": bar["time"],
-                    "entry_index": index, "multiplier": max(0.1, float(long_multiplier)),
+                    "side": candidate_side, "entry": bar["value"], "entry_time": bar["time"],
+                    "entry_index": index,
+                    "multiplier": max(0.1, float(long_multiplier if candidate_side > 0 else short_multiplier)),
                     "remaining_fraction": 1.0, "exit_stage": 0,
                 }
         mode_metrics = {
@@ -2608,13 +2646,22 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     """Single-leg crypto strategy backtest engine across 5 quantitative regimes."""
     if market_source not in {"binance", "lighter"}:
         raise ValueError("Unsupported crypto replay market source")
-    candle_res = (await get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit))
-                  if market_source == "lighter" else
-                  await get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False))
+    if market_source == "lighter":
+        candle_res, macro_res = await asyncio.gather(
+            get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit)),
+            get_lighter_crypto_candles(symbol, interval="1h", limit=125),
+        )
+    else:
+        candle_res, macro_res = await asyncio.gather(
+            get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False),
+            get_crypto_candles(symbol, interval="1h", limit=125, include_markers=False),
+        )
     bars = candle_res.get("bars", [])
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
     now_seconds = int(time.time())
     bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]
+    macro_bars = [bar for bar in macro_res.get("bars", [])
+                  if int(bar["time"]) + 3600 <= now_seconds]
     return await asyncio.to_thread(
         _run_crypto_backtest_sync,
         bars=bars,
@@ -2663,6 +2710,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         base_spacing_pct=base_spacing_pct, min_dwell_bars=min_dwell_bars,
         long_multiplier=long_multiplier, short_multiplier=short_multiplier,
         interval_seconds=interval_seconds,
+        macro_bars=macro_bars,
     )
 
 
