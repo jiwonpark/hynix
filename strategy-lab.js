@@ -72,7 +72,7 @@
         description: "Starts flat at the beginning of loaded history · completed 5m and 1h candles · next-open execution · entry and exit fees included.",
         secondaryStatus: "Completed 1h MA stack: waiting for data…",
         height: 420,
-        legend: '<span style="color:#0284c7">━ BTC/KRW</span><span style="color:#b45309">— 7-MA: <strong id="lab_valShortTermMa7">--</strong></span><span style="color:#6d28d9">— 24-MA: <strong id="lab_valShortTermMa24">--</strong></span><span style="color:#0891b2">— 60-MA: <strong id="lab_valShortTermMa60">--</strong></span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Actual</span><span><strong style="color:#16a34a;opacity:.45">⇧</strong>/<strong style="color:#dc2626;opacity:.45">⇩</strong> Virtual</span><span><strong style="color:#16a34a">△</strong> PnL outline</span>',
+        legend: '<span style="color:#0284c7">━ BTC/KRW</span><span style="color:#b45309">— 7-MA: <strong id="lab_valShortTermMa7">--</strong></span><span style="color:#6d28d9">— 24-MA: <strong id="lab_valShortTermMa24">--</strong></span><span style="color:#0891b2">— 60-MA: <strong id="lab_valShortTermMa60">--</strong></span><span><strong style="color:#16a34a">▲</strong>/<strong style="color:#dc2626">▼</strong> Actual</span><span><strong style="color:#16a34a;opacity:.85">▷</strong>/<strong style="color:#dc2626;opacity:.85">◁</strong> Virtual</span><span><strong style="color:#16a34a">△</strong>/<strong style="color:#dc2626">△</strong> PnL shading</span>',
         syncText: "Upbit public candles (KST)",
       });
       this.forked = true;

@@ -3871,7 +3871,7 @@
                 <span style="font-size: 10.5px; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-weight: 800; flex-shrink: 0; white-space: nowrap;">LIVE BINANCE EXECUTION</span>
               </div>
               <div style="font-size: 11.5px; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="lblShortTermSubtitle">
-                Solid arrows show actual fills. Faded arrows show the dynamic backtest using the condition switches below.
+                Solid arrows show actual fills. Hollow arrows show the dynamic backtest using the condition switches below.
               </div>
             </div>
 
@@ -11720,7 +11720,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           secondaryStatus: "Macro sizing: waiting for completed hourly prices…",
           height: 420,
           assetHeight: 300,
-          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> ADR / √CSOP signal</span><span style="color:#64748b"><span style="display:inline-block;width:10px;border-top:2px dashed #64748b"></span> ADR / domestic reference: <strong id="valDomesticPremiumRef">—</strong></span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">—</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">—</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">—</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.45">⇩</strong>/<strong style="color:#16a34a;opacity:.45">⇧</strong> Virtual</span><span style="color:#0f766e">Selected trim net (est.): <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>',
+          legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> ADR / √CSOP signal</span><span style="color:#64748b"><span style="display:inline-block;width:10px;border-top:2px dashed #64748b"></span> ADR / domestic reference: <strong id="valDomesticPremiumRef">—</strong></span><span id="legendShortMa7" onclick="tradingEngine.toggleShortTermMA(\'ma7\')" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="valShortTermMa7">—</strong></span><span id="legendShortMa24" onclick="tradingEngine.toggleShortTermMA(\'ma24\')" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="valShortTermMa24">—</strong></span><span id="legendShortMa60" onclick="tradingEngine.toggleShortTermMA(\'ma60\')" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="valShortTermMa60">—</strong></span><span><strong style="color:#dc2626">▼</strong>/<strong style="color:#16a34a">▲</strong> Actual</span><span><strong style="color:#dc2626;opacity:.85">◁</strong>/<strong style="color:#16a34a;opacity:.85">▷</strong> Virtual</span><span style="color:#0f766e">Selected trim net (est.): <strong id="valShortTermNetPnl">--</strong> · Exit &gt; <strong id="valSelectedMinProfit">—</strong></span>',
           syncText: "Updated 0s ago",
         });
         const assetPaneShell = $("shortTermAssetPaneShell");
