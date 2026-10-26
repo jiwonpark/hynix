@@ -3811,6 +3811,7 @@
       }
       const isBlocked = Boolean(bot?.execution_blocked);
       const blockedReason = bot?.blocked_reason || bot?.last_error || "";
+      const isEntryCapped = isEnabled && isBlocked && bot?.can_execute_exit !== false;
       const toggle = lid("chkAutoPeriodic48h");
       if (toggle) {
         toggle.checked = isEnabled;
@@ -3841,19 +3842,19 @@
         }
         if (headingEl) headingEl.textContent = isKo ? "그리드 봇: 복구/동기화 대기" : "BOT: RECONCILIATION REQUIRED";
         if (detailEl) detailEl.textContent = blockedReason || (hasMismatch ? (isKo ? `거래소 포지션(${venueAmt} ${symbol})과 봇 포지션(${expectedAmt} ${symbol})이 일치하지 않습니다. 복구 동기화 또는 청산 후 시작하세요.` : `Exchange position (${venueAmt} ${symbol}) differs from bot's inventory (${expectedAmt} ${symbol}); reconcile or flatten required.`) : "Check pending orders & exchange position before execution resumes");
-      } else if (isEnabled && isBlocked) {
-        if (banner) banner.classList.add("recovery");
+      } else if (isEntryCapped) {
+        if (banner) banner.classList.add("active");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator blocked";
-        if (titleEl) titleEl.textContent = isKo ? "⚡ 그리드 봇: 가동 대기" : "⚡ INSTITUTIONAL GRID BOT: ARMED";
+        if (titleEl) titleEl.textContent = isKo ? "⚡ 청산 가동 · 신규 진입 한도" : "⚡ EXITS ACTIVE · ENTRY CAPPED";
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus blocked";
-          badge.textContent = isKo ? "● 차단됨" : "● BLOCKED";
+          badge.textContent = isKo ? "● 청산 가동 · 진입 한도" : "● EXITS ACTIVE · ENTRY CAPPED";
           badge.style.background = "#fef3c7";
           badge.style.color = "#92400e";
         }
-        if (headingEl) headingEl.textContent = "EC2 DAEMON: ARMED (BLOCKED)";
-        if (detailEl) detailEl.textContent = blockedReason || "Order execution temporarily blocked by safeguards";
+        if (headingEl) headingEl.textContent = "EC2 DAEMON: EXITS ACTIVE";
+        if (detailEl) detailEl.textContent = `${blockedReason || "Entry capacity reached"} · exits remain active`;
       } else if (isEnabled) {
         if (banner) banner.classList.add("active");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator active";
@@ -3917,9 +3918,9 @@
         if (isRecovery) {
           navLighterPill.classList.add("recovery");
           navLighterPill.textContent = "⚠ RECOVERY";
-        } else if (isEnabled && isBlocked) {
+        } else if (isEntryCapped) {
           navLighterPill.classList.add("blocked");
-          navLighterPill.textContent = `● ${stratShort} BLOCKED`;
+          navLighterPill.textContent = `● ${stratShort} EXIT ON`;
         } else if (isEnabled) {
           navLighterPill.classList.add("active");
           navLighterPill.textContent = `● ${stratShort} AUTO ON`;
@@ -3932,7 +3933,7 @@
       const liveBtn = lid("modeLive");
       if (liveBtn) liveBtn.classList.toggle("botActiveLive", isEnabled);
 
-      this.setText("lblDaemonLatency", isEnabled ? "Lighter Crypto Bot: Running on EC2" : "Lighter Crypto Bot: Paused");
+      this.setText("lblDaemonLatency", isEntryCapped ? "Lighter Crypto Bot: Exits active · entry capped" : (isEnabled ? "Lighter Crypto Bot: Running on EC2" : "Lighter Crypto Bot: Paused"));
       this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${this.entryCountLabel(bot?.max_tranches)} safe tranches` : "Awaiting first closed-bar evaluation");
       const rulesPanel = $("lighterCryptoLiveRulesPanel");
       if (rulesPanel) {
@@ -3941,9 +3942,9 @@
       }
       const rulesState = $("lighterCryptoLiveRulesState");
       if (rulesState) {
-        rulesState.textContent = isEnabled ? "● REAL BOT ACTIVE" : "○ REAL BOT PAUSED";
-        rulesState.style.background = isEnabled ? "#dcfce7" : "#e2e8f0";
-        rulesState.style.color = isEnabled ? "#166534" : "#475569";
+        rulesState.textContent = isEntryCapped ? "● EXITS ACTIVE · ENTRY CAPPED" : (isEnabled ? "● REAL BOT ACTIVE" : "○ REAL BOT PAUSED");
+        rulesState.style.background = isEntryCapped ? "#fef3c7" : (isEnabled ? "#dcfce7" : "#e2e8f0");
+        rulesState.style.color = isEntryCapped ? "#92400e" : (isEnabled ? "#166534" : "#475569");
       }
       const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
       writeRule("lighterCryptoLiveEngine", `${stratName} (${stratInterval})`);
