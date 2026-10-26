@@ -1698,21 +1698,25 @@ def _hourly_macro_alignment_for_bars(
 
 def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
                         interval_seconds, market_source, macro_bars):
-    """Expose the same position-independent macro predicates used by replay."""
+    """Expose macro predicates at the first chart timestamp where they are known."""
     slopes = ou_macro_ema_slope_series([bar["value"] for bar in bars], span, slope_bars) if is_ou else []
     hourly = sorted(macro_bars or [], key=lambda bar: bar["time"])
+    hourly_values = [float(bar["value"]) for bar in hourly]
     macro_index = -1
     points = []
     for index, bar in enumerate(bars):
         while (macro_index + 1 < len(hourly)
-               and hourly[macro_index + 1]["time"] + 3600 <= bar["time"] + interval_seconds):
+               and hourly[macro_index + 1]["time"] + 3600 <= bar["time"]):
             macro_index += 1
         if is_ou:
             slope = slopes[index]
             long_ok, short_ok = (slope >= 0, slope <= 0) if slope is not None else (False, False)
             source_time = bar["time"] if slope is not None else None
         else:
-            long_ok, short_ok = alignment[index]
+            long_ok, short_ok = (
+                hourly_macro_alignment(hourly_values[max(0, macro_index - 29):macro_index + 1])
+                if macro_index >= 4 else (False, False)
+            )
             source_time = hourly[macro_index]["time"] if macro_index >= 0 else None
         direction = ("OFF" if not enabled else "UPTREND" if long_ok and not short_ok else
                      "DOWNTREND" if short_ok and not long_ok else
@@ -1721,7 +1725,7 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
                        "direction": direction, "long_ok": bool(long_ok), "short_ok": bool(short_ok)})
     return {"enabled": bool(enabled), "source": market_source.upper(),
             "basis": f"EMA{span} slope / {slope_bars} chart bars" if is_ou else
-                     ("completed 1h · 30 closes · ±0.15%" if macro_bars is not None else "replay trend fallback"),
+                     ("completed 1h · actionable-time aligned · 30 closes · ±0.15%" if macro_bars is not None else "replay trend fallback"),
             "points": points}
 
 

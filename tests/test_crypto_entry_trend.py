@@ -18,14 +18,29 @@ class CryptoEntryTrendTests(unittest.TestCase):
         self.assertEqual(len(points), len(self.bars))
         self.assertTrue(all(p['direction'] == 'DOWNTREND' for p in points))
         for bar, point in zip(self.bars, points):
-            completed = [b for b in self.hourly if b['time'] + 3600 <= bar['time'] + 300]
-            self.assertEqual((point['long_ok'], point['short_ok']), hourly_macro_alignment([b['value'] for b in completed]))
+            completed = [b for b in self.hourly if b['time'] + 3600 <= bar['time']]
+            self.assertEqual((point['long_ok'], point['short_ok']), hourly_macro_alignment([b['value'] for b in completed[-30:]]))
             self.assertEqual(point['source_time'], completed[-1]['time'])
-        future_changed = [dict(b, value=10000) if b['time'] >= self.bars[-1]['time'] + 300 else b
+        future_changed = [dict(b, value=10000) if b['time'] >= self.bars[-1]['time'] else b
                           for b in self.hourly]
         changed = _run_crypto_backtest_sync(self.bars, True, strategy_mode='macd_reversal',
                                            interval_seconds=300, macro_bars=future_changed)
         self.assertEqual(result['entry_trend'], changed['entry_trend'])
+
+    def test_hourly_and_five_minute_backgrounds_change_at_same_actionable_time(self):
+        hourly = [{'time': i * 3600, 'value': 100 + i} for i in range(40)]
+        bars_5m = [{'time': 31 * 3600 + i * 300, 'value': 100} for i in range(24)]
+        bars_1h = [{'time': 31 * 3600 + i * 3600, 'value': 100} for i in range(2)]
+        result_5m = _run_crypto_backtest_sync(
+            bars_5m, True, strategy_mode='grid', interval_seconds=300, macro_bars=hourly)
+        result_1h = _run_crypto_backtest_sync(
+            bars_1h, True, strategy_mode='grid', interval_seconds=3600, macro_bars=hourly)
+
+        five_minute_at_32 = result_5m['entry_trend']['points'][12]
+        hourly_at_32 = result_1h['entry_trend']['points'][1]
+        self.assertEqual(five_minute_at_32['source_time'], 31 * 3600)
+        self.assertEqual(hourly_at_32['source_time'], 31 * 3600)
+        self.assertEqual(five_minute_at_32['direction'], hourly_at_32['direction'])
 
     def test_toggle_disables_color_without_suppressing_signal_stream(self):
         result = _run_crypto_backtest_sync(self.bars, True, strategy_mode='grid',
