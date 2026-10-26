@@ -13,7 +13,7 @@ class TestCryptoTab(unittest.TestCase):
             hourly_macro_alignment,
         )
 
-        declining_hourly = [100.0 - index * 0.1 for index in range(30)]
+        declining_hourly = [100.0 - index * 0.1 for index in range(61)]
         alignment = hourly_macro_alignment(declining_hourly)
         self.assertEqual(alignment, (False, True))
 

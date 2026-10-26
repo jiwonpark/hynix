@@ -68,6 +68,16 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         self.client = FakeBinance()
         self.bot = CryptoBot(self.client, self.path)
 
+    async def test_hourly_macro_period_default_and_persistence(self):
+        bot = self.bot
+        self.assertEqual(bot.public_state()["strategy_params"]["macro_ma_period"], 60)
+        await bot.configure({"macro_ma_period": 24})
+        restored = CryptoBot(self.client, bot.state_path)
+        self.assertEqual(restored.public_state()["strategy_params"]["macro_ma_period"], 24)
+        for value in [1, 121, 7.5, True]:
+            with self.assertRaises(ValueError):
+                await bot.configure({"macro_ma_period": value})
+
     async def test_config_is_persisted_and_all_testable_strategies_deployable(self):
         await self.bot.configure({"entry_z": 2.0, "selected_symbol": "BTCUSDT"})
         restored = CryptoBot(self.client, self.path)

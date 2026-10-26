@@ -6,9 +6,9 @@ from backend.lighter_strategy import evaluate_ou_signals, hourly_macro_alignment
 
 class CryptoEntryTrendTests(unittest.TestCase):
     def setUp(self):
-        self.hourly = [{'time': i * 3600, 'value': 200 - i} for i in range(65)]
+        self.hourly = [{'time': i * 3600, 'value': 200 - i} for i in range(180)]
         # Local chart rises while the wider hourly trend falls.
-        self.bars = [{'time': 30 * 3600 + i * 300, 'value': 100 + i * .1}
+        self.bars = [{'time': 100 * 3600 + i * 300, 'value': 100 + i * .1}
                      for i in range(150)]
 
     def test_background_uses_hourly_gate_not_opposite_local_trend(self):
@@ -28,9 +28,9 @@ class CryptoEntryTrendTests(unittest.TestCase):
         self.assertEqual(result['entry_trend'], changed['entry_trend'])
 
     def test_hourly_and_five_minute_backgrounds_change_at_same_actionable_time(self):
-        hourly = [{'time': i * 3600, 'value': 100 + i} for i in range(40)]
-        bars_5m = [{'time': 31 * 3600 + i * 300, 'value': 100} for i in range(24)]
-        bars_1h = [{'time': 31 * 3600 + i * 3600, 'value': 100} for i in range(2)]
+        hourly = [{'time': i * 3600, 'value': 100 + i} for i in range(140)]
+        bars_5m = [{'time': 101 * 3600 + i * 300, 'value': 100} for i in range(24)]
+        bars_1h = [{'time': 101 * 3600 + i * 3600, 'value': 100} for i in range(2)]
         result_5m = _run_crypto_backtest_sync(
             bars_5m, True, strategy_mode='grid', interval_seconds=300, macro_bars=hourly)
         result_1h = _run_crypto_backtest_sync(
@@ -38,8 +38,8 @@ class CryptoEntryTrendTests(unittest.TestCase):
 
         five_minute_at_32 = result_5m['entry_trend']['points'][12]
         hourly_at_32 = result_1h['entry_trend']['points'][1]
-        self.assertEqual(five_minute_at_32['source_time'], 31 * 3600)
-        self.assertEqual(hourly_at_32['source_time'], 31 * 3600)
+        self.assertEqual(five_minute_at_32['source_time'], 101 * 3600)
+        self.assertEqual(hourly_at_32['source_time'], 101 * 3600)
         self.assertEqual(five_minute_at_32['direction'], hourly_at_32['direction'])
 
     def test_toggle_disables_color_without_suppressing_signal_stream(self):
@@ -67,9 +67,21 @@ class CryptoEntryTrendTests(unittest.TestCase):
         result = _run_crypto_backtest_sync(self.bars, True, macro_bars=[])
         self.assertTrue(all(p['direction'] == 'UNAVAILABLE' for p in result['entry_trend']['points']))
 
-    def test_hourly_regime_uses_ma7_slope_not_long_window_return(self):
-        # The newest close lifts MA7 even though the broader series remains lower.
-        values = [120, 119, 118, 117, 116, 100, 100, 100, 100, 100, 100, 100, 101]
+    def test_hourly_regime_defaults_to_ma60_even_when_ma7_disagrees(self):
+        values = [100.0] * 53 + [110.0] * 7 + [105.0]
         self.assertEqual(hourly_macro_alignment(values), (True, False))
-        falling = [80, 81, 82, 83, 84, 100, 100, 100, 100, 100, 100, 100, 99]
+        self.assertEqual(hourly_macro_alignment(values, ma_period=7), (False, True))
+        falling = [200.0 - value for value in values]
         self.assertEqual(hourly_macro_alignment(falling), (False, True))
+        self.assertEqual(hourly_macro_alignment([100.0] * 60), (False, False))
+        self.assertEqual(hourly_macro_alignment([100.0] * 61), (True, True))
+
+    def test_period_changes_both_entry_gate_and_background(self):
+        hourly = [{'time': i * 3600, 'value': value}
+                  for i, value in enumerate([100.0] * 53 + [110.0] * 7 + [105.0])]
+        bars = [{'time': 61 * 3600 + i * 300, 'value': 105.0} for i in range(30)]
+        for period, direction in [(60, 'UPTREND'), (7, 'DOWNTREND')]:
+            result = _run_crypto_backtest_sync(bars, True, strategy_mode='grid', macro_bars=hourly,
+                                               interval_seconds=300, macro_ma_period=period)
+            self.assertEqual(result['entry_trend']['points'][-1]['direction'], direction)
+            self.assertIn(f'MA{period} slope', result['entry_trend']['basis'])

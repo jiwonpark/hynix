@@ -80,6 +80,16 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.client = FakeLighter()
         self.bot = LighterCryptoBot(self.client, self.path)
 
+    async def test_hourly_macro_period_default_and_persistence(self):
+        bot = self.bot
+        self.assertEqual(bot.public_state()["strategy_params"]["macro_ma_period"], 60)
+        await bot.configure({"macro_ma_period": 24})
+        restored = LighterCryptoBot(self.client, bot.state_path)
+        self.assertEqual(restored.public_state()["strategy_params"]["macro_ma_period"], 24)
+        for value in [1, 121, 7.5, True]:
+            with self.assertRaises(ValueError):
+                await bot.configure({"macro_ma_period": value})
+
     async def test_independent_paused_state_and_config(self):
         self.assertFalse(self.bot.state["enabled"])
         self.assertEqual(self.bot.state["selected_symbol"], "BTC")

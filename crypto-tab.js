@@ -566,10 +566,16 @@
         const overlay = document.createElement("div");
         overlay.id = "cryptoTrendOverlay";
         overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
-        overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155" id="cryptoEntryTrendLegend">PAPER ENTRY TREND · awaiting replay</span><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="cryptoTrendSmall" class="cryptoTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span title="Reference display only; the entry-filter background uses the strategy rule shown in its legend">MACRO REF:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="cryptoTrendBig" class="cryptoTrendBadge" style="pointer-events:none">1h —</span></div>';
+        overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155" id="cryptoEntryTrendLegend">PAPER ENTRY TREND · awaiting replay</span><label title="Hourly simple MA period for the replay entry filter; saved to live with Deploy" style="font-size:10px;background:#fff;padding:3px;border:1px solid #cbd5e1;border-radius:4px">1h MA <input id="crypto_macroMaPeriod" aria-label="Hourly macro MA period" type="number" min="2" max="120" step="1" value="60" style="width:48px"></label><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="cryptoTrendSmall" class="cryptoTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span title="Reference display only; the entry-filter background uses the strategy rule shown in its legend">MACRO REF:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="cryptoTrendBig" class="cryptoTrendBadge" style="pointer-events:none">1h —</span></div>';
         chartHost.appendChild(overlay);
         this.bindMatchPill(overlay.querySelector("#cryptoMatchPill"));
 
+        lid("macroMaPeriod")?.addEventListener("change", (event) => {
+          if (!event.target.checkValidity()) return;
+          event.target.dataset.userEdited = "true";
+          this.clearEntryTrend();
+          this.runBacktest();
+        });
         $("cryptoSelSmallTrend")?.addEventListener("change", (e) => {
           this.smallTrendInterval = e.target.value;
           this.fetchAndRenderTrends();
@@ -1258,6 +1264,8 @@
     async setParadigm(mode, options = {}) {
       if (!this.paradigms[mode]) return;
       this.currentParadigm = mode;
+      const macroPeriod = lid("macroMaPeriod");
+      if (macroPeriod) macroPeriod.disabled = mode === "ou_quant";
       safeStorage.setItem(STRATEGY_STORAGE_KEY, mode);
       this.backtestMarkers = [];
       this.clearEntryTrend();
@@ -2011,6 +2019,7 @@
         long_multiplier: this.longMultiplier(),
         short_multiplier: this.shortMultiplier(),
         max_tranches: this.entryCountLimit(),
+        macro_ma_period: numeric("crypto_macroMaPeriod", Number(this.botState?.macro_ma_period ?? 60)),
         max_book_spread_bps: numeric("crypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45)),
       };
       if (mode === "ou_quant") {
@@ -2761,6 +2770,7 @@
       return {
         symbol: this.selectedSymbol || "BTCUSDT",
         interval: this.interval, limit: 500, strategy_mode: mode,
+        macro_ma_period: numeric("crypto_macroMaPeriod", Number(this.botState?.macro_ma_period ?? 60)),
         long_multiplier: this.longMultiplier(),
         short_multiplier: this.shortMultiplier(),
         entry_z: mode === "ou_quant" ? numeric("crypto_inpOuEntryZ", liveOuEntryFallback) :
@@ -2884,6 +2894,8 @@
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
       };
       const liveParams = { ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
+      if (isParadigmMatch && currentMode !== "ou_quant" && settings.macro_ma_period !== Number(liveParams.macro_ma_period ?? 60))
+        diffs.push(`Hourly MA ${settings.macro_ma_period} ≠ ${liveParams.macro_ma_period ?? 60}`);
       if (isParadigmMatch) (parameterKeys[currentMode] || []).forEach((key) => {
         const live = liveParams[key];
         if (live == null || !Number.isFinite(Number(live)) || Math.abs(settings[key] - Number(live)) > 1e-9)
@@ -3184,6 +3196,8 @@
         this.setParadigm(liveMode);
       }
       const params = { ...this.botState, ...(this.botState.strategy_params || {}) };
+      const macroPeriod = lid("macroMaPeriod");
+      if (macroPeriod) { macroPeriod.value = String(params.macro_ma_period ?? 60); delete macroPeriod.dataset.userEdited; }
       if (liveMode === "grid") {
         this.gridReplayEntryZ = Number(params.entry_z);
         this.gridReplayExitZ = Number(params.exit_z);
@@ -3376,6 +3390,8 @@
 
     applyEntryTrend(result) {
       this.entryTrendResult = result || null;
+      const macroPeriod = lid("macroMaPeriod");
+      if (macroPeriod) macroPeriod.disabled = this.currentParadigm === "ou_quant";
       this.trendRanges = this.calculateTrendRanges(this.bars || []);
       const legend = $("cryptoEntryTrendLegend");
       const layer = $("cryptoTrendBandLayer");
@@ -3435,6 +3451,8 @@
 
     updateBotStatus(bot, venue) {
       if (!bot) return;
+      const macroPeriod = lid("macroMaPeriod");
+      if (macroPeriod && !macroPeriod.dataset.userEdited) macroPeriod.value = String(bot.strategy_params?.macro_ma_period ?? bot.macro_ma_period ?? 60);
       bot = this.retainVerifiedRealizedSnapshot(bot);
       this.botState = bot;
       const isEnabled = Boolean(bot?.enabled);
@@ -5804,6 +5822,9 @@
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       try {
+        const macroPeriod = lid("macroMaPeriod");
+        if (this.currentParadigm !== "ou_quant" && macroPeriod && !macroPeriod.checkValidity())
+          throw new Error("Hourly MA period must be an integer between 2 and 120");
         const settings = this.replaySettings();
         const replayKey = this.replayRefreshKey(settings);
         this._pendingReplayRefreshKey = replayKey;

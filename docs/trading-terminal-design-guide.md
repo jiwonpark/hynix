@@ -124,3 +124,12 @@ Across all trading tabs, live price, account, position, and P&L polling must not
 ## Cross-tab interaction contract
 
 Tabs 2–5 use the same navigation, loading, chart viewport, history, marker, and replay interaction model. Venue and strategy differences must not change those mechanics. Linked chart panes must receive identical ordered timestamps; represent unavailable observations as whitespace instead of removing the timestamp. Entering a different terminal starts at the top of that terminal, while horizontal navigation centering must never alter the document's vertical scroll. Every shared-interaction change requires verification across all four tabs.
+
+Tabs 4 and 5 default the hourly wider-trend regime to **simple MA60 slope**.
+Compare the latest completed hourly MA with its value one completed hour earlier;
+rising permits longs, falling permits shorts, exactly flat permits both. Require
+at least period + 1 completed hourly closes; missing history is UNAVAILABLE. The
+`1h MA` replay field adjusts the period (2–120) and the existing macro-condition
+switch enables/disables it. Deploy saves that period through authenticated bot
+configuration; status and replay/live matching include it. OU retains its own
+independently adjustable EMA-slope condition and labels.

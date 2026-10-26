@@ -47,7 +47,7 @@ DEFAULT_STATE = {
     "ma_stretch_min": 0.30, "ma_trailing_stop": 0.15, "min_consensus_votes": 3,
     "trend_macro_window": 24, "trend_pullback_dist": 0.15, "trend_tp_dist": 0.05, "trend_slope_min": 0.002,
     "use_ma_stretch": True, "use_base_spacing": True, "use_peak": True, "use_ma_stack": False,
-    "use_ma_stack_1h": True,
+    "use_ma_stack_1h": True, "macro_ma_period": 60,
     "ma_stack_opposite_only": True, "use_opposite_stack_exit": True,
     "use_ma_diff_hook": True, "use_ma_diff_exit": True, "min_diff_bars": 2,
     "ma_accel_period": 24, "ma_accel_min_slope": 0.0, "ma_accel_min_accel": 0.0,
@@ -152,6 +152,7 @@ class LighterCryptoBot:
                           "use_peak": bool(self.state.get("use_peak", True)),
                           "use_ma_stack": bool(self.state.get("use_ma_stack", False)),
                           "use_ma_stack_1h": bool(self.state.get("use_ma_stack_1h", True)),
+            "macro_ma_period": int(self.state.get("macro_ma_period", 60)),
                           "ma_stack_opposite_only": bool(self.state.get("ma_stack_opposite_only", True)),
                           "use_opposite_stack_exit": bool(self.state.get("use_opposite_stack_exit", True)),
                           "use_ma_diff_hook": bool(self.state.get("use_ma_diff_hook", True)),
@@ -329,7 +330,7 @@ class LighterCryptoBot:
             "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
             "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
-            "use_ma_stack_1h", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
+            "use_ma_stack_1h", "macro_ma_period", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
             "ma_stack_opposite_only", "use_opposite_stack_exit",
             "use_ma_diff_hook", "use_ma_diff_exit", "min_diff_bars",
             "long_multiplier", "short_multiplier", "gross_leverage_cap",
@@ -343,6 +344,10 @@ class LighterCryptoBot:
                 candidate[key] = str(value)
             elif key == "max_tranches":
                 candidate[key] = parse_entry_count_limit(value)
+            elif key == "macro_ma_period":
+                if isinstance(value, bool) or not math.isfinite(float(value)) or not float(value).is_integer():
+                    raise ValueError("Hourly macro MA period must be an integer")
+                candidate[key] = int(value)
             elif key in {"min_seconds_between_orders", "ou_macro_ema_span",
                         "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars",
                         "ma_accel_period", "fast_ma_period", "slow_ma_period", "min_diff_bars",
@@ -381,7 +386,7 @@ class LighterCryptoBot:
                 use_base_spacing=False,
             )
         bounds = {
-            "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0),
+            "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0), "macro_ma_period": (2, 120),
             "notional_usd": (10.0, 500.0),
             "long_multiplier": (0.1, 10.0), "short_multiplier": (0.1, 10.0),
             "gross_leverage_cap": (1.0, 20.0),
@@ -1106,10 +1111,11 @@ class LighterCryptoBot:
                     macro_rows = await self.client.candles(market_id, "1h", 125, fresh=True)
                     macro_closed = [row for row in macro_rows
                                     if int(row["t"]) + 3600 * 1000 <= now_ms - 1000]
-                    if len(macro_closed) < 60:
+                    if len(macro_closed) < int(self.state.get("macro_ma_period", 60)) + 1:
                         raise ValueError("Insufficient completed Lighter 1h candles for macro alignment")
                     macro_alignment = hourly_macro_alignment(
-                        [float(row["c"]) for row in macro_closed]
+                        [float(row["c"]) for row in macro_closed],
+                        ma_period=int(self.state.get("macro_ma_period", 60)),
                     )
                     macro_candle_time = int(macro_closed[-1]["t"]) // 1000
                 position_side = int(self.state["tranches"][-1]["side"]) if self.state["tranches"] else 0
@@ -1132,6 +1138,7 @@ class LighterCryptoBot:
                 if macro_candle_time is not None:
                     evaluation["macro_source"] = "LIGHTER_COMPLETED_1H"
                     evaluation["macro_candle_time"] = macro_candle_time
+                    evaluation["macro_ma_period"] = int(self.state.get("macro_ma_period", 60))
                 self.state["last_evaluated_candle"] = last_candle
                 self._save()
                 if self.state["tranches"] and exit_signal:

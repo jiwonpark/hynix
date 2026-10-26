@@ -29,6 +29,12 @@ for (const [file, prefix, name] of [['crypto-tab.js', 'crypto', 'cryptoEngine'],
   assert.equal(engine.calculateTrendRanges(engine.bars).length, 0);
   assert.match(legend.textContent, /awaiting replay/);
   // Exercise the actual async response path, not just the rendering helper.
+  const input = {value: '7', dataset: {}, checkValidity: () => true};
+  elements.set(`${prefix}_macroMaPeriod`, input);
+  assert.equal(engine.replaySettings().macro_ma_period, 7, 'hourly MA control must reach replay');
+  engine.botState = {macro_ma_period: 60};
+  engine.orderNotional = () => 50;
+  assert.equal(engine.liveStrategyPayload('grid').macro_ma_period, 7, 'hourly MA control must reach authenticated deployment');
   engine.currentParadigm = 'grid';
   engine.paradigms = {grid: {name: 'Grid'}};
   let replayStatus = '';
@@ -41,7 +47,8 @@ for (const [file, prefix, name] of [['crypto-tab.js', 'crypto', 'cryptoEngine'],
   assert.match(layer.innerHTML, /rgba\(220,38,38,.12\)/);
   context.fetch = async () => { throw new Error('test unavailable'); };
   await engine.runBacktest();
-  assert.equal(layer.innerHTML, '', 'failed replay must clear its previous trend');
+  assert.match(legend.textContent, /failed/, 'failed same-settings refresh must be labeled');
+  assert.equal(layer.style.opacity, '.38', 'previous same-settings background must be visibly stale');
 }
 console.log('Both crypto tabs render authoritative entry-filter colors and clear stale shading');
 

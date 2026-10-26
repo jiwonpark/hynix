@@ -7,8 +7,8 @@ OU_MACRO_EMA_SPAN = 60
 OU_MACRO_SLOPE_BARS = 12
 
 
-def hourly_macro_alignment(values: Sequence[float], ma_period: int = 7) -> Tuple[bool, bool]:
-    """Return direction from the slope of the narrowest completed-1h MA."""
+def hourly_macro_alignment(values: Sequence[float], ma_period: int = 60) -> Tuple[bool, bool]:
+    """Return direction from consecutive completed-hourly simple moving averages."""
     clean = [float(value) for value in values if math.isfinite(float(value))]
     period = max(2, int(ma_period))
     if len(clean) < period + 1:
