@@ -216,6 +216,29 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "../lighter-crypto-tab.js")
   assert.ok(ctx.window.lighterCryptoEngine.chart, "lighterCryptoEngine chart must be initialized");
   assert.ok(ctx.window.lighterCryptoEngine.executionChartFrame, "lighterCryptoEngine executionChartFrame must exist");
 
+  for (const [engine, prefix] of [[ctx.window.cryptoEngine, "crypto"], [ctx.window.lighterCryptoEngine, "lighterCrypto"]]) {
+    engine.runBacktest = async () => {};
+    for (const mode of Object.keys(engine.paradigms)) {
+      await engine.setParadigm(mode);
+      const row = elements.get(`${prefix}_rowCondEntryMaStack1h`);
+      assert.ok(row, `${prefix} must keep the shared macro row mounted`);
+      const applies = mode !== "ou_quant" && !(prefix === "lighterCrypto" && mode === "ma_stack");
+      assert.equal(row.style.display, applies ? "" : "none", `${prefix}/${mode}: macro control visibility must match the real gate`);
+      if (applies) {
+        const toggle = elements.get(`${prefix}_chkCondEntryMaStack1h`);
+        toggle.checked = false;
+        assert.equal(engine.replaySettings().use_ma_stack_1h, false, `${mode} macro OFF must reach replay`);
+        assert.equal(engine.liveStrategyPayload(mode).use_ma_stack_1h, false, `${mode} macro OFF must reach deployment`);
+        toggle.checked = true;
+      }
+    }
+    await engine.setParadigm("ou_quant");
+    assert.match(engine.renderParadigmDetail("ou_quant"), /ouUseMacroTrend/, "OU must expose its own switch");
+    const ouToggle = new DOMElement("input", `${prefix}_ouUseMacroTrend`);
+    ouToggle.checked = false;
+    elements.get(`${prefix}_chkCondEntryMaStack1h`).checked = true;
+    assert.equal(engine.liveStrategyPayload("ou_quant").ou_use_macro_trend, false, "visible OU macro switch must control deployment");
+  }
   console.log("✅ Tabs 4 and 5 mount simulation passed!");
   process.exit(0);
 })().catch((err) => {

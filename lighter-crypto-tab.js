@@ -1383,7 +1383,7 @@
       if (!this.paradigms[mode]) return;
       this.currentParadigm = mode;
       const macroPeriod = lid("macroMaPeriod");
-      if (macroPeriod) macroPeriod.disabled = mode === "ou_quant";
+      if (macroPeriod) macroPeriod.disabled = ["ou_quant", "ma_stack"].includes(mode);
       safeStorage.setItem(STRATEGY_STORAGE_KEY, mode);
       this.backtestMarkers = [];
       this.clearEntryTrend();
@@ -1443,6 +1443,10 @@
         rowCondExitDwell: "Paper/live exit: minimum configured completed bars",
         rowCondExitBottoming: "Paper/live exit: Z-score no longer converging",
       } : {};
+      // The hourly gate is real for these strategies even when their other
+      // conditions live in a dedicated detail panel. Never hide its switch.
+      if (mode !== "ou_quant" && mode !== "ma_stack")
+        wiredReplayRows.rowCondEntryMaStack1h = "Wider trend filter · completed 1h MA slope (period above chart)";
       [...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels)].forEach((id) => {
         const row = lid(id);
         if (!row) return;
@@ -1582,7 +1586,7 @@
                 <strong style="font-size:14px;color:#0f172a;text-transform:uppercase;letter-spacing:0.5px;">5m Full-Stack Reversal & MA Diff Inflection Tracker</strong>
                 <span style="background:#fef3c7;color:#b45309;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;border:1px solid #fde68a;">BEARISH ENTRY · BULLISH EXIT</span>
               </div>
-              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Enters long on bearish stack and/or MA diff deceleration hook (Δ(7-24) less negative after series of more negative bars); exits on opposite stack or diff hook (less positive).</p>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Enters long on bearish stack and/or MA diff deceleration hook (Δ(7-24) less negative after series of more negative bars); exits on opposite stack or diff hook (less positive).</p><p style="margin:6px 0;color:#64748b;font-size:11.5px;">Hourly wider-trend filter: N/A — this strategy uses the 5m full stack and MA diff rules only.</p>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Min Neg Bars:</span>
@@ -2243,9 +2247,6 @@
         payload.use_peak = lid("chkCondEntryPeak")?.checked !== false;
         payload.use_ma_stack = lid("chkCondEntryMaStack5m")?.checked === true;
         payload.use_ma_stack_1h = lid("chkCondEntryMaStack1h")?.checked !== false;
-        if (mode === "ou_quant") {
-          payload.ou_use_macro_trend = lid("chkCondEntryMaStack1h")?.checked !== false;
-        }
         payload.use_convergence = lid("chkCondExitConvergence")?.checked !== false;
         payload.use_dwell = lid("chkCondExitDwell")?.checked !== false;
         payload.use_bottoming = lid("chkCondExitBottoming")?.checked === true;
@@ -3753,7 +3754,7 @@
     applyEntryTrend(result) {
       this.entryTrendResult = result || null;
       const macroPeriod = lid("macroMaPeriod");
-      if (macroPeriod) macroPeriod.disabled = this.currentParadigm === "ou_quant";
+      if (macroPeriod) macroPeriod.disabled = ["ou_quant", "ma_stack"].includes(this.currentParadigm);
       this.trendRanges = this.calculateTrendRanges(this.bars || []);
       const legend = $("lighterCryptoEntryTrendLegend");
       const layer = $("lighterCryptoTrendBandLayer");

@@ -1323,6 +1323,10 @@
         rowCondExitDwell: "Paper exit: minimum four completed bars",
         rowCondExitBottoming: "Paper exit: Z-score no longer converging",
       } : {};
+      // The hourly gate is real for these strategies even when their other
+      // conditions live in a dedicated detail panel. Never hide its switch.
+      if (mode !== "ou_quant")
+        wiredReplayRows.rowCondEntryMaStack1h = "Wider trend filter · completed 1h MA slope (period above chart)";
       [...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels)].forEach((id) => {
         const row = lid(id);
         if (!row) return;
@@ -2065,9 +2069,6 @@
       payload.use_peak = lid("chkCondEntryPeak")?.checked !== false;
       payload.use_ma_stack = lid("chkCondEntryMaStack5m")?.checked === true;
       payload.use_ma_stack_1h = lid("chkCondEntryMaStack1h")?.checked !== false;
-      if (mode === "ou_quant") {
-        payload.ou_use_macro_trend = lid("chkCondEntryMaStack1h")?.checked !== false;
-      }
       payload.use_convergence = lid("chkCondExitConvergence")?.checked !== false;
       payload.use_dwell = lid("chkCondExitDwell")?.checked !== false;
       payload.use_bottoming = lid("chkCondExitBottoming")?.checked === true;
@@ -5836,6 +5837,9 @@
         if (requestId !== this.backtestRequestId || JSON.stringify(settings) !== JSON.stringify(this.replaySettings())) return;
         if (!data?.success) throw new Error(data?.error || "Replay data unavailable");
         this.applyEntryTrend(data.entry_trend);
+        this.latestReplayConditionResult = data;
+        this.replayConditionSignature = new URLSearchParams(settings).toString();
+        this.updateRulesMatchStatus();
         this._lastReplayRefreshKey = replayKey;
         const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
         this.backtestMarkers = (data.trades || []).flatMap((trade, tradeIndex) => [

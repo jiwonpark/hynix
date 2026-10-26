@@ -133,3 +133,12 @@ at least period + 1 completed hourly closes; missing history is UNAVAILABLE. The
 switch enables/disables it. Deploy saves that period through authenticated bot
 configuration; status and replay/live matching include it. OU retains its own
 independently adjustable EMA-slope condition and labels.
+
+Every crypto strategy that evaluates the hourly wider-trend entry condition must
+show its shared switch as **Wider trend filter · completed 1h MA slope**, alongside
+its own PAPER PASS/WAITING/OFF verdict. Dedicated strategy panels must not hide
+this real rule. The period is adjusted in the chart's 1h MA field and is saved
+with the switch through authenticated strategy deployment. OU uses its own
+visible EMA-alignment switch; never override it from a hidden inherited switch.
+Tab 5 MA Stack intentionally bypasses the hourly filter: label it N/A, disable
+the unused hourly period input and retain the 5m full-stack/diff rules.
