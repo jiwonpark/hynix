@@ -229,7 +229,16 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "../lighter-crypto-tab.js")
         toggle.checked = false;
         assert.equal(engine.replaySettings().use_ma_stack_1h, false, `${mode} macro OFF must reach replay`);
         assert.equal(engine.liveStrategyPayload(mode).use_ma_stack_1h, false, `${mode} macro OFF must reach deployment`);
+        const settings = engine.replaySettings();
+        engine.replayConditionSignature = new URLSearchParams(settings).toString();
+        engine.latestReplayConditionResult = {latest_conditions: {entry_ma_stack_1h: false}, latest_condition_time: 1712345000};
+        engine.updateRulesMatchStatus();
+        assert.equal(elements.get(`${prefix}_badgeCondEntryMaStack1h`).textContent, "OFF", `${mode}: macro OFF verdict must be visible`);
         toggle.checked = true;
+        engine.replayConditionSignature = new URLSearchParams(engine.replaySettings()).toString();
+        engine.latestReplayConditionResult = {latest_conditions: {entry_ma_stack_1h: false}, latest_condition_time: 1712345000};
+        engine.updateRulesMatchStatus();
+        assert.equal(elements.get(`${prefix}_badgeCondEntryMaStack1h`).textContent, "WAITING", `${mode}: real macro verdict must be visible`);
       }
     }
     await engine.setParadigm("ou_quant");

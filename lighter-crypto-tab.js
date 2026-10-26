@@ -3181,7 +3181,7 @@
       const isMaAccel = currentMode === "ma_acceleration";
       const isMaStack = currentMode === "ma_stack";
       const isMacd = ["macd_reversal", "macd_strength_scaleout"].includes(currentMode);
-      const rules = (isMaStack || isMacd) ? [] : [
+      const rules = isMaStack ? [] : isMacd ? [["EntryMaStack1h", "use_ma_stack_1h", "Wider trend filter"]] : [
         ["EntryMaStretch", isCross ? "use_golden_cross" : (isMaAccel ? "use_ma_slope" : "use_ma_stretch"), isCross ? "Golden Cross" : (isMaAccel ? "MA Slope" : (isMaStack ? "60-MA Stretch" : "Entry trigger"))],
         ["EntryBase", isCross ? "use_death_cross" : (isMaAccel ? "use_ma_accel" : "use_base_spacing"), isCross ? "Death Cross" : (isMaAccel ? "MA Curvature Accel" : "Spacing")],
         ["EntryPeak", isCross ? "use_cross_spread" : (isMaAccel ? "use_ma_pullback" : "use_peak"), isCross ? "Min Cross Spread" : (isMaAccel ? "Price Pullback" : "Peak rollover")],
@@ -3191,6 +3191,11 @@
         ["ExitDwell", "use_dwell", isMaStack ? "16-Bar Dwell Exit" : "Dwell"],
         ["ExitBottoming", "use_bottoming", isMaStack ? "Trailing Stop Ratchet" : "Bottoming"],
       ];
+      if (currentMode !== "ou_quant" && currentMode !== "ma_stack") {
+        this.setText("valCondEntryMaStack1h", `Wider trend filter · 1h MA${settings.macro_ma_period} slope`);
+        const label = lid("rowCondEntryMaStack1h")?.querySelector(".condLabel");
+        if (label) label.title = "Direction of the completed hourly moving average; period is adjustable above the chart";
+      }
       rules.forEach(([suffix, key, name]) => {
         const input = lid(`chkCond${suffix}`);
         const badge = lid(`badgeCond${suffix}`);

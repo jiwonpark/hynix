@@ -2921,6 +2921,11 @@
         ["ExitDwell", "use_dwell", "Dwell"],
         ["ExitBottoming", "use_bottoming", "Bottoming"],
       ];
+      if (currentMode !== "ou_quant") {
+        this.setText("valCondEntryMaStack1h", `Wider trend filter · 1h MA${settings.macro_ma_period} slope`);
+        const label = lid("rowCondEntryMaStack1h")?.querySelector(".condLabel");
+        if (label) label.title = "Direction of the completed hourly moving average; period is adjustable above the chart";
+      }
       rules.forEach(([suffix, key, name]) => {
         const input = lid(`chkCond${suffix}`);
         const badge = lid(`badgeCond${suffix}`);
