@@ -7,17 +7,17 @@ OU_MACRO_EMA_SPAN = 60
 OU_MACRO_SLOPE_BARS = 12
 
 
-def hourly_macro_alignment(values: Sequence[float], lookback: int = 30,
-                           threshold_pct: float = 0.15) -> Tuple[bool, bool]:
-    """Return (long_ok, short_ok) using the same completed-1h regime shown in the UI."""
+def hourly_macro_alignment(values: Sequence[float], ma_period: int = 7) -> Tuple[bool, bool]:
+    """Return direction from the slope of the narrowest completed-1h MA."""
     clean = [float(value) for value in values if math.isfinite(float(value))]
-    if len(clean) < 5:
+    period = max(2, int(ma_period))
+    if len(clean) < period + 1:
         return False, False
-    window = clean[-max(5, int(lookback)):]
-    pct_change = ((window[-1] - window[0]) / window[0] * 100.0) if window[0] else 0.0
-    if pct_change > float(threshold_pct):
+    previous_ma = sum(clean[-period - 1:-1]) / period
+    current_ma = sum(clean[-period:]) / period
+    if current_ma > previous_ma:
         return True, False
-    if pct_change < -float(threshold_pct):
+    if current_ma < previous_ma:
         return False, True
     return True, True
 

@@ -1681,10 +1681,8 @@ def _hourly_macro_alignment_for_bars(
         return [(False, False)] * len(bars)
     hourly = sorted(hourly_bars, key=lambda item: int(item["time"]))
     hourly_values = [float(item["value"]) for item in hourly]
-    verdicts = [
-        hourly_macro_alignment(hourly_values[max(0, index - 29):index + 1])
-        for index in range(len(hourly_values))
-    ]
+    verdicts = [hourly_macro_alignment(hourly_values[:index + 1])
+                for index in range(len(hourly_values))]
     mapped: List[tuple[bool, bool]] = []
     macro_index = -1
     for bar in bars:
@@ -1692,7 +1690,7 @@ def _hourly_macro_alignment_for_bars(
         while (macro_index + 1 < len(hourly)
                and int(hourly[macro_index + 1]["time"]) + 3600 <= signal_close):
             macro_index += 1
-        mapped.append(verdicts[macro_index] if macro_index >= 4 else (False, False))
+        mapped.append(verdicts[macro_index] if macro_index >= 7 else (False, False))
     return mapped
 
 
@@ -1714,8 +1712,8 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
             source_time = bar["time"] if slope is not None else None
         else:
             long_ok, short_ok = (
-                hourly_macro_alignment(hourly_values[max(0, macro_index - 29):macro_index + 1])
-                if macro_index >= 4 else (False, False)
+                hourly_macro_alignment(hourly_values[:macro_index + 1])
+                if macro_index >= 7 else (False, False)
             )
             source_time = hourly[macro_index]["time"] if macro_index >= 0 else None
         direction = ("OFF" if not enabled else "UPTREND" if long_ok and not short_ok else
@@ -1725,7 +1723,7 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
                        "direction": direction, "long_ok": bool(long_ok), "short_ok": bool(short_ok)})
     return {"enabled": bool(enabled), "source": market_source.upper(),
             "basis": f"EMA{span} slope / {slope_bars} chart bars" if is_ou else
-                     ("completed 1h · actionable-time aligned · 30 closes · ±0.15%" if macro_bars is not None else "replay trend fallback"),
+                     ("completed 1h · actionable-time aligned · MA7 slope" if macro_bars is not None else "replay trend fallback"),
             "points": points}
 
 

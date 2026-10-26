@@ -19,7 +19,7 @@ class CryptoEntryTrendTests(unittest.TestCase):
         self.assertTrue(all(p['direction'] == 'DOWNTREND' for p in points))
         for bar, point in zip(self.bars, points):
             completed = [b for b in self.hourly if b['time'] + 3600 <= bar['time']]
-            self.assertEqual((point['long_ok'], point['short_ok']), hourly_macro_alignment([b['value'] for b in completed[-30:]]))
+            self.assertEqual((point['long_ok'], point['short_ok']), hourly_macro_alignment([b['value'] for b in completed]))
             self.assertEqual(point['source_time'], completed[-1]['time'])
         future_changed = [dict(b, value=10000) if b['time'] >= self.bars[-1]['time'] else b
                           for b in self.hourly]
@@ -66,3 +66,10 @@ class CryptoEntryTrendTests(unittest.TestCase):
     def test_missing_hourly_data_is_unavailable(self):
         result = _run_crypto_backtest_sync(self.bars, True, macro_bars=[])
         self.assertTrue(all(p['direction'] == 'UNAVAILABLE' for p in result['entry_trend']['points']))
+
+    def test_hourly_regime_uses_ma7_slope_not_long_window_return(self):
+        # The newest close lifts MA7 even though the broader series remains lower.
+        values = [120, 119, 118, 117, 116, 100, 100, 100, 100, 100, 100, 100, 101]
+        self.assertEqual(hourly_macro_alignment(values), (True, False))
+        falling = [80, 81, 82, 83, 84, 100, 100, 100, 100, 100, 100, 100, 99]
+        self.assertEqual(hourly_macro_alignment(falling), (False, True))
