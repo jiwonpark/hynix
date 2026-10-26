@@ -136,6 +136,43 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(restored.state["tranches"]), 1)
         self.assertEqual(len(self.client.orders), 1)
 
+    async def test_startup_auto_reconciles_filled_exit_after_lost_response(self):
+        await self.bot.manual_entry(1, 50)
+        self.client.fail_after_fill = True
+        with self.assertRaisesRegex(TimeoutError, "response lost after fill"):
+            await self.bot.manual_reduce()
+
+        restored = CryptoBot(self.client, self.path)
+        self.assertIsNotNone(restored.state["pending_order"])
+        await restored.verify_startup()
+
+        self.assertIsNone(restored.state["pending_order"])
+        self.assertEqual(restored.state["tranches"], [])
+        self.assertFalse(restored.state["recovery_required"])
+        self.assertFalse(restored.state["execution_blocked"])
+        self.assertEqual(restored.state["execution_history"][-1]["event"], "EXIT")
+        self.assertEqual(len(self.client.orders), 2)
+
+    async def test_startup_keeps_ambiguous_pending_order_blocked(self):
+        self.bot.state["enabled"] = True
+        self.bot.state["pending_order"] = {
+            "client_order_id": "hxcryptoambiguous", "symbol": "BTCUSDT",
+            "side": 1, "qty": "0.500", "reduce_only": False,
+            "reason": "closed_bar_signal", "created_at": 1,
+        }
+        self.bot._save()
+        self.client.last_order = {
+            "status": "PARTIALLY_FILLED", "executedQty": "0.100",
+            "avgPrice": "100.01", "orderId": 99,
+        }
+
+        restored = CryptoBot(self.client, self.path)
+        await restored.verify_startup()
+
+        self.assertTrue(restored.state["recovery_required"])
+        self.assertTrue(restored.state["execution_blocked"])
+        self.assertIsNotNone(restored.state["pending_order"])
+
     async def test_create_order_polls_if_initial_response_not_filled(self):
         # Initial response has status NEW and 0 avgPrice, polling returns FILLED
         orig_create = self.client.create_order

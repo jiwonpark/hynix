@@ -669,24 +669,31 @@ class CryptoBot:
             self._save()
             raise
 
+    async def _reconcile_pending_order(self) -> Optional[Dict[str, Any]]:
+        """Resolve one persisted order by its exchange-assigned client ID."""
+        pending = self.state["pending_order"]
+        if not pending:
+            return None
+        order = await self.client.request(
+            "GET", "/fapi/v1/order",
+            {"symbol": pending["symbol"], "origClientOrderId": pending["client_order_id"]},
+            signed=True,
+        )
+        if order.get("status") == "FILLED":
+            return self._record_fill(order, pending)
+        if (order.get("status") in {"CANCELED", "EXPIRED", "REJECTED"}
+                and float(order.get("executedQty", 0)) == 0):
+            self.state["pending_order"] = None
+            self._save()
+            return None
+        raise ValueError("Order is still open, partially filled, or not conclusively canceled")
+
     async def reconcile(self) -> Dict[str, Any]:
         """Read exchange order/position history to resolve a stopped executor."""
         async with self.lock:
             if self.state["enabled"] and not self.state["recovery_required"]:
                 raise ValueError("Pause the bot before reconciliation")
-            pending = self.state["pending_order"]
-            event = None
-            if pending:
-                order = await self.client.request("GET", "/fapi/v1/order",
-                                                  {"symbol": pending["symbol"],
-                                                   "origClientOrderId": pending["client_order_id"]}, signed=True)
-                if order.get("status") == "FILLED":
-                    event = self._record_fill(order, pending)
-                elif order.get("status") in {"CANCELED", "EXPIRED", "REJECTED"} and float(order.get("executedQty", 0)) == 0:
-                    self.state["pending_order"] = None
-                    self._save()
-                else:
-                    raise ValueError("Order is still open, partially filled, or not conclusively canceled")
+            event = await self._reconcile_pending_order()
             account, amount = await self._account_position(self.state["selected_symbol"])
             self._check_position(amount)
             self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
@@ -695,14 +702,17 @@ class CryptoBot:
 
     async def verify_startup(self) -> None:
         """Never resume persisted live mode before checking actual exchange inventory."""
-        if not self.state["enabled"] and not self.state["tranches"]:
+        if not self.state["enabled"] and not self.state["tranches"] and not self.state["pending_order"]:
             return
         async with self.lock:
             try:
                 if self.state["pending_order"]:
-                    raise ValueError("Pending order from previous process requires reconciliation")
+                    await self._reconcile_pending_order()
                 _, amount = await self._account_position(self.state["selected_symbol"])
                 self._check_position(amount)
+                self.state.update(recovery_required=False, execution_blocked=False,
+                                  blocked_reason=None, last_error=None)
+                self._save()
             except Exception as exc:
                 self.state.update(recovery_required=True, execution_blocked=True,
                                   blocked_reason=f"Startup reconciliation failed: {exc}",

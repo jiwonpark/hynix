@@ -2881,7 +2881,8 @@
       const isEnabled = Boolean(bot?.enabled);
       const isRecovery = Boolean(bot?.recovery_required);
       const isBlocked = Boolean(bot?.execution_blocked);
-      const isHalted = isRecovery || isBlocked;
+      const isHalted = isRecovery || Boolean(bot?.pending_order) || (isBlocked && bot?.can_execute_exit === false);
+      const isEntryCapped = isEnabled && isBlocked && !isHalted && bot?.can_execute_exit !== false;
       const tranches = Array.isArray(bot?.tranches) ? bot.tranches : [];
       const stratMode = bot?.strategy_mode || "grid";
       const stratName = bot?.strategy_name || this.paradigms[stratMode]?.name || "Dynamic Grid";
@@ -2932,16 +2933,20 @@
       } else if (isEnabled) {
         if (banner) banner.classList.add("active");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator active";
-        if (titleEl) titleEl.textContent = isKo ? `⚡ ${stratName}: 실시간 가동 중` : `⚡ ${stratName.toUpperCase()}: ACTIVE`;
+        if (titleEl) titleEl.textContent = isEntryCapped
+          ? (isKo ? `⚡ ${stratName}: 청산 가동 · 신규 진입 한도` : `⚡ ${stratName.toUpperCase()}: EXITS ACTIVE · ENTRY CAPPED`)
+          : (isKo ? `⚡ ${stratName}: 실시간 가동 중` : `⚡ ${stratName.toUpperCase()}: ACTIVE`);
         if (badge) {
           badge.style.display = "inline-flex";
           badge.className = "badgeAutoPeriodicStatus active";
-          badge.textContent = "● EC2 LIVE BOT ACTIVE";
-          badge.style.background = "#dcfce7";
-          badge.style.color = "#166534";
+          badge.textContent = isEntryCapped ? "● EXITS ACTIVE · ENTRY CAPPED" : "● EC2 LIVE BOT ACTIVE";
+          badge.style.background = isEntryCapped ? "#fef3c7" : "#dcfce7";
+          badge.style.color = isEntryCapped ? "#92400e" : "#166534";
         }
         if (headingEl) headingEl.textContent = "EC2 DAEMON: ACTIVE";
-        if (detailEl) detailEl.textContent = isKo ? `실시간 ${stratName} 가동 중` : `Running ${stratName} on EC2`;
+        if (detailEl) detailEl.textContent = isEntryCapped
+          ? `${bot?.blocked_reason || "Entry capacity reached"} · exits remain active`
+          : (isKo ? `실시간 ${stratName} 가동 중` : `Running ${stratName} on EC2`);
       } else {
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator paused";
         if (titleEl) titleEl.textContent = isKo ? `○ ${stratName}: 대기 (일시정지)` : `○ ${stratName.toUpperCase()}: PAUSED`;
@@ -2975,7 +2980,7 @@
       const liveBtn = lid("modeLive");
       if (liveBtn) liveBtn.classList.toggle("botActiveLive", isEnabled);
 
-      this.setText("lblDaemonLatency", isHalted ? "Lighter Bot: Execution blocked" : (isEnabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused"));
+      this.setText("lblDaemonLatency", isHalted ? "Lighter Bot: Execution blocked" : (isEntryCapped ? "Lighter Bot: Exits active · entry capped" : (isEnabled ? "Lighter Bot: Running on EC2" : "Lighter Bot: Paused")));
       this.setText("lblDaemonStats", bot?.last_evaluation ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(2)} · ${tranches.length}/${bot?.max_tranches ?? tranches.length} safe tranches` : "Awaiting first closed-bar evaluation");
       const rulesPanel = $("lighterLiveRulesPanel");
       if (rulesPanel) {
@@ -2984,9 +2989,9 @@
       }
       const rulesState = $("lighterLiveRulesState");
       if (rulesState) {
-        rulesState.textContent = isHalted ? "⚠ REAL BOT BLOCKED" : (isEnabled ? "● REAL BOT ACTIVE" : "○ REAL BOT PAUSED");
-        rulesState.style.background = isHalted ? "#fee2e2" : (isEnabled ? "#dcfce7" : "#e2e8f0");
-        rulesState.style.color = isHalted ? "#991b1b" : (isEnabled ? "#166534" : "#475569");
+        rulesState.textContent = isHalted ? "⚠ REAL BOT BLOCKED" : (isEntryCapped ? "● EXITS ACTIVE · ENTRY CAPPED" : (isEnabled ? "● REAL BOT ACTIVE" : "○ REAL BOT PAUSED"));
+        rulesState.style.background = isHalted ? "#fee2e2" : (isEntryCapped ? "#fef3c7" : (isEnabled ? "#dcfce7" : "#e2e8f0"));
+        rulesState.style.color = isHalted ? "#991b1b" : (isEntryCapped ? "#92400e" : (isEnabled ? "#166534" : "#475569"));
       }
       const writeRule = (id, value) => { const element = $(id); if (element) element.textContent = value; };
       writeRule("lighterLiveEngine", `${stratName} (${stratInterval})`);
