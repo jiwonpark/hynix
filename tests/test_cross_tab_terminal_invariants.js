@@ -16,6 +16,10 @@ assert.doesNotMatch(
 );
 assert.match(index, /window\.scrollTo\(\{ top: 0, left: 0, behavior: "auto" \}\)/,
   "entering another terminal must start at the top");
+assert.match(index, /function renderMainTabProgress\(container, config\)/,
+  "trading tabs must expose component-level progressive loading");
+assert.doesNotMatch(index, /mainTabLoading > \* \{[\s\S]*?visibility: hidden/,
+  "loaded terminal sections must remain visible while other components load");
 
 for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", lighterCrypto]]) {
   assert.match(source, /StrategyExecutionChartController\.linkTimeScales\(/,
