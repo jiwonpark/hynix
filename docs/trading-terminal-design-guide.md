@@ -117,3 +117,6 @@ colors immediately when replay settings change, while loading, or on failure;
 never carry a prior strategy's trend shading into a new replay. Forming candles
 and candles outside the replay coverage have no evaluated background. Separate
 reference trend dropdowns must say reference; they do not configure live filters.
+# Paper/replay refresh invariant
+
+Across all trading tabs, live price, account, position, and P&L polling must not reset or recompute paper/replay results. Replay is recalculated only when its symbol, candle interval, strategy, enabled conditions, or thresholds change, or when the user explicitly reruns it. Keep the last completed replay visible (dimmed and labelled as updating when appropriate) until its replacement succeeds. Loading UI must identify the pending components rather than presenting an unlabelled blank surface.

@@ -711,7 +711,7 @@
           this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();
           this.refreshChart();
-          this.runBacktest();
+          this.runBacktestIfChanged();
         });
       });
 
@@ -2779,7 +2779,7 @@
       }
       this.updateRulesMatchStatus();
       if (this.bars && this.bars.length) {
-        this.runBacktest();
+        this.runBacktestIfChanged();
       }
     },
 
@@ -3578,7 +3578,7 @@
           if (button) button.classList.toggle("active", value === this.interval);
         });
         this.updateGridLadderData();
-        this.runBacktest();
+        this.runBacktestIfChanged();
         setTimeout(() => {
           if (!this._historyExhausted && !this._loadingOlderBars && (!this.bars || this.bars.length <= 500)) {
             this.loadOlderBars(500);
@@ -5216,6 +5216,16 @@
       if (legend) { legend.style.opacity = this.maVisibility[period] ? "1" : ".35"; legend.style.textDecoration = this.maVisibility[period] ? "none" : "line-through"; }
     },
 
+    replayRefreshKey(settings = this.replaySettings()) {
+      return new URLSearchParams(settings).toString();
+    },
+
+    runBacktestIfChanged() {
+      const key = this.replayRefreshKey();
+      if (key === this._lastReplayRefreshKey || key === this._pendingReplayRefreshKey) return;
+      return this.runBacktest();
+    },
+
     async runBacktest() {
       const requestId = this.backtestRequestId = (this.backtestRequestId || 0) + 1;
       const summary = lid("dynamicBacktestStatus");
@@ -5239,12 +5249,15 @@
           }
         }
         const settings = this.replaySettings();
+        const replayKey = this.replayRefreshKey(settings);
+        this._pendingReplayRefreshKey = replayKey;
         this.updateRulesMatchStatus();
         const trendSlope = settings.trend_slope_min;
         const trendPullback = settings.trend_pullback_dist;
         const toggles = new URLSearchParams(settings);
         const data = await api(`/api/lighter/backtest?${toggles}`);
         if (requestId !== this.backtestRequestId) return;
+        this._lastReplayRefreshKey = replayKey;
         this.latestReplayConditionResult = data;
         if (this.currentParadigm === "ou_quant") this.renderOuConditionStatus(data.latest_evaluation, settings);
         this.renderReplayConditionStatus(data, settings);
@@ -5372,7 +5385,12 @@
           if (summary) summary.textContent = error.message;
           this.executionChartFrame?.setStatus(`⚠️ Replay failed: ${error.message || "error"}`);
         }
-      } finally { if (button && requestId === this.backtestRequestId) button.disabled = false; }
+      } finally {
+        if (requestId === this.backtestRequestId) {
+          this._pendingReplayRefreshKey = null;
+          if (button) button.disabled = false;
+        }
+      }
     },
 
     save() { safeStorage.setItem(STORAGE_KEY, JSON.stringify({ entries: this.entries, ledger: this.ledger.slice(0, 100) })); },

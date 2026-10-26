@@ -11138,10 +11138,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
     const mainTabLoadingConfig = {
       backtest: { id: "tabContentBacktest", ready: () => Array.isArray(cachedRows) && cachedRows.length > 0 },
-      trading: { id: "tabContentTrading", ready: () => Boolean(tradingEngine?.state?.backendAuthenticated && tradingEngine?.shortTermHistory?.bars?.length) },
-      lighter: { id: "tabContentLighter", ready: () => Boolean(window.lighterEngine?.bars?.length && window.lighterEngine?.liveVenue?.success !== false && window.lighterEngine?.liveVenue) },
-      crypto: { id: "tabContentCrypto", ready: () => Boolean(window.cryptoEngine?.bars?.length && window.cryptoEngine?.liveVenue?.success !== false && window.cryptoEngine?.liveVenue) },
-      lightercrypto: { id: "tabContentLighterCrypto", ready: () => Boolean(window.lighterCryptoEngine?.bars?.length && window.lighterCryptoEngine?.liveVenue?.success) },
+      trading: { id: "tabContentTrading", ready: () => Boolean(tradingEngine?.state?.backendAuthenticated && tradingEngine?.shortTermHistory?.bars?.length), status: () => `Loading Tab 2 · ${tradingEngine?.shortTermHistory?.bars?.length ? "✓" : "…"} chart + MA · ${tradingEngine?.state?.backendAuthenticated ? "✓" : "…"} account` },
+      lighter: { id: "tabContentLighter", ready: () => Boolean(window.lighterEngine?.bars?.length && window.lighterEngine?.liveVenue?.success !== false && window.lighterEngine?.liveVenue && window.lighterEngine?.latestReplayConditionResult), status: () => `Loading Tab 3 · ${window.lighterEngine?.bars?.length ? "✓" : "…"} chart + MA · ${window.lighterEngine?.liveVenue ? "✓" : "…"} account · ${window.lighterEngine?.latestReplayConditionResult ? "✓" : "…"} paper replay` },
+      crypto: { id: "tabContentCrypto", ready: () => Boolean(window.cryptoEngine?.bars?.length && window.cryptoEngine?.liveVenue?.success !== false && window.cryptoEngine?.liveVenue && window.cryptoEngine?.botState && window.cryptoEngine?.entryTrendResult), status: () => `Loading Tab 4 · ${window.cryptoEngine?.bars?.length ? "✓" : "…"} chart + MA · ${window.cryptoEngine?.liveVenue ? "✓" : "…"} account · ${window.cryptoEngine?.botState ? "✓" : "…"} bot + P&L · ${window.cryptoEngine?.entryTrendResult ? "✓" : "…"} signals + background` },
+      lightercrypto: { id: "tabContentLighterCrypto", ready: () => Boolean(window.lighterCryptoEngine?.bars?.length && window.lighterCryptoEngine?.liveVenue?.success && window.lighterCryptoEngine?.botState && window.lighterCryptoEngine?.entryTrendResult), status: () => `Loading Tab 5 · ${window.lighterCryptoEngine?.bars?.length ? "✓" : "…"} chart + MA · ${window.lighterCryptoEngine?.liveVenue?.success ? "✓" : "…"} account · ${window.lighterCryptoEngine?.botState ? "✓" : "…"} bot + P&L · ${window.lighterCryptoEngine?.entryTrendResult ? "✓" : "…"} signals + background` },
       pairs: { id: "tabContentPairs", ready: () => Boolean(pairsExplorer?.pairs?.some((pair) => Number(pair.priceA) > 0 && Number(pair.priceB) > 0)) },
       compound: { id: "tabContentCompound", ready: () => Boolean(compoundingEngine?.chart && compoundingEngine?.wealthSeries) },
       strategylab: { id: "tabContentStrategyLab", ready: () => Boolean(window.strategyLab?.loaded && window.strategyLab?.data?.bars?.length) },
@@ -11153,6 +11153,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       const config = mainTabLoadingConfig[normalized];
       const container = config ? $(config.id) : null;
       if (!container) return false;
+      if (typeof config.status === "function") container.dataset.loadingMessage = config.status();
       let ready = false;
       try { ready = Boolean(config.ready()); } catch (_) {}
       container.classList.toggle("mainTabLoading", !ready);

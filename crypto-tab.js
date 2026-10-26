@@ -637,7 +637,7 @@
       });
       this.labelTerminal();
       await this.refresh();
-      await this.runBacktest();
+      await this.runBacktestIfChanged();
       this.updateGridLadderData();
     },
 
@@ -947,13 +947,13 @@
           this.interval = value;
           this._historyExhausted = false;
           this.backtestMarkers = [];
-          this.clearEntryTrend();
+          this.setEntryTrendLoading("interval changing…");
           this.latestReplayConditionResult = null;
           this.renderMarkers();
           this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();
           this.refreshChart();
-          this.runBacktest();
+          this.runBacktestIfChanged();
         });
       });
 
@@ -3341,7 +3341,7 @@
       }
       this.updateRulesMatchStatus();
       if (this.bars && this.bars.length) {
-        this.runBacktest();
+        this.runBacktestIfChanged();
       }
     },
 
@@ -3352,6 +3352,18 @@
       if (layer) layer.innerHTML = "";
       const legend = $("cryptoEntryTrendLegend");
       if (legend) legend.textContent = "PAPER ENTRY TREND · awaiting replay";
+    },
+
+    setEntryTrendLoading(message = "replay updating…") {
+      const layer = $("cryptoTrendBandLayer");
+      const legend = $("cryptoEntryTrendLegend");
+      if (layer) layer.style.opacity = this.entryTrendResult ? ".38" : "1";
+      if (legend) {
+        const previous = this.entryTrendResult
+          ? `PAPER ENTRY FILTER · ${this.entryTrendResult.source || ""} · ${this.entryTrendResult.basis || ""}`
+          : "PAPER ENTRY FILTER";
+        legend.textContent = `${previous} · ${message}`;
+      }
     },
 
     calculateTrendRanges(bars) {
@@ -3366,6 +3378,8 @@
       this.entryTrendResult = result || null;
       this.trendRanges = this.calculateTrendRanges(this.bars || []);
       const legend = $("cryptoEntryTrendLegend");
+      const layer = $("cryptoTrendBandLayer");
+      if (layer) layer.style.opacity = "1";
       const latest = result?.points?.at(-1);
       if (legend) legend.textContent = result
         ? `PAPER ENTRY FILTER ${result.enabled ? "ON" : "OFF"} · ${result.source} · ${result.basis} · ${latest?.direction || "UNAVAILABLE"}`
@@ -4082,7 +4096,7 @@
           if (button) button.classList.toggle("active", value === this.interval);
         });
         this.updateGridLadderData();
-        this.runBacktest();
+        this.runBacktestIfChanged();
         setTimeout(() => {
           if (!this._historyExhausted && !this._loadingOlderBars && (!this.bars || this.bars.length <= 500)) {
             this.loadOlderBars(500);
@@ -4999,7 +5013,7 @@
     requestBacktest() {
       if (this.backtestDebounceTimer) clearTimeout(this.backtestDebounceTimer);
       this.backtestMarkers = [];
-      this.clearEntryTrend();
+      this.setEntryTrendLoading("settings changed · updating…");
       const targets = lid("tradeMarkerTargets");
       if (targets) targets.textContent = "";
       const svg = lid("tradeTrianglesLayer");
@@ -5760,6 +5774,18 @@
       if (legend) { legend.style.opacity = this.maVisibility[period] ? "1" : ".35"; legend.style.textDecoration = this.maVisibility[period] ? "none" : "line-through"; }
     },
 
+    replayRefreshKey(settings = this.replaySettings()) {
+      // Live candles, quotes, account status, and P&L refresh independently.
+      // Paper replay changes only when its explicit symbol/interval/rules change.
+      return new URLSearchParams(settings).toString();
+    },
+
+    runBacktestIfChanged() {
+      const key = this.replayRefreshKey();
+      if (key === this._lastReplayRefreshKey || key === this._pendingReplayRefreshKey) return;
+      return this.runBacktest();
+    },
+
     async runBacktest() {
       const requestId = this.backtestRequestId = (this.backtestRequestId || 0) + 1;
       const summary = lid("dynamicBacktestStatus");
@@ -5768,7 +5794,7 @@
       if (summary) summary.textContent = "Calculating strategy signals…";
       this.executionChartFrame?.setStatus("⏳ Calculating paper replay…");
       this.backtestMarkers = [];
-      this.clearEntryTrend();
+      this.setEntryTrendLoading("replay updating…");
       this.latestReplayConditionResult = null;
       this.replayConditionSignature = null;
       const targets = lid("tradeMarkerTargets");
@@ -5779,6 +5805,8 @@
       this.renderCurrentPositionReferenceLines();
       try {
         const settings = this.replaySettings();
+        const replayKey = this.replayRefreshKey(settings);
+        this._pendingReplayRefreshKey = replayKey;
         this.updateRulesMatchStatus();
         const trendSlope = settings.trend_slope_min;
         const trendPullback = settings.trend_pullback_dist;
@@ -5787,6 +5815,7 @@
         if (requestId !== this.backtestRequestId || JSON.stringify(settings) !== JSON.stringify(this.replaySettings())) return;
         if (!data?.success) throw new Error(data?.error || "Replay data unavailable");
         this.applyEntryTrend(data.entry_trend);
+        this._lastReplayRefreshKey = replayKey;
         const pName = this.paradigms[this.currentParadigm]?.name || "Virtual";
         this.backtestMarkers = (data.trades || []).flatMap((trade, tradeIndex) => [
           {
@@ -5969,14 +5998,24 @@
         if (requestId === this.backtestRequestId) {
           this.latestReplayConditionResult = null;
           this.backtestMarkers = [];
-          this.clearEntryTrend();
+          const layer = $("cryptoTrendBandLayer");
+          if (layer) layer.style.opacity = this.entryTrendResult ? ".38" : "1";
+          const legend = $("cryptoEntryTrendLegend");
+          if (legend) legend.textContent = this.entryTrendResult
+            ? "PAPER ENTRY FILTER · update failed · keeping previous background"
+            : "PAPER ENTRY FILTER · unavailable";
           this.renderMarkers();
           this.renderCurrentPositionReferenceLines();
           this.updateRulesMatchStatus();
           if (summary) summary.textContent = error.message;
           this.executionChartFrame?.setStatus(`⚠️ Replay failed: ${error.message || "error"}`);
         }
-      } finally { if (button && requestId === this.backtestRequestId) button.disabled = false; }
+      } finally {
+        if (requestId === this.backtestRequestId) {
+          this._pendingReplayRefreshKey = null;
+          if (button) button.disabled = false;
+        }
+      }
     },
 
     save() { safeStorage.setItem(STORAGE_KEY, JSON.stringify({ entries: this.entries, ledger: this.ledger.slice(0, 100) })); },
