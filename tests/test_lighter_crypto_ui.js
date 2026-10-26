@@ -49,6 +49,21 @@ const nodes = new Map([
 ]);
 context.document.getElementById = (id) => nodes.get(id) || null;
 const tab5 = context.window.lighterCryptoEngine;
+const tab4 = context.window.cryptoEngine;
+const verifiedBot = tab4.retainVerifiedRealizedSnapshot({
+  execution_history: [{ event: 'EXIT' }],
+  verified_exit_count: 1,
+  verified_realized_pnl_usd: 2.5,
+  pnl_reconciliation: { total_exits: 1, verified_exits: 1 },
+});
+assert.equal(verifiedBot.verified_realized_pnl_usd, 2.5);
+const lightweightBot = tab4.retainVerifiedRealizedSnapshot({
+  execution_history: [{ event: 'EXIT' }, { event: 'EXIT' }],
+});
+assert.equal(lightweightBot.verified_realized_pnl_usd, 2.5);
+assert.equal(lightweightBot.verified_exit_count, 1);
+assert.equal(lightweightBot.pnl_reconciliation.total_exits, 2);
+assert.equal(lightweightBot.pnl_reconciliation.stale, true);
 assert.equal(tab5.currentParadigm, 'adaptive_tranche');
 assert.equal(tab5.paradigms.adaptive_tranche.name, 'Adaptive Tranche');
 assert.match(tab5.paradigms.adaptive_tranche.badge, /TAB 2 MODEL/);

@@ -3421,6 +3421,7 @@
 
     updateBotStatus(bot, venue) {
       if (!bot) return;
+      bot = this.retainVerifiedRealizedSnapshot(bot);
       this.botState = bot;
       const isEnabled = Boolean(bot?.enabled);
       const symbol = bot?.selected_symbol || this.selectedSymbol || "BTCUSDT";
@@ -5998,18 +5999,51 @@
       return { adr, domestic, gross, margin };
     },
 
+    retainVerifiedRealizedSnapshot(bot) {
+      if (!bot) return bot;
+      const count = Number(bot.verified_exit_count);
+      const pnl = Number(bot.verified_realized_pnl_usd);
+      const reconciliation = bot.pnl_reconciliation;
+      const completeSnapshot = reconciliation && !reconciliation.error
+        && Number.isFinite(count) && Number.isFinite(pnl)
+        && Number.isFinite(Number(reconciliation.total_exits));
+      if (completeSnapshot) {
+        this._verifiedRealizedSnapshot = {
+          count, pnl,
+          reconciliation: { ...reconciliation, stale: false },
+        };
+        return bot;
+      }
+      const snapshot = this._verifiedRealizedSnapshot;
+      if (!snapshot) return bot;
+      const history = Array.isArray(bot.execution_history) ? bot.execution_history : [];
+      const currentExitCount = history.filter(row => row.event === "EXIT" || row.is_exit).length;
+      return {
+        ...bot,
+        verified_exit_count: snapshot.count,
+        verified_realized_pnl_usd: snapshot.pnl,
+        pnl_reconciliation: {
+          ...snapshot.reconciliation,
+          total_exits: Math.max(Number(snapshot.reconciliation.total_exits) || 0, currentExitCount),
+          stale: true,
+          error: reconciliation?.error,
+        },
+      };
+    },
+
     verifiedRealizedSummary() {
       const serverPnl = Number(this.botState?.verified_realized_pnl_usd);
       const serverCount = Number(this.botState?.verified_exit_count);
       if (Number.isFinite(serverPnl) && Number.isFinite(serverCount)) {
-        return { pnl: serverPnl, count: serverCount };
+        return { pnl: serverPnl, count: serverCount,
+          stale: Boolean(this.botState?.pnl_reconciliation?.stale) };
       }
       const history = Array.isArray(this.botState?.execution_history) ? this.botState.execution_history : [];
       const exits = history.filter((trade) => (trade.event === "EXIT" || trade.is_exit)
         && (trade.pnl_authoritative || trade.pnl_source === "LIGHTER_REALIZED_PNL"));
       return {
         pnl: exits.reduce((sum, trade) => sum + Number(trade.net_pnl_usd ?? trade.pnl ?? 0), 0),
-        count: exits.length,
+        count: exits.length, stale: false,
       };
     },
 
@@ -6049,7 +6083,7 @@
           : (validTranches.length > 0 ? "Exchange unrealized PnL; fees excluded" : "No bot-owned open tranche"));
         const totalExits = Number(this.botState?.pnl_reconciliation?.total_exits ?? realized.count);
         this.setText("valUnrealizedPnl", realized.count
-          ? `${realizedSign}$${realized.pnl.toFixed(2)} · ${realized.count}/${totalExits} verified exits`
+          ? `${realizedSign}$${realized.pnl.toFixed(2)} · ${realized.count}/${totalExits} verified exits${realized.stale ? " · last verified" : ""}`
           : "— (fees / realized PnL not reconciled)");
         const realizedEl = lid("valUnrealizedPnl");
         if (realizedEl) realizedEl.style.color = realized.pnl > 0 ? "#16a34a" : (realized.pnl < 0 ? "#dc2626" : "#64748b");
