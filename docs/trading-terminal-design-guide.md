@@ -120,3 +120,7 @@ reference trend dropdowns must say reference; they do not configure live filters
 # Paper/replay refresh invariant
 
 Across all trading tabs, live price, account, position, and P&L polling must not reset or recompute paper/replay results. Replay is recalculated only when its symbol, candle interval, strategy, enabled conditions, or thresholds change, or when the user explicitly reruns it. Keep the last completed replay visible (dimmed and labelled as updating when appropriate) until its replacement succeeds. Loading UI must identify the pending components rather than presenting an unlabelled blank surface.
+
+## Cross-tab interaction contract
+
+Tabs 2–5 use the same navigation, loading, chart viewport, history, marker, and replay interaction model. Venue and strategy differences must not change those mechanics. Linked chart panes must receive identical ordered timestamps; represent unavailable observations as whitespace instead of removing the timestamp. Entering a different terminal starts at the top of that terminal, while horizontal navigation centering must never alter the document's vertical scroll. Every shared-interaction change requires verification across all four tabs.

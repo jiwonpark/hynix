@@ -27,6 +27,26 @@ Stateful strategy conditions based on prior signals (for example configured entr
 spacing) may use signal history, but never open-position history. UI summaries
 must distinguish entry signals from simulated fills/trades.
 
+## Cross-tab parity (mandatory)
+
+Tabs 2, 3, 4, and 5 are variants of one trading terminal. Their trading venue,
+instrument, and strategy may differ; shared interaction behavior must not. Any
+change to chart navigation/synchronization, tab activation, scrolling, loading,
+refresh/retry, replay lifecycle, marker interaction, history grouping, account
+presentation, or responsive behavior must be reviewed against all four tabs.
+Implement shared behavior in the common controller/frame or main tab switcher
+whenever possible instead of creating a tab-local variant. If venue-specific
+data requires local adaptation, it must still satisfy the common contract (for
+example every synchronized series must contain the same ordered timestamps,
+using whitespace points for missing quotes).
+
+Before committing such a change, run the cross-tab invariant test and the
+relevant per-tab UI tests. After deployment, open Tabs 2–5 and verify the shared
+behavior in each, including navigation away/back and one interval change. A fix
+is incomplete if only the originally reported tab was checked. Document any
+intentional exception in the trading-terminal design guide and label it in the
+UI; otherwise behavioral divergence is a regression.
+
 The user wants implementation changes committed, pushed, and deployed by default.
 After completing the appropriate checks, commit the changes, push to origin, deploy
 both affected frontend and backend files, and verify the live site. Do not stop at
