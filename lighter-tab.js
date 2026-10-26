@@ -2103,6 +2103,7 @@
         this.trendRanges = this.calculateTrendRanges(cached);
         this.series.setData(cached.map((bar) => ({ time: bar.time, value: bar.value })));
         [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(cached, w)));
+        this.setAssetChartData(cached);
         const initial = StrategyExecutionChartController.initialRange(cached.length, 48);
         if (this.chartSync) this.chartSync.setRange(initial);
         else this.chart.timeScale().setVisibleLogicalRange(initial);
@@ -2147,6 +2148,7 @@
         try {
           this.series.setData(this.bars.map((bar) => ({ time: bar.time, value: bar.value })));
           [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(this.bars, w)));
+          this.setAssetChartData(this.bars);
 
           StrategyExecutionChartController.applyPrependedRange(this.chart, addedCount, currentRange);
           if (this.assetChart) StrategyExecutionChartController.applyPrependedRange(this.assetChart, addedCount, assetRange);
@@ -2179,6 +2181,7 @@
           this.trendRanges = this.calculateTrendRanges(cached);
           this.series.setData(cached.map((bar) => ({ time: bar.time, value: bar.value })));
           [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(cached, w)));
+          this.setAssetChartData(cached);
           const initial = StrategyExecutionChartController.initialRange(cached.length, 48);
           if (this.chartSync) this.chartSync.setRange(initial);
           else this.chart.timeScale().setVisibleLogicalRange(initial);
@@ -3459,6 +3462,26 @@
       }
     },
 
+    setAssetChartData(bars) {
+      if (!this.assetSeries?.adr || !Array.isArray(bars)) return;
+      const adrPoints = [];
+      const stockPoints = [];
+      let lastT = -1;
+      for (const bar of bars) {
+        if (bar.time <= lastT) continue;
+        lastT = bar.time;
+        adrPoints.push(bar.adr != null && Number.isFinite(bar.adr) && bar.adr > 0
+          ? { time: bar.time, value: Number(bar.adr) }
+          : { time: bar.time });
+        const stockValue = bar.domestic != null ? bar.domestic : bar.csop;
+        stockPoints.push(stockValue != null && Number.isFinite(stockValue) && stockValue > 0
+          ? { time: bar.time, value: Number(stockValue) }
+          : { time: bar.time });
+      }
+      this.assetSeries.adr.setData(adrPoints);
+      this.assetSeries.stock?.setData(stockPoints);
+    },
+
     async refreshChart() {
       this.ensureChart();
       this.resize();
@@ -3506,25 +3529,9 @@
         this.trendRanges = this.calculateTrendRanges(mergedBars);
         this.series.setData(mergedBars.map((bar) => ({ time: bar.time, value: bar.value })));
 
-        if (this.assetSeries?.adr && mergedBars.length) {
-          const adrPoints = [];
-          const stockPoints = [];
-          let lastT = -1;
-          for (let i = 0; i < mergedBars.length; i++) {
-            const b = mergedBars[i];
-            if (b.time <= lastT) continue;
-            lastT = b.time;
-            if (b.adr != null && Number.isFinite(b.adr) && b.adr > 0) {
-              adrPoints.push({ time: b.time, value: Number(b.adr) });
-            }
-            const sVal = b.domestic != null ? b.domestic : b.csop;
-            if (sVal != null && Number.isFinite(sVal) && sVal > 0) {
-              stockPoints.push({ time: b.time, value: Number(sVal) });
-            }
-          }
-          this.assetSeries.adr.setData(adrPoints);
-          if (this.assetSeries?.stock) this.assetSeries.stock.setData(stockPoints);
-        }
+        // Time-scale linking is index based, so both price series include every
+        // parity candle and use whitespace for a missing venue quote.
+        this.setAssetChartData(mergedBars);
 
         [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(TerminalCommon.movingAverage(mergedBars, windowSize)));
         [7, 24, 60].forEach((windowSize) => {

@@ -11188,6 +11188,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     // Primary Navigation Tab Switcher
     function switchMainTab(tab) {
       const normalized = (tab || "backtest").toLowerCase();
+      const previousTab = String(window.activeMainTab || "").toLowerCase();
       window.activeMainTab = normalized;
       const isBacktest = normalized === "backtest";
       const isTrading = normalized === "trading";
@@ -11226,7 +11227,20 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         : isStrategyLab ? $("navTabStrategyLab")
         : $("navTabUpbitScanner");
       if (activeNav && window.matchMedia("(max-width: 1024px)").matches) {
-        requestAnimationFrame(() => activeNav.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }));
+        // Center the tab only inside the horizontal navigation strip. Native
+        // scrollIntoView also moves the page vertically and caused tab entry to
+        // jump back to the prior screen position.
+        requestAnimationFrame(() => {
+          const nav = activeNav.parentElement;
+          if (!nav) return;
+          const targetLeft = activeNav.offsetLeft - (nav.clientWidth - activeNav.offsetWidth) / 2;
+          nav.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
+        });
+      }
+      if (previousTab && previousTab !== normalized) {
+        // Each terminal is a separate screen; do not inherit a deep scroll
+        // position from the previously visible tab.
+        window.scrollTo({ top: 0, left: 0, behavior: "auto" });
       }
       try {
         localStorage.setItem("skhynix_active_tab", tab);
