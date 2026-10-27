@@ -5638,13 +5638,21 @@
         window.showToast?.("🔒 Terminal is in read-only mode. Unlock using the slide switch at the top.", "warn");
         return;
       }
-      if (!window.confirm(`Place a REAL reduce-only market order for the latest bot-owned ${this.botState?.selected_symbol || "crypto"} tranche?`)) return;
+      const autoRunning = Boolean(this.botState?.enabled);
+      const pauseNotice = autoRunning
+        ? "\n\nFull-Auto will be paused and exchange inventory reconciled before the reduction. The terminal will remain in Manual Live mode afterward."
+        : "";
+      if (!window.confirm(`Place a REAL reduce-only market order for the latest bot-owned ${this.botState?.selected_symbol || "crypto"} tranche?${pauseNotice}`)) return;
       const btn = lid("btnReduceTranche");
       if (btn) btn.disabled = true;
       window.showToast?.("Reducing bot-owned Lighter Perpetuals tranche...", "info");
       try {
         const res = await apiPost("/api/lighter-crypto/reduce_tranche", { confirm_live_trading: true });
         if (res.success) {
+          if (res.bot) this.updateBotStatus(res.bot, this.liveVenue || { execution_enabled: true });
+          this.mode = "semi_auto";
+          safeStorage.setItem("skhynix_lighterCrypto_mode", "semi_auto");
+          this.applyMode("semi_auto", false);
           window.showToast?.(`✅ ${res.message || "Tranche reduced"}`, "success");
           await this.refresh();
         } else {

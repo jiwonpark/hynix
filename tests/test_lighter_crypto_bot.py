@@ -265,6 +265,24 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.bot.state["pending_order"])
         self.assertFalse(self.bot.state["recovery_required"])
 
+    async def test_active_bot_is_paused_reconciled_then_manually_reduced(self):
+        self.client.amount = 0.5
+        self.bot.state["enabled"] = True
+        self.bot.state["tranches"] = [
+            {"side": 1, "qty": 0.5, "price": 95.0, "fee_usd": 0.0,
+             "order_id": "active", "time": 1},
+        ]
+
+        result = await self.bot.pause_reconcile_and_reduce()
+
+        self.assertTrue(result["bot_was_paused"])
+        self.assertEqual(result["event"]["event"], "EXIT")
+        self.assertFalse(self.bot.state["enabled"])
+        self.assertFalse(self.bot.state["recovery_required"])
+        self.assertIsNone(self.bot.state["pending_order"])
+        self.assertEqual(self.bot.state["tranches"], [])
+        self.assertAlmostEqual(self.client.amount, 0.0)
+
     async def test_unreducible_dust_fails_before_pending_order(self):
         self.client.min_base_amount = "0.01"
         self.client.amount = 0.005

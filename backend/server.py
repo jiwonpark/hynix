@@ -1655,9 +1655,13 @@ async def reduce_lighter_crypto_tranche(request: Request) -> JSONResponse:
         body = await request.json()
         if body.get("confirm_live_trading") is not True:
             raise ValueError("Confirm the live Lighter reduction")
-        event = await lighter_crypto_bot.manual_reduce()
-        return JSONResponse({"success": True, "message": "Lighter perp tranche reduced",
-                             "event": event, "bot": lighter_crypto_bot.public_state()})
+        result = await lighter_crypto_bot.pause_reconcile_and_reduce()
+        message = "Lighter perp tranche reduced"
+        if result["bot_was_paused"]:
+            message += "; Full-Auto paused and inventory reconciled"
+        return JSONResponse({"success": True, "message": message,
+                             "event": result["event"], "bot": lighter_crypto_bot.public_state(),
+                             "bot_was_paused": result["bot_was_paused"]})
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error)}, status_code=400)
 

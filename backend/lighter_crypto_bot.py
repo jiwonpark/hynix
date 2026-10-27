@@ -1076,6 +1076,24 @@ class LighterCryptoBot:
             return await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
                                       reduce_only=True, reason="manual")
 
+    async def pause_reconcile_and_reduce(self) -> Dict[str, Any]:
+        """Safely hand an active bot over to a manual reduce-only action.
+
+        The UI exposes reduction while Full-Auto is running, so requiring the
+        user to switch to Paper first creates an impossible workflow: Paper
+        changes the same control into a simulated exit.  Pause the persisted
+        daemon state first, reconcile its inventory against Lighter, and only
+        then submit the reduction.  A reconciliation failure leaves the bot
+        paused and does not place an order.
+        """
+        was_enabled = bool(self.state.get("enabled"))
+        if was_enabled:
+            await self.toggle(False)
+        if was_enabled or self.state.get("recovery_required") or self.state.get("pending_order"):
+            await self.reconcile()
+        event = await self.manual_reduce()
+        return {"event": event, "bot_was_paused": was_enabled}
+
     async def flatten(self) -> Dict[str, Any]:
         async with self.lock:
             self.state["enabled"] = False
