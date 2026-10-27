@@ -2,7 +2,7 @@ import copy
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from backend.lighter_crypto_bot import LighterCryptoBot
 
@@ -19,11 +19,14 @@ class FakeLighter:
         self.book_ask = 100.01
         self.collateral = 1000.0
         self.extra_positions = []
+        self.min_base_amount = "0.001"
+        self.min_quote_amount = "10"
 
     async def market_detail(self, market_id, *, fresh=False):
         return {"market_id": market_id, "symbol": "BTC", "market_type": "perp",
                 "status": "active", "supported_size_decimals": 3,
-                "min_base_amount": "0.001", "min_quote_amount": "10"}
+                "min_base_amount": self.min_base_amount,
+                "min_quote_amount": self.min_quote_amount}
 
     async def account_status(self):
         return {"authenticated": True, "execution_enabled": True,
@@ -240,6 +243,61 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exit_event["event"], "EXIT")
         self.assertEqual(restored.state["tranches"], [])
         self.assertAlmostEqual(self.client.amount, 0)
+
+    async def test_manual_reduce_merges_latest_dust_with_previous_lifo_tranche(self):
+        self.client.min_base_amount = "0.01"
+        self.client.amount = 0.105
+        self.bot.state["tranches"] = [
+            {"side": 1, "qty": 0.1, "price": 90.0, "fee_usd": 0.01,
+             "order_id": "older", "time": 1},
+            {"side": 1, "qty": 0.005, "price": 95.0, "fee_usd": 0.001,
+             "order_id": "dust", "time": 2},
+        ]
+
+        event = await self.bot.manual_reduce()
+
+        self.assertEqual(event["event"], "EXIT")
+        self.assertEqual(event["matched_tranches"], 2)
+        self.assertEqual(event["entry_order_ids"], ["dust", "older"])
+        self.assertAlmostEqual(event["qty"], 0.105)
+        self.assertEqual(self.bot.state["tranches"], [])
+        self.assertAlmostEqual(self.client.amount, 0.0)
+        self.assertIsNone(self.bot.state["pending_order"])
+        self.assertFalse(self.bot.state["recovery_required"])
+
+    async def test_unreducible_dust_fails_before_pending_order(self):
+        self.client.min_base_amount = "0.01"
+        self.client.amount = 0.005
+        self.bot.state["tranches"] = [
+            {"side": 1, "qty": 0.005, "price": 95.0, "fee_usd": 0.0,
+             "order_id": "dust", "time": 1},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "below the Lighter minimum reduction size"):
+            await self.bot.manual_reduce()
+
+        self.assertEqual(self.client.orders, {})
+        self.assertIsNone(self.bot.state["pending_order"])
+        self.assertFalse(self.bot.state["recovery_required"])
+        self.assertFalse(self.bot.state["execution_blocked"])
+
+    async def test_client_minimum_preflight_rejection_does_not_require_recovery(self):
+        self.client.amount = 0.1
+        self.bot.state["tranches"] = [
+            {"side": 1, "qty": 0.1, "price": 95.0, "fee_usd": 0.0,
+             "order_id": "latest", "time": 1},
+        ]
+        self.client.create_market_order = AsyncMock(
+            side_effect=ValueError("Lighter market 1 order is below its minimum size")
+        )
+
+        with self.assertRaisesRegex(ValueError, "below its minimum size"):
+            await self.bot.manual_reduce()
+
+        self.assertIsNone(self.bot.state["pending_order"])
+        self.assertFalse(self.bot.state["recovery_required"])
+        self.assertFalse(self.bot.state["execution_blocked"])
+        self.assertIn("below its minimum size", self.bot.state["last_error"])
 
     async def test_uncertain_fill_pauses_and_reconciles_by_client_index(self):
         self.client.fail_after_fill = True

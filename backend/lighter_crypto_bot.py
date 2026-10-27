@@ -636,22 +636,52 @@ class LighterCryptoBot:
                  "fee_usd": float(order.get("fee_usd", 0) or 0),
                  "pnl_authoritative": False}
         if is_exit:
-            closed = self.state["tranches"][-1] if self.state["tranches"] else None
-            if closed:
-                original_qty = float(closed["qty"])
-                if filled >= original_qty - max(step / 2, original_qty * 0.00001):
+            remaining = filled
+            matched = []
+            while remaining > max(step / 2, filled * 0.00001) and self.state["tranches"]:
+                tracked = self.state["tranches"][-1]
+                if int(tracked["side"]) * side >= 0:
+                    raise ValueError("Lighter reduction fill does not match the tracked campaign direction")
+                original_qty = float(tracked["qty"])
+                consumed = min(remaining, original_qty)
+                consumed_all = consumed >= original_qty - max(step / 2, original_qty * 0.00001)
+                entry_fee = float(tracked.get("fee_usd", 0) or 0)
+                fee_share = entry_fee if consumed_all else entry_fee * consumed / original_qty
+                matched.append({
+                    "side": int(tracked["side"]),
+                    "qty": consumed,
+                    "price": float(tracked["price"]),
+                    "fee_usd": fee_share,
+                    "order_id": str(tracked["order_id"]),
+                })
+                if consumed_all:
                     self.state["tranches"].pop()
                 else:
-                    closed = dict(closed)
-                    self.state["tranches"][-1]["qty"] = original_qty - filled
-                    fee_share = float(closed.get("fee_usd", 0)) * filled / original_qty
-                    self.state["tranches"][-1]["fee_usd"] = float(closed.get("fee_usd", 0)) - fee_share
-                    closed["fee_usd"] = fee_share
-                gross = int(closed["side"]) * filled * (price - float(closed["price"]))
-                net = gross - float(closed.get("fee_usd", 0)) - event["fee_usd"]
-                event.update(entry_price=closed["price"], entry_order_id=closed["order_id"],
-                             original_side=closed["side"], gross_pnl_usd=gross,
-                             net_pnl_usd=net, pnl_source="ESTIMATED_EX_FUNDING")
+                    tracked["qty"] = original_qty - consumed
+                    tracked["fee_usd"] = entry_fee - fee_share
+                remaining -= consumed
+
+            if remaining > max(step / 2, filled * 0.00001):
+                raise ValueError("Lighter reduction fill exceeds bot-owned inventory")
+            if matched:
+                matched_qty = sum(item["qty"] for item in matched)
+                gross = sum(
+                    item["side"] * item["qty"] * (price - item["price"])
+                    for item in matched
+                )
+                entry_fees = sum(item["fee_usd"] for item in matched)
+                weighted_entry = sum(item["qty"] * item["price"] for item in matched) / matched_qty
+                net = gross - entry_fees - event["fee_usd"]
+                event.update(
+                    entry_price=weighted_entry,
+                    entry_order_id=matched[0]["order_id"],
+                    entry_order_ids=[item["order_id"] for item in matched],
+                    matched_tranches=len(matched),
+                    original_side=matched[0]["side"],
+                    gross_pnl_usd=gross,
+                    net_pnl_usd=net,
+                    pnl_source="ESTIMATED_EX_FUNDING",
+                )
             else:
                 event.update(entry_price=price, entry_order_id="external",
                              original_side=-side, gross_pnl_usd=0.0,
@@ -670,6 +700,40 @@ class LighterCryptoBot:
                           execution_blocked=False, blocked_reason=None)
         self._save()
         return event
+
+    def _reduction_quantity(self, side: int, price: float, detail: Dict[str, Any],
+                            step: float, reduce_fraction: float) -> float:
+        """Return a valid LIFO reduction, merging newer dust with older tranches."""
+        if not self.state["tranches"]:
+            raise ValueError("No bot-owned tranche to reduce")
+        latest = self.state["tranches"][-1]
+        if int(latest["side"]) * side >= 0:
+            raise ValueError("No bot-owned tranche can be reduced in that direction")
+
+        min_base = float(detail.get("min_base_amount", 0) or 0)
+        min_quote = float(detail.get("min_quote_amount", 0) or 0)
+        required = max(step, min_base, (min_quote / price) if min_quote > 0 else 0.0)
+        required_steps = max(1, math.ceil((required / step) - 1e-12))
+        minimum_qty = required_steps * step
+
+        latest_qty = float(latest["qty"])
+        requested = latest_qty * min(1.0, max(0.0, reduce_fraction))
+        quantized = math.floor((requested / step) + 1e-12) * step
+        if quantized >= minimum_qty - step * 1e-9:
+            return quantized
+
+        aggregate = 0.0
+        for tranche in reversed(self.state["tranches"]):
+            if int(tranche["side"]) * side >= 0:
+                break
+            aggregate += float(tranche["qty"])
+            quantized = math.floor((aggregate / step) + 1e-12) * step
+            if quantized >= minimum_qty - step * 1e-9:
+                return quantized
+        raise ValueError(
+            f"Bot-owned LIFO inventory is below the Lighter minimum reduction size "
+            f"({aggregate:.8f} available; {minimum_qty:.8f} required)"
+        )
 
     async def _submit(self, side: int, notional: float, *, reduce_only: bool, reason: str,
                       signal_values: Optional[list[float]] = None,
@@ -700,10 +764,7 @@ class LighterCryptoBot:
             if reduce_only:
                 if not self.state["tranches"] or amount * side >= 0:
                     raise ValueError("No bot-owned tranche can be reduced in that direction")
-                owned_qty = float(self.state["tranches"][-1]["qty"])
-                qty = math.floor((owned_qty * min(1.0, max(0.0, reduce_fraction))) / step) * step
-                if qty < step:
-                    qty = owned_qty
+                qty = self._reduction_quantity(side, price, detail, step, reduce_fraction)
             else:
                 if self.state["pending_order"] or self.state["recovery_required"]:
                     raise ValueError("Execution recovery required")
@@ -730,6 +791,21 @@ class LighterCryptoBot:
                     client_order_index=order_index)
                 return self._record_fill(result, pending)
             except Exception as exc:
+                message = str(exc)
+                definitive_preflight = isinstance(exc, ValueError) and (
+                    "order is below its minimum size" in message
+                    or "order size and reference price must be positive" in message
+                )
+                if definitive_preflight:
+                    self.state.update(
+                        pending_order=None,
+                        recovery_required=False,
+                        execution_blocked=False,
+                        blocked_reason=None,
+                        last_error=message,
+                    )
+                    self._save()
+                    raise
                 self.state.update(recovery_required=True, execution_blocked=True,
                                   blocked_reason=f"Lighter order outcome uncertain; reconcile {order_index}: {exc}",
                                   last_error=f"Lighter order outcome uncertain; reconcile {order_index}: {exc}")
