@@ -1083,6 +1083,8 @@
       if (titleScaling) titleScaling.textContent = "Directional Sizing Multipliers";
       const subScaling = lid("lblCryptoScalingSubtitle");
       if (subScaling) subScaling.textContent = "Single-Leg Perpetual Notional Sizing";
+      window.TerminalCommon?.bindSingleLegDirectionControl("lighterCrypto_", (entryDirectionMode) =>
+        this.saveCryptoScaling({ entry_direction_mode: entryDirectionMode }));
       const shortTitle = lid("lblTitleShortMultiplier");
       if (shortTitle) shortTitle.textContent = "🔴 SHORT MULTIPLIER (SELL RIP)";
       const longTitle = lid("lblTitleLongMultiplier");
@@ -3822,6 +3824,7 @@
       const macroPeriod = lid("macroMaPeriod");
       if (macroPeriod && !macroPeriod.dataset.userEdited) macroPeriod.value = String(bot.strategy_params?.macro_ma_period ?? bot.macro_ma_period ?? 60);
       this.botState = bot;
+      window.TerminalCommon?.syncSingleLegDirectionControl("lighterCrypto_", bot?.entry_direction_mode);
       const isEnabled = Boolean(bot?.enabled);
       const symbol = bot?.selected_symbol || this.selectedSymbol || "BTC";
       const venuePositions = Array.isArray(venue?.positions) ? venue.positions : (Array.isArray(this.venuePositions) ? this.venuePositions : []);
@@ -5422,15 +5425,19 @@
 
     async saveCryptoScaling(payload) {
       if (window.terminalLockManager?.isLocked) {
-        return;
+        window.showToast?.("Unlock the terminal before changing live bot direction or sizing.", "warn");
+        return false;
       }
       try {
         const data = await apiPost("/api/lighter-crypto/bot/config", payload);
         if (data?.bot) {
           this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
         }
+        return Boolean(data?.success);
       } catch (err) {
         console.warn("Failed to auto-save lighter crypto directional scaling:", err);
+        window.showToast?.(`Live bot setting was not saved: ${err.message}`, "danger");
+        return false;
       }
     },
 

@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 from .entry_count_limit import parse_entry_count_limit, has_entry_slot
+from .single_leg_direction import entry_direction_allowed, parse_entry_direction_mode
 from .crypto_bot import INTERVAL_SECONDS
 from .lighter_strategy import (
     evaluate_strategy_signal,
@@ -59,7 +60,7 @@ DEFAULT_STATE = {
     "use_macd_signal_positive": True, "use_macd_hist_positive": True, "use_macd_hist_reversal_exit": True,
     "use_macd_strength": True, "macd_strength_min_pct": 30.0,
     "use_macd_two_stage_exit": True, "macd_first_exit_pct": 50.0, "macd_exit_stage": 0,
-    "long_multiplier": 1.0, "short_multiplier": 1.0,
+    "long_multiplier": 1.0, "short_multiplier": 1.0, "entry_direction_mode": "two_way",
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
     "last_evaluated_candle": 0, "last_order_time": 0,
@@ -333,7 +334,7 @@ class LighterCryptoBot:
             "use_ma_stack_1h", "macro_ma_period", "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
             "ma_stack_opposite_only", "use_opposite_stack_exit",
             "use_ma_diff_hook", "use_ma_diff_exit", "min_diff_bars",
-            "long_multiplier", "short_multiplier", "gross_leverage_cap",
+            "long_multiplier", "short_multiplier", "gross_leverage_cap", "entry_direction_mode",
         }
         unknown = set(values) - permitted
         if unknown:
@@ -342,6 +343,8 @@ class LighterCryptoBot:
         for key, value in values.items():
             if key in {"selected_symbol", "strategy_mode", "strategy_interval"}:
                 candidate[key] = str(value)
+            elif key == "entry_direction_mode":
+                candidate[key] = parse_entry_direction_mode(value)
             elif key == "max_tranches":
                 candidate[key] = parse_entry_count_limit(value)
             elif key == "macro_ma_period":
@@ -1228,6 +1231,9 @@ class LighterCryptoBot:
                     held_bars=held_bars,
                     macro_alignment=macro_alignment,
                 )
+                direction_allowed = entry_direction_allowed(self.state.get("entry_direction_mode", "two_way"), side)
+                evaluation["entry_direction_mode"] = self.state.get("entry_direction_mode", "two_way")
+                evaluation["entry_direction_allowed"] = direction_allowed
                 self.state["last_evaluation"] = evaluation
                 if macro_candle_time is not None:
                     evaluation["macro_source"] = "LIGHTER_COMPLETED_1H"
@@ -1236,7 +1242,7 @@ class LighterCryptoBot:
                 self.state["last_evaluated_candle"] = last_candle
                 self._save()
                 if self.state["tranches"] and exit_signal:
-                    reversing = bool(entry and position_side * side < 0)
+                    reversing = bool(entry and direction_allowed and position_side * side < 0)
                     if (not reversing and self.state["strategy_mode"] == "macd_strength_scaleout"
                             and self.state.get("use_macd_two_stage_exit", True)
                             and int(self.state.get("macd_exit_stage", 0)) == 0):
@@ -1253,7 +1259,7 @@ class LighterCryptoBot:
                             await self._submit(side, self.state["notional_usd"], reduce_only=False,
                                                reason="reversal_entry", signal_values=values,
                                                macro_alignment=macro_alignment)
-                elif entry and has_entry_slot(self.state):
+                elif entry and direction_allowed and has_entry_slot(self.state):
                     if self.state["strategy_mode"] == "macd_strength_scaleout" and self.state["tranches"]:
                         return
                     if time.time() - self.state["last_order_time"] >= self.state["min_seconds_between_orders"]:

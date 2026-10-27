@@ -89,6 +89,14 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported live strategy"):
             await self.bot.configure({"strategy_mode": "unsupported_unknown"})
 
+    async def test_auto_entry_direction_is_validated_and_persisted(self):
+        for mode in ("two_way", "long_only", "short_only"):
+            await self.bot.configure({"entry_direction_mode": mode})
+            restored = CryptoBot(self.client, self.path)
+            self.assertEqual(restored.state["entry_direction_mode"], mode)
+        with self.assertRaisesRegex(ValueError, "entry_direction_mode must be one of"):
+            await self.bot.configure({"entry_direction_mode": "short_spread_only"})
+
     async def test_foreign_position_blocks_enable_and_order(self):
         self.client.amount = 0.4
         with self.assertRaisesRegex(ValueError, "differs"):
@@ -240,6 +248,24 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
             await self.bot.run_once()
             await self.bot.run_once()
         self.assertEqual(len(self.client.orders), 1)
+        self.assertEqual(self.bot.state["last_evaluated_candle"], last_open)
+
+    async def test_worker_preserves_signal_but_blocks_disallowed_entry_direction(self):
+        now = 1000030
+        last_open = 999960
+        self.client.klines = [
+            [int((last_open - (24 - i) * 60) * 1000), "100", "100", "100", "100", "1",
+             int((last_open - (24 - i) * 60 + 60) * 1000 - 1)]
+            for i in range(25)
+        ]
+        self.bot.state.update(enabled=True, strategy_interval="1m", entry_direction_mode="short_only")
+        with patch("backend.crypto_bot.time.time", return_value=now), patch(
+            "backend.crypto_bot.evaluate_strategy_signal",
+            return_value=(True, 1, False, {"mean": 100, "z": -2, "ratio": 100}),
+        ):
+            await self.bot.run_once()
+        self.assertEqual(self.client.orders, [])
+        self.assertFalse(self.bot.state["last_evaluation"]["entry_direction_allowed"])
         self.assertEqual(self.bot.state["last_evaluated_candle"], last_open)
 
     async def test_opposite_signal_closes_then_reverses_instead_of_blocking(self):

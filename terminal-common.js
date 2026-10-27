@@ -203,7 +203,57 @@
     }
   }
 
-  const TerminalCommon = { revealChartSection, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles };
+  function bindSingleLegDirectionControl(prefix, onChange) {
+    const select = document.getElementById(`${prefix}selLighterSpreadDirectionMode`);
+    if (!select) return null;
+    const label = select.parentElement?.querySelector("span");
+    if (label) label.textContent = "Auto-entry direction:";
+    select.title = "Saved live-bot condition for future automatic entries; exits and manual orders remain available";
+    const current = ["two_way", "long_only", "short_only"].includes(select.dataset.serverValue)
+      ? select.dataset.serverValue : "two_way";
+    select.innerHTML = '<option value="two_way">Two-way (Long + Short)</option><option value="long_only">Long only</option><option value="short_only">Short only</option>';
+    select.value = current;
+    let status = document.getElementById(`${prefix}entryDirectionStatus`);
+    if (!status) {
+      status = document.createElement("span");
+      status.id = `${prefix}entryDirectionStatus`;
+      status.style.cssText = "font-size:9px;font-weight:800;color:#64748b;background:#f1f5f9;padding:2px 5px;border-radius:4px";
+      status.textContent = "LIVE BOT · LOADING";
+      select.parentElement?.appendChild(status);
+    }
+    if (!select.dataset.singleLegDirectionBound) {
+      select.dataset.singleLegDirectionBound = "true";
+      select.addEventListener("change", async () => {
+        const requested = select.value;
+        select.disabled = true;
+        status.textContent = "LIVE BOT · SAVING…";
+        const saved = await onChange(requested);
+        select.disabled = false;
+        if (saved === false) {
+          select.value = select.dataset.serverValue || "two_way";
+          status.textContent = "LIVE BOT · SAVE FAILED";
+        }
+      });
+    }
+    return select;
+  }
+
+  function syncSingleLegDirectionControl(prefix, mode) {
+    const select = document.getElementById(`${prefix}selLighterSpreadDirectionMode`);
+    const normalized = ["two_way", "long_only", "short_only"].includes(mode) ? mode : "two_way";
+    if (!select) return;
+    select.dataset.serverValue = normalized;
+    if (document.activeElement !== select) select.value = normalized;
+    const label = {two_way: "TWO-WAY", long_only: "LONG ONLY", short_only: "SHORT ONLY"}[normalized];
+    const status = document.getElementById(`${prefix}entryDirectionStatus`);
+    if (status) {
+      const time = new Date().toLocaleTimeString("en-GB", {timeZone: "Asia/Seoul", hour12: false});
+      status.textContent = `LIVE BOT · ${label} · ${time} KST`;
+      status.title = "Authenticated bot configuration returned by the latest status response";
+    }
+  }
+
+  const TerminalCommon = { revealChartSection, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

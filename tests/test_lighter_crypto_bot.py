@@ -111,6 +111,14 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported live strategy"):
             await self.bot.configure({"strategy_mode": "unsupported_unknown"})
 
+    async def test_auto_entry_direction_is_validated_and_persisted(self):
+        for mode in ("two_way", "long_only", "short_only"):
+            await self.bot.configure({"entry_direction_mode": mode})
+            restored = LighterCryptoBot(self.client, self.path)
+            self.assertEqual(restored.state["entry_direction_mode"], mode)
+        with self.assertRaisesRegex(ValueError, "entry_direction_mode must be one of"):
+            await self.bot.configure({"entry_direction_mode": "short_spread_only"})
+
     async def test_foreign_same_market_position_blocks_entry(self):
         self.client.amount = 0.5
         with self.assertRaisesRegex(ValueError, "differs"):
@@ -209,6 +217,23 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[-2]["reason"], "opposite_signal_reversal")
         self.assertEqual(events[-1]["reason"], "reversal_entry")
         self.assertEqual(self.bot.state["tranches"][-1]["side"], -1)
+
+    async def test_worker_preserves_signal_but_blocks_disallowed_entry_direction(self):
+        now = 1000030
+        last_open = 999960
+        self.client.candle_rows = [
+            {"t": int((last_open - (24 - index) * 60) * 1000), "c": 100.0}
+            for index in range(25)
+        ]
+        self.bot.state.update(enabled=True, strategy_interval="1m", entry_direction_mode="short_only")
+        with patch("backend.lighter_crypto_bot.time.time", return_value=now), patch(
+            "backend.lighter_crypto_bot.evaluate_strategy_signal",
+            return_value=(True, 1, False, {"mean": 100, "z": -2, "ratio": 100}),
+        ):
+            await self.bot.run_once()
+        self.assertEqual(self.client.orders, {})
+        self.assertFalse(self.bot.state["last_evaluation"]["entry_direction_allowed"])
+        self.assertEqual(self.bot.state["last_evaluated_candle"], last_open)
 
     async def test_use_ma_stack_1h_blocks_short_in_uptrend_range(self):
         from backend.lighter_strategy import evaluate_strategy_signal

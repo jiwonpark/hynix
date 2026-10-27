@@ -7,6 +7,15 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const lighter = fs.readFileSync(path.join(root, "lighter-tab.js"), "utf8");
 const crypto = fs.readFileSync(path.join(root, "crypto-tab.js"), "utf8");
 const lighterCrypto = fs.readFileSync(path.join(root, "lighter-crypto-tab.js"), "utf8");
+const common = fs.readFileSync(path.join(root, "terminal-common.js"), "utf8");
+
+assert.match(common, /Auto-entry direction:/, "single-leg tabs must use direction wording, not spread wording");
+assert.match(common, /Two-way \(Long \+ Short\)/, "single-leg direction control must expose two-way trading clearly");
+assert.match(common, /Authenticated bot configuration returned by the latest status response/, "direction status must disclose its live source");
+for (const [name, source, prefix] of [["Tab 4", crypto, "crypto_"], ["Tab 5", lighterCrypto, "lighterCrypto_"]]) {
+  assert.ok(source.includes(`bindSingleLegDirectionControl("${prefix}"`), `${name} must bind the shared direction control`);
+  assert.ok(source.includes(`syncSingleLegDirectionControl("${prefix}"`), `${name} must restore direction from bot status`);
+}
 
 assert.match(index, /function switchMainTab\(tab\)/, "all terminals must use the common tab switcher");
 assert.doesNotMatch(
