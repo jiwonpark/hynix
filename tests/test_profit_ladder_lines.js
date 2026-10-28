@@ -17,8 +17,10 @@ assert.ok(componentSource.includes('rgba(22, 163, 74, 0.18)'), 'net-profit lines
 assert.ok(componentSource.includes('lineStyle: this.lineStyle.Dashed'), 'profit ladder must use dashed lines');
 assert.ok(componentSource.includes('compactProfitLineTitle'), 'shared controller must compact profit-line axis labels');
 assert.ok(componentSource.includes('return "B/E"'), 'break-even axis label must remain compact');
-assert.ok(lighterTabSource.includes('axisTitle: netProfitPct === 0 ? "ENTRY" : `MOVE +${netProfitPct}%`'),
+assert.ok(lighterTabSource.includes('axisTitle: `MOVE +${netProfitPct}%`'),
   'Tab 3 must label ratio movement as MOVE rather than implying paired P&L');
+assert.ok(lighterTabSource.includes('const netProfitTargets = [0.2, 0.5,'),
+  'Tab 3 must not duplicate the separate entry line with a zero-move level');
 let cleared = 0;
 engine.clearShortTermReferenceLines = () => {cleared++;};
 engine.renderShortTermReferenceLines(140);
