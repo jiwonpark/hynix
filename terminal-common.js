@@ -185,6 +185,32 @@
     } catch (_) {}
   }
 
+  function singleLegPositionReference(positions, options = {}) {
+    const symbol = String(options.symbol || "");
+    const marketId = options.marketId == null ? null : String(options.marketId);
+    const position = (Array.isArray(positions) ? positions : []).find((candidate) => {
+      const matchesSymbol = symbol && String(candidate?.symbol || "") === symbol;
+      const matchesMarket = marketId !== null && String(candidate?.market_id ?? "") === marketId;
+      if (!matchesSymbol && !matchesMarket) return false;
+      const raw = Number(candidate?.position_amt ?? candidate?.position ?? candidate?.size ?? 0);
+      return Number.isFinite(raw) && Math.abs(raw) > 1e-12;
+    });
+    if (!position) return null;
+    const raw = Number(position.position_amt ?? position.position ?? position.size ?? 0);
+    const sign = Number(position.sign);
+    const signedQty = Number.isFinite(sign) && sign !== 0
+      ? Math.sign(sign) * Math.abs(raw) : raw;
+    const entry = Number(position.avg_entry_price ?? position.entry_price ?? position.price ?? 0);
+    if (!Number.isFinite(signedQty) || signedQty === 0 || !(entry > 0)) return null;
+    return {
+      position,
+      signedQty,
+      entry,
+      direction: signedQty < 0 ? "short" : "long",
+      isLong: signedQty > 0,
+    };
+  }
+
   function renderAll() {
     const trading = document.getElementById("tabContentTrading");
     const lighter = document.getElementById("tabContentLighter");
@@ -253,7 +279,7 @@
     }
   }
 
-  const TerminalCommon = { revealChartSection, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
+  const TerminalCommon = { revealChartSection, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

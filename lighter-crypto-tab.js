@@ -2944,6 +2944,7 @@
         this.setText("lblHedgedSyncBadge", `CRYPTO ENGINE: ${error.message}`);
       }
       await chartRefresh;
+      this.renderCurrentPositionReferenceLines();
     },
 
     renderTrends(trends) {
@@ -5298,9 +5299,23 @@
 
     renderCurrentPositionReferenceLines() {
       if (!this.executionChartController) return;
+      const isActualVisible = this.executionChartController.visibility.actual !== false;
       const isVirtualVisible = this.executionChartController.visibility.virtual !== false;
 
-      // 1. Open entry in virtual ledger
+      // 1. The authenticated exchange position is authoritative while it is open.
+      const livePosition = isActualVisible && window.TerminalCommon?.singleLegPositionReference(
+        this.livePositions,
+        { symbol: this.selectedSymbol || "BTC", marketId: this.currentMarketId }
+      );
+      if (livePosition) {
+        this.renderShortTermReferenceLines(livePosition.entry, {
+          selected: false,
+          isLong: livePosition.isLong,
+        });
+        return;
+      }
+
+      // 2. Open entry in virtual ledger
       const openEntry = isVirtualVisible && this.entries.length ? this.entries.at(-1) : null;
       if (openEntry && Number(openEntry.ratio) > 0) {
         this.renderShortTermReferenceLines(openEntry.ratio, {
@@ -5310,7 +5325,7 @@
         return;
       }
 
-      // 2. Visible markers with entry price
+      // 3. Visible markers with entry price
       const visibleMarkers = (this.rawExecutionMarkers || []).filter(m => this.isTradeMarkerVisible(m) && (m.entry_price || m.ratio));
       const lastMarker = visibleMarkers.at(-1);
       if (lastMarker) {

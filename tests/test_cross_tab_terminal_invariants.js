@@ -15,6 +15,10 @@ assert.match(common, /Authenticated bot configuration returned by the latest sta
 for (const [name, source, prefix] of [["Tab 4", crypto, "crypto_"], ["Tab 5", lighterCrypto, "lighterCrypto_"]]) {
   assert.ok(source.includes(`bindSingleLegDirectionControl("${prefix}"`), `${name} must bind the shared direction control`);
   assert.ok(source.includes(`syncSingleLegDirectionControl("${prefix}"`), `${name} must restore direction from bot status`);
+  assert.match(source, /singleLegPositionReference\(/,
+    `${name} must derive its idle chart direction from the signed open exchange position`);
+  assert.match(source, /await chartRefresh;\s*this\.renderCurrentPositionReferenceLines\(\);/,
+    `${name} must reapply the live position reference after asynchronous chart loading`);
 }
 
 assert.match(index, /function switchMainTab\(tab\)/, "all terminals must use the common tab switcher");
