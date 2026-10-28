@@ -248,6 +248,7 @@ async def authorize_strategy_lab(request: Request, call_next):
         "/api/crypto/flatten", "/api/crypto/order",
         "/api/lighter-crypto/bot/", "/api/lighter-crypto/step_tranche",
         "/api/lighter-crypto/reduce_tranche", "/api/lighter-crypto/flatten",
+        "/api/trade/update_scaling",
     )
     if (request.url.path.startswith(protected_prefixes)
             and request.method not in ("GET", "HEAD", "OPTIONS")
@@ -3234,8 +3235,10 @@ def exit_ma_alignment(
 
 
 _hedged_status_task: Optional[asyncio.Task] = None
+_hedged_status_task_revision = 0
 _hedged_status_cache: Optional[Dict[str, Any]] = None
 _hedged_status_cache_time = 0.0
+_hedged_status_config_revision = 0
 HEDGED_STATUS_CACHE_TTL = 2.5
 HEDGED_STATUS_TIMEOUT = 8.0
 _verified_exits_cache: Optional[Dict[str, Any]] = None
@@ -3489,7 +3492,8 @@ async def get_verified_exits_endpoint() -> Dict[str, Any]:
 @app.get("/api/trade/hedged_status")
 async def get_hedged_status_endpoint() -> Dict[str, Any]:
     """Coalesce browser polls while keeping execution paths on fresh status reads."""
-    global _hedged_status_task, _hedged_status_cache, _hedged_status_cache_time
+    global _hedged_status_task, _hedged_status_task_revision
+    global _hedged_status_cache, _hedged_status_cache_time
     now = time.monotonic()
     if (_hedged_status_cache is not None
             and now - _hedged_status_cache_time < HEDGED_STATUS_CACHE_TTL):
@@ -3499,10 +3503,13 @@ async def get_hedged_status_endpoint() -> Dict[str, Any]:
     if task is None or task.done():
         task = asyncio.create_task(get_hedged_status())
         _hedged_status_task = task
+        _hedged_status_task_revision = _hedged_status_config_revision
+    task_revision = _hedged_status_task_revision
     try:
         result = await asyncio.shield(task)
-        _hedged_status_cache = result
-        _hedged_status_cache_time = time.monotonic()
+        if task_revision == _hedged_status_config_revision:
+            _hedged_status_cache = result
+            _hedged_status_cache_time = time.monotonic()
         return copy.deepcopy(result)
     finally:
         if task.done() and _hedged_status_task is task:
@@ -4955,6 +4962,8 @@ async def update_conditions(toggles_update: Dict[str, bool]) -> Dict[str, Any]:
 @app.post("/api/trade/update_scaling")
 async def update_scaling(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Updates manual scaling multipliers for directional two-way spread trading."""
+    global _hedged_status_task, _hedged_status_cache, _hedged_status_cache_time
+    global _hedged_status_config_revision
     state = load_auto_tranche_state()
     if "short_spread_multiplier" in payload or "entry_multiplier" in payload:
         try:
@@ -4987,6 +4996,14 @@ async def update_scaling(payload: Dict[str, Any]) -> Dict[str, Any]:
     state["last_action"] = f"SCALING_UPDATED: Short Spread {state.get('short_spread_multiplier', 1.0)}x (auto={state.get('auto_short_multiplier', False)}), Long Spread {state.get('long_spread_multiplier', 1.0)}x, Mode={state.get('spread_direction_mode', 'two_way')}"
     state["last_action_time"] = time.time()
     save_auto_tranche_state(state)
+    # The browser immediately reads status back to confirm the persisted value.
+    # Do not let a pre-save cached or in-flight snapshot make the control appear
+    # to revert. The old task may finish for its original caller, but its stale
+    # revision is not allowed to repopulate the shared cache.
+    _hedged_status_config_revision += 1
+    _hedged_status_cache = None
+    _hedged_status_cache_time = 0.0
+    _hedged_status_task = None
     logger.info(f"[Auto-Tranche] Scaling multipliers updated: {state['last_action']}")
     return {"success": True, "scaling": {
         "short_spread_multiplier": state.get("short_spread_multiplier", 1.0),
@@ -5011,6 +5028,12 @@ async def auto_tranche_worker():
             state_changed = False
             if state.get("enabled", False) and not state.get("execution_recovery"):
                 status = await get_hedged_status()
+                # The status call can take several seconds. A user may save live
+                # scaling or direction settings while it is in flight, so never
+                # write the pre-await snapshot back over those newer settings.
+                state = load_auto_tranche_state()
+                if not state.get("enabled", False) or state.get("execution_recovery"):
+                    continue
                 if status.get("authenticated"):
                     criteria = status.get("auto_tranche_criteria", {})
                     can_take_profit = bool(criteria.get("can_take_profit", False))

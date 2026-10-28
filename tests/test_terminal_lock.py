@@ -86,6 +86,13 @@ class TestTerminalLock(unittest.TestCase):
         self.assertIn('terminalLockManager.isLocked', self.html)
         self.assertIn('terminalLockManager.init();', self.html)
 
+    def test_tab2_scaling_save_uses_unlock_token_and_preserves_lock(self):
+        self.assertIn('/skhynix/api/trade/update_scaling', self.html)
+        self.assertIn('window.terminalLockManager?.token', self.html)
+        self.assertIn('this.pendingScalingWrites', self.html)
+        self.assertIn('disabled = scalingLocked || chkAutoShort.checked', self.html)
+        self.assertIn('Live direction sizing saved.', self.html)
+
     def test_read_only_mode_preserves_hover_events_for_tooltips(self):
         """Read-only disables form controls without suppressing label hover events."""
         action_rule = re.search(

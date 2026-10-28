@@ -13632,10 +13632,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const activeEl = (typeof document !== "undefined") ? document.activeElement : null;
           if (chkAutoShort && activeEl !== chkAutoShort) {
             chkAutoShort.checked = Boolean(sizing.auto_short_multiplier ?? sizing.auto_entry_multiplier);
-            if (inpShort) inpShort.disabled = chkAutoShort.checked;
-            if (rangeShort) rangeShort.disabled = chkAutoShort.checked;
+            const scalingLocked = typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked;
+            if (inpShort) inpShort.disabled = scalingLocked || chkAutoShort.checked;
+            if (rangeShort) rangeShort.disabled = scalingLocked || chkAutoShort.checked;
           }
-          const isInteractingShort = activeEl === inpShort || activeEl === rangeShort || (Date.now() - (this.lastUserScalingUpdateShort || 0) < 4000);
+          const isInteractingShort = activeEl === inpShort || activeEl === rangeShort || this.pendingScalingWrites > 0 || (Date.now() - (this.lastUserScalingUpdateShort || 0) < 4000);
           if (inpShort && !isInteractingShort) {
             inpShort.value = shortVal.toFixed(2);
           }
@@ -13650,7 +13651,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const rangeLong = $("rangeLongSpreadMultiplier");
           const inpLong = $("inputLongSpreadMultiplier");
           const badgeLong = $("badgeLongSpreadMultiplier");
-          const isInteractingLong = activeEl === inpLong || activeEl === rangeLong || (Date.now() - (this.lastUserScalingUpdateLong || 0) < 4000);
+          const isInteractingLong = activeEl === inpLong || activeEl === rangeLong || this.pendingScalingWrites > 0 || (Date.now() - (this.lastUserScalingUpdateLong || 0) < 4000);
           if (inpLong && !isInteractingLong) {
             inpLong.value = longVal.toFixed(2);
           }
@@ -15592,20 +15593,35 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if ($("btnEmergencyFlatten")) $("btnEmergencyFlatten").addEventListener("click", () => this.emergencyFlattenLive());
 
         const updateScalingLive = async (payload) => {
+          if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
+            showToast("Unlock the terminal before changing live direction or sizing.", "warn");
+            terminalLockManager.openPasswordModal();
+            await this.fetchHedgedStatus();
+            return false;
+          }
+          this.pendingScalingWrites = (this.pendingScalingWrites || 0) + 1;
           try {
             const res = await fetch("/skhynix/api/trade/update_scaling", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              credentials: "same-origin",
+              headers: {
+                "Content-Type": "application/json",
+                ...(window.terminalLockManager?.token ? {Authorization: `Bearer ${window.terminalLockManager.token}`} : {})
+              },
               body: JSON.stringify(payload)
             });
             const data = await res.json();
-            if (data.success) {
-              await this.fetchHedgedStatus();
-            } else {
-              showToast(data.error || "Failed to update scaling", "danger");
-            }
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to update scaling");
+            await this.fetchHedgedStatus();
+            showToast("Live direction sizing saved.", "success");
+            return true;
           } catch (e) {
-            console.error(e);
+            console.error("Failed to save live direction sizing:", e);
+            showToast(`Live direction sizing was not saved: ${e.message}`, "danger");
+            await this.fetchHedgedStatus();
+            return false;
+          } finally {
+            this.pendingScalingWrites = Math.max(0, (this.pendingScalingWrites || 1) - 1);
           }
         };
 

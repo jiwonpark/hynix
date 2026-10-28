@@ -68,6 +68,40 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         server._hedged_status_cache = None
         server._hedged_status_cache_time = 0.0
 
+    async def test_worker_does_not_overwrite_scaling_saved_during_status_fetch(self):
+        server.save_auto_tranche_state({
+            'enabled': True,
+            'short_spread_multiplier': 1.0,
+            'long_spread_multiplier': 1.0,
+        })
+
+        async def status_after_user_save():
+            latest = server.load_auto_tranche_state()
+            latest['short_spread_multiplier'] = 1.75
+            latest['long_spread_multiplier'] = 1.5
+            server.save_auto_tranche_state(latest)
+            return {
+                'authenticated': True,
+                'tranches_active': 0,
+                'auto_tranche_criteria': {
+                    'can_take_profit': False,
+                    'scale_in_armed': False,
+                    'tranches_max': 12,
+                },
+                'recent_executions': [],
+            }
+
+        with patch.object(server, 'get_hedged_status', AsyncMock(side_effect=status_after_user_save)), \
+             patch.object(server, 'reconcile_counterfactual_trades', return_value=False), \
+             patch.object(server, 'update_counterfactual_trades', return_value=False), \
+             patch.object(server.asyncio, 'sleep', AsyncMock(side_effect=asyncio.CancelledError)):
+            with self.assertRaises(asyncio.CancelledError):
+                await server.auto_tranche_worker()
+
+        saved = server.load_auto_tranche_state()
+        self.assertEqual(saved['short_spread_multiplier'], 1.75)
+        self.assertEqual(saved['long_spread_multiplier'], 1.5)
+
     async def test_failed_second_leg_records_fill_and_blocks_retry(self):
         self.client.create_order.side_effect = [
             {'status': 'FILLED', 'executedQty': '0.06', 'orderId': 42}, RuntimeError('ETF rejected')]
