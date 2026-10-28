@@ -1762,6 +1762,8 @@
       if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         const live = this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {};
         const checked = (key) => live[key] !== false ? "checked" : "";
+        const macroMode = ["ma_slope", "macd_hist_accel", "hybrid"].includes(live.macro_regime_mode)
+          ? live.macro_regime_mode : "ma_slope";
         const row = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
         const toggle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
         return `
@@ -1775,12 +1777,27 @@
               <button id="lighterCrypto_btnMacdReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun MACD</button>
             </div>
           </div>
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 12px;padding:9px 10px;border:1px solid #c4b5fd;border-radius:7px;background:#f5f3ff;font-size:11px;font-weight:700;color:#4c1d95;">
+            <span style="background:#7c3aed;color:#fff;border-radius:999px;padding:2px 7px;font-size:9px;">NEW</span>
+            <label>1h regime
+              <select id="lighterCrypto_macroRegimeMode" aria-label="Hourly MACD macro regime method" style="height:27px;border:1px solid #c4b5fd;border-radius:4px;background:#fff;">
+                <option value="ma_slope" ${macroMode === "ma_slope" ? "selected" : ""}>MA slope (current)</option>
+                <option value="macd_hist_accel" ${macroMode === "macd_hist_accel" ? "selected" : ""}>MACD-H acceleration</option>
+                <option value="hybrid" ${macroMode === "hybrid" ? "selected" : ""}>Hybrid (both agree)</option>
+              </select>
+            </label>
+            <label>Z window <input id="lighterCrypto_macroMacdZWindow" aria-label="MACD acceleration Z window" type="number" min="8" max="240" step="1" value="${Number(live.macro_macd_z_window ?? 24)}" style="width:55px"></label>
+            <label>Enter |Z| ≥ <input id="lighterCrypto_macroMacdEnterZ" aria-label="MACD acceleration entry Z" type="number" min="0.01" max="5" step="0.05" value="${Number(live.macro_macd_enter_z ?? 0.5)}" style="width:55px"></label>
+            <label>Release |Z| ≤ <input id="lighterCrypto_macroMacdExitZ" aria-label="MACD acceleration release Z" type="number" min="0" max="5" step="0.05" value="${Number(live.macro_macd_exit_z ?? 0.25)}" style="width:55px"></label>
+            <label>Confirm <input id="lighterCrypto_macroMacdConfirmBars" aria-label="MACD acceleration confirmation bars" type="number" min="1" max="12" step="1" value="${Number(live.macro_macd_confirm_bars ?? 2)}" style="width:46px"> bars</label>
+            <span id="lighterCrypto_macroRegimeReadout">Completed 1h candles · normalized histogram slope · hysteresis</span>
+          </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
             <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
               <div style="${row}"><input id="lighterCrypto_macdUseEntrySignalNegative" type="checkbox" style="${toggle}" ${checked("use_macd_signal_negative")}><span>Long entry / short exit: Signal &lt; 0</span><span id="lighterCrypto_macdStatusEntrySignal" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="lighterCrypto_macdUseEntryHistogramNegative" type="checkbox" style="${toggle}" ${checked("use_macd_hist_negative")}><span>Long entry / short exit: Histogram &lt; 0</span><span id="lighterCrypto_macdStatusEntryHistogram" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="lighterCrypto_macdUseEntryReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal")}><span>Long entry / short exit: trough turns up</span><span id="lighterCrypto_macdStatusEntryReversal" class="condBadge neutral">WAITING</span></div>
-              <div style="${row}"><span>Entry direction agrees with completed 1h macro trend</span><span id="lighterCrypto_macdStatusMacro" class="condBadge neutral">WAITING</span></div>
+              <div style="${row}"><span id="lighterCrypto_macdMacroConditionLabel">Entry direction agrees with completed 1h macro regime</span><span id="lighterCrypto_macdStatusMacro" class="condBadge neutral">WAITING</span></div>
               ${mode === "macd_strength_scaleout" ? `<div style="${row}"><input id="lighterCrypto_macdUseStrength" type="checkbox" style="${toggle}" ${checked("use_macd_strength")}><span>Rebound ≥ <input id="lighterCrypto_macdStrengthPct" type="number" min="0" max="1000" step="1" value="${Number(live.macd_strength_min_pct ?? 30)}" style="width:58px">%</span><span id="lighterCrypto_macdStatusEntryStrength" class="condBadge neutral">WAITING</span></div>` : ""}
             </div>
             <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · positive set for short</strong>
@@ -1937,6 +1954,17 @@
         $("lighterCrypto_btnCrossReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         $("lighterCrypto_btnMacdReplay")?.addEventListener("click", () => this.runBacktest());
+        ["lighterCrypto_macroRegimeMode", "lighterCrypto_macroMacdZWindow",
+         "lighterCrypto_macroMacdEnterZ", "lighterCrypto_macroMacdExitZ",
+         "lighterCrypto_macroMacdConfirmBars"].forEach((id) => {
+          const control = $(id);
+          control?.addEventListener("change", () => {
+            control.dataset.unsaved = "true";
+            this.updateDeployButtonState();
+            this.updateRulesMatchStatus();
+            this.runBacktest();
+          });
+        });
       } else if (mode === "custom") {
         $("lighterCrypto_btnCustomSave")?.addEventListener("click", () => {
           const ez = $("lighterCrypto_inpCustomEntryZ")?.value || "1.5";
@@ -2222,6 +2250,7 @@
         payload.use_cross_exit = lid("chkCondExitConvergence")?.checked !== false;
       } else if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         Object.assign(payload, this.macdSettings());
+        Object.assign(payload, this.macroRegimeSettings());
         payload.use_macd_signal_negative = $("lighterCrypto_macdUseEntrySignalNegative")?.checked !== false;
         payload.use_macd_hist_negative = $("lighterCrypto_macdUseEntryHistogramNegative")?.checked !== false;
         payload.use_macd_hist_reversal = $("lighterCrypto_macdUseEntryReversal")?.checked !== false;
@@ -3000,6 +3029,25 @@
       return { macd_fast_period: fast, macd_slow_period: slow, macd_signal_period: signal };
     },
 
+    macroRegimeSettings() {
+      const saved = { ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
+      const numeric = (id, key, fallback) => {
+        const raw = $(id)?.value;
+        const value = Number(raw == null || raw === "" ? (saved[key] ?? fallback) : raw);
+        return Number.isFinite(value) ? value : fallback;
+      };
+      const requestedMode = $("lighterCrypto_macroRegimeMode")?.value || saved.macro_regime_mode || "ma_slope";
+      const macro_regime_mode = ["ma_slope", "macd_hist_accel", "hybrid"].includes(requestedMode)
+        ? requestedMode : "ma_slope";
+      return {
+        macro_regime_mode,
+        macro_macd_z_window: Math.trunc(numeric("lighterCrypto_macroMacdZWindow", "macro_macd_z_window", 24)),
+        macro_macd_enter_z: numeric("lighterCrypto_macroMacdEnterZ", "macro_macd_enter_z", 0.5),
+        macro_macd_exit_z: numeric("lighterCrypto_macroMacdExitZ", "macro_macd_exit_z", 0.25),
+        macro_macd_confirm_bars: Math.trunc(numeric("lighterCrypto_macroMacdConfirmBars", "macro_macd_confirm_bars", 2)),
+      };
+    },
+
     replaySettings() {
       const mode = this.currentParadigm || "adaptive_tranche";
       const numeric = (id, fallback) => {
@@ -3038,6 +3086,7 @@
         slow_ma_period: numeric("lighterCrypto_inpCrossSlowPeriod", 21),
         min_cross_spread_bps: numeric("lighterCrypto_inpCrossMinSpreadBps", 0.0),
         ...this.macdSettings(),
+        ...this.macroRegimeSettings(),
         use_macd_signal_negative: $("lighterCrypto_macdUseEntrySignalNegative")?.checked !== false,
         use_macd_hist_negative: $("lighterCrypto_macdUseEntryHistogramNegative")?.checked !== false,
         use_macd_hist_reversal: $("lighterCrypto_macdUseEntryReversal")?.checked !== false,
@@ -3152,11 +3201,15 @@
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel"],
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
-        macd_reversal: ["macd_fast_period", "macd_slow_period", "macd_signal_period"],
-        macd_strength_scaleout: ["macd_fast_period", "macd_slow_period", "macd_signal_period", "macd_strength_min_pct", "macd_first_exit_pct"],
+        macd_reversal: ["macd_fast_period", "macd_slow_period", "macd_signal_period",
+          "macro_macd_z_window", "macro_macd_enter_z", "macro_macd_exit_z", "macro_macd_confirm_bars"],
+        macd_strength_scaleout: ["macd_fast_period", "macd_slow_period", "macd_signal_period", "macd_strength_min_pct", "macd_first_exit_pct",
+          "macro_macd_z_window", "macro_macd_enter_z", "macro_macd_exit_z", "macro_macd_confirm_bars"],
       };
       const liveParams = { ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
-      if (isParadigmMatch && currentMode !== "ou_quant" && settings.macro_ma_period !== Number(liveParams.macro_ma_period ?? 60))
+      if (isParadigmMatch && currentMode !== "ou_quant"
+          && settings.macro_regime_mode !== "macd_hist_accel"
+          && settings.macro_ma_period !== Number(liveParams.macro_ma_period ?? 60))
         diffs.push(`Hourly MA ${settings.macro_ma_period} ≠ ${liveParams.macro_ma_period ?? 60}`);
       if (isParadigmMatch) (parameterKeys[currentMode] || []).forEach((key) => {
         const live = liveParams[key];
@@ -3164,6 +3217,8 @@
           diffs.push(`${key}: ${settings[key]} ≠ ${live ?? "unknown"}`);
       });
       if (isParadigmMatch && ["macd_reversal", "macd_strength_scaleout"].includes(currentMode)) {
+        if (String(settings.macro_regime_mode) !== String(liveParams.macro_regime_mode ?? "ma_slope"))
+          diffs.push(`Macro regime ${settings.macro_regime_mode} ≠ ${liveParams.macro_regime_mode ?? "ma_slope"}`);
         ["use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
          "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
          ...(currentMode === "macd_strength_scaleout" ? ["use_macd_strength", "use_macd_two_stage_exit"] : [])].forEach((key) => {
@@ -3195,9 +3250,16 @@
         ["ExitBottoming", "use_bottoming", isMaStack ? "Trailing Stop Ratchet" : "Bottoming"],
       ];
       if (currentMode !== "ou_quant" && currentMode !== "ma_stack") {
-        this.setText("valCondEntryMaStack1h", `Wider trend filter · 1h MA${settings.macro_ma_period} slope`);
+        const macroLabel = settings.macro_regime_mode === "macd_hist_accel"
+          ? `Wider trend filter · completed 1h MACD-H acceleration (|Z| ≥ ${Number(settings.macro_macd_enter_z).toFixed(2)})`
+          : settings.macro_regime_mode === "hybrid"
+            ? `Wider trend filter · 1h MA${settings.macro_ma_period} + MACD-H acceleration`
+            : `Wider trend filter · 1h MA${settings.macro_ma_period} slope`;
+        this.setText("valCondEntryMaStack1h", macroLabel);
         const label = lid("rowCondEntryMaStack1h")?.querySelector(".condLabel");
-        if (label) label.title = "Direction of the completed hourly moving average; period is adjustable above the chart";
+        if (label) label.title = settings.macro_regime_mode === "ma_slope"
+          ? "Direction of the completed hourly moving average; period is adjustable above the chart"
+          : "Normalized slope of the completed-hour MACD histogram, with a dead band and confirmation bars";
       }
       rules.forEach(([suffix, key, name]) => {
         const input = lid(`chkCond${suffix}`);
@@ -3347,6 +3409,19 @@
       }
       if (["macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)) {
         const enabled = result?.latest_evaluation?.condition_enabled || {};
+        const regimeMode = result?.latest_evaluation?.macro_regime_mode || settings.macro_regime_mode || "ma_slope";
+        const regimeZ = Number(result?.latest_evaluation?.macro_histogram_slope_z);
+        const regimeName = result?.latest_evaluation?.macro_acceleration_regime || "UNAVAILABLE";
+        const macroConditionLabel = $("lighterCrypto_macdMacroConditionLabel");
+        if (macroConditionLabel) macroConditionLabel.textContent = regimeMode === "macd_hist_accel"
+          ? "Entry direction agrees with completed 1h MACD-H acceleration regime"
+          : regimeMode === "hybrid"
+            ? "Entry direction agrees with both 1h MA slope and MACD-H acceleration"
+            : "Entry direction agrees with completed 1h MA slope";
+        const regimeReadout = $("lighterCrypto_macroRegimeReadout");
+        if (regimeReadout) regimeReadout.textContent = regimeMode === "ma_slope"
+          ? `Completed 1h MA${settings.macro_ma_period} slope`
+          : `${regimeName} · acceleration Z ${Number.isFinite(regimeZ) ? `${regimeZ >= 0 ? "+" : ""}${regimeZ.toFixed(2)}` : "—"} · completed 1h`;
         const rows = [
           ["EntrySignal", "entry_signal_zone", null, "Directional MACD signal zone"],
           ["EntryHistogram", "entry_histogram_zone", null, "Directional histogram zone"],
@@ -3370,7 +3445,7 @@
         const source = $("lighterCrypto_macdStatusSource");
         const candidate = Number(result?.latest_evaluation?.candidate_side) > 0 ? "LONG" : "SHORT";
         if (source) source.textContent = result?.latest_condition_time
-          ? `PAPER · ${candidate} candidate · completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · same completed-bar rules deploy live`
+          ? `PAPER · ${candidate} candidate · ${regimeMode === "ma_slope" ? "1h MA slope" : `1h MACD-H acceleration ${regimeName}`} · completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · same completed-bar rules deploy live`
           : "PAPER · Awaiting completed-candle replay";
         return;
       }
@@ -3715,6 +3790,11 @@
           macd_strength_min_pct: "lighterCrypto_macdStrengthPct",
           use_macd_two_stage_exit: "lighterCrypto_macdUseTwoStageExit",
           macd_first_exit_pct: "lighterCrypto_macdFirstExitPct",
+          macro_regime_mode: "lighterCrypto_macroRegimeMode",
+          macro_macd_z_window: "lighterCrypto_macroMacdZWindow",
+          macro_macd_enter_z: "lighterCrypto_macroMacdEnterZ",
+          macro_macd_exit_z: "lighterCrypto_macroMacdExitZ",
+          macro_macd_confirm_bars: "lighterCrypto_macroMacdConfirmBars",
         };
         Object.entries(controls).forEach(([key, id]) => {
           const input = $(id);
@@ -6259,9 +6339,15 @@
           }
         }
         const macroPeriod = lid("macroMaPeriod");
-        if (this.currentParadigm !== "ou_quant" && macroPeriod && !macroPeriod.checkValidity())
+        const selectedMacroMode = $("lighterCrypto_macroRegimeMode")?.value || "ma_slope";
+        const usesMaMacro = !["macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)
+          || selectedMacroMode !== "macd_hist_accel";
+        if (this.currentParadigm !== "ou_quant" && usesMaMacro && macroPeriod && !macroPeriod.checkValidity())
           throw new Error("Hourly MA period must be an integer between 2 and 120");
         const settings = this.replaySettings();
+        if (["macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)
+            && settings.macro_macd_exit_z > settings.macro_macd_enter_z)
+          throw new Error("MACD-H release Z must not exceed entry Z");
         const replayKey = this.replayRefreshKey(settings);
         this._pendingReplayRefreshKey = replayKey;
         this.updateMaAndDiffs(this.bars);

@@ -10,6 +10,7 @@ from backend.lighter_strategy import (
     evaluate_macd_reversal_signals,
     evaluate_macd_strength_scaleout_signals,
     evaluate_strategy_signal,
+    macd_histogram_acceleration_regime_series,
     required_strategy_bars,
 )
 
@@ -132,4 +133,37 @@ def test_bots_accept_and_persist_macd_configuration():
                 assert state["strategy_mode"] == "macd_reversal"
                 assert state["strategy_params"]["macd_fast_period"] == 10
                 assert state["strategy_params"]["use_macd_hist_reversal"] is False
+    asyncio.run(run())
+
+
+def test_macd_histogram_acceleration_regime_is_causal_and_hysteretic():
+    values = [100 + 0.04 * i + 3 * math.sin(i / 6) for i in range(180)]
+    series = macd_histogram_acceleration_regime_series(
+        values, z_window=24, enter_z=0.5, exit_z=0.25, confirm_bars=2)
+    assert len(series) == len(values)
+    assert any(point["regime"] == "BULL" for point in series)
+    assert any(point["regime"] == "BEAR" for point in series)
+    cutoff = 130
+    changed_future = values[:cutoff] + [value + 1000 for value in values[cutoff:]]
+    changed = macd_histogram_acceleration_regime_series(
+        changed_future, z_window=24, enter_z=0.5, exit_z=0.25, confirm_bars=2)
+    assert series[:cutoff] == changed[:cutoff]
+    assert all(not (point["long_ok"] and point["short_ok"]) for point in series)
+
+
+def test_bots_persist_adjustable_macro_acceleration_regime():
+    async def run():
+        values = {
+            "macro_regime_mode": "macd_hist_accel",
+            "macro_macd_z_window": 36,
+            "macro_macd_enter_z": 0.7,
+            "macro_macd_exit_z": 0.2,
+            "macro_macd_confirm_bars": 3,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for bot_type in (CryptoBot, LighterCryptoBot):
+                bot = bot_type(object(), Path(directory) / f"macro_{bot_type.__name__}.json")
+                state = await bot.configure(values)
+                for key, expected in values.items():
+                    assert state["strategy_params"][key] == expected
     asyncio.run(run())

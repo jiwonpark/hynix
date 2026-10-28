@@ -142,3 +142,14 @@ with the switch through authenticated strategy deployment. OU uses its own
 visible EMA-alignment switch; never override it from a hidden inherited switch.
 Tab 5 MA Stack intentionally bypasses the hourly filter: label it N/A, disable
 the unused hourly period input and retain the 5m full-stack/diff rules.
+
+Tab 5 MACD strategies may explicitly select **MA slope**, **MACD-H
+acceleration**, or **Hybrid** for that same wider-trend condition. MACD-H
+acceleration means the completed-hour MACD histogram's one-bar change,
+standardized against its adjustable rolling Z window. Its enter Z, release Z,
+and consecutive confirmation count are user-adjustable and are persisted in the
+authenticated live configuration. The release threshold must not exceed the
+enter threshold. Hybrid requires both the completed-hour MA direction and the
+MACD-H acceleration regime to agree. The replay background, PAPER condition
+badge, LIVE evaluation, and source timestamp must all use the selected predicate;
+neutral acceleration permits neither direction rather than fabricating a trend.

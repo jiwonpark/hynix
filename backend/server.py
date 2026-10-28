@@ -57,6 +57,7 @@ from .lighter_strategy import (
     evaluate_golden_death_cross_signals,
     evaluate_macd_reversal_signals,
     evaluate_macd_strength_scaleout_signals,
+    macd_histogram_acceleration_regime_series,
 )
 from .upbit_client import UpbitClient
 from .terminal_auth import router as terminal_auth_router, authorized as terminal_authorized
@@ -1723,8 +1724,40 @@ def _hourly_macro_alignment_for_bars(
     return mapped
 
 
+def _hourly_macd_acceleration_for_bars(
+    bars: List[Dict[str, Any]], hourly_bars: List[Dict[str, Any]], interval_seconds: int, *,
+    fast_period: int = 12, slow_period: int = 26, signal_period: int = 9,
+    z_window: int = 24, enter_z: float = 0.5, exit_z: float = 0.25,
+    confirm_bars: int = 2,
+) -> tuple[List[tuple[bool, bool]], List[Dict[str, Any]]]:
+    """Map each signal candle to the latest known completed-hour acceleration regime."""
+    if not bars or not hourly_bars:
+        empty = [(False, False)] * len(bars)
+        return empty, [{"regime": "UNAVAILABLE"} for _ in bars]
+    hourly = sorted(hourly_bars, key=lambda item: int(item["time"]))
+    regimes = macd_histogram_acceleration_regime_series(
+        [float(item["value"]) for item in hourly],
+        fast_period=fast_period, slow_period=slow_period, signal_period=signal_period,
+        z_window=z_window, enter_z=enter_z, exit_z=exit_z, confirm_bars=confirm_bars,
+    )
+    mapped: List[tuple[bool, bool]] = []
+    details: List[Dict[str, Any]] = []
+    macro_index = -1
+    for bar in bars:
+        signal_close = int(bar["time"]) + int(interval_seconds)
+        while (macro_index + 1 < len(hourly)
+               and int(hourly[macro_index + 1]["time"]) + 3600 <= signal_close):
+            macro_index += 1
+        detail = regimes[macro_index] if macro_index >= 0 else {"regime": "UNAVAILABLE"}
+        mapped.append((bool(detail.get("long_ok")), bool(detail.get("short_ok"))))
+        details.append({**detail, "source_time": int(hourly[macro_index]["time"]) if macro_index >= 0 else None})
+    return mapped, details
+
+
 def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
-                        interval_seconds, market_source, macro_bars, macro_ma_period=60):
+                        interval_seconds, market_source, macro_bars, macro_ma_period=60,
+                        macro_regime_mode="ma_slope", macd_details=None,
+                        macro_macd_enter_z=0.5):
     """Expose macro predicates at the first chart timestamp where they are known."""
     slopes = ou_macro_ema_slope_series([bar["value"] for bar in bars], span, slope_bars) if is_ou else []
     hourly = sorted(macro_bars or [], key=lambda bar: bar["time"])
@@ -1732,6 +1765,7 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
     macro_index = -1
     points = []
     for index, bar in enumerate(bars):
+        explicit_neutral = False
         while (macro_index + 1 < len(hourly)
                and hourly[macro_index + 1]["time"] + 3600 <= bar["time"]):
             macro_index += 1
@@ -1739,6 +1773,12 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
             slope = slopes[index]
             long_ok, short_ok = (slope >= 0, slope <= 0) if slope is not None else (False, False)
             source_time = bar["time"] if slope is not None else None
+        elif macro_regime_mode in {"macd_hist_accel", "hybrid"}:
+            long_ok, short_ok = alignment[index] if index < len(alignment) else (False, False)
+            detail = macd_details[index] if macd_details and index < len(macd_details) else {}
+            source_time = detail.get("source_time")
+            explicit_neutral = bool(not long_ok and not short_ok
+                                    and detail.get("regime") in {"BULL", "BEAR", "NEUTRAL"})
         else:
             long_ok, short_ok = (
                 hourly_macro_alignment(hourly_values[:macro_index + 1], ma_period=macro_ma_period)
@@ -1747,12 +1787,18 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
             source_time = hourly[macro_index]["time"] if macro_index >= 0 else None
         direction = ("OFF" if not enabled else "UPTREND" if long_ok and not short_ok else
                      "DOWNTREND" if short_ok and not long_ok else
+                     "NEUTRAL" if explicit_neutral else
                      "SIDEWAYS" if long_ok and short_ok else "UNAVAILABLE")
         points.append({"time": bar["time"], "source_time": source_time,
                        "direction": direction, "long_ok": bool(long_ok), "short_ok": bool(short_ok)})
     return {"enabled": bool(enabled), "source": market_source.upper(),
             "basis": f"EMA{span} slope / {slope_bars} chart bars" if is_ou else
-                     (f"completed 1h · actionable-time aligned · MA{macro_ma_period} slope" if macro_bars is not None else "replay trend fallback"),
+                     (f"completed 1h · actionable-time aligned · MACD-H acceleration |Z|≥{macro_macd_enter_z:g}"
+                      if macro_regime_mode == "macd_hist_accel" else
+                      f"completed 1h · MA{macro_ma_period} + MACD-H acceleration agree"
+                      if macro_regime_mode == "hybrid" else
+                      f"completed 1h · actionable-time aligned · MA{macro_ma_period} slope"
+                      if macro_bars is not None else "replay trend fallback"),
             "points": points}
 
 
@@ -1828,6 +1874,11 @@ def _run_crypto_backtest_sync(
     interval_seconds: int = 900,
     macro_bars: Optional[List[Dict[str, Any]]] = None,
     macro_ma_period: int = 60,
+    macro_regime_mode: str = "ma_slope",
+    macro_macd_z_window: int = 24,
+    macro_macd_enter_z: float = 0.5,
+    macro_macd_exit_z: float = 0.25,
+    macro_macd_confirm_bars: int = 2,
 ) -> Dict[str, Any]:
     window = 24
     trades = []
@@ -1843,13 +1894,31 @@ def _run_crypto_backtest_sync(
     latest_condition_time: Optional[int] = None
     active_positions = []
     bars_values = [item["value"] for item in bars]
-    macro_aligned_list = (
+    if strategy_mode not in {"macd_reversal", "macd_strength_scaleout"}:
+        macro_regime_mode = "ma_slope"
+    ma_macro_aligned_list = (
         _hourly_macro_alignment_for_bars(bars, macro_bars, interval_seconds, macro_ma_period)
         if macro_bars is not None
         else macro_trend_aligned_series(bars_values, span=ou_macro_ema_span,
                                         slope_bars=ou_macro_slope_bars)
     )
-
+    macd_macro_aligned_list, macd_macro_details = _hourly_macd_acceleration_for_bars(
+        bars, macro_bars or [], interval_seconds,
+        fast_period=macd_fast_period, slow_period=macd_slow_period,
+        signal_period=macd_signal_period, z_window=macro_macd_z_window,
+        enter_z=macro_macd_enter_z, exit_z=macro_macd_exit_z,
+        confirm_bars=macro_macd_confirm_bars,
+    )
+    if macro_regime_mode == "macd_hist_accel":
+        macro_aligned_list = macd_macro_aligned_list
+    elif macro_regime_mode == "hybrid":
+        macro_aligned_list = [
+            (ma[0] and accel[0], ma[1] and accel[1])
+            for ma, accel in zip(ma_macro_aligned_list, macd_macro_aligned_list)
+        ]
+    else:
+        macro_regime_mode = "ma_slope"
+        macro_aligned_list = ma_macro_aligned_list
     evaluator_macro_alignment = macro_aligned_list
 
     if strategy_mode in {"adaptive_tranche", "ou_quant", "grid", "custom"}:
@@ -2583,6 +2652,14 @@ def _run_crypto_backtest_sync(
                     **{key: value for key, value in exit_eval.get("condition_enabled", {}).items() if key.startswith("exit_")},
                 }
             latest_evaluation = eval_info
+            macro_detail = macd_macro_details[index] if index < len(macd_macro_details) else {}
+            latest_evaluation.update({
+                "macro_regime_mode": macro_regime_mode,
+                "macro_histogram_slope": macro_detail.get("histogram_slope"),
+                "macro_histogram_slope_z": macro_detail.get("histogram_slope_z"),
+                "macro_acceleration_regime": macro_detail.get("regime"),
+                "macro_source_time": macro_detail.get("source_time"),
+            })
             latest_conditions = eval_info.get("condition_pass", {})
             latest_condition_time = int(bar["time"])
             series.append({
@@ -2629,6 +2706,11 @@ def _run_crypto_backtest_sync(
             "histogram_turn": latest_evaluation.get("histogram_turn"),
             "macd_fast_period": fast_w, "macd_slow_period": slow_w,
             "macd_signal_period": signal_w,
+            "macro_regime_mode": macro_regime_mode,
+            "macro_macd_z_window": macro_macd_z_window,
+            "macro_macd_enter_z": macro_macd_enter_z,
+            "macro_macd_exit_z": macro_macd_exit_z,
+            "macro_macd_confirm_bars": macro_macd_confirm_bars,
         }
 
     if position is not None:
@@ -2656,7 +2738,9 @@ def _run_crypto_backtest_sync(
             enabled=ou_use_macro_trend if strategy_mode == "ou_quant" else use_ma_stack_1h,
             is_ou=strategy_mode == "ou_quant", span=ou_macro_ema_span,
             slope_bars=ou_macro_slope_bars, interval_seconds=interval_seconds,
-            market_source=market_source, macro_bars=macro_bars, macro_ma_period=macro_ma_period),
+            market_source=market_source, macro_bars=macro_bars, macro_ma_period=macro_ma_period,
+            macro_regime_mode=macro_regime_mode, macd_details=macd_macro_details,
+            macro_macd_enter_z=macro_macd_enter_z),
         "trades": trades,
         "open_positions": open_positions,
         "metrics": mode_metrics,
@@ -2710,14 +2794,31 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_macd_two_stage_exit: bool = True, macd_first_exit_pct: float = 50.0,
                               base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
                               long_multiplier: float = 1.0, short_multiplier: float = 1.0,
-                              market_source: str = "binance", macro_ma_period: int = 60) -> Dict[str, Any]:
+                              market_source: str = "binance", macro_ma_period: int = 60,
+                              macro_regime_mode: str = "ma_slope",
+                              macro_macd_z_window: int = 24,
+                              macro_macd_enter_z: float = 0.5,
+                              macro_macd_exit_z: float = 0.25,
+                              macro_macd_confirm_bars: int = 2) -> Dict[str, Any]:
     """Single-leg crypto strategy backtest engine across 5 quantitative regimes."""
     if not 2 <= macro_ma_period <= 120:
         raise ValueError("Hourly macro MA period must be between 2 and 120")
+    if macro_regime_mode not in {"ma_slope", "macd_hist_accel", "hybrid"}:
+        raise ValueError("Unsupported macro regime mode")
+    if not 8 <= macro_macd_z_window <= 240:
+        raise ValueError("Macro MACD acceleration Z window must be between 8 and 240")
+    if not 0.01 <= macro_macd_enter_z <= 5.0:
+        raise ValueError("Macro MACD acceleration entry Z must be between 0.01 and 5")
+    if not 0.0 <= macro_macd_exit_z <= macro_macd_enter_z:
+        raise ValueError("Macro MACD acceleration release Z must be between 0 and entry Z")
+    if not 1 <= macro_macd_confirm_bars <= 12:
+        raise ValueError("Macro MACD confirmation must be between 1 and 12 bars")
     if market_source not in {"binance", "lighter"}:
         raise ValueError("Unsupported crypto replay market source")
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
-    macro_limit = min(500, max(125, math.ceil(min(500, limit) * interval_seconds / 3600) + macro_ma_period + 2))
+    macro_warmup = macd_slow_period + macd_signal_period + macro_macd_z_window + macro_macd_confirm_bars + 4
+    macro_limit = min(500, max(125, math.ceil(min(500, limit) * interval_seconds / 3600)
+                               + max(macro_ma_period + 2, macro_warmup)))
     if market_source == "lighter":
         candle_res, macro_res = await asyncio.gather(
             get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit)),
@@ -2782,6 +2883,11 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         long_multiplier=long_multiplier, short_multiplier=short_multiplier,
         interval_seconds=interval_seconds,
         macro_bars=macro_bars, macro_ma_period=macro_ma_period,
+        macro_regime_mode=macro_regime_mode,
+        macro_macd_z_window=macro_macd_z_window,
+        macro_macd_enter_z=macro_macd_enter_z,
+        macro_macd_exit_z=macro_macd_exit_z,
+        macro_macd_confirm_bars=macro_macd_confirm_bars,
     )
 
 

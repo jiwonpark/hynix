@@ -1075,6 +1075,122 @@ def _ema_series(values: List[float], period: int) -> List[Optional[float]]:
     return result
 
 
+def macd_histogram_acceleration_regime_series(
+    prices: List[float], *,
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9,
+    z_window: int = 24,
+    enter_z: float = 0.5,
+    exit_z: float = 0.25,
+    confirm_bars: int = 2,
+) -> List[Dict[str, Any]]:
+    """Causal completed-candle regime from normalized MACD-histogram slope.
+
+    The histogram slope is treated as filtered momentum acceleration.  A
+    Schmitt-trigger dead band plus consecutive-bar confirmation prevents the
+    macro regime from flipping on every small hourly histogram change.
+    """
+    values = [float(value) for value in prices]
+    fast_w = max(2, int(fast_period))
+    slow_w = max(fast_w + 1, int(slow_period))
+    signal_w = max(2, int(signal_period))
+    window = max(8, int(z_window))
+    enter = max(0.01, float(enter_z))
+    release = min(enter, max(0.0, float(exit_z)))
+    confirmation = max(1, int(confirm_bars))
+    output: List[Dict[str, Any]] = [{
+        "regime": "UNAVAILABLE", "direction": 0, "long_ok": False,
+        "short_ok": False, "histogram": None, "histogram_slope": None,
+        "histogram_slope_z": None,
+    } for _ in values]
+    if not values:
+        return output
+
+    fast = _ema_series(values, fast_w)
+    slow = _ema_series(values, slow_w)
+    first_macd_index: Optional[int] = None
+    compact_macd: List[float] = []
+    for index, slow_value in enumerate(slow):
+        if fast[index] is None or slow_value is None:
+            continue
+        if first_macd_index is None:
+            first_macd_index = index
+        compact_macd.append(float(fast[index]) - float(slow_value))
+    if first_macd_index is None:
+        return output
+    compact_signal = _ema_series(compact_macd, signal_w)
+    histogram: List[Optional[float]] = [None] * len(values)
+    for offset, signal_value in enumerate(compact_signal):
+        if signal_value is not None:
+            histogram[first_macd_index + offset] = compact_macd[offset] - float(signal_value)
+
+    slopes: List[float] = []
+    regime = 0
+    pending = 0
+    pending_count = 0
+    previous_histogram: Optional[float] = None
+    for index, histogram_value in enumerate(histogram):
+        if histogram_value is None:
+            continue
+        slope = None if previous_histogram is None else float(histogram_value) - previous_histogram
+        previous_histogram = float(histogram_value)
+        if slope is None:
+            output[index]["histogram"] = float(histogram_value)
+            continue
+        slopes.append(slope)
+        sample = slopes[-window:]
+        slope_z: Optional[float] = None
+        if len(sample) >= min(8, window):
+            mean = sum(sample) / len(sample)
+            variance = sum((value - mean) ** 2 for value in sample) / len(sample)
+            if variance > 1e-18:
+                slope_z = (slope - mean) / math.sqrt(variance)
+
+        desired = regime
+        if slope_z is not None:
+            if slope_z >= enter:
+                desired = 1
+            elif slope_z <= -enter:
+                desired = -1
+            elif abs(slope_z) <= release:
+                desired = 0
+        if desired == regime:
+            pending = regime
+            pending_count = 0
+        else:
+            if desired == pending:
+                pending_count += 1
+            else:
+                pending = desired
+                pending_count = 1
+            if pending_count >= confirmation:
+                regime = desired
+                pending_count = 0
+
+        output[index] = {
+            "regime": "BULL" if regime > 0 else ("BEAR" if regime < 0 else "NEUTRAL"),
+            "direction": regime,
+            "long_ok": regime > 0,
+            "short_ok": regime < 0,
+            "histogram": float(histogram_value),
+            "histogram_slope": slope,
+            "histogram_slope_z": slope_z,
+        }
+    return output
+
+
+def macd_histogram_acceleration_alignment(
+    prices: List[float], **kwargs: Any,
+) -> Tuple[Tuple[bool, bool], Dict[str, Any]]:
+    series = macd_histogram_acceleration_regime_series(prices, **kwargs)
+    latest = series[-1] if series else {
+        "regime": "UNAVAILABLE", "long_ok": False, "short_ok": False,
+        "histogram_slope": None, "histogram_slope_z": None,
+    }
+    return (bool(latest["long_ok"]), bool(latest["short_ok"])), latest
+
+
 def evaluate_macd_reversal_signals(
     prices: List[float],
     *,
