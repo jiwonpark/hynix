@@ -148,8 +148,10 @@ direction**, or **Hybrid** for that same wider-trend condition. MACD-H direction
 considers both the completed-hour histogram level and its one-bar change. Long
 alignment requires a negative histogram that is rising; short alignment requires
 a positive histogram that is falling. A zero cross invalidates the old alignment
-immediately. Its consecutive confirmation count is user-adjustable and persisted
-in the authenticated live configuration. No normalized Z threshold is used.
+immediately. Its hourly MACD Fast, Slow, and Signal periods are independently
+adjustable from the entry MACD, and its consecutive confirmation count is also
+user-adjustable. All four values persist in authenticated live configuration and
+must be reported in status and used identically by replay. No normalized Z threshold is used.
 Hybrid requires both the completed-hour MA direction and the MACD-H direction
 regime to agree. The replay background, PAPER condition
 badge, LIVE evaluation, and source timestamp must all use the selected predicate;

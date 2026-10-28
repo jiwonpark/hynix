@@ -50,7 +50,9 @@ DEFAULT_STATE = {
     "trend_macro_window": 24, "trend_pullback_dist": 0.15, "trend_tp_dist": 0.05, "trend_slope_min": 0.002,
     "use_ma_stretch": True, "use_base_spacing": True, "use_peak": True, "use_ma_stack": False,
     "use_ma_stack_1h": True, "macro_ma_period": 60,
-    "macro_regime_mode": "ma_slope", "macro_macd_confirm_bars": 2,
+    "macro_regime_mode": "ma_slope",
+    "macro_macd_fast_period": 12, "macro_macd_slow_period": 26,
+    "macro_macd_signal_period": 9, "macro_macd_confirm_bars": 2,
     "ma_stack_opposite_only": True, "use_opposite_stack_exit": True,
     "use_ma_diff_hook": True, "use_ma_diff_exit": True, "min_diff_bars": 2,
     "ma_accel_period": 24, "ma_accel_min_slope": 0.0, "ma_accel_min_accel": 0.0,
@@ -157,6 +159,9 @@ class LighterCryptoBot:
                           "use_ma_stack_1h": bool(self.state.get("use_ma_stack_1h", True)),
                           "macro_ma_period": int(self.state.get("macro_ma_period", 60)),
                           "macro_regime_mode": str(self.state.get("macro_regime_mode", "ma_slope")),
+                          "macro_macd_fast_period": int(self.state.get("macro_macd_fast_period", 12)),
+                          "macro_macd_slow_period": int(self.state.get("macro_macd_slow_period", 26)),
+                          "macro_macd_signal_period": int(self.state.get("macro_macd_signal_period", 9)),
                           "macro_macd_confirm_bars": int(self.state.get("macro_macd_confirm_bars", 2)),
                           "ma_stack_opposite_only": bool(self.state.get("ma_stack_opposite_only", True)),
                           "use_opposite_stack_exit": bool(self.state.get("use_opposite_stack_exit", True)),
@@ -336,6 +341,7 @@ class LighterCryptoBot:
             "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "macro_ma_period", "macro_regime_mode",
+            "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
             "macro_macd_confirm_bars",
             "use_convergence", "use_dwell", "use_bottoming", "base_spacing_pct", "min_dwell_bars",
             "ma_stack_opposite_only", "use_opposite_stack_exit",
@@ -361,6 +367,7 @@ class LighterCryptoBot:
                         "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars",
                         "ma_accel_period", "fast_ma_period", "slow_ma_period", "min_diff_bars",
                         "macd_fast_period", "macd_slow_period", "macd_signal_period",
+                        "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
                         "macro_macd_confirm_bars"}:
                 candidate[key] = int(value)
             elif key in {"ou_use_entry_z", "ou_use_halflife", "ou_use_min_abs_deviation",
@@ -412,6 +419,8 @@ class LighterCryptoBot:
             "trend_tp_dist": (0.01, 10.0), "trend_slope_min": (0.0001, 1.0),
             "fast_ma_period": (2, 100), "slow_ma_period": (3, 200),
             "macd_fast_period": (2, 100), "macd_slow_period": (3, 200), "macd_signal_period": (2, 100),
+            "macro_macd_fast_period": (2, 100), "macro_macd_slow_period": (3, 200),
+            "macro_macd_signal_period": (2, 100),
             "macd_strength_min_pct": (0.0, 1000.0), "macd_first_exit_pct": (1.0, 99.0),
             "min_cross_spread_bps": (0.0, 100.0),
             "min_diff_bars": (1, 10),
@@ -431,12 +440,15 @@ class LighterCryptoBot:
         if candidate["strategy_mode"] in {"macd_reversal", "macd_strength_scaleout"}:
             if candidate.get("macd_fast_period", 12) >= candidate.get("macd_slow_period", 26):
                 raise ValueError("MACD slow period must be greater than MACD fast period")
+        if candidate.get("macro_macd_fast_period", 12) >= candidate.get("macro_macd_slow_period", 26):
+            raise ValueError("Hourly MACD slow period must be greater than hourly MACD fast period")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
                 ("selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
-                 "macro_regime_mode", "macro_macd_confirm_bars",
+                 "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",
+                 "macro_macd_signal_period", "macro_macd_confirm_bars",
                  "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                  "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
                  "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct")):
@@ -1222,7 +1234,8 @@ class LighterCryptoBot:
                                   else "ma_slope")
                     macro_required = max(
                         int(self.state.get("macro_ma_period", 60)) + 1,
-                        int(self.state.get("macd_slow_period", 26)) + int(self.state.get("macd_signal_period", 9))
+                        int(self.state.get("macro_macd_slow_period", 26))
+                        + int(self.state.get("macro_macd_signal_period", 9))
                         + int(self.state.get("macro_macd_confirm_bars", 2)) + 4,
                     )
                     macro_rows = await self.client.candles(
@@ -1238,9 +1251,9 @@ class LighterCryptoBot:
                     )
                     accel_alignment, macro_detail = macd_histogram_acceleration_alignment(
                         macro_values,
-                        fast_period=int(self.state.get("macd_fast_period", 12)),
-                        slow_period=int(self.state.get("macd_slow_period", 26)),
-                        signal_period=int(self.state.get("macd_signal_period", 9)),
+                        fast_period=int(self.state.get("macro_macd_fast_period", 12)),
+                        slow_period=int(self.state.get("macro_macd_slow_period", 26)),
+                        signal_period=int(self.state.get("macro_macd_signal_period", 9)),
                         confirm_bars=int(self.state.get("macro_macd_confirm_bars", 2)),
                     )
                     macro_alignment = (accel_alignment if macro_mode == "macd_hist_accel" else
@@ -1276,6 +1289,9 @@ class LighterCryptoBot:
                     evaluation["macro_histogram_zone"] = macro_detail.get("histogram_zone")
                     evaluation["macro_histogram_slope"] = macro_detail.get("histogram_slope")
                     evaluation["macro_acceleration_regime"] = macro_detail.get("regime")
+                    evaluation["macro_macd_fast_period"] = int(self.state.get("macro_macd_fast_period", 12))
+                    evaluation["macro_macd_slow_period"] = int(self.state.get("macro_macd_slow_period", 26))
+                    evaluation["macro_macd_signal_period"] = int(self.state.get("macro_macd_signal_period", 9))
                 self.state["last_evaluated_candle"] = last_candle
                 self._save()
                 if self.state["tranches"] and exit_signal:

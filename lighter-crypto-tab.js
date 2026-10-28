@@ -1786,6 +1786,9 @@
                 <option value="hybrid" ${macroMode === "hybrid" ? "selected" : ""}>Hybrid (both agree)</option>
               </select>
             </label>
+            <label>1h Fast <input id="lighterCrypto_macroMacdFastPeriod" aria-label="Hourly MACD fast period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_fast_period ?? 12)}" style="width:48px"></label>
+            <label>1h Slow <input id="lighterCrypto_macroMacdSlowPeriod" aria-label="Hourly MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live.macro_macd_slow_period ?? 26)}" style="width:48px"></label>
+            <label>1h Signal <input id="lighterCrypto_macroMacdSignalPeriod" aria-label="Hourly MACD signal period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_signal_period ?? 9)}" style="width:48px"></label>
             <label>Confirm <input id="lighterCrypto_macroMacdConfirmBars" aria-label="MACD direction confirmation bars" type="number" min="1" max="12" step="1" value="${Number(live.macro_macd_confirm_bars ?? 2)}" style="width:46px"> bars</label>
             <span id="lighterCrypto_macroRegimeReadout">Completed 1h MACD-H · below zero + rising for long · above zero + falling for short</span>
           </div>
@@ -1951,8 +1954,8 @@
         $("lighterCrypto_btnCrossReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         $("lighterCrypto_btnMacdReplay")?.addEventListener("click", () => this.runBacktest());
-        ["lighterCrypto_macroRegimeMode", "lighterCrypto_macroMacdZWindow",
-         "lighterCrypto_macroMacdEnterZ", "lighterCrypto_macroMacdExitZ",
+        ["lighterCrypto_macroRegimeMode", "lighterCrypto_macroMacdFastPeriod",
+         "lighterCrypto_macroMacdSlowPeriod", "lighterCrypto_macroMacdSignalPeriod",
          "lighterCrypto_macroMacdConfirmBars"].forEach((id) => {
           const control = $(id);
           control?.addEventListener("change", () => {
@@ -2306,8 +2309,8 @@
             "lighterCrypto_inputLiveMaxSpread", "lighterCrypto_inpOuEntryZ", "lighterCrypto_inpOuExitZ",
             "lighterCrypto_maUseStack5m", "lighterCrypto_maUseOppositeExit",
             "lighterCrypto_gridReplayEntryZ", "lighterCrypto_gridReplayExitZ",
-            "lighterCrypto_macroRegimeMode", "lighterCrypto_macroMacdZWindow",
-            "lighterCrypto_macroMacdEnterZ", "lighterCrypto_macroMacdExitZ",
+            "lighterCrypto_macroRegimeMode", "lighterCrypto_macroMacdFastPeriod",
+            "lighterCrypto_macroMacdSlowPeriod", "lighterCrypto_macroMacdSignalPeriod",
             "lighterCrypto_macroMacdConfirmBars",
             "lighterCrypto_replaySpacingPct", "lighterCrypto_replayDwellBars"
           ].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
@@ -3039,8 +3042,14 @@
       const requestedMode = $("lighterCrypto_macroRegimeMode")?.value || saved.macro_regime_mode || "ma_slope";
       const macro_regime_mode = ["ma_slope", "macd_hist_accel", "hybrid"].includes(requestedMode)
         ? requestedMode : "ma_slope";
+      const macroFast = Math.max(2, Math.trunc(numeric("lighterCrypto_macroMacdFastPeriod", "macro_macd_fast_period", 12)));
+      const macroSlow = Math.max(macroFast + 1, Math.trunc(numeric("lighterCrypto_macroMacdSlowPeriod", "macro_macd_slow_period", 26)));
+      const macroSignal = Math.max(2, Math.trunc(numeric("lighterCrypto_macroMacdSignalPeriod", "macro_macd_signal_period", 9)));
       return {
         macro_regime_mode,
+        macro_macd_fast_period: macroFast,
+        macro_macd_slow_period: macroSlow,
+        macro_macd_signal_period: macroSignal,
         macro_macd_confirm_bars: Math.trunc(numeric("lighterCrypto_macroMacdConfirmBars", "macro_macd_confirm_bars", 2)),
       };
     },
@@ -3199,8 +3208,10 @@
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel"],
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
         macd_reversal: ["macd_fast_period", "macd_slow_period", "macd_signal_period",
+          "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
           "macro_macd_confirm_bars"],
         macd_strength_scaleout: ["macd_fast_period", "macd_slow_period", "macd_signal_period", "macd_strength_min_pct", "macd_first_exit_pct",
+          "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
           "macro_macd_confirm_bars"],
       };
       const liveParams = { ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
@@ -3248,9 +3259,9 @@
       ];
       if (currentMode !== "ou_quant" && currentMode !== "ma_stack") {
         const macroLabel = settings.macro_regime_mode === "macd_hist_accel"
-          ? "Wider trend filter · completed 1h MACD-H < 0 + rising (long) / > 0 + falling (short)"
+          ? `Wider trend filter · completed 1h MACD(${settings.macro_macd_fast_period},${settings.macro_macd_slow_period},${settings.macro_macd_signal_period})-H < 0 + rising (long) / > 0 + falling (short)`
           : settings.macro_regime_mode === "hybrid"
-            ? `Wider trend filter · 1h MA${settings.macro_ma_period} + MACD-H direction`
+            ? `Wider trend filter · 1h MA${settings.macro_ma_period} + MACD(${settings.macro_macd_fast_period},${settings.macro_macd_slow_period},${settings.macro_macd_signal_period})-H direction`
             : `Wider trend filter · 1h MA${settings.macro_ma_period} slope`;
         this.setText("valCondEntryMaStack1h", macroLabel);
         const label = lid("rowCondEntryMaStack1h")?.querySelector(".condLabel");
@@ -3411,16 +3422,17 @@
         const regimeZone = result?.latest_evaluation?.macro_histogram_zone || "UNAVAILABLE";
         const regimeSlope = Number(result?.latest_evaluation?.macro_histogram_slope);
         const regimeName = result?.latest_evaluation?.macro_acceleration_regime || "UNAVAILABLE";
+        const macroPeriods = `${settings.macro_macd_fast_period},${settings.macro_macd_slow_period},${settings.macro_macd_signal_period}`;
         const macroConditionLabel = $("lighterCrypto_macdMacroConditionLabel");
         if (macroConditionLabel) macroConditionLabel.textContent = regimeMode === "macd_hist_accel"
-          ? "Entry direction agrees with completed 1h MACD-H direction regime"
+          ? `Entry direction agrees with completed 1h MACD(${macroPeriods})-H direction regime`
           : regimeMode === "hybrid"
-            ? "Entry direction agrees with both 1h MA slope and MACD-H direction"
+            ? `Entry direction agrees with both 1h MA slope and MACD(${macroPeriods})-H direction`
             : "Entry direction agrees with completed 1h MA slope";
         const regimeReadout = $("lighterCrypto_macroRegimeReadout");
         if (regimeReadout) regimeReadout.textContent = regimeMode === "ma_slope"
           ? `Completed 1h MA${settings.macro_ma_period} slope`
-          : `${regimeName} · H ${Number.isFinite(regimeHistogram) ? `${regimeHistogram >= 0 ? "+" : ""}${regimeHistogram.toFixed(2)}` : "—"} (${regimeZone.toLowerCase()}) · ${Number.isFinite(regimeSlope) ? (regimeSlope > 0 ? "rising" : regimeSlope < 0 ? "falling" : "flat") : "direction unavailable"} · completed 1h`;
+          : `MACD(${macroPeriods}) · ${regimeName} · H ${Number.isFinite(regimeHistogram) ? `${regimeHistogram >= 0 ? "+" : ""}${regimeHistogram.toFixed(2)}` : "—"} (${regimeZone.toLowerCase()}) · ${Number.isFinite(regimeSlope) ? (regimeSlope > 0 ? "rising" : regimeSlope < 0 ? "falling" : "flat") : "direction unavailable"} · completed 1h`;
         const rows = [
           ["EntrySignal", "entry_signal_zone", null, "Directional MACD signal zone"],
           ["EntryHistogram", "entry_histogram_zone", null, "Directional histogram zone"],
@@ -3790,6 +3802,9 @@
           use_macd_two_stage_exit: "lighterCrypto_macdUseTwoStageExit",
           macd_first_exit_pct: "lighterCrypto_macdFirstExitPct",
           macro_regime_mode: "lighterCrypto_macroRegimeMode",
+          macro_macd_fast_period: "lighterCrypto_macroMacdFastPeriod",
+          macro_macd_slow_period: "lighterCrypto_macroMacdSlowPeriod",
+          macro_macd_signal_period: "lighterCrypto_macroMacdSignalPeriod",
           macro_macd_confirm_bars: "lighterCrypto_macroMacdConfirmBars",
         };
         Object.entries(controls).forEach(([key, id]) => {
@@ -3904,6 +3919,9 @@
         ? live.macro_regime_mode : "ma_slope";
       const desired = [
         ["lighterCrypto_macroRegimeMode", mode],
+        ["lighterCrypto_macroMacdFastPeriod", String(Number(live.macro_macd_fast_period ?? 12))],
+        ["lighterCrypto_macroMacdSlowPeriod", String(Number(live.macro_macd_slow_period ?? 26))],
+        ["lighterCrypto_macroMacdSignalPeriod", String(Number(live.macro_macd_signal_period ?? 9))],
         ["lighterCrypto_macroMacdConfirmBars", String(Number(live.macro_macd_confirm_bars ?? 2))],
       ];
       const controls = desired.map(([id]) => $(id));
@@ -3918,20 +3936,21 @@
         }
       });
       if (!changed) return false;
+      const macroPeriods = `${Number(live.macro_macd_fast_period ?? 12)},${Number(live.macro_macd_slow_period ?? 26)},${Number(live.macro_macd_signal_period ?? 9)}`;
       const macroLabel = mode === "macd_hist_accel"
-        ? "Wider trend filter · completed 1h MACD-H < 0 + rising (long) / > 0 + falling (short)"
+        ? `Wider trend filter · completed 1h MACD(${macroPeriods})-H < 0 + rising (long) / > 0 + falling (short)`
         : mode === "hybrid"
-          ? `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} + MACD-H direction`
+          ? `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} + MACD(${macroPeriods})-H direction`
           : `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} slope`;
       this.setText("valCondEntryMaStack1h", macroLabel);
       this.setText("macdMacroConditionLabel", mode === "macd_hist_accel"
-        ? "Entry direction agrees with completed 1h MACD-H direction regime"
+        ? `Entry direction agrees with completed 1h MACD(${macroPeriods})-H direction regime`
         : mode === "hybrid"
-          ? "Entry direction agrees with both 1h MA slope and MACD-H direction"
+          ? `Entry direction agrees with both 1h MA slope and MACD(${macroPeriods})-H direction`
           : "Entry direction agrees with completed 1h MA slope");
       this.setText("macroRegimeReadout", mode === "ma_slope"
         ? `Saved live · completed 1h MA${Number(live.macro_ma_period ?? 60)} slope · updating replay…`
-        : `Saved live · completed 1h MACD-H direction · updating replay…`);
+        : `Saved live · completed 1h MACD(${macroPeriods})-H direction · updating replay…`);
       if (this.initialized) this.requestBacktest();
       return true;
     },
@@ -6381,6 +6400,13 @@
           || selectedMacroMode !== "macd_hist_accel";
         if (this.currentParadigm !== "ou_quant" && usesMaMacro && macroPeriod && !macroPeriod.checkValidity())
           throw new Error("Hourly MA period must be an integer between 2 and 120");
+        if (["macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)
+            && ["lighterCrypto_macroMacdFastPeriod", "lighterCrypto_macroMacdSlowPeriod", "lighterCrypto_macroMacdSignalPeriod", "lighterCrypto_macroMacdConfirmBars"]
+              .some((id) => $(id) && !$(id).checkValidity()))
+          throw new Error("Fix the highlighted hourly MACD condition setting before replaying");
+        if (["macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)
+            && Number($("lighterCrypto_macroMacdSlowPeriod")?.value) <= Number($("lighterCrypto_macroMacdFastPeriod")?.value))
+          throw new Error("Hourly MACD Slow must be greater than Fast");
         const settings = this.replaySettings();
         const replayKey = this.replayRefreshKey(settings);
         this._pendingReplayRefreshKey = replayKey;

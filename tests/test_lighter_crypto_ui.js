@@ -80,6 +80,9 @@ assert.match(macdMarkup, /Short entry \/ long exit: Signal &gt; 0/);
 assert.match(macdMarkup, /Short entry \/ long exit: Histogram &gt; 0/);
 assert.match(macdMarkup, /peak turns down/);
 assert.match(macdMarkup, /MACD-H direction/);
+assert.match(macdMarkup, /Hourly MACD fast period/);
+assert.match(macdMarkup, /Hourly MACD slow period/);
+assert.match(macdMarkup, /Hourly MACD signal period/);
 assert.doesNotMatch(macdMarkup, /Z window|Enter \|Z\||Release \|Z\||slope Z/);
 assert.match(macdMarkup, /Hybrid \(both agree\)/);
 assert.match(macdMarkup, /NEW/);
@@ -94,6 +97,9 @@ assert.match(macdMarkup, /NEW/);
   ['lighterCrypto_macdUseExitHistogramPositive', { checked: true }],
   ['lighterCrypto_macdUseExitReversal', { checked: true }],
   ['lighterCrypto_macroRegimeMode', { value: 'macd_hist_accel' }],
+  ['lighterCrypto_macroMacdFastPeriod', { value: '8' }],
+  ['lighterCrypto_macroMacdSlowPeriod', { value: '21' }],
+  ['lighterCrypto_macroMacdSignalPeriod', { value: '5' }],
   ['lighterCrypto_macroMacdConfirmBars', { value: '2' }],
 ].forEach(([id, node]) => nodes.set(id, node));
 tab5.currentParadigm = 'macd_reversal';
@@ -102,29 +108,42 @@ assert.equal(macdReplay.strategy_mode, 'macd_reversal');
 assert.equal(macdReplay.macd_fast_period, 12);
 assert.equal(macdReplay.use_macd_hist_reversal_exit, true);
 assert.equal(macdReplay.macro_regime_mode, 'macd_hist_accel');
+assert.equal(macdReplay.macro_macd_fast_period, 8);
+assert.equal(macdReplay.macro_macd_slow_period, 21);
+assert.equal(macdReplay.macro_macd_signal_period, 5);
 assert.equal(macdReplay.macro_macd_confirm_bars, 2);
 assert.equal('macro_macd_enter_z' in macdReplay, false);
 const macdPayload = tab5.liveStrategyPayload('macd_reversal');
 assert.equal(macdPayload.macd_slow_period, 26);
 assert.equal(macdPayload.use_macd_signal_negative, true);
 assert.equal(macdPayload.macro_regime_mode, 'macd_hist_accel');
+assert.equal(macdPayload.macro_macd_fast_period, 8);
+assert.equal(macdPayload.macro_macd_slow_period, 21);
+assert.equal(macdPayload.macro_macd_signal_period, 5);
 nodes.set('lighterCrypto_valCondEntryMaStack1h', { textContent: '' });
 nodes.set('lighterCrypto_macdMacroConditionLabel', { textContent: '' });
 nodes.set('lighterCrypto_macroRegimeReadout', { textContent: '' });
 [
-  'lighterCrypto_macroRegimeMode', 'lighterCrypto_macroMacdConfirmBars',
+  'lighterCrypto_macroRegimeMode', 'lighterCrypto_macroMacdFastPeriod',
+  'lighterCrypto_macroMacdSlowPeriod', 'lighterCrypto_macroMacdSignalPeriod',
+  'lighterCrypto_macroMacdConfirmBars',
 ].forEach((id) => { nodes.get(id).dataset = {}; });
 tab5.initialized = false;
 assert.equal(tab5.syncMacroRegimeControlsFromBot({
   strategy_mode: 'macd_reversal',
   strategy_params: {
-    macro_regime_mode: 'macd_hist_accel', macro_macd_confirm_bars: 3,
+    macro_regime_mode: 'macd_hist_accel', macro_macd_fast_period: 10,
+    macro_macd_slow_period: 30, macro_macd_signal_period: 7,
+    macro_macd_confirm_bars: 3,
   },
 }), true);
 assert.equal(nodes.get('lighterCrypto_macroRegimeMode').value, 'macd_hist_accel');
+assert.equal(nodes.get('lighterCrypto_macroMacdFastPeriod').value, '10');
+assert.equal(nodes.get('lighterCrypto_macroMacdSlowPeriod').value, '30');
+assert.equal(nodes.get('lighterCrypto_macroMacdSignalPeriod').value, '7');
 assert.equal(nodes.get('lighterCrypto_macroMacdConfirmBars').value, '3');
-assert.match(nodes.get('lighterCrypto_valCondEntryMaStack1h').textContent, /MACD-H < 0 \+ rising/);
-assert.match(nodes.get('lighterCrypto_macdMacroConditionLabel').textContent, /MACD-H direction/);
+assert.match(nodes.get('lighterCrypto_valCondEntryMaStack1h').textContent, /MACD\(10,30,7\)-H < 0 \+ rising/);
+assert.match(nodes.get('lighterCrypto_macdMacroConditionLabel').textContent, /MACD\(10,30,7\)-H direction/);
 nodes.get('lighterCrypto_macroRegimeMode').dataset.unsaved = 'true';
 assert.equal(tab5.syncMacroRegimeControlsFromBot({
   strategy_mode: 'macd_reversal', strategy_params: { macro_regime_mode: 'ma_slope' },

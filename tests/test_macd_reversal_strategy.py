@@ -158,6 +158,9 @@ def test_bots_persist_adjustable_macro_direction_regime():
     async def run():
         values = {
             "macro_regime_mode": "macd_hist_accel",
+            "macro_macd_fast_period": 8,
+            "macro_macd_slow_period": 21,
+            "macro_macd_signal_period": 5,
             "macro_macd_confirm_bars": 3,
         }
         with tempfile.TemporaryDirectory() as directory:
