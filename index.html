@@ -3703,6 +3703,8 @@
                     Max/campaign
                     <input id="inputEntryMaxCampaign" class="terminal-action-control" type="number" min="1" max="1000" step="1" value="12" style="width:64px; height:25px; padding:2px 5px; border:1px solid #cbd5e1; border-radius:4px; font-weight:800;">
                   </label>
+                  <button id="btnSaveEntryRate" class="terminal-action-control" type="button" style="height:25px; padding:2px 9px; border:1px solid #7c3aed; border-radius:4px; background:#f5f3ff; color:#6d28d9; font-size:10.5px; font-weight:800; cursor:pointer;">Save</button>
+                  <span id="lblEntryRateSaveStatus" role="status" aria-live="polite" style="font-weight:800; color:#16a34a;">Saved</span>
                   <span id="lblEntryRateEffective" style="margin-left:auto; color:#64748b;">Effective: 300s · 4/hour · 12/campaign</span>
                 </div>
               </div>
@@ -11890,6 +11892,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           this.fetchShortTermParity();
         }
         this.syncWithBackend();
+        this.fetchEntryPacing();
         this.fetchHedgedStatus();
       },
 
@@ -11912,6 +11915,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.updateSignalApprover();
         this.initShortTermChart();
         this.fetchShortTermParity();
+        this.fetchEntryPacing();
         this.logDaemonEvent("Trading engine initialized in " + this.state.mode.toUpperCase() + " mode.", "info");
       },
 
@@ -13405,6 +13409,45 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
       },
 
+      applyEntryPacing(pacing, force = false, authoritative = false) {
+        if (!pacing) return false;
+        if (this.entryPacingAuthoritative && !authoritative) return false;
+        if (authoritative) this.entryPacingAuthoritative = true;
+        const cooldownSec = Number(pacing.entry_cooldown_sec);
+        const hourlyLimit = Number(pacing.entry_max_per_hour ?? pacing.entry_hourly_limit);
+        const campaignLimit = Number(pacing.entry_max_campaign ?? pacing.entry_campaign_limit);
+        if (![cooldownSec, hourlyLimit, campaignLimit].every(Number.isFinite)) return false;
+        this.state.entryPacing = {
+          entry_cooldown_sec: cooldownSec,
+          entry_max_per_hour: hourlyLimit,
+          entry_max_campaign: campaignLimit,
+        };
+        if (force || (!this.pendingEntryRateWrites && !this.entryRateEditPending)) {
+          if ($("inputEntryCooldownSec")) $("inputEntryCooldownSec").value = String(cooldownSec);
+          if ($("inputEntryMaxPerHour")) $("inputEntryMaxPerHour").value = String(hourlyLimit);
+          if ($("inputEntryMaxCampaign")) $("inputEntryMaxCampaign").value = String(campaignLimit);
+        }
+        if ($("lblEntryRateEffective")) {
+          $("lblEntryRateEffective").textContent = `Effective: ${cooldownSec}s · ${hourlyLimit}/hour · ${campaignLimit}/campaign`;
+        }
+        return true;
+      },
+
+      async fetchEntryPacing() {
+        const apiPrefix = window.location.pathname.startsWith("/skhynix") ? "/skhynix" : "";
+        try {
+          const res = await fetch(`${apiPrefix}/api/trade/entry_rate`, {
+            signal: AbortSignal.timeout(5000),
+            cache: "no-store",
+          });
+          if (!res.ok) return false;
+          const data = await res.json();
+          return Boolean(data.success && this.applyEntryPacing(data.entry_pacing, false, true));
+        } catch (e) {
+          return false;
+        }
+      },
+
       async fetchHedgedStatus() {
         if (this.hedgedStatusInFlight) return this.hedgedStatusInFlight;
         this.hedgedStatusInFlight = this.fetchHedgedStatusOnce();
@@ -13477,6 +13520,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
             if (res.ok) {
               const data = await res.json();
+              this.fetchEntryPacing();
               // Never let a partial account response erase the last verified history.
               this.applyVerifiedExitSnapshot(data, this.lastVerifiedExitSnapshot, true);
               this.state.hedgedStatus = data;
@@ -14953,13 +14997,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const cooldownSec = Number(criteria.entry_cooldown_sec ?? 300);
         const hourlyLimit = Number(criteria.entry_hourly_limit ?? 4);
         const campaignLimit = Number(criteria.entry_campaign_limit ?? 12);
-        this.state.entryPacing = {entry_cooldown_sec: cooldownSec, entry_max_per_hour: hourlyLimit, entry_max_campaign: campaignLimit};
-        if (!this.pendingEntryRateWrites) {
-          if ($("inputEntryCooldownSec")) $("inputEntryCooldownSec").value = String(cooldownSec);
-          if ($("inputEntryMaxPerHour")) $("inputEntryMaxPerHour").value = String(hourlyLimit);
-          if ($("inputEntryMaxCampaign")) $("inputEntryMaxCampaign").value = String(campaignLimit);
-        }
-        if ($("lblEntryRateEffective")) $("lblEntryRateEffective").textContent = `Effective: ${cooldownSec}s · ${hourlyLimit}/hour · ${campaignLimit}/campaign`;
+        this.applyEntryPacing({
+          entry_cooldown_sec: cooldownSec,
+          entry_max_per_hour: hourlyLimit,
+          entry_max_campaign: campaignLimit,
+        });
         if ($("lblCondEntryGuard")) $("lblCondEntryGuard").textContent = `10. Closed-Bar Cadence · ${cooldownSec}s · ${hourlyLimit}/hour · ${campaignLimit}/campaign`;
         if ($("valCondEntryGuard")) {
           const remaining = Number(criteria.entry_cooldown_remaining_sec ?? 0);
@@ -15657,44 +15699,98 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
         };
 
+        const setEntryRateSaveStatus = (state, message) => {
+          const label = $("lblEntryRateSaveStatus");
+          if (!label) return;
+          label.dataset.state = state;
+          label.textContent = message;
+          label.style.color = state === "saved" ? "#16a34a" : state === "error" ? "#dc2626" : "#d97706";
+        };
+
+        const readEntryPacingInputs = () => {
+          const controls = [
+            ["inputEntryCooldownSec", "entry_cooldown_sec"],
+            ["inputEntryMaxPerHour", "entry_max_per_hour"],
+            ["inputEntryMaxCampaign", "entry_max_campaign"],
+          ];
+          const payload = {};
+          for (const [id, key] of controls) {
+            const input = $(id);
+            const value = Number(input?.value);
+            const min = Number(input?.min);
+            const max = Number(input?.max);
+            if (!Number.isInteger(value) || value < min || value > max) return null;
+            payload[key] = value;
+          }
+          return payload;
+        };
+
         const updateEntryPacingLive = async () => {
           if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
             showToast("Unlock the terminal before changing live entry rate.", "warn");
             terminalLockManager.openPasswordModal();
-            await this.fetchHedgedStatus();
+            setEntryRateSaveStatus("error", "Not saved · unlock required");
             return false;
           }
-          const payload = {
-            entry_cooldown_sec: Number($("inputEntryCooldownSec")?.value),
-            entry_max_per_hour: Number($("inputEntryMaxPerHour")?.value),
-            entry_max_campaign: Number($("inputEntryMaxCampaign")?.value),
-          };
-          this.pendingEntryRateWrites = (this.pendingEntryRateWrites || 0) + 1;
+          const payload = readEntryPacingInputs();
+          if (!payload) {
+            setEntryRateSaveStatus("error", "Not saved · check ranges");
+            return false;
+          }
+
+          const revision = (this.entryRateSaveRevision || 0) + 1;
+          this.entryRateSaveRevision = revision;
+          this.entryRateQueuedSave = {payload, revision};
+          setEntryRateSaveStatus("saving", "Saving…");
+          if (this.entryRateSavePromise) return this.entryRateSavePromise;
+
+          this.entryRateSavePromise = (async () => {
+            let finalSaved = false;
+            while (this.entryRateQueuedSave) {
+              const job = this.entryRateQueuedSave;
+              this.entryRateQueuedSave = null;
+              this.pendingEntryRateWrites = (this.pendingEntryRateWrites || 0) + 1;
+              try {
+                const res = await fetch("/skhynix/api/trade/update_entry_rate", {
+                  method: "POST",
+                  credentials: "same-origin",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...(window.terminalLockManager?.token ? {Authorization: `Bearer ${window.terminalLockManager.token}`} : {})
+                  },
+                  body: JSON.stringify(job.payload)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.error || "Failed to update entry rate");
+                this.applyEntryPacing(data.entry_pacing, true, true);
+                finalSaved = true;
+                if (job.revision === this.entryRateSaveRevision && !this.entryRateQueuedSave) {
+                  this.entryRateEditPending = false;
+                  setEntryRateSaveStatus("saved", "Saved");
+                }
+              } catch (e) {
+                finalSaved = false;
+                console.error("Failed to save entry rate:", e);
+                setEntryRateSaveStatus("error", "Not saved · retry");
+                showToast(`Entry rate was not saved: ${e.message}`, "danger");
+              } finally {
+                this.pendingEntryRateWrites = Math.max(0, (this.pendingEntryRateWrites || 1) - 1);
+              }
+            }
+            return finalSaved;
+          })();
+          let saved = false;
           try {
-            const res = await fetch("/skhynix/api/trade/update_entry_rate", {
-              method: "POST",
-              credentials: "same-origin",
-              headers: {
-                "Content-Type": "application/json",
-                ...(window.terminalLockManager?.token ? {Authorization: `Bearer ${window.terminalLockManager.token}`} : {})
-              },
-              body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            if (!res.ok || !data.success) throw new Error(data.error || "Failed to update entry rate");
-            this.state.entryPacing = {...data.entry_pacing};
-            this.scheduleDynamicBacktest(true);
-            await this.fetchHedgedStatus();
-            showToast("Live and paper entry rate saved.", "success");
-            return true;
-          } catch (e) {
-            console.error("Failed to save entry rate:", e);
-            showToast(`Entry rate was not saved: ${e.message}`, "danger");
-            await this.fetchHedgedStatus();
-            return false;
+            saved = await this.entryRateSavePromise;
           } finally {
-            this.pendingEntryRateWrites = Math.max(0, (this.pendingEntryRateWrites || 1) - 1);
+            this.entryRateSavePromise = null;
           }
+          if (saved) {
+            this.scheduleDynamicBacktest(true);
+            this.fetchHedgedStatus();
+            showToast("Live and paper entry rate saved.", "success");
+          }
+          return saved;
         };
 
         const syncShortUI = (val) => {
@@ -15791,9 +15887,26 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           updateScalingLive({ spread_direction_mode: e.target.value });
         });
 
+        let entryRateSaveTimer = null;
+        const queueEntryRateSave = () => {
+          this.entryRateEditPending = true;
+          setEntryRateSaveStatus("pending", "Unsaved changes…");
+          clearTimeout(entryRateSaveTimer);
+          if (readEntryPacingInputs()) {
+            entryRateSaveTimer = setTimeout(updateEntryPacingLive, 600);
+          } else {
+            setEntryRateSaveStatus("error", "Not saved · check ranges");
+          }
+        };
+        const flushEntryRateSave = () => {
+          clearTimeout(entryRateSaveTimer);
+          updateEntryPacingLive();
+        };
         for (const id of ["inputEntryCooldownSec", "inputEntryMaxPerHour", "inputEntryMaxCampaign"]) {
-          $(id)?.addEventListener("change", updateEntryPacingLive);
+          $(id)?.addEventListener("input", queueEntryRateSave);
+          $(id)?.addEventListener("change", flushEntryRateSave);
         }
+        $("btnSaveEntryRate")?.addEventListener("click", flushEntryRateSave);
 
         if ($("chkAutoPeriodic48h")) {
           $("chkAutoPeriodic48h").addEventListener("change", async (e) => {

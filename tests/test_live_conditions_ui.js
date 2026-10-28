@@ -17,7 +17,7 @@ const context = vm.createContext({window: {location: {origin: 'https://test', pa
 const engine = vm.runInContext(`({state: {positions: [], orderLog: [], conditionToggles: {}},
   ${['isConditionEnabled', 'renderPositionsAndLogs', 'fetchVerifiedExitSnapshot', 'fetchVerifiedExitSnapshotOnce',
     'fetchVerifiedExitSnapshotLive', 'applyVerifiedExitSnapshot', 'fetchHedgedStatus', 'fetchHedgedStatusOnce',
-    'renderHedgedController', 'renderHeldPairPnl'].map(method).join('\n')}
+    'applyEntryPacing', 'fetchEntryPacing', 'renderHedgedController', 'renderHeldPairPnl'].map(method).join('\n')}
 })`, context);
 engine.renderAutoTrancheCriteria = () => {};
 engine.fetchShortTermParity = () => {};
@@ -122,6 +122,14 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
   assert.match(html, /id="inputEntryCooldownSec"[^>]*min="30"[^>]*max="86400"/);
   assert.match(html, /id="inputEntryMaxPerHour"[^>]*max="100"/);
   assert.match(html, /id="inputEntryMaxCampaign"[^>]*max="1000"/);
+  assert.match(html, /id="btnSaveEntryRate"/);
+  assert.match(html, /id="lblEntryRateSaveStatus"[^>]*aria-live="polite"/);
+  assert.match(html, /addEventListener\("input", queueEntryRateSave\)/);
+  assert.match(html, /setTimeout\(updateEntryPacingLive, 600\)/);
+  assert.match(html, /!this\.pendingEntryRateWrites && !this\.entryRateEditPending/);
+  assert.match(html, /fetchEntryPacing\(\)/);
+  assert.match(html, /entryPacingAuthoritative && !authoritative/);
+  assert.match(html, /\/api\/trade\/entry_rate/);
   assert.match(html, /\/api\/trade\/update_entry_rate/);
   assert.match(html, /pacing: \{\.\.\.\(this\.state\.entryPacing/);
 

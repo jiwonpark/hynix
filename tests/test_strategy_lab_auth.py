@@ -108,6 +108,9 @@ class StrategyLabAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.json()['entry_pacing'], payload)
             saved = server.load_auto_tranche_state()
             self.assertEqual({key: saved[key] for key in payload}, payload)
+            readback = await self.client.get('/api/trade/entry_rate')
+            self.assertEqual(readback.status_code, 200)
+            self.assertEqual(readback.json()['entry_pacing'], payload)
 
     async def test_unlock_authorizes_then_lock_revokes(self):
         self.assertFalse((await self.client.get('/api/terminal-auth/status')).json()['authorized'])

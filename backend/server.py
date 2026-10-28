@@ -5055,6 +5055,12 @@ async def update_scaling(payload: Dict[str, Any]) -> Dict[str, Any]:
     }}
 
 
+@app.get("/api/trade/entry_rate")
+async def get_entry_rate() -> Dict[str, Any]:
+    """Return persisted entry pacing without waiting for exchange reconciliation."""
+    return {"success": True, "entry_pacing": entry_pacing(load_auto_tranche_state())}
+
+
 @app.post("/api/trade/update_entry_rate")
 async def update_entry_rate(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Persist adjustable live entry cooldown, hourly limit, and campaign cap."""
