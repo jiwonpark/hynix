@@ -10,7 +10,7 @@ ENTRY_MIN_MA_STRETCH_PTS = 0.25
 STEP = 300
 
 
-def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing_rules=None):
+def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing_rules=None, pacing=None):
     """Start flat at start_time; preceding bars warm indicators without trading.
 
     Bars contain closed 5m prices. Orders are simulated at that candle's close,
@@ -20,6 +20,12 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
     margin, leverage, and account exhaustion never suppress price signals.
     """
     toggles = toggles or {}
+    pacing_supplied = bool(pacing)
+    pacing = pacing or {}
+    cooldown_sec = max(30, min(86400, int(pacing.get('entry_cooldown_sec', 300))))
+    hourly_limit = max(1, min(100, int(pacing.get('entry_max_per_hour', 4))))
+    campaign_limit = max(1, min(1000, int(pacing.get('entry_max_campaign', 12))))
+    guard_enabled = pacing_supplied and bool(toggles.get('entry_adaptive_guard', True))
     def passes(key, value):
         return not toggles.get(key, True) or bool(value)
     def aligned(values, upward, current_val=None):
@@ -42,6 +48,8 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
     hour_parts = []
     previous = None
     last_exit = last_signal_time = -math.inf
+    signal_times = deque()
+    campaign_fill_count = 0
     last_signal_spread = None
     evaluated = missing = 0
     entry_rate = ENTRY_FEE_BPS / 10000
@@ -90,13 +98,17 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
         peak_out = len(vals) >= 3 and (vals[-1] <= vals[-2] or vals[-1] < max(vals[-3:-1]))
         bottoming = len(vals) >= 3 and (vals[-1] >= vals[-2] or vals[-1] > min(vals[-3:-1]) or vals[-1] <= ma24)
         next_notional = entry_adr * adr + entry_stock * stock
+        while signal_times and close - signal_times[0] >= 3600:
+            signal_times.popleft()
+        pacing_pass = (not guard_enabled or (
+            close - last_signal_time >= cooldown_sec and len(signal_times) < hourly_limit))
         signal_setup = all((
             passes('entry_ma_stretch', len(vals) >= 6 and spread-ma24 >= ENTRY_MIN_MA_STRETCH_PTS),
             passes('entry_base_spread', last_signal_spread is None or spread >= last_signal_spread + .10),
             passes('entry_peak_rollover', peak_out),
             ma_pass('entry_ma_stack_5m', five, True, spread),
             ma_pass('entry_ma_stack_1h', hourly, True, spread),
-            close-last_signal_time >= 60,
+            pacing_pass,
         ))
         if signal_setup:
             entry_signals.append({
@@ -105,6 +117,7 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
             })
             last_signal_spread = spread
             last_signal_time = close
+            signal_times.append(close)
         target = stack[-1] if stack else None
         sold = False
         if target:
@@ -136,12 +149,14 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
                 fees += exit_fee; slippage += exit_slip
                 aq = round(aq - exit_adr, 8); sq = round(sq - exit_stock, 8)
                 stack.pop()
+                campaign_fill_count = 0
                 target.update(status='CLOSED', exit_time_ms=close*1000, estimated_net_pnl_usd=net, exit_spread=spread)
                 events.append({'time': t, 'is_entry': False, 'trade_id': target['id'], 'net_pnl_usd': net})
                 last_exit = close
                 sold = True
         if not sold:
-            if signal_setup:
+            fill_rate_allowed = not guard_enabled or campaign_fill_count < campaign_limit
+            if signal_setup and fill_rate_allowed:
                 fee, slip = next_notional*entry_rate, next_notional*slip_rate
                 pnl -= fee+slip
                 fees += fee; slippage += slip
@@ -152,6 +167,7 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
                          'entry_spread': spread, 'adr_entry_price': adr, 'stock_entry_price': stock,
                          'adr_entry_qty': entry_adr, 'stock_entry_qty': entry_stock, 'exit_policy': macro}
                 trades.append(trade); stack.append(trade)
+                campaign_fill_count += 1
                 events.append({'time': t, 'is_entry': True, 'trade_id': trade['id']})
         current_notional = aq*adr + sq*stock
         peak_notional = max(peak_notional, current_notional)
@@ -171,6 +187,8 @@ def replay(bars, start_time, end_time, initial_equity=None, toggles=None, sizing
         'gross_exposure_usd': round(current_notional, 6), 'peak_gross_exposure_usd': round(peak_notional, 6),
         'fees_usd': round(fees, 6), 'slippage_usd': round(slippage, 6), 'funding_reserve_usd': round(funding, 6),
         'capital_blocked_signals': 0, 'evaluated_bars': evaluated, 'missing_price_bars': missing,
+        'entry_cooldown_sec': cooldown_sec, 'entry_hourly_limit': hourly_limit,
+        'entry_campaign_limit': campaign_limit,
         'halted': False, 'start_time': start_time, 'end_time': end_time,
     }}
 

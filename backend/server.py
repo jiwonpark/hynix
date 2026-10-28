@@ -83,6 +83,30 @@ ENTRY_REENTRY_RESET_PTS = 0.50
 ENTRY_COOLDOWN_SEC = 300
 ENTRY_MAX_PER_HOUR = 4
 ENTRY_MAX_CAMPAIGN = 12
+ENTRY_COOLDOWN_MIN_SEC = 30
+ENTRY_COOLDOWN_MAX_SEC = 86400
+ENTRY_MAX_PER_HOUR_MAX = 100
+ENTRY_MAX_CAMPAIGN_MAX = 1000
+
+
+def entry_pacing(state: Dict[str, Any]) -> Dict[str, int]:
+    """Return validated, persisted entry-pacing settings with safe defaults."""
+    def bounded_int(key: str, default: int, low: int, high: int) -> int:
+        try:
+            value = int(state.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+        return max(low, min(high, value))
+
+    return {
+        "entry_cooldown_sec": bounded_int(
+            "entry_cooldown_sec", ENTRY_COOLDOWN_SEC,
+            ENTRY_COOLDOWN_MIN_SEC, ENTRY_COOLDOWN_MAX_SEC),
+        "entry_max_per_hour": bounded_int(
+            "entry_max_per_hour", ENTRY_MAX_PER_HOUR, 1, ENTRY_MAX_PER_HOUR_MAX),
+        "entry_max_campaign": bounded_int(
+            "entry_max_campaign", ENTRY_MAX_CAMPAIGN, 1, ENTRY_MAX_CAMPAIGN_MAX),
+    }
 
 
 def load_auto_tranche_state() -> Dict[str, Any]:
@@ -248,7 +272,7 @@ async def authorize_strategy_lab(request: Request, call_next):
         "/api/crypto/flatten", "/api/crypto/order",
         "/api/lighter-crypto/bot/", "/api/lighter-crypto/step_tranche",
         "/api/lighter-crypto/reduce_tranche", "/api/lighter-crypto/flatten",
-        "/api/trade/update_scaling",
+        "/api/trade/update_scaling", "/api/trade/update_entry_rate",
     )
     if (request.url.path.startswith(protected_prefixes)
             and request.method not in ("GET", "HEAD", "OPTIONS")
@@ -3637,6 +3661,10 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         verified_exit_summary = verified_exit_snapshot["verified_exit_summary"]
         executions = verified_exit_snapshot["recent_executions"]
         cond_toggles = auto_state.get("condition_toggles", {})
+        pacing = entry_pacing(auto_state)
+        entry_cooldown_sec = pacing["entry_cooldown_sec"]
+        entry_max_per_hour = pacing["entry_max_per_hour"]
+        entry_max_campaign = pacing["entry_max_campaign"]
         def is_cond_enabled(k: str, default: bool = True) -> bool:
             if k in MANDATORY_LIVE_CONDITIONS:
                 return True
@@ -3749,7 +3777,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             elif last_pair.get("signal_version") == SIGNAL_VERSION:
                 latest_recorded_entry = last_pair.get("entry_spread")
         campaign_count = int(auto_state.get(
-            "entries_since_last_exit", min(len(entry_pairs), ENTRY_MAX_CAMPAIGN)))
+            "entries_since_last_exit", min(len(entry_pairs), entry_max_campaign)))
         recent_entry_times = [
             float(t) for t in auto_state.get("recent_entry_times", [])
             if now_sec - float(t) < 3600
@@ -3782,8 +3810,11 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         is_new_closed_entry_bar = bool(
             signal_bar_time is not None
             and signal_bar_time > float(auto_state.get("last_entry_bar_time", 0)))
-        has_entry_rate_capacity = len(recent_entry_times) < ENTRY_MAX_PER_HOUR
-        has_entry_campaign_capacity = campaign_count < ENTRY_MAX_CAMPAIGN
+        last_step_time = float(auto_state.get("last_step_time", 0) or 0)
+        entry_cooldown_remaining_sec = max(0, math.ceil(entry_cooldown_sec - (now_sec - last_step_time)))
+        has_entry_cooldown_elapsed = entry_cooldown_remaining_sec <= 0
+        has_entry_rate_capacity = len(recent_entry_times) < entry_max_per_hour
+        has_entry_campaign_capacity = campaign_count < entry_max_campaign
         eff_stretched = is_stretched_above_ma if is_cond_enabled("entry_ma_stretch") else True
         eff_above_entry = is_above_entry if is_cond_enabled("entry_base_spread") else True
         eff_peaking_out = is_peaking_out if is_cond_enabled("entry_peak_rollover") else True
@@ -3792,10 +3823,11 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         eff_closed_bar = is_new_closed_entry_bar if is_cond_enabled("entry_closed_bar") else True
         eff_rate_limit = has_entry_rate_capacity if is_cond_enabled("entry_rate_limit") else True
         eff_campaign_cap = has_entry_campaign_capacity if is_cond_enabled("entry_campaign_cap") else True
+        eff_cooldown = has_entry_cooldown_elapsed if is_cond_enabled("entry_adaptive_guard") else True
         scale_in_setup = bool(
             eff_stretched and eff_above_entry and eff_peaking_out
             and eff_entry_ma_5m and eff_entry_ma_1h
-            and eff_closed_bar and eff_rate_limit and eff_campaign_cap)
+            and eff_closed_bar and eff_cooldown and eff_rate_limit and eff_campaign_cap)
         scale_in_armed = bool(can_scale_in and scale_in_setup)
         scale_in_blocked_reason = (
             "POSITION_CAPACITY" if not has_scale_in_capacity
@@ -4019,12 +4051,14 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             "last_exit_spread": last_exit_spread,
             "entry_signal_bar_time": signal_bar_time,
             "is_new_closed_entry_bar": is_new_closed_entry_bar,
-            "entry_cooldown_sec": ENTRY_COOLDOWN_SEC,
+            "entry_cooldown_sec": entry_cooldown_sec,
+            "entry_cooldown_remaining_sec": entry_cooldown_remaining_sec,
+            "has_entry_cooldown_elapsed": has_entry_cooldown_elapsed,
             "entry_hourly_count": len(recent_entry_times),
-            "entry_hourly_limit": ENTRY_MAX_PER_HOUR,
+            "entry_hourly_limit": entry_max_per_hour,
             "has_entry_rate_capacity": has_entry_rate_capacity,
             "entry_campaign_count": campaign_count,
-            "entry_campaign_limit": ENTRY_MAX_CAMPAIGN,
+            "entry_campaign_limit": entry_max_campaign,
             "has_entry_campaign_capacity": has_entry_campaign_capacity,
             "scale_in_armed": scale_in_armed,
             "scale_in_setup": scale_in_setup,
@@ -4159,6 +4193,7 @@ class DynamicBacktestRequest(BaseModel):
     initial_equity: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     interval: str = "5m"
     toggles: Dict[str, bool] = Field(default_factory=dict)
+    pacing: Dict[str, int] = Field(default_factory=dict)
 
 
 _backtest_market_cache = OrderedDict()
@@ -4215,13 +4250,17 @@ async def dynamic_backtest(request: DynamicBacktestRequest) -> Dict[str, Any]:
     try:
         bars = await backtest_market_bars(start-61*3600, end)
         rules = await exchange_rules(binance_client)
-        result = await asyncio.to_thread(replay, bars, start, end, toggles=request.toggles, sizing_rules=rules)
+        replay_pacing = entry_pacing(request.pacing)
+        result = await asyncio.to_thread(
+            replay, bars, start, end, toggles=request.toggles,
+            sizing_rules=rules, pacing=replay_pacing)
         if not result['summary']['evaluated_bars']:
             return {"success": False, "error": "No complete paired price history for this range."}
         result['summary']['first_available_time'] = next((b['time'] for b in bars if b['time'] >= start), None)
         result['summary']['expected_bars'] = (end-start)//300
         return {"success": True, "markers": replay_markers(result, intervals[request.interval]),
-                "summary": result['summary'], "toggles": request.toggles}
+                "summary": result['summary'], "toggles": request.toggles,
+                "pacing": replay_pacing}
     except Exception:
         logger.exception("Dynamic backtest failed")
         return {"success": False, "error": "Could not load historical prices. Retry the backtest."}
@@ -5015,6 +5054,42 @@ async def update_scaling(payload: Dict[str, Any]) -> Dict[str, Any]:
         "auto_entry_multiplier": state.get("auto_short_multiplier", False),
     }}
 
+
+@app.post("/api/trade/update_entry_rate")
+async def update_entry_rate(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist adjustable live entry cooldown, hourly limit, and campaign cap."""
+    global _hedged_status_task, _hedged_status_cache, _hedged_status_cache_time
+    global _hedged_status_config_revision
+    state = load_auto_tranche_state()
+    limits = {
+        "entry_cooldown_sec": (ENTRY_COOLDOWN_MIN_SEC, ENTRY_COOLDOWN_MAX_SEC),
+        "entry_max_per_hour": (1, ENTRY_MAX_PER_HOUR_MAX),
+        "entry_max_campaign": (1, ENTRY_MAX_CAMPAIGN_MAX),
+    }
+    for key, (low, high) in limits.items():
+        if key not in payload:
+            continue
+        try:
+            value = int(payload[key])
+        except (TypeError, ValueError):
+            return {"success": False, "error": f"Invalid {key}"}
+        if value < low or value > high:
+            return {"success": False, "error": f"{key} must be between {low} and {high}"}
+        state[key] = value
+    pacing = entry_pacing(state)
+    state.update(pacing)
+    state["last_action"] = (
+        f"ENTRY_RATE_UPDATED: {pacing['entry_cooldown_sec']}s, "
+        f"{pacing['entry_max_per_hour']}/hour, {pacing['entry_max_campaign']}/campaign")
+    state["last_action_time"] = time.time()
+    save_auto_tranche_state(state)
+    _hedged_status_config_revision += 1
+    _hedged_status_cache = None
+    _hedged_status_cache_time = 0.0
+    _hedged_status_task = None
+    logger.info(f"[Auto-Tranche] Entry pacing updated: {state['last_action']}")
+    return {"success": True, "entry_pacing": pacing}
+
 async def auto_tranche_worker():
     """
     EC2 Server-Side Autonomous 24/7 Auto-Tranche Execution Worker:
@@ -5059,6 +5134,9 @@ async def auto_tranche_worker():
                     now = time.time()
                     last_reduce = float(state.get("last_reduce_time", 0))
                     last_step = float(state.get("last_step_time", 0))
+                    cooldown_sec = (entry_pacing(state)["entry_cooldown_sec"]
+                                    if state.get("condition_toggles", {}).get("entry_adaptive_guard", True)
+                                    else 0)
 
                     # 1. Take-Profit (Conservative Anti-Churn Scale-Out)
                     if tranches_active > 0 and can_take_profit:
@@ -5082,7 +5160,7 @@ async def auto_tranche_worker():
                         criteria.get("tranches_max") is None
                         or tranches_active < int(criteria["tranches_max"])
                     ):
-                        if now - last_step >= ENTRY_COOLDOWN_SEC:
+                        if now - last_step >= cooldown_sec:
                             logger.info("[Auto-Tranche Worker] Executing autonomous speculative scale-in step...")
                             res = await step_tranche()
                             state = load_auto_tranche_state()

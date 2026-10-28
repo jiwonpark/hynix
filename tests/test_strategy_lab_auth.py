@@ -92,6 +92,23 @@ class StrategyLabAuthorizationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(saved['short_spread_multiplier'], 1.25)
             self.assertEqual(saved['long_spread_multiplier'], 1.5)
 
+    async def test_tab2_entry_rate_mutation_requires_unlock_and_persists(self):
+        payload = {'entry_cooldown_sec': 90, 'entry_max_per_hour': 20, 'entry_max_campaign': 40}
+        self.assertEqual(
+            (await self.client.post('/api/trade/update_entry_rate', json=payload)).status_code,
+            401,
+        )
+        unlocked = await self.client.post(
+            '/api/terminal-auth/unlock', json={'password': 'test-only-password'})
+        headers = {'Authorization': 'Bearer ' + unlocked.json()['token']}
+        with patch.object(server, 'STATE_FILE', Path(self.temp.name) / 'entry-rate.json'):
+            response = await self.client.post(
+                '/api/trade/update_entry_rate', json=payload, headers=headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['entry_pacing'], payload)
+            saved = server.load_auto_tranche_state()
+            self.assertEqual({key: saved[key] for key in payload}, payload)
+
     async def test_unlock_authorizes_then_lock_revokes(self):
         self.assertFalse((await self.client.get('/api/terminal-auth/status')).json()['authorized'])
         self.assertEqual((await self.client.post('/api/terminal-auth/unlock', json={'password':'wrong'})).status_code, 401)

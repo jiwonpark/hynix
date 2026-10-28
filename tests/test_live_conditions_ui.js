@@ -117,6 +117,13 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
   assert.match(html, /id="chkCondEntryGuard"[^>]*onchange="tradingEngine\.toggleConditionWithWarning\('entry_adaptive_guard', this\)"/);
   assert.doesNotMatch(html, /id="chkCondEntryGuard"[^>]*disabled/);
   assert.match(html, /id="conditionWarningModal"/);
+  assert.match(html, /id="rangeShortSpreadMultiplier"[^>]*max="10\.0"/);
+  assert.match(html, /id="rangeLongSpreadMultiplier"[^>]*max="10\.0"/);
+  assert.match(html, /id="inputEntryCooldownSec"[^>]*min="30"[^>]*max="86400"/);
+  assert.match(html, /id="inputEntryMaxPerHour"[^>]*max="100"/);
+  assert.match(html, /id="inputEntryMaxCampaign"[^>]*max="1000"/);
+  assert.match(html, /\/api\/trade\/update_entry_rate/);
+  assert.match(html, /pacing: \{\.\.\.\(this\.state\.entryPacing/);
 
   console.log('Live condition and positions UI checks passed');
 })().catch(error => {console.error(error); process.exitCode = 1;});

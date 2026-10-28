@@ -3661,7 +3661,7 @@
                       </label>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                      <input id="rangeShortSpreadMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Short Spread Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #dc2626;">
+                      <input id="rangeShortSpreadMultiplier" type="range" min="1.0" max="10.0" step="0.05" value="1.00" aria-label="Short Spread Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #dc2626;">
                       <input id="inputShortSpreadMultiplier" type="number" min="1.0" max="10.0" step="0.05" value="1.00" style="width: 58px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11.5px; font-weight: 800; color: #0f172a; text-align: right;">
                       <span style="font-size: 11px; font-weight: 700; color: #64748b;">×</span>
                     </div>
@@ -3678,7 +3678,7 @@
                       <span style="font-size: 10px; font-weight: 700; color: #64748b;">Discount Recovery</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                      <input id="rangeLongSpreadMultiplier" type="range" min="1.0" max="5.0" step="0.05" value="1.00" aria-label="Long Spread Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #16a34a;">
+                      <input id="rangeLongSpreadMultiplier" type="range" min="1.0" max="10.0" step="0.05" value="1.00" aria-label="Long Spread Multiplier slider" style="flex: 1; height: 24px; margin: 0; cursor: pointer; accent-color: #16a34a;">
                       <input id="inputLongSpreadMultiplier" type="number" min="1.0" max="10.0" step="0.05" value="1.00" style="width: 58px; height: 26px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; font-size: 11.5px; font-weight: 800; color: #0f172a; text-align: right;">
                       <span style="font-size: 11px; font-weight: 700; color: #64748b;">×</span>
                     </div>
@@ -3687,6 +3687,23 @@
                       <span id="lblLongSpreadQty" style="font-size: 10.5px; font-weight: 700; color: #16a34a;">-- ADR / -- ETF (100% Symmetric)</span>
                     </div>
                   </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; padding-top: 9px; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #475569;">
+                  <strong style="color: #7c3aed; letter-spacing: .2px;">ENTRY RATE · LIVE + PAPER</strong>
+                  <label style="display:flex; align-items:center; gap:5px; font-weight:700;" title="Minimum elapsed time between automatic entries. Completed 5m candle cadence may be more restrictive.">
+                    Min interval
+                    <input id="inputEntryCooldownSec" class="terminal-action-control" type="number" min="30" max="86400" step="30" value="300" style="width:72px; height:25px; padding:2px 5px; border:1px solid #cbd5e1; border-radius:4px; font-weight:800;">
+                    sec
+                  </label>
+                  <label style="display:flex; align-items:center; gap:5px; font-weight:700;" title="Maximum qualifying entries during any rolling 60-minute window.">
+                    Max/hour
+                    <input id="inputEntryMaxPerHour" class="terminal-action-control" type="number" min="1" max="100" step="1" value="4" style="width:58px; height:25px; padding:2px 5px; border:1px solid #cbd5e1; border-radius:4px; font-weight:800;">
+                  </label>
+                  <label style="display:flex; align-items:center; gap:5px; font-weight:700;" title="Maximum automatic entry fills before the next successful tranche exit resets the campaign.">
+                    Max/campaign
+                    <input id="inputEntryMaxCampaign" class="terminal-action-control" type="number" min="1" max="1000" step="1" value="12" style="width:64px; height:25px; padding:2px 5px; border:1px solid #cbd5e1; border-radius:4px; font-weight:800;">
+                  </label>
+                  <span id="lblEntryRateEffective" style="margin-left:auto; color:#64748b;">Effective: 300s · 4/hour · 12/campaign</span>
                 </div>
               </div>
 
@@ -4022,7 +4039,7 @@
                       <input type="checkbox" id="chkCondEntryGuard" checked onchange="tradingEngine.toggleConditionWithWarning('entry_adaptive_guard', this)">
                       <span class="toggleSlider"></span>
                     </label><span style="font-size: 8px; color: #7c3aed; font-weight: 800;" title="Guarded entry cadence">GUARD</span>
-                    <span class="condLabel" title="One completed 5m candle per entry, maximum four entries/hour and twelve entries/campaign">10. Closed-Bar Cadence · 4/hour · 12/campaign</span>
+                    <span class="condLabel" id="lblCondEntryGuard" title="Configurable completed-bar cadence, minimum interval, hourly entry limit, and campaign fill cap">10. Configurable Entry Cadence</span>
                     <span class="condValue" id="valCondEntryGuard">--</span>
                     <span class="condBadge wait" id="badgeCondEntryGuard">WAIT</span>
                   </div>
@@ -11765,7 +11782,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         selectedLeverage: 3,
         selectedRoute: "market",
         shortTermInterval: "5m",
-        conditionToggles: {}
+        conditionToggles: {},
+        entryPacing: {entry_cooldown_sec: 300, entry_max_per_hour: 4, entry_max_campaign: 12}
       },
       deployedStrategy: null,
 
@@ -12230,8 +12248,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           if (key === "entry_adaptive_guard") {
             title = isKo ? "⚠️ 진입 속도 제한 (Condition 10) 해제" : "⚠️ Disable Guarded Entry Cadence?";
             msg = isKo
-              ? "Condition 10(5분봉 종가 대기, 시간당 4회 제한, 캠페인 12회 한도)을 해제하면 잔여 증거금 한도 내에서 빠른 추가 진입이 실행될 수 있습니다.\n\n역추세 확산 시 마진 소진 위험이 증가합니다. 정말 해제하시겠습니까?"
-              : "Disabling Condition 10 removes the 5m closed-bar cadence, 4/hour limit, and 12-entry campaign cap.\n\nThe daemon will be permitted to add tranches beyond the 12-order ceiling using available margin.\n\nDo you want to proceed?";
+              ? "Condition 10(완료봉 대기, 설정된 최소 간격, 시간당 제한, 캠페인 한도)을 해제하면 잔여 증거금 한도 내에서 빠른 추가 진입이 실행될 수 있습니다.\n\n역추세 확산 시 마진 소진 위험이 증가합니다. 정말 해제하시겠습니까?"
+              : "Disabling Condition 10 removes the completed-bar cadence and your configured interval, hourly, and campaign limits.\n\nThe daemon may add tranches rapidly using available margin.\n\nDo you want to proceed?";
           }
 
           if (msg) {
@@ -13641,7 +13659,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             inpShort.value = shortVal.toFixed(2);
           }
           if (rangeShort && !isInteractingShort) {
-            rangeShort.value = Math.min(5.0, Math.max(1.0, shortVal)).toFixed(2);
+            rangeShort.value = Math.min(10.0, Math.max(1.0, shortVal)).toFixed(2);
           }
           if (badgeShort && !isInteractingShort) {
             badgeShort.textContent = `${shortVal.toFixed(2)}× basic${sizing.auto_short_multiplier ? " (Macro)" : ""}`;
@@ -13656,7 +13674,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             inpLong.value = longVal.toFixed(2);
           }
           if (rangeLong && !isInteractingLong) {
-            rangeLong.value = Math.min(5.0, Math.max(1.0, longVal)).toFixed(2);
+            rangeLong.value = Math.min(10.0, Math.max(1.0, longVal)).toFixed(2);
           }
           if (badgeLong && !isInteractingLong) {
             badgeLong.textContent = `${longVal.toFixed(2)}× basic`;
@@ -14586,7 +14604,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           start_time: history.bars[0].time,
           end_time: Math.min(history.bars.at(-1).time + seconds[history.interval], Math.floor(Date.now()/300000)*300),
           interval: history.interval,
-          toggles: Object.fromEntries(Object.entries(this.state.conditionToggles || {}).filter(([key]) => !["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state"].includes(key)).sort(([a], [b]) => a.localeCompare(b)))
+          toggles: Object.fromEntries(Object.entries(this.state.conditionToggles || {}).filter(([key]) => !["entry_capacity", "entry_gross_leverage", "entry_margin_buffer", "entry_worker_state"].includes(key)).sort(([a], [b]) => a.localeCompare(b))),
+          pacing: {...(this.state.entryPacing || {entry_cooldown_sec: 300, entry_max_per_hour: 4, entry_max_campaign: 12})}
         };
         const key = JSON.stringify(payload);
         if (!force && key === this.dynamicBacktestKey) return;
@@ -14927,13 +14946,26 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         syncCondRow("entry_worker_state", "rowCondEntryEngine", "chkCondEntryEngine", "badgeCondEntryEngine", isEngineReady, isKo ? "가동" : "READY", hasRecovery ? (isKo ? "복구대기" : "RECOVERY") : (isKo ? "자동매매 OFF" : "AUTO OFF"), "wait");
 
         const newClosedBar = Boolean(criteria.is_new_closed_entry_bar);
+        const cooldownOk = Boolean(criteria.has_entry_cooldown_elapsed);
         const rateOk = Boolean(criteria.has_entry_rate_capacity);
         const campaignOk = Boolean(criteria.has_entry_campaign_capacity);
-        const cadenceOk = newClosedBar && rateOk && campaignOk;
-        if ($("valCondEntryGuard")) {
-          $("valCondEntryGuard").textContent = `${criteria.entry_hourly_count ?? 0}/${criteria.entry_hourly_limit ?? 4} hr · ${criteria.entry_campaign_count ?? 0}/${criteria.entry_campaign_limit ?? 12}`;
+        const cadenceOk = newClosedBar && cooldownOk && rateOk && campaignOk;
+        const cooldownSec = Number(criteria.entry_cooldown_sec ?? 300);
+        const hourlyLimit = Number(criteria.entry_hourly_limit ?? 4);
+        const campaignLimit = Number(criteria.entry_campaign_limit ?? 12);
+        this.state.entryPacing = {entry_cooldown_sec: cooldownSec, entry_max_per_hour: hourlyLimit, entry_max_campaign: campaignLimit};
+        if (!this.pendingEntryRateWrites) {
+          if ($("inputEntryCooldownSec")) $("inputEntryCooldownSec").value = String(cooldownSec);
+          if ($("inputEntryMaxPerHour")) $("inputEntryMaxPerHour").value = String(hourlyLimit);
+          if ($("inputEntryMaxCampaign")) $("inputEntryMaxCampaign").value = String(campaignLimit);
         }
-        syncCondRow("entry_adaptive_guard", "rowCondEntryGuard", "chkCondEntryGuard", "badgeCondEntryGuard", cadenceOk, isKo ? "충족" : "PASS", !campaignOk ? (isKo ? "캠페인한도" : "CAMPAIGN CAP") : (!rateOk ? (isKo ? "시간당한도" : "RATE LIMIT") : (isKo ? "5분봉대기" : "WAIT 5m CLOSE")), "wait");
+        if ($("lblEntryRateEffective")) $("lblEntryRateEffective").textContent = `Effective: ${cooldownSec}s · ${hourlyLimit}/hour · ${campaignLimit}/campaign`;
+        if ($("lblCondEntryGuard")) $("lblCondEntryGuard").textContent = `10. Closed-Bar Cadence · ${cooldownSec}s · ${hourlyLimit}/hour · ${campaignLimit}/campaign`;
+        if ($("valCondEntryGuard")) {
+          const remaining = Number(criteria.entry_cooldown_remaining_sec ?? 0);
+          $("valCondEntryGuard").textContent = `${remaining}s · ${criteria.entry_hourly_count ?? 0}/${hourlyLimit} hr · ${criteria.entry_campaign_count ?? 0}/${campaignLimit}`;
+        }
+        syncCondRow("entry_adaptive_guard", "rowCondEntryGuard", "chkCondEntryGuard", "badgeCondEntryGuard", cadenceOk, isKo ? "충족" : "PASS", !campaignOk ? (isKo ? "캠페인한도" : "CAMPAIGN CAP") : (!rateOk ? (isKo ? "시간당한도" : "RATE LIMIT") : (!cooldownOk ? (isKo ? "진입간격" : "COOLDOWN") : (isKo ? "5분봉대기" : "WAIT 5m CLOSE"))), "wait");
 
         // Scale-In Top Badge
         if ($("badgeCriteriaScaleIn")) {
@@ -15625,6 +15657,46 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           }
         };
 
+        const updateEntryPacingLive = async () => {
+          if (typeof terminalLockManager !== "undefined" && terminalLockManager.isLocked) {
+            showToast("Unlock the terminal before changing live entry rate.", "warn");
+            terminalLockManager.openPasswordModal();
+            await this.fetchHedgedStatus();
+            return false;
+          }
+          const payload = {
+            entry_cooldown_sec: Number($("inputEntryCooldownSec")?.value),
+            entry_max_per_hour: Number($("inputEntryMaxPerHour")?.value),
+            entry_max_campaign: Number($("inputEntryMaxCampaign")?.value),
+          };
+          this.pendingEntryRateWrites = (this.pendingEntryRateWrites || 0) + 1;
+          try {
+            const res = await fetch("/skhynix/api/trade/update_entry_rate", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: {
+                "Content-Type": "application/json",
+                ...(window.terminalLockManager?.token ? {Authorization: `Bearer ${window.terminalLockManager.token}`} : {})
+              },
+              body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || "Failed to update entry rate");
+            this.state.entryPacing = {...data.entry_pacing};
+            this.scheduleDynamicBacktest(true);
+            await this.fetchHedgedStatus();
+            showToast("Live and paper entry rate saved.", "success");
+            return true;
+          } catch (e) {
+            console.error("Failed to save entry rate:", e);
+            showToast(`Entry rate was not saved: ${e.message}`, "danger");
+            await this.fetchHedgedStatus();
+            return false;
+          } finally {
+            this.pendingEntryRateWrites = Math.max(0, (this.pendingEntryRateWrites || 1) - 1);
+          }
+        };
+
         const syncShortUI = (val) => {
           const num = parseFloat(val);
           if (!Number.isFinite(num) || num < 1.0) return;
@@ -15718,6 +15790,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         $("selSpreadDirectionMode")?.addEventListener("change", (e) => {
           updateScalingLive({ spread_direction_mode: e.target.value });
         });
+
+        for (const id of ["inputEntryCooldownSec", "inputEntryMaxPerHour", "inputEntryMaxCampaign"]) {
+          $(id)?.addEventListener("change", updateEntryPacingLive);
+        }
 
         if ($("chkAutoPeriodic48h")) {
           $("chkAutoPeriodic48h").addEventListener("change", async (e) => {

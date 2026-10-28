@@ -68,6 +68,28 @@ class ReplayTests(unittest.TestCase):
         self.assertLess(result['summary']['net_pnl_usd'], -1000)
         self.assertFalse(result['summary']['halted'])
 
+    def test_configurable_pacing_limits_signals_and_fills_without_position_suppression(self):
+        data = bars([140] * 30)
+        result = replay(
+            data, BASE, BASE + len(data) * 300, toggles=LOOSE,
+            pacing={'entry_cooldown_sec': 600, 'entry_max_per_hour': 3, 'entry_max_campaign': 2})
+        self.assertEqual(result['summary']['entry_cooldown_sec'], 600)
+        self.assertEqual(result['summary']['entry_hourly_limit'], 3)
+        self.assertEqual(result['summary']['entry_campaign_limit'], 2)
+        self.assertGreater(result['summary']['entry_signals'], result['summary']['entries'])
+        self.assertEqual(result['summary']['entries'], 2)
+        self.assertEqual(result['summary']['entry_signals'], 8)
+
+    def test_disabling_entry_guard_bypasses_configured_replay_pacing(self):
+        data = bars([140] * 10)
+        limited = replay(data, BASE, BASE + 3000, toggles=LOOSE,
+                         pacing={'entry_cooldown_sec': 3600, 'entry_max_per_hour': 1, 'entry_max_campaign': 1})
+        disabled = replay(data, BASE, BASE + 3000,
+                          toggles={**LOOSE, 'entry_adaptive_guard': False},
+                          pacing={'entry_cooldown_sec': 3600, 'entry_max_per_hour': 1, 'entry_max_campaign': 1})
+        self.assertEqual(limited['summary']['entries'], 1)
+        self.assertGreater(disabled['summary']['entries'], limited['summary']['entries'])
+
     def test_future_candles_cannot_change_prior_decisions(self):
         original = bars([140]*8+[139]*8, [100]*8+[95]*8)
         short = self.run_replay(original, end=10)
