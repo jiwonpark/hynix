@@ -1781,7 +1781,7 @@
             <span style="background:#7c3aed;color:#fff;border-radius:999px;padding:2px 7px;font-size:9px;">NEW</span>
             <label>1h regime
               <select id="lighterCrypto_macroRegimeMode" aria-label="Hourly MACD macro regime method" style="height:27px;border:1px solid #c4b5fd;border-radius:4px;background:#fff;">
-                <option value="ma_slope" ${macroMode === "ma_slope" ? "selected" : ""}>MA slope (current)</option>
+                <option value="ma_slope" ${macroMode === "ma_slope" ? "selected" : ""}>MA slope</option>
                 <option value="macd_hist_accel" ${macroMode === "macd_hist_accel" ? "selected" : ""}>MACD-H acceleration</option>
                 <option value="hybrid" ${macroMode === "hybrid" ? "selected" : ""}>Hybrid (both agree)</option>
               </select>
@@ -2309,6 +2309,9 @@
             "lighterCrypto_inputLiveMaxSpread", "lighterCrypto_inpOuEntryZ", "lighterCrypto_inpOuExitZ",
             "lighterCrypto_maUseStack5m", "lighterCrypto_maUseOppositeExit",
             "lighterCrypto_gridReplayEntryZ", "lighterCrypto_gridReplayExitZ",
+            "lighterCrypto_macroRegimeMode", "lighterCrypto_macroMacdZWindow",
+            "lighterCrypto_macroMacdEnterZ", "lighterCrypto_macroMacdExitZ",
+            "lighterCrypto_macroMacdConfirmBars",
             "lighterCrypto_replaySpacingPct", "lighterCrypto_replayDwellBars"
           ].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
           [
@@ -3900,11 +3903,56 @@
       layer.innerHTML = html.join("");
     },
 
+    syncMacroRegimeControlsFromBot(bot) {
+      if (!bot || !["macd_reversal", "macd_strength_scaleout"].includes(bot.strategy_mode)
+          || !["macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)) return false;
+      const live = { ...bot, ...(bot.strategy_params || {}) };
+      const mode = ["ma_slope", "macd_hist_accel", "hybrid"].includes(live.macro_regime_mode)
+        ? live.macro_regime_mode : "ma_slope";
+      const desired = [
+        ["lighterCrypto_macroRegimeMode", mode],
+        ["lighterCrypto_macroMacdZWindow", String(Number(live.macro_macd_z_window ?? 24))],
+        ["lighterCrypto_macroMacdEnterZ", String(Number(live.macro_macd_enter_z ?? 0.5))],
+        ["lighterCrypto_macroMacdExitZ", String(Number(live.macro_macd_exit_z ?? 0.25))],
+        ["lighterCrypto_macroMacdConfirmBars", String(Number(live.macro_macd_confirm_bars ?? 2))],
+      ];
+      const controls = desired.map(([id]) => $(id));
+      if (controls.some((control) => !control)
+          || controls.some((control) => control.dataset?.unsaved === "true")) return false;
+      let changed = false;
+      desired.forEach(([id, value]) => {
+        const control = $(id);
+        if (String(control.value) !== value) {
+          control.value = value;
+          changed = true;
+        }
+      });
+      if (!changed) return false;
+      const enterZ = Number(live.macro_macd_enter_z ?? 0.5);
+      const macroLabel = mode === "macd_hist_accel"
+        ? `Wider trend filter · completed 1h MACD-H acceleration (|Z| ≥ ${enterZ.toFixed(2)})`
+        : mode === "hybrid"
+          ? `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} + MACD-H acceleration`
+          : `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} slope`;
+      this.setText("valCondEntryMaStack1h", macroLabel);
+      this.setText("macdMacroConditionLabel", mode === "macd_hist_accel"
+        ? "Entry direction agrees with completed 1h MACD-H acceleration regime"
+        : mode === "hybrid"
+          ? "Entry direction agrees with both 1h MA slope and MACD-H acceleration"
+          : "Entry direction agrees with completed 1h MA slope");
+      this.setText("macroRegimeReadout", mode === "ma_slope"
+        ? `Saved live · completed 1h MA${Number(live.macro_ma_period ?? 60)} slope · updating replay…`
+        : `Saved live · completed 1h MACD-H acceleration · updating replay…`);
+      if (this.initialized) this.requestBacktest();
+      return true;
+    },
+
     updateBotStatus(bot, venue) {
       if (!bot) return;
       const macroPeriod = lid("macroMaPeriod");
       if (macroPeriod && !macroPeriod.dataset.userEdited) macroPeriod.value = String(bot.strategy_params?.macro_ma_period ?? bot.macro_ma_period ?? 60);
       this.botState = bot;
+      this.syncMacroRegimeControlsFromBot(bot);
       window.TerminalCommon?.syncSingleLegDirectionControl("lighterCrypto_", bot?.entry_direction_mode);
       const isEnabled = Boolean(bot?.enabled);
       const symbol = bot?.selected_symbol || this.selectedSymbol || "BTC";
