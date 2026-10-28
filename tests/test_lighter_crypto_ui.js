@@ -79,7 +79,7 @@ assert.match(macdMarkup, /trough turns up/);
 assert.match(macdMarkup, /Short entry \/ long exit: Signal &gt; 0/);
 assert.match(macdMarkup, /Short entry \/ long exit: Histogram &gt; 0/);
 assert.match(macdMarkup, /peak turns down/);
-assert.match(macdMarkup, /MACD-H direction/);
+assert.match(macdMarkup, /MA Diff \+ Accel/);
 assert.match(macdMarkup, /Hourly MACD fast period/);
 assert.match(macdMarkup, /Hourly MACD slow period/);
 assert.match(macdMarkup, /Hourly MACD signal period/);
@@ -142,8 +142,8 @@ assert.equal(nodes.get('lighterCrypto_macroMacdFastPeriod').value, '10');
 assert.equal(nodes.get('lighterCrypto_macroMacdSlowPeriod').value, '30');
 assert.equal(nodes.get('lighterCrypto_macroMacdSignalPeriod').value, '7');
 assert.equal(nodes.get('lighterCrypto_macroMacdConfirmBars').value, '3');
-assert.match(nodes.get('lighterCrypto_valCondEntryMaStack1h').textContent, /MACD\(10,30,7\)-H > 0 \+ rising/);
-assert.match(nodes.get('lighterCrypto_macdMacroConditionLabel').textContent, /MACD\(10,30,7\)-H direction/);
+assert.match(nodes.get('lighterCrypto_valCondEntryMaStack1h').textContent, /MA Diff\(10,30\) > 0 \+ Accel > 0/);
+assert.match(nodes.get('lighterCrypto_macdMacroConditionLabel').textContent, /MA Diff\(10,30\) \+ Accel/);
 nodes.get('lighterCrypto_macroRegimeMode').dataset.unsaved = 'true';
 assert.equal(tab5.syncMacroRegimeControlsFromBot({
   strategy_mode: 'macd_reversal', strategy_params: { macro_regime_mode: 'ma_slope' },

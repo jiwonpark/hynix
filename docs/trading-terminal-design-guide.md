@@ -143,16 +143,18 @@ visible EMA-alignment switch; never override it from a hidden inherited switch.
 Tab 5 MA Stack intentionally bypasses the hourly filter: label it N/A, disable
 the unused hourly period input and retain the 5m full-stack/diff rules.
 
-Tab 5 MACD strategies may explicitly select **MA slope**, **MACD-H
-direction**, or **Hybrid** for that same wider-trend condition. MACD-H direction
-considers both the completed-hour histogram level and its one-bar change. Long
-alignment requires a positive histogram that is rising; short alignment requires
-a negative histogram that is falling. A zero cross invalidates the old alignment
-immediately. Its hourly MACD Fast, Slow, and Signal periods are independently
-adjustable from the entry MACD, and its consecutive confirmation count is also
-user-adjustable. All four values persist in authenticated live configuration and
-must be reported in status and used identically by replay. No normalized Z threshold is used.
-Hybrid requires both the completed-hour MA direction and the MACD-H direction
-regime to agree. The replay background, PAPER condition
-badge, LIVE evaluation, and source timestamp must all use the selected predicate;
-neutral histogram direction permits neither side rather than fabricating a trend.
+Tab 5 MACD strategies may explicitly select **MA slope**, **MA Diff + Accel
+(1 & 2)**, or **Hybrid** for that same wider-trend condition. MA Diff + Accel
+uses the completed-hour MA Difference (MA_fast - MA_slow) and the 2nd-order
+difference (acceleration) of the fast MA. Long alignment requires a positive
+MA difference and positive 2nd-order acceleration; short alignment requires
+a negative MA difference and negative 2nd-order acceleration. A zero cross on
+MA difference invalidates the old alignment immediately. Its hourly Fast, Slow,
+and Signal periods are independently adjustable from the entry MACD, and its
+consecutive confirmation count is also user-adjustable. All values persist in
+authenticated live configuration and must be reported in status and used
+identically by replay. No normalized Z threshold is used. Hybrid requires both
+the completed-hour MA slope and the MA Diff + Accel regime to agree. The replay
+background, PAPER condition badge, LIVE evaluation, and source timestamp must
+all use the selected predicate; neutral direction permits neither side rather
+than fabricating a trend.

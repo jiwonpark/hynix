@@ -1782,7 +1782,7 @@
             <label>1h regime
               <select id="lighterCrypto_macroRegimeMode" aria-label="Hourly MACD macro regime method" style="height:27px;border:1px solid #c4b5fd;border-radius:4px;background:#fff;">
                 <option value="ma_slope" ${macroMode === "ma_slope" ? "selected" : ""}>MA slope</option>
-                <option value="macd_hist_accel" ${macroMode === "macd_hist_accel" ? "selected" : ""}>MACD-H direction</option>
+                <option value="macd_hist_accel" ${macroMode === "macd_hist_accel" ? "selected" : ""}>MA Diff + Accel</option>
                 <option value="hybrid" ${macroMode === "hybrid" ? "selected" : ""}>Hybrid (both agree)</option>
               </select>
             </label>
@@ -1790,7 +1790,7 @@
             <label>1h Slow <input id="lighterCrypto_macroMacdSlowPeriod" aria-label="Hourly MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live.macro_macd_slow_period ?? 26)}" style="width:48px"></label>
             <label>1h Signal <input id="lighterCrypto_macroMacdSignalPeriod" aria-label="Hourly MACD signal period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_signal_period ?? 9)}" style="width:48px"></label>
             <label>Confirm <input id="lighterCrypto_macroMacdConfirmBars" aria-label="MACD direction confirmation bars" type="number" min="1" max="12" step="1" value="${Number(live.macro_macd_confirm_bars ?? 2)}" style="width:46px"> bars</label>
-            <span id="lighterCrypto_macroRegimeReadout">Completed 1h MACD-H · above zero + rising for long · below zero + falling for short</span>
+            <span id="lighterCrypto_macroRegimeReadout">Completed 1h · MA Diff > 0 + Accel > 0 for long · MA Diff < 0 + Accel < 0 for short</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
             <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
@@ -3259,15 +3259,15 @@
       ];
       if (currentMode !== "ou_quant" && currentMode !== "ma_stack") {
         const macroLabel = settings.macro_regime_mode === "macd_hist_accel"
-          ? `Wider trend filter · completed 1h MACD(${settings.macro_macd_fast_period},${settings.macro_macd_slow_period},${settings.macro_macd_signal_period})-H > 0 + rising (long) / < 0 + falling (short)`
+          ? `Wider trend filter · completed 1h MA Diff(${settings.macro_macd_fast_period},${settings.macro_macd_slow_period}) > 0 + Accel > 0 (long) / < 0 + Accel < 0 (short)`
           : settings.macro_regime_mode === "hybrid"
-            ? `Wider trend filter · 1h MA${settings.macro_ma_period} + MACD(${settings.macro_macd_fast_period},${settings.macro_macd_slow_period},${settings.macro_macd_signal_period})-H direction`
+            ? `Wider trend filter · 1h MA${settings.macro_ma_period} + MA Diff(${settings.macro_macd_fast_period},${settings.macro_macd_slow_period}) agree`
             : `Wider trend filter · 1h MA${settings.macro_ma_period} slope`;
         this.setText("valCondEntryMaStack1h", macroLabel);
         const label = lid("rowCondEntryMaStack1h")?.querySelector(".condLabel");
         if (label) label.title = settings.macro_regime_mode === "ma_slope"
           ? "Direction of the completed hourly moving average; period is adjustable above the chart"
-          : "Direction of the completed-hour MACD histogram in the correct side of zero, with confirmation bars";
+          : "Direction of completed-hour MA Diff and 2nd-order acceleration, with confirmation bars";
       }
       rules.forEach(([suffix, key, name]) => {
         const input = lid(`chkCond${suffix}`);
@@ -3422,17 +3422,17 @@
         const regimeZone = result?.latest_evaluation?.macro_histogram_zone || "UNAVAILABLE";
         const regimeSlope = Number(result?.latest_evaluation?.macro_histogram_slope);
         const regimeName = result?.latest_evaluation?.macro_acceleration_regime || "UNAVAILABLE";
-        const macroPeriods = `${settings.macro_macd_fast_period},${settings.macro_macd_slow_period},${settings.macro_macd_signal_period}`;
+        const macroPeriods = `${settings.macro_macd_fast_period},${settings.macro_macd_slow_period}`;
         const macroConditionLabel = $("lighterCrypto_macdMacroConditionLabel");
         if (macroConditionLabel) macroConditionLabel.textContent = regimeMode === "macd_hist_accel"
-          ? `Entry direction agrees with completed 1h MACD(${macroPeriods})-H direction regime`
+          ? `Entry direction agrees with completed 1h MA Diff(${macroPeriods}) + Accel regime`
           : regimeMode === "hybrid"
-            ? `Entry direction agrees with both 1h MA slope and MACD(${macroPeriods})-H direction`
+            ? `Entry direction agrees with both 1h MA slope and MA Diff(${macroPeriods}) + Accel`
             : "Entry direction agrees with completed 1h MA slope";
         const regimeReadout = $("lighterCrypto_macroRegimeReadout");
         if (regimeReadout) regimeReadout.textContent = regimeMode === "ma_slope"
           ? `Completed 1h MA${settings.macro_ma_period} slope`
-          : `MACD(${macroPeriods}) · ${regimeName} · H ${Number.isFinite(regimeHistogram) ? `${regimeHistogram >= 0 ? "+" : ""}${regimeHistogram.toFixed(2)}` : "—"} (${regimeZone.toLowerCase()}) · ${Number.isFinite(regimeSlope) ? (regimeSlope > 0 ? "rising" : regimeSlope < 0 ? "falling" : "flat") : "direction unavailable"} · completed 1h`;
+          : `MA Diff(${macroPeriods}) · ${regimeName} · Diff ${Number.isFinite(regimeHistogram) ? `${regimeHistogram >= 0 ? "+" : ""}${regimeHistogram.toFixed(2)}` : "—"} (${regimeZone.toLowerCase()}) · Accel ${Number.isFinite(regimeSlope) ? `${regimeSlope >= 0 ? "+" : ""}${regimeSlope.toFixed(2)}` : "—"} · completed 1h`;
         const rows = [
           ["EntrySignal", "entry_signal_zone", null, "Directional MACD signal zone"],
           ["EntryHistogram", "entry_histogram_zone", null, "Directional histogram zone"],
@@ -3936,21 +3936,21 @@
         }
       });
       if (!changed) return false;
-      const macroPeriods = `${Number(live.macro_macd_fast_period ?? 12)},${Number(live.macro_macd_slow_period ?? 26)},${Number(live.macro_macd_signal_period ?? 9)}`;
+      const macroPeriods = `${Number(live.macro_macd_fast_period ?? 12)},${Number(live.macro_macd_slow_period ?? 26)}`;
       const macroLabel = mode === "macd_hist_accel"
-        ? `Wider trend filter · completed 1h MACD(${macroPeriods})-H > 0 + rising (long) / < 0 + falling (short)`
+        ? `Wider trend filter · completed 1h MA Diff(${macroPeriods}) > 0 + Accel > 0 (long) / < 0 + Accel < 0 (short)`
         : mode === "hybrid"
-          ? `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} + MACD(${macroPeriods})-H direction`
+          ? `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} + MA Diff(${macroPeriods}) agree`
           : `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} slope`;
       this.setText("valCondEntryMaStack1h", macroLabel);
       this.setText("macdMacroConditionLabel", mode === "macd_hist_accel"
-        ? `Entry direction agrees with completed 1h MACD(${macroPeriods})-H direction regime`
+        ? `Entry direction agrees with completed 1h MA Diff(${macroPeriods}) + Accel regime`
         : mode === "hybrid"
-          ? `Entry direction agrees with both 1h MA slope and MACD(${macroPeriods})-H direction`
+          ? `Entry direction agrees with both 1h MA slope and MA Diff(${macroPeriods}) + Accel`
           : "Entry direction agrees with completed 1h MA slope");
       this.setText("macroRegimeReadout", mode === "ma_slope"
         ? `Saved live · completed 1h MA${Number(live.macro_ma_period ?? 60)} slope · updating replay…`
-        : `Saved live · completed 1h MACD(${macroPeriods})-H direction · updating replay…`);
+        : `Saved live · completed 1h MA Diff(${macroPeriods}) + Accel · updating replay…`);
       if (this.initialized) this.requestBacktest();
       return true;
     },

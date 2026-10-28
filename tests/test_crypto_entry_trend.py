@@ -97,7 +97,7 @@ class CryptoEntryTrendTests(unittest.TestCase):
             macro_macd_fast_period=8, macro_macd_slow_period=21,
             macro_macd_signal_period=5,
             macro_macd_confirm_bars=2)
-        self.assertIn('MACD(8,21,5)-H above zero + rising', result['entry_trend']['basis'])
+        self.assertIn('MA Diff(8,21) > 0 + Accel > 0', result['entry_trend']['basis'])
         self.assertEqual(result['metrics']['macro_regime_mode'], 'macd_hist_accel')
         self.assertEqual(result['metrics']['macro_macd_fast_period'], 8)
         self.assertEqual(result['metrics']['macro_macd_slow_period'], 21)

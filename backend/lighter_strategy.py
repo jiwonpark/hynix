@@ -1082,68 +1082,60 @@ def macd_histogram_acceleration_regime_series(
     signal_period: int = 9,
     confirm_bars: int = 2,
 ) -> List[Dict[str, Any]]:
-    """Causal completed-candle trend regime from MACD-H level and direction.
+    """Causal completed-candle trend regime from MA Diff (1) and 2nd-order diff / Accel (2).
 
-    A long (BULL) regime requires a positive histogram that is rising
-    (H > 0 and one-bar slope > 0); a short (BEAR) regime requires a negative
-    histogram that is falling (H < 0 and slope < 0).  Consecutive-bar
-    confirmation prevents a single noisy hourly change from flipping the
-    direction.  Crossing zero invalidates the held regime immediately rather
-    than waiting for confirmation.
+    A long (BULL) regime requires a positive MA difference (MA_fast - MA_slow > 0)
+    and positive 2nd-order acceleration of the fast MA (Accel = MA_fast[t] - 2*MA_fast[t-1] + MA_fast[t-2] > 0).
+    A short (BEAR) regime requires a negative MA difference (MA_fast - MA_slow < 0)
+    and negative 2nd-order acceleration (Accel < 0).
+    Consecutive-bar confirmation prevents a single noisy hourly change from flipping
+    the direction. Crossing zero on MA difference invalidates the held regime immediately
+    rather than waiting for confirmation.
     """
+    del signal_period
     values = [float(value) for value in prices]
     fast_w = max(2, int(fast_period))
     slow_w = max(fast_w + 1, int(slow_period))
-    signal_w = max(2, int(signal_period))
     confirmation = max(1, int(confirm_bars))
     output: List[Dict[str, Any]] = [{
         "regime": "UNAVAILABLE", "direction": 0, "long_ok": False,
         "short_ok": False, "histogram": None, "histogram_slope": None,
+        "ma_diff": None, "ma_accel": None,
     } for _ in values]
     if not values:
         return output
 
     fast = _ema_series(values, fast_w)
     slow = _ema_series(values, slow_w)
-    first_macd_index: Optional[int] = None
-    compact_macd: List[float] = []
-    for index, slow_value in enumerate(slow):
-        if fast[index] is None or slow_value is None:
-            continue
-        if first_macd_index is None:
-            first_macd_index = index
-        compact_macd.append(float(fast[index]) - float(slow_value))
-    if first_macd_index is None:
-        return output
-    compact_signal = _ema_series(compact_macd, signal_w)
-    histogram: List[Optional[float]] = [None] * len(values)
-    for offset, signal_value in enumerate(compact_signal):
-        if signal_value is not None:
-            histogram[first_macd_index + offset] = compact_macd[offset] - float(signal_value)
 
     regime = 0
     pending = 0
     pending_count = 0
-    previous_histogram: Optional[float] = None
-    for index, histogram_value in enumerate(histogram):
-        if histogram_value is None:
+
+    for index in range(len(values)):
+        fast_curr = fast[index]
+        slow_curr = slow[index]
+        if fast_curr is None or slow_curr is None or index < 2 or fast[index - 1] is None or fast[index - 2] is None:
             continue
-        slope = None if previous_histogram is None else float(histogram_value) - previous_histogram
-        previous_histogram = float(histogram_value)
-        if slope is None:
-            output[index]["histogram"] = float(histogram_value)
-            continue
-        histogram_direction = -1 if histogram_value < 0 else (1 if histogram_value > 0 else 0)
-        if regime and regime != histogram_direction:
+
+        diff_val = fast_curr - slow_curr
+        # 2nd-order difference / acceleration of the fast moving average:
+        # (fast[index] - fast[index - 1]) - (fast[index - 1] - fast[index - 2])
+        accel = fast_curr - 2.0 * fast[index - 1] + fast[index - 2]
+
+        diff_direction = 1 if diff_val > 0 else (-1 if diff_val < 0 else 0)
+        if regime and regime != diff_direction:
             regime = 0
             pending = 0
             pending_count = 0
-        if histogram_direction > 0 and slope > 0:
+
+        if diff_direction > 0 and accel > 0:
             desired = 1
-        elif histogram_direction < 0 and slope < 0:
+        elif diff_direction < 0 and accel < 0:
             desired = -1
         else:
             desired = 0
+
         if desired == regime:
             pending = regime
             pending_count = 0
@@ -1160,12 +1152,14 @@ def macd_histogram_acceleration_regime_series(
         output[index] = {
             "regime": "BULL" if regime > 0 else ("BEAR" if regime < 0 else "NEUTRAL"),
             "direction": regime,
-            "long_ok": regime > 0 and histogram_direction > 0,
-            "short_ok": regime < 0 and histogram_direction < 0,
-            "histogram": float(histogram_value),
-            "histogram_zone": "NEGATIVE" if histogram_direction < 0 else (
-                "POSITIVE" if histogram_direction > 0 else "ZERO"),
-            "histogram_slope": slope,
+            "long_ok": regime > 0 and diff_direction > 0,
+            "short_ok": regime < 0 and diff_direction < 0,
+            "ma_diff": float(diff_val),
+            "ma_accel": float(accel),
+            "histogram": float(diff_val),
+            "histogram_zone": "POSITIVE" if diff_direction > 0 else (
+                "NEGATIVE" if diff_direction < 0 else "ZERO"),
+            "histogram_slope": float(accel),
         }
     return output
 

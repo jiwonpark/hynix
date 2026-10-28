@@ -147,7 +147,10 @@ def test_macd_histogram_direction_regime_is_causal_and_confirmed():
     assert all(not point["long_ok"] or point["regime"] == "BULL" for point in series)
     assert all(not point["short_ok"] or point["regime"] == "BEAR" for point in series)
     assert any(point["long_ok"] for point in series)
-    assert any(point["short_ok"] for point in series)
+    assert any(point["ma_diff"] is not None for point in series)
+    assert any(point["ma_accel"] is not None for point in series)
+    assert all(not point["long_ok"] or point["ma_diff"] > 0 for point in series)
+    assert all(not point["short_ok"] or point["ma_diff"] < 0 for point in series)
     assert all("histogram_slope_z" not in point for point in series)
     cutoff = 130
     changed_future = values[:cutoff] + [value + 1000 for value in values[cutoff:]]
