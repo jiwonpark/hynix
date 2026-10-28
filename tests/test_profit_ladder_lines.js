@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 const componentSource = fs.readFileSync(path.join(__dirname, '../strategy-execution-chart.js'), 'utf8');
+const lighterTabSource = fs.readFileSync(path.join(__dirname, '../lighter-tab.js'), 'utf8');
 const start = html.indexOf('      observedPairExitFeeBps()');
 const end = html.indexOf('      renderShortTermChart(data)', start);
 assert.ok(start >= 0 && end > start, 'fill-based profit lines must exist before chart rendering');
@@ -14,6 +15,10 @@ assert.ok(!html.includes('const roundTripCostRate = 16 / 10000'), 'Tab 2 must no
 
 assert.ok(componentSource.includes('rgba(22, 163, 74, 0.18)'), 'net-profit lines must remain visually subtle');
 assert.ok(componentSource.includes('lineStyle: this.lineStyle.Dashed'), 'profit ladder must use dashed lines');
+assert.ok(componentSource.includes('compactProfitLineTitle'), 'shared controller must compact profit-line axis labels');
+assert.ok(componentSource.includes('return "B/E"'), 'break-even axis label must remain compact');
+assert.ok(lighterTabSource.includes('axisTitle: netProfitPct === 0 ? "ENTRY" : `MOVE +${netProfitPct}%`'),
+  'Tab 3 must label ratio movement as MOVE rather than implying paired P&L');
 let cleared = 0;
 engine.clearShortTermReferenceLines = () => {cleared++;};
 engine.renderShortTermReferenceLines(140);

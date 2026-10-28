@@ -4318,6 +4318,7 @@
       )].filter((target, index, values) => target <= maxNetProfitPct && values.indexOf(target) === index);
       return netProfitTargets.map((netProfitPct) => ({
         netProfitPct,
+        axisTitle: netProfitPct === 0 ? "ENTRY" : `MOVE +${netProfitPct}%`,
         title: netProfitPct === 0 ? "ENTRY (price move 0%)" : `PRICE MOVE +${netProfitPct}% (not paired P&L)`,
         price: isLong
           ? entry * (1 + netProfitPct / 100)

@@ -275,6 +275,14 @@
       this.referenceLines = [];
     }
 
+    static compactProfitLineTitle(level = {}) {
+      if (typeof level.axisTitle === "string" && level.axisTitle.trim()) return level.axisTitle.trim();
+      const target = Number(level.netProfitPct);
+      if (!Number.isFinite(target)) return String(level.title || "");
+      if (target === 0) return "B/E";
+      return `NET ${target > 0 ? "+" : ""}${target}%`;
+    }
+
     renderReferenceLines(config = {}) {
       if (!this.series || !(Number(config.entry) > 0)) return [];
       this.clearReferenceLines();
@@ -293,7 +301,7 @@
           lineWidth: level.lineWidth || 1,
           lineStyle: this.lineStyle.Dashed,
           axisLabelVisible: true,
-          title: level.title
+          title: StrategyExecutionChartController.compactProfitLineTitle(level)
         }));
       });
       if (config.showScaleIn && Number(config.scaleInSpread) > 0) {
