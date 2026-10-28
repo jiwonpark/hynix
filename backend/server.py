@@ -1793,7 +1793,7 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
                        "direction": direction, "long_ok": bool(long_ok), "short_ok": bool(short_ok)})
     return {"enabled": bool(enabled), "source": market_source.upper(),
             "basis": f"EMA{span} slope / {slope_bars} chart bars" if is_ou else
-                     (f"completed 1h · MACD({macro_macd_fast_period},{macro_macd_slow_period},{macro_macd_signal_period})-H rising / falling"
+                     (f"completed 1h · MACD({macro_macd_fast_period},{macro_macd_slow_period},{macro_macd_signal_period})-H above zero + rising / below zero + falling"
                       if macro_regime_mode == "macd_hist_accel" else
                       f"completed 1h · MA{macro_ma_period} + MACD({macro_macd_fast_period},{macro_macd_slow_period},{macro_macd_signal_period})-H direction agree"
                       if macro_regime_mode == "hybrid" else

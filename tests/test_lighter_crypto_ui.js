@@ -142,7 +142,7 @@ assert.equal(nodes.get('lighterCrypto_macroMacdFastPeriod').value, '10');
 assert.equal(nodes.get('lighterCrypto_macroMacdSlowPeriod').value, '30');
 assert.equal(nodes.get('lighterCrypto_macroMacdSignalPeriod').value, '7');
 assert.equal(nodes.get('lighterCrypto_macroMacdConfirmBars').value, '3');
-assert.match(nodes.get('lighterCrypto_valCondEntryMaStack1h').textContent, /MACD\(10,30,7\)-H rising \(long\)/);
+assert.match(nodes.get('lighterCrypto_valCondEntryMaStack1h').textContent, /MACD\(10,30,7\)-H > 0 \+ rising/);
 assert.match(nodes.get('lighterCrypto_macdMacroConditionLabel').textContent, /MACD\(10,30,7\)-H direction/);
 nodes.get('lighterCrypto_macroRegimeMode').dataset.unsaved = 'true';
 assert.equal(tab5.syncMacroRegimeControlsFromBot({

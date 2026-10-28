@@ -142,11 +142,12 @@ def test_macd_histogram_direction_regime_is_causal_and_confirmed():
     assert len(series) == len(values)
     assert any(point["regime"] == "BULL" for point in series)
     assert any(point["regime"] == "BEAR" for point in series)
-    assert all(point["long_ok"] == (point["regime"] == "BULL") for point in series)
-    assert all(point["short_ok"] == (point["regime"] == "BEAR") for point in series)
-    # Level no longer gates: rising-above-zero BULL and falling-below-zero BEAR occur.
-    assert any(point["long_ok"] and point["histogram"] > 0 for point in series)
-    assert any(point["short_ok"] and point["histogram"] < 0 for point in series)
+    assert all(not point["long_ok"] or point["histogram"] > 0 for point in series)
+    assert all(not point["short_ok"] or point["histogram"] < 0 for point in series)
+    assert all(not point["long_ok"] or point["regime"] == "BULL" for point in series)
+    assert all(not point["short_ok"] or point["regime"] == "BEAR" for point in series)
+    assert any(point["long_ok"] for point in series)
+    assert any(point["short_ok"] for point in series)
     assert all("histogram_slope_z" not in point for point in series)
     cutoff = 130
     changed_future = values[:cutoff] + [value + 1000 for value in values[cutoff:]]

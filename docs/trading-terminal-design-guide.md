@@ -145,9 +145,10 @@ the unused hourly period input and retain the 5m full-stack/diff rules.
 
 Tab 5 MACD strategies may explicitly select **MA slope**, **MACD-H
 direction**, or **Hybrid** for that same wider-trend condition. MACD-H direction
-uses only the completed-hour histogram's one-bar change, not its level. Long
-alignment requires a rising histogram; short alignment requires a falling
-histogram, whether the histogram is above or below zero. Its hourly MACD Fast, Slow, and Signal periods are independently
+considers both the completed-hour histogram level and its one-bar change. Long
+alignment requires a positive histogram that is rising; short alignment requires
+a negative histogram that is falling. A zero cross invalidates the old alignment
+immediately. Its hourly MACD Fast, Slow, and Signal periods are independently
 adjustable from the entry MACD, and its consecutive confirmation count is also
 user-adjustable. All four values persist in authenticated live configuration and
 must be reported in status and used identically by replay. No normalized Z threshold is used.
