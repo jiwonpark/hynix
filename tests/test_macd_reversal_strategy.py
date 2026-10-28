@@ -136,30 +136,28 @@ def test_bots_accept_and_persist_macd_configuration():
     asyncio.run(run())
 
 
-def test_macd_histogram_acceleration_regime_is_causal_and_hysteretic():
+def test_macd_histogram_direction_regime_is_causal_and_confirmed():
     values = [100 + 0.04 * i + 3 * math.sin(i / 6) for i in range(180)]
-    series = macd_histogram_acceleration_regime_series(
-        values, z_window=24, enter_z=0.5, exit_z=0.25, confirm_bars=2)
+    series = macd_histogram_acceleration_regime_series(values, confirm_bars=2)
     assert len(series) == len(values)
     assert any(point["regime"] == "BULL" for point in series)
     assert any(point["regime"] == "BEAR" for point in series)
     assert all(not point["long_ok"] or point["histogram"] < 0 for point in series)
     assert all(not point["short_ok"] or point["histogram"] > 0 for point in series)
+    assert all(not point["long_ok"] or point["histogram_slope"] > 0 for point in series)
+    assert all(not point["short_ok"] or point["histogram_slope"] < 0 for point in series)
+    assert all("histogram_slope_z" not in point for point in series)
     cutoff = 130
     changed_future = values[:cutoff] + [value + 1000 for value in values[cutoff:]]
-    changed = macd_histogram_acceleration_regime_series(
-        changed_future, z_window=24, enter_z=0.5, exit_z=0.25, confirm_bars=2)
+    changed = macd_histogram_acceleration_regime_series(changed_future, confirm_bars=2)
     assert series[:cutoff] == changed[:cutoff]
     assert all(not (point["long_ok"] and point["short_ok"]) for point in series)
 
 
-def test_bots_persist_adjustable_macro_acceleration_regime():
+def test_bots_persist_adjustable_macro_direction_regime():
     async def run():
         values = {
             "macro_regime_mode": "macd_hist_accel",
-            "macro_macd_z_window": 36,
-            "macro_macd_enter_z": 0.7,
-            "macro_macd_exit_z": 0.2,
             "macro_macd_confirm_bars": 3,
         }
         with tempfile.TemporaryDirectory() as directory:

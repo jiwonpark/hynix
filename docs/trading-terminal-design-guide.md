@@ -144,15 +144,13 @@ Tab 5 MA Stack intentionally bypasses the hourly filter: label it N/A, disable
 the unused hourly period input and retain the 5m full-stack/diff rules.
 
 Tab 5 MACD strategies may explicitly select **MA slope**, **MACD-H
-acceleration**, or **Hybrid** for that same wider-trend condition. MACD-H
-acceleration is directional and must consider both the completed-hour histogram
-level and its one-bar change, standardized against its adjustable rolling Z
-window. Long alignment requires a negative histogram whose slope Z is rising;
-short alignment requires a positive histogram whose slope Z is falling. A zero
-cross invalidates the old alignment immediately. Its enter Z, release Z, and
-consecutive confirmation count are user-adjustable and are persisted in the
-authenticated live configuration. The release threshold must not exceed the
-enter threshold. Hybrid requires both the completed-hour MA direction and the
-MACD-H level-plus-acceleration regime to agree. The replay background, PAPER condition
+direction**, or **Hybrid** for that same wider-trend condition. MACD-H direction
+considers both the completed-hour histogram level and its one-bar change. Long
+alignment requires a negative histogram that is rising; short alignment requires
+a positive histogram that is falling. A zero cross invalidates the old alignment
+immediately. Its consecutive confirmation count is user-adjustable and persisted
+in the authenticated live configuration. No normalized Z threshold is used.
+Hybrid requires both the completed-hour MA direction and the MACD-H direction
+regime to agree. The replay background, PAPER condition
 badge, LIVE evaluation, and source timestamp must all use the selected predicate;
-neutral acceleration permits neither direction rather than fabricating a trend.
+neutral histogram direction permits neither side rather than fabricating a trend.

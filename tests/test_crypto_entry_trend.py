@@ -86,7 +86,7 @@ class CryptoEntryTrendTests(unittest.TestCase):
             self.assertEqual(result['entry_trend']['points'][-1]['direction'], direction)
             self.assertIn(f'MA{period} slope', result['entry_trend']['basis'])
 
-    def test_macd_acceleration_gate_and_background_share_completed_hour_verdicts(self):
+    def test_macd_direction_gate_and_background_share_completed_hour_verdicts(self):
         hourly = [{'time': i * 3600,
                    'value': 100 + .03 * i + 4 * math.sin(i / 6)} for i in range(180)]
         bars = [{'time': 100 * 3600 + i * 300,
@@ -94,11 +94,11 @@ class CryptoEntryTrendTests(unittest.TestCase):
         result = _run_crypto_backtest_sync(
             bars, True, strategy_mode='macd_reversal', interval_seconds=300,
             macro_bars=hourly, macro_regime_mode='macd_hist_accel',
-            macro_macd_z_window=24, macro_macd_enter_z=.5,
-            macro_macd_exit_z=.25, macro_macd_confirm_bars=2)
-        self.assertIn('MACD-H zone + acceleration', result['entry_trend']['basis'])
+            macro_macd_confirm_bars=2)
+        self.assertIn('MACD-H below zero + rising', result['entry_trend']['basis'])
         self.assertEqual(result['metrics']['macro_regime_mode'], 'macd_hist_accel')
         self.assertTrue(any(point['direction'] in {'UPTREND', 'DOWNTREND'}
                             for point in result['entry_trend']['points']))
         self.assertEqual(result['latest_evaluation']['macro_regime_mode'], 'macd_hist_accel')
-        self.assertIn('macro_histogram_slope_z', result['latest_evaluation'])
+        self.assertIn('macro_histogram_slope', result['latest_evaluation'])
+        self.assertNotIn('macro_histogram_slope_z', result['latest_evaluation'])

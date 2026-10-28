@@ -1080,34 +1080,26 @@ def macd_histogram_acceleration_regime_series(
     fast_period: int = 12,
     slow_period: int = 26,
     signal_period: int = 9,
-    z_window: int = 24,
-    enter_z: float = 0.5,
-    exit_z: float = 0.25,
     confirm_bars: int = 2,
 ) -> List[Dict[str, Any]]:
-    """Causal completed-candle regime from MACD-H level and normalized slope.
+    """Causal completed-candle regime from MACD-H level and direction.
 
     A long reversal regime requires a negative histogram that is accelerating
     upward; a short reversal regime requires a positive histogram that is
     accelerating downward.  The level check prevents a late-cycle positive
     histogram from being called a long regime merely because it is still
-    rising (and vice versa).  A Schmitt-trigger dead band plus consecutive-bar
-    confirmation prevents the acceleration component from flipping on every
-    small hourly histogram change.  Crossing zero invalidates the old regime
-    immediately rather than waiting for confirmation.
+    rising (and vice versa). Consecutive-bar confirmation prevents a single
+    noisy hourly change from flipping the direction. Crossing zero invalidates
+    the old regime immediately rather than waiting for confirmation.
     """
     values = [float(value) for value in prices]
     fast_w = max(2, int(fast_period))
     slow_w = max(fast_w + 1, int(slow_period))
     signal_w = max(2, int(signal_period))
-    window = max(8, int(z_window))
-    enter = max(0.01, float(enter_z))
-    release = min(enter, max(0.0, float(exit_z)))
     confirmation = max(1, int(confirm_bars))
     output: List[Dict[str, Any]] = [{
         "regime": "UNAVAILABLE", "direction": 0, "long_ok": False,
         "short_ok": False, "histogram": None, "histogram_slope": None,
-        "histogram_slope_z": None,
     } for _ in values]
     if not values:
         return output
@@ -1130,7 +1122,6 @@ def macd_histogram_acceleration_regime_series(
         if signal_value is not None:
             histogram[first_macd_index + offset] = compact_macd[offset] - float(signal_value)
 
-    slopes: List[float] = []
     regime = 0
     pending = 0
     pending_count = 0
@@ -1143,15 +1134,6 @@ def macd_histogram_acceleration_regime_series(
         if slope is None:
             output[index]["histogram"] = float(histogram_value)
             continue
-        slopes.append(slope)
-        sample = slopes[-window:]
-        slope_z: Optional[float] = None
-        if len(sample) >= min(8, window):
-            mean = sum(sample) / len(sample)
-            variance = sum((value - mean) ** 2 for value in sample) / len(sample)
-            if variance > 1e-18:
-                slope_z = (slope - mean) / math.sqrt(variance)
-
         histogram_direction = -1 if histogram_value < 0 else (1 if histogram_value > 0 else 0)
         desired = regime
         regime_level_compatible = ((regime > 0 and histogram_direction < 0)
@@ -1161,16 +1143,12 @@ def macd_histogram_acceleration_regime_series(
             desired = 0
             pending = 0
             pending_count = 0
-        if slope_z is not None:
-            if histogram_direction < 0 and slope_z >= enter:
-                desired = 1
-            elif histogram_direction > 0 and slope_z <= -enter:
-                desired = -1
-            elif abs(slope_z) <= release:
-                desired = 0
-            elif ((regime > 0 and histogram_direction >= 0)
-                  or (regime < 0 and histogram_direction <= 0)):
-                desired = 0
+        if histogram_direction < 0 and slope > 0:
+            desired = 1
+        elif histogram_direction > 0 and slope < 0:
+            desired = -1
+        else:
+            desired = 0
         if desired == regime:
             pending = regime
             pending_count = 0
@@ -1193,7 +1171,6 @@ def macd_histogram_acceleration_regime_series(
             "histogram_zone": "NEGATIVE" if histogram_direction < 0 else (
                 "POSITIVE" if histogram_direction > 0 else "ZERO"),
             "histogram_slope": slope,
-            "histogram_slope_z": slope_z,
         }
     return output
 
@@ -1204,7 +1181,7 @@ def macd_histogram_acceleration_alignment(
     series = macd_histogram_acceleration_regime_series(prices, **kwargs)
     latest = series[-1] if series else {
         "regime": "UNAVAILABLE", "long_ok": False, "short_ok": False,
-        "histogram_slope": None, "histogram_slope_z": None,
+        "histogram_slope": None,
     }
     return (bool(latest["long_ok"]), bool(latest["short_ok"])), latest
 
