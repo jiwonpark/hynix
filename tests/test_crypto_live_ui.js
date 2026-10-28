@@ -86,5 +86,91 @@ assert.equal(svg.children[1].attributes.stroke, '#16a34a', 'verified net gain is
 exit.pnl_authoritative = false;
 engine.renderTradeTriangles();
 assert.equal(svg.children[1].attributes.stroke, '#64748b', 'unverified realized P&L is neutral');
+assert.equal(engine.paradigms.macd_reversal.name, 'MACD Reversal');
+assert.equal(engine.paradigms.macd_strength_scaleout.name, 'MACD Strength Scale-Out');
+const macdMarkup = engine.renderParadigmDetail('macd_reversal');
+assert.match(macdMarkup, /Long entry \/ short exit: Signal &lt; 0/);
+assert.match(macdMarkup, /Long entry \/ short exit: Histogram &lt; 0/);
+assert.match(macdMarkup, /trough turns up/);
+assert.match(macdMarkup, /Short entry \/ long exit: Signal &gt; 0/);
+assert.match(macdMarkup, /Short entry \/ long exit: Histogram &gt; 0/);
+assert.match(macdMarkup, /peak turns down/);
+assert.match(macdMarkup, /MA Diff \+ Accel/);
+assert.match(macdMarkup, /crypto_macroMaPeriodSlider/);
+assert.match(macdMarkup, /Hourly macro MA period/);
+assert.doesNotMatch(macdMarkup, /Z window|Enter \|Z\||Release \|Z\||slope Z/);
+assert.match(macdMarkup, /Hybrid \(both agree\)/);
+assert.match(macdMarkup, /NEW/);
 
-console.log('Crypto live balance display checks passed');
+const strengthMarkup = engine.renderParadigmDetail('macd_strength_scaleout');
+assert.match(strengthMarkup, /Rebound ≥/);
+assert.match(strengthMarkup, /first peak closes/);
+
+[
+  ['crypto_macdFastPeriod', { value: '12' }],
+  ['crypto_macdSlowPeriod', { value: '26' }],
+  ['crypto_macdSignalPeriod', { value: '9' }],
+  ['crypto_macdUseEntrySignalNegative', { checked: true }],
+  ['crypto_macdUseEntryHistogramNegative', { checked: true }],
+  ['crypto_macdUseEntryReversal', { checked: true }],
+  ['crypto_macdUseExitSignalPositive', { checked: true }],
+  ['crypto_macdUseExitHistogramPositive', { checked: true }],
+  ['crypto_macdUseExitReversal', { checked: true }],
+  ['crypto_macroRegimeMode', { value: 'macd_hist_accel' }],
+  ['crypto_macroMaPeriodSlider', { value: '8' }],
+  ['crypto_macroMaPeriodVal', { value: '8' }],
+  ['crypto_macroMacdFastPeriod', { value: '8' }],
+  ['crypto_macroMacdSlowPeriod', { value: '21' }],
+  ['crypto_macroMacdSignalPeriod', { value: '5' }],
+  ['crypto_macroMacdConfirmBars', { value: '2' }],
+  ['crypto_valCondEntryMaStack1h', { textContent: '' }],
+  ['crypto_macdMacroConditionLabel', { textContent: '' }],
+  ['crypto_macroRegimeReadout', { textContent: '' }],
+].forEach(([id, node]) => elements.set(id, node));
+
+engine.currentParadigm = 'macd_reversal';
+const macdReplay = engine.replaySettings();
+assert.equal(macdReplay.strategy_mode, 'macd_reversal');
+assert.equal(macdReplay.macd_fast_period, 12);
+assert.equal(macdReplay.use_macd_hist_reversal_exit, true);
+assert.equal(macdReplay.macro_regime_mode, 'macd_hist_accel');
+assert.equal(macdReplay.macro_ma_period, 8);
+assert.equal(macdReplay.macro_macd_confirm_bars, 2);
+assert.equal('macro_macd_enter_z' in macdReplay, false);
+
+const macdPayload = engine.liveStrategyPayload('macd_reversal');
+assert.equal(macdPayload.macd_slow_period, 26);
+assert.equal(macdPayload.use_macd_signal_negative, true);
+assert.equal(macdPayload.macro_regime_mode, 'macd_hist_accel');
+assert.equal(macdPayload.macro_ma_period, 8);
+
+[
+  'crypto_macroRegimeMode', 'crypto_macroMaPeriodSlider',
+  'crypto_macroMaPeriodVal', 'crypto_macroMacdFastPeriod',
+  'crypto_macroMacdSlowPeriod', 'crypto_macroMacdSignalPeriod',
+  'crypto_macroMacdConfirmBars',
+].forEach((id) => { elements.get(id).dataset = {}; });
+engine.initialized = false;
+assert.equal(engine.syncMacroRegimeControlsFromBot({
+  strategy_mode: 'macd_reversal',
+  strategy_params: {
+    macro_regime_mode: 'macd_hist_accel', macro_ma_period: 24,
+    macro_macd_fast_period: 24,
+    macro_macd_slow_period: 30, macro_macd_signal_period: 7,
+    macro_macd_confirm_bars: 3,
+  },
+}), true);
+assert.equal(elements.get('crypto_macroRegimeMode').value, 'macd_hist_accel');
+assert.equal(elements.get('crypto_macroMaPeriodSlider').value, '24');
+assert.equal(elements.get('crypto_macroMaPeriodVal').value, '24');
+assert.match(elements.get('crypto_valCondEntryMaStack1h').textContent, /diff > 0 \+ diff2 > 0/);
+assert.match(elements.get('crypto_macdMacroConditionLabel').textContent, /diff \+ diff2/);
+
+elements.get('crypto_macroRegimeMode').dataset.unsaved = 'true';
+assert.equal(engine.syncMacroRegimeControlsFromBot({
+  strategy_mode: 'macd_reversal', strategy_params: { macro_regime_mode: 'ma_slope' },
+}), false);
+assert.equal(elements.get('crypto_macroRegimeMode').value, 'macd_hist_accel');
+delete elements.get('crypto_macroRegimeMode').dataset.unsaved;
+
+console.log('Crypto live balance display & Tab 4 MACD parity checks passed');
