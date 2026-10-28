@@ -96,7 +96,7 @@ class CryptoEntryTrendTests(unittest.TestCase):
             macro_bars=hourly, macro_regime_mode='macd_hist_accel',
             macro_macd_z_window=24, macro_macd_enter_z=.5,
             macro_macd_exit_z=.25, macro_macd_confirm_bars=2)
-        self.assertIn('MACD-H acceleration', result['entry_trend']['basis'])
+        self.assertIn('MACD-H zone + acceleration', result['entry_trend']['basis'])
         self.assertEqual(result['metrics']['macro_regime_mode'], 'macd_hist_accel')
         self.assertTrue(any(point['direction'] in {'UPTREND', 'DOWNTREND'}
                             for point in result['entry_trend']['points']))

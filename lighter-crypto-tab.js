@@ -3254,7 +3254,7 @@
       ];
       if (currentMode !== "ou_quant" && currentMode !== "ma_stack") {
         const macroLabel = settings.macro_regime_mode === "macd_hist_accel"
-          ? `Wider trend filter · completed 1h MACD-H acceleration (|Z| ≥ ${Number(settings.macro_macd_enter_z).toFixed(2)})`
+          ? `Wider trend filter · completed 1h MACD-H zone + acceleration (|Z| ≥ ${Number(settings.macro_macd_enter_z).toFixed(2)})`
           : settings.macro_regime_mode === "hybrid"
             ? `Wider trend filter · 1h MA${settings.macro_ma_period} + MACD-H acceleration`
             : `Wider trend filter · 1h MA${settings.macro_ma_period} slope`;
@@ -3413,6 +3413,8 @@
       if (["macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)) {
         const enabled = result?.latest_evaluation?.condition_enabled || {};
         const regimeMode = result?.latest_evaluation?.macro_regime_mode || settings.macro_regime_mode || "ma_slope";
+        const regimeHistogram = Number(result?.latest_evaluation?.macro_histogram);
+        const regimeZone = result?.latest_evaluation?.macro_histogram_zone || "UNAVAILABLE";
         const regimeZ = Number(result?.latest_evaluation?.macro_histogram_slope_z);
         const regimeName = result?.latest_evaluation?.macro_acceleration_regime || "UNAVAILABLE";
         const macroConditionLabel = $("lighterCrypto_macdMacroConditionLabel");
@@ -3424,7 +3426,7 @@
         const regimeReadout = $("lighterCrypto_macroRegimeReadout");
         if (regimeReadout) regimeReadout.textContent = regimeMode === "ma_slope"
           ? `Completed 1h MA${settings.macro_ma_period} slope`
-          : `${regimeName} · acceleration Z ${Number.isFinite(regimeZ) ? `${regimeZ >= 0 ? "+" : ""}${regimeZ.toFixed(2)}` : "—"} · completed 1h`;
+          : `${regimeName} · H ${Number.isFinite(regimeHistogram) ? `${regimeHistogram >= 0 ? "+" : ""}${regimeHistogram.toFixed(2)}` : "—"} (${regimeZone.toLowerCase()}) · slope Z ${Number.isFinite(regimeZ) ? `${regimeZ >= 0 ? "+" : ""}${regimeZ.toFixed(2)}` : "—"} · completed 1h`;
         const rows = [
           ["EntrySignal", "entry_signal_zone", null, "Directional MACD signal zone"],
           ["EntryHistogram", "entry_histogram_zone", null, "Directional histogram zone"],
@@ -3930,7 +3932,7 @@
       if (!changed) return false;
       const enterZ = Number(live.macro_macd_enter_z ?? 0.5);
       const macroLabel = mode === "macd_hist_accel"
-        ? `Wider trend filter · completed 1h MACD-H acceleration (|Z| ≥ ${enterZ.toFixed(2)})`
+        ? `Wider trend filter · completed 1h MACD-H zone + acceleration (|Z| ≥ ${enterZ.toFixed(2)})`
         : mode === "hybrid"
           ? `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} + MACD-H acceleration`
           : `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} slope`;

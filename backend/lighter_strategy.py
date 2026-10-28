@@ -1085,11 +1085,16 @@ def macd_histogram_acceleration_regime_series(
     exit_z: float = 0.25,
     confirm_bars: int = 2,
 ) -> List[Dict[str, Any]]:
-    """Causal completed-candle regime from normalized MACD-histogram slope.
+    """Causal completed-candle regime from MACD-H level and normalized slope.
 
-    The histogram slope is treated as filtered momentum acceleration.  A
-    Schmitt-trigger dead band plus consecutive-bar confirmation prevents the
-    macro regime from flipping on every small hourly histogram change.
+    A long reversal regime requires a negative histogram that is accelerating
+    upward; a short reversal regime requires a positive histogram that is
+    accelerating downward.  The level check prevents a late-cycle positive
+    histogram from being called a long regime merely because it is still
+    rising (and vice versa).  A Schmitt-trigger dead band plus consecutive-bar
+    confirmation prevents the acceleration component from flipping on every
+    small hourly histogram change.  Crossing zero invalidates the old regime
+    immediately rather than waiting for confirmation.
     """
     values = [float(value) for value in prices]
     fast_w = max(2, int(fast_period))
@@ -1147,13 +1152,24 @@ def macd_histogram_acceleration_regime_series(
             if variance > 1e-18:
                 slope_z = (slope - mean) / math.sqrt(variance)
 
+        histogram_direction = -1 if histogram_value < 0 else (1 if histogram_value > 0 else 0)
         desired = regime
+        regime_level_compatible = ((regime > 0 and histogram_direction < 0)
+                                   or (regime < 0 and histogram_direction > 0))
+        if regime and not regime_level_compatible:
+            regime = 0
+            desired = 0
+            pending = 0
+            pending_count = 0
         if slope_z is not None:
-            if slope_z >= enter:
+            if histogram_direction < 0 and slope_z >= enter:
                 desired = 1
-            elif slope_z <= -enter:
+            elif histogram_direction > 0 and slope_z <= -enter:
                 desired = -1
             elif abs(slope_z) <= release:
+                desired = 0
+            elif ((regime > 0 and histogram_direction >= 0)
+                  or (regime < 0 and histogram_direction <= 0)):
                 desired = 0
         if desired == regime:
             pending = regime
@@ -1171,9 +1187,11 @@ def macd_histogram_acceleration_regime_series(
         output[index] = {
             "regime": "BULL" if regime > 0 else ("BEAR" if regime < 0 else "NEUTRAL"),
             "direction": regime,
-            "long_ok": regime > 0,
-            "short_ok": regime < 0,
+            "long_ok": regime > 0 and histogram_direction < 0,
+            "short_ok": regime < 0 and histogram_direction > 0,
             "histogram": float(histogram_value),
+            "histogram_zone": "NEGATIVE" if histogram_direction < 0 else (
+                "POSITIVE" if histogram_direction > 0 else "ZERO"),
             "histogram_slope": slope,
             "histogram_slope_z": slope_z,
         }

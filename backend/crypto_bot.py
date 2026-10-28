@@ -918,6 +918,8 @@ class CryptoBot:
                     evaluation["macro_candle_time"] = macro_candle_time
                     evaluation["macro_ma_period"] = int(self.state.get("macro_ma_period", 60))
                     evaluation["macro_regime_mode"] = macro_mode
+                    evaluation["macro_histogram"] = macro_detail.get("histogram")
+                    evaluation["macro_histogram_zone"] = macro_detail.get("histogram_zone")
                     evaluation["macro_histogram_slope"] = macro_detail.get("histogram_slope")
                     evaluation["macro_histogram_slope_z"] = macro_detail.get("histogram_slope_z")
                     evaluation["macro_acceleration_regime"] = macro_detail.get("regime")

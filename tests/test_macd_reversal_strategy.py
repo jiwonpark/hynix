@@ -143,6 +143,8 @@ def test_macd_histogram_acceleration_regime_is_causal_and_hysteretic():
     assert len(series) == len(values)
     assert any(point["regime"] == "BULL" for point in series)
     assert any(point["regime"] == "BEAR" for point in series)
+    assert all(not point["long_ok"] or point["histogram"] < 0 for point in series)
+    assert all(not point["short_ok"] or point["histogram"] > 0 for point in series)
     cutoff = 130
     changed_future = values[:cutoff] + [value + 1000 for value in values[cutoff:]]
     changed = macd_histogram_acceleration_regime_series(

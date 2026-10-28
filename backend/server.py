@@ -1793,7 +1793,7 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
                        "direction": direction, "long_ok": bool(long_ok), "short_ok": bool(short_ok)})
     return {"enabled": bool(enabled), "source": market_source.upper(),
             "basis": f"EMA{span} slope / {slope_bars} chart bars" if is_ou else
-                     (f"completed 1h · actionable-time aligned · MACD-H acceleration |Z|≥{macro_macd_enter_z:g}"
+                     (f"completed 1h · MACD-H zone + acceleration |Z|≥{macro_macd_enter_z:g}"
                       if macro_regime_mode == "macd_hist_accel" else
                       f"completed 1h · MA{macro_ma_period} + MACD-H acceleration agree"
                       if macro_regime_mode == "hybrid" else
@@ -2655,6 +2655,8 @@ def _run_crypto_backtest_sync(
             macro_detail = macd_macro_details[index] if index < len(macd_macro_details) else {}
             latest_evaluation.update({
                 "macro_regime_mode": macro_regime_mode,
+                "macro_histogram": macro_detail.get("histogram"),
+                "macro_histogram_zone": macro_detail.get("histogram_zone"),
                 "macro_histogram_slope": macro_detail.get("histogram_slope"),
                 "macro_histogram_slope_z": macro_detail.get("histogram_slope_z"),
                 "macro_acceleration_regime": macro_detail.get("regime"),

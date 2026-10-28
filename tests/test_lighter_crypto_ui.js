@@ -128,7 +128,7 @@ assert.equal(tab5.syncMacroRegimeControlsFromBot({
 }), true);
 assert.equal(nodes.get('lighterCrypto_macroRegimeMode').value, 'macd_hist_accel');
 assert.equal(nodes.get('lighterCrypto_macroMacdEnterZ').value, '0.25');
-assert.match(nodes.get('lighterCrypto_valCondEntryMaStack1h').textContent, /MACD-H acceleration/);
+assert.match(nodes.get('lighterCrypto_valCondEntryMaStack1h').textContent, /MACD-H zone \+ acceleration/);
 assert.match(nodes.get('lighterCrypto_macdMacroConditionLabel').textContent, /MACD-H acceleration/);
 nodes.get('lighterCrypto_macroRegimeMode').dataset.unsaved = 'true';
 assert.equal(tab5.syncMacroRegimeControlsFromBot({
