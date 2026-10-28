@@ -58,14 +58,14 @@ lab.onCrosshair(cursor);
 assert.equal(updates, 1, 'one mouse event must not recurse through setMarkers');
 assert.equal(lines.size, 8, 'buy hover must draw entry, six profit levels and exit');
 assert.equal([...lines][0].price, buy.entry_price);
-assert.equal(rendered[0].text, 'BUY');
+assert.equal(rendered[0].text, '▷ BUY');
 lab.onCrosshair({ time: 100, point: { x: 100, y: 350 } });
 assert.equal(updates, 1, 'moving vertically within the same trade column must not redraw');
 
 cursor = { time: 201, point: { x: 202, y: 350 } };
 lab.onCrosshair(cursor);
 assert.equal(updates, 2, 'sell hover must resolve by x even away from the arrow');
-assert.equal(rendered[1].text, 'SELL');
+assert.equal(rendered[1].text, '◁ SELL');
 assert.equal([...lines][0].price, buy.entry_price, 'sell levels must use its matching buy');
 assert.ok([...lines].at(-1).title.includes('+9.89% net'));
 
@@ -219,5 +219,4 @@ lab.toggleActual();
 assert.equal(lab.controller.visibility.actual, true, 'toggleActual must restore actual visibility to true');
 
 console.log('Strategy Lab real crosshair callback regression checks passed');
-
 

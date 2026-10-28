@@ -53,6 +53,7 @@ engine.renderShortTermReferenceLines(140, {model:{adr_exit_qty:.07,stock_exit_qt
  adr_entry_price:140,stock_entry_price:5,entry_fees_usd:.01,entry_time_ms:1000,
  exit_fee_bps:5,slippage_bps:3,funding_reserve_bps_day:3,threshold_usd:.02}});
 assert.equal(rendered.levels.length,9,'entry hover must actually pass all paired profit levels to chart renderer');
+assert.equal(rendered.entryDirection, 'short', 'Tab 2 paired model is explicitly a short-spread ladder');
 assert.ok(rendered.levels.some(level=>level.title.startsWith('Min profit')));
 const expected = require('../held-pair-pnl.js').profitLevels({
  adr_exit_qty:.07,stock_exit_qty:1.2,adr_entry_price:140,stock_entry_price:5,

@@ -14735,7 +14735,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           ? {...options.model, exit_fee_bps: this.observedPairExitFeeBps()} : null;
         const levels = window.HeldPairPnl?.profitLevels(chartModel, bar, valuedAt) || [];
         this.shortTermPriceLines = this.executionChartController.renderReferenceLines({
-          entry: Number(entrySpread), selected: true, levels,
+          entry: Number(entrySpread), entryDirection: "short", selected: true, levels,
           exit: options.exitSpread, exitTitle: "EXIT",
         });
       },

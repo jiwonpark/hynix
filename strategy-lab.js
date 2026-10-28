@@ -1280,7 +1280,7 @@
       if (marker && marker.entry_price) {
         this.renderEntryReferenceLines(marker.fill_entry_price ?? marker.entry_price, true, marker.exit_price || null, marker);
       } else if (this.data?.open_position?.price && this.controller.visibility.virtual !== false) {
-        this.renderEntryReferenceLines(this.data.open_position.price, false);
+        this.renderEntryReferenceLines(this.data.open_position.price, false, null, this.data.open_position);
       } else {
         const visibleMarkers = this.controller.visibleExecutions();
         const lastMarker = visibleMarkers.filter(m => m.entry_price).at(-1);
@@ -1299,9 +1299,12 @@
         return;
       }
       const fee = Number(this.data?.fee_bps || 0) / 10000;
+      const isShort = marker?.direction === "short";
       const levels = [0, .2, .5, 1, 2, 3].map((target) => ({
         netProfitPct: target,
-        price: price * (1 + fee) * (1 + target / 100) / (1 - fee),
+        price: isShort
+          ? price * (1 - fee - target / 100) / (1 + fee)
+          : price * (1 + fee + target / 100) / (1 - fee),
         title: target === 0 ? "B/E NET" : `NET +${target}%`,
         color: target === 0 ? "rgba(71, 85, 105, 0.70)" : "rgba(22, 163, 74, 0.70)",
         lineWidth: 1.5,
@@ -1314,6 +1317,7 @@
       }
       this.controller.renderReferenceLines({
         entry: price,
+        entryDirection: isShort ? "short" : "long",
         selected,
         levels,
         exit: exitPrice,

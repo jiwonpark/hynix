@@ -51,6 +51,7 @@ assert.equal(controller.executionTimeAtX(196, {timeScale, hostWidth: 600}), 2000
 
 controller.renderReferenceLines({
   entry: 140,
+  entryDirection: 'short',
   selected: true,
   levels: [
     {price: 139.8, netProfitPct: 0, title: 'B/E (fees + funding reserve)'},
@@ -59,11 +60,12 @@ controller.renderReferenceLines({
   ],
 });
 assert.equal(created.length, 4);
-assert.equal(created[0].title, 'ENTRY · SELECTED');
+assert.equal(created[0].title, 'SHORT · SELECTED');
 assert.equal(created[1].title, 'B/E');
 assert.equal(created[2].title, 'NET +0.5%');
 assert.equal(created[3].title, 'MOVE +1%');
-controller.renderReferenceLines({entry: 141, levels: [], exit: 139.5, exitTitle: 'EXIT'});
+controller.renderReferenceLines({entry: 141, entryDirection: 'long', levels: [], exit: 139.5, exitTitle: 'EXIT'});
+assert.equal(created.at(-2).title, 'LONG');
 assert.equal(created.at(-1).title, 'EXIT', 'must render optional exit price line');
 assert.equal(created.at(-1).price, 139.5);
 

@@ -49,8 +49,8 @@ const virtualArrow = new StrategyExecutionChartController();
 virtualArrow.setExecutions([{time: 1000, hypothetical: true, backtest: true, is_entry: true, position: 'aboveBar'}]);
 assert.equal(virtualArrow.markersForRender()[0].shape, 'arrowDown',
   'hypothetical markers must use arrow shapes instead of colored circle dots');
-assert.ok(componentSource.includes('m.hypothetical ? "0.35" : "0.70"'),
-  'simulated trades should use dimmed arrows');
+assert.ok(componentSource.includes('const dimAlpha = isPaper ? "0.35" : "0.70"'),
+  'paper and simulated trades should use dimmed arrows');
 assert.ok(componentSource.includes('✓ ${virtual.label || "Virtual"}'));
 assert.ok(html.includes('actual: "legendActualTrades"'));
 assert.ok(html.includes('virtual: "legendVirtualTrades"'));

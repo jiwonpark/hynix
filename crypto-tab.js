@@ -4886,6 +4886,7 @@
       if (!(entry > 0) || !this.executionChartController) return;
       this.executionChartController.renderReferenceLines({
         entry,
+        entryDirection: options.isLong === true ? "long" : options.isLong === false ? "short" : null,
         selected: Boolean(options.selected),
         levels: this.shortSpreadProfitLadder(entry, 5, options.isLong),
         showScaleIn: Boolean(options.showScaleIn),
@@ -4924,13 +4925,7 @@
         }
       }
 
-      // 3. Fallback to current ratio
-      if (Number(this.currentRatio) > 0) {
-        this.renderShortTermReferenceLines(this.currentRatio, {
-          selected: false,
-        });
-        return;
-      }
+      // A price alone has no trade direction. Do not fabricate a short ladder.
       this.clearReferenceLines();
     },
 

@@ -35,7 +35,13 @@ for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", l
     `${name} must use the shared time-scale linker`);
   assert.match(source, /this\.chartSync\?\.sync\(\)/,
     `${name} must resynchronize linked panes after resize or activation`);
+  assert.match(source, /entryDirection: options\.isLong === true \? "long" : options\.isLong === false \? "short" : null/,
+    `${name} reference labels must use the same explicit direction as its profit ladder`);
+  assert.doesNotMatch(source, /Fallback to current ratio/,
+    `${name} must not fabricate a short ladder when only an undirected current price is known`);
 }
+
+assert.match(index, /entryDirection: "short"/, "Tab 2 paired-profit ladder must be identified as short spread");
 
 assert.match(lighter, /adrPoints\.push\([\s\S]*?\{ time: bar\.time \}\)/,
   "Tab 3 ADR data must preserve missing timestamps as whitespace");

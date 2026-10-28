@@ -286,13 +286,16 @@
     renderReferenceLines(config = {}) {
       if (!this.series || !(Number(config.entry) > 0)) return [];
       this.clearReferenceLines();
+      const entryDirection = String(config.entryDirection || "").toLowerCase();
+      const entryTitle = entryDirection === "long" ? "LONG"
+        : entryDirection === "short" ? "SHORT" : "ENTRY";
       this.referenceLines.push(this.series.createPriceLine({
         price: Number(config.entry),
         color: config.selected ? "#7c3aed" : "#0284c7",
         lineWidth: 1,
         lineStyle: this.lineStyle.Solid,
         axisLabelVisible: true,
-        title: config.selected ? "ENTRY · SELECTED" : "ENTRY"
+        title: config.selected ? `${entryTitle} · SELECTED` : entryTitle
       }));
       (config.levels || []).forEach((level) => {
         this.referenceLines.push(this.series.createPriceLine({
