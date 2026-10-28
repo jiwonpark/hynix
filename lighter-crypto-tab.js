@@ -1790,7 +1790,7 @@
             <label>1h Slow <input id="lighterCrypto_macroMacdSlowPeriod" aria-label="Hourly MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live.macro_macd_slow_period ?? 26)}" style="width:48px"></label>
             <label>1h Signal <input id="lighterCrypto_macroMacdSignalPeriod" aria-label="Hourly MACD signal period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_signal_period ?? 9)}" style="width:48px"></label>
             <label>Confirm <input id="lighterCrypto_macroMacdConfirmBars" aria-label="MACD direction confirmation bars" type="number" min="1" max="12" step="1" value="${Number(live.macro_macd_confirm_bars ?? 2)}" style="width:46px"> bars</label>
-            <span id="lighterCrypto_macroRegimeReadout">Completed 1h MACD-H · below zero + rising for long · above zero + falling for short</span>
+            <span id="lighterCrypto_macroRegimeReadout">Completed 1h MACD-H · rising for long · falling for short</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
             <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
@@ -3259,7 +3259,7 @@
       ];
       if (currentMode !== "ou_quant" && currentMode !== "ma_stack") {
         const macroLabel = settings.macro_regime_mode === "macd_hist_accel"
-          ? `Wider trend filter · completed 1h MACD(${settings.macro_macd_fast_period},${settings.macro_macd_slow_period},${settings.macro_macd_signal_period})-H < 0 + rising (long) / > 0 + falling (short)`
+          ? `Wider trend filter · completed 1h MACD(${settings.macro_macd_fast_period},${settings.macro_macd_slow_period},${settings.macro_macd_signal_period})-H rising (long) / falling (short)`
           : settings.macro_regime_mode === "hybrid"
             ? `Wider trend filter · 1h MA${settings.macro_ma_period} + MACD(${settings.macro_macd_fast_period},${settings.macro_macd_slow_period},${settings.macro_macd_signal_period})-H direction`
             : `Wider trend filter · 1h MA${settings.macro_ma_period} slope`;
@@ -3938,7 +3938,7 @@
       if (!changed) return false;
       const macroPeriods = `${Number(live.macro_macd_fast_period ?? 12)},${Number(live.macro_macd_slow_period ?? 26)},${Number(live.macro_macd_signal_period ?? 9)}`;
       const macroLabel = mode === "macd_hist_accel"
-        ? `Wider trend filter · completed 1h MACD(${macroPeriods})-H < 0 + rising (long) / > 0 + falling (short)`
+        ? `Wider trend filter · completed 1h MACD(${macroPeriods})-H rising (long) / falling (short)`
         : mode === "hybrid"
           ? `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} + MACD(${macroPeriods})-H direction`
           : `Wider trend filter · 1h MA${Number(live.macro_ma_period ?? 60)} slope`;

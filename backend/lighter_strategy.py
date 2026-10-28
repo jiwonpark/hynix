@@ -1082,15 +1082,13 @@ def macd_histogram_acceleration_regime_series(
     signal_period: int = 9,
     confirm_bars: int = 2,
 ) -> List[Dict[str, Any]]:
-    """Causal completed-candle regime from MACD-H level and direction.
+    """Causal completed-candle regime from MACD-H direction only.
 
-    A long reversal regime requires a negative histogram that is accelerating
-    upward; a short reversal regime requires a positive histogram that is
-    accelerating downward.  The level check prevents a late-cycle positive
-    histogram from being called a long regime merely because it is still
-    rising (and vice versa). Consecutive-bar confirmation prevents a single
-    noisy hourly change from flipping the direction. Crossing zero invalidates
-    the old regime immediately rather than waiting for confirmation.
+    A long regime requires a rising histogram (one-bar slope > 0); a short
+    regime requires a falling histogram (slope < 0).  The histogram level
+    (above/below zero) is reported but does not gate the regime.
+    Consecutive-bar confirmation prevents a single noisy hourly change from
+    flipping the direction.
     """
     values = [float(value) for value in prices]
     fast_w = max(2, int(fast_period))
@@ -1135,17 +1133,9 @@ def macd_histogram_acceleration_regime_series(
             output[index]["histogram"] = float(histogram_value)
             continue
         histogram_direction = -1 if histogram_value < 0 else (1 if histogram_value > 0 else 0)
-        desired = regime
-        regime_level_compatible = ((regime > 0 and histogram_direction < 0)
-                                   or (regime < 0 and histogram_direction > 0))
-        if regime and not regime_level_compatible:
-            regime = 0
-            desired = 0
-            pending = 0
-            pending_count = 0
-        if histogram_direction < 0 and slope > 0:
+        if slope > 0:
             desired = 1
-        elif histogram_direction > 0 and slope < 0:
+        elif slope < 0:
             desired = -1
         else:
             desired = 0
@@ -1165,8 +1155,8 @@ def macd_histogram_acceleration_regime_series(
         output[index] = {
             "regime": "BULL" if regime > 0 else ("BEAR" if regime < 0 else "NEUTRAL"),
             "direction": regime,
-            "long_ok": regime > 0 and histogram_direction < 0,
-            "short_ok": regime < 0 and histogram_direction > 0,
+            "long_ok": regime > 0,
+            "short_ok": regime < 0,
             "histogram": float(histogram_value),
             "histogram_zone": "NEGATIVE" if histogram_direction < 0 else (
                 "POSITIVE" if histogram_direction > 0 else "ZERO"),
