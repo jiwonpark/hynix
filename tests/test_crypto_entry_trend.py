@@ -94,10 +94,11 @@ class CryptoEntryTrendTests(unittest.TestCase):
         result = _run_crypto_backtest_sync(
             bars, True, strategy_mode='macd_reversal', interval_seconds=300,
             macro_bars=hourly, macro_regime_mode='macd_hist_accel',
+            macro_ma_period=8,
             macro_macd_fast_period=8, macro_macd_slow_period=21,
             macro_macd_signal_period=5,
             macro_macd_confirm_bars=2)
-        self.assertIn('MA Diff(8,21) > 0 + Accel > 0', result['entry_trend']['basis'])
+        self.assertIn('MA8 diff > 0 + diff2 > 0', result['entry_trend']['basis'])
         self.assertEqual(result['metrics']['macro_regime_mode'], 'macd_hist_accel')
         self.assertEqual(result['metrics']['macro_macd_fast_period'], 8)
         self.assertEqual(result['metrics']['macro_macd_slow_period'], 21)

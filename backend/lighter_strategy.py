@@ -1077,61 +1077,59 @@ def _ema_series(values: List[float], period: int) -> List[Optional[float]]:
 
 def macd_histogram_acceleration_regime_series(
     prices: List[float], *,
-    fast_period: int = 12,
-    slow_period: int = 26,
-    signal_period: int = 9,
+    ma_period: int = 24,
     confirm_bars: int = 2,
+    **kwargs: Any,
 ) -> List[Dict[str, Any]]:
-    """Causal completed-candle trend regime from MA Diff (1) and 2nd-order diff / Accel (2).
+    """Causal completed-candle trend regime from single MA diff and diff2 (acceleration).
 
-    A long (BULL) regime requires a positive MA difference (MA_fast - MA_slow > 0)
-    and positive 2nd-order acceleration of the fast MA (Accel = MA_fast[t] - 2*MA_fast[t-1] + MA_fast[t-2] > 0).
-    A short (BEAR) regime requires a negative MA difference (MA_fast - MA_slow < 0)
-    and negative 2nd-order acceleration (Accel < 0).
-    Consecutive-bar confirmation prevents a single noisy hourly change from flipping
-    the direction. Crossing zero on MA difference invalidates the held regime immediately
-    rather than waiting for confirmation.
+    - diff = MA[t] - MA[t-1] (1st-order difference / slope)
+    - diff2 = diff[t] - diff[t-1] = MA[t] - 2*MA[t-1] + MA[t-2] (2nd-order difference / acceleration)
+    - GREEN (BULL): diff > 0 and diff2 > 0
+    - RED (BEAR): diff < 0 and diff2 < 0
+    - NEUTRAL: otherwise
+
+    Crossing zero on diff immediately invalidates the held regime.
+    Confirmation prevents a single noisy bar from flipping direction.
     """
-    del signal_period
-    values = [float(value) for value in prices]
-    fast_w = max(2, int(fast_period))
-    slow_w = max(fast_w + 1, int(slow_period))
+    w = max(2, int(kwargs.get("macro_ma_period") or kwargs.get("ma_period") or kwargs.get("fast_period") or ma_period))
     confirmation = max(1, int(confirm_bars))
+    values = [float(value) for value in prices]
     output: List[Dict[str, Any]] = [{
         "regime": "UNAVAILABLE", "direction": 0, "long_ok": False,
         "short_ok": False, "histogram": None, "histogram_slope": None,
-        "ma_diff": None, "ma_accel": None,
+        "diff": None, "diff2": None, "ma_diff": None, "ma_accel": None,
     } for _ in values]
-    if not values:
+    if len(values) < w + 2:
         return output
 
-    fast = _ema_series(values, fast_w)
-    slow = _ema_series(values, slow_w)
+    ma = _ema_series(values, w)
 
     regime = 0
     pending = 0
     pending_count = 0
 
     for index in range(len(values)):
-        fast_curr = fast[index]
-        slow_curr = slow[index]
-        if fast_curr is None or slow_curr is None or index < 2 or fast[index - 1] is None or fast[index - 2] is None:
+        if index < 2 or ma[index] is None or ma[index - 1] is None or ma[index - 2] is None:
             continue
 
-        diff_val = fast_curr - slow_curr
-        # 2nd-order difference / acceleration of the fast moving average:
-        # (fast[index] - fast[index - 1]) - (fast[index - 1] - fast[index - 2])
-        accel = fast_curr - 2.0 * fast[index - 1] + fast[index - 2]
+        ma_curr = float(ma[index])
+        ma_prev = float(ma[index - 1])
+        ma_prev2 = float(ma[index - 2])
 
-        diff_direction = 1 if diff_val > 0 else (-1 if diff_val < 0 else 0)
+        diff = ma_curr - ma_prev
+        diff2 = diff - (ma_prev - ma_prev2)  # ma_curr - 2.0 * ma_prev + ma_prev2
+
+        diff_direction = 1 if diff > 0 else (-1 if diff < 0 else 0)
         if regime and regime != diff_direction:
             regime = 0
             pending = 0
             pending_count = 0
 
-        if diff_direction > 0 and accel > 0:
+        # GREEN: diff > 0 and diff2 > 0; RED: diff < 0 and diff2 < 0
+        if diff > 0 and diff2 > 0:
             desired = 1
-        elif diff_direction < 0 and accel < 0:
+        elif diff < 0 and diff2 < 0:
             desired = -1
         else:
             desired = 0
@@ -1154,12 +1152,14 @@ def macd_histogram_acceleration_regime_series(
             "direction": regime,
             "long_ok": regime > 0 and diff_direction > 0,
             "short_ok": regime < 0 and diff_direction < 0,
-            "ma_diff": float(diff_val),
-            "ma_accel": float(accel),
-            "histogram": float(diff_val),
+            "diff": float(diff),
+            "diff2": float(diff2),
+            "ma_diff": float(diff),
+            "ma_accel": float(diff2),
+            "histogram": float(diff),
             "histogram_zone": "POSITIVE" if diff_direction > 0 else (
                 "NEGATIVE" if diff_direction < 0 else "ZERO"),
-            "histogram_slope": float(accel),
+            "histogram_slope": float(diff2),
         }
     return output
 

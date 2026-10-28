@@ -145,16 +145,14 @@ the unused hourly period input and retain the 5m full-stack/diff rules.
 
 Tab 5 MACD strategies may explicitly select **MA slope**, **MA Diff + Accel
 (1 & 2)**, or **Hybrid** for that same wider-trend condition. MA Diff + Accel
-uses the completed-hour MA Difference (MA_fast - MA_slow) and the 2nd-order
-difference (acceleration) of the fast MA. Long alignment requires a positive
-MA difference and positive 2nd-order acceleration; short alignment requires
-a negative MA difference and negative 2nd-order acceleration. A zero cross on
-MA difference invalidates the old alignment immediately. Its hourly Fast, Slow,
-and Signal periods are independently adjustable from the entry MACD, and its
-consecutive confirmation count is also user-adjustable. All values persist in
-authenticated live configuration and must be reported in status and used
-identically by replay. No normalized Z threshold is used. Hybrid requires both
-the completed-hour MA slope and the MA Diff + Accel regime to agree. The replay
-background, PAPER condition badge, LIVE evaluation, and source timestamp must
-all use the selected predicate; neutral direction permits neither side rather
-than fabricating a trend.
+uses a single moving average of period W (controlled via slider, 2–120), evaluating its
+1st-order difference (diff = MA[t] - MA[t-1]) and 2nd-order difference / acceleration
+(diff2 = diff[t] - diff[t-1] = MA[t] - 2*MA[t-1] + MA[t-2]).
+Green (BULL / long ok) requires diff > 0 and diff2 > 0; red (BEAR / short ok) requires
+diff < 0 and diff2 < 0; otherwise neutral. A zero cross on diff invalidates the held regime
+immediately. When MA Diff + Accel is selected, only the 1h MA Period slider is presented
+for adjustment. All values persist in authenticated live configuration and must be reported
+in status and used identically by replay. Hybrid requires both the completed-hour MA slope
+and the MA Diff + Accel regime to agree. The replay background, PAPER condition badge,
+LIVE evaluation, and source timestamp must all use the selected predicate; neutral direction
+permits neither side rather than fabricating a trend.

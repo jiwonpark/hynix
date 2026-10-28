@@ -882,6 +882,7 @@ class CryptoBot:
                     )
                     accel_alignment, macro_detail = macd_histogram_acceleration_alignment(
                         macro_values,
+                        ma_period=int(self.state.get("macro_ma_period", 60)),
                         fast_period=int(self.state.get("macro_macd_fast_period", 12)),
                         slow_period=int(self.state.get("macro_macd_slow_period", 26)),
                         signal_period=int(self.state.get("macro_macd_signal_period", 9)),

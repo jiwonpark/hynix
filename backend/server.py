@@ -1726,7 +1726,7 @@ def _hourly_macro_alignment_for_bars(
 
 def _hourly_macd_acceleration_for_bars(
     bars: List[Dict[str, Any]], hourly_bars: List[Dict[str, Any]], interval_seconds: int, *,
-    fast_period: int = 12, slow_period: int = 26, signal_period: int = 9,
+    ma_period: int = 60, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9,
     confirm_bars: int = 2,
 ) -> tuple[List[tuple[bool, bool]], List[Dict[str, Any]]]:
     """Map each signal candle to the latest known completed-hour acceleration regime."""
@@ -1736,6 +1736,7 @@ def _hourly_macd_acceleration_for_bars(
     hourly = sorted(hourly_bars, key=lambda item: int(item["time"]))
     regimes = macd_histogram_acceleration_regime_series(
         [float(item["value"]) for item in hourly],
+        ma_period=ma_period,
         fast_period=fast_period, slow_period=slow_period, signal_period=signal_period,
         confirm_bars=confirm_bars,
     )
@@ -1793,9 +1794,9 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
                        "direction": direction, "long_ok": bool(long_ok), "short_ok": bool(short_ok)})
     return {"enabled": bool(enabled), "source": market_source.upper(),
             "basis": f"EMA{span} slope / {slope_bars} chart bars" if is_ou else
-                     (f"completed 1h · MA Diff({macro_macd_fast_period},{macro_macd_slow_period}) > 0 + Accel > 0 / < 0 + Accel < 0"
+                     (f"completed 1h · MA{macro_ma_period} diff > 0 + diff2 > 0 / diff < 0 + diff2 < 0"
                       if macro_regime_mode == "macd_hist_accel" else
-                      f"completed 1h · MA{macro_ma_period} + MA Diff({macro_macd_fast_period},{macro_macd_slow_period}) agree"
+                      f"completed 1h · MA{macro_ma_period} slope + diff2 agree"
                       if macro_regime_mode == "hybrid" else
                       f"completed 1h · actionable-time aligned · MA{macro_ma_period} slope"
                       if macro_bars is not None else "replay trend fallback"),
@@ -1904,6 +1905,7 @@ def _run_crypto_backtest_sync(
     )
     macd_macro_aligned_list, macd_macro_details = _hourly_macd_acceleration_for_bars(
         bars, macro_bars or [], interval_seconds,
+        ma_period=macro_ma_period,
         fast_period=macro_macd_fast_period, slow_period=macro_macd_slow_period,
         signal_period=macro_macd_signal_period,
         confirm_bars=macro_macd_confirm_bars,

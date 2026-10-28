@@ -10,7 +10,10 @@ from backend import lighter_strategy as strategy
 class ReplayMacroTests(unittest.TestCase):
     def test_precomputed_macro_preserves_all_replay_results(self):
         tree = ast.parse(Path('backend/server.py').read_text())
-        nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in {'_run_crypto_backtest_sync', '_crypto_entry_trend'}]
+        nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in {
+            '_run_crypto_backtest_sync', '_crypto_entry_trend',
+            '_hourly_macro_alignment_for_bars', '_hourly_macd_acceleration_for_bars',
+        }]
         scope = dict(vars(strategy))
         exec(compile(ast.Module(body=nodes, type_ignores=[]), '<replay>', 'exec'), scope)
         run = scope['_run_crypto_backtest_sync']
