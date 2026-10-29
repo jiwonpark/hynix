@@ -1729,7 +1729,7 @@
           <div style="margin:0 0 12px;padding:10px;border:1px solid #c4b5fd;border-radius:7px;background:#f5f3ff;font-size:11px;font-weight:700;color:#4c1d95;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><span style="background:#7c3aed;color:#fff;border-radius:999px;padding:2px 7px;font-size:9px;">NEW</span><strong>Wider trend filters</strong><span style="font-weight:500;color:#6d28d9;">Every checked filter must agree.</span></div>
             <input id="crypto_macroRegimeMode" type="hidden" value="${macroMode}">
-            <fieldset aria-label="Completed-candle wider trend filters" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0;padding:0;border:0;min-width:0;">
+            <fieldset aria-label="Completed-candle wider trend filters" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0;padding:0;border:0;min-width:0;">
               <div id="crypto_macroMaGroup" style="display:grid;gap:8px;align-content:start;padding:9px;border:1px solid #c4b5fd;border-radius:7px;background:#fff;min-width:0;">
                 <label style="display:flex;flex-direction:row !important;align-items:center;gap:6px;"><input id="crypto_macroUseMa" type="checkbox" style="width:16px;height:16px;min-width:16px;margin:0;accent-color:#7c3aed;" ${macroMode !== "macd_hist_accel" ? "checked" : ""}> <strong>Chart MA slope</strong></label>
                 <label id="crypto_lblMacroMaPeriod" style="display:flex;flex-direction:row !important;align-items:center;gap:6px;flex-wrap:wrap;">Period
