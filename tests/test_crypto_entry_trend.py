@@ -86,7 +86,7 @@ class CryptoEntryTrendTests(unittest.TestCase):
             self.assertEqual(result['entry_trend']['points'][-1]['direction'], direction)
             self.assertIn(f'MA{period} slope', result['entry_trend']['basis'])
 
-    def test_macd_direction_gate_and_background_share_completed_hour_verdicts(self):
+    def test_macd_direction_gate_and_background_share_completed_chart_verdicts(self):
         hourly = [{'time': i * 3600,
                    'value': 100 + .03 * i + 4 * math.sin(i / 6)} for i in range(180)]
         bars = [{'time': 100 * 3600 + i * 300,
@@ -98,7 +98,7 @@ class CryptoEntryTrendTests(unittest.TestCase):
             macro_macd_fast_period=8, macro_macd_slow_period=21,
             macro_macd_signal_period=5,
             macro_macd_confirm_bars=2)
-        self.assertIn('MA8 diff > 0 + diff2 > 0', result['entry_trend']['basis'])
+        self.assertIn('completed chart candles · MACD-H(8, 21, 5)', result['entry_trend']['basis'])
         self.assertEqual(result['metrics']['macro_regime_mode'], 'macd_hist_accel')
         self.assertEqual(result['metrics']['macro_macd_fast_period'], 8)
         self.assertEqual(result['metrics']['macro_macd_slow_period'], 21)
@@ -107,4 +107,6 @@ class CryptoEntryTrendTests(unittest.TestCase):
                             for point in result['entry_trend']['points']))
         self.assertEqual(result['latest_evaluation']['macro_regime_mode'], 'macd_hist_accel')
         self.assertIn('macro_histogram_slope', result['latest_evaluation'])
+        self.assertEqual(result['latest_evaluation']['macro_source'], 'BINANCE_COMPLETED_CHART')
+        self.assertEqual(result['entry_trend']['points'][-1]['source_time'], bars[-1]['time'])
         self.assertNotIn('macro_histogram_slope_z', result['latest_evaluation'])

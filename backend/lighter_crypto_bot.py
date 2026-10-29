@@ -1226,41 +1226,43 @@ class LighterCryptoBot:
                 values = [float(row["c"]) for row in closed]
                 macro_alignment = None
                 macro_candle_time = None
+                macro_hourly_candle_time = None
                 macro_detail: Dict[str, Any] = {}
                 if (self.state["strategy_mode"] != "ou_quant"
                         and self.state.get("use_ma_stack_1h", True)):
                     macro_mode = (str(self.state.get("macro_regime_mode", "ma_slope"))
                                   if self.state["strategy_mode"] in {"macd_reversal", "macd_strength_scaleout"}
                                   else "ma_slope")
-                    macro_required = max(
-                        int(self.state.get("macro_ma_period", 60)) + 1,
-                        int(self.state.get("macro_macd_slow_period", 26))
-                        + int(self.state.get("macro_macd_signal_period", 9))
-                        + int(self.state.get("macro_macd_confirm_bars", 2)) + 4,
-                    )
-                    macro_rows = await self.client.candles(
-                        market_id, "1h", min(500, max(125, macro_required)), fresh=True,
-                    )
-                    macro_closed = [row for row in macro_rows
-                                    if int(row["t"]) + 3600 * 1000 <= now_ms - 1000]
-                    if len(macro_closed) < macro_required:
-                        raise ValueError("Insufficient completed Lighter 1h candles for macro alignment")
-                    macro_values = [float(row["c"]) for row in macro_closed]
-                    ma_alignment = hourly_macro_alignment(
-                        macro_values, ma_period=int(self.state.get("macro_ma_period", 60)),
-                    )
                     accel_alignment, macro_detail = macd_histogram_acceleration_alignment(
-                        macro_values,
+                        values,
                         ma_period=int(self.state.get("macro_ma_period", 60)),
                         fast_period=int(self.state.get("macro_macd_fast_period", 12)),
                         slow_period=int(self.state.get("macro_macd_slow_period", 26)),
                         signal_period=int(self.state.get("macro_macd_signal_period", 9)),
                         confirm_bars=int(self.state.get("macro_macd_confirm_bars", 2)),
                     )
-                    macro_alignment = (accel_alignment if macro_mode == "macd_hist_accel" else
-                                       (ma_alignment[0] and accel_alignment[0], ma_alignment[1] and accel_alignment[1])
-                                       if macro_mode == "hybrid" else ma_alignment)
-                    macro_candle_time = int(macro_closed[-1]["t"]) // 1000
+                    if macro_mode == "macd_hist_accel":
+                        macro_alignment = accel_alignment
+                        macro_candle_time = last_candle
+                    else:
+                        macro_required = int(self.state.get("macro_ma_period", 60)) + 1
+                        macro_rows = await self.client.candles(
+                            market_id, "1h", min(500, max(125, macro_required)), fresh=True,
+                        )
+                        macro_closed = [row for row in macro_rows
+                                        if int(row["t"]) + 3600 * 1000 <= now_ms - 1000]
+                        if len(macro_closed) < macro_required:
+                            raise ValueError("Insufficient completed Lighter 1h candles for macro alignment")
+                        ma_alignment = hourly_macro_alignment(
+                            [float(row["c"]) for row in macro_closed],
+                            ma_period=int(self.state.get("macro_ma_period", 60)),
+                        )
+                        macro_alignment = ((ma_alignment[0] and accel_alignment[0],
+                                            ma_alignment[1] and accel_alignment[1])
+                                           if macro_mode == "hybrid" else ma_alignment)
+                        macro_hourly_candle_time = int(macro_closed[-1]["t"]) // 1000
+                        macro_candle_time = (last_candle if macro_mode == "hybrid"
+                                             else macro_hourly_candle_time)
                 position_side = int(self.state["tranches"][-1]["side"]) if self.state["tranches"] else 0
                 entry_price = float(self.state["tranches"][-1]["price"]) if self.state["tranches"] else 0.0
                 entry_time = int(self.state["tranches"][-1].get("time", 0)) if self.state["tranches"] else 0
@@ -1282,8 +1284,13 @@ class LighterCryptoBot:
                 evaluation["entry_direction_allowed"] = direction_allowed
                 self.state["last_evaluation"] = evaluation
                 if macro_candle_time is not None:
-                    evaluation["macro_source"] = "LIGHTER_COMPLETED_1H"
+                    evaluation["macro_source"] = (
+                        f"LIGHTER_COMPLETED_{interval.upper()}" if macro_mode == "macd_hist_accel"
+                        else f"LIGHTER_COMPLETED_1H+{interval.upper()}" if macro_mode == "hybrid"
+                        else "LIGHTER_COMPLETED_1H"
+                    )
                     evaluation["macro_candle_time"] = macro_candle_time
+                    evaluation["macro_hourly_candle_time"] = macro_hourly_candle_time
                     evaluation["macro_ma_period"] = int(self.state.get("macro_ma_period", 60))
                     evaluation["macro_regime_mode"] = macro_mode
                     evaluation["macro_histogram"] = macro_detail.get("histogram")

@@ -143,16 +143,16 @@ visible EMA-alignment switch; never override it from a hidden inherited switch.
 Tab 5 MA Stack intentionally bypasses the hourly filter: label it N/A, disable
 the unused hourly period input and retain the 5m full-stack/diff rules.
 
-Tab 5 MACD strategies may explicitly select **MA slope**, **MA Diff + Accel
-(1 & 2)**, or **Hybrid** for that same wider-trend condition. MA Diff + Accel
-uses a single moving average of period W (controlled via slider, 2–120), evaluating its
-1st-order difference (diff = MA[t] - MA[t-1]) and 2nd-order difference / acceleration
-(diff2 = diff[t] - diff[t-1] = MA[t] - 2*MA[t-1] + MA[t-2]).
-Green (BULL / long ok) requires diff > 0 and diff2 > 0; red (BEAR / short ok) requires
-diff < 0 and diff2 < 0; otherwise neutral. A zero cross on diff invalidates the held regime
-immediately. When MA Diff + Accel is selected, only the 1h MA Period slider is presented
-for adjustment. All values persist in authenticated live configuration and must be reported
-in status and used identically by replay. Hybrid requires both the completed-hour MA slope
-and the MA Diff + Accel regime to agree. The replay background, PAPER condition badge,
+Tabs 4 and 5 MACD strategies may explicitly select **1h MA slope**, **Chart MACD-H
+zone + slope**, or **Hybrid** for that same wider-trend condition. Chart MACD-H uses the
+same completed candle array and interval as the strategy chart (5m in the live bot; the
+selected interval in replay), never a separately sampled hourly series. Its fast, slow,
+and signal periods are independently adjustable and saved. BULL / long ok requires the
+MACD histogram to be below zero and rising; BEAR / short ok requires it to be above zero
+and falling; otherwise it is neutral. The configured confirmation count applies causally
+to consecutive completed chart candles. Hybrid requires both the completed-hour MA slope
+and the completed-chart MACD-H regime to agree. All values persist in authenticated live
+configuration and must be reported in status and used identically by replay. The replay
+background, PAPER condition badge,
 LIVE evaluation, and source timestamp must all use the selected predicate; neutral direction
 permits neither side rather than fabricating a trend.

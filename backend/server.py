@@ -1724,33 +1724,25 @@ def _hourly_macro_alignment_for_bars(
     return mapped
 
 
-def _hourly_macd_acceleration_for_bars(
-    bars: List[Dict[str, Any]], hourly_bars: List[Dict[str, Any]], interval_seconds: int, *,
+def _chart_macd_acceleration_for_bars(
+    bars: List[Dict[str, Any]], *,
     ma_period: int = 60, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9,
     confirm_bars: int = 2,
 ) -> tuple[List[tuple[bool, bool]], List[Dict[str, Any]]]:
-    """Map each signal candle to the latest known completed-hour acceleration regime."""
-    if not bars or not hourly_bars:
+    """Evaluate the regime on the same completed candles used by the strategy."""
+    if not bars:
         empty = [(False, False)] * len(bars)
         return empty, [{"regime": "UNAVAILABLE"} for _ in bars]
-    hourly = sorted(hourly_bars, key=lambda item: int(item["time"]))
+    ordered = sorted(bars, key=lambda item: int(item["time"]))
     regimes = macd_histogram_acceleration_regime_series(
-        [float(item["value"]) for item in hourly],
+        [float(item["value"]) for item in ordered],
         ma_period=ma_period,
         fast_period=fast_period, slow_period=slow_period, signal_period=signal_period,
         confirm_bars=confirm_bars,
     )
-    mapped: List[tuple[bool, bool]] = []
-    details: List[Dict[str, Any]] = []
-    macro_index = -1
-    for bar in bars:
-        signal_close = int(bar["time"]) + int(interval_seconds)
-        while (macro_index + 1 < len(hourly)
-               and int(hourly[macro_index + 1]["time"]) + 3600 <= signal_close):
-            macro_index += 1
-        detail = regimes[macro_index] if macro_index >= 0 else {"regime": "UNAVAILABLE"}
-        mapped.append((bool(detail.get("long_ok")), bool(detail.get("short_ok"))))
-        details.append({**detail, "source_time": int(hourly[macro_index]["time"]) if macro_index >= 0 else None})
+    mapped = [(bool(detail.get("long_ok")), bool(detail.get("short_ok"))) for detail in regimes]
+    details = [{**detail, "source_time": int(bar["time"])}
+               for bar, detail in zip(ordered, regimes)]
     return mapped, details
 
 
@@ -1768,7 +1760,7 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
     for index, bar in enumerate(bars):
         explicit_neutral = False
         while (macro_index + 1 < len(hourly)
-               and hourly[macro_index + 1]["time"] + 3600 <= bar["time"]):
+               and hourly[macro_index + 1]["time"] + 3600 <= bar["time"] + interval_seconds):
             macro_index += 1
         if is_ou:
             slope = slopes[index]
@@ -1791,12 +1783,14 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
                      "NEUTRAL" if explicit_neutral else
                      "SIDEWAYS" if long_ok and short_ok else "UNAVAILABLE")
         points.append({"time": bar["time"], "source_time": source_time,
+                       "hourly_source_time": (hourly[macro_index]["time"]
+                                              if macro_regime_mode == "hybrid" and macro_index >= 0 else None),
                        "direction": direction, "long_ok": bool(long_ok), "short_ok": bool(short_ok)})
     return {"enabled": bool(enabled), "source": market_source.upper(),
             "basis": f"EMA{span} slope / {slope_bars} chart bars" if is_ou else
-                     (f"completed 1h · MA{macro_ma_period} diff > 0 + diff2 > 0 / diff < 0 + diff2 < 0"
+                     (f"completed chart candles · MACD-H({macro_macd_fast_period}, {macro_macd_slow_period}, {macro_macd_signal_period}) direction"
                       if macro_regime_mode == "macd_hist_accel" else
-                      f"completed 1h · MA{macro_ma_period} slope + diff2 agree"
+                      f"completed 1h MA{macro_ma_period} slope + completed chart MACD-H direction agree"
                       if macro_regime_mode == "hybrid" else
                       f"completed 1h · actionable-time aligned · MA{macro_ma_period} slope"
                       if macro_bars is not None else "replay trend fallback"),
@@ -1903,8 +1897,19 @@ def _run_crypto_backtest_sync(
         else macro_trend_aligned_series(bars_values, span=ou_macro_ema_span,
                                         slope_bars=ou_macro_slope_bars)
     )
-    macd_macro_aligned_list, macd_macro_details = _hourly_macd_acceleration_for_bars(
-        bars, macro_bars or [], interval_seconds,
+    hourly_source_times: List[Optional[int]] = []
+    ordered_hourly = sorted(macro_bars or [], key=lambda item: int(item["time"]))
+    hourly_index = -1
+    for item in bars:
+        signal_close = int(item["time"]) + int(interval_seconds)
+        while (hourly_index + 1 < len(ordered_hourly)
+               and int(ordered_hourly[hourly_index + 1]["time"]) + 3600 <= signal_close):
+            hourly_index += 1
+        hourly_source_times.append(
+            int(ordered_hourly[hourly_index]["time"]) if hourly_index >= 0 else None
+        )
+    macd_macro_aligned_list, macd_macro_details = _chart_macd_acceleration_for_bars(
+        bars,
         ma_period=macro_ma_period,
         fast_period=macro_macd_fast_period, slow_period=macro_macd_slow_period,
         signal_period=macro_macd_signal_period,
@@ -2653,14 +2658,24 @@ def _run_crypto_backtest_sync(
                     **{key: value for key, value in exit_eval.get("condition_enabled", {}).items() if key.startswith("exit_")},
                 }
             latest_evaluation = eval_info
-            macro_detail = macd_macro_details[index] if index < len(macd_macro_details) else {}
+            chart_macro_detail = macd_macro_details[index] if index < len(macd_macro_details) else {}
+            macro_detail = chart_macro_detail if macro_regime_mode in {"macd_hist_accel", "hybrid"} else {}
+            hourly_source_time = hourly_source_times[index] if index < len(hourly_source_times) else None
             latest_evaluation.update({
                 "macro_regime_mode": macro_regime_mode,
                 "macro_histogram": macro_detail.get("histogram"),
                 "macro_histogram_zone": macro_detail.get("histogram_zone"),
                 "macro_histogram_slope": macro_detail.get("histogram_slope"),
                 "macro_acceleration_regime": macro_detail.get("regime"),
-                "macro_source_time": macro_detail.get("source_time"),
+                "macro_source_time": (chart_macro_detail.get("source_time")
+                                      if macro_regime_mode in {"macd_hist_accel", "hybrid"}
+                                      else hourly_source_time),
+                "macro_hourly_source_time": hourly_source_time if macro_regime_mode == "hybrid" else None,
+                "macro_source": (f"{market_source.upper()}_COMPLETED_CHART"
+                                 if macro_regime_mode == "macd_hist_accel" else
+                                 f"{market_source.upper()}_COMPLETED_1H+CHART"
+                                 if macro_regime_mode == "hybrid" else
+                                 f"{market_source.upper()}_COMPLETED_1H"),
                 "macro_macd_fast_period": macro_macd_fast_period,
                 "macro_macd_slow_period": macro_macd_slow_period,
                 "macro_macd_signal_period": macro_macd_signal_period,
@@ -2813,29 +2828,42 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     if macro_regime_mode not in {"ma_slope", "macd_hist_accel", "hybrid"}:
         raise ValueError("Unsupported macro regime mode")
     if not 2 <= macro_macd_fast_period <= 100:
-        raise ValueError("Hourly MACD fast period must be between 2 and 100")
+        raise ValueError("Chart MACD fast period must be between 2 and 100")
     if not 3 <= macro_macd_slow_period <= 200 or macro_macd_slow_period <= macro_macd_fast_period:
-        raise ValueError("Hourly MACD slow period must exceed fast and be at most 200")
+        raise ValueError("Chart MACD slow period must exceed fast and be at most 200")
     if not 2 <= macro_macd_signal_period <= 100:
-        raise ValueError("Hourly MACD signal period must be between 2 and 100")
+        raise ValueError("Chart MACD signal period must be between 2 and 100")
     if not 1 <= macro_macd_confirm_bars <= 12:
         raise ValueError("Macro MACD confirmation must be between 1 and 12 bars")
     if market_source not in {"binance", "lighter"}:
         raise ValueError("Unsupported crypto replay market source")
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
-    macro_warmup = macro_macd_slow_period + macro_macd_signal_period + macro_macd_confirm_bars + 4
     macro_limit = min(500, max(125, math.ceil(min(500, limit) * interval_seconds / 3600)
-                               + max(macro_ma_period + 2, macro_warmup)))
+                               + macro_ma_period + 2))
+    needs_hourly = not (
+        strategy_mode in {"macd_reversal", "macd_strength_scaleout"}
+        and macro_regime_mode == "macd_hist_accel"
+    )
     if market_source == "lighter":
-        candle_res, macro_res = await asyncio.gather(
-            get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit)),
-            get_lighter_crypto_candles(symbol, interval="1h", limit=macro_limit),
-        )
+        if needs_hourly:
+            candle_res, macro_res = await asyncio.gather(
+                get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit)),
+                get_lighter_crypto_candles(symbol, interval="1h", limit=macro_limit),
+            )
+        else:
+            candle_res = await get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit))
+            macro_res = {"success": True, "bars": []}
     else:
-        candle_res, macro_res = await asyncio.gather(
-            get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False),
-            get_crypto_candles(symbol, interval="1h", limit=macro_limit, include_markers=False),
-        )
+        if needs_hourly:
+            candle_res, macro_res = await asyncio.gather(
+                get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False),
+                get_crypto_candles(symbol, interval="1h", limit=macro_limit, include_markers=False),
+            )
+        else:
+            candle_res = await get_crypto_candles(
+                symbol, interval=interval, limit=min(500, limit), include_markers=False,
+            )
+            macro_res = {"success": True, "bars": []}
     bars = candle_res.get("bars", [])
     now_seconds = int(time.time())
     bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]

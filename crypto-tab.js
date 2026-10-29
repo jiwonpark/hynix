@@ -1363,7 +1363,7 @@
       // The hourly gate is real for these strategies even when their other
       // conditions live in a dedicated detail panel. Never hide its switch.
       if (mode !== "ou_quant")
-        wiredReplayRows.rowCondEntryMaStack1h = "Wider trend filter · completed 1h MA slope (period above chart)";
+        wiredReplayRows.rowCondEntryMaStack1h = "Wider trend filter · configured completed-candle regime";
       [...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels)].forEach((id) => {
         const row = lid(id);
         if (!row) return;
@@ -1708,6 +1708,7 @@
         `;
       }
       if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
+        const chartInterval = this.interval || "5m";
         const live = this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {};
         const checked = (key) => live[key] !== false ? "checked" : "";
         const macroMode = ["ma_slope", "macd_hist_accel", "hybrid"].includes(live.macro_regime_mode)
@@ -1717,7 +1718,7 @@
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div><strong style="font-size:14px;color:#0f172a;text-transform:uppercase;">〽️ MACD Histogram Reversal</strong>
-              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed bars only. Negative trough = long; positive peak = short. The shared Macro Trend 1h switch is a real directional entry gate.</p></div>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed bars only. Negative trough = long; positive peak = short. The wider-trend switch is a real directional entry gate.</p></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;font-weight:700;color:#475569;">
               <label>Fast <input id="crypto_macdFastPeriod" type="number" min="2" max="100" step="1" value="${Number(live.macd_fast_period ?? 12)}" style="width:52px"></label>
               <label>Slow <input id="crypto_macdSlowPeriod" type="number" min="3" max="200" step="1" value="${Number(live.macd_slow_period ?? 26)}" style="width:52px"></label>
@@ -1727,29 +1728,29 @@
           </div>
           <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 12px;padding:9px 10px;border:1px solid #c4b5fd;border-radius:7px;background:#f5f3ff;font-size:11px;font-weight:700;color:#4c1d95;">
             <span style="background:#7c3aed;color:#fff;border-radius:999px;padding:2px 7px;font-size:9px;">NEW</span>
-            <label>1h regime
-              <select id="crypto_macroRegimeMode" aria-label="Hourly MACD macro regime method" style="height:27px;border:1px solid #c4b5fd;border-radius:4px;background:#fff;">
-                <option value="ma_slope" ${macroMode === "ma_slope" ? "selected" : ""}>MA slope</option>
-                <option value="macd_hist_accel" ${macroMode === "macd_hist_accel" ? "selected" : ""}>MA Diff + Accel</option>
+            <label>Regime
+              <select id="crypto_macroRegimeMode" aria-label="Completed-candle regime method" style="height:27px;border:1px solid #c4b5fd;border-radius:4px;background:#fff;">
+                <option value="ma_slope" ${macroMode === "ma_slope" ? "selected" : ""}>1h MA slope</option>
+                <option value="macd_hist_accel" ${macroMode === "macd_hist_accel" ? "selected" : ""}>Chart MACD-H zone + slope</option>
                 <option value="hybrid" ${macroMode === "hybrid" ? "selected" : ""}>Hybrid (both agree)</option>
               </select>
             </label>
-            <label id="crypto_lblMacroMaPeriod" style="display:inline-flex;align-items:center;gap:6px;">1h MA Period
+            <label id="crypto_lblMacroMaPeriod" style="display:inline-flex;align-items:center;gap:6px;">1h MA Period (MA/Hybrid)
               <input id="crypto_macroMaPeriodSlider" type="range" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="vertical-align:middle;width:85px;cursor:pointer;">
               <input id="crypto_macroMaPeriodVal" aria-label="Hourly macro MA period" type="number" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="width:48px;">
             </label>
-            <input id="crypto_macroMacdFastPeriod" type="hidden" value="${Number(live.macro_macd_fast_period ?? live.macro_ma_period ?? 60)}">
-            <input id="crypto_macroMacdSlowPeriod" type="hidden" value="${Number(live.macro_macd_slow_period ?? 26)}">
-            <input id="crypto_macroMacdSignalPeriod" type="hidden" value="${Number(live.macro_macd_signal_period ?? 9)}">
+            <label>Chart MACD Fast <input id="crypto_macroMacdFastPeriod" aria-label="Chart regime MACD fast period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_fast_period ?? 12)}" style="width:48px;"></label>
+            <label>Slow <input id="crypto_macroMacdSlowPeriod" aria-label="Chart regime MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live.macro_macd_slow_period ?? 26)}" style="width:48px;"></label>
+            <label>Signal <input id="crypto_macroMacdSignalPeriod" aria-label="Chart regime MACD signal period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_signal_period ?? 9)}" style="width:48px;"></label>
             <input id="crypto_macroMacdConfirmBars" type="hidden" value="${Number(live.macro_macd_confirm_bars ?? 1)}">
-            <span id="crypto_macroRegimeReadout">Completed 1h · MA Diff + Accel · diff > 0 + diff2 > 0 (green) · diff < 0 + diff2 < 0 (red)</span>
+            <span id="crypto_macroRegimeReadout">Completed ${chartInterval} · MACD-H(${Number(live.macro_macd_fast_period ?? 12)}, ${Number(live.macro_macd_slow_period ?? 26)}, ${Number(live.macro_macd_signal_period ?? 9)}) · H &lt; 0 and rising = long · H &gt; 0 and falling = short</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
             <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
               <div style="${row}"><input id="crypto_macdUseEntrySignalNegative" type="checkbox" style="${toggle}" ${checked("use_macd_signal_negative")}><span>Long entry / short exit: Signal &lt; 0</span><span id="crypto_macdStatusEntrySignal" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="crypto_macdUseEntryHistogramNegative" type="checkbox" style="${toggle}" ${checked("use_macd_hist_negative")}><span>Long entry / short exit: Histogram &lt; 0</span><span id="crypto_macdStatusEntryHistogram" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="crypto_macdUseEntryReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal")}><span>Long entry / short exit: trough turns up</span><span id="crypto_macdStatusEntryReversal" class="condBadge neutral">WAITING</span></div>
-              <div style="${row}"><span id="crypto_macdMacroConditionLabel">Entry direction agrees with completed 1h macro regime</span><span id="crypto_macdStatusMacro" class="condBadge neutral">WAITING</span></div>
+              <div style="${row}"><span id="crypto_macdMacroConditionLabel">Entry direction agrees with completed ${chartInterval} MACD-H regime</span><span id="crypto_macdStatusMacro" class="condBadge neutral">WAITING</span></div>
               ${mode === "macd_strength_scaleout" ? `<div style="${row}"><input id="crypto_macdUseStrength" type="checkbox" style="${toggle}" ${checked("use_macd_strength")}><span>Rebound ≥ <input id="crypto_macdStrengthPct" type="number" min="0" max="1000" step="1" value="${Number(live.macd_strength_min_pct ?? 30)}" style="width:58px">%</span><span id="crypto_macdStatusEntryStrength" class="condBadge neutral">WAITING</span></div>` : ""}
             </div>
             <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · positive set for short</strong>
@@ -2929,7 +2930,7 @@
       const macro_regime_mode = ["ma_slope", "macd_hist_accel", "hybrid"].includes(requestedMode)
         ? requestedMode : "ma_slope";
       const macroMaPeriod = Math.max(2, Math.trunc(numeric("crypto_macroMaPeriodSlider", "macro_ma_period", numeric("crypto_macroMaPeriod", "macro_ma_period", 60))));
-      const macroFast = Math.max(2, Math.trunc(numeric("crypto_macroMacdFastPeriod", "macro_macd_fast_period", macroMaPeriod)));
+      const macroFast = Math.max(2, Math.trunc(numeric("crypto_macroMacdFastPeriod", "macro_macd_fast_period", 12)));
       const macroSlow = Math.max(macroFast + 1, Math.trunc(numeric("crypto_macroMacdSlowPeriod", "macro_macd_slow_period", 26)));
       const macroSignal = Math.max(2, Math.trunc(numeric("crypto_macroMacdSignalPeriod", "macro_macd_signal_period", 9)));
       return {
@@ -3137,15 +3138,15 @@
       ];
       if (currentMode !== "ou_quant" && currentMode !== "ma_stack") {
         const macroLabel = settings.macro_regime_mode === "macd_hist_accel"
-          ? `Wider trend filter · completed 1h MA${settings.macro_ma_period} diff > 0 + diff2 > 0 (green) / diff < 0 + diff2 < 0 (red)`
+          ? `Wider trend filter · completed ${this.interval} MACD-H(${settings.macro_macd_fast_period}, ${settings.macro_macd_slow_period}, ${settings.macro_macd_signal_period}) zone + slope`
           : settings.macro_regime_mode === "hybrid"
-            ? `Wider trend filter · 1h MA${settings.macro_ma_period} slope + diff2 agree`
+            ? `Wider trend filter · 1h MA${settings.macro_ma_period} slope + completed ${this.interval} MACD-H agree`
             : `Wider trend filter · 1h MA${settings.macro_ma_period} slope`;
         this.setText("valCondEntryMaStack1h", macroLabel);
         const label = lid("rowCondEntryMaStack1h")?.querySelector(".condLabel");
         if (label) label.title = settings.macro_regime_mode === "ma_slope"
           ? "Direction of the completed hourly moving average; period is adjustable with slider"
-          : "Direction of completed-hour MA diff > 0 and diff2 > 0 (green) / diff < 0 and diff2 < 0 (red)";
+          : `Completed ${this.interval} MACD histogram must be negative and rising for long, or positive and falling for short`;
       }
       rules.forEach(([suffix, key, name]) => {
         const input = lid(`chkCond${suffix}`);
@@ -3283,19 +3284,19 @@
         const regimeName = result?.latest_evaluation?.macro_acceleration_regime || "UNAVAILABLE";
         const macroConditionLabel = $("crypto_macdMacroConditionLabel");
         if (macroConditionLabel) macroConditionLabel.textContent = regimeMode === "macd_hist_accel"
-          ? `Entry direction agrees with completed 1h MA${settings.macro_ma_period} diff + diff2 regime`
+          ? `Entry direction agrees with completed ${this.interval} MACD-H regime`
           : regimeMode === "hybrid"
-            ? `Entry direction agrees with both 1h MA slope and MA${settings.macro_ma_period} diff2`
+            ? `Entry direction agrees with both 1h MA slope and ${this.interval} MACD-H regime`
             : "Entry direction agrees with completed 1h MA slope";
         const regimeReadout = $("crypto_macroRegimeReadout");
         if (regimeReadout) regimeReadout.textContent = regimeMode === "ma_slope"
           ? `Completed 1h MA${settings.macro_ma_period} slope`
-          : `MA${settings.macro_ma_period} · ${regimeName} · diff ${Number.isFinite(regimeHistogram) ? `${regimeHistogram >= 0 ? "+" : ""}${regimeHistogram.toFixed(2)}` : "—"} (${regimeZone.toLowerCase()}) · diff2 ${Number.isFinite(regimeSlope) ? `${regimeSlope >= 0 ? "+" : ""}${regimeSlope.toFixed(2)}` : "—"} · completed 1h`;
+          : `MACD-H(${settings.macro_macd_fast_period}, ${settings.macro_macd_slow_period}, ${settings.macro_macd_signal_period}) · ${regimeName} · H ${Number.isFinite(regimeHistogram) ? `${regimeHistogram >= 0 ? "+" : ""}${regimeHistogram.toFixed(4)}` : "—"} (${regimeZone.toLowerCase()}) · slope ${Number.isFinite(regimeSlope) ? `${regimeSlope >= 0 ? "+" : ""}${regimeSlope.toFixed(4)}` : "—"} · completed ${this.interval}`;
         const rows = [
           ["EntrySignal", "entry_signal_zone", null, "Directional MACD signal zone"],
           ["EntryHistogram", "entry_histogram_zone", null, "Directional histogram zone"],
           ["EntryReversal", "entry_histogram_reversal", null, "Directional trough/peak reversal"],
-          ["Macro", "entry_ma_stack_1h", null, "Completed 1h macro trend aligns with candidate direction"],
+          ["Macro", "entry_ma_stack_1h", null, "Configured completed-candle regime aligns with candidate direction"],
           ...(this.currentParadigm === "macd_strength_scaleout" ? [["EntryStrength", "entry_strength", "use_macd_strength", "Configured rebound strength reached"]] : []),
           ["ExitSignal", "exit_signal_zone", null, "Opposite directional MACD signal zone"],
           ["ExitHistogram", "exit_histogram_zone", null, "Opposite directional histogram zone"],
@@ -3314,7 +3315,7 @@
         const source = $("crypto_macdStatusSource");
         const candidate = Number(result?.latest_evaluation?.candidate_side) > 0 ? "LONG" : "SHORT";
         if (source) source.textContent = result?.latest_condition_time
-          ? `PAPER · ${candidate} candidate · ${regimeMode === "ma_slope" ? "1h MA slope" : `1h MACD-H direction ${regimeName}`} · completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · same completed-bar rules deploy live`
+          ? `PAPER · ${candidate} candidate · ${regimeMode === "ma_slope" ? "1h MA slope" : `${this.interval} MACD-H direction ${regimeName}`} · completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · same completed-bar rules deploy live`
           : "PAPER · Awaiting completed-candle replay";
         return;
       }
@@ -3769,12 +3770,13 @@
       const live = { ...bot, ...(bot.strategy_params || {}) };
       const mode = ["ma_slope", "macd_hist_accel", "hybrid"].includes(live.macro_regime_mode)
         ? live.macro_regime_mode : "ma_slope";
-      const maPeriod = Number(live.macro_ma_period ?? live.macro_macd_fast_period ?? 60);
+      const maPeriod = Number(live.macro_ma_period ?? 60);
+      const fastPeriod = Number(live.macro_macd_fast_period ?? 12);
       const desired = [
         ["crypto_macroRegimeMode", mode],
         ["crypto_macroMaPeriodSlider", String(maPeriod)],
         ["crypto_macroMaPeriodVal", String(maPeriod)],
-        ["crypto_macroMacdFastPeriod", String(maPeriod)],
+        ["crypto_macroMacdFastPeriod", String(fastPeriod)],
         ["crypto_macroMacdSlowPeriod", String(Number(live.macro_macd_slow_period ?? 26))],
         ["crypto_macroMacdSignalPeriod", String(Number(live.macro_macd_signal_period ?? 9))],
         ["crypto_macroMacdConfirmBars", String(Number(live.macro_macd_confirm_bars ?? 1))],
@@ -3793,20 +3795,21 @@
         $("crypto_macroMaPeriod").value = String(maPeriod);
       }
       if (!changed) return false;
+      const liveInterval = bot.strategy_interval || "5m";
       const macroLabel = mode === "macd_hist_accel"
-        ? `Wider trend filter · completed 1h MA${maPeriod} diff > 0 + diff2 > 0 (green) / diff < 0 + diff2 < 0 (red)`
+        ? `Wider trend filter · completed ${liveInterval} MACD-H(${fastPeriod}, ${Number(live.macro_macd_slow_period ?? 26)}, ${Number(live.macro_macd_signal_period ?? 9)}) zone + slope`
         : mode === "hybrid"
-          ? `Wider trend filter · 1h MA${maPeriod} slope + diff2 agree`
+          ? `Wider trend filter · 1h MA${maPeriod} slope + completed ${liveInterval} MACD-H agree`
           : `Wider trend filter · 1h MA${maPeriod} slope`;
       this.setText("valCondEntryMaStack1h", macroLabel);
       this.setText("macdMacroConditionLabel", mode === "macd_hist_accel"
-        ? `Entry direction agrees with completed 1h MA${maPeriod} diff + diff2 regime`
+        ? `Entry direction agrees with completed ${liveInterval} MACD-H regime`
         : mode === "hybrid"
-          ? `Entry direction agrees with both 1h MA slope and MA${maPeriod} diff2`
+          ? `Entry direction agrees with both 1h MA slope and ${liveInterval} MACD-H regime`
           : "Entry direction agrees with completed 1h MA slope");
       this.setText("macroRegimeReadout", mode === "ma_slope"
         ? `Saved live · completed 1h MA${maPeriod} slope · updating replay…`
-        : `Saved live · completed 1h MA${maPeriod} diff + diff2 · updating replay…`);
+        : `Saved live · completed ${liveInterval} MACD-H(${fastPeriod}, ${Number(live.macro_macd_slow_period ?? 26)}, ${Number(live.macro_macd_signal_period ?? 9)}) · updating replay…`);
       if (this.initialized) this.requestBacktest();
       return true;
     },

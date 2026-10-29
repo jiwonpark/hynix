@@ -1077,22 +1077,20 @@ def _ema_series(values: List[float], period: int) -> List[Optional[float]]:
 
 def macd_histogram_acceleration_regime_series(
     prices: List[float], *,
-    ma_period: int = 24,
+    ma_period: int = 12,
     confirm_bars: int = 2,
     **kwargs: Any,
 ) -> List[Dict[str, Any]]:
-    """Causal completed-candle trend regime from single MA diff and diff2 (acceleration).
+    """Causal regime from MACD histogram zone and its completed-bar slope.
 
-    - diff = MA[t] - MA[t-1] (1st-order difference / slope)
-    - diff2 = diff[t] - diff[t-1] = MA[t] - 2*MA[t-1] + MA[t-2] (2nd-order difference / acceleration)
-    - GREEN (BULL): diff > 0 and diff2 > 0
-    - RED (BEAR): diff < 0 and diff2 < 0
-    - NEUTRAL: otherwise
-
-    Crossing zero on diff immediately invalidates the held regime.
-    Confirmation prevents a single noisy bar from flipping direction.
+    A negative histogram turning upward is bullish; a positive histogram
+    turning downward is bearish. Both the histogram value and its first
+    difference are therefore real predicates. Confirmation prevents a single
+    noisy candle from establishing a new regime.
     """
-    w = max(2, int(kwargs.get("macro_ma_period") or kwargs.get("ma_period") or kwargs.get("fast_period") or ma_period))
+    fast = max(2, int(kwargs.get("fast_period") or ma_period))
+    slow = max(fast + 1, int(kwargs.get("slow_period") or 26))
+    signal = max(2, int(kwargs.get("signal_period") or 9))
     confirmation = max(1, int(confirm_bars))
     values = [float(value) for value in prices]
     output: List[Dict[str, Any]] = [{
@@ -1100,36 +1098,34 @@ def macd_histogram_acceleration_regime_series(
         "short_ok": False, "histogram": None, "histogram_slope": None,
         "diff": None, "diff2": None, "ma_diff": None, "ma_accel": None,
     } for _ in values]
-    if len(values) < w + 2:
+    if len(values) < slow + signal + 1:
         return output
 
-    ma = _ema_series(values, w)
+    fast_ema = _ema_series(values, fast)
+    slow_ema = _ema_series(values, slow)
+    first_macd_index = slow - 1
+    macd = [float(fast_ema[index]) - float(slow_ema[index])
+            for index in range(first_macd_index, len(values))
+            if fast_ema[index] is not None and slow_ema[index] is not None]
+    signal_line = _ema_series(macd, signal)
+    histogram: List[Optional[float]] = [None] * len(values)
+    for compact_index, signal_value in enumerate(signal_line):
+        if signal_value is not None:
+            histogram[first_macd_index + compact_index] = macd[compact_index] - float(signal_value)
 
     regime = 0
     pending = 0
     pending_count = 0
 
     for index in range(len(values)):
-        if index < 2 or ma[index] is None or ma[index - 1] is None or ma[index - 2] is None:
+        if index < 1 or histogram[index] is None or histogram[index - 1] is None:
             continue
 
-        ma_curr = float(ma[index])
-        ma_prev = float(ma[index - 1])
-        ma_prev2 = float(ma[index - 2])
-
-        diff = ma_curr - ma_prev
-        diff2 = diff - (ma_prev - ma_prev2)  # ma_curr - 2.0 * ma_prev + ma_prev2
-
-        diff_direction = 1 if diff > 0 else (-1 if diff < 0 else 0)
-        if regime and regime != diff_direction:
-            regime = 0
-            pending = 0
-            pending_count = 0
-
-        # GREEN: diff > 0 and diff2 > 0; RED: diff < 0 and diff2 < 0
-        if diff > 0 and diff2 > 0:
+        hist = float(histogram[index])
+        slope = hist - float(histogram[index - 1])
+        if hist < 0 and slope > 0:
             desired = 1
-        elif diff < 0 and diff2 < 0:
+        elif hist > 0 and slope < 0:
             desired = -1
         else:
             desired = 0
@@ -1147,19 +1143,19 @@ def macd_histogram_acceleration_regime_series(
                 regime = desired
                 pending_count = 0
 
+        active_direction = regime if desired == regime else 0
         output[index] = {
-            "regime": "BULL" if regime > 0 else ("BEAR" if regime < 0 else "NEUTRAL"),
-            "direction": regime,
-            "long_ok": regime > 0 and diff_direction > 0,
-            "short_ok": regime < 0 and diff_direction < 0,
-            "diff": float(diff),
-            "diff2": float(diff2),
-            "ma_diff": float(diff),
-            "ma_accel": float(diff2),
-            "histogram": float(diff),
-            "histogram_zone": "POSITIVE" if diff_direction > 0 else (
-                "NEGATIVE" if diff_direction < 0 else "ZERO"),
-            "histogram_slope": float(diff2),
+            "regime": "BULL" if active_direction > 0 else ("BEAR" if active_direction < 0 else "NEUTRAL"),
+            "direction": active_direction,
+            "long_ok": active_direction > 0,
+            "short_ok": active_direction < 0,
+            "diff": hist,
+            "diff2": slope,
+            "ma_diff": hist,
+            "ma_accel": slope,
+            "histogram": hist,
+            "histogram_zone": "POSITIVE" if hist > 0 else ("NEGATIVE" if hist < 0 else "ZERO"),
+            "histogram_slope": slope,
         }
     return output
 
@@ -1350,7 +1346,14 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         fast = max(2, int(params.get("macd_fast_period", 12)))
         slow = max(fast + 1, int(params.get("macd_slow_period", 26)))
         signal = max(2, int(params.get("macd_signal_period", 9)))
-        return slow + signal + 1
+        required = slow + signal + 1
+        if (bool(params.get("use_ma_stack_1h", True))
+                and params.get("macro_regime_mode", "ma_slope") in {"macd_hist_accel", "hybrid"}):
+            regime_fast = max(2, int(params.get("macro_macd_fast_period", 12)))
+            regime_slow = max(regime_fast + 1, int(params.get("macro_macd_slow_period", 26)))
+            regime_signal = max(2, int(params.get("macro_macd_signal_period", 9)))
+            required = max(required, regime_slow + regime_signal + 1)
+        return required
     if strategy_mode == "adaptive_tranche" and bool(params.get("use_ma_stack", False)):
         return 60
     return 25
