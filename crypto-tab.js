@@ -455,9 +455,9 @@
       },
       macd_reversal: {
         id: "macd_reversal", name: "MACD Reversal", icon: "〽️",
-        badge: "MACD · BIDIRECTIONAL REVERSAL · 1H ALIGNED",
+        badge: "MACD · BIDIRECTIONAL REVERSAL · CHART-CANDLE REGIME",
         title: "↕ MACD Directional Reversal Entry",
-        desc: "Long a confirmed negative trough; short a confirmed positive peak. The enabled 1h macro rule must agree with the entry direction.",
+        desc: "Long a confirmed negative trough; short a confirmed positive peak. The enabled completed-chart regime must agree with the entry direction.",
         tpTitle: "🎯 Opposite MACD Reversal / Campaign Flip",
         tpDesc: "An opposite pattern exits owned inventory reduce-only, then permits the new direction after the campaign is flat.",
         entryLabels: {
@@ -3145,7 +3145,7 @@
         this.setText("valCondEntryMaStack1h", macroLabel);
         const label = lid("rowCondEntryMaStack1h")?.querySelector(".condLabel");
         if (label) label.title = settings.macro_regime_mode === "ma_slope"
-          ? "Direction of the completed hourly moving average; period is adjustable with slider"
+          ? `Direction of the completed ${this.interval} moving average; period is adjustable with slider`
           : `Completed ${this.interval} MACD histogram must be negative and rising for long, or positive and falling for short`;
       }
       rules.forEach(([suffix, key, name]) => {
@@ -3452,7 +3452,9 @@
         row.className = "condRow";
         const label = document.createElement("span");
         label.className = "condLabel";
-        label.textContent = key.replace(/^entry_/, "Entry · ").replace(/^exit_/, "Exit · ").replaceAll("_", " ");
+        label.textContent = key === "entry_ma_stack_1h" && ["macd_reversal", "macd_strength_scaleout"].includes(bot?.strategy_mode)
+          ? "Entry · wider trend chart regime"
+          : key.replace(/^entry_/, "Entry · ").replace(/^exit_/, "Exit · ").replaceAll("_", " ");
         const badge = document.createElement("span");
         const toggle = toggleByKey[key];
         const hasPosition = Array.isArray(bot?.tranches) && bot.tranches.length > 0;

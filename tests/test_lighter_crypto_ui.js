@@ -85,6 +85,7 @@ assert.match(macdMarkup, /Completed 5m/);
 assert.match(macdMarkup, /lighterCrypto_macroMaPeriodSlider/);
 assert.match(macdMarkup, /Chart regime MA period/);
 assert.doesNotMatch(macdMarkup, />1h MA slope</);
+assert.doesNotMatch(macdMarkup, /1H ALIGNED|enabled 1h macro rule/);
 assert.doesNotMatch(macdMarkup, /Z window|Enter \|Z\||Release \|Z\||slope Z/);
 assert.match(macdMarkup, /Hybrid \(both agree\)/);
 assert.match(macdMarkup, /NEW/);
