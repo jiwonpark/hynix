@@ -9,6 +9,7 @@ from backend.lighter_strategy import (
     LIVE_STRATEGIES,
     evaluate_macd_reversal_signals,
     evaluate_macd_strength_scaleout_signals,
+    evaluate_macd_zero_cross_signals,
     evaluate_strategy_signal,
     macd_histogram_acceleration_regime_series,
     required_strategy_bars,
@@ -93,6 +94,43 @@ def test_macd_entry_evaluation_is_independent_of_inventory():
     held_entry, _, _, _ = evaluate_macd_reversal_signals(prices(5.9), position_side=1)
     assert flat_entry is True
     assert held_entry is True
+
+
+def test_macd_zero_cross_is_symmetric_and_position_independent():
+    long_entry, long_side, _, long_details = evaluate_macd_zero_cross_signals(prices(1.0))
+    held_entry, _, _, _ = evaluate_macd_zero_cross_signals(prices(1.0), position_side=1)
+    assert long_entry is True and held_entry is True and long_side == 1
+    assert long_details["previous_histogram"] < 0 < long_details["histogram"]
+    assert long_details["signal"] < 0
+    short_entry, short_side, long_exit, short_details = evaluate_macd_zero_cross_signals(
+        prices(4.14), position_side=1)
+    assert short_entry is True and short_side == -1 and long_exit is True
+    assert short_details["previous_histogram"] > 0 > short_details["histogram"]
+    assert short_details["signal"] > 0
+
+
+def test_macd_zero_cross_switches_dispatch_and_persist():
+    entry, _, _, _ = evaluate_macd_zero_cross_signals(
+        prices(1.0), use_macd_zero_cross=False, use_macd_signal_zone=False)
+    assert entry is False
+    assert "macd_zero_cross" in LIVE_STRATEGIES
+    assert required_strategy_bars("macd_zero_cross", {}) == 36
+    dispatched, side, _, details = evaluate_strategy_signal("macd_zero_cross", prices(1.0), {})
+    assert dispatched is True and side == 1 and details["strategy"] == "macd_zero_cross"
+
+    async def run():
+        with tempfile.TemporaryDirectory() as directory:
+            for bot_type in (CryptoBot, LighterCryptoBot):
+                bot = bot_type(object(), Path(directory) / f"zero_{bot_type.__name__}.json")
+                state = await bot.configure({
+                    "strategy_mode": "macd_zero_cross",
+                    "use_macd_zero_cross": True,
+                    "use_macd_signal_zone": False,
+                })
+                assert state["strategy_mode"] == "macd_zero_cross"
+                assert state["strategy_params"]["use_macd_zero_cross"] is True
+                assert state["strategy_params"]["use_macd_signal_zone"] is False
+    asyncio.run(run())
 
 
 def test_strength_scaleout_entry_filter_is_real_and_inventory_independent():

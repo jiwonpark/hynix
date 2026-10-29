@@ -61,6 +61,7 @@ DEFAULT_STATE = {
     "macd_fast_period": 12, "macd_slow_period": 26, "macd_signal_period": 9,
     "use_macd_signal_negative": True, "use_macd_hist_negative": True, "use_macd_hist_reversal": True,
     "use_macd_signal_positive": True, "use_macd_hist_positive": True, "use_macd_hist_reversal_exit": True,
+    "use_macd_zero_cross": True, "use_macd_signal_zone": True,
     "long_multiplier": 1.0, "short_multiplier": 1.0, "entry_direction_mode": "two_way",
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
@@ -147,6 +148,8 @@ class CryptoBot:
             "use_macd_signal_positive": bool(self.state.get("use_macd_signal_positive", True)),
             "use_macd_hist_positive": bool(self.state.get("use_macd_hist_positive", True)),
             "use_macd_hist_reversal_exit": bool(self.state.get("use_macd_hist_reversal_exit", True)),
+            "use_macd_zero_cross": bool(self.state.get("use_macd_zero_cross", True)),
+            "use_macd_signal_zone": bool(self.state.get("use_macd_signal_zone", True)),
             "use_convergence": bool(self.state.get("use_convergence", True)),
             "use_dwell": bool(self.state.get("use_dwell", True)),
             "use_bottoming": bool(self.state.get("use_bottoming", False)),
@@ -373,6 +376,7 @@ class CryptoBot:
             "macd_fast_period", "macd_slow_period", "macd_signal_period",
             "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
             "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
+            "use_macd_zero_cross", "use_macd_signal_zone",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "macro_ma_period", "macro_regime_mode",
             "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
@@ -412,7 +416,8 @@ class CryptoBot:
                         "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit"}:
                 candidate[key] = bool(value)
             elif key in {"use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
-                          "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit"}:
+                          "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
+                          "use_macd_zero_cross", "use_macd_signal_zone"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
@@ -455,7 +460,7 @@ class CryptoBot:
         if candidate["strategy_mode"] == "golden_death_cross":
             if candidate.get("fast_ma_period", 9) >= candidate.get("slow_ma_period", 21):
                 raise ValueError("Slow MA period must be greater than Fast MA period")
-        if candidate["strategy_mode"] == "macd_reversal":
+        if candidate["strategy_mode"] in {"macd_reversal", "macd_zero_cross"}:
             if candidate.get("macd_fast_period", 12) >= candidate.get("macd_slow_period", 26):
                 raise ValueError("MACD slow period must be greater than MACD fast period")
         if candidate.get("macro_macd_fast_period", 12) >= candidate.get("macro_macd_slow_period", 26):
@@ -468,7 +473,8 @@ class CryptoBot:
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",
                  "macro_macd_signal_period", "macro_macd_confirm_bars",
                  "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
-                 "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit")):
+                 "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
+                 "use_macd_zero_cross", "use_macd_signal_zone")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:
                 raise ValueError("Close tracked inventory before changing symbol")
@@ -859,7 +865,7 @@ class CryptoBot:
                 macro_candle_time = None
                 macro_hourly_candle_time = None
                 macro_detail: Dict[str, Any] = {}
-                if (self.state["strategy_mode"] != "ou_quant"
+                if (self.state["strategy_mode"] not in {"ou_quant", "macd_zero_cross"}
                         and self.state.get("use_ma_stack_1h", True)):
                     macro_mode = (str(self.state.get("macro_regime_mode", "ma_slope"))
                                   if self.state["strategy_mode"] in {"macd_reversal", "macd_strength_scaleout"}

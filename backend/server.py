@@ -57,6 +57,7 @@ from .lighter_strategy import (
     evaluate_golden_death_cross_signals,
     evaluate_macd_reversal_signals,
     evaluate_macd_strength_scaleout_signals,
+    evaluate_macd_zero_cross_signals,
     macd_histogram_acceleration_regime_series,
 )
 from .upbit_client import UpbitClient
@@ -1873,6 +1874,8 @@ def _run_crypto_backtest_sync(
     use_macd_signal_positive: bool = True,
     use_macd_hist_positive: bool = True,
     use_macd_hist_reversal_exit: bool = True,
+    use_macd_zero_cross: bool = True,
+    use_macd_signal_zone: bool = True,
     use_macd_strength: bool = True,
     macd_strength_min_pct: float = 30.0,
     use_macd_two_stage_exit: bool = True,
@@ -2624,10 +2627,23 @@ def _run_crypto_backtest_sync(
             "slow_ma_period": slow_w,
         }
 
-    elif strategy_mode in {"macd_reversal", "macd_strength_scaleout"}:
-        macd_evaluator = evaluate_macd_strength_scaleout_signals if strategy_mode == "macd_strength_scaleout" else evaluate_macd_reversal_signals
+    elif strategy_mode in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross"}:
+        macd_evaluator = (evaluate_macd_zero_cross_signals if strategy_mode == "macd_zero_cross" else
+                          evaluate_macd_strength_scaleout_signals if strategy_mode == "macd_strength_scaleout" else
+                          evaluate_macd_reversal_signals)
         extra_macd = ({"use_macd_strength": use_macd_strength, "macd_strength_min_pct": macd_strength_min_pct}
                       if strategy_mode == "macd_strength_scaleout" else {})
+        macd_conditions = ({"use_macd_zero_cross": use_macd_zero_cross,
+                            "use_macd_signal_zone": use_macd_signal_zone}
+                           if strategy_mode == "macd_zero_cross" else {
+                               "use_macd_signal_negative": use_macd_signal_negative,
+                               "use_macd_hist_negative": use_macd_hist_negative,
+                               "use_macd_hist_reversal": use_macd_hist_reversal,
+                               "use_macd_signal_positive": use_macd_signal_positive,
+                               "use_macd_hist_positive": use_macd_hist_positive,
+                               "use_macd_hist_reversal_exit": use_macd_hist_reversal_exit,
+                               "use_ma_stack_1h": use_ma_stack_1h,
+                           })
         fast_w = max(2, int(macd_fast_period))
         slow_w = max(fast_w + 1, int(macd_slow_period))
         signal_w = max(2, int(macd_signal_period))
@@ -2640,28 +2656,18 @@ def _run_crypto_backtest_sync(
             entry_signal, candidate_side, _, entry_eval = macd_evaluator(
                 prefix,
                 macd_fast_period=fast_w, macd_slow_period=slow_w, macd_signal_period=signal_w,
-                use_macd_signal_negative=use_macd_signal_negative,
-                use_macd_hist_negative=use_macd_hist_negative,
-                use_macd_hist_reversal=use_macd_hist_reversal,
-                use_macd_signal_positive=use_macd_signal_positive,
-                use_macd_hist_positive=use_macd_hist_positive,
-                use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
-                use_ma_stack_1h=use_ma_stack_1h,
-                macro_alignment=macro_aligned_list[index],
+                **macd_conditions,
+                **({"macro_alignment": macro_aligned_list[index]}
+                   if strategy_mode != "macd_zero_cross" else {}),
                 evaluation_time=int(bar["time"]), position_side=0,
                 **extra_macd,
             )
             _, _, exit_signal, exit_eval = macd_evaluator(
                 prefix,
                 macd_fast_period=fast_w, macd_slow_period=slow_w, macd_signal_period=signal_w,
-                use_macd_signal_negative=use_macd_signal_negative,
-                use_macd_hist_negative=use_macd_hist_negative,
-                use_macd_hist_reversal=use_macd_hist_reversal,
-                use_macd_signal_positive=use_macd_signal_positive,
-                use_macd_hist_positive=use_macd_hist_positive,
-                use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
-                use_ma_stack_1h=use_ma_stack_1h,
-                macro_alignment=macro_aligned_list[index],
+                **macd_conditions,
+                **({"macro_alignment": macro_aligned_list[index]}
+                   if strategy_mode != "macd_zero_cross" else {}),
                 evaluation_time=int(bar["time"]), position_side=pos_side,
                 **extra_macd,
             )
@@ -2680,20 +2686,21 @@ def _run_crypto_backtest_sync(
             macro_detail = chart_macro_detail if macro_regime_mode in {"macd_hist_accel", "hybrid"} else {}
             hourly_source_time = hourly_source_times[index] if index < len(hourly_source_times) else None
             chart_source_time = int(bar["time"])
-            latest_evaluation.update({
-                "macro_regime_mode": macro_regime_mode,
-                "macro_histogram": macro_detail.get("histogram"),
-                "macro_histogram_zone": macro_detail.get("histogram_zone"),
-                "macro_histogram_slope": macro_detail.get("histogram_slope"),
-                "macro_acceleration_regime": macro_detail.get("regime"),
-                "macro_source_time": chart_source_time if is_macd_strategy else hourly_source_time,
-                "macro_hourly_source_time": None,
-                "macro_source": (f"{market_source.upper()}_COMPLETED_CHART"
-                                 if is_macd_strategy else f"{market_source.upper()}_COMPLETED_1H"),
-                "macro_macd_fast_period": macro_macd_fast_period,
-                "macro_macd_slow_period": macro_macd_slow_period,
-                "macro_macd_signal_period": macro_macd_signal_period,
-            })
+            if strategy_mode != "macd_zero_cross":
+                latest_evaluation.update({
+                    "macro_regime_mode": macro_regime_mode,
+                    "macro_histogram": macro_detail.get("histogram"),
+                    "macro_histogram_zone": macro_detail.get("histogram_zone"),
+                    "macro_histogram_slope": macro_detail.get("histogram_slope"),
+                    "macro_acceleration_regime": macro_detail.get("regime"),
+                    "macro_source_time": chart_source_time if is_macd_strategy else hourly_source_time,
+                    "macro_hourly_source_time": None,
+                    "macro_source": (f"{market_source.upper()}_COMPLETED_CHART"
+                                     if is_macd_strategy else f"{market_source.upper()}_COMPLETED_1H"),
+                    "macro_macd_fast_period": macro_macd_fast_period,
+                    "macro_macd_slow_period": macro_macd_slow_period,
+                    "macro_macd_signal_period": macro_macd_signal_period,
+                })
             latest_conditions = eval_info.get("condition_pass", {})
             latest_condition_time = int(bar["time"])
             series.append({
@@ -2718,7 +2725,9 @@ def _run_crypto_backtest_sync(
                     "exit": bar["value"], "exit_time": bar["time"],
                     "pnl_pct": round(current_pnl * mult * exit_fraction, 4), "multiplier": round(mult, 2),
                     "exit_fraction": round(exit_fraction, 4),
-                    "reason": "macd_first_peak_exit" if first_stage else "macd_final_peak_exit",
+                    "reason": ("macd_first_peak_exit" if first_stage else
+                               "macd_zero_cross_flip" if strategy_mode == "macd_zero_cross" else
+                               "macd_final_peak_exit"),
                 })
                 if first_stage:
                     position["remaining_fraction"] = 1.0 - exit_fraction
@@ -2769,7 +2778,8 @@ def _run_crypto_backtest_sync(
         "entry_signals": entry_signals,
         "entry_trend": _crypto_entry_trend(
             bars, macro_aligned_list,
-            enabled=ou_use_macro_trend if strategy_mode == "ou_quant" else use_ma_stack_1h,
+            enabled=(False if strategy_mode == "macd_zero_cross" else
+                     ou_use_macro_trend if strategy_mode == "ou_quant" else use_ma_stack_1h),
             is_ou=strategy_mode == "ou_quant", span=ou_macro_ema_span,
             slope_bars=ou_macro_slope_bars, interval_seconds=interval_seconds,
             market_source=market_source, macro_bars=macro_bars, macro_ma_period=macro_ma_period,
@@ -2827,6 +2837,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_macd_signal_negative: bool = True, use_macd_hist_negative: bool = True,
                               use_macd_hist_reversal: bool = True, use_macd_signal_positive: bool = True,
                               use_macd_hist_positive: bool = True, use_macd_hist_reversal_exit: bool = True,
+                              use_macd_zero_cross: bool = True, use_macd_signal_zone: bool = True,
                               use_macd_strength: bool = True, macd_strength_min_pct: float = 30.0,
                               use_macd_two_stage_exit: bool = True, macd_first_exit_pct: float = 50.0,
                               base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
@@ -2855,7 +2866,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
     macro_limit = min(500, max(125, math.ceil(min(500, limit) * interval_seconds / 3600)
                                + macro_ma_period + 2))
-    needs_hourly = strategy_mode not in {"macd_reversal", "macd_strength_scaleout"}
+    needs_hourly = strategy_mode not in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross"}
     if market_source == "lighter":
         if needs_hourly:
             candle_res, macro_res = await asyncio.gather(
@@ -2924,6 +2935,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         use_macd_signal_positive=use_macd_signal_positive,
         use_macd_hist_positive=use_macd_hist_positive,
         use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
+        use_macd_zero_cross=use_macd_zero_cross,
+        use_macd_signal_zone=use_macd_signal_zone,
         use_macd_strength=use_macd_strength, macd_strength_min_pct=macd_strength_min_pct,
         use_macd_two_stage_exit=use_macd_two_stage_exit, macd_first_exit_pct=macd_first_exit_pct,
         base_spacing_pct=base_spacing_pct, min_dwell_bars=min_dwell_bars,

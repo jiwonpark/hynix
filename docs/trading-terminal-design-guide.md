@@ -156,3 +156,12 @@ configuration and must be reported in status and used identically by replay. The
 background, PAPER condition badge,
 LIVE evaluation, and source timestamp must all use the selected predicate; neutral direction
 permits neither side rather than fabricating a trend.
+
+The **MACD Zero Cross** strategy is an intentional exception to the wider-trend
+filter above. It has exactly two independently switchable completed-candle
+conditions: histogram zero cross (`−→+` for long, `+→−` for short) and signal
+line on the origin side (`< 0` for long, `> 0` for short). It exposes adjustable
+MACD fast, slow, and signal periods, but no macro/MA regime control. The opposite
+enabled pattern exits and flips direction. Replay entry markers come from the
+position-independent `entry_signals` stream, while fills and exit verdicts may
+still depend on simulated or live position state.
