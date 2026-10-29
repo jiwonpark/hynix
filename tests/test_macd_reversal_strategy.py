@@ -77,7 +77,10 @@ def test_macd_reversal_switches_are_real_and_empty_sets_do_not_fire():
 
 def test_macd_reversal_registered_and_dispatched():
     assert "macd_reversal" in LIVE_STRATEGIES
-    assert required_strategy_bars("macd_reversal", {}) == 36
+    assert required_strategy_bars("macd_reversal", {}) == 61
+    assert required_strategy_bars("macd_reversal", {
+        "macro_regime_mode": "ma_slope", "macro_ma_period": 20,
+    }) == 36
     entry, side, _, details = evaluate_strategy_signal(
         "macd_reversal", prices(5.9), {"use_ma_stack_1h": False})
     assert entry is True
@@ -101,7 +104,7 @@ def test_strength_scaleout_entry_filter_is_real_and_inventory_independent():
     assert weak_details["condition_pass"]["entry_strength"] is False
     assert bypassed is True
     assert "macd_strength_scaleout" in LIVE_STRATEGIES
-    assert required_strategy_bars("macd_strength_scaleout", {}) == 36
+    assert required_strategy_bars("macd_strength_scaleout", {}) == 61
 
 
 def test_strength_scaleout_configuration_persists():

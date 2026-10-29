@@ -129,29 +129,29 @@ Tabs 4 and 5 default the hourly wider-trend regime to **simple MA60 slope**.
 Compare the latest completed hourly MA with its value one completed hour earlier;
 rising permits longs, falling permits shorts, exactly flat permits both. Require
 at least period + 1 completed hourly closes; missing history is UNAVAILABLE. The
-`1h MA` replay field adjusts the period (2–120) and the existing macro-condition
+`Regime MA` replay field adjusts the period (2–120) and the existing macro-condition
 switch enables/disables it. Deploy saves that period through authenticated bot
 configuration; status and replay/live matching include it. OU retains its own
 independently adjustable EMA-slope condition and labels.
 
-Every crypto strategy that evaluates the hourly wider-trend entry condition must
+Every non-MACD crypto strategy that evaluates the hourly wider-trend entry condition must
 show its shared switch as **Wider trend filter · completed 1h MA slope**, alongside
 its own PAPER PASS/WAITING/OFF verdict. Dedicated strategy panels must not hide
-this real rule. The period is adjusted in the chart's 1h MA field and is saved
+this real rule. The period is adjusted in the chart's Regime MA field and is saved
 with the switch through authenticated strategy deployment. OU uses its own
 visible EMA-alignment switch; never override it from a hidden inherited switch.
 Tab 5 MA Stack intentionally bypasses the hourly filter: label it N/A, disable
 the unused hourly period input and retain the 5m full-stack/diff rules.
 
-Tabs 4 and 5 MACD strategies may explicitly select **1h MA slope**, **Chart MACD-H
-zone + slope**, or **Hybrid** for that same wider-trend condition. Chart MACD-H uses the
+Tabs 4 and 5 MACD strategies may explicitly select **Chart MA slope**, **Chart MACD-H
+zone + slope**, or **Hybrid** for that same wider-trend condition. Both indicators use the
 same completed candle array and interval as the strategy chart (5m in the live bot; the
-selected interval in replay), never a separately sampled hourly series. Its fast, slow,
-and signal periods are independently adjustable and saved. BULL / long ok requires the
+selected interval in replay), never a separately sampled hourly series. The MA, MACD fast,
+slow, and signal periods are independently adjustable and saved. BULL / long ok requires the
 MACD histogram to be below zero and rising; BEAR / short ok requires it to be above zero
 and falling; otherwise it is neutral. The configured confirmation count applies causally
-to consecutive completed chart candles. Hybrid requires both the completed-hour MA slope
-and the completed-chart MACD-H regime to agree. All values persist in authenticated live
+to consecutive completed chart candles. Hybrid requires both the completed-chart MA slope
+and completed-chart MACD-H regime to agree. All values persist in authenticated live
 configuration and must be reported in status and used identically by replay. The replay
 background, PAPER condition badge,
 LIVE evaluation, and source timestamp must all use the selected predicate; neutral direction

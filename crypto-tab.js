@@ -599,7 +599,7 @@
         const overlay = document.createElement("div");
         overlay.id = "cryptoTrendOverlay";
         overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
-        overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155" id="cryptoEntryTrendLegend">PAPER ENTRY TREND · awaiting replay</span><label title="Hourly simple MA period for the replay entry filter; saved to live with Deploy" style="font-size:10px;background:#fff;padding:3px;border:1px solid #cbd5e1;border-radius:4px">1h MA <input id="crypto_macroMaPeriod" aria-label="Hourly macro MA period" type="number" min="2" max="120" step="1" value="60" style="width:48px"></label><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="cryptoTrendSmall" class="cryptoTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span title="Reference display only; the entry-filter background uses the strategy rule shown in its legend">MACRO REF:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="cryptoTrendBig" class="cryptoTrendBadge" style="pointer-events:none">1h —</span></div>';
+        overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155" id="cryptoEntryTrendLegend">PAPER ENTRY TREND · awaiting replay</span><label title="Configured wider-trend MA period; MACD strategies use chart candles and other strategies use completed 1h candles" style="font-size:10px;background:#fff;padding:3px;border:1px solid #cbd5e1;border-radius:4px">Regime MA <input id="crypto_macroMaPeriod" aria-label="Wider trend MA period" type="number" min="2" max="120" step="1" value="60" style="width:48px"></label><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="cryptoTrendSmall" class="cryptoTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span title="Reference display only; the entry-filter background uses the strategy rule shown in its legend">MACRO REF:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="cryptoTrendBig" class="cryptoTrendBadge" style="pointer-events:none">1h —</span></div>';
         chartHost.appendChild(overlay);
         this.bindMatchPill(overlay.querySelector("#cryptoMatchPill"));
 
@@ -1730,14 +1730,14 @@
             <span style="background:#7c3aed;color:#fff;border-radius:999px;padding:2px 7px;font-size:9px;">NEW</span>
             <label>Regime
               <select id="crypto_macroRegimeMode" aria-label="Completed-candle regime method" style="height:27px;border:1px solid #c4b5fd;border-radius:4px;background:#fff;">
-                <option value="ma_slope" ${macroMode === "ma_slope" ? "selected" : ""}>1h MA slope</option>
+                <option value="ma_slope" ${macroMode === "ma_slope" ? "selected" : ""}>Chart MA slope</option>
                 <option value="macd_hist_accel" ${macroMode === "macd_hist_accel" ? "selected" : ""}>Chart MACD-H zone + slope</option>
                 <option value="hybrid" ${macroMode === "hybrid" ? "selected" : ""}>Hybrid (both agree)</option>
               </select>
             </label>
-            <label id="crypto_lblMacroMaPeriod" style="display:inline-flex;align-items:center;gap:6px;">1h MA Period (MA/Hybrid)
+            <label id="crypto_lblMacroMaPeriod" style="display:inline-flex;align-items:center;gap:6px;">Chart MA Period (MA/Hybrid)
               <input id="crypto_macroMaPeriodSlider" type="range" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="vertical-align:middle;width:85px;cursor:pointer;">
-              <input id="crypto_macroMaPeriodVal" aria-label="Hourly macro MA period" type="number" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="width:48px;">
+              <input id="crypto_macroMaPeriodVal" aria-label="Chart regime MA period" type="number" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="width:48px;">
             </label>
             <label>Chart MACD Fast <input id="crypto_macroMacdFastPeriod" aria-label="Chart regime MACD fast period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_fast_period ?? 12)}" style="width:48px;"></label>
             <label>Slow <input id="crypto_macroMacdSlowPeriod" aria-label="Chart regime MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live.macro_macd_slow_period ?? 26)}" style="width:48px;"></label>
@@ -3140,8 +3140,8 @@
         const macroLabel = settings.macro_regime_mode === "macd_hist_accel"
           ? `Wider trend filter · completed ${this.interval} MACD-H(${settings.macro_macd_fast_period}, ${settings.macro_macd_slow_period}, ${settings.macro_macd_signal_period}) zone + slope`
           : settings.macro_regime_mode === "hybrid"
-            ? `Wider trend filter · 1h MA${settings.macro_ma_period} slope + completed ${this.interval} MACD-H agree`
-            : `Wider trend filter · 1h MA${settings.macro_ma_period} slope`;
+            ? `Wider trend filter · completed ${this.interval} MA${settings.macro_ma_period} slope + MACD-H agree`
+            : `Wider trend filter · completed ${this.interval} MA${settings.macro_ma_period} slope`;
         this.setText("valCondEntryMaStack1h", macroLabel);
         const label = lid("rowCondEntryMaStack1h")?.querySelector(".condLabel");
         if (label) label.title = settings.macro_regime_mode === "ma_slope"
@@ -3286,11 +3286,11 @@
         if (macroConditionLabel) macroConditionLabel.textContent = regimeMode === "macd_hist_accel"
           ? `Entry direction agrees with completed ${this.interval} MACD-H regime`
           : regimeMode === "hybrid"
-            ? `Entry direction agrees with both 1h MA slope and ${this.interval} MACD-H regime`
-            : "Entry direction agrees with completed 1h MA slope";
+            ? `Entry direction agrees with both ${this.interval} MA slope and MACD-H regime`
+            : `Entry direction agrees with completed ${this.interval} MA slope`;
         const regimeReadout = $("crypto_macroRegimeReadout");
         if (regimeReadout) regimeReadout.textContent = regimeMode === "ma_slope"
-          ? `Completed 1h MA${settings.macro_ma_period} slope`
+          ? `Completed ${this.interval} MA${settings.macro_ma_period} slope`
           : `MACD-H(${settings.macro_macd_fast_period}, ${settings.macro_macd_slow_period}, ${settings.macro_macd_signal_period}) · ${regimeName} · H ${Number.isFinite(regimeHistogram) ? `${regimeHistogram >= 0 ? "+" : ""}${regimeHistogram.toFixed(4)}` : "—"} (${regimeZone.toLowerCase()}) · slope ${Number.isFinite(regimeSlope) ? `${regimeSlope >= 0 ? "+" : ""}${regimeSlope.toFixed(4)}` : "—"} · completed ${this.interval}`;
         const rows = [
           ["EntrySignal", "entry_signal_zone", null, "Directional MACD signal zone"],
@@ -3315,7 +3315,7 @@
         const source = $("crypto_macdStatusSource");
         const candidate = Number(result?.latest_evaluation?.candidate_side) > 0 ? "LONG" : "SHORT";
         if (source) source.textContent = result?.latest_condition_time
-          ? `PAPER · ${candidate} candidate · ${regimeMode === "ma_slope" ? "1h MA slope" : `${this.interval} MACD-H direction ${regimeName}`} · completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · same completed-bar rules deploy live`
+          ? `PAPER · ${candidate} candidate · ${regimeMode === "ma_slope" ? `${this.interval} MA slope` : `${this.interval} MACD-H direction ${regimeName}`} · completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · same completed-bar rules deploy live`
           : "PAPER · Awaiting completed-candle replay";
         return;
       }
@@ -3799,16 +3799,16 @@
       const macroLabel = mode === "macd_hist_accel"
         ? `Wider trend filter · completed ${liveInterval} MACD-H(${fastPeriod}, ${Number(live.macro_macd_slow_period ?? 26)}, ${Number(live.macro_macd_signal_period ?? 9)}) zone + slope`
         : mode === "hybrid"
-          ? `Wider trend filter · 1h MA${maPeriod} slope + completed ${liveInterval} MACD-H agree`
-          : `Wider trend filter · 1h MA${maPeriod} slope`;
+          ? `Wider trend filter · completed ${liveInterval} MA${maPeriod} slope + MACD-H agree`
+          : `Wider trend filter · completed ${liveInterval} MA${maPeriod} slope`;
       this.setText("valCondEntryMaStack1h", macroLabel);
       this.setText("macdMacroConditionLabel", mode === "macd_hist_accel"
         ? `Entry direction agrees with completed ${liveInterval} MACD-H regime`
         : mode === "hybrid"
-          ? `Entry direction agrees with both 1h MA slope and ${liveInterval} MACD-H regime`
-          : "Entry direction agrees with completed 1h MA slope");
+          ? `Entry direction agrees with both ${liveInterval} MA slope and MACD-H regime`
+          : `Entry direction agrees with completed ${liveInterval} MA slope`);
       this.setText("macroRegimeReadout", mode === "ma_slope"
-        ? `Saved live · completed 1h MA${maPeriod} slope · updating replay…`
+        ? `Saved live · completed ${liveInterval} MA${maPeriod} slope · updating replay…`
         : `Saved live · completed ${liveInterval} MACD-H(${fastPeriod}, ${Number(live.macro_macd_slow_period ?? 26)}, ${Number(live.macro_macd_signal_period ?? 9)}) · updating replay…`);
       if (this.initialized) this.requestBacktest();
       return true;

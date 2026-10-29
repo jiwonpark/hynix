@@ -11,20 +11,21 @@ class CryptoEntryTrendTests(unittest.TestCase):
         self.bars = [{'time': 100 * 3600 + i * 300, 'value': 100 + i * .1}
                      for i in range(150)]
 
-    def test_background_uses_hourly_gate_not_opposite_local_trend(self):
+    def test_macd_ma_mode_uses_completed_chart_gate_not_hourly_series(self):
         result = _run_crypto_backtest_sync(self.bars, True, strategy_mode='macd_reversal',
-                                          interval_seconds=300, macro_bars=self.hourly)
+                                          interval_seconds=300, macro_bars=self.hourly,
+                                          macro_ma_period=20)
         points = result['entry_trend']['points']
         self.assertEqual(len(points), len(self.bars))
-        self.assertTrue(all(p['direction'] == 'DOWNTREND' for p in points))
-        for bar, point in zip(self.bars, points):
-            completed = [b for b in self.hourly if b['time'] + 3600 <= bar['time']]
-            self.assertEqual((point['long_ok'], point['short_ok']), hourly_macro_alignment([b['value'] for b in completed]))
-            self.assertEqual(point['source_time'], completed[-1]['time'])
-        future_changed = [dict(b, value=10000) if b['time'] >= self.bars[-1]['time'] else b
-                          for b in self.hourly]
+        self.assertTrue(all(p['direction'] == 'UNAVAILABLE' for p in points[:20]))
+        self.assertTrue(all(p['direction'] == 'UPTREND' for p in points[20:]))
+        self.assertEqual(points[-1]['source_time'], self.bars[-1]['time'])
+        self.assertIn('completed chart candles · MA20 slope', result['entry_trend']['basis'])
+        self.assertEqual(result['latest_evaluation']['macro_source'], 'BINANCE_COMPLETED_CHART')
+        future_changed = [dict(b, value=10000) for b in self.hourly]
         changed = _run_crypto_backtest_sync(self.bars, True, strategy_mode='macd_reversal',
-                                           interval_seconds=300, macro_bars=future_changed)
+                                           interval_seconds=300, macro_bars=future_changed,
+                                           macro_ma_period=20)
         self.assertEqual(result['entry_trend'], changed['entry_trend'])
 
     def test_hourly_and_five_minute_backgrounds_change_at_same_actionable_time(self):
@@ -110,3 +111,15 @@ class CryptoEntryTrendTests(unittest.TestCase):
         self.assertEqual(result['latest_evaluation']['macro_source'], 'BINANCE_COMPLETED_CHART')
         self.assertEqual(result['entry_trend']['points'][-1]['source_time'], bars[-1]['time'])
         self.assertNotIn('macro_histogram_slope_z', result['latest_evaluation'])
+
+    def test_hybrid_waits_for_chart_ma_and_macd_warmup(self):
+        result = _run_crypto_backtest_sync(
+            self.bars, True, strategy_mode='macd_reversal', interval_seconds=300,
+            macro_bars=self.hourly, macro_regime_mode='hybrid', macro_ma_period=60,
+            macro_macd_fast_period=3, macro_macd_slow_period=5,
+            macro_macd_signal_period=2, macro_macd_confirm_bars=1)
+        points = result['entry_trend']['points']
+        self.assertTrue(all(point['direction'] == 'UNAVAILABLE' for point in points[:60]))
+        self.assertTrue(all(point['source_time'] is None for point in points[:60]))
+        self.assertIn('completed chart candles · MA60 slope + MACD-H direction agree',
+                      result['entry_trend']['basis'])

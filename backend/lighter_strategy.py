@@ -1347,8 +1347,10 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         slow = max(fast + 1, int(params.get("macd_slow_period", 26)))
         signal = max(2, int(params.get("macd_signal_period", 9)))
         required = slow + signal + 1
-        if (bool(params.get("use_ma_stack_1h", True))
-                and params.get("macro_regime_mode", "ma_slope") in {"macd_hist_accel", "hybrid"}):
+        macro_mode = params.get("macro_regime_mode", "ma_slope")
+        if bool(params.get("use_ma_stack_1h", True)) and macro_mode in {"ma_slope", "hybrid"}:
+            required = max(required, max(2, int(params.get("macro_ma_period", 60))) + 1)
+        if bool(params.get("use_ma_stack_1h", True)) and macro_mode in {"macd_hist_accel", "hybrid"}:
             regime_fast = max(2, int(params.get("macro_macd_fast_period", 12)))
             regime_slow = max(regime_fast + 1, int(params.get("macro_macd_slow_period", 26)))
             regime_signal = max(2, int(params.get("macro_macd_signal_period", 9)))

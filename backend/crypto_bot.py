@@ -394,7 +394,7 @@ class CryptoBot:
                 candidate[key] = parse_entry_count_limit(value)
             elif key == "macro_ma_period":
                 if isinstance(value, bool) or not math.isfinite(float(value)) or not float(value).is_integer():
-                    raise ValueError("Hourly macro MA period must be an integer")
+                    raise ValueError("Wider-trend MA period must be an integer")
                 candidate[key] = int(value)
             elif key in {"min_seconds_between_orders", "ou_macro_ema_span",
                         "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars",
@@ -864,16 +864,23 @@ class CryptoBot:
                     macro_mode = (str(self.state.get("macro_regime_mode", "ma_slope"))
                                   if self.state["strategy_mode"] in {"macd_reversal", "macd_strength_scaleout"}
                                   else "ma_slope")
-                    accel_alignment, macro_detail = macd_histogram_acceleration_alignment(
-                        values,
-                        ma_period=int(self.state.get("macro_ma_period", 60)),
-                        fast_period=int(self.state.get("macro_macd_fast_period", 12)),
-                        slow_period=int(self.state.get("macro_macd_slow_period", 26)),
-                        signal_period=int(self.state.get("macro_macd_signal_period", 9)),
-                        confirm_bars=int(self.state.get("macro_macd_confirm_bars", 2)),
-                    )
-                    if macro_mode == "macd_hist_accel":
-                        macro_alignment = accel_alignment
+                    if self.state["strategy_mode"] in {"macd_reversal", "macd_strength_scaleout"}:
+                        ma_alignment = hourly_macro_alignment(
+                            values, ma_period=int(self.state.get("macro_ma_period", 60)),
+                        )
+                        accel_alignment, macro_detail = macd_histogram_acceleration_alignment(
+                            values,
+                            fast_period=int(self.state.get("macro_macd_fast_period", 12)),
+                            slow_period=int(self.state.get("macro_macd_slow_period", 26)),
+                            signal_period=int(self.state.get("macro_macd_signal_period", 9)),
+                            confirm_bars=int(self.state.get("macro_macd_confirm_bars", 2)),
+                        )
+                        macro_alignment = (accel_alignment if macro_mode == "macd_hist_accel" else
+                                           (ma_alignment[0] and accel_alignment[0],
+                                            ma_alignment[1] and accel_alignment[1])
+                                           if macro_mode == "hybrid" else ma_alignment)
+                        if macro_mode == "ma_slope":
+                            macro_detail = {}
                         macro_candle_time = last_candle
                     else:
                         macro_required = int(self.state.get("macro_ma_period", 60)) + 1
@@ -888,9 +895,7 @@ class CryptoBot:
                             [float(row[4]) for row in macro_closed],
                             ma_period=int(self.state.get("macro_ma_period", 60)),
                         )
-                        macro_alignment = ((ma_alignment[0] and accel_alignment[0],
-                                            ma_alignment[1] and accel_alignment[1])
-                                           if macro_mode == "hybrid" else ma_alignment)
+                        macro_alignment = ma_alignment
                         macro_hourly_candle_time = int(macro_closed[-1][0]) // 1000
                         macro_candle_time = (last_candle if macro_mode == "hybrid"
                                              else macro_hourly_candle_time)
@@ -918,8 +923,8 @@ class CryptoBot:
                 self.state["last_evaluation"] = evaluation
                 if macro_candle_time is not None:
                     evaluation["macro_source"] = (
-                        f"BINANCE_COMPLETED_{interval.upper()}" if macro_mode == "macd_hist_accel"
-                        else f"BINANCE_COMPLETED_1H+{interval.upper()}" if macro_mode == "hybrid"
+                        f"BINANCE_COMPLETED_{interval.upper()}"
+                        if self.state["strategy_mode"] in {"macd_reversal", "macd_strength_scaleout"}
                         else "BINANCE_COMPLETED_1H"
                     )
                     evaluation["macro_candle_time"] = macro_candle_time
