@@ -13,6 +13,7 @@ class ReplayMacroTests(unittest.TestCase):
         nodes = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in {
             '_run_crypto_backtest_sync', '_crypto_entry_trend',
             '_hourly_macro_alignment_for_bars', '_chart_macd_acceleration_for_bars',
+            '_chart_ma_alignment_for_bars',
         }]
         scope = dict(vars(strategy))
         exec(compile(ast.Module(body=nodes, type_ignores=[]), '<replay>', 'exec'), scope)
