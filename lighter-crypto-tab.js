@@ -1780,13 +1780,13 @@
           </div>
           <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 12px;padding:9px 10px;border:1px solid #c4b5fd;border-radius:7px;background:#f5f3ff;font-size:11px;font-weight:700;color:#4c1d95;">
             <span style="background:#7c3aed;color:#fff;border-radius:999px;padding:2px 7px;font-size:9px;">NEW</span>
-            <label>Regime
-              <select id="lighterCrypto_macroRegimeMode" aria-label="Completed-candle regime method" style="height:27px;border:1px solid #c4b5fd;border-radius:4px;background:#fff;">
-                <option value="ma_slope" ${macroMode === "ma_slope" ? "selected" : ""}>Chart MA slope</option>
-                <option value="macd_hist_accel" ${macroMode === "macd_hist_accel" ? "selected" : ""}>Chart MACD-H zone + slope</option>
-                <option value="hybrid" ${macroMode === "hybrid" ? "selected" : ""}>Hybrid (both agree)</option>
-              </select>
-            </label>
+            <fieldset aria-label="Completed-candle regime method" style="display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;margin:0;padding:0;border:0;min-width:0;">
+              <legend style="float:left;margin:0 3px 0 0;padding:0;font-weight:800;">Regime</legend>
+              <label style="display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid #c4b5fd;border-radius:999px;background:#fff;white-space:nowrap;"><input type="radio" name="lighterCrypto_macroRegimeModeRadio" value="ma_slope" ${macroMode === "ma_slope" ? "checked" : ""}> Chart MA slope</label>
+              <label style="display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid #c4b5fd;border-radius:999px;background:#fff;white-space:nowrap;"><input type="radio" name="lighterCrypto_macroRegimeModeRadio" value="macd_hist_accel" ${macroMode === "macd_hist_accel" ? "checked" : ""}> Chart MACD-H zone + slope</label>
+              <label style="display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid #c4b5fd;border-radius:999px;background:#fff;white-space:nowrap;"><input type="radio" name="lighterCrypto_macroRegimeModeRadio" value="hybrid" ${macroMode === "hybrid" ? "checked" : ""}> Hybrid (both agree)</label>
+            </fieldset>
+            <input id="lighterCrypto_macroRegimeMode" type="hidden" value="${macroMode}">
             <label id="lighterCrypto_lblMacroMaPeriod" style="display:inline-flex;align-items:center;gap:6px;">Chart MA Period (MA/Hybrid)
               <input id="lighterCrypto_macroMaPeriodSlider" type="range" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="vertical-align:middle;width:85px;cursor:pointer;">
               <input id="lighterCrypto_macroMaPeriodVal" aria-label="Chart regime MA period" type="number" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="width:48px;">
@@ -1959,6 +1959,15 @@
         $("lighterCrypto_btnCrossReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         $("lighterCrypto_btnMacdReplay")?.addEventListener("click", () => this.runBacktest());
+        (document.querySelectorAll?.('input[name="lighterCrypto_macroRegimeModeRadio"]') || []).forEach((radio) => {
+          radio.addEventListener("change", () => {
+            if (!radio.checked) return;
+            const modeInput = $("lighterCrypto_macroRegimeMode");
+            if (!modeInput) return;
+            modeInput.value = radio.value;
+            modeInput.dispatchEvent(new Event("change", { bubbles: true }));
+          });
+        });
         const slider = $("lighterCrypto_macroMaPeriodSlider");
         const valInput = $("lighterCrypto_macroMaPeriodVal");
         if (slider && valInput) {
@@ -3837,6 +3846,9 @@
           else input.value = String(params[key]);
           input._userModified = false;
         });
+        (document.querySelectorAll?.('input[name="lighterCrypto_macroRegimeModeRadio"]') || []).forEach((radio) => {
+          radio.checked = radio.value === String(params.macro_regime_mode || "ma_slope");
+        });
       }
       this.updateRulesMatchStatus();
       if (this.bars && this.bars.length) {
@@ -3960,6 +3972,9 @@
           control.value = value;
           changed = true;
         }
+      });
+      (document.querySelectorAll?.('input[name="lighterCrypto_macroRegimeModeRadio"]') || []).forEach((radio) => {
+        radio.checked = radio.value === mode;
       });
       if ($("lighterCrypto_macroMaPeriod") && String($("lighterCrypto_macroMaPeriod").value) !== String(maPeriod)) {
         $("lighterCrypto_macroMaPeriod").value = String(maPeriod);
