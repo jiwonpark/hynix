@@ -81,16 +81,20 @@ assert.match(macdMarkup, /Short entry \/ long exit: Histogram &gt; 0/);
 assert.match(macdMarkup, /peak turns down/);
 assert.match(macdMarkup, /Chart MACD-H zone \+ slope/);
 assert.match(macdMarkup, /Chart MA slope/);
-assert.match(macdMarkup, /type="radio" name="lighterCrypto_macroRegimeModeRadio"/);
+assert.match(macdMarkup, /id="lighterCrypto_macroUseMa" type="checkbox"/);
+assert.match(macdMarkup, /id="lighterCrypto_macroUseMacd" type="checkbox"/);
+assert.match(macdMarkup, /Every checked filter must agree/);
+assert.ok(macdMarkup.indexOf('lighterCrypto_macroUseMa') < macdMarkup.indexOf('lighterCrypto_macroMaPeriodSlider'));
+assert.ok(macdMarkup.indexOf('lighterCrypto_macroUseMacd') < macdMarkup.indexOf('lighterCrypto_macroMacdFastPeriod'));
 assert.match(macdMarkup, /id="lighterCrypto_macroRegimeMode" type="hidden"/);
 assert.doesNotMatch(macdMarkup, /<select id="lighterCrypto_macroRegimeMode"/);
+assert.doesNotMatch(macdMarkup, /type="radio"/);
 assert.match(macdMarkup, /Completed 5m/);
 assert.match(macdMarkup, /lighterCrypto_macroMaPeriodSlider/);
 assert.match(macdMarkup, /Chart regime MA period/);
 assert.doesNotMatch(macdMarkup, />1h MA slope</);
 assert.doesNotMatch(macdMarkup, /1H ALIGNED|enabled 1h macro rule/);
 assert.doesNotMatch(macdMarkup, /Z window|Enter \|Z\||Release \|Z\||slope Z/);
-assert.match(macdMarkup, /Hybrid \(both agree\)/);
 assert.match(macdMarkup, /NEW/);
 [
   ['lighterCrypto_macdFastPeriod', { value: '12' }],

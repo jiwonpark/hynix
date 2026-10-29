@@ -1778,24 +1778,28 @@
               <button id="lighterCrypto_btnMacdReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun MACD</button>
             </div>
           </div>
-          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 12px;padding:9px 10px;border:1px solid #c4b5fd;border-radius:7px;background:#f5f3ff;font-size:11px;font-weight:700;color:#4c1d95;">
-            <span style="background:#7c3aed;color:#fff;border-radius:999px;padding:2px 7px;font-size:9px;">NEW</span>
-            <fieldset aria-label="Completed-candle regime method" style="display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;margin:0;padding:0;border:0;min-width:0;">
-              <legend style="float:left;margin:0 3px 0 0;padding:0;font-weight:800;">Regime</legend>
-              <label style="display:inline-flex;flex-direction:row !important;align-items:center;gap:4px;padding:4px 7px;border:1px solid #c4b5fd;border-radius:999px;background:#fff;white-space:nowrap;"><input type="radio" name="lighterCrypto_macroRegimeModeRadio" value="ma_slope" style="width:14px;height:14px;min-width:14px;min-height:14px;margin:0;accent-color:#7c3aed;" ${macroMode === "ma_slope" ? "checked" : ""}> Chart MA slope</label>
-              <label style="display:inline-flex;flex-direction:row !important;align-items:center;gap:4px;padding:4px 7px;border:1px solid #c4b5fd;border-radius:999px;background:#fff;white-space:nowrap;"><input type="radio" name="lighterCrypto_macroRegimeModeRadio" value="macd_hist_accel" style="width:14px;height:14px;min-width:14px;min-height:14px;margin:0;accent-color:#7c3aed;" ${macroMode === "macd_hist_accel" ? "checked" : ""}> Chart MACD-H zone + slope</label>
-              <label style="display:inline-flex;flex-direction:row !important;align-items:center;gap:4px;padding:4px 7px;border:1px solid #c4b5fd;border-radius:999px;background:#fff;white-space:nowrap;"><input type="radio" name="lighterCrypto_macroRegimeModeRadio" value="hybrid" style="width:14px;height:14px;min-width:14px;min-height:14px;margin:0;accent-color:#7c3aed;" ${macroMode === "hybrid" ? "checked" : ""}> Hybrid (both agree)</label>
-            </fieldset>
+          <div style="margin:0 0 12px;padding:10px;border:1px solid #c4b5fd;border-radius:7px;background:#f5f3ff;font-size:11px;font-weight:700;color:#4c1d95;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><span style="background:#7c3aed;color:#fff;border-radius:999px;padding:2px 7px;font-size:9px;">NEW</span><strong>Wider trend filters</strong><span style="font-weight:500;color:#6d28d9;">Every checked filter must agree.</span></div>
             <input id="lighterCrypto_macroRegimeMode" type="hidden" value="${macroMode}">
-            <label id="lighterCrypto_lblMacroMaPeriod" style="display:inline-flex;align-items:center;gap:6px;">Chart MA Period (MA/Hybrid)
-              <input id="lighterCrypto_macroMaPeriodSlider" type="range" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="vertical-align:middle;width:85px;cursor:pointer;">
-              <input id="lighterCrypto_macroMaPeriodVal" aria-label="Chart regime MA period" type="number" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="width:48px;">
-            </label>
-            <label>Chart MACD Fast <input id="lighterCrypto_macroMacdFastPeriod" aria-label="Chart regime MACD fast period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_fast_period ?? 12)}" style="width:48px;"></label>
-            <label>Slow <input id="lighterCrypto_macroMacdSlowPeriod" aria-label="Chart regime MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live.macro_macd_slow_period ?? 26)}" style="width:48px;"></label>
-            <label>Signal <input id="lighterCrypto_macroMacdSignalPeriod" aria-label="Chart regime MACD signal period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_signal_period ?? 9)}" style="width:48px;"></label>
-            <input id="lighterCrypto_macroMacdConfirmBars" type="hidden" value="${Number(live.macro_macd_confirm_bars ?? 1)}">
-            <span id="lighterCrypto_macroRegimeReadout">Completed ${chartInterval} · MACD-H(${Number(live.macro_macd_fast_period ?? 12)}, ${Number(live.macro_macd_slow_period ?? 26)}, ${Number(live.macro_macd_signal_period ?? 9)}) · H &lt; 0 and rising = long · H &gt; 0 and falling = short</span>
+            <fieldset aria-label="Completed-candle wider trend filters" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0;padding:0;border:0;min-width:0;">
+              <div id="lighterCrypto_macroMaGroup" style="display:grid;gap:8px;align-content:start;padding:9px;border:1px solid #c4b5fd;border-radius:7px;background:#fff;min-width:0;">
+                <label style="display:flex;flex-direction:row !important;align-items:center;gap:6px;"><input id="lighterCrypto_macroUseMa" type="checkbox" style="width:16px;height:16px;min-width:16px;margin:0;accent-color:#7c3aed;" ${macroMode !== "macd_hist_accel" ? "checked" : ""}> <strong>Chart MA slope</strong></label>
+                <label id="lighterCrypto_lblMacroMaPeriod" style="display:flex;flex-direction:row !important;align-items:center;gap:6px;flex-wrap:wrap;">Period
+                  <input id="lighterCrypto_macroMaPeriodSlider" type="range" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="vertical-align:middle;width:85px;cursor:pointer;">
+                  <input id="lighterCrypto_macroMaPeriodVal" aria-label="Chart regime MA period" type="number" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="width:48px;">
+                </label>
+              </div>
+              <div id="lighterCrypto_macroMacdGroup" style="display:grid;gap:8px;align-content:start;padding:9px;border:1px solid #c4b5fd;border-radius:7px;background:#fff;min-width:0;">
+                <label style="display:flex;flex-direction:row !important;align-items:center;gap:6px;"><input id="lighterCrypto_macroUseMacd" type="checkbox" style="width:16px;height:16px;min-width:16px;margin:0;accent-color:#7c3aed;" ${macroMode !== "ma_slope" ? "checked" : ""}> <strong>Chart MACD-H zone + slope</strong></label>
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                  <label>Fast <input id="lighterCrypto_macroMacdFastPeriod" aria-label="Chart regime MACD fast period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_fast_period ?? 12)}" style="width:48px;"></label>
+                  <label>Slow <input id="lighterCrypto_macroMacdSlowPeriod" aria-label="Chart regime MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live.macro_macd_slow_period ?? 26)}" style="width:48px;"></label>
+                  <label>Signal <input id="lighterCrypto_macroMacdSignalPeriod" aria-label="Chart regime MACD signal period" type="number" min="2" max="100" step="1" value="${Number(live.macro_macd_signal_period ?? 9)}" style="width:48px;"></label>
+                </div>
+                <input id="lighterCrypto_macroMacdConfirmBars" type="hidden" value="${Number(live.macro_macd_confirm_bars ?? 1)}">
+              </div>
+            </fieldset>
+            <span id="lighterCrypto_macroRegimeReadout" style="display:block;margin-top:8px;">Completed ${chartInterval} · MACD-H(${Number(live.macro_macd_fast_period ?? 12)}, ${Number(live.macro_macd_slow_period ?? 26)}, ${Number(live.macro_macd_signal_period ?? 9)}) · H &lt; 0 and rising = long · H &gt; 0 and falling = short</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
             <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
@@ -1959,12 +1963,15 @@
         $("lighterCrypto_btnCrossReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         $("lighterCrypto_btnMacdReplay")?.addEventListener("click", () => this.runBacktest());
-        (document.querySelectorAll?.('input[name="lighterCrypto_macroRegimeModeRadio"]') || []).forEach((radio) => {
-          radio.addEventListener("change", () => {
-            if (!radio.checked) return;
+        ["lighterCrypto_macroUseMa", "lighterCrypto_macroUseMacd"].forEach((id) => {
+          const checkbox = $(id);
+          checkbox?.addEventListener("change", () => {
+            const ma = $("lighterCrypto_macroUseMa");
+            const macd = $("lighterCrypto_macroUseMacd");
             const modeInput = $("lighterCrypto_macroRegimeMode");
-            if (!modeInput) return;
-            modeInput.value = radio.value;
+            if (!ma || !macd || !modeInput) return;
+            if (!ma.checked && !macd.checked) checkbox.checked = true;
+            modeInput.value = ma.checked && macd.checked ? "hybrid" : macd.checked ? "macd_hist_accel" : "ma_slope";
             modeInput.dispatchEvent(new Event("change", { bubbles: true }));
           });
         });
@@ -3846,9 +3853,9 @@
           else input.value = String(params[key]);
           input._userModified = false;
         });
-        (document.querySelectorAll?.('input[name="lighterCrypto_macroRegimeModeRadio"]') || []).forEach((radio) => {
-          radio.checked = radio.value === String(params.macro_regime_mode || "ma_slope");
-        });
+        const macroMode = String(params.macro_regime_mode || "ma_slope");
+        if ($("lighterCrypto_macroUseMa")) $("lighterCrypto_macroUseMa").checked = macroMode !== "macd_hist_accel";
+        if ($("lighterCrypto_macroUseMacd")) $("lighterCrypto_macroUseMacd").checked = macroMode !== "ma_slope";
       }
       this.updateRulesMatchStatus();
       if (this.bars && this.bars.length) {
@@ -3973,9 +3980,8 @@
           changed = true;
         }
       });
-      (document.querySelectorAll?.('input[name="lighterCrypto_macroRegimeModeRadio"]') || []).forEach((radio) => {
-        radio.checked = radio.value === mode;
-      });
+      if ($("lighterCrypto_macroUseMa")) $("lighterCrypto_macroUseMa").checked = mode !== "macd_hist_accel";
+      if ($("lighterCrypto_macroUseMacd")) $("lighterCrypto_macroUseMacd").checked = mode !== "ma_slope";
       if ($("lighterCrypto_macroMaPeriod") && String($("lighterCrypto_macroMaPeriod").value) !== String(maPeriod)) {
         $("lighterCrypto_macroMaPeriod").value = String(maPeriod);
       }
