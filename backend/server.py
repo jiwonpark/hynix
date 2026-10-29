@@ -1760,7 +1760,7 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
     for index, bar in enumerate(bars):
         explicit_neutral = False
         while (macro_index + 1 < len(hourly)
-               and hourly[macro_index + 1]["time"] + 3600 <= bar["time"] + interval_seconds):
+               and hourly[macro_index + 1]["time"] + 3600 <= bar["time"]):
             macro_index += 1
         if is_ou:
             slope = slopes[index]
