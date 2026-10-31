@@ -4,8 +4,11 @@ const vm = require("node:vm");
 
 function load(file, globalName, prefix, defaultMode) {
   const nodes = new Map();
+  const storage = new Map();
+  const localStorage = {getItem: key => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value)};
   const context = {
-    window: {}, URLSearchParams, console,
+    window: {}, URLSearchParams, console, localStorage,
     document: {
       readyState: "loading",
       addEventListener() {},
@@ -13,6 +16,8 @@ function load(file, globalName, prefix, defaultMode) {
     },
   };
   vm.createContext(context);
+  vm.runInContext(fs.readFileSync("terminal-common.js", "utf8"), context);
+  context.TerminalCommon = context.window.TerminalCommon;
   vm.runInContext(fs.readFileSync(file, "utf8"), context);
   const engine = context.window[globalName];
   engine.currentParadigm = "macd_zero_cross";
@@ -55,6 +60,34 @@ function load(file, globalName, prefix, defaultMode) {
   assert.deepEqual(plotted.pop(), [10, 21, 5]);
   assert.equal(engine.replaySettings().macd_fast_period, 10);
   assert.equal(engine.liveStrategyPayload(defaultMode).macd_fast_period, 10);
+
+  // Exercise the real input listener, then recreate the engine to model reload.
+  const events = {};
+  const fastInput = nodes.get(`${prefix}macdFastPeriod`);
+  fastInput.id = `${prefix}macdFastPeriod`;
+  fastInput.addEventListener = (event, handler) => { events[event] = handler; };
+  nodes.set(`${prefix}paradigmDetailSection`, {querySelectorAll: () => [fastInput]});
+  engine.updateRulesMatchStatus = () => {};
+  nodes.get(`${prefix}macdZeroUseCross`).addEventListener = () => {};
+  nodes.get(`${prefix}macdZeroUseSignalZone`).addEventListener = () => {};
+  engine.bindParadigmDetailEvents("macd_zero_cross");
+  events.input();
+  assert.ok(storage.size > 0);
+  vm.runInContext(fs.readFileSync(file, "utf8"), context);
+  const reloaded = context.window[globalName];
+  reloaded.botState = {strategy_mode: "macd_zero_cross", strategy_params: {
+    macd_fast_period: 12, macd_slow_period: 26, macd_signal_period: 9}};
+  assert.match(reloaded.renderParadigmDetail("macd_zero_cross"), /value="10"/);
+  assert.match(reloaded.renderParadigmDetail("macd_zero_cross"), /value="21"/);
+  assert.match(reloaded.renderParadigmDetail("macd_zero_cross"), /value="5"/);
+  assert.doesNotMatch(reloaded.renderParadigmDetail("macd_reversal"), /value="21"/);
+  const otherFile = prefix === "crypto_" ? "lighter-crypto-tab.js" : "crypto-tab.js";
+  vm.runInContext(fs.readFileSync(otherFile, "utf8"), context);
+  const other = context.window[prefix === "crypto_" ? "lighterCryptoEngine" : "cryptoEngine"];
+  assert.doesNotMatch(other.renderParadigmDetail("macd_zero_cross"), /value="21"/);
+  const savedKey = Array.from(storage.keys())[0];
+  storage.set(savedKey, "broken json");
+  assert.match(reloaded.renderParadigmDetail("macd_zero_cross"), /value="26"/);
 
   const html = engine.renderParadigmDetail("macd_zero_cross");
   assert.match(html, /Completed candles only/);

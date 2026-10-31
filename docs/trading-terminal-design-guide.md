@@ -170,3 +170,8 @@ MACD period controls in Tabs 4 and 5 must drive the plotted MACD, its period leg
 replay signals, and the authenticated live deployment payload together. Editing
 Fast / Slow / Signal updates the paper chart; saving live settings still requires
 unlocking, pausing the bot, and deploying the selected strategy.
+
+MACD Fast / Slow / Signal replay drafts persist in browser storage, isolated by
+terminal and strategy. Refresh and strategy remount must restore the draft ahead
+of live/default values. Explicit Align to saved bot thresholds replaces that
+draft. Persistence must never save live bot configuration or enable trading.

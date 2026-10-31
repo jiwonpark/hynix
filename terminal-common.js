@@ -279,7 +279,24 @@
     }
   }
 
-  const TerminalCommon = { revealChartSection, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
+  // Browser-only replay drafts, isolated by terminal and strategy. Never bot config.
+  function readReplayMacdPeriods(key, mode) {
+    try {
+      const draft = JSON.parse(localStorage.getItem(`${key}:macd:${mode}`) || "null");
+      if (!draft || ![draft.macd_fast_period, draft.macd_slow_period, draft.macd_signal_period].every(Number.isInteger)
+          || draft.macd_fast_period < 2 || draft.macd_fast_period > 100
+          || draft.macd_slow_period <= draft.macd_fast_period || draft.macd_slow_period > 200
+          || draft.macd_signal_period < 2 || draft.macd_signal_period > 100) return {};
+      return {macd_fast_period: draft.macd_fast_period, macd_slow_period: draft.macd_slow_period,
+        macd_signal_period: draft.macd_signal_period};
+    } catch (_) { return {}; }
+  }
+
+  function saveReplayMacdPeriods(key, mode, periods) {
+    try { localStorage.setItem(`${key}:macd:${mode}`, JSON.stringify(periods)); } catch (_) {}
+  }
+
+  const TerminalCommon = { readReplayMacdPeriods, saveReplayMacdPeriods, revealChartSection, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

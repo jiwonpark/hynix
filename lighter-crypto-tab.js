@@ -1771,7 +1771,8 @@
         `;
       }
       if (mode === "macd_zero_cross") {
-        const live = this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {};
+        const live = { ...(this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {}),
+          ...window.TerminalCommon?.readReplayMacdPeriods?.(STRATEGY_STORAGE_KEY, mode) };
         const checked = (key) => live[key] !== false ? "checked" : "";
         const row = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 10px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
         const toggle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
@@ -1779,7 +1780,7 @@
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div><strong style="font-size:14px;color:#0f172a;text-transform:uppercase;">↕️ MACD Histogram Zero Cross</strong>
               <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed candles only. Long: H crosses −→+ while signal &lt; 0. Short: H crosses +→− while signal &gt; 0.</p>
-              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Adjust Fast / Slow / Signal periods here: the chart and paper signals update together. To save live settings, unlock and pause the bot, then deploy this strategy.</p></div>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Adjust Fast / Slow / Signal periods here: saved in this browser across refreshes; the chart and paper signals update together. To save live settings, unlock and pause the bot, then deploy this strategy.</p></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;font-weight:700;color:#475569;">
               <label>Fast <input id="lighterCrypto_macdFastPeriod" type="number" min="2" max="100" step="1" value="${Number(live.macd_fast_period ?? 12)}" style="width:52px"></label>
               <label>Slow <input id="lighterCrypto_macdSlowPeriod" type="number" min="3" max="200" step="1" value="${Number(live.macd_slow_period ?? 26)}" style="width:52px"></label>
@@ -1802,7 +1803,8 @@
       }
       if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         const chartInterval = this.interval || "5m";
-        const live = this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {};
+        const live = { ...(this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {}),
+          ...window.TerminalCommon?.readReplayMacdPeriods?.(STRATEGY_STORAGE_KEY, mode) };
         const checked = (key) => live[key] !== false ? "checked" : "";
         const macroMode = ["ma_slope", "macd_hist_accel", "hybrid"].includes(live.macro_regime_mode)
           ? live.macro_regime_mode : "ma_slope";
@@ -1910,6 +1912,9 @@
           if (typeof input.addEventListener === "function") {
             input.addEventListener("input", () => {
               input._userModified = true;
+              if (["lighterCrypto_macdFastPeriod", "lighterCrypto_macdSlowPeriod", "lighterCrypto_macdSignalPeriod"].includes(input.id)) {
+                window.TerminalCommon?.saveReplayMacdPeriods?.(STRATEGY_STORAGE_KEY, mode, this.macdSettings());
+              }
               this.updateRulesMatchStatus();
               if (["macd_reversal", "macd_zero_cross", "macd_strength_scaleout"].includes(mode)) this.updateMaAndDiffs(this.bars);
             });
@@ -3966,6 +3971,10 @@
         const macroMode = String(params.macro_regime_mode || "ma_slope");
         if ($("lighterCrypto_macroUseMa")) $("lighterCrypto_macroUseMa").checked = macroMode !== "macd_hist_accel";
         if ($("lighterCrypto_macroUseMacd")) $("lighterCrypto_macroUseMacd").checked = macroMode !== "ma_slope";
+      }
+      if (["macd_zero_cross", "macd_reversal", "macd_strength_scaleout"].includes(liveMode)) {
+        window.TerminalCommon?.saveReplayMacdPeriods?.(STRATEGY_STORAGE_KEY, liveMode, this.macdSettings());
+        this.updateMaAndDiffs(this.bars);
       }
       this.updateRulesMatchStatus();
       if (this.bars && this.bars.length) {
