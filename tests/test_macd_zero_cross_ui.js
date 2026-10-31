@@ -35,6 +35,27 @@ function load(file, globalName, prefix, defaultMode) {
     assert.equal(settings.use_macd_signal_zone, false);
   }
 
+  // Plot, replay, and deploy must consume the same editable periods.
+  const plotted = [];
+  context.TerminalCommon = {
+    movingAverage() { return []; },
+    macd(bars, ...periods) {
+      plotted.push(periods);
+      return {macd: [], signal: [], histogram: []};
+    },
+  };
+  nodes.set(`${prefix}macdLegendPeriods`, {textContent: ""});
+  engine.maSeries = {};
+  engine.renderMaLegendValues = () => {};
+  engine.updateMaAndDiffs([{time: 100, value: 123}]);
+  assert.deepEqual(plotted.pop(), [8, 21, 5]);
+  assert.equal(nodes.get(`${prefix}macdLegendPeriods`).textContent, "MACD (8, 21, 5):");
+  nodes.get(`${prefix}macdFastPeriod`).value = "10";
+  engine.updateMaAndDiffs([{time: 100, value: 123}]);
+  assert.deepEqual(plotted.pop(), [10, 21, 5]);
+  assert.equal(engine.replaySettings().macd_fast_period, 10);
+  assert.equal(engine.liveStrategyPayload(defaultMode).macd_fast_period, 10);
+
   const html = engine.renderParadigmDetail("macd_zero_cross");
   assert.match(html, /Completed candles only/);
   assert.match(html, /Histogram zero cross: −→\+ long; \+→− short/);

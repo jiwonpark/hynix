@@ -165,3 +165,8 @@ MACD fast, slow, and signal periods, but no macro/MA regime control. The opposit
 enabled pattern exits and flips direction. Replay entry markers come from the
 position-independent `entry_signals` stream, while fills and exit verdicts may
 still depend on simulated or live position state.
+
+MACD period controls in Tabs 4 and 5 must drive the plotted MACD, its period legend,
+replay signals, and the authenticated live deployment payload together. Editing
+Fast / Slow / Signal updates the paper chart; saving live settings still requires
+unlocking, pausing the bot, and deploying the selected strategy.

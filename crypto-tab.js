@@ -591,7 +591,7 @@
       const replayAssetLegend = lid("shortTermAssetPaneShell")?.querySelector(".assetPriceLegendBar");
       if (replayAssetLegend) {
         replayAssetLegend.innerHTML = `
-          <span style="font-weight:800;color:#0f172a;">MACD (12, 26, 9):</span>
+          <span id="crypto_macdLegendPeriods" style="font-weight:800;color:#0f172a;">MACD (12, 26, 9):</span>
           <span style="color:#2563eb;font-weight:700;">● MACD</span>
           <span style="color:#f59e0b;font-weight:700;">● Signal</span>
           <span style="color:#16a34a;font-weight:700;">■ Histogram</span>
@@ -1726,7 +1726,8 @@
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div><strong style="font-size:14px;color:#0f172a;text-transform:uppercase;">↕️ MACD Histogram Zero Cross</strong>
-              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed candles only. Long: H crosses −→+ while signal &lt; 0. Short: H crosses +→− while signal &gt; 0.</p></div>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed candles only. Long: H crosses −→+ while signal &lt; 0. Short: H crosses +→− while signal &gt; 0.</p>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Adjust Fast / Slow / Signal periods here: the chart and paper signals update together. To save live settings, unlock and pause the bot, then deploy this strategy.</p></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;font-weight:700;color:#475569;">
               <label>Fast <input id="crypto_macdFastPeriod" type="number" min="2" max="100" step="1" value="${Number(live.macd_fast_period ?? 12)}" style="width:52px"></label>
               <label>Slow <input id="crypto_macdSlowPeriod" type="number" min="3" max="200" step="1" value="${Number(live.macd_slow_period ?? 26)}" style="width:52px"></label>
@@ -2554,7 +2555,11 @@
         this.maSeries[w]?.setData(data);
       });
 
-      const macd = TerminalCommon.macd(bars, 12, 26, 9);
+      const { macd_fast_period: macdFast, macd_slow_period: macdSlow,
+        macd_signal_period: macdSignal } = this.macdSettings();
+      const macd = TerminalCommon.macd(bars, macdFast, macdSlow, macdSignal);
+      const macdLegendPeriods = $("crypto_macdLegendPeriods");
+      if (macdLegendPeriods) macdLegendPeriods.textContent = `MACD (${macdFast}, ${macdSlow}, ${macdSignal}):`;
       this._currentMacd = macd;
 
       if (this.assetSeries) {
