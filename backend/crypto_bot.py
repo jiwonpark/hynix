@@ -4,6 +4,7 @@ Supports live execution for all testable quantitative single-leg strategies:
 grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 """
 
+from .single_leg_take_profit import TakeProfitMixin
 import asyncio
 import copy
 import json
@@ -38,6 +39,7 @@ INTERVAL_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1
 BINANCE_USER_TRADES_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 BINANCE_FILL_TIME_BUFFER_MS = 5 * 60 * 1000
 DEFAULT_STATE = {
+    "use_take_profit": True, "take_profit_pct": 0.2,
     "enabled": False, "selected_symbol": "BTCUSDT", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
     "notional_usd": 150.0, "max_tranches": 5,
@@ -71,7 +73,8 @@ DEFAULT_STATE = {
 }
 
 
-class CryptoBot:
+class CryptoBot(TakeProfitMixin):
+    profit_venue = "binance"
     def __init__(self, client: Any, state_path: Optional[Path] = None):
         self.client = client
         self.state_path = state_path or Path(__file__).with_name("crypto_bot_state.json")
@@ -181,6 +184,7 @@ class CryptoBot:
             "use_ma_pullback": bool(self.state.get("use_ma_pullback", True)),
             "use_ma_cross_exit": bool(self.state.get("use_ma_cross_exit", True)),
         }
+        result["strategy_params"].update(use_take_profit=bool(self.state.get("use_take_profit", True)), take_profit_pct=float(self.state.get("take_profit_pct", 0.2)))
         result["history_event_count"] = len(result["execution_history"])
         result["execution_blocked"] = bool(self.state.get("execution_blocked") or self.state.get("recovery_required") or self.state.get("pending_order"))
         result["blocked_reason"] = self.state.get("blocked_reason") or self.state.get("last_error")
@@ -361,6 +365,7 @@ class CryptoBot:
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         permitted = {
+            "use_take_profit", "take_profit_pct",
             "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
             "notional_usd", "max_tranches", "min_seconds_between_orders", "max_book_spread_bps",
             "ou_halflife_max", "ou_stop_z", "ou_min_abs_deviation_pp",
@@ -392,6 +397,8 @@ class CryptoBot:
         for key, value in values.items():
             if key in {"selected_symbol", "strategy_mode", "strategy_interval", "macro_regime_mode"}:
                 candidate[key] = str(value)
+            elif key == "use_take_profit":
+                candidate[key] = bool(value)
             elif key == "entry_direction_mode":
                 candidate[key] = parse_entry_direction_mode(value)
             elif key == "max_tranches":
@@ -430,6 +437,7 @@ class CryptoBot:
         if candidate.get("macro_regime_mode") not in {"ma_slope", "macd_hist_accel", "hybrid"}:
             raise ValueError("Unsupported macro regime mode")
         bounds = {
+            "take_profit_pct": (0.01, 100.0),
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0), "macro_ma_period": (2, 120),
             "macro_macd_confirm_bars": (1, 12),
             "notional_usd": (10.0, 500.0),
@@ -467,7 +475,7 @@ class CryptoBot:
             raise ValueError("Hourly MACD slow period must be greater than hourly MACD fast period")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                ("use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",
@@ -666,6 +674,9 @@ class CryptoBot:
                 raise ValueError("Selected-contract 1x equity cap or 125% available-margin reserve would be exceeded")
         if qty < minimum or qty * Decimal(str(price)) < min_notional:
             raise ValueError("Order falls below current Binance market lot or notional minimum")
+        if reason == "net_take_profit":
+            if not self.state.get("use_take_profit", True) or not (await self.take_profit_evaluation(price, float(qty)))["pass"]:
+                raise ValueError("Executable quote no longer meets net take-profit target")
         qty_text = format(qty, "f")
         client_id = "hxcrypto" + uuid.uuid4().hex[:24]
         self.state["pending_order"] = {"client_order_id": client_id, "symbol": symbol,
@@ -844,6 +855,8 @@ class CryptoBot:
             seconds = INTERVAL_SECONDS[interval]
             symbol = self.state["selected_symbol"]
             try:
+                if await self.check_take_profit():
+                    return
                 required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
                 request_limit = min(1500, max(125, required_bars + 1))
                 raw = await self.client.request("GET", "/fapi/v1/klines",

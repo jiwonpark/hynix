@@ -39,6 +39,7 @@ from .counterfactual_trades import (
 )
 from .config import config
 from .binance_client import BinanceFuturesClient
+from .single_leg_take_profit import net_profit
 from .crypto_bot import CryptoBot
 from .lighter_client import LighterClient
 from .lighter_crypto_bot import LighterCryptoBot, MARKETS as LIGHTER_CRYPTO_MARKETS
@@ -1816,6 +1817,8 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
 def _run_crypto_backtest_sync(
     bars: List[Dict[str, Any]],
     candle_success: bool,
+    use_take_profit: bool = False, take_profit_pct: float = 0.2,
+    take_profit_fee_rate: Optional[float] = None, take_profit_fee_error: Optional[str] = None,
     symbol: str = "BTCUSDT",
     strategy_mode: str = "grid",
     market_source: str = "binance",
@@ -1906,6 +1909,36 @@ def _run_crypto_backtest_sync(
     latest_conditions: Dict[str, Optional[bool]] = {}
     latest_condition_time: Optional[int] = None
     active_positions = []
+    latest_take_profit = {"state": "N/A", "pass": None}
+
+    def close_take_profit(item, bar):
+        nonlocal latest_take_profit
+        if not use_take_profit:
+            latest_take_profit = {"state": "OFF", "pass": None, "time": bar["time"]}
+            return item
+        if take_profit_fee_rate is None:
+            latest_take_profit = {"state": "UNAVAILABLE", "pass": None, "time": bar["time"],
+                                  "error": take_profit_fee_error or "Exchange fee rate unavailable"}
+            return item
+        if item is None:
+            latest_take_profit = {"state": "N/A", "pass": None, "time": bar["time"]}
+            return None
+        fraction = float(item.get("remaining_fraction", 1.0))
+        evaluation = net_profit([{"side": item["side"], "price": item["entry"], "qty": fraction,
+                                  "fee_usd": item["entry"] * fraction * take_profit_fee_rate}],
+                                fraction, bar["value"], take_profit_fee_rate, take_profit_pct)
+        latest_take_profit = {**evaluation, "source": "PAPER_COMPLETED_CLOSE_ESTIMATED_FEES", "time": bar["time"]}
+        if not evaluation["pass"]:
+            return item
+        mult = float(item.get("multiplier", 1.0))
+        gross_pct = item["side"] * (bar["value"] / item["entry"] - 1) * 100
+        trades.append({"side": item["side"], "entry": item["entry"], "entry_time": item["entry_time"],
+                       "exit": bar["value"], "exit_time": bar["time"],
+                       "pnl_pct": round(gross_pct * mult * fraction, 4),
+                       "net_pnl_pct": round(evaluation["net_pct"] * mult * fraction, 4),
+                       "exit_fraction": fraction, "multiplier": mult, "reason": "net_take_profit"})
+        return None
+
     bars_values = [item["value"] for item in bars]
     is_macd_strategy = strategy_mode in {"macd_reversal", "macd_strength_scaleout"}
     if not is_macd_strategy:
@@ -1954,6 +1987,10 @@ def _run_crypto_backtest_sync(
         is_ou = strategy_mode == "ou_quant"
         is_adaptive = strategy_mode == "adaptive_tranche"
         for index, bar in enumerate(bars):
+            position = close_take_profit(position, bar)
+            if active_positions:
+                if close_take_profit(active_positions[-1], bar) is None:
+                    active_positions.pop()
             required_index = 59 if (is_adaptive and use_ma_stack) else window
             if index < required_index:
                 continue
@@ -2100,6 +2137,10 @@ def _run_crypto_backtest_sync(
     elif strategy_mode == "ma_stack":
         all_diffs = compute_ma_diff_series([b["value"] for b in bars])
         for index, bar in enumerate(bars):
+            position = close_take_profit(position, bar)
+            if active_positions:
+                if close_take_profit(active_positions[-1], bar) is None:
+                    active_positions.pop()
             if index < 60:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
@@ -2210,6 +2251,10 @@ def _run_crypto_backtest_sync(
 
     elif strategy_mode == "multi_factor":
         for index, bar in enumerate(bars):
+            position = close_take_profit(position, bar)
+            if active_positions:
+                if close_take_profit(active_positions[-1], bar) is None:
+                    active_positions.pop()
             if index < window:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
@@ -2283,6 +2328,10 @@ def _run_crypto_backtest_sync(
         slopes = []
         trend_window = max(12, min(60, int(trend_macro_window)))
         for index, bar in enumerate(bars):
+            position = close_take_profit(position, bar)
+            if active_positions:
+                if close_take_profit(active_positions[-1], bar) is None:
+                    active_positions.pop()
             if index < trend_window:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
@@ -2407,6 +2456,10 @@ def _run_crypto_backtest_sync(
     elif strategy_mode == "ma_acceleration":
         w = max(3, int(ma_accel_period))
         for index, bar in enumerate(bars):
+            position = close_take_profit(position, bar)
+            if active_positions:
+                if close_take_profit(active_positions[-1], bar) is None:
+                    active_positions.pop()
             if index < w + 2:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
@@ -2507,6 +2560,10 @@ def _run_crypto_backtest_sync(
         fast_w = max(2, int(fast_ma_period))
         slow_w = max(fast_w + 1, int(slow_ma_period))
         for index, bar in enumerate(bars):
+            position = close_take_profit(position, bar)
+            if active_positions:
+                if close_take_profit(active_positions[-1], bar) is None:
+                    active_positions.pop()
             if index < slow_w + 1:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
@@ -2649,6 +2706,10 @@ def _run_crypto_backtest_sync(
         signal_w = max(2, int(macd_signal_period))
         required = slow_w + signal_w + 1
         for index, bar in enumerate(bars):
+            position = close_take_profit(position, bar)
+            if active_positions:
+                if close_take_profit(active_positions[-1], bar) is None:
+                    active_positions.pop()
             if index + 1 < required:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
@@ -2791,6 +2852,8 @@ def _run_crypto_backtest_sync(
         "trades": trades,
         "open_positions": open_positions,
         "metrics": mode_metrics,
+        "take_profit_evaluation": latest_take_profit,
+        "take_profit_fee_rate": take_profit_fee_rate,
         "latest_evaluation": latest_evaluation,
         "latest_conditions": latest_conditions,
         "latest_condition_time": latest_condition_time,
@@ -2812,6 +2875,7 @@ def _run_crypto_backtest_sync(
 @app.get("/api/lighter-crypto/backtest")
 async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 500,
                               strategy_mode: str = "grid",
+                              use_take_profit: bool = True, take_profit_pct: float = 0.2,
                               entry_z: float = 1.5, exit_z: float = 0.25,
                               use_ma_stretch: bool = True, use_peak: bool = True,
                               use_base_spacing: bool = True, use_ma_stack: bool = False, use_ma_stack_1h: bool = True, use_convergence: bool = True,
@@ -2849,6 +2913,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               macro_macd_signal_period: int = 9,
                               macro_macd_confirm_bars: int = 2) -> Dict[str, Any]:
     """Single-leg crypto strategy backtest engine across 5 quantitative regimes."""
+    if not math.isfinite(take_profit_pct) or not 0.01 <= take_profit_pct <= 100:
+        raise ValueError("Take profit must be between 0.01 and 100 percent")
     if not 2 <= macro_ma_period <= 120:
         raise ValueError("Wider-trend MA period must be between 2 and 120")
     if macro_regime_mode not in {"ma_slope", "macd_hist_accel", "hybrid"}:
@@ -2892,10 +2958,19 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]
     macro_bars = [bar for bar in macro_res.get("bars", [])
                   if int(bar["time"]) + 3600 <= now_seconds]
+    fee_rate, fee_error = None, None
+    if use_take_profit:
+        try:
+            fee_bot = lighter_crypto_bot if market_source == "lighter" else crypto_bot
+            fee_rate = await asyncio.wait_for(fee_bot.take_profit_fee_rate(symbol), timeout=5)
+        except Exception as exc:
+            fee_error = str(exc) or "Fee lookup timed out"
     return await asyncio.to_thread(
         _run_crypto_backtest_sync,
         bars=bars,
         candle_success=candle_res.get("success", False),
+        use_take_profit=use_take_profit, take_profit_pct=take_profit_pct,
+        take_profit_fee_rate=fee_rate, take_profit_fee_error=fee_error,
         symbol=symbol,
         strategy_mode=strategy_mode,
         market_source=market_source,

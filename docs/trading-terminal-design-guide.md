@@ -175,3 +175,32 @@ MACD Fast / Slow / Signal replay drafts persist in browser storage, isolated by
 terminal and strategy. Refresh and strategy remount must restore the draft ahead
 of live/default values. Explicit Align to saved bot thresholds replaces that
 draft. Persistence must never save live bot configuration or enable trading.
+
+## Single-leg net take-profit exit (Tabs 4 and 5)
+
+Every strategy in Tabs 4/5 exposes a separate optional **Net take profit** exit,
+default ON at 0.20%, adjustable 0.01–100% of the matched entry notional (not margin
+ROE). Existing signal exits remain active. The same controls drive replay and
+authenticated live deployment; browser drafts persist and explicit Align replaces
+them. Show PAPER and LIVE PASS/WAITING/OFF/N/A/UNAVAILABLE, source and KST timestamp.
+
+Live checks executable bid for longs / ask for shorts on each daemon tick, before
+completed-candle deduplication. Match the latest owned tranche first; if Lighter
+minimum order size requires merging dust, test the exact merged reduction's
+weighted basis and allocated entry fees. Recheck with the final executable quote
+and quantity immediately before submitting a reduce-only exit. Never close foreign
+inventory. Default ON also applies to existing bot state lacking these new fields.
+
+Net return = (directional fill-to-quote P&L − allocated confirmed entry commissions
+− expected exit commission) / matched entry notional. Binance reads signed
+commissionRate and reconciles entry commissions from complete USDT userTrades.
+Lighter Standard account type 0 has zero execution fees; other account tiers
+currently show fee UNAVAILABLE and skip this exit rather than assume zero.
+Funding is excluded. Missing fees disable only this exit, never other signal exits.
+
+Paper checks completed candle closes, with the current account taker rate applied
+to both entry and exit as an explicit estimate. It does not reconstruct historical
+fee tiers or intrabar book prices. Missing fee lookup shows UNAVAILABLE. Paper
+entry_signals remain position-independent; summary/triangle P&L retains the existing
+pre-fee basis, while take-profit trades additionally return net_pnl_pct. Do not
+present that paper gross summary as realized account net P&L.

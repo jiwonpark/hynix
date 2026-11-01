@@ -4,6 +4,7 @@ Supports live execution for all testable quantitative single-leg strategies:
 grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 """
 
+from .single_leg_take_profit import TakeProfitMixin
 import asyncio
 import copy
 import json
@@ -38,6 +39,7 @@ from .lighter_strategy import (
 # again before every order so a suspended market cannot be traded.
 MARKETS = {"BTC": 1, "ETH": 0, "SOL": 2, "DOGE": 3, "XRP": 7}
 DEFAULT_STATE = {
+    "use_take_profit": True, "take_profit_pct": 0.2,
     "enabled": False, "selected_symbol": "BTC", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
     "notional_usd": 150.0, "max_tranches": 5, "gross_leverage_cap": 8.0,
@@ -74,7 +76,8 @@ DEFAULT_STATE = {
 }
 
 
-class LighterCryptoBot:
+class LighterCryptoBot(TakeProfitMixin):
+    profit_venue = "lighter"
     # Standard 8.0x gross leverage cap matching Tab 2 and Tab 3.
     # Tab 2's margin buffer applies to estimated initial margin, not gross value.
     STRESS_MOVE_PCT = 10.0
@@ -221,6 +224,7 @@ class LighterCryptoBot:
         result["blocked_reason"] = (self.state.get("blocked_reason") or self.state.get("last_error")) if result["execution_blocked"] else None
         result["can_execute_entry"] = bool(self.state.get("enabled") and not result["execution_blocked"])
         result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
+        result["strategy_params"].update(use_take_profit=bool(self.state.get("use_take_profit", True)), take_profit_pct=float(self.state.get("take_profit_pct", 0.2)))
         return result
 
     async def reconciled_public_state(self) -> Dict[str, Any]:
@@ -326,6 +330,7 @@ class LighterCryptoBot:
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         permitted = {
+            "use_take_profit", "take_profit_pct",
             "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
             "notional_usd", "max_tranches", "min_seconds_between_orders", "max_book_spread_bps",
             "ou_halflife_max", "ou_stop_z", "ou_min_abs_deviation_pp",
@@ -359,6 +364,8 @@ class LighterCryptoBot:
         for key, value in values.items():
             if key in {"selected_symbol", "strategy_mode", "strategy_interval", "macro_regime_mode"}:
                 candidate[key] = str(value)
+            elif key == "use_take_profit":
+                candidate[key] = bool(value)
             elif key == "entry_direction_mode":
                 candidate[key] = parse_entry_direction_mode(value)
             elif key == "max_tranches":
@@ -410,6 +417,7 @@ class LighterCryptoBot:
                 use_base_spacing=False,
             )
         bounds = {
+            "take_profit_pct": (0.01, 100.0),
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0), "macro_ma_period": (2, 120),
             "macro_macd_confirm_bars": (1, 12),
             "notional_usd": (10.0, 500.0),
@@ -449,7 +457,7 @@ class LighterCryptoBot:
             raise ValueError("Hourly MACD slow period must be greater than hourly MACD fast period")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                ("use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",
@@ -809,6 +817,9 @@ class LighterCryptoBot:
                 effective_notional = notional * max(0.1, mult)
                 qty = self._entry_quantity(effective_notional, price, detail)
                 self._check_entry_capacity(account, positions, qty * price)
+            if reason == "net_take_profit":
+                if not self.state.get("use_take_profit", True) or not (await self.take_profit_evaluation(price, float(qty)))["pass"]:
+                    raise ValueError("Executable quote no longer meets net take-profit target")
             order_index = secrets.randbelow(self.client.MAX_CLIENT_ORDER_INDEX - 1) + 1
             pending = {"client_order_index": order_index, "symbol": symbol, "market_id": market_id,
                        "side": side, "qty": qty, "size_step": step,
@@ -1215,6 +1226,8 @@ class LighterCryptoBot:
                         except Exception as cap_err:
                             self.state["blocked_reason"] = str(cap_err)
 
+                if await self.check_take_profit():
+                    return
                 required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
                 request_limit = min(500, max(130, required_bars + 1))
                 rows = await self.client.candles(market_id, interval, request_limit, fresh=True)

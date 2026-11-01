@@ -28,10 +28,14 @@ function load(file, globalName, prefix, defaultMode) {
   nodes.set(`${prefix}macdZeroUseCross`, {checked: true});
   nodes.set(`${prefix}macdZeroUseSignalZone`, {checked: false});
 
+  nodes.set(`${prefix}useTakeProfit`, {checked: false});
+  nodes.set(`${prefix}takeProfitPct`, {value: "0.35"});
   const replay = engine.replaySettings();
   const live = engine.liveStrategyPayload(defaultMode);
   for (const settings of [replay, live]) {
     assert.equal(settings.strategy_mode, "macd_zero_cross");
+    assert.equal(settings.use_take_profit, false);
+    assert.equal(settings.take_profit_pct, 0.35);
     assert.deepEqual(
       [settings.macd_fast_period, settings.macd_slow_period, settings.macd_signal_period],
       [8, 21, 5],

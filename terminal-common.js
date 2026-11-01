@@ -279,6 +279,52 @@
     }
   }
 
+  function takeProfitSettings(prefix, bot = {}) {
+    let draft = {};
+    try { draft = JSON.parse(localStorage.getItem(`${prefix}take_profit_draft`) || "{}"); } catch (_) {}
+    const enabled = document.getElementById(`${prefix}useTakeProfit`);
+    const threshold = document.getElementById(`${prefix}takeProfitPct`);
+    const saved = {...bot, ...(bot?.strategy_params || {}), ...draft};
+    const raw = Number(threshold?.value ?? saved.take_profit_pct ?? 0.2);
+    return {use_take_profit: enabled ? enabled.checked : saved.use_take_profit !== false,
+      take_profit_pct: Number.isFinite(raw) && raw >= 0.01 && raw <= 100 ? raw : 0.2};
+  }
+
+  function saveTakeProfitDraft(prefix, settings) {
+    try { localStorage.setItem(`${prefix}take_profit_draft`, JSON.stringify(settings)); } catch (_) {}
+  }
+
+  function mountTakeProfitControls(prefix, anchor, engine) {
+    if (!anchor?.parentNode || document.getElementById(`${prefix}takeProfitControls`)) return;
+    const settings = takeProfitSettings(prefix, engine.botState);
+    const panel = document.createElement("div");
+    panel.id = `${prefix}takeProfitControls`;
+    panel.style.cssText = "margin:14px 0;padding:12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;";
+    panel.innerHTML = `<label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <input id="${prefix}useTakeProfit" type="checkbox" ${settings.use_take_profit ? "checked" : ""} style="appearance:auto;width:16px;height:16px;">
+      <b>Net take profit</b><input id="${prefix}takeProfitPct" aria-label="Net take-profit percent" type="number" min="0.01" max="100" step="0.01" value="${settings.take_profit_pct}" style="width:75px;">% of entry notional</label>
+      <small>Newest tranche first · entry + exit trading fees deducted · funding excluded. Live: executable bid/ask each bot tick. Paper: completed closes with current account fees; no intrabar fills. Existing signal exits remain active. Unlock, pause and deploy to save live settings.</small>
+      <div id="${prefix}takeProfitPaperStatus" style="margin-top:6px;font-size:11px;">PAPER · Awaiting replay</div>
+      <div id="${prefix}takeProfitLiveStatus" style="margin-top:6px;font-size:11px;">LIVE · Awaiting bot status</div>`;
+    anchor.parentNode.insertBefore(panel, anchor);
+    panel.querySelectorAll("input").forEach(input => {
+      input.addEventListener("input", () => {
+        saveTakeProfitDraft(prefix, takeProfitSettings(prefix, engine.botState));
+        engine.updateRulesMatchStatus();
+      });
+      input.addEventListener("change", () => engine.runBacktest());
+    });
+  }
+
+  function renderTakeProfitStatus(prefix, kind, evaluation, enabled) {
+    const node = document.getElementById(`${prefix}takeProfit${kind}Status`);
+    if (!node) return;
+    const stale = kind === "Live" && evaluation?.time && Date.now() / 1000 - evaluation.time > 30;
+    const state = enabled === false ? "OFF" : stale ? "UNAVAILABLE (STALE)" : evaluation?.state || (evaluation?.pass == null ? "UNAVAILABLE" : evaluation.pass ? "PASS" : "WAITING");
+    const time = evaluation?.time ? new Date(evaluation.time * 1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
+    node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
+  }
+
   // Browser-only replay drafts, isolated by terminal and strategy. Never bot config.
   function readReplayMacdPeriods(key, mode) {
     try {
@@ -296,7 +342,7 @@
     try { localStorage.setItem(`${key}:macd:${mode}`, JSON.stringify(periods)); } catch (_) {}
   }
 
-  const TerminalCommon = { readReplayMacdPeriods, saveReplayMacdPeriods, revealChartSection, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
+  const TerminalCommon = { takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, readReplayMacdPeriods, saveReplayMacdPeriods, revealChartSection, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {
