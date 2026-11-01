@@ -300,7 +300,7 @@
     const panel = document.createElement("div");
     panel.id = `${prefix}takeProfitControls`;
     panel.style.cssText = "margin:14px 0;padding:12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;";
-    panel.innerHTML = `<label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    panel.innerHTML = `<label style="display:flex;flex-direction:row !important;justify-content:flex-start;align-items:center;gap:8px;flex-wrap:wrap;">
       <input id="${prefix}useTakeProfit" type="checkbox" ${settings.use_take_profit ? "checked" : ""} style="appearance:auto;width:16px;height:16px;">
       <b>Net take profit</b><input id="${prefix}takeProfitPct" aria-label="Net take-profit percent" type="number" min="0.01" max="100" step="0.01" value="${settings.take_profit_pct}" style="width:75px;">% of entry notional</label>
       <small>Newest tranche first · entry + exit trading fees deducted · funding excluded. Live: executable bid/ask each bot tick. Paper: completed closes with current account fees; no intrabar fills. Existing signal exits remain active. Unlock, pause and deploy to save live settings.</small>
