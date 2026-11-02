@@ -73,6 +73,7 @@ DEFAULT_STATE = {
     "last_evaluated_candle": 0, "last_order_time": 0,
     "last_evaluation": None, "last_error": None, "recovery_required": False,
     "execution_blocked": False, "blocked_reason": None,
+    "strategy_drafts": {},
 }
 
 
@@ -226,6 +227,27 @@ class LighterCryptoBot(TakeProfitMixin):
         result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
         result["strategy_params"].update(use_take_profit=bool(self.state.get("use_take_profit", True)), take_profit_pct=float(self.state.get("take_profit_pct", 0.2)))
         return result
+
+    async def save_strategy_draft(self, mode: str, values: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist replay parameters without changing the live strategy configuration."""
+        if mode not in {"macd_zero_cross", "macd_reversal", "macd_strength_scaleout"}:
+            raise ValueError("Unsupported strategy draft")
+        allowed = {"macd_fast_period", "macd_slow_period", "macd_signal_period"}
+        if set(values) != allowed:
+            raise ValueError("A MACD draft requires fast, slow, and signal periods")
+        periods = {key: int(values[key]) for key in allowed}
+        if not 2 <= periods["macd_fast_period"] <= 100:
+            raise ValueError("MACD fast period must be between 2 and 100")
+        if not periods["macd_fast_period"] < periods["macd_slow_period"] <= 200:
+            raise ValueError("MACD slow period must be greater than fast and at most 200")
+        if not 2 <= periods["macd_signal_period"] <= 100:
+            raise ValueError("MACD signal period must be between 2 and 100")
+        async with self.lock:
+            drafts = copy.deepcopy(self.state.get("strategy_drafts") or {})
+            drafts[mode] = periods
+            self.state["strategy_drafts"] = drafts
+            self._save()
+            return self.public_state()
 
     async def reconciled_public_state(self) -> Dict[str, Any]:
         """Annotate public state with Lighter exchange trade history and verified exits."""

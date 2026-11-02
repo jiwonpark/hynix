@@ -93,6 +93,22 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 await bot.configure({"macro_ma_period": value})
 
+    async def test_macd_replay_draft_is_server_persisted_without_changing_live_config(self):
+        live_before = dict(self.bot.public_state()["strategy_params"])
+        state = await self.bot.save_strategy_draft("macd_reversal", {
+            "macd_fast_period": 7, "macd_slow_period": 19, "macd_signal_period": 4,
+        })
+        self.assertEqual(state["strategy_drafts"]["macd_reversal"]["macd_fast_period"], 7)
+        self.assertEqual(state["strategy_params"], live_before)
+        restored = LighterCryptoBot(self.client, self.path)
+        self.assertEqual(restored.public_state()["strategy_drafts"]["macd_reversal"], {
+            "macd_fast_period": 7, "macd_slow_period": 19, "macd_signal_period": 4,
+        })
+        with self.assertRaisesRegex(ValueError, "greater than fast"):
+            await self.bot.save_strategy_draft("macd_reversal", {
+                "macd_fast_period": 19, "macd_slow_period": 7, "macd_signal_period": 4,
+            })
+
     async def test_independent_paused_state_and_config(self):
         self.assertFalse(self.bot.state["enabled"])
         self.assertEqual(self.bot.state["selected_symbol"], "BTC")

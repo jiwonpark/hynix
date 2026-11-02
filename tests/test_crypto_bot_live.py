@@ -78,6 +78,22 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 await bot.configure({"macro_ma_period": value})
 
+    async def test_macd_replay_draft_is_server_persisted_without_changing_live_config(self):
+        live_before = dict(self.bot.public_state()["strategy_params"])
+        state = await self.bot.save_strategy_draft("macd_zero_cross", {
+            "macd_fast_period": 8, "macd_slow_period": 21, "macd_signal_period": 5,
+        })
+        self.assertEqual(state["strategy_drafts"]["macd_zero_cross"]["macd_fast_period"], 8)
+        self.assertEqual(state["strategy_params"], live_before)
+        restored = CryptoBot(self.client, self.path)
+        self.assertEqual(restored.public_state()["strategy_drafts"]["macd_zero_cross"], {
+            "macd_fast_period": 8, "macd_slow_period": 21, "macd_signal_period": 5,
+        })
+        with self.assertRaisesRegex(ValueError, "greater than fast"):
+            await self.bot.save_strategy_draft("macd_zero_cross", {
+                "macd_fast_period": 21, "macd_slow_period": 8, "macd_signal_period": 5,
+            })
+
     async def test_config_is_persisted_and_all_testable_strategies_deployable(self):
         await self.bot.configure({"entry_z": 2.0, "selected_symbol": "BTCUSDT"})
         restored = CryptoBot(self.client, self.path)

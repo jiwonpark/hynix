@@ -1384,6 +1384,18 @@ async def configure_crypto_bot(request: Request) -> JSONResponse:
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error)}, status_code=400)
 
+@app.post("/api/crypto/bot/strategy-draft")
+async def save_crypto_strategy_draft(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        body = await request.json()
+        mode = str(body.get("strategy_mode") or "")
+        values = {key: body[key] for key in ("macd_fast_period", "macd_slow_period", "macd_signal_period") if key in body}
+        return JSONResponse({"success": True, "bot": await crypto_bot.save_strategy_draft(mode, values)})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
 @app.post("/api/crypto/step_tranche")
 async def step_crypto_tranche(request: Request) -> JSONResponse:
     if not terminal_authorized(request):
@@ -1631,6 +1643,18 @@ async def configure_lighter_crypto_bot(request: Request) -> JSONResponse:
     try:
         bot = await lighter_crypto_bot.configure(await request.json())
         return JSONResponse({"success": True, "bot": bot})
+    except Exception as error:
+        return JSONResponse({"success": False, "error": str(error)}, status_code=400)
+
+@app.post("/api/lighter-crypto/bot/strategy-draft")
+async def save_lighter_crypto_strategy_draft(request: Request) -> JSONResponse:
+    if not terminal_authorized(request):
+        return JSONResponse({"success": False, "error": "Unlock the terminal first"}, status_code=401)
+    try:
+        body = await request.json()
+        mode = str(body.get("strategy_mode") or "")
+        values = {key: body[key] for key in ("macd_fast_period", "macd_slow_period", "macd_signal_period") if key in body}
+        return JSONResponse({"success": True, "bot": await lighter_crypto_bot.save_strategy_draft(mode, values)})
     except Exception as error:
         return JSONResponse({"success": False, "error": str(error)}, status_code=400)
 
