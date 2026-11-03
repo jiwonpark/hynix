@@ -1,0 +1,74 @@
+// Run with linkedom available on NODE_PATH (temporary test dependency).
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const {parseHTML} = require('linkedom');
+for (const [file, name, prefix] of [
+  ['crypto-tab.js', 'cryptoEngine', 'crypto_'],
+  ['lighter-crypto-tab.js', 'lighterCryptoEngine', 'lighterCrypto_'],
+]) {
+  const {window, document} = parseHTML('<html><body><main><div class="shortTermCriteriaGrid"></div><div id="detail"></div></main></body></html>');
+  const storage = new Map();
+  const context = {window, document, console, URLSearchParams, setTimeout, clearTimeout,
+    localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)}};
+  // Scripts normally register DOMContentLoaded; avoid mounting a real terminal.
+  document.addEventListener = () => {};
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync('terminal-common.js','utf8'),context);
+  vm.runInContext(fs.readFileSync(file,'utf8'),context);
+  const common=window.TerminalCommon, engine=window[name];
+  assert.ok(engine, name);
+  engine.botState={strategy_mode:'macd_zero_cross'};
+  engine.interval='5m';
+  let changes=0;
+  engine.runBacktest=()=>{changes++;};
+  engine.updateRulesMatchStatus=()=>{};
+  const anchor=document.getElementById('detail');
+  const frame=document.querySelector('.shortTermCriteriaGrid');
+  frame.innerHTML=`<div><div><span id="${prefix}lblCritScaleInTitle">Entry summary</span></div></div><div><div><span id="${prefix}lblCritTPTitle">Exit summary</span></div></div>`;
+  common.mountHourlyHistogram(prefix,anchor,engine);
+  common.mountTakeProfitControls(prefix,anchor,engine);
+  const hourly=document.getElementById(prefix+'hourlyHistControls');
+  const tp=document.getElementById(prefix+'takeProfitControls');
+  const fast=document.getElementById(prefix+'hourlyHistFast');
+  fast.value='17';
+  const countBefore=document.querySelectorAll('input').length;
+  const livePanel=document.createElement('div');livePanel.id=prefix.replace(/_$/,'')+'LiveConditions';
+  anchor.parentNode.append(livePanel);
+  for (const mode of [...Object.keys(engine.paradigms), 'macd_zero_cross']) {
+    common.prepareConditionGroups(prefix,anchor);
+    anchor.innerHTML=mode==='grid'?'':engine.renderParadigmDetail(mode);
+    common.groupConditionControls(prefix,anchor);
+    const entry=document.getElementById(prefix+'entryConditionGroup');
+    const exit=document.getElementById(prefix+'exitConditionGroup');
+    assert.equal(hourly.parentNode,entry,mode+' hourly in entry');
+    assert.equal(tp.parentNode,exit,mode+' TP in exit');
+    assert.equal(fast.value,'17','unsaved period survives layout rebuild');
+    assert.equal(document.querySelectorAll('#'+prefix+'conditionGroups').length,1);
+    for(const node of document.querySelectorAll('[data-terminal-rule-group]'))
+      assert.equal(node.parentNode,node.dataset.terminalRuleGroup==='entry'?entry:exit);
+    if(mode==='macd_zero_cross') {
+      assert.equal(document.getElementById(prefix+'macdZeroUseExitCross').closest('section'),exit);
+      const badge=document.createElement('span');badge.textContent='PASS';
+      assert.equal(common.groupedLiveCondition(prefix,'exit_histogram_zero_cross',badge,mode,mode),true);
+      const host=document.getElementById(prefix+'liveRule_exit_histogram_zero_cross');
+      assert.equal(host.parentNode,document.getElementById(prefix+'macdZeroUseExitCross').parentNode);
+      common.resetGroupedLiveConditions(prefix,'source',false);
+      assert.match(host.textContent,/DIFFERENT STRATEGY/);
+    }
+    const ids=[...document.querySelectorAll('[id]')].map(n=>n.id);
+    assert.equal(new Set(ids).size,ids.length,'no duplicate controls');
+  }
+  engine.currentParadigm='macd_zero_cross';
+  const bot={enabled:true,strategy_mode:'macd_zero_cross',strategy_interval:'5m',tranches:[{}],
+    last_evaluation:{strategy:'macd_zero_cross',time:Date.now()/1000,
+      condition_pass:{entry_histogram_zero_cross:true,entry_signal_zone:false,exit_histogram_zero_cross:true}}};
+  engine.renderLiveConditionStatus(bot);
+  assert.match(document.getElementById(prefix+'liveRule_exit_histogram_zero_cross').textContent,/LIVE · PASS/);
+  engine.renderLiveConditionStatus({...bot,strategy_mode:'ou_quant'});
+  assert.match(document.getElementById(prefix+'liveRule_exit_histogram_zero_cross').textContent,/DIFFERENT STRATEGY/);
+  fast.dispatchEvent(new window.Event('change'));
+  assert.equal(changes,1,'original change handler remains attached exactly once');
+  assert.ok(document.querySelectorAll('input').length>countBefore);
+  console.log(file+': grouped controls survive strategy switches with draft values and listeners intact');
+}

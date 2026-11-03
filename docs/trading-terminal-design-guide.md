@@ -261,3 +261,24 @@ Show both directional exit labels and PASS/WAITING/OFF/N/A. Remove the old
 exit-signal-zone row. Replay and live use the same evaluator. Existing reduction
 sizing is unchanged (one owned LIFO tranche per signal), and reverse entries still
 require the full entry pattern and hourly gate. Existing take-profit stays active.
+
+
+### Grouping conditions in Tabs 4 and 5
+
+Use the common terminal condition layout in both single-leg tabs: **Entry
+conditions** contains the selected strategy's entry switches and the hourly
+histogram direction filter; **Exit conditions** contains the strategy's exit
+rules and net take-profit. Keep optional strategy rules separate from
+**Execution safeguards & live deployment**, which contains account capacity,
+leverage, margin, recovery/reconciliation and authenticated deployment controls.
+Shared MACD reversal pattern switches also govern opposite-position exits;
+explain this relationship in the exit section without adding duplicate switches.
+
+Move existing controls rather than cloning them. Preserve input identity, drafts,
+listeners, authentication locks and saved live settings when rebuilding a
+strategy panel. Put PAPER and LIVE verdicts next to the condition where a dedicated
+row exists; otherwise list verdicts within the matching entry or exit section.
+Always show the source candle time. When selected replay and saved live strategy
+differ, label the difference and clear inline live verdicts instead of showing a
+prior strategy's PASS. The layout change must not change trading predicates,
+entry signals, execution safeguards or sizing.

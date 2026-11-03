@@ -661,7 +661,7 @@
         const overlay = document.createElement("div");
         overlay.id = "lighterCryptoTrendOverlay";
         overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
-        overlay.innerHTML = '<span id="lighterCryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155" id="lighterCryptoEntryTrendLegend">PAPER ENTRY TREND · awaiting replay</span><label title="Configured wider-trend MA period; MACD strategies use chart candles and other strategies use completed 1h candles" style="font-size:10px;background:#fff;padding:3px;border:1px solid #cbd5e1;border-radius:4px">Regime MA <input id="lighterCrypto_macroMaPeriod" aria-label="Wider trend MA period" type="number" min="2" max="120" step="1" value="60" style="width:48px"></label><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="lighterCryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterCryptoTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span title="Reference display only; the entry-filter background uses the strategy rule shown in its legend">MACRO REF:</span><select id="lighterCryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterCryptoTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
+        overlay.innerHTML = '<span id="lighterCryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155" id="lighterCryptoEntryTrendLegend">PAPER ENTRY TREND · awaiting replay</span><label data-terminal-rule-group="exit" data-terminal-rule-group="entry" title="Configured wider-trend MA period; MACD strategies use chart candles and other strategies use completed 1h candles" style="font-size:10px;background:#fff;padding:3px;border:1px solid #cbd5e1;border-radius:4px">Regime MA <input id="lighterCrypto_macroMaPeriod" aria-label="Wider trend MA period" type="number" min="2" max="120" step="1" value="60" style="width:48px"></label><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="lighterCryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="lighterCryptoTrendSmall" class="lighterTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span title="Reference display only; the entry-filter background uses the strategy rule shown in its legend">MACRO REF:</span><select id="lighterCryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="lighterCryptoTrendBig" class="lighterTrendBadge" style="pointer-events:none">1h —</span></div>';
         chartHost.appendChild(overlay);
         this.bindMatchPill(overlay.querySelector("#lighterCryptoMatchPill"));
 
@@ -1491,6 +1491,7 @@
         }
       }
 
+      window.TerminalCommon?.prepareConditionGroups?.("lighterCrypto_", detailSec);
       window.TerminalCommon?.mountHourlyHistogram?.("lighterCrypto_", detailSec, this);
       window.TerminalCommon?.mountTakeProfitControls?.("lighterCrypto_", detailSec, this);
       if (["adaptive_tranche", "grid"].includes(mode)) {
@@ -1511,6 +1512,8 @@
           this.bindParadigmDetailEvents(mode);
         }
       }
+
+      window.TerminalCommon?.groupConditionControls?.("lighterCrypto_", detailSec);
 
       this.runBacktest();
       this.updateRulesMatchStatus();
@@ -1555,7 +1558,7 @@
               <button id="lighterCrypto_btnOuReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun SDE</button>
             </div>
           </div>
-          <div id="lighterCrypto_ouEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+          <div data-terminal-rule-group="entry" id="lighterCrypto_ouEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Entry conditions · switches and values apply to replay; Deploy saves them to the live bot</strong>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseEntryZ" type="checkbox" aria-label="Enable minimum entry Z" style="${ouToggleStyle}" ${ouChecked("ou_use_entry_z")}><span>1. Minimum |Z| (Entry Z above)</span><span class="condBadge neutral" id="lighterCrypto_ouStatusEntryZ">WAITING</span></div>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseHalflife" type="checkbox" aria-label="Enable maximum half-life" style="${ouToggleStyle}" ${ouChecked("ou_use_halflife")}><span>2. Maximum half-life</span><input id="lighterCrypto_ouHalflifeMax" type="number" aria-label="Maximum half-life parameter" min="1" max="50" step="0.5" value="${ouNumber("ou_halflife_max", 8)}" style="${ouNumberStyle}"><span>× 4 bars</span><span class="condBadge neutral" id="lighterCrypto_ouStatusHalflife">WAITING</span></div>
@@ -1564,7 +1567,7 @@
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseStopZone" type="checkbox" aria-label="Enable upper entry Z limit" style="${ouToggleStyle}" ${ouChecked("ou_use_stop_zone")}><span>5. Entry below emergency |Z| limit</span><input id="lighterCrypto_ouStopZ" type="number" aria-label="Emergency Z limit" min="1.5" max="6" step="0.05" value="${ouNumber("ou_stop_z", 3.5)}" style="${ouNumberStyle}"><span>σ</span><span class="condBadge neutral" id="lighterCrypto_ouStatusStopZone">WAITING</span></div>
             <small style="color:#64748b;">Live order-book quote confirmation and account safety checks are separate. Historical replay has no order-book quotes.</small>
           </div>
-          <div id="lighterCrypto_ouExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+          <div data-terminal-rule-group="exit" id="lighterCrypto_ouExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Exit condition</strong>
             <div style="${ouRowStyle}"><input id="lighterCrypto_ouUseExitZ" type="checkbox" aria-label="Enable neutral Z exit" style="${ouToggleStyle}" ${ouChecked("ou_use_exit_z")}><span>1. OU neutral |Z| target (Exit Z above)</span><span class="condBadge neutral" id="lighterCrypto_ouStatusExitZ">WAITING</span></div>
             <div style="${ouRowStyle}"><span>Emergency stop (always active)</span><span class="condBadge neutral" id="lighterCrypto_ouStatusEmergencyStop">WAITING</span></div>
@@ -1801,13 +1804,12 @@
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Entry pattern · evaluated without position state</strong>
+            <div data-terminal-rule-group="entry" style="display:grid;gap:8px;"><strong style="font-size:12px;">Strategy entry pattern</strong>
               <div style="${row}"><input id="lighterCrypto_macdZeroUseCross" type="checkbox" style="${toggle}" ${checked("use_macd_zero_cross")}><span>Histogram zero cross: −→+ long; +→− short</span><span id="lighterCrypto_macdStatusZeroCross" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="lighterCrypto_macdZeroUseSignalZone" type="checkbox" style="${toggle}" ${checked("use_macd_signal_zone")}><span>Signal on origin side: &lt; 0 long; &gt; 0 short</span><span id="lighterCrypto_macdStatusSignalZone" class="condBadge neutral">WAITING</span></div>
             </div>
-            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Exit / flip</strong>
+            <div data-terminal-rule-group="exit" style="display:grid;gap:8px;"><strong style="font-size:12px;">Opposite histogram cross · one LIFO tranche</strong>
               <div style="${row}"><input id="lighterCrypto_macdZeroUseExitCross" type="checkbox" style="${toggle}" ${checked("use_macd_hist_exit")}><span>Exit long: histogram +→− · Exit short: −→+ (signal-line zone ignored)</span><span id="lighterCrypto_macdStatusExitCross" class="condBadge neutral">N/A</span></div>
-              <div style="${row}"><span>No position, balance, capacity, or margin check can suppress chart entry signals</span></div>
             </div>
           </div>
           <small id="lighterCrypto_macdStatusSource" style="display:block;margin-top:10px;color:#64748b;">PAPER · Awaiting completed-candle replay</small>
@@ -1835,7 +1837,7 @@
               <button id="lighterCrypto_btnMacdReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun MACD</button>
             </div>
           </div>
-          <div style="margin:0 0 12px;padding:10px;border:1px solid #c4b5fd;border-radius:7px;background:#f5f3ff;font-size:11px;font-weight:700;color:#4c1d95;">
+          <div data-terminal-rule-group="entry" style="margin:0 0 12px;padding:10px;border:1px solid #c4b5fd;border-radius:7px;background:#f5f3ff;font-size:11px;font-weight:700;color:#4c1d95;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><span style="background:#7c3aed;color:#fff;border-radius:999px;padding:2px 7px;font-size:9px;">NEW</span><strong>Wider trend filters</strong><span style="font-weight:500;color:#6d28d9;">Every checked filter must agree.</span></div>
             <input id="lighterCrypto_macroRegimeMode" type="hidden" value="${macroMode}">
             <fieldset aria-label="Completed-candle wider trend filters" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0;padding:0;border:0;min-width:0;">
@@ -1859,20 +1861,21 @@
             <span id="lighterCrypto_macroRegimeReadout" style="display:block;margin-top:8px;">Completed ${chartInterval} · MACD-H(${Number(live.macro_macd_fast_period ?? 12)}, ${Number(live.macro_macd_slow_period ?? 26)}, ${Number(live.macro_macd_signal_period ?? 9)}) · H &lt; 0 and rising = long · H &gt; 0 and falling = short</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
+            <div data-terminal-rule-group="entry" style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
               <div style="${row}"><input id="lighterCrypto_macdUseEntrySignalNegative" type="checkbox" style="${toggle}" ${checked("use_macd_signal_negative")}><span>Long entry / short exit: Signal &lt; 0</span><span id="lighterCrypto_macdStatusEntrySignal" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="lighterCrypto_macdUseEntryHistogramNegative" type="checkbox" style="${toggle}" ${checked("use_macd_hist_negative")}><span>Long entry / short exit: Histogram &lt; 0</span><span id="lighterCrypto_macdStatusEntryHistogram" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="lighterCrypto_macdUseEntryReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal")}><span>Long entry / short exit: trough turns up</span><span id="lighterCrypto_macdStatusEntryReversal" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><span id="lighterCrypto_macdMacroConditionLabel">Entry direction agrees with completed ${chartInterval} MACD-H regime</span><span id="lighterCrypto_macdStatusMacro" class="condBadge neutral">WAITING</span></div>
               ${mode === "macd_strength_scaleout" ? `<div style="${row}"><input id="lighterCrypto_macdUseStrength" type="checkbox" style="${toggle}" ${checked("use_macd_strength")}><span>Rebound ≥ <input id="lighterCrypto_macdStrengthPct" type="number" min="0" max="1000" step="1" value="${Number(live.macd_strength_min_pct ?? 30)}" style="width:58px">%</span><span id="lighterCrypto_macdStatusEntryStrength" class="condBadge neutral">WAITING</span></div>` : ""}
             </div>
-            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · positive set for short</strong>
+            <div data-terminal-rule-group="entry" style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · positive set for short</strong>
               <div style="${row}"><input id="lighterCrypto_macdUseExitSignalPositive" type="checkbox" style="${toggle}" ${checked("use_macd_signal_positive")}><span>Short entry / long exit: Signal &gt; 0</span><span id="lighterCrypto_macdStatusExitSignal" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="lighterCrypto_macdUseExitHistogramPositive" type="checkbox" style="${toggle}" ${checked("use_macd_hist_positive")}><span>Short entry / long exit: Histogram &gt; 0</span><span id="lighterCrypto_macdStatusExitHistogram" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="lighterCrypto_macdUseExitReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal_exit")}><span>Short entry / long exit: peak turns down</span><span id="lighterCrypto_macdStatusExitReversal" class="condBadge neutral">WAITING</span></div>
-              ${mode === "macd_strength_scaleout" ? `<div style="${row}"><input id="lighterCrypto_macdUseTwoStageExit" type="checkbox" style="${toggle}" ${checked("use_macd_two_stage_exit")}><span>Two-stage: first peak closes <input id="lighterCrypto_macdFirstExitPct" type="number" min="1" max="99" step="1" value="${Number(live.macd_first_exit_pct ?? 50)}" style="width:58px">%; second closes remainder</span></div>` : ""}
+              ${mode === "macd_strength_scaleout" ? `<div data-terminal-rule-group="exit" style="${row}"><input id="lighterCrypto_macdUseTwoStageExit" type="checkbox" style="${toggle}" ${checked("use_macd_two_stage_exit")}><span>Two-stage: first peak closes <input id="lighterCrypto_macdFirstExitPct" type="number" min="1" max="99" step="1" value="${Number(live.macd_first_exit_pct ?? 50)}" style="width:58px">%; second closes remainder</span></div>` : ""}
             </div>
           </div>
+          <small data-terminal-rule-group="exit" style="color:#64748b;">Opposite directional pattern exits use the same pattern switches shown under Entry conditions. These shared switches also control opposite entries; hourly and wider-trend entry gates do not block exits.</small>
           <small id="lighterCrypto_macdStatusSource" style="display:block;margin-top:10px;color:#64748b;">PAPER · Awaiting completed-candle replay</small>
         `;
       }
@@ -2118,6 +2121,7 @@
       panel.id = "lighterCryptoLiveRulesPanel";
       panel.style.cssText = "margin:14px 0 10px;padding:14px 16px;border:2px solid #059669;border-radius:10px;background:#ecfdf5;color:#064e3b;box-shadow:0 1px 3px rgba(0,0,0,0.05);";
       panel.innerHTML = `
+        <h3 style="margin:0 0 10px;font-size:14px;">Execution safeguards &amp; live deployment</h3>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;border-bottom:1px solid rgba(5,150,105,0.2);padding-bottom:8px;">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <strong style="font-size:13px;letter-spacing:.35px">REAL LIGHTER PERPETUALS BOT — QUANT</strong>
@@ -3716,6 +3720,15 @@
         ? `PAPER · Conditions at completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()}`
         : "PAPER · Awaiting completed-candle replay";
       panel.replaceChildren(heading);
+      const groupedPaper = {};
+      for (const key of ["entry", "exit"]) {
+        const bucket = $("lighterCrypto_" + key + "ConditionGroup");
+        if (!bucket) continue;
+        let list = $("lighterCrypto_" + key + "PaperConditions");
+        if (!list) { list = document.createElement("div"); list.id = "lighterCrypto_" + key + "PaperConditions"; bucket.append(list); }
+        list.replaceChildren();
+        groupedPaper[key] = list;
+      }
       Object.entries(labels).forEach(([key, label]) => {
         const row = document.createElement("div");
         row.className = "condRow";
@@ -3729,7 +3742,7 @@
         badge.textContent = state;
         badge.title = value == null ? "No open paper position or completed replay evaluation" : "Evaluated by paper replay";
         row.append(name, badge);
-        panel.append(row);
+        (groupedPaper[key.startsWith("exit_") ? "exit" : "entry"] || panel).append(row);
       });
     },
 
@@ -3749,6 +3762,16 @@
         ? `LIVE · ${bot.strategy_mode}${candidate} conditions at completed candle ${new Date(time * 1000).toLocaleString()}`
         : `LIVE · ${bot?.strategy_mode || "strategy"} conditions unavailable (paused, stale, or awaiting a completed candle)`;
       panel.replaceChildren(heading);
+      window.TerminalCommon?.resetGroupedLiveConditions?.("lighterCrypto_", heading.textContent, bot?.strategy_mode === this.currentParadigm);
+      const liveGroups = {};
+      if (bot?.strategy_mode === this.currentParadigm) {
+        for (const key of ["entry", "exit"]) {
+          const group = $("lighterCrypto_" + key + "LiveConditions");
+          if (group) {
+            liveGroups[key] = group;
+          }
+        }
+      }
       const toggleByKey = bot?.strategy_mode === "ou_quant" ? {
         entry_z:"ou_use_entry_z", entry_halflife:"ou_use_halflife",
         entry_min_deviation:"ou_use_min_abs_deviation", entry_macro_trend:"ou_use_macro_trend",
@@ -3828,7 +3851,8 @@
         badge.title = fresh ? `LIVE · ${new Date(time * 1000).toLocaleString()} · saved bot rules${macroDetail}`
           : "No current live evaluation";
         row.append(label, badge);
-        panel.append(row);
+        if (!window.TerminalCommon?.groupedLiveCondition?.("lighterCrypto_", key, badge, bot?.strategy_mode, this.currentParadigm))
+          (liveGroups[key.startsWith("exit_") ? "exit" : "entry"] || panel).append(row);
       });
     },
 

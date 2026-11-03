@@ -1407,6 +1407,7 @@
         }
       }
 
+      window.TerminalCommon?.prepareConditionGroups?.("crypto_", detailSec);
       window.TerminalCommon?.mountHourlyHistogram?.("crypto_", detailSec, this);
       window.TerminalCommon?.mountTakeProfitControls?.("crypto_", detailSec, this);
       if (mode === "grid") {
@@ -1422,6 +1423,8 @@
           this.bindParadigmDetailEvents(mode);
         }
       }
+
+      window.TerminalCommon?.groupConditionControls?.("crypto_", detailSec);
 
       this.runBacktest();
       this.updateRulesMatchStatus();
@@ -1466,7 +1469,7 @@
               <button id="crypto_btnOuReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun SDE</button>
             </div>
           </div>
-          <div id="crypto_ouEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+          <div data-terminal-rule-group="entry" id="crypto_ouEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Entry conditions · switches and values apply to replay; Deploy saves them to the live bot</strong>
             <div style="${ouRowStyle}"><input id="crypto_ouUseEntryZ" type="checkbox" aria-label="Enable minimum entry Z" style="${ouToggleStyle}" ${ouChecked("ou_use_entry_z")}><span>1. Minimum |Z| (Entry Z above)</span><span class="condBadge neutral" id="crypto_ouStatusEntryZ">WAITING</span></div>
             <div style="${ouRowStyle}"><input id="crypto_ouUseHalflife" type="checkbox" aria-label="Enable maximum half-life" style="${ouToggleStyle}" ${ouChecked("ou_use_halflife")}><span>2. Maximum half-life</span><input id="crypto_ouHalflifeMax" type="number" aria-label="Maximum half-life parameter" min="1" max="50" step="0.5" value="${ouNumber("ou_halflife_max", 8)}" style="${ouNumberStyle}"><span>× 4 bars</span><span class="condBadge neutral" id="crypto_ouStatusHalflife">WAITING</span></div>
@@ -1475,7 +1478,7 @@
             <div style="${ouRowStyle}"><input id="crypto_ouUseStopZone" type="checkbox" aria-label="Enable upper entry Z limit" style="${ouToggleStyle}" ${ouChecked("ou_use_stop_zone")}><span>5. Entry below emergency |Z| limit</span><input id="crypto_ouStopZ" type="number" aria-label="Emergency Z limit" min="1.5" max="6" step="0.05" value="${ouNumber("ou_stop_z", 3.5)}" style="${ouNumberStyle}"><span>σ</span><span class="condBadge neutral" id="crypto_ouStatusStopZone">WAITING</span></div>
             <small style="color:#64748b;">Live order-book quote confirmation and account safety checks are separate. Historical replay has no order-book quotes.</small>
           </div>
-          <div id="crypto_ouExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+          <div data-terminal-rule-group="exit" id="crypto_ouExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Exit condition</strong>
             <div style="${ouRowStyle}"><input id="crypto_ouUseExitZ" type="checkbox" aria-label="Enable neutral Z exit" style="${ouToggleStyle}" ${ouChecked("ou_use_exit_z")}><span>1. OU neutral |Z| target (Exit Z above)</span><span class="condBadge neutral" id="crypto_ouStatusExitZ">WAITING</span></div>
             <div style="${ouRowStyle}"><span>Emergency stop (always active)</span><span class="condBadge neutral" id="crypto_ouStatusEmergencyStop">WAITING</span></div>
@@ -1525,8 +1528,8 @@
             </div>
           </div>
           <div style="display:grid;gap:8px;margin-bottom:12px;">
-            <label style="display:flex;align-items:center;gap:8px;font-size:12px;"><input id="crypto_maUseDiffHook" type="checkbox" style="width:16px;height:16px;" ${savedMa.use_ma_diff_hook !== false ? "checked" : ""}>Entry · MA diff turnaround after the configured streak<span class="condBadge neutral" id="crypto_maStatusDiffHook">UNAVAILABLE</span></label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:12px;"><input id="crypto_maUseDiffExit" type="checkbox" style="width:16px;height:16px;" ${savedMa.use_ma_diff_exit !== false ? "checked" : ""}>Exit · Opposite MA diff turnaround<span class="condBadge neutral" id="crypto_maStatusDiffExit">N/A</span></label>
+            <label data-terminal-rule-group="entry" style="display:flex;align-items:center;gap:8px;font-size:12px;"><input id="crypto_maUseDiffHook" type="checkbox" style="width:16px;height:16px;" ${savedMa.use_ma_diff_hook !== false ? "checked" : ""}>Entry · MA diff turnaround after the configured streak<span class="condBadge neutral" id="crypto_maStatusDiffHook">UNAVAILABLE</span></label>
+            <label data-terminal-rule-group="exit" style="display:flex;align-items:center;gap:8px;font-size:12px;"><input id="crypto_maUseDiffExit" type="checkbox" style="width:16px;height:16px;" ${savedMa.use_ma_diff_exit !== false ? "checked" : ""}>Exit · Opposite MA diff turnaround<span class="condBadge neutral" id="crypto_maStatusDiffExit">N/A</span></label>
             <small id="crypto_maDiffStatusSource" style="color:#64748b;">PAPER · Awaiting completed-candle replay</small>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
@@ -1747,13 +1750,12 @@
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Entry pattern · evaluated without position state</strong>
+            <div data-terminal-rule-group="entry" style="display:grid;gap:8px;"><strong style="font-size:12px;">Strategy entry pattern</strong>
               <div style="${row}"><input id="crypto_macdZeroUseCross" type="checkbox" style="${toggle}" ${checked("use_macd_zero_cross")}><span>Histogram zero cross: −→+ long; +→− short</span><span id="crypto_macdStatusZeroCross" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="crypto_macdZeroUseSignalZone" type="checkbox" style="${toggle}" ${checked("use_macd_signal_zone")}><span>Signal on origin side: &lt; 0 long; &gt; 0 short</span><span id="crypto_macdStatusSignalZone" class="condBadge neutral">WAITING</span></div>
             </div>
-            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Exit / flip</strong>
+            <div data-terminal-rule-group="exit" style="display:grid;gap:8px;"><strong style="font-size:12px;">Opposite histogram cross · one LIFO tranche</strong>
               <div style="${row}"><input id="crypto_macdZeroUseExitCross" type="checkbox" style="${toggle}" ${checked("use_macd_hist_exit")}><span>Exit long: histogram +→− · Exit short: −→+ (signal-line zone ignored)</span><span id="crypto_macdStatusExitCross" class="condBadge neutral">N/A</span></div>
-              <div style="${row}"><span>No position, balance, capacity, or margin check can suppress chart entry signals</span></div>
             </div>
           </div>
           <small id="crypto_macdStatusSource" style="display:block;margin-top:10px;color:#64748b;">PAPER · Awaiting completed-candle replay</small>
@@ -1779,7 +1781,7 @@
               <button id="crypto_btnMacdReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun MACD</button>
             </div>
           </div>
-          <div style="margin:0 0 12px;padding:10px;border:1px solid #c4b5fd;border-radius:7px;background:#f5f3ff;font-size:11px;font-weight:700;color:#4c1d95;">
+          <div data-terminal-rule-group="entry" style="margin:0 0 12px;padding:10px;border:1px solid #c4b5fd;border-radius:7px;background:#f5f3ff;font-size:11px;font-weight:700;color:#4c1d95;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><span style="background:#7c3aed;color:#fff;border-radius:999px;padding:2px 7px;font-size:9px;">NEW</span><strong>Wider trend filters</strong><span style="font-weight:500;color:#6d28d9;">Every checked filter must agree.</span></div>
             <input id="crypto_macroRegimeMode" type="hidden" value="${macroMode}">
             <fieldset aria-label="Completed-candle wider trend filters" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:0;padding:0;border:0;min-width:0;">
@@ -1803,20 +1805,21 @@
             <span id="crypto_macroRegimeReadout" style="display:block;margin-top:8px;">Completed ${chartInterval} · MACD-H(${Number(live.macro_macd_fast_period ?? 12)}, ${Number(live.macro_macd_slow_period ?? 26)}, ${Number(live.macro_macd_signal_period ?? 9)}) · H &lt; 0 and rising = long · H &gt; 0 and falling = short</span>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
+            <div data-terminal-rule-group="entry" style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
               <div style="${row}"><input id="crypto_macdUseEntrySignalNegative" type="checkbox" style="${toggle}" ${checked("use_macd_signal_negative")}><span>Long entry / short exit: Signal &lt; 0</span><span id="crypto_macdStatusEntrySignal" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="crypto_macdUseEntryHistogramNegative" type="checkbox" style="${toggle}" ${checked("use_macd_hist_negative")}><span>Long entry / short exit: Histogram &lt; 0</span><span id="crypto_macdStatusEntryHistogram" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="crypto_macdUseEntryReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal")}><span>Long entry / short exit: trough turns up</span><span id="crypto_macdStatusEntryReversal" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><span id="crypto_macdMacroConditionLabel">Entry direction agrees with completed ${chartInterval} MACD-H regime</span><span id="crypto_macdStatusMacro" class="condBadge neutral">WAITING</span></div>
               ${mode === "macd_strength_scaleout" ? `<div style="${row}"><input id="crypto_macdUseStrength" type="checkbox" style="${toggle}" ${checked("use_macd_strength")}><span>Rebound ≥ <input id="crypto_macdStrengthPct" type="number" min="0" max="1000" step="1" value="${Number(live.macd_strength_min_pct ?? 30)}" style="width:58px">%</span><span id="crypto_macdStatusEntryStrength" class="condBadge neutral">WAITING</span></div>` : ""}
             </div>
-            <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · positive set for short</strong>
+            <div data-terminal-rule-group="entry" style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · positive set for short</strong>
               <div style="${row}"><input id="crypto_macdUseExitSignalPositive" type="checkbox" style="${toggle}" ${checked("use_macd_signal_positive")}><span>Short entry / long exit: Signal &gt; 0</span><span id="crypto_macdStatusExitSignal" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="crypto_macdUseExitHistogramPositive" type="checkbox" style="${toggle}" ${checked("use_macd_hist_positive")}><span>Short entry / long exit: Histogram &gt; 0</span><span id="crypto_macdStatusExitHistogram" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="crypto_macdUseExitReversal" type="checkbox" style="${toggle}" ${checked("use_macd_hist_reversal_exit")}><span>Short entry / long exit: peak turns down</span><span id="crypto_macdStatusExitReversal" class="condBadge neutral">WAITING</span></div>
-              ${mode === "macd_strength_scaleout" ? `<div style="${row}"><input id="crypto_macdUseTwoStageExit" type="checkbox" style="${toggle}" ${checked("use_macd_two_stage_exit")}><span>Two-stage: first peak closes <input id="crypto_macdFirstExitPct" type="number" min="1" max="99" step="1" value="${Number(live.macd_first_exit_pct ?? 50)}" style="width:58px">%; second closes remainder</span></div>` : ""}
+              ${mode === "macd_strength_scaleout" ? `<div data-terminal-rule-group="exit" style="${row}"><input id="crypto_macdUseTwoStageExit" type="checkbox" style="${toggle}" ${checked("use_macd_two_stage_exit")}><span>Two-stage: first peak closes <input id="crypto_macdFirstExitPct" type="number" min="1" max="99" step="1" value="${Number(live.macd_first_exit_pct ?? 50)}" style="width:58px">%; second closes remainder</span></div>` : ""}
             </div>
           </div>
+          <small data-terminal-rule-group="exit" style="color:#64748b;">Opposite directional pattern exits use the same pattern switches shown under Entry conditions. These shared switches also control opposite entries; hourly and wider-trend entry gates do not block exits.</small>
           <small id="crypto_macdStatusSource" style="display:block;margin-top:10px;color:#64748b;">PAPER · Awaiting completed-candle replay</small>
         `;
       }
@@ -2056,6 +2059,7 @@
       panel.id = "cryptoLiveRulesPanel";
       panel.style.cssText = "margin:14px 0 10px;padding:14px 16px;border:2px solid #059669;border-radius:10px;background:#ecfdf5;color:#064e3b;box-shadow:0 1px 3px rgba(0,0,0,0.05);";
       panel.innerHTML = `
+        <h3 style="margin:0 0 10px;font-size:14px;">Execution safeguards &amp; live deployment</h3>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;border-bottom:1px solid rgba(5,150,105,0.2);padding-bottom:8px;">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <strong style="font-size:13px;letter-spacing:.35px">REAL BINANCE FUTURES BOT — GRID</strong>
@@ -3533,6 +3537,15 @@
         ? `PAPER · Conditions at completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()}`
         : "PAPER · Awaiting completed-candle replay";
       panel.replaceChildren(heading);
+      const groupedPaper = {};
+      for (const key of ["entry", "exit"]) {
+        const bucket = $("crypto_" + key + "ConditionGroup");
+        if (!bucket) continue;
+        let list = $("crypto_" + key + "PaperConditions");
+        if (!list) { list = document.createElement("div"); list.id = "crypto_" + key + "PaperConditions"; bucket.append(list); }
+        list.replaceChildren();
+        groupedPaper[key] = list;
+      }
       Object.entries(labels).forEach(([key, label]) => {
         const row = document.createElement("div");
         row.className = "condRow";
@@ -3547,7 +3560,7 @@
         badge.textContent = state;
         badge.title = value == null ? "No open paper position or completed replay evaluation" : "Evaluated by paper replay";
         row.append(name, badge);
-        panel.append(row);
+        (groupedPaper[key.startsWith("exit_") ? "exit" : "entry"] || panel).append(row);
       });
     },
 
@@ -3567,6 +3580,16 @@
         ? `LIVE · ${bot.strategy_mode}${candidate} conditions at completed candle ${new Date(time * 1000).toLocaleString()}`
         : `LIVE · ${bot?.strategy_mode || "strategy"} conditions unavailable (paused, stale, or awaiting a completed candle)`;
       panel.replaceChildren(heading);
+      window.TerminalCommon?.resetGroupedLiveConditions?.("crypto_", heading.textContent, bot?.strategy_mode === this.currentParadigm);
+      const liveGroups = {};
+      if (bot?.strategy_mode === this.currentParadigm) {
+        for (const key of ["entry", "exit"]) {
+          const group = $("crypto_" + key + "LiveConditions");
+          if (group) {
+            liveGroups[key] = group;
+          }
+        }
+      }
       const toggleByKey = bot?.strategy_mode === "ou_quant" ? {
         entry_z:"ou_use_entry_z", entry_halflife:"ou_use_halflife",
         entry_min_deviation:"ou_use_min_abs_deviation", entry_macro_trend:"ou_use_macro_trend",
@@ -3644,7 +3667,8 @@
         badge.title = fresh ? `LIVE · ${new Date(time * 1000).toLocaleString()} · saved bot rules`
           : "No current live evaluation";
         row.append(label, badge);
-        panel.append(row);
+        if (!window.TerminalCommon?.groupedLiveCondition?.("crypto_", key, badge, bot?.strategy_mode, this.currentParadigm))
+          (liveGroups[key.startsWith("exit_") ? "exit" : "entry"] || panel).append(row);
       });
     },
 

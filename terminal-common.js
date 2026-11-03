@@ -384,6 +384,118 @@
     }
   }
 
+  // Move the existing controls, never clone them: drafts, listeners and live
+  // authentication keep using the same inputs across strategy rerenders.
+  function persistentConditionNodes(prefix) {
+    return [
+      [document.getElementById(`${prefix}lblCritScaleInTitle`)?.parentNode?.parentNode, "entry"],
+      [document.getElementById(`${prefix}lblCritTPTitle`)?.parentNode?.parentNode, "exit"],
+      [document.getElementById(`${prefix.replace(/_$/, "")}LiveGridEntryRule`), "entry"],
+      [document.getElementById(`${prefix.replace(/_$/, "")}LiveGridExitRule`), "exit"],
+    ].filter(([node]) => node?.parentNode);
+  }
+
+  function prepareConditionGroups(prefix, anchor) {
+    if (!anchor?.parentNode) return;
+    for (const suffix of ["hourlyHistControls", "takeProfitControls"]) {
+      const node = document.getElementById(`${prefix}${suffix}`);
+      if (node) anchor.parentNode.insertBefore(node, anchor);
+    }
+    for (const [node] of persistentConditionNodes(prefix)) {
+      if (node._conditionHome) node._conditionHome.append(node);
+    }
+    document.getElementById(`${prefix}conditionGroups`)?.remove();
+  }
+
+  function groupConditionControls(prefix, anchor) {
+    if (!anchor?.parentNode || typeof anchor.querySelectorAll !== "function") return;
+    const groups = document.createElement("section");
+    groups.id = `${prefix}conditionGroups`;
+    groups.setAttribute("aria-label", "Trading conditions");
+    groups.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px;margin:14px 0;";
+    const buckets = {};
+    const liveSources = {};
+    for (const [key, title, note] of [
+      ["entry", "Entry conditions", "All enabled entry rules must pass. Entry signals are independent of positions and account limits."],
+      ["exit", "Exit conditions", "Any enabled exit path can reduce a position. Entry filters do not block exits."],
+    ]) {
+      const section = document.createElement("section");
+      section.id = `${prefix}${key}ConditionGroup`;
+      section.style.cssText = "min-width:0;padding:14px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;display:flex;flex-direction:column;gap:10px;";
+      const heading = document.createElement("h3");
+      heading.textContent = title;
+      heading.style.cssText = "margin:0;font-size:14px;color:#0f172a;";
+      const description = document.createElement("small");
+      description.textContent = note;
+      description.style.color = "#64748b";
+      section.append(heading, description);
+      groups.append(section);
+      buckets[key] = section;
+      const live = document.createElement("div");
+      live.id = `${prefix}${key}LiveConditions`;
+      live.style.cssText = "display:grid;gap:6px;font-size:11px;";
+      section.append(live);
+      liveSources[key] = live;
+    }
+    for (const [node, key] of persistentConditionNodes(prefix)) {
+      node._conditionHome ||= node.parentNode;
+      buckets[key].append(node);
+    }
+    for (const node of anchor.querySelectorAll("[data-terminal-rule-group]")) {
+      const bucket = buckets[node.dataset.terminalRuleGroup];
+      if (bucket) bucket.append(node);
+    }
+    for (const [suffix, key] of [["hourlyHistControls", "entry"], ["takeProfitControls", "exit"]]) {
+      const node = document.getElementById(`${prefix}${suffix}`);
+      if (node) { node.style.margin = "0"; buckets[key].append(node); }
+    }
+    for (const key of ["entry", "exit"]) {
+      buckets[key].append(liveSources[key]);
+    }
+    anchor.parentNode.insertBefore(groups, anchor.nextSibling);
+  }
+
+  function resetGroupedLiveConditions(prefix, source, matching) {
+    for (const key of ["entry", "exit"]) {
+      const group = document.getElementById(`${prefix}${key}LiveConditions`);
+      if (!group) continue;
+      const heading = document.createElement("small");
+      heading.textContent = matching ? source : "LIVE · saved strategy differs from selected replay strategy";
+      group.replaceChildren(heading);
+      for (const host of group.parentNode.querySelectorAll("[data-live-condition]"))
+        host.textContent = matching ? "LIVE · UNAVAILABLE" : "LIVE · DIFFERENT STRATEGY";
+    }
+  }
+
+  function groupedLiveCondition(prefix, key, badge, mode, selectedMode) {
+    if (mode !== selectedMode) return false;
+    const group = document.getElementById(`${prefix}${key.startsWith("exit_") ? "exit" : "entry"}LiveConditions`);
+    if (!group) return false;
+    const ids = mode === "macd_zero_cross" ? {
+      entry_histogram_zero_cross:"macdStatusZeroCross", entry_signal_zone:"macdStatusSignalZone",
+      exit_histogram_zero_cross:"macdStatusExitCross",
+    } : mode === "ou_quant" ? {
+      entry_z:"ouStatusEntryZ",entry_halflife:"ouStatusHalflife",entry_min_deviation:"ouStatusMinDeviation",
+      entry_macro_trend:"ouStatusMacroTrend",entry_stop_zone:"ouStatusStopZone",exit_z:"ouStatusExitZ",
+      exit_emergency_stop:"ouStatusEmergencyStop",
+    } : mode === "ma_stack" ? {entry_ma_diff_hook:"maStatusDiffHook",exit_ma_diff_hook:"maStatusDiffExit"} : {};
+    const paper = ids[key] && document.getElementById(`${prefix}${ids[key]}`);
+    if (!paper?.parentNode) return false;
+    let host = document.getElementById(`${prefix}liveRule_${key}`);
+    if (!host) {
+      const label = document.createElement("small");
+      label.textContent = "PAPER";
+      paper.parentNode.insertBefore(label, paper);
+      host = document.createElement("span");
+      host.id = `${prefix}liveRule_${key}`;
+      host.setAttribute("data-live-condition", key);
+      paper.parentNode.append(host);
+    }
+    badge.textContent = `LIVE · ${badge.textContent}`;
+    host.replaceChildren(badge);
+    return true;
+  }
+
   function mountHourlyHistogram(prefix, anchor, engine) {
     if (!anchor?.parentNode || document.getElementById(`${prefix}hourlyHistControls`)) return;
     const settings=hourlyHistogramSettings(prefix,engine.botState);
@@ -466,7 +578,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
+  const TerminalCommon = { resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {
