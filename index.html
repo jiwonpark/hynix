@@ -13226,6 +13226,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               const bDetails = data.details?.binance || {};
               const bSpotDetails = data.details?.binance_spot || {};
               const uDetails = data.details?.upbit || {};
+              const bStale = Boolean(data.binance?.stale || bDetails.stale);
               const bAuth = data.binance?.authenticated || bDetails.authenticated || false;
               const uAuth = data.upbit?.authenticated || uDetails.authenticated || false;
 
@@ -13233,11 +13234,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
               this.state.binanceSpotAuthenticated = bSpotDetails.authenticated || false;
               this.state.upbitAuthenticated = uAuth;
               this.state.backendAuthSource = data.binance?.auth_source || bDetails.auth_source || "none";
+              this.state.accountDataStale = bStale;
               this.state.upbitAuthSource = data.upbit?.auth_source || uDetails.auth_source || "none";
               this.state.usdtKrwRate = data.usdt_krw_rate || uDetails.summary?.usdt_krw_rate || 1400.0;
 
               if (card) {
                 card.className = (bAuth || uAuth) ? "backendTelemetryCard connected" : "backendTelemetryCard unauth";
+              }
+              if (syncTime && bStale) {
+                const snapshotMs = Number(data.binance?.timestamp || bDetails.timestamp || 0);
+                syncTime.textContent = `Account: STALE · ${snapshotMs ? formatKstDateTime(snapshotMs) : "refreshing"}`;
               }
               if (mainLbl) {
                 const isAutoOn = Boolean(this.state.daemonAutoEnabled || this.state.hedgedStatus?.auto_tranche_criteria?.backend_auto_tranche_enabled);

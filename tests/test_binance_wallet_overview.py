@@ -79,6 +79,28 @@ class BinanceSpotOverviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cached["summary"]["total_equity_usd"], 499.0)
         self.assertEqual(client._fetch_detailed_account_overview.await_count, 1)
 
+    async def test_ui_telemetry_serves_last_good_snapshot_while_refreshing(self):
+        client = BinanceFuturesClient(api_key="key", api_secret="secret")
+        client._overview_last_good = {
+            "authenticated": True,
+            "summary": {"total_equity_usd": 499.0},
+            "positions": [{"symbol": "SKHYUSDT"}],
+        }
+        client._overview_last_good_time = -100
+
+        async def hung():
+            await asyncio.Event().wait()
+
+        client._fetch_detailed_account_overview = AsyncMock(side_effect=hung)
+        result = await client.get_detailed_account_telemetry()
+        self.assertTrue(result["authenticated"])
+        self.assertTrue(result["stale"])
+        self.assertEqual(result["status"], "refreshing")
+        self.assertEqual(result["positions"][0]["symbol"], "SKHYUSDT")
+        self.assertIsNotNone(client._overview_task)
+        client._overview_task.cancel()
+        await asyncio.gather(client._overview_task, return_exceptions=True)
+
     async def test_spot_overview_reports_usdt_and_stablecoins(self):
         client = BinanceFuturesClient(api_key="key", api_secret="secret")
         client.request = AsyncMock(return_value={
@@ -109,6 +131,7 @@ class BinanceSpotOverviewTests(unittest.IsolatedAsyncioTestCase):
             "assets": [],
             "positions": [],
         }
+        binance.get_detailed_account_telemetry.return_value = binance.get_detailed_account_overview.return_value
         binance.get_spot_account_overview.return_value = {
             "authenticated": True,
             "summary": {"usdt_balance": 464.9, "stablecoin_equity_usd": 464.9},

@@ -1247,7 +1247,7 @@ async def get_crypto_status(symbol: str = "BTCUSDT") -> Dict[str, Any]:
             raise ValueError("Unsupported crypto symbol")
         klines, account, book = await asyncio.gather(
             get_klines(symbol, interval="1m", limit=2),
-            binance_client.get_detailed_account_overview(),
+            binance_client.get_detailed_account_telemetry(),
             binance_client.request("GET", "/fapi/v1/ticker/bookTicker", {"symbol": symbol}),
             return_exceptions=True,
         )
@@ -3426,7 +3426,7 @@ async def get_portfolio_overview() -> Dict[str, Any]:
     """Combined portfolio overview across Binance Futures, Binance Spot, and Upbit."""
     try:
         b_data, b_spot_data, u_data = await asyncio.gather(
-            binance_client.get_detailed_account_overview(),
+            binance_client.get_detailed_account_telemetry(),
             binance_client.get_spot_account_overview(),
             upbit_client.get_detailed_account_overview(),
             return_exceptions=True
@@ -3454,6 +3454,9 @@ async def get_portfolio_overview() -> Dict[str, Any]:
             "usdt_krw_rate": rate,
             "binance": {
                 "authenticated": b_data.get("authenticated", False),
+                "stale": b_data.get("stale", False),
+                "status": b_data.get("status", "ok"),
+                "timestamp": b_data.get("timestamp"),
                 "auth_source": config.AUTH_SOURCE,
                 "equity_usd": b_eq_usd,
                 "futures_equity_usd": b_eq_usd,
@@ -3484,10 +3487,16 @@ async def get_portfolio_overview() -> Dict[str, Any]:
 async def get_positions() -> Dict[str, Any]:
     """Returns only the list of active open positions."""
     try:
-        overview = await binance_client.get_detailed_account_overview()
+        overview = await binance_client.get_detailed_account_telemetry()
         return {
+            "authenticated": overview.get("authenticated", False),
+            "stale": overview.get("stale", False),
+            "status": overview.get("status", "ok"),
+            "timestamp": overview.get("timestamp"),
             "positions": overview.get("positions", []),
-            "open_position_count": len(overview.get("positions", []))
+            "open_position_count": (len(overview.get("positions", []))
+                                    if overview.get("authenticated") else None),
+            **({"error": overview["error"]} if overview.get("error") else {}),
         }
     except Exception as e:
         return {"error": str(e), "positions": []}
@@ -3852,6 +3861,20 @@ async def get_hedged_status_endpoint() -> Dict[str, Any]:
             and now - _hedged_status_cache_time < HEDGED_STATUS_CACHE_TTL):
         return copy.deepcopy(_hedged_status_cache)
 
+    if _hedged_status_cache is not None and _hedged_status_cache.get("authenticated"):
+        task = _hedged_status_task
+        if task is None or task.done():
+            task = asyncio.create_task(get_hedged_status())
+            _hedged_status_task = task
+            _hedged_status_task_revision = _hedged_status_config_revision
+        cached = copy.deepcopy(_hedged_status_cache)
+        cached.update(
+            stale=True,
+            status="refreshing",
+            cache_age_seconds=round(max(0.0, now - _hedged_status_cache_time), 3),
+        )
+        return cached
+
     task = _hedged_status_task
     if task is None or task.done():
         task = asyncio.create_task(get_hedged_status())
@@ -3871,8 +3894,13 @@ async def get_hedged_status_endpoint() -> Dict[str, Any]:
 
 async def get_hedged_status() -> Dict[str, Any]:
     """Bound the full status calculation, including all upstream reads."""
+    global _hedged_status_cache, _hedged_status_cache_time
     try:
-        return await asyncio.wait_for(_compute_hedged_status(), HEDGED_STATUS_TIMEOUT)
+        result = await asyncio.wait_for(_compute_hedged_status(), HEDGED_STATUS_TIMEOUT)
+        if result.get("authenticated"):
+            _hedged_status_cache = copy.deepcopy(result)
+            _hedged_status_cache_time = time.monotonic()
+        return result
     except asyncio.TimeoutError:
         logger.warning("Hedged status refresh exceeded its deadline")
         return {"authenticated": False, "status": "unavailable",

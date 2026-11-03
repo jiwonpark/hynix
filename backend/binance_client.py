@@ -24,6 +24,8 @@ class BinanceFuturesClient:
         self._overview_task: Optional[asyncio.Task] = None
         self._overview_cache: Optional[Dict[str, Any]] = None
         self._overview_cache_time = 0.0
+        self._overview_last_good: Optional[Dict[str, Any]] = None
+        self._overview_last_good_time = 0.0
         self._overview_cache_ttl = 2.5
         self._overview_fail_ttl = 1.0
         self._spot_overview_task: Optional[asyncio.Task] = None
@@ -251,6 +253,24 @@ class BinanceFuturesClient:
             if task.done() and self._overview_task is task:
                 self._overview_task = None
 
+    async def get_detailed_account_telemetry(self) -> Dict[str, Any]:
+        """Return last authenticated UI telemetry while refreshing in background.
+
+        Execution callers continue to use ``get_detailed_account_overview`` and
+        therefore never authorize against stale balances or positions.
+        """
+        now = time.monotonic()
+        if self._overview_last_good is not None:
+            age = max(0.0, now - self._overview_last_good_time)
+            if age >= self._overview_cache_ttl:
+                task = self._overview_task
+                if task is None or task.done():
+                    self._overview_task = asyncio.create_task(self._refresh_account_overview())
+                result = copy.deepcopy(self._overview_last_good)
+                result.update(stale=True, status="refreshing", cache_age_seconds=round(age, 3))
+                return result
+        return await self.get_detailed_account_overview()
+
     async def _refresh_account_overview(self):
         try:
             result = await asyncio.wait_for(self._fetch_detailed_account_overview(), ACCOUNT_REFRESH_TIMEOUT)
@@ -262,6 +282,9 @@ class BinanceFuturesClient:
         # No stale account balances or positions are returned to execution paths.
         self._overview_cache = result
         self._overview_cache_time = time.monotonic()
+        if result.get("authenticated"):
+            self._overview_last_good = copy.deepcopy(result)
+            self._overview_last_good_time = self._overview_cache_time
         return result
 
     async def _fetch_detailed_account_overview(self) -> Dict[str, Any]:
