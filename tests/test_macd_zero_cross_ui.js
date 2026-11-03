@@ -123,9 +123,19 @@ function load(file, globalName, prefix, defaultMode) {
   const html = engine.renderParadigmDetail("macd_zero_cross");
   assert.match(html, /Completed candles only/);
   assert.match(html, /Histogram zero cross: −→\+ long; \+→− short/);
-  assert.match(html, /Signal on origin side: &lt; 0 long; &gt; 0 short/);
+  assert.match(html, /Optional signal-line filter: &lt; 0 long; &gt; 0 short \(default OFF\)/);
   assert.match(html, /Exit long: histogram \+→− · Exit short: −→\+ \(signal-line zone ignored\)/);
   assert.doesNotMatch(html, /Wider trend filters/);
+  const signalInput = markup => markup.match(new RegExp(`<input id="${prefix}macdZeroUseSignalZone"[^>]*>`))[0];
+  assert.doesNotMatch(signalInput(reloaded.renderParadigmDetail("macd_zero_cross")), / checked/,
+    "new Zero Cross settings default to histogram-only entry");
+  reloaded.botState.use_macd_signal_zone = true;
+  assert.match(signalInput(reloaded.renderParadigmDetail("macd_zero_cross")), / checked/,
+    "an existing saved strict filter must remain enabled until the user changes it");
+  nodes.get(`${prefix}macdZeroUseSignalZone`).checked = true;
+  assert.equal(engine.replaySettings().use_macd_signal_zone, true);
+  assert.equal(engine.liveStrategyPayload(defaultMode).use_macd_signal_zone, true);
+
 }
 
 load("crypto-tab.js", "cryptoEngine", "crypto_", "macd_zero_cross");

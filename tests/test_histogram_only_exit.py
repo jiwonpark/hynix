@@ -17,7 +17,7 @@ class HistogramExitTests(unittest.TestCase):
                          and evaluate_macd_zero_cross_signals(values[:i])[3]['signal']>0)
 
     def test_short_exit_on_cross_up_even_with_positive_signal(self):
-        entry,_,exit_signal,details=evaluate_macd_zero_cross_signals(self.prices,position_side=-1)
+        entry,_,exit_signal,details=evaluate_macd_zero_cross_signals(self.prices,position_side=-1,use_macd_signal_zone=True)
         self.assertFalse(entry)
         self.assertGreater(details['signal'],0)
         self.assertTrue(exit_signal)
@@ -26,7 +26,7 @@ class HistogramExitTests(unittest.TestCase):
 
     def test_long_exit_on_cross_down_even_with_negative_signal(self):
         mirrored=[300-value for value in self.prices]
-        entry,_,exit_signal,details=evaluate_macd_zero_cross_signals(mirrored,position_side=1)
+        entry,_,exit_signal,details=evaluate_macd_zero_cross_signals(mirrored,position_side=1,use_macd_signal_zone=True)
         self.assertFalse(entry);self.assertLess(details['signal'],0)
         self.assertTrue(exit_signal)
         self.assertEqual(details['histogram_turn'],'CROSS_DOWN')
@@ -67,4 +67,4 @@ class ExitConfigTests(unittest.IsolatedAsyncioTestCase):
                 restored=cls(AsyncMock(),path)
                 self.assertFalse(restored.public_state()['strategy_params']['use_macd_hist_exit'])
                 self.assertTrue(restored.state['use_macd_zero_cross'])
-                self.assertTrue(restored.state['use_macd_signal_zone'])
+                self.assertFalse(restored.state['use_macd_signal_zone'])

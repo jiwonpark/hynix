@@ -175,7 +175,10 @@ permits neither side rather than fabricating a trend.
 The **MACD Zero Cross** strategy is an intentional exception to the wider-trend
 filter above. It has exactly two independently switchable completed-candle
 conditions: histogram zero cross (`−→+` for long, `+→−` for short) and signal
-line on the origin side (`< 0` for long, `> 0` for short). It exposes adjustable
+line on the origin side (`< 0` for long, `> 0` for short). Histogram crossing is
+enabled by default; the signal-line origin filter is optional and defaults OFF.
+Saved live configurations retain their existing choice until changed through
+authenticated configuration. It exposes adjustable
 MACD fast, slow, and signal periods, but no macro/MA regime control. The opposite
 histogram cross exits one owned tranche; reverse entry must independently satisfy the entry pattern. Replay entry markers come from the
 position-independent `entry_signals` stream, while fills and exit verdicts may
@@ -321,3 +324,16 @@ insufficient. Unsupported inherited rules remain unselected even after polling;
 account safeguards belong in their separate real execution controls, without
 fake optional switches. Direction-specific entry alternatives must be labeled as
 such instead of implying every long and short trigger must pass simultaneously.
+
+
+### Histogram-only entry default (Tabs4/5)
+
+MACD Zero Cross defaults to H crossing −→+ for long, +→− for short, without a
+signal-line sign requirement. Keep `use_macd_signal_zone` as a real optional
+switch, default OFF consistently in fresh bot configuration, evaluator dispatch,
+replay API and UI. Preserve an existing saved ON value when loading state; a
+new default must not silently migrate live settings. Saved changes persist via
+the authenticated bot configuration. The hourly histogram-direction entry filter
+continues independently, and histogram-only exits, net take-profit, position
+sizing and execution safeguards are unchanged. The MACD signal period/line still
+forms part of calculating H; only its separate entry-zone predicate is optional.

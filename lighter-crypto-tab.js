@@ -561,9 +561,9 @@
       },
       macd_zero_cross: {
         id: "macd_zero_cross", name: "MACD Zero Cross", icon: "↕️",
-        badge: "MACD · HISTOGRAM ZERO CROSS · SIGNAL ZONE",
+        badge: "MACD · HISTOGRAM ZERO CROSS · OPTIONAL SIGNAL ZONE",
         title: "↕ MACD Histogram Zero-Cross Entry",
-        desc: "Long when MACD-H crosses negative to positive while signal is negative; short on the exact inverse. Completed candles only.",
+        desc: "Long when MACD-H crosses negative to positive; short when it crosses positive to negative. Completed candles only. Signal-line origin filter is optional (default OFF).",
         tpTitle: "🎯 Opposite Zero Cross / Direction Flip",
         tpDesc: "The opposite histogram zero cross exits one owned tranche. Reverse entry must pass its own entry conditions.",
         entryLabels: {}, exitLabels: {}, researchLabels: {},
@@ -1778,13 +1778,13 @@
           ...(this.botState?.strategy_drafts?.[mode] || {}) };
         const awaitingSavedSettings = !this.botState;
         const macdValue = (key, fallback) => awaitingSavedSettings ? "" : Number(live[key] ?? fallback);
-        const checked = (key) => live[key] !== false ? "checked" : "";
+        const checked = (key) => (live[key] ?? (key !== "use_macd_signal_zone")) ? "checked" : "";
         const row = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 10px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
         const toggle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1.5px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px;">
             <div><strong style="font-size:14px;color:#0f172a;text-transform:uppercase;">↕️ MACD Histogram Zero Cross</strong>
-              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed candles only. Long: H crosses −→+ while signal &lt; 0. Short: H crosses +→− while signal &gt; 0.</p>
+              <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed candles only. Long: histogram crosses −→+. Short: histogram crosses +→−. Optional signal-line filter is OFF by default. The hourly entry filter applies independently.</p>
               <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Adjust Fast / Slow / Signal periods here: the server saves the shared replay draft and every browser loads it. Live trading changes only when you deploy this strategy.</p></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;font-weight:700;color:#475569;">
               <label>Fast <input id="lighterCrypto_macdFastPeriod" aria-label="MACD fast period" type="number" min="2" max="100" step="1" value="${macdValue("macd_fast_period", 12)}" placeholder="loading" style="width:52px"></label>
@@ -1796,7 +1796,7 @@
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
             <div data-terminal-rule-group="entry" style="display:grid;gap:8px;"><strong style="font-size:12px;">Strategy entry pattern</strong>
               <div style="${row}"><input id="lighterCrypto_macdZeroUseCross" type="checkbox" style="${toggle}" ${checked("use_macd_zero_cross")}><span>Histogram zero cross: −→+ long; +→− short</span><span id="lighterCrypto_macdStatusZeroCross" class="condBadge neutral">WAITING</span></div>
-              <div style="${row}"><input id="lighterCrypto_macdZeroUseSignalZone" type="checkbox" style="${toggle}" ${checked("use_macd_signal_zone")}><span>Signal on origin side: &lt; 0 long; &gt; 0 short</span><span id="lighterCrypto_macdStatusSignalZone" class="condBadge neutral">WAITING</span></div>
+              <div style="${row}"><input id="lighterCrypto_macdZeroUseSignalZone" type="checkbox" style="${toggle}" ${checked("use_macd_signal_zone")}><span>Optional signal-line filter: &lt; 0 long; &gt; 0 short (default OFF)</span><span id="lighterCrypto_macdStatusSignalZone" class="condBadge neutral">WAITING</span></div>
             </div>
             <div data-terminal-rule-group="exit" style="display:grid;gap:8px;"><strong style="font-size:12px;">Opposite histogram cross · one LIFO tranche</strong>
               <div style="${row}"><input id="lighterCrypto_macdZeroUseExitCross" type="checkbox" style="${toggle}" ${checked("use_macd_hist_exit")}><span>Exit long: histogram +→− · Exit short: −→+ (signal-line zone ignored)</span><span id="lighterCrypto_macdStatusExitCross" class="condBadge neutral">N/A</span></div>
@@ -2355,7 +2355,7 @@
       } else if (mode === "macd_zero_cross") {
         Object.assign(payload, this.macdSettings());
         payload.use_macd_zero_cross = $("lighterCrypto_macdZeroUseCross")?.checked !== false;
-        payload.use_macd_signal_zone = $("lighterCrypto_macdZeroUseSignalZone")?.checked !== false;
+        payload.use_macd_signal_zone = $("lighterCrypto_macdZeroUseSignalZone")?.checked === true;
         payload.use_macd_hist_exit = $("lighterCrypto_macdZeroUseExitCross")?.checked !== false;
       } else if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         Object.assign(payload, this.macdSettings());
@@ -3272,7 +3272,7 @@
         use_macd_hist_positive: $("lighterCrypto_macdUseExitHistogramPositive")?.checked !== false,
         use_macd_hist_reversal_exit: $("lighterCrypto_macdUseExitReversal")?.checked !== false,
         use_macd_zero_cross: $("lighterCrypto_macdZeroUseCross")?.checked !== false,
-        use_macd_signal_zone: $("lighterCrypto_macdZeroUseSignalZone")?.checked !== false,
+        use_macd_signal_zone: $("lighterCrypto_macdZeroUseSignalZone")?.checked === true,
         use_macd_hist_exit: $("lighterCrypto_macdZeroUseExitCross")?.checked !== false,
         use_macd_strength: $("lighterCrypto_macdUseStrength")?.checked !== false,
         macd_strength_min_pct: numeric("lighterCrypto_macdStrengthPct", 30),
@@ -3415,7 +3415,7 @@
       }
       if (isParadigmMatch && currentMode === "macd_zero_cross") {
         ["use_macd_zero_cross", "use_macd_signal_zone", "use_macd_hist_exit"].forEach((key) => {
-          if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? true)) diffs.push(`${key}: paper ≠ live`);
+          if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? (key !== "use_macd_signal_zone"))) diffs.push(`${key}: paper ≠ live`);
         });
       }
       const defaultConditionToggles = currentMode === "ma_stack" ? {
