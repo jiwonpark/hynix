@@ -443,6 +443,59 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["verified_exit_count"], 1)
         self.assertAlmostEqual(state["verified_realized_pnl_usd"], 0.013)
 
+    async def test_reconciled_history_merges_local_exit_with_authoritative_fill(self):
+        self.bot.state["execution_history"] = [{
+            "event": "EXIT", "symbol": "BTC", "market_id": 1,
+            "side": -1, "original_side": 1, "qty": 0.00064,
+            "price": 78311.1, "entry_price": 78150.5,
+            "time": 1793608844, "order_id": "145479957454881",
+            "client_order_index": 145479957454881,
+            "reason": "net_take_profit", "pnl_authoritative": False,
+            "pnl_source": "ESTIMATED_EX_FUNDING", "net_pnl_usd": 0.102784,
+        }]
+        self.client.trades = [{
+            "trade_id": 37639943466, "trade_id_str": "37639943466",
+            "market_id": 1, "size": "0.00064", "price": "78311.1",
+            "usd_amount": "50.119104", "bid_account_id": 27927,
+            "ask_account_id": 749609, "timestamp": 1793608844000,
+            "ask_account_pnl": "0.102784", "taker_fee": "0",
+            "taker_position_size_before": "0.00064",
+            "taker_entry_quote_before": "50.01632",
+        }]
+
+        state = await self.bot.reconciled_public_state()
+
+        self.assertEqual(len(state["execution_history"]), 1)
+        event = state["execution_history"][0]
+        self.assertEqual(event["order_id"], "145479957454881")
+        self.assertEqual(event["exchange_trade_id"], "37639943466")
+        self.assertEqual(event["client_order_index"], 145479957454881)
+        self.assertEqual(event["reason"], "net_take_profit")
+        self.assertTrue(event["pnl_authoritative"])
+        self.assertEqual(event["pnl_source"], "LIGHTER_REALIZED_PNL")
+        self.assertEqual(state["verified_exit_count"], 1)
+
+    def test_reconciled_history_fallback_is_strict_and_one_to_one(self):
+        exchange = [{
+            "event": "EXIT", "symbol": "BTC", "side": -1,
+            "qty": 0.001, "price": 100.0, "time": 100,
+            "order_id": "trade-1", "pnl_authoritative": True,
+        }]
+        local = [
+            {"event": "EXIT", "symbol": "BTC", "side": -1, "qty": 0.001,
+             "price": 100.0, "time": 100, "order_id": "local-1"},
+            {"event": "EXIT", "symbol": "BTC", "side": -1, "qty": 0.001,
+             "price": 100.0, "time": 100, "order_id": "local-2"},
+            {"event": "EXIT", "symbol": "BTC", "side": -1, "qty": 0.002,
+             "price": 100.0, "time": 100, "order_id": "different-qty"},
+        ]
+
+        merged = self.bot._merge_execution_history(exchange, local)
+
+        self.assertEqual(len(merged), 3)
+        self.assertEqual(sum(1 for event in merged if event.get("exchange_trade_id") == "trade-1"), 1)
+        self.assertIn("different-qty", {event.get("order_id") for event in merged})
+
     async def test_ma_stack_condition_toggles(self):
         from backend.lighter_strategy import evaluate_strategy_signal
         # 65 bars with bearish stack (Price < MA7 < MA24 < MA60)

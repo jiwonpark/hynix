@@ -249,6 +249,85 @@ class LighterCryptoBot(TakeProfitMixin):
             self._save()
             return self.public_state()
 
+    @staticmethod
+    def _trade_client_order_index(trade: Dict[str, Any]) -> Optional[str]:
+        """Return an exchange-provided client order reference, never a trade id."""
+        for key in ("client_order_index", "client_order_id", "client_order_id_str"):
+            value = trade.get(key)
+            if value not in (None, ""):
+                return str(value)
+        return None
+
+    @staticmethod
+    def _same_execution_fill(exchange: Dict[str, Any], local: Dict[str, Any]) -> bool:
+        """Strict fallback match for feeds that omit the client order reference."""
+        if str(exchange.get("event", "")) != str(local.get("event", "")):
+            return False
+        if str(exchange.get("symbol", "")) != str(local.get("symbol", "")):
+            return False
+        if int(exchange.get("side", 0) or 0) != int(local.get("side", 0) or 0):
+            return False
+        if abs(int(exchange.get("time", 0) or 0) - int(local.get("time", 0) or 0)) > 3:
+            return False
+        exchange_qty = float(exchange.get("qty", 0) or 0)
+        local_qty = float(local.get("qty", 0) or 0)
+        qty_tolerance = max(1e-12, max(abs(exchange_qty), abs(local_qty)) * 1e-6)
+        if abs(exchange_qty - local_qty) > qty_tolerance:
+            return False
+        exchange_price = float(exchange.get("price", 0) or 0)
+        local_price = float(local.get("price", 0) or 0)
+        price_tolerance = max(1e-8, max(abs(exchange_price), abs(local_price)) * 5e-6)
+        return abs(exchange_price - local_price) <= price_tolerance
+
+    @classmethod
+    def _merge_execution_history(cls, exchange_events: list[Dict[str, Any]],
+                                 local_events: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+        """Reconcile each exchange fill to at most one local execution record."""
+        unmatched_local = set(range(len(local_events)))
+        merged_events: list[Dict[str, Any]] = []
+        for exchange in exchange_events:
+            exchange_client_ref = exchange.get("exchange_client_order_index")
+            match_index: Optional[int] = None
+            if exchange_client_ref not in (None, ""):
+                for index in unmatched_local:
+                    local_ref = local_events[index].get("client_order_index", local_events[index].get("order_id"))
+                    if str(local_ref) == str(exchange_client_ref):
+                        match_index = index
+                        break
+            if match_index is None:
+                candidates = [
+                    index for index in unmatched_local
+                    if cls._same_execution_fill(exchange, local_events[index])
+                ]
+                if candidates:
+                    match_index = min(
+                        candidates,
+                        key=lambda index: abs(
+                            int(exchange.get("time", 0) or 0)
+                            - int(local_events[index].get("time", 0) or 0)
+                        ),
+                    )
+            if match_index is None:
+                merged_events.append(exchange)
+                continue
+
+            local = local_events[match_index]
+            unmatched_local.remove(match_index)
+            merged = {**local, **exchange}
+            merged["exchange_trade_id"] = exchange.get("exchange_trade_id", exchange.get("order_id"))
+            merged["local_order_id"] = local.get("order_id")
+            merged["order_id"] = local.get("order_id", exchange.get("order_id"))
+            local_client_ref = local.get("client_order_index")
+            if local_client_ref not in (None, ""):
+                merged["client_order_index"] = local_client_ref
+            if local.get("reason"):
+                merged["reason"] = local["reason"]
+            merged_events.append(merged)
+
+        merged_events.extend(local_events[index] for index in sorted(unmatched_local))
+        merged_events.sort(key=lambda event: int(event.get("time", 0) or 0))
+        return merged_events
+
     async def reconciled_public_state(self) -> Dict[str, Any]:
         """Annotate public state with Lighter exchange trade history and verified exits."""
         result = self.public_state()
@@ -284,8 +363,9 @@ class LighterCryptoBot(TakeProfitMixin):
                             fee_rate = raw_fee / 1_000_000.0 if raw_fee >= 1.0 else raw_fee
                             fee_usd = usd * fee_rate
                             trade_id = str(trade.get("trade_id_str") or trade.get("trade_id") or "")
+                            client_order_index = self._trade_client_order_index(trade)
                             original_side = -side if is_exit else side
-                            exchange_events.append({
+                            exchange_event = {
                                 "event": "EXIT" if is_exit else "ENTRY",
                                 "symbol": symbol,
                                 "market_id": market_id,
@@ -300,25 +380,25 @@ class LighterCryptoBot(TakeProfitMixin):
                                 "fee_usd": fee_usd,
                                 "time": t_ms // 1000 if t_ms else int(time.time()),
                                 "order_id": trade_id,
-                                "client_order_index": trade_id,
+                                "exchange_trade_id": trade_id,
                                 "status": "CLOSED" if is_exit else "OPEN",
                                 "pnl_authoritative": is_exit,
                                 "pnl_source": "LIGHTER_REALIZED_PNL" if is_exit else "ESTIMATED_EX_FUNDING",
                                 "reason": "lighter_trade",
-                            })
+                            }
+                            if client_order_index is not None:
+                                exchange_event["exchange_client_order_index"] = client_order_index
+                                exchange_event["client_order_index"] = client_order_index
+                            exchange_events.append(exchange_event)
                     self._trade_cache = (symbol, now, 5.0, list(exchange_events))
                 except Exception as exc:
                     logger.warning("Could not fetch Lighter trades for status reconciliation: %s", exc)
                     self._trade_cache = (symbol, now, 10.0, [])
 
         if exchange_events:
-            # Merge with bot execution history by order_id
-            seen_orders = {str(e.get("order_id")) for e in exchange_events}
-            for local in result["execution_history"]:
-                if str(local.get("order_id")) not in seen_orders:
-                    exchange_events.append(local)
-            exchange_events.sort(key=lambda e: int(e.get("time", 0)))
-            result["execution_history"] = exchange_events[-500:]
+            result["execution_history"] = self._merge_execution_history(
+                exchange_events, result["execution_history"],
+            )[-500:]
             result["history_event_count"] = len(result["execution_history"])
 
         # If execution history is still empty but tranches exist, represent them
