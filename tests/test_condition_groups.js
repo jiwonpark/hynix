@@ -26,6 +26,10 @@ for (const [file, name, prefix] of [
   const anchor=document.getElementById('detail');
   const frame=document.querySelector('.shortTermCriteriaGrid');
   frame.innerHTML=`<div><div><span id="${prefix}lblCritScaleInTitle">Entry summary</span></div></div><div><div><span id="${prefix}lblCritTPTitle">Exit summary</span></div></div>`;
+  const legacyEntry=document.getElementById(prefix+'lblCritScaleInTitle').parentNode.parentNode;
+  legacyEntry.insertAdjacentHTML('beforeend', `<div id="${prefix}rowCondEntryMaStack1h"><input type="checkbox" id="${prefix}testTrendSwitch"></div><div id="${prefix}rowCondEntryMaStretch"><input type="checkbox" id="${prefix}testZSwitch"></div>`);
+  const trendRow=document.getElementById(prefix+'rowCondEntryMaStack1h');
+  const zRow=document.getElementById(prefix+'rowCondEntryMaStretch');
   common.mountHourlyHistogram(prefix,anchor,engine);
   common.mountTakeProfitControls(prefix,anchor,engine);
   const hourly=document.getElementById(prefix+'hourlyHistControls');
@@ -38,12 +42,21 @@ for (const [file, name, prefix] of [
   for (const mode of [...Object.keys(engine.paradigms), 'macd_zero_cross']) {
     common.prepareConditionGroups(prefix,anchor);
     anchor.innerHTML=mode==='grid'?'':engine.renderParadigmDetail(mode);
+    const usesTrend = !['ou_quant','macd_zero_cross', ...(prefix==='lighterCrypto_'?['ma_stack']:[])].includes(mode);
+    trendRow.style.display=usesTrend?'':'none';
+    zRow.style.display=['grid','custom','adaptive_tranche'].includes(mode)?'':'none';
     common.groupConditionControls(prefix,anchor,mode);
     const entry=document.getElementById(prefix+'entryConditionGroup');
     const exit=document.getElementById(prefix+'exitConditionGroup');
     assert.equal(hourly.parentNode,entry,mode+' hourly in entry');
     assert.equal(document.getElementById(prefix+'lblCritScaleInTitle').parentNode.parentNode.style.display,
       ['grid','custom','adaptive_tranche'].includes(mode)?'flex':'none','legacy card matches selected strategy');
+    if (!['grid','custom','adaptive_tranche'].includes(mode)) {
+      assert.equal(trendRow.parentNode,usesTrend?entry:legacyEntry,'real shared trend switch remains visible');
+      assert.equal(zRow.parentNode,legacyEntry,'unrelated Grid switch stays in hidden legacy card');
+      zRow.style.display=''; // Simulate a late legacy refresh; parent still hides it.
+      assert.equal(legacyEntry.style.display,'none');
+    }
     assert.equal(tp.parentNode,exit,mode+' TP in exit');
     assert.equal(fast.value,'17','unsaved period survives layout rebuild');
     assert.equal(document.querySelectorAll('#'+prefix+'conditionGroups').length,1);

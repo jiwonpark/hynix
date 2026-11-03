@@ -282,3 +282,8 @@ Always show the source candle time. When selected replay and saved live strategy
 differ, label the difference and clear inline live verdicts instead of showing a
 prior strategy's PASS. The layout change must not change trading predicates,
 entry signals, execution safeguards or sizing.
+
+Do not hide an entire inherited condition card until extracting any real shared
+rules used by the selected strategy. In particular, wider-trend switches for
+non-Zero-Cross strategies must remain in Entry conditions. Hide only unrelated
+legacy rules; preserve the original shared inputs and handlers across switches.

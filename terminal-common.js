@@ -387,11 +387,14 @@
   // Move the existing controls, never clone them: drafts, listeners and live
   // authentication keep using the same inputs across strategy rerenders.
   function persistentConditionNodes(prefix) {
+    const rows = typeof document.querySelectorAll === "function"
+      ? Array.from(document.querySelectorAll(`[id^="${prefix}rowCondEntry"], [id^="${prefix}rowCondExit"]`)) : [];
     return [
       [document.getElementById(`${prefix}lblCritScaleInTitle`)?.parentNode?.parentNode, "entry"],
       [document.getElementById(`${prefix}lblCritTPTitle`)?.parentNode?.parentNode, "exit"],
       [document.getElementById(`${prefix.replace(/_$/, "")}LiveGridEntryRule`), "entry"],
       [document.getElementById(`${prefix.replace(/_$/, "")}LiveGridExitRule`), "exit"],
+      ...rows.map(node => [node, node.id.startsWith(`${prefix}rowCondExit`) ? "exit" : "entry"]),
     ].filter(([node]) => node?.parentNode);
   }
 
@@ -439,6 +442,15 @@
     }
     for (const [node, key] of persistentConditionNodes(prefix)) {
       node._conditionHome ||= node.parentNode;
+      if (node.id.startsWith(`${prefix}rowCond`)) {
+        // Dedicated strategies still share some real switches (e.g. wider
+        // trend). Extract selected rows before hiding their legacy card.
+        // Unselected rows stay in that hidden card even if polling updates
+        // their inline display later.
+        if (!["grid", "custom", "adaptive_tranche"].includes(mode) && node.style.display !== "none")
+          buckets[key].append(node);
+        continue;
+      }
       // Legacy status refreshes may re-show their individual rows. Hide the
       // whole legacy card when a strategy has its own dedicated controls.
       if (node.contains(document.getElementById(`${prefix}lblCritScaleInTitle`))
