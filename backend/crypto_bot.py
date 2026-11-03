@@ -65,6 +65,7 @@ DEFAULT_STATE = {
     "macd_fast_period": 12, "macd_slow_period": 26, "macd_signal_period": 9,
     "use_macd_signal_negative": True, "use_macd_hist_negative": True, "use_macd_hist_reversal": True,
     "use_macd_signal_positive": True, "use_macd_hist_positive": True, "use_macd_hist_reversal_exit": True,
+    "use_macd_hist_turn": True, "use_macd_hist_zone": True,
     "use_macd_zero_cross": True, "use_macd_signal_zone": False, "use_macd_hist_exit": True,
     "long_multiplier": 1.0, "short_multiplier": 1.0, "entry_direction_mode": "two_way",
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
@@ -154,6 +155,8 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "use_macd_signal_positive": bool(self.state.get("use_macd_signal_positive", True)),
             "use_macd_hist_positive": bool(self.state.get("use_macd_hist_positive", True)),
             "use_macd_hist_reversal_exit": bool(self.state.get("use_macd_hist_reversal_exit", True)),
+            "use_macd_hist_turn": bool(self.state.get("use_macd_hist_turn", True)),
+            "use_macd_hist_zone": bool(self.state.get("use_macd_hist_zone", True)),
             "use_macd_zero_cross": bool(self.state.get("use_macd_zero_cross", True)),
             "use_macd_signal_zone": bool(self.state.get("use_macd_signal_zone", False)),
             "use_convergence": bool(self.state.get("use_convergence", True)),
@@ -199,7 +202,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
 
     async def save_strategy_draft(self, mode: str, values: Dict[str, Any]) -> Dict[str, Any]:
         """Persist replay parameters without changing the live strategy configuration."""
-        if mode not in {"macd_zero_cross", "macd_reversal", "macd_strength_scaleout"}:
+        if mode not in {"macd_hist_turn", "macd_zero_cross", "macd_reversal", "macd_strength_scaleout"}:
             raise ValueError("Unsupported strategy draft")
         allowed = {"macd_fast_period", "macd_slow_period", "macd_signal_period"}
         if set(values) != allowed:
@@ -409,7 +412,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "macd_fast_period", "macd_slow_period", "macd_signal_period",
             "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
             "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-            "use_macd_zero_cross", "use_macd_signal_zone",
+            "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_zero_cross", "use_macd_signal_zone",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "macro_ma_period", "macro_regime_mode",
             "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
@@ -460,7 +463,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 candidate[key] = bool(value)
             elif key in {"use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                           "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-                          "use_macd_zero_cross", "use_macd_signal_zone"}:
+                          "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_zero_cross", "use_macd_signal_zone"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
@@ -505,7 +508,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         if candidate["strategy_mode"] == "golden_death_cross":
             if candidate.get("fast_ma_period", 9) >= candidate.get("slow_ma_period", 21):
                 raise ValueError("Slow MA period must be greater than Fast MA period")
-        if candidate["strategy_mode"] in {"macd_reversal", "macd_zero_cross"}:
+        if candidate["strategy_mode"] in {"macd_reversal", "macd_zero_cross", "macd_hist_turn"}:
             if candidate.get("macd_fast_period", 12) >= candidate.get("macd_slow_period", 26):
                 raise ValueError("MACD slow period must be greater than MACD fast period")
         if candidate.get("macro_macd_fast_period", 12) >= candidate.get("macro_macd_slow_period", 26):
@@ -521,7 +524,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                  "macro_macd_signal_period", "macro_macd_confirm_bars",
                  "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                  "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-                 "use_macd_zero_cross", "use_macd_signal_zone")):
+                 "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_zero_cross", "use_macd_signal_zone")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:
                 raise ValueError("Close tracked inventory before changing symbol")
@@ -921,7 +924,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 macro_candle_time = None
                 macro_hourly_candle_time = None
                 macro_detail: Dict[str, Any] = {}
-                if (self.state["strategy_mode"] not in {"ou_quant", "macd_zero_cross"}
+                if (self.state["strategy_mode"] not in {"ou_quant", "macd_zero_cross", "macd_hist_turn"}
                         and self.state.get("use_ma_stack_1h", True)):
                     macro_mode = (str(self.state.get("macro_regime_mode", "ma_slope"))
                                   if self.state["strategy_mode"] in {"macd_reversal", "macd_strength_scaleout"}

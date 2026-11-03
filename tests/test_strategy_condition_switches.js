@@ -20,13 +20,15 @@ for(const [file,name,prefix,rootId] of [
  const exit=['ExitConvergence','ExitDwell','ExitBottoming','ExitNetPnl','ExitActive','ExitMaStack5m','ExitMaStack1h','ExitPosition'];
  const card=(title,rows)=>`<div><div><span id="${prefix}${title}"></span></div>${rows.map(suffix=>`<div id="${prefix}rowCond${suffix}"><input type="checkbox" id="${prefix}chkCond${suffix}"><span class="condLabel"></span><span id="${prefix}valCond${suffix}" class="condValue"></span><span id="${prefix}badgeCond${suffix}" class="condBadge"></span></div>`).join('')}</div>`;
  document.querySelector('.shortTermCriteriaGrid').innerHTML=card('lblCritScaleInTitle',entry)+card('lblCritTPTitle',exit);
- engine.interval='5m';engine.botState={strategy_mode:'macd_zero_cross',strategy_params:{}};
+ engine.interval='5m';engine.botState={strategy_mode:'macd_zero_cross',macd_fast_period:20,macd_slow_period:60,macd_signal_period:9,use_macd_signal_zone:true,strategy_params:{}};
  for(const method of ['renderMarkers','renderCurrentPositionReferenceLines','renderTradeMarkerTargets','clearEntryTrend','runBacktest','updateRulesMatchStatus','updateDeployButtonState','applyExecutionLock'])engine[method]=()=>{};
+ let replayCalls=0;engine.runBacktest=()=>{replayCalls++;};
  const stackDwell=common.inheritedStrategyConditions('ma_stack','crypto_').find(rule=>rule.condition==='exit_max_dwell');
  assert.equal(common.inheritedConditionValue(stackDwell,{min_dwell_bars:3},'ma_stack'),'16 completed bars','MA Stack must not inherit a stale three-bar Grid caption');
  const crossDwell=common.inheritedStrategyConditions('golden_death_cross',prefix).find(rule=>rule.condition==='exit_dwell');
  assert.equal(common.inheritedConditionValue(crossDwell,{min_dwell_bars:7},'golden_death_cross'),'Minimum 7 completed bars');
- const expected={grid:8,custom:8,adaptive_tranche:8,ma_acceleration:5,golden_death_cross:6,ma_stack:prefix==='crypto_'?6:0,macd_zero_cross:0,ou_quant:0,macd_reversal:1,macd_strength_scaleout:1,multi_factor:1,trend_pullback:1};
+ const livePanel=document.createElement('div');livePanel.id=prefix.replace(/_$/,'')+'LiveConditions';document.getElementById(rootId).append(livePanel);
+ const expected={grid:8,custom:8,adaptive_tranche:8,ma_acceleration:5,golden_death_cross:6,ma_stack:prefix==='crypto_'?6:0,macd_zero_cross:0,macd_hist_turn:0,ou_quant:0,macd_reversal:1,macd_strength_scaleout:1,multi_factor:1,trend_pullback:1};
  for(const mode of [...Object.keys(engine.paradigms),'macd_zero_cross','ma_acceleration','golden_death_cross','grid']){
   await engine.setParadigm(mode);
   const rules=common.inheritedStrategyConditions(mode,prefix);
@@ -46,6 +48,33 @@ for(const [file,name,prefix,rootId] of [
    toggle.checked=true;
    assert.equal(engine.replaySettings()[rule.toggle],true,mode+' ON changes replay '+rule.toggle);
    assert.equal(engine.liveStrategyPayload(mode)[rule.toggle],true,mode+' ON changes deploy payload '+rule.toggle);
+  }
+  if(mode==='macd_hist_turn'){
+   assert.equal(document.getElementById(prefix+'macdFastPeriod').value,'20','new mode inherits current MACD periods');
+   assert.equal(document.getElementById(prefix+'macdSlowPeriod').value,'60');
+   assert.equal(document.getElementById(prefix+'macdSignalPeriod').value,'9');
+   const turn=document.getElementById(prefix+'macdTurnUseTurn'),zone=document.getElementById(prefix+'macdTurnUseZone'),signal=document.getElementById(prefix+'macdZeroUseSignalZone');
+   assert.ok(turn.hasAttribute('checked'));assert.ok(zone.hasAttribute('checked'));assert.ok(!signal.hasAttribute('checked'),'a different strategy does not import its saved signal-zone restriction');
+   for(const [node,key] of [[turn,'use_macd_hist_turn'],[zone,'use_macd_hist_zone']]){
+    assert.ok(document.getElementById(prefix+'entryConditionGroup').contains(node));
+    node.checked=false;
+    assert.equal(engine.replaySettings()[key],false);assert.equal(engine.liveStrategyPayload(mode)[key],false);
+    node.checked=true;
+    assert.equal(engine.replaySettings()[key],true);assert.equal(engine.liveStrategyPayload(mode)[key],true);
+   }
+   const beforeChange=replayCalls;zone.dispatchEvent(new window.Event('change'));assert.equal(replayCalls,beforeChange+1,'one toggle schedules exactly one replay');
+   const pass={entry_histogram_delta_turn:true,entry_histogram_zone:true,entry_signal_zone:false,exit_histogram_zero_cross:null};
+   const enabled={entry_histogram_delta_turn:true,entry_histogram_zone:true,entry_signal_zone:false,exit_histogram_zero_cross:true};
+   const evaluation={strategy:mode,time:Date.now()/1000,candidate_side:1,histogram:-.8,previous_histogram_delta:-.5,histogram_delta:.2,condition_pass:pass,condition_enabled:enabled};
+   engine.renderReplayConditionStatus({latest_conditions:pass,latest_evaluation:evaluation,latest_condition_time:evaluation.time},engine.replaySettings());
+   assert.equal(document.getElementById(prefix+'macdStatusDeltaTurn').textContent,'PASS');
+   assert.equal(document.getElementById(prefix+'macdStatusHistogramZone').textContent,'PASS');
+   assert.equal(document.getElementById(prefix+'macdStatusSignalZone').textContent,'OFF');
+   assert.match(document.getElementById(prefix+'macdStatusSource').textContent,/ΔH -0.500000 → 0.200000/);
+   assert.match(document.getElementById(prefix+'macdStatusSource').textContent,/KST/);
+   engine.renderLiveConditionStatus({enabled:true,strategy_mode:mode,strategy_interval:'5m',tranches:[],last_evaluation:evaluation});
+   assert.match(document.getElementById(prefix+'liveRule_entry_histogram_delta_turn').textContent,/LIVE · PASS/);
+   assert.match(document.getElementById(prefix+'liveRule_entry_histogram_zone').textContent,/LIVE · PASS/);
   }
   if(mode==='ma_stack' && prefix==='lighterCrypto_'){
    assert.ok(document.getElementById(prefix+'entryConditionGroup').contains(document.getElementById(prefix+'maUseStack5m')));

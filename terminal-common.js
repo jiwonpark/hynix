@@ -441,7 +441,7 @@
   function inheritedStrategyConditions(mode, prefix) {
     const rule = (suffix, toggle, condition, label) => ({suffix, toggle, condition, label});
     const macro = rule("EntryMaStack1h", "use_ma_stack_1h", "entry_ma_stack_1h", "Wider trend filter · configured completed-candle regime");
-    if (["ou_quant", "macd_zero_cross"].includes(mode) || (mode === "ma_stack" && prefix === "lighterCrypto_")) return [];
+    if (["ou_quant", "macd_zero_cross", "macd_hist_turn"].includes(mode) || (mode === "ma_stack" && prefix === "lighterCrypto_")) return [];
     if (mode === "ma_acceleration") return [
       rule("EntryMaStretch", "use_ma_slope", "entry_ma_slope", "MA direction / minimum velocity · long rising, short falling"),
       rule("EntryBase", "use_ma_accel", "entry_ma_accel", "MA acceleration threshold · long accelerating, short decelerating"),
@@ -603,7 +603,10 @@
     if (mode !== selectedMode) return false;
     const group = document.getElementById(`${prefix}${key.startsWith("exit_") ? "exit" : "entry"}LiveConditions`);
     if (!group) return false;
-    const ids = mode === "macd_zero_cross" ? {
+    const ids = mode === "macd_hist_turn" ? {
+      entry_histogram_delta_turn:"macdStatusDeltaTurn",entry_histogram_zone:"macdStatusHistogramZone",
+      entry_signal_zone:"macdStatusSignalZone",exit_histogram_zero_cross:"macdStatusExitCross",
+    } : mode === "macd_zero_cross" ? {
       entry_histogram_zero_cross:"macdStatusZeroCross", entry_signal_zone:"macdStatusSignalZone",
       exit_histogram_zero_cross:"macdStatusExitCross",
     } : mode === "ou_quant" ? {

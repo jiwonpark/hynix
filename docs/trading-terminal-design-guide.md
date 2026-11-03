@@ -337,3 +337,31 @@ the authenticated bot configuration. The hourly histogram-direction entry filter
 continues independently, and histogram-only exits, net take-profit, position
 sizing and execution safeguards are unchanged. The MACD signal period/line still
 forms part of calculating H; only its separate entry-zone predicate is optional.
+
+
+### MACD histogram momentum-turn entries (Tabs4/5)
+
+Offer **MACD ΔH Turn** (`macd_hist_turn`) alongside the existing Zero Cross
+strategy. Let H be the selected MACD histogram on completed chart candles and
+ΔH_t = H_t − H_(t−1). Long requires previous ΔH ≤ 0, current ΔH > 0 and current
+H < 0. Short requires previous ΔH ≥ 0, current ΔH < 0 and current H > 0. A flat
+previous delta may turn positive/negative; a flat current delta is not a turn.
+The strict H-zone requirement excludes H = 0. Use three completed histogram bars,
+no forming bar, future bar, inventory, balance, capacity or recovery state.
+
+Give ΔH turning (`use_macd_hist_turn`) and histogram zone (`use_macd_hist_zone`)
+independent real switches, both default ON. Retain the optional signal-line sign
+filter default OFF. Show separate PAPER/LIVE PASS/WAITING/OFF/UNAVAILABLE verdicts
+for `entry_histogram_delta_turn` and `entry_histogram_zone`, plus current H,
+previous/current ΔH and source candle time in KST. Each checkbox change schedules
+one replay. New mode drafts inherit current MACD periods when first selected,
+then keep their own adjustable/saved Fast/Slow/Signal values.
+
+The completed-hour histogram direction remains an independent entry filter.
+Exits remain opposite H-zero-cross exits (one owned LIFO tranche) plus the saved
+net take-profit rule; they do not use ΔH entry-turn conditions or hourly entry
+gating. Live and replay dispatch to the same evaluator and expose position-free
+entry_signals for every completed match. Existing Zero Cross and other strategy
+predicates are retained. Saving the new mode to a running bot uses authenticated
+configuration while paused; a code deployment alone must not migrate a saved
+live strategy mode or submit orders.

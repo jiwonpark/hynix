@@ -222,7 +222,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname, "../lighter-crypto-tab.js")
       await engine.setParadigm(mode);
       const row = elements.get(`${prefix}_rowCondEntryMaStack1h`);
       assert.ok(row, `${prefix} must keep the shared macro row mounted`);
-      const applies = mode !== "ou_quant" && mode !== "macd_zero_cross"
+      const applies = !["ou_quant", "macd_zero_cross", "macd_hist_turn"].includes(mode)
         && !(prefix === "lighterCrypto" && mode === "ma_stack");
       assert.equal(row.style.display, applies ? "" : "none", `${prefix}/${mode}: macro control visibility must match the real gate`);
       if (applies) {

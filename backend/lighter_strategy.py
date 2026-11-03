@@ -1309,18 +1309,20 @@ def evaluate_macd_zero_cross_signals(
     use_macd_zero_cross: bool = True,
     use_macd_signal_zone: bool = False,
     use_macd_hist_exit: bool = True,
+    use_macd_hist_turn: bool = True,
+    use_macd_hist_zone: bool = True,
+    _entry_trigger: str = "zero_cross",
     evaluation_time: Optional[int] = None,
     position_side: int = 0,
     entry_price: float = 0.0,
     held_bars: int = 0,
     **_: Any,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
-    """Trade a completed-bar MACD histogram zero cross in the signal's opposite zone.
+    """Completed-bar histogram entries with independent zero-cross exits.
 
-    Negative-to-positive histogram with a negative signal line is bullish;
-    positive-to-negative histogram with a positive signal line is bearish.
-    Entry evaluation is position-independent. Exits use only the opposite histogram
-    cross, independently of entry switches, signal zone and hourly entry filters.
+    The public zero-cross strategy keeps its existing entry predicate. The
+    histogram-turn wrapper selects a three-bar delta reversal inside H's zone.
+    Entry evaluation never consults positions; only exits depend on inventory.
     """
     del entry_price, held_bars
     fast_w = max(2, int(macd_fast_period))
@@ -1348,17 +1350,37 @@ def evaluate_macd_zero_cross_signals(
     histogram = macd_line - signal_line
     bullish_cross = previous_histogram < 0.0 and histogram > 0.0
     bearish_cross = previous_histogram > 0.0 and histogram < 0.0
+    previous2_histogram = ready[-3][0] - ready[-3][1] if len(ready) >= 3 else None
+    histogram_delta = histogram - previous_histogram
+    previous_histogram_delta = previous_histogram - previous2_histogram if previous2_histogram is not None else None
+    is_turn = _entry_trigger == "histogram_turn"
+    if is_turn and previous_histogram_delta is None:
+        raise ValueError("Histogram momentum turn requires three completed histogram bars")
+    delta_up = previous_histogram_delta is not None and previous_histogram_delta <= 0.0 < histogram_delta
+    delta_down = previous_histogram_delta is not None and previous_histogram_delta >= 0.0 > histogram_delta
     signal_negative = signal_line < 0.0
     signal_positive = signal_line > 0.0
 
-    long_checks = ([bullish_cross] if use_macd_zero_cross else []) + ([signal_negative] if use_macd_signal_zone else [])
-    short_checks = ([bearish_cross] if use_macd_zero_cross else []) + ([signal_positive] if use_macd_signal_zone else [])
-    long_pattern = bool(long_checks and all(long_checks))
-    short_pattern = bool(short_checks and all(short_checks))
-    if bullish_cross != bearish_cross:
-        candidate_side = 1 if bullish_cross else -1
+    if is_turn:
+        long_checks = ([delta_up] if use_macd_hist_turn else []) + ([histogram < 0.0] if use_macd_hist_zone else []) + ([signal_negative] if use_macd_signal_zone else [])
+        short_checks = ([delta_down] if use_macd_hist_turn else []) + ([histogram > 0.0] if use_macd_hist_zone else []) + ([signal_positive] if use_macd_signal_zone else [])
+        long_pattern = bool(long_checks and all(long_checks))
+        short_pattern = bool(short_checks and all(short_checks))
+        if long_pattern != short_pattern:
+            candidate_side = 1 if long_pattern else -1
+        elif use_macd_hist_turn and delta_up != delta_down:
+            candidate_side = 1 if delta_up else -1
+        else:
+            candidate_side = 1 if histogram < 0.0 else -1
     else:
-        candidate_side = 1 if histogram >= 0.0 else -1
+        long_checks = ([bullish_cross] if use_macd_zero_cross else []) + ([signal_negative] if use_macd_signal_zone else [])
+        short_checks = ([bearish_cross] if use_macd_zero_cross else []) + ([signal_positive] if use_macd_signal_zone else [])
+        long_pattern = bool(long_checks and all(long_checks))
+        short_pattern = bool(short_checks and all(short_checks))
+        if bullish_cross != bearish_cross:
+            candidate_side = 1 if bullish_cross else -1
+        else:
+            candidate_side = 1 if histogram >= 0.0 else -1
     entry_signal = long_pattern if candidate_side > 0 else short_pattern
     exit_pattern = bearish_cross if position_side > 0 else bullish_cross
     exit_signal = bool(use_macd_hist_exit and position_side != 0 and exit_pattern)
@@ -1368,7 +1390,7 @@ def evaluate_macd_zero_cross_signals(
         "mean": round(float(prices[-1]), 4),
         "signal_mean": round(float(prices[-1]), 4),
         "z": round(histogram, 6),
-        "strategy": "macd_zero_cross",
+        "strategy": "macd_hist_turn" if is_turn else "macd_zero_cross",
         "macd_fast_period": fast_w,
         "macd_slow_period": slow_w,
         "macd_signal_period": signal_w,
@@ -1377,19 +1399,30 @@ def evaluate_macd_zero_cross_signals(
         "histogram": round(histogram, 6),
         "previous_histogram": round(previous_histogram, 6),
         "histogram_turn": "CROSS_UP" if bullish_cross else ("CROSS_DOWN" if bearish_cross else "NONE"),
+        "histogram_delta": round(histogram_delta, 6),
+        "previous_histogram_delta": round(previous_histogram_delta, 6) if previous_histogram_delta is not None else None,
+        "histogram_momentum_turn": "TURN_UP" if delta_up else ("TURN_DOWN" if delta_down else "NONE"),
         "candidate_side": candidate_side,
         "condition_enabled": {
-            "entry_histogram_zero_cross": use_macd_zero_cross,
+            **({"entry_histogram_delta_turn": use_macd_hist_turn, "entry_histogram_zone": use_macd_hist_zone}
+               if is_turn else {"entry_histogram_zero_cross": use_macd_zero_cross}),
             "entry_signal_zone": use_macd_signal_zone,
             "exit_histogram_zero_cross": use_macd_hist_exit,
         },
         "condition_pass": {
-            "entry_histogram_zero_cross": bullish_cross if candidate_side > 0 else bearish_cross,
+            **({"entry_histogram_delta_turn": delta_up if candidate_side > 0 else delta_down,
+                "entry_histogram_zone": histogram < 0.0 if candidate_side > 0 else histogram > 0.0}
+               if is_turn else {"entry_histogram_zero_cross": bullish_cross if candidate_side > 0 else bearish_cross}),
             "entry_signal_zone": signal_negative if candidate_side > 0 else signal_positive,
             "exit_histogram_zero_cross": (bearish_cross if position_side > 0 else bullish_cross) if position_side else None,
         },
     }
     return bool(entry_signal), candidate_side, exit_signal, evaluation
+
+
+def evaluate_macd_hist_turn_signals(prices: List[float], **kwargs: Any) -> Tuple[bool, int, bool, Dict[str, Any]]:
+    """Long on ΔH turning positive under zero; short on ΔH turning negative above zero."""
+    return evaluate_macd_zero_cross_signals(prices, _entry_trigger="histogram_turn", **kwargs)
 
 
 def evaluate_macd_strength_scaleout_signals(
@@ -1418,7 +1451,7 @@ def evaluate_macd_strength_scaleout_signals(
     return bool(entry), side, exit_signal, evaluation
 
 
-LIVE_STRATEGIES = {"adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross"}
+LIVE_STRATEGIES = {"adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}
 
 
 def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
@@ -1433,12 +1466,12 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         fast = max(2, int(params.get("fast_ma_period", 9)))
         slow = max(fast + 1, int(params.get("slow_ma_period", 21)))
         return slow + 1
-    if strategy_mode in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross"}:
+    if strategy_mode in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}:
         fast = max(2, int(params.get("macd_fast_period", 12)))
         slow = max(fast + 1, int(params.get("macd_slow_period", 26)))
         signal = max(2, int(params.get("macd_signal_period", 9)))
         required = slow + signal + 1
-        if strategy_mode == "macd_zero_cross":
+        if strategy_mode in {"macd_zero_cross", "macd_hist_turn"}:
             return required
         macro_mode = params.get("macro_regime_mode", "ma_slope")
         if bool(params.get("use_ma_stack_1h", True)) and macro_mode in {"ma_slope", "hybrid"}:
@@ -1599,6 +1632,21 @@ def _evaluate_strategy_signal(
             macd_slow_period=int(config.get("macd_slow_period", 26)),
             macd_signal_period=int(config.get("macd_signal_period", 9)),
             use_macd_zero_cross=bool(config.get("use_macd_zero_cross", True)),
+            use_macd_signal_zone=bool(config.get("use_macd_signal_zone", False)),
+            use_macd_hist_exit=bool(config.get("use_macd_hist_exit", True)),
+            evaluation_time=evaluation_time,
+            position_side=position_side,
+            entry_price=entry_price,
+            held_bars=held_bars,
+        )
+    elif strategy_mode == "macd_hist_turn":
+        return evaluate_macd_hist_turn_signals(
+            prices,
+            macd_fast_period=int(config.get("macd_fast_period", 12)),
+            macd_slow_period=int(config.get("macd_slow_period", 26)),
+            macd_signal_period=int(config.get("macd_signal_period", 9)),
+            use_macd_hist_turn=bool(config.get("use_macd_hist_turn", True)),
+            use_macd_hist_zone=bool(config.get("use_macd_hist_zone", True)),
             use_macd_signal_zone=bool(config.get("use_macd_signal_zone", False)),
             use_macd_hist_exit=bool(config.get("use_macd_hist_exit", True)),
             evaluation_time=evaluation_time,
