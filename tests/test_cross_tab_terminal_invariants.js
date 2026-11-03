@@ -8,6 +8,12 @@ const lighter = fs.readFileSync(path.join(root, "lighter-tab.js"), "utf8");
 const crypto = fs.readFileSync(path.join(root, "crypto-tab.js"), "utf8");
 const lighterCrypto = fs.readFileSync(path.join(root, "lighter-crypto-tab.js"), "utf8");
 const common = fs.readFileSync(path.join(root, "terminal-common.js"), "utf8");
+const executionChart = fs.readFileSync(path.join(root, "strategy-execution-chart.js"), "utf8");
+
+assert.match(executionChart, /EXIT\$\{groupedCount > 1 \? ` ×\$\{groupedCount\}` : ""\}/,
+  "Tabs 2–5 must share persistent, grouped exit-marker labels");
+assert.match(executionChart, /const dimAlpha = isPaper \? "0\.72" : "0\.90"/,
+  "Tabs 2–5 must share legible actual and replay marker contrast");
 
 assert.match(common, /Auto-entry direction:/, "single-leg tabs must use direction wording, not spread wording");
 assert.match(common, /Two-way \(Long \+ Short\)/, "single-leg direction control must expose two-way trading clearly");

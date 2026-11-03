@@ -245,12 +245,20 @@
         const isEntry = m.is_entry !== false;
         const isSell = isShort ? isEntry : !isEntry;
         const isPaper = Boolean(m.hypothetical || m.is_paper || m.backtest || m.source === "virtual");
-        const dimAlpha = isPaper ? "0.35" : "0.70";
+        const dimAlpha = isPaper ? "0.72" : "0.90";
         const shape = (m.shape && (m.shape === "arrowUp" || m.shape === "arrowDown" || m.shape === "circle" || m.shape === "square"))
           ? m.shape
           : (isSell ? "arrowDown" : "arrowUp");
         const position = m.position || (isSell ? "aboveBar" : "belowBar");
-        const label = isMatch ? (m.hoverText || m.text || "") : (m.text || "");
+        const groupedCount = Number(m.count) > 1
+          ? Number(m.count)
+          : (Array.isArray(m.fill_signals) && m.fill_signals.length > 1 ? m.fill_signals.length : 0);
+        const persistentLabel = m.text || (!isEntry
+          ? `EXIT${groupedCount > 1 ? ` ×${groupedCount}` : ""}`
+          : "");
+        const label = isMatch && m.hoverText
+          ? [persistentLabel, m.hoverText].filter(Boolean).join(" · ")
+          : persistentLabel;
         return {
           time: m.time,
           position,

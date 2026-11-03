@@ -36,8 +36,8 @@ controller.setExecutions(executions);
 const rendered = controller.markersForRender();
 
 assert.equal(rendered.length, 2, "Both actual and paper trades on the same candle must render without collision");
-const actualMarker = rendered.find((m) => m.color.includes("0.70"));
-const paperMarker = rendered.find((m) => m.color.includes("0.35"));
+const actualMarker = rendered.find((m) => m.color.includes("0.90"));
+const paperMarker = rendered.find((m) => m.color.includes("0.72"));
 assert.ok(actualMarker, "Actual marker must be present with actual opacity");
 assert.ok(paperMarker, "Paper marker must be present with hypothetical opacity");
 
@@ -45,7 +45,7 @@ controller.setExecutions([
   {time: nowSec, source: "virtual", is_entry: false, direction: "long"},
   {time: nowSec + 300, source: "actual", is_paper: true, is_entry: true, direction: "long"},
 ]);
-assert.equal(controller.markersForRender()[0].text, "◁", "Virtual exits must remain hollow even without hypothetical flag");
+assert.equal(controller.markersForRender()[0].text, "◁ EXIT", "Virtual exits must remain hollow and visibly labeled even without hypothetical flag");
 assert.ok(controller.markersForRender().every(m => m.size === 0), "Paper worker fills must also be hollow");
 
 // Test 2: Verify forming candle timestamp filter logic across crypto-tab, lighter-crypto-tab, lighter-tab
