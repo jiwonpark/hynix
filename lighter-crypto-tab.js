@@ -625,7 +625,7 @@
         status: "PAPER ONLY · Select a strategy and interval, then rerun",
         description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
         legendPosition: "top",
-        legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="lighterCrypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighterCrypto_valShortTermMa7">—</strong></span><span id="lighterCrypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighterCrypto_valShortTermMa24">—</strong></span><span id="lighterCrypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighterCrypto_valShortTermMa60">—</strong></span><span><strong style="color:#16a34a">↑</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">↓</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">↓</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">↑</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="lighterCrypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="lighterCrypto_valSelectedMinProfit">—</strong></span>',
+        legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Price</span><span id="lighterCrypto_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighterCrypto_valShortTermMa7">—</strong></span><span id="lighterCrypto_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighterCrypto_valShortTermMa24">—</strong></span><span id="lighterCrypto_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighterCrypto_valShortTermMa60">—</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected PnL: <strong id="lighterCrypto_valShortTermNetPnl">--</strong> · Marker price: <strong id="lighterCrypto_valSelectedMinProfit">—</strong></span>',
       });
       const action = lid("btnRerunDynamicBacktest");
       if (action?.parentElement && !lid("btnResetChartView")) {
@@ -5103,11 +5103,11 @@
     },
 
     tradeMarkerGlyph(marker) {
-      const isSell = this.isTradeSell(marker);
+      const isEntry = this.isTradeEntry(marker);
       if (marker?.hypothetical) {
-        return isSell ? "⇩" : "⇧";
+        return isEntry ? "▷" : "◁";
       }
-      return isSell ? "↓" : "↑";
+      return isEntry ? "▶" : "◀";
     },
 
     getTradePairs() {
@@ -5365,13 +5365,14 @@
           target.type = "button";
           target.setAttribute("aria-label", `${glyph} ${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
 
-          // Buy/cover points up from the price; sell/short points down to it.
-          if (isSell) {
-            target.innerHTML = `<svg width="10" height="12" viewBox="0 0 10 12" style="display:block;overflow:visible;pointer-events:none;"><line x1="5" y1="0.5" x2="5" y2="8.5" stroke="${markerColor}" stroke-width="${isHypo ? 1 : 1.5}" stroke-linecap="round"/><polygon points="1,7.5 5,11.5 9,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></svg>`;
-            target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(-50%,-100%);width:10px;height:12px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
+          // Entries point right; exits point left. The tip lands exactly on
+          // the execution price so the paired hover PnL triangle stays aligned.
+          if (isEntry) {
+            target.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,0.5 7.5,4 0.5,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></svg>`;
+            target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(-100%,-50%);width:8px;height:8px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
           } else {
-            target.innerHTML = `<svg width="10" height="12" viewBox="0 0 10 12" style="display:block;overflow:visible;pointer-events:none;"><line x1="5" y1="11.5" x2="5" y2="3.5" stroke="${markerColor}" stroke-width="${isHypo ? 1 : 1.5}" stroke-linecap="round"/><polygon points="1,4.5 5,0.5 9,4.5" fill="${fill}" stroke="${markerColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></svg>`;
-            target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(-50%,0);width:10px;height:12px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
+            target.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="7.5,0.5 0.5,4 7.5,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></svg>`;
+            target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(0,-50%);width:8px;height:8px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
           }
 
           const pairKey = marker.pairKey || marker.markerKey;

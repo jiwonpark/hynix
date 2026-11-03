@@ -168,6 +168,7 @@
     constructor(options = {}) {
       this.series = options.series || null;
       this.lineStyle = options.lineStyle || { Solid: 0, Dashed: 2 };
+      this.compactHoverOnly = Boolean(options.compactHoverOnly);
       this.visibility = { actual: true, virtual: true };
       this.executions = [];
       this.referenceLines = [];
@@ -258,6 +259,10 @@
           ? [persistentLabel, m.hoverText].filter(Boolean).join(" · ")
           : persistentLabel;
         const markerGlyph = isPaper ? (isSell ? "⇩" : "⇧") : "";
+        const hoverLabel = !isMatch ? "" : [
+          !isEntry ? `EXIT${groupedCount > 1 ? ` ×${groupedCount}` : ""}` : "",
+          m.hoverText || m.text || "",
+        ].filter(Boolean).join(" · ");
         return {
           time: m.time,
           position,
@@ -265,10 +270,10 @@
           color: isMatch
             ? (isSell ? "#dc2626" : "#16a34a")
             : (isSell ? `rgba(220, 38, 38, ${dimAlpha})` : `rgba(22, 163, 74, ${dimAlpha})`),
-          // Buy/cover points up and sell/short points down. Actual fills use the
-          // native arrow; paper/replay uses an outlined double-arrow glyph.
-          size: isPaper ? 0 : 2,
-          text: [markerGlyph, label].filter(Boolean).join(" ")
+          // Tab 2 opts into compact native arrows and hover-only detail. Other
+          // consumers retain their established marker presentation.
+          size: this.compactHoverOnly ? 1 : (isPaper ? 0 : 2),
+          text: this.compactHoverOnly ? hoverLabel : [markerGlyph, label].filter(Boolean).join(" ")
         };
       });
     }

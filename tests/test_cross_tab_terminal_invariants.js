@@ -11,20 +11,22 @@ const common = fs.readFileSync(path.join(root, "terminal-common.js"), "utf8");
 const executionChart = fs.readFileSync(path.join(root, "strategy-execution-chart.js"), "utf8");
 
 assert.match(executionChart, /EXIT\$\{groupedCount > 1 \? ` ×\$\{groupedCount\}` : ""\}/,
-  "Tabs 2–5 must share persistent, grouped exit-marker labels");
+  "the shared chart must retain grouped exit detail for hover and legacy consumers");
 assert.match(executionChart, /const dimAlpha = isPaper \? "0\.72" : "0\.90"/,
   "Tabs 2–5 must share legible actual and replay marker contrast");
-assert.match(executionChart, /markerGlyph = isPaper \? \(isSell \? "⇩" : "⇧"\) : ""/,
-  "Tab 2 replay markers must preserve vertical buy/sell direction");
-assert.match(executionChart, /size: isPaper \? 0 : 2/,
-  "Tab 2 actual executions must retain prominent native vertical arrows");
+assert.match(index, /compactHoverOnly: true/,
+  "Tab 2 alone must opt into compact arrows with hover-only labels");
+assert.match(executionChart, /size: this\.compactHoverOnly \? 1/,
+  "Tab 2 compact mode must use the smaller native arrow size");
 for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", lighterCrypto]]) {
-  assert.match(source, /return isSell \? "↓" : "↑"/,
-    `${name} must expose vertical arrows using trade action direction`);
-  assert.match(source, /<line x1="5" y1="0\.5" x2="5" y2="8\.5"/,
-    `${name} sell marker must render a visible down-arrow shaft`);
-  assert.match(source, /<line x1="5" y1="11\.5" x2="5" y2="3\.5"/,
-    `${name} buy marker must render a visible up-arrow shaft`);
+  assert.match(source, /return isEntry \? "▶" : "◀"/,
+    `${name} must retain entry and exit triangle markers`);
+  assert.match(source, /polygon points="0\.5,0\.5 7\.5,4 0\.5,7\.5"/,
+    `${name} entry marker must render as a right-facing triangle`);
+  assert.match(source, /polygon points="7\.5,0\.5 0\.5,4 7\.5,7\.5"/,
+    `${name} exit marker must render as a left-facing triangle`);
+  assert.match(source, /Triangles and diagonal connectors should show ONLY on hover/,
+    `${name} must retain paired PnL triangles on hover or selection`);
 }
 
 assert.match(common, /Auto-entry direction:/, "single-leg tabs must use direction wording, not spread wording");

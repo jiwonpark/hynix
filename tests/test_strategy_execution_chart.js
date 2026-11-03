@@ -61,6 +61,17 @@ assert.equal(controller.markersForRender()[0].shape, 'arrowDown',
   'actual short entries must point down');
 controller.setVisibility('actual', false);
 
+const compactController = new Controller({compactHoverOnly: true});
+compactController.setExecutions([
+  {time: 4000, source: 'actual', is_entry: false, direction: 'short', hoverText: 'COVER 0.70'},
+]);
+assert.equal(compactController.markersForRender()[0].size, 1,
+  'Tab 2 compact mode must use smaller native arrows');
+assert.equal(compactController.markersForRender()[0].text, '',
+  'Tab 2 compact mode must hide labels at rest');
+assert.equal(compactController.markersForRender(4000)[0].text, 'EXIT · COVER 0.70',
+  'Tab 2 compact mode must reveal execution detail on hover');
+
 const timeScale = {
   getVisibleLogicalRange: () => ({from: 0, to: 60}),
   timeToCoordinate: time => time / 10,

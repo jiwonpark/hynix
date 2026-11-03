@@ -97,16 +97,19 @@ on deployment, and never change live settings or place orders to verify this UI.
 
 # Trade marker and P&L triangle styles
 
-Paper, virtual, and backtest markers use outlined double arrows (⇧/⇩). Actual
-execution markers use solid arrows (↑/↓). Buy and cover point up in green;
-sell and short point down in red. Entry versus exit is stated by the persistent
-marker label and hover detail rather than changing the action direction. Custom
-SVG markers keep an outlined arrowhead for paper/replay and a filled arrowhead
-for actual executions.
+Tab 2 uses compact native vertical arrows: buy and cover point up in green, while
+sell and short point down in red. Labels remain hidden at rest and appear only on
+marker hover. Tabs 3–5 intentionally retain their established 8px horizontal
+triangle contract: entries point right, exits point left, paper/replay triangles
+are outlined, and actual-execution triangles are filled. Their hover or selection
+also renders the paired P&L triangle and diagonal connector.
+
 P&L triangles have translucent green fills for profitable trades and translucent
 red fills for losing trades, for both paper and actual trades. Preserve the
 existing selection/hover behavior. When actual net P&L is unverified, use neutral
-gray rather than implying profit or loss.
+gray rather than implying profit or loss. This marker-shape distinction is an
+intentional venue-chart presentation exception; marker visibility, selection,
+hover details, and P&L semantics remain shared interaction behavior.
 
 # Entry-filter trend background
 

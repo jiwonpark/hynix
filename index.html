@@ -14080,7 +14080,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
           this.executionChartController = new StrategyExecutionChartController({
             series: this.shortTermSeries,
-            lineStyle: LightweightCharts.LineStyle
+            lineStyle: LightweightCharts.LineStyle,
+            compactHoverOnly: true
           });
 
           let tab2SaveRangeTimer = 0;
