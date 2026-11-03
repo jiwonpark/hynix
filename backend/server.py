@@ -1507,11 +1507,21 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
         if symbol not in LIGHTER_CRYPTO_MARKETS:
             raise ValueError("Unsupported Lighter crypto symbol")
         market_id = LIGHTER_CRYPTO_MARKETS[symbol]
+
+        async def telemetry_read(awaitable: Any, timeout: float = 6.0) -> Any:
+            """Keep public telemetry inside the browser's 20-second deadline.
+
+            The underlying Lighter client deliberately retries longer for order
+            safety.  A read-only dashboard request must not inherit that retry
+            budget or it can hold the whole Tab 5 refresh open for 30+ seconds.
+            """
+            return await asyncio.wait_for(awaitable, timeout=timeout)
+
         detail, book, account, candles = await asyncio.gather(
-            lighter_client.market_detail(market_id),
-            lighter_client.order_book(market_id, 20),
-            lighter_client.account_status(),
-            lighter_client.candles(market_id, "1m", 20),
+            telemetry_read(lighter_client.market_detail(market_id)),
+            telemetry_read(lighter_client.order_book(market_id, 20)),
+            telemetry_read(lighter_client.account_status()),
+            telemetry_read(lighter_client.candles(market_id, "1m", 20)),
             return_exceptions=True,
         )
         for required in (detail, book, account):
@@ -1520,7 +1530,10 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
         if isinstance(candles, Exception):
             candles = []
         quote = _lighter_book_summary(book)
-        positions = await lighter_client.positions(fresh=True) if account.get("authenticated") else []
+        # Account status has just populated the shared three-second account
+        # cache.  Reuse that snapshot (or the live account stream) instead of
+        # forcing a second REST round trip for positions.
+        positions = await telemetry_read(lighter_client.positions(), timeout=3.0) if account.get("authenticated") else []
         selected = []
         allocated = sum(abs(float(p.get("allocated_margin", 0) or 0)) for p in positions)
         account_gross = 0.0
@@ -1683,7 +1696,17 @@ async def get_lighter_crypto_trends(symbol: str = "BTC", small: str = "5m",
 
 @app.get("/api/lighter-crypto/bot/status")
 async def get_lighter_crypto_bot_status() -> Dict[str, Any]:
-    return {"success": True, "bot": await lighter_crypto_bot.reconciled_public_state()}
+    try:
+        bot = await asyncio.wait_for(lighter_crypto_bot.reconciled_public_state(), timeout=5.0)
+        return {"success": True, "bot": bot, "history_stale": False}
+    except asyncio.TimeoutError:
+        # Saved strategy settings and execution state are local and must remain
+        # available even when the exchange trade-history read is slow.  Label
+        # only the realized-history portion stale; never substitute defaults.
+        bot = lighter_crypto_bot.public_state()
+        bot["history_stale"] = True
+        bot["history_status"] = "Lighter realized trade history refresh timed out; retrying"
+        return {"success": True, "bot": bot, "history_stale": True}
 
 
 @app.post("/api/lighter-crypto/bot/config")

@@ -23,6 +23,9 @@ assert.ok(lighter.includes('tradeRateInput.dataset?.unsaved !== "true"'), 'statu
 assert.ok(lighter.includes('Target ${tradeRateText} pieces/min'), 'trade-rate display must identify the target child-order campaign pace');
 assert.ok(lighter.includes('live execution only; replay signals are unchanged'), 'trade-rate display must distinguish child-order timing from replay signals');
 assert.ok(lighter.includes('Entry campaign target ${tradeRateText} pieces/min'), 'top speed summary must show the configured campaign target');
+assert.ok(lighter.includes('const statusResult = await statusPromise'), 'account telemetry must render independently of slower bot/trend reads');
+assert.ok(lighter.indexOf('const statusResult = await statusPromise') < lighter.indexOf('const [botStatus, trendStatus] = await Promise.all([botPromise, trendPromise])'), 'account telemetry must be awaited before background reconciliation');
+assert.ok(lighter.includes('Waiting for saved MACD settings'), 'MACD replay must wait for authoritative saved settings instead of silently using defaults');
 assert.ok(lighter.includes('Full-Auto will be paused and exchange inventory reconciled before the reduction'), 'live reduction must disclose automatic pause and reconciliation');
 assert.ok(lighter.includes('safeStorage.setItem("skhynix_lighterCrypto_mode", "semi_auto")'), 'successful live reduction must remain in Manual Live mode');
 
@@ -73,6 +76,14 @@ assert.match(tab5.paradigms.adaptive_tranche.badge, /TAB 2 MODEL/);
 assert.match(tab5.paradigms.adaptive_tranche.entryLabels.rowCondEntryMaStack5m, /MA60/);
 assert.equal(tab5.paradigms.grid.name, 'Legacy Dynamic Grid');
 assert.equal(tab5.paradigms.macd_reversal.name, 'MACD Reversal');
+const unloadedMacdMarkup = tab5.renderParadigmDetail('macd_zero_cross');
+assert.match(unloadedMacdMarkup, /aria-label="MACD fast period"[^>]*value=""[^>]*placeholder="loading"/);
+assert.match(unloadedMacdMarkup, /aria-label="MACD slow period"[^>]*value=""[^>]*placeholder="loading"/);
+tab5.botState = { strategy_mode: 'macd_zero_cross', macd_fast_period: 20, macd_slow_period: 60, macd_signal_period: 9 };
+const loadedMacdMarkup = tab5.renderParadigmDetail('macd_zero_cross');
+assert.match(loadedMacdMarkup, /aria-label="MACD fast period"[^>]*value="20"/);
+assert.match(loadedMacdMarkup, /aria-label="MACD slow period"[^>]*value="60"/);
+tab5.botState = null;
 const macdMarkup = tab5.renderParadigmDetail('macd_reversal');
 assert.match(macdMarkup, /Long entry \/ short exit: Signal &lt; 0/);
 assert.match(macdMarkup, /Long entry \/ short exit: Histogram &lt; 0/);

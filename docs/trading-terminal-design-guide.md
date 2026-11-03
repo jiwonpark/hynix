@@ -83,6 +83,13 @@ this checklist before reporting that the work is complete.
   instead of reporting a successful deployment. Never submit test orders or
   change live trading settings as part of these checks.
 
+For multi-part terminal refreshes, account and position telemetry must render as
+soon as its own request completes. Slower strategy-history reconciliation,
+replay, or trend requests must not hold valid account data behind a combined
+barrier. Read-only venue telemetry must use a shorter bounded deadline than
+execution reconciliation and may reuse a recent authenticated account snapshot;
+it must never force an additional fresh account read merely to obtain positions.
+
 
 # Optional entry-count cap
 
@@ -179,10 +186,13 @@ replay signals, and the authenticated live deployment payload together. Editing
 Fast / Slow / Signal updates the paper chart; saving live settings still requires
 unlocking, pausing the bot, and deploying the selected strategy.
 
-MACD Fast / Slow / Signal replay drafts persist in browser storage, isolated by
-terminal and strategy. Refresh and strategy remount must restore the draft ahead
-of live/default values. Explicit Align to saved bot thresholds replaces that
-draft. Persistence must never save live bot configuration or enable trading.
+MACD Fast / Slow / Signal replay drafts persist through the authenticated bot
+state, isolated by terminal and strategy. Refresh and strategy remount must
+restore the saved draft ahead of generic defaults. Until that state arrives,
+the controls and MACD pane must show a loading/unavailable state and must not run
+a replay with hard-coded fallback periods. Explicit Align to saved bot thresholds
+replaces the draft. Draft persistence must never change live bot configuration
+or enable trading.
 
 ## Single-leg net take-profit exit (Tabs 4 and 5)
 

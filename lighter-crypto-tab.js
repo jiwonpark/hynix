@@ -1774,6 +1774,8 @@
       if (mode === "macd_zero_cross") {
         const live = { ...(this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {}),
           ...(this.botState?.strategy_drafts?.[mode] || {}) };
+        const awaitingSavedSettings = !this.botState;
+        const macdValue = (key, fallback) => awaitingSavedSettings ? "" : Number(live[key] ?? fallback);
         const checked = (key) => live[key] !== false ? "checked" : "";
         const row = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 10px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
         const toggle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
@@ -1783,9 +1785,9 @@
               <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed candles only. Long: H crosses −→+ while signal &lt; 0. Short: H crosses +→− while signal &gt; 0.</p>
               <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Adjust Fast / Slow / Signal periods here: the server saves the shared replay draft and every browser loads it. Live trading changes only when you deploy this strategy.</p></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;font-weight:700;color:#475569;">
-              <label>Fast <input id="lighterCrypto_macdFastPeriod" type="number" min="2" max="100" step="1" value="${Number(live.macd_fast_period ?? 12)}" style="width:52px"></label>
-              <label>Slow <input id="lighterCrypto_macdSlowPeriod" type="number" min="3" max="200" step="1" value="${Number(live.macd_slow_period ?? 26)}" style="width:52px"></label>
-              <label>Signal <input id="lighterCrypto_macdSignalPeriod" type="number" min="2" max="100" step="1" value="${Number(live.macd_signal_period ?? 9)}" style="width:52px"></label>
+              <label>Fast <input id="lighterCrypto_macdFastPeriod" aria-label="MACD fast period" type="number" min="2" max="100" step="1" value="${macdValue("macd_fast_period", 12)}" placeholder="loading" style="width:52px"></label>
+              <label>Slow <input id="lighterCrypto_macdSlowPeriod" aria-label="MACD slow period" type="number" min="3" max="200" step="1" value="${macdValue("macd_slow_period", 26)}" placeholder="loading" style="width:52px"></label>
+              <label>Signal <input id="lighterCrypto_macdSignalPeriod" aria-label="MACD signal period" type="number" min="2" max="100" step="1" value="${macdValue("macd_signal_period", 9)}" placeholder="loading" style="width:52px"></label>
               <button id="lighterCrypto_btnMacdReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun MACD</button>
             </div>
           </div>
@@ -1806,6 +1808,8 @@
         const chartInterval = this.interval || "5m";
         const live = { ...(this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {}),
           ...(this.botState?.strategy_drafts?.[mode] || {}) };
+        const awaitingSavedSettings = !this.botState;
+        const macdValue = (key, fallback) => awaitingSavedSettings ? "" : Number(live[key] ?? fallback);
         const checked = (key) => live[key] !== false ? "checked" : "";
         const macroMode = ["ma_slope", "macd_hist_accel", "hybrid"].includes(live.macro_regime_mode)
           ? live.macro_regime_mode : "ma_slope";
@@ -1816,9 +1820,9 @@
             <div><strong style="font-size:14px;color:#0f172a;text-transform:uppercase;">〽️ MACD Histogram Reversal</strong>
               <p style="margin:4px 0 0;color:#64748b;font-size:11.5px;">Completed bars only. Negative trough = long; positive peak = short. The wider-trend switch is a real directional entry gate.</p></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;font-weight:700;color:#475569;">
-              <label>Fast <input id="lighterCrypto_macdFastPeriod" type="number" min="2" max="100" step="1" value="${Number(live.macd_fast_period ?? 12)}" style="width:52px"></label>
-              <label>Slow <input id="lighterCrypto_macdSlowPeriod" type="number" min="3" max="200" step="1" value="${Number(live.macd_slow_period ?? 26)}" style="width:52px"></label>
-              <label>Signal <input id="lighterCrypto_macdSignalPeriod" type="number" min="2" max="100" step="1" value="${Number(live.macd_signal_period ?? 9)}" style="width:52px"></label>
+              <label>Fast <input id="lighterCrypto_macdFastPeriod" aria-label="MACD fast period" type="number" min="2" max="100" step="1" value="${macdValue("macd_fast_period", 12)}" placeholder="loading" style="width:52px"></label>
+              <label>Slow <input id="lighterCrypto_macdSlowPeriod" aria-label="MACD slow period" type="number" min="3" max="200" step="1" value="${macdValue("macd_slow_period", 26)}" placeholder="loading" style="width:52px"></label>
+              <label>Signal <input id="lighterCrypto_macdSignalPeriod" aria-label="MACD signal period" type="number" min="2" max="100" step="1" value="${macdValue("macd_signal_period", 9)}" placeholder="loading" style="width:52px"></label>
               <button id="lighterCrypto_btnMacdReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun MACD</button>
             </div>
           </div>
@@ -2668,6 +2672,18 @@
         this.maSeries[w]?.setData(data);
       });
 
+      const macdMode = ["macd_zero_cross", "macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm);
+      if (macdMode && !this.botState) {
+        const macdLegendPeriods = $("lighterCrypto_macdLegendPeriods");
+        if (macdLegendPeriods) macdLegendPeriods.textContent = "MACD (saved settings loading…):";
+        this._currentMacd = { macd: [], signal: [], histogram: [] };
+        if (this.assetSeries?.macd) this.assetSeries.macd.setData([]);
+        if (this.assetSeries?.signal) this.assetSeries.signal.setData([]);
+        if (this.assetSeries?.histogram) this.assetSeries.histogram.setData([]);
+        this.renderMaLegendValues(bars.at(-1)?.time);
+        return;
+      }
+
       const { macd_fast_period: macdFast, macd_slow_period: macdSlow,
         macd_signal_period: macdSignal } = this.macdSettings();
       const macd = TerminalCommon.macd(bars, macdFast, macdSlow, macdSignal);
@@ -3018,11 +3034,15 @@
       try {
         const sParam = encodeURIComponent(this.smallTrendInterval || "5m");
         const bParam = encodeURIComponent(this.bigTrendInterval || "1h");
-        const [statusResult, botStatus, trendStatus] = await Promise.all([
-          api(`/api/lighter-crypto/status?symbol=${encodeURIComponent(sym)}`).catch(error => ({success: false, error: error.message})),
-          api("/api/lighter-crypto/bot/status").catch(() => null),
-          api(`/api/lighter-crypto/trends?symbol=${encodeURIComponent(sym)}&small=${sParam}&big=${bParam}`).catch(() => null),
-        ]);
+        // Start the independent reads together, but render account telemetry as
+        // soon as it arrives.  Slow realized-history or trend reconciliation
+        // must never hold valid collateral and positions behind Promise.all.
+        const statusPromise = api(`/api/lighter-crypto/status?symbol=${encodeURIComponent(sym)}`)
+          .catch(error => ({success: false, error: error.message}));
+        const botPromise = api("/api/lighter-crypto/bot/status").catch(() => null);
+        const trendPromise = api(`/api/lighter-crypto/trends?symbol=${encodeURIComponent(sym)}&small=${sParam}&big=${bParam}`)
+          .catch(() => null);
+        const statusResult = await statusPromise;
         if (sym !== this.selectedSymbol) return;
         const status = statusResult || { success: false, error: "Account response unavailable", positions: [] };
         clearTimeout(this.accountRetryTimer);
@@ -3047,9 +3067,9 @@
         this.setText("lblDaemonSyncTime", status.success && status.server_time_ms
           ? `Last Sync: ${formatKstDateTime(status.server_time_ms, false)}`
           : `Account unavailable: ${status.error || "No response"} · retrying`);
-      this.setText("lblDaemonLatency", botStatus?.bot?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Paused");
+      this.setText("lblDaemonLatency", this.botState?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Loading");
         this.setText("lblDaemonStats", `Lighter Perpetuals · ${sym}`);
-      this.setText("lblHedgedSyncBadge", botStatus?.bot?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT PAUSED");
+      this.setText("lblHedgedSyncBadge", this.botState?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT LOADING");
         this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto · ${sym}`);
       this.setText("lblDaemonAuthBadge", status.authenticated ? "LIGHTER PERPETUALS CONNECTED" : "ACCOUNT UNAVAILABLE");
       this.setText("valAccountEquity", Number.isFinite(Number(status.collateral)) && status.collateral != null
@@ -3065,7 +3085,16 @@
         this.setText("valAutoCurrentEdge", formattedPrice);
         this.setText("valCritCurrentSpread", formattedPrice);
         this.setText("valCritTpCurrentSpread", formattedPrice);
+        // Account and position cards are now usable even if the two background
+        // reads below are still reconciling.
+        this.renderVirtualState();
+        this.updateGridLadderData();
+
+        const [botStatus, trendStatus] = await Promise.all([botPromise, trendPromise]);
+        if (sym !== this.selectedSymbol) return;
         if (botStatus?.bot) this.updateBotStatus(botStatus.bot, status);
+        this.setText("lblDaemonLatency", botStatus?.bot?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Paused");
+        this.setText("lblHedgedSyncBadge", botStatus?.bot?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT PAUSED");
         if (trendStatus?.success && trendStatus?.trends && Object.keys(trendStatus.trends).length) {
           if (this.trendRetryTimer) clearTimeout(this.trendRetryTimer);
           this.renderTrends(trendStatus.trends);
@@ -4162,10 +4191,15 @@
 
     updateBotStatus(bot, venue) {
       if (!bot) return;
+      const wasAwaitingBotSettings = !this.botState;
       const macroPeriod = lid("macroMaPeriod");
       if (macroPeriod && !macroPeriod.dataset.userEdited) macroPeriod.value = String(bot.strategy_params?.macro_ma_period ?? bot.macro_ma_period ?? 60);
       this.botState = bot;
       this.syncMacdDraftControls(bot);
+      if (wasAwaitingBotSettings && ["macd_zero_cross", "macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)) {
+        this.updateMaAndDiffs(this.bars || []);
+        if (this.bars?.length) this.runBacktestIfChanged();
+      }
       window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Live", bot.take_profit_evaluation, bot.use_take_profit);
       this.syncMacroRegimeControlsFromBot(bot);
       window.TerminalCommon?.syncSingleLegDirectionControl("lighterCrypto_", bot?.entry_direction_mode);
@@ -6583,6 +6617,11 @@
       this.renderMarkers();
       this.renderCurrentPositionReferenceLines();
       try {
+        if (["macd_zero_cross", "macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm) && !this.botState) {
+          if (summary) summary.textContent = "Waiting for saved MACD settings…";
+          this.executionChartFrame?.setStatus("⏳ Waiting for saved MACD settings…");
+          return;
+        }
         if (this.currentParadigm === "ou_quant") {
           const controls = $("lighterCrypto_paradigmDetailSection")?.querySelectorAll?.("input[type=number]") || [];
           for (const input of controls) {
