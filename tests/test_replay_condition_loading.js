@@ -4,10 +4,10 @@ const vm=require('node:vm');
 
 (async()=>{
   for(const [file,name] of [['crypto-tab.js','cryptoEngine'],['lighter-crypto-tab.js','lighterCryptoEngine']]){
-    const pending=[];
+    const pending=[], controllers=[], fetchSignals=[];
     const context={window:{},document:{readyState:'loading',addEventListener(){},getElementById(){return null;}},
-      console,URLSearchParams,AbortController,setTimeout,clearTimeout,
-      fetch:()=>new Promise(resolve=>pending.push(resolve))};
+      console,URLSearchParams,AbortController:class extends AbortController { constructor(){super();controllers.push(this);} },setTimeout,clearTimeout,
+      fetch:(_,options)=>{fetchSignals.push(options.signal);return new Promise(resolve=>pending.push(resolve));}};
     vm.createContext(context);
     vm.runInContext(fs.readFileSync('terminal-common.js','utf8'),context);
     context.TerminalCommon=context.window.TerminalCommon;
@@ -27,6 +27,7 @@ const vm=require('node:vm');
     assert.equal(common.replayProgressPart(engine).ready,false);
     const first=engine.runBacktest();
     assert.equal(engine.replayLoading,true);
+    assert.equal(fetchSignals[0],controllers[0].signal,"replay deadline controls the actual network request");
     assert.equal(common.replayProgressPart(engine).ready,false);
     threshold=2; // Simulate settings synchronized while the first request runs.
     pending.shift()(response());

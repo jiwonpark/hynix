@@ -48,12 +48,12 @@
   }
 
   async function api(path, options = {}) {
-    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const controller = !options.signal && typeof AbortController !== "undefined" ? new AbortController() : null;
     let timeout;
     try {
       return await Promise.race([
         (async () => {
-          const response = await fetch(`${getApiPrefix()}${path}`, controller ? { signal: controller.signal } : {});
+          const response = await fetch(`${getApiPrefix()}${path}`, options.signal ? options : controller ? { signal: controller.signal } : {});
           const ct = response.headers?.get?.("content-type") || "application/json";
           const payload = ct.includes("application/json") ? await response.json().catch(() => null) : null;
           if (!response.ok) throw new Error(payload?.error || payload?.message || payload?.detail || `HTTP ${response.status}`);
@@ -61,6 +61,7 @@
           return payload;
         })(),
         new Promise((_, reject) => {
+          if (options.signal) return; // Replay owns its shared 30-second deadline.
           timeout = setTimeout(() => {
             controller?.abort();
             reject(new Error("Request timed out after 20 seconds"));
