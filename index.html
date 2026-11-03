@@ -11879,7 +11879,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const cacheKey = `skhynix_tab2_parity_${this.state.shortTermInterval || "5m"}`;
           const cached = typeof TerminalCommon !== "undefined" ? TerminalCommon.getCachedCandles(cacheKey) : null;
           if (cached && Array.isArray(cached) && cached.length) {
-            this.shortTermHistory = { interval: this.state.shortTermInterval || "5m", bars: cached, markers: [], hasMore: true, loading: false, loadingOlder: false };
+            // Cached candles are a paint-only preview. Execution markers are
+            // intentionally not cached because authenticated fills can change.
+            // Do not claim the cached candle span as hydrated history, or a
+            // leftward pan will skip marker-bearing API pages already present
+            // in the candle cache and actual exits will silently disappear.
+            this.shortTermHistory = { interval: this.state.shortTermInterval || "5m", bars: [], markers: [], hasMore: true, loading: false, loadingOlder: false };
             this.renderShortTermChart({ bars: cached, markers: [] });
             const initial = typeof this.getInitialViewport === "function"
               ? this.getInitialViewport(cached.length)

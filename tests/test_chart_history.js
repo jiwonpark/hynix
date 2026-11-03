@@ -17,6 +17,8 @@ assert.ok(html.includes('grid-template-columns: minmax(0, 1fr);'),
   'the parity chart must occupy the full execution panel width');
 assert.ok(html.includes('class="shortTermCriteriaGrid"'),
   'criteria should move below the full-width chart');
+assert.match(html, /Cached candles are a paint-only preview[\s\S]*?shortTermHistory = \{ interval: this\.state\.shortTermInterval \|\| "5m", bars: \[\], markers: \[\]/,
+  'cached Tab 2 candles must not suppress authoritative marker-history hydration');
 let range = { from: 0, to: 1 }, rendered;
 engine.shortTermChart = { timeScale: () => ({getVisibleLogicalRange: () => range, setVisibleLogicalRange: r => {range = r;}}) };
 engine.renderShortTermChart = data => { rendered = data; };
