@@ -13202,7 +13202,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         for (const url of endpoints) {
           try {
-            const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+            const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
             if (res.ok) {
               const data = await res.json();
               const latency = Math.round(performance.now() - tStart);
@@ -13324,7 +13324,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           ];
           for (const url of fallbackEndpoints) {
             try {
-              const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+              const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
               if (res.ok) {
                 const data = await res.json();
                 const latency = Math.round(performance.now() - tStart);
@@ -13522,7 +13522,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         ];
         for (const url of endpoints) {
           try {
-            const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+            const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
             if (res.ok) {
               const data = await res.json();
               this.fetchEntryPacing();

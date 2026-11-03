@@ -8,8 +8,12 @@ from typing import Dict, Any, List, Optional
 import aiohttp
 from .config import config
 
-READ_TIMEOUT = aiohttp.ClientTimeout(total=8, connect=3, sock_read=7)
-ACCOUNT_REFRESH_TIMEOUT = 6.0
+# Signed Futures account reads can be slower than public market-data reads.  The
+# aggregate account deadline must never expire before an individual read gets
+# its configured chance to finish, otherwise every slow-but-healthy response is
+# cancelled and the UI incorrectly loses balances and positions.
+READ_TIMEOUT = aiohttp.ClientTimeout(total=10, connect=3, sock_read=9)
+ACCOUNT_REFRESH_TIMEOUT = 11.0
 
 class BinanceFuturesClient:
     def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None, base_url: Optional[str] = None):

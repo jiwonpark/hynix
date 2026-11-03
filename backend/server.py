@@ -73,6 +73,15 @@ STATE_FILE = Path(__file__).parent / "auto_tranche_state.json"
 scale_in_lock = asyncio.Lock()
 upbit_scanner_lock = asyncio.Lock()
 upbit_scanner_cache: Dict[str, Any] = {"timestamp": 0.0, "payload": None}
+# Replay calculations are CPU-heavy Python work.  Serializing them prevents
+# several open/reloading terminal tabs from exhausting the daemon's CPU quota
+# and starving latency-sensitive account and position telemetry.
+backtest_compute_lock = asyncio.Lock()
+
+
+async def run_backtest_compute(func, /, *args, **kwargs):
+    async with backtest_compute_lock:
+        return await asyncio.to_thread(func, *args, **kwargs)
 
 # Live safeguards are independent of selectable price-replay conditions.
 # Capital & solvency constraints remain mandatory for live execution safety.
@@ -1112,7 +1121,7 @@ async def get_lighter_backtest(interval: str = "15m", limit: int = 500,
                         "4h": 14400, "1d": 86400}.get(interval, 900)
     now_seconds = int(time.time())
     bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]
-    return await asyncio.to_thread(
+    return await run_backtest_compute(
         _run_lighter_backtest_sync,
         bars=bars,
         success=data.get("success", False),
@@ -3030,7 +3039,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
             fee_rate = await asyncio.wait_for(fee_bot.take_profit_fee_rate(symbol), timeout=5)
         except Exception as exc:
             fee_error = str(exc) or "Fee lookup timed out"
-    return await asyncio.to_thread(
+    return await run_backtest_compute(
         _run_crypto_backtest_sync,
         bars=bars,
         candle_success=candle_res.get("success", False),
@@ -4642,7 +4651,7 @@ async def dynamic_backtest(request: DynamicBacktestRequest) -> Dict[str, Any]:
         bars = await backtest_market_bars(start-61*3600, end)
         rules = await exchange_rules(binance_client)
         replay_pacing = entry_pacing(request.pacing)
-        result = await asyncio.to_thread(
+        result = await run_backtest_compute(
             replay, bars, start, end, toggles=request.toggles,
             sizing_rules=rules, pacing=replay_pacing)
         if not result['summary']['evaluated_bars']:
