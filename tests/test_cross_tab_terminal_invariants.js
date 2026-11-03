@@ -105,6 +105,8 @@ for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", l
     `${name} must keep account fields neutral when authenticated data is unavailable`);
   assert.match(source, /this\._userSelectedInterval = true/,
     `${name} must remember a user-selected viewing interval`);
+  assert.match(source, /classList\.toggle\("active", candidate === value\)/,
+    `${name} must highlight a selected viewing interval before its candle request completes`);
   assert.match(source, /if \(!this\._userSelectedInterval\) this\.interval = liveInterval/,
     `${name} bot status refresh must not reset a user-selected viewing interval`);
 }

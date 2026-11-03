@@ -707,6 +707,9 @@
         button.addEventListener("click", () => {
           this._userSelectedInterval = true;
           this.interval = value;
+          ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((candidate) => {
+            lid(`btnShortInterval${candidate}`)?.classList.toggle("active", candidate === value);
+          });
           this._historyExhausted = false;
           this.backtestMarkers = [];
           this.renderMarkers();
