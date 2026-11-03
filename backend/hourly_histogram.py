@@ -18,10 +18,14 @@ def histogram_series(values, fast=20, slow=60, signal=9):
 def hourly_histogram_points(bars, config):
     ordered = sorted(bars, key=lambda b: b['time'])
     periods = [int(config.get('hourly_hist_' + key, default)) for key, default in [('fast',20),('slow',60),('signal',9)]]
-    hist = histogram_series([float(b['value']) for b in ordered], *periods)
+    values = [float(b['value']) for b in ordered]
+    # Fixed causal warmup makes live/replay independent of fetched history length.
+    warmup = max(150, periods[1] + periods[2] + 3)
     points = []
     for i, bar in enumerate(ordered):
-        current, previous = hist[i], hist[i-1] if i else None
+        window = values[max(0,i-warmup+1):i+1]
+        hist = histogram_series(window, *periods)
+        current, previous = (hist[-1], hist[-2]) if len(window) >= warmup else (None,None)
         ready = current is not None and previous is not None and all(math.isfinite(v) for v in (current,previous))
         slope = current - previous if ready else None
         points.append({'source_time':int(bar['time']), 'available_time':int(bar['time'])+3600,
@@ -57,7 +61,7 @@ class HourlyHistogramMixin:
             self.state['hourly_histogram']=cache[2]
             return cache[2]
         try:
-            limit=min(500,max(150,params[1]+params[2]+3))
+            limit=min(500,max(150,params[1]+params[2]+3)+2)
             if self.profit_venue=='binance':
                 raw=await self.client.request('GET','/fapi/v1/klines',{'symbol':key[0],'interval':'1h','limit':limit})
                 bars=[{'time':int(r[0])//1000,'value':float(r[4])} for r in raw if int(r[6])<int(now*1000)]

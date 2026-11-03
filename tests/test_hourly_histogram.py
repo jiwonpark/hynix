@@ -15,7 +15,7 @@ from backend.server import _run_crypto_backtest_sync
 class HourlyHistogramTests(unittest.TestCase):
     def setUp(self):
         self.config=dict(use_hourly_hist=True,hourly_hist_fast=4,hourly_hist_slow=10,hourly_hist_signal=3)
-        self.hours=[{'time':i*3600,'value':100+3*math.sin(i/5)} for i in range(170)]
+        self.hours=[{'time':i*3600,'value':100+3*math.sin(i/5)} for i in range(300)]
 
     def test_slope_not_histogram_zone_and_flat_unavailable(self):
         points=hourly_histogram_points(self.hours,self.config)
@@ -30,6 +30,12 @@ class HourlyHistogramTests(unittest.TestCase):
             self.assertFalse(apply_hourly_filter(True,side,{},self.config,None))
             self.assertTrue(apply_hourly_filter(True,side,{},dict(use_hourly_hist=False),None))
 
+    def test_fixed_warmup_matches_live_and_replay_history_lengths(self):
+        config=dict(use_hourly_hist=True,hourly_hist_fast=20,hourly_hist_slow=60,hourly_hist_signal=9)
+        full=hourly_histogram_points(self.hours,config)[-1]
+        short=hourly_histogram_points(self.hours[-150:],config)[-1]
+        self.assertEqual(full,short)
+
     def test_evaluator_gate_keeps_exits_and_entries_position_independent(self):
         prices=[100+3*math.sin(i/5) for i in range(100)]
         for mode in ['macd_zero_cross','macd_reversal','grid','ma_acceleration','golden_death_cross']:
@@ -39,7 +45,7 @@ class HourlyHistogramTests(unittest.TestCase):
                 self.assertFalse(blocked[0]);self.assertEqual(blocked[2],base[2])
 
     def test_replay_maps_hourly_close_without_future_leak_and_toggle_is_real(self):
-        bars=[{'time':100*3600+i*300,'value':100+3*math.sin(i/5)} for i in range(240)]
+        bars=[{'time':200*3600+i*300,'value':100+3*math.sin(i/5)} for i in range(240)]
         kwargs=dict(strategy_mode='macd_zero_cross',interval_seconds=300,macro_bars=self.hours,
                     use_macd_signal_zone=False,macd_fast_period=4,macd_slow_period=10,macd_signal_period=3)
         off=_run_crypto_backtest_sync(bars,True,**kwargs)
@@ -51,7 +57,7 @@ class HourlyHistogramTests(unittest.TestCase):
                 self.assertLessEqual(point['source_time']+3600,point['time']+300)
         old=[dict(b) for b in self.hours]
         for b in old:
-            if b['time']>=120*3600:b['value']*=10
+            if b['time']>=220*3600:b['value']*=10
         future=_run_crypto_backtest_sync(bars,True,**{**kwargs,'macro_bars':old},**self.config)
         self.assertEqual(on['entry_signals'],future['entry_signals'])
         for signal in on['entry_signals']:
@@ -77,7 +83,7 @@ class HourlyLiveTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as folder:
             bot=CryptoBot(AsyncMock(),Path(folder)/'s.json')
             now=200*3600+60
-            raw=[[i*3600000,0,0,0,100+math.sin(i/4),0,(i+1)*3600000-1] for i in range(80,201)]
+            raw=[[i*3600000,0,0,0,100+math.sin(i/4),0,(i+1)*3600000-1] for i in range(20,201)]
             bot.client.request.return_value=raw
             with patch('backend.hourly_histogram.time.time',return_value=now):
                 point=await bot.refresh_hourly_histogram()

@@ -3069,7 +3069,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
     macro_limit = min(500, max(125, math.ceil(min(500, limit) * interval_seconds / 3600)
                                + macro_ma_period + 2))
-    macro_limit = min(1000, max(macro_limit, math.ceil(min(500,limit)*interval_seconds/3600) + hourly_hist_slow + hourly_hist_signal + 3))
+    macro_limit = min(1000, max(macro_limit, math.ceil(min(500,limit)*interval_seconds/3600) + max(150, hourly_hist_slow + hourly_hist_signal + 3) + 2))
     needs_hourly = use_hourly_hist or strategy_mode not in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross"}
     if market_source == "lighter":
         if needs_hourly:
