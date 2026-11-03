@@ -2600,6 +2600,34 @@
     .mainTabProgressStalled { width: 100%; color: #b45309; font-size: 10.5px; }
     @keyframes mainTabLoadingSpin { to { transform: rotate(360deg); } }
 
+    .terminalLoadingDots {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 28px;
+      min-height: 1em;
+      vertical-align: middle;
+      color: #64748b;
+    }
+    .terminalLoadingDots > i {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: .28;
+      animation: terminalLoadingDot 1.05s ease-in-out infinite;
+    }
+    .terminalLoadingDots > i:nth-child(2) { animation-delay: .14s; }
+    .terminalLoadingDots > i:nth-child(3) { animation-delay: .28s; }
+    @keyframes terminalLoadingDot {
+      0%, 65%, 100% { opacity: .28; transform: translateY(0); }
+      32% { opacity: 1; transform: translateY(-2px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .terminalLoadingDots > i { animation: none; opacity: .65; }
+    }
+
     @media (max-width: 860px) {
       main { width: min(100vw - 20px, 1280px); padding-top: 18px; }
       .top { grid-template-columns: minmax(0, 1fr); grid-template-areas: "meta" "title" "actions"; }
@@ -3463,23 +3491,23 @@
               <span id="lblAccountEquity">Binance Total Equity</span>
               <span id="badgeEquitySource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">SYNCING</span>
             </div>
-            <strong id="valAccountEquity" style="color: #0284c7; font-size: 16px;">—</strong>
+            <strong id="valAccountEquity" style="color: #0284c7; font-size: 16px;"><span class="terminalLoadingDots" role="status" aria-label="Loading"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></span></strong>
           </div>
           <div class="realAccountStat">
             <span id="lblAvailMargin">Available Margin</span>
-            <strong id="valAvailMargin" style="font-size: 16px;">—</strong>
+            <strong id="valAvailMargin" style="font-size: 16px;"><span class="terminalLoadingDots" role="status" aria-label="Loading"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></span></strong>
           </div>
           <div class="realAccountStat">
             <span id="lblUnrealizedPnl">Unrealized PnL</span>
-            <strong id="valUnrealizedPnl" style="color: #64748b; font-size: 16px;">—</strong>
+            <strong id="valUnrealizedPnl" style="color: #64748b; font-size: 16px;"><span class="terminalLoadingDots" role="status" aria-label="Loading"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></span></strong>
           </div>
           <div class="realAccountStat">
             <span id="lblActivePairs">Active Positions</span>
-            <strong id="valActivePairs" style="font-size: 15px;">—</strong>
+            <strong id="valActivePairs" style="font-size: 15px;"><span class="terminalLoadingDots" role="status" aria-label="Loading"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></span></strong>
           </div>
           <div class="realAccountStat">
             <span id="lblMarginRisk">Margin Safety Ratio</span>
-            <strong id="valMarginRisk" style="color: #64748b; font-size: 15px;">—</strong>
+            <strong id="valMarginRisk" style="color: #64748b; font-size: 15px;"><span class="terminalLoadingDots" role="status" aria-label="Loading"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></span></strong>
           </div>
           <div class="realAccountStat" id="statCollateralSummary" style="min-width: 170px;">
             <span id="lblCollateralSummary">Binance Wallet Split</span>
@@ -3492,7 +3520,7 @@
               <span id="lblUpbitEquity">Upbit KRW Equity</span>
               <span id="badgeUpbitSource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">SYNCING</span>
             </div>
-            <strong id="valUpbitEquity" style="color: #0d9488; font-size: 16px;">—</strong>
+            <strong id="valUpbitEquity" style="color: #0d9488; font-size: 16px;"><span class="terminalLoadingDots" role="status" aria-label="Loading"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></span></strong>
           </div>
         </div>
       </section>
@@ -3921,7 +3949,7 @@
                 <button id="btnShortInterval1d" class="btnShortInterval" type="button" onclick="tradingEngine.setShortTermInterval('1d')">1d</button>
               </div>
               <div style="font-size: 11.5px; font-weight: 700; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; color: #0f172a; display: flex; align-items: center; gap: 8px; flex-shrink: 0; white-space: nowrap;">
-                <span style="white-space: nowrap;">ADR / √CSOP signal: <strong id="valShortTermCurrentParity" style="color: #0284c7;">--%</strong></span>
+                <span style="white-space: nowrap;">ADR / √CSOP signal: <strong id="valShortTermCurrentParity" style="color: #0284c7;"><span class="terminalLoadingDots" role="status" aria-label="Loading"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></span></strong></span>
                 <span id="badgeShortTermReplayMode" style="font-size: 9.5px; font-weight: 800; padding: 1px 7px; border-radius: 4px; background: #fef3c7; color: #b45309; border: 1px solid #fde68a; white-space: nowrap;">○ REPLAY ONLY (AUTO-TRADE OFF)</span>
               </div>
               <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
@@ -4177,9 +4205,9 @@
         <!-- Full-Width Positions & Execution History Shell -->
         <div class="posTableShell collapsible-section" id="secPositionsTable" style="width: 100%;">
             <div class="posTableTabs collapsible-header">
-              <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">—</span>)</button>
-              <button id="tabAssets" class="posTabBtn" type="button">Binance Collateral (<span id="countAssets">—</span>)</button>
-              <button id="tabUpbit" class="posTabBtn" type="button">🇰🇷 Upbit Spot (<span id="countUpbitAssets">—</span>)</button>
+              <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions"><span class="terminalLoadingDots" role="status" aria-label="Loading"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></span></span>)</button>
+              <button id="tabAssets" class="posTabBtn" type="button">Binance Collateral (<span id="countAssets"><span class="terminalLoadingDots" role="status" aria-label="Loading"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></span></span>)</button>
+              <button id="tabUpbit" class="posTabBtn" type="button">🇰🇷 Upbit Spot (<span id="countUpbitAssets"><span class="terminalLoadingDots" role="status" aria-label="Loading"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i></span></span>)</button>
               <button id="tabDaemonActivity" class="posTabBtn" type="button">Daemon Activity (<span id="countDaemonEvents">0</span>)</button>
               <button id="tabOrderLog" class="posTabBtn" type="button">Execution History (<span id="countOrderLog">0</span>)</button>
               <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section" style="margin-left: auto;"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
@@ -10868,14 +10896,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         terminalLockManager.applyState();
       }
       const accountPending = typeof tradingEngine === 'undefined' || tradingEngine.state.accountSyncPending;
-      const posCount = accountPending ? "—" : ((tradingEngine.state.backendPositions && tradingEngine.state.backendPositions.length) || tradingEngine.state.positions.length);
-      const assetCount = accountPending ? "—" : ((tradingEngine.state.backendAssets && tradingEngine.state.backendAssets.length) || 0);
+      const loadingCount = window.TerminalCommon?.terminalLoadingMarkup || "…";
+      const posCount = accountPending ? loadingCount : ((tradingEngine.state.backendPositions && tradingEngine.state.backendPositions.length) || tradingEngine.state.positions.length);
+      const assetCount = accountPending ? loadingCount : ((tradingEngine.state.backendAssets && tradingEngine.state.backendAssets.length) || 0);
       const daemonEventCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.daemonEvents && tradingEngine.state.daemonEvents.length) || 0) : 0;
       const orderCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.orderLog && tradingEngine.state.orderLog.length) || 0) : 0;
 
       if ($("tabPositions")) $("tabPositions").innerHTML = `${dict.tabPositions} (<span id="countPositions">${posCount}</span>)`;
       if ($("tabAssets")) $("tabAssets").innerHTML = `${dict.tabAssets || (lang === "ko" ? "바이낸스 담보 자산" : "Binance Collateral")} (<span id="countAssets">${assetCount}</span>)`;
-      const upbitCount = accountPending ? "—" : ((tradingEngine.state.upbitAssets && tradingEngine.state.upbitAssets.length) || 0);
+      const upbitCount = accountPending ? loadingCount : ((tradingEngine.state.upbitAssets && tradingEngine.state.upbitAssets.length) || 0);
       if ($("tabUpbit")) $("tabUpbit").innerHTML = `${dict.tabUpbit || (lang === "ko" ? "업비트 현물 잔고" : "Upbit Spot")} (<span id="countUpbitAssets">${upbitCount}</span>)`;
       if ($("tabDaemonActivity")) $("tabDaemonActivity").innerHTML = `${dict.tabDaemonActivity || (lang === "ko" ? "데몬 실시간 활동" : "Daemon Activity")} (<span id="countDaemonEvents">${daemonEventCount}</span>)`;
       if ($("tabOrderLog")) $("tabOrderLog").innerHTML = `${dict.tabOrderLog} (<span id="countOrderLog">${orderCount}</span>)`;
@@ -12455,26 +12484,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       renderAccountStrip() {
         const isKo = window.currentLang === "ko";
         if (this.state.accountSyncPending) {
-          if ($("valAccountEquity")) $("valAccountEquity").textContent = "—";
-          if ($("valAvailMargin")) $("valAvailMargin").textContent = "—";
-          if ($("valUnrealizedPnl")) {
-            $("valUnrealizedPnl").textContent = "—";
-            $("valUnrealizedPnl").style.color = "#64748b";
-          }
-          if ($("valMarginRisk")) {
-            $("valMarginRisk").textContent = "—";
-            $("valMarginRisk").style.color = "#64748b";
-          }
-          if ($("valActivePairs")) $("valActivePairs").textContent = "—";
-          if ($("countPositions")) $("countPositions").textContent = "—";
-          if ($("badgeEquitySource")) {
-            $("badgeEquitySource").textContent = "SYNCING";
-            $("badgeEquitySource").style.background = "#f1f5f9";
-            $("badgeEquitySource").style.color = "#64748b";
-          }
-          if ($("valCollateralPills")) {
-            $("valCollateralPills").innerHTML = `<span style="font-size: 10px; color: #64748b; font-weight: 700;">Connecting to Binance…</span>`;
-          }
+          window.TerminalCommon?.setTerminalAccountLoading?.("");
           return;
         }
         const eq = Number(this.state.equity || 0) + Number(this.state.binanceSpotStablecoinUsd || 0);
@@ -12660,7 +12670,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const isKo = window.currentLang === "ko";
         const hasBackendPos = this.state.backendPositions && this.state.backendPositions.length > 0;
         const count = hasBackendPos ? this.state.backendPositions.length : this.state.positions.length;
-        if ($("countPositions")) $("countPositions").textContent = this.state.accountSyncPending ? "—" : count;
+        if ($("countPositions")) {
+          if (this.state.accountSyncPending) $("countPositions").innerHTML = window.TerminalCommon?.terminalLoadingMarkup || "…";
+          else $("countPositions").textContent = count;
+        }
         const recentExecCount = (this.state.hedgedStatus && Array.isArray(this.state.hedgedStatus.recent_executions)) ? this.state.hedgedStatus.recent_executions.length : (this.state.orderLog.length || 0);
         if ($("countOrderLog")) $("countOrderLog").textContent = recentExecCount;
 

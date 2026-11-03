@@ -65,20 +65,24 @@ assert.match(common, /function setTerminalLoading\(prefix = ""\)/,
   "Tabs 2–5 must share one neutral live-data loading contract");
 assert.match(common, /function setTerminalAccountLoading\(prefix = "", message = "Loading authenticated account…"\)/,
   "account retries must have a shared loading state that does not clear an already-loaded chart");
+assert.match(common, /class="terminalLoadingDots" role="status" aria-label="Loading"/,
+  "loading fields must render an accessible animated placeholder rather than a fake value");
+assert.match(index, /@keyframes terminalLoadingDot/,
+  "the shared loading placeholder must visibly animate");
 assert.match(common, /"valAccountEquity", "valAvailMargin", "valUnrealizedPnl", "valActivePairs"/,
   "the shared loading contract must clear every account summary field");
 assert.match(common, /root\?\.querySelectorAll\("\.condValue"\)/,
   "the shared loading contract must clear strategy-condition values");
 assert.match(common, /element\.querySelector\("\[id\]"\) \|\| element/,
   "loading must preserve nested condition value nodes used by later live renders");
-assert.match(common, /element\.textContent = "LOADING"/,
-  "condition badges must say LOADING rather than PASS or WAIT before data arrives");
+assert.match(common, /element\.innerHTML = terminalLoadingMarkup/,
+  "condition badges must animate rather than show PASS or WAIT before data arrives");
 assert.ok(index.includes('TerminalCommon.setTerminalLoading("")'),
   "Tab 2 must apply the shared loading state after rendering stored UI state");
 assert.doesNotMatch(index, /id="valActivePairs"[^>]*>0 Open \(Flat\)</,
   "Tab 2 must not present a fake flat account while positions are loading");
-assert.match(index, /this\.state\.accountSyncPending \? "—" : count/,
-  "Tab 2 must not change the positions counter to zero before account sync completes");
+assert.match(index, /this\.state\.accountSyncPending\) \$\("countPositions"\)\.innerHTML = window\.TerminalCommon\?\.terminalLoadingMarkup/,
+  "Tab 2 must keep the positions counter animated until account sync completes");
 assert.doesNotMatch(index, /id="valCrit(?:ScaleInThreshold|Ma24|CurrentSpread|OutTargetSpread|LatestInSpread|TpCurrentSpread)"[^>]*>139\./,
   "Tab 2 must not ship example market values in live criteria fields");
 

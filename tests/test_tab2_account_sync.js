@@ -64,7 +64,20 @@ const s2 = lines.findIndex(l => l.includes('renderAssetsTable(assets) {'));
 const s3 = lines.findIndex(l => l.includes('renderUpbitTable(assets, summary = {}) {'));
 const s4 = lines.findIndex((l, idx) => idx > s3 && l.includes('renderPositionsAndLogs() {'));
 
-const window = { currentLang: "en" };
+const loadingMarkup = '<span class="terminalLoadingDots" role="status" aria-label="Loading"></span>';
+const window = {
+  currentLang: "en",
+  TerminalCommon: {
+    terminalLoadingMarkup: loadingMarkup,
+    setTerminalAccountLoading() {
+      ['valAccountEquity', 'valAvailMargin', 'valUnrealizedPnl', 'valMarginRisk',
+        'badgeEquitySource', 'valCollateralPills', 'valActivePairs', 'valUpbitEquity',
+        'badgeUpbitSource', 'countAssets', 'countUpbitAssets'].forEach((id) => {
+        if ($(id)) $(id).innerHTML = loadingMarkup;
+      });
+    }
+  }
+};
 const tradingEngine = { state };
 
 const stripCode = lines.slice(s1 + 1, s2 - 2).join('\n');
@@ -78,9 +91,9 @@ tradingEngine.renderUpbitTable = new Function('$', 'window', 'assets', 'summary'
 // Test 1: Cold start never paints a prior-session account snapshot.
 tradingEngine.state.accountSyncPending = true;
 tradingEngine.renderAccountStrip();
-assert.equal($('valAccountEquity').textContent, '—');
-assert.equal($('valAvailMargin').textContent, '—');
-assert.equal($('badgeEquitySource').textContent, 'SYNCING');
+assert.match($('valAccountEquity').innerHTML, /terminalLoadingDots/);
+assert.match($('valAvailMargin').innerHTML, /terminalLoadingDots/);
+assert.match($('badgeEquitySource').innerHTML, /terminalLoadingDots/);
 
 // Test 2: Synced (accountSyncPending = false)
 tradingEngine.state.accountSyncPending = false;
