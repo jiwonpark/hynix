@@ -29,6 +29,13 @@ for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", l
     `${name} must retain paired PnL triangles on hover or selection`);
 }
 
+assert.match(lighterCrypto, /Target entry campaign pieces per minute/,
+  "Tab 5 must identify its rate control as signal-triggered execution slicing");
+assert.match(lighterCrypto, /One valid signal starts paced live-only entry pieces/,
+  "Tab 5 must disclose that replay signals are independent of live child-order timing");
+assert.match(lighterCrypto, /bot\?\.entry_campaign/,
+  "Tab 5 must render the persisted live entry campaign status");
+
 assert.match(common, /Auto-entry direction:/, "single-leg tabs must use direction wording, not spread wording");
 assert.match(common, /Two-way \(Long \+ Short\)/, "single-leg direction control must expose two-way trading clearly");
 assert.match(common, /Authenticated bot configuration returned by the latest status response/, "direction status must disclose its live source");

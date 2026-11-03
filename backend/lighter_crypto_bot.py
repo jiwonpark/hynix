@@ -70,6 +70,7 @@ DEFAULT_STATE = {
     "long_multiplier": 1.0, "short_multiplier": 1.0, "entry_direction_mode": "two_way",
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
+    "entry_campaign": None, "last_entry_campaign": None,
     "last_evaluated_candle": 0, "last_order_time": 0,
     "last_evaluation": None, "last_error": None, "recovery_required": False,
     "execution_blocked": False, "blocked_reason": None,
@@ -706,6 +707,7 @@ class LighterCryptoBot(TakeProfitMixin):
     async def toggle(self, enabled: bool) -> Dict[str, Any]:
         async with self.lock:
             if not enabled:
+                self._finish_entry_campaign("bot_paused")
                 self.state["enabled"] = False
                 self.state["execution_blocked"] = False
                 self.state["blocked_reason"] = None
@@ -756,6 +758,115 @@ class LighterCryptoBot(TakeProfitMixin):
             self._save()
             return self.public_state()
 
+    def _finish_entry_campaign(self, reason: str) -> None:
+        campaign = self.state.get("entry_campaign")
+        if not campaign:
+            return
+        finished = copy.deepcopy(campaign)
+        finished.update(status=reason, ended_at=int(time.time()))
+        self.state["last_entry_campaign"] = finished
+        self.state["entry_campaign"] = None
+
+    def _start_entry_campaign(
+        self,
+        side: int,
+        signal_time: int,
+        *,
+        signal_values: Optional[list[float]] = None,
+        macro_alignment: Optional[tuple[bool, bool]] = None,
+        initial_reason: str = "closed_bar_signal",
+    ) -> Dict[str, Any]:
+        existing = self.state.get("entry_campaign")
+        if existing and int(existing.get("side", 0)) == int(side):
+            return existing
+        if existing:
+            self._finish_entry_campaign("replaced_by_new_signal")
+        campaign = {
+            "campaign_id": f"{int(signal_time)}:{int(side)}:{secrets.token_hex(4)}",
+            "side": int(side),
+            "signal_time": int(signal_time),
+            "started_at": int(time.time()),
+            "slice_notional_usd": float(self.state["notional_usd"]),
+            "target_slices": self.state.get("max_tranches"),
+            "starting_tranches": len(self.state["tranches"]),
+            "slices_filled": 0,
+            "status": "active",
+            "initial_reason": initial_reason,
+        }
+        if signal_values is not None:
+            campaign["signal_values"] = [float(value) for value in signal_values]
+        if macro_alignment is not None:
+            campaign["macro_alignment"] = [bool(value) for value in macro_alignment]
+        self.state["entry_campaign"] = campaign
+        self._save()
+        return campaign
+
+    async def _continue_entry_campaign(self) -> bool:
+        """Submit one due child order for the active signal-triggered campaign."""
+        campaign = self.state.get("entry_campaign")
+        if not campaign or not self.state.get("enabled"):
+            return False
+        if self.state.get("pending_order") or self.state.get("recovery_required"):
+            return False
+        if self.state.get("execution_blocked"):
+            blocked_reason = str(self.state.get("blocked_reason") or "")
+            if any(text in blocked_reason for text in (
+                "Selected-contract gross exposure",
+                "Available margin",
+                "Tranche capacity reached",
+            )):
+                self._finish_entry_campaign("safety_capacity_reached")
+                self._save()
+            return False
+        side = int(campaign.get("side", 0))
+        if side not in (-1, 1):
+            self._finish_entry_campaign("invalid_campaign")
+            self._save()
+            return False
+        if self.state["tranches"] and int(self.state["tranches"][-1]["side"]) != side:
+            self._finish_entry_campaign("position_direction_changed")
+            self._save()
+            return False
+        if not has_entry_slot(self.state):
+            self._finish_entry_campaign("target_reached")
+            self._save()
+            return False
+        first_slice = int(campaign.get("slices_filled", 0)) == 0
+        immediate_reversal = first_slice and campaign.get("initial_reason") == "reversal_entry"
+        if (not immediate_reversal
+                and time.time() - float(self.state.get("last_order_time", 0) or 0)
+                < float(self.state["min_seconds_between_orders"])):
+            return False
+        try:
+            await self._submit(
+                side,
+                float(campaign.get("slice_notional_usd", self.state["notional_usd"])),
+                reduce_only=False,
+                reason=str(campaign.get("initial_reason") or "closed_bar_signal") if first_slice else "signal_campaign_slice",
+                signal_values=list(campaign.get("signal_values") or []) if first_slice and campaign.get("signal_values") else None,
+                macro_alignment=tuple(campaign["macro_alignment"]) if first_slice and campaign.get("macro_alignment") else None,
+                campaign_id=str(campaign["campaign_id"]),
+            )
+        except ValueError as exc:
+            message = str(exc)
+            if any(text in message for text in (
+                "Tranche capacity reached",
+                "Selected-contract gross exposure",
+                "Available margin",
+            )):
+                self._finish_entry_campaign("safety_capacity_reached")
+                self.state["last_error"] = None
+                self._save()
+                return False
+            if first_slice and not self.state.get("pending_order"):
+                self._finish_entry_campaign("initial_slice_rejected")
+                self._save()
+            raise
+        if not has_entry_slot(self.state):
+            self._finish_entry_campaign("target_reached")
+            self._save()
+        return True
+
     def _record_fill(self, order: Dict[str, Any], pending: Dict[str, Any], allow_partial: bool = False) -> Dict[str, Any]:
         filled = float(order.get("filled_size", 0) or 0)
         price = float(order.get("fill_price", 0) or 0)
@@ -778,6 +889,7 @@ class LighterCryptoBot(TakeProfitMixin):
                  "fee_usd": float(order.get("fee_usd", 0) or 0),
                  "pnl_authoritative": False}
         if is_exit:
+            self._finish_entry_campaign("exit_started")
             remaining = filled
             matched = []
             while remaining > max(step / 2, filled * 0.00001) and self.state["tranches"]:
@@ -832,6 +944,14 @@ class LighterCryptoBot(TakeProfitMixin):
             self.state["tranches"].append({"side": side, "qty": filled, "price": price,
                                             "fee_usd": event["fee_usd"],
                                             "order_id": event["order_id"], "time": event["time"]})
+            campaign = self.state.get("entry_campaign")
+            if campaign and str(pending.get("campaign_id") or "") == str(campaign.get("campaign_id") or ""):
+                campaign["slices_filled"] = int(campaign.get("slices_filled", 0)) + 1
+                campaign["last_fill_time"] = event["time"]
+                campaign["last_fill_price"] = price
+                campaign.pop("signal_values", None)
+                campaign.pop("macro_alignment", None)
+                campaign.pop("initial_reason", None)
             if self.state.get("strategy_mode") == "macd_strength_scaleout":
                 self.state["macd_exit_stage"] = 0
         if pending.get("macd_exit_stage_after") is not None:
@@ -880,7 +1000,8 @@ class LighterCryptoBot(TakeProfitMixin):
     async def _submit(self, side: int, notional: float, *, reduce_only: bool, reason: str,
                       signal_values: Optional[list[float]] = None,
                       reduce_fraction: float = 1.0, exit_stage_after: Optional[int] = None,
-                      macro_alignment: Optional[tuple[bool, bool]] = None) -> Dict[str, Any]:
+                      macro_alignment: Optional[tuple[bool, bool]] = None,
+                      campaign_id: Optional[str] = None) -> Dict[str, Any]:
         async with self.client.execution_lock:
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol, fresh=True)
@@ -926,6 +1047,8 @@ class LighterCryptoBot(TakeProfitMixin):
             pending = {"client_order_index": order_index, "symbol": symbol, "market_id": market_id,
                        "side": side, "qty": qty, "size_step": step,
                        "reduce_only": reduce_only, "reason": reason, "created_at": int(time.time())}
+            if campaign_id is not None:
+                pending["campaign_id"] = str(campaign_id)
             if exit_stage_after is not None:
                 pending["macd_exit_stage_after"] = int(exit_stage_after)
             self.state["pending_order"] = pending
@@ -1158,6 +1281,7 @@ class LighterCryptoBot(TakeProfitMixin):
                     }
                     self.state["execution_history"].append(entry_event)
                     self.state["execution_history"] = self.state["execution_history"][-500:]
+            self._finish_entry_campaign("reconciled")
             self.state.update(recovery_required=False, execution_blocked=False, blocked_reason=None, last_error=None)
             self._save()
             return {"event": event, "bot": await self.reconciled_public_state()}
@@ -1241,6 +1365,7 @@ class LighterCryptoBot(TakeProfitMixin):
 
     async def flatten(self) -> Dict[str, Any]:
         async with self.lock:
+            self._finish_entry_campaign("emergency_flatten")
             self.state["enabled"] = False
             self._save()
             symbol = self.state["selected_symbol"]
@@ -1339,6 +1464,7 @@ class LighterCryptoBot(TakeProfitMixin):
                     raise ValueError("Insufficient completed Lighter candles")
                 last_candle = int(closed[-1]["t"]) // 1000
                 if last_candle <= self.state["last_evaluated_candle"]:
+                    await self._continue_entry_campaign()
                     return
                 if time.time() - (last_candle + seconds) > 30:
                     self.state["last_evaluated_candle"] = last_candle
@@ -1429,6 +1555,7 @@ class LighterCryptoBot(TakeProfitMixin):
                 self.state["last_evaluated_candle"] = last_candle
                 self._save()
                 if self.state["tranches"] and exit_signal:
+                    self._finish_entry_campaign("strategy_exit")
                     reversing = bool(entry and direction_allowed and position_side * side < 0)
                     if (not reversing and self.state["strategy_mode"] == "macd_strength_scaleout"
                             and self.state.get("use_macd_two_stage_exit", True)
@@ -1443,24 +1570,30 @@ class LighterCryptoBot(TakeProfitMixin):
                                            reason="opposite_signal_reversal" if reversing else "macd_final_peak_exit",
                                            exit_stage_after=0)
                         if reversing and not self.state["tranches"]:
-                            await self._submit(side, self.state["notional_usd"], reduce_only=False,
-                                               reason="reversal_entry", signal_values=values,
-                                               macro_alignment=macro_alignment)
+                            self._start_entry_campaign(
+                                side, last_candle, signal_values=values,
+                                macro_alignment=macro_alignment, initial_reason="reversal_entry",
+                            )
+                            await self._continue_entry_campaign()
                 elif entry and direction_allowed and has_entry_slot(self.state):
                     if self.state["strategy_mode"] == "macd_strength_scaleout" and self.state["tranches"]:
                         return
-                    if time.time() - self.state["last_order_time"] >= self.state["min_seconds_between_orders"]:
-                        if position_side and position_side * side < 0:
+                    if position_side and position_side * side < 0:
+                        self._finish_entry_campaign("opposite_signal")
+                        if time.time() - self.state["last_order_time"] >= self.state["min_seconds_between_orders"]:
                             await self._submit(-position_side, 0, reduce_only=True,
                                                reason="opposite_signal_reversal")
                             if not self.state["tranches"]:
-                                await self._submit(side, self.state["notional_usd"], reduce_only=False,
-                                                   reason="reversal_entry", signal_values=values,
-                                                   macro_alignment=macro_alignment)
-                        else:
-                            await self._submit(side, self.state["notional_usd"], reduce_only=False,
-                                               reason="closed_bar_signal", signal_values=values,
-                                               macro_alignment=macro_alignment)
+                                self._start_entry_campaign(
+                                    side, last_candle, signal_values=values,
+                                    macro_alignment=macro_alignment, initial_reason="reversal_entry",
+                                )
+                    else:
+                        self._start_entry_campaign(
+                            side, last_candle, signal_values=values,
+                            macro_alignment=macro_alignment,
+                        )
+                await self._continue_entry_campaign()
             except Exception as exc:
                 if not self.state["recovery_required"]:
                     self.state["last_error"] = str(exc)

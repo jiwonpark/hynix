@@ -2142,7 +2142,7 @@
           </div>
           <div>
             <b>Size / dynamic capacity</b><br>
-            Single-leg target $<span id="lighterCryptoLiveNotional">50</span> · gross ≈ $<span id="lighterCryptoLivePairGross">—</span><br>
+            Per-piece target $<span id="lighterCryptoLiveNotional">50</span> · each fill ≈ $<span id="lighterCryptoLivePairGross">—</span><br>
             <span id="lighterCryptoLiveMaxTranches">—</span> bot-owned tranches · max <select id="lighterCrypto_inputLiveMaxTranches" aria-label="Maximum live entry count" style="width:95px;font-weight:800">${Array.from({length:100}, (_, i) => `<option value="${i + 1}"${i === 4 ? " selected" : ""}>${i + 1}</option>`).join("")}<option value="unlimited">Unlimited</option></select> · configured leverage and margin limits still apply
           </div>
           <div>
@@ -2153,11 +2153,11 @@
             <b>Execution guards</b><br>
             Book spread ≤ <input id="lighterCrypto_inputLiveMaxSpread" type="number" min="1" max="100" step="1" value="45" aria-label="Maximum executable book spread in basis points" style="width:55px;font-weight:800"> bps
             <div class="terminal-action-control" style="display:flex;align-items:center;gap:7px;margin-top:5px">
-              <input id="lighterCrypto_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Maximum single-leg orders per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
+              <input id="lighterCrypto_inputLiveTradeRate" type="range" min="0.2" max="10" step="0.2" value="0.2" aria-label="Target entry campaign pieces per minute" style="width:118px;height:28px;margin:0;cursor:pointer;accent-color:#0284c7">
               <output id="lighterCryptoLiveTradeRateValue" for="lighterCrypto_inputLiveTradeRate" style="min-width:48px;font-weight:900;color:#0369a1">0.2/min</output>
               <button id="lighterCrypto_btnSaveLiveCooldown" type="button" style="height:28px;padding:0 8px;border:0;border-radius:5px;background:#0284c7;color:#fff;font-size:10px;font-weight:800;cursor:pointer">Save</button>
             </div>
-            <small id="lighterCryptoLiveCooldown" style="display:block;margin-top:3px;color:#64748b">Current: 0.2 single-leg orders/min · 300s minimum · unlock required</small>
+            <small id="lighterCryptoLiveCooldown" style="display:block;margin-top:3px;color:#64748b">One valid signal starts paced live-only entry pieces; replay still models the strategy signal independently.</small>
           </div>
           <div>
             <b>Current evaluation</b><br>
@@ -4419,9 +4419,11 @@
       const cooldownSeconds = Math.max(6, Number(bot?.min_seconds_between_orders ?? 300));
       const tradeRate = Math.max(0.2, Math.min(10, 60 / cooldownSeconds));
       const tradeRateText = this.formatTradeRate(tradeRate);
-      const strategyIntervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[stratInterval] || 300;
-      const effectiveTradeRateText = this.formatTradeRate(Math.min(tradeRate, 60 / strategyIntervalSeconds));
-      writeRule("lighterCryptoLiveCooldown", `Cooldown guard: ${tradeRateText}/min · completed ${stratInterval} candles cap entries at ${effectiveTradeRateText}/min · unlock required`);
+      const campaign = bot?.entry_campaign;
+      const campaignDetail = campaign
+        ? ` · ACTIVE ${Number(campaign.slices_filled || 0)}/${this.entryCountLabel(campaign.target_slices)} ${Number(campaign.side) < 0 ? "short" : "long"} pieces`
+        : " · waiting for the next valid entry signal";
+      writeRule("lighterCryptoLiveCooldown", `Target ${tradeRateText} pieces/min · $${configuredAdrNotional.toFixed(0)} each${campaignDetail} · live execution only; replay signals are unchanged`);
       writeRule("lighterCryptoLiveEvaluation", bot?.last_evaluation
         ? `Z ${Number(bot.last_evaluation.z || 0).toFixed(3)} · price ${this.formatCryptoPrice(Number(bot.last_evaluation.ratio || 0))} · mean ${this.formatCryptoPrice(Number(bot.last_evaluation.mean || 0))}`
         : "Awaiting completed bar");
@@ -4483,9 +4485,9 @@
         tradeRateInput.value = String(Math.round(tradeRate * 5) / 5);
       }
       this.renderTradeRatePreview();
-      this.setText("valDeployedSpeed", `Cooldown ${tradeRateText}/min · effective ≤${effectiveTradeRateText}/min on ${stratInterval} candles`);
+      this.setText("valDeployedSpeed", `Entry campaign target ${tradeRateText} pieces/min · $${configuredAdrNotional.toFixed(0)} each`);
       const engineCondition = lid("rowCondEntryEngine")?.querySelector(".condLabel");
-      if (engineCondition) engineCondition.textContent = `9. ${stratName} State & ${tradeRateText}/min Rate Limit`;
+      if (engineCondition) engineCondition.textContent = `9. ${stratName} State & ${tradeRateText}/min Entry Campaign`;
       this.setText("valCritRetainedCore", `${tranches.length} bot-owned single-leg tranche${tranches.length === 1 ? "" : "s"}`);
       if (bot?.last_error) {
         this.setText("lblHedgedSyncBadge", isEnabled
@@ -4678,9 +4680,7 @@
           const cooldownSeconds = this.cooldownSecondsForTradeRate(tradeRate);
           const symbol = this.botState?.selected_symbol || this.selectedSymbol || "BTC";
           const interval = this.botState?.strategy_interval || "5m";
-          const intervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[interval] || 300;
-          const effectiveRate = Math.min(tradeRate, 60 / intervalSeconds);
-          const confirmed = window.confirm(`Enable REAL Lighter Perpetuals trading on EC2?\n\nContract: ${symbol}\nStrategy: ${this.botState?.strategy_mode || "grid"} on completed ${interval} bars\nOrder target: $${notional.toFixed(0)} single-leg, up to ${this.entryCountLabel()} tranches\nCooldown guard: ${this.formatTradeRate(tradeRate)} orders/min (${cooldownSeconds}s minimum)\nEffective completed-candle maximum: ${this.formatTradeRate(effectiveRate)} entries/min\n\nOrders can start after the next completed bar. No hedge leg is placed.`);
+          const confirmed = window.confirm(`Enable REAL Lighter Perpetuals trading on EC2?\n\nContract: ${symbol}\nStrategy: ${this.botState?.strategy_mode || "grid"} on completed ${interval} bars\nEach entry piece: $${notional.toFixed(0)} single-leg\nCampaign target: ${this.formatTradeRate(tradeRate)} pieces/min (${cooldownSeconds}s spacing), up to ${this.entryCountLabel()} total tranches or the dynamic safety cap\n\nOne valid completed-candle entry signal starts the paced campaign. Exit/opposite signals and safety checks stop it. No hedge leg is placed.`);
           if (!confirmed) { if (toggle) toggle.checked = false; return false; }
           const configData = await apiPost("/api/lighter-crypto/bot/config", { notional_usd: notional, min_seconds_between_orders: cooldownSeconds });
           const notionalInput = lid("inputOrderNotional");
@@ -4721,14 +4721,11 @@
 
     renderTradeRatePreview() {
       const rate = this.tradeRatePerMinute();
-      const intervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[this.botState?.strategy_interval || this.interval] || 300;
-      const candleRate = 60 / intervalSeconds;
-      const effectiveRate = Math.min(rate, candleRate);
       const output = $("lighterCryptoLiveTradeRateValue");
       if (output) output.textContent = `${this.formatTradeRate(rate)}/min`;
       const detail = $("lighterCryptoLiveCooldown");
       if (detail && lid("inputLiveTradeRate")?.dataset.unsaved === "true") {
-        detail.textContent = `Pending: ${this.formatTradeRate(rate)}/min cooldown guard · completed ${this.botState?.strategy_interval || this.interval || "5m"} candles limit entries to ${this.formatTradeRate(effectiveRate)}/min`;
+        detail.textContent = `Pending campaign target: ${this.formatTradeRate(rate)} pieces/min after one valid entry signal · live execution only; replay signals unchanged`;
       }
     },
 
@@ -4747,9 +4744,7 @@
         const rateInput = lid("inputLiveTradeRate");
         if (rateInput) delete rateInput.dataset.unsaved;
         if (data?.bot) this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
-        const intervalSeconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[data?.bot?.strategy_interval || this.interval] || 300;
-        const effectiveRate = Math.min(tradeRate, 60 / intervalSeconds);
-        window.showToast?.(`Cooldown saved: ${this.formatTradeRate(tradeRate)}/min (${cooldownSeconds}s minimum). Completed candles currently cap entries at ${this.formatTradeRate(effectiveRate)}/min.`, "success");
+        window.showToast?.(`Entry campaign target saved: ${this.formatTradeRate(tradeRate)} pieces/min (${cooldownSeconds}s spacing after a valid signal).`, "success");
         return true;
       } catch (error) {
         window.alert(error.message);

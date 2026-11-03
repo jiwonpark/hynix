@@ -209,6 +209,67 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
                                        signal_values=[100.0] * 25)
         self.assertEqual(self.client.orders, {})
 
+    async def test_entry_signal_builds_target_position_in_rate_limited_pieces(self):
+        last_open = 999960
+        self.client.candle_rows = [
+            {"t": int((last_open - (24 - index) * 60) * 1000), "c": 100.0}
+            for index in range(25)
+        ]
+        self.bot.state.update(
+            enabled=True,
+            strategy_interval="1m",
+            strategy_mode="grid",
+            notional_usd=100.0,
+            max_tranches=3,
+            min_seconds_between_orders=10,
+        )
+        evaluation = {"strategy": "grid", "condition_pass": {}}
+        with patch("backend.lighter_crypto_bot.time.time", return_value=1000030), patch(
+            "backend.lighter_crypto_bot.evaluate_strategy_signal",
+            side_effect=[(True, 1, False, evaluation), (True, 1, False, evaluation)],
+        ):
+            await self.bot.run_once()
+
+        self.assertEqual(len(self.bot.state["tranches"]), 1)
+        self.assertEqual(self.bot.state["entry_campaign"]["slices_filled"], 1)
+        self.assertEqual(self.bot.state["execution_history"][-1]["reason"], "closed_bar_signal")
+
+        self.bot = LighterCryptoBot(self.client, self.path)
+        self.assertEqual(self.bot.state["entry_campaign"]["slices_filled"], 1)
+        with patch("backend.lighter_crypto_bot.time.time", return_value=1000040):
+            await self.bot.run_once()
+        self.assertEqual(len(self.bot.state["tranches"]), 2)
+        self.assertEqual(self.bot.state["execution_history"][-1]["reason"], "signal_campaign_slice")
+
+        with patch("backend.lighter_crypto_bot.time.time", return_value=1000050):
+            await self.bot.run_once()
+        self.assertEqual(len(self.bot.state["tranches"]), 3)
+        self.assertIsNone(self.bot.state["entry_campaign"])
+        self.assertEqual(self.bot.state["last_entry_campaign"]["status"], "target_reached")
+        self.assertEqual(self.bot.state["last_entry_campaign"]["slices_filled"], 3)
+        self.assertEqual(len(self.client.orders), 3)
+
+    async def test_pausing_bot_cancels_active_entry_campaign(self):
+        self.bot.state.update(
+            enabled=True,
+            entry_campaign={
+                "campaign_id": "signal-1",
+                "side": 1,
+                "signal_time": 100,
+                "started_at": 100,
+                "slice_notional_usd": 100.0,
+                "target_slices": 5,
+                "slices_filled": 1,
+                "status": "active",
+            },
+        )
+
+        state = await self.bot.toggle(False)
+
+        self.assertFalse(state["enabled"])
+        self.assertIsNone(state["entry_campaign"])
+        self.assertEqual(state["last_entry_campaign"]["status"], "bot_paused")
+
     async def test_opposite_signal_closes_then_reverses_instead_of_blocking(self):
         now = 1000030
         last_open = 999960

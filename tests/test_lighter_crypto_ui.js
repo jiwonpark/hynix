@@ -20,8 +20,9 @@ assert.ok(lighter.includes('notionalInput.dataset.unsaved = "true"'), 'edited or
 assert.ok(lighter.includes('notionalInput.dataset?.unsaved !== "true"'), 'status refresh must not overwrite a pending order notional');
 assert.ok(lighter.includes('liveTradeRate.dataset.unsaved = "true"'), 'edited trade rate must remain pending until explicitly saved or live start saves it');
 assert.ok(lighter.includes('tradeRateInput.dataset?.unsaved !== "true"'), 'status refresh must not overwrite a pending trade rate');
-assert.ok(lighter.includes('completed ${stratInterval} candles cap entries'), 'trade-rate display must disclose the completed-candle execution ceiling');
-assert.ok(lighter.includes('effective ≤${effectiveTradeRateText}/min on ${stratInterval} candles'), 'top speed summary must show the completed-candle effective rate');
+assert.ok(lighter.includes('Target ${tradeRateText} pieces/min'), 'trade-rate display must identify the target child-order campaign pace');
+assert.ok(lighter.includes('live execution only; replay signals are unchanged'), 'trade-rate display must distinguish child-order timing from replay signals');
+assert.ok(lighter.includes('Entry campaign target ${tradeRateText} pieces/min'), 'top speed summary must show the configured campaign target');
 assert.ok(lighter.includes('Full-Auto will be paused and exchange inventory reconciled before the reduction'), 'live reduction must disclose automatic pause and reconciliation');
 assert.ok(lighter.includes('safeStorage.setItem("skhynix_lighterCrypto_mode", "semi_auto")'), 'successful live reduction must remain in Manual Live mode');
 
