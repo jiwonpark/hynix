@@ -124,6 +124,13 @@ assert.doesNotMatch(elements.activePositionsBody.innerHTML, /-100\.00%/);
   assert.match(html, /id="inputEntryMaxCampaign"[^>]*max="1000"/);
   assert.match(html, /id="btnSaveEntryRate"/);
   assert.match(html, /id="lblEntryRateSaveStatus"[^>]*aria-live="polite"/);
+  assert.match(html, /Directional MA Stretch \(Short ≥ \+0\.25 \/ Long ≤ −0\.25\)/,
+    'two-way Tab 2 conditions must label both directional predicates');
+  assert.match(html, /5m Directional Reversal \(Short Peak \/ Long Trough\)/);
+  assert.match(html, /5m Directional MA Stack \(Short Bullish \/ Long Bearish\)/);
+  assert.match(html, /1h Directional MA Stack \(Short Bullish \/ Long Bearish\)/);
+  assert.match(html, /isTwoWayEntry \? "3\. 5m Directional Reversal/,
+    'runtime labels must remain dual-directional while two-way mode is selected');
   assert.match(html, /addEventListener\("input", queueEntryRateSave\)/);
   assert.match(html, /setTimeout\(updateEntryPacingLive, 600\)/);
   assert.match(html, /!this\.pendingEntryRateWrites && !this\.entryRateEditPending/);

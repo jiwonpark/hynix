@@ -34,9 +34,9 @@ class TrancheStackUITests(unittest.TestCase):
         self.assertIn('id="entryConditionsChecklist"', self.html)
         self.assertIn('1. MA-24 Stretch', self.html)
         self.assertIn('2. Base Entry Spread', self.html)
-        self.assertIn('3. 5m Peak Rollover Filter', self.html)
-        self.assertIn('4. 5m Bullish MA Stack', self.html)
-        self.assertIn('5. 1h Bullish MA Stack', self.html)
+        self.assertIn('3. 5m Directional Reversal (Short Peak / Long Trough)', self.html)
+        self.assertIn('4. 5m Directional MA Stack (Short Bullish / Long Bearish)', self.html)
+        self.assertIn('5. 1h Directional MA Stack (Short Bullish / Long Bearish)', self.html)
         self.assertIn('6. Dynamic Tranche Capacity', self.html)
         self.assertIn('7. Gross Leverage Cap', self.html)
         self.assertIn('8. Buffered Margin Check', self.html)
@@ -52,5 +52,4 @@ class TrancheStackUITests(unittest.TestCase):
         self.assertIn('6. 1h Bearish MA Stack', self.html)
         self.assertIn('7. Bottoming-Out Filter', self.html)
         self.assertIn('8. Position Sufficiency Check', self.html)
-
 

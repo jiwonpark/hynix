@@ -3960,7 +3960,7 @@
                       <input type="checkbox" id="chkCondEntryMaStretch" checked onchange="tradingEngine.toggleCondition('entry_ma_stretch', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Current spread must exceed the rolling mean by at least +0.25 percentage points">1. Rolling MA Stretch (≥ +0.25%)</span>
+                    <span class="condLabel" title="Directional distance from the rolling mean: short spread requires at least +0.25 points; long spread requires at least -0.25 points">1. Directional MA Stretch (Short ≥ +0.25 / Long ≤ −0.25)</span>
                     <span class="condValue" id="valCondEntryMaStretch"><strong id="valCritMaStretch" style="color: #d97706;">+0.00% pts</strong></span>
                     <span class="condBadge wait" id="badgeCondEntryMaStretch">WAIT</span>
                   </div>
@@ -3969,7 +3969,7 @@
                       <input type="checkbox" id="chkCondEntryBase" checked onchange="tradingEngine.toggleCondition('entry_base_spread', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="Current spread must exceed latest entry spacing (+0.10%) and adaptive volatility floor (MA + max(0.25%, 1.25σ))">2. Base Entry Spread (+0.10% / Adaptive Floor)</span>
+                    <span class="condLabel" title="Short spread uses the upper volatility and spacing threshold; long spread uses the mirrored lower threshold">2. Adaptive Entry Threshold (Short Upper / Long Lower)</span>
                     <span class="condValue" id="valCondEntryBase">--</span>
                     <span class="condBadge wait" id="badgeCondEntryBase">WAIT</span>
                   </div>
@@ -3978,7 +3978,7 @@
                       <input type="checkbox" id="chkCondEntryPeak" checked onchange="tradingEngine.toggleCondition('entry_peak_rollover', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="5-minute bar momentum must be exhausted (current bar ≤ prev bar or lower than local high)">3. 5m Peak Rollover Filter</span>
+                    <span class="condLabel" title="Completed 5-minute reversal: short spread requires a peak rollover; long spread requires a trough reversal">3. 5m Directional Reversal (Short Peak / Long Trough)</span>
                     <span class="condValue" id="valCondEntryPeak"><strong id="valCritPeakOut" style="color: #64748b;">WAITING</strong></span>
                     <span class="condBadge wait" id="badgeCondEntryPeak">WAIT</span>
                   </div>
@@ -3987,7 +3987,7 @@
                       <input type="checkbox" id="chkCondEntryMaStack5m" checked onchange="tradingEngine.toggleCondition('entry_ma_stack_5m', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="5m upward trend confirmation: Price > MA7 > MA24 > MA60 required on 5m timeframe">4. 5m Bullish MA Stack (Price > MA7 > MA24 > MA60)</span>
+                    <span class="condLabel" title="Short spread requires Price > MA7 > MA24 > MA60; long spread requires Price < MA7 < MA24 < MA60">4. 5m Directional MA Stack (Short Bullish / Long Bearish)</span>
                     <span class="condValue" id="valCondEntryMaStack5m"><strong id="valCritEntryMaStack5m" style="color: #d97706;">5m WAITING</strong></span>
                     <span class="condBadge wait" id="badgeCondEntryMaStack5m">WAIT</span>
                   </div>
@@ -3996,7 +3996,7 @@
                       <input type="checkbox" id="chkCondEntryMaStack1h" checked onchange="tradingEngine.toggleCondition('entry_ma_stack_1h', this.checked)">
                       <span class="toggleSlider"></span>
                     </label>
-                    <span class="condLabel" title="1h macro upward trend confirmation: Price > MA7 > MA24 > MA60 required on 1h timeframe">5. 1h Bullish MA Stack (Price > MA7 > MA24 > MA60)</span>
+                    <span class="condLabel" title="Short spread requires Price > MA7 > MA24 > MA60; long spread requires Price < MA7 < MA24 < MA60">5. 1h Directional MA Stack (Short Bullish / Long Bearish)</span>
                     <span class="condValue" id="valCondEntryMaStack1h"><strong id="valCritEntryMaStack1h" style="color: #d97706;">1h WAITING</strong></span>
                     <span class="condBadge wait" id="badgeCondEntryMaStack1h">WAIT</span>
                   </div>
@@ -14876,9 +14876,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           el.textContent = text;
           el.className = `condBadge ${type}`;
         };
-        const setRowLabel = (rowId, text) => {
+        const setRowLabel = (rowId, text, title = "") => {
           const label = $(rowId)?.querySelector?.(".condLabel");
-          if (label) label.textContent = text;
+          if (label) {
+            label.textContent = text;
+            if (title) label.title = title;
+          }
         };
 
         const syncCondRow = (key, rowId, chkId, badgeId, isMet, passText, notMetText, badgeTypeIfNotMet = "wait") => {
@@ -14909,6 +14912,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // 1. Scale-in Rule (Speculative MA Stretch + Peak-Out Momentum Exhaustion)
         const entryDirection = criteria.entry_display_direction === "LONG_SPREAD" ? "LONG_SPREAD" : "SHORT_SPREAD";
         const isLongEntry = entryDirection === "LONG_SPREAD";
+        const entryDirectionMode = criteria.asymmetric_sizing?.spread_direction_mode || "short_only";
+        const isTwoWayEntry = entryDirectionMode === "two_way";
         const entrySetup = criteria.directional_entry_setups?.[entryDirection] || {};
         const directionText = isLongEntry ? "LONG SPREAD · BUY ADR / SHORT ETF" : "SHORT SPREAD · SHORT ADR / BUY ETF";
         const scaleInThreshold = Number(entrySetup.trigger ?? criteria.scale_in_trigger_spread ?? 139.65);
@@ -14935,12 +14940,32 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const hasRecovery = Boolean(criteria.has_execution_recovery || criteria.backend_auto_tranche_state?.execution_recovery);
         const isEngineReady = Boolean(criteria.backend_auto_tranche_enabled && !hasRecovery);
 
-        if ($("lblCritScaleInTitle")) $("lblCritScaleInTitle").textContent = `➕ ${criteria.asymmetric_sizing?.spread_direction_mode === "two_way" ? "TWO-WAY" : (isLongEntry ? "LONG-ONLY" : "SHORT-ONLY")} SCALE-IN · ${directionText}`;
-        setRowLabel("rowCondEntryMaStretch", `1. Rolling MA Stretch (≥ ${isLongEntry ? "−" : "+"}0.25%)`);
-        setRowLabel("rowCondEntryBase", `2. ${isLongEntry ? "Lower" : "Upper"} Adaptive Entry Threshold`);
-        setRowLabel("rowCondEntryPeak", `3. 5m ${isLongEntry ? "Trough Reversal" : "Peak Rollover"} Filter`);
-        setRowLabel("rowCondEntryMaStack5m", `4. 5m ${isLongEntry ? "Bearish" : "Bullish"} MA Stack`);
-        setRowLabel("rowCondEntryMaStack1h", `5. 1h ${isLongEntry ? "Bearish" : "Bullish"} MA Stack`);
+        if ($("lblCritScaleInTitle")) $("lblCritScaleInTitle").textContent = `➕ ${isTwoWayEntry ? "TWO-WAY" : (isLongEntry ? "LONG-ONLY" : "SHORT-ONLY")} SCALE-IN · ${directionText}`;
+        setRowLabel(
+          "rowCondEntryMaStretch",
+          isTwoWayEntry ? "1. Directional MA Stretch (Short ≥ +0.25 / Long ≤ −0.25)" : `1. Rolling MA Stretch (≥ ${isLongEntry ? "−" : "+"}0.25%)`,
+          isTwoWayEntry ? "Short spread requires at least +0.25 points above the rolling mean; long spread requires at least -0.25 points below it" : `Current spread must be at least 0.25 points ${isLongEntry ? "below" : "above"} the rolling mean`,
+        );
+        setRowLabel(
+          "rowCondEntryBase",
+          isTwoWayEntry ? "2. Adaptive Entry Threshold (Short Upper / Long Lower)" : `2. ${isLongEntry ? "Lower" : "Upper"} Adaptive Entry Threshold`,
+          isTwoWayEntry ? "Short spread uses the upper volatility and spacing threshold; long spread uses the mirrored lower threshold" : `${isLongEntry ? "Long" : "Short"} spread directional threshold`,
+        );
+        setRowLabel(
+          "rowCondEntryPeak",
+          isTwoWayEntry ? "3. 5m Directional Reversal (Short Peak / Long Trough)" : `3. 5m ${isLongEntry ? "Trough Reversal" : "Peak Rollover"} Filter`,
+          isTwoWayEntry ? "Completed 5-minute reversal: short spread requires a peak rollover; long spread requires a trough reversal" : `Completed 5-minute ${isLongEntry ? "trough reversal" : "peak rollover"}`,
+        );
+        setRowLabel(
+          "rowCondEntryMaStack5m",
+          isTwoWayEntry ? "4. 5m Directional MA Stack (Short Bullish / Long Bearish)" : `4. 5m ${isLongEntry ? "Bearish" : "Bullish"} MA Stack`,
+          isTwoWayEntry ? "Short spread requires Price > MA7 > MA24 > MA60; long spread requires Price < MA7 < MA24 < MA60" : `${isLongEntry ? "Price < MA7 < MA24 < MA60" : "Price > MA7 > MA24 > MA60"}`,
+        );
+        setRowLabel(
+          "rowCondEntryMaStack1h",
+          isTwoWayEntry ? "5. 1h Directional MA Stack (Short Bullish / Long Bearish)" : `5. 1h ${isLongEntry ? "Bearish" : "Bullish"} MA Stack`,
+          isTwoWayEntry ? "Short spread requires Price > MA7 > MA24 > MA60; long spread requires Price < MA7 < MA24 < MA60" : `${isLongEntry ? "Price < MA7 < MA24 < MA60" : "Price > MA7 > MA24 > MA60"}`,
+        );
 
         if ($("valCritScaleInThreshold")) $("valCritScaleInThreshold").textContent = `${scaleInThreshold.toFixed(2)}%`;
         if ($("valCritMa24")) $("valCritMa24").textContent = `${ma24.toFixed(2)}%`;
@@ -14984,7 +15009,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const stackText = isLongEntry ? "Price < MA7 < MA24 < MA60" : "Price > MA7 > MA24 > MA60";
           $("valCritEntryMaStack5m").textContent = !entry5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry5mUp ? `5m ✓ (${stackText})` : "5m ✗ (NOT ALIGNED)");
           $("valCritEntryMaStack5m").style.color = entry5mUp ? "#16a34a" : "#d97706";
-          $("valCritEntryMaStack5m").title = entry5mReady ? `5m: P ${currSpread.toFixed(2)}% / MA7 ${entryMa5m.ma7.toFixed(3)}% / MA24 ${entryMa5m.ma24.toFixed(3)}% / MA60 ${entryMa5m.ma60.toFixed(3)}% (Price > MA7 > MA24 > MA60)` : "Requires 60 bars on 5m chart";
+          $("valCritEntryMaStack5m").title = entry5mReady ? `5m: P ${currSpread.toFixed(2)}% / MA7 ${entryMa5m.ma7.toFixed(3)}% / MA24 ${entryMa5m.ma24.toFixed(3)}% / MA60 ${entryMa5m.ma60.toFixed(3)}% (${stackText})` : "Requires 60 bars on 5m chart";
         }
         syncCondRow("entry_ma_stack_5m", "rowCondEntryMaStack5m", "chkCondEntryMaStack5m", "badgeCondEntryMaStack5m", entry5mUp, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
@@ -14995,7 +15020,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const stackText = isLongEntry ? "Price < MA7 < MA24 < MA60" : "Price > MA7 > MA24 > MA60";
           $("valCritEntryMaStack1h").textContent = !entry1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry1hUp ? `1h ✓ (${stackText})` : "1h ✗ (NOT ALIGNED)");
           $("valCritEntryMaStack1h").style.color = entry1hUp ? "#16a34a" : "#d97706";
-          $("valCritEntryMaStack1h").title = entry1hReady ? `1h: P ${currSpread.toFixed(2)}% / MA7 ${entryMa1h.ma7.toFixed(3)}% / MA24 ${entryMa1h.ma24.toFixed(3)}% / MA60 ${entryMa1h.ma60.toFixed(3)}% (Price > MA7 > MA24 > MA60)` : "Requires 60 bars on 1h chart";
+          $("valCritEntryMaStack1h").title = entry1hReady ? `1h: P ${currSpread.toFixed(2)}% / MA7 ${entryMa1h.ma7.toFixed(3)}% / MA24 ${entryMa1h.ma24.toFixed(3)}% / MA60 ${entryMa1h.ma60.toFixed(3)}% (${stackText})` : "Requires 60 bars on 1h chart";
         }
         syncCondRow("entry_ma_stack_1h", "rowCondEntryMaStack1h", "chkCondEntryMaStack1h", "badgeCondEntryMaStack1h", entry1hUp, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
@@ -15046,12 +15071,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const isDaemonOn = Boolean(criteria.backend_auto_tranche_enabled);
           if (scaleInArmed) {
             if (!isDaemonOn) {
-              $("badgeCriteriaScaleIn").textContent = isKo ? "피크반전 신호 (자동매매 OFF)" : "SIGNAL ARMED · AUTO-TRADE OFF";
+              $("badgeCriteriaScaleIn").textContent = isKo ? "반전 신호 (자동매매 OFF)" : "REVERSAL SIGNAL ARMED · AUTO-TRADE OFF";
               $("badgeCriteriaScaleIn").style.background = "#fef3c7";
               $("badgeCriteriaScaleIn").style.color = "#b45309";
               $("badgeCriteriaScaleIn").title = "Market criteria passed in price replay, but background auto-tranche execution is disabled";
             } else {
-              $("badgeCriteriaScaleIn").textContent = isKo ? "피크반전 체결대기" : "PEAK REVERSAL ARMED";
+              $("badgeCriteriaScaleIn").textContent = isKo ? "반전 체결대기" : `${isLongEntry ? "TROUGH" : "PEAK"} REVERSAL ARMED`;
               $("badgeCriteriaScaleIn").style.background = "#dcfce7";
               $("badgeCriteriaScaleIn").style.color = "#166534";
               $("badgeCriteriaScaleIn").title = "Signal armed and live background auto-tranche daemon is actively trading";
@@ -15065,11 +15090,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("badgeCriteriaScaleIn").style.background = "#fef3c7";
             $("badgeCriteriaScaleIn").style.color = "#b45309";
           } else if ((!entry5mUp && this.isConditionEnabled("entry_ma_stack_5m", criteria.condition_toggles)) || (!entry1hUp && this.isConditionEnabled("entry_ma_stack_1h", criteria.condition_toggles))) {
-            $("badgeCriteriaScaleIn").textContent = isKo ? "MA 정배열 대기 (5m/1h)" : "AWAITING MA STACKS (5m/1h)";
+            $("badgeCriteriaScaleIn").textContent = isKo ? "MA 방향 정렬 대기 (5m/1h)" : "AWAITING DIRECTIONAL MA STACKS (5m/1h)";
             $("badgeCriteriaScaleIn").style.background = "#fef3c7";
             $("badgeCriteriaScaleIn").style.color = "#b45309";
           } else {
-            $("badgeCriteriaScaleIn").textContent = isKo ? "피크 모멘텀 소진 대기" : "TRENDING UP - WAITING PEAK";
+            $("badgeCriteriaScaleIn").textContent = isKo ? "반전 모멘텀 대기" : (isLongEntry ? "TRENDING DOWN - WAITING TROUGH" : "TRENDING UP - WAITING PEAK");
             $("badgeCriteriaScaleIn").style.background = "#e0f2fe";
             $("badgeCriteriaScaleIn").style.color = "#0369a1";
           }
