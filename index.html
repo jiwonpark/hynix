@@ -4177,9 +4177,9 @@
         <!-- Full-Width Positions & Execution History Shell -->
         <div class="posTableShell collapsible-section" id="secPositionsTable" style="width: 100%;">
             <div class="posTableTabs collapsible-header">
-              <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">0</span>)</button>
-              <button id="tabAssets" class="posTabBtn" type="button">Binance Collateral (<span id="countAssets">0</span>)</button>
-              <button id="tabUpbit" class="posTabBtn" type="button">🇰🇷 Upbit Spot (<span id="countUpbitAssets">0</span>)</button>
+              <button id="tabPositions" class="posTabBtn active" type="button">Active Positions (<span id="countPositions">—</span>)</button>
+              <button id="tabAssets" class="posTabBtn" type="button">Binance Collateral (<span id="countAssets">—</span>)</button>
+              <button id="tabUpbit" class="posTabBtn" type="button">🇰🇷 Upbit Spot (<span id="countUpbitAssets">—</span>)</button>
               <button id="tabDaemonActivity" class="posTabBtn" type="button">Daemon Activity (<span id="countDaemonEvents">0</span>)</button>
               <button id="tabOrderLog" class="posTabBtn" type="button">Execution History (<span id="countOrderLog">0</span>)</button>
               <button class="section-collapse-btn" type="button" aria-expanded="true" aria-label="Toggle section" title="Collapse / Expand section" style="margin-left: auto;"><svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
@@ -10867,14 +10867,15 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if (typeof terminalLockManager !== "undefined") {
         terminalLockManager.applyState();
       }
-      const posCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.backendPositions && tradingEngine.state.backendPositions.length) || tradingEngine.state.positions.length) : 0;
-      const assetCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.backendAssets && tradingEngine.state.backendAssets.length) || 0) : 0;
+      const accountPending = typeof tradingEngine === 'undefined' || tradingEngine.state.accountSyncPending;
+      const posCount = accountPending ? "—" : ((tradingEngine.state.backendPositions && tradingEngine.state.backendPositions.length) || tradingEngine.state.positions.length);
+      const assetCount = accountPending ? "—" : ((tradingEngine.state.backendAssets && tradingEngine.state.backendAssets.length) || 0);
       const daemonEventCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.daemonEvents && tradingEngine.state.daemonEvents.length) || 0) : 0;
       const orderCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.orderLog && tradingEngine.state.orderLog.length) || 0) : 0;
 
       if ($("tabPositions")) $("tabPositions").innerHTML = `${dict.tabPositions} (<span id="countPositions">${posCount}</span>)`;
       if ($("tabAssets")) $("tabAssets").innerHTML = `${dict.tabAssets || (lang === "ko" ? "바이낸스 담보 자산" : "Binance Collateral")} (<span id="countAssets">${assetCount}</span>)`;
-      const upbitCount = typeof tradingEngine !== 'undefined' ? ((tradingEngine.state.upbitAssets && tradingEngine.state.upbitAssets.length) || 0) : 0;
+      const upbitCount = accountPending ? "—" : ((tradingEngine.state.upbitAssets && tradingEngine.state.upbitAssets.length) || 0);
       if ($("tabUpbit")) $("tabUpbit").innerHTML = `${dict.tabUpbit || (lang === "ko" ? "업비트 현물 잔고" : "Upbit Spot")} (<span id="countUpbitAssets">${upbitCount}</span>)`;
       if ($("tabDaemonActivity")) $("tabDaemonActivity").innerHTML = `${dict.tabDaemonActivity || (lang === "ko" ? "데몬 실시간 활동" : "Daemon Activity")} (<span id="countDaemonEvents">${daemonEventCount}</span>)`;
       if ($("tabOrderLog")) $("tabOrderLog").innerHTML = `${dict.tabOrderLog} (<span id="countOrderLog">${orderCount}</span>)`;
@@ -12464,6 +12465,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             $("valMarginRisk").textContent = "—";
             $("valMarginRisk").style.color = "#64748b";
           }
+          if ($("valActivePairs")) $("valActivePairs").textContent = "—";
+          if ($("countPositions")) $("countPositions").textContent = "—";
           if ($("badgeEquitySource")) {
             $("badgeEquitySource").textContent = "SYNCING";
             $("badgeEquitySource").style.background = "#f1f5f9";
@@ -12657,7 +12660,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const isKo = window.currentLang === "ko";
         const hasBackendPos = this.state.backendPositions && this.state.backendPositions.length > 0;
         const count = hasBackendPos ? this.state.backendPositions.length : this.state.positions.length;
-        if ($("countPositions")) $("countPositions").textContent = count;
+        if ($("countPositions")) $("countPositions").textContent = this.state.accountSyncPending ? "—" : count;
         const recentExecCount = (this.state.hedgedStatus && Array.isArray(this.state.hedgedStatus.recent_executions)) ? this.state.hedgedStatus.recent_executions.length : (this.state.orderLog.length || 0);
         if ($("countOrderLog")) $("countOrderLog").textContent = recentExecCount;
 

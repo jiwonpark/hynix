@@ -84,6 +84,8 @@
     setText("badgeUpbitSource", "SYNCING");
     setText("lblHedgedSyncBadge", message);
     setText("countPositions", "—");
+    setText("countAssets", "—");
+    setText("countUpbitAssets", "—");
     const collateral = byId("valCollateralPills");
     if (collateral) collateral.innerHTML = '<span style="font-size:10px;color:#64748b;font-weight:700">Loading live collateral…</span>';
     const summary = byId("activePositionsSummary");

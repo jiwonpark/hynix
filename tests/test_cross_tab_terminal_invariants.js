@@ -77,6 +77,8 @@ assert.ok(index.includes('TerminalCommon.setTerminalLoading("")'),
   "Tab 2 must apply the shared loading state after rendering stored UI state");
 assert.doesNotMatch(index, /id="valActivePairs"[^>]*>0 Open \(Flat\)</,
   "Tab 2 must not present a fake flat account while positions are loading");
+assert.match(index, /this\.state\.accountSyncPending \? "—" : count/,
+  "Tab 2 must not change the positions counter to zero before account sync completes");
 assert.doesNotMatch(index, /id="valCrit(?:ScaleInThreshold|Ma24|CurrentSpread|OutTargetSpread|LatestInSpread|TpCurrentSpread)"[^>]*>139\./,
   "Tab 2 must not ship example market values in live criteria fields");
 
