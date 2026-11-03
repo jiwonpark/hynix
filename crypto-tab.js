@@ -111,7 +111,7 @@
     rawExecutionMarkers: [],
     selectedSymbol: "BTCUSDT",
     supportedSymbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "XRPUSDT"],
-    currentRatio: 68000.0,
+    currentRatio: null,
     currentAdrPrice: null,
     currentDomesticPrice: null,
     entries: [],
@@ -127,6 +127,7 @@
     bigTrendInterval: "1h",
     currentTier: 2,
     botState: null,
+    accountDataReady: false,
 
     tiers: {
       1: {
@@ -685,6 +686,9 @@
         }
       });
       this.labelTerminal();
+      this.currentRatio = null;
+      this.accountDataReady = false;
+      TerminalCommon.setTerminalLoading("crypto_");
       await this.refresh();
       await this.runBacktestIfChanged();
       this.updateGridLadderData();
@@ -2405,14 +2409,20 @@
 
     updateGridLadderData() {
       const tier = this.tiers[this.currentTier] || this.tiers[2];
-      const benchmark = Number.isFinite(this.currentRatio) && this.currentRatio > 0 ? this.currentRatio : 68000.0;
+      const benchmark = Number(this.currentRatio);
       const stepPct = tier.spacingPct;
-      const step = benchmark * stepPct;
       const count = tier.rungCount;
       const sym = this.selectedSymbol || "BTCUSDT";
       const base = sym.replace("USDT", "");
 
       const spacingEl = $("crypto_valGridSpacing");
+      const tbody = $("crypto_gridLadderBody");
+      if (!Number.isFinite(benchmark) || benchmark <= 0) {
+        if (spacingEl) spacingEl.textContent = "Loading live price…";
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:14px;text-align:center;color:#64748b;font-weight:700">Loading live price…</td></tr>';
+        return;
+      }
+      const step = benchmark * stepPct;
       if (spacingEl) spacingEl.textContent = `±${(stepPct * 100).toFixed(2)}% (${this.formatCryptoPrice(step)} / rung)`;
 
       const activeRungsEl = $("crypto_valActiveRungs");
@@ -2421,7 +2431,6 @@
         : this.entries.length;
       if (activeRungsEl) activeRungsEl.textContent = `${activeCount} / ${count} Tiers Active`;
 
-      const tbody = $("crypto_gridLadderBody");
       if (!tbody) return;
 
       const rows = [];
@@ -2500,6 +2509,7 @@
       this.applyMode(this.mode, false);
       this.initialized = true;
       this.renderVirtualState();
+      TerminalCommon.setTerminalLoading("crypto_");
       this.syncBotStatus();
     },
 
@@ -2903,9 +2913,11 @@
           api("/api/crypto/bot/status").catch(() => null),
           api(`/api/crypto/trends?symbol=${encodeURIComponent(sym)}&small=${sParam}&big=${bParam}`).catch(() => null),
         ]);
-        const status = statusResult || { success: false, server_time_ms: Date.now(), positions: [] };
+        const status = statusResult || { success: false, error: "Account response unavailable", positions: [] };
+        const accountReady = status.success !== false && status.authenticated === true;
+        this.accountDataReady = accountReady;
         this.liveVenue = status;
-        this.livePositions = Array.isArray(status?.positions) ? status.positions : [];
+        this.livePositions = accountReady && Array.isArray(status?.positions) ? status.positions : [];
         if (status && (status.mark_price != null || status.price_ratio != null)) {
           this.currentRatio = Number(status.mark_price ?? status.price_ratio);
           const priceBadge = $("crypto_valLivePriceBadge");
@@ -2917,10 +2929,14 @@
             priceBadge.style.borderColor = (status.change_pct ?? 0) >= 0 ? "#bbf7d0" : "#fecaca";
           }
         }
-        this.setText("lblDaemonSyncTime", `Last Sync: ${formatKstDateTime(status.server_time_ms || Date.now(), false)}`);
+        this.setText("lblDaemonSyncTime", accountReady && status.server_time_ms
+          ? `Last Sync: ${formatKstDateTime(status.server_time_ms, false)}`
+          : `Account unavailable: ${status.error || "authentication pending"} · retrying`);
       this.setText("lblDaemonLatency", botStatus?.bot?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Paused");
         this.setText("lblDaemonStats", `Binance Futures · ${sym}`);
-      this.setText("lblHedgedSyncBadge", botStatus?.bot?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT PAUSED");
+      this.setText("lblHedgedSyncBadge", accountReady
+        ? (botStatus?.bot?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT PAUSED")
+        : "BINANCE ACCOUNT LOADING");
         this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto · ${sym}`);
       this.setText("lblDaemonAuthBadge", status.authenticated ? "BINANCE FUTURES CONNECTED" : "ACCOUNT UNAVAILABLE");
       this.setText("valAccountEquity", Number.isFinite(Number(status.collateral)) && status.collateral != null
@@ -2929,7 +2945,8 @@
       this.setText("valAvailMargin", Number.isFinite(Number(status.available_margin)) && status.available_margin != null
         ? `$${Number(status.available_margin).toFixed(2)}` : "—");
 
-        const formattedPrice = this.formatCryptoPrice(this.currentRatio);
+        const hasCurrentPrice = Number.isFinite(Number(this.currentRatio)) && Number(this.currentRatio) > 0;
+        const formattedPrice = hasCurrentPrice ? this.formatCryptoPrice(this.currentRatio) : "—";
         this.setText("valShortTermCurrentPrice", formattedPrice);
         this.setText("valShortTermCurrentParity", formattedPrice);
         this.setText("valHedgedCombinedPnl", this.virtualPnlText());
@@ -6674,6 +6691,10 @@
       const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position_amt ?? pos.size ?? 0)) > 1e-6);
       const showExchangeState = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
       if (showExchangeState) {
+        if (!(this.accountDataReady || this.liveVenue?.authenticated === true)) {
+          TerminalCommon.setTerminalAccountLoading("crypto_", "BINANCE ACCOUNT LOADING");
+          return;
+        }
         this.setText("lblUnrealizedPnl", "Bot Realized Net PnL · ex funding");
         const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : null;
         const validTranches = (this.botState?.tranches || []).filter(t => Number(t.qty) > 0);

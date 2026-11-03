@@ -3475,7 +3475,7 @@
           </div>
           <div class="realAccountStat">
             <span id="lblActivePairs">Active Positions</span>
-            <strong id="valActivePairs" style="font-size: 15px;">0 Open (Flat)</strong>
+            <strong id="valActivePairs" style="font-size: 15px;">—</strong>
           </div>
           <div class="realAccountStat">
             <span id="lblMarginRisk">Margin Safety Ratio</span>
@@ -3484,15 +3484,15 @@
           <div class="realAccountStat" id="statCollateralSummary" style="min-width: 170px;">
             <span id="lblCollateralSummary">Binance Wallet Split</span>
             <div id="valCollateralPills" style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px;">
-              <span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 5px; border-radius: 3px; font-weight: 700;">USDT: $10,000</span>
+              <span style="font-size: 10px; color: #64748b; font-weight: 700;">Loading live collateral…</span>
             </div>
           </div>
           <div class="realAccountStat" id="statUpbitEquity" style="min-width: 150px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span id="lblUpbitEquity">Upbit KRW Equity</span>
-              <span id="badgeUpbitSource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">UPBIT SPOT</span>
+              <span id="badgeUpbitSource" style="font-size: 9.5px; background: #f1f5f9; color: #64748b; padding: 1px 5px; border-radius: 3px; font-weight: 700;">SYNCING</span>
             </div>
-            <strong id="valUpbitEquity" style="color: #0d9488; font-size: 16px;">₩0</strong>
+            <strong id="valUpbitEquity" style="color: #0d9488; font-size: 16px;">—</strong>
           </div>
         </div>
       </section>
@@ -3939,18 +3939,18 @@
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                   <span style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase;" id="lblCritScaleInTitle">➕ Guarded Scale-In <span style="display:inline-block;background:#7c3aed;color:#fff;border-radius:999px;padding:1px 6px;font-size:8px;vertical-align:1px;">NEW</span> (dynamic dollar balance)</span>
-                  <span id="badgeCriteriaScaleIn" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #fef3c7; color: #b45309;">WAITING</span>
+                  <span id="badgeCriteriaScaleIn" class="condBadge neutral" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px;">LOADING</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritScaleInDesc">
-                  Adaptive trigger: Parity <strong>≥ <span id="valCritScaleInThreshold">139.50%</span></strong> (rolling mean: <span id="valCritMa24">139.25%</span>; volatility + reset guard)
+                  Adaptive trigger: Parity <strong>≥ <span id="valCritScaleInThreshold">—</span></strong> (rolling mean: <span id="valCritMa24">—</span>; volatility + reset guard)
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
-                  <span>Current Parity: <strong id="valCritCurrentSpread">139.30%</strong></span>
-                  <span>Gap to Trigger: <strong id="valCritGapScaleIn" style="color: #d97706;">+0.12% pts</strong></span>
+                  <span>Current Parity: <strong id="valCritCurrentSpread">—</strong></span>
+                  <span>Gap to Trigger: <strong id="valCritGapScaleIn" style="color: #64748b;">—</strong></span>
                 </div>
                 <!-- Progress bar towards scale-in -->
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
-                  <div id="barCritScaleInProgress" style="width: 25%; height: 100%; background: #f59e0b;"></div>
+                  <div id="barCritScaleInProgress" style="width: 0%; height: 100%; background: #f59e0b;"></div>
                 </div>
 
                 <!-- 7 Entry Conditions Checklist -->
@@ -3961,8 +3961,8 @@
                       <span class="toggleSlider"></span>
                     </label>
                     <span class="condLabel" title="Directional distance from the rolling mean: short spread requires at least +0.25 points; long spread requires at least -0.25 points">1. Directional MA Stretch (Short ≥ +0.25 / Long ≤ −0.25)</span>
-                    <span class="condValue" id="valCondEntryMaStretch"><strong id="valCritMaStretch" style="color: #d97706;">+0.00% pts</strong></span>
-                    <span class="condBadge wait" id="badgeCondEntryMaStretch">WAIT</span>
+                    <span class="condValue" id="valCondEntryMaStretch"><strong id="valCritMaStretch" style="color: #64748b;">—</strong></span>
+                    <span class="condBadge neutral" id="badgeCondEntryMaStretch">LOADING</span>
                   </div>
                   <div class="condRow" id="rowCondEntryBase">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
@@ -3971,7 +3971,7 @@
                     </label>
                     <span class="condLabel" title="Short spread uses the upper volatility and spacing threshold; long spread uses the mirrored lower threshold">2. Adaptive Entry Threshold (Short Upper / Long Lower)</span>
                     <span class="condValue" id="valCondEntryBase">--</span>
-                    <span class="condBadge wait" id="badgeCondEntryBase">WAIT</span>
+                    <span class="condBadge neutral" id="badgeCondEntryBase">LOADING</span>
                   </div>
                   <div class="condRow" id="rowCondEntryPeak">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
@@ -3979,8 +3979,8 @@
                       <span class="toggleSlider"></span>
                     </label>
                     <span class="condLabel" title="Completed 5-minute reversal: short spread requires a peak rollover; long spread requires a trough reversal">3. 5m Directional Reversal (Short Peak / Long Trough)</span>
-                    <span class="condValue" id="valCondEntryPeak"><strong id="valCritPeakOut" style="color: #64748b;">WAITING</strong></span>
-                    <span class="condBadge wait" id="badgeCondEntryPeak">WAIT</span>
+                    <span class="condValue" id="valCondEntryPeak"><strong id="valCritPeakOut" style="color: #64748b;">—</strong></span>
+                    <span class="condBadge neutral" id="badgeCondEntryPeak">LOADING</span>
                   </div>
                   <div class="condRow" id="rowCondEntryMaStack5m">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
@@ -3988,8 +3988,8 @@
                       <span class="toggleSlider"></span>
                     </label>
                     <span class="condLabel" title="Short spread requires Price > MA7 > MA24 > MA60; long spread requires Price < MA7 < MA24 < MA60">4. 5m Directional MA Stack (Short Bullish / Long Bearish)</span>
-                    <span class="condValue" id="valCondEntryMaStack5m"><strong id="valCritEntryMaStack5m" style="color: #d97706;">5m WAITING</strong></span>
-                    <span class="condBadge wait" id="badgeCondEntryMaStack5m">WAIT</span>
+                    <span class="condValue" id="valCondEntryMaStack5m"><strong id="valCritEntryMaStack5m" style="color: #64748b;">—</strong></span>
+                    <span class="condBadge neutral" id="badgeCondEntryMaStack5m">LOADING</span>
                   </div>
                   <div class="condRow" id="rowCondEntryMaStack1h">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
@@ -3997,8 +3997,8 @@
                       <span class="toggleSlider"></span>
                     </label>
                     <span class="condLabel" title="Short spread requires Price > MA7 > MA24 > MA60; long spread requires Price < MA7 < MA24 < MA60">5. 1h Directional MA Stack (Short Bullish / Long Bearish)</span>
-                    <span class="condValue" id="valCondEntryMaStack1h"><strong id="valCritEntryMaStack1h" style="color: #d97706;">1h WAITING</strong></span>
-                    <span class="condBadge wait" id="badgeCondEntryMaStack1h">WAIT</span>
+                    <span class="condValue" id="valCondEntryMaStack1h"><strong id="valCritEntryMaStack1h" style="color: #64748b;">—</strong></span>
+                    <span class="condBadge neutral" id="badgeCondEntryMaStack1h">LOADING</span>
                   </div>
                   <div class="condRow" id="rowCondEntryCapacity">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
@@ -4007,7 +4007,7 @@
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
                     <span class="condLabel" title="Active speculative tranches must not exceed live equity-based capacity limit">6. Dynamic Tranche Capacity</span>
                     <span class="condValue" id="valCondEntryCapacity">-- / --</span>
-                    <span class="condBadge pass" id="badgeCondEntryCapacity">PASS</span>
+                    <span class="condBadge neutral" id="badgeCondEntryCapacity">LOADING</span>
                   </div>
                   <div class="condRow" id="rowCondEntryLeverage">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
@@ -4016,7 +4016,7 @@
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
                     <span class="condLabel" title="Projected gross portfolio leverage after new tranche must remain ≤ 8.00x">7. Gross Leverage Cap (≤ 8.0x)</span>
                     <span class="condValue" id="valCondEntryLeverage">-- / 8.0x</span>
-                    <span class="condBadge pass" id="badgeCondEntryLeverage">PASS</span>
+                    <span class="condBadge neutral" id="badgeCondEntryLeverage">LOADING</span>
                   </div>
                   <div class="condRow" id="rowCondEntryMargin">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
@@ -4025,7 +4025,7 @@
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
                     <span class="condLabel" title="Free margin must satisfy 125% buffered requirement (min $2.50)">8. Buffered Margin Check</span>
                     <span class="condValue" id="valCondEntryMargin">-- ≥ $2.50</span>
-                    <span class="condBadge pass" id="badgeCondEntryMargin">PASS</span>
+                    <span class="condBadge neutral" id="badgeCondEntryMargin">LOADING</span>
                   </div>
                   <div class="condRow" id="rowCondEntryEngine">
                     <label class="toggleSwitch" title="Turn condition ON/OFF">
@@ -4033,8 +4033,8 @@
                       <span class="toggleSlider"></span>
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">LIVE ONLY</span>
                     <span class="condLabel" title="Auto-tranche daemon must be enabled, five-minute cooldown expired, and no recovery lock">9. Worker State & 5m Cooldown</span>
-                    <span class="condValue" id="valCondEntryEngine">READY</span>
-                    <span class="condBadge pass" id="badgeCondEntryEngine">READY</span>
+                    <span class="condValue" id="valCondEntryEngine">—</span>
+                    <span class="condBadge neutral" id="badgeCondEntryEngine">LOADING</span>
                   </div>
                   <div class="condRow" id="rowCondEntryGuard">
                     <label class="toggleSwitch" title="Closed-bar cadence and campaign limits (Click to toggle with warning)">
@@ -4052,18 +4052,18 @@
               <div style="background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                   <span style="font-size: 11px; font-weight: 800; color: #065f46; text-transform: uppercase;" id="lblCritTPTitle">🎯 Anti-Churn Take-Profit (saved entry quantities)</span>
-                  <span id="badgeCriteriaTP" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #dcfce7; color: #166534;">ZERO-LOSS LOCKED</span>
+                  <span id="badgeCriteriaTP" class="condBadge neutral" style="font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px;">LOADING</span>
                 </div>
                 <div style="font-size: 12px; color: #334155; line-height: 1.4;" id="txtCritTPDesc">
-                  Convergence ref: Parity <strong>≤ <span id="valCritOutTargetSpread">139.22%</span></strong> (<span id="valCritLatestInSpread">139.30%</span> - <span id="valCritConvergencePts">0.08</span> pts)
+                  Convergence ref: Parity <strong>≤ <span id="valCritOutTargetSpread">—</span></strong> (<span id="valCritLatestInSpread">—</span> - <span id="valCritConvergencePts">—</span> pts)
                 </div>
                 <div style="font-size: 11px; color: #64748b; margin-top: 2px; display: flex; justify-content: space-between;">
-                  <span>Current Parity: <strong id="valCritTpCurrentSpread">139.30%</strong></span>
-                  <span>Gap to Target: <strong id="valCritGapTP" style="color: #0284c7;">+0.08% pts</strong></span>
+                  <span>Current Parity: <strong id="valCritTpCurrentSpread">—</strong></span>
+                  <span>Gap to Target: <strong id="valCritGapTP" style="color: #64748b;">—</strong></span>
                 </div>
                 <!-- Progress bar towards TP -->
                 <div style="width: 100%; height: 5px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 6px;">
-                  <div id="barCritTPProgress" style="width: 10%; height: 100%; background: #10b981;"></div>
+                  <div id="barCritTPProgress" style="width: 0%; height: 100%; background: #10b981;"></div>
                 </div>
 
                 <!-- 8 Exit Conditions Checklist -->
@@ -4138,7 +4138,7 @@
                     </label><span style="font-size: 8px; color: #64748b;" title="Always enforced for live orders">REQUIRED</span>
                     <span class="condLabel" title="Open futures positions must cover both exit quantities saved with the latest entry">8. Position Sufficiency Check</span>
                     <span class="condValue" id="valCondExitPosition">--</span>
-                    <span class="condBadge pass" id="badgeCondExitPosition">PASS</span>
+                    <span class="condBadge neutral" id="badgeCondExitPosition">LOADING</span>
                   </div>
                 </div>
               </div>
@@ -11911,6 +11911,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         this.renderDeployedStrategyCard();
         this.renderAccountStrip();
         this.renderPositionsAndLogs();
+        TerminalCommon.setTerminalLoading("");
         if (this.state.backendAssets && this.state.backendAssets.length) {
           try { this.renderAssetsTable(this.state.backendAssets); } catch(e) {}
         }

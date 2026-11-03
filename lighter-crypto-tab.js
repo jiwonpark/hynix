@@ -116,7 +116,7 @@
     rawExecutionMarkers: [],
     selectedSymbol: "BTC",
     supportedSymbols: ["BTC", "ETH", "SOL", "DOGE", "XRP"],
-    currentRatio: 68000.0,
+    currentRatio: null,
     currentAdrPrice: null,
     currentDomesticPrice: null,
     entries: [],
@@ -132,6 +132,7 @@
     bigTrendInterval: "1h",
     currentTier: 2,
     botState: null,
+    accountDataReady: false,
 
     tiers: {
       1: {
@@ -736,6 +737,9 @@
         }
       });
       this.labelTerminal();
+      this.currentRatio = null;
+      this.accountDataReady = false;
+      TerminalCommon.setTerminalLoading("lighterCrypto_");
       await this.refresh();
       await this.runBacktestIfChanged();
       this.updateGridLadderData();
@@ -2514,14 +2518,20 @@
 
     updateGridLadderData() {
       const tier = this.tiers[this.currentTier] || this.tiers[2];
-      const benchmark = Number.isFinite(this.currentRatio) && this.currentRatio > 0 ? this.currentRatio : 68000.0;
+      const benchmark = Number(this.currentRatio);
       const stepPct = tier.spacingPct;
-      const step = benchmark * stepPct;
       const count = tier.rungCount;
       const sym = this.selectedSymbol || "BTC";
       const base = sym.replace("USD", "");
 
       const spacingEl = $("lighterCrypto_valGridSpacing");
+      const tbody = $("lighterCrypto_gridLadderBody");
+      if (!Number.isFinite(benchmark) || benchmark <= 0) {
+        if (spacingEl) spacingEl.textContent = "Loading live price…";
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:14px;text-align:center;color:#64748b;font-weight:700">Loading live price…</td></tr>';
+        return;
+      }
+      const step = benchmark * stepPct;
       if (spacingEl) spacingEl.textContent = `±${(stepPct * 100).toFixed(2)}% (${this.formatCryptoPrice(step)} / rung)`;
 
       const activeRungsEl = $("lighterCrypto_valActiveRungs");
@@ -2530,7 +2540,6 @@
         : this.entries.length;
       if (activeRungsEl) activeRungsEl.textContent = `${activeCount} / ${count} Tiers Active`;
 
-      const tbody = $("lighterCrypto_gridLadderBody");
       if (!tbody) return;
 
       const rows = [];
@@ -2609,6 +2618,7 @@
       this.applyMode(this.mode, false);
       this.initialized = true;
       this.renderVirtualState();
+      TerminalCommon.setTerminalLoading("lighterCrypto_");
       this.syncBotStatus();
     },
 
@@ -3045,6 +3055,8 @@
         const statusResult = await statusPromise;
         if (sym !== this.selectedSymbol) return;
         const status = statusResult || { success: false, error: "Account response unavailable", positions: [] };
+        const accountReady = status.success !== false && status.authenticated === true;
+        this.accountDataReady = accountReady;
         clearTimeout(this.accountRetryTimer);
         if (!status.success) {
           this.accountRetryTimer = setTimeout(() => {
@@ -3052,7 +3064,7 @@
           }, 5000);
         }
         this.liveVenue = status;
-        this.livePositions = Array.isArray(status?.positions) ? status.positions : [];
+        this.livePositions = accountReady && Array.isArray(status?.positions) ? status.positions : [];
         if (status && (status.mark_price != null || status.price_ratio != null)) {
           this.currentRatio = Number(status.mark_price ?? status.price_ratio);
           const priceBadge = $("lighterCrypto_valLivePriceBadge");
@@ -3069,7 +3081,9 @@
           : `Account unavailable: ${status.error || "No response"} · retrying`);
       this.setText("lblDaemonLatency", this.botState?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Loading");
         this.setText("lblDaemonStats", `Lighter Perpetuals · ${sym}`);
-      this.setText("lblHedgedSyncBadge", this.botState?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT LOADING");
+      this.setText("lblHedgedSyncBadge", accountReady
+        ? (this.botState?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT LOADING")
+        : "LIGHTER ACCOUNT LOADING");
         this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto · ${sym}`);
       this.setText("lblDaemonAuthBadge", status.authenticated ? "LIGHTER PERPETUALS CONNECTED" : "ACCOUNT UNAVAILABLE");
       this.setText("valAccountEquity", Number.isFinite(Number(status.collateral)) && status.collateral != null
@@ -3078,7 +3092,8 @@
       this.setText("valAvailMargin", Number.isFinite(Number(status.available_margin)) && status.available_margin != null
         ? `$${Number(status.available_margin).toFixed(2)}` : "—");
 
-        const formattedPrice = this.formatCryptoPrice(this.currentRatio);
+        const hasCurrentPrice = Number.isFinite(Number(this.currentRatio)) && Number(this.currentRatio) > 0;
+        const formattedPrice = hasCurrentPrice ? this.formatCryptoPrice(this.currentRatio) : "—";
         this.setText("valShortTermCurrentPrice", formattedPrice);
         this.setText("valShortTermCurrentParity", formattedPrice);
         this.setText("valHedgedCombinedPnl", this.virtualPnlText());
@@ -6886,6 +6901,10 @@
       const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position_amt ?? pos.size ?? 0)) > 1e-6);
       const showExchangeState = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
       if (showExchangeState) {
+        if (!(this.accountDataReady || this.liveVenue?.authenticated === true)) {
+          TerminalCommon.setTerminalAccountLoading("lighterCrypto_", "LIGHTER ACCOUNT LOADING");
+          return;
+        }
         this.setText("lblUnrealizedPnl", "Closed-Trade Net PnL");
         const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : null;
         const validTranches = (this.botState?.tranches || []).filter(t => Number(t.qty) > 0);

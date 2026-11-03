@@ -61,6 +61,25 @@ assert.match(index, /function renderMainTabProgress\(container, config\)/,
 assert.doesNotMatch(index, /mainTabLoading > \* \{[\s\S]*?visibility: hidden/,
   "loaded terminal sections must remain visible while other components load");
 
+assert.match(common, /function setTerminalLoading\(prefix = ""\)/,
+  "Tabs 2–5 must share one neutral live-data loading contract");
+assert.match(common, /function setTerminalAccountLoading\(prefix = "", message = "Loading authenticated account…"\)/,
+  "account retries must have a shared loading state that does not clear an already-loaded chart");
+assert.match(common, /"valAccountEquity", "valAvailMargin", "valUnrealizedPnl", "valActivePairs"/,
+  "the shared loading contract must clear every account summary field");
+assert.match(common, /root\?\.querySelectorAll\("\.condValue"\)/,
+  "the shared loading contract must clear strategy-condition values");
+assert.match(common, /element\.querySelector\("\[id\]"\) \|\| element/,
+  "loading must preserve nested condition value nodes used by later live renders");
+assert.match(common, /element\.textContent = "LOADING"/,
+  "condition badges must say LOADING rather than PASS or WAIT before data arrives");
+assert.ok(index.includes('TerminalCommon.setTerminalLoading("")'),
+  "Tab 2 must apply the shared loading state after rendering stored UI state");
+assert.doesNotMatch(index, /id="valActivePairs"[^>]*>0 Open \(Flat\)</,
+  "Tab 2 must not present a fake flat account while positions are loading");
+assert.doesNotMatch(index, /id="valCrit(?:ScaleInThreshold|Ma24|CurrentSpread|OutTargetSpread|LatestInSpread|TpCurrentSpread)"[^>]*>139\./,
+  "Tab 2 must not ship example market values in live criteria fields");
+
 for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", lighterCrypto]]) {
   assert.match(source, /StrategyExecutionChartController\.linkTimeScales\(/,
     `${name} must use the shared time-scale linker`);
@@ -70,7 +89,23 @@ for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", l
     `${name} reference labels must use the same explicit direction as its profit ladder`);
   assert.doesNotMatch(source, /Fallback to current ratio/,
     `${name} must not fabricate a short ladder when only an undirected current price is known`);
+  assert.match(source, /currentRatio: null/,
+    `${name} must not initialize a synthetic live market price`);
+  assert.match(source, /accountDataReady: false/,
+    `${name} must distinguish an authenticated account snapshot from an empty loading response`);
+  assert.match(source, /status\.success !== false && status\.authenticated === true/,
+    `${name} must only render zero positions after an authenticated status response`);
+  assert.match(source, /TerminalCommon\.setTerminalAccountLoading\(/,
+    `${name} must keep account fields neutral when authenticated data is unavailable`);
 }
+assert.ok(lighter.includes('TerminalCommon.setTerminalLoading("lighter_")'),
+  "Tab 3 must apply the shared loading state after its virtual-state render");
+assert.ok(crypto.includes('TerminalCommon.setTerminalLoading("crypto_")'),
+  "Tab 4 must apply the shared loading state after its virtual-state render");
+assert.ok(lighterCrypto.includes('TerminalCommon.setTerminalLoading("lighterCrypto_")'),
+  "Tab 5 must apply the shared loading state after its virtual-state render");
+assert.doesNotMatch(lighter, /setText\("valAvailMargin", "\$8,240\.00"\)/,
+  "Tab 3 must not display invented free margin while syncing");
 
 assert.match(index, /entryDirection: "short"/, "Tab 2 paired-profit ladder must be identified as short spread");
 

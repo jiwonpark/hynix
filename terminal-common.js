@@ -59,6 +59,70 @@
     }
   }
 
+  function terminalRoot(prefix = "") {
+    if (!prefix) return document.getElementById("tabContentTrading");
+    const name = prefix.slice(0, -1);
+    return document.getElementById(name === "lighterCrypto"
+      ? "tabContentLighterCrypto"
+      : name === "crypto" ? "tabContentCrypto" : "tabContentLighter");
+  }
+
+  function setTerminalAccountLoading(prefix = "", message = "Loading authenticated account…") {
+    const byId = (id) => document.getElementById(`${prefix}${id}`);
+    const setText = (id, value) => {
+      const element = byId(id);
+      if (element) element.textContent = value;
+    };
+    [
+      "valAccountEquity", "valAvailMargin", "valUnrealizedPnl", "valActivePairs",
+      "valMarginRisk", "valUpbitEquity", "valHedgedTranches",
+      "valHedgedQuantities", "valHedgedLeverage", "valHedgedNotional",
+      "valHedgedDelta", "valHedgedCombinedPnl", "valHedgedLoss10",
+      "valHedgedMaxDiv",
+    ].forEach((id) => setText(id, "—"));
+    setText("badgeEquitySource", "SYNCING");
+    setText("badgeUpbitSource", "SYNCING");
+    setText("lblHedgedSyncBadge", message);
+    setText("countPositions", "—");
+    const collateral = byId("valCollateralPills");
+    if (collateral) collateral.innerHTML = '<span style="font-size:10px;color:#64748b;font-weight:700">Loading live collateral…</span>';
+    const summary = byId("activePositionsSummary");
+    if (summary) summary.textContent = message;
+    const body = byId("activePositionsBody");
+    if (body) body.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px 16px;">${message}</td></tr>`;
+  }
+
+  function setTerminalLoading(prefix = "") {
+    const byId = (id) => document.getElementById(`${prefix}${id}`);
+    const setText = (id, value) => {
+      const element = byId(id);
+      if (element) element.textContent = value;
+    };
+    setTerminalAccountLoading(prefix);
+    [
+      "valShortTermCurrentParity", "valShortTermCurrentPrice", "valAutoCurrentEdge",
+      "valCritScaleInThreshold", "valCritMa24", "valCritCurrentSpread",
+      "valCritGapScaleIn", "valCritOutTargetSpread", "valCritLatestInSpread",
+      "valCritConvergencePts", "valCritTpCurrentSpread", "valCritGapTP",
+      "valCritCombinedPnl",
+    ].forEach((id) => setText(id, "—"));
+    setText("badgeCriteriaScaleIn", "LOADING");
+    setText("badgeCriteriaTP", "LOADING");
+    const root = terminalRoot(prefix);
+    root?.querySelectorAll(".condValue").forEach((element) => {
+      const valueNode = element.querySelector("[id]") || element;
+      valueNode.textContent = "—";
+    });
+    root?.querySelectorAll(".condBadge").forEach((element) => {
+      element.textContent = "LOADING";
+      element.className = "condBadge neutral";
+    });
+    ["barCritScaleInProgress", "barCritTPProgress"].forEach((id) => {
+      const element = byId(id);
+      if (element) element.style.width = "0%";
+    });
+  }
+
   function movingAverage(bars, windowSize) {
     if (!Array.isArray(bars) || windowSize < 1) return [];
     let rolling = 0;
@@ -325,7 +389,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
+  const TerminalCommon = { takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

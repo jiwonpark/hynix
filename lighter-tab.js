@@ -101,7 +101,7 @@
     selectedExecutionMarkerKey: null,
     selectedPairKey: null,
     rawExecutionMarkers: [],
-    currentRatio: 140.09,
+    currentRatio: null,
     currentAdrPrice: null,
     currentDomesticPrice: null,
     entries: [],
@@ -117,6 +117,7 @@
     bigTrendInterval: "1h",
     currentTier: 2,
     botState: null,
+    accountDataReady: false,
     livePositions: [],
     accountPositions: [],
     livePollTimer: null,
@@ -502,7 +503,7 @@
       this.setText("badgeEquitySource", "SYNCING");
       this.setText("valAccountEquity", "—");
       this.setText("lblAvailMargin", "Free Grid Margin");
-      this.setText("valAvailMargin", "$8,240.00");
+      this.setText("valAvailMargin", "—");
       this.setText("lblUnrealizedPnl", "Verified Realized PnL");
       this.setText("lblActivePairs", "Active Pair Positions");
       this.setText("lblMarginRisk", "Target Leverage");
@@ -1815,10 +1816,16 @@
 
     updateGridLadderData() {
       const tier = this.tiers[this.currentTier] || this.tiers[2];
-      const benchmark = Number.isFinite(this.currentRatio) ? this.currentRatio : 140.09;
+      const benchmark = Number(this.currentRatio);
       const step = tier.spacingPct;
       const count = tier.rungCount;
       const spacingEl = $("lighter_valGridSpacing");
+      const tbody = $("lighter_gridLadderBody");
+      if (!Number.isFinite(benchmark) || benchmark <= 0) {
+        if (spacingEl) spacingEl.textContent = "Loading live parity…";
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:14px;text-align:center;color:#64748b;font-weight:700">Loading live parity…</td></tr>';
+        return;
+      }
       if (spacingEl) spacingEl.textContent = `±${step.toFixed(3)}% (${tier.name.split(":")[1]?.trim() || "Dynamic"})`;
 
       const activeRungsEl = $("lighter_valActiveRungs");
@@ -1827,7 +1834,6 @@
         : this.entries.length;
       if (activeRungsEl) activeRungsEl.textContent = `${activeCount} / ${count} Tiers Active`;
 
-      const tbody = $("lighter_gridLadderBody");
       if (!tbody) return;
 
       const rows = [];
@@ -1910,6 +1916,7 @@
       this.applyMode(this.mode, false);
       this.initialized = true;
       this.renderVirtualState();
+      TerminalCommon.setTerminalLoading("lighter_");
       this.syncBotStatus();
       this.startLivePolling();
     },
@@ -2225,17 +2232,21 @@
           api("/api/lighter/bot/status").catch(() => null),
           api(`/api/lighter/trends?small=${sParam}&big=${bParam}`).catch(() => null),
         ]);
-        const status = statusResult || { success: false, server_time_ms: Date.now(), positions: [] };
+        const status = statusResult || { success: false, error: "Account response unavailable", positions: [] };
+        const accountReady = status.success !== false && status.authenticated === true;
+        this.accountDataReady = accountReady;
         this.liveVenue = status;
-        this.accountPositions = Array.isArray(status?.positions) ? status.positions : [];
+        this.accountPositions = accountReady && Array.isArray(status?.positions) ? status.positions : [];
         this.livePositions = this.accountPositions.filter((position) => this.isPairPosition(position));
         if (status && status.parity_ratio) {
           this.currentRatio = Number(status.parity_ratio);
         }
-        this.setText("lblDaemonSyncTime", `Last Sync: ${formatKstDateTime(status.server_time_ms || Date.now(), false)}`);
+        this.setText("lblDaemonSyncTime", accountReady && status.server_time_ms
+          ? `Last Sync: ${formatKstDateTime(status.server_time_ms, false)}`
+          : `Account unavailable: ${status.error || "authentication pending"} · retrying`);
         this.setText("lblDaemonLatency", "Lighter Engine: Syncing");
         this.setText("lblDaemonStats", "Live strategy telemetry");
-        this.setText("lblHedgedSyncBadge", "LIGHTER LIVE SYNCED");
+        this.setText("lblHedgedSyncBadge", accountReady ? "LIGHTER LIVE SYNCED" : "LIGHTER ACCOUNT LOADING");
         if (status && status.l1_address) {
           const shortAddr = `${status.l1_address.slice(0, 6)}...${status.l1_address.slice(-4)}`;
           if (status.authenticated && status.account_index) {
@@ -2249,12 +2260,14 @@
             this.setText("badgeEquitySource", shortAddr);
           }
         }
-        this.setText("valShortTermCurrentParity", `${this.currentRatio.toFixed(3)}%`);
+        const hasCurrentRatio = Number.isFinite(Number(this.currentRatio)) && Number(this.currentRatio) > 0;
+        const currentRatioText = hasCurrentRatio ? `${Number(this.currentRatio).toFixed(3)}%` : "—";
+        this.setText("valShortTermCurrentParity", currentRatioText);
         this.setText("valHedgedCombinedPnl", this.virtualPnlText());
         this.setText("valCollateralPills", `Pair engine · 0.00% advertised maker fee · account-wide safeguards`);
-        this.setText("valAutoCurrentEdge", `${this.currentRatio.toFixed(3)}%`);
-        this.setText("valCritCurrentSpread", `${this.currentRatio.toFixed(3)}%`);
-        this.setText("valCritTpCurrentSpread", `${this.currentRatio.toFixed(3)}%`);
+        this.setText("valAutoCurrentEdge", currentRatioText);
+        this.setText("valCritCurrentSpread", currentRatioText);
+        this.setText("valCritTpCurrentSpread", currentRatioText);
         if (botStatus?.bot) this.updateBotStatus(botStatus.bot, status);
         if (trendStatus?.success && trendStatus?.trends && Object.keys(trendStatus.trends).length) {
           if (this.trendRetryTimer) clearTimeout(this.trendRetryTimer);
@@ -5425,7 +5438,11 @@
       const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position || pos.size || 0)) > 1e-6);
       const showExchangeState = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
       if (showExchangeState) {
-        const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 187.55;
+        if (!(this.accountDataReady || this.liveVenue?.authenticated === true)) {
+          TerminalCommon.setTerminalAccountLoading("lighter_", "LIGHTER ACCOUNT LOADING");
+          return;
+        }
+        const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 0;
         const validTranches = (this.botState?.tranches || []).filter(t => (t.adr_qty > 0 || t.domestic_qty > 0));
         const liveUnrealized = (this.livePositions || []).reduce((acc, pos) => acc + Number(pos.unrealized_pnl || 0), 0);
         const pnlPct = col > 0 ? (liveUnrealized / col) * 100 : 0;
