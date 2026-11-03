@@ -66,7 +66,7 @@ DEFAULT_STATE = {
     "macd_fast_period": 12, "macd_slow_period": 26, "macd_signal_period": 9,
     "use_macd_signal_negative": True, "use_macd_hist_negative": True, "use_macd_hist_reversal": True,
     "use_macd_signal_positive": True, "use_macd_hist_positive": True, "use_macd_hist_reversal_exit": True,
-    "use_macd_hist_turn": True, "use_macd_hist_zone": True,
+    "use_macd_hist_turn": True, "use_macd_hist_zone": True, "use_macd_hist_exit_zone": True,
     "use_macd_zero_cross": True, "use_macd_signal_zone": False, "use_macd_hist_exit": True,
     "use_macd_strength": True, "macd_strength_min_pct": 30.0,
     "use_macd_two_stage_exit": True, "macd_first_exit_pct": 50.0, "macd_exit_stage": 0,
@@ -218,6 +218,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                           "use_macd_hist_reversal_exit": bool(self.state.get("use_macd_hist_reversal_exit", True)),
                           "use_macd_hist_turn": bool(self.state.get("use_macd_hist_turn", True)),
                           "use_macd_hist_zone": bool(self.state.get("use_macd_hist_zone", True)),
+                          "use_macd_hist_exit_zone": bool(self.state.get("use_macd_hist_exit_zone", True)),
                           "use_macd_zero_cross": bool(self.state.get("use_macd_zero_cross", True)),
                           "use_macd_signal_zone": bool(self.state.get("use_macd_signal_zone", False)),
                           "use_macd_strength": bool(self.state.get("use_macd_strength", True)),
@@ -458,7 +459,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "macd_fast_period", "macd_slow_period", "macd_signal_period",
             "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
             "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-            "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_zero_cross", "use_macd_signal_zone",
+            "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_zero_cross", "use_macd_signal_zone",
             "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "macro_ma_period", "macro_regime_mode",
@@ -512,7 +513,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 candidate[key] = bool(value)
             elif key in {"use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                           "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-                          "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_zero_cross", "use_macd_signal_zone"}:
+                          "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_zero_cross", "use_macd_signal_zone"}:
                 candidate[key] = bool(value)
             elif key in {"use_macd_strength", "use_macd_two_stage_exit"}:
                 candidate[key] = bool(value)
@@ -587,7 +588,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                  "macro_macd_signal_period", "macro_macd_confirm_bars",
                  "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                  "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-                 "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_zero_cross", "use_macd_signal_zone",
+                 "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_zero_cross", "use_macd_signal_zone",
                  "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:

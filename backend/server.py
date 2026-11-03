@@ -1980,6 +1980,7 @@ def _run_crypto_backtest_sync(
     use_macd_hist_reversal_exit: bool = True,
     use_macd_hist_turn: bool = True,
     use_macd_hist_zone: bool = True,
+    use_macd_hist_exit_zone: bool = True,
     use_macd_zero_cross: bool = True,
     use_macd_signal_zone: bool = False,
     use_macd_hist_exit: bool = True,
@@ -2819,7 +2820,7 @@ def _run_crypto_backtest_sync(
                           evaluate_macd_reversal_signals)
         extra_macd = ({"use_macd_strength": use_macd_strength, "macd_strength_min_pct": macd_strength_min_pct}
                       if strategy_mode == "macd_strength_scaleout" else {})
-        macd_conditions = ({"use_macd_hist_turn": use_macd_hist_turn, "use_macd_hist_zone": use_macd_hist_zone,
+        macd_conditions = ({"use_macd_hist_turn": use_macd_hist_turn, "use_macd_hist_zone": use_macd_hist_zone, "use_macd_hist_exit_zone": use_macd_hist_exit_zone,
                             "use_macd_signal_zone": use_macd_signal_zone, "use_macd_hist_exit": use_macd_hist_exit}
                            if strategy_mode == "macd_hist_turn" else {"use_macd_zero_cross": use_macd_zero_cross,
                             "use_macd_signal_zone": use_macd_signal_zone, "use_macd_hist_exit": use_macd_hist_exit}
@@ -2919,7 +2920,8 @@ def _run_crypto_backtest_sync(
                     "pnl_pct": round(current_pnl * mult * exit_fraction, 4), "multiplier": round(mult, 2),
                     "exit_fraction": round(exit_fraction, 4),
                     "reason": ("macd_first_peak_exit" if first_stage else
-                               "macd_zero_cross_flip" if strategy_mode in {"macd_zero_cross", "macd_hist_turn"} else
+                               "macd_hist_turn_flip" if strategy_mode == "macd_hist_turn" else
+                               "macd_zero_cross_flip" if strategy_mode == "macd_zero_cross" else
                                "macd_final_peak_exit"),
                 })
                 if first_stage:
@@ -3044,6 +3046,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_macd_hist_reversal: bool = True, use_macd_signal_positive: bool = True,
                               use_macd_hist_positive: bool = True, use_macd_hist_reversal_exit: bool = True,
                               use_macd_hist_turn: bool = True, use_macd_hist_zone: bool = True,
+                              use_macd_hist_exit_zone: bool = True,
                               use_macd_zero_cross: bool = True, use_macd_signal_zone: bool = False,
                               use_macd_hist_exit: bool = True,
                               use_macd_strength: bool = True, macd_strength_min_pct: float = 30.0,
@@ -3160,7 +3163,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         use_macd_hist_positive=use_macd_hist_positive,
         use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
         use_macd_zero_cross=use_macd_zero_cross,
-        use_macd_hist_turn=use_macd_hist_turn, use_macd_hist_zone=use_macd_hist_zone,
+        use_macd_hist_turn=use_macd_hist_turn, use_macd_hist_zone=use_macd_hist_zone, use_macd_hist_exit_zone=use_macd_hist_exit_zone,
         use_macd_signal_zone=use_macd_signal_zone, use_macd_hist_exit=use_macd_hist_exit,
         use_macd_strength=use_macd_strength, macd_strength_min_pct=macd_strength_min_pct,
         use_macd_two_stage_exit=use_macd_two_stage_exit, macd_first_exit_pct=macd_first_exit_pct,

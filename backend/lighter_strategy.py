@@ -1311,6 +1311,7 @@ def evaluate_macd_zero_cross_signals(
     use_macd_hist_exit: bool = True,
     use_macd_hist_turn: bool = True,
     use_macd_hist_zone: bool = True,
+    use_macd_hist_exit_zone: bool = True,
     _entry_trigger: str = "zero_cross",
     evaluation_time: Optional[int] = None,
     position_side: int = 0,
@@ -1318,11 +1319,11 @@ def evaluate_macd_zero_cross_signals(
     held_bars: int = 0,
     **_: Any,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
-    """Completed-bar histogram entries with independent zero-cross exits.
+    """Completed-bar histogram entries and independent opposite-pattern exits.
 
     The public zero-cross strategy keeps its existing entry predicate. The
     histogram-turn wrapper selects a three-bar delta reversal inside H's zone.
-    Entry evaluation never consults positions; only exits depend on inventory.
+    Entry evaluation never consults positions; only exits depend on inventory. Turn mode exits use the opposite delta turn and H zone.
     """
     del entry_price, held_bars
     fast_w = max(2, int(macd_fast_period))
@@ -1382,8 +1383,13 @@ def evaluate_macd_zero_cross_signals(
         else:
             candidate_side = 1 if histogram >= 0.0 else -1
     entry_signal = long_pattern if candidate_side > 0 else short_pattern
-    exit_pattern = bearish_cross if position_side > 0 else bullish_cross
-    exit_signal = bool(use_macd_hist_exit and position_side != 0 and exit_pattern)
+    exit_turn = delta_down if position_side > 0 else delta_up
+    exit_zone = histogram > 0.0 if position_side > 0 else histogram < 0.0
+    if is_turn:
+        exit_checks = ([exit_turn] if use_macd_hist_exit else []) + ([exit_zone] if use_macd_hist_exit_zone else [])
+        exit_signal = bool(position_side != 0 and exit_checks and all(exit_checks))
+    else:
+        exit_signal = bool(use_macd_hist_exit and position_side != 0 and (bearish_cross if position_side > 0 else bullish_cross))
     evaluation = {
         "time": evaluation_time,
         "ratio": round(float(prices[-1]), 4),
@@ -1407,14 +1413,17 @@ def evaluate_macd_zero_cross_signals(
             **({"entry_histogram_delta_turn": use_macd_hist_turn, "entry_histogram_zone": use_macd_hist_zone}
                if is_turn else {"entry_histogram_zero_cross": use_macd_zero_cross}),
             "entry_signal_zone": use_macd_signal_zone,
-            "exit_histogram_zero_cross": use_macd_hist_exit,
+            **({"exit_histogram_delta_turn": use_macd_hist_exit, "exit_histogram_zone": use_macd_hist_exit_zone}
+               if is_turn else {"exit_histogram_zero_cross": use_macd_hist_exit}),
         },
         "condition_pass": {
             **({"entry_histogram_delta_turn": delta_up if candidate_side > 0 else delta_down,
                 "entry_histogram_zone": histogram < 0.0 if candidate_side > 0 else histogram > 0.0}
                if is_turn else {"entry_histogram_zero_cross": bullish_cross if candidate_side > 0 else bearish_cross}),
             "entry_signal_zone": signal_negative if candidate_side > 0 else signal_positive,
-            "exit_histogram_zero_cross": (bearish_cross if position_side > 0 else bullish_cross) if position_side else None,
+            **({"exit_histogram_delta_turn": exit_turn if position_side else None,
+                "exit_histogram_zone": exit_zone if position_side else None}
+               if is_turn else {"exit_histogram_zero_cross": (bearish_cross if position_side > 0 else bullish_cross) if position_side else None}),
         },
     }
     return bool(entry_signal), candidate_side, exit_signal, evaluation
@@ -1647,6 +1656,7 @@ def _evaluate_strategy_signal(
             macd_signal_period=int(config.get("macd_signal_period", 9)),
             use_macd_hist_turn=bool(config.get("use_macd_hist_turn", True)),
             use_macd_hist_zone=bool(config.get("use_macd_hist_zone", True)),
+            use_macd_hist_exit_zone=bool(config.get("use_macd_hist_exit_zone", True)),
             use_macd_signal_zone=bool(config.get("use_macd_signal_zone", False)),
             use_macd_hist_exit=bool(config.get("use_macd_hist_exit", True)),
             evaluation_time=evaluation_time,

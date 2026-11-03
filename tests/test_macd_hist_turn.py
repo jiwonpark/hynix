@@ -56,12 +56,25 @@ class HistogramTurnTests(unittest.TestCase):
         self.assertFalse(evaluate_histogram([-1.,-2.,-1.8],use_macd_hist_turn=False,use_macd_hist_zone=False)[0])
         self.assertTrue(evaluate_histogram([-1.,-2.,-1.8],use_macd_zero_cross=False)[0])
 
-    def test_exit_stays_opposite_histogram_zero_cross(self):
-        self.assertFalse(evaluate_histogram([-1.,-2.,-1.8],position_side=-1)[2])
-        for h,held in [([-.3,-.1,.2],-1),([.3,.1,-.2],1)]:
-            self.assertTrue(evaluate_histogram(h,position_side=held)[2])
-            self.assertFalse(evaluate_histogram(h,position_side=held,use_macd_hist_exit=False)[2])
+    def test_exit_uses_opposite_delta_turn_and_zone(self):
+        for h,held in [([-1.,-2.,-1.8],-1),([1.,2.,1.8],1)]:
+            result=evaluate_histogram(h,position_side=held)
+            self.assertTrue(result[2])
+            self.assertTrue(result[3]['condition_pass']['exit_histogram_delta_turn'])
+            self.assertTrue(result[3]['condition_pass']['exit_histogram_zone'])
+            self.assertNotIn('exit_histogram_zero_cross',result[3]['condition_pass'])
             self.assertFalse(evaluate_histogram(h,position_side=0)[2])
+            self.assertFalse(evaluate_histogram(h,position_side=-held)[2])
+            self.assertFalse(evaluate_histogram(h,position_side=held,use_macd_hist_exit=False,use_macd_hist_exit_zone=False)[2])
+            self.assertTrue(evaluate_histogram(h,position_side=held,use_macd_hist_turn=False,use_macd_hist_zone=False,use_macd_signal_zone=True)[2])
+        # Zero crossing alone and flat current delta do not meet both predicates.
+        self.assertFalse(evaluate_histogram([.3,.1,-.2],position_side=1)[2])
+        self.assertFalse(evaluate_histogram([1.,2.,2.],position_side=1)[2])
+        # Each exit switch independently removes only its own predicate.
+        self.assertTrue(evaluate_histogram([-2.,-1.,-1.2],position_side=1,use_macd_hist_exit_zone=False)[2])
+        self.assertFalse(evaluate_histogram([-2.,-1.,-1.2],position_side=1)[2])
+        self.assertTrue(evaluate_histogram([1.,2.,3.],position_side=1,use_macd_hist_exit=False)[2])
+        self.assertFalse(evaluate_histogram([1.,2.,3.],position_side=1)[2])
 
     def test_real_price_dispatch_hourly_gate_and_causal_replay_entry_stream(self):
         bars=[dict(time=100000+i*300,value=100+.12*i+4*math.sin(i/6)) for i in range(180)]
@@ -78,7 +91,7 @@ class HistogramTurnTests(unittest.TestCase):
         self.assertTrue(expected)
         replay=_run_crypto_backtest_sync(bars,True,strategy_mode='macd_hist_turn',use_hourly_hist=False,**options)
         self.assertEqual([(row['time'],row['side']) for row in replay['entry_signals']],expected)
-        no_exits=_run_crypto_backtest_sync(bars,True,strategy_mode='macd_hist_turn',use_hourly_hist=False,use_macd_hist_exit=False,use_take_profit=False,**options)
+        no_exits=_run_crypto_backtest_sync(bars,True,strategy_mode='macd_hist_turn',use_hourly_hist=False,use_macd_hist_exit=False,use_macd_hist_exit_zone=False,use_take_profit=False,**options)
         self.assertEqual(replay['entry_signals'],no_exits['entry_signals'])
         self.assertEqual(replay['latest_evaluation']['strategy'],'macd_hist_turn')
         self.assertFalse(replay['entry_trend'].get('enabled',False))
@@ -90,13 +103,13 @@ class HistogramTurnConfigTests(unittest.IsolatedAsyncioTestCase):
             for cls in (CryptoBot,LighterCryptoBot):
                 path=Path(directory)/cls.__name__
                 bot=cls(AsyncMock(),path)
-                await bot.configure(dict(strategy_mode='macd_hist_turn',use_macd_hist_turn=False,use_macd_hist_zone=False))
+                await bot.configure(dict(strategy_mode='macd_hist_turn',use_macd_hist_turn=False,use_macd_hist_zone=False,use_macd_hist_exit_zone=False))
                 restored=cls(AsyncMock(),path)
                 self.assertEqual(restored.state['strategy_mode'],'macd_hist_turn')
-                for key in ['use_macd_hist_turn','use_macd_hist_zone']:
+                for key in ['use_macd_hist_turn','use_macd_hist_zone','use_macd_hist_exit_zone']:
                     self.assertFalse(restored.public_state()['strategy_params'][key])
                 await restored.save_strategy_draft('macd_hist_turn',dict(macd_fast_period=4,macd_slow_period=10,macd_signal_period=3))
                 self.assertEqual(restored.state['strategy_drafts']['macd_hist_turn']['macd_slow_period'],10)
                 restored.state['enabled']=True
                 with self.assertRaisesRegex(ValueError,'Pause'):
-                    await restored.configure(dict(use_macd_hist_zone=True))
+                    await restored.configure(dict(use_macd_hist_exit_zone=True))

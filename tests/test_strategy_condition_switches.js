@@ -62,19 +62,30 @@ for(const [file,name,prefix,rootId] of [
     node.checked=true;
     assert.equal(engine.replaySettings()[key],true);assert.equal(engine.liveStrategyPayload(mode)[key],true);
    }
+   for(const [suffix,key] of [['macdZeroUseExitCross','use_macd_hist_exit'],['macdTurnUseExitZone','use_macd_hist_exit_zone']]){
+    const node=document.getElementById(prefix+suffix);
+    assert.ok(document.getElementById(prefix+'exitConditionGroup').contains(node));
+    node.checked=false;assert.equal(engine.replaySettings()[key],false);assert.equal(engine.liveStrategyPayload(mode)[key],false);
+    node.checked=true;assert.equal(engine.replaySettings()[key],true);assert.equal(engine.liveStrategyPayload(mode)[key],true);
+    const before=replayCalls;node.dispatchEvent(new window.Event('change'));assert.equal(replayCalls,before+1);
+   }
    const beforeChange=replayCalls;zone.dispatchEvent(new window.Event('change'));assert.equal(replayCalls,beforeChange+1,'one toggle schedules exactly one replay');
-   const pass={entry_histogram_delta_turn:true,entry_histogram_zone:true,entry_signal_zone:false,exit_histogram_zero_cross:null};
-   const enabled={entry_histogram_delta_turn:true,entry_histogram_zone:true,entry_signal_zone:false,exit_histogram_zero_cross:true};
+   const pass={entry_histogram_delta_turn:true,entry_histogram_zone:true,entry_signal_zone:false,exit_histogram_delta_turn:true,exit_histogram_zone:false};
+   const enabled={entry_histogram_delta_turn:true,entry_histogram_zone:true,entry_signal_zone:false,exit_histogram_delta_turn:true,exit_histogram_zone:true};
    const evaluation={strategy:mode,time:Date.now()/1000,candidate_side:1,histogram:-.8,previous_histogram_delta:-.5,histogram_delta:.2,condition_pass:pass,condition_enabled:enabled};
    engine.renderReplayConditionStatus({latest_conditions:pass,latest_evaluation:evaluation,latest_condition_time:evaluation.time},engine.replaySettings());
    assert.equal(document.getElementById(prefix+'macdStatusDeltaTurn').textContent,'PASS');
    assert.equal(document.getElementById(prefix+'macdStatusHistogramZone').textContent,'PASS');
    assert.equal(document.getElementById(prefix+'macdStatusSignalZone').textContent,'OFF');
+   assert.equal(document.getElementById(prefix+'macdStatusExitCross').textContent,'PASS');
+   assert.equal(document.getElementById(prefix+'macdStatusExitZone').textContent,'WAITING');
    assert.match(document.getElementById(prefix+'macdStatusSource').textContent,/ΔH -0.500000 → 0.200000/);
    assert.match(document.getElementById(prefix+'macdStatusSource').textContent,/KST/);
-   engine.renderLiveConditionStatus({enabled:true,strategy_mode:mode,strategy_interval:'5m',tranches:[],last_evaluation:evaluation});
+   engine.renderLiveConditionStatus({enabled:true,strategy_mode:mode,strategy_interval:'5m',tranches:[{qty:1,side:1}],last_evaluation:evaluation});
    assert.match(document.getElementById(prefix+'liveRule_entry_histogram_delta_turn').textContent,/LIVE · PASS/);
    assert.match(document.getElementById(prefix+'liveRule_entry_histogram_zone').textContent,/LIVE · PASS/);
+   assert.match(document.getElementById(prefix+'liveRule_exit_histogram_delta_turn').textContent,/LIVE · PASS/);
+   assert.match(document.getElementById(prefix+'liveRule_exit_histogram_zone').textContent,/LIVE · WAITING/);
   }
   if(mode==='ma_stack' && prefix==='lighterCrypto_'){
    assert.ok(document.getElementById(prefix+'entryConditionGroup').contains(document.getElementById(prefix+'maUseStack5m')));

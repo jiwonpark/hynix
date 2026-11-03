@@ -358,9 +358,13 @@ one replay. New mode drafts inherit current MACD periods when first selected,
 then keep their own adjustable/saved Fast/Slow/Signal values.
 
 The completed-hour histogram direction remains an independent entry filter.
-Exits remain opposite H-zero-cross exits (one owned LIFO tranche) plus the saved
-net take-profit rule; they do not use ΔH entry-turn conditions or hourly entry
-gating. Live and replay dispatch to the same evaluator and expose position-free
+Exits use the opposite ΔH turn and H zone: close long when previous ΔH ≥ 0,
+current ΔH < 0 and H > 0; close short when previous ΔH ≤ 0, current ΔH > 0
+and H < 0. Give the exit turn (`use_macd_hist_exit`) and exit H zone
+(`use_macd_hist_exit_zone`) separate switches, both default ON, and separate
+`exit_histogram_delta_turn` / `exit_histogram_zone` verdicts. Each signal exits
+one owned LIFO tranche. Net take-profit remains an independent exit; optional
+entry switches, signal-line sign and hourly entry gating do not gate exits. Live and replay dispatch to the same evaluator and expose position-free
 entry_signals for every completed match. Existing Zero Cross and other strategy
 predicates are retained. Saving the new mode to a running bot uses authenticated
 configuration while paused; a code deployment alone must not migrate a saved
