@@ -499,7 +499,7 @@
         // trend). Extract selected rows before hiding their legacy card.
         // Unselected rows stay in that hidden card even if polling updates
         // their inline display later.
-        if (!["grid", "custom", "adaptive_tranche"].includes(mode) && node.style.display !== "none")
+        if (!["grid", "custom", "adaptive_tranche"].includes(mode) && node.dataset.terminalRuleSelected === "true")
           buckets[key].append(node);
         continue;
       }

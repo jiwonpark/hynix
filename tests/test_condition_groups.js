@@ -44,7 +44,9 @@ for (const [file, name, prefix] of [
     anchor.innerHTML=mode==='grid'?'':engine.renderParadigmDetail(mode);
     const usesTrend = !['ou_quant','macd_zero_cross', ...(prefix==='lighterCrypto_'?['ma_stack']:[])].includes(mode);
     trendRow.style.display=usesTrend?'':'none';
-    zRow.style.display=['grid','custom','adaptive_tranche'].includes(mode)?'':'none';
+    trendRow.dataset.terminalRuleSelected=String(usesTrend);
+    zRow.dataset.terminalRuleSelected=String(['grid','custom','adaptive_tranche'].includes(mode));
+    zRow.style.display=''; // Late polling can change display, but never select an irrelevant rule.
     common.groupConditionControls(prefix,anchor,mode);
     const entry=document.getElementById(prefix+'entryConditionGroup');
     const exit=document.getElementById(prefix+'exitConditionGroup');

@@ -1383,9 +1383,12 @@
       // conditions live in a dedicated detail panel. Never hide its switch.
       if (mode !== "ou_quant" && mode !== "macd_zero_cross")
         wiredReplayRows.rowCondEntryMaStack1h = "Wider trend filter · configured completed-candle regime";
-      [...new Set([...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels), "rowCondEntryMaStack1h"])].forEach((id) => {
+      const inheritedRows = typeof document.querySelectorAll === "function"
+        ? Array.from(document.querySelectorAll('[id^="crypto_rowCondEntry"], [id^="crypto_rowCondExit"]')).map(node => node.id.slice("crypto_".length)) : [];
+      [...new Set([...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels), ...inheritedRows, "rowCondEntryMaStack1h"])].forEach((id) => {
         const row = lid(id);
         if (!row) return;
+        row.dataset.terminalRuleSelected = wiredReplayRows[id] ? "true" : "false";
         row.style.display = wiredReplayRows[id] ? "" : "none";
         if (wiredReplayRows[id]) {
           const label = row.querySelector(".condLabel");
