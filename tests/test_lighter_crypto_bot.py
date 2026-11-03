@@ -76,6 +76,36 @@ class FakeLighter:
 
 
 class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
+    async def test_paused_histogram_strategy_switch_preserves_inventory(self):
+        bot = self.bot
+        bot.state.update(strategy_mode="macd_zero_cross", enabled=False,
+                         tranches=[{"id": "existing", "side": -1, "qty": .0039,
+                                    "entry_price": 77078.3, "entry_fee_usd": .01}],
+                         execution_history=[{"event": "ENTRY", "id": "existing"}])
+        inventory = copy.deepcopy(bot.state["tranches"])
+        history = copy.deepcopy(bot.state["execution_history"])
+        for mode in ("macd_hist_turn", "macd_zero_cross"):
+            await bot.configure({"strategy_mode": mode})
+            restored = LighterCryptoBot(self.client, self.path)
+            self.assertEqual(restored.state["strategy_mode"], mode)
+            self.assertEqual(restored.state["tranches"], inventory)
+            self.assertEqual(restored.state["execution_history"], history)
+            self.assertFalse(restored.state["enabled"])
+        self.assertFalse(self.client.orders)
+        for values, message in [({"strategy_mode": "grid"}, "Close tracked inventory"),
+                                ({"selected_symbol": "ETH"}, "Close tracked inventory")]:
+            with self.assertRaisesRegex(ValueError, message):
+                await bot.configure(values)
+        for safeguard in ("pending_order", "recovery_required"):
+            bot.state[safeguard] = {"id": "unresolved"} if safeguard == "pending_order" else True
+            with self.assertRaisesRegex(ValueError, "Resolve pending orders"):
+                await bot.configure({"strategy_mode": "macd_hist_turn"})
+            bot.state[safeguard] = None if safeguard == "pending_order" else False
+        bot.state["enabled"] = True
+        with self.assertRaisesRegex(ValueError, "Pause"):
+            await bot.configure({"strategy_mode": "macd_hist_turn"})
+        self.assertEqual(bot.state["tranches"], inventory)
+
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

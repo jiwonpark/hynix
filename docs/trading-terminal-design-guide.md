@@ -369,3 +369,11 @@ entry_signals for every completed match. Existing Zero Cross and other strategy
 predicates are retained. Saving the new mode to a running bot uses authenticated
 configuration while paused; a code deployment alone must not migrate a saved
 live strategy mode or submit orders.
+
+On Tab 5, a paused bot may switch between `macd_zero_cross` and
+`macd_hist_turn` while retaining tracked inventory: both use the same single-leg
+LIFO lots. Preserve quantities, entry prices, fees and execution history exactly;
+the newly selected rules manage those lots after resume. This configuration
+change submits no orders. Pending orders or inventory recovery must be resolved
+first. Retain the flat-inventory requirement for symbol changes and switches to
+other strategy families.

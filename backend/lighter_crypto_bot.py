@@ -594,7 +594,14 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:
                 raise ValueError("Close tracked inventory before changing symbol")
             if self.state["tranches"] and candidate["strategy_mode"] != self.state["strategy_mode"]:
-                raise ValueError("Close tracked inventory before changing strategy")
+                # Both modes own identical single-leg LIFO lots; only their
+                # completed-candle predicates differ. No inventory migration
+                # or exchange order is needed to use the new rules on resume.
+                compatible_modes = {"macd_zero_cross", "macd_hist_turn"}
+                if not {self.state["strategy_mode"], candidate["strategy_mode"]} <= compatible_modes:
+                    raise ValueError("Close tracked inventory before changing strategy")
+                if self.state.get("pending_order") or self.state.get("recovery_required"):
+                    raise ValueError("Resolve pending orders and inventory recovery before changing strategy")
             self.state.update({key: candidate[key] for key in values})
             self._save()
             return self.public_state()
