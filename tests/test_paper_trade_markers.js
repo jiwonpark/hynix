@@ -67,7 +67,8 @@ assert.equal(oldBuggyCondition, false, "Old condition incorrectly dropped all fo
 // Paper markers remain hollow; P&L ranges use translucent profit/loss fills.
 assert.equal(paperMarker.size, 0, "Native paper shape must be hidden");
 assert.equal(paperMarker.text, "▷ Paper Fill", "Paper entry uses an outline glyph");
-assert.equal(actualMarker.size, 1.4, "Actual marker keeps its solid shape");
+assert.equal(actualMarker.size, 0, "Native actual shape must be hidden in favor of the horizontal glyph");
+assert.equal(actualMarker.text, "▶ Actual Fill", "Actual entry uses a solid right arrow");
 const root = path.join(__dirname, "..");
 for (const file of ["lighter-tab.js", "crypto-tab.js", "lighter-crypto-tab.js"]) {
   const source = fs.readFileSync(path.join(root, file), "utf8");

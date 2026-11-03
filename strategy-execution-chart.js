@@ -259,6 +259,9 @@
         const label = isMatch && m.hoverText
           ? [persistentLabel, m.hoverText].filter(Boolean).join(" · ")
           : persistentLabel;
+        const markerGlyph = isPaper
+          ? (isEntry ? "▷" : "◁")
+          : (isEntry ? "▶" : "◀");
         return {
           time: m.time,
           position,
@@ -266,10 +269,11 @@
           color: isMatch
             ? (isSell ? "#dc2626" : "#16a34a")
             : (isSell ? `rgba(220, 38, 38, ${dimAlpha})` : `rgba(22, 163, 74, ${dimAlpha})`),
-          // Native shapes are solid. Hide the shape for paper events and use an
-          // outline glyph so shared charts follow the same hollow-marker style.
-          size: isPaper ? 0 : 1.4,
-          text: [isPaper ? (isEntry ? "▷" : "◁") : "", label].filter(Boolean).join(" ")
+          // Lightweight Charts only provides vertical native arrows. Hide that
+          // shape and use explicit horizontal glyphs so entries point right and
+          // exits point left, matching every other trading terminal.
+          size: 0,
+          text: [markerGlyph, label].filter(Boolean).join(" ")
         };
       });
     }

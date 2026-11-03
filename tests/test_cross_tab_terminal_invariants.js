@@ -14,6 +14,8 @@ assert.match(executionChart, /EXIT\$\{groupedCount > 1 \? ` ×\$\{groupedCount\}
   "Tabs 2–5 must share persistent, grouped exit-marker labels");
 assert.match(executionChart, /const dimAlpha = isPaper \? "0\.72" : "0\.90"/,
   "Tabs 2–5 must share legible actual and replay marker contrast");
+assert.match(executionChart, /isPaper[\s\S]*\? \(isEntry \? "▷" : "◁"\)[\s\S]*: \(isEntry \? "▶" : "◀"\)/,
+  "Tab 2 must use the same horizontal solid/outline entry and exit arrows as Tabs 3–5");
 
 assert.match(common, /Auto-entry direction:/, "single-leg tabs must use direction wording, not spread wording");
 assert.match(common, /Two-way \(Long \+ Short\)/, "single-leg direction control must expose two-way trading clearly");
