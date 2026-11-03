@@ -705,6 +705,7 @@
         if (!button) return;
         button.disabled = false;
         button.addEventListener("click", () => {
+          this._userSelectedInterval = true;
           this.interval = value;
           this._historyExhausted = false;
           this.backtestMarkers = [];
@@ -2681,10 +2682,10 @@
       const liveMode = this.botState.strategy_mode || "ou_quant";
       const liveInterval = this.botState.strategy_interval || "5m";
       this._userSelectedParadigm = false;
-      this.interval = liveInterval;
+      if (!this._userSelectedInterval) this.interval = liveInterval;
       ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((v) => {
         const btn = lid(`btnShortInterval${v}`);
-        if (btn) btn.classList.toggle("active", v === liveInterval);
+        if (btn) btn.classList.toggle("active", v === this.interval);
       });
       if (this.paradigms[liveMode]) {
         this.setParadigm(liveMode);

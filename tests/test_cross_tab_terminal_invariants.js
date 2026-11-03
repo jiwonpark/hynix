@@ -99,6 +99,10 @@ for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", l
     `${name} must only render zero positions after an authenticated status response`);
   assert.match(source, /TerminalCommon\.setTerminalAccountLoading\(/,
     `${name} must keep account fields neutral when authenticated data is unavailable`);
+  assert.match(source, /this\._userSelectedInterval = true/,
+    `${name} must remember a user-selected viewing interval`);
+  assert.match(source, /if \(!this\._userSelectedInterval\) this\.interval = liveInterval/,
+    `${name} bot status refresh must not reset a user-selected viewing interval`);
 }
 assert.ok(lighter.includes('TerminalCommon.setTerminalLoading("lighter_")'),
   "Tab 3 must apply the shared loading state after its virtual-state render");
