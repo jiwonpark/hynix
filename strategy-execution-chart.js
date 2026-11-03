@@ -260,8 +260,8 @@
           ? [persistentLabel, m.hoverText].filter(Boolean).join(" · ")
           : persistentLabel;
         const markerGlyph = isPaper
-          ? (isEntry ? "▷" : "◁")
-          : (isEntry ? "▶" : "◀");
+          ? (isEntry ? "⇢" : "⇠")
+          : (isEntry ? "→" : "←");
         return {
           time: m.time,
           position,
@@ -270,8 +270,8 @@
             ? (isSell ? "#dc2626" : "#16a34a")
             : (isSell ? `rgba(220, 38, 38, ${dimAlpha})` : `rgba(22, 163, 74, ${dimAlpha})`),
           // Lightweight Charts only provides vertical native arrows. Hide that
-          // shape and use explicit horizontal glyphs so entries point right and
-          // exits point left, matching every other trading terminal.
+          // shape and use true stemmed horizontal arrows: entries point right,
+          // exits point left, and replay arrows use a dashed shaft.
           size: 0,
           text: [markerGlyph, label].filter(Boolean).join(" ")
         };

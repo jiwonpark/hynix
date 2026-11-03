@@ -97,9 +97,11 @@ on deployment, and never change live settings or place orders to verify this UI.
 
 # Trade marker and P&L triangle styles
 
-Paper, virtual, and backtest entry/exit markers have colored outlines with no
-fill. Actual execution markers keep solid fills. Entries point right (▷/▶),
-exits point left (◁/◀); marker color follows buy/cover green and sell/short red.
+Paper, virtual, and backtest entry/exit markers use dashed-shaft arrows (⇢/⇠).
+Actual execution markers use solid-shaft arrows (→/←). Entries point right and
+exits point left; marker color follows buy/cover green and sell/short red. Custom
+SVG markers keep an outlined arrowhead for paper/replay and a filled arrowhead
+for actual executions.
 P&L triangles have translucent green fills for profitable trades and translucent
 red fills for losing trades, for both paper and actual trades. Preserve the
 existing selection/hover behavior. When actual net P&L is unverified, use neutral

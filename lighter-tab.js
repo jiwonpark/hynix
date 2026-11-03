@@ -457,7 +457,7 @@
         },
         status: "PAPER ONLY · Select a strategy and interval, then rerun",
         description: "Paper results intentionally change with the selected candle interval and strategy. These controls never reconfigure the real EC2 bot.",
-        legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#16a34a">▶</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">◀</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">▶</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">◀</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
+        legend: '<span style="color:#0284c7"><span style="display:inline-block;width:10px;height:3px;background:#0284c7"></span> Parity</span><span id="lighter_legendShortMa7" style="cursor:pointer;color:#b45309">— 7-MA: <strong id="lighter_valShortTermMa7">--%</strong></span><span id="lighter_legendShortMa24" style="cursor:pointer;color:#6d28d9">— 24-MA: <strong id="lighter_valShortTermMa24">--%</strong></span><span id="lighter_legendShortMa60" style="cursor:pointer;color:#0891b2">— 60-MA: <strong id="lighter_valShortTermMa60">--%</strong></span><span><strong style="color:#16a34a">→</strong> Long Entry (Buy)</span><span><strong style="color:#dc2626">←</strong> Long Exit (Sell)</span><span><strong style="color:#dc2626">→</strong> Short Entry (Sell)</span><span><strong style="color:#16a34a">←</strong> Short Exit (Buy/Cover)</span><span style="color:#0f766e">Selected net PnL: <strong id="lighter_valShortTermNetPnl">--</strong> · Exit &gt; <strong id="lighter_valSelectedMinProfit">—</strong></span><span>Scale-In</span>',
       });
       [7, 24, 60].forEach((period) => lid(`legendShortMa${period}`)?.addEventListener("click", () => this.toggleMA(period)));
       const chartHost = lid("shortTermSpreadChartHost");
@@ -3821,9 +3821,9 @@
     tradeMarkerGlyph(marker) {
       const isEntry = this.isTradeEntry(marker);
       if (marker?.hypothetical) {
-        return isEntry ? "▷" : "◁";
+        return isEntry ? "⇢" : "⇠";
       }
-      return isEntry ? "▶" : "◀";
+      return isEntry ? "→" : "←";
     },
 
     getTradePairs() {
@@ -4081,20 +4081,18 @@
           target.type = "button";
           target.setAttribute("aria-label", `${glyph} ${marker.hoverText || "Trade"}, ${index + 1} of ${markers.length}`);
 
-          // Entry: points left to right (▶).
-          // SVG viewBox 0 0 8 8, polygon points="0.5,0.5 7.5,4 0.5,7.5".
-          // Tip is at (7.5, 4). Position button at left: finalX, top: finalY, translate(-100%, -50%).
+          // Entry: stemmed arrow points left to right (→).
+          // Tip is at (11.5, 5). Position button at left: finalX, top: finalY, translate(-100%, -50%).
           // The rightmost tip aligns exactly to (finalX, finalY).
-          // Exit: points right to left (◀).
-          // SVG viewBox 0 0 8 8, polygon points="7.5,0.5 0.5,4 7.5,7.5".
-          // Tip is at (0.5, 4). Position button at left: finalX, top: finalY, translate(0, -50%).
+          // Exit: stemmed arrow points right to left (←).
+          // Tip is at (0.5, 5). Position button at left: finalX, top: finalY, translate(0, -50%).
           // The leftmost tip aligns exactly to (finalX, finalY).
           if (isEntry) {
-            target.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="0.5,0.5 7.5,4 0.5,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></svg>`;
-            target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(-100%,-50%);width:8px;height:8px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
+            target.innerHTML = `<svg width="12" height="10" viewBox="0 0 12 10" style="display:block;overflow:visible;pointer-events:none;"><line x1="0.5" y1="5" x2="8.5" y2="5" stroke="${markerColor}" stroke-width="${isHypo ? 1 : 1.5}" stroke-linecap="round"/><polygon points="7.5,1 11.5,5 7.5,9" fill="${fill}" stroke="${markerColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></svg>`;
+            target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(-100%,-50%);width:12px;height:10px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
           } else {
-            target.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" style="display:block;overflow:visible;pointer-events:none;"><polygon points="7.5,0.5 0.5,4 7.5,7.5" fill="${fill}" stroke="${markerColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></svg>`;
-            target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(0,-50%);width:8px;height:8px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
+            target.innerHTML = `<svg width="12" height="10" viewBox="0 0 12 10" style="display:block;overflow:visible;pointer-events:none;"><line x1="11.5" y1="5" x2="3.5" y2="5" stroke="${markerColor}" stroke-width="${isHypo ? 1 : 1.5}" stroke-linecap="round"/><polygon points="4.5,1 0.5,5 4.5,9" fill="${fill}" stroke="${markerColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></svg>`;
+            target.style.cssText = `appearance:none;position:absolute;left:${finalX}px;top:${finalY}px;transform:translate(0,-50%);width:12px;height:10px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${baseOpacity};cursor:pointer;pointer-events:auto`;
           }
 
           const pairKey = marker.pairKey || marker.markerKey;

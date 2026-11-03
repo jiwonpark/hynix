@@ -22,8 +22,8 @@ controller.setExecutions([
 assert.equal(controller.markersForRender().length, 2);
 controller.setVisibility('actual', false);
 assert.equal(controller.markersForRender().length, 1);
-assert.equal(controller.markersForRender()[0].text, '▷');
-assert.equal(controller.markersForRender(2000)[0].text, '▷ virtual');
+assert.equal(controller.markersForRender()[0].text, '⇢');
+assert.equal(controller.markersForRender(2000)[0].text, '⇢ virtual');
 
 controller.setVisibility('actual', true);
 controller.setExecutions([
@@ -37,26 +37,26 @@ const shortCover = controller.markersForRender()[0];
 assert.equal(shortCover.shape, 'arrowUp', 'short-spread cover must point up');
 assert.match(shortCover.color, /22,\s*163,\s*74/, 'short-spread cover must render green');
 assert.equal(shortCover.size, 0, 'actual exits must use the shared horizontal marker glyph');
-assert.equal(shortCover.text, '◀ EXIT', 'actual exits must remain visibly labeled with a solid left arrow');
+assert.equal(shortCover.text, '← EXIT', 'actual exits must remain visibly labeled with a stemmed left arrow');
 controller.setExecutions([
   {time: 3600, source: 'actual', is_entry: false, direction: 'short', fill_signals: [{}, {}, {}]},
 ]);
-assert.equal(controller.markersForRender()[0].text, '◀ EXIT ×3',
+assert.equal(controller.markersForRender()[0].text, '← EXIT ×3',
   'same-candle exit fills must expose their grouped count');
 controller.setExecutions([
   {time: 3700, source: 'virtual', hypothetical: true, backtest: true, is_entry: false,
     direction: 'short', hoverText: 'BACKTEST COVER 0.70'},
 ]);
-assert.equal(controller.markersForRender()[0].text, '◁ EXIT',
-  'replay exits must have a persistent hollow EXIT label');
-assert.equal(controller.markersForRender(3700)[0].text, '◁ EXIT · BACKTEST COVER 0.70',
+assert.equal(controller.markersForRender()[0].text, '⇠ EXIT',
+  'replay exits must have a persistent dashed-arrow EXIT label');
+assert.equal(controller.markersForRender(3700)[0].text, '⇠ EXIT · BACKTEST COVER 0.70',
   'hover detail must supplement rather than replace the exit label');
 controller.setExecutions([
   {time: 1000, source: 'actual', is_entry: true, position: 'aboveBar', shape: 'arrowDown', hoverText: 'actual'},
   {time: 2000, source: 'virtual', hypothetical: true, backtest: true, is_entry: true, position: 'aboveBar', shape: 'arrowDown', hoverText: 'virtual'},
 ]);
-assert.equal(controller.markersForRender()[0].text, '▶',
-  'actual entries must use a solid right arrow');
+assert.equal(controller.markersForRender()[0].text, '→',
+  'actual entries must use a stemmed right arrow');
 controller.setVisibility('actual', false);
 
 const timeScale = {
