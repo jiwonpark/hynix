@@ -20,6 +20,8 @@ const context = {
   URLSearchParams, console,
 };
 vm.createContext(context);
+vm.runInContext(fs.readFileSync(path.join(path.join(__dirname, '..'), 'terminal-common.js'), 'utf8'), context);
+context.TerminalCommon = context.window.TerminalCommon;
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../crypto-tab.js'), 'utf8'), context);
 const engine = context.window.cryptoEngine;
 engine.currentParadigm = 'grid';

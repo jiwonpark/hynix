@@ -436,6 +436,44 @@
     }
   }
 
+  // The same inventory drives visibility, labels and PAPER verdict mappings.
+  // Only predicates actually consumed by the selected evaluator belong here.
+  function inheritedStrategyConditions(mode, prefix) {
+    const rule = (suffix, toggle, condition, label) => ({suffix, toggle, condition, label});
+    const macro = rule("EntryMaStack1h", "use_ma_stack_1h", "entry_ma_stack_1h", "Wider trend filter · configured completed-candle regime");
+    if (["ou_quant", "macd_zero_cross"].includes(mode) || (mode === "ma_stack" && prefix === "lighterCrypto_")) return [];
+    if (mode === "ma_acceleration") return [
+      rule("EntryMaStretch", "use_ma_slope", "entry_ma_slope", "MA direction / minimum velocity · long rising, short falling"),
+      rule("EntryBase", "use_ma_accel", "entry_ma_accel", "MA acceleration threshold · long accelerating, short decelerating"),
+      rule("EntryPeak", "use_ma_pullback", "entry_ma_pullback", "Price pullback · long below MA, short above MA"), macro,
+      rule("ExitConvergence", "use_ma_cross_exit", "exit_ma_cross", "Exit · price reaches the strategy MA"),
+    ];
+    if (mode === "golden_death_cross") return [
+      rule("EntryMaStretch", "use_golden_cross", "entry_golden_cross", "Long entry · fast MA crosses above slow MA (Golden Cross)"),
+      rule("EntryBase", "use_death_cross", "entry_death_cross", "Short entry · fast MA crosses below slow MA (Death Cross)"),
+      rule("EntryPeak", "use_cross_spread", "entry_cross_spread", "Minimum MA spread · configured bps threshold"), macro,
+      rule("ExitConvergence", "use_cross_exit", "exit_cross", "Exit · opposite MA cross / alignment"),
+      rule("ExitDwell", "use_dwell", "exit_dwell", "Minimum holding bars before opposite-cross exit"),
+    ];
+    if (mode === "ma_stack") return [
+      rule("EntryMaStretch", "use_ma_stretch", "entry_stretch", "Minimum distance from MA60 · configured stretch %"),
+      rule("EntryMaStack5m", "use_ma_stack", "entry_ma_stack", "Entry · Price / MA7 / MA24 / MA60 stack"), macro,
+      rule("ExitConvergence", "use_convergence", "exit_ma_cross", "Exit · opposite MA7 / MA24 alignment"),
+      rule("ExitDwell", "use_dwell", "exit_max_dwell", "Exit · 16 completed bars held"),
+      rule("ExitBottoming", "use_bottoming", "exit_trailing_stop", "Exit · configured trailing-stop retracement"),
+    ];
+    if (["grid", "custom", "adaptive_tranche"].includes(mode)) return [
+      rule("EntryMaStretch", "use_ma_stretch", "entry_z", "Entry · Z-score stretch (Entry Z setting)"),
+      rule("EntryBase", "use_base_spacing", "entry_spacing", "Entry · minimum spacing from prior same-side entry"),
+      rule("EntryPeak", "use_peak", "entry_rollover", "Entry · completed-bar Z-score rollover"),
+      rule("EntryMaStack5m", "use_ma_stack", "entry_ma_stack", mode === "adaptive_tranche" ? "Entry · Price / MA7 / MA24 / MA60 stack" : "Entry · price / MA7 / mean alignment"), macro,
+      rule("ExitConvergence", "use_convergence", "exit_convergence", "Exit · Z-score convergence (Exit Z setting)"),
+      rule("ExitDwell", "use_dwell", "exit_dwell", "Exit · minimum configured completed bars"),
+      rule("ExitBottoming", "use_bottoming", "exit_bottoming", "Exit · Z-score no longer converging"),
+    ];
+    return [macro];
+  }
+
   // Move the existing controls, never clone them: drafts, listeners and live
   // authentication keep using the same inputs across strategy rerenders.
   function persistentConditionNodes(prefix) {
@@ -471,7 +509,7 @@
     const buckets = {};
     const liveSources = {};
     for (const [key, title, note] of [
-      ["entry", "Entry conditions", "All enabled entry rules must pass. Entry signals are independent of positions and account limits."],
+      ["entry", "Entry conditions", "Entry rules apply to their indicated direction or setup. Entry signals are independent of positions and account limits."],
       ["exit", "Exit conditions", "Any enabled exit path can reduce a position. Entry filters do not block exits."],
     ]) {
       const section = document.createElement("section");
@@ -548,7 +586,9 @@
       entry_macro_trend:"ouStatusMacroTrend",entry_stop_zone:"ouStatusStopZone",exit_z:"ouStatusExitZ",
       exit_emergency_stop:"ouStatusEmergencyStop",
     } : mode === "ma_stack" ? {entry_ma_diff_hook:"maStatusDiffHook",exit_ma_diff_hook:"maStatusDiffExit"} : {};
-    const paper = ids[key] && document.getElementById(`${prefix}${ids[key]}`);
+    const inherited = inheritedStrategyConditions(mode, prefix).find(rule => rule.condition === key);
+    const badgeId = ids[key] || (inherited && `badgeCond${inherited.suffix}`);
+    const paper = badgeId && document.getElementById(`${prefix}${badgeId}`);
     if (!paper?.parentNode) return false;
     let host = document.getElementById(`${prefix}liveRule_${key}`);
     if (!host) {
@@ -647,7 +687,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
+  const TerminalCommon = { inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

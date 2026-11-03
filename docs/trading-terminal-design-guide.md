@@ -301,3 +301,23 @@ retry instruction; keep live condition verdicts separate. A successful response
 without completed-candle condition data is unavailable, not complete. After a
 replay settles, clear residual condition-value loading dots: show Not reported
 for a separate measurement absent from the response, never a fabricated value.
+
+### Complete strategy-switch inventory
+
+Use `TerminalCommon.inheritedStrategyConditions(mode, prefix)` as the single
+source for inherited switch visibility, labels, replay verdict keys and live
+verdict placement in Tabs4/5. Dedicated OU/MACD and Tab5 MA Stack controls remain
+in their corresponding entry/exit groups. Preserve the full set of existing
+switches consumed by each evaluator: Grid/Custom/Adaptive8; MA Acceleration5;
+Golden/Death Cross6; Tab4 MA Stack6 inherited plus its dedicated diff controls;
+Tab5 MA Stack uses its four dedicated controls. MACD Zero Cross has its three
+specific switches, plus shared hourly and take-profit controls. Do not attach
+Grid/Z/spacing predicates to MACD merely to restore the old visual checklist.
+
+Test the real `setParadigm` lifecycle across every strategy and verify every
+supported inherited switch in both ON and OFF states against both replay settings
+and the live deployment payload. A test of a visibility helper alone is
+insufficient. Unsupported inherited rules remain unselected even after polling;
+account safeguards belong in their separate real execution controls, without
+fake optional switches. Direction-specific entry alternatives must be labeled as
+such instead of implying every long and short trigger must pass simultaneously.

@@ -40,6 +40,8 @@ const context = {
   URLSearchParams, console,
 };
 vm.createContext(context);
+vm.runInContext(fs.readFileSync(path.join(root, 'terminal-common.js'), 'utf8'), context);
+context.TerminalCommon = context.window.TerminalCommon;
 vm.runInContext(fs.readFileSync(path.join(root, 'crypto-tab.js'), 'utf8'), context);
 vm.runInContext(lighter, context);
 assert.notEqual(context.window.cryptoEngine, context.window.lighterCryptoEngine);

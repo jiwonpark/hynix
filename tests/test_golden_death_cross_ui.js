@@ -18,6 +18,7 @@ const lighterCryptoTabCode = fs.readFileSync(path.join(root, 'lighter-crypto-tab
       readyState: 'loading',
       addEventListener() {},
       getElementById(id) {
+        if (id === "tradingTerminalTemplate") return null;
         if (!elements.has(id)) {
           elements.set(id, {
             id,
@@ -62,6 +63,8 @@ const lighterCryptoTabCode = fs.readFileSync(path.join(root, 'lighter-crypto-tab
   context.globalThis = context;
 
   vm.createContext(context);
+vm.runInContext(fs.readFileSync(path.join(root, 'terminal-common.js'), 'utf8'), context);
+context.TerminalCommon = context.window.TerminalCommon;
   vm.runInContext(code, context);
 
   const engine = context.window[engineKey];

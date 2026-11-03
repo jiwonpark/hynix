@@ -1453,22 +1453,8 @@
       // The inherited paired-asset checklist contains rules that this
       // single-leg replay does not evaluate. Show only wired replay switches;
       // live-only exchange safeguards are reported in the separate bot panel.
-      const wiredReplayRows = ["adaptive_tranche", "grid", "custom"].includes(mode) ? {
-        rowCondEntryMaStretch: "Paper/live entry: Z-score stretch (adjust Entry Z below)",
-        rowCondEntryBase: "Paper/live entry: minimum spacing from prior same-side entry",
-        rowCondEntryPeak: "Paper/live entry: completed-bar Z-score rollover",
-        rowCondEntryMaStack5m: mode === "adaptive_tranche"
-          ? "Paper/live entry: full Price / MA7 / MA24 / MA60 stack"
-          : "Paper/live entry: legacy price / MA7 / mean alignment",
-        rowCondEntryMaStack1h: "Paper/live entry: macro direction alignment",
-        rowCondExitConvergence: "Paper/live exit: Z-score convergence (adjust Exit Z below)",
-        rowCondExitDwell: "Paper/live exit: minimum configured completed bars",
-        rowCondExitBottoming: "Paper/live exit: Z-score no longer converging",
-      } : {};
-      // The hourly gate is real for these strategies even when their other
-      // conditions live in a dedicated detail panel. Never hide its switch.
-      if (mode !== "ou_quant" && mode !== "ma_stack" && mode !== "macd_zero_cross")
-        wiredReplayRows.rowCondEntryMaStack1h = "Wider trend filter · configured completed-candle regime";
+      const sharedRules = window.TerminalCommon.inheritedStrategyConditions(mode, "lighterCrypto_");
+      const wiredReplayRows = Object.fromEntries(sharedRules.map(rule => [`rowCond${rule.suffix}`, rule.label]));
       const inheritedRows = typeof document.querySelectorAll === "function"
         ? Array.from(document.querySelectorAll('[id^="lighterCrypto_rowCondEntry"], [id^="lighterCrypto_rowCondExit"]')).map(node => node.id.slice("lighterCrypto_".length)) : [];
       [...new Set([...Object.keys(p.entryLabels), ...Object.keys(p.exitLabels), ...inheritedRows, "rowCondEntryMaStack1h"])].forEach((id) => {
@@ -1624,12 +1610,12 @@
               <button id="lighterCrypto_btnMaReplay" type="button" style="border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun Trend</button>
             </div>
           </div>
-          <div id="lighterCrypto_maEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+          <div data-terminal-rule-group="entry" id="lighterCrypto_maEntryConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Entry conditions · apply identically to paper replay and the deployed live bot</strong>
             <div style="${maRowStyle}"><input id="lighterCrypto_maUseStack5m" type="checkbox" aria-label="Enable 5m bearish full MA stack entry" style="${maToggleStyle}" ${maChecked("use_ma_stack", true)}><span>2. 5m Full MA Stack (Price &lt; MA7 &lt; MA24 &lt; MA60)</span><span class="condBadge neutral" id="lighterCrypto_maStatusStack5m">WAITING</span></div>
             <div style="${maRowStyle}"><input id="lighterCrypto_maUseDiffHook" type="checkbox" aria-label="Enable MA diff inflection hook entry" style="${maToggleStyle}" ${maChecked("use_ma_diff_hook", true)}><span>3. MA Diff Turnaround (Δ(7-24) less negative for 1st time after series of more negative)</span><span class="condBadge neutral" id="lighterCrypto_maStatusDiffHook">WAITING</span></div>
           </div>
-          <div id="lighterCrypto_maExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
+          <div data-terminal-rule-group="exit" id="lighterCrypto_maExitConditions" style="display:grid;gap:8px;margin:12px 0 14px;">
             <strong style="font-size:12px;color:#0f172a;">Exit conditions</strong>
             <div style="${maRowStyle}"><input id="lighterCrypto_maUseOppositeExit" type="checkbox" aria-label="Enable opposite bullish full MA stack exit" style="${maToggleStyle}" ${maChecked("use_opposite_stack_exit", true)}><span>Opposite 5m Full MA Stack (Price &gt; MA7 &gt; MA24 &gt; MA60)</span><span class="condBadge neutral" id="lighterCrypto_maStatusOppositeExit">WAITING</span></div>
             <div style="${maRowStyle}"><input id="lighterCrypto_maUseDiffExit" type="checkbox" aria-label="Enable MA diff inflection hook exit" style="${maToggleStyle}" ${maChecked("use_ma_diff_exit", true)}><span>MA Diff Turnaround Exit (Δ(7-24) less positive for 1st time after series of more positive)</span><span class="condBadge neutral" id="lighterCrypto_maStatusDiffExit">WAITING</span></div>
@@ -3441,21 +3427,9 @@
         use_ma_slope: true, use_ma_accel: true, use_ma_pullback: true, use_ma_cross_exit: true,
         use_golden_cross: true, use_death_cross: true, use_cross_spread: true, use_cross_exit: true,
       };
-      const usesFilters = true;
-      const isCross = currentMode === "golden_death_cross";
-      const isMaAccel = currentMode === "ma_acceleration";
       const isMaStack = currentMode === "ma_stack";
-      const isMacd = ["macd_reversal", "macd_strength_scaleout"].includes(currentMode);
-      const rules = isMaStack || currentMode === "macd_zero_cross" ? [] : isMacd ? [["EntryMaStack1h", "use_ma_stack_1h", "Wider trend filter"]] : [
-        ["EntryMaStretch", isCross ? "use_golden_cross" : (isMaAccel ? "use_ma_slope" : "use_ma_stretch"), isCross ? "Golden Cross" : (isMaAccel ? "MA Slope" : (isMaStack ? "60-MA Stretch" : "Entry trigger"))],
-        ["EntryBase", isCross ? "use_death_cross" : (isMaAccel ? "use_ma_accel" : "use_base_spacing"), isCross ? "Death Cross" : (isMaAccel ? "MA Curvature Accel" : "Spacing")],
-        ["EntryPeak", isCross ? "use_cross_spread" : (isMaAccel ? "use_ma_pullback" : "use_peak"), isCross ? "Min Cross Spread" : (isMaAccel ? "Price Pullback" : "Peak rollover")],
-        ["EntryMaStack5m", "use_ma_stack", isMaStack ? "5m MA Stack" : "Trend stack"],
-        ["EntryMaStack1h", "use_ma_stack_1h", isMaStack ? "1h Macro Trend" : "Macro trend 1h"],
-        ["ExitConvergence", isCross ? "use_cross_exit" : (isMaAccel ? "use_ma_cross_exit" : "use_convergence"), isCross ? "Opposite Cross Exit" : (isMaAccel ? "MA Crossing Exit" : (isMaStack ? "MA Cross Exit" : "Convergence"))],
-        ["ExitDwell", "use_dwell", isMaStack ? "16-Bar Dwell Exit" : "Dwell"],
-        ["ExitBottoming", "use_bottoming", isMaStack ? "Trailing Stop Ratchet" : "Bottoming"],
-      ];
+      const sharedRules = window.TerminalCommon.inheritedStrategyConditions(currentMode, "lighterCrypto_");
+      const rules = sharedRules.map(rule => [rule.suffix, rule.toggle, rule.label]);
       if (currentMode !== "ou_quant" && currentMode !== "ma_stack" && currentMode !== "macd_zero_cross") {
         const macroLabel = settings.macro_regime_mode === "macd_hist_accel"
           ? `Wider trend filter · completed ${this.interval} MACD-H(${settings.macro_macd_fast_period}, ${settings.macro_macd_slow_period}, ${settings.macro_macd_signal_period}) zone + slope`
@@ -3478,38 +3452,7 @@
           input.title = `${name} strategy condition`;
         }
         if (badge) {
-          const conditionKey = isCross ? {
-            EntryMaStretch: "entry_golden_cross",
-            EntryBase: "entry_death_cross",
-            EntryPeak: "entry_cross_spread",
-            EntryMaStack5m: "entry_golden_cross",
-            EntryMaStack1h: "entry_ma_stack_1h",
-            ExitConvergence: "exit_cross",
-            ExitDwell: "exit_dwell",
-            ExitBottoming: "exit_cross"
-          }[suffix] : isMaAccel ? {
-            EntryMaStretch: "entry_ma_slope",
-            EntryBase: "entry_ma_accel",
-            EntryPeak: "entry_ma_pullback",
-            EntryMaStack5m: "entry_ma_slope",
-            EntryMaStack1h: "entry_ma_stack_1h",
-            ExitConvergence: "exit_ma_cross",
-            ExitDwell: "exit_ma_cross",
-            ExitBottoming: "exit_ma_cross"
-          }[suffix] : isMaStack ? {
-            EntryMaStretch: "entry_stretch",
-            EntryBase: "entry_stretch",
-            EntryPeak: "entry_stretch",
-            EntryMaStack5m: "entry_ma_stack",
-            EntryMaStack1h: "entry_ma_stack_1h",
-            ExitConvergence: "exit_ma_cross",
-            ExitDwell: "exit_max_dwell",
-            ExitBottoming: "exit_trailing_stop"
-          }[suffix] : {
-            EntryMaStretch:"entry_z", EntryBase:"entry_spacing", EntryPeak:"entry_rollover",
-            EntryMaStack5m:"entry_ma_stack", EntryMaStack1h:"entry_ma_stack_1h", ExitConvergence:"exit_convergence",
-            ExitDwell:"exit_dwell", ExitBottoming:"exit_bottoming"
-          }[suffix];
+          const conditionKey = sharedRules.find(rule => rule.suffix === suffix)?.condition;
           const result = this.latestReplayConditionResult;
           const value = result?.latest_conditions?.[conditionKey];
           const state = !settings[key] ? "OFF"
@@ -3848,7 +3791,7 @@
           ? "Entry · wider trend chart regime"
           : key.replace(/^entry_/, "Entry · ").replace(/^exit_/, "Exit · ").replaceAll("_", " ");
         const badge = document.createElement("span");
-        const toggle = toggleByKey[key];
+        const toggle = toggleByKey[key] || window.TerminalCommon?.inheritedStrategyConditions?.(bot?.strategy_mode, "lighterCrypto_").find(rule => rule.condition === key)?.toggle;
         const hasPosition = Array.isArray(bot?.tranches) && bot.tranches.length > 0;
         const state = !fresh ? "UNAVAILABLE" : (conditionEnabled[key] === false || (toggle && bot[toggle] === false)) ? "OFF"
           : key.startsWith("exit_") && !hasPosition ? "N/A"
