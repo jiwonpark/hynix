@@ -45,7 +45,7 @@ controller.setExecutions([
   {time: nowSec, source: "virtual", is_entry: false, direction: "long"},
   {time: nowSec + 300, source: "actual", is_paper: true, is_entry: true, direction: "long"},
 ]);
-assert.equal(controller.markersForRender()[0].text, "⇠ EXIT", "Virtual exits must remain dashed and visibly labeled even without hypothetical flag");
+assert.equal(controller.markersForRender()[0].text, "⇩ EXIT", "Virtual long exits must remain outlined and visibly labeled even without hypothetical flag");
 assert.ok(controller.markersForRender().every(m => m.size === 0), "Paper worker fills must also be hollow");
 
 // Test 2: Verify forming candle timestamp filter logic across crypto-tab, lighter-crypto-tab, lighter-tab
@@ -66,9 +66,9 @@ assert.equal(oldBuggyCondition, false, "Old condition incorrectly dropped all fo
 
 // Paper markers remain hollow; P&L ranges use translucent profit/loss fills.
 assert.equal(paperMarker.size, 0, "Native paper shape must be hidden");
-assert.equal(paperMarker.text, "⇢ Paper Fill", "Paper entry uses a dashed arrow glyph");
-assert.equal(actualMarker.size, 0, "Native actual shape must be hidden in favor of the horizontal glyph");
-assert.equal(actualMarker.text, "→ Actual Fill", "Actual entry uses a stemmed right arrow");
+assert.equal(paperMarker.text, "⇩ Paper Fill", "Paper short entry uses an outlined down-arrow glyph");
+assert.equal(actualMarker.size, 2, "Actual fill must keep its native directional arrow");
+assert.equal(actualMarker.text, "Actual Fill", "Actual entry label accompanies the native arrow");
 const root = path.join(__dirname, "..");
 for (const file of ["lighter-tab.js", "crypto-tab.js", "lighter-crypto-tab.js"]) {
   const source = fs.readFileSync(path.join(root, file), "utf8");

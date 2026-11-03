@@ -97,9 +97,10 @@ on deployment, and never change live settings or place orders to verify this UI.
 
 # Trade marker and P&L triangle styles
 
-Paper, virtual, and backtest entry/exit markers use dashed-shaft arrows (⇢/⇠).
-Actual execution markers use solid-shaft arrows (→/←). Entries point right and
-exits point left; marker color follows buy/cover green and sell/short red. Custom
+Paper, virtual, and backtest markers use outlined double arrows (⇧/⇩). Actual
+execution markers use solid arrows (↑/↓). Buy and cover point up in green;
+sell and short point down in red. Entry versus exit is stated by the persistent
+marker label and hover detail rather than changing the action direction. Custom
 SVG markers keep an outlined arrowhead for paper/replay and a filled arrowhead
 for actual executions.
 P&L triangles have translucent green fills for profitable trades and translucent

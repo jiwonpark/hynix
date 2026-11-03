@@ -238,17 +238,15 @@
         return true;
       }).map((m) => {
         const isMatch = hoveredTime !== null && m.time === hoveredTime;
+        const isEntry = m.is_entry !== false;
         const isShort = m.direction
           ? m.direction === "short"
-          : (m.shape ? m.shape === "arrowDown" : (m.is_entry || m.color === "#dc2626"
+          : (m.shape ? (isEntry ? m.shape === "arrowDown" : m.shape === "arrowUp") : (m.is_entry || m.color === "#dc2626"
             || (typeof m.color === "string" && m.color.includes("220"))));
-        const isEntry = m.is_entry !== false;
         const isSell = isShort ? isEntry : !isEntry;
         const isPaper = Boolean(m.hypothetical || m.is_paper || m.backtest || m.source === "virtual");
         const dimAlpha = isPaper ? "0.72" : "0.90";
-        const shape = (m.shape && (m.shape === "arrowUp" || m.shape === "arrowDown" || m.shape === "circle" || m.shape === "square"))
-          ? m.shape
-          : (isSell ? "arrowDown" : "arrowUp");
+        const shape = isSell ? "arrowDown" : "arrowUp";
         const position = m.position || (isSell ? "aboveBar" : "belowBar");
         const groupedCount = Number(m.count) > 1
           ? Number(m.count)
@@ -259,9 +257,7 @@
         const label = isMatch && m.hoverText
           ? [persistentLabel, m.hoverText].filter(Boolean).join(" · ")
           : persistentLabel;
-        const markerGlyph = isPaper
-          ? (isEntry ? "⇢" : "⇠")
-          : (isEntry ? "→" : "←");
+        const markerGlyph = isPaper ? (isSell ? "⇩" : "⇧") : "";
         return {
           time: m.time,
           position,
@@ -269,10 +265,9 @@
           color: isMatch
             ? (isSell ? "#dc2626" : "#16a34a")
             : (isSell ? `rgba(220, 38, 38, ${dimAlpha})` : `rgba(22, 163, 74, ${dimAlpha})`),
-          // Lightweight Charts only provides vertical native arrows. Hide that
-          // shape and use true stemmed horizontal arrows: entries point right,
-          // exits point left, and replay arrows use a dashed shaft.
-          size: 0,
+          // Buy/cover points up and sell/short points down. Actual fills use the
+          // native arrow; paper/replay uses an outlined double-arrow glyph.
+          size: isPaper ? 0 : 2,
           text: [markerGlyph, label].filter(Boolean).join(" ")
         };
       });

@@ -188,7 +188,7 @@ class TestLighterTab(unittest.TestCase):
         self.assertIn("isShortTrade(marker)", script)
         self.assertIn("isTradeSell(marker)", script)
         self.assertIn('return this.isTradeSell(marker) ? "#dc2626" : "#16a34a"', script)
-        self.assertIn('return isEntry ? "→" : "←"', script)
+        self.assertIn('return isSell ? "↓" : "↑"', script)
         self.assertIn('overlay.style.borderColor = markerColor === "#dc2626"', script)
         self.assertIn('overlay.style.color = markerColor === "#dc2626"', script)
 

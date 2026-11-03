@@ -14,13 +14,17 @@ assert.match(executionChart, /EXIT\$\{groupedCount > 1 \? ` ×\$\{groupedCount\}
   "Tabs 2–5 must share persistent, grouped exit-marker labels");
 assert.match(executionChart, /const dimAlpha = isPaper \? "0\.72" : "0\.90"/,
   "Tabs 2–5 must share legible actual and replay marker contrast");
-assert.match(executionChart, /isPaper[\s\S]*\? \(isEntry \? "⇢" : "⇠"\)[\s\S]*: \(isEntry \? "→" : "←"\)/,
-  "Tab 2 must use the same stemmed entry and exit arrows as Tabs 3–5");
+assert.match(executionChart, /markerGlyph = isPaper \? \(isSell \? "⇩" : "⇧"\) : ""/,
+  "Tab 2 replay markers must preserve vertical buy/sell direction");
+assert.match(executionChart, /size: isPaper \? 0 : 2/,
+  "Tab 2 actual executions must retain prominent native vertical arrows");
 for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", lighterCrypto]]) {
-  assert.match(source, /return isEntry \? "→" : "←"/,
-    `${name} must expose true stemmed arrows instead of triangle glyphs`);
-  assert.match(source, /<line x1="11\.5" y1="5" x2="3\.5" y2="5"/,
-    `${name} exit marker must render a visible left-arrow shaft`);
+  assert.match(source, /return isSell \? "↓" : "↑"/,
+    `${name} must expose vertical arrows using trade action direction`);
+  assert.match(source, /<line x1="5" y1="0\.5" x2="5" y2="8\.5"/,
+    `${name} sell marker must render a visible down-arrow shaft`);
+  assert.match(source, /<line x1="5" y1="11\.5" x2="5" y2="3\.5"/,
+    `${name} buy marker must render a visible up-arrow shaft`);
 }
 
 assert.match(common, /Auto-entry direction:/, "single-leg tabs must use direction wording, not spread wording");
