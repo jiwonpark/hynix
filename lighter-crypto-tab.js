@@ -564,7 +564,7 @@
         title: "↕ MACD Histogram Zero-Cross Entry",
         desc: "Long when MACD-H crosses negative to positive while signal is negative; short on the exact inverse. Completed candles only.",
         tpTitle: "🎯 Opposite Zero Cross / Direction Flip",
-        tpDesc: "The opposite valid zero cross exits owned inventory and becomes the next directional entry signal.",
+        tpDesc: "The opposite histogram zero cross exits one owned tranche. Reverse entry must pass its own entry conditions.",
         entryLabels: {}, exitLabels: {}, researchLabels: {},
         defaultParams: { macd_fast_period: 12, macd_slow_period: 26, macd_signal_period: 9 }
       },
@@ -1806,7 +1806,7 @@
               <div style="${row}"><input id="lighterCrypto_macdZeroUseSignalZone" type="checkbox" style="${toggle}" ${checked("use_macd_signal_zone")}><span>Signal on origin side: &lt; 0 long; &gt; 0 short</span><span id="lighterCrypto_macdStatusSignalZone" class="condBadge neutral">WAITING</span></div>
             </div>
             <div style="display:grid;gap:8px;"><strong style="font-size:12px;">Exit / flip</strong>
-              <div style="${row}"><span>Opposite enabled pattern closes the held direction</span><span id="lighterCrypto_macdStatusExitCross" class="condBadge neutral">N/A</span></div>
+              <div style="${row}"><input id="lighterCrypto_macdZeroUseExitCross" type="checkbox" style="${toggle}" ${checked("use_macd_hist_exit")}><span>Exit long: histogram +→− · Exit short: −→+ (signal-line zone ignored)</span><span id="lighterCrypto_macdStatusExitCross" class="condBadge neutral">N/A</span></div>
               <div style="${row}"><span>No position, balance, capacity, or margin check can suppress chart entry signals</span></div>
             </div>
           </div>
@@ -2024,7 +2024,7 @@
         $("lighterCrypto_btnCrossReplay")?.addEventListener("click", () => this.runBacktest());
       } else if (mode === "macd_zero_cross") {
         $("lighterCrypto_btnMacdReplay")?.addEventListener("click", () => this.runBacktest());
-        ["lighterCrypto_macdZeroUseCross", "lighterCrypto_macdZeroUseSignalZone"].forEach((id) => {
+        ["lighterCrypto_macdZeroUseCross", "lighterCrypto_macdZeroUseSignalZone", "lighterCrypto_macdZeroUseExitCross"].forEach((id) => {
           const input = $(id);
           input?.addEventListener("change", () => {
             input.dataset.unsaved = "true";
@@ -2362,6 +2362,7 @@
         Object.assign(payload, this.macdSettings());
         payload.use_macd_zero_cross = $("lighterCrypto_macdZeroUseCross")?.checked !== false;
         payload.use_macd_signal_zone = $("lighterCrypto_macdZeroUseSignalZone")?.checked !== false;
+        payload.use_macd_hist_exit = $("lighterCrypto_macdZeroUseExitCross")?.checked !== false;
       } else if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         Object.assign(payload, this.macdSettings());
         Object.assign(payload, this.macroRegimeSettings());
@@ -3278,6 +3279,7 @@
         use_macd_hist_reversal_exit: $("lighterCrypto_macdUseExitReversal")?.checked !== false,
         use_macd_zero_cross: $("lighterCrypto_macdZeroUseCross")?.checked !== false,
         use_macd_signal_zone: $("lighterCrypto_macdZeroUseSignalZone")?.checked !== false,
+        use_macd_hist_exit: $("lighterCrypto_macdZeroUseExitCross")?.checked !== false,
         use_macd_strength: $("lighterCrypto_macdUseStrength")?.checked !== false,
         macd_strength_min_pct: numeric("lighterCrypto_macdStrengthPct", 30),
         use_macd_two_stage_exit: $("lighterCrypto_macdUseTwoStageExit")?.checked !== false,
@@ -3418,7 +3420,7 @@
         });
       }
       if (isParadigmMatch && currentMode === "macd_zero_cross") {
-        ["use_macd_zero_cross", "use_macd_signal_zone"].forEach((key) => {
+        ["use_macd_zero_cross", "use_macd_signal_zone", "use_macd_hist_exit"].forEach((key) => {
           if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? true)) diffs.push(`${key}: paper ≠ live`);
         });
       }
@@ -3612,7 +3614,7 @@
         const rows = [
           ["ZeroCross", "entry_histogram_zero_cross", "Completed histogram crossed zero in the candidate direction"],
           ["SignalZone", "entry_signal_zone", "Signal line remains on the origin side of zero"],
-          ["ExitCross", "exit_histogram_zero_cross", "Opposite enabled cross closes the held direction"],
+          ["ExitCross", "exit_histogram_zero_cross", "Exit long on +→−; exit short on −→+; signal zone and hourly filter do not gate exits"],
         ];
         rows.forEach(([id, key, detail]) => {
           const badge = $(`lighterCrypto_macdStatus${id}`);
@@ -3767,8 +3769,7 @@
       } : bot?.strategy_mode === "macd_zero_cross" ? {
         entry_histogram_zero_cross: "use_macd_zero_cross",
         entry_signal_zone: "use_macd_signal_zone",
-        exit_histogram_zero_cross: "use_macd_zero_cross",
-        exit_signal_zone: "use_macd_signal_zone",
+        exit_histogram_zero_cross: "use_macd_hist_exit",
       } : ["macd_reversal", "macd_strength_scaleout"].includes(bot?.strategy_mode) ? {
         entry_signal_zone: null,
         entry_histogram_zone: null,
@@ -3800,7 +3801,7 @@
         trend_pullback:["entry_macro_trend","entry_ma_stack_1h","entry_pullback","entry_micro_reversal","exit_target","exit_opposite_reversal","exit_trend_invalidation","exit_stop_or_dwell"],
         ma_acceleration:["entry_ma_slope","entry_ma_accel","entry_ma_pullback","entry_ma_stack_1h","exit_ma_cross"],
         golden_death_cross:["entry_golden_cross","entry_death_cross","entry_cross_spread","entry_ma_stack_1h","exit_cross","exit_dwell"],
-        macd_zero_cross:["entry_histogram_zero_cross","entry_signal_zone","exit_histogram_zero_cross","exit_signal_zone"],
+        macd_zero_cross:["entry_histogram_zero_cross","entry_signal_zone","exit_histogram_zero_cross"],
         macd_reversal:["entry_signal_zone","entry_histogram_zone","entry_histogram_reversal","entry_ma_stack_1h","exit_signal_zone","exit_histogram_zone","exit_histogram_reversal"],
         macd_strength_scaleout:["entry_signal_zone","entry_histogram_zone","entry_histogram_reversal","entry_ma_stack_1h","entry_strength","exit_signal_zone","exit_histogram_zone","exit_histogram_reversal"],
       };
@@ -4021,6 +4022,7 @@
           macd_signal_period: "lighterCrypto_macdSignalPeriod",
           use_macd_zero_cross: "lighterCrypto_macdZeroUseCross",
           use_macd_signal_zone: "lighterCrypto_macdZeroUseSignalZone",
+          use_macd_hist_exit: "lighterCrypto_macdZeroUseExitCross",
         };
         Object.entries(controls).forEach(([key, id]) => {
           const input = $(id);

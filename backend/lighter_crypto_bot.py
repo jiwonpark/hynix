@@ -66,7 +66,7 @@ DEFAULT_STATE = {
     "macd_fast_period": 12, "macd_slow_period": 26, "macd_signal_period": 9,
     "use_macd_signal_negative": True, "use_macd_hist_negative": True, "use_macd_hist_reversal": True,
     "use_macd_signal_positive": True, "use_macd_hist_positive": True, "use_macd_hist_reversal_exit": True,
-    "use_macd_zero_cross": True, "use_macd_signal_zone": True,
+    "use_macd_zero_cross": True, "use_macd_signal_zone": True, "use_macd_hist_exit": True,
     "use_macd_strength": True, "macd_strength_min_pct": 30.0,
     "use_macd_two_stage_exit": True, "macd_first_exit_pct": 50.0, "macd_exit_stage": 0,
     "long_multiplier": 1.0, "short_multiplier": 1.0, "entry_direction_mode": "two_way",
@@ -228,6 +228,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         result["blocked_reason"] = (self.state.get("blocked_reason") or self.state.get("last_error")) if result["execution_blocked"] else None
         result["can_execute_entry"] = bool(self.state.get("enabled") and not result["execution_blocked"])
         result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
+        result["strategy_params"]["use_macd_hist_exit"] = bool(self.state.get("use_macd_hist_exit", True))
         result["strategy_params"].update({key:self.state[key] for key in ("use_hourly_hist","hourly_hist_fast","hourly_hist_slow","hourly_hist_signal")})
         result["strategy_params"].update(use_take_profit=bool(self.state.get("use_take_profit", True)), take_profit_pct=float(self.state.get("take_profit_pct", 0.2)))
         return result
@@ -436,6 +437,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         permitted = {
+            "use_macd_hist_exit",
             "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal",
             "use_take_profit", "take_profit_pct",
             "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
@@ -475,6 +477,8 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 if isinstance(value,bool) or not float(value).is_integer():
                     raise ValueError("Hourly MACD periods must be integers")
                 candidate[key] = int(value)
+            elif key == "use_macd_hist_exit":
+                candidate[key] = bool(value)
             elif key == "use_hourly_hist":
                 candidate[key] = bool(value)
             elif key == "use_take_profit":
@@ -573,7 +577,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             raise ValueError("Hourly MACD slow period must exceed fast")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                ("use_macd_hist_exit", "use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",

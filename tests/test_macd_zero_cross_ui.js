@@ -28,6 +28,7 @@ function load(file, globalName, prefix, defaultMode) {
   nodes.set(`${prefix}macdSignalPeriod`, {value: "5"});
   nodes.set(`${prefix}macdZeroUseCross`, {checked: true});
   nodes.set(`${prefix}macdZeroUseSignalZone`, {checked: false});
+  nodes.set(`${prefix}macdZeroUseExitCross`, {checked: false, addEventListener() {}});
 
   nodes.set(`${prefix}useTakeProfit`, {checked: false});
   nodes.set(`${prefix}takeProfitPct`, {value: "0.35"});
@@ -49,6 +50,7 @@ function load(file, globalName, prefix, defaultMode) {
       [settings.macd_fast_period, settings.macd_slow_period, settings.macd_signal_period],
       [8, 21, 5],
     );
+    assert.equal(settings.use_macd_hist_exit, false);
     assert.equal(settings.use_macd_zero_cross, true);
     assert.equal(settings.use_macd_signal_zone, false);
   }
@@ -122,6 +124,7 @@ function load(file, globalName, prefix, defaultMode) {
   assert.match(html, /Completed candles only/);
   assert.match(html, /Histogram zero cross: −→\+ long; \+→− short/);
   assert.match(html, /Signal on origin side: &lt; 0 long; &gt; 0 short/);
+  assert.match(html, /Exit long: histogram \+→− · Exit short: −→\+ \(signal-line zone ignored\)/);
   assert.doesNotMatch(html, /Wider trend filters/);
 }
 

@@ -1979,6 +1979,7 @@ def _run_crypto_backtest_sync(
     use_macd_hist_reversal_exit: bool = True,
     use_macd_zero_cross: bool = True,
     use_macd_signal_zone: bool = True,
+    use_macd_hist_exit: bool = True,
     use_macd_strength: bool = True,
     macd_strength_min_pct: float = 30.0,
     use_macd_two_stage_exit: bool = True,
@@ -2209,7 +2210,7 @@ def _run_crypto_backtest_sync(
                 entry_signals.append({
                     "time": int(bar["time"]), "price": signal_price,
                     "side": int(candidate_side), "reason": strategy_mode,
-                    "conditions": dict(latest_conditions),
+                    "conditions": {key:value for key,value in latest_conditions.items() if key.startswith("entry_")},
                 })
                 # Spacing is based on prior entry signals, never open-position state.
                 last_entry_value, last_entry_side = signal_price, candidate_side
@@ -2320,7 +2321,7 @@ def _run_crypto_backtest_sync(
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
                     "side": int(candidate_side), "reason": "ma_stack",
-                    "conditions": dict(latest_conditions),
+                    "conditions": {key:value for key,value in latest_conditions.items() if key.startswith("entry_")},
                 })
 
             if position is None and entry_signal:
@@ -2417,7 +2418,7 @@ def _run_crypto_backtest_sync(
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
                     "side": int(candidate_side), "reason": "multi_factor",
-                    "conditions": dict(latest_conditions),
+                    "conditions": {key:value for key,value in latest_conditions.items() if key.startswith("entry_")},
                 })
 
             if position is None and entry_signal:
@@ -2508,7 +2509,7 @@ def _run_crypto_backtest_sync(
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
                     "side": 1 if buy_signal else -1, "reason": "trend_pullback",
-                    "conditions": dict(latest_conditions),
+                    "conditions": {key:value for key,value in latest_conditions.items() if key.startswith("entry_")},
                 })
 
             if position is None:
@@ -2642,7 +2643,7 @@ def _run_crypto_backtest_sync(
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
                     "side": int(candidate_side), "reason": "ma_acceleration",
-                    "conditions": dict(latest_conditions),
+                    "conditions": {key:value for key,value in latest_conditions.items() if key.startswith("entry_")},
                 })
             if position is None and entry_signal:
                 active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
@@ -2752,7 +2753,7 @@ def _run_crypto_backtest_sync(
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
                     "side": int(candidate_side), "reason": "golden_death_cross",
-                    "conditions": dict(latest_conditions),
+                    "conditions": {key:value for key,value in latest_conditions.items() if key.startswith("entry_")},
                 })
 
             # Check exit on open position
@@ -2815,7 +2816,7 @@ def _run_crypto_backtest_sync(
         extra_macd = ({"use_macd_strength": use_macd_strength, "macd_strength_min_pct": macd_strength_min_pct}
                       if strategy_mode == "macd_strength_scaleout" else {})
         macd_conditions = ({"use_macd_zero_cross": use_macd_zero_cross,
-                            "use_macd_signal_zone": use_macd_signal_zone}
+                            "use_macd_signal_zone": use_macd_signal_zone, "use_macd_hist_exit": use_macd_hist_exit}
                            if strategy_mode == "macd_zero_cross" else {
                                "use_macd_signal_negative": use_macd_signal_negative,
                                "use_macd_hist_negative": use_macd_hist_negative,
@@ -2898,7 +2899,7 @@ def _run_crypto_backtest_sync(
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
                     "side": int(candidate_side), "reason": strategy_mode,
-                    "conditions": dict(latest_conditions),
+                    "conditions": {key:value for key,value in latest_conditions.items() if key.startswith("entry_")},
                 })
             if position is not None and exit_signal:
                 current_pnl = position["side"] * (bar["value"] / position["entry"] - 1) * 100
@@ -3037,6 +3038,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_macd_hist_reversal: bool = True, use_macd_signal_positive: bool = True,
                               use_macd_hist_positive: bool = True, use_macd_hist_reversal_exit: bool = True,
                               use_macd_zero_cross: bool = True, use_macd_signal_zone: bool = True,
+                              use_macd_hist_exit: bool = True,
                               use_macd_strength: bool = True, macd_strength_min_pct: float = 30.0,
                               use_macd_two_stage_exit: bool = True, macd_first_exit_pct: float = 50.0,
                               base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
@@ -3151,7 +3153,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         use_macd_hist_positive=use_macd_hist_positive,
         use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
         use_macd_zero_cross=use_macd_zero_cross,
-        use_macd_signal_zone=use_macd_signal_zone,
+        use_macd_signal_zone=use_macd_signal_zone, use_macd_hist_exit=use_macd_hist_exit,
         use_macd_strength=use_macd_strength, macd_strength_min_pct=macd_strength_min_pct,
         use_macd_two_stage_exit=use_macd_two_stage_exit, macd_first_exit_pct=macd_first_exit_pct,
         base_spacing_pct=base_spacing_pct, min_dwell_bars=min_dwell_bars,

@@ -1308,6 +1308,7 @@ def evaluate_macd_zero_cross_signals(
     macd_signal_period: int = 9,
     use_macd_zero_cross: bool = True,
     use_macd_signal_zone: bool = True,
+    use_macd_hist_exit: bool = True,
     evaluation_time: Optional[int] = None,
     position_side: int = 0,
     entry_price: float = 0.0,
@@ -1318,8 +1319,8 @@ def evaluate_macd_zero_cross_signals(
 
     Negative-to-positive histogram with a negative signal line is bullish;
     positive-to-negative histogram with a positive signal line is bearish.
-    Entry evaluation is position-independent.  An opposite valid pattern exits
-    an open position and lets the caller perform a same-candle reversal.
+    Entry evaluation is position-independent. Exits use only the opposite histogram
+    cross, independently of entry switches, signal zone and hourly entry filters.
     """
     del entry_price, held_bars
     fast_w = max(2, int(macd_fast_period))
@@ -1359,8 +1360,8 @@ def evaluate_macd_zero_cross_signals(
     else:
         candidate_side = 1 if histogram >= 0.0 else -1
     entry_signal = long_pattern if candidate_side > 0 else short_pattern
-    exit_pattern = short_pattern if position_side > 0 else long_pattern
-    exit_signal = bool(position_side != 0 and exit_pattern)
+    exit_pattern = bearish_cross if position_side > 0 else bullish_cross
+    exit_signal = bool(use_macd_hist_exit and position_side != 0 and exit_pattern)
     evaluation = {
         "time": evaluation_time,
         "ratio": round(float(prices[-1]), 4),
@@ -1380,14 +1381,12 @@ def evaluate_macd_zero_cross_signals(
         "condition_enabled": {
             "entry_histogram_zero_cross": use_macd_zero_cross,
             "entry_signal_zone": use_macd_signal_zone,
-            "exit_histogram_zero_cross": use_macd_zero_cross,
-            "exit_signal_zone": use_macd_signal_zone,
+            "exit_histogram_zero_cross": use_macd_hist_exit,
         },
         "condition_pass": {
             "entry_histogram_zero_cross": bullish_cross if candidate_side > 0 else bearish_cross,
             "entry_signal_zone": signal_negative if candidate_side > 0 else signal_positive,
             "exit_histogram_zero_cross": (bearish_cross if position_side > 0 else bullish_cross) if position_side else None,
-            "exit_signal_zone": (signal_positive if position_side > 0 else signal_negative) if position_side else None,
         },
     }
     return bool(entry_signal), candidate_side, exit_signal, evaluation
@@ -1601,6 +1600,7 @@ def _evaluate_strategy_signal(
             macd_signal_period=int(config.get("macd_signal_period", 9)),
             use_macd_zero_cross=bool(config.get("use_macd_zero_cross", True)),
             use_macd_signal_zone=bool(config.get("use_macd_signal_zone", True)),
+            use_macd_hist_exit=bool(config.get("use_macd_hist_exit", True)),
             evaluation_time=evaluation_time,
             position_side=position_side,
             entry_price=entry_price,

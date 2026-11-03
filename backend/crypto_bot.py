@@ -65,7 +65,7 @@ DEFAULT_STATE = {
     "macd_fast_period": 12, "macd_slow_period": 26, "macd_signal_period": 9,
     "use_macd_signal_negative": True, "use_macd_hist_negative": True, "use_macd_hist_reversal": True,
     "use_macd_signal_positive": True, "use_macd_hist_positive": True, "use_macd_hist_reversal_exit": True,
-    "use_macd_zero_cross": True, "use_macd_signal_zone": True,
+    "use_macd_zero_cross": True, "use_macd_signal_zone": True, "use_macd_hist_exit": True,
     "long_multiplier": 1.0, "short_multiplier": 1.0, "entry_direction_mode": "two_way",
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
@@ -187,6 +187,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "use_ma_pullback": bool(self.state.get("use_ma_pullback", True)),
             "use_ma_cross_exit": bool(self.state.get("use_ma_cross_exit", True)),
         }
+        result["strategy_params"]["use_macd_hist_exit"] = bool(self.state.get("use_macd_hist_exit", True))
         result["strategy_params"].update({key:self.state[key] for key in ("use_hourly_hist","hourly_hist_fast","hourly_hist_slow","hourly_hist_signal")})
         result["strategy_params"].update(use_take_profit=bool(self.state.get("use_take_profit", True)), take_profit_pct=float(self.state.get("take_profit_pct", 0.2)))
         result["history_event_count"] = len(result["execution_history"])
@@ -390,6 +391,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         permitted = {
+            "use_macd_hist_exit",
             "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal",
             "use_take_profit", "take_profit_pct",
             "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
@@ -427,6 +429,8 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 if isinstance(value,bool) or not float(value).is_integer():
                     raise ValueError("Hourly MACD periods must be integers")
                 candidate[key] = int(value)
+            elif key == "use_macd_hist_exit":
+                candidate[key] = bool(value)
             elif key == "use_hourly_hist":
                 candidate[key] = bool(value)
             elif key == "use_take_profit":
@@ -510,7 +514,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             raise ValueError("Hourly MACD slow period must exceed fast")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                ("use_macd_hist_exit", "use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",

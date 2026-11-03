@@ -177,7 +177,7 @@ filter above. It has exactly two independently switchable completed-candle
 conditions: histogram zero cross (`−→+` for long, `+→−` for short) and signal
 line on the origin side (`< 0` for long, `> 0` for short). It exposes adjustable
 MACD fast, slow, and signal periods, but no macro/MA regime control. The opposite
-enabled pattern exits and flips direction. Replay entry markers come from the
+histogram cross exits one owned tranche; reverse entry must independently satisfy the entry pattern. Replay entry markers come from the
 position-independent `entry_signals` stream, while fills and exit verdicts may
 still depend on simulated or live position state.
 
@@ -250,3 +250,14 @@ mode. Missing hourly data blocks new entries without suppressing exits.
 The earlier MACD Zero Cross and Tab5 MA Stack exceptions bypass only the older
 MA/zone-based wider-trend gate; this separately labeled hourly histogram-slope
 filter applies to them as well.
+
+### MACD Zero Cross exits: histogram only
+
+For Tabs4/5, LONG exits on a completed histogram +→− cross; SHORT exits on −→+.
+Signal-line sign and hourly direction are entry-only and never gate this exit.
+The exit has an independent persisted `use_macd_hist_exit` switch (default ON),
+separate from entry's `use_macd_zero_cross` and `use_macd_signal_zone` switches.
+Show both directional exit labels and PASS/WAITING/OFF/N/A. Remove the old
+exit-signal-zone row. Replay and live use the same evaluator. Existing reduction
+sizing is unchanged (one owned LIFO tranche per signal), and reverse entries still
+require the full entry pattern and hourly gate. Existing take-profit stays active.
