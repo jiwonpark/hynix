@@ -46,6 +46,27 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.bars_patch.start()
         self.addCleanup(self.bars_patch.stop)
 
+    def test_entry_setups_are_exact_directional_mirrors(self):
+        common = dict(
+            mean=140.0, sigma=0.2,
+            latest_by_direction={'SHORT_SPREAD': None, 'LONG_SPREAD': None},
+            last_exit_by_direction={'SHORT_SPREAD': None, 'LONG_SPREAD': None},
+            campaign_count=0, direction_mode='two_way', campaign_direction=None,
+            peaking=True, troughing=True,
+            ma_5m={'upward': True, 'downward': True},
+            ma_1h={'upward': True, 'downward': True},
+        )
+        high = server.symmetric_entry_setups(current=140.30, **common)
+        low = server.symmetric_entry_setups(current=139.70, **common)
+        self.assertTrue(high['SHORT_SPREAD']['threshold_pass'])
+        self.assertFalse(high['LONG_SPREAD']['threshold_pass'])
+        self.assertTrue(low['LONG_SPREAD']['threshold_pass'])
+        self.assertFalse(low['SHORT_SPREAD']['threshold_pass'])
+        self.assertEqual(high['SHORT_SPREAD']['trigger'] - common['mean'],
+                         common['mean'] - low['LONG_SPREAD']['trigger'])
+        self.assertAlmostEqual(high['SHORT_SPREAD']['stretch_pts'],
+                               low['LONG_SPREAD']['stretch_pts'])
+
     async def test_public_hedged_status_coalesces_concurrent_polls(self):
         server._hedged_status_task = None
         server._hedged_status_cache = None
@@ -815,6 +836,48 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pair['entry_policy'], {**size_policy(policy, 190, 5.6, REFERENCE_RULES), 'spread_direction': 'SHORT_SPREAD'})
         self.assertEqual(pair['entry_spread'], 140)
         self.assertEqual(pair['adr_quantity'], .09)
+
+    async def test_long_spread_entry_uses_mirrored_sides_and_persists_direction(self):
+        policy = policy_for_level(0)
+        status = {'authenticated': True, 'tranches_active': 0, 'auto_tranche_criteria': {
+            'tranches_max': 10, 'current_spread': 130, 'macro_policy': policy,
+            'campaign_direction': None}}
+        self.client.create_order.side_effect = [
+            {'status': 'FILLED', 'executedQty': '.06', 'orderId': 601},
+            {'status': 'FILLED', 'executedQty': '1.02', 'orderId': 602}]
+        with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
+            result = await server.step_tranche({'direction': 'LONG_SPREAD'})
+        self.assertTrue(result['success'])
+        self.assertEqual(self.client.create_order.await_args_list, [
+            call('SKHYUSDT', 'BUY', .06, 'MARKET'),
+            call('CSOPSKHYNIX2LUSDT', 'SELL', 1.02, 'MARKET')])
+        pair = server.load_auto_tranche_state()['entry_order_pairs'][0]
+        self.assertEqual(pair['spread_direction'], 'LONG_SPREAD')
+        self.assertEqual(pair['entry_policy']['spread_direction'], 'LONG_SPREAD')
+        self.assertEqual(pair['entry_policy']['adr_entry_qty'], pair['entry_policy']['adr_exit_qty'])
+        self.assertEqual(pair['entry_policy']['stock_entry_qty'], pair['entry_policy']['stock_exit_qty'])
+
+    async def test_long_spread_exit_uses_opposite_reduce_only_sides(self):
+        positions = [
+            {'symbol': 'SKHYUSDT', 'position_amt': .06},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': -1.02}]
+        status = {'authenticated': True, 'adr_position': positions[0],
+                  'stock_position': positions[1], 'auto_tranche_criteria': {
+                      'can_take_profit': True,
+                      'current_target_tranche': {'spread_direction': 'LONG_SPREAD'},
+                      'exit_policy': {'adr_exit_qty': .06, 'stock_exit_qty': 1.02}}}
+        self.client.create_order.side_effect = [
+            {'status': 'FILLED', 'executedQty': '.06', 'orderId': 701},
+            {'status': 'FILLED', 'executedQty': '1.02', 'orderId': 702}]
+        with patch.object(server, 'get_hedged_status', AsyncMock(return_value=status)):
+            result = await server.reduce_tranche()
+        self.assertTrue(result['success'])
+        self.assertEqual(self.client.create_order.await_args_list, [
+            call('SKHYUSDT', 'SELL', .06, 'MARKET', reduce_only=True),
+            call('CSOPSKHYNIX2LUSDT', 'BUY', 1.02, 'MARKET', reduce_only=True)])
+        self.assertEqual(
+            server.load_auto_tranche_state()['exit_order_pairs'][0]['spread_direction'],
+            'LONG_SPREAD')
 
     async def test_boosted_entry_margin_is_checked_for_the_full_larger_size(self):
         self.client.get_detailed_account_overview.return_value['summary'] = {

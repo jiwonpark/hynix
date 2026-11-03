@@ -30,6 +30,7 @@ from .tranche_accounting import (
     infer_exit_pairs,
     entry_profiles,
     reconstruct_leg_stack,
+    reconstruct_recorded_pair_stack,
     prepare_exit_context,
     summarize_verified_exit_pairs,
 )
@@ -90,6 +91,46 @@ ENTRY_COOLDOWN_MIN_SEC = 30
 ENTRY_COOLDOWN_MAX_SEC = 86400
 ENTRY_MAX_PER_HOUR_MAX = 100
 ENTRY_MAX_CAMPAIGN_MAX = 1000
+
+
+def symmetric_entry_setups(
+    *, current: float, mean: float, sigma: float,
+    latest_by_direction: Dict[str, Optional[float]],
+    last_exit_by_direction: Dict[str, Optional[float]], campaign_count: int,
+    direction_mode: str, campaign_direction: Optional[str],
+    peaking: bool, troughing: bool, ma_5m: Dict[str, Any], ma_1h: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    """Build mirrored completed-candle entry setups for both spread directions."""
+    upper_floor = mean + max(ENTRY_MIN_MA_STRETCH_PTS, 1.25 * sigma)
+    lower_floor = mean - max(ENTRY_MIN_MA_STRETCH_PTS, 1.25 * sigma)
+    setups: Dict[str, Dict[str, Any]] = {}
+    for direction, sign in (("SHORT_SPREAD", 1), ("LONG_SPREAD", -1)):
+        latest = latest_by_direction.get(direction)
+        last_exit = last_exit_by_direction.get(direction)
+        if campaign_count <= 0:
+            reset = (last_exit + sign * ENTRY_REENTRY_RESET_PTS
+                     if last_exit is not None else (upper_floor if sign > 0 else lower_floor))
+        else:
+            reset = ((latest if latest is not None else mean) + sign * ENTRY_MIN_SPACING_PTS)
+        trigger = max(upper_floor, reset) if sign > 0 else min(lower_floor, reset)
+        stretch = (current - mean) * sign
+        threshold_pass = current >= trigger if sign > 0 else current <= trigger
+        rollover_pass = peaking if sign > 0 else troughing
+        ma5_pass = bool(ma_5m.get("upward" if sign > 0 else "downward"))
+        ma1_pass = bool(ma_1h.get("upward" if sign > 0 else "downward"))
+        mode_allowed = direction_mode == "two_way" or direction_mode == (
+            "short_only" if sign > 0 else "long_only")
+        campaign_allowed = campaign_direction in (None, direction)
+        setups[direction] = {
+            "direction": direction, "trigger": round(trigger, 2),
+            "gap_to_trigger": round((trigger - current) * sign, 2),
+            "stretch_pts": round(stretch, 2),
+            "stretch_pass": stretch >= ENTRY_MIN_MA_STRETCH_PTS,
+            "threshold_pass": threshold_pass, "rollover_pass": rollover_pass,
+            "ma_5m_pass": ma5_pass, "ma_1h_pass": ma1_pass,
+            "mode_allowed": mode_allowed, "campaign_allowed": campaign_allowed,
+        }
+    return setups
 
 
 def entry_pacing(state: Dict[str, Any]) -> Dict[str, int]:
@@ -3565,8 +3606,9 @@ def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs, entry_pa
         executions, stock_symbol, exit_pairs, entry_pairs)
     verified_legs = {}
     for item in summary["verified_exits"]:
-        verified_legs[("SKHYUSDT", item["adr_order_id"], "BUY")] = (item, False)
-        verified_legs[(stock_symbol, item["stock_order_id"], "SELL")] = (item, True)
+        is_long = item.get("spread_direction") == "LONG_SPREAD"
+        verified_legs[("SKHYUSDT", item["adr_order_id"], "SELL" if is_long else "BUY")] = (item, False)
+        verified_legs[(stock_symbol, item["stock_order_id"], "BUY" if is_long else "SELL")] = (item, True)
     entry_legs = {}
     if isinstance(entry_pairs, list):
         for entry_index, pair in enumerate(entry_pairs):
@@ -3586,11 +3628,18 @@ def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs, entry_pa
             (execution["symbol"], str(execution["order_id"]), execution["side"]))
         if verified:
             item, pair_anchor = verified
+            spread_direction = item.get("spread_direction", "SHORT_SPREAD")
             execution["pnl_authoritative"] = True
             execution["pnl_source"] = "BINANCE_USER_TRADES"
             execution["verified_exit_leg"] = True
             execution["verified_exit_pair_index"] = item["recorded_pair_index"]
             execution["verified_exit_pair_anchor"] = pair_anchor
+            execution["spread_direction"] = spread_direction
+            execution["action_type"] = (
+                "EXIT_LONG" if execution["symbol"] == "SKHYUSDT" else "EXIT_SHORT"
+            ) if spread_direction == "LONG_SPREAD" else (
+                "EXIT_SHORT" if execution["symbol"] == "SKHYUSDT" else "EXIT_LONG"
+            )
             execution["verified_exit_pair_realized_after_exit_fees_usd"] = item[
                 "realized_after_exit_fees_usd"]
             if item.get("virtual_lifo_after_commissions_usd") is not None:
@@ -3614,6 +3663,12 @@ def _build_verified_exit_snapshot(executions, stock_symbol, exit_pairs, entry_pa
                 execution["signal_version"] = pair["signal_version"]
             if pair.get("spread_direction") is not None:
                 execution["spread_direction"] = pair["spread_direction"]
+            spread_direction = pair.get("spread_direction", "SHORT_SPREAD")
+            execution["action_type"] = (
+                "ENTRY_LONG" if execution["symbol"] == "SKHYUSDT" else "ENTRY_SHORT"
+            ) if spread_direction == "LONG_SPREAD" else (
+                "ENTRY_SHORT" if execution["symbol"] == "SKHYUSDT" else "ENTRY_LONG"
+            )
     return {"verified_exit_summary": summary, "recent_executions": executions}
 
 
@@ -4012,6 +4067,9 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             # A real crest transition on completed candles, not a condition that
             # remains true throughout a long decline.
             is_peaking_out = bool(prev_val >= prev2_val and last_val < prev_val)
+            # Exact mirror for long-spread entries: a completed-candle trough
+            # transition after parity has stretched below its rolling mean.
+            is_troughing_out = bool(prev_val <= prev2_val and last_val > prev_val)
             # Conservative Scale-Out: Bottoming-out occurs when downward cascade stops / bounces
             # (last_val >= prev_val or last_val > local_low_3) OR spread has fully pierced 24-MA (last_val <= ma24)
             is_bottoming_out = bool(last_val >= prev_val or last_val > local_low_3 or last_val <= ma24)
@@ -4019,6 +4077,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         else:
             ma24 = base_entry
             is_peaking_out = True
+            is_troughing_out = True
             is_bottoming_out = True
             spread_velocity = 0.0
 
@@ -4027,20 +4086,23 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         entry_pairs = auto_state.get("entry_order_pairs", [])
         orders = aggregate_orders(executions)
         profiles = entry_profiles(orders, stock_sym, entry_pairs)
-        adr_entry_orders = {o["order_id"]: o for o in orders
-                            if o["symbol"] == "SKHYUSDT" and o["side"] == "SELL"}
-        stock_entry_orders = {o["order_id"]: o for o in orders
-                              if o["symbol"] == "CSOPSKHYNIX2LUSDT" and o["side"] == "BUY"}
-        latest_recorded_entry = None
-        if entry_pairs:
-            last_pair = entry_pairs[-1]
-            adr_order = adr_entry_orders.get(str(last_pair.get("adr_order_id")))
-            stock_order = stock_entry_orders.get(str(last_pair.get("stock_order_id")))
+        order_index = {(o["symbol"], str(o["order_id"]), o["side"]): o for o in orders}
+        latest_by_direction: Dict[str, Optional[float]] = {
+            "SHORT_SPREAD": None, "LONG_SPREAD": None,
+        }
+        for pair in entry_pairs:
+            direction = str(pair.get("spread_direction") or "SHORT_SPREAD")
+            adr_side = "SELL" if direction == "SHORT_SPREAD" else "BUY"
+            stock_side = "BUY" if direction == "SHORT_SPREAD" else "SELL"
+            adr_order = order_index.get(("SKHYUSDT", str(pair.get("adr_order_id")), adr_side))
+            stock_order = order_index.get((stock_sym, str(pair.get("stock_order_id")), stock_side))
+            recorded_spread = pair.get("entry_spread")
             if adr_order and stock_order and adr_order["qty"] > 0 and stock_order["qty"] > 0:
-                latest_recorded_entry = nominal_premium(
+                recorded_spread = nominal_premium(
                     adr_order["cost"] / adr_order["qty"], stock_order["cost"] / stock_order["qty"])
-            elif last_pair.get("signal_version") == SIGNAL_VERSION:
-                latest_recorded_entry = last_pair.get("entry_spread")
+            if recorded_spread is not None:
+                latest_by_direction[direction] = float(recorded_spread)
+        latest_recorded_entry = latest_by_direction.get("SHORT_SPREAD")
         campaign_count = int(auto_state.get(
             "entries_since_last_exit", min(len(entry_pairs), entry_max_campaign)))
         recent_entry_times = [
@@ -4054,24 +4116,27 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             if rolling_values else 0.0
         )
         rolling_sigma = math.sqrt(rolling_variance)
-        adaptive_floor = rolling_mean + max(
-            ENTRY_MIN_MA_STRETCH_PTS, 1.25 * rolling_sigma)
-        last_exit_spread = (auto_state.get("last_exit_spread")
+        adaptive_floor = rolling_mean + max(ENTRY_MIN_MA_STRETCH_PTS, 1.25 * rolling_sigma)
+        adaptive_ceiling = rolling_mean - max(ENTRY_MIN_MA_STRETCH_PTS, 1.25 * rolling_sigma)
+        legacy_last_exit = (auto_state.get("last_exit_spread")
                             if auto_state.get("last_exit_signal_version") == SIGNAL_VERSION else None)
-        if campaign_count <= 0:
-            scale_in_trigger = max(
-                adaptive_floor,
-                float(last_exit_spread) + ENTRY_REENTRY_RESET_PTS
-                if last_exit_spread is not None else adaptive_floor,
-            )
-        else:
-            scale_in_trigger = max(
-                adaptive_floor,
-                (latest_recorded_entry if latest_recorded_entry is not None else base_entry)
-                + ENTRY_MIN_SPACING_PTS,
-            )
-        scale_in_trigger = round(scale_in_trigger, 2)
-        is_above_entry = bool(curr_spread >= scale_in_trigger)
+        last_exit_by_direction = {
+            "SHORT_SPREAD": auto_state.get("last_exit_spread_short", legacy_last_exit),
+            "LONG_SPREAD": auto_state.get("last_exit_spread_long"),
+        }
+        campaign_direction = (
+            "SHORT_SPREAD" if adr_amt < 0 and stock_amt > 0 else
+            "LONG_SPREAD" if adr_amt > 0 and stock_amt < 0 else
+            None if abs(adr_amt) < 1e-8 and abs(stock_amt) < 1e-8 else "POSITION_MISMATCH"
+        )
+        directional_setups = symmetric_entry_setups(
+            current=curr_spread, mean=rolling_mean, sigma=rolling_sigma,
+            latest_by_direction=latest_by_direction,
+            last_exit_by_direction=last_exit_by_direction,
+            campaign_count=campaign_count, direction_mode=spread_direction_mode,
+            campaign_direction=campaign_direction, peaking=is_peaking_out,
+            troughing=is_troughing_out, ma_5m=entry_alignment_5m, ma_1h=entry_alignment_1h,
+        )
         is_new_closed_entry_bar = bool(
             signal_bar_time is not None
             and signal_bar_time > float(auto_state.get("last_entry_bar_time", 0)))
@@ -4080,19 +4145,42 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         has_entry_cooldown_elapsed = entry_cooldown_remaining_sec <= 0
         has_entry_rate_capacity = len(recent_entry_times) < entry_max_per_hour
         has_entry_campaign_capacity = campaign_count < entry_max_campaign
-        eff_stretched = is_stretched_above_ma if is_cond_enabled("entry_ma_stretch") else True
-        eff_above_entry = is_above_entry if is_cond_enabled("entry_base_spread") else True
-        eff_peaking_out = is_peaking_out if is_cond_enabled("entry_peak_rollover") else True
-        eff_entry_ma_5m = is_entry_ma_aligned_5m if is_cond_enabled("entry_ma_stack_5m") else True
-        eff_entry_ma_1h = is_entry_ma_aligned_1h if is_cond_enabled("entry_ma_stack_1h") else True
         eff_closed_bar = is_new_closed_entry_bar if is_cond_enabled("entry_closed_bar") else True
         eff_rate_limit = has_entry_rate_capacity if is_cond_enabled("entry_rate_limit") else True
         eff_campaign_cap = has_entry_campaign_capacity if is_cond_enabled("entry_campaign_cap") else True
         eff_cooldown = has_entry_cooldown_elapsed if is_cond_enabled("entry_adaptive_guard") else True
-        scale_in_setup = bool(
-            eff_stretched and eff_above_entry and eff_peaking_out
-            and eff_entry_ma_5m and eff_entry_ma_1h
-            and eff_closed_bar and eff_cooldown and eff_rate_limit and eff_campaign_cap)
+        def direction_setup_passes(setup: Dict[str, Any]) -> bool:
+            return bool(
+                setup["mode_allowed"] and setup["campaign_allowed"]
+                and (setup["stretch_pass"] if is_cond_enabled("entry_ma_stretch") else True)
+                and (setup["threshold_pass"] if is_cond_enabled("entry_base_spread") else True)
+                and (setup["rollover_pass"] if is_cond_enabled("entry_peak_rollover") else True)
+                and (setup["ma_5m_pass"] if is_cond_enabled("entry_ma_stack_5m") else True)
+                and (setup["ma_1h_pass"] if is_cond_enabled("entry_ma_stack_1h") else True)
+                and eff_closed_bar and eff_cooldown and eff_rate_limit and eff_campaign_cap)
+
+        passing_directions = [direction for direction in ("SHORT_SPREAD", "LONG_SPREAD")
+                              if direction_setup_passes(directional_setups[direction])]
+        entry_signal_direction = passing_directions[0] if len(passing_directions) == 1 else (
+            "SHORT_SPREAD" if len(passing_directions) > 1 and curr_spread > rolling_mean else
+            "LONG_SPREAD" if len(passing_directions) > 1 and curr_spread < rolling_mean else None
+        )
+        display_direction = entry_signal_direction or (
+            campaign_direction if campaign_direction in directional_setups else
+            ("LONG_SPREAD" if spread_direction_mode == "long_only" else "SHORT_SPREAD")
+        )
+        selected_entry_setup = directional_setups[display_direction]
+        scale_in_trigger = selected_entry_setup["trigger"]
+        is_above_entry = selected_entry_setup["threshold_pass"]
+        ma_stretch_pts = selected_entry_setup["stretch_pts"]
+        is_stretched_above_ma = selected_entry_setup["stretch_pass"]
+        is_peaking_out = selected_entry_setup["rollover_pass"]
+        is_entry_ma_aligned_5m = selected_entry_setup["ma_5m_pass"]
+        is_entry_ma_aligned_1h = selected_entry_setup["ma_1h_pass"]
+        is_entry_ma_aligned = bool(is_entry_ma_aligned_5m and is_entry_ma_aligned_1h)
+        entry_adr_qty = macro.get("long_adr_qty", entry_adr_qty) if display_direction == "LONG_SPREAD" else macro.get("short_adr_qty", entry_adr_qty)
+        entry_stock_qty = macro.get("long_stock_qty", entry_stock_qty) if display_direction == "LONG_SPREAD" else macro.get("short_stock_qty", entry_stock_qty)
+        scale_in_setup = entry_signal_direction is not None
         scale_in_armed = bool(can_scale_in and scale_in_setup)
         scale_in_blocked_reason = (
             "POSITION_CAPACITY" if not has_scale_in_capacity
@@ -4104,11 +4192,18 @@ async def _compute_hedged_status() -> Dict[str, Any]:
 
         # Larger adaptive entries are one fixed exit unit plus retained core.
         # Restore their policy from recorded pairs or recognized paired fill sizes.
-        adr_stack = reconstruct_leg_stack(orders, "SKHYUSDT", "SELL", .08, .07, profiles)
+        if campaign_direction == "LONG_SPREAD":
+            adr_stack = reconstruct_recorded_pair_stack(
+                orders, stock_sym, entry_pairs, auto_state.get("exit_order_pairs", []), "LONG_SPREAD")
+        else:
+            adr_stack = reconstruct_leg_stack(orders, "SKHYUSDT", "SELL", .08, .07, profiles)
+        stock_entry_orders = {o["order_id"]: o for o in orders
+                              if o["symbol"] == stock_sym and o["side"] == (
+                                  "SELL" if campaign_direction == "LONG_SPREAD" else "BUY")}
         for item in adr_stack:
             tr = item["order"]
             profile = profiles.get(tr["order_id"], {})
-            policy = profile.get("policy", policy_for_level())
+            policy = item.get("policy") or profile.get("policy", policy_for_level())
             t_sec = tr["time"] / 1000
             matched_bar = min(parity_bars, key=lambda b: abs(b["time"] - t_sec)) if parity_bars else None
             stock_order = stock_entry_orders.get(str(profile.get("stock_order_id")))
@@ -4119,9 +4214,11 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             active_tranches_queue.append({
                 "trade_id": tr["order_id"], "time": t_sec,
                 "qty": item["qty"], "stock_qty": policy["stock_entry_qty"],
-                "trim_qty": item["trim_qty"], "entry_spread": round(bar_spread, 2),
+                "trim_qty": item["trim_qty"], "stock_trim_qty": item.get("stock_trim_qty", policy["stock_exit_qty"]),
+                "entry_spread": round(bar_spread, 2),
                 "entry_price": tr["cost"] / tr["qty"], "exit_policy": policy,
-                "target_out_spread": round(bar_spread - policy["convergence_pts"], 2),
+                "spread_direction": campaign_direction if campaign_direction in {"SHORT_SPREAD", "LONG_SPREAD"} else "SHORT_SPREAD",
+                "target_out_spread": round(bar_spread + (policy["convergence_pts"] if campaign_direction == "LONG_SPREAD" else -policy["convergence_pts"]), 2),
             })
 
         # 1-to-1 Entry-to-Exit Matching Invariant:
@@ -4206,26 +4303,38 @@ async def _compute_hedged_status() -> Dict[str, Any]:
 
         exit_policy = current_target_tranche["exit_policy"] if current_target_tranche else macro
         exit_adr_qty, exit_stock_qty = exit_policy["adr_exit_qty"], exit_policy["stock_exit_qty"]
-        if exit_policy["require_confirmed_rebound"]:
+        target_direction = (current_target_tranche or {}).get("spread_direction", campaign_direction or "SHORT_SPREAD")
+        if exit_policy["require_confirmed_rebound"] and target_direction == "SHORT_SPREAD":
             is_bottoming_out = confirmed_rebound(closed_values(parity_bars, 300, now_sec, 3))
+        exit_turn_pass = is_bottoming_out if target_direction == "SHORT_SPREAD" else is_peaking_out
 
         tranche_profit = estimate_tranche_exit(
             current_target_tranche, executions, adr_mark, stock_mark, stock_sym,
             auto_state.get("entry_order_pairs", []), now_sec, context=exit_context)
         eligible_for_take_profit = bool(tranche_profit["profitable"])
 
-        is_out_profitable_relative_to_latest = bool(current_target_tranche and curr_spread <= out_target_spread)
+        is_out_profitable_relative_to_latest = bool(
+            current_target_tranche and (
+                curr_spread <= out_target_spread if target_direction == "SHORT_SPREAD"
+                else curr_spread >= out_target_spread))
         is_dwell_satisfied = bool(current_target_tranche and dwell_time_sec >= 120)
 
         eff_spec_tranche = (speculative_tranches_active > 0 and current_target_tranche and current_target_tranche.get("trim_qty", 0) + 1e-8 >= exit_adr_qty) if is_cond_enabled("exit_speculative_tranche") else True
         eff_profitable = eligible_for_take_profit if is_cond_enabled("exit_net_profit") else True
         eff_convergence = is_out_profitable_relative_to_latest if is_cond_enabled("exit_convergence") else True
         eff_dwell = is_dwell_satisfied if is_cond_enabled("exit_dwell_time") else True
-        eff_bottoming = is_bottoming_out if is_cond_enabled("exit_bottoming_out") else True
-        eff_exit_ma_5m = is_exit_ma_aligned_5m if is_cond_enabled("exit_ma_stack_5m") else True
-        eff_exit_ma_1h = is_exit_ma_aligned_1h if is_cond_enabled("exit_ma_stack_1h") else True
+        eff_bottoming = exit_turn_pass if is_cond_enabled("exit_bottoming_out") else True
+        exit_ma_5m_pass = (is_exit_ma_aligned_5m if target_direction == "SHORT_SPREAD"
+                           else bool(exit_alignment_5m.get("upward")))
+        exit_ma_1h_pass = (is_exit_ma_aligned_1h if target_direction == "SHORT_SPREAD"
+                           else bool(exit_alignment_1h.get("upward")))
+        eff_exit_ma_5m = exit_ma_5m_pass if is_cond_enabled("exit_ma_stack_5m") else True
+        eff_exit_ma_1h = exit_ma_1h_pass if is_cond_enabled("exit_ma_stack_1h") else True
         eff_ma_aligned = bool(eff_exit_ma_5m and eff_exit_ma_1h)
-        eff_pos_qty = (adr_qty + 1e-8 >= exit_adr_qty and stock_qty + 1e-8 >= exit_stock_qty and adr_amt < 0 and stock_amt > 0) if is_cond_enabled("exit_position_qty") else True
+        position_direction_ok = ((adr_amt < 0 and stock_amt > 0) if target_direction == "SHORT_SPREAD"
+                                 else (adr_amt > 0 and stock_amt < 0))
+        eff_pos_qty = (adr_qty + 1e-8 >= exit_adr_qty and stock_qty + 1e-8 >= exit_stock_qty
+                       and position_direction_ok) if is_cond_enabled("exit_position_qty") else True
         eff_no_recovery = not auto_state.get("execution_recovery")
 
         can_take_profit = bool(
@@ -4241,14 +4350,14 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         )
 
         status_scale_in = "SIZING_UNAVAILABLE" if not macro["sizing_available"] else (
-            "PEAK_REVERSAL_ARMED" if scale_in_armed
+            f"{entry_signal_direction or display_direction}_REVERSAL_ARMED" if scale_in_armed
             else ("MAX_CAPACITY" if not can_scale_in
             else ("ENTRY_CAMPAIGN_CAP" if (is_cond_enabled("entry_campaign_cap") and not has_entry_campaign_capacity)
             else ("ENTRY_RATE_LIMIT" if (is_cond_enabled("entry_rate_limit") and not has_entry_rate_capacity)
             else ("WAITING_NEW_5M_CLOSE" if (is_cond_enabled("entry_closed_bar") and not is_new_closed_entry_bar)
             else ("AWAITING_MA_STRETCH" if (is_cond_enabled("entry_ma_stretch") and not is_stretched_above_ma)
-            else ("AWAITING_UPWARD_MA_STACK" if not (eff_entry_ma_5m and eff_entry_ma_1h)
-            else ("WAITING_PEAK_EXHAUSTION" if (is_cond_enabled("entry_peak_rollover") and not is_peaking_out)
+            else ("AWAITING_DIRECTIONAL_MA_STACK" if not (selected_entry_setup["ma_5m_pass"] and selected_entry_setup["ma_1h_pass"])
+            else ("WAITING_DIRECTIONAL_REVERSAL" if (is_cond_enabled("entry_peak_rollover") and not selected_entry_setup["rollover_pass"])
             else "WAITING_DIVERGENCE")))))))
         )
 
@@ -4265,13 +4374,18 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         elif not eff_dwell:
             status_take_profit = f"ANTI_CHURN_DWELL ({max(0, 120-dwell_time_sec)}s)"
         elif not eff_convergence:
-            status_take_profit = f"ANTI_CHURN_WAITING_CONVERGENCE (Target <={out_target_spread}%)"
+            comparator = "<=" if target_direction == "SHORT_SPREAD" else ">="
+            status_take_profit = f"ANTI_CHURN_WAITING_CONVERGENCE (Target {comparator}{out_target_spread}%)"
         elif not eff_ma_aligned:
             missing_ma = ((is_cond_enabled("exit_ma_stack_5m") and not exit_alignment_5m["ready"])
                           or (is_cond_enabled("exit_ma_stack_1h") and not exit_alignment_1h["ready"]))
-            status_take_profit = "AWAITING_MA_HISTORY" if missing_ma else "AWAITING_DOWNWARD_MA_STACK"
+            status_take_profit = ("AWAITING_MA_HISTORY" if missing_ma else
+                                  "AWAITING_UPWARD_MA_STACK" if target_direction == "LONG_SPREAD"
+                                  else "AWAITING_DOWNWARD_MA_STACK")
         elif not eff_bottoming:
-            status_take_profit = "RIDING_CONVERGENCE (Awaiting Trough Rebound / MA Touch)"
+            status_take_profit = ("RIDING_CONVERGENCE (Awaiting Peak Rollover)"
+                                  if target_direction == "LONG_SPREAD"
+                                  else "RIDING_CONVERGENCE (Awaiting Trough Rebound / MA Touch)")
         else:
             status_take_profit = "TRIM_READY"
 
@@ -4291,7 +4405,12 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             "ma_stretch_pts": ma_stretch_pts,
             "is_stretched_above_ma": is_stretched_above_ma,
             "is_peaking_out": is_peaking_out,
-            "is_bottoming_out": is_bottoming_out,
+            "is_troughing_out": is_troughing_out,
+            "entry_signal_direction": entry_signal_direction,
+            "entry_display_direction": display_direction,
+            "campaign_direction": campaign_direction,
+            "directional_entry_setups": directional_setups,
+            "is_bottoming_out": exit_turn_pass,
             "entry_ma_alignment_5m": entry_alignment_5m,
             "entry_ma_alignment_1h": entry_alignment_1h,
             "is_entry_ma_aligned_5m": is_entry_ma_aligned_5m,
@@ -4304,16 +4423,21 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             "is_exit_ma_aligned_5m": is_exit_ma_aligned_5m,
             "is_exit_ma_aligned_1h": is_exit_ma_aligned_1h,
             "is_exit_ma_aligned": is_exit_ma_aligned,
+            "exit_direction": target_direction,
+            "exit_turn_pass": exit_turn_pass,
+            "exit_ma_5m_pass": exit_ma_5m_pass,
+            "exit_ma_1h_pass": exit_ma_1h_pass,
             "spread_velocity_1bar": spread_velocity,
             "scale_in_trigger_spread": scale_in_trigger,
-            "gap_to_scale_in_pts": round(scale_in_trigger - curr_spread, 2),
+            "gap_to_scale_in_pts": selected_entry_setup["gap_to_trigger"],
             "scale_in_threshold_pts": 0.10,
             "entry_strategy_version": "guarded-entry-v2",
             "entry_strategy_new": True,
             "adaptive_entry_floor": round(adaptive_floor, 2),
+            "adaptive_entry_ceiling": round(adaptive_ceiling, 2),
             "rolling_entry_sigma": round(rolling_sigma, 4),
             "latest_recorded_entry_spread": round(latest_recorded_entry, 2) if latest_recorded_entry is not None else None,
-            "last_exit_spread": last_exit_spread,
+            "last_exit_spread": last_exit_by_direction.get(display_direction),
             "entry_signal_bar_time": signal_bar_time,
             "is_new_closed_entry_bar": is_new_closed_entry_bar,
             "entry_cooldown_sec": entry_cooldown_sec,
@@ -4355,13 +4479,15 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             "active_tranches_queue": active_tranches_queue,  # Backward-compatible alias.
             "current_target_tranche": current_target_tranche,
             "has_speculative_tranche": bool(speculative_tranches_active > 0 and current_target_tranche and current_target_tranche.get("trim_qty", 0) + 1e-8 >= exit_adr_qty),
-            "has_exit_position_qty": bool(adr_qty + 1e-8 >= exit_adr_qty and stock_qty + 1e-8 >= exit_stock_qty and adr_amt < 0 and stock_amt > 0),
+            "has_exit_position_qty": bool(adr_qty + 1e-8 >= exit_adr_qty and stock_qty + 1e-8 >= exit_stock_qty and position_direction_ok),
             "has_execution_recovery": bool(auto_state.get("execution_recovery")),
             "latest_entry_spread": round(latest_in_spread, 2),
             "out_target_spread": out_target_spread,
             "take_profit_trigger_spread": out_target_spread,
-            "gap_to_out_pts": round(curr_spread - out_target_spread, 2),
-            "gap_to_take_profit_pts": round(curr_spread - out_target_spread, 2),
+            "gap_to_out_pts": round((curr_spread - out_target_spread) * (1 if target_direction == "SHORT_SPREAD" else -1), 2),
+            "gap_to_take_profit_pts": round(
+                (curr_spread - out_target_spread)
+                * (1 if target_direction == "SHORT_SPREAD" else -1), 2),
             "dwell_time_sec": dwell_time_sec,
             "dwell_min_sec": 120,
             "is_dwell_satisfied": is_dwell_satisfied,
@@ -4720,30 +4846,31 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                 saved_pairs = saved_state.get("entry_order_pairs", [])
                 saved_exit_pairs = saved_state.get("exit_order_pairs", [])
                 marker_profiles = entry_profiles(pair_orders, "CSOPSKHYNIX2LUSDT", saved_pairs)
+                saved_entry_by_adr = {
+                    str(pair["adr_order_id"]): pair for pair in saved_pairs
+                    if isinstance(pair, dict) and pair.get("adr_order_id") is not None
+                }
+                saved_exit_by_adr = {
+                    str(pair["adr_order_id"]): pair for pair in saved_exit_pairs
+                    if isinstance(pair, dict) and pair.get("adr_order_id") is not None
+                }
                 for pair in saved_pairs:
                     inferred_pairs[str(pair["adr_order_id"])] = str(pair["stock_order_id"])
                 for pair in saved_exit_pairs:
                     inferred_exit_pairs[str(pair["adr_order_id"])] = str(pair["stock_order_id"])
-                stock_entries = {
-                    order["order_id"]: order for order in pair_orders
-                    if order["symbol"] == "CSOPSKHYNIX2LUSDT" and order["side"] == "BUY"
-                }
-                adr_entries = {
-                    order["order_id"]: order for order in pair_orders
-                    if order["symbol"] == "SKHYUSDT" and order["side"] == "SELL"
-                }
-                adr_exits = {
-                    order["order_id"]: order for order in pair_orders
-                    if order["symbol"] == "SKHYUSDT" and order["side"] == "BUY"
-                }
-                stock_exits = {
-                    order["order_id"]: order for order in pair_orders
-                    if order["symbol"] == "CSOPSKHYNIX2LUSDT" and order["side"] == "SELL"
+                pair_order_index = {
+                    (order["symbol"], str(order["order_id"]), order["side"]): order
+                    for order in pair_orders
                 }
                 pnl_model_by_order = {}
                 for adr_order_id, stock_order_id in inferred_pairs.items():
-                    adr_order = adr_entries.get(adr_order_id)
-                    stock_order = stock_entries.get(stock_order_id)
+                    saved_pair = saved_entry_by_adr.get(adr_order_id, {})
+                    spread_direction = saved_pair.get("spread_direction", "SHORT_SPREAD")
+                    adr_side = "BUY" if spread_direction == "LONG_SPREAD" else "SELL"
+                    stock_side = "SELL" if spread_direction == "LONG_SPREAD" else "BUY"
+                    adr_order = pair_order_index.get(("SKHYUSDT", adr_order_id, adr_side))
+                    stock_order = pair_order_index.get(
+                        ("CSOPSKHYNIX2LUSDT", str(stock_order_id), stock_side))
                     if not adr_order or not stock_order or adr_order["qty"] <= 0 or stock_order["qty"] <= 0:
                         continue
                     adr_fill = adr_order["cost"] / adr_order["qty"]
@@ -4767,6 +4894,7 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                                 adr_order["fee"] * marker_aq / adr_order["qty"]
                                 + stock_order["fee"] * marker_sq / stock_order["qty"]),
                             "entry_time_ms": min(adr_order["time"], stock_order["time"]),
+                            "spread_direction": spread_direction,
                             "threshold_usd": marker_profiles.get(adr_order_id, {}).get("policy", policy_for_level())["minimum_net_profit_usd"],
                             "convergence_pts": marker_profiles.get(adr_order_id, {}).get("policy", policy_for_level())["convergence_pts"],
                             "entry_spread": nominal_premium(adr_fill, stock_fill),
@@ -4783,13 +4911,27 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         marker_time = matched_bar["time"]
 
                         side = tr.get("side", "")
-                        is_entry = (side == "SELL")
                         price = float(tr.get("price", 0.0))
                         qty = float(tr.get("qty", 0.0))
                         order_id = str(tr.get("orderId", tr.get("id", "")))
-                        adr_order = (adr_entries if is_entry else adr_exits).get(order_id)
+                        saved_entry = saved_entry_by_adr.get(order_id)
+                        saved_exit = saved_exit_by_adr.get(order_id)
+                        is_entry = bool(saved_entry) if (saved_entry or saved_exit) else side == "SELL"
+                        pair_record = saved_entry if is_entry else saved_exit
+                        spread_direction = ((pair_record or {}).get("spread_direction")
+                                            or "SHORT_SPREAD")
+                        expected_adr_side = (
+                            "BUY" if (is_entry and spread_direction == "LONG_SPREAD") else
+                            "SELL" if (is_entry or spread_direction == "LONG_SPREAD") else "BUY"
+                        )
+                        adr_order = pair_order_index.get(("SKHYUSDT", order_id, expected_adr_side))
                         stock_order_id = (inferred_pairs if is_entry else inferred_exit_pairs).get(order_id)
-                        stock_order = (stock_entries if is_entry else stock_exits).get(stock_order_id)
+                        expected_stock_side = (
+                            "SELL" if (is_entry and spread_direction == "LONG_SPREAD") else
+                            "BUY" if (is_entry or spread_direction == "LONG_SPREAD") else "SELL"
+                        )
+                        stock_order = pair_order_index.get(
+                            ("CSOPSKHYNIX2LUSDT", str(stock_order_id), expected_stock_side))
                         fill_signal = (nominal_premium(
                             adr_order["cost"] / adr_order["qty"], stock_order["cost"] / stock_order["qty"])
                             if adr_order and stock_order and adr_order["qty"] > 0 and stock_order["qty"] > 0
@@ -4799,11 +4941,12 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                             "entry_time_ms": t_ms,
                         }) if is_entry else None
 
-                        key = (marker_time, is_entry)
+                        key = (marker_time, is_entry, spread_direction)
                         if key not in candle_markers:
                             candle_markers[key] = {
                                 "time": marker_time,
                                 "is_entry": is_entry,
+                                "spread_direction": spread_direction,
                                 "entry_spread": matched_bar["value"],
                                 "total_qty": qty,
                                 "weighted_price": price * qty,
@@ -4842,11 +4985,15 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                             "side": side,
                             "price": price,
                             "qty": qty,
-                            "type": "SHORT" if is_entry else "COVER"
+                            "type": ("LONG" if spread_direction == "LONG_SPREAD" else "SHORT")
+                                    if is_entry else
+                                    ("SELL_LONG" if spread_direction == "LONG_SPREAD" else "COVER"),
+                            "spread_direction": spread_direction,
                         })
 
                 # Sort chronologically by marker_time to satisfy Lightweight Charts strict monotonic ordering
-                for (m_time, is_entry), m_data in sorted(candle_markers.items(), key=lambda x: x[0][0]):
+                for (m_time, is_entry, spread_direction), m_data in sorted(
+                        candle_markers.items(), key=lambda x: x[0][0]):
                     avg_px = m_data["weighted_price"] / max(1e-6, m_data["total_qty"])
                     qty_str = f"{m_data['total_qty']:.2f}"
                     cnt_str = f" {m_data['count']}x" if m_data['count'] > 1 else ""
@@ -4862,16 +5009,19 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                     fill_signals = m_data["fill_signals"]
                     exact_signal = (sum(fill["signal"] * fill["adr_qty"] for fill in fill_signals)
                                     / sum(fill["adr_qty"] for fill in fill_signals)) if fill_signals else None
+                    is_long_spread = spread_direction == "LONG_SPREAD"
+                    is_buy = is_entry == is_long_spread
                     markers.append({
                         "time": m_time,
-                        "position": "aboveBar" if is_entry else "belowBar",
-                        "color": "rgba(220, 38, 38, 0.70)" if is_entry else "rgba(22, 163, 74, 0.70)",
-                        "activeColor": "#dc2626" if is_entry else "#16a34a",
-                        "shape": "arrowDown" if is_entry else "arrowUp",
+                        "position": "belowBar" if is_buy else "aboveBar",
+                        "color": "rgba(22, 163, 74, 0.70)" if is_buy else "rgba(220, 38, 38, 0.70)",
+                        "activeColor": "#16a34a" if is_buy else "#dc2626",
+                        "shape": "arrowUp" if is_buy else "arrowDown",
                         "text": "",
                         "hoverText": hover_lbl,
                         "is_entry": is_entry,
-                        "direction": "short",
+                        "direction": "long" if is_long_spread else "short",
+                        "spread_direction": spread_direction,
                         "avg_price": round(avg_px, 2),
                         "qty": round(m_data["total_qty"], 2),
                         "entry_spread": round(exact_signal, 4) if is_entry and exact_signal is not None else None,
@@ -4879,7 +5029,10 @@ async def get_short_term_parity(interval: str = "5m", limit: int = 100, end_time
                         "fill_signals": fill_signals,
                         "unpaired_order_count": len(m_data["unpaired_order_ids"]),
                         "minimum_net_profit_usd": pnl_model["threshold_usd"] if pnl_model else (MIN_NET_PROFIT_USD if is_entry else None),
-                        "convergence_target_spread": (round((pnl_model.get("entry_spread") or m_data["entry_spread"]) - pnl_model["convergence_pts"], 2) if pnl_model else None),
+                        "convergence_target_spread": (round(
+                            (pnl_model.get("entry_spread") or m_data["entry_spread"])
+                            + (pnl_model["convergence_pts"] if spread_direction == "LONG_SPREAD"
+                               else -pnl_model["convergence_pts"]), 2) if pnl_model else None),
                         "pnl_models": pnl_models,
                         "pnl_model": pnl_model,
                     })
@@ -4939,6 +5092,13 @@ async def execute_scale_in(direction: str = "SHORT_SPREAD") -> Dict[str, Any]:
             return {"success": False, "error": "Scale-in paused: fresh account and strategy data unavailable"}
         live_tranches = int(live_status.get("tranches_active", 0))
         criteria = live_status.get("auto_tranche_criteria") or {}
+        configured_mode = str(state.get("spread_direction_mode", "two_way"))
+        if ((direction == "SHORT_SPREAD" and configured_mode == "long_only")
+                or (direction == "LONG_SPREAD" and configured_mode == "short_only")):
+            return {"success": False, "error": f"{direction} is disabled by {configured_mode} mode"}
+        campaign_direction = criteria.get("campaign_direction")
+        if campaign_direction not in (None, direction):
+            return {"success": False, "error": f"Close the active {campaign_direction} campaign before entering {direction}"}
         tranche_cap_raw = criteria.get("tranches_max")
         tranche_cap = int(tranche_cap_raw) if tranche_cap_raw is not None else None
         if tranche_cap is not None and live_tranches >= tranche_cap:
@@ -5050,7 +5210,8 @@ async def execute_scale_in(direction: str = "SHORT_SPREAD") -> Dict[str, Any]:
         save_auto_tranche_state(state)
         return {
             "success": True,
-            "message": f"Asymmetric Scale-in filled: Short {adr_qty:.2f} SKHYUSDT + Long {stock_qty:.2f} CSOPSKHYNIX2LUSDT",
+            "message": (f"{direction} scale-in filled: {adr_side} {adr_qty:.2f} SKHYUSDT + "
+                        f"{stock_side} {stock_qty:.2f} CSOPSKHYNIX2LUSDT"),
             "scale_in_adr_qty": adr_qty,
             "scale_in_stock_qty": stock_qty,
             "order_adr": order_adr,
@@ -5113,6 +5274,11 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
 
         target_criteria = (status or {}).get("auto_tranche_criteria", {})
         target_profit = (status or {}).get("target_tranche_profit")
+        target_direction = str(
+            (target_criteria.get("current_target_tranche") or {}).get("spread_direction")
+            or ("LONG_SPREAD" if is_long_spread else "SHORT_SPREAD"))
+        if (target_direction == "LONG_SPREAD") != is_long_spread:
+            return {"success": False, "error": "Tracked tranche direction does not match the live hedged position"}
         if force and not status.get("authenticated") and any(
                 p.get("entry_policy", {}).get("sizing_version") for p in state.get("entry_order_pairs", [])):
             return {"success": False, "error": "Cannot verify the saved dynamic exit quantities; retry when history is available."}
@@ -5169,6 +5335,7 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
             exit_pair_record = {
                 "adr_order_id": str(order_adr["orderId"]),
                 "stock_order_id": str(order_stock["orderId"]),
+                "spread_direction": target_direction,
             }
             if isinstance(target_profit, dict) and target_profit.get("available"):
                 estimate_keys = (
@@ -5186,6 +5353,8 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         if status:
             state["last_exit_spread"] = status.get("auto_tranche_criteria", {}).get("current_spread")
             state["last_exit_signal_version"] = SIGNAL_VERSION
+            direction_key = "last_exit_spread_long" if target_direction == "LONG_SPREAD" else "last_exit_spread_short"
+            state[direction_key] = state["last_exit_spread"]
         state["entries_since_last_exit"] = 0
         state["recent_entry_times"] = []
         save_auto_tranche_state(state)
@@ -5433,7 +5602,11 @@ async def auto_tranche_worker():
                     ):
                         if now - last_step >= cooldown_sec:
                             logger.info("[Auto-Tranche Worker] Executing autonomous speculative scale-in step...")
-                            res = await step_tranche()
+                            signal_direction = criteria.get("entry_signal_direction")
+                            if signal_direction not in {"SHORT_SPREAD", "LONG_SPREAD"}:
+                                logger.warning("[Auto-Tranche Worker] Armed entry had no valid direction; blocking execution")
+                                continue
+                            res = await step_tranche({"direction": signal_direction})
                             state = load_auto_tranche_state()
                             state["last_step_time"] = now
                             state["last_action_time"] = now

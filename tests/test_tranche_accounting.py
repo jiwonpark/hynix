@@ -4,6 +4,7 @@ from backend.tranche_accounting import (
     estimate_tranche_exit,
     infer_exit_pairs,
     prepare_exit_context,
+    reconstruct_recorded_pair_stack,
     summarize_verified_exit_pairs,
 )
 
@@ -218,3 +219,29 @@ class TrancheAccountingTests(unittest.TestCase):
         self.assertAlmostEqual(result['threshold_usd'], 0.1025, places=4)
         self.assertEqual(result['min_profit_pct'], 0.50)
         self.assertAlmostEqual(result['exit_notional_usd'], 20.49, places=2)
+
+    def test_long_spread_profit_and_lifo_stack_use_mirrored_legs(self):
+        trades = [
+            self.trade('SKHYUSDT', 10, 'BUY', .06, 190, 1000000),
+            self.trade('CSOPSKHYNIX2LUSDT', 11, 'SELL', 1.02, 5.6, 1000001),
+        ]
+        policy = {
+            'sizing_version': 'dollar_2x_v1', 'adr_entry_qty': .06,
+            'stock_entry_qty': 1.02, 'adr_exit_qty': .06,
+            'stock_exit_qty': 1.02, 'minimum_net_profit_usd': .02,
+        }
+        pairs = [{'adr_order_id': '10', 'stock_order_id': '11',
+                  'spread_direction': 'LONG_SPREAD', 'entry_spread': 130,
+                  'entry_policy': policy}]
+        orders = aggregate_orders(trades)
+        stack = reconstruct_recorded_pair_stack(
+            orders, 'CSOPSKHYNIX2LUSDT', pairs, [], 'LONG_SPREAD')
+        self.assertEqual(len(stack), 1)
+        target = {**stack[0], 'trade_id': '10', 'exit_policy': policy,
+                  'time': 1000}
+        result = estimate_tranche_exit(
+            target, trades, 195, 5.4, 'CSOPSKHYNIX2LUSDT', pairs, 2000)
+        self.assertTrue(result['available'])
+        self.assertEqual(result['spread_direction'], 'LONG_SPREAD')
+        self.assertGreater(result['adr_pnl_usd'], 0)
+        self.assertGreater(result['stock_pnl_usd'], 0)

@@ -14420,7 +14420,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const adr = Number(useMarks ? live.adr_position?.mark_price : bar.adr);
           const csop = Number(useMarks ? live.stock_position?.mark_price : bar.csop);
           if (!(adr > 0) || !(csop > 0) || barTimeMs < entryTimeMs) return [{time: bar.time}];
-          const gross = adrQty * (adrEntry - adr) + stockQty * (csop - stockEntry);
+          const isLongSpread = model.spread_direction === "LONG_SPREAD";
+          const gross = isLongSpread
+            ? adrQty * (adr - adrEntry) + stockQty * (stockEntry - csop)
+            : adrQty * (adrEntry - adr) + stockQty * (csop - stockEntry);
           const exitCosts = (adrQty * adr + stockQty * csop) * exitCostRate;
           const holdingDays = Math.max(0, barTimeMs - entryTimeMs) / 86400000;
           const funding = entryNotional * fundingRate * holdingDays;
@@ -14861,6 +14864,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           el.textContent = text;
           el.className = `condBadge ${type}`;
         };
+        const setRowLabel = (rowId, text) => {
+          const label = $(rowId)?.querySelector?.(".condLabel");
+          if (label) label.textContent = text;
+        };
 
         const syncCondRow = (key, rowId, chkId, badgeId, isMet, passText, notMetText, badgeTypeIfNotMet = "wait") => {
           const on = this.isConditionEnabled(key, criteria.condition_toggles);
@@ -14888,17 +14895,21 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         };
 
         // 1. Scale-in Rule (Speculative MA Stretch + Peak-Out Momentum Exhaustion)
-        const scaleInThreshold = criteria.scale_in_trigger_spread || 139.65;
+        const entryDirection = criteria.entry_display_direction === "LONG_SPREAD" ? "LONG_SPREAD" : "SHORT_SPREAD";
+        const isLongEntry = entryDirection === "LONG_SPREAD";
+        const entrySetup = criteria.directional_entry_setups?.[entryDirection] || {};
+        const directionText = isLongEntry ? "LONG SPREAD · BUY ADR / SHORT ETF" : "SHORT SPREAD · SHORT ADR / BUY ETF";
+        const scaleInThreshold = Number(entrySetup.trigger ?? criteria.scale_in_trigger_spread ?? 139.65);
         const currSpread = criteria.current_spread || 139.29;
-        const gapScaleIn = criteria.gap_to_scale_in_pts != null ? criteria.gap_to_scale_in_pts : (scaleInThreshold - currSpread);
+        const gapScaleIn = entrySetup.gap_to_trigger != null ? Number(entrySetup.gap_to_trigger) : Math.abs(scaleInThreshold - currSpread);
         const canScaleIn = Boolean(criteria.can_scale_in);
         const baseEntry = criteria.entry_baseline_spread || 139.30;
         const ma24 = criteria.rolling_ma_24 != null ? criteria.rolling_ma_24 : baseEntry;
-        const maStretch = criteria.ma_stretch_pts != null ? criteria.ma_stretch_pts : (currSpread - ma24);
-        const isPeakingOut = Boolean(criteria.is_peaking_out);
+        const maStretch = entrySetup.stretch_pts != null ? Number(entrySetup.stretch_pts) : (isLongEntry ? ma24 - currSpread : currSpread - ma24);
+        const isPeakingOut = entrySetup.rollover_pass != null ? Boolean(entrySetup.rollover_pass) : Boolean(criteria.is_peaking_out);
         const scaleInArmed = Boolean(criteria.scale_in_armed);
-        const isStretchedAboveMa = criteria.is_stretched_above_ma != null ? Boolean(criteria.is_stretched_above_ma) : (maStretch >= 0.25);
-        const isAboveEntry = criteria.is_above_entry != null ? Boolean(criteria.is_above_entry) : (currSpread >= scaleInThreshold);
+        const isStretchedAboveMa = entrySetup.stretch_pass != null ? Boolean(entrySetup.stretch_pass) : (maStretch >= 0.25);
+        const isAboveEntry = entrySetup.threshold_pass != null ? Boolean(entrySetup.threshold_pass) : (isLongEntry ? currSpread <= scaleInThreshold : currSpread >= scaleInThreshold);
         const tranchesMax = criteria.tranches_max ?? "—";
         const tranchesActive = criteria.tranches_active || 0;
         const tranchesRemaining = criteria.tranches_remaining != null ? criteria.tranches_remaining : Math.max(0, tranchesMax - tranchesActive);
@@ -14912,6 +14923,13 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const hasRecovery = Boolean(criteria.has_execution_recovery || criteria.backend_auto_tranche_state?.execution_recovery);
         const isEngineReady = Boolean(criteria.backend_auto_tranche_enabled && !hasRecovery);
 
+        if ($("lblCritScaleInTitle")) $("lblCritScaleInTitle").textContent = `➕ ${criteria.asymmetric_sizing?.spread_direction_mode === "two_way" ? "TWO-WAY" : (isLongEntry ? "LONG-ONLY" : "SHORT-ONLY")} SCALE-IN · ${directionText}`;
+        setRowLabel("rowCondEntryMaStretch", `1. Rolling MA Stretch (≥ ${isLongEntry ? "−" : "+"}0.25%)`);
+        setRowLabel("rowCondEntryBase", `2. ${isLongEntry ? "Lower" : "Upper"} Adaptive Entry Threshold`);
+        setRowLabel("rowCondEntryPeak", `3. 5m ${isLongEntry ? "Trough Reversal" : "Peak Rollover"} Filter`);
+        setRowLabel("rowCondEntryMaStack5m", `4. 5m ${isLongEntry ? "Bearish" : "Bullish"} MA Stack`);
+        setRowLabel("rowCondEntryMaStack1h", `5. 1h ${isLongEntry ? "Bearish" : "Bullish"} MA Stack`);
+
         if ($("valCritScaleInThreshold")) $("valCritScaleInThreshold").textContent = `${scaleInThreshold.toFixed(2)}%`;
         if ($("valCritMa24")) $("valCritMa24").textContent = `${ma24.toFixed(2)}%`;
         if ($("valCritCurrentSpread")) $("valCritCurrentSpread").textContent = `${currSpread.toFixed(2)}%`;
@@ -14921,9 +14939,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("valCritGapScaleIn").style.color = gapScaleIn <= 0 ? "#16a34a" : "#d97706";
         }
         if ($("barCritScaleInProgress")) {
-          const base = ma24;
-          const range = Math.max(0.01, scaleInThreshold - base);
-          const prog = Math.max(0, Math.min(100, Math.round(((currSpread - base) / range) * 100)));
+          const range = Math.max(0.01, Math.abs(scaleInThreshold - ma24));
+          const moved = isLongEntry ? ma24 - currSpread : currSpread - ma24;
+          const prog = Math.max(0, Math.min(100, Math.round((moved / range) * 100)));
           $("barCritScaleInProgress").style.width = `${prog}%`;
           $("barCritScaleInProgress").style.background = scaleInArmed ? "#16a34a" : "#f59e0b";
         }
@@ -14931,27 +14949,28 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         // 7 Scale-In Conditions Checklist
         if ($("valCritMaStretch")) {
           const sign = maStretch >= 0 ? "+" : "";
-          $("valCritMaStretch").textContent = `${sign}${maStretch.toFixed(2)}% pts (≥ +0.25%)`;
+          $("valCritMaStretch").textContent = `${sign}${maStretch.toFixed(2)}% pts directional stretch (≥ 0.25%)`;
           $("valCritMaStretch").style.color = isStretchedAboveMa ? "#16a34a" : "#d97706";
         }
         syncCondRow("entry_ma_stretch", "rowCondEntryMaStretch", "chkCondEntryMaStretch", "badgeCondEntryMaStretch", isStretchedAboveMa, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
         if ($("valCondEntryBase")) {
-          $("valCondEntryBase").textContent = `${currSpread.toFixed(2)}% vs ${scaleInThreshold.toFixed(2)}%`;
+          $("valCondEntryBase").textContent = `${currSpread.toFixed(2)}% ${isLongEntry ? "≤" : "≥"} ${scaleInThreshold.toFixed(2)}%`;
         }
         syncCondRow("entry_base_spread", "rowCondEntryBase", "chkCondEntryBase", "badgeCondEntryBase", isAboveEntry, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
         if ($("valCritPeakOut")) {
-          $("valCritPeakOut").textContent = isPeakingOut ? (isKo ? "피크 반전 확인" : "PEAK ROLLOVER") : (isKo ? "상승 모멘텀 지속" : "RISING MOMENTUM");
+          $("valCritPeakOut").textContent = isPeakingOut ? (isLongEntry ? "TROUGH REVERSAL" : "PEAK ROLLOVER") : (isLongEntry ? "FALLING MOMENTUM" : "RISING MOMENTUM");
           $("valCritPeakOut").style.color = isPeakingOut ? "#16a34a" : "#dc2626";
         }
         syncCondRow("entry_peak_rollover", "rowCondEntryPeak", "chkCondEntryPeak", "badgeCondEntryPeak", isPeakingOut, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
         const entryMa5m = criteria.entry_ma_alignment_5m || criteria.exit_ma_alignment_5m;
         const entry5mReady = Boolean(entryMa5m?.ready);
-        const entry5mUp = Boolean(entryMa5m?.upward);
+        const entry5mUp = entrySetup.ma_5m_pass != null ? Boolean(entrySetup.ma_5m_pass) : Boolean(entryMa5m?.[isLongEntry ? "downward" : "upward"]);
         if ($("valCritEntryMaStack5m")) {
-          $("valCritEntryMaStack5m").textContent = !entry5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry5mUp ? "5m ✓ (Price > MA7 > MA24 > MA60)" : "5m ✗ (NOT ALIGNED)");
+          const stackText = isLongEntry ? "Price < MA7 < MA24 < MA60" : "Price > MA7 > MA24 > MA60";
+          $("valCritEntryMaStack5m").textContent = !entry5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry5mUp ? `5m ✓ (${stackText})` : "5m ✗ (NOT ALIGNED)");
           $("valCritEntryMaStack5m").style.color = entry5mUp ? "#16a34a" : "#d97706";
           $("valCritEntryMaStack5m").title = entry5mReady ? `5m: P ${currSpread.toFixed(2)}% / MA7 ${entryMa5m.ma7.toFixed(3)}% / MA24 ${entryMa5m.ma24.toFixed(3)}% / MA60 ${entryMa5m.ma60.toFixed(3)}% (Price > MA7 > MA24 > MA60)` : "Requires 60 bars on 5m chart";
         }
@@ -14959,9 +14978,10 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
 
         const entryMa1h = criteria.entry_ma_alignment_1h || criteria.exit_ma_alignment_1h;
         const entry1hReady = Boolean(entryMa1h?.ready);
-        const entry1hUp = Boolean(entryMa1h?.upward);
+        const entry1hUp = entrySetup.ma_1h_pass != null ? Boolean(entrySetup.ma_1h_pass) : Boolean(entryMa1h?.[isLongEntry ? "downward" : "upward"]);
         if ($("valCritEntryMaStack1h")) {
-          $("valCritEntryMaStack1h").textContent = !entry1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry1hUp ? "1h ✓ (Price > MA7 > MA24 > MA60)" : "1h ✗ (NOT ALIGNED)");
+          const stackText = isLongEntry ? "Price < MA7 < MA24 < MA60" : "Price > MA7 > MA24 > MA60";
+          $("valCritEntryMaStack1h").textContent = !entry1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (entry1hUp ? `1h ✓ (${stackText})` : "1h ✗ (NOT ALIGNED)");
           $("valCritEntryMaStack1h").style.color = entry1hUp ? "#16a34a" : "#d97706";
           $("valCritEntryMaStack1h").title = entry1hReady ? `1h: P ${currSpread.toFixed(2)}% / MA7 ${entryMa1h.ma7.toFixed(3)}% / MA24 ${entryMa1h.ma24.toFixed(3)}% / MA60 ${entryMa1h.ma60.toFixed(3)}% (Price > MA7 > MA24 > MA60)` : "Requires 60 bars on 1h chart";
         }
@@ -15055,14 +15075,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const isDwellOk = Boolean(criteria.is_dwell_satisfied);
         const isOutProfitable = Boolean(criteria.is_out_profitable_relative_to_latest);
         const isBottomingOut = Boolean(criteria.is_bottoming_out);
+        const exitDirection = criteria.exit_direction === "LONG_SPREAD" ? "LONG_SPREAD" : "SHORT_SPREAD";
+        const isLongExit = exitDirection === "LONG_SPREAD";
         const convergencePts = criteria.exit_policy?.convergence_pts ?? .08;
         if ($("valCritConvergencePts")) $("valCritConvergencePts").textContent = convergencePts.toFixed(2);
         const exitMa5m = criteria.exit_ma_alignment_5m || criteria.exit_ma_alignment;
         const exitMa1h = criteria.exit_ma_alignment_1h;
         const exit5mReady = Boolean(exitMa5m?.ready);
-        const exit5mDown = Boolean(exitMa5m?.downward);
+        const exit5mDown = criteria.exit_ma_5m_pass != null ? Boolean(criteria.exit_ma_5m_pass) : Boolean(exitMa5m?.[isLongExit ? "upward" : "downward"]);
         const exit1hReady = Boolean(exitMa1h?.ready);
-        const exit1hDown = Boolean(exitMa1h?.downward);
+        const exit1hDown = criteria.exit_ma_1h_pass != null ? Boolean(criteria.exit_ma_1h_pass) : Boolean(exitMa1h?.[isLongExit ? "upward" : "downward"]);
         const bothReady = Boolean(exit5mReady && exit1hReady);
         const bothDown = Boolean(exit5mDown && exit1hDown);
         const specActive = criteria.speculative_tranches_active || 0;
@@ -15076,6 +15098,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         const pnlSign = pnl != null && pnl > 0 ? "+" : "";
         const pnlColor = pnl == null ? "#64748b" : (pnl > 0 ? "#16a34a" : (pnl < 0 ? "#dc2626" : "#64748b"));
 
+        setRowLabel("rowCondExitConvergence", `2. Spread Convergence Target (${isLongExit ? "rise" : "fall"} toward mean)`);
+        setRowLabel("rowCondExitMaStack5m", `5. 5m ${isLongExit ? "Bullish" : "Bearish"} MA Stack`);
+        setRowLabel("rowCondExitMaStack1h", `6. 1h ${isLongExit ? "Bullish" : "Bearish"} MA Stack`);
+        setRowLabel("rowCondExitBottoming", `7. ${isLongExit ? "Topping-Out" : "Bottoming-Out"} Filter`);
+
         if ($("valCritLatestInSpread")) $("valCritLatestInSpread").textContent = `${latestIn.toFixed(2)}%`;
         if ($("valCritOutTargetSpread")) $("valCritOutTargetSpread").textContent = `${outTarget.toFixed(2)}%`;
         if ($("valCritTpCurrentSpread")) $("valCritTpCurrentSpread").textContent = `${currSpread.toFixed(2)}%`;
@@ -15085,7 +15112,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           $("valCritGapTP").style.color = gapOut <= 0 ? "#16a34a" : "#0284c7";
         }
         if ($("barCritTPProgress")) {
-          const prog = Math.max(0, Math.min(100, Math.round(((latestIn - currSpread) / convergencePts) * 100)));
+          const moved = isLongExit ? currSpread - latestIn : latestIn - currSpread;
+          const prog = Math.max(0, Math.min(100, Math.round((moved / convergencePts) * 100)));
           $("barCritTPProgress").style.width = `${prog}%`;
           $("barCritTPProgress").style.background = canTP ? "#16a34a" : "#0284c7";
         }
@@ -15097,7 +15125,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         syncCondRow("exit_speculative_tranche", "rowCondExitActive", "chkCondExitActive", "badgeCondExitActive", hasSpecTranche, isKo ? "충족" : "PASS", coreSkhy > 0 ? (isKo ? "코어보호" : "PROTECTED") : (isKo ? "없음" : "EMPTY"), "neutral");
 
         if ($("valCondExitConvergence")) {
-          $("valCondExitConvergence").textContent = `${currSpread.toFixed(2)}% ≤ ${outTarget.toFixed(2)}% (${gapOut <= 0 ? "Target Met" : "+" + gapOut.toFixed(2) + "% gap"})`;
+          $("valCondExitConvergence").textContent = `${currSpread.toFixed(2)}% ${isLongExit ? "≥" : "≤"} ${outTarget.toFixed(2)}% (${gapOut <= 0 ? "Target Met" : "+" + gapOut.toFixed(2) + "% gap"})`;
         }
         syncCondRow("exit_convergence", "rowCondExitConvergence", "chkCondExitConvergence", "badgeCondExitConvergence", isOutProfitable, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
@@ -15122,14 +15150,16 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         syncCondRow("exit_dwell_time", "rowCondExitDwell", "chkCondExitDwell", "badgeCondExitDwell", isDwellOk, isKo ? "충족" : "PASS", isKo ? "쿨다운" : "WAIT", "wait");
 
         if ($("valCritExitMaStack5m")) {
-          $("valCritExitMaStack5m").textContent = !exit5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (exit5mDown ? "5m ✓ (Price < MA7 < MA24 < MA60)" : "5m ✗ (NOT ALIGNED)");
+          const stackText = isLongExit ? "Price > MA7 > MA24 > MA60" : "Price < MA7 < MA24 < MA60";
+          $("valCritExitMaStack5m").textContent = !exit5mReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (exit5mDown ? `5m ✓ (${stackText})` : "5m ✗ (NOT ALIGNED)");
           $("valCritExitMaStack5m").style.color = exit5mDown ? "#16a34a" : "#d97706";
           $("valCritExitMaStack5m").title = exit5mReady ? `5m: P ${currSpread.toFixed(2)}% / MA7 ${exitMa5m.ma7.toFixed(3)}% / MA24 ${exitMa5m.ma24.toFixed(3)}% / MA60 ${exitMa5m.ma60.toFixed(3)}% (Price < MA7 < MA24 < MA60)` : "Requires 60 bars on 5m chart";
         }
         syncCondRow("exit_ma_stack_5m", "rowCondExitMaStack5m", "chkCondExitMaStack5m", "badgeCondExitMaStack5m", exit5mDown, isKo ? "충족" : "PASS", isKo ? "대기" : "WAIT", "wait");
 
         if ($("valCritExitMaStack1h")) {
-          $("valCritExitMaStack1h").textContent = !exit1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (exit1hDown ? "1h ✓ (Price < MA7 < MA24 < MA60)" : "1h ✗ (NOT ALIGNED)");
+          const stackText = isLongExit ? "Price > MA7 > MA24 > MA60" : "Price < MA7 < MA24 < MA60";
+          $("valCritExitMaStack1h").textContent = !exit1hReady ? (isKo ? "봉 데이터 대기" : "Waiting for bars") : (exit1hDown ? `1h ✓ (${stackText})` : "1h ✗ (NOT ALIGNED)");
           $("valCritExitMaStack1h").style.color = exit1hDown ? "#16a34a" : "#d97706";
           $("valCritExitMaStack1h").title = exit1hReady ? `1h: P ${currSpread.toFixed(2)}% / MA7 ${exitMa1h.ma7.toFixed(3)}% / MA24 ${exitMa1h.ma24.toFixed(3)}% / MA60 ${exitMa1h.ma60.toFixed(3)}% (Price < MA7 < MA24 < MA60)` : "Requires 60 bars on 1h chart";
         }
@@ -15147,7 +15177,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
 
         if ($("valCritBottomingOut")) {
-          $("valCritBottomingOut").textContent = criteria.exit_policy?.require_confirmed_rebound ? (isBottomingOut ? "TWO RISING CLOSES ✓" : "WAITING FOR TWO RISING CLOSES") : (isBottomingOut ? "REBOUND / BELOW MA" : "CASCADE IN PROGRESS");
+          $("valCritBottomingOut").textContent = isLongExit
+            ? (isBottomingOut ? "TOP ROLLOVER ✓" : "RALLY IN PROGRESS")
+            : (criteria.exit_policy?.require_confirmed_rebound ? (isBottomingOut ? "TWO RISING CLOSES ✓" : "WAITING FOR TWO RISING CLOSES") : (isBottomingOut ? "REBOUND / BELOW MA" : "CASCADE IN PROGRESS"));
           $("valCritBottomingOut").style.color = isBottomingOut ? "#16a34a" : "#0284c7";
         }
         syncCondRow("exit_bottoming_out", "rowCondExitBottoming", "chkCondExitBottoming", "badgeCondExitBottoming", isBottomingOut, isKo ? "충족" : "PASS", isKo ? "파동진행" : "RIDING", "wait");
@@ -15202,7 +15234,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
                   <strong style="color:${pnlColor};">Trim net (est.) ${pnlText}</strong>
                 </div>
                 <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); gap:2px 10px; margin-top:4px; color:#64748b;">
-                  <span>Signal <strong style="color:#334155;">${Number(t.entry_spread).toFixed(2)}% → ≤${Number(t.target_out_spread).toFixed(2)}%</strong></span>
+                  <span>Signal <strong style="color:#334155;">${Number(t.entry_spread).toFixed(2)}% → ${t.spread_direction === "LONG_SPREAD" ? "≥" : "≤"}${Number(t.target_out_spread).toFixed(2)}%</strong></span>
                   <span>${Number(t.exit_policy?.adr_exit_qty ?? .07).toFixed(2)} ADR / ${Number(t.exit_policy?.stock_exit_qty ?? 1.2).toFixed(2)} ETF trim · net > $${Number(t.minimum_net_profit_usd ?? .02).toFixed(2)} · ${t.exit_policy?.regime || "NORMAL"}</span>
                   <span>Age <strong style="color:#334155;">${ageText}</strong></span>
                   <span>ADR ${Number(t.qty).toFixed(2)} @ <strong style="color:#334155;">${Number.isFinite(adrEntry) ? `$${adrEntry.toFixed(2)}` : "—"}</strong> · #${adrOrder}</span>

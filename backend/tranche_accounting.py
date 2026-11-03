@@ -194,8 +194,11 @@ def summarize_verified_exit_pairs(executions, stock_symbol, exit_pairs, entry_pa
         stock_order_id = str(pair.get('stock_order_id', ''))
         if not adr_order_id or not stock_order_id:
             continue
-        adr = order_index.get(('SKHYUSDT', adr_order_id, 'BUY'))
-        stock = order_index.get((stock_symbol, stock_order_id, 'SELL'))
+        direction = pair.get('spread_direction', 'SHORT_SPREAD')
+        adr_exit_side = 'BUY' if direction == 'SHORT_SPREAD' else 'SELL'
+        stock_exit_side = 'SELL' if direction == 'SHORT_SPREAD' else 'BUY'
+        adr = order_index.get(('SKHYUSDT', adr_order_id, adr_exit_side))
+        stock = order_index.get((stock_symbol, stock_order_id, stock_exit_side))
         if not adr or not stock:
             continue
         if (adr['qty'] <= 0 or stock['qty'] <= 0 or not adr['fee_known']
@@ -214,13 +217,16 @@ def summarize_verified_exit_pairs(executions, stock_symbol, exit_pairs, entry_pa
             'realized_after_exit_fees_usd': gross_pnl - exit_fees,
             'pnl_authoritative': True,
             'pnl_source': 'BINANCE_USER_TRADES',
+            'spread_direction': direction,
             '_adr_order': adr,
             '_stock_order': stock,
         })
 
     verified_by_index = {item['recorded_pair_index']: item for item in verified}
+    short_verified = {index: item for index, item in verified_by_index.items()
+                      if item.get('spread_direction') == 'SHORT_SPREAD'}
     reconstructed = _reconstruct_virtual_lifo_exits(
-        orders, stock_symbol, entry_pairs, verified_by_index)
+        orders, stock_symbol, entry_pairs, short_verified)
     for item in verified:
         item.update(reconstructed.get(item['recorded_pair_index'], {}))
         saved_pair = recorded_pairs[item['recorded_pair_index']]
@@ -323,10 +329,34 @@ def entry_profiles(orders, stock_symbol, pairs):
     matched = infer_entry_pairs(orders, stock_symbol)
     saved = {str(p['adr_order_id']): p for p in pairs}
     matched.update({key: str(p['stock_order_id']) for key, p in saved.items()})
-    stocks = {o['order_id']: o for o in orders if o['symbol'] == stock_symbol and o['side'] == 'BUY'}
     profiles = {}
+    order_index = {(o['symbol'], str(o['order_id']), o['side']): o for o in orders}
+    # Persisted pairs are authoritative and may represent either direction.
+    for adr_id, pair in saved.items():
+        direction = pair.get('spread_direction', 'SHORT_SPREAD')
+        adr_side = 'SELL' if direction == 'SHORT_SPREAD' else 'BUY'
+        stock_side = 'BUY' if direction == 'SHORT_SPREAD' else 'SELL'
+        adr = order_index.get(('SKHYUSDT', adr_id, adr_side))
+        stock = order_index.get((stock_symbol, str(pair.get('stock_order_id')), stock_side))
+        recorded = pair.get('entry_policy')
+        if not adr or not stock or not recorded or recorded.get('sizing_version') != 'dollar_2x_v1':
+            continue
+        try:
+            valid = all(math.isfinite(recorded[k]) and recorded[k] > 0 for k in
+                        ('adr_entry_qty', 'stock_entry_qty', 'adr_exit_qty', 'stock_exit_qty'))
+            valid = valid and recorded['adr_exit_qty'] <= adr['qty'] + 1e-8 and recorded['stock_exit_qty'] <= stock['qty'] + 1e-8
+            valid = valid and abs(adr['qty']-recorded['adr_entry_qty']) < 1e-8 and abs(stock['qty']-recorded['stock_entry_qty']) < 1e-8
+        except (KeyError, TypeError):
+            valid = False
+        if valid:
+            profiles[adr_id] = {'stock_order_id': stock['order_id'], 'policy': recorded,
+                'entry_spread': pair.get('entry_spread'), 'spread_direction': direction}
+
+    stocks = {o['order_id']: o for o in orders if o['symbol'] == stock_symbol and o['side'] == 'BUY'}
     for adr in orders:
         if adr['symbol'] != 'SKHYUSDT' or adr['side'] != 'SELL':
+            continue
+        if adr['order_id'] in profiles:
             continue
         stock = stocks.get(matched.get(adr['order_id']))
         if not stock:
@@ -382,6 +412,62 @@ def reconstruct_leg_stack(orders, symbol, entry_side, entry_unit, exit_unit, ada
     return stack
 
 
+def reconstruct_recorded_pair_stack(orders, stock_symbol, entry_pairs, exit_pairs, direction):
+    """Rebuild an exact direction-specific LIFO stack from persisted pair IDs."""
+    order_index = {(o['symbol'], str(o['order_id']), o['side']): o for o in orders}
+    entry_adr_side = 'SELL' if direction == 'SHORT_SPREAD' else 'BUY'
+    entry_stock_side = 'BUY' if direction == 'SHORT_SPREAD' else 'SELL'
+    exit_adr_side = 'BUY' if direction == 'SHORT_SPREAD' else 'SELL'
+    exit_stock_side = 'SELL' if direction == 'SHORT_SPREAD' else 'BUY'
+    events = []
+    for pair in entry_pairs if isinstance(entry_pairs, list) else []:
+        pair_direction = pair.get('spread_direction', 'SHORT_SPREAD')
+        if pair_direction != direction:
+            continue
+        adr = order_index.get(('SKHYUSDT', str(pair.get('adr_order_id')), entry_adr_side))
+        stock = order_index.get((stock_symbol, str(pair.get('stock_order_id')), entry_stock_side))
+        policy = pair.get('entry_policy') or {}
+        if not adr or not stock:
+            continue
+        aq = float(policy.get('adr_exit_qty', adr['qty']))
+        sq = float(policy.get('stock_exit_qty', stock['qty']))
+        if aq <= 0 or sq <= 0 or aq > adr['qty'] + 1e-8 or sq > stock['qty'] + 1e-8:
+            continue
+        events.append((max(adr['time'], stock['time']), 0, {
+            'order': adr, 'stock_order': stock, 'qty': adr['qty'], 'stock_qty': stock['qty'],
+            'trim_qty': aq, 'stock_trim_qty': sq, 'policy': policy,
+            'entry_spread': pair.get('entry_spread'), 'spread_direction': direction,
+        }))
+    for pair in exit_pairs if isinstance(exit_pairs, list) else []:
+        pair_direction = pair.get('spread_direction', 'SHORT_SPREAD')
+        if pair_direction != direction:
+            continue
+        adr = order_index.get(('SKHYUSDT', str(pair.get('adr_order_id')), exit_adr_side))
+        stock = order_index.get((stock_symbol, str(pair.get('stock_order_id')), exit_stock_side))
+        if adr and stock:
+            events.append((max(adr['time'], stock['time']), 1, (adr['qty'], stock['qty'])))
+    events.sort(key=lambda event: (event[0], event[1]))
+    stack = []
+    for _, kind, payload in events:
+        if kind == 0:
+            stack.append(payload)
+            continue
+        adr_remaining, stock_remaining = payload
+        while stack and (adr_remaining > 1e-8 or stock_remaining > 1e-8):
+            lot = stack[-1]
+            adr_use = min(adr_remaining, lot['trim_qty'])
+            stock_use = min(stock_remaining, lot['stock_trim_qty'])
+            lot['trim_qty'] = round(lot['trim_qty'] - adr_use, 8)
+            lot['stock_trim_qty'] = round(lot['stock_trim_qty'] - stock_use, 8)
+            adr_remaining = round(adr_remaining - adr_use, 8)
+            stock_remaining = round(stock_remaining - stock_use, 8)
+            if lot['trim_qty'] <= 1e-8 and lot['stock_trim_qty'] <= 1e-8:
+                stack.pop()
+            elif adr_use <= 1e-8 and stock_use <= 1e-8:
+                break
+    return stack
+
+
 def prepare_exit_context(executions, stock_symbol, pairs, *, orders=None, profiles=None):
     """Build history attribution once for all tranches in a single snapshot."""
     if orders is None:
@@ -396,6 +482,7 @@ def prepare_exit_context(executions, stock_symbol, pairs, *, orders=None, profil
         'saved_pairs': {str(p['adr_order_id']): p for p in pairs},
         'inferred_pairs': infer_entry_pairs(orders, stock_symbol),
         'profiles': profiles,
+        'order_index': {(o['symbol'], str(o['order_id']), o['side']): o for o in orders},
     }
 
 
@@ -422,18 +509,28 @@ def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol
         return {**result, 'reason': 'MISSING_MARK_PRICES'}
     if context is None:
         context = prepare_exit_context(executions, stock_symbol, pairs)
-    adr = context['adr_entries'].get(target['trade_id'])
-    active_stock = context['active_stock']
-    if not adr or not active_stock:
-        return {**result, 'reason': 'MISSING_ENTRY_LEG'}
-    saved_pair = context['saved_pairs'].get(adr['order_id'])
-    if saved_pair:
-        stock_item = active_stock.get(str(saved_pair['stock_order_id']))
+    direction = target.get('spread_direction', 'SHORT_SPREAD')
+    saved_pair = context['saved_pairs'].get(str(target['trade_id']))
+    if direction == 'LONG_SPREAD' and saved_pair:
+        adr = context['order_index'].get(('SKHYUSDT', str(target['trade_id']), 'BUY'))
+        stock = context['order_index'].get((stock_symbol, str(saved_pair.get('stock_order_id')), 'SELL'))
+        stock_item = {'order': stock, 'trim_qty': target.get('stock_trim_qty', target.get('stock_qty', 0))} if stock else None
         pairing = 'recorded_order_ids'
     else:
-        inferred_order_id = context['inferred_pairs'].get(adr['order_id'])
-        stock_item = active_stock.get(inferred_order_id)
-        pairing = 'restored_from_account_history_sequence'
+        adr = context['adr_entries'].get(target['trade_id'])
+        stock_item = None
+    active_stock = context['active_stock']
+    if not adr or not active_stock:
+        if direction != 'LONG_SPREAD':
+            return {**result, 'reason': 'MISSING_ENTRY_LEG'}
+    if direction != 'LONG_SPREAD':
+        if saved_pair:
+            stock_item = active_stock.get(str(saved_pair['stock_order_id']))
+            pairing = 'recorded_order_ids'
+        else:
+            inferred_order_id = context['inferred_pairs'].get(adr['order_id'])
+            stock_item = active_stock.get(inferred_order_id)
+            pairing = 'restored_from_account_history_sequence'
     if not stock_item:
         return {**result, 'reason': 'AMBIGUOUS_OR_MISMATCHED_ENTRY_LEGS'}
     stock = stock_item['order']
@@ -449,8 +546,12 @@ def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol
     stock_entry = stock['cost'] / stock['qty']
     if not all(math.isfinite(p) and p > 0 for p in (adr_entry, stock_entry)):
         return {**result, 'reason': 'INVALID_ENTRY_PRICES'}
-    adr_pnl = aq * (adr_entry - adr_mark)
-    stock_pnl = sq * (stock_mark - stock_entry)
+    if direction == 'LONG_SPREAD':
+        adr_pnl = aq * (adr_mark - adr_entry)
+        stock_pnl = sq * (stock_entry - stock_mark)
+    else:
+        adr_pnl = aq * (adr_entry - adr_mark)
+        stock_pnl = sq * (stock_mark - stock_entry)
     entry_fees = adr['fee'] * aq / adr['qty'] + stock['fee'] * sq / stock['qty']
     exit_notional = aq * adr_mark + sq * stock_mark
     closing_fee = exit_notional * EXIT_FEE_BPS / 10000
@@ -468,6 +569,7 @@ def estimate_tranche_exit(target, executions, adr_mark, stock_mark, stock_symbol
     result['net_return_pct'] = round((net / exit_notional * 100.0), 4) if exit_notional > 0 else 0.0
     return {**result, 'available': True, 'profitable': net > threshold, 'reason': 'ESTIMATE_READY',
             'stock_order_id': stock['order_id'], 'pairing': pairing,
+            'spread_direction': direction,
             'adr_entry_price': adr_entry, 'stock_entry_price': stock_entry,
             'adr_exit_qty': aq, 'stock_exit_qty': sq,
             'adr_pnl_usd': adr_pnl, 'stock_pnl_usd': stock_pnl,
