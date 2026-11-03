@@ -4,6 +4,7 @@ Supports live execution for all testable quantitative single-leg strategies:
 grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 """
 
+from .hourly_histogram import HourlyHistogramMixin
 from .single_leg_take_profit import TakeProfitMixin
 import asyncio
 import copy
@@ -39,6 +40,7 @@ INTERVAL_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1
 BINANCE_USER_TRADES_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 BINANCE_FILL_TIME_BUFFER_MS = 5 * 60 * 1000
 DEFAULT_STATE = {
+    "use_hourly_hist": True, "hourly_hist_fast": 20, "hourly_hist_slow": 60, "hourly_hist_signal": 9,
     "use_take_profit": True, "take_profit_pct": 0.2,
     "enabled": False, "selected_symbol": "BTCUSDT", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
@@ -74,7 +76,7 @@ DEFAULT_STATE = {
 }
 
 
-class CryptoBot(TakeProfitMixin):
+class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
     profit_venue = "binance"
     def __init__(self, client: Any, state_path: Optional[Path] = None):
         self.client = client
@@ -185,6 +187,7 @@ class CryptoBot(TakeProfitMixin):
             "use_ma_pullback": bool(self.state.get("use_ma_pullback", True)),
             "use_ma_cross_exit": bool(self.state.get("use_ma_cross_exit", True)),
         }
+        result["strategy_params"].update({key:self.state[key] for key in ("use_hourly_hist","hourly_hist_fast","hourly_hist_slow","hourly_hist_signal")})
         result["strategy_params"].update(use_take_profit=bool(self.state.get("use_take_profit", True)), take_profit_pct=float(self.state.get("take_profit_pct", 0.2)))
         result["history_event_count"] = len(result["execution_history"])
         result["execution_blocked"] = bool(self.state.get("execution_blocked") or self.state.get("recovery_required") or self.state.get("pending_order"))
@@ -387,6 +390,7 @@ class CryptoBot(TakeProfitMixin):
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         permitted = {
+            "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal",
             "use_take_profit", "take_profit_pct",
             "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
             "notional_usd", "max_tranches", "min_seconds_between_orders", "max_book_spread_bps",
@@ -419,6 +423,12 @@ class CryptoBot(TakeProfitMixin):
         for key, value in values.items():
             if key in {"selected_symbol", "strategy_mode", "strategy_interval", "macro_regime_mode"}:
                 candidate[key] = str(value)
+            elif key in {"hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"}:
+                if isinstance(value,bool) or not float(value).is_integer():
+                    raise ValueError("Hourly MACD periods must be integers")
+                candidate[key] = int(value)
+            elif key == "use_hourly_hist":
+                candidate[key] = bool(value)
             elif key == "use_take_profit":
                 candidate[key] = bool(value)
             elif key == "entry_direction_mode":
@@ -459,6 +469,7 @@ class CryptoBot(TakeProfitMixin):
         if candidate.get("macro_regime_mode") not in {"ma_slope", "macd_hist_accel", "hybrid"}:
             raise ValueError("Unsupported macro regime mode")
         bounds = {
+            "hourly_hist_fast": (2,100), "hourly_hist_slow": (3,200), "hourly_hist_signal": (2,100),
             "take_profit_pct": (0.01, 100.0),
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0), "macro_ma_period": (2, 120),
             "macro_macd_confirm_bars": (1, 12),
@@ -495,6 +506,8 @@ class CryptoBot(TakeProfitMixin):
                 raise ValueError("MACD slow period must be greater than MACD fast period")
         if candidate.get("macro_macd_fast_period", 12) >= candidate.get("macro_macd_slow_period", 26):
             raise ValueError("Hourly MACD slow period must be greater than hourly MACD fast period")
+        if candidate["hourly_hist_slow"] <= candidate["hourly_hist_fast"]:
+            raise ValueError("Hourly MACD slow period must exceed fast")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
                 ("use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
@@ -657,12 +670,15 @@ class CryptoBot(TakeProfitMixin):
             await self.client.set_leverage(symbol, 1)
         bid, ask = await self._book(symbol, enforce_spread=not reduce_only)
         price = ask if side > 0 else bid
+        if not reduce_only and not await self.hourly_entry_allowed(side):
+            raise ValueError("Hourly MACD histogram direction blocks this entry")
         if signal_values is not None and not reduce_only:
             executable_values = signal_values[:-1] + [price]
             valid, quote_side, _, _ = evaluate_strategy_signal(
                 self.state["strategy_mode"],
                 executable_values,
                 self.state,
+                hourly_histogram=self.state.get("hourly_histogram"),
                 evaluation_time=int(time.time()),
                 position_side=0,
                 entry_price=0.0,
@@ -879,6 +895,7 @@ class CryptoBot(TakeProfitMixin):
             try:
                 if await self.check_take_profit():
                     return
+                await self.refresh_hourly_histogram()
                 required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
                 request_limit = min(1500, max(125, required_bars + 1))
                 raw = await self.client.request("GET", "/fapi/v1/klines",
@@ -952,6 +969,7 @@ class CryptoBot(TakeProfitMixin):
                     self.state["strategy_mode"],
                     values,
                     self.state,
+                    hourly_histogram=self.state.get("hourly_histogram"),
                     evaluation_time=last_candle,
                     position_side=position_side,
                     entry_price=entry_price,

@@ -8,7 +8,7 @@ function load(file, globalName, prefix, defaultMode) {
   const localStorage = {getItem: key => storage.get(key) ?? null,
     setItem: (key, value) => storage.set(key, value)};
   const context = {
-    window: {}, URLSearchParams, console, localStorage,
+    window: {}, URLSearchParams, console, localStorage, clearTimeout() {}, setTimeout() {return 1;},
     document: {
       readyState: "loading",
       addEventListener() {},
@@ -20,6 +20,7 @@ function load(file, globalName, prefix, defaultMode) {
   context.TerminalCommon = context.window.TerminalCommon;
   vm.runInContext(fs.readFileSync(file, "utf8"), context);
   const engine = context.window[globalName];
+  engine.botState = {strategy_mode:"macd_zero_cross"};
   engine.currentParadigm = "macd_zero_cross";
   engine.interval = "5m";
   nodes.set(`${prefix}macdFastPeriod`, {value: "8"});
@@ -30,10 +31,18 @@ function load(file, globalName, prefix, defaultMode) {
 
   nodes.set(`${prefix}useTakeProfit`, {checked: false});
   nodes.set(`${prefix}takeProfitPct`, {value: "0.35"});
+  nodes.set(`${prefix}useHourlyHist`, {checked: true});
+  nodes.set(`${prefix}hourlyHistFast`, {value: "8"});
+  nodes.set(`${prefix}hourlyHistSlow`, {value: "21"});
+  nodes.set(`${prefix}hourlyHistSignal`, {value: "5"});
   const replay = engine.replaySettings();
   const live = engine.liveStrategyPayload(defaultMode);
   for (const settings of [replay, live]) {
     assert.equal(settings.strategy_mode, "macd_zero_cross");
+    assert.equal(settings.use_hourly_hist, true);
+    assert.equal(settings.hourly_hist_fast, 8);
+    assert.equal(settings.hourly_hist_slow, 21);
+    assert.equal(settings.hourly_hist_signal, 5);
     assert.equal(settings.use_take_profit, false);
     assert.equal(settings.take_profit_pct, 0.35);
     assert.deepEqual(
@@ -43,6 +52,23 @@ function load(file, globalName, prefix, defaultMode) {
     assert.equal(settings.use_macd_zero_cross, true);
     assert.equal(settings.use_macd_signal_zone, false);
   }
+
+  for (const suffix of ["LongPaper", "ShortPaper", "PaperSource"]) nodes.set(`${prefix}hourlyHist${suffix}`, {textContent: ""});
+  context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", {
+    ready:true,long_ok:true,short_ok:false,source_time:100,periods:[8,21,5],
+    histogram:2,previous_histogram:1,slope:1}, true);
+  assert.match(nodes.get(`${prefix}hourlyHistLongPaper`).textContent, /PASS/);
+  assert.match(nodes.get(`${prefix}hourlyHistShortPaper`).textContent, /WAITING/);
+  context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", {ready:true,long_ok:false,short_ok:true}, true);
+  assert.match(nodes.get(`${prefix}hourlyHistLongPaper`).textContent, /WAITING/);
+  assert.match(nodes.get(`${prefix}hourlyHistShortPaper`).textContent, /PASS/);
+  context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", null, true);
+  assert.match(nodes.get(`${prefix}hourlyHistLongPaper`).textContent, /UNAVAILABLE/);
+  context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", null, false);
+  assert.match(nodes.get(`${prefix}hourlyHistShortPaper`).textContent, /OFF/);
+  nodes.get(`${prefix}useHourlyHist`).checked=false;
+  assert.equal(engine.replaySettings().use_hourly_hist,false);
+  assert.equal(engine.liveStrategyPayload(defaultMode).use_hourly_hist,false);
 
   // Plot, replay, and deploy must consume the same editable periods.
   const plotted = [];
@@ -76,11 +102,11 @@ function load(file, globalName, prefix, defaultMode) {
   nodes.get(`${prefix}macdZeroUseSignalZone`).addEventListener = () => {};
   engine.bindParadigmDetailEvents("macd_zero_cross");
   events.input();
-  assert.ok(storage.size > 0);
+  assert.equal(engine.macdDraftSaveTimer, 1);
   vm.runInContext(fs.readFileSync(file, "utf8"), context);
   const reloaded = context.window[globalName];
   reloaded.botState = {strategy_mode: "macd_zero_cross", strategy_params: {
-    macd_fast_period: 12, macd_slow_period: 26, macd_signal_period: 9}};
+    macd_fast_period: 12, macd_slow_period: 26, macd_signal_period: 9}, strategy_drafts:{macd_zero_cross:{macd_fast_period:10,macd_slow_period:21,macd_signal_period:5}}};
   assert.match(reloaded.renderParadigmDetail("macd_zero_cross"), /value="10"/);
   assert.match(reloaded.renderParadigmDetail("macd_zero_cross"), /value="21"/);
   assert.match(reloaded.renderParadigmDetail("macd_zero_cross"), /value="5"/);
@@ -89,8 +115,7 @@ function load(file, globalName, prefix, defaultMode) {
   vm.runInContext(fs.readFileSync(otherFile, "utf8"), context);
   const other = context.window[prefix === "crypto_" ? "lighterCryptoEngine" : "cryptoEngine"];
   assert.doesNotMatch(other.renderParadigmDetail("macd_zero_cross"), /value="21"/);
-  const savedKey = Array.from(storage.keys())[0];
-  storage.set(savedKey, "broken json");
+  reloaded.botState.strategy_drafts = {};
   assert.match(reloaded.renderParadigmDetail("macd_zero_cross"), /value="26"/);
 
   const html = engine.renderParadigmDetail("macd_zero_cross");

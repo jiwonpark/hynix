@@ -4,6 +4,7 @@ Supports live execution for all testable quantitative single-leg strategies:
 grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 """
 
+from .hourly_histogram import HourlyHistogramMixin
 from .single_leg_take_profit import TakeProfitMixin
 import asyncio
 import copy
@@ -39,6 +40,7 @@ from .lighter_strategy import (
 # again before every order so a suspended market cannot be traded.
 MARKETS = {"BTC": 1, "ETH": 0, "SOL": 2, "DOGE": 3, "XRP": 7}
 DEFAULT_STATE = {
+    "use_hourly_hist": True, "hourly_hist_fast": 20, "hourly_hist_slow": 60, "hourly_hist_signal": 9,
     "use_take_profit": True, "take_profit_pct": 0.2,
     "enabled": False, "selected_symbol": "BTC", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
@@ -78,7 +80,7 @@ DEFAULT_STATE = {
 }
 
 
-class LighterCryptoBot(TakeProfitMixin):
+class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
     profit_venue = "lighter"
     # Standard 8.0x gross leverage cap matching Tab 2 and Tab 3.
     # Tab 2's margin buffer applies to estimated initial margin, not gross value.
@@ -226,6 +228,7 @@ class LighterCryptoBot(TakeProfitMixin):
         result["blocked_reason"] = (self.state.get("blocked_reason") or self.state.get("last_error")) if result["execution_blocked"] else None
         result["can_execute_entry"] = bool(self.state.get("enabled") and not result["execution_blocked"])
         result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
+        result["strategy_params"].update({key:self.state[key] for key in ("use_hourly_hist","hourly_hist_fast","hourly_hist_slow","hourly_hist_signal")})
         result["strategy_params"].update(use_take_profit=bool(self.state.get("use_take_profit", True)), take_profit_pct=float(self.state.get("take_profit_pct", 0.2)))
         return result
 
@@ -433,6 +436,7 @@ class LighterCryptoBot(TakeProfitMixin):
 
     async def configure(self, values: Dict[str, Any]) -> Dict[str, Any]:
         permitted = {
+            "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal",
             "use_take_profit", "take_profit_pct",
             "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
             "notional_usd", "max_tranches", "min_seconds_between_orders", "max_book_spread_bps",
@@ -467,6 +471,12 @@ class LighterCryptoBot(TakeProfitMixin):
         for key, value in values.items():
             if key in {"selected_symbol", "strategy_mode", "strategy_interval", "macro_regime_mode"}:
                 candidate[key] = str(value)
+            elif key in {"hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"}:
+                if isinstance(value,bool) or not float(value).is_integer():
+                    raise ValueError("Hourly MACD periods must be integers")
+                candidate[key] = int(value)
+            elif key == "use_hourly_hist":
+                candidate[key] = bool(value)
             elif key == "use_take_profit":
                 candidate[key] = bool(value)
             elif key == "entry_direction_mode":
@@ -520,6 +530,7 @@ class LighterCryptoBot(TakeProfitMixin):
                 use_base_spacing=False,
             )
         bounds = {
+            "hourly_hist_fast": (2,100), "hourly_hist_slow": (3,200), "hourly_hist_signal": (2,100),
             "take_profit_pct": (0.01, 100.0),
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0), "macro_ma_period": (2, 120),
             "macro_macd_confirm_bars": (1, 12),
@@ -558,6 +569,8 @@ class LighterCryptoBot(TakeProfitMixin):
                 raise ValueError("MACD slow period must be greater than MACD fast period")
         if candidate.get("macro_macd_fast_period", 12) >= candidate.get("macro_macd_slow_period", 26):
             raise ValueError("Hourly MACD slow period must be greater than hourly MACD fast period")
+        if candidate["hourly_hist_slow"] <= candidate["hourly_hist_fast"]:
+            raise ValueError("Hourly MACD slow period must exceed fast")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
                 ("use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
@@ -831,6 +844,10 @@ class LighterCryptoBot(TakeProfitMixin):
             self._finish_entry_campaign("target_reached")
             self._save()
             return False
+        if not entry_direction_allowed(self.state.get("entry_direction_mode", "two_way"), side) or not await self.hourly_entry_allowed(side):
+            self._finish_entry_campaign("entry_direction_filter")
+            self._save()
+            return False
         first_slice = int(campaign.get("slices_filled", 0)) == 0
         immediate_reversal = first_slice and campaign.get("initial_reason") == "reversal_entry"
         if (not immediate_reversal
@@ -1011,11 +1028,14 @@ class LighterCryptoBot(TakeProfitMixin):
             self._check_position(amount, step, mark_price=mark_px, min_base_amount=min_base)
             bid, ask = await self._book(market_id, enforce_spread=not reduce_only)
             price = ask if side > 0 else bid
+            if not reduce_only and not await self.hourly_entry_allowed(side):
+                raise ValueError("Hourly MACD histogram direction blocks this entry")
             if signal_values is not None and not reduce_only:
                 valid, quote_side, _, _ = evaluate_strategy_signal(
                     self.state["strategy_mode"],
                     signal_values[:-1] + [price],
                     self.state,
+                    hourly_histogram=self.state.get("hourly_histogram"),
                     evaluation_time=int(time.time()),
                     position_side=0,
                     entry_price=0.0,
@@ -1455,6 +1475,7 @@ class LighterCryptoBot(TakeProfitMixin):
 
                 if await self.check_take_profit():
                     return
+                await self.refresh_hourly_histogram()
                 required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
                 request_limit = min(500, max(130, required_bars + 1))
                 rows = await self.client.candles(market_id, interval, request_limit, fresh=True)
@@ -1525,6 +1546,7 @@ class LighterCryptoBot(TakeProfitMixin):
                     self.state["strategy_mode"],
                     values,
                     self.state,
+                    hourly_histogram=self.state.get("hourly_histogram"),
                     evaluation_time=last_candle,
                     position_side=position_side,
                     entry_price=entry_price,

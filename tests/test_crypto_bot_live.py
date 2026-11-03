@@ -67,6 +67,9 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         self.path = Path(self.temp.name) / "crypto_bot_state.json"
         self.client = FakeBinance()
         self.bot = CryptoBot(self.client, self.path)
+        # These execution tests isolate their existing rules; hourly gate has its own suite.
+        self.bot.state["use_hourly_hist"] = False
+        self.bot._save()
 
     async def test_hourly_macro_period_default_and_persistence(self):
         bot = self.bot

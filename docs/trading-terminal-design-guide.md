@@ -222,3 +222,31 @@ fee tiers or intrabar book prices. Missing fee lookup shows UNAVAILABLE. Paper
 entry_signals remain position-independent; summary/triangle P&L retains the existing
 pre-fee basis, while take-profit trades additionally return net_pnl_pct. Do not
 present that paper gross summary as realized account net P&L.
+
+## Hourly MACD histogram direction (Tabs 4 and 5)
+
+All single-leg strategies expose an additional optional entry filter, default ON:
+compare MACD-H on the last two **completed 1h candles**. Rising permits LONG only;
+falling permits SHORT only; exactly flat or unavailable permits neither. Histogram
+sign is irrelevant. Fast/Slow/Signal are independently adjustable (default20/60/9)
+from the selected strategy/chart MACD. The switch and periods persist through the
+authenticated bot config and are reported in strategy_params. Replay drafts may
+persist in the browser; deploying saves live, explicit Align restores live values.
+
+Show separate direction-correct LONG/rising and SHORT/falling PAPER and LIVE
+PASS/WAITING/OFF/UNAVAILABLE states, exact periods, histogram delta and completed
+hour source timestamp in KST. Replay background uses this hourly entry filter
+when enabled; the other strategy conditions remain independently evaluated.
+Replay maps each chart bar's close to the newest hourly close available then.
+Never use the forming hourly candle or let future hourly data change old signals.
+Hourly direction is evaluated independently of inventory for entry_signals.
+
+This filter is entry-only: keep every existing signal, emergency and net-profit
+exit active. Recheck current completed-hour direction immediately before **every**
+entry order, including each persisted Tab5 campaign piece. Cancel a campaign when
+its direction is no longer allowed by this filter or saved Long-only/Short-only
+mode. Missing hourly data blocks new entries without suppressing exits.
+
+The earlier MACD Zero Cross and Tab5 MA Stack exceptions bypass only the older
+MA/zone-based wider-trend gate; this separately labeled hourly histogram-slope
+filter applies to them as well.

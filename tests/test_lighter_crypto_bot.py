@@ -82,6 +82,9 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.path = Path(self.temp.name) / "lighter_crypto_bot_state.json"
         self.client = FakeLighter()
         self.bot = LighterCryptoBot(self.client, self.path)
+        # These execution tests isolate their existing rules; hourly gate has its own suite.
+        self.bot.state["use_hourly_hist"] = False
+        self.bot._save()
 
     async def test_hourly_macro_period_default_and_persistence(self):
         bot = self.bot

@@ -1491,6 +1491,7 @@
         }
       }
 
+      window.TerminalCommon?.mountHourlyHistogram?.("lighterCrypto_", detailSec, this);
       window.TerminalCommon?.mountTakeProfitControls?.("lighterCrypto_", detailSec, this);
       if (["adaptive_tranche", "grid"].includes(mode)) {
         if (ladderSec) ladderSec.style.display = "block";
@@ -2316,6 +2317,7 @@
         short_multiplier: this.shortMultiplier(),
         max_tranches: this.entryCountLimit(),
         macro_ma_period: numeric("lighterCrypto_macroMaPeriodSlider", numeric("lighterCrypto_macroMaPeriod", Number(this.botState?.macro_ma_period ?? 60))),
+        ...(window.TerminalCommon?.hourlyHistogramSettings?.("lighterCrypto_", this.botState) || {}),
         ...(window.TerminalCommon?.takeProfitSettings?.("lighterCrypto_", this.botState) || {}),
         max_book_spread_bps: numeric("lighterCrypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45)),
       };
@@ -3237,6 +3239,7 @@
       const liveOuEntryFallback = Number(this.botState?.strategy_params?.entry_z ?? this.botState?.entry_z ?? 1.4);
       const liveOuExitFallback = Number(this.botState?.strategy_params?.exit_z ?? this.botState?.exit_z ?? 0.20);
       return {
+        ...(window.TerminalCommon?.hourlyHistogramSettings?.("lighterCrypto_", this.botState) || {}),
         ...(window.TerminalCommon?.takeProfitSettings?.("lighterCrypto_", this.botState) || {}),
         symbol: this.selectedSymbol || "BTC",
         interval: this.interval, limit: 500, strategy_mode: mode,
@@ -3371,8 +3374,8 @@
       if (!this.botState) diffs.push("Live settings unavailable");
       if (!isIntervalMatch) diffs.push(`Interval ${currentInterval} ≠ ${liveInterval}`);
       if (!isParadigmMatch) diffs.push(`Strategy ${currentMode} ≠ ${liveMode}`);
-      for (const key of ["use_take_profit", "take_profit_pct"]) {
-        const saved = this.botState?.strategy_params?.[key] ?? this.botState?.[key] ?? (key === "use_take_profit" ? true : 0.2);
+      for (const key of ["use_take_profit", "take_profit_pct", "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"]) {
+        const saved = this.botState?.strategy_params?.[key] ?? this.botState?.[key] ?? ({use_take_profit:true,take_profit_pct:0.2,use_hourly_hist:true,hourly_hist_fast:20,hourly_hist_slow:60,hourly_hist_signal:9}[key]);
         if (settings[key] != null && settings[key] !== saved) diffs.push(`${key}: ${settings[key]} ≠ ${saved}`);
       }
       const parameterKeys = {
@@ -3548,6 +3551,7 @@
     },
 
     renderReplayConditionStatus(result, settings = this.replaySettings()) {
+      window.TerminalCommon?.renderHourlyHistogram?.("lighterCrypto_", "Paper", result?.hourly_histogram, settings.use_hourly_hist);
       window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Paper", result?.take_profit_evaluation, settings.use_take_profit);
       const checks = result?.latest_conditions || {};
       if (this.currentParadigm === "ou_quant") {
@@ -3841,6 +3845,7 @@
         this.setParadigm(liveMode);
       }
       const params = { ...this.botState, ...(this.botState.strategy_params || {}) };
+      window.TerminalCommon?.alignHourlyHistogram?.("lighterCrypto_", this.botState);
       const profitSettings = {use_take_profit: params.use_take_profit !== false, take_profit_pct: Number(params.take_profit_pct ?? 0.2)};
       if ($("lighterCrypto_useTakeProfit")) $("lighterCrypto_useTakeProfit").checked = profitSettings.use_take_profit;
       if ($("lighterCrypto_takeProfitPct")) $("lighterCrypto_takeProfitPct").value = String(profitSettings.take_profit_pct);
@@ -4214,6 +4219,8 @@
       const macroPeriod = lid("macroMaPeriod");
       if (macroPeriod && !macroPeriod.dataset.userEdited) macroPeriod.value = String(bot.strategy_params?.macro_ma_period ?? bot.macro_ma_period ?? 60);
       this.botState = bot;
+      window.TerminalCommon?.syncHourlyHistogram?.("lighterCrypto_", bot);
+      window.TerminalCommon?.renderHourlyHistogram?.("lighterCrypto_", "Live", bot.hourly_histogram, bot.use_hourly_hist);
       this.syncMacdDraftControls(bot);
       if (wasAwaitingBotSettings && ["macd_zero_cross", "macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)) {
         this.updateMaAndDiffs(this.bars || []);

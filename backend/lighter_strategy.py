@@ -1455,7 +1455,7 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
     return 25
 
 
-def evaluate_strategy_signal(
+def _evaluate_strategy_signal(
     strategy_mode: str,
     prices: List[float],
     config: Dict[str, Any],
@@ -1695,3 +1695,11 @@ def evaluate_strategy_signal(
         details["condition_pass"]["entry_spacing"] = spacing_pass
         details["condition_pass"]["exit_dwell"] = dwell_pass
     return entry_signal, candidate_side, exit_signal, details
+
+
+def evaluate_strategy_signal(strategy_mode, prices, config, *, hourly_histogram=None, **kwargs):
+    from .hourly_histogram import apply_hourly_filter
+    entry, side, exit_signal, details = _evaluate_strategy_signal(strategy_mode, prices, config, **kwargs)
+    if "use_hourly_hist" in config:
+        entry = apply_hourly_filter(entry, side, details, config, hourly_histogram)
+    return entry, side, exit_signal, details

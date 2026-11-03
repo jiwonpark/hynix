@@ -348,6 +348,78 @@
     }
   }
 
+  function hourlyHistogramSettings(prefix, bot = {}) {
+    let draft = {};
+    try { draft = JSON.parse(localStorage.getItem(`${prefix}hourly_hist_draft`) || "{}"); } catch (_) {}
+    const saved = {...bot, ...(bot?.strategy_params || {}), ...draft};
+    const settings = {use_hourly_hist: document.getElementById(`${prefix}useHourlyHist`)?.checked ?? saved.use_hourly_hist ?? true};
+    for (const [key, suffix, fallback] of [["fast","Fast",20],["slow","Slow",60],["signal","Signal",9]]) {
+      const value = Number(document.getElementById(`${prefix}hourlyHist${suffix}`)?.value ?? saved[`hourly_hist_${key}`] ?? fallback);
+      settings[`hourly_hist_${key}`] = Number.isFinite(value) ? Math.trunc(value) : fallback;
+    }
+    return settings;
+  }
+
+  function alignHourlyHistogram(prefix, bot) {
+    const saved = {...bot, ...(bot?.strategy_params || {})};
+    const settings = {use_hourly_hist:saved.use_hourly_hist !== false};
+    const enabled = document.getElementById(`${prefix}useHourlyHist`);
+    if (enabled) enabled.checked = settings.use_hourly_hist;
+    for (const [key,suffix,fallback] of [["fast","Fast",20],["slow","Slow",60],["signal","Signal",9]]) {
+      settings[`hourly_hist_${key}`]=saved[`hourly_hist_${key}`] ?? fallback;
+      const input=document.getElementById(`${prefix}hourlyHist${suffix}`);
+      if(input) input.value=String(settings[`hourly_hist_${key}`]);
+    }
+    try {localStorage.setItem(`${prefix}hourly_hist_draft`,JSON.stringify(settings));} catch (_) {}
+  }
+
+  function syncHourlyHistogram(prefix, bot) {
+    try {if(localStorage.getItem(`${prefix}hourly_hist_draft`)) return;} catch (_) {}
+    const saved={...bot,...(bot?.strategy_params || {})};
+    const enabled=document.getElementById(`${prefix}useHourlyHist`);
+    if(enabled && !enabled._userModified) enabled.checked=saved.use_hourly_hist !== false;
+    for(const [key,suffix,fallback] of [["fast","Fast",20],["slow","Slow",60],["signal","Signal",9]]) {
+      const input=document.getElementById(`${prefix}hourlyHist${suffix}`);
+      if(input && !input._userModified) input.value=String(saved[`hourly_hist_${key}`] ?? fallback);
+    }
+  }
+
+  function mountHourlyHistogram(prefix, anchor, engine) {
+    if (!anchor?.parentNode || document.getElementById(`${prefix}hourlyHistControls`)) return;
+    const settings=hourlyHistogramSettings(prefix,engine.botState);
+    const panel=document.createElement("div");
+    panel.id=`${prefix}hourlyHistControls`;
+    panel.style.cssText="padding:12px;margin:14px 0;border:1px solid #c4b5fd;border-radius:8px;background:#faf5ff;";
+    panel.innerHTML=`<label style="display:flex;flex-direction:row !important;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input id="${prefix}useHourlyHist" type="checkbox" ${settings.use_hourly_hist?"checked":""} style="appearance:auto;width:16px;height:16px;">
+      <b>Hourly MACD histogram direction · entry only</b></label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:8px 0;">${[["fast","Fast",2,100],["slow","Slow",3,200],["signal","Signal",2,100]].map(([key,label,min,max])=>`<label>1h ${label} <input id="${prefix}hourlyHist${label}" aria-label="Hourly MACD ${key} period" type="number" min="${min}" max="${max}" step="1" value="${settings[`hourly_hist_${key}`]}" style="width:65px;"></label>`).join("")}</div>
+      <div>Long entries: hourly histogram rising · <span id="${prefix}hourlyHistLongPaper">PAPER · waiting</span> · <span id="${prefix}hourlyHistLongLive">LIVE · waiting</span></div>
+      <div>Short entries: hourly histogram falling · <span id="${prefix}hourlyHistShortPaper">PAPER · waiting</span> · <span id="${prefix}hourlyHistShortLive">LIVE · waiting</span></div>
+      <small>Latest two completed hourly candles, independent of chart interval and histogram sign. Flat or unavailable blocks both directions. Includes every live campaign piece; exits remain active. Changes affect replay; unlock, pause and deploy to save live.</small>
+      <div id="${prefix}hourlyHistPaperSource" style="font-size:11px;margin-top:6px;">PAPER · awaiting completed hourly candles</div>
+      <div id="${prefix}hourlyHistLiveSource" style="font-size:11px;">LIVE · awaiting status</div>`;
+    anchor.parentNode.insertBefore(panel,anchor);
+    panel.querySelectorAll("input").forEach(input=>{
+      input.addEventListener("input",()=>{
+        input._userModified=true;
+        try {localStorage.setItem(`${prefix}hourly_hist_draft`,JSON.stringify(hourlyHistogramSettings(prefix,engine.botState)));} catch (_) {}
+        engine.updateRulesMatchStatus();
+      });
+      input.addEventListener("change",()=>engine.runBacktest());
+    });
+  }
+
+  function renderHourlyHistogram(prefix, kind, point, enabled) {
+    const stale=kind==="Live" && point?.available_time && Date.now()/1000-point.available_time>3600;
+    for(const [name,key] of [["Long","long_ok"],["Short","short_ok"]]) {
+      const node=document.getElementById(`${prefix}hourlyHist${name}${kind}`);
+      if(node) node.textContent=`${kind.toUpperCase()} · ${enabled===false?"OFF":!point?.ready||stale?"UNAVAILABLE":point[key]?"PASS":"WAITING"}`;
+    }
+    const source=document.getElementById(`${prefix}hourlyHist${kind}Source`);
+    if(source) source.textContent=`${kind.toUpperCase()} · completed 1h${point?.periods?` MACD (${point.periods.join(", ")})`:""} · ${point?.source_time?new Date(point.source_time*1000).toLocaleString("en-GB",{timeZone:"Asia/Seoul"})+" KST (candle open)":"source unavailable"}${point?.slope!=null?` · H ${point.previous_histogram.toFixed(5)} → ${point.histogram.toFixed(5)} · Δ ${point.slope.toFixed(5)}`:""}${point?.error?" · "+point.error:""}`;
+  }
+
   function takeProfitSettings(prefix, bot = {}) {
     let draft = {};
     try { draft = JSON.parse(localStorage.getItem(`${prefix}take_profit_draft`) || "{}"); } catch (_) {}
@@ -394,7 +466,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
+  const TerminalCommon = { syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

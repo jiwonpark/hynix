@@ -40,6 +40,7 @@ from .counterfactual_trades import (
 )
 from .config import config
 from .binance_client import BinanceFuturesClient
+from .hourly_histogram import hourly_histogram_points, apply_hourly_filter
 from .single_leg_take_profit import net_profit
 from .crypto_bot import CryptoBot
 from .lighter_client import LighterClient
@@ -1914,6 +1915,8 @@ def _crypto_entry_trend(bars, alignment, *, enabled, is_ou, span, slope_bars,
 def _run_crypto_backtest_sync(
     bars: List[Dict[str, Any]],
     candle_success: bool,
+    use_hourly_hist: bool = False, hourly_hist_fast: int = 20,
+    hourly_hist_slow: int = 60, hourly_hist_signal: int = 9,
     use_take_profit: bool = False, take_profit_pct: float = 0.2,
     take_profit_fee_rate: Optional[float] = None, take_profit_fee_error: Optional[str] = None,
     symbol: str = "BTCUSDT",
@@ -2035,6 +2038,23 @@ def _run_crypto_backtest_sync(
                        "net_pnl_pct": round(evaluation["net_pct"] * mult * fraction, 4),
                        "exit_fraction": fraction, "multiplier": mult, "reason": "net_take_profit"})
         return None
+
+    import bisect
+    hourly_config = dict(use_hourly_hist=use_hourly_hist, hourly_hist_fast=hourly_hist_fast,
+                         hourly_hist_slow=hourly_hist_slow, hourly_hist_signal=hourly_hist_signal)
+    hourly_points = hourly_histogram_points(macro_bars or [], hourly_config) if use_hourly_hist else []
+    hourly_times = [p['available_time'] for p in hourly_points]
+    hourly_by_bar = []
+    for b in bars:
+        point_index = bisect.bisect_right(hourly_times, b['time'] + interval_seconds) - 1
+        point = hourly_points[point_index] if point_index >= 0 else None
+        if point and point['source_time'] != int((b['time'] + interval_seconds)//3600)*3600-3600:
+            point = None
+        hourly_by_bar.append(point)
+
+    def filter_hourly(entry, side, index):
+        details = {'condition_pass':latest_conditions}
+        return apply_hourly_filter(entry, side, details, hourly_config, hourly_by_bar[index])
 
     bars_values = [item["value"] for item in bars]
     is_macd_strategy = strategy_mode in {"macd_reversal", "macd_strength_scaleout"}
@@ -2184,6 +2204,7 @@ def _run_crypto_backtest_sync(
                     exit_signal = convergence_pass and dwell_pass and bottoming_pass
             latest_condition_time = int(bar["time"])
 
+            entry_signal = filter_hourly(entry_signal, candidate_side, index)
             if entry_signal:
                 entry_signals.append({
                     "time": int(bar["time"]), "price": signal_price,
@@ -2294,6 +2315,7 @@ def _run_crypto_backtest_sync(
                 }
             latest_condition_time = int(bar["time"])
 
+            entry_signal = filter_hourly(entry_signal, candidate_side, index)
             if entry_signal:
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
@@ -2390,6 +2412,7 @@ def _run_crypto_backtest_sync(
             entry_signal = (votes >= min_consensus_votes and abs(zscore) >= 0.8
                             and (not use_ma_stack_1h or macro_aligned))
 
+            entry_signal = filter_hourly(entry_signal, candidate_side, index)
             if entry_signal:
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
@@ -2479,6 +2502,8 @@ def _run_crypto_backtest_sync(
             }
             latest_condition_time = int(bar["time"])
 
+            buy_signal = filter_hourly(buy_signal, 1, index)
+            short_signal = filter_hourly(short_signal, -1, index)
             if buy_signal or short_signal:
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
@@ -2612,11 +2637,12 @@ def _run_crypto_backtest_sync(
                 "mean": eval_info["mean"],
                 "z": eval_info["z"]
             })
+            entry_signal = filter_hourly(entry_signal, candidate_side, index)
             if entry_signal:
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
                     "side": int(candidate_side), "reason": "ma_acceleration",
-                    "conditions": dict(entry_eval.get("condition_pass", {})),
+                    "conditions": dict(latest_conditions),
                 })
             if position is None and entry_signal:
                 active_mult = max(0.1, float(long_multiplier)) if candidate_side > 0 else max(0.1, float(short_multiplier))
@@ -2721,11 +2747,12 @@ def _run_crypto_backtest_sync(
                 "slow_ma": eval_info["slow_ma"],
             })
 
+            entry_signal = filter_hourly(entry_signal, candidate_side, index)
             if entry_signal:
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
                     "side": int(candidate_side), "reason": "golden_death_cross",
-                    "conditions": dict(entry_eval.get("condition_pass", {})),
+                    "conditions": dict(latest_conditions),
                 })
 
             # Check exit on open position
@@ -2866,11 +2893,12 @@ def _run_crypto_backtest_sync(
                 "z": eval_info["histogram"], "macd": eval_info["macd"],
                 "signal": eval_info["signal"], "histogram": eval_info["histogram"],
             })
+            entry_signal = filter_hourly(entry_signal, candidate_side, index)
             if entry_signal:
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
                     "side": int(candidate_side), "reason": strategy_mode,
-                    "conditions": dict(entry_eval.get("condition_pass", {})),
+                    "conditions": dict(latest_conditions),
                 })
             if position is not None and exit_signal:
                 current_pnl = position["side"] * (bar["value"] / position["entry"] - 1) * 100
@@ -2927,6 +2955,13 @@ def _run_crypto_backtest_sync(
     mode_metrics["open_tranches"] = len(open_positions)
     mode_metrics["capacity_mode"] = "SINGLE_LEG_CRYPTO"
 
+    hourly_entry_trend = {"enabled":bool(use_hourly_hist), "source":market_source.upper(),
+        "basis":f"completed 1h MACD-H({hourly_hist_fast}, {hourly_hist_slow}, {hourly_hist_signal}) slope: rising LONG / falling SHORT",
+        "points":[{"time":bar['time'], "source_time":point.get('source_time') if point else None,
+                   "long_ok":bool(point and point.get('long_ok')), "short_ok":bool(point and point.get('short_ok')),
+                   "direction":"UNAVAILABLE" if not point or not point.get('ready') else
+                       "UPTREND" if point['long_ok'] else "DOWNTREND" if point['short_ok'] else "NEUTRAL"}
+                  for bar,point in zip(bars,hourly_by_bar)]}
     wins = sum(1 for trade in trades if trade["pnl_pct"] > 0)
     return {
         "success": candle_success,
@@ -2934,7 +2969,7 @@ def _run_crypto_backtest_sync(
         "strategy_mode": strategy_mode,
         "series": series,
         "entry_signals": entry_signals,
-        "entry_trend": _crypto_entry_trend(
+        "entry_trend": hourly_entry_trend if use_hourly_hist else _crypto_entry_trend(
             bars, macro_aligned_list,
             enabled=(False if strategy_mode == "macd_zero_cross" else
                      ou_use_macro_trend if strategy_mode == "ou_quant" else use_ma_stack_1h),
@@ -2951,6 +2986,7 @@ def _run_crypto_backtest_sync(
         "metrics": mode_metrics,
         "take_profit_evaluation": latest_take_profit,
         "take_profit_fee_rate": take_profit_fee_rate,
+        "hourly_histogram": hourly_by_bar[-1] if hourly_by_bar else None,
         "latest_evaluation": latest_evaluation,
         "latest_conditions": latest_conditions,
         "latest_condition_time": latest_condition_time,
@@ -2972,6 +3008,8 @@ def _run_crypto_backtest_sync(
 @app.get("/api/lighter-crypto/backtest")
 async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", limit: int = 500,
                               strategy_mode: str = "grid",
+                              use_hourly_hist: bool = True, hourly_hist_fast: int = 20,
+                              hourly_hist_slow: int = 60, hourly_hist_signal: int = 9,
                               use_take_profit: bool = True, take_profit_pct: float = 0.2,
                               entry_z: float = 1.5, exit_z: float = 0.25,
                               use_ma_stretch: bool = True, use_peak: bool = True,
@@ -3010,6 +3048,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               macro_macd_signal_period: int = 9,
                               macro_macd_confirm_bars: int = 2) -> Dict[str, Any]:
     """Single-leg crypto strategy backtest engine across 5 quantitative regimes."""
+    if not (2 <= hourly_hist_fast <= 100 and hourly_hist_fast < hourly_hist_slow <= 200 and 2 <= hourly_hist_signal <= 100):
+        raise ValueError("Invalid hourly MACD periods")
     if not math.isfinite(take_profit_pct) or not 0.01 <= take_profit_pct <= 100:
         raise ValueError("Take profit must be between 0.01 and 100 percent")
     if not 2 <= macro_ma_period <= 120:
@@ -3029,7 +3069,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
     macro_limit = min(500, max(125, math.ceil(min(500, limit) * interval_seconds / 3600)
                                + macro_ma_period + 2))
-    needs_hourly = strategy_mode not in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross"}
+    macro_limit = min(1000, max(macro_limit, math.ceil(min(500,limit)*interval_seconds/3600) + hourly_hist_slow + hourly_hist_signal + 3))
+    needs_hourly = use_hourly_hist or strategy_mode not in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross"}
     if market_source == "lighter":
         if needs_hourly:
             candle_res, macro_res = await asyncio.gather(
@@ -3066,6 +3107,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         _run_crypto_backtest_sync,
         bars=bars,
         candle_success=candle_res.get("success", False),
+        use_hourly_hist=use_hourly_hist, hourly_hist_fast=hourly_hist_fast,
+        hourly_hist_slow=hourly_hist_slow, hourly_hist_signal=hourly_hist_signal,
         use_take_profit=use_take_profit, take_profit_pct=take_profit_pct,
         take_profit_fee_rate=fee_rate, take_profit_fee_error=fee_error,
         symbol=symbol,
