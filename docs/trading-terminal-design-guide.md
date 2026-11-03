@@ -287,3 +287,17 @@ Do not hide an entire inherited condition card until extracting any real shared
 rules used by the selected strategy. In particular, wider-trend switches for
 non-Zero-Cross strategies must remain in Entry conditions. Hide only unrelated
 legacy rules; preserve the original shared inputs and handlers across switches.
+
+
+### Replay condition loading readiness
+
+Tabs4/5 loading completion must use the current parameter-matched condition
+result, never a retained chart background. Keep Conditions + signals pending
+through a replacement request when settings change in flight. If a response is
+discarded, fetch the current settings instead of leaving conditions empty.
+A prior completed request key cannot suppress retry when its result is missing.
+Abort replay requests after 30 seconds and show UNAVAILABLE with a Rerun Paper
+retry instruction; keep live condition verdicts separate. A successful response
+without completed-candle condition data is unavailable, not complete. After a
+replay settles, clear residual condition-value loading dots: show Not reported
+for a separate measurement absent from the response, never a fabricated value.

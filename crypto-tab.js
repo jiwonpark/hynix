@@ -47,9 +47,9 @@
     return periods.map((period) => `<option value="${period}"${period === value ? " selected" : ""}>MA${period}${[7, 24, 60].includes(period) ? " · chart line" : " · saved custom"}</option>`).join("");
   }
 
-  async function api(path) {
+  async function api(path, options = {}) {
     const prefix = getApiPrefix();
-    const response = await fetch(`${prefix}${path}`);
+    const response = await fetch(`${prefix}${path}`, options);
     const ct = (response.headers && typeof response.headers.get === "function" ? response.headers.get("content-type") : "application/json") || "";
     let payload = null;
     if (ct.includes("application/json")) {
@@ -3375,9 +3375,14 @@
       pill.style.color = matched ? (active ? "#166534" : "#92400e") : "#c2410c";
       pill.style.borderColor = matched ? (active ? "#86efac" : "#fcd34d") : "#fdba74";
       this.renderReplayConditionStatus(this.latestReplayConditionResult, settings);
+      if (this.latestReplayConditionResult || this.replayError) window.TerminalCommon?.settleReplayPlaceholders?.("crypto_");
     },
 
     renderReplayConditionStatus(result, settings = this.replaySettings()) {
+      if (!result && this.replayError) {
+        window.TerminalCommon?.renderReplayFailure?.("crypto_", this.replayError);
+        return;
+      }
       window.TerminalCommon?.renderHourlyHistogram?.("crypto_", "Paper", result?.hourly_histogram, settings.use_hourly_hist);
       window.TerminalCommon?.renderTakeProfitStatus?.("crypto_", "Paper", result?.take_profit_evaluation, settings.use_take_profit);
       const checks = result?.latest_conditions || {};
@@ -6413,12 +6418,16 @@
 
     runBacktestIfChanged() {
       const key = this.replayRefreshKey();
-      if (key === this._lastReplayRefreshKey || key === this._pendingReplayRefreshKey) return;
+      if ((key === this._lastReplayRefreshKey && this.latestReplayConditionResult && this.replayConditionSignature === key) || key === this._pendingReplayRefreshKey) return;
       return this.runBacktest();
     },
 
     async runBacktest() {
       const requestId = this.backtestRequestId = (this.backtestRequestId || 0) + 1;
+      this.replayLoading = true;
+      this.replayError = null;
+      window.beginMainTabLoading?.("crypto");
+      let requestedSettings;
       const summary = lid("dynamicBacktestStatus");
       const button = lid("btnRerunDynamicBacktest");
       if (button) button.disabled = true;
@@ -6439,6 +6448,7 @@
         if (this.currentParadigm !== "ou_quant" && macroPeriod && !macroPeriod.checkValidity())
           throw new Error("Hourly MA period must be an integer between 2 and 120");
         const settings = this.replaySettings();
+        requestedSettings = settings;
         const replayKey = this.replayRefreshKey(settings);
         this._pendingReplayRefreshKey = replayKey;
         this.updateMaAndDiffs(this.bars);
@@ -6446,9 +6456,10 @@
         const trendSlope = settings.trend_slope_min;
         const trendPullback = settings.trend_pullback_dist;
         const toggles = new URLSearchParams(settings);
-        const data = await api(`/api/crypto/backtest?${toggles}`);
+        const data = await window.TerminalCommon.fetchReplay(api, `/api/crypto/backtest?${toggles}`);
         if (requestId !== this.backtestRequestId || JSON.stringify(settings) !== JSON.stringify(this.replaySettings())) return;
         if (!data?.success) throw new Error(data?.error || "Replay data unavailable");
+        if (!data.latest_conditions || !data.latest_condition_time) throw new Error("Completed-candle condition results unavailable. Use Rerun Paper to retry.");
         this.applyEntryTrend(data.entry_trend);
         this.latestReplayConditionResult = data;
         this.replayConditionSignature = new URLSearchParams(settings).toString();
@@ -6634,6 +6645,7 @@
         }
       } catch (error) {
         if (requestId === this.backtestRequestId) {
+          this.replayError = error.message || "Condition replay unavailable";
           this.latestReplayConditionResult = null;
           this.backtestMarkers = [];
           const layer = $("cryptoTrendBandLayer");
@@ -6651,6 +6663,12 @@
       } finally {
         if (requestId === this.backtestRequestId) {
           this._pendingReplayRefreshKey = null;
+          this.replayLoading = false;
+          window.updateMainTabLoading?.("crypto");
+          // Status synchronization can change the inputs while a request runs.
+          // A discarded response must not leave conditions without a replacement.
+          if (requestedSettings && !this.replayError && JSON.stringify(requestedSettings) !== JSON.stringify(this.replaySettings()))
+            setTimeout(() => this.runBacktestIfChanged(), 0);
           if (button) button.disabled = false;
         }
       }

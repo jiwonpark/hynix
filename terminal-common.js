@@ -128,6 +128,58 @@
     });
   }
 
+  function replayProgressPart(engine) {
+    const key = engine?.replayRefreshKey?.();
+    const result = engine?.latestReplayConditionResult;
+    const current = Boolean(result?.latest_conditions && result?.latest_condition_time && (!key || engine.replayConditionSignature === key));
+    const error = engine?.replayError || "";
+    return {label:"Conditions + signals", ready:current && !engine?.replayLoading,
+      detail:error, error:Boolean(error)};
+  }
+
+  async function fetchReplay(api, path, timeoutMs = 30000) {
+    const controller = new AbortController();
+    let timer;
+    try {
+      return await Promise.race([
+        api(path, {signal:controller.signal}),
+        new Promise((_, reject) => { timer = setTimeout(() => {
+          reject(new Error("Condition replay timed out after 30s. Use Rerun Paper to retry."));
+          controller.abort();
+        }, timeoutMs); }),
+      ]);
+    } finally { clearTimeout(timer); }
+  }
+
+  function settleReplayPlaceholders(prefix) {
+    const groups = document.getElementById(`${prefix}conditionGroups`);
+    if (!groups) return;
+    for (const dots of groups.querySelectorAll(".terminalLoadingDots")) {
+      const host = dots.closest(".condValue, .condBadge");
+      if (!host) continue;
+      host.textContent = host.classList.contains("condBadge") ? "UNAVAILABLE" : "Not reported";
+      host.title = "PAPER · Replay settled; this separate value was not returned. See the condition verdict and source time.";
+    }
+  }
+
+  function renderReplayFailure(prefix, message) {
+    const groups = document.getElementById(`${prefix}conditionGroups`);
+    if (groups) for (const badge of groups.querySelectorAll(".condBadge[id]")) {
+      if (badge.textContent === "OFF") continue;
+      badge.textContent = "UNAVAILABLE";
+      badge.className = "condBadge neutral";
+      badge.title = `PAPER · ${message}`;
+    }
+    for (const suffix of ["hourlyHistLongPaper", "hourlyHistShortPaper"]) {
+      const status = document.getElementById(`${prefix}${suffix}`);
+      if (status && !status.textContent.includes("OFF")) status.textContent = "PAPER · UNAVAILABLE";
+    }
+    for (const suffix of ["macdStatusSource", "ouStatusSource", "maDiffStatusSource", "hourlyHistPaperSource", "takeProfitPaperStatus"]) {
+      const source = document.getElementById(`${prefix}${suffix}`);
+      if (source) source.textContent = `PAPER · ${message}`;
+    }
+  }
+
   function movingAverage(bars, windowSize) {
     if (!Array.isArray(bars) || windowSize < 1) return [];
     let rolling = 0;
@@ -595,7 +647,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
+  const TerminalCommon = { settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

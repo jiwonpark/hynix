@@ -74,6 +74,11 @@ for (const [file, name, prefix] of [
     const ids=[...document.querySelectorAll('[id]')].map(n=>n.id);
     assert.equal(new Set(ids).size,ids.length,'no duplicate controls');
   }
+  const placeholder=document.createElement('span');placeholder.className='condValue';
+  placeholder.innerHTML=common.terminalLoadingMarkup;
+  document.getElementById(prefix+'entryConditionGroup').append(placeholder);
+  common.settleReplayPlaceholders(prefix);
+  assert.equal(placeholder.textContent,'Not reported','settled replay cannot leave a value spinning indefinitely');
   engine.currentParadigm='macd_zero_cross';
   const bot={enabled:true,strategy_mode:'macd_zero_cross',strategy_interval:'5m',tranches:[{}],
     last_evaluation:{strategy:'macd_zero_cross',time:Date.now()/1000,
