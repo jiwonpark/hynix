@@ -3976,12 +3976,17 @@ async def _compute_hedged_status() -> Dict[str, Any]:
             if isinstance(res_stock, list):
                 executions.extend(_normalize_binance_trades(res_stock, history_stock_sym))
             executions.sort(key=lambda x: x["time"])
+            # Reconciliation can cover several weeks of fills.  Yield between
+            # CPU-heavy phases so account HTTP responses and exchange timeout
+            # callbacks are not delayed by the autonomous worker.
+            await asyncio.sleep(0)
         except Exception:
             pass
 
         # Real-time criteria for speculative trend-reversal auto-tranching & anti-churn LIFO ratchet
         auto_state = load_auto_tranche_state()
-        verified_exit_snapshot = _build_verified_exit_snapshot(
+        verified_exit_snapshot = await asyncio.to_thread(
+            _build_verified_exit_snapshot,
             executions,
             history_stock_sym,
             auto_state.get("exit_order_pairs", []),
@@ -3989,6 +3994,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         )
         verified_exit_summary = verified_exit_snapshot["verified_exit_summary"]
         executions = verified_exit_snapshot["recent_executions"]
+        await asyncio.sleep(0)
         cond_toggles = auto_state.get("condition_toggles", {})
         pacing = entry_pacing(auto_state)
         entry_cooldown_sec = pacing["entry_cooldown_sec"]
@@ -4093,8 +4099,9 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         ma_stretch_pts = round(curr_spread - ma24, 2)
         is_stretched_above_ma = bool(ma_stretch_pts >= ENTRY_MIN_MA_STRETCH_PTS)
         entry_pairs = auto_state.get("entry_order_pairs", [])
-        orders = aggregate_orders(executions)
-        profiles = entry_profiles(orders, stock_sym, entry_pairs)
+        orders = await asyncio.to_thread(aggregate_orders, executions)
+        profiles = await asyncio.to_thread(entry_profiles, orders, stock_sym, entry_pairs)
+        await asyncio.sleep(0)
         order_index = {(o["symbol"], str(o["order_id"]), o["side"]): o for o in orders}
         latest_by_direction: Dict[str, Optional[float]] = {
             "SHORT_SPREAD": None, "LONG_SPREAD": None,
@@ -4202,10 +4209,12 @@ async def _compute_hedged_status() -> Dict[str, Any]:
         # Larger adaptive entries are one fixed exit unit plus retained core.
         # Restore their policy from recorded pairs or recognized paired fill sizes.
         if campaign_direction == "LONG_SPREAD":
-            adr_stack = reconstruct_recorded_pair_stack(
+            adr_stack = await asyncio.to_thread(
+                reconstruct_recorded_pair_stack,
                 orders, stock_sym, entry_pairs, auto_state.get("exit_order_pairs", []), "LONG_SPREAD")
         else:
-            adr_stack = reconstruct_leg_stack(orders, "SKHYUSDT", "SELL", .08, .07, profiles)
+            adr_stack = await asyncio.to_thread(
+                reconstruct_leg_stack, orders, "SKHYUSDT", "SELL", .08, .07, profiles)
         stock_entry_orders = {o["order_id"]: o for o in orders
                               if o["symbol"] == stock_sym and o["side"] == (
                                   "SELL" if campaign_direction == "LONG_SPREAD" else "BUY")}
@@ -4229,6 +4238,7 @@ async def _compute_hedged_status() -> Dict[str, Any]:
                 "spread_direction": campaign_direction if campaign_direction in {"SHORT_SPREAD", "LONG_SPREAD"} else "SHORT_SPREAD",
                 "target_out_spread": round(bar_spread + (policy["convergence_pts"] if campaign_direction == "LONG_SPREAD" else -policy["convergence_pts"]), 2),
             })
+        await asyncio.sleep(0)
 
         # 1-to-1 Entry-to-Exit Matching Invariant:
         # Each scale-out requires a corresponding un-exited scale-in entry.
