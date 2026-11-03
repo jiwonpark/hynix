@@ -1424,7 +1424,7 @@
         }
       }
 
-      window.TerminalCommon?.groupConditionControls?.("crypto_", detailSec);
+      window.TerminalCommon?.groupConditionControls?.("crypto_", detailSec, mode);
 
       this.runBacktest();
       this.updateRulesMatchStatus();
@@ -2062,7 +2062,7 @@
         <h3 style="margin:0 0 10px;font-size:14px;">Execution safeguards &amp; live deployment</h3>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;border-bottom:1px solid rgba(5,150,105,0.2);padding-bottom:8px;">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <strong style="font-size:13px;letter-spacing:.35px">REAL BINANCE FUTURES BOT — GRID</strong>
+            <strong style="font-size:13px;letter-spacing:.35px">REAL BINANCE FUTURES BOT</strong>
             <span id="crypto_liveBotEnginePill" style="font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px;background:#059669;color:#fff;">LIVE: DYNAMIC GRID</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">

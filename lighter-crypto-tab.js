@@ -1513,7 +1513,7 @@
         }
       }
 
-      window.TerminalCommon?.groupConditionControls?.("lighterCrypto_", detailSec);
+      window.TerminalCommon?.groupConditionControls?.("lighterCrypto_", detailSec, mode);
 
       this.runBacktest();
       this.updateRulesMatchStatus();

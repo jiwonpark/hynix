@@ -407,7 +407,7 @@
     document.getElementById(`${prefix}conditionGroups`)?.remove();
   }
 
-  function groupConditionControls(prefix, anchor) {
+  function groupConditionControls(prefix, anchor, mode) {
     if (!anchor?.parentNode || typeof anchor.querySelectorAll !== "function") return;
     const groups = document.createElement("section");
     groups.id = `${prefix}conditionGroups`;
@@ -439,6 +439,11 @@
     }
     for (const [node, key] of persistentConditionNodes(prefix)) {
       node._conditionHome ||= node.parentNode;
+      // Legacy status refreshes may re-show their individual rows. Hide the
+      // whole legacy card when a strategy has its own dedicated controls.
+      if (node.contains(document.getElementById(`${prefix}lblCritScaleInTitle`))
+          || node.contains(document.getElementById(`${prefix}lblCritTPTitle`)))
+        node.style.display = ["grid", "custom", "adaptive_tranche"].includes(mode) ? "flex" : "none";
       buckets[key].append(node);
     }
     for (const node of anchor.querySelectorAll("[data-terminal-rule-group]")) {

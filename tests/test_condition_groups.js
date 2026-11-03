@@ -38,10 +38,12 @@ for (const [file, name, prefix] of [
   for (const mode of [...Object.keys(engine.paradigms), 'macd_zero_cross']) {
     common.prepareConditionGroups(prefix,anchor);
     anchor.innerHTML=mode==='grid'?'':engine.renderParadigmDetail(mode);
-    common.groupConditionControls(prefix,anchor);
+    common.groupConditionControls(prefix,anchor,mode);
     const entry=document.getElementById(prefix+'entryConditionGroup');
     const exit=document.getElementById(prefix+'exitConditionGroup');
     assert.equal(hourly.parentNode,entry,mode+' hourly in entry');
+    assert.equal(document.getElementById(prefix+'lblCritScaleInTitle').parentNode.parentNode.style.display,
+      ['grid','custom','adaptive_tranche'].includes(mode)?'flex':'none','legacy card matches selected strategy');
     assert.equal(tp.parentNode,exit,mode+' TP in exit');
     assert.equal(fast.value,'17','unsaved period survives layout rebuild');
     assert.equal(document.querySelectorAll('#'+prefix+'conditionGroups').length,1);
