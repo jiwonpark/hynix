@@ -77,7 +77,12 @@ for (const [file, name, prefix] of [
   const placeholder=document.createElement('span');placeholder.className='condValue';
   placeholder.innerHTML=common.terminalLoadingMarkup;
   document.getElementById(prefix+'entryConditionGroup').append(placeholder);
+  const livePlaceholder=document.createElement('span');livePlaceholder.setAttribute('data-live-condition','test');
+  livePlaceholder.innerHTML='<span class="condBadge">'+common.terminalLoadingMarkup+'</span>';
+  document.getElementById(prefix+'entryConditionGroup').append(livePlaceholder);
   common.settleReplayPlaceholders(prefix);
+  assert.ok(livePlaceholder.querySelector('.terminalLoadingDots'),'settling PAPER must not alter live statuses');
+  livePlaceholder.remove();
   assert.equal(placeholder.textContent,'Not reported','settled replay cannot leave a value spinning indefinitely');
   engine.currentParadigm='macd_zero_cross';
   const bot={enabled:true,strategy_mode:'macd_zero_cross',strategy_interval:'5m',tranches:[{}],

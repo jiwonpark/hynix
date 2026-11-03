@@ -156,7 +156,7 @@
     if (!groups) return;
     for (const dots of groups.querySelectorAll(".terminalLoadingDots")) {
       const host = dots.closest(".condValue, .condBadge");
-      if (!host) continue;
+      if (!host || host.closest("[data-live-condition]")) continue;
       host.textContent = host.classList.contains("condBadge") ? "UNAVAILABLE" : "Not reported";
       host.title = "PAPER · Replay settled; this separate value was not returned. See the condition verdict and source time.";
     }
