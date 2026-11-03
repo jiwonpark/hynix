@@ -474,6 +474,31 @@
     return [macro];
   }
 
+  function inheritedConditionValue(rule, settings, mode) {
+    const value = key => settings[key] == null ? "—" : String(settings[key]);
+    const descriptions = {
+      entry_z:`|Z| ≥ ${value("entry_z")}`,
+      entry_spacing:`Minimum spacing ${value("base_spacing_pct")}%`,
+      entry_rollover:"Completed-bar Z rollover",
+      entry_ma_stack:["ma_stack", "adaptive_tranche"].includes(mode) ? "Price / MA7 / MA24 / MA60" : "Price / MA7 / rolling mean",
+      entry_stretch:`Distance from MA60 ≥ ${value("ma_stretch_min")}%`,
+      entry_ma_slope:`Minimum velocity ${value("ma_accel_min_slope")}`,
+      entry_ma_accel:`Minimum acceleration ${value("ma_accel_min_accel")}`,
+      entry_ma_pullback:`Pullback to MA${value("ma_accel_period")}`,
+      entry_golden_cross:`MA${value("fast_ma_period")} crosses above MA${value("slow_ma_period")}`,
+      entry_death_cross:`MA${value("fast_ma_period")} crosses below MA${value("slow_ma_period")}`,
+      entry_cross_spread:`MA spread ≥ ${value("min_cross_spread_bps")} bps`,
+      exit_convergence:`|Z| ≤ ${value("exit_z")}`,
+      exit_dwell:`Minimum ${value("min_dwell_bars")} completed bars`,
+      exit_max_dwell:"16 completed bars",
+      exit_bottoming:"Z convergence stalls",
+      exit_ma_cross:mode === "ma_stack" ? "Opposite MA7 / MA24 alignment" : `Price reaches MA${value("ma_accel_period")}`,
+      exit_cross:`Opposite MA${value("fast_ma_period")} / MA${value("slow_ma_period")} alignment`,
+      exit_trailing_stop:`Retracement ≥ ${value("ma_trailing_stop")}%`,
+    };
+    return descriptions[rule.condition] || "Completed-candle rule";
+  }
+
   // Move the existing controls, never clone them: drafts, listeners and live
   // authentication keep using the same inputs across strategy rerenders.
   function persistentConditionNodes(prefix) {
@@ -687,7 +712,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
+  const TerminalCommon = { inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

@@ -22,6 +22,10 @@ for(const [file,name,prefix,rootId] of [
  document.querySelector('.shortTermCriteriaGrid').innerHTML=card('lblCritScaleInTitle',entry)+card('lblCritTPTitle',exit);
  engine.interval='5m';engine.botState={strategy_mode:'macd_zero_cross',strategy_params:{}};
  for(const method of ['renderMarkers','renderCurrentPositionReferenceLines','renderTradeMarkerTargets','clearEntryTrend','runBacktest','updateRulesMatchStatus','updateDeployButtonState','applyExecutionLock'])engine[method]=()=>{};
+ const stackDwell=common.inheritedStrategyConditions('ma_stack','crypto_').find(rule=>rule.condition==='exit_max_dwell');
+ assert.equal(common.inheritedConditionValue(stackDwell,{min_dwell_bars:3},'ma_stack'),'16 completed bars','MA Stack must not inherit a stale three-bar Grid caption');
+ const crossDwell=common.inheritedStrategyConditions('golden_death_cross',prefix).find(rule=>rule.condition==='exit_dwell');
+ assert.equal(common.inheritedConditionValue(crossDwell,{min_dwell_bars:7},'golden_death_cross'),'Minimum 7 completed bars');
  const expected={grid:8,custom:8,adaptive_tranche:8,ma_acceleration:5,golden_death_cross:6,ma_stack:prefix==='crypto_'?6:0,macd_zero_cross:0,ou_quant:0,macd_reversal:1,macd_strength_scaleout:1,multi_factor:1,trend_pullback:1};
  for(const mode of [...Object.keys(engine.paradigms),'macd_zero_cross','ma_acceleration','golden_death_cross','grid']){
   await engine.setParadigm(mode);

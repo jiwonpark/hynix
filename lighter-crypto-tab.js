@@ -3443,6 +3443,10 @@
           : `Completed ${this.interval} MACD histogram must be negative and rising for long, or positive and falling for short`;
       }
       rules.forEach(([suffix, key, name]) => {
+        if (suffix !== "EntryMaStack1h") {
+          const rule = sharedRules.find(item => item.suffix === suffix);
+          this.setText(`valCond${suffix}`, window.TerminalCommon.inheritedConditionValue(rule, settings, currentMode));
+        }
         const input = lid(`chkCond${suffix}`);
         const badge = lid(`badgeCond${suffix}`);
         const liveEnabled = liveParams[key] != null ? Boolean(liveParams[key]) : Boolean(defaultConditionToggles[key]);

@@ -1519,8 +1519,8 @@
             </div>
           </div>
           <div style="display:grid;gap:8px;margin-bottom:12px;">
-            <label data-terminal-rule-group="entry" style="display:flex;align-items:center;gap:8px;font-size:12px;"><input id="crypto_maUseDiffHook" type="checkbox" style="width:16px;height:16px;" ${savedMa.use_ma_diff_hook !== false ? "checked" : ""}>Entry · MA diff turnaround after the configured streak<span class="condBadge neutral" id="crypto_maStatusDiffHook">UNAVAILABLE</span></label>
-            <label data-terminal-rule-group="exit" style="display:flex;align-items:center;gap:8px;font-size:12px;"><input id="crypto_maUseDiffExit" type="checkbox" style="width:16px;height:16px;" ${savedMa.use_ma_diff_exit !== false ? "checked" : ""}>Exit · Opposite MA diff turnaround<span class="condBadge neutral" id="crypto_maStatusDiffExit">N/A</span></label>
+            <label data-terminal-rule-group="entry" style="display:flex;flex-direction:row !important;justify-content:flex-start;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;"><input id="crypto_maUseDiffHook" type="checkbox" style="width:16px;height:16px;" ${savedMa.use_ma_diff_hook !== false ? "checked" : ""}>Entry · MA diff turnaround after the configured streak<span class="condBadge neutral" id="crypto_maStatusDiffHook">UNAVAILABLE</span></label>
+            <label data-terminal-rule-group="exit" style="display:flex;flex-direction:row !important;justify-content:flex-start;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;"><input id="crypto_maUseDiffExit" type="checkbox" style="width:16px;height:16px;" ${savedMa.use_ma_diff_exit !== false ? "checked" : ""}>Exit · Opposite MA diff turnaround<span class="condBadge neutral" id="crypto_maStatusDiffExit">N/A</span></label>
             <small id="crypto_maDiffStatusSource" style="color:#64748b;">PAPER · Awaiting completed-candle replay</small>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
@@ -3277,6 +3277,10 @@
           : `Completed ${this.interval} MACD histogram must be negative and rising for long, or positive and falling for short`;
       }
       rules.forEach(([suffix, key, name]) => {
+        if (suffix !== "EntryMaStack1h") {
+          const rule = sharedRules.find(item => item.suffix === suffix);
+          this.setText(`valCond${suffix}`, window.TerminalCommon.inheritedConditionValue(rule, settings, currentMode));
+        }
         const input = lid(`chkCond${suffix}`);
         const badge = lid(`badgeCond${suffix}`);
         const liveEnabled = liveParams[key] != null ? Boolean(liveParams[key]) : Boolean(defaultConditionToggles[key]);
