@@ -1433,7 +1433,6 @@ async def get_crypto_parity(symbol: str = "BTCUSDT", interval: str = "15m", limi
 
 @app.get("/api/crypto/bot/status")
 async def get_crypto_bot_status() -> Dict[str, Any]:
-    global _crypto_history_task
     bot = crypto_bot.public_state()
     history_age = time.monotonic() - _crypto_history_cache_time if _crypto_history_cache_time else None
     if _crypto_history_cache:
@@ -1441,9 +1440,7 @@ async def get_crypto_bot_status() -> Dict[str, Any]:
     history_stale = history_age is None or history_age > 30.0
     bot["history_stale"] = history_stale
     if history_stale:
-        bot["history_status"] = "Binance realized trade history refreshing; condition telemetry is current"
-    if _crypto_history_task is None or _crypto_history_task.done():
-        _crypto_history_task = asyncio.create_task(_refresh_crypto_history_snapshot())
+        bot["history_status"] = "Binance realized trade history is stale; condition telemetry is current"
     return {"success": True, "bot": bot, "history_stale": history_stale}
 
 
@@ -1744,9 +1741,12 @@ async def get_lighter_crypto_trends(symbol: str = "BTC", small: str = "5m",
 
 @app.get("/api/lighter-crypto/bot/status")
 async def get_lighter_crypto_bot_status() -> Dict[str, Any]:
-    global _lighter_crypto_history_task
     # Configuration and completed-candle condition telemetry are local and must
-    # never wait for slow exchange trade-history reconciliation.
+    # never wait for or launch slow exchange trade-history reconciliation. Some
+    # signer/history implementations perform synchronous work before their first
+    # await, which can starve the single API event loop even from a background
+    # task. Reconciliation remains available through the explicit authenticated
+    # endpoint; this lightweight route reports the last verified cache as stale.
     bot = lighter_crypto_bot.public_state()
     history_age = (time.monotonic() - _lighter_crypto_history_cache_time
                    if _lighter_crypto_history_cache_time else None)
@@ -1755,9 +1755,7 @@ async def get_lighter_crypto_bot_status() -> Dict[str, Any]:
     history_stale = history_age is None or history_age > 30.0
     bot["history_stale"] = history_stale
     if history_stale:
-        bot["history_status"] = "Lighter realized trade history refreshing; condition telemetry is current"
-    if _lighter_crypto_history_task is None or _lighter_crypto_history_task.done():
-        _lighter_crypto_history_task = asyncio.create_task(_refresh_lighter_crypto_history_snapshot())
+        bot["history_status"] = "Lighter realized trade history is stale; condition telemetry is current"
     return {"success": True, "bot": bot, "history_stale": history_stale}
 
 
