@@ -3101,8 +3101,10 @@
             priceBadge.style.borderColor = (status.change_pct ?? 0) >= 0 ? "#bbf7d0" : "#fecaca";
           }
         }
-        this.setText("lblDaemonSyncTime", status.success && status.server_time_ms
-          ? `Last Sync: ${formatKstDateTime(status.server_time_ms, false)}`
+        const accountTimestamp = Number(status.account_updated_ms || 0);
+        const accountFreshness = status.account_stale ? " · STALE SNAPSHOT" : "";
+        this.setText("lblDaemonSyncTime", status.success && accountTimestamp
+          ? `Account: ${formatKstDateTime(accountTimestamp, false)}${accountFreshness}`
           : `Account unavailable: ${status.error || "No response"} · retrying`);
       this.setText("lblDaemonLatency", this.botState?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Loading");
         this.setText("lblDaemonStats", `Lighter Perpetuals · ${sym}`);
@@ -3110,10 +3112,14 @@
         ? (this.botState?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT LOADING")
         : "LIGHTER ACCOUNT LOADING");
         this.setText("lblDaemonMainStatus", `Daemon: Single-Leg Crypto · ${sym}`);
-      this.setText("lblDaemonAuthBadge", status.authenticated ? "LIGHTER PERPETUALS CONNECTED" : "ACCOUNT UNAVAILABLE");
+      this.setText("lblDaemonAuthBadge", status.authenticated
+        ? (status.account_stale ? "LIGHTER ACCOUNT · STALE" : "LIGHTER PERPETUALS CONNECTED")
+        : "ACCOUNT UNAVAILABLE");
       this.setText("valAccountEquity", Number.isFinite(Number(status.collateral)) && status.collateral != null
         ? `$${Number(status.collateral).toFixed(2)}` : "—");
-      this.setText("badgeEquitySource", status.authenticated ? "REAL FUTURES" : "UNAVAILABLE");
+      this.setText("badgeEquitySource", status.authenticated
+        ? (status.account_stale ? "REAL FUTURES · STALE" : "REAL FUTURES")
+        : "UNAVAILABLE");
       this.setText("valAvailMargin", Number.isFinite(Number(status.available_margin)) && status.available_margin != null
         ? `$${Number(status.available_margin).toFixed(2)}` : "—");
 

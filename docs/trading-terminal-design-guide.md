@@ -382,6 +382,15 @@ from the lightweight status route: synchronous signer work can starve its API
 event loop even when wrapped in a background coroutine. Slow P&L history must
 not blank current LIVE conditions.
 
+Tab 5 account and position cards must render from the latest authoritative
+Lighter account stream or last successful REST snapshot without waiting for a
+new exchange request. Show the account source timestamp and label snapshots
+older than 15 seconds `STALE`; never stamp the HTTP response time onto old
+balances. A stale/missing snapshot schedules one coalesced REST refresh, while
+the current UI response remains bounded. Stale account data disables live-order
+availability but remains visible instead of becoming a fresh zero or an HTTP
+proxy timeout.
+
 The completed-hour signal second difference remains an independent entry filter.
 Exits use the opposite ΔH turn and H zone: close long when previous ΔH ≥ 0,
 current ΔH < 0 and H > 0; close short when previous ΔH ≤ 0, current ΔH > 0

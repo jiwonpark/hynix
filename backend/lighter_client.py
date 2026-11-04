@@ -64,8 +64,49 @@ class LighterClient:
                     logger.warning("Using stale cached Lighter data for %s", key)
                     return self._clone(cached["value"])
                 raise
-            self._cache[key] = {"value": self._clone(value), "expires": time.monotonic() + max(0.1, ttl)}
+            self._cache[key] = {
+                "value": self._clone(value),
+                "expires": time.monotonic() + max(0.1, ttl),
+                "updated_at_ms": int(time.time() * 1000),
+            }
             return self._clone(value)
+
+    def account_telemetry_snapshot(self) -> Optional[Dict[str, Any]]:
+        """Return the latest account stream/cache without making a network call.
+
+        Dashboard reads must remain responsive when Lighter REST is degraded.
+        The caller receives the source timestamp so stale data is never shown as
+        a freshly fetched zero or empty account.
+        """
+        creds = self.get_credentials() or {}
+        address = creds.get("l1_address")
+        if not address:
+            return None
+        if self._ws_account:
+            account = self._ws_account.get("account")
+            if not isinstance(account, dict):
+                account = self._ws_account
+            if "positions" not in account and "positions" in self._ws_account:
+                account = {**account, "positions": self._ws_account.get("positions")}
+            return {
+                "account": self._clone(account),
+                "source": "LIGHTER_ACCOUNT_STREAM",
+                "updated_at_ms": int(time.time() * 1000 - max(0.0, time.monotonic() - self._ws_account_time) * 1000),
+            }
+        cached = self._cache.get(f"account:{address}")
+        if not cached or not isinstance(cached.get("value"), dict):
+            return None
+        return {
+            "account": self._clone(cached["value"]),
+            "source": "LIGHTER_ACCOUNT_CACHE",
+            "updated_at_ms": int(cached.get("updated_at_ms", 0) or 0),
+        }
+
+    def market_detail_snapshot(self, market_id: int) -> Optional[Dict[str, Any]]:
+        """Return cached market metadata without waiting on Lighter REST."""
+        cached = self._cache.get(f"market-detail:{market_id}")
+        value = cached.get("value") if cached else None
+        return self._clone(value) if isinstance(value, dict) else None
 
     def stream_status(self) -> Dict[str, Any]:
         now = time.monotonic()

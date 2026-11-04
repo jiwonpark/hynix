@@ -16,13 +16,19 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
         bot_end = source.index('@app.post("/api/lighter-crypto/bot/config")', bot_start)
         cls.bot_status_source = source[bot_start:bot_end]
 
-    def test_account_telemetry_has_a_server_side_deadline(self) -> None:
-        self.assertIn("asyncio.wait_for(awaitable, timeout=timeout)", self.status_source)
-        self.assertIn("timeout: float = 6.0", self.status_source)
+    def test_account_telemetry_never_waits_for_exchange_rest(self) -> None:
+        self.assertIn("lighter_client.account_telemetry_snapshot()", self.status_source)
+        self.assertNotIn("await lighter_client.account_status()", self.status_source)
+        self.assertIn("asyncio.create_task(_refresh_lighter_account_cache())", self.status_source)
 
     def test_positions_reuse_the_account_snapshot(self) -> None:
-        self.assertIn("lighter_client.positions()", self.status_source)
-        self.assertNotIn("positions(fresh=True)", self.status_source)
+        self.assertIn('positions = account.get("positions") or []', self.status_source)
+        self.assertNotIn("lighter_client.positions(", self.status_source)
+
+    def test_account_snapshot_exposes_source_age_and_staleness(self) -> None:
+        self.assertIn('"account_source": snapshot.get("source")', self.status_source)
+        self.assertIn('"account_updated_ms": updated_at_ms or None', self.status_source)
+        self.assertIn('"account_stale": account_stale', self.status_source)
 
     def test_bot_settings_survive_trade_history_timeout(self) -> None:
         self.assertIn("lighter_crypto_bot.public_state()", self.bot_status_source)

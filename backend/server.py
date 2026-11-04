@@ -214,6 +214,7 @@ _crypto_history_cache_time = 0.0
 _lighter_crypto_history_task: Optional[asyncio.Task] = None
 _lighter_crypto_history_cache: Optional[Dict[str, Any]] = None
 _lighter_crypto_history_cache_time = 0.0
+_lighter_account_refresh_task: Optional[asyncio.Task] = None
 
 _REALIZED_HISTORY_KEYS = (
     "verified_exit_count", "verified_realized_pnl_usd", "pnl_reconciliation",
@@ -238,6 +239,14 @@ async def _refresh_lighter_crypto_history_snapshot() -> None:
         _lighter_crypto_history_cache_time = time.monotonic()
     except Exception as exc:
         logger.warning("Lighter realized-history refresh failed: %s", exc)
+
+
+async def _refresh_lighter_account_cache() -> None:
+    """Refresh the REST fallback without holding the dashboard response open."""
+    try:
+        await asyncio.wait_for(lighter_client.account_status(), timeout=6.0)
+    except Exception as exc:
+        logger.warning("Lighter account-cache refresh failed: %s", exc)
 
 # Active WebSocket connections for live push
 active_connections: List[WebSocket] = []
@@ -1548,37 +1557,29 @@ async def get_lighter_crypto_markets() -> Dict[str, Any]:
 
 @app.get("/api/lighter-crypto/status")
 async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
+    global _lighter_account_refresh_task
     try:
         if symbol not in LIGHTER_CRYPTO_MARKETS:
             raise ValueError("Unsupported Lighter crypto symbol")
         market_id = LIGHTER_CRYPTO_MARKETS[symbol]
-
-        async def telemetry_read(awaitable: Any, timeout: float = 6.0) -> Any:
-            """Keep public telemetry inside the browser's 20-second deadline.
-
-            The underlying Lighter client deliberately retries longer for order
-            safety.  A read-only dashboard request must not inherit that retry
-            budget or it can hold the whole Tab 5 refresh open for 30+ seconds.
-            """
-            return await asyncio.wait_for(awaitable, timeout=timeout)
-
-        detail, book, account, candles = await asyncio.gather(
-            telemetry_read(lighter_client.market_detail(market_id)),
-            telemetry_read(lighter_client.order_book(market_id, 20)),
-            telemetry_read(lighter_client.account_status()),
-            telemetry_read(lighter_client.candles(market_id, "1m", 20)),
-            return_exceptions=True,
-        )
-        for required in (detail, book, account):
-            if isinstance(required, Exception):
-                raise required
-        if isinstance(candles, Exception):
-            candles = []
-        quote = _lighter_book_summary(book)
-        # Account status has just populated the shared three-second account
-        # cache.  Reuse that snapshot (or the live account stream) instead of
-        # forcing a second REST round trip for positions.
-        positions = await telemetry_read(lighter_client.positions(), timeout=3.0) if account.get("authenticated") else []
+        snapshot = lighter_client.account_telemetry_snapshot()
+        updated_at_ms = int((snapshot or {}).get("updated_at_ms", 0) or 0)
+        snapshot_stale = (not updated_at_ms
+                          or int(time.time() * 1000) - updated_at_ms > 15_000)
+        if snapshot_stale and (_lighter_account_refresh_task is None
+                               or _lighter_account_refresh_task.done()):
+            _lighter_account_refresh_task = asyncio.create_task(_refresh_lighter_account_cache())
+        if not snapshot:
+            return {"success": False, "symbol": symbol,
+                    "error": "Lighter account snapshot unavailable; waiting for account stream",
+                    "server_time_ms": int(time.time() * 1000)}
+        account = snapshot["account"]
+        positions = account.get("positions") or []
+        if isinstance(positions, dict):
+            positions = list(positions.values())
+        detail = lighter_client.market_detail_snapshot(market_id) or {}
+        evaluation = lighter_crypto_bot.state.get("last_evaluation") or {}
+        mark = float(evaluation.get("ratio", 0) or detail.get("mark_price", 0) or 0)
         selected = []
         allocated = sum(abs(float(p.get("allocated_margin", 0) or 0)) for p in positions)
         account_gross = 0.0
@@ -1612,25 +1613,30 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
                              "unrealized_pnl": unrealized_pnl,
                              "initial_margin": initial_margin,
                              "roe_percent": round(roe_percent, 4)})
-        collateral = float(account.get("collateral", 0) or 0) if account.get("authenticated") else None
-        mark = float(quote["mid"] or 0)
-        previous_open = float(candles[-2]["o"]) if len(candles) > 1 else mark
-        change_pct = (mark - previous_open) / previous_open * 100 if previous_open else 0.0
+        collateral_raw = account.get("collateral")
+        collateral = float(collateral_raw) if collateral_raw not in (None, "") else None
+        # Raw Lighter account snapshots are authoritative when present; unlike
+        # the normalized account_status helper they do not carry this flag.
+        authenticated = bool(account) and collateral is not None
+        account_age_ms = max(0, int(time.time() * 1000) - updated_at_ms) if updated_at_ms else None
+        account_stale = account_age_ms is None or account_age_ms > 15_000
         return {"success": True, "symbol": symbol, "market_id": market_id,
-                "mark_price": mark, "price_ratio": mark, "bid": quote["bid"], "ask": quote["ask"],
-                "high": float(candles[-1]["h"]) if candles else mark,
-                "low": float(candles[-1]["l"]) if candles else mark,
-                "change_pct": round(change_pct, 2),
-                "venue": "Lighter Single-Leg Perpetual", "authenticated": bool(account.get("authenticated")),
-                "execution_enabled": bool(account.get("execution_enabled") and detail.get("status") == "active"
-                                          and quote["bid"] and quote["ask"]
+                "mark_price": mark or None, "price_ratio": mark or None,
+                "venue": "Lighter Single-Leg Perpetual", "authenticated": authenticated,
+                "execution_enabled": bool(authenticated and detail.get("status") == "active"
+                                          and not account_stale
                                           and not lighter_crypto_bot.state["recovery_required"]),
-                "execution_message": lighter_crypto_bot.state.get("last_error") or account.get("message"),
+                "execution_message": lighter_crypto_bot.state.get("last_error"),
                 "collateral": collateral,
                 "available_margin": max(0.0, collateral - allocated) if collateral is not None else None,
                 "account_gross_notional": account_gross if collateral is not None else None,
                 "selected_gross_notional": selected_gross if collateral is not None else None,
-                "positions": selected, "server_time_ms": int(time.time() * 1000)}
+                "positions": selected,
+                "account_source": snapshot.get("source"),
+                "account_updated_ms": updated_at_ms or None,
+                "account_age_ms": account_age_ms,
+                "account_stale": account_stale,
+                "server_time_ms": int(time.time() * 1000)}
     except Exception as error:
         return {"success": False, "symbol": symbol, "error": str(error),
                 "server_time_ms": int(time.time() * 1000)}
