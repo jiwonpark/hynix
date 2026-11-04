@@ -82,24 +82,41 @@ class LighterClient:
         address = creds.get("l1_address")
         if not address:
             return None
+        cached = self._cache.get(f"account:{address}")
+        cached_account = (self._clone(cached.get("value"))
+                          if cached and isinstance(cached.get("value"), dict) else None)
         if self._ws_account:
-            account = self._ws_account.get("account")
-            if not isinstance(account, dict):
-                account = self._ws_account
-            if "positions" not in account and "positions" in self._ws_account:
-                account = {**account, "positions": self._ws_account.get("positions")}
+            streamed_account = self._ws_account.get("account")
+            if not isinstance(streamed_account, dict):
+                streamed_account = self._ws_account
+            account = {**(cached_account or {}), **streamed_account}
+            if "positions" in self._ws_account:
+                account["positions"] = self._ws_account.get("positions")
+            stream_updated_at_ms = int(
+                time.time() * 1000 - max(0.0, time.monotonic() - self._ws_account_time) * 1000)
+            # account_all updates can contain positions without collateral. In
+            # that case collateral is still sourced from REST and its older
+            # timestamp must control the combined snapshot's freshness label.
+            stream_has_collateral = streamed_account.get("collateral") not in (None, "")
+            cached_updated_at_ms = int((cached or {}).get("updated_at_ms", 0) or 0)
             return {
                 "account": self._clone(account),
-                "source": "LIGHTER_ACCOUNT_STREAM",
-                "updated_at_ms": int(time.time() * 1000 - max(0.0, time.monotonic() - self._ws_account_time) * 1000),
+                "source": ("LIGHTER_ACCOUNT_STREAM" if stream_has_collateral
+                           else "LIGHTER_ACCOUNT_STREAM+REST_CACHE"),
+                "updated_at_ms": (stream_updated_at_ms if stream_has_collateral
+                                   else cached_updated_at_ms),
+                "positions_updated_ms": stream_updated_at_ms,
+                "collateral_updated_ms": (stream_updated_at_ms if stream_has_collateral
+                                           else cached_updated_at_ms),
             }
-        cached = self._cache.get(f"account:{address}")
-        if not cached or not isinstance(cached.get("value"), dict):
+        if cached_account is None:
             return None
         return {
-            "account": self._clone(cached["value"]),
+            "account": cached_account,
             "source": "LIGHTER_ACCOUNT_CACHE",
             "updated_at_ms": int(cached.get("updated_at_ms", 0) or 0),
+            "positions_updated_ms": int(cached.get("updated_at_ms", 0) or 0),
+            "collateral_updated_ms": int(cached.get("updated_at_ms", 0) or 0),
         }
 
     def market_detail_snapshot(self, market_id: int) -> Optional[Dict[str, Any]]:

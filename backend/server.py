@@ -1634,6 +1634,8 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
                 "positions": selected,
                 "account_source": snapshot.get("source"),
                 "account_updated_ms": updated_at_ms or None,
+                "positions_updated_ms": snapshot.get("positions_updated_ms"),
+                "collateral_updated_ms": snapshot.get("collateral_updated_ms"),
                 "account_age_ms": account_age_ms,
                 "account_stale": account_stale,
                 "server_time_ms": int(time.time() * 1000)}

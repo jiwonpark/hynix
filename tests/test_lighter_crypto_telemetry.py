@@ -28,6 +28,8 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
     def test_account_snapshot_exposes_source_age_and_staleness(self) -> None:
         self.assertIn('"account_source": snapshot.get("source")', self.status_source)
         self.assertIn('"account_updated_ms": updated_at_ms or None', self.status_source)
+        self.assertIn('"positions_updated_ms": snapshot.get("positions_updated_ms")', self.status_source)
+        self.assertIn('"collateral_updated_ms": snapshot.get("collateral_updated_ms")', self.status_source)
         self.assertIn('"account_stale": account_stale', self.status_source)
 
     def test_bot_settings_survive_trade_history_timeout(self) -> None:
