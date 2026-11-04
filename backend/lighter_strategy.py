@@ -890,10 +890,11 @@ def evaluate_ma_acceleration_signals(
     if proximity_mode:
         use_ma_accel = False
         use_ma_stack_1h = False
-        if ma_max_distance_pct <= 0:
-            ma_max_distance_pct = 0.15
-
-    if ma_max_distance_pct > 0:
+        if use_ma_slope and slope_curr != 0:
+            candidate_side = 1 if slope_curr > 0 else -1
+        else:
+            candidate_side = 1 if long_pullback else -1
+    elif ma_max_distance_pct > 0:
         near_ma = abs(current_price - ma_curr) <= ma_curr * ma_max_distance_pct / 100
         long_pullback = short_bounce = near_ma
         if use_ma_slope and slope_curr != 0:

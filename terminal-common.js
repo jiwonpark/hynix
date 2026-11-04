@@ -472,7 +472,7 @@
     if (["ou_quant", "macd_zero_cross", "macd_hist_turn"].includes(mode) || (mode === "ma_stack" && prefix === "lighterCrypto_")) return [];
     if (mode === "ma_proximity") return [
       rule("EntryMaStretch", "use_ma_slope", "entry_ma_slope", "MA direction · long rising, short falling"),
-      rule("EntryPeak", "use_ma_pullback", "entry_ma_pullback", "Price within the configured distance of the MA"),
+      rule("EntryPeak", "use_ma_pullback", "entry_ma_pullback", "Price vs SMA · long below, short above"),
       rule("ExitConvergence", "use_ma_cross_exit", "exit_ma_cross", "Exit · price crosses the MA against the position"),
     ];
     if (mode === "ma_acceleration") return [
@@ -509,14 +509,13 @@
 
   function renderMaProximityControls(prefix, saved) {
     return `
-      <p>Enter long near a rising SMA or short near a falling SMA, using completed chart candles. Distance is measured on either side of the SMA.</p>
+      <p>Long requires a close below the Pullback SMA. Short requires a close above it. The Direction SMA controls the slope check.</p>
       <div data-terminal-rule-group="entry" data-after-condition="EntryMaStretch" style="display:flex;gap:12px;flex-wrap:wrap;">
-        <label>Direction SMA period <input id="${prefix}inpMaDirectionPeriod" type="number" min="0" max="498" step="1" required value="${Number(saved?.ma_direction_period ?? 0)}" style="width:85px;"> <small>0 uses the proximity SMA</small></label>
+        <label>Direction SMA period <input id="${prefix}inpMaDirectionPeriod" type="number" min="0" max="498" step="1" required value="${Number(saved?.ma_direction_period ?? 0)}" style="width:85px;"> <small>0 uses the Pullback SMA</small></label>
         <label>Minimum MA slope <input id="${prefix}inpMaAccelMinSlope" type="number" min="0" step="0.001" value="${Number(saved?.ma_accel_min_slope ?? 0)}"></label>
       </div>
       <div data-terminal-rule-group="entry" data-after-condition="EntryPeak" style="display:flex;gap:12px;flex-wrap:wrap;">
-        <label>Proximity SMA period <input id="${prefix}inpMaAccelPeriod" type="number" min="3" max="498" step="1" required value="${Number(saved?.ma_accel_period ?? 24)}" style="width:85px;"></label>
-        <label>Max distance from MA (%) <input id="${prefix}inpMaMaxDistance" type="number" min="0.01" max="100" step="0.01" required value="${Number(saved?.ma_max_distance_pct || 0.15)}" style="width:95px;"></label>
+        <label>Pullback SMA period <input id="${prefix}inpMaAccelPeriod" type="number" min="3" max="498" step="1" required value="${Number(saved?.ma_accel_period ?? 24)}" style="width:85px;"></label>
       </div>`;
   }
 
@@ -526,7 +525,7 @@
       const period = Number(direction.value);
       direction.setCustomValidity(period === 1 || period === 2 ? "Enter 0 or a period from 3 to 498" : "");
     }
-    return ["inpMaDirectionPeriod", "inpMaAccelPeriod", "inpMaMaxDistance"]
+    return ["inpMaDirectionPeriod", "inpMaAccelPeriod"]
       .map(id => document.getElementById(prefix + id))
       .find(input => input?.checkValidity?.() === false);
   }
@@ -553,9 +552,11 @@
         ? `MA${settings.ma_direction_period || settings.ma_accel_period} slope · min ${value("ma_accel_min_slope")}`
         : `Minimum velocity ${value("ma_accel_min_slope")}`,
       entry_ma_accel:`Minimum acceleration ${value("ma_accel_min_accel")}`,
-      entry_ma_pullback: mode === "ma_proximity" || Number(settings.ma_max_distance_pct) > 0
-        ? `Within ${value("ma_max_distance_pct")}% of MA${value("ma_accel_period")}`
-        : `Pullback to MA${value("ma_accel_period")}`,
+      entry_ma_pullback: mode === "ma_proximity"
+        ? `Below SMA${value("ma_accel_period")} long / above short`
+        : Number(settings.ma_max_distance_pct) > 0
+          ? `Within ${value("ma_max_distance_pct")}% of MA${value("ma_accel_period")}`
+          : `Pullback to MA${value("ma_accel_period")}`,
       entry_golden_cross:`MA${value("fast_ma_period")} crosses above MA${value("slow_ma_period")}`,
       entry_death_cross:`MA${value("fast_ma_period")} crosses below MA${value("slow_ma_period")}`,
       entry_cross_spread:`MA spread ≥ ${value("min_cross_spread_bps")} bps`,

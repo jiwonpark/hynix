@@ -61,17 +61,15 @@ for(const [file,name,prefix,rootId] of [
    stop.checked=false;
 
    const period=document.getElementById(prefix+'inpMaAccelPeriod');
-   const distance=document.getElementById(prefix+'inpMaMaxDistance');
+   assert.equal(document.getElementById(prefix+'inpMaMaxDistance'),null,'MA Pullback has no distance filter');
    const nearRow=document.getElementById(prefix+'rowCondEntryPeak');
    assert.ok(nearRow.nextElementSibling?.contains(period), 'SMA period follows the proximity rule');
    assert.equal(period.type,'number');
    period.value='37';
-   distance.value='0.27';
    document.getElementById(prefix+'inpMaDirectionPeriod').value='73';
    for(const settings of [engine.replaySettings(),engine.liveStrategyPayload(mode)]){
     assert.equal(settings.ma_accel_period,37);
     assert.equal(settings.ma_direction_period,73);
-    assert.equal(settings.ma_max_distance_pct,0.27);
    }
 
    const slope=document.getElementById(prefix+'chkCondEntryMaStretch');

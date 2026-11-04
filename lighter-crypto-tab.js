@@ -459,15 +459,15 @@
       },
       ma_proximity: {
         id: "ma_proximity",
-        name: "MA Proximity",
+        name: "MA Pullback",
         icon: "↔",
-        badge: "MA PROXIMITY",
-        title: "MA Proximity Entry",
-        desc: "Long near a rising moving average. Short near a falling moving average.",
+        badge: "MA PULLBACK",
+        title: "MA Pullback Entry",
+        desc: "Long below the Pullback SMA. Short above it. Direction follows the selected SMA slope.",
         tpTitle: "Adverse MA Cross",
         tpDesc: "Exit when the price crosses the MA against the position.",
         entryLabels: {}, exitLabels: {}, researchLabels: {},
-        defaultParams: { ma_accel_period: 24, ma_accel_min_slope: 0, ma_max_distance_pct: 0.15 }
+        defaultParams: { ma_accel_period: 24, ma_accel_min_slope: 0 }
       },
       ma_acceleration: {
         id: "ma_acceleration",
@@ -1402,7 +1402,7 @@
             <button id="lighterCrypto_tabParadigm_multi_factor" class="lighterParadigmBtn" type="button" data-mode="multi_factor" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚖️ Multi-Factor Gate</button>
             <button id="lighterCrypto_tabParadigm_trend_pullback" class="lighterParadigmBtn" type="button" data-mode="trend_pullback" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🌊 Macro Trend Reversion</button>
             <button id="lighterCrypto_tabParadigm_ma_acceleration" class="lighterParadigmBtn" type="button" data-mode="ma_acceleration" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">🚀 MA Acceleration</button>
-            <button id="lighterCrypto_tabParadigm_ma_proximity" class="lighterParadigmBtn" type="button" data-mode="ma_proximity" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">↔ MA Proximity</button>
+            <button id="lighterCrypto_tabParadigm_ma_proximity" class="lighterParadigmBtn" type="button" data-mode="ma_proximity" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">↔ MA Pullback</button>
             <button id="lighterCrypto_tabParadigm_golden_death_cross" class="lighterParadigmBtn" type="button" data-mode="golden_death_cross" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">⚔️ Golden & Death Cross</button>
             <button id="lighterCrypto_tabParadigm_macd_reversal" class="lighterParadigmBtn" type="button" data-mode="macd_reversal" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">〽️ MACD Reversal</button>
             <button id="lighterCrypto_tabParadigm_macd_zero_cross" class="lighterParadigmBtn" type="button" data-mode="macd_zero_cross" style="border:1.5px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:700;cursor:pointer;">↕️ MACD Zero Cross</button>
@@ -2390,7 +2390,7 @@
       } else if (["ma_acceleration", "ma_proximity"].includes(mode)) {
         payload.ma_accel_period = numeric("lighterCrypto_inpMaAccelPeriod", Number(this.botState?.ma_accel_period ?? 24));
         payload.ma_accel_min_slope = numeric("lighterCrypto_inpMaAccelMinSlope", Number(this.botState?.ma_accel_min_slope ?? 0.0));
-        payload.ma_max_distance_pct = numeric("lighterCrypto_inpMaMaxDistance", mode === "ma_proximity" ? 0.15 : 0);
+        if (mode === "ma_acceleration") payload.ma_max_distance_pct = numeric("lighterCrypto_inpMaMaxDistance", 0);
         if (mode === "ma_proximity") payload.ma_direction_period = numeric("lighterCrypto_inpMaDirectionPeriod", 0);
         payload.ma_accel_min_accel = numeric("lighterCrypto_inpMaAccelMinAccel", Number(this.botState?.ma_accel_min_accel ?? 0.0));
         payload.use_ma_slope = lid("chkCondEntryMaStretch")?.checked !== false;
@@ -3375,7 +3375,7 @@
         trend_slope_min: numeric("lighterCrypto_replayTrendSlope", 0.002),
         ma_accel_period: numeric("lighterCrypto_inpMaAccelPeriod", 24),
         ma_accel_min_slope: numeric("lighterCrypto_inpMaAccelMinSlope", 0.0),
-        ma_max_distance_pct: numeric("lighterCrypto_inpMaMaxDistance", this.currentParadigm === "ma_proximity" ? 0.15 : 0),
+        ma_max_distance_pct: numeric("lighterCrypto_inpMaMaxDistance", 0),
         ma_direction_period: numeric("lighterCrypto_inpMaDirectionPeriod", 0),
         ma_accel_min_accel: numeric("lighterCrypto_inpMaAccelMinAccel", 0.0),
         fast_ma_period: numeric("lighterCrypto_inpCrossFastPeriod", 9),
@@ -3506,7 +3506,7 @@
         ma_stack: ["min_diff_bars"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
-        ma_proximity: ["ma_direction_period", "ma_accel_period", "ma_accel_min_slope", "ma_max_distance_pct"],
+        ma_proximity: ["ma_direction_period", "ma_accel_period", "ma_accel_min_slope"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel", "ma_max_distance_pct"],
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
         macd_hist_turn: ["macd_fast_period", "macd_slow_period", "macd_signal_period"],
@@ -3524,8 +3524,7 @@
           && settings.macro_ma_period !== Number(liveParams.macro_ma_period ?? 60))
         diffs.push(`Hourly MA ${settings.macro_ma_period} ≠ ${liveParams.macro_ma_period ?? 60}`);
       if (isParadigmMatch) (parameterKeys[currentMode] || []).forEach((key) => {
-        const live = currentMode === "ma_proximity" && key === "ma_max_distance_pct"
-          ? liveParams[key] || 0.15 : liveParams[key];
+        const live = liveParams[key];
         if (live == null || !Number.isFinite(Number(live)) || Math.abs(settings[key] - Number(live)) > 1e-9)
           diffs.push(`${key}: ${settings[key]} ≠ ${live ?? "unknown"}`);
       });
@@ -3794,7 +3793,7 @@
           exit_trend_invalidation:"Exit · trend invalidation", exit_stop_or_dwell:"Exit · stop loss / 32-bar limit"},
         ma_proximity: {
           entry_ma_slope: "Entry · MA direction",
-          entry_ma_pullback: "Entry · Price near MA",
+          entry_ma_pullback: "Entry · Price below SMA long / above SMA short",
           exit_ma_cross: "Exit · Adverse MA cross",
         },
         ma_acceleration: {
@@ -4136,7 +4135,7 @@
          ["lighterCrypto_inpMaAccelMinAccel", "ma_accel_min_accel"]].forEach(([id, key]) => {
           const input = $(id);
           if (input && params[key] != null) {
-            input.value = String(liveMode === "ma_proximity" && key === "ma_max_distance_pct" ? params[key] || 0.15 : params[key]);
+            input.value = String(params[key]);
             input._userModified = false;
           }
         });
@@ -6798,7 +6797,7 @@
         }
         const macroPeriod = $("lighterCrypto_macroMaPeriodSlider") || lid("macroMaPeriod");
         if (this.currentParadigm === "ma_proximity" && window.TerminalCommon.invalidMaProximityInput("lighterCrypto_"))
-          throw new Error("Check the SMA periods and maximum distance in Entry conditions");
+          throw new Error("Check the SMA periods in Entry conditions");
         if (!["ou_quant", "ma_proximity"].includes(this.currentParadigm) && macroPeriod && !macroPeriod.checkValidity())
           throw new Error("Hourly MA period must be an integer between 2 and 120");
         const settings = this.replaySettings();
