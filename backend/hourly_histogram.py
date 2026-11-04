@@ -1,4 +1,4 @@
-"""Causal completed-hour MACD signal-line second-difference entry gate, shared by Tabs 4/5."""
+"""Causal completed-hour MACD histogram-regime entry gate, shared by Tabs 4/5."""
 import math
 import time
 
@@ -66,22 +66,23 @@ def hourly_histogram_points(bars, config):
     for i, bar in enumerate(ordered):
         window = values[max(0,i-warmup+1):i+1]
         hist, signals = macd_hourly_series(window, *periods)
-        current, previous, previous2 = signals[-3:][::-1] if len(window) >= warmup else (None, None, None)
-        ready = (all(v is not None and math.isfinite(v) for v in (current, previous, previous2))
-                 and i >= 2 and int(bar["time"]) - int(ordered[i-1]["time"]) == 3600
-                 and int(ordered[i-1]["time"]) - int(ordered[i-2]["time"]) == 3600)
+        current, previous = signals[-2:][::-1] if len(window) >= warmup else (None, None)
+        current_histogram, previous_histogram = hist[-2:][::-1] if len(window) >= warmup else (None, None)
+        ready = (all(v is not None and math.isfinite(v)
+                     for v in (current, previous, current_histogram, previous_histogram))
+                 and i >= 1 and int(bar["time"]) - int(ordered[i-1]["time"]) == 3600)
         delta = current - previous if ready else None
-        previous_delta = previous - previous2 if ready else None
-        acceleration = delta - previous_delta if ready else None
         points.append({'source_time':int(bar['time']), 'available_time':int(bar['time'])+3600,
-                       'signal':current, 'previous_signal':previous, 'previous2_signal':previous2,
-                       'signal_delta':delta, 'previous_signal_delta':previous_delta,
-                       'signal_acceleration':acceleration,
-                       'histogram':hist[-1] if ready else None,
-                       'previous_histogram':hist[-2] if ready else None,
-                       'slope':hist[-1]-hist[-2] if ready else None,
-                       'long_ok':bool(ready and acceleration>0), 'short_ok':bool(ready and acceleration<0),
-                       'ready':ready, 'periods':periods, 'source':'COMPLETED_1H_MACD_SIGNAL_SECOND_DIFF'})
+                       'signal':current, 'previous_signal':previous, 'signal_delta':delta,
+                       'histogram':current_histogram if ready else None,
+                       'previous_histogram':previous_histogram if ready else None,
+                       'slope':current_histogram-previous_histogram if ready else None,
+                       'histogram_cross':('CROSS_UP' if ready and previous_histogram <= 0 < current_histogram
+                                          else 'CROSS_DOWN' if ready and previous_histogram >= 0 > current_histogram
+                                          else 'NONE'),
+                       'long_ok':bool(ready and current_histogram>0),
+                       'short_ok':bool(ready and current_histogram<0),
+                       'ready':ready, 'periods':periods, 'source':'COMPLETED_1H_MACD_HISTOGRAM_REGIME'})
     return points
 
 
