@@ -1,4 +1,4 @@
-"""Shared net-notional take profit for the single-leg terminals (funding excluded)."""
+"""Shared net-notional exits for the single-leg terminals (funding excluded)."""
 import math
 import time
 
@@ -34,6 +34,12 @@ def net_profit(tranches, quantity, price, exit_fee_rate, target_pct):
             "entry_fee_usd": fees, "estimated_exit_fee_usd": exit_fee,
             "exit_fee_rate": exit_fee_rate, "quote": price, "quantity": quantity,
             "side": side, "source": "EXECUTABLE_BOOK_EX_FUNDING", "time": time.time()}
+
+
+def stop_loss_status(evaluation, loss_pct):
+    target = -float(loss_pct)
+    return {**evaluation, "target_pct": target,
+            "pass": evaluation["net_pct"] <= target + 1e-10}
 
 
 class TakeProfitMixin:
@@ -90,9 +96,19 @@ class TakeProfitMixin:
         self.state["take_profit_evaluation"] = evaluation
         return evaluation
 
-    async def check_take_profit(self):
-        if not self.state.get("use_take_profit", True) or not self.state["tranches"]:
-            self.state["take_profit_evaluation"] = {"pass": None, "state": "OFF" if not self.state.get("use_take_profit", True) else "N/A", "time": time.time()}
+    async def stop_loss_evaluation(self, price, quantity):
+        evaluation = await self.take_profit_evaluation(price, quantity)
+        result = stop_loss_status(evaluation, self.state.get("stop_loss_pct", 0.2))
+        self.state["stop_loss_evaluation"] = result
+        return result
+
+    async def check_net_exits(self):
+        profit_enabled = self.state.get("use_take_profit", True)
+        loss_enabled = self.state.get("use_stop_loss", False)
+        if not (profit_enabled or loss_enabled) or not self.state["tranches"]:
+            for name, enabled in (("take_profit", profit_enabled), ("stop_loss", loss_enabled)):
+                self.state[f"{name}_evaluation"] = {
+                    "pass": None, "state": "N/A" if enabled else "OFF", "time": time.time()}
             return False
         try:
             if self.profit_venue == "binance":
@@ -104,13 +120,24 @@ class TakeProfitMixin:
                 price = bid if int(self.state["tranches"][-1]["side"]) > 0 else ask
                 quantity = self._reduction_quantity(-int(self.state["tranches"][-1]["side"]), price, detail, step, 1.0)
             side = int(self.state["tranches"][-1]["side"])
-            evaluation = await self.take_profit_evaluation(bid if side > 0 else ask, quantity)
+            profit = await self.take_profit_evaluation(bid if side > 0 else ask, quantity)
+            loss = stop_loss_status(profit, self.state.get("stop_loss_pct", 0.2))
         except Exception as exc:
-            self.state["take_profit_evaluation"] = {"pass": None, "state": "UNAVAILABLE", "error": str(exc), "time": time.time()}
+            for name, enabled in (("take_profit", profit_enabled), ("stop_loss", loss_enabled)):
+                self.state[f"{name}_evaluation"] = {
+                    "pass": None, "state": "UNAVAILABLE" if enabled else "OFF",
+                    "error": str(exc) if enabled else None, "time": time.time()}
             self._save()
             return False
+        self.state["stop_loss_evaluation"] = loss if loss_enabled else {
+            "pass": None, "state": "OFF", "time": profit["time"]}
+        if not profit_enabled:
+            self.state["take_profit_evaluation"] = {"pass": None, "state": "OFF", "time": profit["time"]}
         self._save()
-        if evaluation["pass"]:
+        if loss_enabled and loss["pass"]:
+            await self._submit(-side, 0, reduce_only=True, reason="net_stop_loss")
+            return True
+        if profit_enabled and profit["pass"]:
             await self._submit(-side, 0, reduce_only=True, reason="net_take_profit")
             return True
         return False

@@ -50,6 +50,16 @@ for(const [file,name,prefix,rootId] of [
    assert.equal(engine.liveStrategyPayload(mode)[rule.toggle],true,mode+' ON changes deploy payload '+rule.toggle);
   }
   if(mode==='ma_proximity'){
+   const stop=document.getElementById(prefix+'useStopLoss');
+   assert.equal(engine.replaySettings().use_stop_loss,false,'stop loss starts disabled');
+   stop.checked=true;
+   document.getElementById(prefix+'stopLossPct').value='0.35';
+   for(const settings of [engine.replaySettings(),engine.liveStrategyPayload(mode)]){
+    assert.equal(settings.use_stop_loss,true);
+    assert.equal(settings.stop_loss_pct,0.35);
+   }
+   stop.checked=false;
+
    const period=document.getElementById(prefix+'inpMaAccelPeriod');
    const distance=document.getElementById(prefix+'inpMaMaxDistance');
    const nearRow=document.getElementById(prefix+'rowCondEntryPeak');

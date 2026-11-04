@@ -42,6 +42,7 @@ MARKETS = {"BTC": 1, "ETH": 0, "SOL": 2, "DOGE": 3, "XRP": 7}
 DEFAULT_STATE = {
     "use_hourly_hist": True, "hourly_hist_fast": 20, "hourly_hist_slow": 60, "hourly_hist_signal": 9,
     "use_take_profit": True, "take_profit_pct": 0.2,
+    "use_stop_loss": False, "stop_loss_pct": 0.2,
     "enabled": False, "selected_symbol": "BTC", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
     "notional_usd": 150.0, "max_tranches": 5, "gross_leverage_cap": 8.0,
@@ -239,6 +240,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         result["strategy_params"]["use_macd_hist_exit"] = bool(self.state.get("use_macd_hist_exit", True))
         result["strategy_params"].update({key:self.state[key] for key in ("use_hourly_hist","hourly_hist_fast","hourly_hist_slow","hourly_hist_signal")})
         result["strategy_params"].update(use_take_profit=bool(self.state.get("use_take_profit", True)), take_profit_pct=float(self.state.get("take_profit_pct", 0.2)))
+        result["strategy_params"].update(use_stop_loss=bool(self.state.get("use_stop_loss", False)), stop_loss_pct=float(self.state.get("stop_loss_pct", 0.2)))
         return result
 
     async def save_strategy_draft(self, mode: str, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -447,7 +449,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         permitted = {
             "use_macd_hist_exit",
             "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal",
-            "use_take_profit", "take_profit_pct",
+            "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct",
             "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
             "notional_usd", "max_tranches", "min_seconds_between_orders", "max_book_spread_bps",
             "ou_halflife_max", "ou_stop_z", "ou_min_abs_deviation_pp",
@@ -489,7 +491,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 candidate[key] = bool(value)
             elif key == "use_hourly_hist":
                 candidate[key] = bool(value)
-            elif key == "use_take_profit":
+            elif key in {"use_take_profit", "use_stop_loss"}:
                 candidate[key] = bool(value)
             elif key == "entry_direction_mode":
                 candidate[key] = parse_entry_direction_mode(value)
@@ -549,6 +551,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         bounds = {
             "hourly_hist_fast": (2,100), "hourly_hist_slow": (3,200), "hourly_hist_signal": (2,100),
             "take_profit_pct": (0.01, 100.0),
+            "stop_loss_pct": (0.01, 100.0),
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0), "macro_ma_period": (2, 120),
             "macro_macd_confirm_bars": (1, 12),
             "notional_usd": (10.0, 500.0),
@@ -592,7 +595,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             raise ValueError("Maximum MA distance must be between 0 and 100 percent")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("ma_direction_period", "ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                ("ma_direction_period", "ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",
@@ -1096,6 +1099,9 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             if reason == "net_take_profit":
                 if not self.state.get("use_take_profit", True) or not (await self.take_profit_evaluation(price, float(qty)))["pass"]:
                     raise ValueError("Executable quote no longer meets net take-profit target")
+            if reason == "net_stop_loss":
+                if not self.state.get("use_stop_loss", False) or not (await self.stop_loss_evaluation(price, float(qty)))["pass"]:
+                    raise ValueError("Executable quote no longer meets net stop-loss threshold")
             order_index = secrets.randbelow(self.client.MAX_CLIENT_ORDER_INDEX - 1) + 1
             pending = {"client_order_index": order_index, "symbol": symbol, "market_id": market_id,
                        "side": side, "qty": qty, "size_step": step,
@@ -1559,7 +1565,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                         except Exception as cap_err:
                             self.state["blocked_reason"] = str(cap_err)
 
-                if await self.check_take_profit():
+                if await self.check_net_exits():
                     return
                 await self.refresh_hourly_histogram()
                 await self.refresh_five_minute_macd_signal()

@@ -197,13 +197,16 @@ a replay with hard-coded fallback periods. Explicit Align to saved bot threshold
 replaces the draft. Draft persistence must never change live bot configuration
 or enable trading.
 
-## Single-leg net take-profit exit (Tabs 4 and 5)
+## Single-leg net take-profit and stop-loss exits (Tabs 4 and 5)
 
 Every strategy in Tabs 4/5 exposes a separate optional **Net take profit** exit,
 default ON at 0.20%, adjustable 0.01–100% of the matched entry notional (not margin
 ROE). Existing signal exits remain active. The same controls drive replay and
 authenticated live deployment; browser drafts persist and explicit Align replaces
-them. Show PAPER and LIVE PASS/WAITING/OFF/N/A/UNAVAILABLE, source and KST timestamp.
+them. The separate **Net stop loss** control defaults OFF with a 0.20% threshold.
+Enter a positive loss percentage in the same 0.01–100% range. The stop triggers
+when net return is at or below the negative threshold. Both controls show PAPER
+and LIVE PASS/WAITING/OFF/N/A/UNAVAILABLE, source and KST timestamp.
 
 Live checks executable bid for longs / ask for shorts on each daemon tick, before
 completed-candle deduplication. Match the latest owned tranche first; if Lighter
@@ -217,13 +220,13 @@ Net return = (directional fill-to-quote P&L − allocated confirmed entry commis
 commissionRate and reconciles entry commissions from complete USDT userTrades.
 Lighter Standard account type 0 has zero execution fees; other account tiers
 currently show fee UNAVAILABLE and skip this exit rather than assume zero.
-Funding is excluded. Missing fees disable only this exit, never other signal exits.
+Funding is excluded. Missing fees make these net exits unavailable. Other signal exits remain active.
 
 Paper checks completed candle closes, with the current account taker rate applied
 to both entry and exit as an explicit estimate. It does not reconstruct historical
 fee tiers or intrabar book prices. Missing fee lookup shows UNAVAILABLE. Paper
 entry_signals remain position-independent; summary/triangle P&L retains the existing
-pre-fee basis, while take-profit trades additionally return net_pnl_pct. Do not
+pre-fee basis, while net take-profit and stop-loss trades additionally return net_pnl_pct. Do not
 present that paper gross summary as realized account net P&L.
 
 ## Hourly MACD histogram direction regime (Tabs 4 and 5)

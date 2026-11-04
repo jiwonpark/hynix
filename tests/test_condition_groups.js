@@ -32,6 +32,8 @@ for (const [file, name, prefix] of [
   const zRow=document.getElementById(prefix+'rowCondEntryMaStretch');
   common.mountHourlyHistogram(prefix,anchor,engine);
   common.mountTakeProfitControls(prefix,anchor,engine);
+  common.mountTakeProfitControls(prefix,anchor,engine,"stop_loss");
+  const sl=document.getElementById(prefix+"stopLossControls");
   const hourly=document.getElementById(prefix+'hourlyHistControls');
   const tp=document.getElementById(prefix+'takeProfitControls');
   const fast=document.getElementById(prefix+'hourlyHistFast');
@@ -60,6 +62,7 @@ for (const [file, name, prefix] of [
       assert.equal(legacyEntry.style.display,'none');
     }
     assert.equal(tp.parentNode,exit,mode+' TP in exit');
+    assert.equal(sl.parentNode,exit,mode+' SL in exit');
     assert.equal(fast.value,'17','unsaved period survives layout rebuild');
     assert.equal(document.querySelectorAll('#'+prefix+'conditionGroups').length,1);
     for(const node of document.querySelectorAll('[data-terminal-rule-group]'))

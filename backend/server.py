@@ -46,7 +46,7 @@ from .hourly_histogram import (
     five_minute_signal_points,
     hourly_histogram_points,
 )
-from .single_leg_take_profit import net_profit
+from .single_leg_take_profit import net_profit, stop_loss_status
 from .crypto_bot import CryptoBot
 from .lighter_client import LighterClient
 from .lighter_crypto_bot import LighterCryptoBot, MARKETS as LIGHTER_CRYPTO_MARKETS
@@ -1987,6 +1987,7 @@ def _run_crypto_backtest_sync(
     use_hourly_hist: bool = False, hourly_hist_fast: int = 20,
     hourly_hist_slow: int = 60, hourly_hist_signal: int = 9,
     use_take_profit: bool = False, take_profit_pct: float = 0.2,
+    use_stop_loss: bool = False, stop_loss_pct: float = 0.2,
     take_profit_fee_rate: Optional[float] = None, take_profit_fee_error: Optional[str] = None,
     symbol: str = "BTCUSDT",
     strategy_mode: str = "grid",
@@ -2087,25 +2088,32 @@ def _run_crypto_backtest_sync(
     latest_condition_time: Optional[int] = None
     active_positions = []
     latest_take_profit = {"state": "N/A", "pass": None}
+    latest_stop_loss = {"state": "N/A", "pass": None}
 
-    def close_take_profit(item, bar):
-        nonlocal latest_take_profit
-        if not use_take_profit:
-            latest_take_profit = {"state": "OFF", "pass": None, "time": bar["time"]}
-            return item
+    def close_net_exit(item, bar):
+        nonlocal latest_take_profit, latest_stop_loss
+        idle = {"state": "N/A", "pass": None, "time": bar["time"]}
         if take_profit_fee_rate is None:
-            latest_take_profit = {"state": "UNAVAILABLE", "pass": None, "time": bar["time"],
-                                  "error": take_profit_fee_error or "Exchange fee rate unavailable"}
+            idle.update(state="UNAVAILABLE", error=take_profit_fee_error or "Exchange fee rate unavailable")
+        off = {"state": "OFF", "pass": None, "time": bar["time"]}
+        latest_take_profit = idle if use_take_profit else off
+        latest_stop_loss = idle if use_stop_loss else off
+        if not (use_take_profit or use_stop_loss) or take_profit_fee_rate is None or item is None:
             return item
-        if item is None:
-            latest_take_profit = {"state": "N/A", "pass": None, "time": bar["time"]}
-            return None
         fraction = float(item.get("remaining_fraction", 1.0))
         evaluation = net_profit([{"side": item["side"], "price": item["entry"], "qty": fraction,
                                   "fee_usd": item["entry"] * fraction * take_profit_fee_rate}],
                                 fraction, bar["value"], take_profit_fee_rate, take_profit_pct)
-        latest_take_profit = {**evaluation, "source": "PAPER_COMPLETED_CLOSE_ESTIMATED_FEES", "time": bar["time"]}
-        if not evaluation["pass"]:
+        evaluation.update(source="PAPER_COMPLETED_CLOSE_ESTIMATED_FEES", time=bar["time"])
+        if use_take_profit:
+            latest_take_profit = evaluation
+        if use_stop_loss:
+            latest_stop_loss = stop_loss_status(evaluation, stop_loss_pct)
+        if use_stop_loss and latest_stop_loss["pass"]:
+            reason = "net_stop_loss"
+        elif use_take_profit and evaluation["pass"]:
+            reason = "net_take_profit"
+        else:
             return item
         mult = float(item.get("multiplier", 1.0))
         gross_pct = item["side"] * (bar["value"] / item["entry"] - 1) * 100
@@ -2113,7 +2121,7 @@ def _run_crypto_backtest_sync(
                        "exit": bar["value"], "exit_time": bar["time"],
                        "pnl_pct": round(gross_pct * mult * fraction, 4),
                        "net_pnl_pct": round(evaluation["net_pct"] * mult * fraction, 4),
-                       "exit_fraction": fraction, "multiplier": mult, "reason": "net_take_profit"})
+                       "exit_fraction": fraction, "multiplier": mult, "reason": reason})
         return None
 
     import bisect
@@ -2207,9 +2215,9 @@ def _run_crypto_backtest_sync(
         is_ou = strategy_mode == "ou_quant"
         is_adaptive = strategy_mode == "adaptive_tranche"
         for index, bar in enumerate(bars):
-            position = close_take_profit(position, bar)
+            position = close_net_exit(position, bar)
             if active_positions:
-                if close_take_profit(active_positions[-1], bar) is None:
+                if close_net_exit(active_positions[-1], bar) is None:
                     active_positions.pop()
             required_index = 59 if (is_adaptive and use_ma_stack) else window
             if index < required_index:
@@ -2358,9 +2366,9 @@ def _run_crypto_backtest_sync(
     elif strategy_mode == "ma_stack":
         all_diffs = compute_ma_diff_series([b["value"] for b in bars])
         for index, bar in enumerate(bars):
-            position = close_take_profit(position, bar)
+            position = close_net_exit(position, bar)
             if active_positions:
-                if close_take_profit(active_positions[-1], bar) is None:
+                if close_net_exit(active_positions[-1], bar) is None:
                     active_positions.pop()
             if index < 60:
                 continue
@@ -2473,9 +2481,9 @@ def _run_crypto_backtest_sync(
 
     elif strategy_mode == "multi_factor":
         for index, bar in enumerate(bars):
-            position = close_take_profit(position, bar)
+            position = close_net_exit(position, bar)
             if active_positions:
-                if close_take_profit(active_positions[-1], bar) is None:
+                if close_net_exit(active_positions[-1], bar) is None:
                     active_positions.pop()
             if index < window:
                 continue
@@ -2551,9 +2559,9 @@ def _run_crypto_backtest_sync(
         slopes = []
         trend_window = max(12, min(60, int(trend_macro_window)))
         for index, bar in enumerate(bars):
-            position = close_take_profit(position, bar)
+            position = close_net_exit(position, bar)
             if active_positions:
-                if close_take_profit(active_positions[-1], bar) is None:
+                if close_net_exit(active_positions[-1], bar) is None:
                     active_positions.pop()
             if index < trend_window:
                 continue
@@ -2683,9 +2691,9 @@ def _run_crypto_backtest_sync(
         direction_period = ma_direction_period if strategy_mode == "ma_proximity" else 0
         first_index = max(w, direction_period) if strategy_mode == "ma_proximity" else w + 1
         for index, bar in enumerate(bars):
-            position = close_take_profit(position, bar)
+            position = close_net_exit(position, bar)
             if active_positions:
-                if close_take_profit(active_positions[-1], bar) is None:
+                if close_net_exit(active_positions[-1], bar) is None:
                     active_positions.pop()
             if index < first_index:
                 continue
@@ -2794,9 +2802,9 @@ def _run_crypto_backtest_sync(
         fast_w = max(2, int(fast_ma_period))
         slow_w = max(fast_w + 1, int(slow_ma_period))
         for index, bar in enumerate(bars):
-            position = close_take_profit(position, bar)
+            position = close_net_exit(position, bar)
             if active_positions:
-                if close_take_profit(active_positions[-1], bar) is None:
+                if close_net_exit(active_positions[-1], bar) is None:
                     active_positions.pop()
             if index < slow_w + 1:
                 continue
@@ -2944,9 +2952,9 @@ def _run_crypto_backtest_sync(
         signal_w = max(2, int(macd_signal_period))
         required = slow_w + signal_w + 1
         for index, bar in enumerate(bars):
-            position = close_take_profit(position, bar)
+            position = close_net_exit(position, bar)
             if active_positions:
-                if close_take_profit(active_positions[-1], bar) is None:
+                if close_net_exit(active_positions[-1], bar) is None:
                     active_positions.pop()
             if index + 1 < required:
                 continue
@@ -3101,6 +3109,7 @@ def _run_crypto_backtest_sync(
         "open_positions": open_positions,
         "metrics": mode_metrics,
         "take_profit_evaluation": latest_take_profit,
+        "stop_loss_evaluation": latest_stop_loss,
         "take_profit_fee_rate": take_profit_fee_rate,
         "hourly_histogram": hourly_by_bar[-1] if hourly_by_bar else None,
         "five_minute_macd_signal": five_by_bar[-1] if five_by_bar else None,
@@ -3128,6 +3137,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_hourly_hist: bool = True, hourly_hist_fast: int = 20,
                               hourly_hist_slow: int = 60, hourly_hist_signal: int = 9,
                               use_take_profit: bool = True, take_profit_pct: float = 0.2,
+                              use_stop_loss: bool = False, stop_loss_pct: float = Query(0.2, ge=0.01, le=100),
                               entry_z: float = 1.5, exit_z: float = 0.25,
                               use_ma_stretch: bool = True, use_peak: bool = True,
                               use_base_spacing: bool = True, use_ma_stack: bool = False, use_ma_stack_1h: bool = True, use_convergence: bool = True,
@@ -3224,7 +3234,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     five_minute_bars = [bar for bar in five_res.get("bars", [])
                         if int(bar["time"]) + 300 <= now_seconds]
     fee_rate, fee_error = None, None
-    if use_take_profit:
+    if use_take_profit or use_stop_loss:
         try:
             fee_bot = lighter_crypto_bot if market_source == "lighter" else crypto_bot
             fee_rate = await asyncio.wait_for(fee_bot.take_profit_fee_rate(symbol), timeout=5)
@@ -3237,6 +3247,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         use_hourly_hist=use_hourly_hist, hourly_hist_fast=hourly_hist_fast,
         hourly_hist_slow=hourly_hist_slow, hourly_hist_signal=hourly_hist_signal,
         use_take_profit=use_take_profit, take_profit_pct=take_profit_pct,
+        use_stop_loss=use_stop_loss, stop_loss_pct=stop_loss_pct,
         take_profit_fee_rate=fee_rate, take_profit_fee_error=fee_error,
         symbol=symbol,
         strategy_mode=strategy_mode,

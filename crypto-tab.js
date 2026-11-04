@@ -1426,6 +1426,7 @@
       window.TerminalCommon?.prepareConditionGroups?.("crypto_", detailSec);
       window.TerminalCommon?.mountHourlyHistogram?.("crypto_", detailSec, this);
       window.TerminalCommon?.mountTakeProfitControls?.("crypto_", detailSec, this);
+      window.TerminalCommon?.mountTakeProfitControls?.("crypto_", detailSec, this, "stop_loss");
       if (mode === "grid") {
         if (ladderSec) ladderSec.style.display = "block";
         if (detailSec) detailSec.style.display = "none";
@@ -2276,6 +2277,7 @@
         macro_ma_period: numeric("crypto_macroMaPeriodSlider", numeric("crypto_macroMaPeriod", Number(this.botState?.macro_ma_period ?? 60))),
         ...(window.TerminalCommon?.hourlyHistogramSettings?.("crypto_", this.botState) || {}),
         ...(window.TerminalCommon?.takeProfitSettings?.("crypto_", this.botState) || {}),
+        ...(window.TerminalCommon?.takeProfitSettings?.("crypto_", this.botState, "stop_loss") || {}),
         max_book_spread_bps: numeric("crypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45)),
       };
       if (mode === "ou_quant") {
@@ -3139,6 +3141,7 @@
       return {
         ...(window.TerminalCommon?.hourlyHistogramSettings?.("crypto_", this.botState) || {}),
         ...(window.TerminalCommon?.takeProfitSettings?.("crypto_", this.botState) || {}),
+        ...(window.TerminalCommon?.takeProfitSettings?.("crypto_", this.botState, "stop_loss") || {}),
         symbol: this.selectedSymbol || "BTCUSDT",
         interval: this.interval, limit: 500, strategy_mode: mode,
         macro_ma_period: numeric("crypto_macroMaPeriodSlider", numeric("crypto_macroMaPeriod", Number(this.botState?.macro_ma_period ?? 60))),
@@ -3273,8 +3276,8 @@
       if (!this.botState) diffs.push("Live settings unavailable");
       if (!isIntervalMatch) diffs.push(`Interval ${currentInterval} ≠ ${liveInterval}`);
       if (!isParadigmMatch) diffs.push(`Strategy ${currentMode} ≠ ${liveMode}`);
-      for (const key of ["use_take_profit", "take_profit_pct", "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"]) {
-        const saved = this.botState?.strategy_params?.[key] ?? this.botState?.[key] ?? ({use_take_profit:true,take_profit_pct:0.2,use_hourly_hist:true,hourly_hist_fast:20,hourly_hist_slow:60,hourly_hist_signal:9}[key]);
+      for (const key of ["use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"]) {
+        const saved = this.botState?.strategy_params?.[key] ?? this.botState?.[key] ?? ({use_take_profit:true,take_profit_pct:0.2,use_stop_loss:false,stop_loss_pct:0.2,use_hourly_hist:true,hourly_hist_fast:20,hourly_hist_slow:60,hourly_hist_signal:9}[key]);
         if (settings[key] != null && settings[key] !== saved) diffs.push(`${key}: ${settings[key]} ≠ ${saved}`);
       }
       const parameterKeys = {
@@ -3411,6 +3414,7 @@
       }
       window.TerminalCommon?.renderHourlyHistogram?.("crypto_", "Paper", result?.hourly_histogram, settings.use_hourly_hist);
       window.TerminalCommon?.renderTakeProfitStatus?.("crypto_", "Paper", result?.take_profit_evaluation, settings.use_take_profit);
+      window.TerminalCommon?.renderTakeProfitStatus?.("crypto_", "Paper", result?.stop_loss_evaluation, settings.use_stop_loss === true, "stop_loss");
       const checks = result?.latest_conditions || {};
       if (this.currentParadigm === "ma_stack") {
         for (const [suffix, key, toggle] of [
@@ -3750,10 +3754,7 @@
       }
       const params = { ...this.botState, ...(this.botState.strategy_params || {}) };
       window.TerminalCommon?.alignHourlyHistogram?.("crypto_", this.botState);
-      const profitSettings = {use_take_profit: params.use_take_profit !== false, take_profit_pct: Number(params.take_profit_pct ?? 0.2)};
-      if ($("crypto_useTakeProfit")) $("crypto_useTakeProfit").checked = profitSettings.use_take_profit;
-      if ($("crypto_takeProfitPct")) $("crypto_takeProfitPct").value = String(profitSettings.take_profit_pct);
-      window.TerminalCommon?.saveTakeProfitDraft?.("crypto_", profitSettings);
+      window.TerminalCommon?.alignNetExitControls?.("crypto_", params);
 
       const macroPeriod = lid("macroMaPeriod");
       if (macroPeriod) { macroPeriod.value = String(params.macro_ma_period ?? 60); delete macroPeriod.dataset.userEdited; }
@@ -4129,6 +4130,7 @@
       window.TerminalCommon?.renderHourlyHistogram?.("crypto_", "Live", bot.hourly_histogram, bot.use_hourly_hist);
       this.syncMacdDraftControls(bot);
       window.TerminalCommon?.renderTakeProfitStatus?.("crypto_", "Live", bot.take_profit_evaluation, bot.use_take_profit);
+      window.TerminalCommon?.renderTakeProfitStatus?.("crypto_", "Live", bot.stop_loss_evaluation, bot.use_stop_loss === true, "stop_loss");
       window.TerminalCommon?.syncSingleLegDirectionControl("crypto_", bot?.entry_direction_mode);
       const isEnabled = Boolean(bot?.enabled);
       const symbol = bot?.selected_symbol || this.selectedSymbol || "BTCUSDT";

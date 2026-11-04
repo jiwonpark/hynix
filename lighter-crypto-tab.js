@@ -1514,6 +1514,7 @@
       window.TerminalCommon?.prepareConditionGroups?.("lighterCrypto_", detailSec);
       window.TerminalCommon?.mountHourlyHistogram?.("lighterCrypto_", detailSec, this);
       window.TerminalCommon?.mountTakeProfitControls?.("lighterCrypto_", detailSec, this);
+      window.TerminalCommon?.mountTakeProfitControls?.("lighterCrypto_", detailSec, this, "stop_loss");
       if (["adaptive_tranche", "grid"].includes(mode)) {
         if (ladderSec) ladderSec.style.display = "block";
         if (detailSec) detailSec.style.display = "none";
@@ -2362,6 +2363,7 @@
         macro_ma_period: numeric("lighterCrypto_macroMaPeriodSlider", numeric("lighterCrypto_macroMaPeriod", Number(this.botState?.macro_ma_period ?? 60))),
         ...(window.TerminalCommon?.hourlyHistogramSettings?.("lighterCrypto_", this.botState) || {}),
         ...(window.TerminalCommon?.takeProfitSettings?.("lighterCrypto_", this.botState) || {}),
+        ...(window.TerminalCommon?.takeProfitSettings?.("lighterCrypto_", this.botState, "stop_loss") || {}),
         max_book_spread_bps: numeric("lighterCrypto_inputLiveMaxSpread", Number(this.botState?.max_book_spread_bps ?? 45)),
       };
       if (mode === "ou_quant") {
@@ -3349,6 +3351,7 @@
       return {
         ...(window.TerminalCommon?.hourlyHistogramSettings?.("lighterCrypto_", this.botState) || {}),
         ...(window.TerminalCommon?.takeProfitSettings?.("lighterCrypto_", this.botState) || {}),
+        ...(window.TerminalCommon?.takeProfitSettings?.("lighterCrypto_", this.botState, "stop_loss") || {}),
         symbol: this.selectedSymbol || "BTC",
         interval: this.interval, limit: 500, strategy_mode: mode,
         macro_ma_period: numeric("lighterCrypto_macroMaPeriodSlider", numeric("lighterCrypto_macroMaPeriod", Number(this.botState?.macro_ma_period ?? 60))),
@@ -3489,8 +3492,8 @@
       if (!this.botState) diffs.push("Live settings unavailable");
       if (!isIntervalMatch) diffs.push(`Interval ${currentInterval} ≠ ${liveInterval}`);
       if (!isParadigmMatch) diffs.push(`Strategy ${currentMode} ≠ ${liveMode}`);
-      for (const key of ["use_take_profit", "take_profit_pct", "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"]) {
-        const saved = this.botState?.strategy_params?.[key] ?? this.botState?.[key] ?? ({use_take_profit:true,take_profit_pct:0.2,use_hourly_hist:true,hourly_hist_fast:20,hourly_hist_slow:60,hourly_hist_signal:9}[key]);
+      for (const key of ["use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"]) {
+        const saved = this.botState?.strategy_params?.[key] ?? this.botState?.[key] ?? ({use_take_profit:true,take_profit_pct:0.2,use_stop_loss:false,stop_loss_pct:0.2,use_hourly_hist:true,hourly_hist_fast:20,hourly_hist_slow:60,hourly_hist_signal:9}[key]);
         if (settings[key] != null && settings[key] !== saved) diffs.push(`${key}: ${settings[key]} ≠ ${saved}`);
       }
       const parameterKeys = {
@@ -3637,6 +3640,7 @@
       }
       window.TerminalCommon?.renderHourlyHistogram?.("lighterCrypto_", "Paper", result?.hourly_histogram, settings.use_hourly_hist);
       window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Paper", result?.take_profit_evaluation, settings.use_take_profit);
+      window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Paper", result?.stop_loss_evaluation, settings.use_stop_loss === true, "stop_loss");
       const checks = result?.latest_conditions || {};
       if (this.currentParadigm === "ou_quant") {
         const evaluation = result?.latest_evaluation;
@@ -3981,10 +3985,7 @@
       }
       const params = { ...this.botState, ...(this.botState.strategy_params || {}) };
       window.TerminalCommon?.alignHourlyHistogram?.("lighterCrypto_", this.botState);
-      const profitSettings = {use_take_profit: params.use_take_profit !== false, take_profit_pct: Number(params.take_profit_pct ?? 0.2)};
-      if ($("lighterCrypto_useTakeProfit")) $("lighterCrypto_useTakeProfit").checked = profitSettings.use_take_profit;
-      if ($("lighterCrypto_takeProfitPct")) $("lighterCrypto_takeProfitPct").value = String(profitSettings.take_profit_pct);
-      window.TerminalCommon?.saveTakeProfitDraft?.("lighterCrypto_", profitSettings);
+      window.TerminalCommon?.alignNetExitControls?.("lighterCrypto_", params);
 
       const macroPeriod = lid("macroMaPeriod");
       if (macroPeriod) { macroPeriod.value = String(params.macro_ma_period ?? 60); delete macroPeriod.dataset.userEdited; }
@@ -4371,6 +4372,7 @@
         if (this.bars?.length) this.runBacktestIfChanged();
       }
       window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Live", bot.take_profit_evaluation, bot.use_take_profit);
+      window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Live", bot.stop_loss_evaluation, bot.use_stop_loss === true, "stop_loss");
       this.syncMacroRegimeControlsFromBot(bot);
       window.TerminalCommon?.syncSingleLegDirectionControl("lighterCrypto_", bot?.entry_direction_mode);
       const isEnabled = Boolean(bot?.enabled);

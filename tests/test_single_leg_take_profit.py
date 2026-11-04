@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
-from backend.single_leg_take_profit import net_profit
+from backend.single_leg_take_profit import net_profit, stop_loss_status
 from backend.crypto_bot import CryptoBot
 from backend.lighter_crypto_bot import LighterCryptoBot
 from backend.server import _run_crypto_backtest_sync
@@ -21,6 +21,31 @@ class ProfitMathTests(unittest.TestCase):
             self.assertFalse(net_profit(tranches, 2, target - side * .00001, .0005, .2)['pass'])
         zero_fee = net_profit([{"side": 1, "qty": 1, "price": 100, "fee_usd": 0}], 1, 100.2, 0, .2)
         self.assertTrue(zero_fee['pass'])
+
+    def test_net_stop_loss_counts_fees_for_long_and_short(self):
+        for side in (1, -1):
+            tranche = {"side": side, "qty": 1, "price": 100, "fee_usd": .05}
+            quote = 100 - side * .15
+            evaluation = net_profit([tranche], 1, quote, .0005, .2)
+            self.assertTrue(stop_loss_status(evaluation, .2)["pass"])
+            self.assertFalse(stop_loss_status(evaluation, .3)["pass"])
+            self.assertEqual(stop_loss_status(evaluation, .2)["target_pct"], -.2)
+
+    def test_replay_stop_loss_independent_of_take_profit_and_entry_stream(self):
+        bars = [{"time": 100000+i*300, "value": 100+3*math.sin(i/5)} for i in range(240)]
+        kwargs = dict(strategy_mode="ma_proximity", ma_accel_period=4,
+                      ma_max_distance_pct=2, use_ma_cross_exit=False)
+        baseline = _run_crypto_backtest_sync(bars, True, **kwargs)
+        result = _run_crypto_backtest_sync(bars, True, use_stop_loss=True,
+                                         take_profit_fee_rate=.0005, **kwargs)
+        self.assertEqual(result["entry_signals"], baseline["entry_signals"])
+        self.assertEqual(result["take_profit_evaluation"]["state"], "OFF")
+        stops = [row for row in result["trades"] if row["reason"] == "net_stop_loss"]
+        self.assertTrue(stops)
+        self.assertTrue(all(row["net_pnl_pct"] <= -.2 for row in stops))
+        unavailable = _run_crypto_backtest_sync(bars, True, use_stop_loss=True, **kwargs)
+        self.assertEqual(unavailable["trades"], baseline["trades"])
+        self.assertEqual(unavailable["stop_loss_evaluation"]["state"], "UNAVAILABLE")
 
     def test_lifo_dust_merge_does_not_take_loss_on_older_inventory(self):
         tranches = [{"side": 1, "qty": 1, "price": 110, "fee_usd": .055},
@@ -64,7 +89,24 @@ class LiveProfitTests(unittest.IsolatedAsyncioTestCase):
             bot._submit.assert_awaited_once_with(-1,0,reduce_only=True,reason='net_take_profit')
             self.assertGreater(bot.state['take_profit_evaluation']['net_pct'], .2)
             bot.state['use_take_profit'] = False
-            self.assertFalse(await bot.check_take_profit())
+            self.assertFalse(await bot.check_net_exits())
+
+    async def test_stop_loss_only_uses_executable_exit_quote(self):
+        with tempfile.TemporaryDirectory() as folder:
+            for cls, side in ((CryptoBot, 1), (LighterCryptoBot, -1)):
+                client = AsyncMock()
+                bot = cls(client, Path(folder)/cls.__name__)
+                await bot.configure({"use_take_profit": False, "use_stop_loss": True, "stop_loss_pct": .2})
+                bot.state["tranches"] = [{"side": side, "qty": 1, "price": 100, "order_id": "7", "fee_usd": 0}]
+                bot.take_profit_fee_rate = AsyncMock(return_value=0)
+                client.request.return_value = [{"orderId": 7, "qty": 1, "commission": 0, "commissionAsset": "USDT"}]
+                bot._book = AsyncMock(return_value=(99.7, 100.3))
+                bot._market = AsyncMock(return_value=(1, {"min_base_amount": ".001", "min_quote_amount": "5"}, .001))
+                bot._submit = AsyncMock()
+                self.assertTrue(await bot.check_net_exits())
+                bot._submit.assert_awaited_once_with(-side, 0, reduce_only=True, reason="net_stop_loss")
+                self.assertEqual(bot.state["take_profit_evaluation"]["state"], "OFF")
+                self.assertAlmostEqual(bot.state["stop_loss_evaluation"]["net_pct"], -.3)
 
     async def test_quote_recheck_prevents_submitting_when_profit_disappears(self):
         import asyncio
@@ -85,6 +127,10 @@ class LiveProfitTests(unittest.IsolatedAsyncioTestCase):
                 bot.take_profit_evaluation = AsyncMock(return_value={'pass':False})
                 with self.assertRaisesRegex(ValueError,'no longer meets'):
                     await bot._submit(-1,0,reduce_only=True,reason='net_take_profit')
+                bot.state["use_stop_loss"] = True
+                bot.stop_loss_evaluation = AsyncMock(return_value={"pass": False})
+                with self.assertRaisesRegex(ValueError, "no longer meets net stop-loss"):
+                    await bot._submit(-1, 0, reduce_only=True, reason="net_stop_loss")
                 client.create_order.assert_not_awaited()
                 client.create_market_order.assert_not_awaited()
                 self.assertIsNone(bot.state['pending_order'])
@@ -96,7 +142,7 @@ class LiveProfitTests(unittest.IsolatedAsyncioTestCase):
             bot._book = AsyncMock(return_value=(101,101.01))
             bot.take_profit_fee_rate = AsyncMock(side_effect=ValueError('Fee service offline'))
             bot._submit = AsyncMock()
-            self.assertFalse(await bot.check_take_profit())
+            self.assertFalse(await bot.check_net_exits())
             bot._submit.assert_not_awaited()
             self.assertEqual(bot.state['take_profit_evaluation']['state'],'UNAVAILABLE')
 
