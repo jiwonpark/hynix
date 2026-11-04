@@ -57,8 +57,10 @@ for(const [file,name,prefix,rootId] of [
    assert.equal(period.type,'number');
    period.value='37';
    distance.value='0.27';
+   document.getElementById(prefix+'inpMaDirectionPeriod').value='73';
    for(const settings of [engine.replaySettings(),engine.liveStrategyPayload(mode)]){
     assert.equal(settings.ma_accel_period,37);
+    assert.equal(settings.ma_direction_period,73);
     assert.equal(settings.ma_max_distance_pct,0.27);
    }
 

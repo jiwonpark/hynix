@@ -2030,6 +2030,7 @@ def _run_crypto_backtest_sync(
     use_ma_slope: bool = True,
     use_ma_accel: bool = True,
     ma_max_distance_pct: float = 0.0,
+    ma_direction_period: int = 0,
     use_ma_pullback: bool = True,
     use_ma_cross_exit: bool = True,
     fast_ma_period: int = 9,
@@ -2679,12 +2680,14 @@ def _run_crypto_backtest_sync(
 
     elif strategy_mode in {"ma_acceleration", "ma_proximity"}:
         w = max(3, int(ma_accel_period))
+        direction_period = ma_direction_period if strategy_mode == "ma_proximity" else 0
+        first_index = max(w, direction_period) if strategy_mode == "ma_proximity" else w + 1
         for index, bar in enumerate(bars):
             position = close_take_profit(position, bar)
             if active_positions:
                 if close_take_profit(active_positions[-1], bar) is None:
                     active_positions.pop()
-            if index < w + 1:
+            if index < first_index:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
             held = (index - position["entry_index"]) if position is not None else 0
@@ -2701,6 +2704,7 @@ def _run_crypto_backtest_sync(
                 use_ma_slope=use_ma_slope,
                 use_ma_accel=use_ma_accel,
                 ma_max_distance_pct=ma_max_distance_pct,
+                ma_direction_period=direction_period,
                 proximity_mode=strategy_mode == "ma_proximity",
                 use_ma_pullback=use_ma_pullback,
                 use_ma_cross_exit=use_ma_cross_exit,
@@ -2719,6 +2723,7 @@ def _run_crypto_backtest_sync(
                 use_ma_slope=use_ma_slope,
                 use_ma_accel=use_ma_accel,
                 ma_max_distance_pct=ma_max_distance_pct,
+                ma_direction_period=direction_period,
                 proximity_mode=strategy_mode == "ma_proximity",
                 use_ma_pullback=use_ma_pullback,
                 use_ma_cross_exit=use_ma_cross_exit,
@@ -3142,6 +3147,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002,
                               ma_accel_period: int = 24, ma_accel_min_slope: float = 0.0, ma_accel_min_accel: float = 0.0,
                               ma_max_distance_pct: float = Query(0.0, ge=0, le=100),
+                              ma_direction_period: int = Query(0, ge=0, le=498),
                               use_ma_slope: bool = True, use_ma_accel: bool = True, use_ma_pullback: bool = True, use_ma_cross_exit: bool = True,
                               fast_ma_period: int = 9, slow_ma_period: int = 21, min_cross_spread_bps: float = 0.0,
                               use_golden_cross: bool = True, use_death_cross: bool = True, use_cross_spread: bool = True,
@@ -3164,7 +3170,9 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               macro_macd_slow_period: int = 26,
                               macro_macd_signal_period: int = 9,
                               macro_macd_confirm_bars: int = 2) -> Dict[str, Any]:
-    """Single-leg crypto strategy backtest engine across 5 quantitative regimes."""
+    """Replay a single-leg crypto strategy."""
+    if strategy_mode == "ma_proximity" and ma_direction_period in (1, 2):
+        raise ValueError("Direction SMA period must be 0 or between 3 and 498")
     if not (2 <= hourly_hist_fast <= 100 and hourly_hist_fast < hourly_hist_slow <= 200 and 2 <= hourly_hist_signal <= 100):
         raise ValueError("Invalid hourly MACD periods")
     if not math.isfinite(take_profit_pct) or not 0.01 <= take_profit_pct <= 100:
@@ -3257,6 +3265,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         ma_accel_min_accel=ma_accel_min_accel,
         use_ma_slope=use_ma_slope, use_ma_accel=use_ma_accel,
         ma_max_distance_pct=ma_max_distance_pct,
+        ma_direction_period=ma_direction_period,
         use_ma_pullback=use_ma_pullback, use_ma_cross_exit=use_ma_cross_exit,
         fast_ma_period=fast_ma_period, slow_ma_period=slow_ma_period,
         min_cross_spread_bps=min_cross_spread_bps,

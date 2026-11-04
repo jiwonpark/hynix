@@ -820,6 +820,7 @@ def evaluate_ma_acceleration_signals(
     ma_accel_min_accel: float = 0.0,
     ma_max_distance_pct: float = 0.0,
     proximity_mode: bool = False,
+    ma_direction_period: int = 0,
     use_ma_slope: bool = True,
     use_ma_accel: bool = True,
     use_ma_pullback: bool = True,
@@ -846,22 +847,29 @@ def evaluate_ma_acceleration_signals(
       Exit: Price drops and crosses below the MA (Price <= MA)
     """
     w = max(3, int(ma_accel_period))
-    if len(prices) < w + 2:
-        raise ValueError(f"MA Acceleration evaluation requires at least {w + 2} completed bars")
+    direction_period = (ma_direction_period or w) if proximity_mode else w
+    required = max(w + (1 if proximity_mode else 2), direction_period + 1)
+    if len(prices) < required:
+        raise ValueError(f"MA strategy evaluation requires at least {required} completed bars")
 
     current_price = prices[-1]
 
     # Compute 3 consecutive MA values to get first derivative (velocity) and second derivative (acceleration)
     ma_curr = sum(prices[-w:]) / w
     ma_prev = sum(prices[-w-1:-1]) / w
-    ma_prev2 = sum(prices[-w-2:-2]) / w
+    ma_prev2 = sum(prices[-w-2:-2]) / w if len(prices) >= w + 2 else None
 
     # Velocity (first derivative / slope per bar)
     slope_curr = ma_curr - ma_prev
-    slope_prev = ma_prev - ma_prev2
+    slope_prev = ma_prev - ma_prev2 if ma_prev2 is not None else None
 
     # Acceleration (second derivative / curvature per bar)
-    accel_curr = slope_curr - slope_prev
+    accel_curr = slope_curr - slope_prev if slope_prev is not None else 0.0
+
+    if direction_period != w:
+        slope_curr = (current_price - prices[-direction_period - 1]) / direction_period
+        slope_prev = ((prices[-2] - prices[-direction_period - 2]) / direction_period
+                      if len(prices) >= direction_period + 2 else None)
 
     min_slope = max(0.0, float(ma_accel_min_slope))
     min_accel = max(0.0, float(ma_accel_min_accel))
@@ -945,7 +953,8 @@ def evaluate_ma_acceleration_signals(
         "strategy": "ma_proximity" if proximity_mode else "ma_acceleration",
         "ma_period": w,
         "slope": round(slope_curr, 5),
-        "prev_slope": round(slope_prev, 5),
+        "prev_slope": round(slope_prev, 5) if slope_prev is not None else None,
+        "direction_ma_period": direction_period,
         "acceleration": round(accel_curr, 6),
         "price_vs_ma": round(current_price - ma_curr, 4),
         "price_vs_ma_pct": round((current_price / ma_curr - 1) * 100, 3),
@@ -1500,7 +1509,11 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         return 61
     if strategy_mode == "trend_pullback":
         return max(12, min(60, int(params.get("trend_macro_window", 24)))) + 1
-    if strategy_mode in {"ma_acceleration", "ma_proximity"}:
+    if strategy_mode == "ma_proximity":
+        period = max(3, int(params.get("ma_accel_period", 24)))
+        direction_period = int(params.get("ma_direction_period", 0)) or period
+        return max(period, direction_period) + 1
+    if strategy_mode == "ma_acceleration":
         return max(3, min(120, int(params.get("ma_accel_period", 24)))) + 2
     if strategy_mode == "golden_death_cross":
         fast = max(2, int(params.get("fast_ma_period", 9)))
@@ -1637,6 +1650,7 @@ def _evaluate_strategy_signal(
             ma_accel_min_accel=float(config.get("ma_accel_min_accel", 0.0)),
             ma_max_distance_pct=float(config.get("ma_max_distance_pct", 0.0)),
             proximity_mode=strategy_mode == "ma_proximity",
+            ma_direction_period=int(config.get("ma_direction_period", 0)),
             use_ma_slope=bool(config.get("use_ma_slope", True)),
             use_ma_accel=bool(config.get("use_ma_accel", True)),
             use_ma_pullback=bool(config.get("use_ma_pullback", True)),

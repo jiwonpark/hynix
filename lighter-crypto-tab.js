@@ -2389,6 +2389,7 @@
         payload.ma_accel_period = numeric("lighterCrypto_inpMaAccelPeriod", Number(this.botState?.ma_accel_period ?? 24));
         payload.ma_accel_min_slope = numeric("lighterCrypto_inpMaAccelMinSlope", Number(this.botState?.ma_accel_min_slope ?? 0.0));
         payload.ma_max_distance_pct = numeric("lighterCrypto_inpMaMaxDistance", mode === "ma_proximity" ? 0.15 : 0);
+        if (mode === "ma_proximity") payload.ma_direction_period = numeric("lighterCrypto_inpMaDirectionPeriod", 0);
         payload.ma_accel_min_accel = numeric("lighterCrypto_inpMaAccelMinAccel", Number(this.botState?.ma_accel_min_accel ?? 0.0));
         payload.use_ma_slope = lid("chkCondEntryMaStretch")?.checked !== false;
         if (mode === "ma_acceleration") payload.use_ma_accel = lid("chkCondEntryBase")?.checked !== false;
@@ -3372,6 +3373,7 @@
         ma_accel_period: numeric("lighterCrypto_inpMaAccelPeriod", 24),
         ma_accel_min_slope: numeric("lighterCrypto_inpMaAccelMinSlope", 0.0),
         ma_max_distance_pct: numeric("lighterCrypto_inpMaMaxDistance", this.currentParadigm === "ma_proximity" ? 0.15 : 0),
+        ma_direction_period: numeric("lighterCrypto_inpMaDirectionPeriod", 0),
         ma_accel_min_accel: numeric("lighterCrypto_inpMaAccelMinAccel", 0.0),
         fast_ma_period: numeric("lighterCrypto_inpCrossFastPeriod", 9),
         slow_ma_period: numeric("lighterCrypto_inpCrossSlowPeriod", 21),
@@ -3501,7 +3503,7 @@
         ma_stack: ["min_diff_bars"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
-        ma_proximity: ["ma_accel_period", "ma_accel_min_slope", "ma_max_distance_pct"],
+        ma_proximity: ["ma_direction_period", "ma_accel_period", "ma_accel_min_slope", "ma_max_distance_pct"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel", "ma_max_distance_pct"],
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
         macd_hist_turn: ["macd_fast_period", "macd_slow_period", "macd_signal_period"],
@@ -4129,6 +4131,7 @@
         [["lighterCrypto_inpMaAccelPeriod", "ma_accel_period"],
          ["lighterCrypto_inpMaAccelMinSlope", "ma_accel_min_slope"],
          ["lighterCrypto_inpMaMaxDistance", "ma_max_distance_pct"],
+         ["lighterCrypto_inpMaDirectionPeriod", "ma_direction_period"],
          ["lighterCrypto_inpMaAccelMinAccel", "ma_accel_min_accel"]].forEach(([id, key]) => {
           const input = $(id);
           if (input && params[key] != null) {
@@ -6793,7 +6796,7 @@
         }
         const macroPeriod = $("lighterCrypto_macroMaPeriodSlider") || lid("macroMaPeriod");
         if (this.currentParadigm === "ma_proximity" && window.TerminalCommon.invalidMaProximityInput("lighterCrypto_"))
-          throw new Error("Enter a whole SMA period from 3 to 498 and a distance from 0.01% to 100%");
+          throw new Error("Check the SMA periods and maximum distance in Entry conditions");
         if (!["ou_quant", "ma_proximity"].includes(this.currentParadigm) && macroPeriod && !macroPeriod.checkValidity())
           throw new Error("Hourly MA period must be an integer between 2 and 120");
         const settings = this.replaySettings();

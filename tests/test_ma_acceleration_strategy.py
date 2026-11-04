@@ -232,14 +232,14 @@ def test_standalone_ma_proximity_matches_live_and_replay_with_acceleration_irrel
     config = dict(ma_accel_period=4, ma_max_distance_pct=1.0,
                   use_ma_accel=True, ma_accel_min_accel=999, use_ma_stack_1h=True)
     expected = []
-    for i in range(5, len(prices)):
+    for i in range(config["ma_accel_period"], len(prices)):
         signal, side, _, detail = evaluate_strategy_signal("ma_proximity", prices[:i+1], config)
         assert detail["strategy"] == "ma_proximity"
         assert "entry_ma_accel" not in detail["condition_pass"]
         assert "entry_ma_stack_1h" not in detail["condition_pass"]
         if signal:
             expected.append((bars[i]["time"], side))
-    assert expected and expected[0] == (bars[5]["time"], 1)
+    assert (bars[5]["time"], 1) in expected
     replay = _run_crypto_backtest_sync(bars, True, strategy_mode="ma_proximity", **config)
     assert [(row["time"], row["side"]) for row in replay["entry_signals"]] == expected
 
@@ -249,3 +249,21 @@ def test_standalone_ma_proximity_matches_live_and_replay_with_acceleration_irrel
     assert not evaluate_strategy_signal(
         "ma_proximity", [98, 99, 100, 101, 102, 100],
         {**config, "use_ma_cross_exit": False}, position_side=1, entry_price=101)[2]
+
+
+def test_proximity_direction_sma_can_disagree_with_distance_sma():
+    from backend.lighter_strategy import required_strategy_bars
+    from backend.server import _run_crypto_backtest_sync
+
+    prices = [98, 99, 100, 105, 103, 102, 101]
+    config = dict(ma_accel_period=3, ma_max_distance_pct=1, ma_direction_period=6)
+    assert required_strategy_bars("ma_proximity", config) == 7
+    short = evaluate_strategy_signal("ma_proximity", prices, {**config, "ma_direction_period": 0})
+    long = evaluate_strategy_signal("ma_proximity", prices, config)
+    assert short[:2] == (True, -1)
+    assert long[:2] == (True, 1)
+    assert long[3]["direction_ma_period"] == 6
+    assert long[3]["mean"] == short[3]["mean"] == 102
+    bars = [{"time": (i + 1) * 300, "value": price} for i, price in enumerate(prices)]
+    replay = _run_crypto_backtest_sync(bars, True, strategy_mode="ma_proximity", **config)
+    assert [(row["time"], row["side"]) for row in replay["entry_signals"]] == [(2100, 1)]

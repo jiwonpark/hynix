@@ -510,15 +510,23 @@
   function renderMaProximityControls(prefix, saved) {
     return `
       <p>Enter long near a rising SMA or short near a falling SMA, using completed chart candles. Distance is measured on either side of the SMA.</p>
-      <label>Minimum MA slope <input id="${prefix}inpMaAccelMinSlope" type="number" min="0" step="0.001" value="${Number(saved?.ma_accel_min_slope ?? 0)}"></label>
+      <div data-terminal-rule-group="entry" data-after-condition="EntryMaStretch" style="display:flex;gap:12px;flex-wrap:wrap;">
+        <label>Direction SMA period <input id="${prefix}inpMaDirectionPeriod" type="number" min="0" max="498" step="1" required value="${Number(saved?.ma_direction_period ?? 0)}" style="width:85px;"> <small>0 uses the proximity SMA</small></label>
+        <label>Minimum MA slope <input id="${prefix}inpMaAccelMinSlope" type="number" min="0" step="0.001" value="${Number(saved?.ma_accel_min_slope ?? 0)}"></label>
+      </div>
       <div data-terminal-rule-group="entry" data-after-condition="EntryPeak" style="display:flex;gap:12px;flex-wrap:wrap;">
-        <label>SMA period <input id="${prefix}inpMaAccelPeriod" type="number" min="3" max="498" step="1" required value="${Number(saved?.ma_accel_period ?? 24)}" style="width:85px;"></label>
+        <label>Proximity SMA period <input id="${prefix}inpMaAccelPeriod" type="number" min="3" max="498" step="1" required value="${Number(saved?.ma_accel_period ?? 24)}" style="width:85px;"></label>
         <label>Max distance from MA (%) <input id="${prefix}inpMaMaxDistance" type="number" min="0.01" max="100" step="0.01" required value="${Number(saved?.ma_max_distance_pct || 0.15)}" style="width:95px;"></label>
       </div>`;
   }
 
   function invalidMaProximityInput(prefix) {
-    return ["inpMaAccelPeriod", "inpMaMaxDistance"]
+    const direction = document.getElementById(prefix + "inpMaDirectionPeriod");
+    if (direction?.setCustomValidity) {
+      const period = Number(direction.value);
+      direction.setCustomValidity(period === 1 || period === 2 ? "Enter 0 or a period from 3 to 498" : "");
+    }
+    return ["inpMaDirectionPeriod", "inpMaAccelPeriod", "inpMaMaxDistance"]
       .map(id => document.getElementById(prefix + id))
       .find(input => input?.checkValidity?.() === false);
   }
@@ -541,7 +549,9 @@
       entry_rollover:"Completed-bar Z rollover",
       entry_ma_stack:["ma_stack", "adaptive_tranche"].includes(mode) ? "Price / MA7 / MA24 / MA60" : "Price / MA7 / rolling mean",
       entry_stretch:`Distance from MA60 ≥ ${value("ma_stretch_min")}%`,
-      entry_ma_slope:`Minimum velocity ${value("ma_accel_min_slope")}`,
+      entry_ma_slope: mode === "ma_proximity"
+        ? `MA${settings.ma_direction_period || settings.ma_accel_period} slope · min ${value("ma_accel_min_slope")}`
+        : `Minimum velocity ${value("ma_accel_min_slope")}`,
       entry_ma_accel:`Minimum acceleration ${value("ma_accel_min_accel")}`,
       entry_ma_pullback: mode === "ma_proximity" || Number(settings.ma_max_distance_pct) > 0
         ? `Within ${value("ma_max_distance_pct")}% of MA${value("ma_accel_period")}`
