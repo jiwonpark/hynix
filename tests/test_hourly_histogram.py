@@ -17,10 +17,26 @@ class HourlyHistogramTests(unittest.TestCase):
         self.config=dict(use_hourly_hist=True,hourly_hist_fast=4,hourly_hist_slow=10,hourly_hist_signal=3)
         self.hours=[{'time':i*3600,'value':100+3*math.sin(i/5)} for i in range(300)]
 
-    def test_slope_not_histogram_zone_and_flat_unavailable(self):
+    def test_signal_second_difference_not_histogram_or_signal_slope(self):
+        for values,expected in [([3.,2.,2.],1),([1.,2.,2.],-1),
+                                ([1.,3.,4.],-1),([4.,2.,1.],1),
+                                ([-4.,-2.,-1.],-1),([-1.,-3.,-4.],1),([1.,2.,3.],0)]:
+            def components(window,*periods):
+                return list(range(len(window))), [0.]*(len(window)-3)+values if len(window)>=3 else [0.]*len(window)
+            with patch('backend.hourly_histogram.macd_hourly_series',side_effect=components):
+                point=hourly_histogram_points(self.hours,self.config)[-1]
+            self.assertEqual(point['signal_acceleration'], values[2]-2*values[1]+values[0])
+            self.assertEqual(point['long_ok'], expected>0)
+            self.assertEqual(point['short_ok'], expected<0)
+            self.assertEqual(point['source'],'COMPLETED_1H_MACD_SIGNAL_SECOND_DIFF')
+        missing=self.hours[:-2]+self.hours[-1:]
+        self.assertFalse(hourly_histogram_points(missing,self.config)[-1]['ready'])
+
+    def test_second_difference_sign_and_flat_unavailable(self):
         points=hourly_histogram_points(self.hours,self.config)
-        self.assertTrue(any(p['histogram']>0 and p['long_ok'] for p in points if p['ready']))
-        self.assertTrue(any(p['histogram']<0 and p['short_ok'] for p in points if p['ready']))
+        self.assertTrue(any(p['signal_delta']<0 and p['long_ok'] for p in points if p['ready']))
+        self.assertTrue(all(p['long_ok']==(p['signal_acceleration']>0) and p['short_ok']==(p['signal_acceleration']<0) for p in points if p['ready']))
+        self.assertTrue(any(p['signal_delta']>0 and p['short_ok'] for p in points if p['ready']))
         self.assertTrue(all(not p['ready'] for p in points[:12]))
         flat=hourly_histogram_points([dict(b,value=100) for b in self.hours],self.config)[-1]
         self.assertTrue(flat['ready']);self.assertFalse(flat['long_ok']);self.assertFalse(flat['short_ok'])

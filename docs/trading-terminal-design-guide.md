@@ -226,22 +226,27 @@ entry_signals remain position-independent; summary/triangle P&L retains the exis
 pre-fee basis, while take-profit trades additionally return net_pnl_pct. Do not
 present that paper gross summary as realized account net P&L.
 
-## Hourly MACD histogram direction (Tabs 4 and 5)
+## Hourly MACD signal second difference (Tabs 4 and 5)
 
 All single-leg strategies expose an additional optional entry filter, default ON:
-compare MACD-H on the last two **completed 1h candles**. Rising permits LONG only;
-falling permits SHORT only; exactly flat or unavailable permits neither. Histogram
-sign is irrelevant. Fast/Slow/Signal are independently adjustable (default20/60/9)
+compute Δ²S = Sₜ − 2Sₜ₋₁ + Sₜ₋₂ from the MACD signal line on the last
+three **completed 1h candles**. Positive permits LONG only; negative permits SHORT
+only; exactly zero or unavailable permits neither. Signal and histogram signs
+are irrelevant. This replaces the former histogram-slope rule in live and replay. Fast/Slow/Signal are independently adjustable (default20/60/9)
 from the selected strategy/chart MACD. The switch and periods persist through the
 authenticated bot config and are reported in strategy_params. Replay drafts may
 persist in the browser; deploying saves live, explicit Align restores live values.
 
-Show separate direction-correct LONG/rising and SHORT/falling PAPER and LIVE
-PASS/WAITING/OFF/UNAVAILABLE states, exact periods, histogram delta and completed
+Show separate direction-correct LONG/positive Δ²S and SHORT/negative Δ²S PAPER and LIVE
+PASS/WAITING/OFF/UNAVAILABLE states, exact periods, three signal values, prior/current
+ΔS, Δ²S and completed
 hour source timestamp in KST. Replay background uses this hourly entry filter
 when enabled; the other strategy conditions remain independently evaluated.
 Replay maps each chart bar's close to the newest hourly close available then.
 Never use the forming hourly candle or let future hourly data change old signals.
+Retain legacy `use_hourly_hist` and period/condition API keys for saved controls;
+return source `COMPLETED_1H_MACD_SIGNAL_SECOND_DIFF` plus signal values and
+`signal_acceleration`. Do not label a cached old-rule evaluation as the new rule.
 Hourly direction is evaluated independently of inventory for entry_signals.
 
 This filter is entry-only: keep every existing signal, emergency and net-profit
@@ -270,7 +275,7 @@ require the full entry pattern and hourly gate. Existing take-profit stays activ
 
 Use the common terminal condition layout in both single-leg tabs: **Entry
 conditions** contains the selected strategy's entry switches and the hourly
-histogram direction filter; **Exit conditions** contains the strategy's exit
+signal second-difference direction filter; **Exit conditions** contains the strategy's exit
 rules and net take-profit. Keep optional strategy rules separate from
 **Execution safeguards & live deployment**, which contains account capacity,
 leverage, margin, recovery/reconciliation and authenticated deployment controls.
@@ -357,7 +362,7 @@ previous/current ΔH and source candle time in KST. Each checkbox change schedul
 one replay. New mode drafts inherit current MACD periods when first selected,
 then keep their own adjustable/saved Fast/Slow/Signal values.
 
-The completed-hour histogram direction remains an independent entry filter.
+The completed-hour signal second difference remains an independent entry filter.
 Exits use the opposite ΔH turn and H zone: close long when previous ΔH ≥ 0,
 current ΔH < 0 and H > 0; close short when previous ΔH ≤ 0, current ΔH > 0
 and H < 0. Give the exit turn (`use_macd_hist_exit`) and exit H zone

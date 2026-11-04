@@ -1,18 +1,23 @@
-"""Causal completed-hour MACD histogram slope entry gate, shared by Tabs 4/5."""
+"""Causal completed-hour MACD signal-line second-difference entry gate, shared by Tabs 4/5."""
 import math
 import time
 
 
-def histogram_series(values, fast=20, slow=60, signal=9):
+def macd_hourly_series(values, fast=20, slow=60, signal=9):
     from .lighter_strategy import _ema_series
     fast_ema, slow_ema = _ema_series(values, fast), _ema_series(values, slow)
     macd = [float(fast_ema[i]) - float(slow_ema[i]) for i in range(slow - 1, len(values))]
     signals = _ema_series(macd, signal)
-    output = [None] * len(values)
+    histograms, aligned_signals = [None] * len(values), [None] * len(values)
     for i, value in enumerate(signals):
         if value is not None:
-            output[slow - 1 + i] = macd[i] - float(value)
-    return output
+            histograms[slow - 1 + i] = macd[i] - float(value)
+            aligned_signals[slow - 1 + i] = float(value)
+    return histograms, aligned_signals
+
+
+def histogram_series(values, fast=20, slow=60, signal=9):
+    return macd_hourly_series(values, fast, slow, signal)[0]
 
 
 def hourly_histogram_points(bars, config):
@@ -24,14 +29,23 @@ def hourly_histogram_points(bars, config):
     points = []
     for i, bar in enumerate(ordered):
         window = values[max(0,i-warmup+1):i+1]
-        hist = histogram_series(window, *periods)
-        current, previous = (hist[-1], hist[-2]) if len(window) >= warmup else (None,None)
-        ready = current is not None and previous is not None and all(math.isfinite(v) for v in (current,previous))
-        slope = current - previous if ready else None
+        hist, signals = macd_hourly_series(window, *periods)
+        current, previous, previous2 = signals[-3:][::-1] if len(window) >= warmup else (None, None, None)
+        ready = (all(v is not None and math.isfinite(v) for v in (current, previous, previous2))
+                 and i >= 2 and int(bar["time"]) - int(ordered[i-1]["time"]) == 3600
+                 and int(ordered[i-1]["time"]) - int(ordered[i-2]["time"]) == 3600)
+        delta = current - previous if ready else None
+        previous_delta = previous - previous2 if ready else None
+        acceleration = delta - previous_delta if ready else None
         points.append({'source_time':int(bar['time']), 'available_time':int(bar['time'])+3600,
-                       'histogram': current, 'previous_histogram': previous, 'slope':slope,
-                       'long_ok':bool(ready and slope>0), 'short_ok':bool(ready and slope<0),
-                       'ready':ready, 'periods':periods, 'source':'COMPLETED_1H_MACD_HISTOGRAM'})
+                       'signal':current, 'previous_signal':previous, 'previous2_signal':previous2,
+                       'signal_delta':delta, 'previous_signal_delta':previous_delta,
+                       'signal_acceleration':acceleration,
+                       'histogram':hist[-1] if ready else None,
+                       'previous_histogram':hist[-2] if ready else None,
+                       'slope':hist[-1]-hist[-2] if ready else None,
+                       'long_ok':bool(ready and acceleration>0), 'short_ok':bool(ready and acceleration<0),
+                       'ready':ready, 'periods':periods, 'source':'COMPLETED_1H_MACD_SIGNAL_SECOND_DIFF'})
     return points
 
 

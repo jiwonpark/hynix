@@ -641,11 +641,11 @@
     panel.style.cssText="padding:12px;margin:14px 0;border:1px solid #c4b5fd;border-radius:8px;background:#faf5ff;";
     panel.innerHTML=`<label style="display:flex;flex-direction:row !important;gap:8px;align-items:center;flex-wrap:wrap;">
       <input id="${prefix}useHourlyHist" type="checkbox" ${settings.use_hourly_hist?"checked":""} style="appearance:auto;width:16px;height:16px;">
-      <b>Hourly MACD histogram direction · entry only</b></label>
+      <b>Hourly MACD signal second difference · entry only</b></label>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin:8px 0;">${[["fast","Fast",2,100],["slow","Slow",3,200],["signal","Signal",2,100]].map(([key,label,min,max])=>`<label>1h ${label} <input id="${prefix}hourlyHist${label}" aria-label="Hourly MACD ${key} period" type="number" min="${min}" max="${max}" step="1" value="${settings[`hourly_hist_${key}`]}" style="width:65px;"></label>`).join("")}</div>
-      <div>Long entries: hourly histogram rising · <span id="${prefix}hourlyHistLongPaper">PAPER · waiting</span> · <span id="${prefix}hourlyHistLongLive">LIVE · waiting</span></div>
-      <div>Short entries: hourly histogram falling · <span id="${prefix}hourlyHistShortPaper">PAPER · waiting</span> · <span id="${prefix}hourlyHistShortLive">LIVE · waiting</span></div>
-      <small>Latest two completed hourly candles, independent of chart interval and histogram sign. Flat or unavailable blocks both directions. Includes every live campaign piece; exits remain active. Changes affect replay; unlock, pause and deploy to save live.</small>
+      <div>Long entries: hourly signal Δ²S > 0 · <span id="${prefix}hourlyHistLongPaper">PAPER · waiting</span> · <span id="${prefix}hourlyHistLongLive">LIVE · waiting</span></div>
+      <div>Short entries: hourly signal Δ²S < 0 · <span id="${prefix}hourlyHistShortPaper">PAPER · waiting</span> · <span id="${prefix}hourlyHistShortLive">LIVE · waiting</span></div>
+      <small>Δ²S = Sₜ − 2Sₜ₋₁ + Sₜ₋₂, using the latest three completed hourly candles. Independent of chart interval, signal sign and histogram sign. Flat or unavailable blocks both directions. Includes every live campaign piece; exits remain active. Changes affect replay; unlock, pause and deploy to save live.</small>
       <div id="${prefix}hourlyHistPaperSource" style="font-size:11px;margin-top:6px;">PAPER · awaiting completed hourly candles</div>
       <div id="${prefix}hourlyHistLiveSource" style="font-size:11px;">LIVE · awaiting status</div>`;
     anchor.parentNode.insertBefore(panel,anchor);
@@ -660,13 +660,14 @@
   }
 
   function renderHourlyHistogram(prefix, kind, point, enabled) {
+    const currentRule=point?.source === "COMPLETED_1H_MACD_SIGNAL_SECOND_DIFF" && Number.isFinite(point?.signal_acceleration);
     const stale=kind==="Live" && point?.available_time && Date.now()/1000-point.available_time>3600;
     for(const [name,key] of [["Long","long_ok"],["Short","short_ok"]]) {
       const node=document.getElementById(`${prefix}hourlyHist${name}${kind}`);
-      if(node) node.textContent=`${kind.toUpperCase()} · ${enabled===false?"OFF":!point?.ready||stale?"UNAVAILABLE":point[key]?"PASS":"WAITING"}`;
+      if(node) node.textContent=`${kind.toUpperCase()} · ${enabled===false?"OFF":!point?.ready||!currentRule||stale?"UNAVAILABLE":point[key]?"PASS":"WAITING"}`;
     }
     const source=document.getElementById(`${prefix}hourlyHist${kind}Source`);
-    if(source) source.textContent=`${kind.toUpperCase()} · completed 1h${point?.periods?` MACD (${point.periods.join(", ")})`:""} · ${point?.source_time?new Date(point.source_time*1000).toLocaleString("en-GB",{timeZone:"Asia/Seoul"})+" KST (candle open)":"source unavailable"}${point?.slope!=null?` · H ${point.previous_histogram.toFixed(5)} → ${point.histogram.toFixed(5)} · Δ ${point.slope.toFixed(5)}`:""}${point?.error?" · "+point.error:""}`;
+    if(source) source.textContent=`${kind.toUpperCase()} · completed 1h${point?.periods?` MACD (${point.periods.join(", ")})`:""} · ${point?.source_time?new Date(point.source_time*1000).toLocaleString("en-GB",{timeZone:"Asia/Seoul"})+" KST (candle open)":"source unavailable"}${currentRule?` · S ${point.previous2_signal.toFixed(5)} → ${point.previous_signal.toFixed(5)} → ${point.signal.toFixed(5)} · ΔS ${point.previous_signal_delta.toFixed(5)} → ${point.signal_delta.toFixed(5)} · Δ²S ${point.signal_acceleration.toFixed(5)}`:""}${point?.error?" · "+point.error:""}`;
   }
 
   function takeProfitSettings(prefix, bot = {}) {

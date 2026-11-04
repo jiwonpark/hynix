@@ -2965,7 +2965,7 @@ def _run_crypto_backtest_sync(
     mode_metrics["capacity_mode"] = "SINGLE_LEG_CRYPTO"
 
     hourly_entry_trend = {"enabled":bool(use_hourly_hist), "source":market_source.upper(),
-        "basis":f"completed 1h MACD-H({hourly_hist_fast}, {hourly_hist_slow}, {hourly_hist_signal}) slope: rising LONG / falling SHORT",
+        "basis":f"completed 1h MACD-S({hourly_hist_fast}, {hourly_hist_slow}, {hourly_hist_signal}) second difference: Δ²S > 0 LONG / Δ²S < 0 SHORT",
         "points":[{"time":bar['time'], "source_time":point.get('source_time') if point else None,
                    "long_ok":bool(point and point.get('long_ok')), "short_ok":bool(point and point.get('short_ok')),
                    "direction":"UNAVAILABLE" if not point or not point.get('ready') else
