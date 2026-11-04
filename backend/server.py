@@ -2689,7 +2689,7 @@ def _run_crypto_backtest_sync(
     elif strategy_mode in {"ma_acceleration", "ma_proximity"}:
         w = max(3, int(ma_accel_period))
         direction_period = ma_direction_period if strategy_mode == "ma_proximity" else 0
-        first_index = max(w, direction_period) if strategy_mode == "ma_proximity" else w + 1
+        first_index = max(w, (direction_period or w) + 1) if strategy_mode == "ma_proximity" else w + 1
         for index, bar in enumerate(bars):
             position = close_net_exit(position, bar)
             if active_positions:
@@ -3208,14 +3208,19 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     needs_hourly = use_hourly_hist or strategy_mode not in {"ma_proximity", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}
     needs_five_minute = strategy_mode == "macd_hist_turn" and use_macd_signal_slope_5m
     five_limit = min(1500, max(500, math.ceil(min(500, limit) * interval_seconds / 300) + 152))
+    # A 498-period direction SMA needs all 500 candles to be completed.
+    completed_window = (strategy_mode == "ma_proximity" and (ma_direction_period or ma_accel_period) == 498)
+    candle_options = {}
+    if completed_window:
+        candle_options["end_timestamp"] = (int(time.time()) // interval_seconds * interval_seconds) * 1000 - 1
     if market_source == "lighter":
-        tasks = [get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit))]
+        tasks = [get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit), **candle_options)]
         if needs_hourly:
             tasks.append(get_lighter_crypto_candles(symbol, interval="1h", limit=macro_limit))
         if needs_five_minute:
             tasks.append(get_lighter_crypto_candles(symbol, interval="5m", limit=five_limit))
     else:
-        tasks = [get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False)]
+        tasks = [get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False, **candle_options)]
         if needs_hourly:
             tasks.append(get_crypto_candles(symbol, interval="1h", limit=macro_limit, include_markers=False))
         if needs_five_minute:

@@ -67,9 +67,11 @@ for(const [file,name,prefix,rootId] of [
    assert.equal(period.type,'number');
    period.value='37';
    document.getElementById(prefix+'inpMaDirectionPeriod').value='73';
+   document.getElementById(prefix+'inpMaAccelMinAccel').value='0.125';
    for(const settings of [engine.replaySettings(),engine.liveStrategyPayload(mode)]){
     assert.equal(settings.ma_accel_period,37);
     assert.equal(settings.ma_direction_period,73);
+    assert.equal(settings.ma_accel_min_accel,0.125);
    }
 
    const slope=document.getElementById(prefix+'chkCondEntryMaStretch');

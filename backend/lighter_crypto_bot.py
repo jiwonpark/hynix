@@ -1571,7 +1571,10 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 await self.refresh_five_minute_macd_signal()
                 required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
                 request_limit = min(500, max(130, required_bars + 1))
-                rows = await self.client.candles(market_id, interval, request_limit, fresh=True)
+                candle_options = {}
+                if self.state["strategy_mode"] == "ma_proximity" and required_bars == 500:
+                    candle_options["end_timestamp"] = (int(time.time()) // seconds * seconds) * 1000 - 1
+                rows = await self.client.candles(market_id, interval, request_limit, fresh=True, **candle_options)
                 now_ms = int(time.time() * 1000)
                 closed = [row for row in rows if int(row["t"]) + seconds * 1000 <= now_ms - 1000]
                 if len(closed) < required_bars:

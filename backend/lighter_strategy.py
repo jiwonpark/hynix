@@ -848,50 +848,41 @@ def evaluate_ma_acceleration_signals(
     """
     w = max(3, int(ma_accel_period))
     direction_period = (ma_direction_period or w) if proximity_mode else w
-    required = max(w + (1 if proximity_mode else 2), direction_period + 1)
+    required = max(w + 1, direction_period + 2)
     if len(prices) < required:
         raise ValueError(f"MA strategy evaluation requires at least {required} completed bars")
 
     current_price = prices[-1]
 
-    # Compute 3 consecutive MA values to get first derivative (velocity) and second derivative (acceleration)
     ma_curr = sum(prices[-w:]) / w
     ma_prev = sum(prices[-w-1:-1]) / w
-    ma_prev2 = sum(prices[-w-2:-2]) / w if len(prices) >= w + 2 else None
 
-    # Velocity (first derivative / slope per bar)
-    slope_curr = ma_curr - ma_prev
-    slope_prev = ma_prev - ma_prev2 if ma_prev2 is not None else None
-
-    # Acceleration (second derivative / curvature per bar)
-    accel_curr = slope_curr - slope_prev if slope_prev is not None else 0.0
-
-    if direction_period != w:
-        slope_curr = (current_price - prices[-direction_period - 1]) / direction_period
-        slope_prev = ((prices[-2] - prices[-direction_period - 2]) / direction_period
-                      if len(prices) >= direction_period + 2 else None)
+    # Successive SMA differences simplify to the entering minus departing price.
+    slope_curr = (prices[-1] - prices[-direction_period - 1]) / direction_period
+    slope_prev = (prices[-2] - prices[-direction_period - 2]) / direction_period
+    accel_curr = slope_curr - slope_prev
 
     min_slope = max(0.0, float(ma_accel_min_slope))
     min_accel = max(0.0, float(ma_accel_min_accel))
 
     # Long condition components:
-    long_rising = slope_curr > min_slope
+    long_direction = accel_curr > min_accel if proximity_mode else slope_curr > min_slope
     long_accel = accel_curr > min_accel
     long_pullback = current_price < ma_curr
 
     # Short condition components:
-    short_falling = slope_curr < -min_slope
+    short_direction = accel_curr < -min_accel if proximity_mode else slope_curr < -min_slope
     short_decel = accel_curr < -min_accel
     short_bounce = current_price > ma_curr
 
     # Determine candidate side based on active momentum regime
-    candidate_side = 1 if (long_rising and long_accel) else (-1 if (short_falling and short_decel) else (1 if current_price < ma_curr else -1))
+    candidate_side = 1 if (long_direction and long_accel) else (-1 if (short_direction and short_decel) else (1 if current_price < ma_curr else -1))
 
     if proximity_mode:
         use_ma_accel = False
         use_ma_stack_1h = False
-        if use_ma_slope and slope_curr != 0:
-            candidate_side = 1 if slope_curr > 0 else -1
+        if use_ma_slope and accel_curr != 0:
+            candidate_side = 1 if accel_curr > 0 else -1
         else:
             candidate_side = 1 if long_pullback else -1
     elif ma_max_distance_pct > 0:
@@ -906,12 +897,12 @@ def evaluate_ma_acceleration_signals(
     macro_pass = not use_ma_stack_1h or macro_aligned
 
     if candidate_side > 0:
-        slope_pass = not use_ma_slope or long_rising
+        slope_pass = not use_ma_slope or long_direction
         accel_pass = not use_ma_accel or long_accel
         pullback_pass = not use_ma_pullback or long_pullback
         entry_signal = bool(slope_pass and accel_pass and pullback_pass and macro_pass)
     else:
-        slope_pass = not use_ma_slope or short_falling
+        slope_pass = not use_ma_slope or short_direction
         accel_pass = not use_ma_accel or short_decel
         pullback_pass = not use_ma_pullback or short_bounce
         entry_signal = bool(slope_pass and accel_pass and pullback_pass and macro_pass)
@@ -931,8 +922,9 @@ def evaluate_ma_acceleration_signals(
     emergency_stop = current_pnl <= -2.0 or held_bars >= 32
     exit_signal = bool((tp_exit or emergency_stop) if position_side != 0 else False)
 
+    direction_key = "entry_ma_direction_accel" if proximity_mode else "entry_ma_slope"
     condition_pass = {
-        "entry_ma_slope": slope_pass,
+        direction_key: slope_pass,
         "entry_ma_accel": accel_pass,
         "entry_ma_pullback": pullback_pass,
         "entry_ma_stack_1h": macro_aligned,
@@ -954,14 +946,14 @@ def evaluate_ma_acceleration_signals(
         "strategy": "ma_proximity" if proximity_mode else "ma_acceleration",
         "ma_period": w,
         "slope": round(slope_curr, 5),
-        "prev_slope": round(slope_prev, 5) if slope_prev is not None else None,
+        "prev_slope": round(slope_prev, 5),
         "direction_ma_period": direction_period,
         "acceleration": round(accel_curr, 6),
         "price_vs_ma": round(current_price - ma_curr, 4),
         "price_vs_ma_pct": round((current_price / ma_curr - 1) * 100, 3),
         "candidate_side": candidate_side,
         "condition_enabled": {
-            "entry_ma_slope": use_ma_slope,
+            direction_key: use_ma_slope,
             "entry_ma_pullback": use_ma_pullback,
             **({} if proximity_mode else {"entry_ma_accel": use_ma_accel, "entry_ma_stack_1h": use_ma_stack_1h}),
             "exit_ma_cross": use_ma_cross_exit,
@@ -1513,7 +1505,7 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
     if strategy_mode == "ma_proximity":
         period = max(3, int(params.get("ma_accel_period", 24)))
         direction_period = int(params.get("ma_direction_period", 0)) or period
-        return max(period, direction_period) + 1
+        return max(period + 1, direction_period + 2)
     if strategy_mode == "ma_acceleration":
         return max(3, min(120, int(params.get("ma_accel_period", 24)))) + 2
     if strategy_mode == "golden_death_cross":

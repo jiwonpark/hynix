@@ -471,7 +471,7 @@
     const macro = rule("EntryMaStack1h", "use_ma_stack_1h", "entry_ma_stack_1h", "Wider trend filter · configured completed-candle regime");
     if (["ou_quant", "macd_zero_cross", "macd_hist_turn"].includes(mode) || (mode === "ma_stack" && prefix === "lighterCrypto_")) return [];
     if (mode === "ma_proximity") return [
-      rule("EntryMaStretch", "use_ma_slope", "entry_ma_slope", "MA direction · long rising, short falling"),
+      rule("EntryMaStretch", "use_ma_slope", "entry_ma_direction_accel", "Direction SMA acceleration · positive long, negative short"),
       rule("EntryPeak", "use_ma_pullback", "entry_ma_pullback", "Price vs SMA · long below, short above"),
       rule("ExitConvergence", "use_ma_cross_exit", "exit_ma_cross", "Exit · price crosses the MA against the position"),
     ];
@@ -509,10 +509,10 @@
 
   function renderMaProximityControls(prefix, saved) {
     return `
-      <p>Long requires a close below the Pullback SMA. Short requires a close above it. The Direction SMA controls the slope check.</p>
+      <p>Long requires a close below the Pullback SMA. Short requires a close above it. The Direction SMA uses the change in slope across three completed candles.</p>
       <div data-terminal-rule-group="entry" data-after-condition="EntryMaStretch" style="display:flex;gap:12px;flex-wrap:wrap;">
         <label>Direction SMA period <input id="${prefix}inpMaDirectionPeriod" type="number" min="0" max="498" step="1" required value="${Number(saved?.ma_direction_period ?? 0)}" style="width:85px;"> <small>0 uses the Pullback SMA</small></label>
-        <label>Minimum MA slope <input id="${prefix}inpMaAccelMinSlope" type="number" min="0" step="0.001" value="${Number(saved?.ma_accel_min_slope ?? 0)}"></label>
+        <label>Minimum SMA acceleration <input id="${prefix}inpMaAccelMinAccel" type="number" min="0" step="0.0001" value="${Number(saved?.ma_accel_min_accel ?? 0)}"></label>
       </div>
       <div data-terminal-rule-group="entry" data-after-condition="EntryPeak" style="display:flex;gap:12px;flex-wrap:wrap;">
         <label>Pullback SMA period <input id="${prefix}inpMaAccelPeriod" type="number" min="3" max="498" step="1" required value="${Number(saved?.ma_accel_period ?? 24)}" style="width:85px;"></label>
@@ -548,9 +548,8 @@
       entry_rollover:"Completed-bar Z rollover",
       entry_ma_stack:["ma_stack", "adaptive_tranche"].includes(mode) ? "Price / MA7 / MA24 / MA60" : "Price / MA7 / rolling mean",
       entry_stretch:`Distance from MA60 ≥ ${value("ma_stretch_min")}%`,
-      entry_ma_slope: mode === "ma_proximity"
-        ? `MA${settings.ma_direction_period || settings.ma_accel_period} slope · min ${value("ma_accel_min_slope")}`
-        : `Minimum velocity ${value("ma_accel_min_slope")}`,
+      entry_ma_direction_accel: `SMA${settings.ma_direction_period || settings.ma_accel_period} acceleration · min ${value("ma_accel_min_accel")}`,
+      entry_ma_slope: `Minimum velocity ${value("ma_accel_min_slope")}`,
       entry_ma_accel:`Minimum acceleration ${value("ma_accel_min_accel")}`,
       entry_ma_pullback: mode === "ma_proximity"
         ? `Below SMA${value("ma_accel_period")} long / above short`
