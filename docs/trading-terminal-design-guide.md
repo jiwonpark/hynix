@@ -368,6 +368,12 @@ Each checkbox change schedules one replay. New mode drafts inherit current MACD
 periods when first selected, then keep their own adjustable/saved Fast/Slow/Signal
 values.
 
+Pausing execution does not pause MACD condition telemetry. While a MACD bot is
+paused, continue evaluating completed venue candles in read-only mode, label the
+snapshot `READ-ONLY (BOT PAUSED)`, and never submit orders or advance the bot's
+last-executed candle. This keeps LIVE PASS/WAITING and source timestamps honest
+without turning a paused bot back on.
+
 The completed-hour signal second difference remains an independent entry filter.
 Exits use the opposite ΔH turn and H zone: close long when previous ΔH ≥ 0,
 current ΔH < 0 and H > 0; close short when previous ΔH ≤ 0, current ΔH > 0

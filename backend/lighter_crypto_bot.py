@@ -1456,8 +1456,61 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             self._save()
             return {"events": events, "bot": self.public_state()}
 
+    async def _refresh_paused_condition_evaluation(self) -> None:
+        """Keep live condition status current while paused, without executing orders."""
+        if self.state.get("strategy_mode") not in {"macd_zero_cross", "macd_hist_turn"}:
+            return
+        now = time.time()
+        if now - float(getattr(self, "_paused_condition_refresh_at", 0.0)) < 15:
+            return
+        self._paused_condition_refresh_at = now
+        async with self.lock:
+            if self.state.get("enabled"):
+                return
+            interval = self.state["strategy_interval"]
+            seconds = INTERVAL_SECONDS[interval]
+            symbol = self.state["selected_symbol"]
+            try:
+                market_id, _, _ = await self._market(symbol)
+                await self.refresh_hourly_histogram()
+                await self.refresh_five_minute_macd_signal()
+                required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
+                request_limit = min(500, max(130, required_bars + 1))
+                rows = await self.client.candles(market_id, interval, request_limit, fresh=True)
+                now_ms = int(time.time() * 1000)
+                closed = [row for row in rows if int(row["t"]) + seconds * 1000 <= now_ms - 1000]
+                if len(closed) < required_bars:
+                    raise ValueError("Insufficient completed Lighter candles")
+                last_candle = int(closed[-1]["t"]) // 1000
+                previous = self.state.get("last_evaluation") or {}
+                if previous.get("strategy") == self.state["strategy_mode"] and int(previous.get("time", 0)) == last_candle:
+                    return
+                position_side = int(self.state["tranches"][-1]["side"]) if self.state["tranches"] else 0
+                entry_price = float(self.state["tranches"][-1]["price"]) if self.state["tranches"] else 0.0
+                _, side, _, evaluation = evaluate_strategy_signal(
+                    self.state["strategy_mode"],
+                    [float(row["c"]) for row in closed],
+                    self.state,
+                    hourly_histogram=self.state.get("hourly_histogram"),
+                    five_minute_macd_signal=self.state.get("five_minute_macd_signal"),
+                    evaluation_time=last_candle,
+                    position_side=position_side,
+                    entry_price=entry_price,
+                    held_bars=0,
+                )
+                evaluation["entry_direction_mode"] = self.state.get("entry_direction_mode", "two_way")
+                evaluation["entry_direction_allowed"] = entry_direction_allowed(
+                    evaluation["entry_direction_mode"], side,
+                )
+                evaluation["execution_paused"] = True
+                self.state["last_evaluation"] = evaluation
+                self._save()
+            except Exception as exc:
+                logger.warning("Paused Lighter condition refresh failed: %s", exc)
+
     async def run_once(self) -> None:
         if not self.state["enabled"]:
+            await self._refresh_paused_condition_evaluation()
             return
         async with self.lock:
             if not self.state["enabled"]:

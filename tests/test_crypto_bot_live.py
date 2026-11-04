@@ -81,6 +81,31 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 await bot.configure({"macro_ma_period": value})
 
+    async def test_paused_macd_bot_refreshes_read_only_conditions_without_orders(self):
+        now = 1000030
+        last_open = 999960
+        self.client.klines = [
+            [int((last_open - (129 - index) * 60) * 1000), "100", "100", "100", "100", "1",
+             int((last_open - (129 - index) * 60 + 60) * 1000 - 1)]
+            for index in range(130)
+        ]
+        self.bot.state.update(enabled=False, strategy_interval="1m", strategy_mode="macd_hist_turn")
+        original_executed_candle = self.bot.state["last_evaluated_candle"]
+        evaluation = {"strategy": "macd_hist_turn", "time": last_open, "condition_pass": {}}
+        with patch("backend.crypto_bot.time.time", return_value=now), patch.object(
+            self.bot, "refresh_hourly_histogram", AsyncMock(return_value=None)
+        ), patch.object(
+            self.bot, "refresh_five_minute_macd_signal", AsyncMock(return_value=None)
+        ), patch(
+            "backend.crypto_bot.evaluate_strategy_signal",
+            return_value=(False, 1, False, evaluation),
+        ):
+            await self.bot.run_once()
+        self.assertTrue(self.bot.state["last_evaluation"]["execution_paused"])
+        self.assertEqual(self.bot.state["last_evaluation"]["strategy"], "macd_hist_turn")
+        self.assertEqual(self.bot.state["last_evaluated_candle"], original_executed_candle)
+        self.assertEqual(self.client.orders, [])
+
     async def test_macd_replay_draft_is_server_persisted_without_changing_live_config(self):
         live_before = dict(self.bot.public_state()["strategy_params"])
         state = await self.bot.save_strategy_draft("macd_zero_cross", {

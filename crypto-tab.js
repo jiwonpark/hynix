@@ -3575,14 +3575,14 @@
       const evaluation = bot?.last_evaluation;
       const time = Number(evaluation?.time);
       const seconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[bot?.strategy_interval] || 300;
-      const fresh = bot?.enabled && evaluation?.strategy === bot?.strategy_mode
+      const fresh = evaluation?.strategy === bot?.strategy_mode
         && Number.isFinite(time) && time > 0 && Date.now() / 1000 - time <= seconds * 2 + 60;
       const checks = evaluation?.condition_pass || {};
       const heading = document.createElement("strong");
       const candidate = ["macd_reversal", "macd_zero_cross", "macd_strength_scaleout", "macd_hist_turn"].includes(bot?.strategy_mode)
         ? ` · ${Number(evaluation?.candidate_side) > 0 ? "LONG" : "SHORT"} candidate` : "";
       heading.textContent = fresh
-        ? `LIVE · ${bot.strategy_mode}${candidate} conditions at completed candle ${formatKstDateTime(time * 1000)}`
+        ? `LIVE${bot?.enabled ? "" : " · READ-ONLY (BOT PAUSED)"} · ${bot.strategy_mode}${candidate} conditions at completed candle ${formatKstDateTime(time * 1000)}`
         : `LIVE · ${bot?.strategy_mode || "strategy"} conditions unavailable (paused, stale, or awaiting a completed candle)`;
       panel.replaceChildren(heading);
       window.TerminalCommon?.resetGroupedLiveConditions?.("crypto_", heading.textContent, bot?.strategy_mode === this.currentParadigm);

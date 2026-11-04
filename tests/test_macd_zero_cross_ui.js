@@ -3,6 +3,11 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 
 function load(file, globalName, prefix, defaultMode) {
+  const source = fs.readFileSync(file, "utf8");
+  assert.match(source, /const fresh = evaluation\?\.strategy === bot\?\.strategy_mode/,
+    `${file} must show fresh read-only conditions while execution is paused`);
+  assert.doesNotMatch(source, /const fresh = bot\?\.enabled && evaluation/);
+  assert.match(source, /READ-ONLY \(BOT PAUSED\)/);
   const nodes = new Map();
   const storage = new Map();
   const localStorage = {getItem: key => storage.get(key) ?? null,
@@ -18,7 +23,7 @@ function load(file, globalName, prefix, defaultMode) {
   vm.createContext(context);
   vm.runInContext(fs.readFileSync("terminal-common.js", "utf8"), context);
   context.TerminalCommon = context.window.TerminalCommon;
-  vm.runInContext(fs.readFileSync(file, "utf8"), context);
+  vm.runInContext(source, context);
   const engine = context.window[globalName];
   engine.botState = {strategy_mode:"macd_zero_cross"};
   engine.currentParadigm = "macd_zero_cross";
