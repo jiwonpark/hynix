@@ -761,7 +761,7 @@
     const threshold = document.getElementById(`${prefix}${id}Pct`);
     const saved = {...bot, ...(bot?.strategy_params || {}), ...draft};
     const raw = Number(threshold?.value ?? saved[pctKey] ?? 0.2);
-    return {[enabledKey]: enabled ? enabled.checked : saved[enabledKey] ?? defaultEnabled,
+    return {[enabledKey]: enabled ? Boolean(enabled.checked) : saved[enabledKey] ?? defaultEnabled,
       [pctKey]: Number.isFinite(raw) && raw >= 0.01 && raw <= 100 ? raw : 0.2};
   }
 
