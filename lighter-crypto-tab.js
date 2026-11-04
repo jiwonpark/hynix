@@ -3084,11 +3084,19 @@
           .catch(() => null);
         const statusResult = await statusPromise;
         if (sym !== this.selectedSymbol) return;
-        const status = statusResult || { success: false, error: "Account response unavailable", positions: [] };
-        const accountReady = status.success !== false && status.authenticated === true;
+        const responseStatus = statusResult || { success: false, error: "Account response unavailable", positions: [] };
+        const freshAccountReady = responseStatus.success !== false && responseStatus.authenticated === true;
+        const previousStatus = this.liveVenue?.authenticated === true ? this.liveVenue : null;
+        const refreshError = freshAccountReady ? null : (responseStatus.error || "Account response unavailable");
+        // A later timeout must not erase an authenticated account snapshot.
+        // Preserve it as explicitly stale while the bounded retry continues.
+        const status = freshAccountReady || !previousStatus
+          ? responseStatus
+          : { ...previousStatus, success: true, account_stale: true, refresh_error: refreshError };
+        const accountReady = status.authenticated === true;
         this.accountDataReady = accountReady;
         clearTimeout(this.accountRetryTimer);
-        if (!status.success) {
+        if (!freshAccountReady) {
           this.accountRetryTimer = setTimeout(() => {
             if (sym === this.selectedSymbol && $("tabContentLighterCrypto")?.style.display !== "none") this.refresh();
           }, 5000);
@@ -3108,9 +3116,10 @@
         }
         const accountTimestamp = Number(status.account_updated_ms || 0);
         const accountFreshness = status.account_stale ? " · STALE SNAPSHOT" : "";
-        this.setText("lblDaemonSyncTime", status.success && accountTimestamp
-          ? `Account: ${formatKstDateTime(accountTimestamp, false)}${accountFreshness}`
-          : `Account unavailable: ${status.error || "No response"} · retrying`);
+        const retryDetail = refreshError && previousStatus ? ` · refresh failed: ${refreshError} · retrying` : "";
+        this.setText("lblDaemonSyncTime", accountReady && accountTimestamp
+          ? `Account: ${formatKstDateTime(accountTimestamp, false)}${accountFreshness}${retryDetail}`
+          : `Account unavailable: ${refreshError || status.error || "No response"} · retrying`);
       this.setText("lblDaemonLatency", this.botState?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Loading");
         this.setText("lblDaemonStats", `Lighter Perpetuals · ${sym}`);
       this.setText("lblHedgedSyncBadge", accountReady
@@ -3157,7 +3166,7 @@
         // starve the single production API worker and turn each retry into
         // another proxy timeout. Replay resumes automatically after a usable
         // account snapshot arrives.
-        if (accountReady && !this.replayLoading && !this.latestReplayConditionResult) {
+        if (freshAccountReady && !this.replayLoading && !this.latestReplayConditionResult) {
           setTimeout(() => this.runBacktestIfChanged(), 300);
         }
       } catch (error) {

@@ -99,7 +99,7 @@ for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", l
     `${name} must not initialize a synthetic live market price`);
   assert.match(source, /accountDataReady: false/,
     `${name} must distinguish an authenticated account snapshot from an empty loading response`);
-  assert.match(source, /status\.success !== false && status\.authenticated === true/,
+  assert.match(source, /(?:status|responseStatus)\.success !== false && (?:status|responseStatus)\.authenticated === true/,
     `${name} must only render zero positions after an authenticated status response`);
   assert.match(source, /TerminalCommon\.setTerminalAccountLoading\(/,
     `${name} must keep account fields neutral when authenticated data is unavailable`);

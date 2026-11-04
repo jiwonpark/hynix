@@ -61,7 +61,7 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
         end = self.ui_source.index("renderTrends(trends)", start)
         refresh = self.ui_source[start:end]
         self.assertIn(
-            "if (accountReady && !this.replayLoading && !this.latestReplayConditionResult)",
+            "if (freshAccountReady && !this.replayLoading && !this.latestReplayConditionResult)",
             refresh,
         )
         self.assertIn("this.runBacktestIfChanged()", refresh)
@@ -69,6 +69,11 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
     def test_account_snapshot_has_a_contention_tolerant_bounded_deadline(self) -> None:
         self.assertIn("{ timeoutMs: 35000 }", self.ui_source)
         self.assertIn("Request timed out after ${Math.round(timeoutMs / 1000)} seconds", self.ui_source)
+
+    def test_failed_refresh_preserves_last_authenticated_snapshot(self) -> None:
+        self.assertIn("const previousStatus = this.liveVenue?.authenticated === true", self.ui_source)
+        self.assertIn("{ ...previousStatus, success: true, account_stale: true", self.ui_source)
+        self.assertIn("refresh failed: ${refreshError} · retrying", self.ui_source)
 
 
 if __name__ == "__main__":

@@ -398,7 +398,10 @@ window; start replay automatically after that retry succeeds. Manual replay
 remains available once the terminal is usable. The account snapshot alone uses
 a 35-second client deadline so severe production CPU contention does not turn a
 valid but slow snapshot into a false unavailable state; other reads retain the
-standard 20-second bound.
+standard 20-second bound. Once an authenticated account snapshot has rendered,
+a later refresh failure keeps those values visible as an explicitly stale
+snapshot with the failed-refresh reason and retry state; it must not replace
+known balances or positions with dashes or zeros.
 
 The completed-hour signal second difference remains an independent entry filter.
 Exits use the opposite ΔH turn and H zone: close long when previous ΔH ≥ 0,
