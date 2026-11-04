@@ -605,7 +605,7 @@
     if (!group) return false;
     const ids = mode === "macd_hist_turn" ? {
       entry_histogram_delta_turn:"macdStatusDeltaTurn",entry_histogram_zone:"macdStatusHistogramZone",
-      entry_signal_zone:"macdStatusSignalZone",exit_histogram_delta_turn:"macdStatusExitCross",exit_histogram_zone:"macdStatusExitZone",
+      entry_signal_slope_5m:"macdStatusSignalSlope5m",entry_signal_zone:"macdStatusSignalZone",exit_histogram_delta_turn:"macdStatusExitCross",exit_histogram_zone:"macdStatusExitZone",
     } : mode === "macd_zero_cross" ? {
       entry_histogram_zero_cross:"macdStatusZeroCross", entry_signal_zone:"macdStatusSignalZone",
       exit_histogram_zero_cross:"macdStatusExitCross",

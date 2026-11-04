@@ -139,6 +139,21 @@ function load(file, globalName, prefix, defaultMode) {
   assert.equal(engine.replaySettings().use_macd_signal_zone, true);
   assert.equal(engine.liveStrategyPayload(defaultMode).use_macd_signal_zone, true);
 
+  const turnHtml = reloaded.renderParadigmDetail("macd_hist_turn");
+  assert.match(turnHtml, /Completed 5m MACD signal: rising long; falling short/);
+  assert.match(turnHtml, new RegExp(`id="${prefix}macdTurnUseSignalSlope5m"`));
+  nodes.set(`${prefix}macdTurnUseTurn`, {checked: true});
+  nodes.set(`${prefix}macdTurnUseZone`, {checked: true});
+  nodes.set(`${prefix}macdTurnUseExitZone`, {checked: true});
+  nodes.set(`${prefix}macdTurnUseSignalSlope5m`, {checked: true});
+  engine.currentParadigm = "macd_hist_turn";
+  engine.botState.strategy_mode = "macd_hist_turn";
+  assert.equal(engine.replaySettings().use_macd_signal_slope_5m, true);
+  assert.equal(engine.liveStrategyPayload("macd_hist_turn").use_macd_signal_slope_5m, true);
+  nodes.get(`${prefix}macdTurnUseSignalSlope5m`).checked = false;
+  assert.equal(engine.replaySettings().use_macd_signal_slope_5m, false);
+  assert.equal(engine.liveStrategyPayload("macd_hist_turn").use_macd_signal_slope_5m, false);
+
 }
 
 load("crypto-tab.js", "cryptoEngine", "crypto_", "macd_zero_cross");

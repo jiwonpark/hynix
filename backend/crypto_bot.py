@@ -66,6 +66,7 @@ DEFAULT_STATE = {
     "use_macd_signal_negative": True, "use_macd_hist_negative": True, "use_macd_hist_reversal": True,
     "use_macd_signal_positive": True, "use_macd_hist_positive": True, "use_macd_hist_reversal_exit": True,
     "use_macd_hist_turn": True, "use_macd_hist_zone": True, "use_macd_hist_exit_zone": True,
+    "use_macd_signal_slope_5m": True,
     "use_macd_zero_cross": True, "use_macd_signal_zone": False, "use_macd_hist_exit": True,
     "long_multiplier": 1.0, "short_multiplier": 1.0, "entry_direction_mode": "two_way",
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
@@ -158,6 +159,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "use_macd_hist_turn": bool(self.state.get("use_macd_hist_turn", True)),
             "use_macd_hist_zone": bool(self.state.get("use_macd_hist_zone", True)),
             "use_macd_hist_exit_zone": bool(self.state.get("use_macd_hist_exit_zone", True)),
+            "use_macd_signal_slope_5m": bool(self.state.get("use_macd_signal_slope_5m", True)),
             "use_macd_zero_cross": bool(self.state.get("use_macd_zero_cross", True)),
             "use_macd_signal_zone": bool(self.state.get("use_macd_signal_zone", False)),
             "use_convergence": bool(self.state.get("use_convergence", True)),
@@ -413,7 +415,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "macd_fast_period", "macd_slow_period", "macd_signal_period",
             "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
             "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-            "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_zero_cross", "use_macd_signal_zone",
+            "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "macro_ma_period", "macro_regime_mode",
             "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
@@ -464,7 +466,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 candidate[key] = bool(value)
             elif key in {"use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                           "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-                          "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_zero_cross", "use_macd_signal_zone"}:
+                          "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
@@ -525,7 +527,8 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                  "macro_macd_signal_period", "macro_macd_confirm_bars",
                  "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                  "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-                 "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_zero_cross", "use_macd_signal_zone")):
+                 "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone",
+                 "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:
                 raise ValueError("Close tracked inventory before changing symbol")
@@ -678,8 +681,11 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             await self.client.set_leverage(symbol, 1)
         bid, ask = await self._book(symbol, enforce_spread=not reduce_only)
         price = ask if side > 0 else bid
-        if not reduce_only and not await self.hourly_entry_allowed(side):
-            raise ValueError("Hourly MACD histogram direction blocks this entry")
+        if reason != "manual" and not reduce_only:
+            if not await self.hourly_entry_allowed(side):
+                raise ValueError("Hourly MACD histogram direction blocks this entry")
+            if not await self.five_minute_signal_entry_allowed(side):
+                raise ValueError("Completed 5m MACD signal slope blocks this entry")
         if signal_values is not None and not reduce_only:
             executable_values = signal_values[:-1] + [price]
             valid, quote_side, _, _ = evaluate_strategy_signal(
@@ -687,6 +693,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 executable_values,
                 self.state,
                 hourly_histogram=self.state.get("hourly_histogram"),
+                five_minute_macd_signal=self.state.get("five_minute_macd_signal"),
                 evaluation_time=int(time.time()),
                 position_side=0,
                 entry_price=0.0,
@@ -904,6 +911,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 if await self.check_take_profit():
                     return
                 await self.refresh_hourly_histogram()
+                await self.refresh_five_minute_macd_signal()
                 required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
                 request_limit = min(1500, max(125, required_bars + 1))
                 raw = await self.client.request("GET", "/fapi/v1/klines",
@@ -978,6 +986,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                     values,
                     self.state,
                     hourly_histogram=self.state.get("hourly_histogram"),
+                    five_minute_macd_signal=self.state.get("five_minute_macd_signal"),
                     evaluation_time=last_candle,
                     position_side=position_side,
                     entry_price=entry_price,

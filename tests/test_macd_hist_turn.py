@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from backend.crypto_bot import CryptoBot
+from backend.hourly_histogram import five_minute_signal_points
 from backend.lighter_crypto_bot import LighterCryptoBot
 from backend.lighter_strategy import (evaluate_macd_hist_turn_signals,
     evaluate_macd_zero_cross_signals, evaluate_strategy_signal, required_strategy_bars)
@@ -22,6 +23,46 @@ def evaluate_histogram(histogram, *, old=False, signal=2.0, **kwargs):
 
 
 class HistogramTurnTests(unittest.TestCase):
+    def test_completed_five_minute_signal_slope_is_directional_and_toggleable(self):
+        options = dict(macd_fast_period=4, macd_slow_period=10, macd_signal_period=3)
+        prices = [100 + .12 * i + 4 * math.sin(i / 6) for i in range(180)]
+        base = None
+        for index in range(required_strategy_bars('macd_hist_turn', options) - 1, len(prices)):
+            result = evaluate_strategy_signal('macd_hist_turn', prices[:index + 1], options)
+            if result[0]:
+                base = (prices[:index + 1], result[1])
+                break
+        self.assertIsNotNone(base)
+        sample, side = base
+        allowed = dict(ready=True, long_ok=side > 0, short_ok=side < 0,
+                       signal=2.0, previous_signal=1.0, source_time=600,
+                       source='COMPLETED_5M_MACD_SIGNAL_SLOPE')
+        blocked = {**allowed, 'long_ok': side < 0, 'short_ok': side > 0}
+        config = {**options, 'use_macd_signal_slope_5m': True}
+        passed = evaluate_strategy_signal('macd_hist_turn', sample, config,
+                                          five_minute_macd_signal=allowed)
+        waiting = evaluate_strategy_signal('macd_hist_turn', sample, config,
+                                           five_minute_macd_signal=blocked)
+        self.assertTrue(passed[0])
+        self.assertTrue(passed[3]['condition_pass']['entry_signal_slope_5m'])
+        self.assertFalse(waiting[0])
+        self.assertFalse(waiting[3]['condition_pass']['entry_signal_slope_5m'])
+        self.assertTrue(evaluate_strategy_signal(
+            'macd_hist_turn', sample, {**config, 'use_macd_signal_slope_5m': False},
+            five_minute_macd_signal=blocked,
+        )[0])
+
+    def test_five_minute_points_use_only_completed_consecutive_candles(self):
+        bars = [dict(time=i * 300, value=100 + math.sin(i / 7)) for i in range(180)]
+        config = dict(macd_fast_period=4, macd_slow_period=10, macd_signal_period=3)
+        point = five_minute_signal_points(bars, config)[-1]
+        self.assertTrue(point['ready'])
+        self.assertEqual(point['available_time'], point['source_time'] + 300)
+        self.assertEqual(point['long_ok'], point['signal_slope'] > 0)
+        self.assertEqual(point['short_ok'], point['signal_slope'] < 0)
+        broken = bars[:-2] + [bars[-1]]
+        self.assertFalse(five_minute_signal_points(broken, config)[-1]['ready'])
+
     def test_directional_turns_inside_histogram_zone_before_zero_cross(self):
         for h,side in [([-1.,-2.,-1.8],1),([1.,2.,1.8],-1)]:
             entry,candidate,_,detail=evaluate_histogram(h)
@@ -103,10 +144,10 @@ class HistogramTurnConfigTests(unittest.IsolatedAsyncioTestCase):
             for cls in (CryptoBot,LighterCryptoBot):
                 path=Path(directory)/cls.__name__
                 bot=cls(AsyncMock(),path)
-                await bot.configure(dict(strategy_mode='macd_hist_turn',use_macd_hist_turn=False,use_macd_hist_zone=False,use_macd_hist_exit_zone=False))
+                await bot.configure(dict(strategy_mode='macd_hist_turn',use_macd_hist_turn=False,use_macd_hist_zone=False,use_macd_hist_exit_zone=False,use_macd_signal_slope_5m=False))
                 restored=cls(AsyncMock(),path)
                 self.assertEqual(restored.state['strategy_mode'],'macd_hist_turn')
-                for key in ['use_macd_hist_turn','use_macd_hist_zone','use_macd_hist_exit_zone']:
+                for key in ['use_macd_hist_turn','use_macd_hist_zone','use_macd_hist_exit_zone','use_macd_signal_slope_5m']:
                     self.assertFalse(restored.public_state()['strategy_params'][key])
                 await restored.save_strategy_draft('macd_hist_turn',dict(macd_fast_period=4,macd_slow_period=10,macd_signal_period=3))
                 self.assertEqual(restored.state['strategy_drafts']['macd_hist_turn']['macd_slow_period'],10)

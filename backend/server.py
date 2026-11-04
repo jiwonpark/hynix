@@ -40,7 +40,12 @@ from .counterfactual_trades import (
 )
 from .config import config
 from .binance_client import BinanceFuturesClient
-from .hourly_histogram import hourly_histogram_points, apply_hourly_filter
+from .hourly_histogram import (
+    apply_five_minute_signal_filter,
+    apply_hourly_filter,
+    five_minute_signal_points,
+    hourly_histogram_points,
+)
 from .single_leg_take_profit import net_profit
 from .crypto_bot import CryptoBot
 from .lighter_client import LighterClient
@@ -1981,6 +1986,7 @@ def _run_crypto_backtest_sync(
     use_macd_hist_turn: bool = True,
     use_macd_hist_zone: bool = True,
     use_macd_hist_exit_zone: bool = True,
+    use_macd_signal_slope_5m: bool = False,
     use_macd_zero_cross: bool = True,
     use_macd_signal_zone: bool = False,
     use_macd_hist_exit: bool = True,
@@ -1994,6 +2000,7 @@ def _run_crypto_backtest_sync(
     short_multiplier: float = 1.0,
     interval_seconds: int = 900,
     macro_bars: Optional[List[Dict[str, Any]]] = None,
+    five_minute_bars: Optional[List[Dict[str, Any]]] = None,
     macro_ma_period: int = 60,
     macro_regime_mode: str = "ma_slope",
     macro_macd_fast_period: int = 12,
@@ -2058,8 +2065,34 @@ def _run_crypto_backtest_sync(
         hourly_by_bar.append(point)
 
     def filter_hourly(entry, side, index):
+        if not use_hourly_hist:
+            return entry
         details = {'condition_pass':latest_conditions}
         return apply_hourly_filter(entry, side, details, hourly_config, hourly_by_bar[index])
+
+    five_config = dict(
+        use_macd_signal_slope_5m=use_macd_signal_slope_5m,
+        macd_fast_period=macd_fast_period,
+        macd_slow_period=macd_slow_period,
+        macd_signal_period=macd_signal_period,
+    )
+    five_points = (five_minute_signal_points(five_minute_bars or [], five_config)
+                   if strategy_mode == 'macd_hist_turn' and use_macd_signal_slope_5m else [])
+    five_times = [point['available_time'] for point in five_points]
+    five_by_bar = []
+    for bar in bars:
+        completed_at = int(bar['time']) + interval_seconds
+        point_index = bisect.bisect_right(five_times, completed_at) - 1
+        point = five_points[point_index] if point_index >= 0 else None
+        expected_source = completed_at // 300 * 300 - 300
+        if point and point['source_time'] != expected_source:
+            point = None
+        five_by_bar.append(point)
+
+    def filter_five_minute(entry, side, index, details):
+        if strategy_mode != 'macd_hist_turn':
+            return entry
+        return apply_five_minute_signal_filter(entry, side, details, five_config, five_by_bar[index])
 
     bars_values = [item["value"] for item in bars]
     is_macd_strategy = strategy_mode in {"macd_reversal", "macd_strength_scaleout"}
@@ -2901,6 +2934,7 @@ def _run_crypto_backtest_sync(
                 "z": eval_info["histogram"], "macd": eval_info["macd"],
                 "signal": eval_info["signal"], "histogram": eval_info["histogram"],
             })
+            entry_signal = filter_five_minute(entry_signal, candidate_side, index, eval_info)
             entry_signal = filter_hourly(entry_signal, candidate_side, index)
             if entry_signal:
                 entry_signals.append({
@@ -2996,6 +3030,7 @@ def _run_crypto_backtest_sync(
         "take_profit_evaluation": latest_take_profit,
         "take_profit_fee_rate": take_profit_fee_rate,
         "hourly_histogram": hourly_by_bar[-1] if hourly_by_bar else None,
+        "five_minute_macd_signal": five_by_bar[-1] if five_by_bar else None,
         "latest_evaluation": latest_evaluation,
         "latest_conditions": latest_conditions,
         "latest_condition_time": latest_condition_time,
@@ -3047,6 +3082,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_macd_hist_positive: bool = True, use_macd_hist_reversal_exit: bool = True,
                               use_macd_hist_turn: bool = True, use_macd_hist_zone: bool = True,
                               use_macd_hist_exit_zone: bool = True,
+                              use_macd_signal_slope_5m: bool = True,
                               use_macd_zero_cross: bool = True, use_macd_signal_zone: bool = False,
                               use_macd_hist_exit: bool = True,
                               use_macd_strength: bool = True, macd_strength_min_pct: float = 30.0,
@@ -3083,31 +3119,33 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                                + macro_ma_period + 2))
     macro_limit = min(1000, max(macro_limit, math.ceil(min(500,limit)*interval_seconds/3600) + max(150, hourly_hist_slow + hourly_hist_signal + 3) + 2))
     needs_hourly = use_hourly_hist or strategy_mode not in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}
+    needs_five_minute = strategy_mode == "macd_hist_turn" and use_macd_signal_slope_5m
+    five_limit = min(1500, max(500, math.ceil(min(500, limit) * interval_seconds / 300) + 152))
     if market_source == "lighter":
+        tasks = [get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit))]
         if needs_hourly:
-            candle_res, macro_res = await asyncio.gather(
-                get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit)),
-                get_lighter_crypto_candles(symbol, interval="1h", limit=macro_limit),
-            )
-        else:
-            candle_res = await get_lighter_crypto_candles(symbol, interval=interval, limit=min(500, limit))
-            macro_res = {"success": True, "bars": []}
+            tasks.append(get_lighter_crypto_candles(symbol, interval="1h", limit=macro_limit))
+        if needs_five_minute:
+            tasks.append(get_lighter_crypto_candles(symbol, interval="5m", limit=five_limit))
     else:
+        tasks = [get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False)]
         if needs_hourly:
-            candle_res, macro_res = await asyncio.gather(
-                get_crypto_candles(symbol, interval=interval, limit=min(500, limit), include_markers=False),
-                get_crypto_candles(symbol, interval="1h", limit=macro_limit, include_markers=False),
-            )
-        else:
-            candle_res = await get_crypto_candles(
-                symbol, interval=interval, limit=min(500, limit), include_markers=False,
-            )
-            macro_res = {"success": True, "bars": []}
+            tasks.append(get_crypto_candles(symbol, interval="1h", limit=macro_limit, include_markers=False))
+        if needs_five_minute:
+            tasks.append(get_crypto_candles(symbol, interval="5m", limit=five_limit, include_markers=False))
+    responses = await asyncio.gather(*tasks)
+    candle_res = responses[0]
+    response_index = 1
+    macro_res = responses[response_index] if needs_hourly else {"success": True, "bars": []}
+    response_index += 1 if needs_hourly else 0
+    five_res = responses[response_index] if needs_five_minute else {"success": True, "bars": []}
     bars = candle_res.get("bars", [])
     now_seconds = int(time.time())
     bars = [bar for bar in bars if int(bar["time"]) + interval_seconds <= now_seconds]
     macro_bars = [bar for bar in macro_res.get("bars", [])
                   if int(bar["time"]) + 3600 <= now_seconds]
+    five_minute_bars = [bar for bar in five_res.get("bars", [])
+                        if int(bar["time"]) + 300 <= now_seconds]
     fee_rate, fee_error = None, None
     if use_take_profit:
         try:
@@ -3164,13 +3202,14 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         use_macd_hist_reversal_exit=use_macd_hist_reversal_exit,
         use_macd_zero_cross=use_macd_zero_cross,
         use_macd_hist_turn=use_macd_hist_turn, use_macd_hist_zone=use_macd_hist_zone, use_macd_hist_exit_zone=use_macd_hist_exit_zone,
+        use_macd_signal_slope_5m=use_macd_signal_slope_5m,
         use_macd_signal_zone=use_macd_signal_zone, use_macd_hist_exit=use_macd_hist_exit,
         use_macd_strength=use_macd_strength, macd_strength_min_pct=macd_strength_min_pct,
         use_macd_two_stage_exit=use_macd_two_stage_exit, macd_first_exit_pct=macd_first_exit_pct,
         base_spacing_pct=base_spacing_pct, min_dwell_bars=min_dwell_bars,
         long_multiplier=long_multiplier, short_multiplier=short_multiplier,
         interval_seconds=interval_seconds,
-        macro_bars=macro_bars, macro_ma_period=macro_ma_period,
+        macro_bars=macro_bars, five_minute_bars=five_minute_bars, macro_ma_period=macro_ma_period,
         macro_regime_mode=macro_regime_mode,
         macro_macd_fast_period=macro_macd_fast_period,
         macro_macd_slow_period=macro_macd_slow_period,

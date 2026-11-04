@@ -1755,9 +1755,14 @@ def _evaluate_strategy_signal(
     return entry_signal, candidate_side, exit_signal, details
 
 
-def evaluate_strategy_signal(strategy_mode, prices, config, *, hourly_histogram=None, **kwargs):
-    from .hourly_histogram import apply_hourly_filter
+def evaluate_strategy_signal(strategy_mode, prices, config, *, hourly_histogram=None,
+                             five_minute_macd_signal=None, **kwargs):
+    from .hourly_histogram import apply_five_minute_signal_filter, apply_hourly_filter
     entry, side, exit_signal, details = _evaluate_strategy_signal(strategy_mode, prices, config, **kwargs)
+    if strategy_mode == "macd_hist_turn":
+        entry = apply_five_minute_signal_filter(
+            entry, side, details, config, five_minute_macd_signal,
+        )
     if "use_hourly_hist" in config:
         entry = apply_hourly_filter(entry, side, details, config, hourly_histogram)
     return entry, side, exit_signal, details

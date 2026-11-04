@@ -356,11 +356,17 @@ no forming bar, future bar, inventory, balance, capacity or recovery state.
 
 Give ΔH turning (`use_macd_hist_turn`) and histogram zone (`use_macd_hist_zone`)
 independent real switches, both default ON. Retain the optional signal-line sign
-filter default OFF. Show separate PAPER/LIVE PASS/WAITING/OFF/UNAVAILABLE verdicts
-for `entry_histogram_delta_turn` and `entry_histogram_zone`, plus current H,
-previous/current ΔH and source candle time in KST. Each checkbox change schedules
-one replay. New mode drafts inherit current MACD periods when first selected,
-then keep their own adjustable/saved Fast/Slow/Signal values.
+filter default OFF. Add a fixed-timeframe completed-5m MACD signal-slope entry
+condition (`use_macd_signal_slope_5m`), default ON: S_t > S_(t−1) for long and
+S_t < S_(t−1) for short, using the strategy's adjustable Fast/Slow/Signal
+periods. It is independent of the selected chart interval; flat or unavailable
+5m signal data waits instead of passing. Show separate PAPER/LIVE
+PASS/WAITING/OFF/UNAVAILABLE verdicts for `entry_histogram_delta_turn`,
+`entry_histogram_zone` and `entry_signal_slope_5m`, plus current H,
+previous/current ΔH, previous/current 5m S and both source candle times in KST.
+Each checkbox change schedules one replay. New mode drafts inherit current MACD
+periods when first selected, then keep their own adjustable/saved Fast/Slow/Signal
+values.
 
 The completed-hour signal second difference remains an independent entry filter.
 Exits use the opposite ΔH turn and H zone: close long when previous ΔH ≥ 0,

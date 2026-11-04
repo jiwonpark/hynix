@@ -67,6 +67,7 @@ DEFAULT_STATE = {
     "use_macd_signal_negative": True, "use_macd_hist_negative": True, "use_macd_hist_reversal": True,
     "use_macd_signal_positive": True, "use_macd_hist_positive": True, "use_macd_hist_reversal_exit": True,
     "use_macd_hist_turn": True, "use_macd_hist_zone": True, "use_macd_hist_exit_zone": True,
+    "use_macd_signal_slope_5m": True,
     "use_macd_zero_cross": True, "use_macd_signal_zone": False, "use_macd_hist_exit": True,
     "use_macd_strength": True, "macd_strength_min_pct": 30.0,
     "use_macd_two_stage_exit": True, "macd_first_exit_pct": 50.0, "macd_exit_stage": 0,
@@ -219,6 +220,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                           "use_macd_hist_turn": bool(self.state.get("use_macd_hist_turn", True)),
                           "use_macd_hist_zone": bool(self.state.get("use_macd_hist_zone", True)),
                           "use_macd_hist_exit_zone": bool(self.state.get("use_macd_hist_exit_zone", True)),
+                          "use_macd_signal_slope_5m": bool(self.state.get("use_macd_signal_slope_5m", True)),
                           "use_macd_zero_cross": bool(self.state.get("use_macd_zero_cross", True)),
                           "use_macd_signal_zone": bool(self.state.get("use_macd_signal_zone", False)),
                           "use_macd_strength": bool(self.state.get("use_macd_strength", True)),
@@ -459,7 +461,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "macd_fast_period", "macd_slow_period", "macd_signal_period",
             "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
             "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-            "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_zero_cross", "use_macd_signal_zone",
+            "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone",
             "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "macro_ma_period", "macro_regime_mode",
@@ -513,7 +515,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 candidate[key] = bool(value)
             elif key in {"use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                           "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-                          "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_zero_cross", "use_macd_signal_zone"}:
+                          "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone"}:
                 candidate[key] = bool(value)
             elif key in {"use_macd_strength", "use_macd_two_stage_exit"}:
                 candidate[key] = bool(value)
@@ -588,7 +590,8 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                  "macro_macd_signal_period", "macro_macd_confirm_bars",
                  "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                  "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-                 "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_zero_cross", "use_macd_signal_zone",
+                 "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone",
+                 "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal",
                  "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:
@@ -859,7 +862,9 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             self._finish_entry_campaign("target_reached")
             self._save()
             return False
-        if not entry_direction_allowed(self.state.get("entry_direction_mode", "two_way"), side) or not await self.hourly_entry_allowed(side):
+        if (not entry_direction_allowed(self.state.get("entry_direction_mode", "two_way"), side)
+                or not await self.hourly_entry_allowed(side)
+                or not await self.five_minute_signal_entry_allowed(side)):
             self._finish_entry_campaign("entry_direction_filter")
             self._save()
             return False
@@ -1043,14 +1048,18 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             self._check_position(amount, step, mark_price=mark_px, min_base_amount=min_base)
             bid, ask = await self._book(market_id, enforce_spread=not reduce_only)
             price = ask if side > 0 else bid
-            if not reduce_only and not await self.hourly_entry_allowed(side):
-                raise ValueError("Hourly MACD histogram direction blocks this entry")
+            if reason != "manual" and not reduce_only:
+                if not await self.hourly_entry_allowed(side):
+                    raise ValueError("Hourly MACD histogram direction blocks this entry")
+                if not await self.five_minute_signal_entry_allowed(side):
+                    raise ValueError("Completed 5m MACD signal slope blocks this entry")
             if signal_values is not None and not reduce_only:
                 valid, quote_side, _, _ = evaluate_strategy_signal(
                     self.state["strategy_mode"],
                     signal_values[:-1] + [price],
                     self.state,
                     hourly_histogram=self.state.get("hourly_histogram"),
+                    five_minute_macd_signal=self.state.get("five_minute_macd_signal"),
                     evaluation_time=int(time.time()),
                     position_side=0,
                     entry_price=0.0,
@@ -1491,6 +1500,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 if await self.check_take_profit():
                     return
                 await self.refresh_hourly_histogram()
+                await self.refresh_five_minute_macd_signal()
                 required_bars = required_strategy_bars(self.state["strategy_mode"], self.state)
                 request_limit = min(500, max(130, required_bars + 1))
                 rows = await self.client.candles(market_id, interval, request_limit, fresh=True)
@@ -1562,6 +1572,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                     values,
                     self.state,
                     hourly_histogram=self.state.get("hourly_histogram"),
+                    five_minute_macd_signal=self.state.get("five_minute_macd_signal"),
                     evaluation_time=last_candle,
                     position_side=position_side,
                     entry_price=entry_price,
