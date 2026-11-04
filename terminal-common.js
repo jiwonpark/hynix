@@ -507,6 +507,16 @@
     return [macro];
   }
 
+  function syncInheritedConditionControls(prefix, mode, bot) {
+    for (const rule of inheritedStrategyConditions(mode, prefix)) {
+      const input = document.getElementById(`${prefix}chkCond${rule.suffix}`);
+      const saved = bot.strategy_params?.[rule.toggle] ?? bot[rule.toggle];
+      if (input && input.dataset.unsaved !== "true" && typeof saved === "boolean") {
+        input.checked = saved;
+      }
+    }
+  }
+
   function inheritedConditionValue(rule, settings, mode) {
     const value = key => settings[key] == null ? "—" : String(settings[key]);
     const descriptions = {
@@ -753,7 +763,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
+  const TerminalCommon = { syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

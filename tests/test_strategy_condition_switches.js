@@ -49,6 +49,19 @@ for(const [file,name,prefix,rootId] of [
    assert.equal(engine.replaySettings()[rule.toggle],true,mode+' ON changes replay '+rule.toggle);
    assert.equal(engine.liveStrategyPayload(mode)[rule.toggle],true,mode+' ON changes deploy payload '+rule.toggle);
   }
+  if(mode==='ma_proximity'){
+   const slope=document.getElementById(prefix+'chkCondEntryMaStretch');
+   const proximity=document.getElementById(prefix+'chkCondEntryPeak');
+   common.syncInheritedConditionControls(prefix,mode,{strategy_params:{use_ma_stretch:true,use_ma_slope:false,use_ma_pullback:false}});
+   assert.equal(slope.checked,false,'polling uses MA slope rather than legacy MA stretch');
+   assert.equal(proximity.checked,false);
+   proximity.checked=true;
+   proximity.dataset.unsaved='true';
+   common.syncInheritedConditionControls(prefix,mode,{strategy_params:{use_ma_pullback:false}});
+   assert.equal(proximity.checked,true,'polling preserves the edited paper switch');
+   delete proximity.dataset.unsaved;
+   slope.checked=true;
+  }
   if(mode==='macd_hist_turn'){
    assert.equal(document.getElementById(prefix+'macdFastPeriod').value,'20','new mode inherits current MACD periods');
    assert.equal(document.getElementById(prefix+'macdSlowPeriod').value,'60');

@@ -18,7 +18,9 @@ const entry = control('btnStepTranche');
 const exit = control('btnReduceTranche');
 const optional = control('chkCondEntryBase');
 const mandatory = control('chkCondEntryCapacity', true);
-const actionControls = [entry, exit, optional, mandatory];
+const paper = control("crypto_chkCondEntryPeak");
+paper.dataset.terminalPaperControl = "true";
+const actionControls = [entry, exit, optional, mandatory, paper];
 let synced = 0;
 const window = {
   currentLang: 'en',
@@ -34,7 +36,8 @@ const context = { window, document, $: () => null, clearTimeout, setTimeout,
 vm.createContext(context);
 vm.runInContext(`${html.slice(start, end)}\nwindow.lock = terminalLockManager;`, context);
 window.lock.applyState();
-assert(actionControls.every((item) => item.disabled));
+assert([entry, exit, optional, mandatory].every((item) => item.disabled));
+assert.equal(paper.disabled, false, "paper switches remain editable under the live lock");
 window.lock.isLocked = false;
 window.lock.applyState();
 assert.equal(optional.disabled, false, 'usable condition unlocks');

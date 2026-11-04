@@ -11754,6 +11754,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const updateElem = (el) => {
             if (el.dataset.terminalUnavailable === "true") {
               el.disabled = true;
+            } else if (el.dataset.terminalPaperControl === "true") {
+              el.disabled = false;
             } else if (!locked && (el.id === "btnStepTranche" || el.id === "btnReduceTranche")) {
               const status = window.tradingEngine?.state?.hedgedStatus;
               const criteria = status?.auto_tranche_criteria;

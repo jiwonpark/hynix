@@ -1255,7 +1255,8 @@
         const input = lid(id);
         if (!input) return;
         input.onchange = null;
-        input.disabled = Boolean(window.terminalLockManager?.isLocked);
+        input.dataset.terminalPaperControl = "true";
+        input.disabled = false;
         input.addEventListener("change", () => {
           input.dataset.unsaved = "true";
           this.updateDeployButtonState();
@@ -3345,7 +3346,7 @@
         const liveEnabled = liveParams[key] != null ? Boolean(liveParams[key]) : Boolean(defaultConditionToggles[key]);
         if (input) {
           input.dataset.terminalUnavailable = "false";
-          input.disabled = Boolean(window.terminalLockManager?.isLocked);
+          input.disabled = false;
           input.title = `${name} strategy condition`;
         }
         if (badge) {
@@ -3586,7 +3587,10 @@
         list.replaceChildren();
         groupedPaper[key] = list;
       }
+      const inlineChecks = new Set(window.TerminalCommon.inheritedStrategyConditions(this.currentParadigm, "crypto_")
+        .map(rule => rule.condition));
       Object.entries(labels).forEach(([key, label]) => {
+        if (inlineChecks.has(key)) return;
         const row = document.createElement("div");
         row.className = "condRow";
         const name = document.createElement("span");
@@ -4317,23 +4321,9 @@
         countControl.value = bot.max_tranches === null ? "unlimited" : String(bot.max_tranches);
       }
 
-      const condCheckboxes = {
-        chkCondEntryMaStretch: "use_ma_stretch",
-        chkCondEntryBase: "use_base_spacing",
-        chkCondEntryPeak: "use_peak",
-        chkCondEntryMaStack5m: "use_ma_stack",
-        chkCondEntryMaStack1h: "use_ma_stack_1h",
-        chkCondExitConvergence: "use_convergence",
-        chkCondExitDwell: "use_dwell",
-        chkCondExitBottoming: "use_bottoming",
-      };
-      Object.entries(condCheckboxes).forEach(([id, key]) => {
-        const input = lid(id);
-        const liveVal = bot?.[key] != null ? Boolean(bot[key]) : (bot?.strategy_params?.[key] != null ? Boolean(bot.strategy_params[key]) : null);
-        if (input && liveVal != null && input.dataset.unsaved !== "true") {
-          input.checked = liveVal;
-        }
-      });
+      if (bot?.strategy_mode === this.currentParadigm) {
+        window.TerminalCommon.syncInheritedConditionControls("crypto_", this.currentParadigm, bot);
+      }
       const liveEntryZ = Number(bot?.entry_z ?? 1.4);
       const liveExitZ = Number(bot?.exit_z ?? 0.2);
       const ouEntryInp = $("crypto_inpOuEntryZ");
