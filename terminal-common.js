@@ -639,7 +639,7 @@
     for (const node of anchor.querySelectorAll("[data-terminal-rule-group]")) {
       const bucket = buckets[node.dataset.terminalRuleGroup];
       const after = node.dataset.afterCondition
-        && document.getElementById(`${prefix}rowCond${node.dataset.afterCondition}`);
+        && bucket?.querySelector(`#${prefix}rowCond${node.dataset.afterCondition}`);
       if (after && after.parentNode === bucket) bucket.insertBefore(node, after.nextSibling);
       else if (bucket) bucket.append(node);
     }

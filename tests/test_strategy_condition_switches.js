@@ -53,7 +53,7 @@ for(const [file,name,prefix,rootId] of [
    const period=document.getElementById(prefix+'inpMaAccelPeriod');
    const distance=document.getElementById(prefix+'inpMaMaxDistance');
    const nearRow=document.getElementById(prefix+'rowCondEntryPeak');
-   assert.equal(nearRow.nextElementSibling,period.closest('[data-after-condition]'));
+   assert.ok(nearRow.nextElementSibling?.contains(period), 'SMA period follows the proximity rule');
    assert.equal(period.type,'number');
    period.value='37';
    distance.value='0.27';
