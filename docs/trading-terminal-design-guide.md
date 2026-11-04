@@ -395,7 +395,10 @@ On Tab 5 activation, chart loading may remain parallel, but automatic paper
 replay must wait until an account snapshot has rendered. If the first account
 read fails, leave replay idle so the bounded account retry has a quiet API
 window; start replay automatically after that retry succeeds. Manual replay
-remains available once the terminal is usable.
+remains available once the terminal is usable. The account snapshot alone uses
+a 35-second client deadline so severe production CPU contention does not turn a
+valid but slow snapshot into a false unavailable state; other reads retain the
+standard 20-second bound.
 
 The completed-hour signal second difference remains an independent entry filter.
 Exits use the opposite ΔH turn and H zone: close long when previous ΔH ≥ 0,

@@ -66,6 +66,10 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
         )
         self.assertIn("this.runBacktestIfChanged()", refresh)
 
+    def test_account_snapshot_has_a_contention_tolerant_bounded_deadline(self) -> None:
+        self.assertIn("{ timeoutMs: 35000 }", self.ui_source)
+        self.assertIn("Request timed out after ${Math.round(timeoutMs / 1000)} seconds", self.ui_source)
+
 
 if __name__ == "__main__":
     unittest.main()

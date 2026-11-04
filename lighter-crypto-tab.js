@@ -49,6 +49,9 @@
 
   async function api(path, options = {}) {
     const controller = !options.signal && typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeoutMs = Number.isFinite(Number(options.timeoutMs))
+      ? Math.max(1000, Number(options.timeoutMs))
+      : 20000;
     let timeout;
     try {
       return await Promise.race([
@@ -64,8 +67,8 @@
           if (options.signal) return; // Replay owns its shared 30-second deadline.
           timeout = setTimeout(() => {
             controller?.abort();
-            reject(new Error("Request timed out after 20 seconds"));
-          }, 20000);
+            reject(new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds`));
+          }, timeoutMs);
         }),
       ]);
     } finally { clearTimeout(timeout); }
@@ -3074,7 +3077,7 @@
         // Start the independent reads together, but render account telemetry as
         // soon as it arrives.  Slow realized-history or trend reconciliation
         // must never hold valid collateral and positions behind Promise.all.
-        const statusPromise = api(`/api/lighter-crypto/status?symbol=${encodeURIComponent(sym)}`)
+        const statusPromise = api(`/api/lighter-crypto/status?symbol=${encodeURIComponent(sym)}`, { timeoutMs: 35000 })
           .catch(error => ({success: false, error: error.message}));
         const botPromise = api("/api/lighter-crypto/bot/status").catch(() => null);
         const trendPromise = api(`/api/lighter-crypto/trends?symbol=${encodeURIComponent(sym)}&small=${sParam}&big=${bParam}`)
