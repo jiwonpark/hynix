@@ -28,7 +28,7 @@ for(const [file,name,prefix,rootId] of [
  const crossDwell=common.inheritedStrategyConditions('golden_death_cross',prefix).find(rule=>rule.condition==='exit_dwell');
  assert.equal(common.inheritedConditionValue(crossDwell,{min_dwell_bars:7},'golden_death_cross'),'Minimum 7 completed bars');
  const livePanel=document.createElement('div');livePanel.id=prefix.replace(/_$/,'')+'LiveConditions';document.getElementById(rootId).append(livePanel);
- const expected={grid:8,custom:8,adaptive_tranche:8,ma_acceleration:5,golden_death_cross:6,ma_stack:prefix==='crypto_'?6:0,macd_zero_cross:0,macd_hist_turn:0,ou_quant:0,macd_reversal:1,macd_strength_scaleout:1,multi_factor:1,trend_pullback:1};
+ const expected={grid:8,custom:8,adaptive_tranche:8,ma_acceleration:5,ma_proximity:3,golden_death_cross:6,ma_stack:prefix==='crypto_'?6:0,macd_zero_cross:0,macd_hist_turn:0,ou_quant:0,macd_reversal:1,macd_strength_scaleout:1,multi_factor:1,trend_pullback:1};
  for(const mode of [...Object.keys(engine.paradigms),'macd_zero_cross','ma_acceleration','golden_death_cross','grid']){
   await engine.setParadigm(mode);
   const rules=common.inheritedStrategyConditions(mode,prefix);

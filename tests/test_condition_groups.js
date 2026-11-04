@@ -42,7 +42,7 @@ for (const [file, name, prefix] of [
   for (const mode of [...Object.keys(engine.paradigms), 'macd_zero_cross']) {
     common.prepareConditionGroups(prefix,anchor);
     anchor.innerHTML=mode==='grid'?'':engine.renderParadigmDetail(mode);
-    const usesTrend = !['ou_quant','macd_zero_cross','macd_hist_turn', ...(prefix==='lighterCrypto_'?['ma_stack']:[])].includes(mode);
+    const usesTrend = !['ou_quant','macd_zero_cross','macd_hist_turn','ma_proximity', ...(prefix==='lighterCrypto_'?['ma_stack']:[])].includes(mode);
     trendRow.style.display=usesTrend?'':'none';
     trendRow.dataset.terminalRuleSelected=String(usesTrend);
     zRow.dataset.terminalRuleSelected=String(['grid','custom','adaptive_tranche'].includes(mode));

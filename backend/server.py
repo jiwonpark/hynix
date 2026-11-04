@@ -2677,7 +2677,7 @@ def _run_crypto_backtest_sync(
                 "pullback_dist_target": trend_pullback_dist
             }
 
-    elif strategy_mode == "ma_acceleration":
+    elif strategy_mode in {"ma_acceleration", "ma_proximity"}:
         w = max(3, int(ma_accel_period))
         for index, bar in enumerate(bars):
             position = close_take_profit(position, bar)
@@ -2701,6 +2701,7 @@ def _run_crypto_backtest_sync(
                 use_ma_slope=use_ma_slope,
                 use_ma_accel=use_ma_accel,
                 ma_max_distance_pct=ma_max_distance_pct,
+                proximity_mode=strategy_mode == "ma_proximity",
                 use_ma_pullback=use_ma_pullback,
                 use_ma_cross_exit=use_ma_cross_exit,
                 use_ma_stack_1h=use_ma_stack_1h,
@@ -2718,6 +2719,7 @@ def _run_crypto_backtest_sync(
                 use_ma_slope=use_ma_slope,
                 use_ma_accel=use_ma_accel,
                 ma_max_distance_pct=ma_max_distance_pct,
+                proximity_mode=strategy_mode == "ma_proximity",
                 use_ma_pullback=use_ma_pullback,
                 use_ma_cross_exit=use_ma_cross_exit,
                 use_ma_stack_1h=use_ma_stack_1h,
@@ -2745,7 +2747,7 @@ def _run_crypto_backtest_sync(
             if entry_signal:
                 entry_signals.append({
                     "time": int(bar["time"]), "price": float(bar["value"]),
-                    "side": int(candidate_side), "reason": "ma_acceleration",
+                    "side": int(candidate_side), "reason": strategy_mode,
                     "conditions": {key:value for key,value in latest_conditions.items() if key.startswith("entry_")},
                 })
             if position is None and entry_signal:
@@ -2759,7 +2761,7 @@ def _run_crypto_backtest_sync(
                 }
             elif position is not None:
                 current_pnl = position["side"] * (bar["value"] / position["entry"] - 1) * 100
-                if exit_signal or index == len(bars) - 1:
+                if exit_signal or (strategy_mode == "ma_acceleration" and index == len(bars) - 1):
                     mult = position.get("multiplier", 1.0)
                     tp_hit = eval_info.get("condition_pass", {}).get("exit_ma_cross")
                     trades.append({
@@ -2775,7 +2777,7 @@ def _run_crypto_backtest_sync(
                     position = None
 
         mode_metrics = {
-            "signal_engine": "ma_acceleration",
+            "signal_engine": strategy_mode,
             "latest_slope": latest_evaluation.get("slope"),
             "latest_acceleration": latest_evaluation.get("acceleration"),
             "latest_ma": latest_evaluation.get("mean"),
@@ -3080,7 +3082,7 @@ def _run_crypto_backtest_sync(
         "entry_signals": entry_signals,
         "entry_trend": hourly_entry_trend if use_hourly_hist else _crypto_entry_trend(
             bars, macro_aligned_list,
-            enabled=(False if strategy_mode in {"macd_zero_cross", "macd_hist_turn"} else
+            enabled=(False if strategy_mode in {"macd_zero_cross", "macd_hist_turn", "ma_proximity"} else
                      ou_use_macro_trend if strategy_mode == "ou_quant" else use_ma_stack_1h),
             is_ou=strategy_mode == "ou_quant", span=ou_macro_ema_span,
             slope_bars=ou_macro_slope_bars, interval_seconds=interval_seconds,
@@ -3185,7 +3187,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     macro_limit = min(500, max(125, math.ceil(min(500, limit) * interval_seconds / 3600)
                                + macro_ma_period + 2))
     macro_limit = min(1000, max(macro_limit, math.ceil(min(500,limit)*interval_seconds/3600) + max(150, hourly_hist_slow + hourly_hist_signal + 3) + 2))
-    needs_hourly = use_hourly_hist or strategy_mode not in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}
+    needs_hourly = use_hourly_hist or strategy_mode not in {"ma_proximity", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}
     needs_five_minute = strategy_mode == "macd_hist_turn" and use_macd_signal_slope_5m
     five_limit = min(1500, max(500, math.ceil(min(500, limit) * interval_seconds / 300) + 152))
     if market_source == "lighter":

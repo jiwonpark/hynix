@@ -819,6 +819,7 @@ def evaluate_ma_acceleration_signals(
     ma_accel_min_slope: float = 0.0,
     ma_accel_min_accel: float = 0.0,
     ma_max_distance_pct: float = 0.0,
+    proximity_mode: bool = False,
     use_ma_slope: bool = True,
     use_ma_accel: bool = True,
     use_ma_pullback: bool = True,
@@ -878,6 +879,12 @@ def evaluate_ma_acceleration_signals(
     # Determine candidate side based on active momentum regime
     candidate_side = 1 if (long_rising and long_accel) else (-1 if (short_falling and short_decel) else (1 if current_price < ma_curr else -1))
 
+    if proximity_mode:
+        use_ma_accel = False
+        use_ma_stack_1h = False
+        if ma_max_distance_pct <= 0:
+            ma_max_distance_pct = 0.15
+
     if ma_max_distance_pct > 0:
         near_ma = abs(current_price - ma_curr) <= ma_curr * ma_max_distance_pct / 100
         long_pullback = short_bounce = near_ma
@@ -907,6 +914,10 @@ def evaluate_ma_acceleration_signals(
     elif position_side < 0:
         tp_exit = current_price <= ma_curr if use_ma_cross_exit else False
 
+    if proximity_mode and position_side and use_ma_cross_exit:
+        tp_exit = (position_side * (prices[-2] - ma_prev) >= 0
+                   and position_side * (current_price - ma_curr) < 0)
+
     current_pnl = position_side * (current_price / entry_price - 1) * 100 if (position_side != 0 and entry_price > 0) else 0.0
     emergency_stop = current_pnl <= -2.0 or held_bars >= 32
     exit_signal = bool((tp_exit or emergency_stop) if position_side != 0 else False)
@@ -920,13 +931,18 @@ def evaluate_ma_acceleration_signals(
         "exit_emergency_stop": emergency_stop if position_side else None,
     }
 
+    if proximity_mode:
+        entry_signal = entry_signal and (use_ma_slope or use_ma_pullback)
+        condition_pass.pop("entry_ma_accel")
+        condition_pass.pop("entry_ma_stack_1h")
+
     evaluation = {
         "time": evaluation_time,
         "ratio": round(current_price, 4),
         "mean": round(ma_curr, 4),
         "z": round((current_price - ma_curr) / max(1e-6, ma_curr * 0.01), 3),
         "signal_mean": ma_curr,
-        "strategy": "ma_acceleration",
+        "strategy": "ma_proximity" if proximity_mode else "ma_acceleration",
         "ma_period": w,
         "slope": round(slope_curr, 5),
         "prev_slope": round(slope_prev, 5),
@@ -935,8 +951,9 @@ def evaluate_ma_acceleration_signals(
         "price_vs_ma_pct": round((current_price / ma_curr - 1) * 100, 3),
         "candidate_side": candidate_side,
         "condition_enabled": {
-            "entry_ma_slope": use_ma_slope, "entry_ma_accel": use_ma_accel,
-            "entry_ma_pullback": use_ma_pullback, "entry_ma_stack_1h": use_ma_stack_1h,
+            "entry_ma_slope": use_ma_slope,
+            "entry_ma_pullback": use_ma_pullback,
+            **({} if proximity_mode else {"entry_ma_accel": use_ma_accel, "entry_ma_stack_1h": use_ma_stack_1h}),
             "exit_ma_cross": use_ma_cross_exit,
         },
         "condition_pass": condition_pass,
@@ -1474,7 +1491,7 @@ def evaluate_macd_strength_scaleout_signals(
     return bool(entry), side, exit_signal, evaluation
 
 
-LIVE_STRATEGIES = {"adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "golden_death_cross", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}
+LIVE_STRATEGIES = {"adaptive_tranche", "grid", "ou_quant", "ma_stack", "multi_factor", "trend_pullback", "custom", "ma_acceleration", "ma_proximity", "golden_death_cross", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}
 
 
 def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
@@ -1483,7 +1500,7 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         return 61
     if strategy_mode == "trend_pullback":
         return max(12, min(60, int(params.get("trend_macro_window", 24)))) + 1
-    if strategy_mode == "ma_acceleration":
+    if strategy_mode in {"ma_acceleration", "ma_proximity"}:
         return max(3, min(120, int(params.get("ma_accel_period", 24)))) + 2
     if strategy_mode == "golden_death_cross":
         fast = max(2, int(params.get("fast_ma_period", 9)))
@@ -1612,13 +1629,14 @@ def _evaluate_strategy_signal(
             held_bars=held_bars,
             macro_alignment=macro_alignment,
         )
-    elif strategy_mode == "ma_acceleration":
+    elif strategy_mode in {"ma_acceleration", "ma_proximity"}:
         return evaluate_ma_acceleration_signals(
             prices,
             ma_accel_period=int(config.get("ma_accel_period", 24)),
             ma_accel_min_slope=float(config.get("ma_accel_min_slope", 0.0)),
             ma_accel_min_accel=float(config.get("ma_accel_min_accel", 0.0)),
             ma_max_distance_pct=float(config.get("ma_max_distance_pct", 0.0)),
+            proximity_mode=strategy_mode == "ma_proximity",
             use_ma_slope=bool(config.get("use_ma_slope", True)),
             use_ma_accel=bool(config.get("use_ma_accel", True)),
             use_ma_pullback=bool(config.get("use_ma_pullback", True)),

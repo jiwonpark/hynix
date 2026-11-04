@@ -1577,7 +1577,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 macro_candle_time = None
                 macro_hourly_candle_time = None
                 macro_detail: Dict[str, Any] = {}
-                if (self.state["strategy_mode"] not in {"ou_quant", "macd_zero_cross", "macd_hist_turn"}
+                if (self.state["strategy_mode"] not in {"ou_quant", "macd_zero_cross", "macd_hist_turn", "ma_proximity"}
                         and self.state.get("use_ma_stack_1h", True)):
                     macro_mode = (str(self.state.get("macro_regime_mode", "ma_slope"))
                                   if self.state["strategy_mode"] in {"macd_reversal", "macd_strength_scaleout"}

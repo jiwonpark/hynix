@@ -470,6 +470,11 @@
     const rule = (suffix, toggle, condition, label) => ({suffix, toggle, condition, label});
     const macro = rule("EntryMaStack1h", "use_ma_stack_1h", "entry_ma_stack_1h", "Wider trend filter · configured completed-candle regime");
     if (["ou_quant", "macd_zero_cross", "macd_hist_turn"].includes(mode) || (mode === "ma_stack" && prefix === "lighterCrypto_")) return [];
+    if (mode === "ma_proximity") return [
+      rule("EntryMaStretch", "use_ma_slope", "entry_ma_slope", "MA direction · long rising, short falling"),
+      rule("EntryPeak", "use_ma_pullback", "entry_ma_pullback", "Price within the configured distance of the MA"),
+      rule("ExitConvergence", "use_ma_cross_exit", "exit_ma_cross", "Exit · price crosses the MA against the position"),
+    ];
     if (mode === "ma_acceleration") return [
       rule("EntryMaStretch", "use_ma_slope", "entry_ma_slope", "MA direction / minimum velocity · long rising, short falling"),
       rule("EntryBase", "use_ma_accel", "entry_ma_accel", "MA acceleration threshold · long accelerating, short decelerating"),
@@ -512,7 +517,9 @@
       entry_stretch:`Distance from MA60 ≥ ${value("ma_stretch_min")}%`,
       entry_ma_slope:`Minimum velocity ${value("ma_accel_min_slope")}`,
       entry_ma_accel:`Minimum acceleration ${value("ma_accel_min_accel")}`,
-      entry_ma_pullback:`Pullback to MA${value("ma_accel_period")}`,
+      entry_ma_pullback: mode === "ma_proximity" || Number(settings.ma_max_distance_pct) > 0
+        ? `Within ${value("ma_max_distance_pct")}% of MA${value("ma_accel_period")}`
+        : `Pullback to MA${value("ma_accel_period")}`,
       entry_golden_cross:`MA${value("fast_ma_period")} crosses above MA${value("slow_ma_period")}`,
       entry_death_cross:`MA${value("fast_ma_period")} crosses below MA${value("slow_ma_period")}`,
       entry_cross_spread:`MA spread ≥ ${value("min_cross_spread_bps")} bps`,
@@ -520,7 +527,9 @@
       exit_dwell:`Minimum ${value("min_dwell_bars")} completed bars`,
       exit_max_dwell:"16 completed bars",
       exit_bottoming:"Z convergence stalls",
-      exit_ma_cross:mode === "ma_stack" ? "Opposite MA7 / MA24 alignment" : `Price reaches MA${value("ma_accel_period")}`,
+      exit_ma_cross: mode === "ma_stack" ? "Opposite MA7 / MA24 alignment"
+        : mode === "ma_proximity" ? `Adverse cross of MA${value("ma_accel_period")}`
+        : `Price reaches MA${value("ma_accel_period")}`,
       exit_cross:`Opposite MA${value("fast_ma_period")} / MA${value("slow_ma_period")} alignment`,
       exit_trailing_stop:`Retracement ≥ ${value("ma_trailing_stop")}%`,
     };

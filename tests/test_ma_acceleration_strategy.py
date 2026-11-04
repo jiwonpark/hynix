@@ -222,3 +222,30 @@ def test_ma_proximity_follows_slope_with_acceleration_disabled():
         assert evaluate_strategy_signal(
             "ma_acceleration", prices,
             {**config, "ma_max_distance_pct": 0.1, "use_ma_pullback": False})[0]
+
+
+def test_standalone_ma_proximity_matches_live_and_replay_with_acceleration_irrelevant():
+    from backend.server import _run_crypto_backtest_sync
+
+    prices = [98, 99, 100, 101, 102, 101.75, 101.6, 101.4]
+    bars = [{"time": 300 * i, "value": price} for i, price in enumerate(prices)]
+    config = dict(ma_accel_period=4, ma_max_distance_pct=1.0,
+                  use_ma_accel=True, ma_accel_min_accel=999, use_ma_stack_1h=True)
+    expected = []
+    for i in range(5, len(prices)):
+        signal, side, _, detail = evaluate_strategy_signal("ma_proximity", prices[:i+1], config)
+        assert detail["strategy"] == "ma_proximity"
+        assert "entry_ma_accel" not in detail["condition_pass"]
+        assert "entry_ma_stack_1h" not in detail["condition_pass"]
+        if signal:
+            expected.append((bars[i]["time"], side))
+    assert expected and expected[0] == (bars[5]["time"], 1)
+    replay = _run_crypto_backtest_sync(bars, True, strategy_mode="ma_proximity", **config)
+    assert [(row["time"], row["side"]) for row in replay["entry_signals"]] == expected
+
+    _, _, exit_signal, details = evaluate_strategy_signal(
+        "ma_proximity", [98, 99, 100, 101, 102, 100], config, position_side=1, entry_price=101)
+    assert exit_signal and details["condition_pass"]["exit_ma_cross"]
+    assert not evaluate_strategy_signal(
+        "ma_proximity", [98, 99, 100, 101, 102, 100],
+        {**config, "use_ma_cross_exit": False}, position_side=1, entry_price=101)[2]
