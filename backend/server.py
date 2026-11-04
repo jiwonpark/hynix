@@ -1587,7 +1587,10 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
         for position in positions:
             size = abs(float(position.get("position", 0) or position.get("size", 0) or 0))
             value = abs(float(position.get("position_value", 0) or 0))
-            mark_price = float(position.get("mark_price", 0) or position.get("avg_entry_price", 0) or detail.get("mark_price", 0) or 0)
+            derived_mark = value / size if size > 0 and value > 0 else 0.0
+            mark_price = float(position.get("mark_price", 0) or derived_mark
+                               or detail.get("mark_price", 0)
+                               or position.get("avg_entry_price", 0) or 0)
             if size and not value:
                 value = size * mark_price
             account_gross += value
@@ -1599,8 +1602,11 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
             amount = abs(raw) * (1 if sign > 0 else -1)
             notional = value or (abs(amount) * mark_price)
             allocated_margin = abs(float(position.get("allocated_margin", 0) or 0))
+            initial_margin_fraction = abs(float(position.get("initial_margin_fraction", 0) or 0))
             leverage_cap = float(lighter_crypto_bot.GROSS_LEVERAGE_CAP or 8.0)
-            initial_margin = allocated_margin or ((notional / leverage_cap) if leverage_cap > 0 else notional)
+            initial_margin = (allocated_margin
+                              or (notional * initial_margin_fraction / 100.0 if initial_margin_fraction > 0 else 0.0)
+                              or ((notional / leverage_cap) if leverage_cap > 0 else notional))
             unrealized_pnl = float(position.get("unrealized_pnl", 0) or 0)
             roe_percent = (unrealized_pnl / initial_margin * 100.0) if initial_margin > 0 else (
                 (unrealized_pnl / notional * 100.0) if notional > 0 else 0.0
@@ -1615,6 +1621,9 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
                              "roe_percent": round(roe_percent, 4)})
         collateral_raw = account.get("collateral")
         collateral = float(collateral_raw) if collateral_raw not in (None, "") else None
+        available_raw = account.get("available_balance")
+        available_margin = (float(available_raw) if available_raw not in (None, "")
+                            else (max(0.0, collateral - allocated) if collateral is not None else None))
         # Raw Lighter account snapshots are authoritative when present; unlike
         # the normalized account_status helper they do not carry this flag.
         authenticated = bool(account) and collateral is not None
@@ -1628,7 +1637,7 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
                                           and not lighter_crypto_bot.state["recovery_required"]),
                 "execution_message": lighter_crypto_bot.state.get("last_error"),
                 "collateral": collateral,
-                "available_margin": max(0.0, collateral - allocated) if collateral is not None else None,
+                "available_margin": available_margin,
                 "account_gross_notional": account_gross if collateral is not None else None,
                 "selected_gross_notional": selected_gross if collateral is not None else None,
                 "positions": selected,
