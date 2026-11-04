@@ -136,6 +136,8 @@
     bigTrendInterval: "1h",
     currentTier: 2,
     botState: null,
+    botStatusRetryTimer: null,
+    botStatusPromise: null,
     accountDataReady: false,
 
     tiers: {
@@ -2650,15 +2652,35 @@
       this.syncBotStatus();
     },
 
+    scheduleBotStatusRetry(delayMs = 5000) {
+      if (this.botState || this.botStatusRetryTimer) return;
+      this.botStatusRetryTimer = setTimeout(() => {
+        this.botStatusRetryTimer = null;
+        if ($("tabContentLighterCrypto")?.style.display !== "none") this.syncBotStatus();
+      }, delayMs);
+    },
+
     async syncBotStatus() {
-      try {
-        const data = await api("/api/lighter-crypto/bot/status");
-        if (data?.bot) {
+      if (this.botStatusPromise) return this.botStatusPromise;
+      this.botStatusPromise = (async () => {
+        try {
+          // This is a local configuration snapshot, but the shared API worker
+          // can still be busy with exchange reconciliation. Give it the same
+          // bounded window as account loading and retry without duplicating
+          // concurrent requests.
+          const data = await api("/api/lighter-crypto/bot/status", { timeoutMs: 35000 });
+          if (!data?.bot) throw new Error("Saved bot configuration unavailable");
           this.updateBotStatus(data.bot, this.liveVenue || { execution_enabled: true });
+          return data.bot;
+        } catch (err) {
+          console.warn("Lighter crypto bot status sync failed:", err);
+          this.scheduleBotStatusRetry();
+          return null;
+        } finally {
+          this.botStatusPromise = null;
         }
-      } catch (err) {
-        console.warn("Lighter crypto bot status sync failed:", err);
-      }
+      })();
+      return this.botStatusPromise;
     },
 
     renderMaLegendValues(targetTime = null) {
@@ -3093,6 +3115,10 @@
         const status = freshAccountReady || !previousStatus
           ? responseStatus
           : { ...previousStatus, success: true, account_stale: true, refresh_error: refreshError };
+        // Account status carries the same authoritative local bot snapshot so
+        // replay does not remain blocked when the parallel bot-status request
+        // is the one request lost during an overloaded API window.
+        if (status?.bot) this.updateBotStatus(status.bot, status);
         const accountReady = status.authenticated === true;
         this.accountDataReady = accountReady;
         clearTimeout(this.accountRetryTimer);
@@ -3153,6 +3179,7 @@
         const [botStatus, trendStatus] = await Promise.all([botPromise, trendPromise]);
         if (sym !== this.selectedSymbol) return;
         if (botStatus?.bot) this.updateBotStatus(botStatus.bot, status);
+        else if (!this.botState) this.scheduleBotStatusRetry();
         this.setText("lblDaemonLatency", botStatus?.bot?.enabled ? "Single-Leg Engine: Trading" : "Single-Leg Engine: Paused");
         this.setText("lblHedgedSyncBadge", botStatus?.bot?.enabled ? "CRYPTO BOT TRADING" : "CRYPTO BOT PAUSED");
         if (trendStatus?.success && trendStatus?.trends && Object.keys(trendStatus.trends).length) {
@@ -4282,6 +4309,8 @@
     updateBotStatus(bot, venue) {
       if (!bot) return;
       const wasAwaitingBotSettings = !this.botState;
+      if (this.botStatusRetryTimer) clearTimeout(this.botStatusRetryTimer);
+      this.botStatusRetryTimer = null;
       const macroPeriod = lid("macroMaPeriod");
       if (macroPeriod && !macroPeriod.dataset.userEdited) macroPeriod.value = String(bot.strategy_params?.macro_ma_period ?? bot.macro_ma_period ?? 60);
       this.botState = bot;
@@ -6716,6 +6745,7 @@
         if (["macd_zero_cross", "macd_reversal", "macd_strength_scaleout", "macd_hist_turn"].includes(this.currentParadigm) && !this.botState) {
           if (summary) summary.textContent = "Waiting for saved MACD settings…";
           this.executionChartFrame?.setStatus("⏳ Waiting for saved MACD settings…");
+          this.scheduleBotStatusRetry();
           return;
         }
         if (this.currentParadigm === "ou_quant") {

@@ -26,6 +26,9 @@ assert.ok(lighter.includes('Entry campaign target ${tradeRateText} pieces/min'),
 assert.ok(lighter.includes('const statusResult = await statusPromise'), 'account telemetry must render independently of slower bot/trend reads');
 assert.ok(lighter.indexOf('const statusResult = await statusPromise') < lighter.indexOf('const [botStatus, trendStatus] = await Promise.all([botPromise, trendPromise])'), 'account telemetry must be awaited before background reconciliation');
 assert.ok(lighter.includes('Waiting for saved MACD settings'), 'MACD replay must wait for authoritative saved settings instead of silently using defaults');
+assert.ok(lighter.includes('scheduleBotStatusRetry'), 'a failed saved-settings read must schedule a bounded retry');
+assert.ok(lighter.includes('if (this.botStatusPromise) return this.botStatusPromise'), 'saved-settings retries must deduplicate concurrent requests');
+assert.ok(lighter.includes('if (status?.bot) this.updateBotStatus(status.bot, status)'), 'account status must unblock replay with its authoritative bot snapshot');
 assert.ok(lighter.includes('Full-Auto will be paused and exchange inventory reconciled before the reduction'), 'live reduction must disclose automatic pause and reconciliation');
 assert.ok(lighter.includes('safeStorage.setItem("skhynix_lighterCrypto_mode", "semi_auto")'), 'successful live reduction must remain in Manual Live mode');
 

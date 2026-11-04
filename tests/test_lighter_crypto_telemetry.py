@@ -33,6 +33,18 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
         self.assertIn('"collateral_updated_ms": snapshot.get("collateral_updated_ms")', self.status_source)
         self.assertIn('"account_stale": account_stale', self.status_source)
 
+    def test_account_status_piggybacks_authoritative_bot_settings(self) -> None:
+        self.assertGreaterEqual(
+            self.status_source.count('"bot": lighter_crypto_bot.public_state()'),
+            3,
+        )
+        self.assertIn("if (status?.bot) this.updateBotStatus(status.bot, status)", self.ui_source)
+
+    def test_saved_bot_settings_retry_is_bounded_and_deduplicated(self) -> None:
+        self.assertIn("if (this.botStatusPromise) return this.botStatusPromise", self.ui_source)
+        self.assertIn('api("/api/lighter-crypto/bot/status", { timeoutMs: 35000 })', self.ui_source)
+        self.assertIn("this.scheduleBotStatusRetry()", self.ui_source)
+
     def test_bot_settings_survive_trade_history_timeout(self) -> None:
         self.assertIn("lighter_crypto_bot.public_state()", self.bot_status_source)
         self.assertNotIn("_refresh_lighter_crypto_history_snapshot", self.bot_status_source)

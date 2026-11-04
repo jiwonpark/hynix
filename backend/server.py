@@ -1572,6 +1572,7 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
         if not snapshot:
             return {"success": False, "symbol": symbol,
                     "error": "Lighter account snapshot unavailable; waiting for account stream",
+                    "bot": lighter_crypto_bot.public_state(),
                     "server_time_ms": int(time.time() * 1000)}
         account = snapshot["account"]
         positions = account.get("positions") or []
@@ -1647,9 +1648,11 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
                 "collateral_updated_ms": snapshot.get("collateral_updated_ms"),
                 "account_age_ms": account_age_ms,
                 "account_stale": account_stale,
+                "bot": lighter_crypto_bot.public_state(),
                 "server_time_ms": int(time.time() * 1000)}
     except Exception as error:
         return {"success": False, "symbol": symbol, "error": str(error),
+                "bot": lighter_crypto_bot.public_state(),
                 "server_time_ms": int(time.time() * 1000)}
 
 
