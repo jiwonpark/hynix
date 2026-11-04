@@ -400,6 +400,34 @@
     }
   }
 
+  function syncLiveToggleAvailability(prefix, venue = {}, bot = {}, options = {}) {
+    const toggle = document.getElementById(`${prefix}chkAutoPeriodic48h`);
+    const locked = options.locked ?? (window.terminalLockManager?.isLocked !== false);
+    const enabled = Boolean(bot?.enabled);
+    const halted = Boolean(options.halted ?? (bot?.recovery_required || bot?.pending_order));
+    const snapshotReady = venue?.execution_enabled === true;
+    const reason = venue?.execution_message || venue?.refresh_error || venue?.error || "";
+    const stale = venue?.account_stale === true;
+    const detail = locked
+      ? "Unlock the execution terminal to change Full-Auto."
+      : halted && !enabled
+        ? (bot?.blocked_reason || bot?.last_error || "Resolve execution recovery before enabling Full-Auto.")
+        : enabled
+          ? "Disable the 24/7 EC2 bot."
+          : snapshotReady
+            ? "Enable Full-Auto. EC2 will revalidate account, position, margin, market, and executable quote before arming."
+            : `${stale ? "The displayed account snapshot is stale" : "The displayed account snapshot cannot authorize execution"}${reason ? `: ${reason}` : ""}. You may still request Full-Auto; EC2 performs a fresh safety validation before arming.`;
+    if (toggle) {
+      // A stale browser snapshot is informational. The authenticated backend
+      // remains the authority and performs fresh safety checks on every start.
+      // Recovery/pending-order state is different and remains a hard block.
+      toggle.disabled = Boolean(locked || (!enabled && halted));
+      toggle.title = detail;
+      toggle.setAttribute?.("aria-description", detail);
+    }
+    return { locked: Boolean(locked), enabled, halted, snapshotReady, stale, reason, detail };
+  }
+
   function hourlyHistogramSettings(prefix, bot = {}) {
     let draft = {};
     try { draft = JSON.parse(localStorage.getItem(`${prefix}hourly_hist_draft`) || "{}"); } catch (_) {}
@@ -716,7 +744,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl };
+  const TerminalCommon = { inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

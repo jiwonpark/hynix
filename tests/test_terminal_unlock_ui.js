@@ -57,12 +57,19 @@ for (const [file, engineName, prefix] of [
     terminalLockManager: { isLocked: false },
     addEventListener() {},
   };
+  const sandboxDocument = {
+    readyState: 'loading',
+    addEventListener() {},
+    getElementById(id) { return id === 'tradingTerminalTemplate' ? null : el(id); },
+  };
   const sandbox = {
     window: browser,
-    document: { readyState: 'loading', addEventListener() {}, getElementById: el },
+    document: sandboxDocument,
     URLSearchParams, console,
   };
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(root, 'terminal-common.js'), 'utf8'), sandbox);
+  sandbox.TerminalCommon = browser.TerminalCommon;
   vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), sandbox);
   const engine = browser[engineName];
   engine.liveVenue = { execution_enabled: true };
@@ -83,8 +90,15 @@ for (const [file, engineName, prefix] of [
   }
   engine.botState.enabled = false;
   engine.liveVenue.execution_enabled = false;
+  engine.liveVenue.account_stale = true;
+  engine.liveVenue.execution_message = 'Account refresh timed out';
   engine.applyExecutionLock();
-  assert.equal(el(`${prefix}chkAutoPeriodic48h`).disabled, true, `${file}: unavailable venue cannot start bot`);
+  assert.equal(el(`${prefix}chkAutoPeriodic48h`).disabled, false, `${file}: stale browser telemetry delegates fresh validation to backend`);
+  assert.match(el(`${prefix}chkAutoPeriodic48h`).title, /fresh safety validation/, `${file}: stale start path is explained`);
+  engine.botState.recovery_required = true;
+  engine.applyExecutionLock();
+  assert.equal(el(`${prefix}chkAutoPeriodic48h`).disabled, true, `${file}: recovery remains a hard start block`);
+  engine.botState.recovery_required = false;
   browser.terminalLockManager.isLocked = true;
   engine.applyExecutionLock();
   assert.equal(el(`${prefix}inputLiveTradeRate`).disabled, true, `${file}: relock disables live settings`);

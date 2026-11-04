@@ -19,6 +19,8 @@ assert.match(index, /compactHoverOnly: true/,
 assert.match(executionChart, /size: this\.compactHoverOnly \? 1/,
   "Tab 2 compact mode must use the smaller native arrow size");
 for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", lighterCrypto]]) {
+  assert.match(source, /TerminalCommon\?\.syncLiveToggleAvailability\?\./,
+    `${name} must use the shared backend-authoritative Full-Auto availability contract`);
   assert.match(source, /return isEntry \? "▶" : "◀"/,
     `${name} must retain entry and exit triangle markers`);
   assert.match(source, /polygon points="0\.5,0\.5 7\.5,4 0\.5,7\.5"/,

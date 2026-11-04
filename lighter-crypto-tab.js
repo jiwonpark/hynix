@@ -2293,8 +2293,10 @@
       const locked = window.terminalLockManager?.isLocked !== false;
       const botEnabled = Boolean(this.botState?.enabled);
       const recovering = Boolean(this.botState?.recovery_required);
-      const toggle = lid("chkAutoPeriodic48h");
-      if (toggle) toggle.disabled = locked || (!this.liveVenue?.execution_enabled && !botEnabled);
+      window.TerminalCommon?.syncLiveToggleAvailability?.("lighterCrypto_", this.liveVenue, this.botState, {
+        locked,
+        halted: recovering,
+      });
       ["btnDeployLiveStrategy", "inputLiveGridEntryZ", "inputLiveGridExitZ",
        "inputLiveMaxTranches"].forEach((id) => {
         const control = lid(id);
@@ -4355,8 +4357,10 @@
       const toggle = lid("chkAutoPeriodic48h");
       if (toggle) {
         toggle.checked = isEnabled;
-        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || (!venue?.execution_enabled && !isEnabled);
       }
+      const liveStartAccess = window.TerminalCommon?.syncLiveToggleAvailability?.("lighterCrypto_", venue, bot, {
+        halted: isRecovery,
+      });
       const banner = lid("autoTradeMasterBanner");
       const pulseEl = lid("autoTradePulseIndicator");
       const titleEl = lid("lblAutoTradeStateTitle");
@@ -4419,7 +4423,9 @@
           badge.style.color = "#475569";
         }
         if (headingEl) headingEl.textContent = "EC2 DAEMON: STANDBY";
-        if (detailEl) detailEl.textContent = isKo ? "실계좌 확인 후 스위치로 자동매매 시작" : "Review the real account, then enable automatic trading";
+        if (detailEl) detailEl.textContent = isKo
+          ? "실계좌를 확인한 뒤 자동매매를 요청하세요. EC2가 시작 전에 최신 안전 검사를 수행합니다."
+          : (liveStartAccess?.detail || "Review the real account, then enable automatic trading. EC2 revalidates safety before arming.");
       }
 
       let bannerActions = lid("autoTradeBannerRecoveryActions");

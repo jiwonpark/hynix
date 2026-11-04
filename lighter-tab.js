@@ -1659,11 +1659,11 @@
 
     applyExecutionLock() {
       const locked = window.terminalLockManager?.isLocked !== false;
-      const botEnabled = Boolean(this.botState?.enabled);
-      const unavailable = !this.liveVenue?.execution_enabled && !botEnabled;
-      const recovering = Boolean(this.botState?.recovery_required) && !botEnabled;
-      const toggle = lid("chkAutoPeriodic48h");
-      if (toggle) toggle.disabled = locked || unavailable || recovering;
+      const recovering = Boolean(this.botState?.recovery_required) && !this.botState?.enabled;
+      window.TerminalCommon?.syncLiveToggleAvailability?.("lighter_", this.liveVenue, this.botState, {
+        locked,
+        halted: recovering,
+      });
       ["btnDeployLiveStrategy", "inputLiveTradeRate", "btnSaveLiveCooldown",
        "inputLiveMinProfitPct", "btnSaveLiveMinProfit"].forEach((id) => {
         const control = lid(id);
@@ -2921,8 +2921,10 @@
       const toggle = lid("chkAutoPeriodic48h");
       if (toggle) {
         toggle.checked = isEnabled;
-        toggle.disabled = Boolean(window.terminalLockManager?.isLocked) || !venue?.execution_enabled || isHalted;
       }
+      const liveStartAccess = window.TerminalCommon?.syncLiveToggleAvailability?.("lighter_", venue, bot, {
+        halted: isHalted,
+      });
       const banner = lid("autoTradeMasterBanner");
       const pulseEl = lid("autoTradePulseIndicator");
       const titleEl = lid("lblAutoTradeStateTitle");
@@ -2978,7 +2980,9 @@
           badge.style.color = "#475569";
         }
         if (headingEl) headingEl.textContent = "EC2 DAEMON: STANDBY";
-        if (detailEl) detailEl.textContent = isKo ? "토글 스위치를 켜서 실시간 전략을 시작하세요" : `Click toggle switch to start ${stratName}`;
+        if (detailEl) detailEl.textContent = isKo
+          ? "실시간 전략을 요청하세요. EC2가 시작 전에 최신 안전 검사를 수행합니다."
+          : (liveStartAccess?.detail || `Request ${stratName}; EC2 revalidates safety before arming.`);
       }
 
       // Sync Tab 3 Top Nav Pill
