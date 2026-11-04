@@ -53,7 +53,7 @@ for (const [file, engineName, prefix] of [
 ]) {
   const elements = new Map();
   const el = (id) => {
-    if (!elements.has(id)) elements.set(id, { id, disabled: true, style: {}, dataset: {} });
+    if (!elements.has(id)) elements.set(id, { id, disabled: true, style: {}, dataset: {}, querySelector() { return null; } });
     return elements.get(id);
   };
   const browser = {
@@ -105,6 +105,11 @@ for (const [file, engineName, prefix] of [
   browser.terminalLockManager.isLocked = true;
   engine.applyExecutionLock();
   assert.equal(el(`${prefix}inputLiveTradeRate`).disabled, true, `${file}: relock disables live settings`);
+  if (file !== 'lighter-tab.js') {
+    el(`${prefix}chkCondEntryPeak`).dataset.unsaved = 'true';
+    engine.updateDeployButtonState();
+    assert.equal(el(`${prefix}btnDeployLiveStrategy`).disabled, true, 'paper edits cannot unlock deployment');
+  }
 }
 
 (async () => {

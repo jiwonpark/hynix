@@ -2206,6 +2206,11 @@
         btn.disabled = true;
         return;
       }
+      if (window.terminalLockManager?.isLocked !== false) {
+        btnLabel.textContent = `Unlock to deploy ${currentName} to Live Bot`;
+        btn.disabled = true;
+        return;
+      }
       btn.disabled = false;
       const hasUnsaved = Boolean(
         $("tabContentCrypto")?.querySelector("input[data-unsaved='true'], select[data-unsaved='true']") ||
@@ -2247,6 +2252,7 @@
       });
       const reconcile = lid("btnReconcileBot");
       if (reconcile) reconcile.disabled = locked || !recovering;
+      this.updateDeployButtonState();
     },
 
     entryCountLimit() {
