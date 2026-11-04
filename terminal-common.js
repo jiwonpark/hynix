@@ -507,6 +507,22 @@
     return [macro];
   }
 
+  function renderMaProximityControls(prefix, saved) {
+    return `
+      <p>Enter long near a rising SMA or short near a falling SMA, using completed chart candles. Distance is measured on either side of the SMA.</p>
+      <label>Minimum MA slope <input id="${prefix}inpMaAccelMinSlope" type="number" min="0" step="0.001" value="${Number(saved?.ma_accel_min_slope ?? 0)}"></label>
+      <div data-terminal-rule-group="entry" data-after-condition="EntryPeak" style="display:flex;gap:12px;flex-wrap:wrap;">
+        <label>SMA period <input id="${prefix}inpMaAccelPeriod" type="number" min="3" max="498" step="1" required value="${Number(saved?.ma_accel_period ?? 24)}" style="width:85px;"></label>
+        <label>Max distance from MA (%) <input id="${prefix}inpMaMaxDistance" type="number" min="0.01" max="100" step="0.01" required value="${Number(saved?.ma_max_distance_pct || 0.15)}" style="width:95px;"></label>
+      </div>`;
+  }
+
+  function invalidMaProximityInput(prefix) {
+    return ["inpMaAccelPeriod", "inpMaMaxDistance"]
+      .map(id => document.getElementById(prefix + id))
+      .find(input => input?.checkValidity?.() === false);
+  }
+
   function syncInheritedConditionControls(prefix, mode, bot) {
     for (const rule of inheritedStrategyConditions(mode, prefix)) {
       const input = document.getElementById(`${prefix}chkCond${rule.suffix}`);
@@ -622,7 +638,10 @@
     }
     for (const node of anchor.querySelectorAll("[data-terminal-rule-group]")) {
       const bucket = buckets[node.dataset.terminalRuleGroup];
-      if (bucket) bucket.append(node);
+      const after = node.dataset.afterCondition
+        && document.getElementById(`${prefix}rowCond${node.dataset.afterCondition}`);
+      if (after && after.parentNode === bucket) bucket.insertBefore(node, after.nextSibling);
+      else if (bucket) bucket.append(node);
     }
     for (const [suffix, key] of [["hourlyHistControls", "entry"], ["takeProfitControls", "exit"]]) {
       const node = document.getElementById(`${prefix}${suffix}`);
@@ -763,7 +782,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
+  const TerminalCommon = { renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

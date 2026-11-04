@@ -1664,13 +1664,7 @@
       }
       if (mode === "ma_proximity") {
         const saved = this.botState?.strategy_mode === mode ? this.botState?.strategy_params : null;
-        return `
-          <p>Enter long near a rising SMA or short near a falling SMA, using completed chart candles. Distance is measured on either side of the SMA.</p>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
-            <label>SMA period <select id="crypto_inpMaAccelPeriod">${chartMaPeriodOptions(Number(saved?.ma_accel_period ?? 24))}</select></label>
-            <label>Minimum MA slope <input id="crypto_inpMaAccelMinSlope" type="number" min="0" step="0.001" value="${Number(saved?.ma_accel_min_slope ?? 0)}"></label>
-            <label>Max distance from MA (%) <input id="crypto_inpMaMaxDistance" type="number" min="0.01" max="100" step="0.01" value="${Number(saved?.ma_max_distance_pct || 0.15)}"></label>
-          </div>`;
+        return window.TerminalCommon.renderMaProximityControls("crypto_", saved);
       }
       if (mode === "ma_acceleration") {
         const selectedMaPeriod = this.botState?.strategy_mode === mode ? Number(this.botState.ma_accel_period ?? 24) : 24;
@@ -2368,6 +2362,11 @@
         return false;
       }
       const mode = this.currentParadigm || "grid";
+      const invalidProximity = mode === "ma_proximity" && window.TerminalCommon.invalidMaProximityInput("crypto_");
+      if (invalidProximity) {
+        invalidProximity.reportValidity();
+        return false;
+      }
       const pName = this.paradigms[mode]?.name || mode;
       const confirmed = options.skipConfirm || window.confirm(`Save ${pName} (${this.interval}) for real Binance Futures trading?\n\nPause the bot before changing strategy. Saving while paused places no order.`);
       if (!confirmed) return false;
@@ -6497,6 +6496,8 @@
       this.renderCurrentPositionReferenceLines();
       try {
         const macroPeriod = $("crypto_macroMaPeriodSlider") || lid("macroMaPeriod");
+        if (this.currentParadigm === "ma_proximity" && window.TerminalCommon.invalidMaProximityInput("crypto_"))
+          throw new Error("Enter a whole SMA period from 3 to 498 and a distance from 0.01% to 100%");
         if (!["ou_quant", "ma_proximity"].includes(this.currentParadigm) && macroPeriod && !macroPeriod.checkValidity())
           throw new Error("Hourly MA period must be an integer between 2 and 120");
         const settings = this.replaySettings();

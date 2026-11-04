@@ -50,6 +50,18 @@ for(const [file,name,prefix,rootId] of [
    assert.equal(engine.liveStrategyPayload(mode)[rule.toggle],true,mode+' ON changes deploy payload '+rule.toggle);
   }
   if(mode==='ma_proximity'){
+   const period=document.getElementById(prefix+'inpMaAccelPeriod');
+   const distance=document.getElementById(prefix+'inpMaMaxDistance');
+   const nearRow=document.getElementById(prefix+'rowCondEntryPeak');
+   assert.equal(nearRow.nextElementSibling,period.closest('[data-after-condition]'));
+   assert.equal(period.type,'number');
+   period.value='37';
+   distance.value='0.27';
+   for(const settings of [engine.replaySettings(),engine.liveStrategyPayload(mode)]){
+    assert.equal(settings.ma_accel_period,37);
+    assert.equal(settings.ma_max_distance_pct,0.27);
+   }
+
    const slope=document.getElementById(prefix+'chkCondEntryMaStretch');
    const proximity=document.getElementById(prefix+'chkCondEntryPeak');
    common.syncInheritedConditionControls(prefix,mode,{strategy_params:{use_ma_stretch:true,use_ma_slope:false,use_ma_pullback:false}});
