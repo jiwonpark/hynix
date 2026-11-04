@@ -58,7 +58,7 @@ DEFAULT_STATE = {
     "macro_macd_fast_period": 12, "macro_macd_slow_period": 26,
     "macro_macd_signal_period": 9, "macro_macd_confirm_bars": 2,
     "use_ma_diff_hook": True, "use_ma_diff_exit": True, "min_diff_bars": 2,
-    "ma_accel_period": 24, "ma_accel_min_slope": 0.0, "ma_accel_min_accel": 0.0,
+    "ma_accel_period": 24, "ma_accel_min_slope": 0.0, "ma_accel_min_accel": 0.0, "ma_max_distance_pct": 0.0,
     "use_ma_slope": True, "use_ma_accel": True, "use_ma_pullback": True, "use_ma_cross_exit": True,
     "fast_ma_period": 9, "slow_ma_period": 21, "min_cross_spread_bps": 0.0,
     "use_golden_cross": True, "use_death_cross": True, "use_cross_spread": True, "use_cross_exit": True,
@@ -188,6 +188,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "ma_accel_period": int(self.state.get("ma_accel_period", 24)),
             "ma_accel_min_slope": float(self.state.get("ma_accel_min_slope", 0.0)),
             "ma_accel_min_accel": float(self.state.get("ma_accel_min_accel", 0.0)),
+            "ma_max_distance_pct": float(self.state.get("ma_max_distance_pct", 0.0)),
             "use_ma_slope": bool(self.state.get("use_ma_slope", True)),
             "use_ma_accel": bool(self.state.get("use_ma_accel", True)),
             "use_ma_pullback": bool(self.state.get("use_ma_pullback", True)),
@@ -408,7 +409,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "ou_use_macro_trend", "ou_use_stop_zone", "ou_use_exit_z",
             "ma_stretch_min", "ma_trailing_stop", "min_consensus_votes",
             "trend_macro_window", "trend_pullback_dist", "trend_tp_dist", "trend_slope_min",
-            "ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel",
+            "ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel", "ma_max_distance_pct",
             "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
             "fast_ma_period", "slow_ma_period", "min_cross_spread_bps",
             "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit",
@@ -518,9 +519,11 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             raise ValueError("Hourly MACD slow period must be greater than hourly MACD fast period")
         if candidate["hourly_hist_slow"] <= candidate["hourly_hist_fast"]:
             raise ValueError("Hourly MACD slow period must exceed fast")
+        if not 0 <= candidate["ma_max_distance_pct"] <= 100:
+            raise ValueError("Maximum MA distance must be between 0 and 100 percent")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("use_macd_hist_exit", "use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                ("ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",

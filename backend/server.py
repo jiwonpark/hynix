@@ -2029,6 +2029,7 @@ def _run_crypto_backtest_sync(
     ma_accel_min_accel: float = 0.0,
     use_ma_slope: bool = True,
     use_ma_accel: bool = True,
+    ma_max_distance_pct: float = 0.0,
     use_ma_pullback: bool = True,
     use_ma_cross_exit: bool = True,
     fast_ma_period: int = 9,
@@ -2683,7 +2684,7 @@ def _run_crypto_backtest_sync(
             if active_positions:
                 if close_take_profit(active_positions[-1], bar) is None:
                     active_positions.pop()
-            if index < w + 2:
+            if index < w + 1:
                 continue
             prefix = [item["value"] for item in bars[:index + 1]]
             held = (index - position["entry_index"]) if position is not None else 0
@@ -2699,6 +2700,7 @@ def _run_crypto_backtest_sync(
                 ma_accel_min_accel=ma_accel_min_accel,
                 use_ma_slope=use_ma_slope,
                 use_ma_accel=use_ma_accel,
+                ma_max_distance_pct=ma_max_distance_pct,
                 use_ma_pullback=use_ma_pullback,
                 use_ma_cross_exit=use_ma_cross_exit,
                 use_ma_stack_1h=use_ma_stack_1h,
@@ -2715,6 +2717,7 @@ def _run_crypto_backtest_sync(
                 ma_accel_min_accel=ma_accel_min_accel,
                 use_ma_slope=use_ma_slope,
                 use_ma_accel=use_ma_accel,
+                ma_max_distance_pct=ma_max_distance_pct,
                 use_ma_pullback=use_ma_pullback,
                 use_ma_cross_exit=use_ma_cross_exit,
                 use_ma_stack_1h=use_ma_stack_1h,
@@ -3136,6 +3139,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               trend_macro_window: int = 24, trend_pullback_dist: float = 0.15,
                               trend_tp_dist: float = 0.05, trend_slope_min: float = 0.002,
                               ma_accel_period: int = 24, ma_accel_min_slope: float = 0.0, ma_accel_min_accel: float = 0.0,
+                              ma_max_distance_pct: float = Query(0.0, ge=0, le=100),
                               use_ma_slope: bool = True, use_ma_accel: bool = True, use_ma_pullback: bool = True, use_ma_cross_exit: bool = True,
                               fast_ma_period: int = 9, slow_ma_period: int = 21, min_cross_spread_bps: float = 0.0,
                               use_golden_cross: bool = True, use_death_cross: bool = True, use_cross_spread: bool = True,
@@ -3250,6 +3254,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         ma_accel_period=ma_accel_period, ma_accel_min_slope=ma_accel_min_slope,
         ma_accel_min_accel=ma_accel_min_accel,
         use_ma_slope=use_ma_slope, use_ma_accel=use_ma_accel,
+        ma_max_distance_pct=ma_max_distance_pct,
         use_ma_pullback=use_ma_pullback, use_ma_cross_exit=use_ma_cross_exit,
         fast_ma_period=fast_ma_period, slow_ma_period=slow_ma_period,
         min_cross_spread_bps=min_cross_spread_bps,

@@ -1667,6 +1667,7 @@
               <input id="crypto_inpMaAccelMinSlope" type="number" step="0.001" value="0.0" style="width:64px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
               <span style="font-size:11px;font-weight:700;color:#475569;">Min Accel (A):</span>
               <input id="crypto_inpMaAccelMinAccel" type="number" step="0.0001" value="0.0" style="width:68px;height:26px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:11px;font-weight:700;">
+              <label>Max distance from MA (%) <input id="crypto_inpMaMaxDistance" type="number" min="0" max="100" step="0.01" value="${this.botState?.strategy_mode === mode ? Number(this.botState?.strategy_params?.ma_max_distance_pct ?? 0) : 0}" style="width:70px;"> <small>Try 0.15% with MA direction and Price pullback on, and MA acceleration off. 0 uses the original below/above MA rule.</small></label>
               <button id="crypto_btnMaAccelReplay" type="button" style="border:1px solid #0284c7;background:#0284c7;color:#fff;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;">Rerun MA Accel</button>
             </div>
           </div>
@@ -2271,6 +2272,7 @@
       } else if (mode === "ma_acceleration") {
         payload.ma_accel_period = numeric("crypto_inpMaAccelPeriod", Number(this.botState?.ma_accel_period ?? 24));
         payload.ma_accel_min_slope = numeric("crypto_inpMaAccelMinSlope", Number(this.botState?.ma_accel_min_slope ?? 0.0));
+        payload.ma_max_distance_pct = numeric("crypto_inpMaMaxDistance", 0);
         payload.ma_accel_min_accel = numeric("crypto_inpMaAccelMinAccel", Number(this.botState?.ma_accel_min_accel ?? 0.0));
         payload.use_ma_slope = lid("chkCondEntryMaStretch")?.checked !== false;
         payload.use_ma_accel = lid("chkCondEntryBase")?.checked !== false;
@@ -3149,6 +3151,7 @@
         trend_slope_min: numeric("crypto_replayTrendSlope", 0.002),
         ma_accel_period: numeric("crypto_inpMaAccelPeriod", 24),
         ma_accel_min_slope: numeric("crypto_inpMaAccelMinSlope", 0.0),
+        ma_max_distance_pct: numeric("crypto_inpMaMaxDistance", 0),
         ma_accel_min_accel: numeric("crypto_inpMaAccelMinAccel", 0.0),
         use_ma_slope: lid("chkCondEntryMaStretch")?.checked !== false,
         use_ma_accel: lid("chkCondEntryBase")?.checked !== false,
@@ -3252,7 +3255,7 @@
         ma_stack: ["ma_stretch_min", "ma_trailing_stop", "min_diff_bars"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
-        ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel"],
+        ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel", "ma_max_distance_pct"],
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
         macd_hist_turn: ["macd_fast_period", "macd_slow_period", "macd_signal_period"],
         macd_zero_cross: ["macd_fast_period", "macd_slow_period", "macd_signal_period"],
@@ -3848,6 +3851,7 @@
       if (liveMode === "ma_acceleration") {
         [["crypto_inpMaAccelPeriod", "ma_accel_period"],
          ["crypto_inpMaAccelMinSlope", "ma_accel_min_slope"],
+         ["crypto_inpMaMaxDistance", "ma_max_distance_pct"],
          ["crypto_inpMaAccelMinAccel", "ma_accel_min_accel"]].forEach(([id, key]) => {
           const input = $(id);
           if (input && params[key] != null) {

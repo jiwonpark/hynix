@@ -818,6 +818,7 @@ def evaluate_ma_acceleration_signals(
     ma_accel_period: int = 24,
     ma_accel_min_slope: float = 0.0,
     ma_accel_min_accel: float = 0.0,
+    ma_max_distance_pct: float = 0.0,
     use_ma_slope: bool = True,
     use_ma_accel: bool = True,
     use_ma_pullback: bool = True,
@@ -877,6 +878,14 @@ def evaluate_ma_acceleration_signals(
     # Determine candidate side based on active momentum regime
     candidate_side = 1 if (long_rising and long_accel) else (-1 if (short_falling and short_decel) else (1 if current_price < ma_curr else -1))
 
+    if ma_max_distance_pct > 0:
+        near_ma = abs(current_price - ma_curr) <= ma_curr * ma_max_distance_pct / 100
+        long_pullback = short_bounce = near_ma
+        if use_ma_slope and slope_curr != 0:
+            candidate_side = 1 if slope_curr > 0 else -1
+        elif use_ma_accel and accel_curr != 0:
+            candidate_side = 1 if accel_curr > 0 else -1
+
     macro_aligned = (macro_alignment[0 if candidate_side > 0 else 1] if macro_alignment is not None else _macro_trend_aligned(prices, candidate_side))
     macro_pass = not use_ma_stack_1h or macro_aligned
 
@@ -925,6 +934,11 @@ def evaluate_ma_acceleration_signals(
         "price_vs_ma": round(current_price - ma_curr, 4),
         "price_vs_ma_pct": round((current_price / ma_curr - 1) * 100, 3),
         "candidate_side": candidate_side,
+        "condition_enabled": {
+            "entry_ma_slope": use_ma_slope, "entry_ma_accel": use_ma_accel,
+            "entry_ma_pullback": use_ma_pullback, "entry_ma_stack_1h": use_ma_stack_1h,
+            "exit_ma_cross": use_ma_cross_exit,
+        },
         "condition_pass": condition_pass,
     }
     return entry_signal, candidate_side, exit_signal, evaluation
@@ -1604,6 +1618,7 @@ def _evaluate_strategy_signal(
             ma_accel_period=int(config.get("ma_accel_period", 24)),
             ma_accel_min_slope=float(config.get("ma_accel_min_slope", 0.0)),
             ma_accel_min_accel=float(config.get("ma_accel_min_accel", 0.0)),
+            ma_max_distance_pct=float(config.get("ma_max_distance_pct", 0.0)),
             use_ma_slope=bool(config.get("use_ma_slope", True)),
             use_ma_accel=bool(config.get("use_ma_accel", True)),
             use_ma_pullback=bool(config.get("use_ma_pullback", True)),

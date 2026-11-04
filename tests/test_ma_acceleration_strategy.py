@@ -199,3 +199,26 @@ async def test_crypto_bots_ma_acceleration_state_and_config():
         assert cfg5["ma_accel_period"] == 18
         assert cfg5["ma_accel_min_slope"] == 0.002
         assert cfg5["use_ma_accel"] is False
+
+
+def test_ma_proximity_follows_slope_with_acceleration_disabled():
+    cases = [
+        ([98, 99, 100, 101, 102, 101.75], 1),
+        ([102, 101, 100, 99, 98, 98.25], -1),
+    ]
+    for prices, expected_side in cases:
+        config = dict(ma_accel_period=4, use_ma_accel=False, use_ma_stack_1h=False,
+                      ma_max_distance_pct=1.0)
+        for position_side in (0, 1, -1):
+            entry, side, _, evaluation = evaluate_strategy_signal(
+                "ma_acceleration", prices, config, position_side=position_side)
+            assert entry and side == expected_side
+            assert evaluation["condition_pass"]["entry_ma_pullback"]
+
+        entry, side, _, evaluation = evaluate_strategy_signal(
+            "ma_acceleration", prices, {**config, "ma_max_distance_pct": 0.1})
+        assert not entry and side == expected_side
+        assert not evaluation["condition_pass"]["entry_ma_pullback"]
+        assert evaluate_strategy_signal(
+            "ma_acceleration", prices,
+            {**config, "ma_max_distance_pct": 0.1, "use_ma_pullback": False})[0]

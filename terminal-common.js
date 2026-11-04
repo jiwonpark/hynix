@@ -473,7 +473,7 @@
     if (mode === "ma_acceleration") return [
       rule("EntryMaStretch", "use_ma_slope", "entry_ma_slope", "MA direction / minimum velocity · long rising, short falling"),
       rule("EntryBase", "use_ma_accel", "entry_ma_accel", "MA acceleration threshold · long accelerating, short decelerating"),
-      rule("EntryPeak", "use_ma_pullback", "entry_ma_pullback", "Price pullback · long below MA, short above MA"), macro,
+      rule("EntryPeak", "use_ma_pullback", "entry_ma_pullback", "Price pullback · use max MA distance when set, otherwise long below MA / short above MA"), macro,
       rule("ExitConvergence", "use_ma_cross_exit", "exit_ma_cross", "Exit · price reaches the strategy MA"),
     ];
     if (mode === "golden_death_cross") return [
