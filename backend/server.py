@@ -208,6 +208,36 @@ upbit_client = UpbitClient()
 lighter_client = LighterClient()
 lighter_pair_bot = LighterPairBot(lighter_client)
 lighter_crypto_bot = LighterCryptoBot(lighter_client)
+_crypto_history_task: Optional[asyncio.Task] = None
+_crypto_history_cache: Optional[Dict[str, Any]] = None
+_crypto_history_cache_time = 0.0
+_lighter_crypto_history_task: Optional[asyncio.Task] = None
+_lighter_crypto_history_cache: Optional[Dict[str, Any]] = None
+_lighter_crypto_history_cache_time = 0.0
+
+_REALIZED_HISTORY_KEYS = (
+    "verified_exit_count", "verified_realized_pnl_usd", "pnl_reconciliation",
+)
+
+
+async def _refresh_crypto_history_snapshot() -> None:
+    global _crypto_history_cache, _crypto_history_cache_time
+    try:
+        state = await asyncio.wait_for(crypto_bot.reconciled_public_state(), timeout=5.0)
+        _crypto_history_cache = {key: copy.deepcopy(state[key]) for key in _REALIZED_HISTORY_KEYS if key in state}
+        _crypto_history_cache_time = time.monotonic()
+    except Exception as exc:
+        logger.warning("Binance realized-history refresh failed: %s", exc)
+
+
+async def _refresh_lighter_crypto_history_snapshot() -> None:
+    global _lighter_crypto_history_cache, _lighter_crypto_history_cache_time
+    try:
+        state = await asyncio.wait_for(lighter_crypto_bot.reconciled_public_state(), timeout=5.0)
+        _lighter_crypto_history_cache = {key: copy.deepcopy(state[key]) for key in _REALIZED_HISTORY_KEYS if key in state}
+        _lighter_crypto_history_cache_time = time.monotonic()
+    except Exception as exc:
+        logger.warning("Lighter realized-history refresh failed: %s", exc)
 
 # Active WebSocket connections for live push
 active_connections: List[WebSocket] = []
@@ -1403,7 +1433,18 @@ async def get_crypto_parity(symbol: str = "BTCUSDT", interval: str = "15m", limi
 
 @app.get("/api/crypto/bot/status")
 async def get_crypto_bot_status() -> Dict[str, Any]:
-    return {"success": True, "bot": await crypto_bot.reconciled_public_state()}
+    global _crypto_history_task
+    bot = crypto_bot.public_state()
+    history_age = time.monotonic() - _crypto_history_cache_time if _crypto_history_cache_time else None
+    if _crypto_history_cache:
+        bot.update(copy.deepcopy(_crypto_history_cache))
+    history_stale = history_age is None or history_age > 30.0
+    bot["history_stale"] = history_stale
+    if history_stale:
+        bot["history_status"] = "Binance realized trade history refreshing; condition telemetry is current"
+    if _crypto_history_task is None or _crypto_history_task.done():
+        _crypto_history_task = asyncio.create_task(_refresh_crypto_history_snapshot())
+    return {"success": True, "bot": bot, "history_stale": history_stale}
 
 
 @app.post("/api/crypto/bot/reconcile")
@@ -1703,17 +1744,21 @@ async def get_lighter_crypto_trends(symbol: str = "BTC", small: str = "5m",
 
 @app.get("/api/lighter-crypto/bot/status")
 async def get_lighter_crypto_bot_status() -> Dict[str, Any]:
-    try:
-        bot = await asyncio.wait_for(lighter_crypto_bot.reconciled_public_state(), timeout=5.0)
-        return {"success": True, "bot": bot, "history_stale": False}
-    except asyncio.TimeoutError:
-        # Saved strategy settings and execution state are local and must remain
-        # available even when the exchange trade-history read is slow.  Label
-        # only the realized-history portion stale; never substitute defaults.
-        bot = lighter_crypto_bot.public_state()
-        bot["history_stale"] = True
-        bot["history_status"] = "Lighter realized trade history refresh timed out; retrying"
-        return {"success": True, "bot": bot, "history_stale": True}
+    global _lighter_crypto_history_task
+    # Configuration and completed-candle condition telemetry are local and must
+    # never wait for slow exchange trade-history reconciliation.
+    bot = lighter_crypto_bot.public_state()
+    history_age = (time.monotonic() - _lighter_crypto_history_cache_time
+                   if _lighter_crypto_history_cache_time else None)
+    if _lighter_crypto_history_cache:
+        bot.update(copy.deepcopy(_lighter_crypto_history_cache))
+    history_stale = history_age is None or history_age > 30.0
+    bot["history_stale"] = history_stale
+    if history_stale:
+        bot["history_status"] = "Lighter realized trade history refreshing; condition telemetry is current"
+    if _lighter_crypto_history_task is None or _lighter_crypto_history_task.done():
+        _lighter_crypto_history_task = asyncio.create_task(_refresh_lighter_crypto_history_snapshot())
+    return {"success": True, "bot": bot, "history_stale": history_stale}
 
 
 @app.post("/api/lighter-crypto/bot/config")

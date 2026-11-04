@@ -374,6 +374,11 @@ snapshot `READ-ONLY (BOT PAUSED)`, and never submit orders or advance the bot's
 last-executed candle. This keeps LIVE PASS/WAITING and source timestamps honest
 without turning a paused bot back on.
 
+Bot status must return saved strategy configuration and the latest condition
+snapshot without waiting for exchange trade-history reconciliation. Refresh
+realized-P&L history in a single background task and label that history stale
+until it completes; slow P&L history must not blank current LIVE conditions.
+
 The completed-hour signal second difference remains an independent entry filter.
 Exits use the opposite ΔH turn and H zone: close long when previous ΔH ≥ 0,
 current ΔH < 0 and H > 0; close short when previous ΔH ≤ 0, current ΔH > 0

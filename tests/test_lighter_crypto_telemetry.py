@@ -25,9 +25,19 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
         self.assertNotIn("positions(fresh=True)", self.status_source)
 
     def test_bot_settings_survive_trade_history_timeout(self) -> None:
-        self.assertIn("asyncio.wait_for(lighter_crypto_bot.reconciled_public_state(), timeout=5.0)", self.bot_status_source)
         self.assertIn("lighter_crypto_bot.public_state()", self.bot_status_source)
-        self.assertIn('bot["history_stale"] = True', self.bot_status_source)
+        self.assertIn("asyncio.create_task(_refresh_lighter_crypto_history_snapshot())", self.bot_status_source)
+        self.assertNotIn("await lighter_crypto_bot.reconciled_public_state()", self.bot_status_source)
+        self.assertIn('bot["history_stale"] = history_stale', self.bot_status_source)
+
+    def test_binance_and_lighter_status_share_nonblocking_history_contract(self) -> None:
+        source = (ROOT / "backend" / "server.py").read_text(encoding="utf-8")
+        start = source.index('async def get_crypto_bot_status')
+        end = source.index('@app.post("/api/crypto/bot/reconcile")', start)
+        crypto_status = source[start:end]
+        self.assertIn("crypto_bot.public_state()", crypto_status)
+        self.assertIn("asyncio.create_task(_refresh_crypto_history_snapshot())", crypto_status)
+        self.assertNotIn("await crypto_bot.reconciled_public_state()", crypto_status)
 
 
 if __name__ == "__main__":
