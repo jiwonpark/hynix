@@ -15,6 +15,7 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
         bot_start = source.index('async def get_lighter_crypto_bot_status')
         bot_end = source.index('@app.post("/api/lighter-crypto/bot/config")', bot_start)
         cls.bot_status_source = source[bot_start:bot_end]
+        cls.ui_source = (ROOT / "lighter-crypto-tab.js").read_text(encoding="utf-8")
 
     def test_account_telemetry_never_waits_for_exchange_rest(self) -> None:
         self.assertIn("lighter_client.account_telemetry_snapshot()", self.status_source)
@@ -46,6 +47,24 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
         self.assertIn("crypto_bot.public_state()", crypto_status)
         self.assertNotIn("_refresh_crypto_history_snapshot", crypto_status)
         self.assertNotIn("await crypto_bot.reconciled_public_state()", crypto_status)
+
+    def test_tab_activation_does_not_start_replay_before_account_is_ready(self) -> None:
+        start = self.ui_source.index("async onTabActivated()")
+        end = self.ui_source.index("resetChartView()", start)
+        activation = self.ui_source[start:end]
+        self.assertIn("if (this.accountDataReady)", activation)
+        self.assertIn("this.runBacktestIfChanged()", activation)
+        self.assertNotIn("this.runBacktest().catch", activation)
+
+    def test_successful_account_retry_starts_deferred_replay(self) -> None:
+        start = self.ui_source.index("async refresh()")
+        end = self.ui_source.index("renderTrends(trends)", start)
+        refresh = self.ui_source[start:end]
+        self.assertIn(
+            "if (accountReady && !this.replayLoading && !this.latestReplayConditionResult)",
+            refresh,
+        )
+        self.assertIn("this.runBacktestIfChanged()", refresh)
 
 
 if __name__ == "__main__":

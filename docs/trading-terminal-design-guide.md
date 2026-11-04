@@ -391,6 +391,12 @@ the current UI response remains bounded. Stale account data disables live-order
 availability but remains visible instead of becoming a fresh zero or an HTTP
 proxy timeout.
 
+On Tab 5 activation, chart loading may remain parallel, but automatic paper
+replay must wait until an account snapshot has rendered. If the first account
+read fails, leave replay idle so the bounded account retry has a quiet API
+window; start replay automatically after that retry succeeds. Manual replay
+remains available once the terminal is usable.
+
 The completed-hour signal second difference remains an independent entry filter.
 Exits use the opposite ΔH turn and H zone: close long when previous ΔH ≥ 0,
 current ΔH < 0 and H > 0; close short when previous ΔH ≤ 0, current ΔH > 0

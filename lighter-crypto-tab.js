@@ -3024,9 +3024,11 @@
         }
       }
       await this.refresh();
-      setTimeout(() => {
-        this.runBacktest().catch((e) => console.warn("Background backtest error:", e));
-      }, 300);
+      if (this.accountDataReady) {
+        setTimeout(() => {
+          this.runBacktestIfChanged()?.catch?.((e) => console.warn("Background backtest error:", e));
+        }, 300);
+      }
     },
 
     resetChartView() {
@@ -3147,6 +3149,14 @@
         } else this.scheduleTrendRetry();
         this.renderVirtualState();
         this.updateGridLadderData();
+        // Give a failed first account read a quiet retry window. Launching the
+        // CPU-heavy paper replay before collateral and positions render can
+        // starve the single production API worker and turn each retry into
+        // another proxy timeout. Replay resumes automatically after a usable
+        // account snapshot arrives.
+        if (accountReady && !this.replayLoading && !this.latestReplayConditionResult) {
+          setTimeout(() => this.runBacktestIfChanged(), 300);
+        }
       } catch (error) {
         this.setText("lblHedgedSyncBadge", `CRYPTO ENGINE: ${error.message}`);
       }
