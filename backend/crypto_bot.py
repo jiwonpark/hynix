@@ -790,11 +790,26 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         pending = self.state["pending_order"]
         if not pending:
             return None
-        order = await self.client.request(
-            "GET", "/fapi/v1/order",
-            {"symbol": pending["symbol"], "origClientOrderId": pending["client_order_id"]},
-            signed=True,
-        )
+        try:
+            order = await self.client.request(
+                "GET", "/fapi/v1/order",
+                {"symbol": pending["symbol"], "origClientOrderId": pending["client_order_id"]},
+                signed=True,
+            )
+        except Exception as error:
+            # Binance -2013 is a definitive response that this persisted client
+            # order ID never reached the exchange.  Clear only the ghost order;
+            # the caller still verifies live inventory against saved tranches
+            # before it removes the recovery block.
+            if "-2013" not in str(error):
+                raise
+            logger.warning(
+                "Pending Binance order %s does not exist; verifying inventory before clearing recovery",
+                pending["client_order_id"],
+            )
+            self.state["pending_order"] = None
+            self._save()
+            return None
         if order.get("status") == "FILLED":
             return self._record_fill(order, pending)
         if (order.get("status") in {"CANCELED", "EXPIRED", "REJECTED"}

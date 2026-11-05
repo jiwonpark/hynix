@@ -14,6 +14,7 @@ class FakeBinance:
         self.fail_order = False
         self.fail_after_fill = False
         self.last_order = None
+        self.order_lookup_error = None
         self.account = {"authenticated": True, "can_trade": True,
                         "summary": {"total_equity_usd": 1000.0, "available_margin_usd": 900.0},
                         "positions": []}
@@ -45,6 +46,8 @@ class FakeBinance:
                 ]
             return self.klines
         if path == "/fapi/v1/order":
+            if self.order_lookup_error:
+                raise self.order_lookup_error
             return self.last_order
         raise AssertionError(path)
 
@@ -234,6 +237,55 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(restored.state["recovery_required"])
         self.assertTrue(restored.state["execution_blocked"])
         self.assertIsNotNone(restored.state["pending_order"])
+
+    async def test_startup_clears_nonexistent_pending_order_when_inventory_matches(self):
+        self.bot.state.update(
+            enabled=True,
+            tranches=[{"side": 1, "qty": .001, "price": 100, "order_id": "1", "time": 1}],
+            pending_order={
+                "client_order_id": "hxcryptoghost", "symbol": "BTCUSDT",
+                "side": -1, "qty": ".001", "reduce_only": True,
+                "reason": "net_stop_loss", "created_at": 1,
+            },
+            recovery_required=True,
+            execution_blocked=True,
+        )
+        self.bot._save()
+        self.client.amount = .001
+        self.client.order_lookup_error = Exception(
+            "Binance API Error [-2013]: Order does not exist.")
+
+        restored = CryptoBot(self.client, self.path)
+        await restored.verify_startup()
+
+        self.assertIsNone(restored.state["pending_order"])
+        self.assertFalse(restored.state["recovery_required"])
+        self.assertFalse(restored.state["execution_blocked"])
+        self.assertEqual(len(restored.state["tranches"]), 1)
+
+    async def test_nonexistent_pending_order_stays_blocked_when_inventory_differs(self):
+        self.bot.state.update(
+            enabled=True,
+            tranches=[{"side": 1, "qty": .001, "price": 100, "order_id": "1", "time": 1}],
+            pending_order={
+                "client_order_id": "hxcryptoghost", "symbol": "BTCUSDT",
+                "side": -1, "qty": ".001", "reduce_only": True,
+                "reason": "net_stop_loss", "created_at": 1,
+            },
+            recovery_required=True,
+            execution_blocked=True,
+        )
+        self.bot._save()
+        self.client.amount = 0
+        self.client.order_lookup_error = Exception(
+            "Binance API Error [-2013]: Order does not exist.")
+
+        restored = CryptoBot(self.client, self.path)
+        await restored.verify_startup()
+
+        self.assertIsNone(restored.state["pending_order"])
+        self.assertTrue(restored.state["recovery_required"])
+        self.assertTrue(restored.state["execution_blocked"])
 
     async def test_create_order_polls_if_initial_response_not_filled(self):
         # Initial response has status NEW and 0 avgPrice, polling returns FILLED
