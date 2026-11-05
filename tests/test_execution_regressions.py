@@ -3,7 +3,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import ANY, AsyncMock, call, patch
 
 from backend import server
 from backend.macro_policy import policy_for_level
@@ -698,8 +698,8 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
                     {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': stock}]
                 self.assertTrue((await server.reduce_tranche(force=True))['success'])
                 self.assertEqual(self.client.create_order.await_args_list, [
-                    call('SKHYUSDT', 'BUY', min(.07, adr), 'MARKET', reduce_only=True),
-                    call('CSOPSKHYNIX2LUSDT', 'SELL', min(1.2, stock), 'MARKET', reduce_only=True)])
+                    call('SKHYUSDT', 'BUY', min(.07, adr), 'MARKET', reduce_only=True, client_order_id=ANY),
+                    call('CSOPSKHYNIX2LUSDT', 'SELL', min(1.2, stock), 'MARKET', reduce_only=True, client_order_id=ANY)])
 
     async def test_forced_reduction_rejects_invalid_directions_and_quantities(self):
         for adr, stock in [(.08, 1.4), (-.08, -1.4), (0, 1.4),
@@ -793,8 +793,35 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
         first = await server.reduce_tranche(force=True)
         self.assertTrue(first['recovery_required'])
         self.assertEqual(first['execution_recovery']['phase'], 'ADR_SUBMITTING')
+        self.assertTrue(first['execution_recovery']['adr_client_order_id'].startswith('skhrda'))
         await server.reduce_tranche(force=True)
         self.assertEqual(self.client.create_order.await_count, 1)
+
+    async def test_timed_out_reduction_is_reconciled_by_client_id(self):
+        positions = [
+            {'symbol': 'SKHYUSDT', 'position_amt': -.08},
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'position_amt': 1.4}]
+        self.client.get_detailed_account_overview.return_value['positions'] = positions
+        self.client.create_order.side_effect = [
+            TimeoutError('lost POST acknowledgement'),
+            {'symbol': 'CSOPSKHYNIX2LUSDT', 'side': 'SELL', 'status': 'FILLED',
+             'executedQty': '1.2', 'orderId': 302},
+        ]
+
+        async def lookup(method, path, params, **kwargs):
+            self.assertEqual((method, path), ('GET', '/fapi/v1/order'))
+            client_id = params['origClientOrderId']
+            return {'symbol': 'SKHYUSDT', 'side': 'BUY', 'status': 'FILLED',
+                    'executedQty': '.07', 'orderId': 301,
+                    'clientOrderId': client_id, 'reduceOnly': True}
+
+        self.client.request.side_effect = lookup
+        result = await server.reduce_tranche(force=True)
+        self.assertTrue(result['success'])
+        self.assertEqual(self.client.create_order.await_count, 2)
+        self.assertNotIn('execution_recovery', server.load_auto_tranche_state())
+        pair = server.load_auto_tranche_state()['exit_order_pairs'][0]
+        self.assertEqual((pair['adr_order_id'], pair['stock_order_id']), ('301', '302'))
 
     async def test_partial_reduction_fill_is_not_reported_as_success(self):
         positions = [
@@ -830,8 +857,8 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             result = await server.step_tranche()
         self.assertTrue(result['success'])
         self.assertEqual(self.client.create_order.await_args_list, [
-            call('SKHYUSDT', 'SELL', .09, 'MARKET'),
-            call('CSOPSKHYNIX2LUSDT', 'BUY', 1.53, 'MARKET')])
+            call('SKHYUSDT', 'SELL', .09, 'MARKET', reduce_only=False, client_order_id=ANY),
+            call('CSOPSKHYNIX2LUSDT', 'BUY', 1.53, 'MARKET', reduce_only=False, client_order_id=ANY)])
         pair = server.load_auto_tranche_state()['entry_order_pairs'][0]
         self.assertEqual(pair['entry_policy'], {**size_policy(policy, 190, 5.6, REFERENCE_RULES), 'spread_direction': 'SHORT_SPREAD'})
         self.assertEqual(pair['entry_spread'], 140)
@@ -849,8 +876,8 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             result = await server.step_tranche({'direction': 'LONG_SPREAD'})
         self.assertTrue(result['success'])
         self.assertEqual(self.client.create_order.await_args_list, [
-            call('SKHYUSDT', 'BUY', .06, 'MARKET'),
-            call('CSOPSKHYNIX2LUSDT', 'SELL', 1.02, 'MARKET')])
+            call('SKHYUSDT', 'BUY', .06, 'MARKET', reduce_only=False, client_order_id=ANY),
+            call('CSOPSKHYNIX2LUSDT', 'SELL', 1.02, 'MARKET', reduce_only=False, client_order_id=ANY)])
         pair = server.load_auto_tranche_state()['entry_order_pairs'][0]
         self.assertEqual(pair['spread_direction'], 'LONG_SPREAD')
         self.assertEqual(pair['entry_policy']['spread_direction'], 'LONG_SPREAD')
@@ -873,8 +900,8 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             result = await server.reduce_tranche()
         self.assertTrue(result['success'])
         self.assertEqual(self.client.create_order.await_args_list, [
-            call('SKHYUSDT', 'SELL', .06, 'MARKET', reduce_only=True),
-            call('CSOPSKHYNIX2LUSDT', 'BUY', 1.02, 'MARKET', reduce_only=True)])
+            call('SKHYUSDT', 'SELL', .06, 'MARKET', reduce_only=True, client_order_id=ANY),
+            call('CSOPSKHYNIX2LUSDT', 'BUY', 1.02, 'MARKET', reduce_only=True, client_order_id=ANY)])
         self.assertEqual(
             server.load_auto_tranche_state()['exit_order_pairs'][0]['spread_direction'],
             'LONG_SPREAD')
@@ -968,8 +995,8 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             self.client.create_order.reset_mock()
             self.assertTrue((await server.reduce_tranche(force=force))['success'])
             self.assertEqual(self.client.create_order.await_args_list, [
-                call('SKHYUSDT', 'BUY', .06, 'MARKET', reduce_only=True),
-                call('CSOPSKHYNIX2LUSDT', 'SELL', 1.08, 'MARKET', reduce_only=True)])
+                call('SKHYUSDT', 'BUY', .06, 'MARKET', reduce_only=True, client_order_id=ANY),
+                call('CSOPSKHYNIX2LUSDT', 'SELL', 1.08, 'MARKET', reduce_only=True, client_order_id=ANY)])
 
     async def test_entry_refreshes_size_instead_of_submitting_preview_quantities(self):
         # Preview uses 190/5.6; the final pre-order quote is 100/5.
@@ -979,7 +1006,8 @@ class ExecutionRegressions(unittest.IsolatedAsyncioTestCase):
             self.client.create_order.side_effect = filled
             self.assertTrue((await server.step_tranche())['success'])
         self.assertEqual(self.client.create_order.await_args_list, [
-            call('SKHYUSDT', 'SELL', .1, 'MARKET'), call('CSOPSKHYNIX2LUSDT', 'BUY', 1, 'MARKET')])
+            call('SKHYUSDT', 'SELL', .1, 'MARKET', reduce_only=False, client_order_id=ANY),
+            call('CSOPSKHYNIX2LUSDT', 'BUY', 1, 'MARKET', reduce_only=False, client_order_id=ANY)])
         pair = server.load_auto_tranche_state()['entry_order_pairs'][0]
         self.assertEqual(pair['entry_policy']['adr_exit_qty'], .1)
         self.assertEqual(pair['stock_quantity'], 1)

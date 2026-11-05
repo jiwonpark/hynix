@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -219,6 +220,76 @@ _lighter_account_refresh_task: Optional[asyncio.Task] = None
 _REALIZED_HISTORY_KEYS = (
     "verified_exit_count", "verified_realized_pnl_usd", "pnl_reconciliation",
 )
+
+
+def _execution_client_order_id(operation: str, leg: str) -> str:
+    """Return a Binance-safe id that can deterministically recover a timed-out POST."""
+    operation_code = "rd" if operation == "REDUCE_TRANCHE" else "en"
+    leg_code = "a" if leg == "adr" else "s"
+    return f"skh{operation_code}{leg_code}{uuid.uuid4().hex[:24]}"
+
+
+async def _submit_recoverable_order(
+    state: Dict[str, Any], recovery: Dict[str, Any], *, leg: str,
+    symbol: str, side: str, quantity: float, reduce_only: bool,
+) -> Dict[str, Any]:
+    """Persist an id before submission and resolve an ambiguous POST by that id.
+
+    A POST is never retried.  If its response is lost, the signed order lookup is
+    the only operation retried; this prevents duplicate fills while allowing the
+    paired second leg to proceed after a confirmed first-leg fill.
+    """
+    client_key = f"{leg}_client_order_id"
+    order_key = f"order_{leg}"
+    client_order_id = recovery.get(client_key)
+    if not client_order_id:
+        client_order_id = _execution_client_order_id(
+            str(recovery.get("operation") or "ENTRY_TRANCHE"), leg)
+        recovery[client_key] = client_order_id
+    recovery["phase"] = "ADR_SUBMITTING" if leg == "adr" else "ETF_SUBMITTING"
+    state["execution_recovery"] = recovery
+    save_auto_tranche_state(state)
+
+    try:
+        order = await binance_client.create_order(
+            symbol, side, quantity, "MARKET", reduce_only=reduce_only,
+            client_order_id=client_order_id)
+    except Exception as submit_error:
+        order = None
+        lookup_error: Optional[Exception] = None
+        for attempt in range(3):
+            try:
+                candidate = await binance_client.request(
+                    "GET", "/fapi/v1/order",
+                    {"symbol": symbol, "origClientOrderId": client_order_id},
+                    signed=True)
+                if not isinstance(candidate, dict):
+                    raise RuntimeError("Order reconciliation returned an invalid response")
+                if (candidate.get("symbol") != symbol
+                        or str(candidate.get("side", "")).upper() != side.upper()
+                        or candidate.get("clientOrderId") != client_order_id
+                        or ("reduceOnly" in candidate
+                            and bool(candidate.get("reduceOnly")) != reduce_only)
+                        or abs(float(candidate.get("origQty", quantity)) - quantity) > 1e-8):
+                    raise RuntimeError("Order reconciliation returned a mismatched order")
+                order = candidate
+                break
+            except Exception as error:
+                lookup_error = error
+                if attempt < 2:
+                    await asyncio.sleep(.35)
+        if order is None:
+            recovery["error"] = (
+                f"{submit_error}; lookup by client order id failed: {lookup_error}")
+            state["execution_recovery"] = recovery
+            save_auto_tranche_state(state)
+            raise submit_error
+
+    recovery[order_key] = order
+    recovery.pop("error", None)
+    state["execution_recovery"] = recovery
+    save_auto_tranche_state(state)
+    return order
 
 
 async def _refresh_crypto_history_snapshot() -> None:
@@ -5425,23 +5496,22 @@ async def execute_scale_in(direction: str = "SHORT_SPREAD") -> Dict[str, Any]:
             binance_client.set_margin_type("CSOPSKHYNIX2LUSDT", "CROSSED"),
         )
 
-        recovery = {"started_at": time.time(), "phase": "ADR_SUBMITTING", "order_adr": None, "order_stock": None,
+        recovery = {"operation": "ENTRY_TRANCHE", "started_at": time.time(), "phase": "ADR_SUBMITTING", "order_adr": None, "order_stock": None,
                     "entry_policy": entry_policy, "entry_spread": criteria.get("current_spread"),
                     "signal_version": SIGNAL_VERSION, "spread_direction": direction,
                     "adr_quantity": adr_qty, "stock_quantity": stock_qty}
         state["execution_recovery"] = recovery
         save_auto_tranche_state(state)  # Persist before any order can reach the exchange.
-        order_adr = await binance_client.create_order("SKHYUSDT", adr_side, adr_qty, "MARKET")
-        recovery["order_adr"] = order_adr
+        order_adr = await _submit_recoverable_order(
+            state, recovery, leg="adr", symbol="SKHYUSDT", side=adr_side,
+            quantity=adr_qty, reduce_only=False)
         if (order_adr.get("status") != "FILLED" or order_adr.get("orderId") is None
                 or not math.isfinite(float(order_adr.get("executedQty", 0)))
                 or abs(float(order_adr.get("executedQty", 0)) - adr_qty) > 1e-8):
             raise RuntimeError("ADR fill is incomplete or unconfirmed")
-        recovery["phase"] = "ETF_SUBMITTING"
-        save_auto_tranche_state(state)
-        order_stock = await binance_client.create_order("CSOPSKHYNIX2LUSDT", stock_side, stock_qty, "MARKET")
-
-        recovery["order_stock"] = order_stock
+        order_stock = await _submit_recoverable_order(
+            state, recovery, leg="stock", symbol="CSOPSKHYNIX2LUSDT",
+            side=stock_side, quantity=stock_qty, reduce_only=False)
         if (order_stock.get("status") != "FILLED" or order_stock.get("orderId") is None
                 or not math.isfinite(float(order_stock.get("executedQty", 0)))
                 or abs(float(order_stock.get("executedQty", 0)) - stock_qty) > 1e-8):
@@ -5571,18 +5641,16 @@ async def execute_tranche_reduction(force: bool = False) -> Dict[str, Any]:
         state["execution_recovery"] = recovery
         save_auto_tranche_state(state)
 
-        order_adr = await binance_client.create_order(
-            "SKHYUSDT", adr_reduce_side, adr_reduce_qty, "MARKET", reduce_only=True)
-        recovery["order_adr"] = order_adr
+        order_adr = await _submit_recoverable_order(
+            state, recovery, leg="adr", symbol="SKHYUSDT", side=adr_reduce_side,
+            quantity=adr_reduce_qty, reduce_only=True)
         if (order_adr.get("status") != "FILLED"
                 or float(order_adr.get("executedQty", 0)) < adr_reduce_qty):
             raise RuntimeError("ADR reduction fill is incomplete or unconfirmed")
 
-        recovery["phase"] = "ETF_SUBMITTING"
-        save_auto_tranche_state(state)
-        order_stock = await binance_client.create_order(
-            stock_sym, stock_reduce_side, stock_reduce_qty, "MARKET", reduce_only=True)
-        recovery["order_stock"] = order_stock
+        order_stock = await _submit_recoverable_order(
+            state, recovery, leg="stock", symbol=stock_sym, side=stock_reduce_side,
+            quantity=stock_reduce_qty, reduce_only=True)
         if (order_stock.get("status") != "FILLED"
                 or float(order_stock.get("executedQty", 0)) < stock_reduce_qty):
             raise RuntimeError("Stock/ETF reduction fill is incomplete or unconfirmed")
