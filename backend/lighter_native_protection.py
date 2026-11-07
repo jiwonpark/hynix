@@ -41,6 +41,7 @@ class NativeProtectionMixin:
         covered = {g["entry_order_id"] for g in groups if g["phase"] == "live"}
         return {"enabled": self.state.get("use_native_protection", False),
                 "state": "ERROR" if self.state.get("native_protection_error") else
+                         "PENDING RESUME" if self.state.get("native_protection_pending_activation") else
                          "WORKING" if groups else "WAITING" if self.state.get("use_native_protection") else "OFF",
                 "protected_slices": sum(str(t.get("order_id", "")) in covered for t in lots),
                 "tracked_slices": len(lots), "groups": groups,
@@ -139,6 +140,11 @@ class NativeProtectionMixin:
     async def arm_native_protection(self):
         if not self.state.get("use_native_protection"):
             return
+        if self.state.get("native_protection_pending_activation"):
+            if not self.state.get("enabled"):
+                return
+            self.state["native_protection_pending_activation"] = False
+            self._save()
         if self.state.get("native_protection_error"):
             raise ValueError(self.state["native_protection_error"])
         if self.state.get("pending_order"):

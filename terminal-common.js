@@ -588,7 +588,7 @@
 
   function prepareConditionGroups(prefix, anchor) {
     if (!anchor?.parentNode) return;
-    for (const suffix of ["hourlyHistControls", "takeProfitControls", "stopLossControls"]) {
+    for (const suffix of ["hourlyHistControls", "takeProfitControls", "stopLossControls", "nativeProtectionControls"]) {
       const node = document.getElementById(`${prefix}${suffix}`);
       if (node) anchor.parentNode.insertBefore(node, anchor);
     }
@@ -653,7 +653,7 @@
       if (after && after.parentNode === bucket) bucket.insertBefore(node, after.nextSibling);
       else if (bucket) bucket.append(node);
     }
-    for (const [suffix, key] of [["hourlyHistControls", "entry"], ["takeProfitControls", "exit"], ["stopLossControls", "exit"]]) {
+    for (const [suffix, key] of [["hourlyHistControls", "entry"], ["takeProfitControls", "exit"], ["stopLossControls", "exit"], ["nativeProtectionControls", "exit"]]) {
       const node = document.getElementById(`${prefix}${suffix}`);
       if (node) { node.style.margin = "0"; buckets[key].append(node); }
     }

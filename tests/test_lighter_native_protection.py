@@ -152,11 +152,35 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(residual['qty'], .6)
         self.assertEqual(residual['phase'], 'live')
 
-    async def test_flat_required_for_protection_setting_changes(self):
+    async def test_active_native_orders_protect_settings(self):
+        await self.arm()
         with self.assertRaisesRegex(ValueError, 'Close tracked inventory'):
             await self.bot.configure({'use_native_protection': False})
         with self.assertRaisesRegex(ValueError, 'Close tracked inventory'):
             await self.bot.configure({'stop_loss_pct': .5})
+
+    async def test_enable_with_inventory_saves_without_orders_until_resume(self):
+        self.bot.state['use_native_protection'] = False
+        result = await self.bot.configure({'use_native_protection': True})
+        self.assertTrue(result['use_native_protection'])
+        self.assertEqual(result['native_protection']['state'], 'PENDING RESUME')
+        self.assertEqual(self.client.placements, [])
+        restored = LighterCryptoBot(self.client, self.path)
+        restored.take_profit_fee_rate = AsyncMock(return_value=0)
+        await restored.run_once()
+        self.assertEqual(self.client.placements, [])
+        self.assertEqual(len(restored.state['tranches']), 2)
+        restored.state['enabled'] = True
+        await restored.arm_native_protection()
+        self.assertEqual(len(self.client.placements), 2)
+        self.assertFalse(restored.state['native_protection_pending_activation'])
+
+    async def test_pending_activation_can_be_cancelled_without_orders(self):
+        self.bot.state['use_native_protection'] = False
+        await self.bot.configure({'use_native_protection': True})
+        await self.bot.configure({'use_native_protection': False})
+        self.assertFalse(self.bot.state['native_protection_pending_activation'])
+        self.assertEqual(self.client.placements, [])
 
     async def test_cancel_failure_withholds_market_exit(self):
         await self.arm()

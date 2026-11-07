@@ -1,0 +1,45 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const {parseHTML}=require('linkedom');
+const storage=new Map();
+function mount(){
+ const {window,document}=parseHTML('<html><body><div id="detail"></div></body></html>');
+ Object.defineProperty(document,'readyState',{value:'loading'});document.addEventListener=()=>{};
+ const requests=[];
+ let response={ok:true,bot:{enabled:false,use_native_protection:true,native_protection_pending_activation:true}};
+ const ctx={window,document,console,URLSearchParams,setTimeout,clearTimeout,localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)},fetch:async(url,options)=>{requests.push(JSON.parse(options.body));return{ok:response.ok,headers:{get:()=> 'application/json'},json:async()=>response.ok?{bot:response.bot}:{error:'Resolve pending orders first'}};}};
+ vm.createContext(ctx);vm.runInContext(fs.readFileSync('lighter-crypto-tab.js','utf8'),ctx);
+ const engine=window.lighterCryptoEngine;
+ engine.botState={enabled:false,use_native_protection:false,take_profit_pct:1};
+ for(const key of ['applyExecutionLock','updateDeployButtonState','updateRulesMatchStatus'])engine[key]=()=>{};
+ engine.updateBotStatus=b=>{engine.botState=b;};
+ window.terminalLockManager={isLocked:false,token:'test-token'};
+ engine.mountNativeProtection(document.getElementById('detail'));
+ return {engine,document,window,requests,setResponse:r=>response=r};
+}
+(async()=>{
+ let m=mount(),toggle=m.document.getElementById('lighterCrypto_useNativeProtection');
+ toggle.checked=true;toggle.dispatchEvent(new m.window.Event('change'));
+ assert.equal(storage.get('skhynix_lighterCrypto_native_protection_draft'),'true');
+ m=mount();toggle=m.document.getElementById('lighterCrypto_useNativeProtection');
+ assert.equal(toggle.checked,true,'unsaved draft survives reload');
+ m.window.terminalLockManager.isLocked=true;
+ assert.equal(await m.engine.saveNativeProtection(),false);
+ assert.equal(m.requests.length,0);
+ m.window.terminalLockManager.isLocked=false;m.engine.botState.enabled=true;
+ assert.equal(await m.engine.saveNativeProtection(),false);
+ assert.equal(m.requests.length,0);
+ m.engine.botState.enabled=false;
+ m.setResponse({ok:false});
+ assert.equal(await m.engine.saveNativeProtection(),false);
+ assert.match(m.document.getElementById('lighterCrypto_nativeProtectionSaveStatus').textContent,/Not saved.*Resolve pending/);
+ assert.equal(storage.get('skhynix_lighterCrypto_native_protection_draft'),'true');
+ m.setResponse({ok:true,bot:{enabled:false,use_native_protection:true,native_protection_pending_activation:true}});
+ assert.equal(await m.engine.saveNativeProtection(),true);
+ assert.deepEqual(m.requests.at(-1),{use_native_protection:true},'save does not overwrite live TP/SL or replay parameters');
+ assert.equal(storage.get('skhynix_lighterCrypto_native_protection_draft'),'');
+ assert.match(m.document.getElementById('lighterCrypto_nativeProtectionSaveStatus').textContent,/Saved.*resume/);
+ assert.equal(toggle.dataset.unsaved,undefined);
+ console.log('Native protection draft, authenticated narrow save and inline failures passed');
+})().catch(e=>{console.error(e);process.exitCode=1;});

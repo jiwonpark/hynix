@@ -2323,7 +2323,7 @@
         locked,
         halted: recovering,
       });
-      ["btnDeployLiveStrategy", "inputLiveGridEntryZ", "inputLiveGridExitZ",
+      ["btnSaveNativeProtection", "btnDeployLiveStrategy", "inputLiveGridEntryZ", "inputLiveGridExitZ",
        "inputLiveMaxTranches"].forEach((id) => {
         const control = lid(id);
         if (control) control.disabled = locked || botEnabled;
@@ -2352,12 +2352,52 @@
       const panel = document.createElement("div");
       panel.id = "lighterCrypto_nativeProtectionControls";
       panel.style.cssText = "margin:14px 0;padding:12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;";
-      panel.innerHTML = `<label style="display:flex;gap:8px;align-items:center;"><input id="lighterCrypto_useNativeProtection" type="checkbox" style="appearance:auto;width:16px;height:16px;" ${this.botState?.use_native_protection ? "checked" : ""}><b>Native Lighter TP / SL · live only</b></label>
-        <small>Each filled slice gets its own reduce-only protection. Both exits enabled: OCO; one enabled: a single conditional order. Uses the TP/SL percentages above, entry fees included, funding excluded. Triggered IOC orders can slip or leave a remainder. Protection stays on exchange while the bot is paused. Strategy exits cancel and reconcile protection before reducing. Change this setting or its TP/SL targets only while flat, then unlock, pause and deploy. Paper uses completed closes and cannot model exchange triggers.</small>
+      const draft = safeStorage.getItem("skhynix_lighterCrypto_native_protection_draft");
+      const hasDraft = draft === "true" || draft === "false";
+      const checked = hasDraft ? draft === "true" : this.botState?.use_native_protection === true;
+      panel.innerHTML = `<label style="display:flex;flex-direction:row !important;justify-content:flex-start;gap:8px;align-items:center;"><input id="lighterCrypto_useNativeProtection" type="checkbox" style="appearance:auto;width:16px;height:16px;" ${checked ? "checked" : ""}><b>Native Lighter TP / SL · live only</b></label>
+        <small>Each filled slice gets its own reduce-only protection. Both exits enabled: OCO; one enabled: a single conditional order. Uses the configured live TP/SL percentages, entry fees included, funding excluded. Triggered IOC orders can slip or leave a remainder. Protection stays on exchange while the bot is paused. Strategy exits cancel and reconcile protection before reducing. Unlock and pause to save. Enabling is saved immediately and protects existing slices on resume; saving places no order. Active native orders must be closed and reconciled before disabling or changing their targets. Paper uses completed closes and cannot model exchange triggers.</small>
+        <div style="margin:8px 0;"><button id="lighterCrypto_btnSaveNativeProtection" type="button" class="terminal-action-control">Save native protection</button> <span id="lighterCrypto_nativeProtectionSaveStatus" role="status"></span></div>
         <div id="lighterCrypto_nativeProtectionStatus" style="margin-top:6px;font-size:11px;">LIVE · Awaiting protection status</div>`;
       anchor.parentNode.insertBefore(panel, anchor);
       const toggle = $("lighterCrypto_useNativeProtection");
-      toggle.addEventListener("change", () => { toggle.dataset.userEdited = "true"; toggle.dataset.unsaved = "true"; this.updateRulesMatchStatus(); });
+      toggle.checked = checked;
+      if (hasDraft) { toggle.dataset.userEdited = "true"; toggle.dataset.unsaved = "true"; }
+      toggle.addEventListener("change", () => {
+        toggle.dataset.userEdited = "true"; toggle.dataset.unsaved = "true";
+        safeStorage.setItem("skhynix_lighterCrypto_native_protection_draft", String(toggle.checked));
+        this.setText("nativeProtectionSaveStatus", "Unsaved · unlock and pause, then save");
+        this.updateRulesMatchStatus(); this.updateDeployButtonState();
+      });
+      $("lighterCrypto_btnSaveNativeProtection").addEventListener("click", () => this.saveNativeProtection());
+      this.setText("nativeProtectionSaveStatus", hasDraft ? "Unsaved draft restored · unlock and pause to save" : this.botState ? "Saved setting" : "Awaiting live settings");
+      this.applyExecutionLock();
+    },
+
+    async saveNativeProtection() {
+      if (window.terminalLockManager?.isLocked !== false || !this.botState || this.botState.enabled) {
+        this.setText("nativeProtectionSaveStatus", "Not saved · unlock and pause the live bot first");
+        return false;
+      }
+      const button = $("lighterCrypto_btnSaveNativeProtection");
+      if (button) button.disabled = true;
+      this.setText("nativeProtectionSaveStatus", "Saving…");
+      try {
+        const data = await apiPost("/api/lighter-crypto/bot/config", {
+          use_native_protection: $("lighterCrypto_useNativeProtection").checked,
+        });
+        if (!data?.bot) throw new Error("Saved configuration unavailable");
+        const toggle = $("lighterCrypto_useNativeProtection");
+        delete toggle.dataset.userEdited; delete toggle.dataset.unsaved;
+        safeStorage.setItem("skhynix_lighterCrypto_native_protection_draft", "");
+        this.updateBotStatus(data.bot, this.liveVenue || {});
+        this.setText("nativeProtectionSaveStatus", data.bot.native_protection_pending_activation
+          ? "Saved · activates on resume using live TP/SL targets" : "Saved");
+        return true;
+      } catch (error) {
+        this.setText("nativeProtectionSaveStatus", `Not saved · ${error.message}`);
+        return false;
+      } finally { this.applyExecutionLock(); }
     },
 
     liveStrategyPayload(mode = this.currentParadigm || "adaptive_tranche") {
@@ -2493,6 +2533,10 @@
       try {
         const data = await apiPost("/api/lighter-crypto/bot/config", payload);
         if (data?.bot) {
+          const nativeToggle = $("lighterCrypto_useNativeProtection");
+          if (nativeToggle) delete nativeToggle.dataset.userEdited;
+          safeStorage.setItem("skhynix_lighterCrypto_native_protection_draft", "");
+          this.setText("nativeProtectionSaveStatus", data.bot.native_protection_pending_activation ? "Saved · activates on resume" : "Saved");
           [
             "lighterCrypto_useNativeProtection", "lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
             "lighterCrypto_inputLiveMaxSpread", "lighterCrypto_inpOuEntryZ", "lighterCrypto_inpOuExitZ",
@@ -4381,9 +4425,11 @@
       this.botState = bot;
       const nativeToggle = $("lighterCrypto_useNativeProtection");
       if (nativeToggle && !nativeToggle.dataset.userEdited) nativeToggle.checked = bot.use_native_protection === true;
+      if (nativeToggle && nativeToggle.dataset.unsaved !== "true")
+        this.setText("nativeProtectionSaveStatus", bot.native_protection_pending_activation ? "Saved · activates on resume using live TP/SL targets" : "Saved");
       const protection = bot.native_protection || {};
       const protectionTime = protection.time ? new Date(protection.time * 1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
-      const protectionState = protection.time && Date.now() / 1000 - protection.time > 30 && protection.enabled ? "UNAVAILABLE (STALE)" : protection.state || "OFF";
+      const protectionState = protection.time && Date.now() / 1000 - protection.time > 30 && protection.state === "WORKING" ? "UNAVAILABLE (STALE)" : protection.state || "OFF";
       this.setText("nativeProtectionStatus", `LIVE · ${protectionState} · ${protection.protected_slices || 0}/${protection.tracked_slices || 0} slices protected · exchange order status · ${protectionTime}${protection.error ? " · " + protection.error : ""}`);
       window.TerminalCommon?.syncHourlyHistogram?.("lighterCrypto_", bot);
       window.TerminalCommon?.renderHourlyHistogram?.("lighterCrypto_", "Live", bot.hourly_histogram, bot.use_hourly_hist);

@@ -31,6 +31,11 @@ for(const [file,name,prefix,rootId] of [
  const expected={grid:8,custom:8,adaptive_tranche:8,ma_acceleration:5,ma_proximity:3,golden_death_cross:6,ma_stack:prefix==='crypto_'?6:0,macd_zero_cross:0,macd_hist_turn:0,ou_quant:0,macd_reversal:1,macd_strength_scaleout:1,multi_factor:1,trend_pullback:1};
  for(const mode of [...Object.keys(engine.paradigms),'macd_zero_cross','ma_acceleration','golden_death_cross','grid']){
   await engine.setParadigm(mode);
+  if(prefix==='lighterCrypto_') {
+   const nativePanel=document.getElementById(prefix+'nativeProtectionControls');
+   assert.equal(nativePanel.parentNode.id,prefix+'exitConditionGroup',mode+' native protection in exit group');
+   assert.equal(document.querySelectorAll('#'+prefix+'nativeProtectionControls').length,1);
+  }
   const rules=common.inheritedStrategyConditions(mode,prefix);
   assert.equal(rules.length,expected[mode],mode+' complete supported switch inventory');
   const selected=[...document.querySelectorAll('[data-terminal-rule-selected="true"]')];

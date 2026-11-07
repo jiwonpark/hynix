@@ -44,7 +44,7 @@ DEFAULT_STATE = {
     "use_hourly_hist": True, "hourly_hist_fast": 20, "hourly_hist_slow": 60, "hourly_hist_signal": 9,
     "use_take_profit": True, "take_profit_pct": 0.2,
     "use_stop_loss": False, "stop_loss_pct": 0.2,
-    "use_native_protection": False, "native_brackets": [],
+    "use_native_protection": False, "native_protection_pending_activation": False, "native_brackets": [],
     "native_protection_error": None, "native_protection_checked_at": None,
     "enabled": False, "selected_symbol": "BTC", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
@@ -623,10 +623,17 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 if self.state.get("pending_order") or self.state.get("recovery_required"):
                     raise ValueError("Resolve pending orders and inventory recovery before changing strategy")
             native_keys = {"use_native_protection", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct"}
-            if (self.state.get("use_native_protection") or candidate.get("use_native_protection")) and (
-                    self.state["tranches"] or self.state.get("native_brackets") or self.state.get("pending_order")):
-                if any(candidate[k] != self.state[k] for k in native_keys):
-                    raise ValueError("Close tracked inventory and reconcile native orders before changing native protection or TP/SL")
+            native_changed = any(candidate[k] != self.state[k] for k in native_keys)
+            if native_changed and (self.state.get("use_native_protection") or candidate.get("use_native_protection")):
+                if self.state.get("pending_order") or self.state.get("recovery_required"):
+                    raise ValueError("Resolve pending orders and inventory recovery before changing native protection")
+                if self.state.get("native_brackets"):
+                    raise ValueError("Close tracked inventory and reconcile native orders before changing active native protection or TP/SL")
+            if candidate["use_native_protection"] != self.state["use_native_protection"]:
+                # Saving configuration while paused must not submit orders.
+                # Existing slices are enrolled on the next explicit resume.
+                self.state["native_protection_pending_activation"] = candidate["use_native_protection"]
+                self.state["native_protection_checked_at"] = int(time.time())
             self.state.update({key: candidate[key] for key in values})
             self._save()
             return self.public_state()

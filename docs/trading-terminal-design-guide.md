@@ -444,8 +444,15 @@ new risk rather than be blindly resubmitted. Resolve and confirm cancellations
 and racing fills before strategy/manual reductions; re-protect remaining lots
 after a confirmed reduction. Protection remains on exchange during pause and
 reconciliation continues while paused. Restart must reconcile protection before
-checking inventory. Users must be flat, with no unresolved children, to change
-native protection or its TP/SL settings. The UI labels it live-only, displays
+checking inventory. Users may save native protection while paused with existing
+inventory; persist pending activation and enroll those slices only on explicit
+resume. Saving configuration must not place orders. Active native orders must
+be closed and reconciled before disabling or changing their TP/SL settings.
+Keep the native execution option inside Exit conditions alongside TP/SL across
+strategy switches. Preserve unsaved browser drafts across reload, distinguish
+them from the saved live state, and provide a dedicated authenticated save that
+changes only native protection, never unrelated replay/strategy parameters.
+Show save errors inline. The UI labels it live-only, displays
 protected/owned slice counts, exchange check time in KST, and errors. Paper
 completed-close results cannot certify native trigger or intrabar performance.
 Deployment verification never submits test orders or enables native protection.
