@@ -6,6 +6,7 @@ grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 
 from .hourly_histogram import HourlyHistogramMixin
 from .single_leg_take_profit import TakeProfitMixin
+from .lighter_native_protection import NativeProtectionMixin
 import asyncio
 import copy
 import json
@@ -43,6 +44,8 @@ DEFAULT_STATE = {
     "use_hourly_hist": True, "hourly_hist_fast": 20, "hourly_hist_slow": 60, "hourly_hist_signal": 9,
     "use_take_profit": True, "take_profit_pct": 0.2,
     "use_stop_loss": False, "stop_loss_pct": 0.2,
+    "use_native_protection": False, "native_brackets": [],
+    "native_protection_error": None, "native_protection_checked_at": None,
     "enabled": False, "selected_symbol": "BTC", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
     "notional_usd": 150.0, "max_tranches": 5, "gross_leverage_cap": 8.0,
@@ -83,7 +86,7 @@ DEFAULT_STATE = {
 }
 
 
-class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
+class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMixin):
     profit_venue = "lighter"
     # Standard 8.0x gross leverage cap matching Tab 2 and Tab 3.
     # Tab 2's margin buffer applies to estimated initial margin, not gross value.
@@ -233,6 +236,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                           "macd_exit_stage": int(self.state.get("macd_exit_stage", 0)),
                       })
         result["gross_leverage_cap"] = float(self.state.get("gross_leverage_cap", self.GROSS_LEVERAGE_CAP))
+        result["native_protection"] = self.native_protection_status()
         result["execution_blocked"] = bool(self.state.get("execution_blocked") or self.state.get("recovery_required") or self.state.get("pending_order"))
         result["blocked_reason"] = (self.state.get("blocked_reason") or self.state.get("last_error")) if result["execution_blocked"] else None
         result["can_execute_entry"] = bool(self.state.get("enabled") and not result["execution_blocked"])
@@ -240,6 +244,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         result["strategy_params"]["use_macd_hist_exit"] = bool(self.state.get("use_macd_hist_exit", True))
         result["strategy_params"].update({key:self.state[key] for key in ("use_hourly_hist","hourly_hist_fast","hourly_hist_slow","hourly_hist_signal")})
         result["strategy_params"].update(use_take_profit=bool(self.state.get("use_take_profit", True)), take_profit_pct=float(self.state.get("take_profit_pct", 0.2)))
+        result["strategy_params"]["use_native_protection"] = bool(self.state.get("use_native_protection", False))
         result["strategy_params"].update(use_stop_loss=bool(self.state.get("use_stop_loss", False)), stop_loss_pct=float(self.state.get("stop_loss_pct", 0.2)))
         return result
 
@@ -449,7 +454,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         permitted = {
             "use_macd_hist_exit",
             "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal",
-            "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct",
+            "use_native_protection", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct",
             "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
             "notional_usd", "max_tranches", "min_seconds_between_orders", "max_book_spread_bps",
             "ou_halflife_max", "ou_stop_z", "ou_min_abs_deviation_pp",
@@ -491,7 +496,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 candidate[key] = bool(value)
             elif key == "use_hourly_hist":
                 candidate[key] = bool(value)
-            elif key in {"use_take_profit", "use_stop_loss"}:
+            elif key in {"use_native_protection", "use_take_profit", "use_stop_loss"}:
                 candidate[key] = bool(value)
             elif key == "entry_direction_mode":
                 candidate[key] = parse_entry_direction_mode(value)
@@ -595,7 +600,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             raise ValueError("Maximum MA distance must be between 0 and 100 percent")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("ma_direction_period", "ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                ("use_native_protection", "ma_direction_period", "ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",
@@ -617,6 +622,11 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                     raise ValueError("Close tracked inventory before changing strategy")
                 if self.state.get("pending_order") or self.state.get("recovery_required"):
                     raise ValueError("Resolve pending orders and inventory recovery before changing strategy")
+            native_keys = {"use_native_protection", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct"}
+            if (self.state.get("use_native_protection") or candidate.get("use_native_protection")) and (
+                    self.state["tranches"] or self.state.get("native_brackets") or self.state.get("pending_order")):
+                if any(candidate[k] != self.state[k] for k in native_keys):
+                    raise ValueError("Close tracked inventory and reconcile native orders before changing native protection or TP/SL")
             self.state.update({key: candidate[key] for key in values})
             self._save()
             return self.public_state()
@@ -760,6 +770,8 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 resolved, _ = await self._resolve_pending_order()
                 if not resolved:
                     raise ValueError("Resolve Lighter execution recovery before enabling")
+            async with self.client.execution_lock:
+                await self.reconcile_native_protection()
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol, fresh=True)
             account, amount, positions = await self._account_position(symbol)
@@ -942,7 +954,12 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             remaining = filled
             matched = []
             while remaining > max(step / 2, filled * 0.00001) and self.state["tranches"]:
-                tracked = self.state["tranches"][-1]
+                target_id = pending.get("entry_order_id")
+                lot_index = next((i for i, t in enumerate(self.state["tranches"])
+                                  if str(t["order_id"]) == str(target_id)), -1) if target_id else -1
+                if target_id and lot_index < 0:
+                    raise ValueError("Native exit does not match a tracked entry")
+                tracked = self.state["tranches"][lot_index]
                 if int(tracked["side"]) * side >= 0:
                     raise ValueError("Lighter reduction fill does not match the tracked campaign direction")
                 original_qty = float(tracked["qty"])
@@ -958,7 +975,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                     "order_id": str(tracked["order_id"]),
                 })
                 if consumed_all:
-                    self.state["tranches"].pop()
+                    self.state["tranches"].pop(lot_index)
                 else:
                     tracked["qty"] = original_qty - consumed
                     tracked["fee_usd"] = entry_fee - fee_share
@@ -1052,6 +1069,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                       macro_alignment: Optional[tuple[bool, bool]] = None,
                       campaign_id: Optional[str] = None) -> Dict[str, Any]:
         async with self.client.execution_lock:
+            await self.reconcile_native_protection(cancel=reduce_only)
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol, fresh=True)
             account, amount, positions = await self._account_position(symbol)
@@ -1116,7 +1134,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 result = await self.client.create_market_order(
                     market_id, qty, price, is_ask=side < 0, reduce_only=reduce_only,
                     client_order_index=order_index)
-                return self._record_fill(result, pending)
+                event = self._record_fill(result, pending)
             except Exception as exc:
                 message = str(exc)
                 definitive_preflight = isinstance(exc, ValueError) and (
@@ -1138,6 +1156,10 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                                   last_error=f"Lighter order outcome uncertain; reconcile {order_index}: {exc}")
                 self._save()
                 raise
+            # Market fill has already been durably recorded. A bracket error
+            # must never turn that confirmed fill into an uncertain market order.
+            await self.arm_native_protection()
+            return event
 
     async def _resolve_pending_order(self) -> tuple[bool, Optional[Dict[str, Any]]]:
         """Verify and safely resolve an in-flight, unfilled, or rejected pending order.
@@ -1286,6 +1308,8 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                                 self._save()
                         else:
                             raise ValueError(f"Lighter order {idx} status is '{status_str}'; cancel on exchange before reconciling")
+            async with self.client.execution_lock:
+                await self.reconcile_native_protection()
             symbol = self.state["selected_symbol"]
             market_id, detail, step = await self._market(symbol)
             _, amount, _ = await self._account_position(symbol)
@@ -1302,6 +1326,8 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             tolerance = max(step / 2, abs(expected) * 0.00001)
             diff_notional = diff * mark_px if mark_px > 0 else 0.0
 
+            if diff > tolerance and self.state.get("use_native_protection"):
+                raise ValueError("Native protection inventory mismatch; preserve slice ownership and investigate exchange fills")
             if diff > tolerance:
                 logger.warning("Reconciling position mismatch: expected %s, exchange has %s", expected, amount)
                 is_dust = (diff_notional > 0 and diff_notional < self.DUST_NOTIONAL_THRESHOLD_USD) or (min_base > 0 and diff < min_base and diff_notional < 10.0)
@@ -1346,7 +1372,7 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             return {"event": event, "bot": await self.reconciled_public_state()}
 
     async def verify_startup(self) -> None:
-        if not self.state["enabled"] and not self.state["tranches"] and not self.state["pending_order"]:
+        if not self.state["enabled"] and not self.state["tranches"] and not self.state["pending_order"] and not self.state.get("native_brackets"):
             return
         async with self.lock:
             try:
@@ -1375,6 +1401,8 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                                 self._save()
                             else:
                                 raise ValueError("Pending order requires reconciliation")
+                async with self.client.execution_lock:
+                    await self.reconcile_native_protection()
                 symbol = self.state["selected_symbol"]
                 _, detail, step = await self._market(symbol)
                 _, amount, _ = await self._account_position(symbol)
@@ -1524,6 +1552,13 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 logger.warning("Paused Lighter condition refresh failed: %s", exc)
 
     async def run_once(self) -> None:
+        if self.state.get("native_brackets"):
+            async with self.lock:
+                async with self.client.execution_lock:
+                    try:
+                        await self.reconcile_native_protection()
+                    except Exception:
+                        return
         if not self.state["enabled"]:
             await self._refresh_paused_condition_evaluation()
             return
@@ -1565,7 +1600,10 @@ class LighterCryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                         except Exception as cap_err:
                             self.state["blocked_reason"] = str(cap_err)
 
-                if await self.check_net_exits():
+                if self.state.get("use_native_protection"):
+                    async with self.client.execution_lock:
+                        await self.arm_native_protection()
+                elif await self.check_net_exits():
                     return
                 await self.refresh_hourly_histogram()
                 await self.refresh_five_minute_macd_signal()

@@ -49,6 +49,15 @@ for(const [file,name,prefix,rootId] of [
    assert.equal(engine.replaySettings()[rule.toggle],true,mode+' ON changes replay '+rule.toggle);
    assert.equal(engine.liveStrategyPayload(mode)[rule.toggle],true,mode+' ON changes deploy payload '+rule.toggle);
   }
+  if(mode==='ma_proximity' && prefix==='lighterCrypto_') {
+   const native=document.getElementById(prefix+'useNativeProtection');
+   assert.ok(native,'native protection control exists');
+   native.checked=true;
+   assert.equal(engine.liveStrategyPayload(mode).use_native_protection,true);
+   assert.equal(engine.replaySettings().use_native_protection,undefined,'native triggers are live only');
+   native.checked=false;
+   assert.equal(engine.liveStrategyPayload(mode).use_native_protection,false);
+  }
   if(mode==='ma_proximity'){
    const stop=document.getElementById(prefix+'useStopLoss');
    assert.equal(engine.replaySettings().use_stop_loss,false,'stop loss starts disabled');

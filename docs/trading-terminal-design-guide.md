@@ -425,3 +425,27 @@ the newly selected rules manage those lots after resume. This configuration
 change submits no orders. Pending orders or inventory recovery must be resolved
 first. Retain the flat-inventory requirement for symbol changes and switches to
 other strategy families.
+
+### Tab 5 native conditional protection
+
+`use_native_protection` is an authenticated live execution option, default OFF
+for existing configurations. It does not change entry signals or paper fills.
+When enabled, each confirmed entry slice receives reduce-only native Lighter
+TP/SL orders using the existing adjustable net TP/SL targets. Both enabled exits
+form an OCO group; one enabled exit is a standalone conditional order. Entry and
+estimated exit trading fees enter trigger calculation; funding is excluded.
+Triggers are not guaranteed execution prices: IOC slippage protection may leave
+unfilled inventory. Reconcile partial fills to the owning slice, cancel remaining
+children, and protect the residual on the next enabled bot tick. Native fills are
+attributed to their entry slice rather than an unrelated newer LIFO slice.
+
+Persist child client IDs before submission. Missing/ambiguous orders must block
+new risk rather than be blindly resubmitted. Resolve and confirm cancellations
+and racing fills before strategy/manual reductions; re-protect remaining lots
+after a confirmed reduction. Protection remains on exchange during pause and
+reconciliation continues while paused. Restart must reconcile protection before
+checking inventory. Users must be flat, with no unresolved children, to change
+native protection or its TP/SL settings. The UI labels it live-only, displays
+protected/owned slice counts, exchange check time in KST, and errors. Paper
+completed-close results cannot certify native trigger or intrabar performance.
+Deployment verification never submits test orders or enables native protection.

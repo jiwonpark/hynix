@@ -411,8 +411,67 @@ class LighterClient:
         fill = await self.execution_fill(client_order_index, market_id, accepted["base_amount"])
         return {**accepted, **fill}
 
+    async def create_protection_orders(self, market_id, quantity, side, children):
+        """Submit persisted, reduce-only TP/SL children as native OCO (or one leg)."""
+        from lighter.signer_client import CreateOrderTxReq
+        signer = self.get_signer()
+        if signer is None or not hasattr(signer, "create_grouped_orders"):
+            raise ValueError("Installed Lighter SDK does not support native OCO")
+        error = signer.check_client()
+        if error:
+            raise ValueError(f"Lighter signer validation failed: {error}")
+        detail = await self.market_detail(market_id, fresh=True)
+        scale = 10 ** int(detail["supported_size_decimals"])
+        price_scale = 10 ** int(detail["supported_price_decimals"])
+        size = int(Decimal(str(quantity)) * scale)
+        if size <= 0 or size / scale < float(detail.get("min_base_amount") or 0):
+            raise ValueError("Native protection quantity is below minimum size")
+        orders = []
+        for child in children:
+            trigger = int(child["trigger_ticks"])
+            # Same bounded IOC tolerance as ordinary bot reductions. This is
+            # a trigger, not a guaranteed fill price or maximum realized loss.
+            limit = int(trigger * (0.994 if side > 0 else 1.006))
+            if not 0 < min(trigger, limit) <= max(trigger, limit) < 2 ** 32:
+                raise ValueError("Native protection price is out of exchange range")
+            if size / scale * trigger / price_scale < float(detail.get("min_quote_amount") or 0):
+                raise ValueError("Native protection is below minimum order notional")
+            orders.append(CreateOrderTxReq(
+                MarketIndex=market_id, ClientOrderIndex=child["client_order_index"],
+                BaseAmount=size, Price=limit, IsAsk=int(side > 0),
+                Type=signer.ORDER_TYPE_TAKE_PROFIT if child["kind"] == "take_profit" else signer.ORDER_TYPE_STOP_LOSS,
+                TimeInForce=signer.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
+                ReduceOnly=1, TriggerPrice=trigger,
+                OrderExpiry=signer.DEFAULT_28_DAY_ORDER_EXPIRY))
+        if len(orders) == 2:
+            _, response, error = await signer.create_grouped_orders(
+                signer.GROUPING_TYPE_ONE_CANCELS_THE_OTHER, orders)
+        elif len(orders) == 1:
+            o = orders[0]
+            _, response, error = await signer.create_order(
+                o.MarketIndex, o.ClientOrderIndex, o.BaseAmount, o.Price, o.IsAsk,
+                o.Type, o.TimeInForce, o.ReduceOnly, o.TriggerPrice, o.OrderExpiry)
+        else:
+            raise ValueError("Native protection requires one or two enabled exits")
+        if error or getattr(response, "code", 200) != 200:
+            raise RuntimeError(f"Native protection submission failed: {error or response.code}")
+        return {"tx_hash": getattr(response, "tx_hash", None)}
+
+    async def cancel_protection_order(self, market_id, order_index):
+        signer = self.get_signer()
+        if signer is None:
+            raise RuntimeError("Lighter signer is unavailable")
+        _, response, error = await signer.cancel_order(market_id, int(order_index))
+        if error or getattr(response, "code", 200) != 200:
+            raise RuntimeError(f"Native protection cancellation failed: {error or response.code}")
+
     async def account_order(self, client_order_index: int) -> Optional[Dict[str, Any]]:
         """Read one submitted order by its persisted client index for recovery."""
+        orders = await self.account_orders([client_order_index])
+        return orders[0] if orders else None
+
+    async def account_orders(self, client_order_indexes):
+        """Batch read persisted IDs, including inactive conditional orders."""
         creds = self.get_credentials() or {}
         signer = self.get_signer()
         if creds.get("account_index") is None or signer is None:
@@ -424,12 +483,11 @@ class LighterClient:
             raise RuntimeError(f"Lighter order lookup authentication failed: {error}")
         payload = await self.request(
             "/api/v1/accountOrders",
-            {"client_order_indexes": str(client_order_index),
+            {"client_order_indexes": ",".join(str(i) for i in client_order_indexes),
              "account_index": int(creds["account_index"])},
             headers={"authorization": auth},
         )
-        orders = payload.get("orders") or []
-        return orders[0] if orders else None
+        return payload.get("orders") or []
 
     async def execution_fill(
         self, client_order_index: int, market_id: int, expected_size: float,

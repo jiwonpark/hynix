@@ -1515,6 +1515,7 @@
       window.TerminalCommon?.mountHourlyHistogram?.("lighterCrypto_", detailSec, this);
       window.TerminalCommon?.mountTakeProfitControls?.("lighterCrypto_", detailSec, this);
       window.TerminalCommon?.mountTakeProfitControls?.("lighterCrypto_", detailSec, this, "stop_loss");
+      this.mountNativeProtection(detailSec);
       if (["adaptive_tranche", "grid"].includes(mode)) {
         if (ladderSec) ladderSec.style.display = "block";
         if (detailSec) detailSec.style.display = "none";
@@ -2346,6 +2347,19 @@
       return value === null ? "Unlimited" : String(value ?? 5);
     },
 
+    mountNativeProtection(anchor) {
+      if (!anchor?.parentNode || $("lighterCrypto_nativeProtectionControls")) return;
+      const panel = document.createElement("div");
+      panel.id = "lighterCrypto_nativeProtectionControls";
+      panel.style.cssText = "margin:14px 0;padding:12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;";
+      panel.innerHTML = `<label style="display:flex;gap:8px;align-items:center;"><input id="lighterCrypto_useNativeProtection" type="checkbox" style="appearance:auto;width:16px;height:16px;" ${this.botState?.use_native_protection ? "checked" : ""}><b>Native Lighter TP / SL · live only</b></label>
+        <small>Each filled slice gets its own reduce-only protection. Both exits enabled: OCO; one enabled: a single conditional order. Uses the TP/SL percentages above, entry fees included, funding excluded. Triggered IOC orders can slip or leave a remainder. Protection stays on exchange while the bot is paused. Strategy exits cancel and reconcile protection before reducing. Change this setting or its TP/SL targets only while flat, then unlock, pause and deploy. Paper uses completed closes and cannot model exchange triggers.</small>
+        <div id="lighterCrypto_nativeProtectionStatus" style="margin-top:6px;font-size:11px;">LIVE · Awaiting protection status</div>`;
+      anchor.parentNode.insertBefore(panel, anchor);
+      const toggle = $("lighterCrypto_useNativeProtection");
+      toggle.addEventListener("change", () => { toggle.dataset.userEdited = "true"; this.updateRulesMatchStatus(); });
+    },
+
     liveStrategyPayload(mode = this.currentParadigm || "adaptive_tranche") {
       const numeric = (id, fallback) => {
         const raw = $(id)?.value;
@@ -2356,6 +2370,7 @@
         strategy_mode: mode,
         strategy_interval: this.interval || "5m",
         selected_symbol: this.selectedSymbol || "BTC",
+        use_native_protection: $("lighterCrypto_useNativeProtection")?.checked ?? this.botState?.use_native_protection ?? false,
         notional_usd: Number(this.orderNotional()),
         long_multiplier: this.longMultiplier(),
         short_multiplier: this.shortMultiplier(),
@@ -4364,6 +4379,12 @@
       const macroPeriod = lid("macroMaPeriod");
       if (macroPeriod && !macroPeriod.dataset.userEdited) macroPeriod.value = String(bot.strategy_params?.macro_ma_period ?? bot.macro_ma_period ?? 60);
       this.botState = bot;
+      const nativeToggle = $("lighterCrypto_useNativeProtection");
+      if (nativeToggle && !nativeToggle.dataset.userEdited) nativeToggle.checked = bot.use_native_protection === true;
+      const protection = bot.native_protection || {};
+      const protectionTime = protection.time ? new Date(protection.time * 1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
+      const protectionState = protection.time && Date.now() / 1000 - protection.time > 30 && protection.enabled ? "UNAVAILABLE (STALE)" : protection.state || "OFF";
+      this.setText("nativeProtectionStatus", `LIVE · ${protectionState} · ${protection.protected_slices || 0}/${protection.tracked_slices || 0} slices protected · exchange order status · ${protectionTime}${protection.error ? " · " + protection.error : ""}`);
       window.TerminalCommon?.syncHourlyHistogram?.("lighterCrypto_", bot);
       window.TerminalCommon?.renderHourlyHistogram?.("lighterCrypto_", "Live", bot.hourly_histogram, bot.use_hourly_hist);
       this.syncMacdDraftControls(bot);
@@ -4373,6 +4394,12 @@
       }
       window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Live", bot.take_profit_evaluation, bot.use_take_profit);
       window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Live", bot.stop_loss_evaluation, bot.use_stop_loss === true, "stop_loss");
+      if (bot.use_native_protection) {
+        for (const [id, rule] of [["takeProfit", "take_profit"], ["stopLoss", "stop_loss"]]) {
+          const node = $("lighterCrypto_" + id + "LiveStatus");
+          if (node) node.textContent = `LIVE · ${bot["use_" + rule] ? "NATIVE " + protectionState : "OFF"} · ${bot[rule + "_pct"]}% net trigger target · per-slice exchange protection · ${protectionTime}`;
+        }
+      }
       this.syncMacroRegimeControlsFromBot(bot);
       window.TerminalCommon?.syncSingleLegDirectionControl("lighterCrypto_", bot?.entry_direction_mode);
       const isEnabled = Boolean(bot?.enabled);
