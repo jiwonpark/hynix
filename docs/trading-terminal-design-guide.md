@@ -450,9 +450,10 @@ resume. Saving configuration must not place orders. Active native orders must
 be closed and reconciled before disabling or changing their TP/SL settings.
 Keep the native execution option inside Exit conditions alongside TP/SL across
 strategy switches. Preserve unsaved browser drafts across reload, distinguish
-them from the saved live state, and provide a dedicated authenticated save that
-changes only native protection, never unrelated replay/strategy parameters.
-Show save errors inline. The UI labels it live-only, displays
+them from the saved live state, and save native protection through the same
+authenticated Save & Deploy action as the other exit settings. Do not add a
+separate per-condition save button. Show save errors inline and retain drafts
+until the server confirms the saved configuration. The UI labels it live-only, displays
 protected/owned slice counts, exchange check time in KST, and errors. Paper
 completed-close results cannot certify native trigger or intrabar performance.
 Deployment verification never submits test orders or enables native protection.
