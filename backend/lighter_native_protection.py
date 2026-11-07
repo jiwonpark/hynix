@@ -143,6 +143,9 @@ class NativeProtectionMixin:
             raise ValueError(self.state["native_protection_error"])
         if self.state.get("pending_order"):
             raise ValueError("Resolve pending order before placing native protection")
+        covered = {g["entry_order_id"] for g in self.state.get("native_brackets", [])}
+        if all(str(t["order_id"]) in covered for t in self.state["tranches"]):
+            return
         market_id, detail, step = await self._market(self.state["selected_symbol"], fresh=True)
         _, amount, _ = await self._account_position(self.state["selected_symbol"])
         self._check_position(amount, step, mark_price=float(detail.get("mark_price", 0) or 0),

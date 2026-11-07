@@ -1552,12 +1552,16 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 logger.warning("Paused Lighter condition refresh failed: %s", exc)
 
     async def run_once(self) -> None:
-        if self.state.get("native_brackets"):
+        if self.state.get("native_brackets") or (self.state.get("use_native_protection") and self.state["tranches"]):
             async with self.lock:
                 async with self.client.execution_lock:
                     try:
                         await self.reconcile_native_protection()
-                    except Exception:
+                        if not self.state.get("pending_order"):
+                            await self.arm_native_protection()
+                    except Exception as exc:
+                        self.state.update(execution_blocked=True, blocked_reason=str(exc), last_error=str(exc))
+                        self._save()
                         return
         if not self.state["enabled"]:
             await self._refresh_paused_condition_evaluation()

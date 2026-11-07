@@ -436,7 +436,7 @@ form an OCO group; one enabled exit is a standalone conditional order. Entry and
 estimated exit trading fees enter trigger calculation; funding is excluded.
 Triggers are not guaranteed execution prices: IOC slippage protection may leave
 unfilled inventory. Reconcile partial fills to the owning slice, cancel remaining
-children, and protect the residual on the next enabled bot tick. Native fills are
+children, and protect the residual on the next bot tick, including while paused. Native fills are
 attributed to their entry slice rather than an unrelated newer LIFO slice.
 
 Persist child client IDs before submission. Missing/ambiguous orders must block

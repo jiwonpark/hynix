@@ -144,6 +144,14 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
         await self.bot.run_once()
         self.assertEqual(len(self.bot.state['tranches']), 1)
 
+    async def test_paused_partial_native_exit_reprotects_residual(self):
+        groups = await self.arm()
+        self.fill(groups[0], qty=.4)
+        await self.bot.run_once()
+        residual = next(g for g in self.bot.state['native_brackets'] if g['entry_order_id'] == 'old')
+        self.assertAlmostEqual(residual['qty'], .6)
+        self.assertEqual(residual['phase'], 'live')
+
     async def test_flat_required_for_protection_setting_changes(self):
         with self.assertRaisesRegex(ValueError, 'Close tracked inventory'):
             await self.bot.configure({'use_native_protection': False})
