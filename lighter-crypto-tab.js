@@ -2357,7 +2357,7 @@
         <div id="lighterCrypto_nativeProtectionStatus" style="margin-top:6px;font-size:11px;">LIVE · Awaiting protection status</div>`;
       anchor.parentNode.insertBefore(panel, anchor);
       const toggle = $("lighterCrypto_useNativeProtection");
-      toggle.addEventListener("change", () => { toggle.dataset.userEdited = "true"; this.updateRulesMatchStatus(); });
+      toggle.addEventListener("change", () => { toggle.dataset.userEdited = "true"; toggle.dataset.unsaved = "true"; this.updateRulesMatchStatus(); });
     },
 
     liveStrategyPayload(mode = this.currentParadigm || "adaptive_tranche") {
@@ -2494,7 +2494,7 @@
         const data = await apiPost("/api/lighter-crypto/bot/config", payload);
         if (data?.bot) {
           [
-            "lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
+            "lighterCrypto_useNativeProtection", "lighterCrypto_inputLiveGridEntryZ", "lighterCrypto_inputLiveGridExitZ", "lighterCrypto_inputLiveMaxTranches",
             "lighterCrypto_inputLiveMaxSpread", "lighterCrypto_inpOuEntryZ", "lighterCrypto_inpOuExitZ",
             "lighterCrypto_maUseStack5m", "lighterCrypto_maUseOppositeExit",
             "lighterCrypto_gridReplayEntryZ", "lighterCrypto_gridReplayExitZ",
