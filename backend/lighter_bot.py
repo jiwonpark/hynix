@@ -894,6 +894,7 @@ class LighterPairBot:
         gross_pnl = self._execution_realized_pnl(execution)
         net_pnl = gross_pnl - entry_fee - exit_fee
         tranches.pop(tranche_index)
+        self.state.pop("risk_capacity", None)  # The pre-exit account/lot snapshot is stale.
         self.state.setdefault("history", []).append({
             "tranche_id": tranche.get("tranche_id"), "entry_time": tranche.get("time"),
             "side": -original_side, "adr_qty": filled_adr, "domestic_qty": filled_domestic,

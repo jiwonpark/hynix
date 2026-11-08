@@ -28,10 +28,12 @@ class PairedReductionRecoveryTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):self.tmp.cleanup()
 
     async def test_completed_older_tranche_exit_reconciles_once_without_trading(self):
+        self.bot.state['risk_capacity']={'active_tranches':2,'current_gross_usd':999}
         remaining=copy.deepcopy(self.bot.state['tranches'][1])
         self.assertTrue(await self.bot._reconcile_confirmed_pending_reduction())
         self.assertEqual(self.bot.state['tranches'],[remaining])
         self.assertIsNone(self.bot.state['pending_execution'])
+        self.assertNotIn('risk_capacity',self.bot.state)
         self.assertFalse(self.bot.state['execution_blocked'])
         self.assertFalse(self.bot.state['enabled'])
         self.assertEqual(self.bot.state['history'][-1]['tranche_id'],'older')
