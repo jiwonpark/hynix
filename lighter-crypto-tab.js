@@ -4407,7 +4407,9 @@
       const nativeToggle = $("lighterCrypto_useNativeProtection");
       if (nativeToggle && !nativeToggle.dataset.userEdited) nativeToggle.checked = bot.use_native_protection === true;
       if (nativeToggle && nativeToggle.dataset.unsaved !== "true")
-        this.setText("nativeProtectionSaveStatus", bot.native_protection_pending_activation ? "Saved · activates on resume using live TP/SL targets" : "Saved");
+        this.setText("nativeProtectionSaveStatus", bot.native_protection_update_pending?.length
+          ? "Protection update incomplete · retry Save & Deploy before resuming"
+          : bot.native_protection_pending_activation ? "Saved · activates on resume using live TP/SL targets" : "Saved");
       const protection = bot.native_protection || {};
       const protectionTime = protection.time ? new Date(protection.time * 1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
       const protectionState = protection.time && Date.now() / 1000 - protection.time > 30 && protection.state === "WORKING" ? "UNAVAILABLE (STALE)" : protection.state || "OFF";
