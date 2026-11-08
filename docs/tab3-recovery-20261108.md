@@ -53,3 +53,41 @@ pre-exit capacity snapshot was removed rather than reused as fresh data.
 Local evidence: `/tmp/hynix-tab3-inspect.py`,
 `/tmp/hynix-tab3-final-status.json`, `/tmp/hynix-tab3-recovery-final-ui.log`,
 `/tmp/tab3_recovery_reload.png`, and `/tmp/live_*.png`.
+
+## Follow-up: automatic reconciliation
+
+Runtime commit `5c62548` adds periodic read-only reconciliation of completed
+reduction intents with both saved order IDs. The worker now checks those intents
+even while paused. Both full fills, a unique or explicit owner, and matching
+residual positions are still required. The automatic path sets
+`allow_leg_retry=False`, never evaluates a new trade in the reconciliation tick,
+and preserves the existing enabled/paused state. Missing legs, uncertain
+submissions and mismatches remain blocked. Reads are throttled using monotonic
+time; actual polling cadence also depends on the existing worker scheduler.
+
+159 backend tests passed, including five additional worker tests for paused
+recovery, restart, delayed confirmation with backoff, no missing-leg retry,
+no same-tick trade and exactly-once history. The saved incident was also replayed
+against real exchange fill/position reads using a temporary state file and an
+order-submission function that raises. It recovered correctly once, stayed
+paused in the replay, and did not alter live state or submit orders.
+
+Production source was checked and backed up before installation; runtime state,
+credentials and unrelated changes were preserved. The backend restarted,
+read-only status returned HTTP 200 with no recovery/execution block, and the
+frontend remained HTTP 200 text/html. No frontend files changed. The deployed
+bot's existing enabled setting remained enabled; the deployment did not issue a
+toggle or change strategy settings.
+
+Actual price/MA lines were captured and inspected in Tabs 2–5. Tab 3 activation
+showed chart/account in 0.628 s in a fresh browser profile (prefetch can contribute).
+Navigation away/back and actual 15m/5m changes passed (1.107/1.005 s chart readiness).
+Reload chart/account were first observed at 5.518 s, including the five-second
+startup wait. At the 15:22:53 KST sample, latest 5m candle opened 15:20 (forming),
+prior completed candle opened 15:15, and account server time was 15:22:55 (about
+two seconds ahead of the browser clock). The paired endpoint does not expose
+an independent account-update timestamp, so underlying account age is not
+certified from that server-render timestamp alone. Displayed collateral and
+paired quantities were checked against authenticated read-only telemetry.
+Local evidence: `/tmp/hynix-tab3-auto-ui.log`,
+`/tmp/hynix-tab3-auto-live-status.json`, and `/tmp/tab3_recovery_reload.png`.
