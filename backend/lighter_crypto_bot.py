@@ -6,7 +6,7 @@ grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 
 from .hourly_histogram import HourlyHistogramMixin
 from .single_leg_take_profit import TakeProfitMixin
-from .lighter_native_protection import NativeProtectionMixin
+from .lighter_native_protection import NativeProtectionMixin, protection_children
 import asyncio
 import copy
 import json
@@ -46,7 +46,7 @@ DEFAULT_STATE = {
     "use_stop_loss": False, "stop_loss_pct": 0.2,
     "use_native_protection": False, "native_protection_pending_activation": False, "native_brackets": [],
     "native_protection_error": None, "native_protection_checked_at": None,
-    "native_protection_attempts": [],
+    "native_protection_attempts": [], "native_protection_update_pending": [],
     "enabled": False, "selected_symbol": "BTC", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
     "notional_usd": 150.0, "max_tranches": 5, "gross_leverage_cap": 8.0,
@@ -625,11 +625,50 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                     raise ValueError("Resolve pending orders and inventory recovery before changing strategy")
             native_keys = {"use_native_protection", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct"}
             native_changed = any(candidate[k] != self.state[k] for k in native_keys)
-            if native_changed and (self.state.get("use_native_protection") or candidate.get("use_native_protection")):
+            replacing = bool(self.state.get("native_protection_update_pending")) or (
+                native_changed and bool(self.state.get("native_brackets")))
+            if replacing or (native_changed and (self.state.get("use_native_protection") or candidate.get("use_native_protection"))):
                 if self.state.get("pending_order") or self.state.get("recovery_required"):
                     raise ValueError("Resolve pending orders and inventory recovery before changing native protection")
-                if self.state.get("native_brackets"):
-                    raise ValueError("Close tracked inventory and reconcile native orders before changing active native protection or TP/SL")
+            if replacing:
+                if self.state["enabled"]:
+                    raise ValueError("Pause the live bot before updating native protection")
+                async with self.client.execution_lock:
+                    # Account for fills before validating ownership. Leave all
+                    # working protection intact if this preflight fails.
+                    await self.reconcile_native_protection()
+                    _, detail, step = await self._market(self.state["selected_symbol"], fresh=True)
+                    _, amount, _ = await self._account_position(self.state["selected_symbol"])
+                    self._check_position(amount, step, mark_price=float(detail.get("mark_price", 0) or 0),
+                                         min_base_amount=float(detail.get("min_base_amount", 0) or 0))
+                    if candidate["use_native_protection"]:
+                        fee = await self.take_profit_fee_rate()
+                        for lot in self.state["tranches"]:
+                            children = protection_children(lot, candidate, int(detail["supported_price_decimals"]), fee, lambda: 1)
+                            if children and (float(lot["qty"]) < float(detail.get("min_base_amount") or 0)
+                                    or any(float(lot["qty"]) * c["trigger_price"] < float(detail.get("min_quote_amount") or 0)
+                                           for c in children)):
+                                raise ValueError("Replacement native protection is below exchange minimum size/notional")
+                    if native_changed:
+                        self.state["native_protection_update_pending"] = list(dict.fromkeys(
+                            [g["entry_order_id"] for g in self.state["native_brackets"]] +
+                            [str(t["order_id"]) for t in self.state["tranches"]]))
+                    self.state.update({key: candidate[key] for key in values})
+                    # Durable pause barrier: a restart cannot silently arm old
+                    # targets or resume entries during an incomplete replacement.
+                    self.state["native_protection_pending_activation"] = True
+                    self._save()
+                    try:
+                        for owner in list(self.state["native_protection_update_pending"]):
+                            await self.reconcile_native_protection(cancel_entry_ids={owner})
+                            await self.arm_native_protection(replacing=True, entry_ids={owner})
+                            self.state["native_protection_update_pending"].remove(owner)
+                            self._save()
+                    except Exception as exc:
+                        raise ValueError(f"Protection update incomplete; bot remains paused. Retry Save & Deploy after resolving: {exc}") from exc
+                    self.state["native_protection_pending_activation"] = False
+                    self._save()
+                    return self.public_state()
             if candidate["use_native_protection"] != self.state["use_native_protection"]:
                 # Saving configuration while paused must not submit orders.
                 # Existing slices are enrolled on the next explicit resume.
@@ -774,6 +813,8 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 self.state["blocked_reason"] = None
                 self._save()
                 return self.public_state()
+            if self.state.get("native_protection_update_pending"):
+                raise ValueError("Finish the native protection update with Save & Deploy before resuming")
             if self.state["pending_order"]:
                 resolved, _ = await self._resolve_pending_order()
                 if not resolved:

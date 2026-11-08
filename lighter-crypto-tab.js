@@ -2356,7 +2356,7 @@
       const hasDraft = draft === "true" || draft === "false";
       const checked = hasDraft ? draft === "true" : this.botState?.use_native_protection === true;
       panel.innerHTML = `<label style="display:flex;flex-direction:row !important;justify-content:flex-start;gap:8px;align-items:center;"><input id="lighterCrypto_useNativeProtection" type="checkbox" style="appearance:auto;width:16px;height:16px;" ${checked ? "checked" : ""}><b>Native Lighter TP / SL · live only</b></label>
-        <small>Each filled slice gets its own reduce-only protection. Both exits enabled: OCO; one enabled: a single conditional order. Uses the configured live TP/SL percentages, entry fees included, funding excluded. Triggered IOC orders can slip or leave a remainder. Protection stays on exchange while the bot is paused. Strategy exits cancel and reconcile protection before reducing. Unlock and pause, then use Save & Deploy with the other exit settings. The saved setting protects existing slices on resume; saving places no order. Active native orders must be closed and reconciled before disabling or changing their targets. Paper uses completed closes and cannot model exchange triggers.</small>
+        <small>Each filled slice gets its own reduce-only protection. Both exits enabled: OCO; one enabled: a single conditional order. Uses the configured live TP/SL percentages, entry fees included, funding excluded. Triggered IOC orders can slip or leave a remainder. Protection stays on exchange while the bot is paused. Strategy exits cancel and reconcile protection before reducing. Unlock and pause, then use Save & Deploy with the other exit settings. First activation protects existing slices on resume. Changing active protection cancels and confirms each old slice’s orders, then installs its new reduce-only exits while paused. Disabling cancels native exits. No position is closed by saving. An incomplete update stays paused; resolve the reported error and retry Save & Deploy. Paper uses completed closes and cannot model exchange triggers.</small>
         <div id="lighterCrypto_nativeProtectionSaveStatus" role="status" style="margin:8px 0;"></div>
         <div id="lighterCrypto_nativeProtectionStatus" style="margin-top:6px;font-size:11px;">LIVE · Awaiting protection status</div>`;
       anchor.parentNode.insertBefore(panel, anchor);
@@ -2500,7 +2500,7 @@
         return false;
       }
       const pName = this.paradigms[mode]?.name || mode;
-      const confirmed = options.skipConfirm || window.confirm(`Save ${pName} (${this.interval}) for real Lighter Perpetuals trading?\n\nPause the bot before changing strategy. Saving while paused places no order.`);
+      const confirmed = options.skipConfirm || window.confirm(`Save ${pName} (${this.interval}) for real Lighter Perpetuals trading?\n\nPause the bot before changing strategy. Changes to active native protection cancel and replace reduce-only exits while paused; disabling cancels them. No new entry or position close is submitted. First activation takes effect on resume.`);
       if (!confirmed) return false;
 
       const btn = $("lighterCrypto_btnDeployLiveStrategy");
@@ -2536,7 +2536,8 @@
         window.showToast?.(`✅ Live EC2 strategy changed to ${pName} (${payload.strategy_interval}).`, "success");
         return true;
       } catch (err) {
-        this.setText("nativeProtectionSaveStatus", `Not saved · ${err.message}`);
+        this.setText("nativeProtectionSaveStatus", /Protection update incomplete/.test(err.message)
+          ? err.message : `Not saved · ${err.message}`);
         window.alert(`Failed to deploy strategy: ${err.message}`);
         return false;
       } finally {

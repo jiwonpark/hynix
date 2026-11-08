@@ -162,12 +162,92 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(residual['qty'], .6)
         self.assertEqual(residual['phase'], 'live')
 
-    async def test_active_native_orders_protect_settings(self):
+    async def test_active_targets_replace_without_closing_inventory(self):
+        previous = copy.deepcopy(await self.arm())
+        result = await self.bot.configure({'stop_loss_pct': .5})
+        self.assertEqual(result['native_protection']['state'], 'WORKING')
+        self.assertFalse(result['enabled'])
+        self.assertEqual(self.client.amount, 2)
+        self.assertEqual(len(result['tranches']), 2)
+        self.assertEqual(len(self.client.placements), 4)
+        for group in previous:
+            self.assertTrue(all(self.client.orders[c['client_order_index']]['status'] == 'canceled'
+                                for c in group['children']))
+        self.assertEqual(self.bot.state['native_brackets'][0]['children'][1]['trigger_price'], 99.5)
+
+    async def test_disable_cancels_native_exits_without_flattening(self):
         await self.arm()
-        with self.assertRaisesRegex(ValueError, 'Close tracked inventory'):
-            await self.bot.configure({'use_native_protection': False})
-        with self.assertRaisesRegex(ValueError, 'Close tracked inventory'):
+        result = await self.bot.configure({'use_native_protection': False})
+        self.assertFalse(result['use_native_protection'])
+        self.assertEqual(result['native_brackets'], [])
+        self.assertEqual(self.client.amount, 2)
+        self.assertEqual(len(self.client.placements), 2)
+
+    async def test_update_cancel_failure_is_durable_and_blocks_resume(self):
+        previous = copy.deepcopy(await self.arm())
+        self.client.cancel_error = True
+        with self.assertRaisesRegex(ValueError, 'update incomplete'):
             await self.bot.configure({'stop_loss_pct': .5})
+        restored = LighterCryptoBot(self.client, self.path)
+        restored.take_profit_fee_rate = AsyncMock(return_value=0)
+        self.assertEqual(restored.state['native_protection_update_pending'], ['old', 'new'])
+        with self.assertRaisesRegex(ValueError, 'Finish the native protection update'):
+            await restored.toggle(True)
+        self.assertEqual(len(self.client.placements), 2)
+        self.assertEqual(len(previous), len(restored.state['native_brackets']))
+        self.client.cancel_error = False
+        result = await restored.configure({'stop_loss_pct': .5})
+        self.assertEqual(result['native_protection_update_pending'], [])
+        self.assertEqual(result['native_protection']['protected_slices'], 2)
+
+    async def test_update_accounts_fill_racing_cancellation(self):
+        groups = copy.deepcopy(await self.arm())
+        self.client.cancel_race = lambda: self.fill(groups[0], qty=.4)
+        result = await self.bot.configure({'stop_loss_pct': .5})
+        residual = next(g for g in result['native_brackets'] if g['entry_order_id'] == 'old')
+        self.assertAlmostEqual(residual['qty'], .6)
+        self.assertEqual(len(result['execution_history']), 1)
+        self.assertAlmostEqual(self.client.amount, 1.6)
+
+    async def test_update_unknown_submission_never_duplicates_on_retry(self):
+        await self.arm()
+        self.client.lost_response = True
+        with self.assertRaisesRegex(ValueError, 'update incomplete'):
+            await self.bot.configure({'stop_loss_pct': .5})
+        # Lost response can still have accepted orders; the retry reconciles,
+        # cancels and confirms them before another submission.
+        self.client.lost_response = False
+        result = await self.bot.configure({'stop_loss_pct': .5})
+        active = [r for r in self.client.orders.values() if r['status'] == 'open']
+        self.assertEqual(len(active), 4)
+        self.assertEqual(result['native_protection']['protected_slices'], 2)
+
+    async def test_failed_replacement_preserves_other_slices_and_restart_waits(self):
+        previous = copy.deepcopy(await self.arm())
+        self.client.preflight_error = True
+        with self.assertRaisesRegex(ValueError, 'update incomplete'):
+            await self.bot.configure({'stop_loss_pct': .5})
+        other = previous[1]
+        self.assertTrue(all(self.client.orders[c['client_order_index']]['status'] == 'open'
+                            for c in other['children']))
+        restored = LighterCryptoBot(self.client, self.path)
+        restored.take_profit_fee_rate = AsyncMock(return_value=0)
+        await restored.run_once()
+        self.assertEqual(len(self.client.placements), 2)
+        self.assertEqual(restored.native_protection_status()['state'], 'UPDATE INCOMPLETE')
+        self.client.preflight_error = False
+        result = await restored.configure({'stop_loss_pct': .5})
+        self.assertEqual(result['native_protection']['protected_slices'], 2)
+
+    async def test_invalid_replacement_does_not_cancel_working_protection(self):
+        await self.arm()
+        self.bot.state['tranches'][0]['side'] = -1
+        self.bot.state['tranches'][1]['side'] = -1
+        self.client.amount = -2
+        with self.assertRaisesRegex(ValueError, 'no positive trigger'):
+            await self.bot.configure({'take_profit_pct': 100})
+        self.assertTrue(all(r['status'] == 'open' for r in self.client.orders.values()))
+        self.assertFalse(self.bot.state['native_protection_update_pending'])
 
     async def test_enable_with_inventory_saves_without_orders_until_resume(self):
         self.bot.state['use_native_protection'] = False
@@ -328,6 +408,9 @@ class NativeClientSubmissionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([o.Type for o in orders], [4, 2])
             self.assertTrue(all(o.ReduceOnly == 1 and o.IsAsk == 1 and o.BaseAmount == 129 for o in orders))
             self.assertEqual(orders[0].TriggerPrice, 800000)
+            import time
+            self.assertEqual(orders[0].OrderExpiry, orders[1].OrderExpiry)
+            self.assertGreater(orders[0].OrderExpiry, int(time.time()*1000) + 27*86400000)
             await client.create_protection_orders(1, .00129, -1, children[:1])
             self.assertEqual(signer.create_order.call_args.args[4], 0)
             self.assertEqual(signer.create_order.call_args.args[7], 1)

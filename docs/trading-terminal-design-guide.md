@@ -446,8 +446,15 @@ after a confirmed reduction. Protection remains on exchange during pause and
 reconciliation continues while paused. Restart must reconcile protection before
 checking inventory. Users may save native protection while paused with existing
 inventory; persist pending activation and enroll those slices only on explicit
-resume. Saving configuration must not place orders. Active native orders must
-be closed and reconciled before disabling or changing their TP/SL settings.
+resume. First activation places no orders until resume. Changing active native TP/SL
+while paused uses Save & Deploy to cancel, confirm and replace protection one
+slice at a time without flattening inventory. Account for racing fills and
+protect only residual owned quantity. Journal remaining replacements before
+cancelling; an incomplete update blocks resume and requires retrying Save &
+Deploy. Preserve other slices’ working orders on failure. Disabling cancels
+tracked native exits; never cancel unrelated exchange orders. Show these effects
+in the confirmation and native status. Use an identical explicit expiry for both
+OCO children. Exchange capacity/unknown outcomes still block unsafe submission.
 Keep the native execution option inside Exit conditions alongside TP/SL across
 strategy switches. Preserve unsaved browser drafts across reload, distinguish
 them from the saved live state, and save native protection through the same

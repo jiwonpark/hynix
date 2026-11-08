@@ -426,6 +426,9 @@ class LighterClient:
         size = int(Decimal(str(quantity)) * scale)
         if size <= 0 or size / scale < float(detail.get("min_base_amount") or 0):
             raise ValueError("Native protection quantity is below minimum size")
+        # The Go signer expands -1 separately for each child. Crossing a
+        # millisecond boundary then violates OCO's identical-expiry invariant.
+        order_expiry = int(time.time() * 1000) + 28 * 24 * 60 * 60 * 1000
         orders = []
         for child in children:
             trigger = int(child["trigger_ticks"])
@@ -442,7 +445,7 @@ class LighterClient:
                 Type=signer.ORDER_TYPE_TAKE_PROFIT if child["kind"] == "take_profit" else signer.ORDER_TYPE_STOP_LOSS,
                 TimeInForce=signer.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
                 ReduceOnly=1, TriggerPrice=trigger,
-                OrderExpiry=signer.DEFAULT_28_DAY_ORDER_EXPIRY))
+                OrderExpiry=order_expiry))
         if on_signed is not None:
             # Use the SDK's nonce lifecycle, but journal the signed deadline and
             # hash BEFORE send_tx. A lost HTTP response must remain recoverable.

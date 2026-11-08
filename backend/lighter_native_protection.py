@@ -46,6 +46,7 @@ class NativeProtectionMixin:
         covered = {g["entry_order_id"] for g in groups if g["phase"] == "live"}
         return {"enabled": self.state.get("use_native_protection", False),
                 "state": "ERROR" if self.state.get("native_protection_error") else
+                         "UPDATE INCOMPLETE" if self.state.get("native_protection_update_pending") else
                          "PENDING RESUME" if self.state.get("native_protection_pending_activation") else
                          "WORKING" if groups else "WAITING" if self.state.get("use_native_protection") else "OFF",
                 "protected_slices": sum(str(t.get("order_id", "")) in covered for t in lots),
@@ -151,7 +152,7 @@ class NativeProtectionMixin:
         self._save()
         return True
 
-    async def reconcile_native_protection(self, *, cancel=False):
+    async def reconcile_native_protection(self, *, cancel=False, cancel_entry_ids=()):
         """Caller owns bot and execution locks. Safe after restart and while paused."""
         try:
             groups = list(self.state.get("native_brackets", []))
@@ -170,7 +171,7 @@ class NativeProtectionMixin:
                 self._native_account_fills(group, rows)
                 lot = next((t for t in self.state["tranches"] if str(t["order_id"]) == group["entry_order_id"]), None)
                 resized = not lot or abs(float(lot["qty"]) - group["qty"]) > group["size_step"] / 2
-                if cancel or resized or group["phase"] == "cancelling" or any(terminal_order(r) for r in rows):
+                if cancel or group["entry_order_id"] in cancel_entry_ids or resized or group["phase"] == "cancelling" or any(terminal_order(r) for r in rows):
                     await self._cancel_native_group(group, rows)
                     self.state["native_brackets"].remove(group)
                 else:
@@ -190,10 +191,10 @@ class NativeProtectionMixin:
             self._save()
             raise
 
-    async def arm_native_protection(self):
+    async def arm_native_protection(self, *, replacing=False, entry_ids=None):
         if not self.state.get("use_native_protection"):
             return
-        if self.state.get("native_protection_pending_activation"):
+        if self.state.get("native_protection_pending_activation") and not replacing:
             if not self.state.get("enabled"):
                 return
             self.state["native_protection_pending_activation"] = False
@@ -212,6 +213,8 @@ class NativeProtectionMixin:
         fee = await self.take_profit_fee_rate()
         covered = {g["entry_order_id"] for g in self.state.get("native_brackets", [])}
         for lot in list(self.state["tranches"]):
+            if entry_ids is not None and str(lot["order_id"]) not in entry_ids:
+                continue
             if str(lot["order_id"]) in covered:
                 continue
             children = protection_children(lot, self.state, int(detail["supported_price_decimals"]), fee,
