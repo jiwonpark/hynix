@@ -481,3 +481,13 @@ one tranche by direction and both confirmed quantities; ambiguous matches remain
 blocked. Require both full fills and fresh residual exchange positions matching
 the remaining ledger before recording the exit and clearing recovery. Reconcile
 exactly once, retain the other tranches, and preserve the paused/enabled state.
+
+
+Completed paired reductions must also reconcile automatically in the worker,
+including after restart and while paused. Automatic recovery is read-only:
+confirm both full fills, identify the owning tranche, verify residual exchange
+inventory, then record the exit once. Never retry a missing leg or enter a trade
+in that recovery tick, and never enable a paused bot. Incomplete/ambiguous
+executions remain blocked. Throttle recovery reads to avoid hammering venue
+rate limits; a disabled worker without pending execution must not touch the
+exchange. Explicit operator recovery retains its separately guarded repair path.

@@ -101,6 +101,7 @@ def classify_trend(values: List[float]) -> Dict[str, Any]:
 
 
 class LighterPairBot:
+    PENDING_RECONCILE_INTERVAL_SECONDS = 15.0
     TAB2_GROSS_LEVERAGE_CAP = 8.0
     TAB2_MARGIN_LEVERAGE = 10.0
     TAB2_MARGIN_BUFFER_MULTIPLIER = 1.25
@@ -183,6 +184,7 @@ class LighterPairBot:
         self.state_file = state_file or Path(__file__).with_name("lighter_bot_state.json")
         self.lock = asyncio.Lock()
         self.state = self._load()
+        self._last_pending_recovery_check = None
 
     def _load(self) -> Dict[str, Any]:
         state = dict(self.DEFAULTS)
@@ -837,7 +839,7 @@ class LighterPairBot:
         self.save()
         return True
 
-    async def _reconcile_confirmed_pending_reduction(self) -> bool:
+    async def _reconcile_confirmed_pending_reduction(self, *, allow_leg_retry: bool = True) -> bool:
         """Reconcile the owning tranche only after both fills and residual inventory agree."""
         pending = self.state.get("pending_execution") or {}
         if not pending.get("completed") or not pending.get("reduce_only"):
@@ -852,7 +854,7 @@ class LighterPairBot:
         domestic_qty = float(pending.get("domestic_qty", 0.0) or 0.0)
         first.update(await self.client.execution_fill(int(first_id), 216, adr_qty))
         second.update(await self.client.execution_fill(int(second_id), 161, domestic_qty))
-        if bool(first.get("fill_confirmed")) != bool(second.get("fill_confirmed")):
+        if allow_leg_retry and bool(first.get("fill_confirmed")) != bool(second.get("fill_confirmed")):
             first, second = await self._retry_verified_missing_leg(pending, first, second)
         if not first.get("fill_confirmed") or not second.get("fill_confirmed"):
             return False
@@ -1219,17 +1221,31 @@ class LighterPairBot:
         return result
 
     async def run_once(self) -> None:
-        if not self.state.get("enabled"):
+        if not self.state.get("enabled") and not self.state.get("pending_execution"):
             return
         async with self.lock:
+            if self.state.get("pending_execution"):
+                now = time.monotonic()
+                if (self._last_pending_recovery_check is not None
+                        and now - self._last_pending_recovery_check < self.PENDING_RECONCILE_INTERVAL_SECONDS):
+                    return
+                self._last_pending_recovery_check = now
             try:
+                if self.state.get("pending_execution"):
+                    # Automatic recovery is bookkeeping only. Never retry a leg,
+                    # start a new trade in this tick, or resume a paused bot.
+                    if await self._reconcile_confirmed_pending_reduction(allow_leg_retry=False):
+                        self._last_pending_recovery_check = None
+                        return
+                    raise RuntimeError("Pending execution requires reconciliation")
+                if not self.state.get("enabled"):
+                    return
                 await self._evaluate()
                 self.state["last_error"] = None
                 self.state["transient_error_count"] = 0
                 # A completed evaluation proves a previous transport/runtime
-                # failure is no longer blocking execution. Pending paired
-                # executions still fail at the start of _evaluate and cannot
-                # be cleared by this path.
+                # failure is no longer blocking execution. Unresolved intents
+                # are handled above and never reach this evaluation path.
                 self.state["execution_blocked"] = False
                 self.state["blocked_reason"] = None
             except Exception as error:

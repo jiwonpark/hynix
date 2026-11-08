@@ -80,3 +80,61 @@ class PairedReductionRecoveryTests(unittest.IsolatedAsyncioTestCase):
             await self.bot._trade_pair(1,.3775,.055,{'mid':127},{'mid':867},reduce_only=True,tranche_id='older')
         restored=LighterPairBot(self.client,self.bot.state_file)
         self.assertEqual(restored.state['pending_execution']['tranche_id'],'older')
+
+
+    async def test_worker_auto_reconciles_confirmed_exit_while_paused(self):
+        self.bot._evaluate=AsyncMock()
+        await self.bot.run_once()
+        self.assertIsNone(self.bot.state['pending_execution'])
+        self.assertEqual(self.bot.state['tranches'][0]['tranche_id'],'newer')
+        self.assertFalse(self.bot.state['enabled'])
+        self.bot._evaluate.assert_not_awaited()
+        self.client.create_market_order.assert_not_awaited()
+        await self.bot.run_once()
+        self.assertEqual(len(self.bot.state['history']),1)
+
+    async def test_worker_does_not_trade_in_the_recovery_tick(self):
+        self.bot.state['enabled']=True
+        self.bot._evaluate=AsyncMock()
+        await self.bot.run_once()
+        self.assertTrue(self.bot.state['enabled'])
+        self.bot._evaluate.assert_not_awaited()
+        self.client.create_market_order.assert_not_awaited()
+        await self.bot.run_once()
+        self.bot._evaluate.assert_awaited_once()
+
+    async def test_automatic_recovery_never_retries_a_missing_leg(self):
+        self.fills[1]={'fill_confirmed':False}
+        self.bot._retry_verified_missing_leg=AsyncMock(side_effect=AssertionError('No automatic retries'))
+        await self.bot.run_once()
+        self.assertIsNotNone(self.bot.state['pending_execution'])
+        self.assertTrue(self.bot.state['execution_blocked'])
+        self.assertFalse(self.bot.state['enabled'])
+        self.bot._retry_verified_missing_leg.assert_not_awaited()
+        self.client.create_market_order.assert_not_awaited()
+        self.assertEqual(len(self.bot.state['tranches']),2)
+
+    async def test_recovery_polls_are_throttled_and_retry_when_fills_arrive(self):
+        from unittest.mock import patch
+        self.fills[1]={'fill_confirmed':False}
+        with patch('backend.lighter_bot.time.monotonic',return_value=100):
+            await self.bot.run_once()
+        count=self.client.execution_fill.await_count
+        with patch('backend.lighter_bot.time.monotonic',return_value=101):
+            await self.bot.run_once()
+        self.assertEqual(self.client.execution_fill.await_count,count)
+        self.fills[1]={'fill_confirmed':True,'filled_size':.055,'fill_price':867.243,'realized_pnl_usd':-2.4563,'fee_usd':0}
+        with patch('backend.lighter_bot.time.monotonic',return_value=116):
+            await self.bot.run_once()
+        self.assertIsNone(self.bot.state['pending_execution'])
+        self.assertEqual(len(self.bot.state['history']),1)
+        self.client.create_market_order.assert_not_awaited()
+
+    async def test_restart_automatically_reconciles_without_enabling(self):
+        self.bot.save()
+        restored=LighterPairBot(self.client,self.bot.state_file)
+        await restored.run_once()
+        self.assertFalse(restored.state['enabled'])
+        self.assertIsNone(restored.state['pending_execution'])
+        self.assertEqual(restored.state['tranches'][0]['tranche_id'],'newer')
+        self.client.create_market_order.assert_not_awaited()
