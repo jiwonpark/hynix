@@ -12,6 +12,7 @@ function mount(){
  vm.createContext(ctx);vm.runInContext(fs.readFileSync('lighter-crypto-tab.js','utf8'),ctx);
  const engine=window.lighterCryptoEngine;
  engine.botState={enabled:false,use_native_protection:false,take_profit_pct:1};
+ const applyExecutionLock=engine.applyExecutionLock.bind(engine);
  for(const key of ['applyExecutionLock','updateDeployButtonState','updateRulesMatchStatus'])engine[key]=()=>{};
  engine.updateBotStatus=b=>{engine.botState=b;};
  window.terminalLockManager={isLocked:false,token:'test-token'};
@@ -19,7 +20,7 @@ function mount(){
  engine.currentParadigm='grid';
  engine.liveStrategyPayload=()=>({strategy_mode:'grid',use_native_protection:document.getElementById('lighterCrypto_useNativeProtection').checked,take_profit_pct:1});
  engine.mountNativeProtection(document.getElementById('detail'));
- return {engine,document,window,requests,setResponse:r=>response=r};
+ return {engine,document,window,requests,applyExecutionLock,setResponse:r=>response=r};
 }
 (async()=>{
  let m=mount(),toggle=m.document.getElementById('lighterCrypto_useNativeProtection');
@@ -29,6 +30,14 @@ function mount(){
  assert.equal(toggle.checked,true,'unsaved draft survives reload');
  assert.equal(m.document.getElementById('lighterCrypto_btnSaveNativeProtection'),null,'no separate save button');
  assert.equal(m.engine.saveNativeProtection,undefined,'no separate save path');
+ const reconcile=m.document.createElement('button');reconcile.id='lighterCrypto_btnReconcileBot';m.document.body.append(reconcile);
+ m.engine.botState.native_protection={error:'missing native order'};
+ m.applyExecutionLock();
+ assert.equal(reconcile.disabled,false,'native error enables Reconcile even without market-order recovery');
+ m.window.terminalLockManager.isLocked=true;m.applyExecutionLock();
+ assert.equal(reconcile.disabled,true,'native reconciliation still requires authentication');
+ m.window.terminalLockManager.isLocked=false;m.engine.botState.native_protection={error:null};m.applyExecutionLock();
+ assert.equal(reconcile.disabled,true,'healthy state has no reconciliation action');
  m.window.terminalLockManager.isLocked=true;
  assert.equal(await m.engine.deployLiveStrategy({skipConfirm:true}),false);
  assert.equal(m.requests.length,0);
