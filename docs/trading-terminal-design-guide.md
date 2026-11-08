@@ -473,3 +473,11 @@ orders must clear only their own stale error, preserving unrelated recovery.
 Native exchange order timestamps may be seconds; normalize to milliseconds
 before creating fill events. The Reconcile control must recognize native
 protection errors even when ordinary market-order recovery is false.
+
+Paired-venue recovery must reconcile the actual reduced tranche, including
+non-newest slices selected by emergency exits. Persist the owning `tranche_id`
+before submitting reduction legs. Legacy intents without that ID may match only
+one tranche by direction and both confirmed quantities; ambiguous matches remain
+blocked. Require both full fills and fresh residual exchange positions matching
+the remaining ledger before recording the exit and clearing recovery. Reconcile
+exactly once, retain the other tranches, and preserve the paused/enabled state.

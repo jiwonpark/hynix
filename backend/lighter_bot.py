@@ -838,7 +838,7 @@ class LighterPairBot:
         return True
 
     async def _reconcile_confirmed_pending_reduction(self) -> bool:
-        """Clear only a fully confirmed reduction matching the latest tracked tranche."""
+        """Reconcile the owning tranche only after both fills and residual inventory agree."""
         pending = self.state.get("pending_execution") or {}
         if not pending.get("completed") or not pending.get("reduce_only"):
             return False
@@ -863,13 +863,26 @@ class LighterPairBot:
         tranches = self.state.get("tranches") or []
         if not tranches:
             return False
-        tranche = tranches[-1]
         original_side = -int(pending.get("side", 0) or 0)
-        if int(tranche.get("side", 0) or 0) != original_side:
+        if abs(filled_adr - adr_qty) > 0.0002 or abs(filled_domestic - domestic_qty) > 0.0011:
             return False
-        tracked_adr = float(tranche.get("adr_qty", 0.0) or 0.0)
-        tracked_domestic = float(tranche.get("domestic_qty", 0.0) or 0.0)
-        if abs(tracked_adr - filled_adr) > 0.0002 or abs(tracked_domestic - filled_domestic) > 0.0011:
+        owner = pending.get("tranche_id")
+        matches = [index for index, row in enumerate(tranches)
+                   if (not owner or row.get("tranche_id") == owner)
+                   and int(row.get("side", 0) or 0) == original_side
+                   and abs(float(row.get("adr_qty", 0) or 0) - filled_adr) <= 0.0002
+                   and abs(float(row.get("domestic_qty", 0) or 0) - filled_domestic) <= 0.0011]
+        # Legacy intents had no owning ID. Quantities may identify one slice,
+        # but identical slices must never be assigned by guessing FIFO/LIFO.
+        if len(matches) != 1:
+            return False
+        tranche_index = matches[0]
+        tranche = tranches[tranche_index]
+        actual = self._signed_pair_positions(await self.client.positions(fresh=True))
+        tracked = self._tracked_pair_positions()
+        expected_adr = tracked[216] - original_side * float(tranche["adr_qty"])
+        expected_domestic = tracked[161] + original_side * float(tranche["domestic_qty"])
+        if abs(actual[216] - expected_adr) > 0.0002 or abs(actual[161] - expected_domestic) > 0.0011:
             return False
 
         execution = {"first_leg": first, "second_leg": second}
@@ -880,12 +893,12 @@ class LighterPairBot:
         exit_fee = self._execution_fees(execution)
         gross_pnl = self._execution_realized_pnl(execution)
         net_pnl = gross_pnl - entry_fee - exit_fee
-        tranches.pop()
+        tranches.pop(tranche_index)
         self.state.setdefault("history", []).append({
             "tranche_id": tranche.get("tranche_id"), "entry_time": tranche.get("time"),
             "side": -original_side, "adr_qty": filled_adr, "domestic_qty": filled_domestic,
             "entry_ratio": round(entry_ratio, 4), "exit_ratio": round(exit_ratio, 4),
-            "ratio": round(exit_ratio, 4), "time": int(pending.get("time") or time.time()),
+            "ratio": round(exit_ratio, 4), "time": max(int(first.get("fill_time_ms", 0) or 0), int(second.get("fill_time_ms", 0) or 0)) // 1000 or int(pending.get("time") or time.time()),
             "is_exit": True, "pnl": round(net_pnl, 6),
             "gross_pnl_usd": round(gross_pnl, 6), "net_pnl_usd": round(net_pnl, 6),
             "entry_fee_usd": round(entry_fee, 8), "exit_fee_usd": round(exit_fee, 8),
@@ -900,6 +913,7 @@ class LighterPairBot:
         self.state["last_action"] = "RECOVERED_CONFIRMED_REDUCTION"
         self.state["last_action_time"] = int(time.time())
         self.state["last_error"] = None
+        self.state.update(execution_blocked=False, blocked_reason=None)
         self.save()
         return True
 
@@ -1482,7 +1496,7 @@ class LighterPairBot:
                     held_tranches.append((tranche, net_pnl_est, net_return_pct, hurdle_usd))
                     continue
 
-                execution = await self._trade_pair(-int(tranche["side"]), float(tranche["adr_qty"]), float(tranche["domestic_qty"]), adr_quote, domestic_quote, reduce_only=True)
+                execution = await self._trade_pair(-int(tranche["side"]), float(tranche["adr_qty"]), float(tranche["domestic_qty"]), adr_quote, domestic_quote, reduce_only=True, tranche_id=tranche.get("tranche_id"))
                 exit_ratio = self._execution_ratio(execution, ratios[-1])
                 tranches.remove(tranche)
                 exited_tranches.append(tranche)
@@ -1625,10 +1639,13 @@ class LighterPairBot:
             self.state["last_action_time"] = int(time.time())
 
     async def _trade_pair(self, side: int, adr_qty: float, domestic_qty: float,
-                          adr_quote: Dict[str, Any], domestic_quote: Dict[str, Any], *, reduce_only: bool) -> Dict[str, Any]:
+                          adr_quote: Dict[str, Any], domestic_quote: Dict[str, Any], *, reduce_only: bool,
+                          tranche_id: Optional[str] = None) -> Dict[str, Any]:
         # Persist intent before leg one. Any interruption leaves the bot disabled on restart.
         intent = {"side": side, "adr_qty": adr_qty, "domestic_qty": domestic_qty,
                   "reduce_only": reduce_only, "first_leg": None, "time": int(time.time())}
+        if reduce_only and tranche_id is not None:
+            intent["tranche_id"] = tranche_id
         self.state["pending_execution"] = intent
         self.save()
         adr_is_ask = side < 0
@@ -1729,7 +1746,7 @@ class LighterPairBot:
             adr_quote = _book_summary(adr_book)
             domestic_quote = _book_summary(domestic_book)
             execution = await self._trade_pair(-int(tranche["side"]), float(tranche["adr_qty"]), float(tranche["domestic_qty"]),
-                                               adr_quote, domestic_quote, reduce_only=True)
+                                               adr_quote, domestic_quote, reduce_only=True, tranche_id=tranche.get("tranche_id"))
             tranches.pop()
             midpoint_ratio = (adr_quote["mid"] / (domestic_quote["mid"] / 10.0)) * 100
             exit_ratio = self._execution_ratio(execution, midpoint_ratio)

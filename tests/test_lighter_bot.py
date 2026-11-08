@@ -287,6 +287,7 @@ class TestLighterPairBot(unittest.TestCase):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
                 client = Mock()
+                client.positions = AsyncMock(return_value=[])
                 client.execution_fill = AsyncMock(side_effect=[
                     {"fill_confirmed": True, "filled_size": 0.1345, "fill_price": 185.59,
                      "fee_usd": 0.0, "realized_pnl_usd": 0.11},
@@ -318,6 +319,7 @@ class TestLighterPairBot(unittest.TestCase):
         async def run():
             with tempfile.TemporaryDirectory() as directory:
                 client = Mock()
+                client.positions = AsyncMock(return_value=[])
                 client.execution_fill = AsyncMock(side_effect=[
                     {"fill_confirmed": True, "filled_size": 0.1354, "fill_price": 184.11,
                      "fee_usd": 0.0, "realized_pnl_usd": 0.05},
@@ -354,9 +356,9 @@ class TestLighterPairBot(unittest.TestCase):
                      "fee_usd": 0.0, "realized_pnl_usd": 0.11},
                     {"fill_confirmed": False},
                 ])
-                client.positions = AsyncMock(return_value=[
+                client.positions = AsyncMock(side_effect=[[
                     {"market_id": 161, "position": "0.013", "sign": -1},
-                ])
+                ], []])
                 client.order_book = AsyncMock(return_value={
                     "bids": [{"price": "1314", "size": "1"}],
                     "asks": [{"price": "1315", "size": "1"}],
