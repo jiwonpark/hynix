@@ -46,6 +46,7 @@ DEFAULT_STATE = {
     "use_stop_loss": False, "stop_loss_pct": 0.2,
     "use_native_protection": False, "native_protection_pending_activation": False, "native_brackets": [],
     "native_protection_error": None, "native_protection_checked_at": None,
+    "native_protection_attempts": [],
     "enabled": False, "selected_symbol": "BTC", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
     "notional_usd": 150.0, "max_tranches": 5, "gross_leverage_cap": 8.0,

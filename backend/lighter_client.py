@@ -411,7 +411,7 @@ class LighterClient:
         fill = await self.execution_fill(client_order_index, market_id, accepted["base_amount"])
         return {**accepted, **fill}
 
-    async def create_protection_orders(self, market_id, quantity, side, children):
+    async def create_protection_orders(self, market_id, quantity, side, children, *, on_signed=None):
         """Submit persisted, reduce-only TP/SL children as native OCO (or one leg)."""
         from lighter.signer_client import CreateOrderTxReq
         signer = self.get_signer()
@@ -443,16 +443,49 @@ class LighterClient:
                 TimeInForce=signer.ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL,
                 ReduceOnly=1, TriggerPrice=trigger,
                 OrderExpiry=signer.DEFAULT_28_DAY_ORDER_EXPIRY))
-        if len(orders) == 2:
-            _, response, error = await signer.create_grouped_orders(
-                signer.GROUPING_TYPE_ONE_CANCELS_THE_OTHER, orders)
-        elif len(orders) == 1:
-            o = orders[0]
-            _, response, error = await signer.create_order(
-                o.MarketIndex, o.ClientOrderIndex, o.BaseAmount, o.Price, o.IsAsk,
-                o.Type, o.TimeInForce, o.ReduceOnly, o.TriggerPrice, o.OrderExpiry)
+        if on_signed is not None:
+            # Use the SDK's nonce lifecycle, but journal the signed deadline and
+            # hash BEFORE send_tx. A lost HTTP response must remain recoverable.
+            from lighter.signer_client import process_api_key_and_nonce
+
+            @process_api_key_and_nonce
+            async def submit(self, nonce=-1, api_key_index=255):
+                if len(orders) == 2:
+                    tx_type, tx_info, tx_hash, sign_error = self.sign_create_grouped_orders(
+                        self.GROUPING_TYPE_ONE_CANCELS_THE_OTHER, orders,
+                        nonce=nonce, api_key_index=api_key_index)
+                elif len(orders) == 1:
+                    o = orders[0]
+                    tx_type, tx_info, tx_hash, sign_error = self.sign_create_order(
+                        o.MarketIndex, o.ClientOrderIndex, o.BaseAmount, o.Price, o.IsAsk,
+                        o.Type, o.TimeInForce, o.ReduceOnly, o.TriggerPrice, o.OrderExpiry,
+                        nonce=nonce, api_key_index=api_key_index)
+                else:
+                    raise ValueError("Native protection requires one or two enabled exits")
+                if sign_error:
+                    return None, None, sign_error
+                info = json.loads(tx_info)
+                deadline = int(info["ExpiredAt"])
+                if deadline <= int(time.time() * 1000) or not tx_hash:
+                    raise ValueError("Native signed transaction has no valid deadline or hash")
+                on_signed({"submission_tx_hash": tx_hash,
+                           "submission_expires_at_ms": deadline,
+                           "submission_nonce": nonce, "submission_api_key_index": api_key_index})
+                response = await self.send_tx(tx_type=tx_type, tx_info=tx_info)
+                return None, response, None
+
+            _, response, error = await submit(signer)
         else:
-            raise ValueError("Native protection requires one or two enabled exits")
+            if len(orders) == 2:
+                _, response, error = await signer.create_grouped_orders(
+                    signer.GROUPING_TYPE_ONE_CANCELS_THE_OTHER, orders)
+            elif len(orders) == 1:
+                o = orders[0]
+                _, response, error = await signer.create_order(
+                    o.MarketIndex, o.ClientOrderIndex, o.BaseAmount, o.Price, o.IsAsk,
+                    o.Type, o.TimeInForce, o.ReduceOnly, o.TriggerPrice, o.OrderExpiry)
+            else:
+                raise ValueError("Native protection requires one or two enabled exits")
         if error or getattr(response, "code", 200) != 200:
             raise RuntimeError(f"Native protection submission failed: {error or response.code}")
         return {"tx_hash": getattr(response, "tx_hash", None)}
@@ -487,7 +520,10 @@ class LighterClient:
              "account_index": int(creds["account_index"])},
             headers={"authorization": auth},
         )
-        return payload.get("orders") or []
+        orders = payload.get("orders")
+        if not isinstance(orders, list):
+            raise RuntimeError("Lighter order lookup returned no valid order list")
+        return orders
 
     async def execution_fill(
         self, client_order_index: int, market_id: int, expected_size: float,
@@ -569,18 +605,22 @@ class LighterClient:
         return {"fill_confirmed": False}
 
     async def account_trades(
-        self, market_id: int, limit: int = 100,
+        self, market_id: int, limit: int = 100, *, strict: bool = False,
     ) -> List[Dict[str, Any]]:
         """Return authoritative trades from Lighter exchange for an account."""
         creds = self.get_credentials() or {}
         account_index = creds.get("account_index")
         signer = self.get_signer()
         if account_index is None or signer is None:
+            if strict:
+                raise RuntimeError("Authenticated Lighter trade history is unavailable")
             return []
         auth, error = signer.create_auth_token_with_expiry(
             api_key_index=int(creds.get("api_key_index", 0))
         )
         if error:
+            if strict:
+                raise RuntimeError("Lighter trade history authentication failed")
             logger.warning("Could not authenticate Lighter trade history: %s", error)
             return []
         try:
@@ -595,8 +635,12 @@ class LighterClient:
                 },
                 headers={"authorization": auth},
             )
+            if strict and not isinstance(payload.get("trades"), list):
+                raise RuntimeError("Lighter trade history returned no valid trade list")
             return payload.get("trades") or []
         except Exception as exc:
+            if strict:
+                raise
             logger.warning("Failed to fetch Lighter trades for market %s: %s", market_id, exc)
             return []
 

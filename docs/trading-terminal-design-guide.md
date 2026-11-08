@@ -457,3 +457,19 @@ until the server confirms the saved configuration. The UI labels it live-only, d
 protected/owned slice counts, exchange check time in KST, and errors. Paper
 completed-close results cannot certify native trigger or intrabar performance.
 Deployment verification never submits test orders or enables native protection.
+
+
+Native submission recovery must journal the signed transaction hash, nonce and
+submission deadline before broadcasting, preserving the first submission error.
+Missing order rows alone never authorize a retry. A missing, never-confirmed
+group may be retired only after its verified signed deadline plus a safety
+margin, fresh absence of every child, complete authenticated trade-history
+coverage with no matching fills, and an exact fresh position/ownership match.
+Unknown legacy deadlines require separately verified evidence; never invent a
+deadline automatically. Archive the retired attempt, keep the bot paused, and
+mark protection pending explicit resume. History/authentication failures must
+remain unavailable, never become empty-history evidence. Confirmed working
+orders must clear only their own stale error, preserving unrelated recovery.
+Native exchange order timestamps may be seconds; normalize to milliseconds
+before creating fill events. The Reconcile control must recognize native
+protection errors even when ordinary market-order recovery is false.

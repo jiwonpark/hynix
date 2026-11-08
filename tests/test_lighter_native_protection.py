@@ -20,7 +20,12 @@ class NativeClient(FakeLighter):
     async def market_detail(self, *args, **kwargs):
         return {**await super().market_detail(*args, **kwargs), 'supported_price_decimals': 2}
 
-    async def create_protection_orders(self, market_id, quantity, side, children):
+    async def create_protection_orders(self, market_id, quantity, side, children, *, on_signed=None):
+        if getattr(self,'preflight_error',False):
+            raise ValueError('signer validation failed')
+        if on_signed:
+            import time
+            on_signed({'submission_tx_hash':'test-hash', 'submission_expires_at_ms':int(time.time()*1000)+600000})
         self.placements.append(copy.deepcopy(children))
         for child in children:
             self.orders[child['client_order_index']] = {
@@ -28,6 +33,11 @@ class NativeClient(FakeLighter):
                 'filled_base_amount': 0, 'filled_quote_amount': 0}
         if self.lost_response:
             raise TimeoutError('lost group response')
+
+    async def account_trades(self, market_id, limit=100, *, strict=False):
+        if getattr(self, 'trades_error', False):
+            raise RuntimeError('trade API unavailable')
+        return getattr(self, 'trades', [])
 
     async def cancel_protection_order(self, market_id, index):
         if self.cancel_error:
@@ -196,6 +206,91 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(len(g['children']) == 1 for g in groups))
         self.assertEqual(groups[0]['children'][0]['kind'], 'stop_loss')
 
+    async def test_working_confirmation_clears_its_stale_error_only(self):
+        await self.arm()
+        self.bot.state.update(native_protection_error='missing native',last_error='missing native',
+                              execution_blocked=True,blocked_reason='missing native')
+        await self.bot.reconcile_native_protection()
+        self.assertFalse(self.bot.state['execution_blocked'])
+        self.assertIsNone(self.bot.state['last_error'])
+        self.bot.state.update(native_protection_error='missing native',last_error='other order recovery',
+                              execution_blocked=True,blocked_reason='other order recovery')
+        await self.bot.reconcile_native_protection()
+        self.assertTrue(self.bot.state['execution_blocked'])
+        self.assertEqual(self.bot.state['last_error'],'other order recovery')
+
+    async def test_signing_failure_does_not_leave_a_phantom_order(self):
+        self.client.preflight_error=True
+        with self.assertRaisesRegex(ValueError,'signer validation failed'):
+            await self.arm()
+        self.assertEqual(self.bot.state['native_brackets'],[])
+        self.assertEqual(self.bot.state['native_protection_attempts'][-1]['outcome'],'NOT_SUBMITTED')
+        self.assertFalse(self.bot.state['enabled'])
+        self.assertTrue(self.bot.state['native_protection_pending_activation'])
+        self.assertEqual(len(self.bot.state['tranches']),2)
+
+    async def expired_missing(self):
+        import time
+        groups = await self.arm()
+        group = groups[0]
+        group.update(phase='submitted', submission_expires_at_ms=int(time.time()*1000)-120000)
+        for child in group['children']:
+            self.client.orders.pop(child['client_order_index'])
+        return group
+
+    async def test_expired_missing_submission_retires_without_replacing(self):
+        group = await self.expired_missing()
+        await self.bot.reconcile_native_protection()
+        self.assertFalse(self.bot.state['enabled'])
+        self.assertTrue(self.bot.state['native_protection_pending_activation'])
+        self.assertEqual(len(self.bot.state['tranches']), 2)
+        self.assertEqual(len(self.bot.state['native_brackets']), 1)
+        self.assertEqual(self.bot.state['native_protection_attempts'][-1]['outcome'], 'EXPIRED_WITHOUT_ORDERS_OR_FILLS')
+        await self.bot.run_once()
+        self.assertEqual(len(self.client.placements), 2)
+
+    async def test_expired_recovery_requires_strict_history(self):
+        await self.expired_missing()
+        self.client.trades_error = True
+        with self.assertRaisesRegex(RuntimeError, 'trade API unavailable'):
+            await self.bot.reconcile_native_protection()
+        self.assertEqual(len(self.bot.state['native_brackets']), 2)
+
+    async def test_expired_recovery_retains_intent_when_fill_exists(self):
+        group = await self.expired_missing()
+        self.client.trades = [{'timestamp':group['created_at']*1000,
+                              'ask_client_id':group['children'][0]['client_order_index']}]
+        with self.assertRaisesRegex(ValueError, 'exchange fills'):
+            await self.bot.reconcile_native_protection()
+        self.assertEqual(len(self.bot.state['tranches']), 2)
+
+    async def test_expired_recovery_rejects_truncated_history_and_position_mismatch(self):
+        group = await self.expired_missing()
+        self.client.trades = [{'timestamp':(group['created_at']+1)*1000,'ask_client_id':0}]*100
+        with self.assertRaisesRegex(ValueError, 'older trade-history coverage'):
+            await self.bot.reconcile_native_protection()
+        self.client.trades = []
+        self.client.amount = 0
+        with self.assertRaisesRegex(ValueError, 'position mismatch'):
+            await self.bot.reconcile_native_protection()
+
+    async def test_legacy_missing_submission_never_infers_deadline(self):
+        group = await self.expired_missing()
+        group.pop('submission_expires_at_ms')
+        with self.assertRaisesRegex(ValueError, 'outcome unavailable'):
+            await self.bot.reconcile_native_protection()
+        self.assertEqual(len(self.bot.state['native_brackets']), 2)
+
+    async def test_native_fill_time_accepts_seconds_and_milliseconds(self):
+        groups = await self.arm()
+        self.fill(groups[0])
+        self.client.orders[groups[0]['children'][1]['client_order_index']]['updated_at'] = 1794000000
+        await self.bot.reconcile_native_protection()
+        self.assertEqual(self.bot.state['execution_history'][-1]['time'], 1794000000)
+        self.fill(self.bot.state['native_brackets'][0])
+        await self.bot.reconcile_native_protection()
+        self.assertEqual(self.bot.state['execution_history'][-1]['time'], 1794000000)
+
     def test_fee_adjusted_triggers_both_directions(self):
         for side in (1, -1):
             children = protection_children(dict(side=side, qty=2, price=100, fee_usd=.2),
@@ -239,3 +334,57 @@ class NativeClientSubmissionTests(unittest.IsolatedAsyncioTestCase):
             signer.create_grouped_orders.return_value = (None, SimpleNamespace(code=400), None)
             with self.assertRaisesRegex(RuntimeError, 'submission failed'):
                 await client.create_protection_orders(1, .00129, 1, children)
+
+    async def test_signed_receipt_is_persisted_before_send_and_survives_timeout(self):
+        import json, sys, time
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        from backend.lighter_client import LighterClient
+        events=[]
+        def nonce_decorator(fn):
+            async def wrapped(signer):
+                return await fn(signer,nonce=19,api_key_index=0)
+            return wrapped
+        deadline=int(time.time()*1000)+600000
+        signer=SimpleNamespace(check_client=lambda:None,
+            ORDER_TYPE_TAKE_PROFIT=4,ORDER_TYPE_STOP_LOSS=2,
+            ORDER_TIME_IN_FORCE_IMMEDIATE_OR_CANCEL=0,DEFAULT_28_DAY_ORDER_EXPIRY=-1,
+            GROUPING_TYPE_ONE_CANCELS_THE_OTHER=2,create_grouped_orders=AsyncMock(),
+            sign_create_grouped_orders=Mock(return_value=(28,json.dumps({'ExpiredAt':deadline}),'signed-hash',None)))
+        async def send(**kwargs):
+            events.append('send')
+            self.assertEqual(events,['persist','send'])
+            raise TimeoutError('lost send response')
+        signer.send_tx=send
+        client=LighterClient();client.get_signer=Mock(return_value=signer)
+        client.market_detail=AsyncMock(return_value=dict(supported_size_decimals=5,
+            supported_price_decimals=1,min_base_amount='.00001',min_quote_amount='10'))
+        saved={}
+        def persist(metadata):
+            events.append('persist');saved.update(metadata)
+        sdk=SimpleNamespace(CreateOrderTxReq=SimpleNamespace,process_api_key_and_nonce=nonce_decorator)
+        children=[dict(kind='take_profit',client_order_index=11,trigger_ticks=800000),
+                  dict(kind='stop_loss',client_order_index=12,trigger_ticks=790000)]
+        with patch.dict(sys.modules,{'lighter.signer_client':sdk}):
+            with self.assertRaises(TimeoutError):
+                await client.create_protection_orders(1,.00129,1,children,on_signed=persist)
+        self.assertEqual(saved['submission_expires_at_ms'],deadline)
+        self.assertEqual(saved['submission_tx_hash'],'signed-hash')
+        self.assertEqual(saved['submission_nonce'],19)
+        self.assertEqual(signer.sign_create_grouped_orders.call_count,1)
+        self.assertEqual(signer.create_grouped_orders.call_count,0)
+
+    async def test_strict_history_does_not_convert_api_failure_to_empty(self):
+        from unittest.mock import Mock
+        from backend.lighter_client import LighterClient
+        client=LighterClient()
+        client.get_credentials=Mock(return_value={'account_index':1,'api_key_index':0})
+        client.get_signer=Mock(return_value=__import__('types').SimpleNamespace(
+            create_auth_token_with_expiry=lambda **kw:('auth',None)))
+        client.request=AsyncMock(side_effect=RuntimeError('API unavailable'))
+        with self.assertRaisesRegex(RuntimeError,'API unavailable'):
+            await client.account_trades(1,strict=True)
+        self.assertEqual(await client.account_trades(1),[])
+        client.request=AsyncMock(return_value={'code':200})
+        with self.assertRaisesRegex(RuntimeError,'no valid trade list'):
+            await client.account_trades(1,strict=True)

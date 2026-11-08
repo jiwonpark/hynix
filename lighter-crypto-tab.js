@@ -2318,7 +2318,7 @@
     applyExecutionLock() {
       const locked = window.terminalLockManager?.isLocked !== false;
       const botEnabled = Boolean(this.botState?.enabled);
-      const recovering = Boolean(this.botState?.recovery_required);
+      const recovering = Boolean(this.botState?.recovery_required || this.botState?.native_protection?.error);
       window.TerminalCommon?.syncLiveToggleAvailability?.("lighterCrypto_", this.liveVenue, this.botState, {
         locked,
         halted: recovering,

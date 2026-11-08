@@ -34,6 +34,11 @@ def protection_children(lot, state, price_decimals, fee_rate, next_index):
     return children
 
 
+def exchange_time_ms(value):
+    value = int(value or 0)
+    return value * 1000 if 0 < value < 100_000_000_000 else value
+
+
 class NativeProtectionMixin:
     def native_protection_status(self):
         groups = self.state.get("native_brackets", [])
@@ -52,6 +57,8 @@ class NativeProtectionMixin:
         rows = []
         for child in group["children"]:
             row = snapshot.get(str(child["client_order_index"])) if snapshot is not None else await self.client.account_order(child["client_order_index"])
+            if not row and snapshot is not None:
+                row = await self.client.account_order(child["client_order_index"])
             # An absent order after a lost placement response is NOT permission
             # to submit again. Keep the persisted IDs and stop new risk.
             if not row:
@@ -80,7 +87,7 @@ class NativeProtectionMixin:
             child.update(accounted_qty=total, accounted_quote=quote)
             self._record_fill({"filled_size": qty, "fill_price": quote_delta / qty,
                                "fill_confirmed": True, "fee_usd": quote_delta * group["fee_rate"],
-                               "fill_time_ms": int(row.get("updated_at", 0) or 0)},
+                               "fill_time_ms": exchange_time_ms(row.get("updated_at", 0))},
                               {"symbol": group["symbol"], "market_id": group["market_id"],
                                "side": -group["side"], "qty": qty, "size_step": group["size_step"],
                                "reduce_only": True, "reason": "native_" + child["kind"],
@@ -105,6 +112,45 @@ class NativeProtectionMixin:
             await asyncio.sleep(.25)
         raise ValueError("Native cancellation not confirmed; market exit withheld: " + "; ".join(errors))
 
+    async def _retire_expired_missing_group(self, group):
+        """Never infer rejection from absence alone; require expired signed intent,
+        complete authenticated fill coverage and unchanged, fresh owned inventory.
+        Legacy groups need an independently verified expiry before using this path.
+        """
+        deadline = int(group.get("submission_expires_at_ms", 0) or 0)
+        if group["phase"] not in {"placing", "submitted"} or not deadline:
+            return False
+        if int(time.time() * 1000) <= deadline + 60_000:
+            return False
+        ids = {str(c["client_order_index"]) for c in group["children"]}
+        for child in group["children"]:
+            if await self.client.account_order(child["client_order_index"]):
+                return False
+        trades = await self.client.account_trades(group["market_id"], limit=100, strict=True)
+        if any(not exchange_time_ms(t.get("timestamp")) or not any(k in t for k in ("ask_client_id_str", "ask_client_id", "bid_client_id_str", "bid_client_id")) for t in trades):
+            raise ValueError("Native recovery trade history is incomplete")
+        if len(trades) >= 100 and min(exchange_time_ms(t.get("timestamp")) for t in trades) >= group["created_at"] * 1000:
+            raise ValueError("Native recovery needs older trade-history coverage; missing order is not resolved")
+        for trade in trades:
+            if any(str(trade.get(key, "")) in ids for key in
+                   ("ask_client_id_str", "ask_client_id", "bid_client_id_str", "bid_client_id")):
+                raise ValueError("Missing native order has exchange fills; preserve intent and reconcile fills")
+        _, amount, _ = await self._account_position(group["symbol"])
+        expected = sum(int(t["side"]) * float(t["qty"]) for t in self.state["tranches"])
+        if abs(amount - expected) > group["size_step"] / 2:
+            raise ValueError("Native recovery position mismatch; preserve slice ownership")
+        attempts = self.state.setdefault("native_protection_attempts", [])
+        attempts.append({**group, "outcome": "EXPIRED_WITHOUT_ORDERS_OR_FILLS",
+                         "verified_at": int(time.time()), "verified_position": amount})
+        self.state["native_protection_attempts"] = attempts[-50:]
+        self.state["native_brackets"].remove(group)
+        self._finish_entry_campaign("native_submission_expired")
+        # Do not silently retry the expired intent or resume a paused bot.
+        self.state.update(enabled=False, native_protection_pending_activation=True,
+                          execution_blocked=False, blocked_reason=None, last_error=None)
+        self._save()
+        return True
+
     async def reconcile_native_protection(self, *, cancel=False):
         """Caller owns bot and execution locks. Safe after restart and while paused."""
         try:
@@ -117,6 +163,9 @@ class NativeProtectionMixin:
                     for row in await self.client.account_orders(ids[start:start + 50]):
                         snapshot[str(row.get("client_order_index"))] = row
             for group in groups:
+                if (snapshot is None or any(str(c["client_order_index"]) not in snapshot for c in group["children"])):
+                    if await self._retire_expired_missing_group(group):
+                        continue
                 rows = await self._native_rows(group, snapshot)
                 self._native_account_fills(group, rows)
                 lot = next((t for t in self.state["tranches"] if str(t["order_id"]) == group["entry_order_id"]), None)
@@ -127,7 +176,11 @@ class NativeProtectionMixin:
                 else:
                     group["phase"] = "live"
                 self._save()
+            previous_error = self.state.get("native_protection_error")
             self.state["native_protection_error"] = None
+            if (previous_error and self.state.get("last_error") == previous_error
+                    and not self.state.get("pending_order") and not self.state.get("recovery_required")):
+                self.state.update(last_error=None, execution_blocked=False, blocked_reason=None)
             self.state["native_protection_checked_at"] = int(time.time())
             self._save()
         except Exception as exc:
@@ -168,14 +221,31 @@ class NativeProtectionMixin:
             group = {"entry_order_id": str(lot["order_id"]), "market_id": market_id,
                      "symbol": self.state["selected_symbol"], "side": int(lot["side"]),
                      "qty": float(lot["qty"]), "fee_rate": fee, "size_step": step,
-                     "phase": "placing", "children": children, "created_at": int(time.time())}
+                     "phase": "preparing", "children": children, "created_at": int(time.time())}
             self.state["native_brackets"].append(group)
             self._save()  # Never submit a child without a durable client ID.
             try:
-                await self.client.create_protection_orders(market_id, group["qty"], group["side"], children)
+                def signed(metadata):
+                    group.update(metadata, phase="submitted")
+                    self._save()
+                result = await self.client.create_protection_orders(
+                    market_id, group["qty"], group["side"], children, on_signed=signed)
+                group["submission_accepted"] = True
+                if result and result.get("tx_hash"):
+                    group["submission_tx_hash"] = result["tx_hash"]
+                self._save()
                 # Accepted transaction alone does not prove working orders.
                 await self.reconcile_native_protection()
             except Exception as exc:
+                group["submission_error"] = str(exc)
+                if group["phase"] == "preparing":
+                    # The client contract persists a signed intent before any
+                    # send. Without that callback, no order was submitted.
+                    self.state["native_brackets"].remove(group)
+                    self.state.setdefault("native_protection_attempts", []).append(
+                        {**group, "outcome": "NOT_SUBMITTED", "verified_at": int(time.time())})
+                    self.state["native_protection_attempts"] = self.state["native_protection_attempts"][-50:]
+                    self.state.update(enabled=False, native_protection_pending_activation=True)
                 self.state["native_protection_error"] = str(exc)
                 self._finish_entry_campaign("native_protection_error")
                 self.state.update(execution_blocked=True, blocked_reason=str(exc), last_error=str(exc))
