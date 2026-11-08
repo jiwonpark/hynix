@@ -61,7 +61,7 @@ class FakeLighter:
     def get_credentials(self):
         return {"account_index": 749609, "api_key_index": 0}
 
-    async def account_trades(self, market_id, limit=100):
+    async def account_trades(self, market_id, limit=100, *, strict=False):
         return getattr(self, "trades", [])
 
     async def candles(self, market_id, interval, limit, *, fresh=False):
@@ -613,6 +613,46 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(merged), 3)
         self.assertEqual(sum(1 for event in merged if event.get("exchange_trade_id") == "trade-1"), 1)
         self.assertIn("different-qty", {event.get("order_id") for event in merged})
+
+    async def test_native_partial_fills_verify_tranche_basis_by_own_client_ids(self):
+        self.bot.state['execution_history'] = [dict(event='EXIT', symbol='BTC', side=-1,
+            qty=1, price=110, entry_price=100, entry_order_id='1001', order_id='2001',
+            client_order_index=2001, matched_tranches=1, time=200, pnl_authoritative=False)]
+        self.client.trades = [dict(trade_id=1, market_id=1, bid_account_id=749609,
+            ask_account_id=8, bid_client_id_str='1001', ask_client_id_str='other',
+            size='1', price='100', timestamp=100000, taker_fee='0')]
+        for i, qty in enumerate((.2,.3,.5)):
+            self.client.trades.append(dict(trade_id=10+i, market_id=1, bid_account_id=8,
+                ask_account_id=749609, bid_client_id_str='other', ask_client_id_str='2001',
+                size=str(qty), price='110', timestamp=200000+i, ask_account_pnl=str(qty*5), taker_fee='0'))
+        state = await self.bot.reconciled_public_state()
+        exits = [e for e in state['execution_history'] if e['event']=='EXIT']
+        self.assertEqual(len(exits),1)
+        event=exits[0]
+        self.assertEqual(event['qty'],1)
+        self.assertEqual(len(event['exchange_trade_ids']),3)
+        self.assertEqual(event['entry_price'],100)
+        self.assertAlmostEqual(event['net_pnl_usd'],10)
+        self.assertAlmostEqual(event['exchange_account_pnl_usd'],5)
+        self.assertEqual(event['pnl_source'],'LIGHTER_VERIFIED_TRANCHE_FILLS')
+
+    async def test_trade_history_failure_is_not_a_verified_empty_history(self):
+        self.client.account_trades = AsyncMock(side_effect=RuntimeError('history unavailable'))
+        with self.assertRaisesRegex(RuntimeError,'history unavailable'):
+            await self.bot.reconciled_public_state()
+
+    def test_missing_entry_fills_does_not_substitute_account_average_pnl(self):
+        local = [dict(event='EXIT',symbol='BTC',side=-1,qty=1,price=110,entry_price=100,
+            entry_order_id='entry',order_id='exit',client_order_index='exit',time=100,
+            net_pnl_usd=10,gross_pnl_usd=10,pnl_authoritative=False)]
+        exchange = [dict(event='EXIT',symbol='BTC',side=-1,qty=1,price=110,entry_price=105,
+            exchange_client_order_index='exit',order_id='trade',time=100,net_pnl_usd=5,
+            gross_pnl_usd=5,pnl_authoritative=True)]
+        row = self.bot._merge_execution_history(exchange,local)[0]
+        self.assertFalse(row['pnl_authoritative'])
+        self.assertEqual(row['entry_price'],100)
+        self.assertEqual(row['net_pnl_usd'],10)
+        self.assertEqual(row['exchange_account_pnl_usd'],5)
 
     async def test_ma_stack_condition_toggles(self):
         from backend.lighter_strategy import evaluate_strategy_signal

@@ -271,9 +271,11 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             return self.public_state()
 
     @staticmethod
-    def _trade_client_order_index(trade: Dict[str, Any]) -> Optional[str]:
+    def _trade_client_order_index(trade: Dict[str, Any], is_buyer=None) -> Optional[str]:
         """Return an exchange-provided client order reference, never a trade id."""
-        for key in ("client_order_index", "client_order_id", "client_order_id_str"):
+        role = "bid" if is_buyer else "ask"
+        keys = (f"{role}_client_id_str", f"{role}_client_id") if is_buyer is not None else ()
+        for key in (*keys, "client_order_index", "client_order_id", "client_order_id_str"):
             value = trade.get(key)
             if value not in (None, ""):
                 return str(value)
@@ -304,6 +306,31 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
     def _merge_execution_history(cls, exchange_events: list[Dict[str, Any]],
                                  local_events: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
         """Reconcile each exchange fill to at most one local execution record."""
+        # One native child can execute against several counterparties. Match
+        # the complete order, not one partial trade against the whole local lot.
+        grouped = {}
+        for event in exchange_events:
+            ref = event.get("exchange_client_order_index")
+            key = (event.get("symbol"), event.get("event"), event.get("side"), str(ref)) if ref else ("trade", event.get("exchange_trade_id", event.get("order_id")))
+            if key not in grouped:
+                grouped[key] = copy.deepcopy(event)
+                grouped[key]["exchange_trade_ids"] = [event.get("exchange_trade_id", event.get("order_id"))]
+                continue
+            total = grouped[key]
+            trade_id = event.get("exchange_trade_id", event.get("order_id"))
+            if trade_id in total["exchange_trade_ids"]:
+                continue
+            total["exchange_trade_ids"].append(trade_id)
+            qty = float(total["qty"]) + float(event["qty"])
+            total["price"] = (float(total["price"]) * float(total["qty"]) + float(event["price"]) * float(event["qty"])) / qty
+            total["qty"] = qty
+            for field in ("notional_usd", "fee_usd", "net_pnl_usd", "gross_pnl_usd"):
+                if total.get(field) is not None and event.get(field) is not None:
+                    total[field] += event[field]
+            total["time"] = max(total["time"], event["time"])
+        exchange_events = list(grouped.values())
+        entries = {(e.get("symbol"), str(e.get("exchange_client_order_index"))): e
+                   for e in exchange_events if e.get("event") == "ENTRY"}
         unmatched_local = set(range(len(local_events)))
         merged_events: list[Dict[str, Any]] = []
         for exchange in exchange_events:
@@ -312,7 +339,11 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             if exchange_client_ref not in (None, ""):
                 for index in unmatched_local:
                     local_ref = local_events[index].get("client_order_index", local_events[index].get("order_id"))
-                    if str(local_ref) == str(exchange_client_ref):
+                    if (str(local_ref) == str(exchange_client_ref)
+                            and local_events[index].get("symbol") == exchange.get("symbol")
+                            and local_events[index].get("event") == exchange.get("event")
+                            and int(local_events[index].get("side", 0)) == int(exchange.get("side", 0))
+                            and abs(float(local_events[index].get("qty", 0)) - float(exchange.get("qty", 0))) <= max(1e-12, float(exchange.get("qty", 0)) * 1e-6)):
                         match_index = index
                         break
             if match_index is None:
@@ -343,6 +374,33 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 merged["client_order_index"] = local_client_ref
             if local.get("reason"):
                 merged["reason"] = local["reason"]
+            entry = entries.get((local.get("symbol"), str(local.get("entry_order_id"))))
+            tranche_verified = False
+            if exchange.get("event") == "EXIT" and entry and int(local.get("matched_tranches", 1)) == 1:
+                qty = float(exchange["qty"])
+                if (float(entry["qty"]) >= qty - 1e-12 and entry["side"] == -exchange["side"]
+                        and abs(float(entry["price"]) - float(local.get("entry_price", 0))) <= max(1e-8, float(entry["price"]) * 5e-6)):
+                    gross = int(entry["side"]) * qty * (float(exchange["price"]) - float(entry["price"]))
+                    entry_fee = float(entry["fee_usd"]) * qty / float(entry["qty"])
+                    exit_fee = float(exchange["fee_usd"])
+                    net = gross - entry_fee - exit_fee
+                    merged.update(entry_price=entry["price"], gross_pnl_usd=gross, net_pnl_usd=net,
+                                  entry_fee_usd=entry_fee, exit_fee_usd=exit_fee,
+                                  round_trip_fee_usd=entry_fee + exit_fee,
+                                  pnl_pct=net / (qty * float(entry["price"])) * 100,
+                                  exchange_account_pnl_usd=exchange.get("net_pnl_usd"),
+                                  pnl_source="LIGHTER_VERIFIED_TRANCHE_FILLS")
+                    tranche_verified = True
+            if exchange.get("event") == "EXIT" and local.get("entry_order_id") and not tranche_verified:
+                # Exchange account-average P&L is not this tracked lot's P&L.
+                # Preserve its estimate until its own entry fills are available.
+                merged["exchange_account_pnl_usd"] = exchange.get("net_pnl_usd")
+                for field in ("entry_price", "gross_pnl_usd", "net_pnl_usd", "pnl_pct", "pnl_source"):
+                    if field in local:
+                        merged[field] = local[field]
+                    else:
+                        merged.pop(field, None)
+                merged["pnl_authoritative"] = False
             merged_events.append(merged)
 
         merged_events.extend(local_events[index] for index in sorted(unmatched_local))
@@ -365,7 +423,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                     creds = getattr(self.client, "get_credentials", lambda: None)() or {}
                     account_id = int(creds.get("account_index", -1) or -1)
                     if account_id >= 0 and hasattr(self.client, "account_trades"):
-                        raw_trades = await self.client.account_trades(market_id, limit=100)
+                        raw_trades = await self.client.account_trades(market_id, limit=100, strict=True)
                         for trade in reversed(raw_trades or []):
                             is_buyer = int(trade.get("bid_account_id", -1) or -1) == account_id
                             side = 1 if is_buyer else -1
@@ -384,7 +442,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                             fee_rate = raw_fee / 1_000_000.0 if raw_fee >= 1.0 else raw_fee
                             fee_usd = usd * fee_rate
                             trade_id = str(trade.get("trade_id_str") or trade.get("trade_id") or "")
-                            client_order_index = self._trade_client_order_index(trade)
+                            client_order_index = self._trade_client_order_index(trade, is_buyer)
                             original_side = -side if is_exit else side
                             exchange_event = {
                                 "event": "EXIT" if is_exit else "ENTRY",
@@ -414,7 +472,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                     self._trade_cache = (symbol, now, 5.0, list(exchange_events))
                 except Exception as exc:
                     logger.warning("Could not fetch Lighter trades for status reconciliation: %s", exc)
-                    self._trade_cache = (symbol, now, 10.0, [])
+                    raise
 
         if exchange_events:
             result["execution_history"] = self._merge_execution_history(

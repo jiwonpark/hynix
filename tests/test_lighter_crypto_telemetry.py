@@ -60,6 +60,13 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
         self.assertNotIn("_refresh_crypto_history_snapshot", crypto_status)
         self.assertNotIn("await crypto_bot.reconciled_public_state()", crypto_status)
 
+    def test_history_refresh_is_started_independently_of_status_requests(self):
+        source = (ROOT / "backend" / "server.py").read_text()
+        self.assertIn('realized_history_worker(_refresh_crypto_history_snapshot)', source)
+        self.assertIn('realized_history_worker(_refresh_lighter_crypto_history_snapshot)', source)
+        self.assertIn('await read_history_snapshot(lighter_crypto_bot)', source)
+        self.assertIn('apply_history_snapshot(bot, _lighter_crypto_history_cache)', source)
+
     def test_tab_activation_does_not_start_replay_before_account_is_ready(self) -> None:
         start = self.ui_source.index("async onTabActivated()")
         end = self.ui_source.index("resetChartView()", start)

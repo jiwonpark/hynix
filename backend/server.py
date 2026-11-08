@@ -13,6 +13,7 @@ from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from collections import OrderedDict
 from .chart_cache import ChartResponseCache
+from .realized_history import read_history_snapshot, apply_history_snapshot
 from .dynamic_backtest import replay, replay_markers
 from .pair_sizing import exchange_rules, live_sizing_inputs, size_policy
 from .macro_policy import macro_policy, policy_for_level, closed_values, confirmed_rebound
@@ -295,8 +296,8 @@ async def _submit_recoverable_order(
 async def _refresh_crypto_history_snapshot() -> None:
     global _crypto_history_cache, _crypto_history_cache_time
     try:
-        state = await asyncio.wait_for(crypto_bot.reconciled_public_state(), timeout=5.0)
-        _crypto_history_cache = {key: copy.deepcopy(state[key]) for key in _REALIZED_HISTORY_KEYS if key in state}
+        state = await read_history_snapshot(crypto_bot)
+        _crypto_history_cache = {key: copy.deepcopy(state[key]) for key in (*_REALIZED_HISTORY_KEYS, "execution_history") if key in state}
         _crypto_history_cache_time = time.monotonic()
     except Exception as exc:
         logger.warning("Binance realized-history refresh failed: %s", exc)
@@ -305,8 +306,8 @@ async def _refresh_crypto_history_snapshot() -> None:
 async def _refresh_lighter_crypto_history_snapshot() -> None:
     global _lighter_crypto_history_cache, _lighter_crypto_history_cache_time
     try:
-        state = await asyncio.wait_for(lighter_crypto_bot.reconciled_public_state(), timeout=5.0)
-        _lighter_crypto_history_cache = {key: copy.deepcopy(state[key]) for key in _REALIZED_HISTORY_KEYS if key in state}
+        state = await read_history_snapshot(lighter_crypto_bot)
+        _lighter_crypto_history_cache = {key: copy.deepcopy(state[key]) for key in (*_REALIZED_HISTORY_KEYS, "execution_history") if key in state}
         _lighter_crypto_history_cache_time = time.monotonic()
     except Exception as exc:
         logger.warning("Lighter realized-history refresh failed: %s", exc)
@@ -386,6 +387,12 @@ async def lighter_crypto_bot_worker():
             logger.exception("Lighter crypto bot worker failed")
         await asyncio.sleep(5)
 
+async def realized_history_worker(refresh):
+    while True:
+        await refresh()
+        await asyncio.sleep(15)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting HYPERION Trading & Multi-Exchange Telemetry Daemon...")
@@ -412,6 +419,8 @@ async def lifespan(app: FastAPI):
     lighter_pair_task = asyncio.create_task(lighter_pair_worker())
     crypto_bot_task = asyncio.create_task(crypto_bot_worker())
     lighter_crypto_bot_task = asyncio.create_task(lighter_crypto_bot_worker())
+    history_task = asyncio.create_task(realized_history_worker(_refresh_crypto_history_snapshot))
+    lighter_history_task = asyncio.create_task(realized_history_worker(_refresh_lighter_crypto_history_snapshot))
     yield
     broadcaster_task.cancel()
     auto_tranche_task.cancel()
@@ -420,6 +429,9 @@ async def lifespan(app: FastAPI):
     lighter_pair_task.cancel()
     crypto_bot_task.cancel()
     lighter_crypto_bot_task.cancel()
+    history_task.cancel()
+    lighter_history_task.cancel()
+    await asyncio.gather(history_task, lighter_history_task, return_exceptions=True)
     await asyncio.gather(binance_client.close(), upbit_client.close(), lighter_client.close(), return_exceptions=True)
     logger.info("HYPERION Trading Daemon shutdown complete.")
 
@@ -1516,7 +1528,7 @@ async def get_crypto_bot_status() -> Dict[str, Any]:
     bot = crypto_bot.public_state()
     history_age = time.monotonic() - _crypto_history_cache_time if _crypto_history_cache_time else None
     if _crypto_history_cache:
-        bot.update(copy.deepcopy(_crypto_history_cache))
+        apply_history_snapshot(bot, _crypto_history_cache)
     history_stale = history_age is None or history_age > 30.0
     bot["history_stale"] = history_stale
     if history_stale:
@@ -1842,7 +1854,7 @@ async def get_lighter_crypto_bot_status() -> Dict[str, Any]:
     history_age = (time.monotonic() - _lighter_crypto_history_cache_time
                    if _lighter_crypto_history_cache_time else None)
     if _lighter_crypto_history_cache:
-        bot.update(copy.deepcopy(_lighter_crypto_history_cache))
+        apply_history_snapshot(bot, _lighter_crypto_history_cache)
     history_stale = history_age is None or history_age > 30.0
     bot["history_stale"] = history_stale
     if history_stale:
