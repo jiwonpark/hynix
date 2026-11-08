@@ -453,7 +453,8 @@ protect only residual owned quantity. Journal remaining replacements before
 cancelling; an incomplete update blocks resume and requires retrying Save &
 Deploy. Preserve other slices’ working orders on failure. Disabling cancels
 tracked native exits; never cancel unrelated exchange orders. Show these effects
-in the confirmation and native status. Use an identical explicit expiry for both
+in the confirmation and native status, including that replacement exits may
+trigger immediately if their targets are already reached. Use an identical explicit expiry for both
 OCO children. Exchange capacity/unknown outcomes still block unsafe submission.
 Keep the native execution option inside Exit conditions alongside TP/SL across
 strategy switches. Preserve unsaved browser drafts across reload, distinguish
