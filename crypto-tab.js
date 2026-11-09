@@ -2749,6 +2749,9 @@
         24: this.chart.addLineSeries({ color: "#8b5cf6", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
         60: this.chart.addLineSeries({ color: "#06b6d4", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
       };
+      this.maExtremumHoverSeries = TerminalCommon.createMaExtremumHoverSeries(this.chart, {
+        7: "#f59e0b", 24: "#8b5cf6", 60: "#06b6d4",
+      }, LightweightCharts.LineStyle?.Dashed || 2);
 
       const assetHost = lid("shortTermAssetHost");
       if (assetHost && !this.assetChart) {
@@ -2813,10 +2816,12 @@
       const handleCrosshair = (param) => {
         if (!param || !param.time) {
           this.renderMaLegendValues(this.bars?.at(-1)?.time);
+          TerminalCommon.renderMaExtremumHover(this.maExtremumHoverSeries, this._currentMaData, null, this.maVisibility);
           return;
         }
         const t = typeof param.time === "number" ? param.time : (param.time.timestamp || param.time);
         this.renderMaLegendValues(t);
+        TerminalCommon.renderMaExtremumHover(this.maExtremumHoverSeries, this._currentMaData, t, this.maVisibility);
       };
       this.chart.subscribeCrosshairMove(handleCrosshair);
       if (this.assetChart) {
@@ -6462,6 +6467,8 @@
     toggleMA(period) {
       this.maVisibility[period] = !this.maVisibility[period];
       this.maSeries[period]?.applyOptions({ visible: this.maVisibility[period] });
+      this.maExtremumHoverSeries?.[period]?.applyOptions({ visible: this.maVisibility[period] });
+      if (!this.maVisibility[period]) this.maExtremumHoverSeries?.[period]?.setData([]);
       const legend = lid(`legendShortMa${period}`);
       if (legend) { legend.style.opacity = this.maVisibility[period] ? "1" : ".35"; legend.style.textDecoration = this.maVisibility[period] ? "none" : "line-through"; }
     },

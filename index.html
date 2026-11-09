@@ -14098,6 +14098,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
             crosshairMarkerVisible: true,
             priceFormat: { type: "price", precision: 2, minMove: 0.01 }
           });
+          this.shortTermMaExtremumHoverSeries = TerminalCommon.createMaExtremumHoverSeries(this.shortTermChart, {
+            7: "#f59e0b", 24: "#8b5cf6", 60: "#06b6d4"
+          }, LightweightCharts.LineStyle?.Dashed || 2);
 
           this.executionChartController = new StrategyExecutionChartController({
             series: this.shortTermSeries,
@@ -14135,6 +14138,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           this.activeHoveredExecutionMarkerTime = null;
           this.selectedExecutionMarkerTime = null;
           this.shortTermChart.subscribeCrosshairMove((param) => {
+            const targetTime = param?.time == null ? null
+              : (typeof param.time === "number" ? param.time : (param.time.timestamp || param.time));
+            TerminalCommon.renderMaExtremumHover(
+              this.shortTermMaExtremumHoverSeries, this.shortTermMaData, targetTime, this.maVisibility
+            );
             if (!param || !param.point) {
               if (this.activeHoveredExecutionMarkerTime !== null) {
                 this.activeHoveredExecutionMarkerTime = null;
@@ -14574,6 +14582,9 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         if (cfg && cfg.series) {
           cfg.series.applyOptions({ visible: isVis });
         }
+        const hoverPeriod = maKey.replace("ma", "");
+        this.shortTermMaExtremumHoverSeries?.[hoverPeriod]?.applyOptions({ visible: isVis });
+        if (!isVis) this.shortTermMaExtremumHoverSeries?.[hoverPeriod]?.setData([]);
         if (cfg && cfg.el) {
           if (isVis) {
             cfg.el.style.opacity = "1";
@@ -14827,6 +14838,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           const ma7Data = this.calcMovingAverage(data.bars, 7);
           const ma24Data = this.calcMovingAverage(data.bars, 24);
           const ma60Data = this.calcMovingAverage(data.bars, 60);
+          this.shortTermMaData = {7: ma7Data, 24: ma24Data, 60: ma60Data};
 
           if (this.shortTermMa7Series) this.shortTermMa7Series.setData(ma7Data);
           if (this.shortTermMa24Series) this.shortTermMa24Series.setData(ma24Data);

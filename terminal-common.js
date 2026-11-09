@@ -191,6 +191,60 @@
     }).filter(Boolean);
   }
 
+  function previousLocalExtremumSegment(points, targetTime) {
+    if (!Array.isArray(points) || points.length < 3 || targetTime == null) return [];
+    const numericTarget = Number(targetTime?.timestamp ?? targetTime);
+    if (!Number.isFinite(numericTarget)) return [];
+    let endIndex = -1;
+    for (let index = 0; index < points.length; index += 1) {
+      const time = Number(points[index]?.time?.timestamp ?? points[index]?.time);
+      if (!Number.isFinite(time)) continue;
+      if (time <= numericTarget) endIndex = index;
+      else break;
+    }
+    if (endIndex < 2) return [];
+    const end = points[endIndex];
+    if (!Number.isFinite(Number(end?.value))) return [];
+    for (let index = endIndex - 1; index >= 1; index -= 1) {
+      const previous = Number(points[index - 1]?.value);
+      const current = Number(points[index]?.value);
+      const next = Number(points[index + 1]?.value);
+      if (![previous, current, next].every(Number.isFinite)) continue;
+      const isMaximum = (current >= previous && current > next) || (current > previous && current >= next);
+      const isMinimum = (current <= previous && current < next) || (current < previous && current <= next);
+      if (isMaximum || isMinimum) {
+        return [
+          {time: points[index].time, value: current},
+          {time: end.time, value: Number(end.value)},
+        ];
+      }
+    }
+    return [];
+  }
+
+  function createMaExtremumHoverSeries(chart, colors, lineStyle) {
+    if (!chart?.addLineSeries) return {};
+    return Object.fromEntries(Object.entries(colors || {}).map(([key, color]) => [key, chart.addLineSeries({
+      color,
+      lineWidth: 2,
+      lineStyle,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    })]));
+  }
+
+  function renderMaExtremumHover(seriesByPeriod, dataByPeriod, targetTime, visibility = {}) {
+    for (const [period, series] of Object.entries(seriesByPeriod || {})) {
+      if (!series?.setData) continue;
+      const visible = visibility[period] !== false && visibility[`ma${period}`] !== false;
+      series.applyOptions?.({visible});
+      series.setData(visible && targetTime != null
+        ? previousLocalExtremumSegment(dataByPeriod?.[period], targetTime)
+        : []);
+    }
+  }
+
   function movingAverageDiff(maFast, maSlow) {
     if (!Array.isArray(maFast) || !Array.isArray(maSlow)) return [];
     const slowMap = new Map();
@@ -813,7 +867,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
+  const TerminalCommon = { alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

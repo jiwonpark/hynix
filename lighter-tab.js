@@ -2057,6 +2057,16 @@
         24: this.chart.addLineSeries({ color: "#8b5cf6", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
         60: this.chart.addLineSeries({ color: "#06b6d4", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
       };
+      this.maExtremumHoverSeries = TerminalCommon.createMaExtremumHoverSeries(this.chart, {
+        7: "#f59e0b", 24: "#8b5cf6", 60: "#06b6d4",
+      }, LightweightCharts.LineStyle?.Dashed || 2);
+      this.chart.subscribeCrosshairMove((param) => {
+        const targetTime = param?.time == null ? null
+          : (typeof param.time === "number" ? param.time : (param.time.timestamp || param.time));
+        TerminalCommon.renderMaExtremumHover(
+          this.maExtremumHoverSeries, this._currentMaData, targetTime, this.maVisibility,
+        );
+      });
 
       const assetHost = lid("shortTermAssetHost");
       if (assetHost && !this.assetChart) {
@@ -2113,7 +2123,8 @@
         this.bars = cached;
         this.trendRanges = this.calculateTrendRanges(cached);
         this.series.setData(cached.map((bar) => ({ time: bar.time, value: bar.value })));
-        [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(cached, w)));
+        this._currentMaData = Object.fromEntries([7, 24, 60].map((w) => [w, TerminalCommon.movingAverage(cached, w)]));
+        [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(this._currentMaData[w]));
         this.setAssetChartData(cached);
         const initial = StrategyExecutionChartController.initialRange(cached.length, 48);
         if (this.chartSync) this.chartSync.setRange(initial);
@@ -2158,7 +2169,8 @@
         this.chartSync?.pause();
         try {
           this.series.setData(this.bars.map((bar) => ({ time: bar.time, value: bar.value })));
-          [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(this.bars, w)));
+          this._currentMaData = Object.fromEntries([7, 24, 60].map((w) => [w, TerminalCommon.movingAverage(this.bars, w)]));
+          [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(this._currentMaData[w]));
           this.setAssetChartData(this.bars);
 
           StrategyExecutionChartController.applyPrependedRange(this.chart, addedCount, currentRange);
@@ -2191,7 +2203,8 @@
           this.bars = cached;
           this.trendRanges = this.calculateTrendRanges(cached);
           this.series.setData(cached.map((bar) => ({ time: bar.time, value: bar.value })));
-          [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(TerminalCommon.movingAverage(cached, w)));
+          this._currentMaData = Object.fromEntries([7, 24, 60].map((w) => [w, TerminalCommon.movingAverage(cached, w)]));
+          [7, 24, 60].forEach((w) => this.maSeries[w]?.setData(this._currentMaData[w]));
           this.setAssetChartData(cached);
           const initial = StrategyExecutionChartController.initialRange(cached.length, 48);
           if (this.chartSync) this.chartSync.setRange(initial);
@@ -3554,9 +3567,10 @@
         // parity candle and use whitespace for a missing venue quote.
         this.setAssetChartData(mergedBars);
 
-        [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(TerminalCommon.movingAverage(mergedBars, windowSize)));
+        this._currentMaData = Object.fromEntries([7, 24, 60].map((windowSize) => [windowSize, TerminalCommon.movingAverage(mergedBars, windowSize)]));
+        [7, 24, 60].forEach((windowSize) => this.maSeries[windowSize].setData(this._currentMaData[windowSize]));
         [7, 24, 60].forEach((windowSize) => {
-          const value = TerminalCommon.movingAverage(mergedBars, windowSize).at(-1)?.value;
+          const value = this._currentMaData[windowSize].at(-1)?.value;
           this.setText(`valShortTermMa${windowSize}`, Number.isFinite(value) ? `${value.toFixed(2)}%` : "--%");
         });
 
@@ -5230,6 +5244,8 @@
     toggleMA(period) {
       this.maVisibility[period] = !this.maVisibility[period];
       this.maSeries[period]?.applyOptions({ visible: this.maVisibility[period] });
+      this.maExtremumHoverSeries?.[period]?.applyOptions({ visible: this.maVisibility[period] });
+      if (!this.maVisibility[period]) this.maExtremumHoverSeries?.[period]?.setData([]);
       const legend = lid(`legendShortMa${period}`);
       if (legend) { legend.style.opacity = this.maVisibility[period] ? "1" : ".35"; legend.style.textDecoration = this.maVisibility[period] ? "none" : "line-through"; }
     },
