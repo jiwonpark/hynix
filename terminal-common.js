@@ -263,8 +263,8 @@
     return result;
   }
 
-  function maPivotAnalysis(points, targetTime, lookback=120, minArrows=1) {
-    const empty = {ready:false,long_pass:false,short_pass:false,up_count:0,down_count:0,crossings:[],segment:[]};
+  function maPivotAnalysis(points, targetTime, lookback=120) {
+    const empty = {ready:false,long_pass:false,short_pass:false,up_count:0,down_count:0,crossings:[],segment:[],last_arrow:null,rule:"last_arrow_v1"};
     const source = (points || []).filter(p => Number(p.time?.timestamp ?? p.time) <= Number(targetTime?.timestamp ?? targetTime)).slice(-lookback);
     if (source.length < lookback || source.some(p => !Number.isFinite(p.value))) return empty;
     const segment = previousLocalExtremumSegment(source,targetTime);
@@ -287,7 +287,8 @@
       } else if(i>pivot && Math.abs(delta[i-1])>epsilon && Math.sign(delta[i-1])!==Math.sign(d)) add(i-1+delta[i-1]/(delta[i-1]-d),delta[i-1],d);
     }
     const up=crossings.filter(c=>c.direction==="up").length, down=crossings.length-up;
-    return {ready:true,segment,crossings,slope,pivot_index:pivot,up_count:up,down_count:down,long_pass:slope>0 || up>=minArrows,short_pass:slope<0 || down>=minArrows};
+    const lastArrow=crossings.at(-1)?.direction ?? null;
+    return {ready:true,segment,crossings,slope,pivot_index:pivot,up_count:up,down_count:down,last_arrow:lastArrow,rule:"last_arrow_v1",long_pass:slope>0 || lastArrow==="up",short_pass:slope<0 || lastArrow==="down"};
   }
 
   function createMaExtremumHoverSeries(chart, colors, lineStyle, priceSeries) {
@@ -397,7 +398,7 @@
       series.setCurveData?.(dataByPeriod?.[period] || []);
       const canonical = pivotSettings?.use_ma_pivot_direction && Number(period) === pivotSettings.ma_pivot_period;
       const completedTarget = Math.min(Number(targetTime?.timestamp ?? targetTime), pivotSettings?.completedBefore ?? Infinity);
-      const analysis = canonical && visible && targetTime != null ? maPivotAnalysis(dataByPeriod?.[period],completedTarget,pivotSettings.ma_pivot_lookback,pivotSettings.ma_pivot_min_arrows) : null;
+      const analysis = canonical && visible && targetTime != null ? maPivotAnalysis(dataByPeriod?.[period],completedTarget,pivotSettings.ma_pivot_lookback) : null;
       series.setPivotAnalysis?.(analysis);
       series.setData(visible && targetTime != null
         ? canonical ? analysis?.segment || [] : previousLocalExtremumSegment(dataByPeriod?.[period], targetTime)
@@ -721,8 +722,8 @@
     return [macro];
   }
 
-  const maPivotDefaults = {use_ma_pivot_direction:false, ma_pivot_period:24, ma_pivot_lookback:120, ma_pivot_min_arrows:1};
-  const maPivotInputs = {use_ma_pivot_direction:"useMaPivotGuide", ma_pivot_period:"maPivotPeriod", ma_pivot_lookback:"maPivotLookback", ma_pivot_min_arrows:"maPivotMinArrows"};
+  const maPivotDefaults = {use_ma_pivot_direction:false, ma_pivot_period:24, ma_pivot_lookback:120};
+  const maPivotInputs = {use_ma_pivot_direction:"useMaPivotGuide", ma_pivot_period:"maPivotPeriod", ma_pivot_lookback:"maPivotLookback"};
   function maPivotDraft(prefix) {
     try { return JSON.parse(localStorage.getItem(prefix + "maPivotDraft") || "null"); } catch (_) { return null; }
   }
@@ -759,7 +760,7 @@
   }
   function renderMaPivotStatus(prefix, kind, evaluation, settings, time, available=true) {
     const pivot = evaluation?.ma_pivot;
-    const matching = pivot && ["ma_pivot_period","ma_pivot_lookback","ma_pivot_min_arrows"].every((key,i) => Number(settings[key] ?? maPivotDefaults[key]) === pivot[["period","lookback","min_arrows"][i]]);
+    const matching = pivot?.rule === "last_arrow_v1" && ["ma_pivot_period","ma_pivot_lookback"].every((key,i) => Number(settings[key] ?? maPivotDefaults[key]) === pivot[["period","lookback"][i]]);
     const usable = available && matching;
     for (const [dir,key] of [["Long","long_pass"],["Short","short_pass"]]) {
       const node = document.getElementById(prefix + "maPivot" + dir + kind);
@@ -771,8 +772,8 @@
     const source = document.getElementById(prefix + "maPivot" + kind + "Source");
     if (source) {
       const stamp = time && usable ? new Date(time*1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
-      source.textContent = `${kind.toUpperCase()} · MA${settings.ma_pivot_period ?? 24} · ${settings.ma_pivot_lookback ?? 120} MA points · ≥${settings.ma_pivot_min_arrows ?? 1} arrows · completed candle ${stamp}`
-        + (usable && pivot?.ready ? ` · slope ${Number(pivot.slope).toPrecision(5)} · ↑${pivot.up_count} ↓${pivot.down_count}` : ` · ${!matching && pivot ? "Parameters changed; awaiting matching evaluation" : pivot?.reason || "Awaiting completed-candle evaluation"}`);
+      source.textContent = `${kind.toUpperCase()} · MA${settings.ma_pivot_period ?? 24} · ${settings.ma_pivot_lookback ?? 120} MA points · completed candle ${stamp}`
+        + (usable && pivot?.ready ? ` · slope ${Number(pivot.slope).toPrecision(5)} · last arrow ${pivot.last_arrow === "up" ? "↑" : pivot.last_arrow === "down" ? "↓" : "none"} · ↑${pivot.up_count} ↓${pivot.down_count}` : ` · ${!matching && pivot ? "Rule or parameters changed; awaiting matching evaluation" : pivot?.reason || "Awaiting completed-candle evaluation"}`);
     }
   }
 
@@ -788,14 +789,13 @@
         <label>Pullback SMA period <input id="${prefix}inpMaAccelPeriod" type="number" min="3" max="498" step="1" required value="${Number(saved?.ma_accel_period ?? 24)}" style="width:85px;"></label>
       </div>
       <div data-terminal-rule-group="entry" id="${prefix}maPivotControls" style="display:grid;gap:8px;padding:10px;border:1px solid #cbd5e1;border-radius:6px;">
-        <label style="display:flex;flex-direction:row;align-items:center;gap:8px;"><input style="width:16px;height:16px;flex:0 0 auto;margin:0;" id="${prefix}useMaPivotGuide" type="checkbox" ${pivot.use_ma_pivot_direction ? "checked" : ""}> MA pivot guide direction / crossing arrows</label>
+        <label style="display:flex;flex-direction:row;align-items:center;gap:8px;"><input style="width:16px;height:16px;flex:0 0 auto;margin:0;" id="${prefix}useMaPivotGuide" type="checkbox" ${pivot.use_ma_pivot_direction ? "checked" : ""}> MA pivot guide / last crossing arrow</label>
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <label>Guide MA <select id="${prefix}maPivotPeriod">${[7,24,60].map(n=>`<option value="${n}" ${n===Number(pivot.ma_pivot_period)?"selected":""}>MA${n}</option>`).join("")}</select></label>
           <label>Lookback (MA points) <input id="${prefix}maPivotLookback" type="number" min="3" max="440" step="1" required value="${Number(pivot.ma_pivot_lookback)}" style="width:72px;"></label>
-          <label>Minimum arrows <input id="${prefix}maPivotMinArrows" type="number" min="1" max="440" step="1" required value="${Number(pivot.ma_pivot_min_arrows)}" style="width:64px;"></label>
         </div>
-        ${["Long","Short"].map(dir=>`<div>${dir}: guide ${dir==="Long"?"rising":"falling"} OR enough ${dir==="Long"?"↑":"↓"} arrows · <span id="${prefix}maPivot${dir}Paper" class="condBadge neutral">PAPER · UNAVAILABLE</span> · <span id="${prefix}maPivot${dir}Live" data-live-condition class="condBadge neutral">LIVE · UNAVAILABLE</span></div>`).join("")}
-        <small>Latest confirmed pivot to the completed candle, within the selected lookback. Counts strict interior crossings of the guide through the MA (↑ below→above; ↓ above→below). No pivot or insufficient history blocks an enabled rule. Hover the selected MA to inspect that candle’s guide (forming candles use the latest completed guide). Exits are unaffected. Replay changes immediately; unlock, pause and deploy to save live.</small>
+        ${["Long","Short"].map(dir=>`<div>${dir}: guide ${dir==="Long"?"rising":"falling"} OR last arrow ${dir==="Long"?"↑":"↓"} · <span id="${prefix}maPivot${dir}Paper" class="condBadge neutral">PAPER · UNAVAILABLE</span> · <span id="${prefix}maPivot${dir}Live" data-live-condition class="condBadge neutral">LIVE · UNAVAILABLE</span></div>`).join("")}
+        <small>Latest confirmed pivot to the completed candle, within the selected lookback. Checks only the last strict interior crossing of the guide through the MA (↑ below→above; ↓ above→below); earlier arrows do not qualify. Without an arrow, only guide direction can pass. No pivot or insufficient history blocks an enabled rule. Hover the selected MA to inspect that candle’s guide (forming candles use the latest completed guide). Exits are unaffected. Replay changes immediately; unlock, pause and deploy to save live.</small>
         <small id="${prefix}maPivotPaperSource">PAPER · source unavailable</small>
         <small id="${prefix}maPivotLiveSource" data-live-condition>LIVE · source unavailable</small>
       </div>`;
@@ -807,7 +807,7 @@
       const period = Number(direction.value);
       direction.setCustomValidity(period === 1 || period === 2 ? "Enter 0 or a period from 3 to 498" : "");
     }
-    return ["inpMaDirectionPeriod", "inpMaAccelPeriod", "maPivotLookback", "maPivotMinArrows"]
+    return ["inpMaDirectionPeriod", "inpMaAccelPeriod", "maPivotLookback"]
       .map(id => document.getElementById(prefix + id))
       .find(input => input?.checkValidity?.() === false);
   }

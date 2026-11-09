@@ -18,7 +18,7 @@ class PivotRuleTests(unittest.TestCase):
         for case in FIXTURES:
             with self.subTest(case=case['name']):
                 result = analyze_ma_points(case['values'],case['minimum'])
-                for expected,key in [('ready','ready'),('up','up_count'),('down','down_count'),('long','long_pass'),('short','short_pass')]:
+                for expected,key in [('ready','ready'),('up','up_count'),('down','down_count'),('long','long_pass'),('short','short_pass'),('last','last_arrow')]:
                     self.assertEqual(result[key],case[expected])
 
     def test_finite_history_and_confirmed_pivots(self):
@@ -93,13 +93,13 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
             import time
             completed=int(time.time())//300*300-300
             bot._start_entry_campaign(1,completed)
-            bot.state['last_evaluation']=dict(strategy='ma_proximity',time=completed,ma_pivot=dict(period=24,lookback=120,min_arrows=1,ready=True,long_pass=True,short_pass=False))
+            bot.state['last_evaluation']=dict(strategy='ma_proximity',time=completed,ma_pivot=dict(rule='last_arrow_v1',period=24,lookback=120,min_arrows=1,ready=True,long_pass=True,short_pass=False))
             self.assertTrue(await bot._continue_entry_campaign())
             bot._submit.assert_awaited_once()
             # A paused configuration change cannot reuse old counts at a new threshold.
-            bot.state['ma_pivot_min_arrows']=2
+            bot.state['ma_pivot_lookback']=30
             self.assertFalse(await bot._continue_entry_campaign())
-            bot.state['ma_pivot_min_arrows']=1
+            bot.state['ma_pivot_lookback']=120
             bot._start_entry_campaign(1,completed)
             bot.state['entry_campaign']['slices_filled']=1
             bot.state['last_evaluation']['ma_pivot']['long_pass']=False

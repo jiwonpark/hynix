@@ -1,9 +1,11 @@
 [
- {"name":"rising with both crossing directions","values":[101,100,103,103.2,106.8,107,110],"minimum":1,"ready":true,"up":2,"down":1,"long":true,"short":true},
- {"name":"arrow threshold blocks falling-direction exception","values":[101,100,103,103.2,106.8,107,110],"minimum":2,"ready":true,"up":2,"down":1,"long":true,"short":false},
- {"name":"falling with two down arrows","values":[109,110,107,106.8,103.2,103,100],"minimum":2,"ready":true,"up":1,"down":2,"long":false,"short":true},
- {"name":"rising straight guide endpoints are not arrows","values":[102,100,102,104,106],"minimum":1,"ready":true,"up":0,"down":0,"long":true,"short":false},
- {"name":"no confirmed pivot","values":[100,101,102,103],"minimum":1,"ready":false,"up":0,"down":0,"long":false,"short":false},
- {"name":"plateau uses final point","values":[100,103,103,102,101],"minimum":1,"ready":true,"up":0,"down":0,"long":false,"short":true},
- {"name":"exact vertex crossing once","values":[99,100,99.5,97,96.5,96],"minimum":1,"ready":true,"up":1,"down":0,"long":true,"short":true}
+ {"name":"last up overrides older down on rising guide","values":[101,100,103,103.2,106.8,107,110],"minimum":1,"ready":true,"up":2,"down":1,"long":true,"short":false,"last":"up"},
+ {"name":"legacy minimum arrow count has no effect","values":[101,100,103,103.2,106.8,107,110],"minimum":2,"ready":true,"up":2,"down":1,"long":true,"short":false,"last":"up"},
+ {"name":"last down overrides older up on falling guide","values":[109,110,107,106.8,103.2,103,100],"minimum":1,"ready":true,"up":1,"down":2,"long":false,"short":true,"last":"down"},
+ {"name":"rising straight guide endpoints are not arrows","values":[102,100,102,104,106],"minimum":1,"ready":true,"up":0,"down":0,"long":true,"short":false,"last":null},
+ {"name":"no confirmed pivot","values":[100,101,102,103],"minimum":1,"ready":false,"up":0,"down":0,"long":false,"short":false,"last":null},
+ {"name":"plateau uses final point","values":[100,103,103,102,101],"minimum":1,"ready":true,"up":0,"down":0,"long":false,"short":true,"last":null},
+ {"name":"exact vertex crossing once","values":[99,100,99.5,97,96.5,96],"minimum":1,"ready":true,"up":1,"down":0,"long":true,"short":true,"last":"up"},
+ {"name":"last down permits short despite a rising guide","values":[101,100,103,103.2,106.8,109,110],"minimum":99,"ready":true,"up":1,"down":1,"long":true,"short":true,"last":"down"},
+ {"name":"last up permits long despite a falling guide","values":[109,110,107,106.8,103.2,101,100],"minimum":99,"ready":true,"up":1,"down":1,"long":true,"short":true,"last":"up"}
 ]

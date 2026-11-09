@@ -1015,10 +1015,10 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             if (evaluation.get("strategy") != "ma_proximity"
                     or int(evaluation.get("time") or 0) < expected
                     or not pivot.get("ready")
+                    or pivot.get("rule") != "last_arrow_v1"
                     or any(pivot.get(field) != self.state.get(key, default)
                            for key, field, default in (("ma_pivot_period", "period", 24),
-                                                       ("ma_pivot_lookback", "lookback", 120),
-                                                       ("ma_pivot_min_arrows", "min_arrows", 1)))
+                                                       ("ma_pivot_lookback", "lookback", 120)))
                     or not pivot.get("long_pass" if side > 0 else "short_pass")):
                 self._finish_entry_campaign("ma_pivot_direction_filter")
                 self._save()

@@ -4,7 +4,7 @@ const common=require('../terminal-common.js');
 for(const fixture of require('./fixtures/ma_pivot_cases.json')) {
  const points=fixture.values.map((value,time)=>({time,value}));
  const result=common.maPivotAnalysis(points,points.length-1,points.length,fixture.minimum);
- for(const [expected,key] of [['ready','ready'],['up','up_count'],['down','down_count'],['long','long_pass'],['short','short_pass']]) assert.equal(result[key],fixture[expected],fixture.name+' '+key);
+ for(const [expected,key] of [['ready','ready'],['up','up_count'],['down','down_count'],['long','long_pass'],['short','short_pass'],['last','last_arrow']]) assert.equal(result[key],fixture[expected],fixture.name+' '+key);
  const causal=common.maPivotAnalysis([...points,{time:points.length,value:100000}],points.length-1,points.length,fixture.minimum);
  assert.deepEqual(causal,result,'future candles cannot change a past guide condition');
 }
@@ -39,18 +39,20 @@ for(const prefix of ['crypto_','lighterCrypto_']) {
  vm.createContext(context);vm.runInContext(fs.readFileSync('terminal-common.js','utf8'),context);
  const ui=window.TerminalCommon,host=document.querySelector('main');
  host.innerHTML=ui.renderMaProximityControls(prefix,{});ui.bindMaPivotControls(prefix);
- const count=document.getElementById(prefix+'maPivotMinArrows');count.value='3';count.dispatchEvent(new window.Event('input'));
- host.innerHTML=ui.renderMaProximityControls(prefix,{ma_pivot_min_arrows:1});
- assert.equal(document.getElementById(prefix+'maPivotMinArrows').value,'3','local draft survives rerender');
- ui.syncMaPivotControls(prefix,{strategy_mode:'ma_proximity',strategy_params:{ma_pivot_min_arrows:2}});
- assert.equal(document.getElementById(prefix+'maPivotMinArrows').value,'3','polling preserves draft');
+ const count=document.getElementById(prefix+'maPivotLookback');count.value='30';count.dispatchEvent(new window.Event('input'));
+ host.innerHTML=ui.renderMaProximityControls(prefix,{ma_pivot_lookback:120});
+ assert.equal(document.getElementById(prefix+'maPivotLookback').value,'30','local draft survives rerender');
+ ui.syncMaPivotControls(prefix,{strategy_mode:'ma_proximity',strategy_params:{ma_pivot_lookback:90}});
+ assert.equal(document.getElementById(prefix+'maPivotLookback').value,'30','polling preserves draft');
  Object.defineProperty(document.getElementById(prefix+'maPivotPeriod'),'value',{value:'24',writable:true,configurable:true});
- ui.syncMaPivotControls(prefix,{strategy_mode:'ma_proximity',strategy_params:{ma_pivot_min_arrows:2}},true);
- assert.equal(document.getElementById(prefix+'maPivotMinArrows').value,'2','match live replaces draft');
+ ui.syncMaPivotControls(prefix,{strategy_mode:'ma_proximity',strategy_params:{ma_pivot_lookback:90}},true);
+ assert.equal(document.getElementById(prefix+'maPivotLookback').value,'90','match live replaces draft');
  assert.equal(store.has(prefix+'maPivotDraft'),false);
  const config={...ui.maPivotSettings(prefix),use_ma_pivot_direction:true};
- ui.renderMaPivotStatus(prefix,'Live',{ma_pivot:{ready:true,period:7,lookback:120,min_arrows:1,long_pass:true,short_pass:true}},config,100000,true);
+ ui.renderMaPivotStatus(prefix,'Live',{ma_pivot:{rule:"last_arrow_v1",ready:true,period:7,lookback:120,min_arrows:1,long_pass:true,short_pass:true}},config,100000,true);
  assert.equal(document.getElementById(prefix+'maPivotLongLive').textContent,'LIVE · UNAVAILABLE','old parameter counts cannot pass a new setting');
- assert.match(document.getElementById(prefix+'maPivotLiveSource').textContent,/Parameters changed/);
+ assert.match(document.getElementById(prefix+'maPivotLiveSource').textContent,/parameters changed/i);
+ ui.renderMaPivotStatus(prefix,'Live',{ma_pivot:{ready:true,period:24,lookback:90,long_pass:true,short_pass:true}},config,100000,true);
+ assert.equal(document.getElementById(prefix+'maPivotLongLive').textContent,'LIVE · UNAVAILABLE','pre-migration any-arrow verdict cannot be reused');
 }
 console.log('MA pivot replay draft persistence and Match Live passed');
