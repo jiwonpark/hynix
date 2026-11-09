@@ -267,9 +267,13 @@ weighted basis and allocated entry fees. Recheck with the final executable quote
 and quantity immediately before submitting a reduce-only exit. Never close foreign
 inventory. Default ON also applies to existing bot state lacking these new fields.
 For Lighter single-leg strategies, a below-minimum strategy exit retains the
-tracked lot and still allows a fresh, eligible entry on the same side. A reversal
-must reduce the existing lot first. Venue minimums and order reconciliation
-remain execution safeguards.
+tracked lot and still allows a fresh, eligible entry on the same side. If an
+eligible opposite signal encounters a below-minimum exit, one opposite order
+can net the verified bot-owned remainder and open the sized entry. It requires
+an exact inventory match and resolved protection. The pending intent records
+the close quantity, and confirmed fills consume the old lot before opening any
+new quantity. Ordinary reducible positions still use reduce-only exits before
+reentry. Venue minimums and reconciliation remain execution safeguards.
 
 Net return = (directional fill-to-quote P&L − allocated confirmed entry commissions
 − expected exit commission) / matched entry notional. Binance reads signed

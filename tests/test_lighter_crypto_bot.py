@@ -470,26 +470,85 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.bot.state.update(enabled=True, strategy_mode="ma_proximity",
                               strategy_interval="1m", tranches=[dust])
 
-        for side in (-1, 1):
-            self.bot.state["last_evaluated_candle"] = 0
-            evaluation = {"strategy": "ma_proximity", "condition_pass": {}}
-            with patch("backend.lighter_crypto_bot.time.time", return_value=1000030), patch(
-                "backend.lighter_crypto_bot.evaluate_strategy_signal",
-                return_value=(True, side, True, evaluation),
-            ):
-                await self.bot.run_once()
+        with patch("backend.lighter_crypto_bot.time.time", return_value=1000030), patch(
+            "backend.lighter_crypto_bot.evaluate_strategy_signal",
+            return_value=(True, 1, True, {"strategy": "ma_proximity", "condition_pass": {}}),
+        ):
+            await self.bot.run_once()
 
-            self.assertEqual(self.bot.state["tranches"][0], dust)
-            self.assertFalse(self.bot.state["recovery_required"])
-            self.assertIsNone(self.bot.state["pending_order"])
-            if side < 0:
-                self.assertFalse(self.client.orders)
-                self.assertIn("below the Lighter minimum", self.bot.state["last_error"])
-            else:
-                self.assertEqual(len(self.client.orders), 1)
-                self.assertEqual(len(self.bot.state["tranches"]), 2)
-                self.assertEqual(self.bot.state["execution_history"][-1]["event"], "ENTRY")
-                self.assertIsNone(self.bot.state["last_error"])
+        self.assertEqual(self.bot.state["tranches"][0], dust)
+        self.assertEqual(len(self.client.orders), 1)
+        self.assertEqual(len(self.bot.state["tranches"]), 2)
+        self.assertEqual(self.bot.state["execution_history"][-1]["event"], "ENTRY")
+        self.assertIsNone(self.bot.state["last_error"])
+
+    async def test_dust_reversal_nets_one_order_and_keeps_split_history(self):
+        last_open = 999960
+        self.client.candle_rows = [
+            {"t": (last_open - (29 - index) * 60) * 1000, "c": 100.0}
+            for index in range(30)
+        ]
+        self.client.amount = 0.005
+        self.bot.state.update(enabled=True, strategy_mode="ma_proximity", notional_usd=100.0,
+                              strategy_interval="1m", max_tranches=1,
+                              tranches=[{"side": 1, "qty": 0.005, "price": 95.0, "fee_usd": 0.001,
+                                         "order_id": "dust", "time": 1}])
+        with patch("backend.lighter_crypto_bot.time.time", return_value=1000030), patch(
+            "backend.lighter_crypto_bot.evaluate_strategy_signal",
+            return_value=(True, -1, False, {"strategy": "ma_proximity", "condition_pass": {}}),
+        ):
+            await self.bot.run_once()
+
+        self.assertEqual(len(self.client.orders), 1)
+        fill = next(iter(self.client.orders.values()))
+        self.assertAlmostEqual(fill["filled_size"], 1.005)
+        self.assertAlmostEqual(self.client.amount, -1.0)
+        restored = LighterCryptoBot(self.client, self.path)
+        self.assertIsNone(restored.state["pending_order"])
+        self.assertEqual(len(restored.state["tranches"]), 1)
+        self.assertEqual(restored.state["tranches"][0]["side"], -1)
+        self.assertAlmostEqual(restored.state["tranches"][0]["qty"], 1.0)
+        closed, opened = restored.state["execution_history"][-2:]
+        self.assertEqual((closed["event"], opened["event"]), ("EXIT", "ENTRY"))
+        self.assertAlmostEqual(closed["qty"], 0.005)
+        self.assertAlmostEqual(closed["net_pnl_usd"], 0.024)
+        self.assertAlmostEqual(opened["qty"], 1.0)
+        exchange = dict(closed, qty=1.005, exchange_client_order_index=closed["client_order_index"])
+        self.assertEqual(restored._merge_execution_history([exchange], [closed, opened]), [closed, opened])
+
+    async def test_dust_reversal_refuses_unowned_exchange_remainder(self):
+        self.client.amount = 0.006
+        self.bot.state["tranches"] = [
+            {"side": 1, "qty": 0.005, "price": 95.0, "fee_usd": 0.0,
+             "order_id": "dust", "time": 1},
+        ]
+        with self.assertRaisesRegex(ValueError, "exact match to bot-owned inventory"):
+            await self.bot._submit(-1, 100.0, reduce_only=False, reason="dust_reversal", net_dust=True)
+        self.assertFalse(self.client.orders)
+        self.assertIsNone(self.bot.state["pending_order"])
+
+    async def test_dust_reversal_recovers_partial_fill_without_opening_opposite_lot(self):
+        self.bot.state["tranches"] = [
+            {"side": 1, "qty": 0.005, "price": 95.0, "fee_usd": 0.005,
+             "order_id": "dust", "time": 1},
+        ]
+        self.bot.state["pending_order"] = {
+            "client_order_index": 2, "symbol": "BTC", "market_id": 1, "side": -1,
+            "qty": 1.005, "size_step": 0.001, "dust_reversal_qty": 0.005,
+            "reduce_only": False, "reason": "dust_reversal",
+        }
+        self.client.orders[2] = {"status": "cancelled", "filled_base_amount": "0.002",
+                                 "filled_quote_amount": "0.2", "integrator_taker_fee": 0.001}
+        self.bot._save()
+        restored = LighterCryptoBot(self.client, self.path)
+        resolved, event = await restored._resolve_pending_order()
+        self.assertTrue(resolved)
+        self.assertEqual(event["event"], "EXIT")
+        self.assertAlmostEqual(event["qty"], 0.002)
+        self.assertAlmostEqual(event["fee_usd"], 0.001)
+        self.assertAlmostEqual(restored.state["tranches"][0]["qty"], 0.003)
+        self.assertEqual(restored.state["tranches"][0]["side"], 1)
+        self.assertIsNone(restored.state["pending_order"])
 
     async def test_client_minimum_preflight_rejection_does_not_require_recovery(self):
         self.client.amount = 0.1

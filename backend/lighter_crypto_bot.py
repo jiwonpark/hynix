@@ -317,8 +317,12 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
         # One native child can execute against several counterparties. Match
         # the complete order, not one partial trade against the whole local lot.
         grouped = {}
+        split_orders = {(event["symbol"], str(event["client_order_index"]))
+                        for event in local_events if event.get("dust_reversal")}
         for event in exchange_events:
             ref = event.get("exchange_client_order_index")
+            if ref is not None and (event.get("symbol"), str(ref)) in split_orders:
+                continue
             key = (event.get("symbol"), event.get("event"), event.get("side"), str(ref)) if ref else ("trade", event.get("exchange_trade_id", event.get("order_id")))
             if key not in grouped:
                 grouped[key] = copy.deepcopy(event)
@@ -1084,17 +1088,29 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                  "reason": pending["reason"], "time": int(order.get("fill_time_ms", 0) or 0) // 1000 or int(time.time()),
                  "fee_usd": float(order.get("fee_usd", 0) or 0),
                  "pnl_authoritative": False}
-        if is_exit:
-            self._finish_entry_campaign("exit_started")
-            remaining = filled
+        dust_qty = float(pending.get("dust_reversal_qty", 0))
+        if dust_qty and (not math.isfinite(filled) or not math.isfinite(price) or filled > expected + step / 2):
+            raise ValueError("Lighter reversal fill is invalid for the submitted quantity")
+        # Stage both sides together so pending-order recovery never persists
+        # half of a reversal.
+        tranches = [dict(tranche) for tranche in self.state["tranches"]]
+        close_qty = filled if is_exit else min(filled, dust_qty)
+        exit_event = None
+        reduction_tolerance = step / 2 if dust_qty else max(step / 2, filled * 0.00001)
+        if close_qty:
+            if dust_qty:
+                event.update(event="EXIT", qty=close_qty, notional_usd=close_qty * price,
+                             fee_usd=event["fee_usd"] * close_qty / filled,
+                             order_id=f'{event["order_id"]}:close', dust_reversal=True)
+            remaining = close_qty
             matched = []
-            while remaining > max(step / 2, filled * 0.00001) and self.state["tranches"]:
+            while remaining > reduction_tolerance and tranches:
                 target_id = pending.get("entry_order_id")
-                lot_index = next((i for i, t in enumerate(self.state["tranches"])
+                lot_index = next((i for i, t in enumerate(tranches)
                                   if str(t["order_id"]) == str(target_id)), -1) if target_id else -1
                 if target_id and lot_index < 0:
                     raise ValueError("Native exit does not match a tracked entry")
-                tracked = self.state["tranches"][lot_index]
+                tracked = tranches[lot_index]
                 if int(tracked["side"]) * side >= 0:
                     raise ValueError("Lighter reduction fill does not match the tracked campaign direction")
                 original_qty = float(tracked["qty"])
@@ -1110,13 +1126,13 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                     "order_id": str(tracked["order_id"]),
                 })
                 if consumed_all:
-                    self.state["tranches"].pop(lot_index)
+                    tranches.pop(lot_index)
                 else:
                     tracked["qty"] = original_qty - consumed
                     tracked["fee_usd"] = entry_fee - fee_share
                 remaining -= consumed
 
-            if remaining > max(step / 2, filled * 0.00001):
+            if remaining > reduction_tolerance:
                 raise ValueError("Lighter reduction fill exceeds bot-owned inventory")
             if matched:
                 matched_qty = sum(item["qty"] for item in matched)
@@ -1141,8 +1157,17 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 event.update(entry_price=price, entry_order_id="external",
                              original_side=-side, gross_pnl_usd=0.0,
                              net_pnl_usd=-event["fee_usd"], pnl_source="ESTIMATED_EX_FUNDING")
-        else:
-            self.state["tranches"].append({"side": side, "qty": filled, "price": price,
+            exit_event = event
+        open_qty = filled - close_qty
+        if open_qty > step / 2:
+            if dust_qty:
+                event = dict(event, event="ENTRY", order_id=str(pending["client_order_index"]),
+                             qty=open_qty, notional_usd=open_qty * price,
+                             fee_usd=float(order.get("fee_usd", 0) or 0) - exit_event["fee_usd"])
+                for field in ("entry_price", "entry_order_id", "entry_order_ids", "matched_tranches",
+                              "original_side", "gross_pnl_usd", "net_pnl_usd", "pnl_source"):
+                    event.pop(field, None)
+            tranches.append({"side": side, "qty": open_qty, "price": price,
                                             "fee_usd": event["fee_usd"],
                                             "order_id": event["order_id"], "time": event["time"]})
             campaign = self.state.get("entry_campaign")
@@ -1155,6 +1180,11 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 campaign.pop("initial_reason", None)
             if self.state.get("strategy_mode") == "macd_strength_scaleout":
                 self.state["macd_exit_stage"] = 0
+        self.state["tranches"] = tranches
+        if close_qty:
+            self._finish_entry_campaign("exit_started")
+        if exit_event is not None and exit_event is not event:
+            self.state["execution_history"].append(exit_event)
         if pending.get("macd_exit_stage_after") is not None:
             self.state["macd_exit_stage"] = int(pending["macd_exit_stage_after"])
         self.state["execution_history"].append(event)
@@ -1202,7 +1232,8 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                       signal_values: Optional[list[float]] = None,
                       reduce_fraction: float = 1.0, exit_stage_after: Optional[int] = None,
                       macro_alignment: Optional[tuple[bool, bool]] = None,
-                      campaign_id: Optional[str] = None) -> Dict[str, Any]:
+                      campaign_id: Optional[str] = None,
+                      net_dust: bool = False) -> Dict[str, Any]:
         async with self.client.execution_lock:
             await self.reconcile_native_protection(cancel=reduce_only)
             symbol = self.state["selected_symbol"]
@@ -1234,6 +1265,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 )
                 if not valid or quote_side != side:
                     raise ValueError("Current Lighter quote no longer supports the candle entry signal")
+            dust_qty = 0.0
             if reduce_only:
                 if not self.state["tranches"] or amount * side >= 0:
                     raise ValueError("No bot-owned tranche can be reduced in that direction")
@@ -1241,15 +1273,35 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             else:
                 if self.state["pending_order"] or self.state["recovery_required"]:
                     raise ValueError("Execution recovery required")
-                if not has_entry_slot(self.state):
+                if net_dust:
+                    if self.state.get("execution_blocked") or self.state.get("native_brackets"):
+                        raise ValueError("Resolve execution or protection blocks before reversing")
+                    if amount * side >= 0 or not self.state["tranches"]:
+                        raise ValueError("Dust reversal requires an opposing bot-owned position")
+                    owned_qty = sum(float(t["qty"]) for t in self.state["tranches"])
+                    dust_steps = round(abs(amount) / step)
+                    if (dust_steps < 1
+                            or not math.isclose(abs(amount), dust_steps * step, rel_tol=0, abs_tol=step * 1e-6)
+                            or any(int(t["side"]) != -side for t in self.state["tranches"])
+                            or not math.isclose(abs(amount), owned_qty, rel_tol=0, abs_tol=step * 1e-6)):
+                        raise ValueError("Dust reversal requires an exact match to bot-owned inventory")
+                    try:
+                        self._reduction_quantity(side, price, detail, step, 1.0)
+                    except BelowMinimumReduction:
+                        dust_qty = float(Decimal(dust_steps).scaleb(-int(detail["supported_size_decimals"])))
+                    else:
+                        raise ValueError("Dust reversal requires a position below the reduction minimum")
+                elif not has_entry_slot(self.state):
                     raise ValueError("Tranche capacity reached")
                 is_dust_pos = (abs(amount) * mark_px < self.DUST_NOTIONAL_THRESHOLD_USD) or (min_base > 0 and abs(amount) < min_base)
-                if not is_dust_pos and amount and amount * side < 0:
+                if not net_dust and amount * side < 0 and (self.state["tranches"] or not is_dust_pos):
                     raise ValueError("Cannot reverse an active campaign")
                 mult = float(self.state.get("long_multiplier", 1.0)) if side > 0 else float(self.state.get("short_multiplier", 1.0))
                 effective_notional = notional * max(0.1, mult)
                 qty = self._entry_quantity(effective_notional, price, detail)
                 self._check_entry_capacity(account, positions, qty * price)
+                if dust_qty:
+                    qty = float(Decimal(str(qty)) + Decimal(str(dust_qty)))
             if reason == "net_take_profit":
                 if not self.state.get("use_take_profit", True) or not (await self.take_profit_evaluation(price, float(qty)))["pass"]:
                     raise ValueError("Executable quote no longer meets net take-profit target")
@@ -1260,6 +1312,8 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             pending = {"client_order_index": order_index, "symbol": symbol, "market_id": market_id,
                        "side": side, "qty": qty, "size_step": step,
                        "reduce_only": reduce_only, "reason": reason, "created_at": int(time.time())}
+            if dust_qty:
+                pending["dust_reversal_qty"] = dust_qty
             if campaign_id is not None:
                 pending["campaign_id"] = str(campaign_id)
             if exit_stage_after is not None:
@@ -1876,6 +1930,11 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                     except BelowMinimumReduction as exc:
                         # Keep the tracked remainder. A valid same-side entry can
                         # add to it without netting or reversing the open lot.
+                        if reversing:
+                            await self._submit(side, self.state["notional_usd"], reduce_only=False,
+                                               reason="dust_reversal", signal_values=values,
+                                               macro_alignment=macro_alignment, net_dust=True)
+                            return
                         if not (entry and direction_allowed and side == position_side):
                             raise
                         self.state["last_error"] = str(exc)
@@ -1883,20 +1942,26 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                     else:
                         await self._continue_entry_campaign()
                         return
-                if entry and direction_allowed and has_entry_slot(self.state):
+                if entry and direction_allowed:
                     if self.state["strategy_mode"] == "macd_strength_scaleout" and self.state["tranches"]:
                         return
                     if position_side and position_side * side < 0:
                         self._finish_entry_campaign("opposite_signal")
                         if time.time() - self.state["last_order_time"] >= self.state["min_seconds_between_orders"]:
-                            await self._submit(-position_side, 0, reduce_only=True,
-                                               reason="opposite_signal_reversal")
+                            try:
+                                await self._submit(-position_side, 0, reduce_only=True,
+                                                   reason="opposite_signal_reversal")
+                            except BelowMinimumReduction:
+                                await self._submit(side, self.state["notional_usd"], reduce_only=False,
+                                                   reason="dust_reversal", signal_values=values,
+                                                   macro_alignment=macro_alignment, net_dust=True)
+                                return
                             if not self.state["tranches"]:
                                 self._start_entry_campaign(
                                     side, last_candle, signal_values=values,
                                     macro_alignment=macro_alignment, initial_reason="reversal_entry",
                                 )
-                    else:
+                    elif has_entry_slot(self.state):
                         self._start_entry_campaign(
                             side, last_candle, signal_values=values,
                             macro_alignment=macro_alignment,
