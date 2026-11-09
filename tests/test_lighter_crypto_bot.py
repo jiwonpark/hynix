@@ -458,6 +458,39 @@ class TestLighterCryptoBot(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.bot.state["recovery_required"])
         self.assertFalse(self.bot.state["execution_blocked"])
 
+    async def test_dust_exit_does_not_preempt_valid_same_side_entry(self):
+        last_open = 999960
+        self.client.candle_rows = [
+            {"t": (last_open - (29 - index) * 60) * 1000, "c": 100.0}
+            for index in range(30)
+        ]
+        dust = {"side": 1, "qty": 0.005, "price": 95.0, "fee_usd": 0.0,
+                "order_id": "dust", "time": 1}
+        self.client.amount = dust["qty"]
+        self.bot.state.update(enabled=True, strategy_mode="ma_proximity",
+                              strategy_interval="1m", tranches=[dust])
+
+        for side in (-1, 1):
+            self.bot.state["last_evaluated_candle"] = 0
+            evaluation = {"strategy": "ma_proximity", "condition_pass": {}}
+            with patch("backend.lighter_crypto_bot.time.time", return_value=1000030), patch(
+                "backend.lighter_crypto_bot.evaluate_strategy_signal",
+                return_value=(True, side, True, evaluation),
+            ):
+                await self.bot.run_once()
+
+            self.assertEqual(self.bot.state["tranches"][0], dust)
+            self.assertFalse(self.bot.state["recovery_required"])
+            self.assertIsNone(self.bot.state["pending_order"])
+            if side < 0:
+                self.assertFalse(self.client.orders)
+                self.assertIn("below the Lighter minimum", self.bot.state["last_error"])
+            else:
+                self.assertEqual(len(self.client.orders), 1)
+                self.assertEqual(len(self.bot.state["tranches"]), 2)
+                self.assertEqual(self.bot.state["execution_history"][-1]["event"], "ENTRY")
+                self.assertIsNone(self.bot.state["last_error"])
+
     async def test_client_minimum_preflight_rejection_does_not_require_recovery(self):
         self.client.amount = 0.1
         self.bot.state["tranches"] = [

@@ -90,6 +90,10 @@ DEFAULT_STATE = {
 }
 
 
+class BelowMinimumReduction(ValueError):
+    """Tracked inventory cannot meet the venue minimum for a reduce-only order."""
+
+
 class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMixin):
     profit_venue = "lighter"
     # Standard 8.0x gross leverage cap matching Tab 2 and Tab 3.
@@ -1189,7 +1193,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             quantized = math.floor((aggregate / step) + 1e-12) * step
             if quantized >= minimum_qty - step * 1e-9:
                 return quantized
-        raise ValueError(
+        raise BelowMinimumReduction(
             f"Bot-owned LIFO inventory is below the Lighter minimum reduction size "
             f"({aggregate:.8f} available; {minimum_qty:.8f} required)"
         )
@@ -1850,25 +1854,36 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 if self.state["tranches"] and exit_signal:
                     self._finish_entry_campaign("strategy_exit")
                     reversing = bool(entry and direction_allowed and position_side * side < 0)
-                    if (not reversing and self.state["strategy_mode"] == "macd_strength_scaleout"
-                            and self.state.get("use_macd_two_stage_exit", True)
-                            and int(self.state.get("macd_exit_stage", 0)) == 0):
-                        fraction = float(self.state.get("macd_first_exit_pct", 50.0)) / 100.0
-                        await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
-                                           reduce_only=True, reason="macd_first_peak_exit",
-                                           reduce_fraction=fraction, exit_stage_after=1)
+                    try:
+                        if (not reversing and self.state["strategy_mode"] == "macd_strength_scaleout"
+                                and self.state.get("use_macd_two_stage_exit", True)
+                                and int(self.state.get("macd_exit_stage", 0)) == 0):
+                            fraction = float(self.state.get("macd_first_exit_pct", 50.0)) / 100.0
+                            await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
+                                               reduce_only=True, reason="macd_first_peak_exit",
+                                               reduce_fraction=fraction, exit_stage_after=1)
+                        else:
+                            await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
+                                               reduce_only=True,
+                                               reason="opposite_signal_reversal" if reversing else "macd_final_peak_exit",
+                                               exit_stage_after=0)
+                            if reversing and not self.state["tranches"]:
+                                self._start_entry_campaign(
+                                    side, last_candle, signal_values=values,
+                                    macro_alignment=macro_alignment, initial_reason="reversal_entry",
+                                )
+                                await self._continue_entry_campaign()
+                    except BelowMinimumReduction as exc:
+                        # Keep the tracked remainder. A valid same-side entry can
+                        # add to it without netting or reversing the open lot.
+                        if not (entry and direction_allowed and side == position_side):
+                            raise
+                        self.state["last_error"] = str(exc)
+                        self._save()
                     else:
-                        await self._submit(-int(self.state["tranches"][-1]["side"]), 0,
-                                           reduce_only=True,
-                                           reason="opposite_signal_reversal" if reversing else "macd_final_peak_exit",
-                                           exit_stage_after=0)
-                        if reversing and not self.state["tranches"]:
-                            self._start_entry_campaign(
-                                side, last_candle, signal_values=values,
-                                macro_alignment=macro_alignment, initial_reason="reversal_entry",
-                            )
-                            await self._continue_entry_campaign()
-                elif entry and direction_allowed and has_entry_slot(self.state):
+                        await self._continue_entry_campaign()
+                        return
+                if entry and direction_allowed and has_entry_slot(self.state):
                     if self.state["strategy_mode"] == "macd_strength_scaleout" and self.state["tranches"]:
                         return
                     if position_side and position_side * side < 0:
