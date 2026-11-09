@@ -204,34 +204,81 @@
     }
     if (endIndex < 2) return [];
     const end = points[endIndex];
-    if (!Number.isFinite(Number(end?.value))) return [];
-    for (let index = endIndex - 1; index >= 1; index -= 1) {
-      const previous = Number(points[index - 1]?.value);
-      const current = Number(points[index]?.value);
-      const next = Number(points[index + 1]?.value);
-      if (![previous, current, next].every(Number.isFinite)) continue;
-      const isMaximum = (current >= previous && current > next) || (current > previous && current >= next);
-      const isMinimum = (current <= previous && current < next) || (current < previous && current <= next);
-      if (isMaximum || isMinimum) {
-        return [
-          {time: points[index].time, value: current},
-          {time: end.time, value: Number(end.value)},
-        ];
+    if (end?.value == null || !Number.isFinite(Number(end.value))) return [];
+    let direction = 0;
+    let pivotIndex = -1;
+    for (let index = 1; index <= endIndex; index += 1) {
+      const previous = points[index - 1]?.value;
+      const current = points[index]?.value;
+      if (previous == null || current == null || ![previous, current].every(Number.isFinite)) {
+        direction = 0;
+        pivotIndex = -1;
+        continue;
       }
+      const nextDirection = Math.sign(current - previous);
+      if (nextDirection && direction && nextDirection !== direction) pivotIndex = index - 1;
+      if (nextDirection) direction = nextDirection;
     }
-    return [];
+    return pivotIndex < 0 ? [] : [
+      {time: points[pivotIndex].time, value: points[pivotIndex].value},
+      {time: end.time, value: Number(end.value)},
+    ];
   }
 
-  function createMaExtremumHoverSeries(chart, colors, lineStyle) {
-    if (!chart?.addLineSeries) return {};
-    return Object.fromEntries(Object.entries(colors || {}).map(([key, color]) => [key, chart.addLineSeries({
-      color,
-      lineWidth: 2,
-      lineStyle,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    })]));
+  function createMaExtremumHoverSeries(chart, colors, lineStyle, priceSeries) {
+    if (!priceSeries?.attachPrimitive) return {};
+    const states = Object.entries(colors || {}).map(([period, color]) => ({period, color, visible: true, points: []}));
+    let requestUpdate = null;
+    const renderer = {
+      draw(target) {
+        target.useMediaCoordinateSpace(({context: ctx}) => {
+          for (const state of states) {
+            if (!state.visible || state.points.length !== 2) continue;
+            const coords = state.points.map(point => ({
+              x: chart.timeScale().timeToCoordinate(point.time),
+              y: priceSeries.priceToCoordinate(point.value),
+            }));
+            if (!coords.every(p => Number.isFinite(p.x) && Number.isFinite(p.y))) continue;
+            ctx.save();
+            ctx.strokeStyle = state.color;
+            ctx.fillStyle = state.color;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash(lineStyle === 0 ? [] : [5, 4]);
+            ctx.beginPath();
+            ctx.moveTo(coords[0].x, coords[0].y);
+            ctx.lineTo(coords[1].x, coords[1].y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.arc(coords[0].x, coords[0].y, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        });
+      },
+    };
+    // A primitive draws in the price pane but owns no data, autoscale range or
+    // hit targets. Calling real-series setData/applyOptions during a crosshair
+    // callback re-enters that callback in Lightweight Charts 4.2.
+    priceSeries.attachPrimitive({
+      attached(params) { requestUpdate = params.requestUpdate; },
+      detached() { requestUpdate = null; },
+      paneViews: () => [{zOrder: () => 'top', renderer: () => renderer}],
+    });
+    return Object.fromEntries(states.map(state => [state.period, {
+      applyOptions(options) {
+        if (options.visible !== undefined && state.visible !== options.visible) {
+          state.visible = options.visible;
+          requestUpdate?.();
+        }
+      },
+      setData(points) {
+        if (state.points.length === points.length && state.points.every((p, i) => p.time === points[i].time && p.value === points[i].value)) return;
+        state.points = points;
+        requestUpdate?.();
+      },
+      data: () => state.points.slice(),
+    }]));
   }
 
   function renderMaExtremumHover(seriesByPeriod, dataByPeriod, targetTime, visibility = {}) {

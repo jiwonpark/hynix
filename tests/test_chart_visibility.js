@@ -21,9 +21,12 @@ for (const [file,name,tab] of [['lighter-tab.js','lighterEngine','Lighter'],
   const order={disabled:false,classList:{contains:()=>false}};
   const root={dataset:{terminalInstance:tab[0].toLowerCase()+tab.slice(1)},
     querySelectorAll(selector){return selector==='button,input,select'?[arrow,order]:[];}};
-  const context={window:{TerminalCommon:common},console,URLSearchParams,
+  const context={window:{},console,URLSearchParams,
     document:{readyState:'loading',addEventListener(){},getElementById(id){return id===`tabContent${tab}`?root:null;}}};
-  vm.createContext(context);vm.runInContext(fs.readFileSync(file,'utf8'),context);
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync('terminal-common.js','utf8'),context);
+  context.TerminalCommon=context.window.TerminalCommon;
+  vm.runInContext(fs.readFileSync(file,'utf8'),context);
   const engine=context.window[name];
   engine.labelTerminal=()=>{};engine.applyMode=()=>{};
   engine.renderVirtualState=()=>{};engine.syncBotStatus=()=>{};

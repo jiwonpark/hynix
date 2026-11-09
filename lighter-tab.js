@@ -2059,7 +2059,7 @@
       };
       this.maExtremumHoverSeries = TerminalCommon.createMaExtremumHoverSeries(this.chart, {
         7: "#f59e0b", 24: "#8b5cf6", 60: "#06b6d4",
-      }, LightweightCharts.LineStyle?.Dashed || 2);
+      }, LightweightCharts.LineStyle?.Dashed || 2, this.series);
       this.chart.subscribeCrosshairMove((param) => {
         const targetTime = param?.time == null ? null
           : (typeof param.time === "number" ? param.time : (param.time.timestamp || param.time));

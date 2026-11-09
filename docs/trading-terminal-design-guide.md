@@ -140,6 +140,21 @@ Across all trading tabs, live price, account, position, and P&L polling must not
 
 Tabs 2–5 use the same navigation, loading, chart viewport, history, marker, and replay interaction model. Venue and strategy differences must not change those mechanics. Linked chart panes must receive identical ordered timestamps; represent unavailable observations as whitespace instead of removing the timestamp. Entering a different terminal starts at the top of that terminal, while horizontal navigation centering must never alter the document's vertical scroll. Every shared-interaction change requires verification across all four tabs.
 
+MA pivot guides are visual-only pane primitives attached to the existing price
+series. Hover must not call real chart-series `setData` or `applyOptions`: those
+operations can synchronously emit another crosshair event in Lightweight Charts
+4.2 and overflow the stack. Guides must not contribute data timestamps, autoscale
+ranges or pointer hit targets. Draw using the current time/price transforms so
+pan, wheel zoom, price-axis scaling and resizing move the guides with their MAs.
+Hide guides on pointer leave and when the owning MA is hidden. Flat runs require
+a subsequent reversal before they qualify as a pivot; unavailable values must
+not become zero-price pivots. Browser verification must exercise real pointer
+hover, wheel, multi-step drag, price-axis scaling and linked-pane synchronization
+in Tabs 2–5; unit tests of endpoint arrays alone cannot certify this interaction.
+Run `HYPERION_VERIFY_INTERACTION=1 node scripts/verify_live_charts.mjs` and inspect
+the saved hover/scaled screenshots. Runtime JavaScript exceptions fail verification.
+
+
 Tabs 4 and 5 default the hourly wider-trend regime to **simple MA60 slope**.
 Compare the latest completed hourly MA with its value one completed hour earlier;
 rising permits longs, falling permits shorts, exactly flat permits both. Require

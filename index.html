@@ -14100,7 +14100,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
           });
           this.shortTermMaExtremumHoverSeries = TerminalCommon.createMaExtremumHoverSeries(this.shortTermChart, {
             7: "#f59e0b", 24: "#8b5cf6", 60: "#06b6d4"
-          }, LightweightCharts.LineStyle?.Dashed || 2);
+          }, LightweightCharts.LineStyle?.Dashed || 2, this.shortTermSeries);
 
           this.executionChartController = new StrategyExecutionChartController({
             series: this.shortTermSeries,

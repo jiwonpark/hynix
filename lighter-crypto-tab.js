@@ -2936,7 +2936,7 @@
       };
       this.maExtremumHoverSeries = TerminalCommon.createMaExtremumHoverSeries(this.chart, {
         7: "#f59e0b", 24: "#8b5cf6", 60: "#06b6d4",
-      }, LightweightCharts.LineStyle?.Dashed || 2);
+      }, LightweightCharts.LineStyle?.Dashed || 2, this.series);
 
       const assetHost = lid("shortTermAssetHost");
       if (assetHost && !this.assetChart) {
