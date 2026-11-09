@@ -1,6 +1,7 @@
 import copy
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -307,6 +308,44 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
             await self.bot.configure({"entry_z": 2.5})
         await self.bot.toggle(False)
         self.assertFalse(CryptoBot(self.client, self.path).state["enabled"])
+
+    def test_entry_quantity_allows_safe_under_target_exchange_slice(self):
+        quantity = self.bot._entry_quantity(
+            100.0, 74960.0, Decimal("0.001"), Decimal("0.001"), Decimal("5"),
+        )
+        self.assertEqual(quantity, Decimal("0.001"))
+
+    def test_entry_quantity_still_rejects_oversized_exchange_slice(self):
+        with self.assertRaisesRegex(ValueError, "above the .* safety limit"):
+            self.bot._entry_quantity(
+                100.0, 150000.0, Decimal("0.001"), Decimal("0.001"), Decimal("5"),
+            )
+
+    async def test_retryable_sizing_preflight_does_not_disable_automation(self):
+        self.bot.state["notional_usd"] = 100.0
+        with patch.object(
+            self.bot, "_entry_quantity", side_effect=ValueError("temporary lot mismatch"),
+        ):
+            state = await self.bot.toggle(True)
+        self.assertTrue(state["enabled"])
+        self.assertFalse(state["execution_blocked"])
+        self.assertTrue(state["can_execute_entry"])
+        self.assertIn("automation will retry", state["blocked_reason"])
+        self.assertEqual(self.client.orders, [])
+
+    def test_restart_clears_legacy_retryable_sizing_block(self):
+        self.bot.state.update(
+            enabled=True,
+            execution_blocked=True,
+            blocked_reason="Entry sizing blocked: Exchange lot size makes the nearest order $74.96; adjust the target",
+            last_error=None,
+        )
+        self.bot._save()
+        restored = CryptoBot(self.client, self.path)
+        state = restored.public_state()
+        self.assertTrue(state["enabled"])
+        self.assertFalse(state["execution_blocked"])
+        self.assertTrue(state["can_execute_entry"])
 
     async def test_executable_quote_must_still_support_signal(self):
         self.bot.state["enabled"] = True

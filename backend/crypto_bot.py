@@ -107,8 +107,12 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 self.state.update(recovery_required=True, execution_blocked=True,
                                   blocked_reason="An order was pending during restart; reconcile its client order ID on Binance",
                                   last_error="An order was pending during restart; reconcile its client order ID on Binance")
-            elif str(self.state.get("blocked_reason") or "").startswith("Opposite entry blocked:"):
-                self.state.update(blocked_reason=None, last_error=None)
+            elif (str(self.state.get("blocked_reason") or "").startswith("Opposite entry blocked:") or
+                  str(self.state.get("blocked_reason") or "").startswith("Entry sizing blocked:") or
+                  self.state.get("blocked_reason") == "No available Futures margin for new entries"):
+                # These are retryable entry conditions, not recovery states. Older
+                # versions persisted them as hard execution blocks indefinitely.
+                self.state.update(execution_blocked=False, blocked_reason=None, last_error=None)
         except Exception as exc:
             self.state.update(recovery_required=True, execution_blocked=True,
                               blocked_reason=f"Cannot load crypto execution state: {exc}",
@@ -634,8 +638,13 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             raise ValueError("Configured order is below the current Binance lot/notional minimum")
         chosen = min(candidates, key=lambda qty: abs(qty * price_decimal - target))
         actual_usd = chosen * price_decimal
-        if actual_usd < target * Decimal("0.75") or actual_usd > target * Decimal("1.25"):
-            raise ValueError(f"Exchange lot size makes the nearest order ${actual_usd:.2f}; adjust the target")
+        # A slice below its target reduces risk and is still useful when Binance's
+        # quantity step is coarse. Oversizing remains fail-closed.
+        if actual_usd > target * Decimal("1.25"):
+            raise ValueError(
+                f"Exchange lot size makes the nearest order ${actual_usd:.2f}, "
+                f"above the ${target * Decimal('1.25'):.2f} safety limit; increase the target"
+            )
         return chosen
 
     async def toggle(self, enabled: bool) -> Dict[str, Any]:
@@ -663,22 +672,20 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 )
                 self._save()
                 raise
-            blocked = False
-            blocked_reason = None
+            entry_warning = None
             if float(account.get("summary", {}).get("available_margin_usd", 0)) <= 0:
-                blocked = True
-                blocked_reason = "No available Futures margin for new entries"
+                entry_warning = "No available Futures margin for new entries; automation will retry"
             else:
                 try:
                     step, minimum, min_notional = await self._exchange_rules(symbol)
                     _, ask = await self._book(symbol)
                     self._entry_quantity(self.state["notional_usd"], ask, step, minimum, min_notional)
                 except Exception as exc:
-                    blocked = True
-                    blocked_reason = f"Entry sizing blocked: {exc}"
+                    entry_warning = f"Entry sizing unavailable; automation will retry: {exc}"
             seconds = INTERVAL_SECONDS[self.state["strategy_interval"]]
             self.state["last_evaluated_candle"] = int(time.time()) // seconds * seconds - seconds
-            self.state.update(enabled=True, execution_blocked=blocked, blocked_reason=blocked_reason, last_error=None)
+            self.state.update(enabled=True, execution_blocked=False, blocked_reason=None,
+                              last_error=entry_warning)
             self._save()
             return self.public_state()
 
