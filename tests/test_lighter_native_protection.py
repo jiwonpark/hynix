@@ -113,6 +113,44 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.client.placements), 3)
         self.assertAlmostEqual(self.bot.state['native_brackets'][-1]['qty'], .6)
 
+    async def test_below_minimum_partial_fill_dust_does_not_pause_bot(self):
+        self.bot.state['tranches'] = []
+        self.client.amount = 0
+        self.bot.state.update(enabled=True, native_protection_pending_activation=False)
+        self.bot.state['tranches'].append(
+            dict(order_id='dust', side=1, qty=.001, price=100, fee_usd=0)
+        )
+        self.client.amount = .001
+
+        await self.bot.arm_native_protection()
+
+        self.assertTrue(self.bot.state['enabled'])
+        self.assertFalse(self.bot.state['execution_blocked'])
+        self.assertIsNone(self.bot.state['native_protection_error'])
+        self.assertEqual(self.client.placements, [])
+        status = self.bot.native_protection_status()
+        self.assertEqual(status['state'], 'DUST ONLY')
+        self.assertEqual(status['dust_slices'], 1)
+        self.assertAlmostEqual(status['dust_qty'], .001)
+
+    async def test_terminal_native_partial_fill_tracks_dust_and_keeps_running(self):
+        self.bot.state.update(enabled=True, native_protection_pending_activation=False)
+        groups = await self.arm()
+        self.fill(groups[0], qty=.999)
+
+        await self.bot.reconcile_native_protection()
+        await self.bot.arm_native_protection()
+
+        old = next(lot for lot in self.bot.state['tranches'] if lot['order_id'] == 'old')
+        self.assertAlmostEqual(old['qty'], .001)
+        self.assertTrue(self.bot.state['enabled'])
+        self.assertFalse(self.bot.state['execution_blocked'])
+        self.assertEqual(len(self.client.placements), 2)
+        status = self.bot.native_protection_status()
+        self.assertEqual(status['state'], 'WORKING')
+        self.assertEqual(status['protected_slices'], 1)
+        self.assertEqual(status['dust_slices'], 1)
+
     async def test_strategy_exit_cancels_then_rearms_remaining(self):
         groups = copy.deepcopy(await self.arm())
         await self.bot._submit(-1, 0, reduce_only=True, reason='strategy_exit')

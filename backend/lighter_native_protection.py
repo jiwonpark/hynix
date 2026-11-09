@@ -44,12 +44,21 @@ class NativeProtectionMixin:
         groups = self.state.get("native_brackets", [])
         lots = self.state.get("tranches", [])
         covered = {g["entry_order_id"] for g in groups if g["phase"] == "live"}
+        live_ids = {str(lot.get("order_id", "")) for lot in lots}
+        dust_ids = {
+            str(entry_id) for entry_id in self.state.get("native_protection_dust_entry_ids", [])
+            if str(entry_id) in live_ids
+        }
         return {"enabled": self.state.get("use_native_protection", False),
                 "state": "ERROR" if self.state.get("native_protection_error") else
                          "UPDATE INCOMPLETE" if self.state.get("native_protection_update_pending") else
                          "PENDING RESUME" if self.state.get("native_protection_pending_activation") else
+                         "DUST ONLY" if lots and len(dust_ids) == len(lots) else
                          "WORKING" if groups else "WAITING" if self.state.get("use_native_protection") else "OFF",
                 "protected_slices": sum(str(t.get("order_id", "")) in covered for t in lots),
+                "dust_slices": len(dust_ids),
+                "dust_qty": sum(float(t.get("qty", 0) or 0) for t in lots
+                                if str(t.get("order_id", "")) in dust_ids),
                 "tracked_slices": len(lots), "groups": groups,
                 "error": self.state.get("native_protection_error"),
                 "time": self.state.get("native_protection_checked_at")}
@@ -212,18 +221,39 @@ class NativeProtectionMixin:
                              min_base_amount=float(detail.get("min_base_amount", 0) or 0))
         fee = await self.take_profit_fee_rate()
         covered = {g["entry_order_id"] for g in self.state.get("native_brackets", [])}
+        live_ids = {str(lot.get("order_id", "")) for lot in self.state["tranches"]}
+        dust_ids = {
+            str(entry_id) for entry_id in self.state.get("native_protection_dust_entry_ids", [])
+            if str(entry_id) in live_ids
+        }
+        minimum_base = float(detail.get("min_base_amount", 0) or 0)
+        minimum_quote = float(detail.get("min_quote_amount", 0) or 0)
         for lot in list(self.state["tranches"]):
+            entry_id = str(lot["order_id"])
             if entry_ids is not None and str(lot["order_id"]) not in entry_ids:
                 continue
-            if str(lot["order_id"]) in covered:
+            if entry_id in covered:
                 continue
             children = protection_children(lot, self.state, int(detail["supported_price_decimals"]), fee,
                                             lambda: secrets.randbelow(self.client.MAX_CLIENT_ORDER_INDEX - 1) + 1)
             if not children:
                 continue
-            group = {"entry_order_id": str(lot["order_id"]), "market_id": market_id,
+            quantity = float(lot["qty"])
+            below_base_minimum = quantity < minimum_base
+            below_quote_minimum = any(
+                quantity * float(child["trigger_price"]) < minimum_quote for child in children
+            )
+            if below_base_minimum or below_quote_minimum:
+                # A terminal native exit may leave one exchange size step. Keep
+                # that real inventory accounted for, but do not turn an
+                # impossible protective order into a fatal bot error. A later
+                # strategy reduction can merge the dust with newer inventory.
+                dust_ids.add(entry_id)
+                continue
+            dust_ids.discard(entry_id)
+            group = {"entry_order_id": entry_id, "market_id": market_id,
                      "symbol": self.state["selected_symbol"], "side": int(lot["side"]),
-                     "qty": float(lot["qty"]), "fee_rate": fee, "size_step": step,
+                     "qty": quantity, "fee_rate": fee, "size_step": step,
                      "phase": "preparing", "children": children, "created_at": int(time.time())}
             self.state["native_brackets"].append(group)
             self._save()  # Never submit a child without a durable client ID.
@@ -254,3 +284,5 @@ class NativeProtectionMixin:
                 self.state.update(execution_blocked=True, blocked_reason=str(exc), last_error=str(exc))
                 self._save()
                 raise
+        self.state["native_protection_dust_entry_ids"] = sorted(dust_ids)
+        self._save()

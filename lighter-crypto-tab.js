@@ -4413,7 +4413,11 @@
       const protection = bot.native_protection || {};
       const protectionTime = protection.time ? new Date(protection.time * 1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
       const protectionState = protection.time && Date.now() / 1000 - protection.time > 30 && protection.state === "WORKING" ? "UNAVAILABLE (STALE)" : protection.state || "OFF";
-      this.setText("nativeProtectionStatus", `LIVE · ${protectionState} · ${protection.protected_slices || 0}/${protection.tracked_slices || 0} slices protected · exchange order status · ${protectionTime}${protection.error ? " · " + protection.error : ""}`);
+      const protectionDust = Number(protection.dust_slices || 0);
+      const protectionDustText = protectionDust
+        ? ` · ${protectionDust} dust slice${protectionDust === 1 ? "" : "s"} below exchange minimum (tracked, no native order)`
+        : "";
+      this.setText("nativeProtectionStatus", `LIVE · ${protectionState} · ${protection.protected_slices || 0}/${protection.tracked_slices || 0} slices protected${protectionDustText} · exchange order status · ${protectionTime}${protection.error ? " · " + protection.error : ""}`);
       window.TerminalCommon?.syncHourlyHistogram?.("lighterCrypto_", bot);
       window.TerminalCommon?.renderHourlyHistogram?.("lighterCrypto_", "Live", bot.hourly_histogram, bot.use_hourly_hist);
       this.syncMacdDraftControls(bot);
