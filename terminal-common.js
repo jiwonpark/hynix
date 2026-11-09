@@ -235,22 +235,28 @@
     const lineY = x => a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x);
     const delta = p => p.y - lineY(p.x);
     const result = [];
-    const add = x => {
+    const add = (x, before, after) => {
       if (x <= low + epsilon || x >= high - epsilon) return;
       if (result.some(p => Math.abs(p.x - x) <= epsilon)) return;
-      result.push({x, y: lineY(x)});
+      // Canvas y grows downwards. A negative→positive curve-minus-guide
+      // difference means the guide crosses from below the curve to above it.
+      const direction = (after - before) * Math.sign(b.x - a.x) > 0 ? 'up' : 'down';
+      result.push({x, y: lineY(x), direction});
     };
     curve.forEach((point, i) => {
       if (!valid(point)) return;
       const d = delta(point), previous = curve[i - 1], next = curve[i + 1];
       if (Math.abs(d) <= epsilon) {
-        // Mark isolated touches, but not an entire coincident run. The chord's
-        // two endpoints already have pivot/crosshair dots.
-        if (valid(previous) && valid(next) && Math.abs(delta(previous)) > epsilon && Math.abs(delta(next)) > epsilon) add(point.x);
+        // An exact vertex can cross once; a tangency or coincident run has no
+        // crossing direction. Endpoints already have pivot/crosshair dots.
+        if (valid(previous) && valid(next)) {
+          const before = delta(previous), after = delta(next);
+          if (Math.abs(before) > epsilon && Math.abs(after) > epsilon && Math.sign(before) !== Math.sign(after)) add(point.x, before, after);
+        }
       } else if (valid(previous)) {
         const before = delta(previous);
         if (Math.abs(before) > epsilon && Math.sign(before) !== Math.sign(d)) {
-          add(previous.x + (point.x - previous.x) * before / (before - d));
+          add(previous.x + (point.x - previous.x) * before / (before - d), before, d);
         }
       }
     });
@@ -294,12 +300,21 @@
               x: chart.timeScale().timeToCoordinate(p.time), y: priceSeries.priceToCoordinate(p.value),
             }));
             state.intersections = segmentCurveIntersections(coords, curve);
-            ctx.fillStyle = '#ffffff';
-            ctx.lineWidth = 2;
             for (const crossing of state.intersections) {
+              const tail = crossing.direction === 'up' ? 1 : -1;
               ctx.beginPath();
-              ctx.arc(crossing.x, crossing.y, 4.5, 0, Math.PI * 2);
-              ctx.fill();
+              ctx.moveTo(crossing.x, crossing.y + tail * 11);
+              ctx.lineTo(crossing.x, crossing.y);
+              ctx.moveTo(crossing.x - 4, crossing.y + tail * 5);
+              ctx.lineTo(crossing.x, crossing.y);
+              ctx.lineTo(crossing.x + 4, crossing.y + tail * 5);
+              ctx.lineCap = 'round';
+              ctx.lineJoin = 'round';
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 4;
+              ctx.stroke();
+              ctx.strokeStyle = state.color;
+              ctx.lineWidth = 1.8;
               ctx.stroke();
             }
             ctx.restore();

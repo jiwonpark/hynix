@@ -271,6 +271,7 @@ async function run() {
           failures.push(`${t.name}: hovering changed price data or time range`);
         if(!Object.keys(hovered.guides).length)failures.push(`${t.name}: pivot renderer was not attached`);
         if(crossingCandidate && !Object.values(hovered.intersections).some(h=>h.length))failures.push(`${t.name}: an expected guide intersection was not rendered`);
+        if(process.env.HYPERION_VERIFY_INTERSECTIONS==='1' && Object.values(hovered.intersections).flat().some(p=>!['up','down'].includes(p.direction)))failures.push(`${t.name}: crossing arrow has no direction`);
         await captureScreenshot(`/tmp/pivot_hover_${t.name}.png`);
         await send('Input.dispatchMouseEvent',{type:'mouseWheel',x:before.x,y:before.y,deltaX:0,deltaY:-120});
         await new Promise(r=>setTimeout(r,180));

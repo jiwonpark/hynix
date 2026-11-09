@@ -146,11 +146,13 @@ operations can synchronously emit another crosshair event in Lightweight Charts
 4.2 and overflow the stack. Guides must not contribute data timestamps, autoscale
 ranges or pointer hit targets. Draw using the current time/price transforms so
 pan, wheel zoom, price-axis scaling and resizing move the guides with their MAs.
-Mark isolated interior intersections of each guide with its own MA using hollow
-circles in that MA’s color. Compute the intersections in rendered coordinates
-so irregular time spacing and price-scale changes are handled correctly. Shared
-endpoints already have pivot/crosshair dots; coincident spans are not isolated
-intersections. Hide guides and intersection circles on pointer leave and when
+Mark interior crossings of each guide with its own MA using small arrows in
+that MA’s color, reading from pivot toward hovered candle: ↑ when the guide
+crosses from below the MA to above, ↓ for above to below. The arrow tip anchors
+at the intersection. Tangencies without a side change have no crossing direction
+and get no arrow; coincident spans and shared endpoints are excluded. Compute
+crossings in rendered coordinates so irregular time spacing and price-scale
+changes are handled correctly. Hide guides and arrows on pointer leave and when
 the owning MA is hidden. Flat runs require
 a subsequent reversal before they qualify as a pivot; unavailable values must
 not become zero-price pivots. Browser verification must exercise real pointer
