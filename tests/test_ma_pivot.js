@@ -49,7 +49,7 @@ for(const prefix of ['crypto_','lighterCrypto_']) {
  assert.equal(document.getElementById(prefix+'maPivotLookback').value,'90','match live replaces draft');
  assert.equal(store.has(prefix+'maPivotDraft'),false);
  const config={...ui.maPivotSettings(prefix),use_ma_pivot_direction:true};
- ui.renderMaPivotStatus(prefix,'Live',{ma_pivot:{rule:"last_arrow_v1",ready:true,period:7,lookback:120,min_arrows:1,long_pass:true,short_pass:true}},config,100000,true);
+ ui.renderMaPivotStatus(prefix,'Live',{ma_pivot:{rule:"last_arrow_v2",ready:true,period:7,lookback:120,min_arrows:1,long_pass:true,short_pass:true}},config,100000,true);
  assert.equal(document.getElementById(prefix+'maPivotLongLive').textContent,'LIVE · UNAVAILABLE','old parameter counts cannot pass a new setting');
  assert.match(document.getElementById(prefix+'maPivotLiveSource').textContent,/parameters changed/i);
  ui.renderMaPivotStatus(prefix,'Live',{ma_pivot:{ready:true,period:24,lookback:90,long_pass:true,short_pass:true}},config,100000,true);

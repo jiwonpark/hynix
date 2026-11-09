@@ -894,7 +894,7 @@ def evaluate_ma_acceleration_signals(
         pivot = evaluate_ma_pivot(ma_pivot_prices if ma_pivot_prices is not None else prices,
                                   ma_pivot_period, ma_pivot_lookback, ma_pivot_min_arrows)
         if use_ma_pivot_direction and not use_ma_slope and not use_ma_pullback and pivot['ready']:
-            candidate_side = 1 if pivot['slope'] > 0 else -1
+            candidate_side = 1 if pivot['long_pass'] else -1
     elif ma_max_distance_pct > 0:
         near_ma = abs(current_price - ma_curr) <= ma_curr * ma_max_distance_pct / 100
         long_pullback = short_bounce = near_ma

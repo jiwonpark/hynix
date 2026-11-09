@@ -4,7 +4,7 @@ Supports live execution for all testable quantitative single-leg strategies:
 grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 """
 
-from .ma_pivot import DEFAULTS as MA_PIVOT_DEFAULTS
+from .ma_pivot import DEFAULTS as MA_PIVOT_DEFAULTS, RULE_VERSION as MA_PIVOT_RULE_VERSION
 from .hourly_histogram import HourlyHistogramMixin
 from .single_leg_take_profit import TakeProfitMixin
 from .lighter_native_protection import NativeProtectionMixin, protection_children
@@ -1015,7 +1015,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             if (evaluation.get("strategy") != "ma_proximity"
                     or int(evaluation.get("time") or 0) < expected
                     or not pivot.get("ready")
-                    or pivot.get("rule") != "last_arrow_v1"
+                    or pivot.get("rule") != MA_PIVOT_RULE_VERSION
                     or any(pivot.get(field) != self.state.get(key, default)
                            for key, field, default in (("ma_pivot_period", "period", 24),
                                                        ("ma_pivot_lookback", "lookback", 120)))

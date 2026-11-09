@@ -263,8 +263,10 @@
     return result;
   }
 
+  const maPivotRuleVersion = "last_arrow_v2";
+
   function maPivotAnalysis(points, targetTime, lookback=120) {
-    const empty = {ready:false,long_pass:false,short_pass:false,up_count:0,down_count:0,crossings:[],segment:[],last_arrow:null,rule:"last_arrow_v1"};
+    const empty = {ready:false,long_pass:false,short_pass:false,up_count:0,down_count:0,crossings:[],segment:[],last_arrow:null,rule:maPivotRuleVersion};
     const source = (points || []).filter(p => Number(p.time?.timestamp ?? p.time) <= Number(targetTime?.timestamp ?? targetTime)).slice(-lookback);
     if (source.length < lookback || source.some(p => !Number.isFinite(p.value))) return empty;
     const segment = previousLocalExtremumSegment(source,targetTime);
@@ -288,7 +290,8 @@
     }
     const up=crossings.filter(c=>c.direction==="up").length, down=crossings.length-up;
     const lastArrow=crossings.at(-1)?.direction ?? null;
-    return {ready:true,segment,crossings,slope,pivot_index:pivot,up_count:up,down_count:down,last_arrow:lastArrow,rule:"last_arrow_v1",long_pass:slope>0 || lastArrow==="up",short_pass:slope<0 || lastArrow==="down"};
+    return {ready:true,segment,crossings,slope,pivot_index:pivot,up_count:up,down_count:down,last_arrow:lastArrow,rule:maPivotRuleVersion,long_pass:lastArrow === null ? slope > 0 : lastArrow === "up",
+      short_pass:lastArrow === null ? slope < 0 : lastArrow === "down"};
   }
 
   function createMaExtremumHoverSeries(chart, colors, lineStyle, priceSeries) {
@@ -760,7 +763,7 @@
   }
   function renderMaPivotStatus(prefix, kind, evaluation, settings, time, available=true) {
     const pivot = evaluation?.ma_pivot;
-    const matching = pivot?.rule === "last_arrow_v1" && ["ma_pivot_period","ma_pivot_lookback"].every((key,i) => Number(settings[key] ?? maPivotDefaults[key]) === pivot[["period","lookback"][i]]);
+    const matching = pivot?.rule === maPivotRuleVersion && ["ma_pivot_period","ma_pivot_lookback"].every((key,i) => Number(settings[key] ?? maPivotDefaults[key]) === pivot[["period","lookback"][i]]);
     const usable = available && matching;
     for (const [dir,key] of [["Long","long_pass"],["Short","short_pass"]]) {
       const node = document.getElementById(prefix + "maPivot" + dir + kind);
@@ -794,8 +797,8 @@
           <label>Guide MA <select id="${prefix}maPivotPeriod">${[7,24,60].map(n=>`<option value="${n}" ${n===Number(pivot.ma_pivot_period)?"selected":""}>MA${n}</option>`).join("")}</select></label>
           <label>Lookback (MA points) <input id="${prefix}maPivotLookback" type="number" min="3" max="440" step="1" required value="${Number(pivot.ma_pivot_lookback)}" style="width:72px;"></label>
         </div>
-        ${["Long","Short"].map(dir=>`<div>${dir}: guide ${dir==="Long"?"rising":"falling"} OR last arrow ${dir==="Long"?"↑":"↓"} · <span id="${prefix}maPivot${dir}Paper" class="condBadge neutral">PAPER · UNAVAILABLE</span> · <span id="${prefix}maPivot${dir}Live" data-live-condition class="condBadge neutral">LIVE · UNAVAILABLE</span></div>`).join("")}
-        <small>Latest confirmed pivot to the completed candle, within the selected lookback. Checks only the last strict interior crossing of the guide through the MA (↑ below→above; ↓ above→below); earlier arrows do not qualify. Without an arrow, only guide direction can pass. No pivot or insufficient history blocks an enabled rule. Hover the selected MA to inspect that candle’s guide (forming candles use the latest completed guide). Exits are unaffected. Replay changes immediately; unlock, pause and deploy to save live.</small>
+        ${["Long","Short"].map(dir=>`<div>${dir}: last arrow ${dir==="Long"?"↑":"↓"}, or guide ${dir==="Long"?"rising":"falling"} if no arrows · <span id="${prefix}maPivot${dir}Paper" class="condBadge neutral">PAPER · UNAVAILABLE</span> · <span id="${prefix}maPivot${dir}Live" data-live-condition class="condBadge neutral">LIVE · UNAVAILABLE</span></div>`).join("")}
+        <small>Latest confirmed pivot to the completed candle, within the selected lookback. The last crossing decides direction (↑ below→above; ↓ above→below). Guide slope decides only when there are no crossing arrows. No pivot or insufficient history blocks an enabled rule. Hover the selected MA to inspect that candle’s guide (forming candles use the latest completed guide). Exits are unaffected. Replay changes immediately; unlock, pause and deploy to save live.</small>
         <small id="${prefix}maPivotPaperSource">PAPER · source unavailable</small>
         <small id="${prefix}maPivotLiveSource" data-live-condition>LIVE · source unavailable</small>
       </div>`;

@@ -48,6 +48,19 @@ class PivotRuleTests(unittest.TestCase):
         self.assertGreater(blocked,0)
         self.assertGreater(allowed,0)
 
+    def test_pivot_only_entry_uses_arrow_when_slope_points_other_way(self):
+        for case, side in zip(FIXTURES[-2:], (-1, 1)):
+            values = case['values']
+            prices = [values[0]] * 7
+            for previous, current in zip(values, values[1:]):
+                prices.append(prices[-7] + 7 * (current - previous))
+            config = dict(ma_accel_period=7, use_ma_slope=False, use_ma_pullback=False,
+                          use_ma_pivot_direction=True, ma_pivot_period=7, ma_pivot_lookback=len(values))
+            entry, candidate, _, evaluation = evaluate_strategy_signal('ma_proximity', prices, config)
+            self.assertTrue(entry)
+            self.assertEqual(candidate, side)
+            self.assertEqual(evaluation['ma_pivot']['last_arrow'], case['last'])
+
     def test_replay_matches_flat_live_entry_and_ignores_position_exits(self):
         bars=[dict(time=100000+i*300,value=100+3*math.sin(i/5)+.2*math.sin(i/2)) for i in range(240)]
         config=dict(ma_accel_period=7,use_ma_slope=False,use_ma_pullback=True,use_ma_pivot_direction=True,ma_pivot_period=7,ma_pivot_lookback=30,ma_pivot_min_arrows=1)
@@ -93,7 +106,7 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
             import time
             completed=int(time.time())//300*300-300
             bot._start_entry_campaign(1,completed)
-            bot.state['last_evaluation']=dict(strategy='ma_proximity',time=completed,ma_pivot=dict(rule='last_arrow_v1',period=24,lookback=120,min_arrows=1,ready=True,long_pass=True,short_pass=False))
+            bot.state['last_evaluation']=dict(strategy='ma_proximity',time=completed,ma_pivot=dict(rule='last_arrow_v2',period=24,lookback=120,min_arrows=1,ready=True,long_pass=True,short_pass=False))
             self.assertTrue(await bot._continue_entry_campaign())
             bot._submit.assert_awaited_once()
             # A paused configuration change cannot reuse old counts at a new threshold.
