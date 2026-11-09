@@ -48,5 +48,9 @@ for(const prefix of ['crypto_','lighterCrypto_']) {
  ui.syncMaPivotControls(prefix,{strategy_mode:'ma_proximity',strategy_params:{ma_pivot_min_arrows:2}},true);
  assert.equal(document.getElementById(prefix+'maPivotMinArrows').value,'2','match live replaces draft');
  assert.equal(store.has(prefix+'maPivotDraft'),false);
+ const config={...ui.maPivotSettings(prefix),use_ma_pivot_direction:true};
+ ui.renderMaPivotStatus(prefix,'Live',{ma_pivot:{ready:true,period:7,lookback:120,min_arrows:1,long_pass:true,short_pass:true}},config,100000,true);
+ assert.equal(document.getElementById(prefix+'maPivotLongLive').textContent,'LIVE · UNAVAILABLE','old parameter counts cannot pass a new setting');
+ assert.match(document.getElementById(prefix+'maPivotLiveSource').textContent,/Parameters changed/);
 }
 console.log('MA pivot replay draft persistence and Match Live passed');

@@ -180,7 +180,9 @@ draft. Live settings pass through authenticated configuration, persist on disk,
 and require pausing before changes. The entry quote recheck keeps the pivot on
 completed prices while rechecking other entry rules against executable quotes.
 Lighter campaign child slices also require a fresh passing completed-candle
-pivot verdict. Exits remain independent. When enabled, hovering the selected MA
+pivot verdict with matching period, lookback and arrow threshold. Parameter
+mismatches must show UNAVAILABLE until an evaluation using the saved values
+arrives. Exits remain independent. When enabled, hovering the selected MA
 uses that same bounded history and canonical arrows; hovering a forming candle
 uses the latest completed guide. Other MAs/tabs retain general hover behavior.
 

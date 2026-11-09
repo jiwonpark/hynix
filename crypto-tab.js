@@ -1442,6 +1442,7 @@
       }
 
       window.TerminalCommon?.groupConditionControls?.("crypto_", detailSec, mode);
+      if (mode === "ma_proximity" && this.botState) this.renderLiveConditionStatus(this.botState);
 
       this.runBacktest();
       this.updateRulesMatchStatus();
@@ -3644,7 +3645,7 @@
         : `LIVE · ${bot?.strategy_mode || "strategy"} conditions unavailable (paused, stale, or awaiting a completed candle)`;
       panel.replaceChildren(heading);
       window.TerminalCommon?.resetGroupedLiveConditions?.("crypto_", heading.textContent, bot?.strategy_mode === this.currentParadigm);
-      if (this.currentParadigm === "ma_proximity") TerminalCommon.renderMaPivotStatus("crypto_", "Live", evaluation, {use_ma_pivot_direction:false,...bot?.strategy_params}, time, fresh && bot?.strategy_mode === "ma_proximity");
+      if (this.currentParadigm === "ma_proximity" && bot?.strategy_mode === "ma_proximity") TerminalCommon.renderMaPivotStatus("crypto_", "Live", evaluation, {use_ma_pivot_direction:false,...bot?.strategy_params}, time, fresh && bot?.strategy_mode === "ma_proximity");
       const liveGroups = {};
       if (bot?.strategy_mode === this.currentParadigm) {
         for (const key of ["entry", "exit"]) {

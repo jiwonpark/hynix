@@ -77,7 +77,7 @@ for(const [file,name,prefix,rootId] of [
     assert.equal(config.ma_pivot_lookback,200);assert.equal(config.ma_pivot_min_arrows,2);
    }
    const config=engine.replaySettings();
-   common.renderMaPivotStatus(prefix,'Paper',{ma_pivot:{ready:true,long_pass:true,short_pass:false,slope:1,up_count:0,down_count:0}},config,100000);
+   common.renderMaPivotStatus(prefix,'Paper',{ma_pivot:{period:60,lookback:200,min_arrows:2,ready:true,long_pass:true,short_pass:false,slope:1,up_count:0,down_count:0}},config,100000);
    assert.equal(document.getElementById(prefix+'maPivotLongPaper').textContent,'PAPER · PASS');
    assert.equal(document.getElementById(prefix+'maPivotShortPaper').textContent,'PAPER · WAITING');
    assert.match(document.getElementById(prefix+'maPivotPaperSource').textContent,/MA60.*200 MA points.*KST/);

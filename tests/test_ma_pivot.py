@@ -93,9 +93,14 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
             import time
             completed=int(time.time())//300*300-300
             bot._start_entry_campaign(1,completed)
-            bot.state['last_evaluation']=dict(strategy='ma_proximity',time=completed,ma_pivot=dict(ready=True,long_pass=True,short_pass=False))
+            bot.state['last_evaluation']=dict(strategy='ma_proximity',time=completed,ma_pivot=dict(period=24,lookback=120,min_arrows=1,ready=True,long_pass=True,short_pass=False))
             self.assertTrue(await bot._continue_entry_campaign())
             bot._submit.assert_awaited_once()
+            # A paused configuration change cannot reuse old counts at a new threshold.
+            bot.state['ma_pivot_min_arrows']=2
+            self.assertFalse(await bot._continue_entry_campaign())
+            bot.state['ma_pivot_min_arrows']=1
+            bot._start_entry_campaign(1,completed)
             bot.state['entry_campaign']['slices_filled']=1
             bot.state['last_evaluation']['ma_pivot']['long_pass']=False
             self.assertFalse(await bot._continue_entry_campaign())

@@ -759,18 +759,20 @@
   }
   function renderMaPivotStatus(prefix, kind, evaluation, settings, time, available=true) {
     const pivot = evaluation?.ma_pivot;
+    const matching = pivot && ["ma_pivot_period","ma_pivot_lookback","ma_pivot_min_arrows"].every((key,i) => Number(settings[key] ?? maPivotDefaults[key]) === pivot[["period","lookback","min_arrows"][i]]);
+    const usable = available && matching;
     for (const [dir,key] of [["Long","long_pass"],["Short","short_pass"]]) {
       const node = document.getElementById(prefix + "maPivot" + dir + kind);
       if (!node) continue;
-      const state = !settings.use_ma_pivot_direction ? "OFF" : !available || !pivot?.ready ? "UNAVAILABLE" : pivot[key] ? "PASS" : "WAITING";
+      const state = !settings.use_ma_pivot_direction ? "OFF" : !usable || !pivot?.ready ? "UNAVAILABLE" : pivot[key] ? "PASS" : "WAITING";
       node.textContent = kind.toUpperCase() + " · " + state;
       node.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
     }
     const source = document.getElementById(prefix + "maPivot" + kind + "Source");
     if (source) {
-      const stamp = time && available ? new Date(time*1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
+      const stamp = time && usable ? new Date(time*1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
       source.textContent = `${kind.toUpperCase()} · MA${settings.ma_pivot_period ?? 24} · ${settings.ma_pivot_lookback ?? 120} MA points · ≥${settings.ma_pivot_min_arrows ?? 1} arrows · completed candle ${stamp}`
-        + (available && pivot?.ready ? ` · slope ${Number(pivot.slope).toPrecision(5)} · ↑${pivot.up_count} ↓${pivot.down_count}` : ` · ${pivot?.reason || "Awaiting completed-candle evaluation"}`);
+        + (usable && pivot?.ready ? ` · slope ${Number(pivot.slope).toPrecision(5)} · ↑${pivot.up_count} ↓${pivot.down_count}` : ` · ${!matching && pivot ? "Parameters changed; awaiting matching evaluation" : pivot?.reason || "Awaiting completed-candle evaluation"}`);
     }
   }
 
@@ -786,7 +788,7 @@
         <label>Pullback SMA period <input id="${prefix}inpMaAccelPeriod" type="number" min="3" max="498" step="1" required value="${Number(saved?.ma_accel_period ?? 24)}" style="width:85px;"></label>
       </div>
       <div data-terminal-rule-group="entry" id="${prefix}maPivotControls" style="display:grid;gap:8px;padding:10px;border:1px solid #cbd5e1;border-radius:6px;">
-        <label><input id="${prefix}useMaPivotGuide" type="checkbox" ${pivot.use_ma_pivot_direction ? "checked" : ""}> MA pivot guide direction / crossing arrows</label>
+        <label style="display:flex;flex-direction:row;align-items:center;gap:8px;"><input style="width:16px;height:16px;flex:0 0 auto;margin:0;" id="${prefix}useMaPivotGuide" type="checkbox" ${pivot.use_ma_pivot_direction ? "checked" : ""}> MA pivot guide direction / crossing arrows</label>
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <label>Guide MA <select id="${prefix}maPivotPeriod">${[7,24,60].map(n=>`<option value="${n}" ${n===Number(pivot.ma_pivot_period)?"selected":""}>MA${n}</option>`).join("")}</select></label>
           <label>Lookback (MA points) <input id="${prefix}maPivotLookback" type="number" min="3" max="440" step="1" required value="${Number(pivot.ma_pivot_lookback)}" style="width:72px;"></label>
