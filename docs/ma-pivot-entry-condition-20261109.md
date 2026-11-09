@@ -179,3 +179,34 @@ Evidence logs are under `/tmp/hynix-last-arrow-*-live.log`,
 With the filter enabled in replay, the final historical hover check in both
 Tabs 4 and 5 rendered ↓ ↑ ↓ ↑ in order at the 21:25 KST candle. The last ↑ and
 rising guide passed long. Short waited despite two earlier ↓ arrows.
+
+## Follow-up: the arrow takes precedence over slope
+
+Build `v1.7.1+7a4fe63.20261109222342` and backend commit `7a4fe63` use
+`last_arrow_v2`. An ↑ permits only long and a ↓ permits only short. The slope
+chooses the direction when there are zero crossings. Shared fixtures test both
+opposing slope and arrow combinations and the pivot-only strategy path. Both
+live replay endpoints returned a falling no-arrow guide for the 22:20 KST
+completed candle and passed short only. The rendered MA7 guide at 18:45 KST
+was falling with a last ↑ in both affected tabs and passed long only.
+
+HTTP and service checks passed. The backend retained runtime state and saved
+settings. No verification orders were placed. Browser checks passed hover,
+zoom, pan, scale, navigation, reload and 5m → 15m → 5m across Tabs 2–5. Prices,
+MAs and arrows were inspected in the captures. No uncaught exceptions occurred.
+
+| Tab | Account after reload | Prices and MAs after reload |
+| --- | ---: | ---: |
+| 2 | 5.289 s | 8.954 s |
+| 3 | 11.537 s | 1.256 s |
+| 4 | 13.799 s | 1.753 s |
+| 5 | 4.998 s | 1.019 s |
+
+Observed at 22:25–22:27 KST. The 22:25 candle was forming and 22:20 was the
+completed 5m candle on Tabs 3–5. Tab 2 initially had the 22:20 completed candle
+as latest just after the 22:25 boundary. The authenticated Tab 4 account showed
+$813.08 equity and $269.52 available. Tab 5 showed $75.48 collateral and $75.44
+available, with a non-stale 22:26:55 KST account snapshot. Both had one selected
+BTC position and matched their read-only responses at the observed precision.
+Tab 3's free margin is still an estimate without an exchange source timestamp.
+Logs are `/tmp/hynix-arrow-priority-{backend,frontend,lifecycle}.log`.
