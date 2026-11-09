@@ -152,7 +152,8 @@ not become zero-price pivots. Browser verification must exercise real pointer
 hover, wheel, multi-step drag, price-axis scaling and linked-pane synchronization
 in Tabs 2–5; unit tests of endpoint arrays alone cannot certify this interaction.
 Run `HYPERION_VERIFY_INTERACTION=1 node scripts/verify_live_charts.mjs` and inspect
-the saved hover/scaled screenshots. Runtime JavaScript exceptions fail verification.
+the saved hover/scaled screenshots. The frontend deploy script enables these
+interaction checks by default. Runtime JavaScript exceptions fail verification.
 
 
 Tabs 4 and 5 default the hourly wider-trend regime to **simple MA60 slope**.

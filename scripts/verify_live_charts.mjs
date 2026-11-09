@@ -125,8 +125,9 @@ async function run() {
     localStorage.setItem("hynix_collapse_lighterCrypto_shortTermExecutionSection", "1");
     localStorage.setItem("hynix_collapse_lighterCrypto_secExecutionTerminal", "1");
   `});
-  console.log("Navigating to https://control.jiwonova.com/skhynix/ ...");
-  await send("Page.navigate", { url: process.env.HYPERION_VERIFY_URL || "https://control.jiwonova.com/skhynix/" });
+  const targetUrl = process.env.HYPERION_VERIFY_URL || "https://control.jiwonova.com/skhynix/";
+  console.log(`Navigating to ${targetUrl} ...`);
+  await send("Page.navigate", { url: targetUrl });
 
   await new Promise((r) => setTimeout(r, 5000));
 
