@@ -225,14 +225,47 @@
     ];
   }
 
+  function segmentCurveIntersections(segment, curve) {
+    if (segment?.length !== 2 || !Array.isArray(curve)) return [];
+    const valid = p => p && Number.isFinite(p.x) && Number.isFinite(p.y);
+    const [a, b] = segment;
+    if (!valid(a) || !valid(b) || a.x === b.x) return [];
+    const epsilon = 1e-7;
+    const low = Math.min(a.x, b.x), high = Math.max(a.x, b.x);
+    const lineY = x => a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x);
+    const delta = p => p.y - lineY(p.x);
+    const result = [];
+    const add = x => {
+      if (x <= low + epsilon || x >= high - epsilon) return;
+      if (result.some(p => Math.abs(p.x - x) <= epsilon)) return;
+      result.push({x, y: lineY(x)});
+    };
+    curve.forEach((point, i) => {
+      if (!valid(point)) return;
+      const d = delta(point), previous = curve[i - 1], next = curve[i + 1];
+      if (Math.abs(d) <= epsilon) {
+        // Mark isolated touches, but not an entire coincident run. The chord's
+        // two endpoints already have pivot/crosshair dots.
+        if (valid(previous) && valid(next) && Math.abs(delta(previous)) > epsilon && Math.abs(delta(next)) > epsilon) add(point.x);
+      } else if (valid(previous)) {
+        const before = delta(previous);
+        if (Math.abs(before) > epsilon && Math.sign(before) !== Math.sign(d)) {
+          add(previous.x + (point.x - previous.x) * before / (before - d));
+        }
+      }
+    });
+    return result;
+  }
+
   function createMaExtremumHoverSeries(chart, colors, lineStyle, priceSeries) {
     if (!priceSeries?.attachPrimitive) return {};
-    const states = Object.entries(colors || {}).map(([period, color]) => ({period, color, visible: true, points: []}));
+    const states = Object.entries(colors || {}).map(([period, color]) => ({period, color, visible: true, points: [], curve: [], intersections: []}));
     let requestUpdate = null;
     const renderer = {
       draw(target) {
         target.useMediaCoordinateSpace(({context: ctx}) => {
           for (const state of states) {
+            state.intersections = [];
             if (!state.visible || state.points.length !== 2) continue;
             const coords = state.points.map(point => ({
               x: chart.timeScale().timeToCoordinate(point.time),
@@ -252,6 +285,23 @@
             ctx.beginPath();
             ctx.arc(coords[0].x, coords[0].y, 3, 0, Math.PI * 2);
             ctx.fill();
+            const start = Number(state.points[0].time?.timestamp ?? state.points[0].time);
+            const end = Number(state.points[1].time?.timestamp ?? state.points[1].time);
+            const curve = state.curve.filter(p => {
+              const time = Number(p.time?.timestamp ?? p.time);
+              return time >= start && time <= end;
+            }).map(p => !Number.isFinite(p.value) ? null : ({
+              x: chart.timeScale().timeToCoordinate(p.time), y: priceSeries.priceToCoordinate(p.value),
+            }));
+            state.intersections = segmentCurveIntersections(coords, curve);
+            ctx.fillStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            for (const crossing of state.intersections) {
+              ctx.beginPath();
+              ctx.arc(crossing.x, crossing.y, 4.5, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+            }
             ctx.restore();
           }
         });
@@ -269,15 +319,24 @@
       applyOptions(options) {
         if (options.visible !== undefined && state.visible !== options.visible) {
           state.visible = options.visible;
+          if (!state.visible) state.intersections = [];
           requestUpdate?.();
         }
       },
       setData(points) {
         if (state.points.length === points.length && state.points.every((p, i) => p.time === points[i].time && p.value === points[i].value)) return;
         state.points = points;
+        state.intersections = [];
         requestUpdate?.();
       },
+      setCurveData(points) {
+        if (state.curve === points) return;
+        state.curve = points;
+        state.intersections = [];
+        if (state.points.length) requestUpdate?.();
+      },
       data: () => state.points.slice(),
+      intersections: () => state.intersections.map(p => ({...p})),
     }]));
   }
 
@@ -286,6 +345,7 @@
       if (!series?.setData) continue;
       const visible = visibility[period] !== false && visibility[`ma${period}`] !== false;
       series.applyOptions?.({visible});
+      series.setCurveData?.(dataByPeriod?.[period] || []);
       series.setData(visible && targetTime != null
         ? previousLocalExtremumSegment(dataByPeriod?.[period], targetTime)
         : []);
@@ -914,7 +974,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
+  const TerminalCommon = { alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, segmentCurveIntersections, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

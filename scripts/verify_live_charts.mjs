@@ -241,15 +241,36 @@ async function run() {
             pointerTarget:document.elementFromPoint(r.left+r.width*.6,r.top+r.height*.6)?.outerHTML?.slice(0,200),handleScroll:c.options().handleScroll,
             priceSpan:s.priceToCoordinate(v*1.001)-s.priceToCoordinate(v),
             guides:Object.fromEntries(Object.entries(e.shortTermMaExtremumHoverSeries||e.maExtremumHoverSeries||{}).map(([k,g])=>[k,g.data()])),
+            intersections:Object.fromEntries(Object.entries(e.shortTermMaExtremumHoverSeries||e.maExtremumHoverSeries||{}).map(([k,g])=>[k,g.intersections?.()||[]])),
             follower:e.assetChart?.timeScale().getVisibleLogicalRange()||e.shortTermAssetChart?.timeScale().getVisibleLogicalRange()};
         })()`);
         const before=await state();
+        let crossingCandidate=null;
+        if(process.env.HYPERION_VERIFY_INTERSECTIONS==='1') {
+          crossingCandidate=await evaluate(`(()=>{
+            const e=${t.engine},c=e.shortTermChart||e.chart,s=e.shortTermSeries||e.series,h=document.getElementById('${t.hostId}').getBoundingClientRect();
+            const data=e.shortTermMaData||e._currentMaData||{},bars=e.shortTermHistory?.bars||e.bars||[],width=c.timeScale().width();
+            for(const b of bars.slice().reverse()) {
+              const x=c.timeScale().timeToCoordinate(b.time);if(x==null || x<30 || x>width-30)continue;
+              for(const [period,ma] of Object.entries(data)) {
+                const segment=TerminalCommon.previousLocalExtremumSegment(ma,b.time);if(segment.length!==2)continue;
+                const project=p=>({x:c.timeScale().timeToCoordinate(p.time),y:s.priceToCoordinate(p.value)});
+                const curve=ma.filter(p=>p.time>=segment[0].time && p.time<=segment[1].time).map(project);
+                const hits=TerminalCommon.segmentCurveIntersections(segment.map(project),curve).filter(p=>p.x>5 && p.x<width-5 && p.y>5 && p.y<h.height-35);
+                if(hits.length)return {x:h.left+c.priceScale('left').width()+x,time:b.time,period,hits};
+              }
+            }
+            return null;
+          })()`);
+          if(crossingCandidate)before.x=crossingCandidate.x;
+        }
         await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:before.x,y:before.y});
         await new Promise(r=>setTimeout(r,150));
         const hovered=await state();
         if(Math.abs(hovered.range.from-before.range.from)>.01 || Math.abs(hovered.range.to-before.range.to)>.01 || hovered.count!==before.count)
           failures.push(`${t.name}: hovering changed price data or time range`);
         if(!Object.keys(hovered.guides).length)failures.push(`${t.name}: pivot renderer was not attached`);
+        if(crossingCandidate && !Object.values(hovered.intersections).some(h=>h.length))failures.push(`${t.name}: an expected guide intersection was not rendered`);
         await captureScreenshot(`/tmp/pivot_hover_${t.name}.png`);
         await send('Input.dispatchMouseEvent',{type:'mouseWheel',x:before.x,y:before.y,deltaX:0,deltaY:-120});
         await new Promise(r=>setTimeout(r,180));
@@ -279,8 +300,9 @@ async function run() {
         await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:10,y:10});
         await new Promise(r=>setTimeout(r,100));
         const left=await state();
+        if(Object.values(left.intersections).some(g=>g.length))failures.push(`${t.name}: intersection markers remain after pointer leaves chart`);
         if(Object.values(left.guides).some(g=>g.length))failures.push(`${t.name}: pivot guides remain after pointer leaves chart`);
-        console.log('INTERACTION',JSON.stringify({tab:t.name,rangeBefore:before.range,rangeAfterHover:hovered.range,guideCounts:Object.fromEntries(Object.entries(hovered.guides).map(([k,v])=>[k,v.length])),zoomed:zoomed.range,dragged:dragged.range,linked:dragged.follower,priceSpanBefore:dragged.priceSpan,priceSpanAfter:scaled.priceSpan,cleared:Object.values(left.guides).every(g=>!g.length)}));
+        console.log('INTERACTION',JSON.stringify({tab:t.name,rangeBefore:before.range,rangeAfterHover:hovered.range,guideCounts:Object.fromEntries(Object.entries(hovered.guides).map(([k,v])=>[k,v.length])),intersectionCounts:Object.fromEntries(Object.entries(hovered.intersections).map(([k,v])=>[k,v.length])),crossingCandidate,zoomed:zoomed.range,dragged:dragged.range,linked:dragged.follower,priceSpanBefore:dragged.priceSpan,priceSpanAfter:scaled.priceSpan,cleared:Object.values(left.guides).every(g=>!g.length)}));
       }
       if (t.name === "lighterCrypto" && !diag?.accountReady) failures.push("Tab lighterCrypto: real account data did not load");
       if (!diag?.hostExists) {

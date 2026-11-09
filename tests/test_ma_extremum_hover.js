@@ -41,6 +41,21 @@ TerminalCommon.renderMaExtremumHover(overlays, {7: points, 24: points}, 6, {7: t
 assert.deepStrictEqual(writes[0][1], [{time: 4, value: 0}, {time: 6, value: 4}]);
 assert.deepStrictEqual(writes[1][1], [], 'hidden MAs never leave a hover segment visible');
 
+const curved = [1, 0, 3, 3.2, 6.8, 7, 10].map((value,time)=>({time,value}));
+const chord = [{x:1,y:0},{x:6,y:10}];
+const crossings = TerminalCommon.segmentCurveIntersections(chord, curved.slice(1).map(p=>({x:p.time,y:p.value})));
+assert.equal(crossings.length,3,'marks every internal crossing, including between candles');
+for (const [i, expected] of [23/9,3.5,40/9].entries()) assert(Math.abs(crossings[i].x-expected)<1e-9);
+assert.deepStrictEqual(TerminalCommon.segmentCurveIntersections([{x:0,y:0},{x:2,y:2}],
+  [{x:0,y:0},{x:.5,y:2},{x:1,y:1},{x:1.5,y:2},{x:2,y:2}]),[{x:1,y:1}], 'isolated tangency is also an intersection');
+assert.deepStrictEqual(TerminalCommon.segmentCurveIntersections([{x:0,y:0},{x:2,y:2}],
+  [{x:0,y:0},{x:.5,y:1},{x:1,y:1},{x:1.5,y:1},{x:2,y:2}]),[{x:1,y:1}], 'an exact vertex crossing is marked once');
+assert.deepStrictEqual(TerminalCommon.segmentCurveIntersections(chord,chord),[], 'shared endpoints are not extra intersections');
+assert.deepStrictEqual(TerminalCommon.segmentCurveIntersections([{x:0,y:0},{x:2,y:2}],
+  [{x:0,y:0},{x:1,y:1},{x:2,y:2}]),[], 'coincident lines do not create arbitrary rings');
+assert.deepStrictEqual(TerminalCommon.segmentCurveIntersections([{x:0,y:0},{x:3,y:0}],
+  [{x:0,y:0},{x:1,y:1},null,{x:2,y:-1},{x:3,y:0}]),[], 'missing curve data is not bridged');
+
 let primitive, redraws = 0;
 const chart = {addLineSeries() { throw Error('Hover must not add or mutate chart data'); },
   timeScale: () => ({timeToCoordinate: time => time * 10})};
@@ -52,16 +67,34 @@ const count = redraws;
 TerminalCommon.renderMaExtremumHover(guides, {7:points}, 6);
 assert.equal(redraws, count, 'moving within the same candle must not request another redraw');
 const paths = [];
+const circles = [];
 const ctx = {save(){},restore(){},setLineDash(){},beginPath(){},stroke(){},fill(){},
-  moveTo:(x,y)=>paths.push(['move',x,y]),lineTo:(x,y)=>paths.push(['line',x,y]),arc(){}};
+  moveTo:(x,y)=>paths.push(['move',x,y]),lineTo:(x,y)=>paths.push(['line',x,y]),arc:(x,y,r)=>circles.push({x,y,r})};
 const view = primitive.paneViews()[0];
 view.renderer().draw({useMediaCoordinateSpace: draw => draw({context:ctx})});
 assert.deepStrictEqual(paths,[['move',40,0],['line',60,16]],'guides use the existing time and price coordinate transforms');
 assert.equal(view.zOrder(),'top');
 assert.equal(primitive.autoscaleInfo, undefined, 'guides do not change the price scale');
 assert.equal(primitive.hitTest, undefined, 'guides do not intercept pointer gestures');
+TerminalCommon.renderMaExtremumHover(guides,{7:curved},6);
+circles.length=0;
+view.renderer().draw({useMediaCoordinateSpace: draw=>draw({context:ctx})});
+assert.equal(guides[7].intersections().length,3);
+assert.equal(circles.filter(c=>c.r===4.5).length,3,'native renderer paints all intersection rings');
+const originalX=guides[7].intersections()[0].x;
+chart.timeScale=()=>({timeToCoordinate:t=>t*20});
+priceSeries.priceToCoordinate=value=>value*8;
+view.renderer().draw({useMediaCoordinateSpace:draw=>draw({context:ctx})});
+assert(Math.abs(guides[7].intersections()[0].x-originalX*2)<1e-9,'rings reproject when the chart is scaled');
+const straight=curved.map(p=>({...p,value:p.time>=1?(p.time-1)*2:p.value}));
+TerminalCommon.renderMaExtremumHover(guides,{7:straight},6);
+view.renderer().draw({useMediaCoordinateSpace:draw=>draw({context:ctx})});
+assert.deepStrictEqual(guides[7].intersections(),[], 'interior curve changes refresh rings even when chord endpoints are unchanged');
+TerminalCommon.renderMaExtremumHover(guides,{7:curved},6,{7:false});
+assert.deepStrictEqual(guides[7].intersections(),[],'hidden MAs clear intersection markers');
 TerminalCommon.renderMaExtremumHover(guides,{7:points},null);
 assert.deepStrictEqual(guides[7].data(),[], 'leaving the chart removes guides');
+assert.deepStrictEqual(guides[7].intersections(),[], 'leaving the chart removes intersections');
 primitive.detached();
 
 const root = path.join(__dirname, '..');
