@@ -90,3 +90,20 @@ non-stale. Equity, free margin, BTC quantity and unrealized P&L matched the
 read-only response. Verification submitted no orders and observed no
 post-deploy fill. Logs: `/tmp/hynix-dust-entry-deploy.log` and
 `/tmp/hynix-dust-entry-ui-retry.log`.
+
+At 03:28 KST on 2026-11-10, commit `8a64106` superseded the separate-close
+restriction for a verified below-minimum remainder. A qualifying opposite
+signal can net the old lot and sized entry in one order. Full and partial
+fills, history deduplication and unowned inventory rejection were tested.
+The 78 focused bot and native protection tests passed.
+
+Production returned HTTP 200 text/html and bot status with no pending order
+or recovery lock. Tab 5 rendered price and all three MAs in 3.63 seconds and
+loaded authenticated account figures in 9.28 seconds on reload. The capture
+showed cached 03:25 forming data while refreshing at 03:29, with 03:20 the
+latest completed candle. Switching away and back and 5m → 15m → 5m worked.
+The account snapshot at 03:28:54 KST agreed with the read-only response for
+rounded collateral ($75.48), available margin ($75.44), BTC position size
+and P&L. No test order was submitted and no live reversal fill was observed
+during verification. Browser evidence: `/tmp/lighter-net-dust-ui.log` and
+`/tmp/lighter-net-dust-chart.png`.
