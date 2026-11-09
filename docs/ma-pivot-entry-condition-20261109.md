@@ -124,3 +124,58 @@ Evidence logs:
 Screenshots include /tmp/ma_pivot_condition_{crypto,lighterCrypto}.png,
 /tmp/pivot_reload_{trading,lighter,crypto,lighterCrypto}.png and
 /tmp/ma_pivot_enabled_hover_{crypto,lighterCrypto}.png.
+
+## Follow-up: use only the last crossing arrow
+
+Commit `4b22219` supersedes the arrow count rule above. Long passes when the
+pivot guide rises or its last crossing is ↑. Short passes when it falls or its
+last crossing is ↓. With no crossing, only the slope can pass. The entry panel
+reports the last arrow and removes the minimum arrow count input. Legacy clients
+and saved settings can still supply the old count, which has no effect. Older
+verdicts cannot authorize a Lighter campaign slice or appear as current UI status.
+
+The backend deployment preserved saved settings and runtime state. Both read-only
+status endpoints returned HTTP 200 after restart. At the 21:55 KST completed
+5m candle, both bots reported the new rule version. The enabled Tab 5 filter
+reported long PASS by slope and short WAITING, with no crossing. Tab 4's saved
+filter was off. No verification orders were placed.
+
+Frontend build `v1.7.1+4b22219.20261109215642` returned HTTP 200 text/html.
+The live browser passed hover, wheel, drag, price scaling, linked panes and
+clearing on Tabs 2–5. Live replay in Tabs 4–5 matched the chart geometry and
+survived reload with the new labels. At the 21:50 KST completed candle, MA7
+had a rising guide and a last ↓ arrow in both tabs, passing the long branch
+by slope and the short branch by the last arrow.
+
+Live lifecycle checks at 22:03–22:11 KST covered navigation, fresh reload and
+5m → 15m → 5m switching in all four tabs. Measured UI delays from fresh reload,
+recorded separately as first observed by the browser probe:
+
+| Tab | Authenticated account | Rendered prices and MAs |
+| --- | ---: | ---: |
+| 2 | 8.744 s | 31.144 s |
+| 3 | 50.673 s | 1.464 s |
+| 4 | 14.133 s | 1.631 s |
+| 5 | 10.758 s | 1.514 s |
+
+Tab 2's 15m switch took 33.216 s. Tab 4's reload showed the 22:05 forming and
+22:00 completed 5m candles, $810.74 equity and $339.49 margin, consistent with
+the read-only response. Tab 5 reloaded at the 22:10 boundary with the 22:05
+candle still latest and now completed. Its account source was 22:09:55 KST,
+non-stale at observation, with $75.48 collateral, $75.44 available, and one
+selected BTC position in the authenticated response. The paired Tab 3 free
+margin remains an estimate without an exchange value or source timestamp.
+
+On one Tab 5 run the browser kept the stale candle flag for the full 60-second
+freshness check despite rendering recent prices and MAs. Read-only 5m and 15m
+requests later returned stale=false with 22:09:41 and 22:09:46 KST fetch times.
+The subsequent reload screenshot still labeled its displayed candles cached
+while refreshing. The 1.514 s measurement reflects rendering, not freshness.
+
+Evidence logs are under `/tmp/hynix-last-arrow-*-live.log`,
+`/tmp/hynix-last-arrow-lifecycle-final.log` and
+`/tmp/hynix-last-arrow-frontend-deploy.log`.
+
+With the filter enabled in replay, the final historical hover check in both
+Tabs 4 and 5 rendered ↓ ↑ ↓ ↑ in order at the 21:25 KST candle. The last ↑ and
+rising guide passed long. Short waited despite two earlier ↓ arrows.
