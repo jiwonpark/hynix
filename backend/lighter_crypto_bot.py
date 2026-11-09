@@ -4,6 +4,7 @@ Supports live execution for all testable quantitative single-leg strategies:
 grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 """
 
+from .ma_pivot import DEFAULTS as MA_PIVOT_DEFAULTS
 from .hourly_histogram import HourlyHistogramMixin
 from .single_leg_take_profit import TakeProfitMixin
 from .lighter_native_protection import NativeProtectionMixin, protection_children
@@ -66,6 +67,7 @@ DEFAULT_STATE = {
     "ma_stack_opposite_only": True, "use_opposite_stack_exit": True,
     "use_ma_diff_hook": True, "use_ma_diff_exit": True, "min_diff_bars": 2,
     "ma_accel_period": 24, "ma_accel_min_slope": 0.0, "ma_accel_min_accel": 0.0, "ma_max_distance_pct": 0.0, "ma_direction_period": 0,
+    "use_ma_pivot_direction": False, "ma_pivot_period": 24, "ma_pivot_lookback": 120, "ma_pivot_min_arrows": 1,
     "use_ma_slope": True, "use_ma_accel": True, "use_ma_pullback": True, "use_ma_cross_exit": True,
     "fast_ma_period": 9, "slow_ma_period": 21, "min_cross_spread_bps": 0.0,
     "use_golden_cross": True, "use_death_cross": True, "use_cross_spread": True, "use_cross_exit": True,
@@ -212,6 +214,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                           "ma_accel_min_accel": float(self.state.get("ma_accel_min_accel", 0.0)),
                           "ma_max_distance_pct": float(self.state.get("ma_max_distance_pct", 0.0)),
                           "ma_direction_period": int(self.state.get("ma_direction_period", 0)),
+                          **{key: self.state.get(key, default) for key, default in MA_PIVOT_DEFAULTS.items()},
                           "use_ma_slope": bool(self.state.get("use_ma_slope", True)),
                           "use_ma_accel": bool(self.state.get("use_ma_accel", True)),
                           "use_ma_pullback": bool(self.state.get("use_ma_pullback", True)),
@@ -524,6 +527,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             "ma_stretch_min", "ma_trailing_stop", "min_consensus_votes",
             "trend_macro_window", "trend_pullback_dist", "trend_tp_dist", "trend_slope_min",
             "ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel", "ma_max_distance_pct", "ma_direction_period",
+            "use_ma_pivot_direction", "ma_pivot_period", "ma_pivot_lookback", "ma_pivot_min_arrows",
             "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
             "fast_ma_period", "slow_ma_period", "min_cross_spread_bps",
             "use_golden_cross", "use_death_cross", "use_cross_spread", "use_cross_exit",
@@ -562,6 +566,9 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 candidate[key] = parse_entry_direction_mode(value)
             elif key == "max_tranches":
                 candidate[key] = parse_entry_count_limit(value)
+            elif key in {"use_ma_pivot_direction", "ma_pivot_period", "ma_pivot_lookback", "ma_pivot_min_arrows"}:
+                from .ma_pivot import validate_setting
+                candidate[key] = validate_setting(key, value)
             elif key == "ma_direction_period":
                 period = float(value)
                 if isinstance(value, bool) or not period.is_integer() or (period != 0 and not 3 <= period <= 498):
@@ -660,7 +667,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             raise ValueError("Maximum MA distance must be between 0 and 100 percent")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("use_native_protection", "ma_direction_period", "ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                ("use_ma_pivot_direction", "ma_pivot_period", "ma_pivot_lookback", "ma_pivot_min_arrows", "use_native_protection", "ma_direction_period", "ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",
@@ -1000,6 +1007,18 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             self._finish_entry_campaign("entry_direction_filter")
             self._save()
             return False
+        if self.state.get("strategy_mode") == "ma_proximity" and self.state.get("use_ma_pivot_direction", False):
+            evaluation = self.state.get("last_evaluation") or {}
+            pivot = evaluation.get("ma_pivot") or {}
+            seconds = INTERVAL_SECONDS[self.state["strategy_interval"]]
+            expected = (int(time.time()) - 1) // seconds * seconds - seconds
+            if (evaluation.get("strategy") != "ma_proximity"
+                    or int(evaluation.get("time") or 0) < expected
+                    or not pivot.get("ready")
+                    or not pivot.get("long_pass" if side > 0 else "short_pass")):
+                self._finish_entry_campaign("ma_pivot_direction_filter")
+                self._save()
+                return False
         first_slice = int(campaign.get("slices_filled", 0)) == 0
         immediate_reversal = first_slice and campaign.get("initial_reason") == "reversal_entry"
         if (not immediate_reversal
@@ -1196,6 +1215,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                     self.state["strategy_mode"],
                     signal_values[:-1] + [price],
                     self.state,
+                    ma_pivot_prices=signal_values,
                     hourly_histogram=self.state.get("hourly_histogram"),
                     five_minute_macd_signal=self.state.get("five_minute_macd_signal"),
                     evaluation_time=int(time.time()),

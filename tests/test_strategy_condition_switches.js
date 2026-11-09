@@ -64,6 +64,31 @@ for(const [file,name,prefix,rootId] of [
    assert.equal(engine.liveStrategyPayload(mode).use_native_protection,false);
   }
   if(mode==='ma_proximity'){
+   const pivot=document.getElementById(prefix+'useMaPivotGuide');
+   assert.ok(document.getElementById(prefix+'entryConditionGroup').contains(pivot),'pivot condition in entry group');
+   assert.equal(engine.replaySettings().use_ma_pivot_direction,false);
+   pivot.checked=true;
+   const pivotPeriod=document.getElementById(prefix+'maPivotPeriod');
+   Object.defineProperty(pivotPeriod,'value',{value:'60',writable:true,configurable:true});
+   document.getElementById(prefix+'maPivotLookback').value='200';
+   document.getElementById(prefix+'maPivotMinArrows').value='2';
+   for(const config of [engine.replaySettings(),engine.liveStrategyPayload(mode)]) {
+    assert.equal(config.use_ma_pivot_direction,true);assert.equal(config.ma_pivot_period,60);
+    assert.equal(config.ma_pivot_lookback,200);assert.equal(config.ma_pivot_min_arrows,2);
+   }
+   const config=engine.replaySettings();
+   common.renderMaPivotStatus(prefix,'Paper',{ma_pivot:{ready:true,long_pass:true,short_pass:false,slope:1,up_count:0,down_count:0}},config,100000);
+   assert.equal(document.getElementById(prefix+'maPivotLongPaper').textContent,'PAPER · PASS');
+   assert.equal(document.getElementById(prefix+'maPivotShortPaper').textContent,'PAPER · WAITING');
+   assert.match(document.getElementById(prefix+'maPivotPaperSource').textContent,/MA60.*200 MA points.*KST/);
+   common.renderMaPivotStatus(prefix,'Live',{},config,100000,false);
+   assert.equal(document.getElementById(prefix+'maPivotLongLive').textContent,'LIVE · UNAVAILABLE');
+   pivot.checked=false;
+   common.renderMaPivotStatus(prefix,'Paper',null,engine.replaySettings());
+   assert.equal(document.getElementById(prefix+'maPivotLongPaper').textContent,'PAPER · OFF');
+   common.syncMaPivotControls(prefix,{strategy_mode:mode,strategy_params:{use_ma_pivot_direction:true,ma_pivot_period:7,ma_pivot_lookback:90,ma_pivot_min_arrows:3}},true);
+   assert.equal(pivot.checked,true);assert.equal(engine.liveStrategyPayload(mode).ma_pivot_period,7);
+   pivot.checked=false;
    const stop=document.getElementById(prefix+'useStopLoss');
    assert.equal(engine.replaySettings().use_stop_loss,false,'stop loss starts disabled');
    stop.checked=true;

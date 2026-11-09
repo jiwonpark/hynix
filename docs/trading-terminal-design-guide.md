@@ -140,7 +140,7 @@ Across all trading tabs, live price, account, position, and P&L polling must not
 
 Tabs 2–5 use the same navigation, loading, chart viewport, history, marker, and replay interaction model. Venue and strategy differences must not change those mechanics. Linked chart panes must receive identical ordered timestamps; represent unavailable observations as whitespace instead of removing the timestamp. Entering a different terminal starts at the top of that terminal, while horizontal navigation centering must never alter the document's vertical scroll. Every shared-interaction change requires verification across all four tabs.
 
-MA pivot guides are visual-only pane primitives attached to the existing price
+MA pivot guides render as pane primitives attached to the existing price
 series. Hover must not call real chart-series `setData` or `applyOptions`: those
 operations can synchronously emit another crosshair event in Lightweight Charts
 4.2 and overflow the stack. Guides must not contribute data timestamps, autoscale
@@ -150,14 +150,40 @@ Mark interior crossings of each guide with its own MA using small arrows in
 that MA’s color, reading from pivot toward hovered candle: ↑ when the guide
 crosses from below the MA to above, ↓ for above to below. The arrow tip anchors
 at the intersection. Tangencies without a side change have no crossing direction
-and get no arrow; coincident spans and shared endpoints are excluded. Compute
-crossings in rendered coordinates so irregular time spacing and price-scale
-changes are handled correctly. Hide guides and arrows on pointer leave and when
+and get no arrow; coincident spans and shared endpoints are excluded. General hover guides compute crossings in rendered coordinates. For the optional
+MA Pullback pivot condition in Tabs 4–5, the selected MA instead uses the engine’s
+canonical linear-price / ordered-candle-index geometry, then projects the same
+crossing fractions through native chart coordinates. Zoom and price scaling must
+never change condition verdicts. Hide guides and arrows on pointer leave and when
 the owning MA is hidden. Flat runs require
 a subsequent reversal before they qualify as a pivot; unavailable values must
 not become zero-price pivots. Browser verification must exercise real pointer
 hover, wheel, multi-step drag, price-axis scaling and linked-pane synchronization
 in Tabs 2–5; unit tests of endpoint arrays alone cannot certify this interaction.
+Tabs 4–5 MA Pullback have an optional **MA pivot guide direction / crossing
+arrows** entry filter (default OFF). Select only MA7, MA24 or MA60; the lookback
+is 3–440 completed MA points (default 120), and the minimum same-direction arrow
+count is 1–440 (default 1). It needs `period + lookback - 1` completed price
+candles. Use the most recent confirmed extremum in that exact trailing window:
+long passes when the pivot-to-current guide rises OR has enough ↑ crossings;
+short passes when it falls OR has enough ↓ crossings. Count strict interior
+side-changing crossings only; endpoints, tangencies and coincident runs do not
+count. The relative tolerance is 1e-10 of the maximum absolute MA value in the
+window. No pivot or insufficient data is UNAVAILABLE and blocks an enabled rule.
+When it is the sole enabled MA entry condition, guide direction chooses the
+candidate side. Position/account state must never affect these signals.
+
+Show separate PAPER/LIVE long and short verdicts, selected period, lookback,
+arrow threshold/counts, slope and completed-candle KST timestamp. Preserve local
+replay edits across refresh/strategy changes; Match Live explicitly replaces the
+draft. Live settings pass through authenticated configuration, persist on disk,
+and require pausing before changes. The entry quote recheck keeps the pivot on
+completed prices while rechecking other entry rules against executable quotes.
+Lighter campaign child slices also require a fresh passing completed-candle
+pivot verdict. Exits remain independent. When enabled, hovering the selected MA
+uses that same bounded history and canonical arrows; hovering a forming candle
+uses the latest completed guide. Other MAs/tabs retain general hover behavior.
+
 Run `HYPERION_VERIFY_INTERACTION=1 node scripts/verify_live_charts.mjs` and inspect
 the saved hover/scaled screenshots. The frontend deploy script enables these
 interaction checks by default. Runtime JavaScript exceptions fail verification.

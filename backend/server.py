@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
-from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from collections import OrderedDict
 from .chart_cache import ChartResponseCache
@@ -2115,6 +2115,10 @@ def _run_crypto_backtest_sync(
     use_ma_accel: bool = True,
     ma_max_distance_pct: float = 0.0,
     ma_direction_period: int = 0,
+    use_ma_pivot_direction: bool = False,
+    ma_pivot_period: int = 24,
+    ma_pivot_lookback: int = 120,
+    ma_pivot_min_arrows: int = 1,
     use_ma_pullback: bool = True,
     use_ma_cross_exit: bool = True,
     fast_ma_period: int = 9,
@@ -2796,6 +2800,10 @@ def _run_crypto_backtest_sync(
                 use_ma_accel=use_ma_accel,
                 ma_max_distance_pct=ma_max_distance_pct,
                 ma_direction_period=direction_period,
+                use_ma_pivot_direction=use_ma_pivot_direction,
+                ma_pivot_period=ma_pivot_period,
+                ma_pivot_lookback=ma_pivot_lookback,
+                ma_pivot_min_arrows=ma_pivot_min_arrows,
                 proximity_mode=strategy_mode == "ma_proximity",
                 use_ma_pullback=use_ma_pullback,
                 use_ma_cross_exit=use_ma_cross_exit,
@@ -2815,6 +2823,10 @@ def _run_crypto_backtest_sync(
                 use_ma_accel=use_ma_accel,
                 ma_max_distance_pct=ma_max_distance_pct,
                 ma_direction_period=direction_period,
+                use_ma_pivot_direction=use_ma_pivot_direction,
+                ma_pivot_period=ma_pivot_period,
+                ma_pivot_lookback=ma_pivot_lookback,
+                ma_pivot_min_arrows=ma_pivot_min_arrows,
                 proximity_mode=strategy_mode == "ma_proximity",
                 use_ma_pullback=use_ma_pullback,
                 use_ma_cross_exit=use_ma_cross_exit,
@@ -3241,6 +3253,10 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               ma_accel_period: int = 24, ma_accel_min_slope: float = 0.0, ma_accel_min_accel: float = 0.0,
                               ma_max_distance_pct: float = Query(0.0, ge=0, le=100),
                               ma_direction_period: int = Query(0, ge=0, le=498),
+                              use_ma_pivot_direction: bool = False,
+                              ma_pivot_period: int = 24,
+                              ma_pivot_lookback: int = 120,
+                              ma_pivot_min_arrows: int = 1,
                               use_ma_slope: bool = True, use_ma_accel: bool = True, use_ma_pullback: bool = True, use_ma_cross_exit: bool = True,
                               fast_ma_period: int = 9, slow_ma_period: int = 21, min_cross_spread_bps: float = 0.0,
                               use_golden_cross: bool = True, use_death_cross: bool = True, use_cross_spread: bool = True,
@@ -3264,6 +3280,13 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               macro_macd_signal_period: int = 9,
                               macro_macd_confirm_bars: int = 2) -> Dict[str, Any]:
     """Replay a single-leg crypto strategy."""
+    from .ma_pivot import validate_setting
+    try:
+        for key, value in (("ma_pivot_period", ma_pivot_period), ("ma_pivot_lookback", ma_pivot_lookback),
+                           ("ma_pivot_min_arrows", ma_pivot_min_arrows)):
+            validate_setting(key, value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if strategy_mode == "ma_proximity" and ma_direction_period in (1, 2):
         raise ValueError("Direction SMA period must be 0 or between 3 and 498")
     if not (2 <= hourly_hist_fast <= 100 and hourly_hist_fast < hourly_hist_slow <= 200 and 2 <= hourly_hist_signal <= 100):
@@ -3365,6 +3388,10 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         use_ma_slope=use_ma_slope, use_ma_accel=use_ma_accel,
         ma_max_distance_pct=ma_max_distance_pct,
         ma_direction_period=ma_direction_period,
+        use_ma_pivot_direction=use_ma_pivot_direction,
+        ma_pivot_period=ma_pivot_period,
+        ma_pivot_lookback=ma_pivot_lookback,
+        ma_pivot_min_arrows=ma_pivot_min_arrows,
         use_ma_pullback=use_ma_pullback, use_ma_cross_exit=use_ma_cross_exit,
         fast_ma_period=fast_ma_period, slow_ma_period=slow_ma_period,
         min_cross_spread_bps=min_cross_spread_bps,

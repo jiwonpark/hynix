@@ -821,6 +821,11 @@ def evaluate_ma_acceleration_signals(
     ma_max_distance_pct: float = 0.0,
     proximity_mode: bool = False,
     ma_direction_period: int = 0,
+    use_ma_pivot_direction: bool = False,
+    ma_pivot_period: int = 24,
+    ma_pivot_lookback: int = 120,
+    ma_pivot_min_arrows: int = 1,
+    ma_pivot_prices: Optional[List[float]] = None,
     use_ma_slope: bool = True,
     use_ma_accel: bool = True,
     use_ma_pullback: bool = True,
@@ -885,6 +890,11 @@ def evaluate_ma_acceleration_signals(
             candidate_side = 1 if accel_curr > 0 else -1
         else:
             candidate_side = 1 if long_pullback else -1
+        from .ma_pivot import evaluate_ma_pivot
+        pivot = evaluate_ma_pivot(ma_pivot_prices if ma_pivot_prices is not None else prices,
+                                  ma_pivot_period, ma_pivot_lookback, ma_pivot_min_arrows)
+        if use_ma_pivot_direction and not use_ma_slope and not use_ma_pullback and pivot['ready']:
+            candidate_side = 1 if pivot['slope'] > 0 else -1
     elif ma_max_distance_pct > 0:
         near_ma = abs(current_price - ma_curr) <= ma_curr * ma_max_distance_pct / 100
         long_pullback = short_bounce = near_ma
@@ -933,7 +943,10 @@ def evaluate_ma_acceleration_signals(
     }
 
     if proximity_mode:
-        entry_signal = entry_signal and (use_ma_slope or use_ma_pullback)
+        pivot_pass = pivot['long_pass'] if candidate_side > 0 else pivot['short_pass']
+        entry_signal = entry_signal and (use_ma_slope or use_ma_pullback or use_ma_pivot_direction)
+        entry_signal = entry_signal and (not use_ma_pivot_direction or pivot_pass)
+        condition_pass['entry_ma_pivot_direction'] = pivot_pass
         condition_pass.pop("entry_ma_accel")
         condition_pass.pop("entry_ma_stack_1h")
 
@@ -960,6 +973,9 @@ def evaluate_ma_acceleration_signals(
         },
         "condition_pass": condition_pass,
     }
+    if proximity_mode:
+        evaluation['ma_pivot'] = pivot
+        evaluation['condition_enabled']['entry_ma_pivot_direction'] = use_ma_pivot_direction
     return entry_signal, candidate_side, exit_signal, evaluation
 
 def evaluate_golden_death_cross_signals(
@@ -1505,7 +1521,9 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
     if strategy_mode == "ma_proximity":
         period = max(3, int(params.get("ma_accel_period", 24)))
         direction_period = int(params.get("ma_direction_period", 0)) or period
-        return max(period + 1, direction_period + 2)
+        pivot_required = (int(params.get('ma_pivot_period',24))+int(params.get('ma_pivot_lookback',120))-1
+                          if params.get('use_ma_pivot_direction',False) else 0)
+        return max(period + 1, direction_period + 2, pivot_required)
     if strategy_mode == "ma_acceleration":
         return max(3, min(120, int(params.get("ma_accel_period", 24)))) + 2
     if strategy_mode == "golden_death_cross":
@@ -1543,6 +1561,7 @@ def _evaluate_strategy_signal(
     entry_price: float = 0.0,
     held_bars: int = 0,
     macro_alignment: Optional[Tuple[bool, bool]] = None,
+    ma_pivot_prices: Optional[List[float]] = None,
 ) -> Tuple[bool, int, bool, Dict[str, Any]]:
     """Dispatch evaluation to any live-deployable quantitative strategy regime."""
     if strategy_mode not in LIVE_STRATEGIES:
@@ -1644,6 +1663,11 @@ def _evaluate_strategy_signal(
             ma_max_distance_pct=float(config.get("ma_max_distance_pct", 0.0)),
             proximity_mode=strategy_mode == "ma_proximity",
             ma_direction_period=int(config.get("ma_direction_period", 0)),
+            use_ma_pivot_direction=bool(config.get("use_ma_pivot_direction", False)),
+            ma_pivot_period=int(config.get("ma_pivot_period", 24)),
+            ma_pivot_lookback=int(config.get("ma_pivot_lookback", 120)),
+            ma_pivot_min_arrows=int(config.get("ma_pivot_min_arrows", 1)),
+            ma_pivot_prices=ma_pivot_prices,
             use_ma_slope=bool(config.get("use_ma_slope", True)),
             use_ma_accel=bool(config.get("use_ma_accel", True)),
             use_ma_pullback=bool(config.get("use_ma_pullback", True)),

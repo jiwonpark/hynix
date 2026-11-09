@@ -1944,6 +1944,7 @@
     },
 
     bindParadigmDetailEvents(mode) {
+      if (mode === "ma_proximity") TerminalCommon.bindMaPivotControls("lighterCrypto_");
       const detailSec = $("lighterCrypto_paradigmDetailSection");
       if (mode === "golden_death_cross") {
         const fast = $("lighterCrypto_inpCrossFastPeriod");
@@ -2420,6 +2421,7 @@
         payload.ma_accel_min_slope = numeric("lighterCrypto_inpMaAccelMinSlope", Number(this.botState?.ma_accel_min_slope ?? 0.0));
         if (mode === "ma_acceleration") payload.ma_max_distance_pct = numeric("lighterCrypto_inpMaMaxDistance", 0);
         if (mode === "ma_proximity") payload.ma_direction_period = numeric("lighterCrypto_inpMaDirectionPeriod", 0);
+        if (mode === "ma_proximity") Object.assign(payload, TerminalCommon.maPivotSettings("lighterCrypto_"));
         payload.ma_accel_min_accel = numeric("lighterCrypto_inpMaAccelMinAccel", Number(this.botState?.ma_accel_min_accel ?? 0.0));
         payload.use_ma_slope = lid("chkCondEntryMaStretch")?.checked !== false;
         if (mode === "ma_acceleration") payload.use_ma_accel = lid("chkCondEntryBase")?.checked !== false;
@@ -3006,7 +3008,7 @@
         }
         const t = typeof param.time === "number" ? param.time : (param.time.timestamp || param.time);
         this.renderMaLegendValues(t);
-        TerminalCommon.renderMaExtremumHover(this.maExtremumHoverSeries, this._currentMaData, t, this.maVisibility);
+        TerminalCommon.renderMaExtremumHover(this.maExtremumHoverSeries, this._currentMaData, t, this.maVisibility, this.currentParadigm === "ma_proximity" ? TerminalCommon.maPivotGuideSettings("lighterCrypto_", this.interval) : null);
       };
       this.chart.subscribeCrosshairMove(handleCrosshair);
       if (this.assetChart) {
@@ -3422,6 +3424,7 @@
         ma_accel_min_slope: numeric("lighterCrypto_inpMaAccelMinSlope", 0.0),
         ma_max_distance_pct: numeric("lighterCrypto_inpMaMaxDistance", 0),
         ma_direction_period: numeric("lighterCrypto_inpMaDirectionPeriod", 0),
+        ...(mode === "ma_proximity" ? TerminalCommon.maPivotSettings("lighterCrypto_") : {}),
         ma_accel_min_accel: numeric("lighterCrypto_inpMaAccelMinAccel", 0.0),
         fast_ma_period: numeric("lighterCrypto_inpCrossFastPeriod", 9),
         slow_ma_period: numeric("lighterCrypto_inpCrossSlowPeriod", 21),
@@ -3551,7 +3554,7 @@
         ma_stack: ["min_diff_bars"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
-        ma_proximity: ["ma_direction_period", "ma_accel_period", "ma_accel_min_accel"],
+        ma_proximity: ["ma_direction_period", "ma_accel_period", "ma_accel_min_accel", "use_ma_pivot_direction", "ma_pivot_period", "ma_pivot_lookback", "ma_pivot_min_arrows"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel", "ma_max_distance_pct"],
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
         macd_hist_turn: ["macd_fast_period", "macd_slow_period", "macd_signal_period"],
@@ -3563,7 +3566,7 @@
           "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
           "macro_macd_confirm_bars"],
       };
-      const liveParams = { ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
+      const liveParams = { use_ma_pivot_direction:false, ma_pivot_period:24, ma_pivot_lookback:120, ma_pivot_min_arrows:1, ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
       if (isParadigmMatch && currentMode !== "ou_quant" && !["macd_zero_cross", "macd_hist_turn", "ma_proximity"].includes(currentMode)
           && settings.macro_regime_mode !== "macd_hist_accel"
           && settings.macro_ma_period !== Number(liveParams.macro_ma_period ?? 60))
@@ -3685,6 +3688,7 @@
       window.TerminalCommon?.renderHourlyHistogram?.("lighterCrypto_", "Paper", result?.hourly_histogram, settings.use_hourly_hist);
       window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Paper", result?.take_profit_evaluation, settings.use_take_profit);
       window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Paper", result?.stop_loss_evaluation, settings.use_stop_loss === true, "stop_loss");
+      if (this.currentParadigm === "ma_proximity") TerminalCommon.renderMaPivotStatus("lighterCrypto_", "Paper", result?.latest_evaluation, settings, result?.latest_condition_time);
       const checks = result?.latest_conditions || {};
       if (this.currentParadigm === "ou_quant") {
         const evaluation = result?.latest_evaluation;
@@ -3909,6 +3913,7 @@
         : `LIVE · ${bot?.strategy_mode || "strategy"} conditions unavailable (paused, stale, or awaiting a completed candle)`;
       panel.replaceChildren(heading);
       window.TerminalCommon?.resetGroupedLiveConditions?.("lighterCrypto_", heading.textContent, bot?.strategy_mode === this.currentParadigm);
+      if (this.currentParadigm === "ma_proximity") TerminalCommon.renderMaPivotStatus("lighterCrypto_", "Live", evaluation, {use_ma_pivot_direction:false,...bot?.strategy_params}, time, fresh && bot?.strategy_mode === "ma_proximity");
       const liveGroups = {};
       if (bot?.strategy_mode === this.currentParadigm) {
         for (const key of ["entry", "exit"]) {
@@ -4173,6 +4178,7 @@
           }
         });
       }
+      if (liveMode === "ma_proximity") TerminalCommon.syncMaPivotControls("lighterCrypto_", this.botState, true);
       if (["ma_acceleration", "ma_proximity"].includes(liveMode)) {
         [["lighterCrypto_inpMaAccelPeriod", "ma_accel_period"],
          ["lighterCrypto_inpMaAccelMinSlope", "ma_accel_min_slope"],
@@ -4650,6 +4656,7 @@
       }
       if (bot?.strategy_mode === this.currentParadigm) {
         window.TerminalCommon.syncInheritedConditionControls("lighterCrypto_", this.currentParadigm, bot);
+        if (this.currentParadigm === "ma_proximity") TerminalCommon.syncMaPivotControls("lighterCrypto_", bot);
       }
       const liveEntryZ = Number(bot?.entry_z ?? 1.4);
       const liveExitZ = Number(bot?.exit_z ?? 0.2);

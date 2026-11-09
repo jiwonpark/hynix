@@ -263,6 +263,33 @@
     return result;
   }
 
+  function maPivotAnalysis(points, targetTime, lookback=120, minArrows=1) {
+    const empty = {ready:false,long_pass:false,short_pass:false,up_count:0,down_count:0,crossings:[],segment:[]};
+    const source = (points || []).filter(p => Number(p.time?.timestamp ?? p.time) <= Number(targetTime?.timestamp ?? targetTime)).slice(-lookback);
+    if (source.length < lookback || source.some(p => !Number.isFinite(p.value))) return empty;
+    const segment = previousLocalExtremumSegment(source,targetTime);
+    if (segment.length !== 2) return empty;
+    const pivot = source.findIndex(p => p.time === segment[0].time), end=source.length-1;
+    const slope = (source[end].value-source[pivot].value)/(end-pivot);
+    const scale = Math.max(1e-12,...source.map(p=>Math.abs(p.value)));
+    // Normalize exactly as the engine, using its relative tolerance (1e-10).
+    const delta = source.map((p,i)=>(source[pivot].value+slope*(i-pivot)-p.value)/scale);
+    const crossings=[], epsilon=1e-10;
+    const add=(x,before,after)=>{
+      if(x<=pivot+epsilon || x>=end-epsilon || crossings.some(c=>Math.abs(c.index-x)<=epsilon)) return;
+      const left=Math.floor(x), right=Math.min(end,left+1);
+      crossings.push({index:x,left_index:left,right_index:right,fraction:x-left,value:source[pivot].value+slope*(x-pivot),direction:after>before?"up":"down",left_time:source[left].time,right_time:source[right].time});
+    };
+    for(let i=pivot;i<=end;i++) {
+      const d=delta[i];
+      if(Math.abs(d)<=epsilon) {
+        if(i>pivot && i<end && Math.abs(delta[i-1])>epsilon && Math.abs(delta[i+1])>epsilon && Math.sign(delta[i-1])!==Math.sign(delta[i+1])) add(i,delta[i-1],delta[i+1]);
+      } else if(i>pivot && Math.abs(delta[i-1])>epsilon && Math.sign(delta[i-1])!==Math.sign(d)) add(i-1+delta[i-1]/(delta[i-1]-d),delta[i-1],d);
+    }
+    const up=crossings.filter(c=>c.direction==="up").length, down=crossings.length-up;
+    return {ready:true,segment,crossings,slope,pivot_index:pivot,up_count:up,down_count:down,long_pass:slope>0 || up>=minArrows,short_pass:slope<0 || down>=minArrows};
+  }
+
   function createMaExtremumHoverSeries(chart, colors, lineStyle, priceSeries) {
     if (!priceSeries?.attachPrimitive) return {};
     const states = Object.entries(colors || {}).map(([period, color]) => ({period, color, visible: true, points: [], curve: [], intersections: []}));
@@ -299,7 +326,10 @@
             }).map(p => !Number.isFinite(p.value) ? null : ({
               x: chart.timeScale().timeToCoordinate(p.time), y: priceSeries.priceToCoordinate(p.value),
             }));
-            state.intersections = segmentCurveIntersections(coords, curve);
+            state.intersections = state.pivotAnalysis?.ready ? state.pivotAnalysis.crossings.map(c => {
+              const left=chart.timeScale().timeToCoordinate(c.left_time), right=chart.timeScale().timeToCoordinate(c.right_time);
+              return {x:left+(right-left)*c.fraction,y:priceSeries.priceToCoordinate(c.value),direction:c.direction};
+            }).filter(p=>Number.isFinite(p.x) && Number.isFinite(p.y)) : segmentCurveIntersections(coords, curve);
             for (const crossing of state.intersections) {
               const tail = crossing.direction === 'up' ? 1 : -1;
               ctx.beginPath();
@@ -344,6 +374,10 @@
         state.intersections = [];
         requestUpdate?.();
       },
+      setPivotAnalysis(analysis) {
+        if (JSON.stringify(state.pivotAnalysis ?? null) === JSON.stringify(analysis)) return;
+        state.pivotAnalysis=analysis; requestUpdate?.();
+      },
       setCurveData(points) {
         if (state.curve === points) return;
         state.curve = points;
@@ -355,14 +389,18 @@
     }]));
   }
 
-  function renderMaExtremumHover(seriesByPeriod, dataByPeriod, targetTime, visibility = {}) {
+  function renderMaExtremumHover(seriesByPeriod, dataByPeriod, targetTime, visibility = {}, pivotSettings = null) {
     for (const [period, series] of Object.entries(seriesByPeriod || {})) {
       if (!series?.setData) continue;
       const visible = visibility[period] !== false && visibility[`ma${period}`] !== false;
       series.applyOptions?.({visible});
       series.setCurveData?.(dataByPeriod?.[period] || []);
+      const canonical = pivotSettings?.use_ma_pivot_direction && Number(period) === pivotSettings.ma_pivot_period;
+      const completedTarget = Math.min(Number(targetTime?.timestamp ?? targetTime), pivotSettings?.completedBefore ?? Infinity);
+      const analysis = canonical && visible && targetTime != null ? maPivotAnalysis(dataByPeriod?.[period],completedTarget,pivotSettings.ma_pivot_lookback,pivotSettings.ma_pivot_min_arrows) : null;
+      series.setPivotAnalysis?.(analysis);
       series.setData(visible && targetTime != null
-        ? previousLocalExtremumSegment(dataByPeriod?.[period], targetTime)
+        ? canonical ? analysis?.segment || [] : previousLocalExtremumSegment(dataByPeriod?.[period], targetTime)
         : []);
     }
   }
@@ -683,7 +721,61 @@
     return [macro];
   }
 
+  const maPivotDefaults = {use_ma_pivot_direction:false, ma_pivot_period:24, ma_pivot_lookback:120, ma_pivot_min_arrows:1};
+  const maPivotInputs = {use_ma_pivot_direction:"useMaPivotGuide", ma_pivot_period:"maPivotPeriod", ma_pivot_lookback:"maPivotLookback", ma_pivot_min_arrows:"maPivotMinArrows"};
+  function maPivotDraft(prefix) {
+    try { return JSON.parse(localStorage.getItem(prefix + "maPivotDraft") || "null"); } catch (_) { return null; }
+  }
+  function maPivotSettings(prefix) {
+    return Object.fromEntries(Object.entries(maPivotInputs).map(([key,id]) => {
+      const input = document.getElementById(prefix + id);
+      return [key, key === "use_ma_pivot_direction" ? input?.checked === true : Number(input?.value ?? maPivotDefaults[key])];
+    }));
+  }
+  function maPivotGuideSettings(prefix, interval) {
+    const seconds = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}[interval] || 300;
+    return {...maPivotSettings(prefix), completedBefore:Date.now()/1000-seconds};
+  }
+  function bindMaPivotControls(prefix) {
+    for (const id of Object.values(maPivotInputs)) {
+      const input = document.getElementById(prefix + id);
+      input?.addEventListener("input", () => {
+        input.dataset.unsaved = "true";
+        try { localStorage.setItem(prefix + "maPivotDraft", JSON.stringify(maPivotSettings(prefix))); } catch (_) {}
+      });
+    }
+  }
+  function syncMaPivotControls(prefix, bot, force=false) {
+    if (bot?.strategy_mode !== "ma_proximity" || (!force && maPivotDraft(prefix))) return;
+    const settings = {...maPivotDefaults,...bot?.strategy_params};
+    for (const [key,id] of Object.entries(maPivotInputs)) {
+      const input = document.getElementById(prefix + id);
+      if (!input || (!force && (input._userModified || input.dataset.unsaved === "true" || document.activeElement === input))) continue;
+      if (key === "use_ma_pivot_direction") input.checked = settings[key];
+      else input.value = String(settings[key]);
+      if (force) { input._userModified = false; delete input.dataset.unsaved; }
+    }
+    if (force) try { localStorage.removeItem(prefix + "maPivotDraft"); } catch (_) {}
+  }
+  function renderMaPivotStatus(prefix, kind, evaluation, settings, time, available=true) {
+    const pivot = evaluation?.ma_pivot;
+    for (const [dir,key] of [["Long","long_pass"],["Short","short_pass"]]) {
+      const node = document.getElementById(prefix + "maPivot" + dir + kind);
+      if (!node) continue;
+      const state = !settings.use_ma_pivot_direction ? "OFF" : !available || !pivot?.ready ? "UNAVAILABLE" : pivot[key] ? "PASS" : "WAITING";
+      node.textContent = kind.toUpperCase() + " · " + state;
+      node.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+    }
+    const source = document.getElementById(prefix + "maPivot" + kind + "Source");
+    if (source) {
+      const stamp = time && available ? new Date(time*1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
+      source.textContent = `${kind.toUpperCase()} · MA${settings.ma_pivot_period ?? 24} · ${settings.ma_pivot_lookback ?? 120} MA points · ≥${settings.ma_pivot_min_arrows ?? 1} arrows · completed candle ${stamp}`
+        + (available && pivot?.ready ? ` · slope ${Number(pivot.slope).toPrecision(5)} · ↑${pivot.up_count} ↓${pivot.down_count}` : ` · ${pivot?.reason || "Awaiting completed-candle evaluation"}`);
+    }
+  }
+
   function renderMaProximityControls(prefix, saved) {
+    const pivot = {...maPivotDefaults,...saved,...maPivotDraft(prefix)};
     return `
       <p>Long requires a close below the Pullback SMA. Short requires a close above it. The Direction SMA uses the change in slope across three completed candles.</p>
       <div data-terminal-rule-group="entry" data-after-condition="EntryMaStretch" style="display:flex;gap:12px;flex-wrap:wrap;">
@@ -692,6 +784,18 @@
       </div>
       <div data-terminal-rule-group="entry" data-after-condition="EntryPeak" style="display:flex;gap:12px;flex-wrap:wrap;">
         <label>Pullback SMA period <input id="${prefix}inpMaAccelPeriod" type="number" min="3" max="498" step="1" required value="${Number(saved?.ma_accel_period ?? 24)}" style="width:85px;"></label>
+      </div>
+      <div data-terminal-rule-group="entry" id="${prefix}maPivotControls" style="display:grid;gap:8px;padding:10px;border:1px solid #cbd5e1;border-radius:6px;">
+        <label><input id="${prefix}useMaPivotGuide" type="checkbox" ${pivot.use_ma_pivot_direction ? "checked" : ""}> MA pivot guide direction / crossing arrows</label>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <label>Guide MA <select id="${prefix}maPivotPeriod">${[7,24,60].map(n=>`<option value="${n}" ${n===Number(pivot.ma_pivot_period)?"selected":""}>MA${n}</option>`).join("")}</select></label>
+          <label>Lookback (MA points) <input id="${prefix}maPivotLookback" type="number" min="3" max="440" step="1" required value="${Number(pivot.ma_pivot_lookback)}" style="width:72px;"></label>
+          <label>Minimum arrows <input id="${prefix}maPivotMinArrows" type="number" min="1" max="440" step="1" required value="${Number(pivot.ma_pivot_min_arrows)}" style="width:64px;"></label>
+        </div>
+        ${["Long","Short"].map(dir=>`<div>${dir}: guide ${dir==="Long"?"rising":"falling"} OR enough ${dir==="Long"?"↑":"↓"} arrows · <span id="${prefix}maPivot${dir}Paper" class="condBadge neutral">PAPER · UNAVAILABLE</span> · <span id="${prefix}maPivot${dir}Live" data-live-condition class="condBadge neutral">LIVE · UNAVAILABLE</span></div>`).join("")}
+        <small>Latest confirmed pivot to the completed candle, within the selected lookback. Counts strict interior crossings of the guide through the MA (↑ below→above; ↓ above→below). No pivot or insufficient history blocks an enabled rule. Hover the selected MA to inspect that candle’s guide (forming candles use the latest completed guide). Exits are unaffected. Replay changes immediately; unlock, pause and deploy to save live.</small>
+        <small id="${prefix}maPivotPaperSource">PAPER · source unavailable</small>
+        <small id="${prefix}maPivotLiveSource" data-live-condition>LIVE · source unavailable</small>
       </div>`;
   }
 
@@ -701,7 +805,7 @@
       const period = Number(direction.value);
       direction.setCustomValidity(period === 1 || period === 2 ? "Enter 0 or a period from 3 to 498" : "");
     }
-    return ["inpMaDirectionPeriod", "inpMaAccelPeriod"]
+    return ["inpMaDirectionPeriod", "inpMaAccelPeriod", "maPivotLookback", "maPivotMinArrows"]
       .map(id => document.getElementById(prefix + id))
       .find(input => input?.checkValidity?.() === false);
   }
@@ -989,7 +1093,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, segmentCurveIntersections, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
+  const TerminalCommon = { maPivotSettings, maPivotGuideSettings, bindMaPivotControls, syncMaPivotControls, renderMaPivotStatus, maPivotAnalysis, alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, segmentCurveIntersections, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {
