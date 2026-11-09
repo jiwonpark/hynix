@@ -69,3 +69,24 @@ showed pending resume, one tracked slice, no native groups and no error.
 Local evidence: `/tmp/hynix-native-recovery-lifecycle.log`,
 `/tmp/hynix-native-recovery-status.json`, `/tmp/native_oco_controls.png`,
 `/tmp/native_oco_tab5_reload.png`, and `/tmp/live_*.png`.
+
+## Tab 5 below-minimum remainder follow-up, 2026-11-10 KST
+
+At 03:05 the live SMA7 and MA24 pivot arrow filters disagreed. At 03:10 both
+passed long, but an emergency exit tried to reduce 0.00001 BTC against a
+0.00014 BTC minimum and preempted entry. Commit `f06489e` lets a valid same-side
+signal proceed after that specific preflight error. It retains the tracked
+remainder and requires a successful close before reversal. The 94 backend
+tests passed, including simulated same-side entry and blocked reversal.
+
+The production service restarted with its saved settings and inventory. The
+frontend returned HTTP 200 text/html and read-only bot status returned HTTP
+200 with no recovery or pending order. Tab 5 showed rendered prices and all
+three MAs at 1.620 s and authenticated account data at 9.518 s after reload.
+Navigation and 5m → 15m → 5m switching passed. The 03:15 forming and 03:10
+completed candles appeared with the cached-data label, so the chart timing
+measures rendering. At 03:17:18 the account source was 03:17:10 KST and marked
+non-stale. Equity, free margin, BTC quantity and unrealized P&L matched the
+read-only response. Verification submitted no orders and observed no
+post-deploy fill. Logs: `/tmp/hynix-dust-entry-deploy.log` and
+`/tmp/hynix-dust-entry-ui-retry.log`.

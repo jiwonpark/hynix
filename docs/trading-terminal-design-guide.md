@@ -266,6 +266,10 @@ minimum order size requires merging dust, test the exact merged reduction's
 weighted basis and allocated entry fees. Recheck with the final executable quote
 and quantity immediately before submitting a reduce-only exit. Never close foreign
 inventory. Default ON also applies to existing bot state lacking these new fields.
+For Lighter single-leg strategies, a below-minimum strategy exit retains the
+tracked lot and still allows a fresh, eligible entry on the same side. A reversal
+must reduce the existing lot first. Venue minimums and order reconciliation
+remain execution safeguards.
 
 Net return = (directional fill-to-quote P&L − allocated confirmed entry commissions
 − expected exit commission) / matched entry notional. Binance reads signed
