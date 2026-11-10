@@ -1974,6 +1974,11 @@ def evaluate_strategy_signal(strategy_mode, prices, config, *, hourly_histogram=
     entry, side, exit_signal, details = _evaluate_strategy_signal(strategy_mode, prices, config, **kwargs)
     if strategy_mode in {"ma_proximity", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}:
         enabled = bool(config.get("use_macd_signal_streak", False))
+        enabled_conditions = details.get("condition_enabled", {})
+        standalone = enabled and not any(
+            bool(value) for key, value in enabled_conditions.items()
+            if key.startswith("entry_") and key != "entry_signal_streak_exhaustion"
+        )
         streak = macd_signal_streak_exhaustion(
             prices, candidate_side=side,
             macd_fast_period=int(config.get("macd_fast_period", 12)),
@@ -1985,11 +1990,26 @@ def evaluate_strategy_signal(strategy_mode, prices, config, *, hourly_histogram=
             min_reversal_probability_pct=float(config.get("macd_streak_min_reversal_prob_pct", 20.0)),
             require_turn=bool(config.get("macd_streak_require_turn", True)),
         )
+        if standalone and streak["current_sign"]:
+            side = 1 if streak["current_sign"] < 0 else -1
+            streak = macd_signal_streak_exhaustion(
+                prices, candidate_side=side,
+                macd_fast_period=int(config.get("macd_fast_period", 12)),
+                macd_slow_period=int(config.get("macd_slow_period", 26)),
+                macd_signal_period=int(config.get("macd_signal_period", 9)),
+                lookback=int(config.get("macd_streak_lookback", 20)),
+                min_samples=int(config.get("macd_streak_min_samples", 5)),
+                min_percentile=float(config.get("macd_streak_min_percentile", 70.0)),
+                min_reversal_probability_pct=float(config.get("macd_streak_min_reversal_prob_pct", 20.0)),
+                require_turn=bool(config.get("macd_streak_require_turn", True)),
+            )
+            details["candidate_side"] = side
+        streak["standalone_trigger"] = standalone
         details["macd_signal_streak"] = streak
         details.setdefault("condition_enabled", {})["entry_signal_streak_exhaustion"] = enabled
         details.setdefault("condition_pass", {})["entry_signal_streak_exhaustion"] = bool(streak["pass"])
         if enabled:
-            entry = bool(entry and streak["pass"])
+            entry = bool(streak["pass"] if standalone else entry and streak["pass"])
     if strategy_mode == "macd_hist_turn":
         entry = apply_five_minute_signal_filter(
             entry, side, details, config, five_minute_macd_signal,

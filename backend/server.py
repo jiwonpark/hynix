@@ -69,6 +69,7 @@ from .lighter_strategy import (
     evaluate_macd_strength_scaleout_signals,
     evaluate_macd_zero_cross_signals,
     evaluate_macd_hist_turn_signals,
+    evaluate_strategy_signal,
     macd_signal_streak_exhaustion,
     macd_histogram_acceleration_regime_series,
 )
@@ -2814,53 +2815,45 @@ def _run_crypto_backtest_sync(
             ent_price = position["entry"] if position is not None else 0.0
             # Entry evaluation is always flat. A second evaluation below supplies
             # position-aware exit state for the trade/P&L simulation only.
-            entry_signal, candidate_side, _, entry_eval = evaluate_ma_acceleration_signals(
-                prefix,
-                    macro_alignment=evaluator_macro_alignment[index],
-                ma_accel_period=w,
-                ma_accel_min_slope=ma_accel_min_slope,
-                ma_accel_min_accel=ma_accel_min_accel,
-                use_ma_slope=use_ma_slope,
-                use_ma_accel=use_ma_accel,
-                ma_max_distance_pct=ma_max_distance_pct,
-                ma_direction_period=direction_period,
-                use_ma_pivot_direction=use_ma_pivot_direction,
-                use_ma_pivot_7=use_ma_pivot_7,
-                use_ma_pivot_24=use_ma_pivot_24,
-                use_ma_pivot_60=use_ma_pivot_60,
-                use_ma_price_7=use_ma_price_7,
-                use_ma_price_24=use_ma_price_24,
-                use_ma_price_60=use_ma_price_60,
-                use_ma_pivot_slope_fallback=use_ma_pivot_slope_fallback,
-                ma_pivot_period=ma_pivot_period,
-                ma_pivot_lookback=ma_pivot_lookback,
-                ma_pivot_min_arrows=ma_pivot_min_arrows,
-                proximity_mode=strategy_mode == "ma_proximity",
-                use_ma_pullback=use_ma_pullback,
-                use_ma_cross_exit=use_ma_cross_exit,
-                use_ma_stack_1h=use_ma_stack_1h,
+            entry_signal, candidate_side, _, entry_eval = evaluate_strategy_signal(
+                strategy_mode, prefix, {
+                    "ma_accel_period": w,
+                    "ma_accel_min_slope": ma_accel_min_slope,
+                    "ma_accel_min_accel": ma_accel_min_accel,
+                    "use_ma_slope": use_ma_slope,
+                    "use_ma_accel": use_ma_accel,
+                    "ma_max_distance_pct": ma_max_distance_pct,
+                    "ma_direction_period": direction_period,
+                    "use_ma_pivot_direction": use_ma_pivot_direction,
+                    "use_ma_pivot_7": use_ma_pivot_7,
+                    "use_ma_pivot_24": use_ma_pivot_24,
+                    "use_ma_pivot_60": use_ma_pivot_60,
+                    "use_ma_price_7": use_ma_price_7,
+                    "use_ma_price_24": use_ma_price_24,
+                    "use_ma_price_60": use_ma_price_60,
+                    "use_ma_pivot_slope_fallback": use_ma_pivot_slope_fallback,
+                    "ma_pivot_period": ma_pivot_period,
+                    "ma_pivot_lookback": ma_pivot_lookback,
+                    "ma_pivot_min_arrows": ma_pivot_min_arrows,
+                    "use_ma_pullback": use_ma_pullback,
+                    "use_ma_cross_exit": use_ma_cross_exit,
+                    "use_ma_stack_1h": use_ma_stack_1h,
+                    "use_macd_signal_streak": use_macd_signal_streak,
+                    "macd_fast_period": macd_fast_period,
+                    "macd_slow_period": macd_slow_period,
+                    "macd_signal_period": macd_signal_period,
+                    "macd_streak_lookback": macd_streak_lookback,
+                    "macd_streak_min_samples": macd_streak_min_samples,
+                    "macd_streak_min_percentile": macd_streak_min_percentile,
+                    "macd_streak_min_reversal_prob_pct": macd_streak_min_reversal_prob_pct,
+                    "macd_streak_require_turn": macd_streak_require_turn,
+                },
+                macro_alignment=evaluator_macro_alignment[index],
                 evaluation_time=int(bar["time"]),
                 position_side=0,
                 entry_price=0.0,
                 held_bars=0,
             )
-            if strategy_mode == "ma_proximity":
-                streak = macd_signal_streak_exhaustion(
-                    prefix, candidate_side=candidate_side,
-                    macd_fast_period=macd_fast_period,
-                    macd_slow_period=macd_slow_period,
-                    macd_signal_period=macd_signal_period,
-                    lookback=macd_streak_lookback,
-                    min_samples=macd_streak_min_samples,
-                    min_percentile=macd_streak_min_percentile,
-                    min_reversal_probability_pct=macd_streak_min_reversal_prob_pct,
-                    require_turn=macd_streak_require_turn,
-                )
-                entry_eval["macd_signal_streak"] = streak
-                entry_eval.setdefault("condition_enabled", {})["entry_signal_streak_exhaustion"] = use_macd_signal_streak
-                entry_eval.setdefault("condition_pass", {})["entry_signal_streak_exhaustion"] = bool(streak["pass"])
-                if use_macd_signal_streak:
-                    entry_signal = bool(entry_signal and streak["pass"])
             _, _, exit_signal, exit_eval = evaluate_ma_acceleration_signals(
                 prefix,
                     macro_alignment=evaluator_macro_alignment[index],

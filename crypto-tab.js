@@ -646,6 +646,7 @@
           <span style="color:#2563eb;font-weight:700;">● MACD</span>
           <span style="color:#f59e0b;font-weight:700;">● Signal</span>
           <span style="color:#16a34a;font-weight:700;">■ Histogram</span>
+          <span id="crypto_macdSignalRegimeSummary" style="font-size:10px;font-weight:800;color:#64748b;">Signal regime —</span>
           <span id="crypto_shortTermAssetDetails" style="color:#334155;font-family:monospace;font-size:11px;margin-left:6px;font-weight:700;"></span>
         `;
       }
@@ -2681,6 +2682,7 @@
           this.assetSeries.zeroLine.setData(bars.map((b) => ({ time: b.time, value: 0 })));
         }
       }
+      TerminalCommon.renderMacdSignalRegimes("crypto_", lid("shortTermAssetHost"), this.assetChart, macd.signal);
 
       this.renderMaLegendValues(bars.at(-1)?.time);
     },
@@ -2762,6 +2764,7 @@
           this.renderTrendRanges();
           this.renderTradeMarkerTargets();
           this.renderTradeTriangles();
+          TerminalCommon.renderMacdSignalRegimes("crypto_", lid("shortTermAssetHost"), this.assetChart, this._currentMacd?.signal);
         });
       });
       this.stopPriceScaleWatch = StrategyExecutionChartController.watchPriceScale({
@@ -2874,6 +2877,7 @@
               this.renderTradeMarkerTargets();
               this.renderTradeTriangles();
               this.chartSync?.sync();
+              TerminalCommon.renderMacdSignalRegimes("crypto_", assetHost, this.assetChart, this._currentMacd?.signal);
             }
           }
         });

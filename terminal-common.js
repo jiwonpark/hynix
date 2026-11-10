@@ -480,6 +480,94 @@
     return { macd: macdLine, signal: signalLine, histogram };
   }
 
+  function macdSignalRegimeComparison(signalPoints) {
+    const runs = [];
+    let active = null;
+    for (const point of Array.isArray(signalPoints) ? signalPoints : []) {
+      const value = Number(point?.value);
+      if (!Number.isFinite(value) || point?.time == null) continue;
+      const sign = value > 0 ? 1 : value < 0 ? -1 : 0;
+      if (!sign) {
+        if (active) runs.push(active);
+        active = null;
+        continue;
+      }
+      if (!active || active.sign !== sign) {
+        if (active) runs.push(active);
+        active = { sign, length: 1, startTime: point.time, endTime: point.time };
+      } else {
+        active.length += 1;
+        active.endTime = point.time;
+      }
+    }
+    if (active) runs.push(active);
+    const current = runs.at(-1) || null;
+    const previous = current
+      ? [...runs.slice(0, -1)].reverse().find((run) => run.sign === current.sign) || null
+      : null;
+    return {
+      current,
+      previous,
+      percentage: current && previous ? current.length / previous.length * 100 : null,
+    };
+  }
+
+  function renderMacdSignalRegimes(prefix, host, chart, signalPoints) {
+    if (!host || typeof document === "undefined") return macdSignalRegimeComparison(signalPoints);
+    host.style.position = "relative";
+    let layer = document.getElementById(`${prefix}macdSignalRegimeLayer`);
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = `${prefix}macdSignalRegimeLayer`;
+      layer.setAttribute("aria-label", "Current and previous same-sign MACD signal regimes");
+      layer.style.cssText = "position:absolute;inset:0;z-index:4;overflow:hidden;pointer-events:none";
+      host.appendChild(layer);
+    }
+    layer.replaceChildren();
+    const comparison = macdSignalRegimeComparison(signalPoints);
+    const summary = document.getElementById(`${prefix}macdSignalRegimeSummary`);
+    if (!comparison.current) {
+      if (summary) summary.textContent = "Signal regime —";
+      return comparison;
+    }
+    const signLabel = comparison.current.sign > 0 ? "+" : "−";
+    const color = comparison.current.sign > 0 ? "22,163,74" : "220,38,38";
+    if (summary) {
+      const ratio = comparison.percentage == null ? "—" : `${comparison.percentage.toFixed(1)}%`;
+      const previousLength = comparison.previous?.length ?? "—";
+      summary.textContent = `Signal ${signLabel} · current ${comparison.current.length} / previous ${previousLength} · ${ratio}`;
+      summary.style.color = comparison.current.sign > 0 ? "#15803d" : "#b91c1c";
+      summary.title = "Current completed-candle signal-line sign streak compared with the previous streak of the same sign";
+    }
+    const timeScale = chart?.timeScale?.();
+    if (!timeScale?.timeToCoordinate) return comparison;
+    const points = (Array.isArray(signalPoints) ? signalPoints : []).filter((point) => point?.time != null);
+    let barWidth = 8;
+    if (points.length > 1) {
+      const lastX = timeScale.timeToCoordinate(points.at(-1).time);
+      const priorX = timeScale.timeToCoordinate(points.at(-2).time);
+      if (Number.isFinite(lastX) && Number.isFinite(priorX)) barWidth = Math.max(2, Math.abs(lastX - priorX));
+    }
+    const hostWidth = host.clientWidth || 0;
+    for (const [role, run, opacity] of [
+      ["previous", comparison.previous, 0.055],
+      ["current", comparison.current, 0.13],
+    ]) {
+      if (!run) continue;
+      const startX = timeScale.timeToCoordinate(run.startTime);
+      const endX = timeScale.timeToCoordinate(run.endTime);
+      if (!Number.isFinite(startX) || !Number.isFinite(endX)) continue;
+      const left = Math.max(0, Math.min(hostWidth, Math.min(startX, endX) - barWidth / 2));
+      const right = Math.max(0, Math.min(hostWidth, Math.max(startX, endX) + barWidth / 2));
+      if (right <= left) continue;
+      const band = document.createElement("div");
+      band.dataset.regimeRole = role;
+      band.style.cssText = `position:absolute;top:0;bottom:0;left:${left}px;width:${right-left}px;background:rgba(${color},${opacity});border-left:1px ${role === "current" ? "solid" : "dashed"} rgba(${color},.45);border-right:1px ${role === "current" ? "solid" : "dashed"} rgba(${color},.45)`;
+      layer.appendChild(band);
+    }
+    return comparison;
+  }
+
   // Only signals that actually produced simulated inventory may link to exits.
   // Other qualifying candles remain standalone condition markers.
   function replaySignalLinks(data) {
@@ -1257,7 +1345,7 @@
     const checked = (live?.use_macd_signal_streak === true) ? "checked" : "";
     const turnChecked = live?.macd_streak_require_turn !== false ? "checked" : "";
     return `<div style="${row}"><input id="${prefix}macdUseSignalStreak" aria-label="Enable MACD signal streak exhaustion entry condition" type="checkbox" style="${toggle}" ${checked}>
-      <span><b>Signal streak exhaustion (AND)</b> · negative streak for long; positive for short</span><span id="${prefix}macdStatusSignalStreak" class="condBadge neutral">${checked ? "WAITING" : "OFF"}</span>
+      <span><b>Signal streak exhaustion</b> · negative streak → long; positive streak → short · standalone alone, AND with other entry rules</span><span id="${prefix}macdStatusSignalStreak" class="condBadge neutral">${checked ? "WAITING" : "OFF"}</span>
       <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;padding-left:24px;">
         ${options.showPeriods ? `<label>MACD Fast <input id="${prefix}macdFastPeriod" aria-label="MACD fast period" type="number" min="2" max="100" step="1" value="${Number(live?.macd_fast_period ?? 12)}" style="width:52px"></label>
         <label>Slow <input id="${prefix}macdSlowPeriod" aria-label="MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live?.macd_slow_period ?? 26)}" style="width:52px"></label>
@@ -1309,7 +1397,7 @@
     source.textContent = `${kind.toUpperCase()} · completed ${interval || "candle"} MACD signal · ${sign} ${metric?.current_streak_length ?? "—"} bars · last ${metric?.last_same_sign_streak_length ?? "—"} · samples ${metric?.sample_count ?? 0}/${settings.macd_streak_lookback} · percentile ${pct} · next-bar reversal ${hazard} · toward zero ${metric?.turning_toward_zero ? "YES" : "NO"} · ${time}`;
   }
 
-  const TerminalCommon = { maPivotSettings, maPivotGuideSettings, bindMaPivotControls, syncMaPivotControls, renderMaPivotStatus, maPivotAnalysis, alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, singleLegNetTargetPrice, singleLegStopLossLevel, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, macdSignalStreakControls, macdSignalStreakSettings, renderMacdSignalStreakStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, segmentCurveIntersections, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
+  const TerminalCommon = { maPivotSettings, maPivotGuideSettings, bindMaPivotControls, syncMaPivotControls, renderMaPivotStatus, maPivotAnalysis, alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, singleLegNetTargetPrice, singleLegStopLossLevel, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, macdSignalStreakControls, macdSignalStreakSettings, renderMacdSignalStreakStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, segmentCurveIntersections, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, macdSignalRegimeComparison, renderMacdSignalRegimes, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

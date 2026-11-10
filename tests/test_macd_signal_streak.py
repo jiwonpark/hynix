@@ -104,3 +104,48 @@ def test_ma_proximity_replay_returns_streak_status_from_completed_bars():
     assert evaluation["condition_enabled"]["entry_signal_streak_exhaustion"] is True
     assert evaluation["condition_pass"]["entry_signal_streak_exhaustion"] == evaluation["macd_signal_streak"]["pass"]
     assert evaluation["macd_signal_streak"]["rule"] == "macd_signal_streak_hazard_v1"
+
+
+def test_streak_condition_can_be_the_only_ma_proximity_entry_trigger():
+    prices = oscillating_prices()
+    entry, side, _, evaluation = evaluate_strategy_signal("ma_proximity", prices, {
+        "ma_accel_period": 4,
+        "use_ma_slope": False, "use_ma_pullback": False,
+        "use_ma_pivot_7": False, "use_ma_pivot_24": False, "use_ma_pivot_60": False,
+        "use_ma_price_7": False, "use_ma_price_24": False, "use_ma_price_60": False,
+        "use_macd_signal_streak": True,
+        "macd_fast_period": 3, "macd_slow_period": 8, "macd_signal_period": 3,
+        "macd_streak_lookback": 20, "macd_streak_min_samples": 3,
+        "macd_streak_min_percentile": 0,
+        "macd_streak_min_reversal_prob_pct": 0,
+        "macd_streak_require_turn": False,
+    })
+
+    streak = evaluation["macd_signal_streak"]
+    assert entry is True
+    assert streak["standalone_trigger"] is True
+    assert streak["pass"] is True
+    assert side == (-1 if streak["current_sign"] > 0 else 1)
+
+
+def test_streak_only_replay_emits_position_independent_chart_signals():
+    from backend.server import _run_crypto_backtest_sync
+
+    bars = [{"time": (index + 1) * 300, "value": value}
+            for index, value in enumerate(oscillating_prices(300))]
+    replay = _run_crypto_backtest_sync(
+        bars, True, strategy_mode="ma_proximity", use_hourly_hist=False,
+        ma_accel_period=4, use_ma_slope=False, use_ma_pullback=False,
+        use_ma_pivot_7=False, use_ma_pivot_24=False, use_ma_pivot_60=False,
+        use_ma_price_7=False, use_ma_price_24=False, use_ma_price_60=False,
+        use_macd_signal_streak=True,
+        macd_fast_period=3, macd_slow_period=8, macd_signal_period=3,
+        macd_streak_lookback=20, macd_streak_min_samples=3,
+        macd_streak_min_percentile=0,
+        macd_streak_min_reversal_prob_pct=0,
+        macd_streak_require_turn=False,
+    )
+
+    assert replay["entry_signals"]
+    assert all(signal["conditions"]["entry_signal_streak_exhaustion"] is True
+               for signal in replay["entry_signals"])

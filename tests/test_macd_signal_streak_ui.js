@@ -34,5 +34,20 @@ for (const file of ['crypto-tab.js', 'lighter-crypto-tab.js']) {
 const sharedSource = fs.readFileSync(path.join(__dirname, '..', 'terminal-common.js'), 'utf8');
 assert.ok(sharedSource.includes('macdSignalStreakControls(prefix, saved, streakRow, streakToggle, {showPeriods:true})'), 'MA Proximity visibly renders the shared streak condition');
 assert.ok(sharedSource.includes('options.showPeriods'), 'MA Proximity exposes the applicable MACD periods');
+assert.ok(sharedSource.includes('standalone alone, AND with other entry rules'), 'UI explains standalone and combined replay behavior');
+
+const comparison = TerminalCommon.macdSignalRegimeComparison([
+  {time:1,value:-1},{time:2,value:-2},
+  {time:3,value:1},{time:4,value:2},
+  {time:5,value:-1},{time:6,value:-2},{time:7,value:-3},
+]);
+assert.deepEqual(comparison.current, {sign:-1,length:3,startTime:5,endTime:7});
+assert.deepEqual(comparison.previous, {sign:-1,length:2,startTime:1,endTime:2});
+assert.equal(comparison.percentage, 150);
+for (const file of ['crypto-tab.js', 'lighter-crypto-tab.js']) {
+  const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+  assert.ok(source.includes('macdSignalRegimeSummary'), `${file} shows the current/previous regime comparison`);
+  assert.ok(source.includes('renderMacdSignalRegimes'), `${file} renders shared MACD regime bands`);
+}
 
 console.log('MACD signal streak UI tests passed');
