@@ -58,3 +58,49 @@ def test_disabled_streak_is_observable_without_gating_and_increases_history_when
     assert required_strategy_bars("macd_hist_turn", {
         **config, "use_macd_signal_streak": True, "macd_streak_lookback": 20,
     }) == 251
+
+
+def test_ma_proximity_exposes_and_applies_the_same_optional_streak_filter():
+    prices = [110, 80, 120, 120, 120, 100]
+    config = {
+        "ma_accel_period": 4, "use_ma_accel": False,
+        "use_macd_signal_streak": False,
+        "macd_fast_period": 3, "macd_slow_period": 5, "macd_signal_period": 2,
+    }
+    baseline = evaluate_strategy_signal("ma_proximity", prices, config)
+    assert baseline[:2] == (True, 1)
+    assert baseline[3]["condition_enabled"]["entry_signal_streak_exhaustion"] is False
+    assert "macd_signal_streak" in baseline[3]
+
+    blocked = evaluate_strategy_signal("ma_proximity", prices, {
+        **config, "use_macd_signal_streak": True,
+        "macd_streak_min_samples": 3, "macd_streak_min_percentile": 0,
+        "macd_streak_min_reversal_prob_pct": 0, "macd_streak_require_turn": False,
+    })
+    assert blocked[0] is False
+    assert blocked[1] == 1
+    assert blocked[3]["condition_enabled"]["entry_signal_streak_exhaustion"] is True
+    assert required_strategy_bars("ma_proximity", {
+        **config, "use_macd_signal_streak": True, "macd_streak_lookback": 20,
+    }) == 247
+
+
+def test_ma_proximity_replay_returns_streak_status_from_completed_bars():
+    from backend.server import _run_crypto_backtest_sync
+
+    bars = [{"time": (index + 1) * 300, "value": value}
+            for index, value in enumerate(oscillating_prices(300))]
+    replay = _run_crypto_backtest_sync(
+        bars, True, strategy_mode="ma_proximity", use_hourly_hist=False,
+        ma_accel_period=4, use_ma_accel=False,
+        use_macd_signal_streak=True,
+        macd_fast_period=3, macd_slow_period=8, macd_signal_period=3,
+        macd_streak_lookback=20, macd_streak_min_samples=3,
+        macd_streak_min_percentile=0,
+        macd_streak_min_reversal_prob_pct=0,
+        macd_streak_require_turn=False,
+    )
+    evaluation = replay["latest_evaluation"]
+    assert evaluation["condition_enabled"]["entry_signal_streak_exhaustion"] is True
+    assert evaluation["condition_pass"]["entry_signal_streak_exhaustion"] == evaluation["macd_signal_streak"]["pass"]
+    assert evaluation["macd_signal_streak"]["rule"] == "macd_signal_streak_hazard_v1"

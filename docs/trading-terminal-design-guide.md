@@ -625,7 +625,9 @@ exchange. Explicit operator recovery retains its separately guarded repair path.
 ## MACD signal-streak exhaustion entry condition
 
 Tabs 4 and 5 expose the same optional MACD signal-streak exhaustion condition
-for every MACD strategy. It is an AND entry gate and defaults OFF. A negative
+in all four MACD strategies and MA Proximity. The MA Proximity panel includes
+the applicable MACD fast, slow, and signal periods beside the streak controls.
+It is an AND entry gate and defaults OFF. A negative
 completed signal-line streak may support a long candidate; a positive streak
 may support a short candidate. It never gates exits and never reads positions,
 balances, tranche capacity, recovery, or account state, so the independent

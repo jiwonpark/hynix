@@ -1653,7 +1653,14 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         pivot_required = (max(enabled_pivots)+int(params.get('ma_pivot_lookback',120))-1
                           if enabled_pivots else 0)
         price_required = max(enabled_prices) if enabled_prices else 0
-        return max(period + 1, direction_period + 2, pivot_required, price_required)
+        required = max(period + 1, direction_period + 2, pivot_required, price_required)
+        if bool(params.get("use_macd_signal_streak", False)):
+            fast = max(2, int(params.get("macd_fast_period", 12)))
+            slow = max(fast + 1, int(params.get("macd_slow_period", 26)))
+            signal = max(2, int(params.get("macd_signal_period", 9)))
+            streak_lookback = max(5, min(200, int(params.get("macd_streak_lookback", 20))))
+            required = max(required, min(500, slow + signal + streak_lookback * 12))
+        return required
     if strategy_mode == "ma_acceleration":
         return max(3, min(120, int(params.get("ma_accel_period", 24)))) + 2
     if strategy_mode == "golden_death_cross":
@@ -1962,7 +1969,7 @@ def evaluate_strategy_signal(strategy_mode, prices, config, *, hourly_histogram=
                              five_minute_macd_signal=None, **kwargs):
     from .hourly_histogram import apply_five_minute_signal_filter, apply_hourly_filter
     entry, side, exit_signal, details = _evaluate_strategy_signal(strategy_mode, prices, config, **kwargs)
-    if strategy_mode in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}:
+    if strategy_mode in {"ma_proximity", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}:
         enabled = bool(config.get("use_macd_signal_streak", False))
         streak = macd_signal_streak_exhaustion(
             prices, candidate_side=side,

@@ -2448,6 +2448,7 @@
         if (mode === "ma_acceleration") payload.ma_max_distance_pct = numeric("lighterCrypto_inpMaMaxDistance", 0);
         if (mode === "ma_proximity") payload.ma_direction_period = numeric("lighterCrypto_inpMaDirectionPeriod", 0);
         if (mode === "ma_proximity") Object.assign(payload, TerminalCommon.maPivotSettings("lighterCrypto_"));
+        if (mode === "ma_proximity") Object.assign(payload, this.macdSettings(), window.TerminalCommon?.macdSignalStreakSettings?.("lighterCrypto_", this.botState?.strategy_params) || {});
         payload.ma_accel_min_accel = numeric("lighterCrypto_inpMaAccelMinAccel", Number(this.botState?.ma_accel_min_accel ?? 0.0));
         payload.use_ma_slope = lid("chkCondEntryMaStretch")?.checked !== false;
         if (mode === "ma_acceleration") payload.use_ma_accel = lid("chkCondEntryBase")?.checked !== false;
@@ -3380,7 +3381,7 @@
 
     syncMacdDraftControls(bot) {
       const mode = this.currentParadigm;
-      if (!["macd_zero_cross", "macd_reversal", "macd_strength_scaleout", "macd_hist_turn"].includes(mode)) return;
+      if (!["ma_proximity", "macd_zero_cross", "macd_reversal", "macd_strength_scaleout", "macd_hist_turn"].includes(mode)) return;
       const values = bot?.strategy_drafts?.[mode]
         || (bot?.strategy_mode === mode ? { ...bot, ...(bot.strategy_params || {}) } : {});
       [["lighterCrypto_macdFastPeriod", "macd_fast_period"], ["lighterCrypto_macdSlowPeriod", "macd_slow_period"],
@@ -3583,7 +3584,7 @@
         ma_stack: ["min_diff_bars"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
-        ma_proximity: ["ma_direction_period", "ma_accel_period", "ma_accel_min_accel", "use_ma_pivot_7", "use_ma_pivot_24", "use_ma_pivot_60", "use_ma_price_7", "use_ma_price_24", "use_ma_price_60", "ma_pivot_lookback"],
+        ma_proximity: ["ma_direction_period", "ma_accel_period", "ma_accel_min_accel", "use_ma_pivot_7", "use_ma_pivot_24", "use_ma_pivot_60", "use_ma_price_7", "use_ma_price_24", "use_ma_price_60", "ma_pivot_lookback", "macd_fast_period", "macd_slow_period", "macd_signal_period", "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel", "ma_max_distance_pct"],
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
         macd_hist_turn: ["macd_fast_period", "macd_slow_period", "macd_signal_period", "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct"],
@@ -3622,6 +3623,12 @@
         [...(currentMode === "macd_hist_turn" ? ["use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m"] : ["use_macd_zero_cross"]), "use_macd_signal_zone", "use_macd_hist_exit"].forEach((key) => {
           if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? (key !== "use_macd_signal_zone"))) diffs.push(`${key}: paper ≠ live`);
         });
+        ["use_macd_signal_streak", "macd_streak_require_turn"].forEach((key) => {
+          const fallback = key === "macd_streak_require_turn";
+          if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? fallback)) diffs.push(`${key}: paper ≠ live`);
+        });
+      }
+      if (isParadigmMatch && currentMode === "ma_proximity") {
         ["use_macd_signal_streak", "macd_streak_require_turn"].forEach((key) => {
           const fallback = key === "macd_streak_require_turn";
           if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? fallback)) diffs.push(`${key}: paper ≠ live`);
@@ -3725,7 +3732,10 @@
       window.TerminalCommon?.renderHourlyHistogram?.("lighterCrypto_", "Paper", result?.hourly_histogram, settings.use_hourly_hist);
       window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Paper", result?.take_profit_evaluation, settings.use_take_profit);
       window.TerminalCommon?.renderTakeProfitStatus?.("lighterCrypto_", "Paper", result?.stop_loss_evaluation, settings.use_stop_loss === true, "stop_loss");
-      if (this.currentParadigm === "ma_proximity") TerminalCommon.renderMaPivotStatus("lighterCrypto_", "Paper", result?.latest_evaluation, settings, result?.latest_condition_time);
+      if (this.currentParadigm === "ma_proximity") {
+        TerminalCommon.renderMaPivotStatus("lighterCrypto_", "Paper", result?.latest_evaluation, settings, result?.latest_condition_time);
+        window.TerminalCommon?.renderMacdSignalStreakStatus?.("lighterCrypto_", "Paper", result?.latest_evaluation, settings, result?.latest_condition_time, this.interval);
+      }
       const checks = result?.latest_conditions || {};
       if (this.currentParadigm === "ou_quant") {
         const evaluation = result?.latest_evaluation;
@@ -3777,7 +3787,6 @@
         if (source) source.textContent = result?.latest_condition_time
           ? `PAPER · Completed candle ${new Date(Number(result.latest_condition_time) * 1000).toLocaleString()} · Tab 5 live bot executes deployed strategy`
           : "PAPER · Awaiting completed-candle replay";
-        window.TerminalCommon?.renderMacdSignalStreakStatus?.("lighterCrypto_", "Paper", evaluation, settings, result?.latest_condition_time, this.interval);
         return;
       }
       if (["macd_zero_cross", "macd_hist_turn"].includes(this.currentParadigm)) {
@@ -3953,7 +3962,7 @@
       panel.replaceChildren(heading);
       window.TerminalCommon?.resetGroupedLiveConditions?.("lighterCrypto_", heading.textContent, bot?.strategy_mode === this.currentParadigm);
       if (this.currentParadigm === "ma_proximity" && bot?.strategy_mode === "ma_proximity") TerminalCommon.renderMaPivotStatus("lighterCrypto_", "Live", evaluation, {use_ma_pivot_direction:false,use_ma_pivot_7:false,use_ma_pivot_24:false,use_ma_pivot_60:false,...bot,...bot?.strategy_params}, time, fresh && bot?.strategy_mode === "ma_proximity");
-      if (["macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"].includes(this.currentParadigm)) window.TerminalCommon?.renderMacdSignalStreakStatus?.("lighterCrypto_", "Live", fresh && bot?.strategy_mode === this.currentParadigm ? evaluation : null, {...bot,...bot?.strategy_params}, time, bot?.strategy_interval);
+      if (["ma_proximity", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"].includes(this.currentParadigm)) window.TerminalCommon?.renderMacdSignalStreakStatus?.("lighterCrypto_", "Live", fresh && bot?.strategy_mode === this.currentParadigm ? evaluation : null, {...bot,...bot?.strategy_params}, time, bot?.strategy_interval);
       const liveGroups = {};
       if (bot?.strategy_mode === this.currentParadigm) {
         for (const key of ["entry", "exit"]) {
@@ -4233,6 +4242,21 @@
             input.value = String(params[key]);
             input._userModified = false;
           }
+        });
+      }
+      if (liveMode === "ma_proximity") {
+        const controls = {
+          macd_fast_period: "lighterCrypto_macdFastPeriod", macd_slow_period: "lighterCrypto_macdSlowPeriod", macd_signal_period: "lighterCrypto_macdSignalPeriod",
+          use_macd_signal_streak: "lighterCrypto_macdUseSignalStreak", macd_streak_lookback: "lighterCrypto_macdStreakLookback",
+          macd_streak_min_samples: "lighterCrypto_macdStreakMinSamples", macd_streak_min_percentile: "lighterCrypto_macdStreakMinPercentile",
+          macd_streak_min_reversal_prob_pct: "lighterCrypto_macdStreakMinReversalProb", macd_streak_require_turn: "lighterCrypto_macdStreakRequireTurn",
+        };
+        Object.entries(controls).forEach(([key, id]) => {
+          const input = $(id);
+          if (!input || params[key] == null) return;
+          if (typeof params[key] === "boolean") input.checked = params[key];
+          else input.value = String(params[key]);
+          input._userModified = false;
         });
       }
       if (liveMode === "golden_death_cross") {

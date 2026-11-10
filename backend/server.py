@@ -2795,6 +2795,11 @@ def _run_crypto_backtest_sync(
         w = max(3, int(ma_accel_period))
         direction_period = ma_direction_period if strategy_mode == "ma_proximity" else 0
         first_index = max(w, (direction_period or w) + 1) if strategy_mode == "ma_proximity" else w + 1
+        if strategy_mode == "ma_proximity" and use_macd_signal_streak:
+            streak_required = min(500, max(int(macd_slow_period), int(macd_fast_period) + 1)
+                                  + max(2, int(macd_signal_period))
+                                  + max(5, min(200, int(macd_streak_lookback))) * 12)
+            first_index = max(first_index, streak_required - 1)
         for index, bar in enumerate(bars):
             position = close_net_exit(position, bar)
             if active_positions:
@@ -2837,6 +2842,23 @@ def _run_crypto_backtest_sync(
                 entry_price=0.0,
                 held_bars=0,
             )
+            if strategy_mode == "ma_proximity":
+                streak = macd_signal_streak_exhaustion(
+                    prefix, candidate_side=candidate_side,
+                    macd_fast_period=macd_fast_period,
+                    macd_slow_period=macd_slow_period,
+                    macd_signal_period=macd_signal_period,
+                    lookback=macd_streak_lookback,
+                    min_samples=macd_streak_min_samples,
+                    min_percentile=macd_streak_min_percentile,
+                    min_reversal_probability_pct=macd_streak_min_reversal_prob_pct,
+                    require_turn=macd_streak_require_turn,
+                )
+                entry_eval["macd_signal_streak"] = streak
+                entry_eval.setdefault("condition_enabled", {})["entry_signal_streak_exhaustion"] = use_macd_signal_streak
+                entry_eval.setdefault("condition_pass", {})["entry_signal_streak_exhaustion"] = bool(streak["pass"])
+                if use_macd_signal_streak:
+                    entry_signal = bool(entry_signal and streak["pass"])
             _, _, exit_signal, exit_eval = evaluate_ma_acceleration_signals(
                 prefix,
                     macro_alignment=evaluator_macro_alignment[index],

@@ -821,6 +821,8 @@
 
   function renderMaProximityControls(prefix, saved) {
     const pivot = normalizeMaPivotSettings({...saved,...maPivotDraft(prefix)});
+    const streakRow = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 10px;border:1px solid #c4b5fd;border-radius:6px;background:#f5f3ff;font-size:12px;color:#4c1d95;";
+    const streakToggle = "appearance:auto;display:inline-block;width:16px;height:16px;min-width:16px;margin:0;flex:none;";
     const periodOptions = (selected, allowInherited = false) => {
       const value = Number(selected);
       const periods = allowInherited ? [0, 7, 24, 60] : [7, 24, 60];
@@ -853,6 +855,9 @@
           <small id="${prefix}maPrice${period}LiveSource" data-live-condition>LIVE · source unavailable</small>
         </div>`).join("")}
         <small>Every enabled rule is AND. Pivot rules use the latest confirmed pivot within the shared lookback: ↑ permits long, ↓ permits short; guide slope is used only when that MA has no crossing arrows. Price-side rules require the completed close below each enabled MA for long or above each enabled MA for short. Any unavailable or disagreeing rule blocks entry. Exits are unaffected. Replay changes immediately; unlock, pause and deploy to save live.</small>
+      </div>
+      <div data-terminal-rule-group="entry" style="display:grid;gap:8px;margin-top:10px;">
+        ${macdSignalStreakControls(prefix, saved, streakRow, streakToggle, {showPeriods:true})}
       </div>`;
   }
 
@@ -1234,12 +1239,15 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  function macdSignalStreakControls(prefix, live, row, toggle) {
+  function macdSignalStreakControls(prefix, live, row, toggle, options = {}) {
     const checked = (live?.use_macd_signal_streak === true) ? "checked" : "";
     const turnChecked = live?.macd_streak_require_turn !== false ? "checked" : "";
     return `<div style="${row}"><input id="${prefix}macdUseSignalStreak" aria-label="Enable MACD signal streak exhaustion entry condition" type="checkbox" style="${toggle}" ${checked}>
       <span><b>Signal streak exhaustion (AND)</b> · negative streak for long; positive for short</span><span id="${prefix}macdStatusSignalStreak" class="condBadge neutral">${checked ? "WAITING" : "OFF"}</span>
       <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;padding-left:24px;">
+        ${options.showPeriods ? `<label>MACD Fast <input id="${prefix}macdFastPeriod" aria-label="MACD fast period" type="number" min="2" max="100" step="1" value="${Number(live?.macd_fast_period ?? 12)}" style="width:52px"></label>
+        <label>Slow <input id="${prefix}macdSlowPeriod" aria-label="MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live?.macd_slow_period ?? 26)}" style="width:52px"></label>
+        <label>Signal <input id="${prefix}macdSignalPeriod" aria-label="MACD signal period" type="number" min="2" max="100" step="1" value="${Number(live?.macd_signal_period ?? 9)}" style="width:52px"></label>` : ""}
         <label>History <input id="${prefix}macdStreakLookback" type="number" min="5" max="200" step="1" value="${Number(live?.macd_streak_lookback ?? 20)}" style="width:58px"> streaks</label>
         <label>Samples ≥ <input id="${prefix}macdStreakMinSamples" type="number" min="3" max="50" step="1" value="${Number(live?.macd_streak_min_samples ?? 5)}" style="width:50px"></label>
         <label>Percentile ≥ <input id="${prefix}macdStreakMinPercentile" type="number" min="0" max="100" step="1" value="${Number(live?.macd_streak_min_percentile ?? 70)}" style="width:55px">%</label>

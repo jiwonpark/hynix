@@ -31,4 +31,8 @@ for (const file of ['crypto-tab.js', 'lighter-crypto-tab.js']) {
   assert.ok(source.includes('entry_signal_streak_exhaustion'), `${file} exposes the live engine condition`);
 }
 
+const sharedSource = fs.readFileSync(path.join(__dirname, '..', 'terminal-common.js'), 'utf8');
+assert.ok(sharedSource.includes('macdSignalStreakControls(prefix, saved, streakRow, streakToggle, {showPeriods:true})'), 'MA Proximity visibly renders the shared streak condition');
+assert.ok(sharedSource.includes('options.showPeriods'), 'MA Proximity exposes the applicable MACD periods');
+
 console.log('MACD signal streak UI tests passed');

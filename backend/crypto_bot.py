@@ -230,7 +230,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
 
     async def save_strategy_draft(self, mode: str, values: Dict[str, Any]) -> Dict[str, Any]:
         """Persist replay parameters without changing the live strategy configuration."""
-        if mode not in {"macd_hist_turn", "macd_zero_cross", "macd_reversal", "macd_strength_scaleout"}:
+        if mode not in {"ma_proximity", "macd_hist_turn", "macd_zero_cross", "macd_reversal", "macd_strength_scaleout"}:
             raise ValueError("Unsupported strategy draft")
         allowed = {"macd_fast_period", "macd_slow_period", "macd_signal_period"}
         if set(values) != allowed:
