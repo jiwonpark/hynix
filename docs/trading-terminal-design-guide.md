@@ -202,6 +202,16 @@ for compatibility and have no effect on this last-arrow rule. Exits remain indep
 uses that same bounded history and canonical arrows; hovering a forming candle
 uses the latest completed guide. Other MAs/tabs retain general hover behavior.
 
+Each MA also exposes an independent completed-close price-side entry condition:
+below MA7/MA24/MA60 permits long and above it permits short. Each price-side
+switch is a real replay/live setting with separate PAPER/LIVE direction verdicts,
+the completed close, MA value, source time and `price_side_v1` rule version.
+Every enabled pivot and price-side rule is combined by strict AND; an unavailable
+MA or a disagreement blocks the entry. If price-side rules are the only enabled
+directional rules, unanimous below/above results select long/short respectively.
+Lighter campaign child slices must recheck every enabled price-side verdict from
+the latest completed candle before submitting another slice.
+
 Run `HYPERION_VERIFY_INTERACTION=1 node scripts/verify_live_charts.mjs` and inspect
 the saved hover/scaled screenshots. The frontend deploy script enables these
 interaction checks by default. Runtime JavaScript exceptions fail verification.

@@ -2,22 +2,25 @@
 import math
 
 RULE_VERSION = "last_arrow_v2"
+PRICE_SIDE_RULE_VERSION = "price_side_v1"
 
 # ma_pivot_min_arrows is retained for old configurations; the rule uses only the last arrow.
 PIVOT_PERIODS = (7, 24, 60)
 PIVOT_TOGGLE_KEYS = tuple(f'use_ma_pivot_{period}' for period in PIVOT_PERIODS)
-KEYS = ('use_ma_pivot_direction', *PIVOT_TOGGLE_KEYS,
+PRICE_TOGGLE_KEYS = tuple(f'use_ma_price_{period}' for period in PIVOT_PERIODS)
+KEYS = ('use_ma_pivot_direction', *PIVOT_TOGGLE_KEYS, *PRICE_TOGGLE_KEYS,
         'ma_pivot_period', 'ma_pivot_lookback', 'ma_pivot_min_arrows')
 DEFAULTS = dict(use_ma_pivot_direction=False,
                 use_ma_pivot_7=False, use_ma_pivot_24=False, use_ma_pivot_60=False,
+                use_ma_price_7=False, use_ma_price_24=False, use_ma_price_60=False,
                 ma_pivot_period=24,
                 ma_pivot_lookback=120, ma_pivot_min_arrows=1)
 
 
 def validate_setting(key, value):
-    if key == 'use_ma_pivot_direction' or key in PIVOT_TOGGLE_KEYS:
+    if key == 'use_ma_pivot_direction' or key in PIVOT_TOGGLE_KEYS or key in PRICE_TOGGLE_KEYS:
         if not isinstance(value, bool):
-            raise ValueError('MA pivot switch must be boolean')
+            raise ValueError('MA condition switch must be boolean')
         return value
     number = float(value)
     if isinstance(value, bool) or not math.isfinite(number) or not number.is_integer():
@@ -43,12 +46,40 @@ def enabled_pivot_periods(config):
     return enabled
 
 
+def enabled_price_periods(config):
+    """Return MA periods whose completed-close price-side condition is enabled."""
+    return [period for period in PIVOT_PERIODS
+            if bool(config.get(f'use_ma_price_{period}', False))]
+
+
 def evaluate_ma_pivots(prices, config):
     """Evaluate every chart MA so UI status and enabled AND rules share one source."""
     lookback = int(config.get('ma_pivot_lookback', 120))
     min_arrows = int(config.get('ma_pivot_min_arrows', 1))
     return {str(period): evaluate_ma_pivot(prices, period, lookback, min_arrows)
             for period in PIVOT_PERIODS}
+
+
+def evaluate_ma_price_sides(prices):
+    """Evaluate completed close below/above each chart MA for long/short entry."""
+    current = float(prices[-1]) if prices else None
+    results = {}
+    for period in PIVOT_PERIODS:
+        ready = current is not None and math.isfinite(current) and len(prices) >= period
+        mean = (sum(float(value) for value in prices[-period:]) / period) if ready else None
+        ready = bool(ready and math.isfinite(mean))
+        results[str(period)] = dict(
+            ready=ready,
+            long_pass=bool(ready and current < mean),
+            short_pass=bool(ready and current > mean),
+            price=current if ready else None,
+            ma=mean if ready else None,
+            difference=(current-mean) if ready else None,
+            period=period,
+            rule=PRICE_SIDE_RULE_VERSION,
+            reason=None if ready else f'MA{period} history unavailable',
+        )
+    return results
 
 
 def analyze_ma_points(values, min_arrows=1):

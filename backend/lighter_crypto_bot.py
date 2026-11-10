@@ -5,7 +5,7 @@ grid, ou_quant, ma_stack, multi_factor, trend_pullback, custom.
 """
 
 from .ma_pivot import (DEFAULTS as MA_PIVOT_DEFAULTS, RULE_VERSION as MA_PIVOT_RULE_VERSION,
-                       enabled_pivot_periods)
+                       PRICE_SIDE_RULE_VERSION, enabled_pivot_periods, enabled_price_periods)
 from .hourly_histogram import HourlyHistogramMixin
 from .single_leg_take_profit import TakeProfitMixin
 from .lighter_native_protection import NativeProtectionMixin, protection_children
@@ -71,6 +71,7 @@ DEFAULT_STATE = {
     "use_ma_diff_hook": True, "use_ma_diff_exit": True, "min_diff_bars": 2,
     "ma_accel_period": 24, "ma_accel_min_slope": 0.0, "ma_accel_min_accel": 0.0, "ma_max_distance_pct": 0.0, "ma_direction_period": 0,
     "use_ma_pivot_direction": False, "use_ma_pivot_7": False, "use_ma_pivot_24": False, "use_ma_pivot_60": False,
+    "use_ma_price_7": False, "use_ma_price_24": False, "use_ma_price_60": False,
     "ma_pivot_period": 24, "ma_pivot_lookback": 120, "ma_pivot_min_arrows": 1,
     "use_ma_slope": True, "use_ma_accel": True, "use_ma_pullback": True, "use_ma_cross_exit": True,
     "fast_ma_period": 9, "slow_ma_period": 21, "min_cross_spread_bps": 0.0,
@@ -550,6 +551,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             "trend_macro_window", "trend_pullback_dist", "trend_tp_dist", "trend_slope_min",
             "ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel", "ma_max_distance_pct", "ma_direction_period",
             "use_ma_pivot_direction", "use_ma_pivot_7", "use_ma_pivot_24", "use_ma_pivot_60",
+            "use_ma_price_7", "use_ma_price_24", "use_ma_price_60",
             "ma_pivot_period", "ma_pivot_lookback", "ma_pivot_min_arrows",
             "use_ma_slope", "use_ma_accel", "use_ma_pullback", "use_ma_cross_exit",
             "fast_ma_period", "slow_ma_period", "min_cross_spread_bps",
@@ -590,6 +592,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             elif key == "max_tranches":
                 candidate[key] = parse_entry_count_limit(value)
             elif key in {"use_ma_pivot_direction", "use_ma_pivot_7", "use_ma_pivot_24", "use_ma_pivot_60",
+                         "use_ma_price_7", "use_ma_price_24", "use_ma_price_60",
                          "ma_pivot_period", "ma_pivot_lookback", "ma_pivot_min_arrows"}:
                 from .ma_pivot import validate_setting
                 candidate[key] = validate_setting(key, value)
@@ -696,7 +699,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             raise ValueError("Maximum MA distance must be between 0 and 100 percent")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("use_ma_pivot_direction", "use_ma_pivot_7", "use_ma_pivot_24", "use_ma_pivot_60", "ma_pivot_period", "ma_pivot_lookback", "ma_pivot_min_arrows", "use_native_protection", "ma_direction_period", "ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "stop_loss_mode", "stop_trail_activation_pct", "stop_trail_distance_pct", "stop_trail_min_step_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                ("use_ma_pivot_direction", "use_ma_pivot_7", "use_ma_pivot_24", "use_ma_pivot_60", "use_ma_price_7", "use_ma_price_24", "use_ma_price_60", "ma_pivot_period", "ma_pivot_lookback", "ma_pivot_min_arrows", "use_native_protection", "ma_direction_period", "ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "stop_loss_mode", "stop_trail_activation_pct", "stop_trail_distance_pct", "stop_trail_min_step_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",
@@ -1037,6 +1040,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             self._save()
             return False
         enabled_pivots = enabled_pivot_periods(self.state)
+        enabled_prices = enabled_price_periods(self.state)
         if self.state.get("strategy_mode") == "ma_proximity" and enabled_pivots:
             evaluation = self.state.get("last_evaluation") or {}
             pivots = evaluation.get("ma_pivots") or {}
@@ -1051,6 +1055,21 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                                 and pivots.get(str(period), {}).get("long_pass" if side > 0 else "short_pass"))
                            for period in enabled_pivots)):
                 self._finish_entry_campaign("ma_pivot_direction_filter")
+                self._save()
+                return False
+        if self.state.get("strategy_mode") == "ma_proximity" and enabled_prices:
+            evaluation = self.state.get("last_evaluation") or {}
+            price_sides = evaluation.get("ma_price_sides") or {}
+            seconds = INTERVAL_SECONDS[self.state["strategy_interval"]]
+            expected = (int(time.time()) - 1) // seconds * seconds - seconds
+            if (evaluation.get("strategy") != "ma_proximity"
+                    or int(evaluation.get("time") or 0) < expected
+                    or any(not (price_sides.get(str(period), {}).get("ready")
+                                and price_sides.get(str(period), {}).get("rule") == PRICE_SIDE_RULE_VERSION
+                                and price_sides.get(str(period), {}).get("period") == period
+                                and price_sides.get(str(period), {}).get("long_pass" if side > 0 else "short_pass"))
+                           for period in enabled_prices)):
+                self._finish_entry_campaign("ma_price_side_filter")
                 self._save()
                 return False
         first_slice = int(campaign.get("slices_filled", 0)) == 0

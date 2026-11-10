@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
-from backend.ma_pivot import analyze_ma_points, enabled_pivot_periods, evaluate_ma_pivot, validate_setting
+from backend.ma_pivot import (analyze_ma_points, enabled_pivot_periods, enabled_price_periods,
+                              evaluate_ma_pivot, evaluate_ma_price_sides, validate_setting)
 from backend.lighter_strategy import evaluate_strategy_signal, required_strategy_bars
 from backend.crypto_bot import CryptoBot
 from backend.lighter_crypto_bot import LighterCryptoBot
@@ -28,6 +29,7 @@ class PivotRuleTests(unittest.TestCase):
         self.assertEqual(required_strategy_bars('ma_proximity',dict(use_ma_pivot_direction=True,ma_pivot_period=60,ma_pivot_lookback=440)),499)
         self.assertEqual(required_strategy_bars('ma_proximity',dict(use_ma_pivot_7=True,use_ma_pivot_60=True,ma_pivot_lookback=440)),499)
         self.assertEqual(required_strategy_bars('ma_proximity',dict(use_ma_pivot_direction=False)),26)
+        self.assertEqual(required_strategy_bars('ma_proximity',dict(ma_accel_period=7,use_ma_price_60=True)),60)
 
     def test_enabled_pivots_are_independent_and_conditions(self):
         prices=[100+3*math.sin(i/5)+.2*math.sin(i/2) for i in range(240)]
@@ -50,6 +52,35 @@ class PivotRuleTests(unittest.TestCase):
                 self.assertFalse(entry)
         self.assertTrue(saw_disagreement)
         self.assertEqual(enabled_pivot_periods(dict(use_ma_pivot_direction=True,ma_pivot_period=60)),[60])
+
+    def test_enabled_price_side_rules_are_independent_and_strict_and(self):
+        rising=[100+i*.1 for i in range(80)]
+        entry,side,_,evaluation=evaluate_strategy_signal('ma_proximity',rising,dict(
+            ma_accel_period=7,use_ma_slope=False,use_ma_pullback=False,
+            use_ma_price_7=True,use_ma_price_24=True,use_ma_price_60=True))
+        self.assertTrue(entry)
+        self.assertEqual(side,-1)
+        self.assertEqual(enabled_price_periods(dict(use_ma_price_7=True,use_ma_price_60=True)),[7,60])
+        for period in (7,24,60):
+            self.assertTrue(evaluation['condition_enabled'][f'entry_ma_price_{period}'])
+            self.assertTrue(evaluation['condition_pass'][f'entry_ma_price_{period}'])
+            self.assertTrue(evaluation['ma_price_sides'][str(period)]['short_pass'])
+        falling=list(reversed(rising))
+        self.assertEqual(evaluate_strategy_signal('ma_proximity',falling,dict(
+            ma_accel_period=7,use_ma_slope=False,use_ma_pullback=False,
+            use_ma_price_7=True,use_ma_price_24=True,use_ma_price_60=True))[:2],(True,1))
+        mixed=[100.0]*60+[80,80,80,80,80,80,90]
+        blocked=evaluate_strategy_signal('ma_proximity',mixed,dict(
+            ma_accel_period=7,use_ma_slope=False,use_ma_pullback=False,
+            use_ma_price_7=True,use_ma_price_60=True))
+        self.assertFalse(blocked[0])
+        self.assertNotEqual(blocked[3]['ma_price_sides']['7']['long_pass'],blocked[3]['ma_price_sides']['60']['long_pass'])
+        completed=evaluate_strategy_signal('ma_proximity',falling,dict(
+            ma_accel_period=7,use_ma_slope=False,use_ma_pullback=False,use_ma_price_7=True))
+        quote=evaluate_strategy_signal('ma_proximity',falling[:-1]+[falling[-1]*1.2],dict(
+            ma_accel_period=7,use_ma_slope=False,use_ma_pullback=False,use_ma_price_7=True),
+            ma_pivot_prices=falling)
+        self.assertEqual(quote[3]['ma_price_sides'],completed[3]['ma_price_sides'])
 
     def test_filter_toggle_scope_and_completed_price_snapshot(self):
         prices=[100+3*math.sin(i/5) for i in range(200)]
@@ -106,7 +137,9 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
                 path=Path(folder)/'state.json'
                 bot=cls(AsyncMock(),path)
                 self.assertFalse(bot.public_state()['strategy_params']['use_ma_pivot_direction'])
-                config=dict(use_ma_pivot_direction=True,use_ma_pivot_7=True,use_ma_pivot_60=True,ma_pivot_period=7,ma_pivot_lookback=200,ma_pivot_min_arrows=2)
+                config=dict(use_ma_pivot_direction=True,use_ma_pivot_7=True,use_ma_pivot_60=True,
+                            use_ma_price_7=True,use_ma_price_24=True,
+                            ma_pivot_period=7,ma_pivot_lookback=200,ma_pivot_min_arrows=2)
                 await bot.configure(config)
                 reloaded=cls(AsyncMock(),path)
                 for key,value in config.items(): self.assertEqual(reloaded.public_state()['strategy_params'][key],value)
@@ -114,7 +147,7 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(ValueError,'ause'):
                     await reloaded.configure(dict(ma_pivot_period=24))
                 self.assertEqual(reloaded.state['ma_pivot_period'],7)
-                for key,value in [('ma_pivot_period',25),('ma_pivot_lookback',441),('ma_pivot_min_arrows',0),('use_ma_pivot_direction','false'),('use_ma_pivot_7','false'),('ma_pivot_period',True),('ma_pivot_lookback',3.5)]:
+                for key,value in [('ma_pivot_period',25),('ma_pivot_lookback',441),('ma_pivot_min_arrows',0),('use_ma_pivot_direction','false'),('use_ma_pivot_7','false'),('use_ma_price_7','false'),('ma_pivot_period',True),('ma_pivot_lookback',3.5)]:
                     with self.subTest(key=key,value=value),self.assertRaises(ValueError): validate_setting(key,value)
 
     async def test_campaign_slices_respect_latest_direction_filter(self):
@@ -146,6 +179,27 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await bot._continue_entry_campaign())
             bot._submit.assert_awaited_once()
 
+    async def test_campaign_slices_recheck_every_enabled_ma_price_side(self):
+        with tempfile.TemporaryDirectory() as folder:
+            import time
+            completed=int(time.time())//300*300-300
+            bot=LighterCryptoBot(AsyncMock(),Path(folder)/'state.json')
+            bot.state.update(enabled=True,strategy_mode='ma_proximity',use_hourly_hist=False,
+                             use_ma_price_7=True,use_ma_price_24=True)
+            bot._start_entry_campaign(1,completed)
+            bot._submit=AsyncMock()
+            bot.state['last_evaluation']=dict(strategy='ma_proximity',time=completed,ma_price_sides={
+                '7':dict(rule='price_side_v1',period=7,ready=True,long_pass=True,short_pass=False),
+                '24':dict(rule='price_side_v1',period=24,ready=True,long_pass=True,short_pass=False),
+            })
+            self.assertTrue(await bot._continue_entry_campaign())
+            bot._submit.assert_awaited_once()
+            bot._start_entry_campaign(1,completed)
+            bot.state['last_evaluation']['ma_price_sides']['24']['long_pass']=False
+            self.assertFalse(await bot._continue_entry_campaign())
+            self.assertEqual(bot.state['last_entry_campaign']['status'],'ma_price_side_filter')
+            bot._submit.assert_awaited_once()
+
 class PivotReplayEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def test_both_venue_replay_routes_forward_new_settings(self):
         from unittest.mock import patch
@@ -158,11 +212,15 @@ class PivotReplayEndpointTests(unittest.IsolatedAsyncioTestCase):
                     strategy_mode='ma_proximity',use_hourly_hist=False,use_take_profit=False,stop_loss_pct=.2,
                     ma_direction_period=0,ma_max_distance_pct=0,use_ma_pivot_direction=True,
                     use_ma_pivot_7=True,use_ma_pivot_24=True,
+                    use_ma_price_7=True,use_ma_price_60=True,
                     ma_pivot_period=7,ma_pivot_lookback=30,ma_pivot_min_arrows=2)
                 self.assertEqual(result['latest_evaluation']['ma_pivot'],evaluate_ma_pivot([b['value'] for b in bars],7,30,2))
                 self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_pivot_direction'])
                 self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_pivot_7'])
                 self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_pivot_24'])
+                self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_price_7'])
+                self.assertFalse(result['latest_evaluation']['condition_enabled']['entry_ma_price_24'])
+                self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_price_60'])
         for params in [dict(ma_pivot_period=8),dict(ma_pivot_lookback=441),dict(ma_pivot_min_arrows=0)]:
             with self.assertRaises(HTTPException) as error: await server.get_crypto_backtest(**params)
             self.assertEqual(error.exception.status_code,422)

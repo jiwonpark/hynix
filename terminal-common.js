@@ -264,6 +264,7 @@
   }
 
   const maPivotRuleVersion = "last_arrow_v2";
+  const maPriceSideRuleVersion = "price_side_v1";
 
   function maPivotAnalysis(points, targetTime, lookback=120) {
     const empty = {ready:false,long_pass:false,short_pass:false,up_count:0,down_count:0,crossings:[],segment:[],last_arrow:null,rule:maPivotRuleVersion};
@@ -727,8 +728,8 @@
   }
 
   const maPivotPeriods = [7,24,60];
-  const maPivotDefaults = {use_ma_pivot_direction:false, use_ma_pivot_7:false, use_ma_pivot_24:false, use_ma_pivot_60:false, ma_pivot_period:24, ma_pivot_lookback:120};
-  const maPivotInputs = {use_ma_pivot_7:"useMaPivot7", use_ma_pivot_24:"useMaPivot24", use_ma_pivot_60:"useMaPivot60", ma_pivot_lookback:"maPivotLookback"};
+  const maPivotDefaults = {use_ma_pivot_direction:false, use_ma_pivot_7:false, use_ma_pivot_24:false, use_ma_pivot_60:false, use_ma_price_7:false, use_ma_price_24:false, use_ma_price_60:false, ma_pivot_period:24, ma_pivot_lookback:120};
+  const maPivotInputs = {use_ma_pivot_7:"useMaPivot7", use_ma_pivot_24:"useMaPivot24", use_ma_pivot_60:"useMaPivot60", use_ma_price_7:"useMaPrice7", use_ma_price_24:"useMaPrice24", use_ma_price_60:"useMaPrice60", ma_pivot_lookback:"maPivotLookback"};
   function normalizeMaPivotSettings(source={}) {
     const settings = {...maPivotDefaults,...source};
     const enabled = maPivotPeriods.filter(period => settings[`use_ma_pivot_${period}`] === true);
@@ -746,7 +747,7 @@
   function maPivotSettings(prefix) {
     const settings = Object.fromEntries(Object.entries(maPivotInputs).map(([key,id]) => {
       const input = document.getElementById(prefix + id);
-      return [key, key.startsWith("use_ma_pivot_") ? input?.checked === true : Number(input?.value ?? maPivotDefaults[key])];
+      return [key, key.startsWith("use_ma_") ? input?.checked === true : Number(input?.value ?? maPivotDefaults[key])];
     }));
     return normalizeMaPivotSettings(settings);
   }
@@ -769,7 +770,7 @@
     for (const [key,id] of Object.entries(maPivotInputs)) {
       const input = document.getElementById(prefix + id);
       if (!input || (!force && (input._userModified || input.dataset.unsaved === "true" || document.activeElement === input))) continue;
-      if (key.startsWith("use_ma_pivot_")) input.checked = settings[key];
+      if (key.startsWith("use_ma_")) input.checked = settings[key];
       else input.value = String(settings[key]);
       if (force) { input._userModified = false; delete input.dataset.unsaved; }
     }
@@ -778,6 +779,7 @@
   function renderMaPivotStatus(prefix, kind, evaluation, settings, time, available=true) {
     const normalized = normalizeMaPivotSettings(settings);
     const pivots = evaluation?.ma_pivots || (evaluation?.ma_pivot ? {[String(evaluation.ma_pivot.period ?? normalized.ma_pivot_period)]:evaluation.ma_pivot} : {});
+    const priceSides = evaluation?.ma_price_sides || {};
     for (const period of maPivotPeriods) {
       const pivot = pivots[String(period)];
       const matching = pivot?.rule === maPivotRuleVersion && Number(pivot?.period) === period
@@ -796,6 +798,23 @@
         const stamp = time && usable ? new Date(time*1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
         source.textContent = `${kind.toUpperCase()} · MA${period} · ${normalized.ma_pivot_lookback} MA points · completed candle ${stamp}`
           + (usable && pivot?.ready ? ` · slope ${Number(pivot.slope).toPrecision(5)} · last arrow ${pivot.last_arrow === "up" ? "↑" : pivot.last_arrow === "down" ? "↓" : "none"} · ↑${pivot.up_count} ↓${pivot.down_count}` : ` · ${!matching && pivot ? "Rule or parameters changed; awaiting matching evaluation" : pivot?.reason || "Awaiting completed-candle evaluation"}`);
+      }
+      const priceSide = priceSides[String(period)];
+      const priceMatching = priceSide?.rule === maPriceSideRuleVersion && Number(priceSide?.period) === period;
+      const priceUsable = available && priceMatching;
+      const priceEnabled = normalized[`use_ma_price_${period}`];
+      for (const [dir,key] of [["Long","long_pass"],["Short","short_pass"]]) {
+        const node = document.getElementById(prefix + `maPrice${period}${dir}${kind}`);
+        if (!node) continue;
+        const state = !priceEnabled ? "OFF" : !priceUsable || !priceSide?.ready ? "UNAVAILABLE" : priceSide[key] ? "PASS" : "WAITING";
+        node.textContent = kind.toUpperCase() + " · " + state;
+        node.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+      }
+      const priceSource = document.getElementById(prefix + `maPrice${period}${kind}Source`);
+      if (priceSource) {
+        const stamp = time && priceUsable ? new Date(time*1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
+        priceSource.textContent = `${kind.toUpperCase()} · completed close ${priceSide?.ready ? Number(priceSide.price).toPrecision(7) : "—"} vs MA${period} ${priceSide?.ready ? Number(priceSide.ma).toPrecision(7) : "—"} · ${stamp}`
+          + (!priceMatching && priceSide ? " · Rule changed; awaiting matching evaluation" : priceSide?.reason ? ` · ${priceSide.reason}` : "");
       }
     }
   }
@@ -818,7 +837,7 @@
         <label>Pullback SMA period <select id="${prefix}inpMaAccelPeriod" required style="width:150px;">${periodOptions(saved?.ma_accel_period ?? 24)}</select></label>
       </div>
       <div data-terminal-rule-group="entry" id="${prefix}maPivotControls" style="display:grid;gap:8px;padding:10px;border:1px solid #cbd5e1;border-radius:6px;">
-        <strong>MA pivot guide / last crossing arrow · enabled MA rules are AND</strong>
+        <strong>MA pivot guide + price side · enabled MA rules are AND</strong>
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <label>Lookback (MA points) <input id="${prefix}maPivotLookback" type="number" min="3" max="440" step="1" required value="${Number(pivot.ma_pivot_lookback)}" style="width:72px;"></label>
         </div>
@@ -827,8 +846,13 @@
           ${["Long","Short"].map(dir=>`<div>${dir}: last arrow ${dir==="Long"?"↑":"↓"}, or guide ${dir==="Long"?"rising":"falling"} if no arrows · <span id="${prefix}maPivot${period}${dir}Paper" class="condBadge neutral">PAPER · UNAVAILABLE</span> · <span id="${prefix}maPivot${period}${dir}Live" data-live-condition class="condBadge neutral">LIVE · UNAVAILABLE</span></div>`).join("")}
           <small id="${prefix}maPivot${period}PaperSource">PAPER · source unavailable</small>
           <small id="${prefix}maPivot${period}LiveSource" data-live-condition>LIVE · source unavailable</small>
+          <label style="display:flex;flex-direction:row;align-items:center;gap:8px;"><input style="width:16px;height:16px;flex:0 0 auto;margin:0;" id="${prefix}useMaPrice${period}" type="checkbox" ${pivot[`use_ma_price_${period}`] ? "checked" : ""}> Price side of MA${period}</label>
+          <div>Long: completed close below MA${period} · <span id="${prefix}maPrice${period}LongPaper" class="condBadge neutral">PAPER · UNAVAILABLE</span> · <span id="${prefix}maPrice${period}LongLive" data-live-condition class="condBadge neutral">LIVE · UNAVAILABLE</span></div>
+          <div>Short: completed close above MA${period} · <span id="${prefix}maPrice${period}ShortPaper" class="condBadge neutral">PAPER · UNAVAILABLE</span> · <span id="${prefix}maPrice${period}ShortLive" data-live-condition class="condBadge neutral">LIVE · UNAVAILABLE</span></div>
+          <small id="${prefix}maPrice${period}PaperSource">PAPER · source unavailable</small>
+          <small id="${prefix}maPrice${period}LiveSource" data-live-condition>LIVE · source unavailable</small>
         </div>`).join("")}
-        <small>Every enabled MA must permit the same entry direction. The latest confirmed pivot within the shared lookback decides each MA: ↑ permits long, ↓ permits short; guide slope is used only when that MA has no crossing arrows. Any enabled MA that is unavailable or disagrees blocks entry. Hover an enabled MA to inspect its canonical guide. Exits are unaffected. Replay changes immediately; unlock, pause and deploy to save live.</small>
+        <small>Every enabled rule is AND. Pivot rules use the latest confirmed pivot within the shared lookback: ↑ permits long, ↓ permits short; guide slope is used only when that MA has no crossing arrows. Price-side rules require the completed close below each enabled MA for long or above each enabled MA for short. Any unavailable or disagreeing rule blocks entry. Exits are unaffected. Replay changes immediately; unlock, pause and deploy to save live.</small>
       </div>`;
   }
 

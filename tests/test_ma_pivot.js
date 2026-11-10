@@ -44,14 +44,17 @@ for(const prefix of ['crypto_','lighterCrypto_']) {
  assert.equal(document.getElementById(prefix+'maPivotLookback').value,'30','local draft survives rerender');
  ui.syncMaPivotControls(prefix,{strategy_mode:'ma_proximity',strategy_params:{ma_pivot_lookback:90}});
  assert.equal(document.getElementById(prefix+'maPivotLookback').value,'30','polling preserves draft');
- ui.syncMaPivotControls(prefix,{strategy_mode:'ma_proximity',strategy_params:{use_ma_pivot_24:true,ma_pivot_lookback:90}},true);
+ ui.syncMaPivotControls(prefix,{strategy_mode:'ma_proximity',strategy_params:{use_ma_pivot_24:true,use_ma_price_24:true,ma_pivot_lookback:90}},true);
  assert.equal(document.getElementById(prefix+'maPivotLookback').value,'90','match live replaces draft');
  assert.equal(document.getElementById(prefix+'useMaPivot24').checked,true,'match live restores enabled MA conditions');
+ assert.equal(document.getElementById(prefix+'useMaPrice24').checked,true,'match live restores enabled MA price conditions');
  assert.equal(store.has(prefix+'maPivotDraft'),false);
  const config=ui.maPivotSettings(prefix);
- ui.renderMaPivotStatus(prefix,'Live',{ma_pivots:{24:{rule:"last_arrow_v2",ready:true,period:24,lookback:120,min_arrows:1,long_pass:true,short_pass:true}}},config,100000,true);
+ ui.renderMaPivotStatus(prefix,'Live',{ma_pivots:{24:{rule:"last_arrow_v2",ready:true,period:24,lookback:120,min_arrows:1,long_pass:true,short_pass:true}},ma_price_sides:{24:{rule:"price_side_v1",ready:true,period:24,price:90,ma:100,long_pass:true,short_pass:false}}},config,100000,true);
  assert.equal(document.getElementById(prefix+'maPivot24LongLive').textContent,'LIVE · UNAVAILABLE','old parameter counts cannot pass a new setting');
  assert.match(document.getElementById(prefix+'maPivot24LiveSource').textContent,/parameters changed/i);
+ assert.equal(document.getElementById(prefix+'maPrice24LongLive').textContent,'LIVE · PASS');
+ assert.equal(document.getElementById(prefix+'maPrice24ShortLive').textContent,'LIVE · WAITING');
  ui.renderMaPivotStatus(prefix,'Live',{ma_pivots:{24:{ready:true,period:24,lookback:90,long_pass:true,short_pass:true}}},config,100000,true);
  assert.equal(document.getElementById(prefix+'maPivot24LongLive').textContent,'LIVE · UNAVAILABLE','pre-migration any-arrow verdict cannot be reused');
 }
