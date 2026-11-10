@@ -501,6 +501,29 @@ class LighterClient:
         if error or getattr(response, "code", 200) != 200:
             raise RuntimeError(f"Native protection cancellation failed: {error or response.code}")
 
+    async def modify_protection_order(self, market_id, order_index, quantity, side,
+                                      trigger_ticks, *, order_version=0):
+        """Tighten an existing reduce-only conditional without replacing its OCO group."""
+        signer = self.get_signer()
+        if signer is None or not hasattr(signer, "modify_order"):
+            raise RuntimeError("Installed Lighter SDK does not support conditional-order modification")
+        error = signer.check_client()
+        if error:
+            raise ValueError(f"Lighter signer validation failed: {error}")
+        detail = await self.market_detail(market_id, fresh=True)
+        scale = 10 ** int(detail["supported_size_decimals"])
+        size = int(Decimal(str(quantity)) * scale)
+        trigger = int(trigger_ticks)
+        limit = int(trigger * (0.994 if side > 0 else 1.006))
+        if size <= 0 or not 0 < min(trigger, limit) <= max(trigger, limit) < 2 ** 32:
+            raise ValueError("Modified native protection size or price is invalid")
+        _, response, error = await signer.modify_order(
+            int(market_id), int(order_index), size, limit, trigger,
+            order_version=int(order_version or 0))
+        if error or getattr(response, "code", 200) != 200:
+            raise RuntimeError(f"Native protection modification failed: {error or response.code}")
+        return {"tx_hash": getattr(response, "tx_hash", None)}
+
     async def account_order(self, client_order_index: int) -> Optional[Dict[str, Any]]:
         """Read one submitted order by its persisted client index for recovery."""
         orders = await self.account_orders([client_order_index])

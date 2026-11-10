@@ -1046,8 +1046,19 @@
     const threshold = document.getElementById(`${prefix}${id}Pct`);
     const saved = {...bot, ...(bot?.strategy_params || {}), ...draft};
     const raw = Number(threshold?.value ?? saved[pctKey] ?? 0.2);
-    return {[enabledKey]: enabled ? Boolean(enabled.checked) : saved[enabledKey] ?? defaultEnabled,
+    const result = {[enabledKey]: enabled ? Boolean(enabled.checked) : saved[enabledKey] ?? defaultEnabled,
       [pctKey]: Number.isFinite(raw) && raw >= 0.01 && raw <= 100 ? raw : 0.2};
+    if (rule === "stop_loss" && prefix === "lighterCrypto_") {
+      const number = (name, fallback) => {
+        const value = Number(document.getElementById(prefix + name)?.value ?? saved[name] ?? fallback);
+        return Number.isFinite(value) && value >= 0.01 && value <= 100 ? value : fallback;
+      };
+      result.stop_loss_mode = document.getElementById(prefix + "stopLossMode")?.value || saved.stop_loss_mode || "fixed";
+      result.stop_trail_activation_pct = number("stop_trail_activation_pct", 0.3);
+      result.stop_trail_distance_pct = number("stop_trail_distance_pct", 0.2);
+      result.stop_trail_min_step_pct = number("stop_trail_min_step_pct", 0.05);
+    }
+    return result;
   }
 
   function saveTakeProfitDraft(prefix, settings, rule = "take_profit") {
@@ -1058,10 +1069,24 @@
     for (const [rule, fields] of Object.entries(netExitFields)) {
       const enabledKey = `use_${rule}`, pctKey = `${rule}_pct`;
       const settings = {[enabledKey]: params[enabledKey] ?? fields.enabled, [pctKey]: Number(params[pctKey] ?? 0.2)};
+      if (rule === "stop_loss" && prefix === "lighterCrypto_") Object.assign(settings, {
+        stop_loss_mode: params.stop_loss_mode || "fixed",
+        stop_trail_activation_pct: Number(params.stop_trail_activation_pct ?? 0.3),
+        stop_trail_distance_pct: Number(params.stop_trail_distance_pct ?? 0.2),
+        stop_trail_min_step_pct: Number(params.stop_trail_min_step_pct ?? 0.05),
+      });
       const enabled = document.getElementById(prefix + fields.toggle);
       const pct = document.getElementById(`${prefix}${fields.id}Pct`);
       if (enabled) enabled.checked = settings[enabledKey];
       if (pct) pct.value = String(settings[pctKey]);
+      if (rule === "stop_loss" && prefix === "lighterCrypto_") {
+        for (const [name, fallback] of [["stopLossMode", "fixed"], ["stop_trail_activation_pct", 0.3], ["stop_trail_distance_pct", 0.2], ["stop_trail_min_step_pct", 0.05]]) {
+          const control = document.getElementById(prefix + name);
+          if (control) control.value = String(params[name === "stopLossMode" ? "stop_loss_mode" : name] ?? fallback);
+        }
+        const trail = document.getElementById(prefix + "stopTrailFields");
+        if (trail) trail.hidden = (params.stop_loss_mode || "fixed") !== "trailing";
+      }
       saveTakeProfitDraft(prefix, settings, rule);
     }
   }
@@ -1073,10 +1098,11 @@
     const panel = document.createElement("div");
     panel.id = `${prefix}${id}Controls`;
     panel.style.cssText = "margin:14px 0;padding:12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;";
+    const trailing = rule === "stop_loss" && prefix === "lighterCrypto_" ? `<div style="margin-top:9px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><label>Behavior <select id="${prefix}stopLossMode"><option value="fixed" ${settings.stop_loss_mode !== "trailing" ? "selected" : ""}>Fixed</option><option value="trailing" ${settings.stop_loss_mode === "trailing" ? "selected" : ""}>Trail</option></select></label><span id="${prefix}stopTrailFields" ${settings.stop_loss_mode === "trailing" ? "" : "hidden"} style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><label>Activate at <input id="${prefix}stop_trail_activation_pct" type="number" min="0.01" max="100" step="0.01" value="${settings.stop_trail_activation_pct}" style="width:70px;">% net profit</label><label>Trail by <input id="${prefix}stop_trail_distance_pct" type="number" min="0.01" max="100" step="0.01" value="${settings.stop_trail_distance_pct}" style="width:70px;">%</label><label>Minimum ratchet <input id="${prefix}stop_trail_min_step_pct" type="number" min="0.01" max="100" step="0.01" value="${settings.stop_trail_min_step_pct}" style="width:70px;">%</label></span></div>` : "";
     panel.innerHTML = `<label style="display:flex;flex-direction:row !important;justify-content:flex-start;align-items:center;gap:8px;flex-wrap:wrap;">
       <input id="${prefix}${toggle}" type="checkbox" ${settings[`use_${rule}`] ? "checked" : ""} style="appearance:auto;width:16px;height:16px;">
       <b>${label}</b><input id="${prefix}${id}Pct" aria-label="${label} percent" type="number" min="0.01" max="100" step="0.01" value="${settings[`${rule}_pct`]}" style="width:75px;">% of entry notional</label>
-      <small>${rule === "stop_loss" ? "Enter the loss threshold as a positive number. " : ""}Newest tranche first · entry + exit trading fees deducted · funding excluded. Live: executable bid/ask each bot tick. Paper: completed closes with current account fees; no intrabar fills. Existing signal exits remain active. Unlock, pause and deploy to save live settings.</small>
+      ${trailing}<small>${rule === "stop_loss" ? "Enter the initial maximum loss as a positive number. Trail activates only after the configured net profit, then raises the net-P&L floor behind the best observed value. " : ""}Newest tranche first · entry + exit trading fees deducted · funding excluded. Live: executable bid/ask each bot tick. Paper: completed closes with current account fees; no intrabar fills. Existing signal exits remain active. Unlock, pause and deploy to save live settings.</small>
       <div id="${prefix}${id}PaperStatus" style="margin-top:6px;font-size:11px;">PAPER · Awaiting replay</div>
       <div id="${prefix}${id}LiveStatus" style="margin-top:6px;font-size:11px;">LIVE · Awaiting bot status</div>`;
     anchor.parentNode.insertBefore(panel, anchor);
@@ -1086,6 +1112,10 @@
         engine.updateRulesMatchStatus();
       });
       input.addEventListener("change", () => engine.runBacktest());
+    });
+    const mode = document.getElementById(prefix + "stopLossMode");
+    if (mode) mode.addEventListener("change", () => {
+      document.getElementById(prefix + "stopTrailFields").hidden = mode.value !== "trailing";
     });
   }
 

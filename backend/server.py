@@ -48,7 +48,7 @@ from .hourly_histogram import (
     five_minute_signal_points,
     hourly_histogram_points,
 )
-from .single_leg_take_profit import net_profit, stop_loss_status
+from .single_leg_take_profit import net_profit, stop_loss_status, trailing_stop_status
 from .crypto_bot import CryptoBot
 from .lighter_client import LighterClient
 from .lighter_crypto_bot import LighterCryptoBot, MARKETS as LIGHTER_CRYPTO_MARKETS
@@ -2071,6 +2071,8 @@ def _run_crypto_backtest_sync(
     hourly_hist_slow: int = 60, hourly_hist_signal: int = 9,
     use_take_profit: bool = False, take_profit_pct: float = 0.2,
     use_stop_loss: bool = False, stop_loss_pct: float = 0.2,
+    stop_loss_mode: str = "fixed", stop_trail_activation_pct: float = 0.3,
+    stop_trail_distance_pct: float = 0.2, stop_trail_min_step_pct: float = 0.05,
     take_profit_fee_rate: Optional[float] = None, take_profit_fee_error: Optional[str] = None,
     symbol: str = "BTCUSDT",
     strategy_mode: str = "grid",
@@ -2195,7 +2197,10 @@ def _run_crypto_backtest_sync(
         if use_take_profit:
             latest_take_profit = evaluation
         if use_stop_loss:
-            latest_stop_loss = stop_loss_status(evaluation, stop_loss_pct)
+            latest_stop_loss = (trailing_stop_status(
+                evaluation, item, stop_loss_pct, stop_trail_activation_pct,
+                stop_trail_distance_pct, stop_trail_min_step_pct)
+                if stop_loss_mode == "trailing" else stop_loss_status(evaluation, stop_loss_pct))
         if use_stop_loss and latest_stop_loss["pass"]:
             reason = "net_stop_loss"
         elif use_take_profit and evaluation["pass"]:
@@ -3233,6 +3238,10 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               hourly_hist_slow: int = 60, hourly_hist_signal: int = 9,
                               use_take_profit: bool = True, take_profit_pct: float = 0.2,
                               use_stop_loss: bool = False, stop_loss_pct: float = Query(0.2, ge=0.01, le=100),
+                              stop_loss_mode: str = "fixed",
+                              stop_trail_activation_pct: float = Query(0.3, ge=0.01, le=100),
+                              stop_trail_distance_pct: float = Query(0.2, ge=0.01, le=100),
+                              stop_trail_min_step_pct: float = Query(0.05, ge=0.01, le=100),
                               entry_z: float = 1.5, exit_z: float = 0.25,
                               use_ma_stretch: bool = True, use_peak: bool = True,
                               use_base_spacing: bool = True, use_ma_stack: bool = False, use_ma_stack_1h: bool = True, use_convergence: bool = True,
@@ -3293,6 +3302,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         raise ValueError("Invalid hourly MACD periods")
     if not math.isfinite(take_profit_pct) or not 0.01 <= take_profit_pct <= 100:
         raise ValueError("Take profit must be between 0.01 and 100 percent")
+    if stop_loss_mode not in {"fixed", "trailing"}:
+        raise ValueError("Stop loss mode must be fixed or trailing")
     if not 2 <= macro_ma_period <= 120:
         raise ValueError("Wider-trend MA period must be between 2 and 120")
     if macro_regime_mode not in {"ma_slope", "macd_hist_accel", "hybrid"}:
@@ -3359,6 +3370,9 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         hourly_hist_slow=hourly_hist_slow, hourly_hist_signal=hourly_hist_signal,
         use_take_profit=use_take_profit, take_profit_pct=take_profit_pct,
         use_stop_loss=use_stop_loss, stop_loss_pct=stop_loss_pct,
+        stop_loss_mode=stop_loss_mode, stop_trail_activation_pct=stop_trail_activation_pct,
+        stop_trail_distance_pct=stop_trail_distance_pct,
+        stop_trail_min_step_pct=stop_trail_min_step_pct,
         take_profit_fee_rate=fee_rate, take_profit_fee_error=fee_error,
         symbol=symbol,
         strategy_mode=strategy_mode,

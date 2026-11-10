@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
-from backend.single_leg_take_profit import net_profit, stop_loss_status
+from backend.single_leg_take_profit import net_profit, stop_loss_status, trailing_stop_status
 from backend.crypto_bot import CryptoBot
 from backend.lighter_crypto_bot import LighterCryptoBot
 from backend.server import _run_crypto_backtest_sync
@@ -30,6 +30,18 @@ class ProfitMathTests(unittest.TestCase):
             self.assertTrue(stop_loss_status(evaluation, .2)["pass"])
             self.assertFalse(stop_loss_status(evaluation, .3)["pass"])
             self.assertEqual(stop_loss_status(evaluation, .2)["target_pct"], -.2)
+
+    def test_trailing_stop_activates_ratchets_and_never_loosens(self):
+        holder = {}
+        def status(net):
+            return trailing_stop_status({"net_pct": net}, holder, .2, .3, .2, .05)
+        self.assertEqual(status(.1)["target_pct"], -.2)
+        self.assertAlmostEqual(status(.5)["target_pct"], .3)
+        self.assertAlmostEqual(status(.52)["target_pct"], .3)  # below minimum ratchet
+        self.assertAlmostEqual(status(.8)["target_pct"], .6)
+        self.assertFalse(status(.61)["pass"])
+        self.assertTrue(status(.59)["pass"])
+        self.assertAlmostEqual(holder["stop_trail_peak_pct"], .8)
 
     def test_replay_stop_loss_independent_of_take_profit_and_entry_stream(self):
         bars = [{"time": 100000+i*300, "value": 100+3*math.sin(i/5)} for i in range(240)]
@@ -69,6 +81,20 @@ class ProfitMathTests(unittest.TestCase):
         unavailable = _run_crypto_backtest_sync(bars, True, use_take_profit=True, **kwargs)
         self.assertEqual(unavailable['trades'], old['trades'])
         self.assertEqual(unavailable['take_profit_evaluation']['state'], 'UNAVAILABLE')
+
+    def test_replay_trailing_stop_is_real_and_keeps_entry_signal_stream(self):
+        bars = [{"time": 100000+i*300, "value": 100+3*math.sin(i/5)} for i in range(240)]
+        kwargs = dict(strategy_mode="ma_proximity", ma_accel_period=4,
+                      ma_max_distance_pct=2, use_ma_cross_exit=False,
+                      use_stop_loss=True, stop_loss_mode="trailing",
+                      stop_trail_activation_pct=.2, stop_trail_distance_pct=.1,
+                      stop_trail_min_step_pct=.01, take_profit_fee_rate=0)
+        baseline = _run_crypto_backtest_sync(bars, True, strategy_mode="ma_proximity",
+            ma_accel_period=4, ma_max_distance_pct=2, use_ma_cross_exit=False)
+        result = _run_crypto_backtest_sync(bars, True, **kwargs)
+        self.assertEqual(result["entry_signals"], baseline["entry_signals"])
+        self.assertTrue(any(row["reason"] == "net_stop_loss" and row["net_pnl_pct"] > 0
+                            for row in result["trades"]))
 
 
 class LiveProfitTests(unittest.IsolatedAsyncioTestCase):

@@ -34,6 +34,19 @@ def protection_children(lot, state, price_decimals, fee_rate, next_index):
     return children
 
 
+def target_trigger_ticks(lot, target_pct, price_decimals, fee_rate):
+    side = int(lot["side"])
+    entry, qty = float(lot["price"]), float(lot["qty"])
+    entry_fee = float(lot.get("fee_usd", 0)) / qty
+    trigger = (side * entry + entry * float(target_pct) / 100 + entry_fee) / (side - fee_rate)
+    if trigger <= 0:
+        raise ValueError("Native trailing target has no positive trigger price")
+    scale = 10 ** int(price_decimals)
+    rounding = ROUND_CEILING if side > 0 else ROUND_FLOOR
+    ticks = int((Decimal(str(trigger)) * scale).to_integral_value(rounding=rounding))
+    return ticks, ticks / scale
+
+
 def exchange_time_ms(value):
     value = int(value or 0)
     return value * 1000 if 0 < value < 100_000_000_000 else value
@@ -49,6 +62,8 @@ class NativeProtectionMixin:
             str(entry_id) for entry_id in self.state.get("native_protection_dust_entry_ids", [])
             if str(entry_id) in live_ids
         }
+        trail_rows = [g.get("stop_trail_evaluation") for g in groups if g.get("stop_trail_evaluation")]
+        latest_trail = max(trail_rows, key=lambda row: row.get("time", 0)) if trail_rows else None
         return {"enabled": self.state.get("use_native_protection", False),
                 "state": "ERROR" if self.state.get("native_protection_error") else
                          "UPDATE INCOMPLETE" if self.state.get("native_protection_update_pending") else
@@ -60,6 +75,7 @@ class NativeProtectionMixin:
                 "dust_qty": sum(float(t.get("qty", 0) or 0) for t in lots
                                 if str(t.get("order_id", "")) in dust_ids),
                 "tracked_slices": len(lots), "groups": groups,
+                "trailing": latest_trail,
                 "error": self.state.get("native_protection_error"),
                 "time": self.state.get("native_protection_checked_at")}
 
@@ -122,6 +138,82 @@ class NativeProtectionMixin:
             await asyncio.sleep(.25)
         raise ValueError("Native cancellation not confirmed; market exit withheld: " + "; ".join(errors))
 
+    async def _ratchet_native_trailing(self, group, rows):
+        if (self.state.get("stop_loss_mode") != "trailing"
+                or not self.state.get("use_stop_loss")):
+            return
+        stop_pair = next(((child, row) for child, row in zip(group["children"], rows)
+                          if child["kind"] == "stop_loss"), None)
+        if not stop_pair or terminal_order(stop_pair[1]):
+            return
+        lot = next((item for item in self.state["tranches"]
+                    if str(item["order_id"]) == group["entry_order_id"]), None)
+        if not lot:
+            return
+        detail = await self.client.market_detail(group["market_id"], fresh=True)
+        mark = float(detail.get("mark_price", 0) or 0)
+        if mark <= 0:
+            raise ValueError("Lighter mark price unavailable for native trailing stop")
+        from .single_leg_take_profit import net_profit, trailing_stop_status
+        evaluation = net_profit(
+            [{"side": lot["side"], "price": lot["price"], "qty": group["qty"],
+              "fee_usd": float(lot.get("fee_usd", 0)) * group["qty"] / float(lot["qty"])}],
+            group["qty"], mark, group["fee_rate"], self.state.get("take_profit_pct", 0.2))
+        status = trailing_stop_status(
+            evaluation, group, self.state.get("stop_loss_pct", 0.2),
+            self.state.get("stop_trail_activation_pct", 0.3),
+            self.state.get("stop_trail_distance_pct", 0.2),
+            self.state.get("stop_trail_min_step_pct", 0.05))
+        group["stop_trail_evaluation"] = {**status, "source": "LIGHTER_MARK_PRICE", "time": int(time.time())}
+        if not status["trail_active"]:
+            self._save()
+            return
+        child, row = stop_pair
+        ticks, price = target_trigger_ticks(
+            lot, status["target_pct"], int(detail["supported_price_decimals"]), group["fee_rate"])
+        old_ticks = int(child["trigger_ticks"])
+        tightens = ticks > old_ticks if group["side"] > 0 else ticks < old_ticks
+        if not tightens:
+            self._save()
+            return
+        group["pending_stop_modify"] = {
+            "client_order_index": child["client_order_index"], "order_index": row["order_index"],
+            "old_trigger_ticks": old_ticks, "new_trigger_ticks": ticks, "created_at": int(time.time())}
+        self._save()
+        result = await self.client.modify_protection_order(
+            group["market_id"], row["order_index"], group["qty"], group["side"], ticks,
+            order_version=row.get("order_version", 0))
+        child.update(trigger_ticks=ticks, trigger_price=price)
+        group.update(pending_stop_modify=None, last_stop_modify_at=int(time.time()),
+                     last_stop_modify_tx_hash=(result or {}).get("tx_hash"))
+        self._save()
+
+    def _resolve_pending_stop_modify(self, group, rows):
+        pending = group.get("pending_stop_modify")
+        if not pending:
+            return
+        pair = next(((child, row) for child, row in zip(group["children"], rows)
+                     if child["client_order_index"] == pending["client_order_index"]), None)
+        if not pair:
+            raise ValueError("Pending native stop modification no longer matches its child")
+        child, row = pair
+        raw = row.get("trigger_price_ticks")
+        if raw is None and row.get("trigger_price") is not None:
+            raw = int(Decimal(str(row["trigger_price"])) * (10 ** int(group["price_decimals"])))
+        if raw is None:
+            raise ValueError("Pending native stop modification outcome unavailable; exchange trigger is missing")
+        actual = int(raw)
+        if actual == int(pending["new_trigger_ticks"]):
+            child.update(trigger_ticks=actual, trigger_price=actual / (10 ** int(group["price_decimals"])))
+            group["pending_stop_modify"] = None
+            self._save()
+        elif actual != int(pending["old_trigger_ticks"]):
+            raise ValueError("Pending native stop modification has an unexpected exchange trigger")
+        else:
+            # A fresh authenticated row proves the old trigger is still live;
+            # retrying the same in-place tightening cannot create another order.
+            group["pending_stop_modify"] = None
+            self._save()
     async def _retire_expired_missing_group(self, group):
         """Never infer rejection from absence alone; require expired signed intent,
         complete authenticated fill coverage and unchanged, fresh owned inventory.
@@ -178,6 +270,7 @@ class NativeProtectionMixin:
                         continue
                 rows = await self._native_rows(group, snapshot)
                 self._native_account_fills(group, rows)
+                self._resolve_pending_stop_modify(group, rows)
                 lot = next((t for t in self.state["tranches"] if str(t["order_id"]) == group["entry_order_id"]), None)
                 resized = not lot or abs(float(lot["qty"]) - group["qty"]) > group["size_step"] / 2
                 if cancel or group["entry_order_id"] in cancel_entry_ids or resized or group["phase"] == "cancelling" or any(terminal_order(r) for r in rows):
@@ -185,6 +278,7 @@ class NativeProtectionMixin:
                     self.state["native_brackets"].remove(group)
                 else:
                     group["phase"] = "live"
+                    await self._ratchet_native_trailing(group, rows)
                 self._save()
             previous_error = self.state.get("native_protection_error")
             self.state["native_protection_error"] = None
@@ -254,6 +348,7 @@ class NativeProtectionMixin:
             group = {"entry_order_id": entry_id, "market_id": market_id,
                      "symbol": self.state["selected_symbol"], "side": int(lot["side"]),
                      "qty": quantity, "fee_rate": fee, "size_step": step,
+                     "price_decimals": int(detail["supported_price_decimals"]),
                      "phase": "preparing", "children": children, "created_at": int(time.time())}
             self.state["native_brackets"].append(group)
             self._save()  # Never submit a child without a durable client ID.

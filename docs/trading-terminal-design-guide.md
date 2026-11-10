@@ -260,6 +260,19 @@ Enter a positive loss percentage in the same 0.01–100% range. The stop trigger
 when net return is at or below the negative threshold. Both controls show PAPER
 and LIVE PASS/WAITING/OFF/N/A/UNAVAILABLE, source and KST timestamp.
 
+Tab 5 additionally offers **Fixed / Trail** inside Net stop loss. Fixed preserves
+the initial negative net-P&L threshold. Trail keeps that fixed floor until the
+adjustable activation profit is reached, then ratchets the floor behind the best
+position-scoped net return by the adjustable distance. The adjustable minimum
+ratchet suppresses smaller updates; a new campaign starts with no inherited
+peak. Paper evaluates the same rule on completed closes and labels that source.
+Bot-managed live exits use executable quotes each daemon tick. With native
+Lighter protection enabled, the daemon tightens only the outstanding stop child
+in place, preserving its OCO take-profit sibling and client IDs. Persist a
+pending modification before submission; ambiguous outcomes block risk until a
+fresh authenticated order row proves the old or new trigger. Native activation
+and peak status use the Lighter mark price and must be exposed with source/time.
+
 Live checks executable bid for longs / ask for shorts on each daemon tick, before
 completed-candle deduplication. Match the latest owned tranche first; if Lighter
 minimum order size requires merging dust, test the exact merged reduction's

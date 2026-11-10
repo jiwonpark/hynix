@@ -42,6 +42,36 @@ def stop_loss_status(evaluation, loss_pct):
             "pass": evaluation["net_pct"] <= target + 1e-10}
 
 
+def trailing_stop_status(evaluation, holder, loss_pct, activation_pct, distance_pct,
+                         min_step_pct=0.0):
+    """Evaluate and persist a fee-aware trailing net-P&L floor.
+
+    ``holder`` is the owned tranche in live trading and the replay position in
+    paper.  Keeping the peak on that object makes the rule position-scoped and
+    prevents a previous campaign from influencing a new entry.
+    """
+    net_pct = float(evaluation["net_pct"])
+    active = bool(holder.get("stop_trail_active", False))
+    peak = holder.get("stop_trail_peak_pct")
+    if not active and net_pct + 1e-10 >= float(activation_pct):
+        active, peak = True, net_pct
+    elif active:
+        peak = max(float(peak if peak is not None else net_pct), net_pct)
+    holder["stop_trail_active"] = active
+    holder["stop_trail_peak_pct"] = peak if active else None
+    fixed_target = -float(loss_pct)
+    desired = max(fixed_target, float(peak) - float(distance_pct)) if active else fixed_target
+    previous = holder.get("stop_trail_target_pct")
+    if previous is None or desired >= float(previous) + float(min_step_pct) - 1e-10:
+        holder["stop_trail_target_pct"] = desired
+    target = float(holder.get("stop_trail_target_pct", fixed_target))
+    return {**evaluation, "target_pct": target, "fixed_target_pct": fixed_target,
+            "trail_active": active, "trail_peak_pct": peak,
+            "trail_activation_pct": float(activation_pct),
+            "trail_distance_pct": float(distance_pct),
+            "pass": net_pct <= target + 1e-10}
+
+
 class TakeProfitMixin:
     async def take_profit_fee_rate(self, symbol=None):
         symbol = symbol or self.state["selected_symbol"]
@@ -98,7 +128,13 @@ class TakeProfitMixin:
 
     async def stop_loss_evaluation(self, price, quantity):
         evaluation = await self.take_profit_evaluation(price, quantity)
-        result = stop_loss_status(evaluation, self.state.get("stop_loss_pct", 0.2))
+        result = (trailing_stop_status(
+            evaluation, self.state["tranches"][-1], self.state.get("stop_loss_pct", 0.2),
+            self.state.get("stop_trail_activation_pct", 0.3),
+            self.state.get("stop_trail_distance_pct", 0.2),
+            self.state.get("stop_trail_min_step_pct", 0.05))
+            if self.state.get("stop_loss_mode") == "trailing"
+            else stop_loss_status(evaluation, self.state.get("stop_loss_pct", 0.2)))
         self.state["stop_loss_evaluation"] = result
         return result
 
@@ -121,7 +157,13 @@ class TakeProfitMixin:
                 quantity = self._reduction_quantity(-int(self.state["tranches"][-1]["side"]), price, detail, step, 1.0)
             side = int(self.state["tranches"][-1]["side"])
             profit = await self.take_profit_evaluation(bid if side > 0 else ask, quantity)
-            loss = stop_loss_status(profit, self.state.get("stop_loss_pct", 0.2))
+            loss = (trailing_stop_status(
+                profit, self.state["tranches"][-1], self.state.get("stop_loss_pct", 0.2),
+                self.state.get("stop_trail_activation_pct", 0.3),
+                self.state.get("stop_trail_distance_pct", 0.2),
+                self.state.get("stop_trail_min_step_pct", 0.05))
+                if self.state.get("stop_loss_mode") == "trailing"
+                else stop_loss_status(profit, self.state.get("stop_loss_pct", 0.2)))
         except Exception as exc:
             for name, enabled in (("take_profit", profit_enabled), ("stop_loss", loss_enabled)):
                 self.state[f"{name}_evaluation"] = {

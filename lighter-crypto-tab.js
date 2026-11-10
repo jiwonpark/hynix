@@ -3541,8 +3541,8 @@
       if (!this.botState) diffs.push("Live settings unavailable");
       if (!isIntervalMatch) diffs.push(`Interval ${currentInterval} ≠ ${liveInterval}`);
       if (!isParadigmMatch) diffs.push(`Strategy ${currentMode} ≠ ${liveMode}`);
-      for (const key of ["use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"]) {
-        const saved = this.botState?.strategy_params?.[key] ?? this.botState?.[key] ?? ({use_take_profit:true,take_profit_pct:0.2,use_stop_loss:false,stop_loss_pct:0.2,use_hourly_hist:true,hourly_hist_fast:20,hourly_hist_slow:60,hourly_hist_signal:9}[key]);
+      for (const key of ["use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "stop_loss_mode", "stop_trail_activation_pct", "stop_trail_distance_pct", "stop_trail_min_step_pct", "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"]) {
+        const saved = this.botState?.strategy_params?.[key] ?? this.botState?.[key] ?? ({use_take_profit:true,take_profit_pct:0.2,use_stop_loss:false,stop_loss_pct:0.2,stop_loss_mode:"fixed",stop_trail_activation_pct:0.3,stop_trail_distance_pct:0.2,stop_trail_min_step_pct:0.05,use_hourly_hist:true,hourly_hist_fast:20,hourly_hist_slow:60,hourly_hist_signal:9}[key]);
         if (settings[key] != null && settings[key] !== saved) diffs.push(`${key}: ${settings[key]} ≠ ${saved}`);
       }
       const parameterKeys = {
@@ -4425,11 +4425,14 @@
       const protection = bot.native_protection || {};
       const protectionTime = protection.time ? new Date(protection.time * 1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
       const protectionState = protection.time && Date.now() / 1000 - protection.time > 30 && protection.state === "WORKING" ? "UNAVAILABLE (STALE)" : protection.state || "OFF";
+      const trail = protection.trailing;
+      const trailText = bot.stop_loss_mode === "trailing" || bot.strategy_params?.stop_loss_mode === "trailing"
+        ? ` · trail ${trail?.trail_active ? "ACTIVE" : "ARMED"}${trail?.trail_peak_pct != null ? ` · peak ${Number(trail.trail_peak_pct).toFixed(4)}% · stop floor ${Number(trail.target_pct).toFixed(4)}%` : ""}` : "";
       const protectionDust = Number(protection.dust_slices || 0);
       const protectionDustText = protectionDust
         ? ` · ${protectionDust} dust slice${protectionDust === 1 ? "" : "s"} below exchange minimum (tracked, no native order)`
         : "";
-      this.setText("nativeProtectionStatus", `LIVE · ${protectionState} · ${protection.protected_slices || 0}/${protection.tracked_slices || 0} slices protected${protectionDustText} · exchange order status · ${protectionTime}${protection.error ? " · " + protection.error : ""}`);
+      this.setText("nativeProtectionStatus", `LIVE · ${protectionState} · ${protection.protected_slices || 0}/${protection.tracked_slices || 0} slices protected${protectionDustText}${trailText} · exchange order status · ${protectionTime}${protection.error ? " · " + protection.error : ""}`);
       window.TerminalCommon?.syncHourlyHistogram?.("lighterCrypto_", bot);
       window.TerminalCommon?.renderHourlyHistogram?.("lighterCrypto_", "Live", bot.hourly_histogram, bot.use_hourly_hist);
       this.syncMacdDraftControls(bot);
@@ -4442,7 +4445,7 @@
       if (bot.use_native_protection) {
         for (const [id, rule] of [["takeProfit", "take_profit"], ["stopLoss", "stop_loss"]]) {
           const node = $("lighterCrypto_" + id + "LiveStatus");
-          if (node) node.textContent = `LIVE · ${bot["use_" + rule] ? "NATIVE " + protectionState : "OFF"} · ${bot[rule + "_pct"]}% net trigger target · per-slice exchange protection · ${protectionTime}`;
+          if (node) node.textContent = `LIVE · ${bot["use_" + rule] ? "NATIVE " + protectionState : "OFF"} · ${rule === "stop_loss" && (bot.stop_loss_mode || bot.strategy_params?.stop_loss_mode) === "trailing" ? `initial -${bot.stop_loss_pct}% · trailing${trail?.target_pct != null ? ` floor ${Number(trail.target_pct).toFixed(4)}%` : " armed"}` : `${bot[rule + "_pct"]}% net trigger target`} · per-slice exchange protection · ${protectionTime}`;
         }
       }
       this.syncMacroRegimeControlsFromBot(bot);

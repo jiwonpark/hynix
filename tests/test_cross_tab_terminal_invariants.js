@@ -37,6 +37,15 @@ assert.match(lighterCrypto, /One valid signal starts paced live-only entry piece
   "Tab 5 must disclose that replay signals are independent of live child-order timing");
 assert.match(lighterCrypto, /bot\?\.entry_campaign/,
   "Tab 5 must render the persisted live entry campaign status");
+assert.match(common, /prefix === "lighterCrypto_"[\s\S]*?stop_loss_mode/,
+  "Tab 5 stop-loss controls must expose the trailing mode through shared net-exit plumbing");
+assert.match(common, />Trail<\/option>/,
+  "Tab 5 must offer Trail inside Net stop loss");
+for (const key of ["stop_trail_activation_pct", "stop_trail_distance_pct", "stop_trail_min_step_pct"])
+  assert.ok(lighterCrypto.includes(key), `Tab 5 must send ${key} to replay and authenticated live configuration`);
+for (const source of [crypto, lighter])
+  assert.doesNotMatch(source, /stop_trail_activation_pct/,
+    "Tab 3/4 scripts must not gain Tab 5's venue-specific trailing-stop controls");
 
 assert.match(common, /Auto-entry direction:/, "single-leg tabs must use direction wording, not spread wording");
 assert.match(common, /Two-way \(Long \+ Short\)/, "single-leg direction control must expose two-way trading clearly");

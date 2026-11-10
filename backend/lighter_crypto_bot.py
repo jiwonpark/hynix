@@ -44,7 +44,9 @@ MARKETS = {"BTC": 1, "ETH": 0, "SOL": 2, "DOGE": 3, "XRP": 7}
 DEFAULT_STATE = {
     "use_hourly_hist": True, "hourly_hist_fast": 20, "hourly_hist_slow": 60, "hourly_hist_signal": 9,
     "use_take_profit": True, "take_profit_pct": 0.2,
-    "use_stop_loss": False, "stop_loss_pct": 0.2,
+    "use_stop_loss": False, "stop_loss_pct": 0.2, "stop_loss_mode": "fixed",
+    "stop_trail_activation_pct": 0.3, "stop_trail_distance_pct": 0.2,
+    "stop_trail_min_step_pct": 0.05,
     "use_native_protection": False, "native_protection_pending_activation": False, "native_brackets": [],
     "native_protection_error": None, "native_protection_checked_at": None,
     "native_protection_attempts": [], "native_protection_update_pending": [],
@@ -254,7 +256,13 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
         result["strategy_params"].update({key:self.state[key] for key in ("use_hourly_hist","hourly_hist_fast","hourly_hist_slow","hourly_hist_signal")})
         result["strategy_params"].update(use_take_profit=bool(self.state.get("use_take_profit", True)), take_profit_pct=float(self.state.get("take_profit_pct", 0.2)))
         result["strategy_params"]["use_native_protection"] = bool(self.state.get("use_native_protection", False))
-        result["strategy_params"].update(use_stop_loss=bool(self.state.get("use_stop_loss", False)), stop_loss_pct=float(self.state.get("stop_loss_pct", 0.2)))
+        result["strategy_params"].update(
+            use_stop_loss=bool(self.state.get("use_stop_loss", False)),
+            stop_loss_pct=float(self.state.get("stop_loss_pct", 0.2)),
+            stop_loss_mode=str(self.state.get("stop_loss_mode", "fixed")),
+            stop_trail_activation_pct=float(self.state.get("stop_trail_activation_pct", 0.3)),
+            stop_trail_distance_pct=float(self.state.get("stop_trail_distance_pct", 0.2)),
+            stop_trail_min_step_pct=float(self.state.get("stop_trail_min_step_pct", 0.05)))
         return result
 
     async def save_strategy_draft(self, mode: str, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -526,6 +534,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             "use_macd_hist_exit",
             "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal",
             "use_native_protection", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct",
+            "stop_loss_mode", "stop_trail_activation_pct", "stop_trail_distance_pct", "stop_trail_min_step_pct",
             "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
             "notional_usd", "max_tranches", "min_seconds_between_orders", "max_book_spread_bps",
             "ou_halflife_max", "ou_stop_z", "ou_min_abs_deviation_pp",
@@ -558,7 +567,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             raise ValueError(f"Unsupported live setting: {', '.join(sorted(unknown))}")
         candidate = dict(self.state)
         for key, value in values.items():
-            if key in {"selected_symbol", "strategy_mode", "strategy_interval", "macro_regime_mode"}:
+            if key in {"selected_symbol", "strategy_mode", "strategy_interval", "macro_regime_mode", "stop_loss_mode"}:
                 candidate[key] = str(value)
             elif key in {"hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"}:
                 if isinstance(value,bool) or not float(value).is_integer():
@@ -618,6 +627,8 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             raise ValueError("Unsupported candle interval")
         if candidate.get("macro_regime_mode") not in {"ma_slope", "macd_hist_accel", "hybrid"}:
             raise ValueError("Unsupported macro regime mode")
+        if candidate.get("stop_loss_mode") not in {"fixed", "trailing"}:
+            raise ValueError("Stop loss mode must be fixed or trailing")
         if candidate["strategy_mode"] == "ma_stack":
             candidate.update(
                 ma_stack_opposite_only=True,
@@ -632,6 +643,9 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             "hourly_hist_fast": (2,100), "hourly_hist_slow": (3,200), "hourly_hist_signal": (2,100),
             "take_profit_pct": (0.01, 100.0),
             "stop_loss_pct": (0.01, 100.0),
+            "stop_trail_activation_pct": (0.01, 100.0),
+            "stop_trail_distance_pct": (0.01, 100.0),
+            "stop_trail_min_step_pct": (0.01, 100.0),
             "entry_z": (0.1, 10.0), "exit_z": (0.0, 5.0), "macro_ma_period": (2, 120),
             "macro_macd_confirm_bars": (1, 12),
             "notional_usd": (10.0, 500.0),
@@ -675,7 +689,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             raise ValueError("Maximum MA distance must be between 0 and 100 percent")
         async with self.lock:
             if self.state["enabled"] and any(candidate[key] != self.state[key] for key in
-                ("use_ma_pivot_direction", "ma_pivot_period", "ma_pivot_lookback", "ma_pivot_min_arrows", "use_native_protection", "ma_direction_period", "ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
+                ("use_ma_pivot_direction", "ma_pivot_period", "ma_pivot_lookback", "ma_pivot_min_arrows", "use_native_protection", "ma_direction_period", "ma_max_distance_pct", "use_macd_hist_exit", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "stop_loss_mode", "stop_trail_activation_pct", "stop_trail_distance_pct", "stop_trail_min_step_pct", "selected_symbol", "strategy_mode", "strategy_interval", "entry_z", "exit_z",
                  "notional_usd", "max_tranches", "ma_stretch_min", "min_consensus_votes", "trend_macro_window",
                  "macd_fast_period", "macd_slow_period", "macd_signal_period",
                  "macro_regime_mode", "macro_macd_fast_period", "macro_macd_slow_period",
@@ -697,7 +711,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                     raise ValueError("Close tracked inventory before changing strategy")
                 if self.state.get("pending_order") or self.state.get("recovery_required"):
                     raise ValueError("Resolve pending orders and inventory recovery before changing strategy")
-            native_keys = {"use_native_protection", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct"}
+            native_keys = {"use_native_protection", "use_take_profit", "take_profit_pct", "use_stop_loss", "stop_loss_pct", "stop_loss_mode", "stop_trail_activation_pct", "stop_trail_distance_pct", "stop_trail_min_step_pct"}
             native_changed = any(candidate[k] != self.state[k] for k in native_keys)
             replacing = bool(self.state.get("native_protection_update_pending")) or (
                 native_changed and bool(self.state.get("native_brackets")))

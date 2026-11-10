@@ -16,9 +16,13 @@ class NativeClient(FakeLighter):
         self.cancel_race = None
         self.lost_response = False
         self.cancel_error = False
+        self.mark_price = 100
+        self.modifications = []
+        self.lost_modify_response = False
 
     async def market_detail(self, *args, **kwargs):
-        return {**await super().market_detail(*args, **kwargs), 'supported_price_decimals': 2}
+        return {**await super().market_detail(*args, **kwargs),
+                'supported_price_decimals': 2, 'mark_price': self.mark_price}
 
     async def create_protection_orders(self, market_id, quantity, side, children, *, on_signed=None):
         if getattr(self,'preflight_error',False):
@@ -30,7 +34,7 @@ class NativeClient(FakeLighter):
         for child in children:
             self.orders[child['client_order_index']] = {
                 'status': 'open', 'order_index': child['client_order_index'],
-                'filled_base_amount': 0, 'filled_quote_amount': 0}
+                'filled_base_amount': 0, 'filled_quote_amount': 0, 'order_version': 1}
         if self.lost_response:
             raise TimeoutError('lost group response')
 
@@ -48,6 +52,15 @@ class NativeClient(FakeLighter):
         row = self.orders[index]
         if row['status'] != 'filled':
             row['status'] = 'canceled'
+
+    async def modify_protection_order(self, market_id, order_index, quantity, side,
+                                      trigger_ticks, *, order_version=0):
+        self.modifications.append((market_id, order_index, quantity, side, trigger_ticks, order_version))
+        self.orders[order_index].update(order_version=order_version + 1,
+                                        trigger_price=trigger_ticks / 100)
+        if self.lost_modify_response:
+            raise TimeoutError('lost modify response')
+        return {'tx_hash': 'modified'}
 
 
 class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
@@ -212,6 +225,42 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(all(self.client.orders[c['client_order_index']]['status'] == 'canceled'
                                 for c in group['children']))
         self.assertEqual(self.bot.state['native_brackets'][0]['children'][1]['trigger_price'], 99.5)
+
+    async def test_trailing_native_stop_modifies_only_stop_child_in_place(self):
+        self.bot.state.update(stop_loss_mode='trailing', stop_trail_activation_pct=.3,
+                              stop_trail_distance_pct=.2, stop_trail_min_step_pct=.05)
+        groups = await self.arm()
+        original_ids = [[c['client_order_index'] for c in g['children']] for g in groups]
+        self.client.mark_price = 102
+        await self.bot.reconcile_native_protection()
+        self.assertEqual(len(self.client.placements), 2)
+        self.assertEqual([[c['client_order_index'] for c in g['children']]
+                          for g in self.bot.state['native_brackets']], original_ids)
+        self.assertEqual(len(self.client.modifications), 2)
+        for group, modified in zip(self.bot.state['native_brackets'], self.client.modifications):
+            stop = next(c for c in group['children'] if c['kind'] == 'stop_loss')
+            take_profit = next(c for c in group['children'] if c['kind'] == 'take_profit')
+            self.assertEqual(modified[1], stop['client_order_index'])
+            self.assertNotEqual(modified[1], take_profit['client_order_index'])
+            self.assertTrue(group['stop_trail_evaluation']['trail_active'])
+            self.assertIsNone(group.get('pending_stop_modify'))
+
+    async def test_lost_modify_response_recovers_from_exchange_trigger_without_duplicate(self):
+        self.bot.state.update(stop_loss_mode='trailing', stop_trail_activation_pct=.3,
+                              stop_trail_distance_pct=.2, stop_trail_min_step_pct=.05)
+        await self.arm()
+        self.client.mark_price = 102
+        self.client.lost_modify_response = True
+        with self.assertRaisesRegex(TimeoutError, 'lost modify response'):
+            await self.bot.reconcile_native_protection()
+        self.assertIsNotNone(self.bot.state['native_brackets'][0]['pending_stop_modify'])
+        first_count = len(self.client.modifications)
+        self.client.lost_modify_response = False
+        restored = LighterCryptoBot(self.client, self.path)
+        restored.take_profit_fee_rate = AsyncMock(return_value=0)
+        await restored.reconcile_native_protection()
+        self.assertIsNone(restored.state['native_brackets'][0].get('pending_stop_modify'))
+        self.assertEqual(len(self.client.modifications), first_count + 1)  # second slice only
 
     async def test_disable_cancels_native_exits_without_flattening(self):
         await self.arm()
@@ -421,6 +470,23 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLess(net_pct - target, .0002)
 
 class NativeClientSubmissionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_in_place_stop_modification_preserves_order_index(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from backend.lighter_client import LighterClient
+        signer = SimpleNamespace(
+            check_client=lambda: None,
+            modify_order=AsyncMock(return_value=(None, SimpleNamespace(code=200, tx_hash='changed'), None)))
+        client = LighterClient()
+        client.get_signer = Mock(return_value=signer)
+        client.market_detail = AsyncMock(return_value=dict(supported_size_decimals=5))
+        result = await client.modify_protection_order(1, 77, .00129, 1, 790000, order_version=4)
+        self.assertEqual(result['tx_hash'], 'changed')
+        args = signer.modify_order.call_args.args
+        self.assertEqual(args[:3], (1, 77, 129))
+        self.assertEqual(args[4], 790000)
+        self.assertEqual(signer.modify_order.call_args.kwargs['order_version'], 4)
+
     async def test_grouped_submission_has_reduce_only_and_integer_precision(self):
         import sys
         from types import SimpleNamespace
