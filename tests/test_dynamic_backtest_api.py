@@ -74,3 +74,45 @@ class BacktestAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual([b['time'] for b in data],[now-600,now-300])
             self.assertNotIn('domestic', data[0])
             self.assertAlmostEqual(data[0]['value'], server.nominal_premium(100, 5), places=3)
+
+    async def test_market_cache_retries_transient_leg_timeout(self):
+        now = 1704070800
+        attempts = {'SKHYUSDT': 0, 'CSOPSKHYNIX2LUSDT': 0}
+
+        async def prices(method, path, params):
+            symbol = params['symbol']
+            attempts[symbol] += 1
+            if symbol == 'SKHYUSDT' and attempts[symbol] == 1:
+                raise TimeoutError('transient Binance timeout')
+            price = {'SKHYUSDT': 100, 'CSOPSKHYNIX2LUSDT': 5}[symbol]
+            return [[t*1000, 0, 0, 0, price] for t in (now-600, now-300)]
+
+        with patch.object(server, 'binance_client', AsyncMock()) as client, \
+             patch.object(server.time, 'time', return_value=now), \
+             patch.object(server, '_backtest_market_cache', server.OrderedDict()), \
+             patch.object(server.asyncio, 'sleep', AsyncMock()) as sleep:
+            client.request.side_effect = prices
+            data = await server.backtest_market_bars(now-600, now)
+
+        self.assertEqual([bar['time'] for bar in data], [now-600, now-300])
+        self.assertEqual(attempts, {'SKHYUSDT': 2, 'CSOPSKHYNIX2LUSDT': 2})
+        sleep.assert_awaited_once_with(.25)
+
+    async def test_market_cache_serves_same_chunk_when_refresh_times_out(self):
+        now = 1704070800
+        chunk_seconds = 5 * 86400
+        chunk = (now-600) // chunk_seconds * chunk_seconds
+        stale = {'end': now-300, 'bars': [
+            dict(time=now-600, value=140, adr=100, csop=5),
+            dict(time=now-300, value=141, adr=101, csop=5),
+        ]}
+        client = AsyncMock()
+        client.request.side_effect = TimeoutError('transient Binance timeout')
+        with patch.object(server, 'binance_client', client), \
+             patch.object(server.time, 'time', return_value=now), \
+             patch.object(server, '_backtest_market_cache', server.OrderedDict([(chunk, stale)])), \
+             patch.object(server.asyncio, 'sleep', AsyncMock()):
+            data = await server.backtest_market_bars(now-600, now)
+
+        self.assertEqual(data, stale['bars'])
+        self.assertEqual(client.request.await_count, 6)

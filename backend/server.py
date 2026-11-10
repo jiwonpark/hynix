@@ -5085,12 +5085,31 @@ async def backtest_market_bars(start, end):
             needed_end = min(end, chunk_end)
             cached = _backtest_market_cache.get(chunk)
             if cached is None or cached['end'] < needed_end:
-                responses = await asyncio.gather(*[
-                    binance_client.request("GET", "/fapi/v1/klines", {
-                        "symbol": symbol, "interval": "5m", "limit": 1500,
-                        "startTime": chunk * 1000, "endTime": chunk_end * 1000 - 1,
-                    }) for symbol in ("SKHYUSDT", "CSOPSKHYNIX2LUSDT")
-                ])
+                responses = None
+                last_errors = []
+                for attempt in range(3):
+                    fetched = await asyncio.gather(*[
+                        binance_client.request("GET", "/fapi/v1/klines", {
+                            "symbol": symbol, "interval": "5m", "limit": 1500,
+                            "startTime": chunk * 1000, "endTime": chunk_end * 1000 - 1,
+                        }) for symbol in ("SKHYUSDT", "CSOPSKHYNIX2LUSDT")
+                    ], return_exceptions=True)
+                    if all(isinstance(response, list) for response in fetched):
+                        responses = fetched
+                        break
+                    last_errors = [str(response) for response in fetched
+                                   if isinstance(response, Exception)]
+                    if attempt < 2:
+                        await asyncio.sleep(0.25 * (attempt + 1))
+                if responses is None:
+                    if cached is not None and cached.get('bars'):
+                        logger.warning("Backtest market refresh failed; serving same-chunk cache for %s: %s",
+                                       chunk, "; ".join(last_errors) or "invalid response")
+                        bars.extend(b for b in cached['bars']
+                                    if start <= b['time'] and b['time']+300 <= end)
+                        chunk += chunk_seconds
+                        continue
+                    raise ValueError("Historical prices unavailable after retries; retry the backtest.")
                 if not all(isinstance(response, list) for response in responses):
                     raise ValueError("Historical prices unavailable; retry the backtest.")
                 legs = [{int(b[0])//1000: float(b[4]) for b in response} for response in responses]

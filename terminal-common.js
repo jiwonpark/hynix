@@ -137,14 +137,15 @@
       detail:error, error:Boolean(error)};
   }
 
-  async function fetchReplay(api, path, timeoutMs = 30000) {
+  async function fetchReplay(api, path, timeoutMs = 90000) {
     const controller = new AbortController();
     let timer;
     try {
       return await Promise.race([
         api(path, {signal:controller.signal}),
         new Promise((_, reject) => { timer = setTimeout(() => {
-          reject(new Error("Condition replay timed out after 30s. Use Rerun Paper to retry."));
+          const timeoutSeconds = Math.max(1, Math.round(timeoutMs / 1000));
+          reject(new Error(`Condition replay timed out after ${timeoutSeconds}s. Use Rerun Paper to retry.`));
           controller.abort();
         }, timeoutMs); }),
       ]);

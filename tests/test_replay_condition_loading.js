@@ -60,6 +60,9 @@ const vm=require('node:vm');
     console.log(file+': readiness, stale-response recovery, same-key retry, errors and timeout passed');
   }
   const index=fs.readFileSync('index.html','utf8');
+  const commonSource=fs.readFileSync('terminal-common.js','utf8');
+  assert.match(commonSource,/fetchReplay\(api, path, timeoutMs = 90000\)/,
+    'shared replay requests allow serialized calculations to finish before timing out');
   assert.match(index,/replayProgressPart\(window.cryptoEngine\)/);
   assert.match(index,/replayProgressPart\(window.lighterCryptoEngine\)/);
   assert.doesNotMatch(index,/progressPart\("Signals \+ background", window\.(?:cryptoEngine|lighterCryptoEngine)\?\.entryTrendResult\)/);
