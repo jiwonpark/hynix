@@ -1786,7 +1786,8 @@
       if (["macd_zero_cross", "macd_hist_turn"].includes(mode)) {
         const isTurn = mode === "macd_hist_turn";
         const inheritedPeriods = isTurn ? Object.fromEntries(["macd_fast_period", "macd_slow_period", "macd_signal_period"].map(key => [key, this.botState?.strategy_params?.[key] ?? this.botState?.[key] ?? ({macd_fast_period:12,macd_slow_period:26,macd_signal_period:9}[key])])) : {};
-        const live = { ...inheritedPeriods, ...(this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {}),
+        const inheritedStreak = Object.fromEntries(["use_macd_signal_streak", "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn"].map(key => [key, this.botState?.strategy_params?.[key] ?? this.botState?.[key]]));
+        const live = { ...inheritedPeriods, ...inheritedStreak, ...(this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {}),
           ...(this.botState?.strategy_drafts?.[mode] || {}) };
         const checked = (key) => (live[key] ?? (key !== "use_macd_signal_zone")) ? "checked" : "";
         const row = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 10px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:12px;color:#334155;";
@@ -1809,6 +1810,7 @@
               <div style="${row}"><input id="crypto_macdTurnUseZone" aria-label="Enable histogram sign zone for entry" type="checkbox" style="${toggle}" ${checked("use_macd_hist_zone")}><span>Histogram zone: H &lt; 0 long; H &gt; 0 short</span><span id="crypto_macdStatusHistogramZone" class="condBadge neutral">WAITING</span></div>
               <div style="${row}"><input id="crypto_macdTurnUseSignalSlope5m" aria-label="Enable completed 5 minute MACD signal slope entry filter" type="checkbox" style="${toggle}" ${checked("use_macd_signal_slope_5m")}><span>Completed 5m MACD signal: rising long; falling short</span><span id="crypto_macdStatusSignalSlope5m" class="condBadge neutral">WAITING</span></div>` : `<div style="${row}"><input id="crypto_macdZeroUseCross" type="checkbox" style="${toggle}" ${checked("use_macd_zero_cross")}><span>Histogram zero cross: −→+ long; +→− short</span><span id="crypto_macdStatusZeroCross" class="condBadge neutral">WAITING</span></div>`}
               <div style="${row}"><input id="crypto_macdZeroUseSignalZone" type="checkbox" style="${toggle}" ${checked("use_macd_signal_zone")}><span>Optional signal-line filter: &lt; 0 long; &gt; 0 short (default OFF)</span><span id="crypto_macdStatusSignalZone" class="condBadge neutral">WAITING</span></div>
+              ${window.TerminalCommon?.macdSignalStreakControls?.("crypto_", live, row, toggle) || ""}
             </div>
             <div data-terminal-rule-group="exit" style="display:grid;gap:8px;"><strong style="font-size:12px;">${isTurn ? "Opposite ΔH turn + histogram zone" : "Opposite histogram cross"} · one LIFO tranche</strong>
               <div style="${row}"><input id="crypto_macdZeroUseExitCross" type="checkbox" style="${toggle}" ${checked("use_macd_hist_exit")}><span>${isTurn ? "Exit ΔH turn: ≥0→negative for long; ≤0→positive for short" : "Exit long: histogram +→− · Exit short: −→+ (signal-line zone ignored)"}</span><span id="crypto_macdStatusExitCross" class="condBadge neutral">N/A</span></div>
@@ -1820,7 +1822,8 @@
       }
       if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         const chartInterval = this.interval || "5m";
-        const live = { ...(this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {}),
+        const inheritedStreak = Object.fromEntries(["use_macd_signal_streak", "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn"].map(key => [key, this.botState?.strategy_params?.[key] ?? this.botState?.[key]]));
+        const live = { ...inheritedStreak, ...(this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {}),
           ...(this.botState?.strategy_drafts?.[mode] || {}) };
         const checked = (key) => live[key] !== false ? "checked" : "";
         const macroMode = ["ma_slope", "macd_hist_accel", "hybrid"].includes(live.macro_regime_mode)
@@ -1859,6 +1862,9 @@
               </div>
             </fieldset>
             <span id="crypto_macroRegimeReadout" style="display:block;margin-top:8px;">Completed ${chartInterval} · MACD-H(${Number(live.macro_macd_fast_period ?? 12)}, ${Number(live.macro_macd_slow_period ?? 26)}, ${Number(live.macro_macd_signal_period ?? 9)}) · H &lt; 0 and rising = long · H &gt; 0 and falling = short</span>
+          </div>
+          <div data-terminal-rule-group="entry" style="display:grid;gap:8px;margin-bottom:12px;">
+            ${window.TerminalCommon?.macdSignalStreakControls?.("crypto_", live, row, toggle) || ""}
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
             <div data-terminal-rule-group="entry" style="display:grid;gap:8px;"><strong style="font-size:12px;">Directional entry · negative set for long</strong>
@@ -2337,6 +2343,7 @@
         payload.use_cross_exit = lid("chkCondExitConvergence")?.checked !== false;
       } else if (["macd_zero_cross", "macd_hist_turn"].includes(mode)) {
         Object.assign(payload, this.macdSettings());
+        Object.assign(payload, window.TerminalCommon?.macdSignalStreakSettings?.("crypto_", this.botState?.strategy_params) || {});
         if (mode === "macd_hist_turn") {
           payload.use_macd_hist_turn = $("crypto_macdTurnUseTurn")?.checked !== false;
           payload.use_macd_hist_zone = $("crypto_macdTurnUseZone")?.checked !== false;
@@ -2349,6 +2356,7 @@
         payload.use_macd_hist_exit = $("crypto_macdZeroUseExitCross")?.checked !== false;
       } else if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         Object.assign(payload, this.macdSettings());
+        Object.assign(payload, window.TerminalCommon?.macdSignalStreakSettings?.("crypto_", this.botState?.strategy_params) || {});
         Object.assign(payload, this.macroRegimeSettings());
         payload.use_macd_signal_negative = $("crypto_macdUseEntrySignalNegative")?.checked !== false;
         payload.use_macd_hist_negative = $("crypto_macdUseEntryHistogramNegative")?.checked !== false;
@@ -3175,6 +3183,7 @@
         long_multiplier: this.longMultiplier(),
         short_multiplier: this.shortMultiplier(),
         ...this.macdSettings(),
+        ...(window.TerminalCommon?.macdSignalStreakSettings?.("crypto_", this.botState?.strategy_params) || {}),
         ...this.macroRegimeSettings(),
         use_macd_signal_negative: $("crypto_macdUseEntrySignalNegative")?.checked !== false,
         use_macd_hist_negative: $("crypto_macdUseEntryHistogramNegative")?.checked !== false,
@@ -3320,12 +3329,14 @@
         ma_proximity: ["ma_direction_period", "ma_accel_period", "ma_accel_min_accel", "use_ma_pivot_7", "use_ma_pivot_24", "use_ma_pivot_60", "use_ma_price_7", "use_ma_price_24", "use_ma_price_60", "ma_pivot_lookback"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel", "ma_max_distance_pct"],
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
-        macd_hist_turn: ["macd_fast_period", "macd_slow_period", "macd_signal_period"],
-        macd_zero_cross: ["macd_fast_period", "macd_slow_period", "macd_signal_period"],
+        macd_hist_turn: ["macd_fast_period", "macd_slow_period", "macd_signal_period", "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct"],
+        macd_zero_cross: ["macd_fast_period", "macd_slow_period", "macd_signal_period", "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct"],
         macd_reversal: ["macd_fast_period", "macd_slow_period", "macd_signal_period",
+          "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct",
           "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
           "macro_macd_confirm_bars"],
         macd_strength_scaleout: ["macd_fast_period", "macd_slow_period", "macd_signal_period", "macd_strength_min_pct", "macd_first_exit_pct",
+          "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct",
           "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
           "macro_macd_confirm_bars"],
       };
@@ -3344,13 +3355,19 @@
           diffs.push(`Macro regime ${settings.macro_regime_mode} ≠ ${liveParams.macro_regime_mode ?? "ma_slope"}`);
         ["use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
          "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
+         "use_macd_signal_streak", "macd_streak_require_turn",
          ...(currentMode === "macd_strength_scaleout" ? ["use_macd_strength", "use_macd_two_stage_exit"] : [])].forEach((key) => {
-          if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? true)) diffs.push(`${key}: paper ≠ live`);
+          const fallback = key === "use_macd_signal_streak" ? false : true;
+          if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? fallback)) diffs.push(`${key}: paper ≠ live`);
         });
       }
       if (isParadigmMatch && ["macd_zero_cross", "macd_hist_turn"].includes(currentMode)) {
         [...(currentMode === "macd_hist_turn" ? ["use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m"] : ["use_macd_zero_cross"]), "use_macd_signal_zone", "use_macd_hist_exit"].forEach((key) => {
           if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? (key !== "use_macd_signal_zone"))) diffs.push(`${key}: paper ≠ live`);
+        });
+        ["use_macd_signal_streak", "macd_streak_require_turn"].forEach((key) => {
+          const fallback = key === "macd_streak_require_turn";
+          if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? fallback)) diffs.push(`${key}: paper ≠ live`);
         });
       }
       const defaultConditionToggles = {
@@ -3489,6 +3506,7 @@
         if (source) source.textContent = evaluation?.time
           ? `PAPER · Completed candle ${new Date(Number(evaluation.time) * 1000).toLocaleString()} · Tab 4 live bot executes deployed strategy`
           : "PAPER · Awaiting completed-candle replay";
+        window.TerminalCommon?.renderMacdSignalStreakStatus?.("crypto_", "Paper", evaluation, settings, result?.latest_condition_time, this.interval);
         return;
       }
       if (["macd_zero_cross", "macd_hist_turn"].includes(this.currentParadigm)) {
@@ -3525,6 +3543,7 @@
         if (source) source.textContent = result?.latest_condition_time
           ? `PAPER · ${candidate} candidate · H ${Number(evaluation?.histogram).toFixed(6)} · ${this.currentParadigm === "macd_hist_turn" ? `ΔH ${Number(evaluation?.previous_histogram_delta).toFixed(6)} → ${Number(evaluation?.histogram_delta).toFixed(6)}` : `signal ${Number(evaluation?.signal).toFixed(6)}`}${fiveDetail} · completed candle ${formatKstDateTime(Number(result.latest_condition_time) * 1000)} · same completed-bar rules deploy live`
           : "PAPER · Awaiting completed-candle replay";
+        window.TerminalCommon?.renderMacdSignalStreakStatus?.("crypto_", "Paper", result?.latest_evaluation, settings, result?.latest_condition_time, this.interval);
         return;
       }
       if (["macd_reversal", "macd_strength_scaleout"].includes(this.currentParadigm)) {
@@ -3665,6 +3684,7 @@
       panel.replaceChildren(heading);
       window.TerminalCommon?.resetGroupedLiveConditions?.("crypto_", heading.textContent, bot?.strategy_mode === this.currentParadigm);
       if (this.currentParadigm === "ma_proximity" && bot?.strategy_mode === "ma_proximity") TerminalCommon.renderMaPivotStatus("crypto_", "Live", evaluation, {use_ma_pivot_direction:false,use_ma_pivot_7:false,use_ma_pivot_24:false,use_ma_pivot_60:false,...bot,...bot?.strategy_params}, time, fresh && bot?.strategy_mode === "ma_proximity");
+      if (["macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"].includes(this.currentParadigm)) window.TerminalCommon?.renderMacdSignalStreakStatus?.("crypto_", "Live", fresh && bot?.strategy_mode === this.currentParadigm ? evaluation : null, {...bot,...bot?.strategy_params}, time, bot?.strategy_interval);
       const liveGroups = {};
       if (bot?.strategy_mode === this.currentParadigm) {
         for (const key of ["entry", "exit"]) {
@@ -3696,15 +3716,18 @@
         entry_histogram_delta_turn: "use_macd_hist_turn",
         entry_histogram_zone: "use_macd_hist_zone",
         entry_signal_slope_5m: "use_macd_signal_slope_5m",
+        entry_signal_streak_exhaustion: "use_macd_signal_streak",
         entry_signal_zone: "use_macd_signal_zone",
         exit_histogram_delta_turn: "use_macd_hist_exit",
         exit_histogram_zone: "use_macd_hist_exit_zone",
       } : bot?.strategy_mode === "macd_zero_cross" ? {
         entry_histogram_zero_cross: "use_macd_zero_cross",
+        entry_signal_streak_exhaustion: "use_macd_signal_streak",
         entry_signal_zone: "use_macd_signal_zone",
         exit_histogram_zero_cross: "use_macd_hist_exit",
       } : ["macd_reversal", "macd_strength_scaleout"].includes(bot?.strategy_mode) ? {
         entry_signal_zone: null,
+        entry_signal_streak_exhaustion: "use_macd_signal_streak",
         entry_histogram_zone: null,
         entry_histogram_reversal: null,
         entry_ma_stack_1h: "use_ma_stack_1h",
@@ -3735,10 +3758,10 @@
         ma_proximity:["entry_ma_direction_accel","entry_ma_pullback","exit_ma_cross"],
         ma_acceleration:["entry_ma_slope","entry_ma_accel","entry_ma_pullback","entry_ma_stack_1h","exit_ma_cross"],
         golden_death_cross:["entry_golden_cross","entry_death_cross","entry_cross_spread","entry_ma_stack_1h","exit_cross","exit_dwell"],
-        macd_hist_turn:["entry_histogram_delta_turn","entry_histogram_zone","entry_signal_slope_5m","entry_signal_zone","exit_histogram_delta_turn","exit_histogram_zone"],
-        macd_zero_cross:["entry_histogram_zero_cross","entry_signal_zone","exit_histogram_zero_cross"],
-        macd_reversal:["entry_signal_zone","entry_histogram_zone","entry_histogram_reversal","entry_ma_stack_1h","exit_signal_zone","exit_histogram_zone","exit_histogram_reversal"],
-        macd_strength_scaleout:["entry_signal_zone","entry_histogram_zone","entry_histogram_reversal","entry_ma_stack_1h","entry_strength","exit_signal_zone","exit_histogram_zone","exit_histogram_reversal"],
+        macd_hist_turn:["entry_histogram_delta_turn","entry_histogram_zone","entry_signal_slope_5m","entry_signal_zone","entry_signal_streak_exhaustion","exit_histogram_delta_turn","exit_histogram_zone"],
+        macd_zero_cross:["entry_histogram_zero_cross","entry_signal_zone","entry_signal_streak_exhaustion","exit_histogram_zero_cross"],
+        macd_reversal:["entry_signal_zone","entry_histogram_zone","entry_histogram_reversal","entry_ma_stack_1h","entry_signal_streak_exhaustion","exit_signal_zone","exit_histogram_zone","exit_histogram_reversal"],
+        macd_strength_scaleout:["entry_signal_zone","entry_histogram_zone","entry_histogram_reversal","entry_ma_stack_1h","entry_strength","entry_signal_streak_exhaustion","exit_signal_zone","exit_histogram_zone","exit_histogram_reversal"],
       };
       (keysByMode[bot?.strategy_mode] || Object.keys(checks)).forEach((key) => {
         const value = checks[key];
@@ -3958,6 +3981,12 @@
           use_macd_signal_zone: "crypto_macdZeroUseSignalZone",
           use_macd_hist_exit: "crypto_macdZeroUseExitCross",
           use_macd_hist_exit_zone: "crypto_macdTurnUseExitZone",
+          use_macd_signal_streak: "crypto_macdUseSignalStreak",
+          macd_streak_lookback: "crypto_macdStreakLookback",
+          macd_streak_min_samples: "crypto_macdStreakMinSamples",
+          macd_streak_min_percentile: "crypto_macdStreakMinPercentile",
+          macd_streak_min_reversal_prob_pct: "crypto_macdStreakMinReversalProb",
+          macd_streak_require_turn: "crypto_macdStreakRequireTurn",
         };
         Object.entries(controls).forEach(([key, id]) => {
           const input = $(id);
@@ -3982,6 +4011,12 @@
           macd_strength_min_pct: "crypto_macdStrengthPct",
           use_macd_two_stage_exit: "crypto_macdUseTwoStageExit",
           macd_first_exit_pct: "crypto_macdFirstExitPct",
+          use_macd_signal_streak: "crypto_macdUseSignalStreak",
+          macd_streak_lookback: "crypto_macdStreakLookback",
+          macd_streak_min_samples: "crypto_macdStreakMinSamples",
+          macd_streak_min_percentile: "crypto_macdStreakMinPercentile",
+          macd_streak_min_reversal_prob_pct: "crypto_macdStreakMinReversalProb",
+          macd_streak_require_turn: "crypto_macdStreakRequireTurn",
           macro_regime_mode: "crypto_macroRegimeMode",
           macro_macd_fast_period: "crypto_macroMacdFastPeriod",
           macro_macd_slow_period: "crypto_macroMacdSlowPeriod",

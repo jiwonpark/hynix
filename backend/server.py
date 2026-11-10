@@ -69,6 +69,7 @@ from .lighter_strategy import (
     evaluate_macd_strength_scaleout_signals,
     evaluate_macd_zero_cross_signals,
     evaluate_macd_hist_turn_signals,
+    macd_signal_streak_exhaustion,
     macd_histogram_acceleration_regime_series,
 )
 from .upbit_client import UpbitClient
@@ -2153,6 +2154,12 @@ def _run_crypto_backtest_sync(
     use_macd_hist_exit: bool = True,
     use_macd_strength: bool = True,
     macd_strength_min_pct: float = 30.0,
+    use_macd_signal_streak: bool = False,
+    macd_streak_lookback: int = 20,
+    macd_streak_min_samples: int = 5,
+    macd_streak_min_percentile: float = 70.0,
+    macd_streak_min_reversal_prob_pct: float = 20.0,
+    macd_streak_require_turn: bool = True,
     use_macd_two_stage_exit: bool = True,
     macd_first_exit_pct: float = 50.0,
     base_spacing_pct: float = 0.2,
@@ -3069,6 +3076,8 @@ def _run_crypto_backtest_sync(
         slow_w = max(fast_w + 1, int(macd_slow_period))
         signal_w = max(2, int(macd_signal_period))
         required = slow_w + signal_w + 1
+        if use_macd_signal_streak:
+            required = max(required, min(500, slow_w + signal_w + macd_streak_lookback * 12))
         for index, bar in enumerate(bars):
             position = close_net_exit(position, bar)
             if active_positions:
@@ -3087,6 +3096,20 @@ def _run_crypto_backtest_sync(
                 evaluation_time=int(bar["time"]), position_side=0,
                 **extra_macd,
             )
+            streak = macd_signal_streak_exhaustion(
+                prefix, candidate_side=candidate_side,
+                macd_fast_period=fast_w, macd_slow_period=slow_w,
+                macd_signal_period=signal_w, lookback=macd_streak_lookback,
+                min_samples=macd_streak_min_samples,
+                min_percentile=macd_streak_min_percentile,
+                min_reversal_probability_pct=macd_streak_min_reversal_prob_pct,
+                require_turn=macd_streak_require_turn,
+            )
+            entry_eval["macd_signal_streak"] = streak
+            entry_eval.setdefault("condition_enabled", {})["entry_signal_streak_exhaustion"] = use_macd_signal_streak
+            entry_eval.setdefault("condition_pass", {})["entry_signal_streak_exhaustion"] = bool(streak["pass"])
+            if use_macd_signal_streak:
+                entry_signal = bool(entry_signal and streak["pass"])
             _, _, exit_signal, exit_eval = macd_evaluator(
                 prefix,
                 macd_fast_period=fast_w, macd_slow_period=slow_w, macd_signal_period=signal_w,
@@ -3303,6 +3326,11 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               use_macd_zero_cross: bool = True, use_macd_signal_zone: bool = False,
                               use_macd_hist_exit: bool = True,
                               use_macd_strength: bool = True, macd_strength_min_pct: float = 30.0,
+                              use_macd_signal_streak: bool = False,
+                              macd_streak_lookback: int = 20, macd_streak_min_samples: int = 5,
+                              macd_streak_min_percentile: float = 70.0,
+                              macd_streak_min_reversal_prob_pct: float = 20.0,
+                              macd_streak_require_turn: bool = True,
                               use_macd_two_stage_exit: bool = True, macd_first_exit_pct: float = 50.0,
                               base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
                               long_multiplier: float = 1.0, short_multiplier: float = 1.0,
@@ -3340,6 +3368,14 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         raise ValueError("Chart MACD signal period must be between 2 and 100")
     if not 1 <= macro_macd_confirm_bars <= 12:
         raise ValueError("Macro MACD confirmation must be between 1 and 12 bars")
+    if not 5 <= macd_streak_lookback <= 200:
+        raise ValueError("MACD signal streak lookback must be between 5 and 200")
+    if not 3 <= macd_streak_min_samples <= min(50, macd_streak_lookback):
+        raise ValueError("MACD signal streak minimum samples must be between 3 and the lookback")
+    if not 0 <= macd_streak_min_percentile <= 100:
+        raise ValueError("MACD signal streak percentile must be between 0 and 100")
+    if not 0 <= macd_streak_min_reversal_prob_pct <= 100:
+        raise ValueError("MACD signal streak reversal probability must be between 0 and 100")
     if market_source not in {"binance", "lighter"}:
         raise ValueError("Unsupported crypto replay market source")
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
@@ -3454,6 +3490,12 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         use_macd_signal_slope_5m=use_macd_signal_slope_5m,
         use_macd_signal_zone=use_macd_signal_zone, use_macd_hist_exit=use_macd_hist_exit,
         use_macd_strength=use_macd_strength, macd_strength_min_pct=macd_strength_min_pct,
+        use_macd_signal_streak=use_macd_signal_streak,
+        macd_streak_lookback=macd_streak_lookback,
+        macd_streak_min_samples=macd_streak_min_samples,
+        macd_streak_min_percentile=macd_streak_min_percentile,
+        macd_streak_min_reversal_prob_pct=macd_streak_min_reversal_prob_pct,
+        macd_streak_require_turn=macd_streak_require_turn,
         use_macd_two_stage_exit=use_macd_two_stage_exit, macd_first_exit_pct=macd_first_exit_pct,
         base_spacing_pct=base_spacing_pct, min_dwell_bars=min_dwell_bars,
         long_multiplier=long_multiplier, short_multiplier=short_multiplier,

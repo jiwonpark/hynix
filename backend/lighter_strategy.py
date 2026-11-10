@@ -1165,6 +1165,91 @@ def _ema_series(values: List[float], period: int) -> List[Optional[float]]:
     return result
 
 
+def macd_signal_streak_exhaustion(
+    prices: List[float], *, candidate_side: int,
+    macd_fast_period: int = 12, macd_slow_period: int = 26,
+    macd_signal_period: int = 9, lookback: int = 20,
+    min_samples: int = 5, min_percentile: float = 70.0,
+    min_reversal_probability_pct: float = 20.0,
+    require_turn: bool = True,
+) -> Dict[str, Any]:
+    """Estimate completed-signal streak exhaustion without future candles.
+
+    Historical samples contain only streaks that ended before the current
+    completed candle.  The next-candle reversal probability is the smoothed
+    empirical hazard among same-sign streaks that survived to the current
+    length.  This is an entry filter, not a deterministic countdown.
+    """
+    fast_w = max(2, int(macd_fast_period))
+    slow_w = max(fast_w + 1, int(macd_slow_period))
+    signal_w = max(2, int(macd_signal_period))
+    fast = _ema_series([float(value) for value in prices], fast_w)
+    slow = _ema_series([float(value) for value in prices], slow_w)
+    macd_values = [float(fast[index]) - float(slow_value)
+                   for index, slow_value in enumerate(slow)
+                   if fast[index] is not None and slow_value is not None]
+    signal_values = [float(value) for value in _ema_series(macd_values, signal_w)
+                     if value is not None]
+    base = {
+        "ready": False, "candidate_side": int(candidate_side),
+        "current_sign": 0, "current_streak_length": 0,
+        "last_same_sign_streak_length": None, "sample_count": 0,
+        "percentile": None, "reversal_probability_pct": None,
+        "turning_toward_zero": False, "direction_ok": False,
+        "lookback": int(lookback), "min_samples": int(min_samples),
+        "min_percentile": float(min_percentile),
+        "min_reversal_probability_pct": float(min_reversal_probability_pct),
+        "require_turn": bool(require_turn), "pass": False,
+        "rule": "macd_signal_streak_hazard_v1",
+    }
+    if len(signal_values) < 2 or signal_values[-1] == 0:
+        return base
+    signs = [1 if value > 0 else (-1 if value < 0 else 0) for value in signal_values]
+    current_sign = signs[-1]
+    current_length = 0
+    for sign in reversed(signs):
+        if sign != current_sign:
+            break
+        current_length += 1
+    completed_signs = signs[:-current_length]
+    runs: List[Tuple[int, int]] = []
+    run_sign, run_length = 0, 0
+    for sign in completed_signs:
+        if sign == 0:
+            if run_sign and run_length:
+                runs.append((run_sign, run_length))
+            run_sign, run_length = 0, 0
+        elif sign == run_sign:
+            run_length += 1
+        else:
+            if run_sign and run_length:
+                runs.append((run_sign, run_length))
+            run_sign, run_length = sign, 1
+    if run_sign and run_length:
+        runs.append((run_sign, run_length))
+    sample_lengths = [length for sign, length in runs if sign == current_sign][-max(1, int(lookback)):]
+    count = len(sample_lengths)
+    percentile = (sum(length <= current_length for length in sample_lengths) / count * 100.0) if count else None
+    at_risk = sum(length >= current_length for length in sample_lengths)
+    ended_now = sum(length == current_length for length in sample_lengths)
+    hazard = ((ended_now + 1) / (at_risk + 2) * 100.0) if count else None
+    turning = signal_values[-1] < signal_values[-2] if current_sign > 0 else signal_values[-1] > signal_values[-2]
+    direction_ok = (candidate_side > 0 and current_sign < 0) or (candidate_side < 0 and current_sign > 0)
+    ready = count >= max(1, int(min_samples))
+    passed = bool(ready and direction_ok
+                  and percentile is not None and percentile + 1e-10 >= float(min_percentile)
+                  and hazard is not None and hazard + 1e-10 >= float(min_reversal_probability_pct)
+                  and (not require_turn or turning))
+    return {**base, "ready": ready, "current_sign": current_sign,
+            "current_streak_length": current_length,
+            "last_same_sign_streak_length": sample_lengths[-1] if sample_lengths else None,
+            "sample_count": count, "sample_lengths": sample_lengths,
+            "percentile": round(percentile, 4) if percentile is not None else None,
+            "reversal_probability_pct": round(hazard, 4) if hazard is not None else None,
+            "turning_toward_zero": turning, "direction_ok": direction_ok,
+            "pass": passed}
+
+
 def macd_histogram_acceleration_regime_series(
     prices: List[float], *,
     ma_period: int = 12,
@@ -1580,6 +1665,9 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         slow = max(fast + 1, int(params.get("macd_slow_period", 26)))
         signal = max(2, int(params.get("macd_signal_period", 9)))
         required = slow + signal + 1
+        if bool(params.get("use_macd_signal_streak", False)):
+            streak_lookback = max(5, min(200, int(params.get("macd_streak_lookback", 20))))
+            required = max(required, min(500, slow + signal + streak_lookback * 12))
         if strategy_mode in {"macd_zero_cross", "macd_hist_turn"}:
             return required
         macro_mode = params.get("macro_regime_mode", "ma_slope")
@@ -1874,6 +1962,24 @@ def evaluate_strategy_signal(strategy_mode, prices, config, *, hourly_histogram=
                              five_minute_macd_signal=None, **kwargs):
     from .hourly_histogram import apply_five_minute_signal_filter, apply_hourly_filter
     entry, side, exit_signal, details = _evaluate_strategy_signal(strategy_mode, prices, config, **kwargs)
+    if strategy_mode in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}:
+        enabled = bool(config.get("use_macd_signal_streak", False))
+        streak = macd_signal_streak_exhaustion(
+            prices, candidate_side=side,
+            macd_fast_period=int(config.get("macd_fast_period", 12)),
+            macd_slow_period=int(config.get("macd_slow_period", 26)),
+            macd_signal_period=int(config.get("macd_signal_period", 9)),
+            lookback=int(config.get("macd_streak_lookback", 20)),
+            min_samples=int(config.get("macd_streak_min_samples", 5)),
+            min_percentile=float(config.get("macd_streak_min_percentile", 70.0)),
+            min_reversal_probability_pct=float(config.get("macd_streak_min_reversal_prob_pct", 20.0)),
+            require_turn=bool(config.get("macd_streak_require_turn", True)),
+        )
+        details["macd_signal_streak"] = streak
+        details.setdefault("condition_enabled", {})["entry_signal_streak_exhaustion"] = enabled
+        details.setdefault("condition_pass", {})["entry_signal_streak_exhaustion"] = bool(streak["pass"])
+        if enabled:
+            entry = bool(entry and streak["pass"])
     if strategy_mode == "macd_hist_turn":
         entry = apply_five_minute_signal_filter(
             entry, side, details, config, five_minute_macd_signal,

@@ -621,3 +621,23 @@ in that recovery tick, and never enable a paused bot. Incomplete/ambiguous
 executions remain blocked. Throttle recovery reads to avoid hammering venue
 rate limits; a disabled worker without pending execution must not touch the
 exchange. Explicit operator recovery retains its separately guarded repair path.
+
+## MACD signal-streak exhaustion entry condition
+
+Tabs 4 and 5 expose the same optional MACD signal-streak exhaustion condition
+for every MACD strategy. It is an AND entry gate and defaults OFF. A negative
+completed signal-line streak may support a long candidate; a positive streak
+may support a short candidate. It never gates exits and never reads positions,
+balances, tranche capacity, recovery, or account state, so the independent
+`entry_signals` stream remains position-invariant.
+
+The current streak uses only completed chart-interval MACD signal values. Its
+reference distribution is the adjustable number of prior completed streaks of
+the same sign. Show the current length, most recent same-sign completed length,
+sample count, empirical percentile, and Laplace-smoothed next-bar reversal
+hazard `(ended_at_length + 1) / (survived_to_length + 2)`. Users can adjust the
+history count, minimum samples, minimum percentile, minimum reversal probability,
+and whether the signal must also turn toward zero. Insufficient samples or an
+unavailable completed source fails closed when enabled. PASS/WAITING/OFF and the
+completed candle time must appear for paper and live status. This is a historical
+exhaustion estimate, not a guaranteed reversal countdown.

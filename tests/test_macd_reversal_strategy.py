@@ -166,6 +166,10 @@ def test_bots_accept_and_persist_macd_configuration():
             "strategy_mode": "macd_reversal", "macd_fast_period": 10,
             "macd_slow_period": 30, "macd_signal_period": 8,
             "use_macd_hist_reversal": False,
+            "use_macd_signal_streak": True, "macd_streak_lookback": 30,
+            "macd_streak_min_samples": 7, "macd_streak_min_percentile": 80,
+            "macd_streak_min_reversal_prob_pct": 25,
+            "macd_streak_require_turn": False,
         }
         with tempfile.TemporaryDirectory() as directory:
             for bot_type in (CryptoBot, LighterCryptoBot):
@@ -174,6 +178,12 @@ def test_bots_accept_and_persist_macd_configuration():
                 assert state["strategy_mode"] == "macd_reversal"
                 assert state["strategy_params"]["macd_fast_period"] == 10
                 assert state["strategy_params"]["use_macd_hist_reversal"] is False
+                assert state["strategy_params"]["use_macd_signal_streak"] is True
+                assert state["strategy_params"]["macd_streak_lookback"] == 30
+                assert state["strategy_params"]["macd_streak_min_samples"] == 7
+                assert state["strategy_params"]["macd_streak_min_percentile"] == 80
+                assert state["strategy_params"]["macd_streak_min_reversal_prob_pct"] == 25
+                assert state["strategy_params"]["macd_streak_require_turn"] is False
     asyncio.run(run())
 
 

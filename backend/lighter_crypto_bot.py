@@ -82,6 +82,9 @@ DEFAULT_STATE = {
     "use_macd_hist_turn": True, "use_macd_hist_zone": True, "use_macd_hist_exit_zone": True,
     "use_macd_signal_slope_5m": True,
     "use_macd_zero_cross": True, "use_macd_signal_zone": False, "use_macd_hist_exit": True,
+    "use_macd_signal_streak": False, "macd_streak_lookback": 20,
+    "macd_streak_min_samples": 5, "macd_streak_min_percentile": 70.0,
+    "macd_streak_min_reversal_prob_pct": 20.0, "macd_streak_require_turn": True,
     "use_macd_strength": True, "macd_strength_min_pct": 30.0,
     "use_macd_two_stage_exit": True, "macd_first_exit_pct": 50.0, "macd_exit_stage": 0,
     "long_multiplier": 1.0, "short_multiplier": 1.0, "entry_direction_mode": "two_way",
@@ -246,6 +249,12 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                           "use_macd_signal_slope_5m": bool(self.state.get("use_macd_signal_slope_5m", True)),
                           "use_macd_zero_cross": bool(self.state.get("use_macd_zero_cross", True)),
                           "use_macd_signal_zone": bool(self.state.get("use_macd_signal_zone", False)),
+                          "use_macd_signal_streak": bool(self.state.get("use_macd_signal_streak", False)),
+                          "macd_streak_lookback": int(self.state.get("macd_streak_lookback", 20)),
+                          "macd_streak_min_samples": int(self.state.get("macd_streak_min_samples", 5)),
+                          "macd_streak_min_percentile": float(self.state.get("macd_streak_min_percentile", 70.0)),
+                          "macd_streak_min_reversal_prob_pct": float(self.state.get("macd_streak_min_reversal_prob_pct", 20.0)),
+                          "macd_streak_require_turn": bool(self.state.get("macd_streak_require_turn", True)),
                           "use_macd_strength": bool(self.state.get("use_macd_strength", True)),
                           "macd_strength_min_pct": float(self.state.get("macd_strength_min_pct", 30.0)),
                           "use_macd_two_stage_exit": bool(self.state.get("use_macd_two_stage_exit", True)),
@@ -560,6 +569,8 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
             "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
             "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone",
+            "use_macd_signal_streak", "macd_streak_lookback", "macd_streak_min_samples",
+            "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn",
             "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "macro_ma_period", "macro_regime_mode",
@@ -609,6 +620,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                         "ou_macro_slope_bars", "min_consensus_votes", "trend_macro_window", "min_dwell_bars",
                         "ma_accel_period", "fast_ma_period", "slow_ma_period", "min_diff_bars",
                         "macd_fast_period", "macd_slow_period", "macd_signal_period",
+                        "macd_streak_lookback", "macd_streak_min_samples",
                         "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
                         "macro_macd_confirm_bars"}:
                 candidate[key] = int(value)
@@ -625,7 +637,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                           "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
                           "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone"}:
                 candidate[key] = bool(value)
-            elif key in {"use_macd_strength", "use_macd_two_stage_exit"}:
+            elif key in {"use_macd_strength", "use_macd_two_stage_exit", "use_macd_signal_streak", "macd_streak_require_turn"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
@@ -670,6 +682,9 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             "trend_tp_dist": (0.01, 10.0), "trend_slope_min": (0.0001, 1.0),
             "fast_ma_period": (2, 100), "slow_ma_period": (3, 200),
             "macd_fast_period": (2, 100), "macd_slow_period": (3, 200), "macd_signal_period": (2, 100),
+            "macd_streak_lookback": (5, 200), "macd_streak_min_samples": (3, 50),
+            "macd_streak_min_percentile": (0.0, 100.0),
+            "macd_streak_min_reversal_prob_pct": (0.0, 100.0),
             "macro_macd_fast_period": (2, 100), "macro_macd_slow_period": (3, 200),
             "macro_macd_signal_period": (2, 100),
             "macd_strength_min_pct": (0.0, 1000.0), "macd_first_exit_pct": (1.0, 99.0),
@@ -691,6 +706,8 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
         if candidate["strategy_mode"] in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}:
             if candidate.get("macd_fast_period", 12) >= candidate.get("macd_slow_period", 26):
                 raise ValueError("MACD slow period must be greater than MACD fast period")
+        if candidate["macd_streak_min_samples"] > candidate["macd_streak_lookback"]:
+            raise ValueError("MACD streak minimum samples cannot exceed the lookback")
         if candidate.get("macro_macd_fast_period", 12) >= candidate.get("macro_macd_slow_period", 26):
             raise ValueError("Hourly MACD slow period must be greater than hourly MACD fast period")
         if candidate["hourly_hist_slow"] <= candidate["hourly_hist_fast"]:
@@ -707,6 +724,8 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                  "use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
                  "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
                  "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone",
+                 "use_macd_signal_streak", "macd_streak_lookback", "macd_streak_min_samples",
+                 "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn",
                  "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal",
                  "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
@@ -1772,7 +1791,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
 
     async def _refresh_paused_condition_evaluation(self) -> None:
         """Keep live condition status current while paused, without executing orders."""
-        if self.state.get("strategy_mode") not in {"macd_zero_cross", "macd_hist_turn"}:
+        if self.state.get("strategy_mode") not in {"macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}:
             return
         now = time.time()
         if now - float(getattr(self, "_paused_condition_refresh_at", 0.0)) < 15:

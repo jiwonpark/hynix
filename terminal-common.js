@@ -1234,7 +1234,60 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { maPivotSettings, maPivotGuideSettings, bindMaPivotControls, syncMaPivotControls, renderMaPivotStatus, maPivotAnalysis, alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, singleLegNetTargetPrice, singleLegStopLossLevel, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, segmentCurveIntersections, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
+  function macdSignalStreakControls(prefix, live, row, toggle) {
+    const checked = (live?.use_macd_signal_streak === true) ? "checked" : "";
+    const turnChecked = live?.macd_streak_require_turn !== false ? "checked" : "";
+    return `<div style="${row}"><input id="${prefix}macdUseSignalStreak" aria-label="Enable MACD signal streak exhaustion entry condition" type="checkbox" style="${toggle}" ${checked}>
+      <span><b>Signal streak exhaustion (AND)</b> · negative streak for long; positive for short</span><span id="${prefix}macdStatusSignalStreak" class="condBadge neutral">${checked ? "WAITING" : "OFF"}</span>
+      <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;padding-left:24px;">
+        <label>History <input id="${prefix}macdStreakLookback" type="number" min="5" max="200" step="1" value="${Number(live?.macd_streak_lookback ?? 20)}" style="width:58px"> streaks</label>
+        <label>Samples ≥ <input id="${prefix}macdStreakMinSamples" type="number" min="3" max="50" step="1" value="${Number(live?.macd_streak_min_samples ?? 5)}" style="width:50px"></label>
+        <label>Percentile ≥ <input id="${prefix}macdStreakMinPercentile" type="number" min="0" max="100" step="1" value="${Number(live?.macd_streak_min_percentile ?? 70)}" style="width:55px">%</label>
+        <label>Next-bar reversal ≥ <input id="${prefix}macdStreakMinReversalProb" type="number" min="0" max="100" step="1" value="${Number(live?.macd_streak_min_reversal_prob_pct ?? 20)}" style="width:55px">%</label>
+        <label style="display:flex;align-items:center;gap:4px;"><input id="${prefix}macdStreakRequireTurn" type="checkbox" style="${toggle}" ${turnChecked}> Require signal turning toward zero</label>
+      </span><small id="${prefix}macdSignalStreakSource" style="width:100%;padding-left:24px;color:#64748b;">Completed-candle source awaiting replay</small></div>`;
+  }
+
+  function macdSignalStreakSettings(prefix, fallback = {}) {
+    const byId = id => document.getElementById(prefix + id);
+    const numeric = (id, key, defaultValue) => {
+      const value = Number(byId(id)?.value);
+      return Number.isFinite(value) ? value : Number(fallback?.[key] ?? defaultValue);
+    };
+    return {
+      use_macd_signal_streak: byId("macdUseSignalStreak")?.checked === true,
+      macd_streak_lookback: Math.trunc(numeric("macdStreakLookback", "macd_streak_lookback", 20)),
+      macd_streak_min_samples: Math.trunc(numeric("macdStreakMinSamples", "macd_streak_min_samples", 5)),
+      macd_streak_min_percentile: numeric("macdStreakMinPercentile", "macd_streak_min_percentile", 70),
+      macd_streak_min_reversal_prob_pct: numeric("macdStreakMinReversalProb", "macd_streak_min_reversal_prob_pct", 20),
+      macd_streak_require_turn: byId("macdStreakRequireTurn")?.checked !== false,
+    };
+  }
+
+  function renderMacdSignalStreakStatus(prefix, kind, evaluation, settings, sourceTime, interval) {
+    const badge = document.getElementById(prefix + "macdStatusSignalStreak");
+    const source = document.getElementById(prefix + "macdSignalStreakSource");
+    if (!badge && !source) return;
+    const metric = evaluation?.macd_signal_streak;
+    const enabled = settings?.use_macd_signal_streak === true;
+    const state = !enabled ? "OFF" : !metric?.ready ? "UNAVAILABLE" : metric.pass ? "PASS" : "WAITING";
+    if (badge) {
+      badge.textContent = state;
+      badge.className = `condBadge ${state === "PASS" ? "pass" : state === "WAITING" ? "wait" : "neutral"}`;
+    }
+    if (!source) return;
+    if (!enabled) {
+      source.textContent = `${kind.toUpperCase()} · OFF · completed-candle condition does not gate entries`;
+      return;
+    }
+    const sign = metric?.current_sign > 0 ? "positive" : metric?.current_sign < 0 ? "negative" : "flat";
+    const time = sourceTime ? new Date(Number(sourceTime) * 1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
+    const pct = metric?.percentile == null ? "—" : `${Number(metric.percentile).toFixed(1)}%`;
+    const hazard = metric?.reversal_probability_pct == null ? "—" : `${Number(metric.reversal_probability_pct).toFixed(1)}%`;
+    source.textContent = `${kind.toUpperCase()} · completed ${interval || "candle"} MACD signal · ${sign} ${metric?.current_streak_length ?? "—"} bars · last ${metric?.last_same_sign_streak_length ?? "—"} · samples ${metric?.sample_count ?? 0}/${settings.macd_streak_lookback} · percentile ${pct} · next-bar reversal ${hazard} · toward zero ${metric?.turning_toward_zero ? "YES" : "NO"} · ${time}`;
+  }
+
+  const TerminalCommon = { maPivotSettings, maPivotGuideSettings, bindMaPivotControls, syncMaPivotControls, renderMaPivotStatus, maPivotAnalysis, alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, singleLegNetTargetPrice, singleLegStopLossLevel, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, macdSignalStreakControls, macdSignalStreakSettings, renderMacdSignalStreakStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, segmentCurveIntersections, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {
