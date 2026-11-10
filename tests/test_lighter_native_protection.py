@@ -107,6 +107,33 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
         await self.bot.reconcile_native_protection()
         self.assertEqual(len(self.bot.state['execution_history']), 1)
 
+    async def test_entry_is_withheld_before_fill_when_native_children_exceed_venue_capacity(self):
+        self.bot.state['tranches'] = []
+        self.bot.state['native_brackets'] = []
+        self.client.amount = 0
+        self.client.active_orders = [
+            {'status': 'pending', 'type': 'take-profit', 'trigger_status': 'mark-price'}
+            for _ in range(9)
+        ]
+        with self.assertRaisesRegex(ValueError, 'pending-order capacity 9/10'):
+            await self.bot._submit(1, 25, reduce_only=False, reason='manual')
+        self.assertEqual(self.client.amount, 0)
+        self.assertIsNone(self.bot.state['pending_order'])
+        self.assertEqual(self.bot.state['native_pending_capacity']['required_for_next_slice'], 2)
+
+    async def test_plus_tier_capacity_allows_same_native_entry(self):
+        self.bot.state['tranches'] = []
+        self.bot.state['native_brackets'] = []
+        self.client.amount = 0
+        self.client.user_tier_name = 'Plus'
+        self.client.active_orders = [
+            {'status': 'pending', 'type': 'take-profit', 'trigger_status': 'mark-price'}
+            for _ in range(9)
+        ]
+        await self.bot._submit(1, 25, reduce_only=False, reason='manual')
+        self.assertGreater(self.client.amount, 0)
+        self.assertEqual(self.bot.state['native_pending_capacity']['limit'], 100)
+
     async def test_restart_accounts_fill_once(self):
         groups = await self.arm()
         self.fill(groups[0])

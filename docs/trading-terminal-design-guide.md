@@ -535,6 +535,14 @@ tracked native exits; never cancel unrelated exchange orders. Show these effects
 in the confirmation and native status, including that replacement exits may
 trigger immediately if their targets are already reached. Use an identical explicit expiry for both
 OCO children. Exchange capacity/unknown outcomes still block unsafe submission.
+Before every Tab 5 entry fill, native protection must read the authenticated
+account tier and the complete active-order set for the selected market. Count
+venue-pending TP, SL and TWAP orders from the whole account, including orders
+created outside this bot, and reserve one slot for each enabled native child.
+If the next slice cannot fit, withhold the entry before submission, end the
+campaign as an execution-safety capacity stop, and show the used/limit/free
+capacity separately in native protection status. This venue safeguard is not a
+strategy condition and must never suppress the independent entry-signal stream.
 Keep the native execution option inside Exit conditions alongside TP/SL across
 strategy switches. Preserve unsaved browser drafts across reload, distinguish
 them from the saved live state, and save native protection through the same

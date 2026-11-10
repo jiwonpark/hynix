@@ -21,6 +21,8 @@ class FakeLighter:
         self.extra_positions = []
         self.min_base_amount = "0.001"
         self.min_quote_amount = "10"
+        self.active_orders = []
+        self.user_tier_name = "Standard"
 
     async def market_detail(self, market_id, *, fresh=False):
         return {"market_id": market_id, "symbol": "BTC", "market_type": "perp",
@@ -63,6 +65,12 @@ class FakeLighter:
 
     async def account_trades(self, market_id, limit=100, *, strict=False):
         return getattr(self, "trades", [])
+
+    async def account_active_orders(self, market_id):
+        return copy.deepcopy(self.active_orders)
+
+    async def account_limits(self):
+        return {"code": 0, "user_tier_name": self.user_tier_name}
 
     async def candles(self, market_id, interval, limit, *, fresh=False):
         if interval == "1h":

@@ -75,6 +75,7 @@ class NativeProtectionMixin:
                 "dust_qty": sum(float(t.get("qty", 0) or 0) for t in lots
                                 if str(t.get("order_id", "")) in dust_ids),
                 "tracked_slices": len(lots), "groups": groups,
+                "pending_capacity": self.state.get("native_pending_capacity"),
                 "trailing": latest_trail,
                 "error": self.state.get("native_protection_error"),
                 "time": self.state.get("native_protection_checked_at")}

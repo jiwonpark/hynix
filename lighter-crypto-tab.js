@@ -4432,7 +4432,11 @@
       const protectionDustText = protectionDust
         ? ` · ${protectionDust} dust slice${protectionDust === 1 ? "" : "s"} below exchange minimum (tracked, no native order)`
         : "";
-      this.setText("nativeProtectionStatus", `LIVE · ${protectionState} · ${protection.protected_slices || 0}/${protection.tracked_slices || 0} slices protected${protectionDustText}${trailText} · exchange order status · ${protectionTime}${protection.error ? " · " + protection.error : ""}`);
+      const pendingCapacity = protection.pending_capacity;
+      const capacityText = pendingCapacity
+        ? ` · venue pending-order capacity ${pendingCapacity.pending}/${pendingCapacity.limit} (${pendingCapacity.available} free; next slice needs ${pendingCapacity.required_for_next_slice})`
+        : "";
+      this.setText("nativeProtectionStatus", `LIVE · ${protectionState} · ${protection.protected_slices || 0}/${protection.tracked_slices || 0} slices protected${protectionDustText}${trailText}${capacityText} · exchange order status · ${protectionTime}${protection.error ? " · " + protection.error : ""}`);
       window.TerminalCommon?.syncHourlyHistogram?.("lighterCrypto_", bot);
       window.TerminalCommon?.renderHourlyHistogram?.("lighterCrypto_", "Live", bot.hourly_histogram, bot.use_hourly_hist);
       this.syncMacdDraftControls(bot);

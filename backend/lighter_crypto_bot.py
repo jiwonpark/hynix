@@ -50,7 +50,7 @@ DEFAULT_STATE = {
     "use_native_protection": False, "native_protection_pending_activation": False, "native_brackets": [],
     "native_protection_error": None, "native_protection_checked_at": None,
     "native_protection_attempts": [], "native_protection_update_pending": [],
-    "native_protection_dust_entry_ids": [],
+    "native_protection_dust_entry_ids": [], "native_pending_capacity": None,
     "enabled": False, "selected_symbol": "BTC", "strategy_mode": "grid",
     "strategy_interval": "5m", "entry_z": 1.5, "exit_z": 0.25,
     "notional_usd": 150.0, "max_tranches": 5, "gross_leverage_cap": 8.0,
@@ -1067,6 +1067,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 "Tranche capacity reached",
                 "Selected-contract gross exposure",
                 "Available margin",
+                "Lighter pending-order capacity",
             )):
                 self._finish_entry_campaign("safety_capacity_reached")
                 self.state["last_error"] = None
@@ -1287,6 +1288,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             else:
                 if self.state["pending_order"] or self.state["recovery_required"]:
                     raise ValueError("Execution recovery required")
+                await self._check_native_pending_capacity(market_id)
                 if net_dust:
                     if self.state.get("execution_blocked") or self.state.get("native_brackets"):
                         raise ValueError("Resolve execution or protection blocks before reversing")
@@ -1364,6 +1366,44 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             # must never turn that confirmed fill into an uncertain market order.
             await self.arm_native_protection()
             return event
+
+    async def _check_native_pending_capacity(self, market_id: int) -> None:
+        """Fail before entry when its native children cannot fit at the venue.
+
+        Lighter counts untriggered TP, SL and TWAP orders against an account-wide
+        per-market pending cap.  The live authenticated order list is therefore
+        authoritative; counting only this bot's bracket state is insufficient.
+        """
+        if not self.state.get("use_native_protection"):
+            self.state["native_pending_capacity"] = None
+            return
+        required = int(bool(self.state.get("use_take_profit", True))) + int(bool(self.state.get("use_stop_loss", False)))
+        if required <= 0:
+            self.state["native_pending_capacity"] = None
+            return
+        if not hasattr(self.client, "account_active_orders") or not hasattr(self.client, "account_limits"):
+            raise ValueError("Lighter pending-order capacity is unavailable; entry withheld")
+        limits, orders = await asyncio.gather(
+            self.client.account_limits(), self.client.account_active_orders(market_id)
+        )
+        tier = str(limits.get("user_tier_name") or limits.get("user_tier") or "standard").lower()
+        cap = 100 if any(name in tier for name in ("plus", "premium", "advanced")) else 10
+        pending_types = {"stop-loss", "stop-loss-limit", "take-profit", "take-profit-limit", "twap", "twap-sub"}
+        pending = sum(
+            str(order.get("status", "")).lower() == "pending"
+            or (str(order.get("type", "")).lower() in pending_types
+                and str(order.get("trigger_status", "")).lower() not in {"", "na"})
+            for order in orders
+        )
+        capacity = {"source": "LIGHTER_ACCOUNT_ACTIVE_ORDERS", "tier": tier,
+                    "pending": pending, "limit": cap, "required_for_next_slice": required,
+                    "available": max(0, cap - pending), "checked_at": int(time.time())}
+        self.state["native_pending_capacity"] = capacity
+        self._save()
+        if pending + required > cap:
+            raise ValueError(
+                f"Lighter pending-order capacity {pending}/{cap}; next slice needs {required} native TP/SL orders"
+            )
 
     async def _resolve_pending_order(self) -> tuple[bool, Optional[Dict[str, Any]]]:
         """Verify and safely resolve an in-flight, unfilled, or rejected pending order.

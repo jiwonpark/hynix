@@ -551,6 +551,52 @@ class LighterClient:
             raise RuntimeError("Lighter order lookup returned no valid order list")
         return orders
 
+    async def account_active_orders(self, market_id: int) -> List[Dict[str, Any]]:
+        """Return authenticated active orders for one market.
+
+        This is used as an execution safeguard before opening inventory that
+        requires native TP/SL children.  It intentionally includes orders not
+        created by this bot because the venue cap is account-wide.
+        """
+        creds = self.get_credentials() or {}
+        signer = self.get_signer()
+        if creds.get("account_index") is None or signer is None:
+            raise RuntimeError("Lighter account authentication is unavailable")
+        auth, error = signer.create_auth_token_with_expiry(
+            api_key_index=int(creds.get("api_key_index", 0))
+        )
+        if error:
+            raise RuntimeError(f"Lighter active-order authentication failed: {error}")
+        payload = await self.request(
+            "/api/v1/accountActiveOrders",
+            {"account_index": int(creds["account_index"]), "market_id": int(market_id)},
+            headers={"authorization": auth},
+        )
+        orders = payload.get("orders")
+        if not isinstance(orders, list):
+            raise RuntimeError("Lighter active-order lookup returned no valid order list")
+        return orders
+
+    async def account_limits(self) -> Dict[str, Any]:
+        """Return the authenticated account tier used for venue order caps."""
+        creds = self.get_credentials() or {}
+        signer = self.get_signer()
+        if creds.get("account_index") is None or signer is None:
+            raise RuntimeError("Lighter account authentication is unavailable")
+        auth, error = signer.create_auth_token_with_expiry(
+            api_key_index=int(creds.get("api_key_index", 0))
+        )
+        if error:
+            raise RuntimeError(f"Lighter account-limit authentication failed: {error}")
+        payload = await self.request(
+            "/api/v1/accountLimits",
+            {"account_index": int(creds["account_index"])},
+            headers={"authorization": auth},
+        )
+        if not isinstance(payload, dict) or int(payload.get("code", 0) or 0) != 0:
+            raise RuntimeError("Lighter account-limit lookup returned no valid limits")
+        return payload
+
     async def execution_fill(
         self, client_order_index: int, market_id: int, expected_size: float,
     ) -> Dict[str, Any]:
