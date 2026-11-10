@@ -828,6 +828,7 @@ def evaluate_ma_acceleration_signals(
     use_ma_price_7: bool = False,
     use_ma_price_24: bool = False,
     use_ma_price_60: bool = False,
+    use_ma_pivot_slope_fallback: bool = True,
     ma_pivot_period: int = 24,
     ma_pivot_lookback: int = 120,
     ma_pivot_min_arrows: int = 1,
@@ -905,6 +906,7 @@ def evaluate_ma_acceleration_signals(
                             use_ma_price_7=use_ma_price_7,
                             use_ma_price_24=use_ma_price_24,
                             use_ma_price_60=use_ma_price_60,
+                            use_ma_pivot_slope_fallback=use_ma_pivot_slope_fallback,
                             ma_pivot_period=ma_pivot_period,
                             ma_pivot_lookback=ma_pivot_lookback,
                             ma_pivot_min_arrows=ma_pivot_min_arrows)
@@ -1810,6 +1812,7 @@ def _evaluate_strategy_signal(
             use_ma_price_7=bool(config.get("use_ma_price_7", False)),
             use_ma_price_24=bool(config.get("use_ma_price_24", False)),
             use_ma_price_60=bool(config.get("use_ma_price_60", False)),
+            use_ma_pivot_slope_fallback=bool(config.get("use_ma_pivot_slope_fallback", True)),
             ma_pivot_period=int(config.get("ma_pivot_period", 24)),
             ma_pivot_lookback=int(config.get("ma_pivot_lookback", 120)),
             ma_pivot_min_arrows=int(config.get("ma_pivot_min_arrows", 1)),

@@ -9,16 +9,19 @@ PIVOT_PERIODS = (7, 24, 60)
 PIVOT_TOGGLE_KEYS = tuple(f'use_ma_pivot_{period}' for period in PIVOT_PERIODS)
 PRICE_TOGGLE_KEYS = tuple(f'use_ma_price_{period}' for period in PIVOT_PERIODS)
 KEYS = ('use_ma_pivot_direction', *PIVOT_TOGGLE_KEYS, *PRICE_TOGGLE_KEYS,
-        'ma_pivot_period', 'ma_pivot_lookback', 'ma_pivot_min_arrows')
+        'use_ma_pivot_slope_fallback', 'ma_pivot_period', 'ma_pivot_lookback',
+        'ma_pivot_min_arrows')
 DEFAULTS = dict(use_ma_pivot_direction=False,
                 use_ma_pivot_7=False, use_ma_pivot_24=False, use_ma_pivot_60=False,
                 use_ma_price_7=False, use_ma_price_24=False, use_ma_price_60=False,
+                use_ma_pivot_slope_fallback=True,
                 ma_pivot_period=24,
                 ma_pivot_lookback=120, ma_pivot_min_arrows=1)
 
 
 def validate_setting(key, value):
-    if key == 'use_ma_pivot_direction' or key in PIVOT_TOGGLE_KEYS or key in PRICE_TOGGLE_KEYS:
+    if (key in {'use_ma_pivot_direction', 'use_ma_pivot_slope_fallback'}
+            or key in PIVOT_TOGGLE_KEYS or key in PRICE_TOGGLE_KEYS):
         if not isinstance(value, bool):
             raise ValueError('MA condition switch must be boolean')
         return value
@@ -56,7 +59,9 @@ def evaluate_ma_pivots(prices, config):
     """Evaluate every chart MA so UI status and enabled AND rules share one source."""
     lookback = int(config.get('ma_pivot_lookback', 120))
     min_arrows = int(config.get('ma_pivot_min_arrows', 1))
-    return {str(period): evaluate_ma_pivot(prices, period, lookback, min_arrows)
+    allow_slope_fallback = bool(config.get('use_ma_pivot_slope_fallback', True))
+    return {str(period): evaluate_ma_pivot(prices, period, lookback, min_arrows,
+                                           allow_slope_fallback)
             for period in PIVOT_PERIODS}
 
 
@@ -82,11 +87,12 @@ def evaluate_ma_price_sides(prices):
     return results
 
 
-def analyze_ma_points(values, min_arrows=1):
+def analyze_ma_points(values, min_arrows=1, allow_slope_fallback=True):
     # min_arrows is accepted only for compatibility with older saved configs.
     result = dict(ready=False, long_pass=False, short_pass=False, up_count=0,
                   down_count=0, crossings=[], slope=None, pivot_index=None,
-                  last_arrow=None, rule=RULE_VERSION)
+                  last_arrow=None, rule=RULE_VERSION,
+                  allow_slope_fallback=bool(allow_slope_fallback))
     if len(values) < 3 or not all(math.isfinite(v) for v in values):
         return dict(result, reason='MA history unavailable')
     direction, pivot = 0, None
@@ -132,14 +138,15 @@ def analyze_ma_points(values, min_arrows=1):
     return dict(result, ready=True, reason=None, slope=slope, pivot_index=pivot,
                 pivot_age_bars=end-pivot, start_value=values[pivot], end_value=values[end],
                 crossings=crossings, up_count=up, down_count=down, last_arrow=last_arrow,
-                long_pass=slope > 0 if last_arrow is None else last_arrow == 'up',
-                short_pass=slope < 0 if last_arrow is None else last_arrow == 'down')
+                long_pass=(allow_slope_fallback and slope > 0) if last_arrow is None else last_arrow == 'up',
+                short_pass=(allow_slope_fallback and slope < 0) if last_arrow is None else last_arrow == 'down')
 
 
-def evaluate_ma_pivot(prices, period=24, lookback=120, min_arrows=1):
+def evaluate_ma_pivot(prices, period=24, lookback=120, min_arrows=1,
+                      allow_slope_fallback=True):
     required = period+lookback-1
     if len(prices)<required:
-        result=analyze_ma_points([])
+        result=analyze_ma_points([], allow_slope_fallback=allow_slope_fallback)
         result['reason']=f'Need {required} completed candles'
     else:
         source=prices[-required:]
@@ -147,5 +154,5 @@ def evaluate_ma_pivot(prices, period=24, lookback=120, min_arrows=1):
         for i in range(period,len(source)):
             total+=source[i]-source[i-period]
             values.append(total/period)
-        result=analyze_ma_points(values,min_arrows)
+        result=analyze_ma_points(values,min_arrows,allow_slope_fallback)
     return dict(result, period=period, lookback=lookback, min_arrows=min_arrows)

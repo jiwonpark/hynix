@@ -191,6 +191,11 @@ replay edits across refresh/strategy changes; Match Live explicitly replaces the
 draft. Live settings pass through authenticated configuration, persist on disk,
 and require pausing before changes. The entry quote recheck keeps the pivot on
 completed prices while rechecking other entry rules against executable quotes.
+The shared **Allow rising/falling guide when no arrow** switch is a real replay
+and live setting. It defaults on for existing configurations. When off, an
+enabled MA with no crossing arrow fails both directions instead of falling back
+to the guide slope; evaluations report the fallback value so stale verdicts
+from the opposite setting remain unavailable.
 Lighter campaign child slices also require fresh passing completed-candle
 pivot verdicts for every enabled MA, each with matching period, lookback and
 `last_arrow_v2` rule version. Rule/parameter

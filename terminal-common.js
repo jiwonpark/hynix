@@ -728,8 +728,8 @@
   }
 
   const maPivotPeriods = [7,24,60];
-  const maPivotDefaults = {use_ma_pivot_direction:false, use_ma_pivot_7:false, use_ma_pivot_24:false, use_ma_pivot_60:false, use_ma_price_7:false, use_ma_price_24:false, use_ma_price_60:false, ma_pivot_period:24, ma_pivot_lookback:120};
-  const maPivotInputs = {use_ma_pivot_7:"useMaPivot7", use_ma_pivot_24:"useMaPivot24", use_ma_pivot_60:"useMaPivot60", use_ma_price_7:"useMaPrice7", use_ma_price_24:"useMaPrice24", use_ma_price_60:"useMaPrice60", ma_pivot_lookback:"maPivotLookback"};
+  const maPivotDefaults = {use_ma_pivot_direction:false, use_ma_pivot_7:false, use_ma_pivot_24:false, use_ma_pivot_60:false, use_ma_price_7:false, use_ma_price_24:false, use_ma_price_60:false, use_ma_pivot_slope_fallback:true, ma_pivot_period:24, ma_pivot_lookback:120};
+  const maPivotInputs = {use_ma_pivot_7:"useMaPivot7", use_ma_pivot_24:"useMaPivot24", use_ma_pivot_60:"useMaPivot60", use_ma_price_7:"useMaPrice7", use_ma_price_24:"useMaPrice24", use_ma_price_60:"useMaPrice60", use_ma_pivot_slope_fallback:"useMaPivotSlopeFallback", ma_pivot_lookback:"maPivotLookback"};
   function normalizeMaPivotSettings(source={}) {
     const settings = {...maPivotDefaults,...source};
     const enabled = maPivotPeriods.filter(period => settings[`use_ma_pivot_${period}`] === true);
@@ -761,7 +761,17 @@
       input?.addEventListener("input", () => {
         input.dataset.unsaved = "true";
         try { localStorage.setItem(prefix + "maPivotDraft", JSON.stringify(maPivotSettings(prefix))); } catch (_) {}
+        updateMaPivotFallbackLabels(prefix);
       });
+    }
+  }
+  function updateMaPivotFallbackLabels(prefix) {
+    const enabled = document.getElementById(prefix + "useMaPivotSlopeFallback")?.checked === true;
+    for (const period of maPivotPeriods) for (const dir of ["Long","Short"]) {
+      const label = document.getElementById(prefix + `maPivot${period}${dir}RuleLabel`);
+      if (label) label.textContent = enabled
+        ? `last arrow ${dir === "Long" ? "↑" : "↓"}, or guide ${dir === "Long" ? "rising" : "falling"} if no arrows`
+        : `last arrow ${dir === "Long" ? "↑" : "↓"} required`;
     }
   }
   function syncMaPivotControls(prefix, bot, force=false) {
@@ -774,6 +784,7 @@
       else input.value = String(settings[key]);
       if (force) { input._userModified = false; delete input.dataset.unsaved; }
     }
+    updateMaPivotFallbackLabels(prefix);
     if (force) try { localStorage.removeItem(prefix + "maPivotDraft"); } catch (_) {}
   }
   function renderMaPivotStatus(prefix, kind, evaluation, settings, time, available=true) {
@@ -783,7 +794,8 @@
     for (const period of maPivotPeriods) {
       const pivot = pivots[String(period)];
       const matching = pivot?.rule === maPivotRuleVersion && Number(pivot?.period) === period
-        && Number(pivot?.lookback) === Number(normalized.ma_pivot_lookback);
+        && Number(pivot?.lookback) === Number(normalized.ma_pivot_lookback)
+        && pivot?.allow_slope_fallback === normalized.use_ma_pivot_slope_fallback;
       const usable = available && matching;
       const enabled = normalized[`use_ma_pivot_${period}`];
       for (const [dir,key] of [["Long","long_pass"],["Short","short_pass"]]) {
@@ -842,10 +854,11 @@
         <strong>MA pivot guide + price side · enabled MA rules are AND</strong>
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <label>Lookback (MA points) <input id="${prefix}maPivotLookback" type="number" min="3" max="440" step="1" required value="${Number(pivot.ma_pivot_lookback)}" style="width:72px;"></label>
+          <label style="display:flex;flex-direction:row;align-items:center;gap:8px;"><input style="width:16px;height:16px;flex:0 0 auto;margin:0;" id="${prefix}useMaPivotSlopeFallback" type="checkbox" ${pivot.use_ma_pivot_slope_fallback ? "checked" : ""}> Allow rising/falling guide when no arrow</label>
         </div>
         ${maPivotPeriods.map(period=>`<div style="display:grid;gap:5px;padding:7px;border-top:1px solid #e2e8f0;">
           <label style="display:flex;flex-direction:row;align-items:center;gap:8px;"><input style="width:16px;height:16px;flex:0 0 auto;margin:0;" id="${prefix}useMaPivot${period}" type="checkbox" ${pivot[`use_ma_pivot_${period}`] ? "checked" : ""}> MA${period} last crossing arrow</label>
-          ${["Long","Short"].map(dir=>`<div>${dir}: last arrow ${dir==="Long"?"↑":"↓"}, or guide ${dir==="Long"?"rising":"falling"} if no arrows · <span id="${prefix}maPivot${period}${dir}Paper" class="condBadge neutral">PAPER · UNAVAILABLE</span> · <span id="${prefix}maPivot${period}${dir}Live" data-live-condition class="condBadge neutral">LIVE · UNAVAILABLE</span></div>`).join("")}
+          ${["Long","Short"].map(dir=>`<div>${dir}: <span id="${prefix}maPivot${period}${dir}RuleLabel">${pivot.use_ma_pivot_slope_fallback ? `last arrow ${dir==="Long"?"↑":"↓"}, or guide ${dir==="Long"?"rising":"falling"} if no arrows` : `last arrow ${dir==="Long"?"↑":"↓"} required`}</span> · <span id="${prefix}maPivot${period}${dir}Paper" class="condBadge neutral">PAPER · UNAVAILABLE</span> · <span id="${prefix}maPivot${period}${dir}Live" data-live-condition class="condBadge neutral">LIVE · UNAVAILABLE</span></div>`).join("")}
           <small id="${prefix}maPivot${period}PaperSource">PAPER · source unavailable</small>
           <small id="${prefix}maPivot${period}LiveSource" data-live-condition>LIVE · source unavailable</small>
           <label style="display:flex;flex-direction:row;align-items:center;gap:8px;"><input style="width:16px;height:16px;flex:0 0 auto;margin:0;" id="${prefix}useMaPrice${period}" type="checkbox" ${pivot[`use_ma_price_${period}`] ? "checked" : ""}> Price side of MA${period}</label>
@@ -854,7 +867,7 @@
           <small id="${prefix}maPrice${period}PaperSource">PAPER · source unavailable</small>
           <small id="${prefix}maPrice${period}LiveSource" data-live-condition>LIVE · source unavailable</small>
         </div>`).join("")}
-        <small>Every enabled rule is AND. Pivot rules use the latest confirmed pivot within the shared lookback: ↑ permits long, ↓ permits short; guide slope is used only when that MA has no crossing arrows. Price-side rules require the completed close below each enabled MA for long or above each enabled MA for short. Any unavailable or disagreeing rule blocks entry. Exits are unaffected. Replay changes immediately; unlock, pause and deploy to save live.</small>
+        <small>Every enabled rule is AND. Pivot rules use the latest confirmed pivot within the shared lookback: ↑ permits long and ↓ permits short. The optional no-arrow switch allows guide slope only when an MA has no crossing arrows; when OFF, no arrow blocks both directions. Price-side rules require the completed close below each enabled MA for long or above each enabled MA for short. Any unavailable or disagreeing rule blocks entry. Exits are unaffected. Replay changes immediately; unlock, pause and deploy to save live.</small>
       </div>
       <div data-terminal-rule-group="entry" style="display:grid;gap:8px;margin-top:10px;">
         ${macdSignalStreakControls(prefix, saved, streakRow, streakToggle, {showPeriods:true})}

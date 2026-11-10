@@ -70,7 +70,10 @@ for(const [file,name,prefix,rootId] of [
    const price7=document.getElementById(prefix+'useMaPrice7');
    const price24=document.getElementById(prefix+'useMaPrice24');
    const price60=document.getElementById(prefix+'useMaPrice60');
-   for(const rule of [pivot7,pivot24,pivot60,price7,price24,price60]) assert.ok(document.getElementById(prefix+'entryConditionGroup').contains(rule),'MA condition in entry group');
+   const slopeFallback=document.getElementById(prefix+'useMaPivotSlopeFallback');
+   for(const rule of [pivot7,pivot24,pivot60,price7,price24,price60,slopeFallback]) assert.ok(document.getElementById(prefix+'entryConditionGroup').contains(rule),'MA condition in entry group');
+   assert.equal(slopeFallback.hasAttribute('checked'),true);
+   slopeFallback.checked=true;
    assert.equal(engine.replaySettings().use_ma_pivot_direction,false);
    pivot7.checked=true;pivot60.checked=true;price7.checked=true;price24.checked=true;
    document.getElementById(prefix+'maPivotLookback').value='200';
@@ -79,13 +82,14 @@ for(const [file,name,prefix,rootId] of [
     assert.equal(config.use_ma_pivot_direction,true);assert.equal(config.use_ma_pivot_7,true);
     assert.equal(config.use_ma_pivot_24,false);assert.equal(config.use_ma_pivot_60,true);
     assert.equal(config.use_ma_price_7,true);assert.equal(config.use_ma_price_24,true);assert.equal(config.use_ma_price_60,false);
+    assert.equal(config.use_ma_pivot_slope_fallback,true);
     assert.equal(config.ma_pivot_period,7);
     assert.equal(config.ma_pivot_lookback,200);assert.equal(config.ma_pivot_min_arrows,undefined);
    }
    const config=engine.replaySettings();
    common.renderMaPivotStatus(prefix,'Paper',{ma_pivots:{
-    7:{rule:"last_arrow_v2",last_arrow:null,period:7,lookback:200,ready:true,long_pass:true,short_pass:false,slope:1,up_count:0,down_count:0},
-    60:{rule:"last_arrow_v2",last_arrow:"down",period:60,lookback:200,ready:true,long_pass:false,short_pass:true,slope:-1,up_count:0,down_count:1}
+    7:{rule:"last_arrow_v2",allow_slope_fallback:true,last_arrow:null,period:7,lookback:200,ready:true,long_pass:true,short_pass:false,slope:1,up_count:0,down_count:0},
+    60:{rule:"last_arrow_v2",allow_slope_fallback:true,last_arrow:"down",period:60,lookback:200,ready:true,long_pass:false,short_pass:true,slope:-1,up_count:0,down_count:1}
    },ma_price_sides:{
     7:{rule:"price_side_v1",period:7,ready:true,price:90,ma:100,long_pass:true,short_pass:false},
     24:{rule:"price_side_v1",period:24,ready:true,price:90,ma:95,long_pass:true,short_pass:false}
@@ -98,6 +102,10 @@ for(const [file,name,prefix,rootId] of [
    assert.equal(document.getElementById(prefix+'maPrice7LongPaper').textContent,'PAPER · PASS');
    assert.equal(document.getElementById(prefix+'maPrice24ShortPaper').textContent,'PAPER · WAITING');
    assert.equal(document.getElementById(prefix+'maPrice60LongPaper').textContent,'PAPER · OFF');
+   slopeFallback.checked=false;slopeFallback.dispatchEvent(new window.Event('input'));
+   assert.equal(engine.replaySettings().use_ma_pivot_slope_fallback,false);
+   assert.equal(engine.liveStrategyPayload(mode).use_ma_pivot_slope_fallback,false);
+   assert.match(document.getElementById(prefix+'maPivot7LongRuleLabel').textContent,/required/);
    common.renderMaPivotStatus(prefix,'Live',{},config,100000,false);
    assert.equal(document.getElementById(prefix+'maPivot7LongLive').textContent,'LIVE · UNAVAILABLE');
    pivot7.checked=false;pivot60.checked=false;price7.checked=false;price24.checked=false;

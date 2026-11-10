@@ -31,6 +31,19 @@ class PivotRuleTests(unittest.TestCase):
         self.assertEqual(required_strategy_bars('ma_proximity',dict(use_ma_pivot_direction=False)),26)
         self.assertEqual(required_strategy_bars('ma_proximity',dict(ma_accel_period=7,use_ma_price_60=True)),60)
 
+    def test_no_arrow_slope_fallback_can_be_disabled(self):
+        rising = [102, 100, 102, 104, 106]
+        falling = [100, 103, 103, 102, 101]
+        for values in (rising, falling):
+            enabled = analyze_ma_points(values, allow_slope_fallback=True)
+            disabled = analyze_ma_points(values, allow_slope_fallback=False)
+            self.assertTrue(enabled['ready'])
+            self.assertIsNone(enabled['last_arrow'])
+            self.assertTrue(enabled['long_pass'] or enabled['short_pass'])
+            self.assertFalse(disabled['long_pass'])
+            self.assertFalse(disabled['short_pass'])
+            self.assertFalse(disabled['allow_slope_fallback'])
+
     def test_enabled_pivots_are_independent_and_conditions(self):
         prices=[100+3*math.sin(i/5)+.2*math.sin(i/2) for i in range(240)]
         common=dict(ma_accel_period=7,use_ma_slope=False,use_ma_pullback=False,
@@ -139,6 +152,7 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(bot.public_state()['strategy_params']['use_ma_pivot_direction'])
                 config=dict(use_ma_pivot_direction=True,use_ma_pivot_7=True,use_ma_pivot_60=True,
                             use_ma_price_7=True,use_ma_price_24=True,
+                            use_ma_pivot_slope_fallback=False,
                             ma_pivot_period=7,ma_pivot_lookback=200,ma_pivot_min_arrows=2)
                 await bot.configure(config)
                 reloaded=cls(AsyncMock(),path)
@@ -147,7 +161,7 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(ValueError,'ause'):
                     await reloaded.configure(dict(ma_pivot_period=24))
                 self.assertEqual(reloaded.state['ma_pivot_period'],7)
-                for key,value in [('ma_pivot_period',25),('ma_pivot_lookback',441),('ma_pivot_min_arrows',0),('use_ma_pivot_direction','false'),('use_ma_pivot_7','false'),('use_ma_price_7','false'),('ma_pivot_period',True),('ma_pivot_lookback',3.5)]:
+                for key,value in [('ma_pivot_period',25),('ma_pivot_lookback',441),('ma_pivot_min_arrows',0),('use_ma_pivot_direction','false'),('use_ma_pivot_7','false'),('use_ma_price_7','false'),('use_ma_pivot_slope_fallback','false'),('ma_pivot_period',True),('ma_pivot_lookback',3.5)]:
                     with self.subTest(key=key,value=value),self.assertRaises(ValueError): validate_setting(key,value)
 
     async def test_campaign_slices_respect_latest_direction_filter(self):
@@ -164,8 +178,8 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
             completed=int(time.time())//300*300-300
             bot._start_entry_campaign(1,completed)
             bot.state['last_evaluation']=dict(strategy='ma_proximity',time=completed,ma_pivots={
-                '7':dict(rule='last_arrow_v2',period=7,lookback=120,min_arrows=1,ready=True,long_pass=True,short_pass=False),
-                '24':dict(rule='last_arrow_v2',period=24,lookback=120,min_arrows=1,ready=True,long_pass=True,short_pass=False),
+                '7':dict(rule='last_arrow_v2',period=7,lookback=120,min_arrows=1,allow_slope_fallback=True,ready=True,long_pass=True,short_pass=False),
+                '24':dict(rule='last_arrow_v2',period=24,lookback=120,min_arrows=1,allow_slope_fallback=True,ready=True,long_pass=True,short_pass=False),
             })
             self.assertTrue(await bot._continue_entry_campaign())
             bot._submit.assert_awaited_once()
@@ -213,8 +227,10 @@ class PivotReplayEndpointTests(unittest.IsolatedAsyncioTestCase):
                     ma_direction_period=0,ma_max_distance_pct=0,use_ma_pivot_direction=True,
                     use_ma_pivot_7=True,use_ma_pivot_24=True,
                     use_ma_price_7=True,use_ma_price_60=True,
+                    use_ma_pivot_slope_fallback=False,
                     ma_pivot_period=7,ma_pivot_lookback=30,ma_pivot_min_arrows=2)
-                self.assertEqual(result['latest_evaluation']['ma_pivot'],evaluate_ma_pivot([b['value'] for b in bars],7,30,2))
+                self.assertEqual(result['latest_evaluation']['ma_pivot'],evaluate_ma_pivot([b['value'] for b in bars],7,30,2,False))
+                self.assertFalse(result['latest_evaluation']['ma_pivots']['24']['allow_slope_fallback'])
                 self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_pivot_direction'])
                 self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_pivot_7'])
                 self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_pivot_24'])

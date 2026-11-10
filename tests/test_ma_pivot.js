@@ -39,6 +39,7 @@ for(const prefix of ['crypto_','lighterCrypto_']) {
  vm.createContext(context);vm.runInContext(fs.readFileSync('terminal-common.js','utf8'),context);
  const ui=window.TerminalCommon,host=document.querySelector('main');
  host.innerHTML=ui.renderMaProximityControls(prefix,{});ui.bindMaPivotControls(prefix);
+ assert.equal(document.getElementById(prefix+'useMaPivotSlopeFallback').hasAttribute('checked'),true,'legacy default keeps no-arrow guide enabled');
  const count=document.getElementById(prefix+'maPivotLookback');count.value='30';count.dispatchEvent(new window.Event('input'));
  host.innerHTML=ui.renderMaProximityControls(prefix,{ma_pivot_lookback:120});
  assert.equal(document.getElementById(prefix+'maPivotLookback').value,'30','local draft survives rerender');
@@ -48,9 +49,10 @@ for(const prefix of ['crypto_','lighterCrypto_']) {
  assert.equal(document.getElementById(prefix+'maPivotLookback').value,'90','match live replaces draft');
  assert.equal(document.getElementById(prefix+'useMaPivot24').checked,true,'match live restores enabled MA conditions');
  assert.equal(document.getElementById(prefix+'useMaPrice24').checked,true,'match live restores enabled MA price conditions');
+ assert.equal(document.getElementById(prefix+'useMaPivotSlopeFallback').checked,true,'match live restores no-arrow fallback default');
  assert.equal(store.has(prefix+'maPivotDraft'),false);
  const config=ui.maPivotSettings(prefix);
- ui.renderMaPivotStatus(prefix,'Live',{ma_pivots:{24:{rule:"last_arrow_v2",ready:true,period:24,lookback:120,min_arrows:1,long_pass:true,short_pass:true}},ma_price_sides:{24:{rule:"price_side_v1",ready:true,period:24,price:90,ma:100,long_pass:true,short_pass:false}}},config,100000,true);
+ ui.renderMaPivotStatus(prefix,'Live',{ma_pivots:{24:{rule:"last_arrow_v2",allow_slope_fallback:true,ready:true,period:24,lookback:120,min_arrows:1,long_pass:true,short_pass:true}},ma_price_sides:{24:{rule:"price_side_v1",ready:true,period:24,price:90,ma:100,long_pass:true,short_pass:false}}},config,100000,true);
  assert.equal(document.getElementById(prefix+'maPivot24LongLive').textContent,'LIVE · UNAVAILABLE','old parameter counts cannot pass a new setting');
  assert.match(document.getElementById(prefix+'maPivot24LiveSource').textContent,/parameters changed/i);
  assert.equal(document.getElementById(prefix+'maPrice24LongLive').textContent,'LIVE · PASS');
