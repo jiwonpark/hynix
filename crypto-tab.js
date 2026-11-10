@@ -47,6 +47,34 @@
     return periods.map((period) => `<option value="${period}"${period === value ? " selected" : ""}>MA${period}${[7, 24, 60].includes(period) ? " · chart line" : " · saved custom"}</option>`).join("");
   }
 
+  function setMaPeriodSelectValue(select, value) {
+    if (!select) return false;
+    const text = String(Number(value));
+    if (select.options && ![...select.options].some((option) => option.value === text)) {
+      const option = document.createElement("option");
+      option.value = text;
+      option.textContent = `MA${text} · saved custom`;
+      select.appendChild(option);
+    }
+    if (select.value === text) return false;
+    select.value = text;
+    return true;
+  }
+
+  function replaceMaPeriodInput(input) {
+    if (!input || input.tagName === "SELECT") return input;
+    const select = document.createElement("select");
+    select.id = input.id;
+    select.setAttribute("aria-label", input.getAttribute("aria-label") || "SMA period");
+    select.style.cssText = input.style.cssText;
+    select.style.width = "130px";
+    select.innerHTML = chartMaPeriodOptions(input.value || 60);
+    if (typeof input.replaceWith === "function") input.replaceWith(select);
+    else if (typeof input.parentNode?.replaceChild === "function") input.parentNode.replaceChild(select, input);
+    else return input;
+    return select;
+  }
+
   async function api(path, options = {}) {
     const prefix = getApiPrefix();
     const response = await fetch(`${prefix}${path}`, options);
@@ -634,6 +662,7 @@
         overlay.style.cssText = "position:absolute;z-index:5;top:8px;right:55px;display:flex;align-items:center;gap:6px;pointer-events:auto;flex-wrap:wrap";
         overlay.innerHTML = '<span id="cryptoMatchPill" style="border-radius:4px;padding:3px 7px;font-size:9.5px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,0.05)">RULES MATCHING…</span><span style="border-radius:4px;padding:3px 6px;font-size:9px;font-weight:900;background:linear-gradient(90deg,rgba(220,38,38,.20),rgba(100,116,139,.05),rgba(22,163,74,.22));color:#334155" id="cryptoEntryTrendLegend">PAPER ENTRY TREND · awaiting replay</span><label title="Configured wider-trend MA period; MACD strategies use chart candles and other strategies use completed 1h candles" style="font-size:10px;background:#fff;padding:3px;border:1px solid #cbd5e1;border-radius:4px">Regime MA <input id="crypto_macroMaPeriod" aria-label="Wider trend MA period" type="number" min="2" max="120" step="1" value="60" style="width:48px"></label><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span>MICRO:</span><select id="cryptoSelSmallTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select><span id="cryptoTrendSmall" class="cryptoTrendBadge" style="pointer-events:none">5m —</span></div><div style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.94);padding:2px 6px;border-radius:4px;border:1px solid #cbd5e1;font-size:9px;font-weight:800;color:#334155;box-shadow:0 1px 2px rgba(0,0,0,0.04)"><span title="Reference display only; the entry-filter background uses the strategy rule shown in its legend">MACRO REF:</span><select id="cryptoSelBigTrend" style="font-size:10px;font-weight:900;border:none;background:transparent;cursor:pointer;color:#0f172a"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option></select><span id="cryptoTrendBig" class="cryptoTrendBadge" style="pointer-events:none">1h —</span></div>';
         chartHost.appendChild(overlay);
+        replaceMaPeriodInput(lid("macroMaPeriod"));
         this.bindMatchPill(overlay.querySelector("#cryptoMatchPill"));
 
         lid("macroMaPeriod")?.addEventListener("change", (event) => {
@@ -1816,8 +1845,7 @@
               <div id="crypto_macroMaGroup" style="display:grid;gap:8px;align-content:start;padding:9px;border:1px solid #c4b5fd;border-radius:7px;background:#fff;min-width:0;">
                 <label style="display:flex;flex-direction:row !important;align-items:center;gap:6px;"><input id="crypto_macroUseMa" type="checkbox" style="width:16px;height:16px;min-width:16px;margin:0;accent-color:#7c3aed;" ${macroMode !== "macd_hist_accel" ? "checked" : ""}> <strong>Chart MA slope</strong></label>
                 <label id="crypto_lblMacroMaPeriod" style="display:flex;flex-direction:row !important;align-items:center;gap:6px;flex-wrap:wrap;">Period
-                  <input id="crypto_macroMaPeriodSlider" type="range" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="vertical-align:middle;width:85px;cursor:pointer;">
-                  <input id="crypto_macroMaPeriodVal" aria-label="Chart regime MA period" type="number" min="2" max="120" step="1" value="${Number(live.macro_ma_period ?? 60)}" style="width:48px;">
+                  <select id="crypto_macroMaPeriodSlider" aria-label="Chart regime SMA period" style="width:150px;">${chartMaPeriodOptions(Number(live.macro_ma_period ?? 60))}</select>
                 </label>
               </div>
               <div id="crypto_macroMacdGroup" style="display:grid;gap:8px;align-content:start;padding:9px;border:1px solid #c4b5fd;border-radius:7px;background:#fff;min-width:0;">
@@ -2019,21 +2047,12 @@
           });
         });
         const slider = $("crypto_macroMaPeriodSlider");
-        const valInput = $("crypto_macroMaPeriodVal");
-        if (slider && valInput) {
-          slider.addEventListener("input", () => {
-            valInput.value = slider.value;
-            const topInput = $("crypto_macroMaPeriod");
-            if (topInput) topInput.value = slider.value;
-          });
-          valInput.addEventListener("input", () => {
-            slider.value = valInput.value;
-            const topInput = $("crypto_macroMaPeriod");
-            if (topInput) topInput.value = valInput.value;
-          });
-        }
+        slider?.addEventListener("change", () => {
+          const topInput = $("crypto_macroMaPeriod");
+          setMaPeriodSelectValue(topInput, slider.value);
+        });
         ["crypto_macroRegimeMode", "crypto_macroMaPeriodSlider",
-         "crypto_macroMaPeriodVal", "crypto_macroMacdFastPeriod",
+         "crypto_macroMacdFastPeriod",
          "crypto_macroMacdSlowPeriod", "crypto_macroMacdSignalPeriod",
          "crypto_macroMacdConfirmBars"].forEach((id) => {
           const control = $(id);
@@ -2388,7 +2407,7 @@
           [
             "crypto_inputLiveGridEntryZ", "crypto_inputLiveGridExitZ", "crypto_inputLiveMaxTranches",
             "crypto_inputLiveMaxSpread", "crypto_inpOuEntryZ", "crypto_inpOuExitZ",
-            "crypto_macroRegimeMode", "crypto_macroMaPeriodSlider", "crypto_macroMaPeriodVal",
+            "crypto_macroRegimeMode", "crypto_macroMaPeriodSlider",
             "crypto_macroMacdFastPeriod", "crypto_macroMacdSlowPeriod", "crypto_macroMacdSignalPeriod",
             "crypto_macroMacdConfirmBars"
           ].forEach((id) => { if ($(id)) delete $(id).dataset.unsaved; });
@@ -4090,7 +4109,6 @@
       const desired = [
         ["crypto_macroRegimeMode", mode],
         ["crypto_macroMaPeriodSlider", String(maPeriod)],
-        ["crypto_macroMaPeriodVal", String(maPeriod)],
         ["crypto_macroMacdFastPeriod", String(fastPeriod)],
         ["crypto_macroMacdSlowPeriod", String(Number(live.macro_macd_slow_period ?? 26))],
         ["crypto_macroMacdSignalPeriod", String(Number(live.macro_macd_signal_period ?? 9))],
@@ -4108,9 +4126,7 @@
       });
       if ($("crypto_macroUseMa")) $("crypto_macroUseMa").checked = mode !== "macd_hist_accel";
       if ($("crypto_macroUseMacd")) $("crypto_macroUseMacd").checked = mode !== "ma_slope";
-      if ($("crypto_macroMaPeriod") && String($("crypto_macroMaPeriod").value) !== String(maPeriod)) {
-        $("crypto_macroMaPeriod").value = String(maPeriod);
-      }
+      setMaPeriodSelectValue($("crypto_macroMaPeriod"), maPeriod);
       if (!changed) return false;
       const liveInterval = bot.strategy_interval || "5m";
       const macroLabel = mode === "macd_hist_accel"

@@ -107,7 +107,8 @@ assert.doesNotMatch(macdMarkup, /<select id="crypto_macroRegimeMode"/);
 assert.doesNotMatch(macdMarkup, /type="radio"/);
 assert.match(macdMarkup, /Completed 5m/);
 assert.match(macdMarkup, /crypto_macroMaPeriodSlider/);
-assert.match(macdMarkup, /Chart regime MA period/);
+assert.match(macdMarkup, /<select id="crypto_macroMaPeriodSlider" aria-label="Chart regime SMA period"/);
+assert.doesNotMatch(macdMarkup, /id="crypto_macroMaPeriodVal"/);
 assert.doesNotMatch(macdMarkup, />1h MA slope</);
 assert.doesNotMatch(macdMarkup, /1H ALIGNED|enabled 1h macro rule/);
 assert.doesNotMatch(macdMarkup, /Z window|Enter \|Z\||Release \|Z\||slope Z/);
@@ -129,7 +130,6 @@ assert.match(strengthMarkup, /first peak closes/);
   ['crypto_macdUseExitReversal', { checked: true }],
   ['crypto_macroRegimeMode', { value: 'macd_hist_accel' }],
   ['crypto_macroMaPeriodSlider', { value: '8' }],
-  ['crypto_macroMaPeriodVal', { value: '8' }],
   ['crypto_macroMacdFastPeriod', { value: '8' }],
   ['crypto_macroMacdSlowPeriod', { value: '21' }],
   ['crypto_macroMacdSignalPeriod', { value: '5' }],
@@ -157,7 +157,7 @@ assert.equal(macdPayload.macro_ma_period, 8);
 
 [
   'crypto_macroRegimeMode', 'crypto_macroMaPeriodSlider',
-  'crypto_macroMaPeriodVal', 'crypto_macroMacdFastPeriod',
+  'crypto_macroMacdFastPeriod',
   'crypto_macroMacdSlowPeriod', 'crypto_macroMacdSignalPeriod',
   'crypto_macroMacdConfirmBars',
 ].forEach((id) => { elements.get(id).dataset = {}; });
@@ -173,7 +173,6 @@ assert.equal(engine.syncMacroRegimeControlsFromBot({
 }), true);
 assert.equal(elements.get('crypto_macroRegimeMode').value, 'macd_hist_accel');
 assert.equal(elements.get('crypto_macroMaPeriodSlider').value, '24');
-assert.equal(elements.get('crypto_macroMaPeriodVal').value, '24');
 assert.match(elements.get('crypto_valCondEntryMaStack1h').textContent, /completed 5m MACD-H/);
 assert.match(elements.get('crypto_macdMacroConditionLabel').textContent, /completed 5m MACD-H/);
 

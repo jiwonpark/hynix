@@ -108,7 +108,8 @@ assert.doesNotMatch(macdMarkup, /<select id="lighterCrypto_macroRegimeMode"/);
 assert.doesNotMatch(macdMarkup, /type="radio"/);
 assert.match(macdMarkup, /Completed 5m/);
 assert.match(macdMarkup, /lighterCrypto_macroMaPeriodSlider/);
-assert.match(macdMarkup, /Chart regime MA period/);
+assert.match(macdMarkup, /<select id="lighterCrypto_macroMaPeriodSlider" aria-label="Chart regime SMA period"/);
+assert.doesNotMatch(macdMarkup, /id="lighterCrypto_macroMaPeriodVal"/);
 assert.doesNotMatch(macdMarkup, />1h MA slope</);
 assert.doesNotMatch(macdMarkup, /1H ALIGNED|enabled 1h macro rule/);
 assert.doesNotMatch(macdMarkup, /Z window|Enter \|Z\||Release \|Z\||slope Z/);
@@ -125,7 +126,6 @@ assert.match(macdMarkup, /NEW/);
   ['lighterCrypto_macdUseExitReversal', { checked: true }],
   ['lighterCrypto_macroRegimeMode', { value: 'macd_hist_accel' }],
   ['lighterCrypto_macroMaPeriodSlider', { value: '8' }],
-  ['lighterCrypto_macroMaPeriodVal', { value: '8' }],
   ['lighterCrypto_macroMacdFastPeriod', { value: '8' }],
   ['lighterCrypto_macroMacdSlowPeriod', { value: '21' }],
   ['lighterCrypto_macroMacdSignalPeriod', { value: '5' }],
@@ -150,7 +150,7 @@ nodes.set('lighterCrypto_macdMacroConditionLabel', { textContent: '' });
 nodes.set('lighterCrypto_macroRegimeReadout', { textContent: '' });
 [
   'lighterCrypto_macroRegimeMode', 'lighterCrypto_macroMaPeriodSlider',
-  'lighterCrypto_macroMaPeriodVal', 'lighterCrypto_macroMacdFastPeriod',
+  'lighterCrypto_macroMacdFastPeriod',
   'lighterCrypto_macroMacdSlowPeriod', 'lighterCrypto_macroMacdSignalPeriod',
   'lighterCrypto_macroMacdConfirmBars',
 ].forEach((id) => { nodes.get(id).dataset = {}; });
@@ -166,7 +166,6 @@ assert.equal(tab5.syncMacroRegimeControlsFromBot({
 }), true);
 assert.equal(nodes.get('lighterCrypto_macroRegimeMode').value, 'macd_hist_accel');
 assert.equal(nodes.get('lighterCrypto_macroMaPeriodSlider').value, '24');
-assert.equal(nodes.get('lighterCrypto_macroMaPeriodVal').value, '24');
 assert.match(nodes.get('lighterCrypto_valCondEntryMaStack1h').textContent, /completed 5m MACD-H/);
 assert.match(nodes.get('lighterCrypto_macdMacroConditionLabel').textContent, /completed 5m MACD-H/);
 nodes.get('lighterCrypto_macroRegimeMode').dataset.unsaved = 'true';

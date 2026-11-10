@@ -173,6 +173,14 @@ window. No pivot or insufficient data is UNAVAILABLE and blocks an enabled rule.
 When it is the sole enabled MA entry condition, the pivot verdict chooses the
 candidate side. Position/account state must never affect these signals.
 
+All user-facing SMA period controls in Tabs 4–5 use the same dropdown contract:
+MA7, MA24 and MA60 correspond to the three visible chart lines. Direction SMA
+also offers “Use Pullback SMA.” MA acceleration, crossover, Pullback SMA, chart
+Regime SMA and wider-trend SMA controls must not diverge into free-form numeric
+fields or sliders. If a persisted legacy configuration contains another valid
+period, retain it as a clearly labelled saved-custom option until the user
+chooses one of the chart periods; never silently reset it during loading.
+
 Show separate PAPER/LIVE long and short verdicts, selected period, lookback,
 last arrow direction, diagnostic arrow counts, slope and completed-candle KST timestamp. Preserve local
 replay edits across refresh/strategy changes; Match Live explicitly replaces the

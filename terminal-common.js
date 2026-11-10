@@ -782,14 +782,20 @@
 
   function renderMaProximityControls(prefix, saved) {
     const pivot = {...maPivotDefaults,...saved,...maPivotDraft(prefix)};
+    const periodOptions = (selected, allowInherited = false) => {
+      const value = Number(selected);
+      const periods = allowInherited ? [0, 7, 24, 60] : [7, 24, 60];
+      if (Number.isFinite(value) && !periods.includes(value)) periods.push(value);
+      return periods.map((period) => `<option value="${period}"${period === value ? " selected" : ""}>${period === 0 ? "Use Pullback SMA" : `MA${period}${[7,24,60].includes(period) ? " · chart line" : " · saved custom"}`}</option>`).join("");
+    };
     return `
       <p>Long requires a close below the Pullback SMA. Short requires a close above it. The Direction SMA uses the change in slope across three completed candles.</p>
       <div data-terminal-rule-group="entry" data-after-condition="EntryMaStretch" style="display:flex;gap:12px;flex-wrap:wrap;">
-        <label>Direction SMA period <input id="${prefix}inpMaDirectionPeriod" type="number" min="0" max="498" step="1" required value="${Number(saved?.ma_direction_period ?? 0)}" style="width:85px;"> <small>0 uses the Pullback SMA</small></label>
+        <label>Direction SMA period <select id="${prefix}inpMaDirectionPeriod" required style="width:150px;">${periodOptions(saved?.ma_direction_period ?? 0, true)}</select></label>
         <label>Minimum SMA acceleration <input id="${prefix}inpMaAccelMinAccel" type="number" min="0" step="0.0001" value="${Number(saved?.ma_accel_min_accel ?? 0)}"></label>
       </div>
       <div data-terminal-rule-group="entry" data-after-condition="EntryPeak" style="display:flex;gap:12px;flex-wrap:wrap;">
-        <label>Pullback SMA period <input id="${prefix}inpMaAccelPeriod" type="number" min="3" max="498" step="1" required value="${Number(saved?.ma_accel_period ?? 24)}" style="width:85px;"></label>
+        <label>Pullback SMA period <select id="${prefix}inpMaAccelPeriod" required style="width:150px;">${periodOptions(saved?.ma_accel_period ?? 24)}</select></label>
       </div>
       <div data-terminal-rule-group="entry" id="${prefix}maPivotControls" style="display:grid;gap:8px;padding:10px;border:1px solid #cbd5e1;border-radius:6px;">
         <label style="display:flex;flex-direction:row;align-items:center;gap:8px;"><input style="width:16px;height:16px;flex:0 0 auto;margin:0;" id="${prefix}useMaPivotGuide" type="checkbox" ${pivot.use_ma_pivot_direction ? "checked" : ""}> MA pivot guide / last crossing arrow</label>

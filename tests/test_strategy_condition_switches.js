@@ -103,13 +103,17 @@ for(const [file,name,prefix,rootId] of [
    assert.equal(document.getElementById(prefix+'inpMaMaxDistance'),null,'MA Pullback has no distance filter');
    const nearRow=document.getElementById(prefix+'rowCondEntryPeak');
    assert.ok(nearRow.nextElementSibling?.contains(period), 'SMA period follows the proximity rule');
-   assert.equal(period.type,'number');
-   period.value='37';
-   document.getElementById(prefix+'inpMaDirectionPeriod').value='73';
+   assert.equal(period.tagName,'SELECT');
+   assert.deepEqual([...period.options].map(option=>option.value),['7','24','60']);
+   Object.defineProperty(period,'value',{value:'7',writable:true,configurable:true});
+   const directionPeriod=document.getElementById(prefix+'inpMaDirectionPeriod');
+   assert.equal(directionPeriod.tagName,'SELECT');
+   assert.deepEqual([...directionPeriod.options].map(option=>option.value),['0','7','24','60']);
+   Object.defineProperty(directionPeriod,'value',{value:'60',writable:true,configurable:true});
    document.getElementById(prefix+'inpMaAccelMinAccel').value='0.125';
    for(const settings of [engine.replaySettings(),engine.liveStrategyPayload(mode)]){
-    assert.equal(settings.ma_accel_period,37);
-    assert.equal(settings.ma_direction_period,73);
+    assert.equal(settings.ma_accel_period,7);
+    assert.equal(settings.ma_direction_period,60);
     assert.equal(settings.ma_accel_min_accel,0.125);
    }
 
