@@ -593,7 +593,9 @@ class LighterClient:
             {"account_index": int(creds["account_index"])},
             headers={"authorization": auth},
         )
-        if not isinstance(payload, dict) or int(payload.get("code", 0) or 0) != 0:
+        if (not isinstance(payload, dict)
+                or int(payload.get("code", 0) or 0) not in {0, 200}
+                or not (payload.get("user_tier_name") or payload.get("user_tier"))):
             raise RuntimeError("Lighter account-limit lookup returned no valid limits")
         return payload
 

@@ -70,7 +70,7 @@ class FakeLighter:
         return copy.deepcopy(self.active_orders)
 
     async def account_limits(self):
-        return {"code": 0, "user_tier_name": self.user_tier_name}
+        return {"code": 200, "user_tier_name": self.user_tier_name}
 
     async def candles(self, market_id, interval, limit, *, fresh=False):
         if interval == "1h":

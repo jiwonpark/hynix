@@ -497,6 +497,21 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLess(net_pct - target, .0002)
 
 class NativeClientSubmissionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_live_success_code_is_accepted_for_account_capacity_reads(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from backend.lighter_client import LighterClient
+        client = LighterClient()
+        client.get_credentials = Mock(return_value={'account_index': 7, 'api_key_index': 0})
+        client.get_signer = Mock(return_value=SimpleNamespace(
+            create_auth_token_with_expiry=lambda **kwargs: ('auth', None)))
+        client.request = AsyncMock(side_effect=[
+            {'code': 200, 'user_tier': 'standard', 'user_tier_name': 'standard'},
+            {'code': 200, 'orders': [{'status': 'pending'}]},
+        ])
+        self.assertEqual((await client.account_limits())['user_tier_name'], 'standard')
+        self.assertEqual(len(await client.account_active_orders(1)), 1)
+
     async def test_in_place_stop_modification_preserves_order_index(self):
         from types import SimpleNamespace
         from unittest.mock import Mock
