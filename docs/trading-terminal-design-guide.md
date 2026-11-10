@@ -638,6 +638,11 @@ may support a short candidate. It never gates exits and never reads positions,
 balances, tranche capacity, recovery, or account state, so the independent
 `entry_signals` stream remains position-invariant.
 
+The MACD panes on Tabs 4 and 5 shade every displayed signal-line run across
+strategies. Positive values are green, negative values are red, and zero or
+missing values are unshaded. The current and previous same-sign runs retain
+their comparison outlines and length summary.
+
 The current streak uses only completed chart-interval MACD signal values. Its
 reference distribution is the adjustable number of prior completed streaks of
 the same sign. Show the current length, most recent same-sign completed length,

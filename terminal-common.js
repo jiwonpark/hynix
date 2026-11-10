@@ -484,9 +484,8 @@
     const runs = [];
     let active = null;
     for (const point of Array.isArray(signalPoints) ? signalPoints : []) {
-      const value = Number(point?.value);
-      if (!Number.isFinite(value) || point?.time == null) continue;
-      const sign = value > 0 ? 1 : value < 0 ? -1 : 0;
+      const value = point?.value;
+      const sign = !Number.isFinite(value) || point?.time == null ? 0 : Math.sign(value);
       if (!sign) {
         if (active) runs.push(active);
         active = null;
@@ -506,6 +505,7 @@
       ? [...runs.slice(0, -1)].reverse().find((run) => run.sign === current.sign) || null
       : null;
     return {
+      runs,
       current,
       previous,
       percentage: current && previous ? current.length / previous.length * 100 : null,
@@ -519,7 +519,7 @@
     if (!layer) {
       layer = document.createElement("div");
       layer.id = `${prefix}macdSignalRegimeLayer`;
-      layer.setAttribute("aria-label", "Current and previous same-sign MACD signal regimes");
+      layer.setAttribute("aria-label", "MACD signal sign regimes. Green above zero, red below zero.");
       layer.style.cssText = "position:absolute;inset:0;z-index:4;overflow:hidden;pointer-events:none";
       host.appendChild(layer);
     }
@@ -531,7 +531,6 @@
       return comparison;
     }
     const signLabel = comparison.current.sign > 0 ? "+" : "−";
-    const color = comparison.current.sign > 0 ? "22,163,74" : "220,38,38";
     if (summary) {
       const ratio = comparison.percentage == null ? "—" : `${comparison.percentage.toFixed(1)}%`;
       const previousLength = comparison.previous?.length ?? "—";
@@ -549,11 +548,9 @@
       if (Number.isFinite(lastX) && Number.isFinite(priorX)) barWidth = Math.max(2, Math.abs(lastX - priorX));
     }
     const hostWidth = host.clientWidth || 0;
-    for (const [role, run, opacity] of [
-      ["previous", comparison.previous, 0.055],
-      ["current", comparison.current, 0.13],
-    ]) {
-      if (!run) continue;
+    for (const run of comparison.runs) {
+      const role = run === comparison.current ? "current" : run === comparison.previous ? "previous" : "history";
+      const color = run.sign > 0 ? "22,163,74" : "220,38,38";
       const startX = timeScale.timeToCoordinate(run.startTime);
       const endX = timeScale.timeToCoordinate(run.endTime);
       if (!Number.isFinite(startX) || !Number.isFinite(endX)) continue;
@@ -562,7 +559,13 @@
       if (right <= left) continue;
       const band = document.createElement("div");
       band.dataset.regimeRole = role;
-      band.style.cssText = `position:absolute;top:0;bottom:0;left:${left}px;width:${right-left}px;background:rgba(${color},${opacity});border-left:1px ${role === "current" ? "solid" : "dashed"} rgba(${color},.45);border-right:1px ${role === "current" ? "solid" : "dashed"} rgba(${color},.45)`;
+      band.dataset.regimeSign = run.sign > 0 ? "positive" : "negative";
+      band.style.cssText = `position:absolute;top:0;bottom:0;left:${left}px;width:${right-left}px;box-sizing:border-box;background:rgba(${color},.12)`;
+      if (role !== "history") {
+        const border = `1px ${role === "current" ? "solid" : "dashed"} rgba(${color},.45)`;
+        band.style.borderLeft = border;
+        band.style.borderRight = border;
+      }
       layer.appendChild(band);
     }
     return comparison;

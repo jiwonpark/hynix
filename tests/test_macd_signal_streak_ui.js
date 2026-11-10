@@ -50,4 +50,34 @@ for (const file of ['crypto-tab.js', 'lighter-crypto-tab.js']) {
   assert.ok(source.includes('renderMacdSignalRegimes'), `${file} renders shared MACD regime bands`);
 }
 
+function element() {
+  return {
+    style: {}, dataset: {}, children: [], clientWidth: 100,
+    setAttribute() {},
+    replaceChildren() { this.children = []; },
+    appendChild(child) {
+      this.children.push(child);
+      if (child.id) nodes.set(child.id, child);
+    },
+  };
+}
+global.document.createElement = element;
+const host = element();
+const chart = { timeScale: () => ({ timeToCoordinate: time => time * 10 }) };
+const history = [-1, 2, 0, 1, undefined, -2, 1, -3].map((value, index) => ({
+  time: index + 1, value,
+}));
+TerminalCommon.renderMacdSignalRegimes('crypto_', host, chart, history);
+const bands = host.children[0].children;
+assert.deepEqual(bands.map(band => band.dataset.regimeSign),
+  ['negative', 'positive', 'positive', 'negative', 'positive', 'negative']);
+assert.deepEqual(bands.map(band => band.dataset.regimeRole),
+  ['history', 'history', 'history', 'previous', 'history', 'current']);
+assert.deepEqual(bands.map(band => Number(band.style.cssText.match(/left:(\d+)px/)[1])),
+  [5, 15, 35, 55, 65, 75], 'zero and missing values have no band');
+for (const band of bands) {
+  const rgb = band.dataset.regimeSign === 'positive' ? '22,163,74' : '220,38,38';
+  assert.ok(band.style.cssText.includes(`background:rgba(${rgb},`));
+}
+
 console.log('MACD signal streak UI tests passed');
