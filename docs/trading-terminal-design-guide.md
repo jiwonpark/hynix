@@ -160,10 +160,13 @@ a subsequent reversal before they qualify as a pivot; unavailable values must
 not become zero-price pivots. Browser verification must exercise real pointer
 hover, wheel, multi-step drag, price-axis scaling and linked-pane synchronization
 in Tabs 2–5; unit tests of endpoint arrays alone cannot certify this interaction.
-Tabs 4–5 MA Pullback have an optional **MA pivot guide / last crossing
-arrow** entry filter (default OFF). Select only MA7, MA24 or MA60; the lookback
-is 3–440 completed MA points (default 120). It needs `period + lookback - 1` completed price
-candles. Use the most recent confirmed extremum in that exact trailing window:
+Tabs 4–5 MA Pullback present **MA pivot guide / last crossing arrow** as three
+independently enableable entry conditions: MA7, MA24 and MA60 (all default OFF).
+Enabled MA conditions are combined with strict AND semantics: every enabled MA
+must be ready and permit the same candidate direction. A disagreement or an
+unavailable enabled MA blocks entry. The shared lookback is 3–440 completed MA
+points (default 120). Each rule needs `period + lookback - 1` completed price
+candles, so warmup uses the largest enabled period. Use the most recent confirmed extremum in that exact trailing window:
 the **last** crossing arrow determines the permitted side, even when the guide
 slope points the other way. ↑ permits long and ↓ permits short. When there are
 no arrows, a rising guide permits long and a falling guide permits short. The obsolete arrow-count control is removed. Count strict interior
@@ -181,16 +184,20 @@ fields or sliders. If a persisted legacy configuration contains another valid
 period, retain it as a clearly labelled saved-custom option until the user
 chooses one of the chart periods; never silently reset it during loading.
 
-Show separate PAPER/LIVE long and short verdicts, selected period, lookback,
-last arrow direction, diagnostic arrow counts, slope and completed-candle KST timestamp. Preserve local
+Show separate PAPER/LIVE long and short verdicts for MA7, MA24 and MA60, with
+their enabled/OFF state, shared lookback, last arrow direction, diagnostic arrow
+counts, slope and completed-candle KST timestamp. Preserve local
 replay edits across refresh/strategy changes; Match Live explicitly replaces the
 draft. Live settings pass through authenticated configuration, persist on disk,
 and require pausing before changes. The entry quote recheck keeps the pivot on
 completed prices while rechecking other entry rules against executable quotes.
-Lighter campaign child slices also require a fresh passing completed-candle
-pivot verdict with matching period, lookback and `last_arrow_v2` rule version. Rule/parameter
+Lighter campaign child slices also require fresh passing completed-candle
+pivot verdicts for every enabled MA, each with matching period, lookback and
+`last_arrow_v2` rule version. Rule/parameter
 mismatches must show UNAVAILABLE until an evaluation using the saved values
-arrives. Older `ma_pivot_min_arrows` settings/API arguments remain accepted only
+arrives. Older single-period `use_ma_pivot_direction` + `ma_pivot_period`
+configurations map only to their previously selected MA. Older
+`ma_pivot_min_arrows` settings/API arguments remain accepted only
 for compatibility and have no effect on this last-arrow rule. Exits remain independent. When enabled, hovering the selected MA
 uses that same bounded history and canonical arrows; hovering a forming candle
 uses the latest completed guide. Other MAs/tabs retain general hover behavior.

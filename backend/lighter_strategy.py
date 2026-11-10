@@ -822,6 +822,9 @@ def evaluate_ma_acceleration_signals(
     proximity_mode: bool = False,
     ma_direction_period: int = 0,
     use_ma_pivot_direction: bool = False,
+    use_ma_pivot_7: bool = False,
+    use_ma_pivot_24: bool = False,
+    use_ma_pivot_60: bool = False,
     ma_pivot_period: int = 24,
     ma_pivot_lookback: int = 120,
     ma_pivot_min_arrows: int = 1,
@@ -890,11 +893,24 @@ def evaluate_ma_acceleration_signals(
             candidate_side = 1 if accel_curr > 0 else -1
         else:
             candidate_side = 1 if long_pullback else -1
-        from .ma_pivot import evaluate_ma_pivot
-        pivot = evaluate_ma_pivot(ma_pivot_prices if ma_pivot_prices is not None else prices,
-                                  ma_pivot_period, ma_pivot_lookback, ma_pivot_min_arrows)
-        if use_ma_pivot_direction and not use_ma_slope and not use_ma_pullback and pivot['ready']:
-            candidate_side = 1 if pivot['long_pass'] else -1
+        from .ma_pivot import enabled_pivot_periods, evaluate_ma_pivots
+        pivot_config = dict(use_ma_pivot_direction=use_ma_pivot_direction,
+                            use_ma_pivot_7=use_ma_pivot_7,
+                            use_ma_pivot_24=use_ma_pivot_24,
+                            use_ma_pivot_60=use_ma_pivot_60,
+                            ma_pivot_period=ma_pivot_period,
+                            ma_pivot_lookback=ma_pivot_lookback,
+                            ma_pivot_min_arrows=ma_pivot_min_arrows)
+        enabled_pivots = enabled_pivot_periods(pivot_config)
+        pivots = evaluate_ma_pivots(ma_pivot_prices if ma_pivot_prices is not None else prices,
+                                    pivot_config)
+        pivot = pivots[str(ma_pivot_period)]
+        if enabled_pivots and not use_ma_slope and not use_ma_pullback:
+            enabled_results = [pivots[str(period)] for period in enabled_pivots]
+            if all(item['ready'] and item['long_pass'] for item in enabled_results):
+                candidate_side = 1
+            elif all(item['ready'] and item['short_pass'] for item in enabled_results):
+                candidate_side = -1
     elif ma_max_distance_pct > 0:
         near_ma = abs(current_price - ma_curr) <= ma_curr * ma_max_distance_pct / 100
         long_pullback = short_bounce = near_ma
@@ -943,10 +959,15 @@ def evaluate_ma_acceleration_signals(
     }
 
     if proximity_mode:
-        pivot_pass = pivot['long_pass'] if candidate_side > 0 else pivot['short_pass']
-        entry_signal = entry_signal and (use_ma_slope or use_ma_pullback or use_ma_pivot_direction)
-        entry_signal = entry_signal and (not use_ma_pivot_direction or pivot_pass)
-        condition_pass['entry_ma_pivot_direction'] = pivot_pass
+        pivot_key = 'long_pass' if candidate_side > 0 else 'short_pass'
+        pivot_passes = {period: bool(pivots[str(period)]['ready'] and pivots[str(period)][pivot_key])
+                        for period in enabled_pivots}
+        entry_signal = entry_signal and (use_ma_slope or use_ma_pullback or bool(enabled_pivots))
+        entry_signal = entry_signal and all(pivot_passes.values())
+        for period in (7, 24, 60):
+            condition_pass[f'entry_ma_pivot_{period}'] = (
+                bool(pivots[str(period)]['ready'] and pivots[str(period)][pivot_key]))
+        condition_pass['entry_ma_pivot_direction'] = all(pivot_passes.values()) if enabled_pivots else True
         condition_pass.pop("entry_ma_accel")
         condition_pass.pop("entry_ma_stack_1h")
 
@@ -975,7 +996,10 @@ def evaluate_ma_acceleration_signals(
     }
     if proximity_mode:
         evaluation['ma_pivot'] = pivot
-        evaluation['condition_enabled']['entry_ma_pivot_direction'] = use_ma_pivot_direction
+        evaluation['ma_pivots'] = pivots
+        evaluation['condition_enabled']['entry_ma_pivot_direction'] = bool(enabled_pivots)
+        for period in (7, 24, 60):
+            evaluation['condition_enabled'][f'entry_ma_pivot_{period}'] = period in enabled_pivots
     return entry_signal, candidate_side, exit_signal, evaluation
 
 def evaluate_golden_death_cross_signals(
@@ -1521,8 +1545,10 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
     if strategy_mode == "ma_proximity":
         period = max(3, int(params.get("ma_accel_period", 24)))
         direction_period = int(params.get("ma_direction_period", 0)) or period
-        pivot_required = (int(params.get('ma_pivot_period',24))+int(params.get('ma_pivot_lookback',120))-1
-                          if params.get('use_ma_pivot_direction',False) else 0)
+        from .ma_pivot import enabled_pivot_periods
+        enabled_pivots = enabled_pivot_periods(params)
+        pivot_required = (max(enabled_pivots)+int(params.get('ma_pivot_lookback',120))-1
+                          if enabled_pivots else 0)
         return max(period + 1, direction_period + 2, pivot_required)
     if strategy_mode == "ma_acceleration":
         return max(3, min(120, int(params.get("ma_accel_period", 24)))) + 2
@@ -1664,6 +1690,9 @@ def _evaluate_strategy_signal(
             proximity_mode=strategy_mode == "ma_proximity",
             ma_direction_period=int(config.get("ma_direction_period", 0)),
             use_ma_pivot_direction=bool(config.get("use_ma_pivot_direction", False)),
+            use_ma_pivot_7=bool(config.get("use_ma_pivot_7", False)),
+            use_ma_pivot_24=bool(config.get("use_ma_pivot_24", False)),
+            use_ma_pivot_60=bool(config.get("use_ma_pivot_60", False)),
             ma_pivot_period=int(config.get("ma_pivot_period", 24)),
             ma_pivot_lookback=int(config.get("ma_pivot_lookback", 120)),
             ma_pivot_min_arrows=int(config.get("ma_pivot_min_arrows", 1)),

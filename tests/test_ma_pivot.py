@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
-from backend.ma_pivot import analyze_ma_points, evaluate_ma_pivot, validate_setting
+from backend.ma_pivot import analyze_ma_points, enabled_pivot_periods, evaluate_ma_pivot, validate_setting
 from backend.lighter_strategy import evaluate_strategy_signal, required_strategy_bars
 from backend.crypto_bot import CryptoBot
 from backend.lighter_crypto_bot import LighterCryptoBot
@@ -26,7 +26,30 @@ class PivotRuleTests(unittest.TestCase):
         self.assertFalse(evaluate_ma_pivot([100]*125,60,120)['ready'])
         self.assertFalse(evaluate_ma_pivot([100]*300,7,120)['ready'])
         self.assertEqual(required_strategy_bars('ma_proximity',dict(use_ma_pivot_direction=True,ma_pivot_period=60,ma_pivot_lookback=440)),499)
+        self.assertEqual(required_strategy_bars('ma_proximity',dict(use_ma_pivot_7=True,use_ma_pivot_60=True,ma_pivot_lookback=440)),499)
         self.assertEqual(required_strategy_bars('ma_proximity',dict(use_ma_pivot_direction=False)),26)
+
+    def test_enabled_pivots_are_independent_and_conditions(self):
+        prices=[100+3*math.sin(i/5)+.2*math.sin(i/2) for i in range(240)]
+        common=dict(ma_accel_period=7,use_ma_slope=False,use_ma_pullback=False,
+                    use_ma_pivot_7=True,use_ma_pivot_24=True,ma_pivot_lookback=30)
+        saw_disagreement=False
+        for end in range(90,len(prices)):
+            entry,side,_,evaluation=evaluate_strategy_signal('ma_proximity',prices[:end+1],common)
+            p7=evaluation['ma_pivots']['7']
+            p24=evaluation['ma_pivots']['24']
+            expected=(p7['ready'] and p24['ready'] and
+                      ((p7['long_pass'] and p24['long_pass']) or
+                       (p7['short_pass'] and p24['short_pass'])))
+            self.assertEqual(entry,expected)
+            self.assertEqual(evaluation['condition_enabled']['entry_ma_pivot_7'],True)
+            self.assertEqual(evaluation['condition_enabled']['entry_ma_pivot_24'],True)
+            self.assertEqual(evaluation['condition_enabled']['entry_ma_pivot_60'],False)
+            if p7['ready'] and p24['ready'] and p7['long_pass'] != p24['long_pass']:
+                saw_disagreement=True
+                self.assertFalse(entry)
+        self.assertTrue(saw_disagreement)
+        self.assertEqual(enabled_pivot_periods(dict(use_ma_pivot_direction=True,ma_pivot_period=60)),[60])
 
     def test_filter_toggle_scope_and_completed_price_snapshot(self):
         prices=[100+3*math.sin(i/5) for i in range(200)]
@@ -83,21 +106,22 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
                 path=Path(folder)/'state.json'
                 bot=cls(AsyncMock(),path)
                 self.assertFalse(bot.public_state()['strategy_params']['use_ma_pivot_direction'])
-                config=dict(use_ma_pivot_direction=True,ma_pivot_period=60,ma_pivot_lookback=200,ma_pivot_min_arrows=2)
+                config=dict(use_ma_pivot_direction=True,use_ma_pivot_7=True,use_ma_pivot_60=True,ma_pivot_period=7,ma_pivot_lookback=200,ma_pivot_min_arrows=2)
                 await bot.configure(config)
                 reloaded=cls(AsyncMock(),path)
                 for key,value in config.items(): self.assertEqual(reloaded.public_state()['strategy_params'][key],value)
                 reloaded.state['enabled']=True
                 with self.assertRaisesRegex(ValueError,'ause'):
-                    await reloaded.configure(dict(ma_pivot_period=7))
-                self.assertEqual(reloaded.state['ma_pivot_period'],60)
-                for key,value in [('ma_pivot_period',25),('ma_pivot_lookback',441),('ma_pivot_min_arrows',0),('use_ma_pivot_direction','false'),('ma_pivot_period',True),('ma_pivot_lookback',3.5)]:
+                    await reloaded.configure(dict(ma_pivot_period=24))
+                self.assertEqual(reloaded.state['ma_pivot_period'],7)
+                for key,value in [('ma_pivot_period',25),('ma_pivot_lookback',441),('ma_pivot_min_arrows',0),('use_ma_pivot_direction','false'),('use_ma_pivot_7','false'),('ma_pivot_period',True),('ma_pivot_lookback',3.5)]:
                     with self.subTest(key=key,value=value),self.assertRaises(ValueError): validate_setting(key,value)
 
     async def test_campaign_slices_respect_latest_direction_filter(self):
         with tempfile.TemporaryDirectory() as folder:
             bot=LighterCryptoBot(AsyncMock(),Path(folder)/'state.json')
-            bot.state.update(enabled=True,strategy_mode='ma_proximity',use_ma_pivot_direction=True,use_hourly_hist=False)
+            bot.state.update(enabled=True,strategy_mode='ma_proximity',use_ma_pivot_direction=True,
+                             use_ma_pivot_7=True,use_ma_pivot_24=True,use_hourly_hist=False)
             bot._start_entry_campaign(1,100)
             bot._submit=AsyncMock()
             self.assertFalse(await bot._continue_entry_campaign())
@@ -106,7 +130,10 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
             import time
             completed=int(time.time())//300*300-300
             bot._start_entry_campaign(1,completed)
-            bot.state['last_evaluation']=dict(strategy='ma_proximity',time=completed,ma_pivot=dict(rule='last_arrow_v2',period=24,lookback=120,min_arrows=1,ready=True,long_pass=True,short_pass=False))
+            bot.state['last_evaluation']=dict(strategy='ma_proximity',time=completed,ma_pivots={
+                '7':dict(rule='last_arrow_v2',period=7,lookback=120,min_arrows=1,ready=True,long_pass=True,short_pass=False),
+                '24':dict(rule='last_arrow_v2',period=24,lookback=120,min_arrows=1,ready=True,long_pass=True,short_pass=False),
+            })
             self.assertTrue(await bot._continue_entry_campaign())
             bot._submit.assert_awaited_once()
             # A paused configuration change cannot reuse old counts at a new threshold.
@@ -115,7 +142,7 @@ class PivotConfigurationTests(unittest.IsolatedAsyncioTestCase):
             bot.state['ma_pivot_lookback']=120
             bot._start_entry_campaign(1,completed)
             bot.state['entry_campaign']['slices_filled']=1
-            bot.state['last_evaluation']['ma_pivot']['long_pass']=False
+            bot.state['last_evaluation']['ma_pivots']['24']['long_pass']=False
             self.assertFalse(await bot._continue_entry_campaign())
             bot._submit.assert_awaited_once()
 
@@ -130,9 +157,12 @@ class PivotReplayEndpointTests(unittest.IsolatedAsyncioTestCase):
                 result=await server.get_crypto_backtest(symbol='BTC' if venue=='lighter' else 'BTCUSDT',market_source=venue,
                     strategy_mode='ma_proximity',use_hourly_hist=False,use_take_profit=False,stop_loss_pct=.2,
                     ma_direction_period=0,ma_max_distance_pct=0,use_ma_pivot_direction=True,
+                    use_ma_pivot_7=True,use_ma_pivot_24=True,
                     ma_pivot_period=7,ma_pivot_lookback=30,ma_pivot_min_arrows=2)
                 self.assertEqual(result['latest_evaluation']['ma_pivot'],evaluate_ma_pivot([b['value'] for b in bars],7,30,2))
                 self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_pivot_direction'])
+                self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_pivot_7'])
+                self.assertTrue(result['latest_evaluation']['condition_enabled']['entry_ma_pivot_24'])
         for params in [dict(ma_pivot_period=8),dict(ma_pivot_lookback=441),dict(ma_pivot_min_arrows=0)]:
             with self.assertRaises(HTTPException) as error: await server.get_crypto_backtest(**params)
             self.assertEqual(error.exception.status_code,422)

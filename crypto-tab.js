@@ -3317,7 +3317,7 @@
         ma_stack: ["ma_stretch_min", "ma_trailing_stop", "min_diff_bars"],
         multi_factor: ["entry_z", "exit_z", "min_consensus_votes"],
         trend_pullback: ["trend_pullback_dist", "trend_tp_dist", "trend_macro_window", "trend_slope_min"],
-        ma_proximity: ["ma_direction_period", "ma_accel_period", "ma_accel_min_accel", "use_ma_pivot_direction", "ma_pivot_period", "ma_pivot_lookback"],
+        ma_proximity: ["ma_direction_period", "ma_accel_period", "ma_accel_min_accel", "use_ma_pivot_7", "use_ma_pivot_24", "use_ma_pivot_60", "ma_pivot_lookback"],
         ma_acceleration: ["ma_accel_period", "ma_accel_min_slope", "ma_accel_min_accel", "ma_max_distance_pct"],
         golden_death_cross: ["fast_ma_period", "slow_ma_period", "min_cross_spread_bps"],
         macd_hist_turn: ["macd_fast_period", "macd_slow_period", "macd_signal_period"],
@@ -3329,7 +3329,7 @@
           "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
           "macro_macd_confirm_bars"],
       };
-      const liveParams = { use_ma_pivot_direction:false, ma_pivot_period:24, ma_pivot_lookback:120, ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
+      const liveParams = { use_ma_pivot_direction:false, use_ma_pivot_7:false, use_ma_pivot_24:false, use_ma_pivot_60:false, ma_pivot_period:24, ma_pivot_lookback:120, ...(this.botState || {}), ...(this.botState?.strategy_params || {}) };
       if (isParadigmMatch && currentMode !== "ou_quant" && !["macd_zero_cross", "macd_hist_turn", "ma_proximity"].includes(currentMode)
           && settings.macro_regime_mode !== "macd_hist_accel"
           && settings.macro_ma_period !== Number(liveParams.macro_ma_period ?? 60))
@@ -3664,7 +3664,7 @@
         : `LIVE · ${bot?.strategy_mode || "strategy"} conditions unavailable (paused, stale, or awaiting a completed candle)`;
       panel.replaceChildren(heading);
       window.TerminalCommon?.resetGroupedLiveConditions?.("crypto_", heading.textContent, bot?.strategy_mode === this.currentParadigm);
-      if (this.currentParadigm === "ma_proximity" && bot?.strategy_mode === "ma_proximity") TerminalCommon.renderMaPivotStatus("crypto_", "Live", evaluation, {use_ma_pivot_direction:false,...bot?.strategy_params}, time, fresh && bot?.strategy_mode === "ma_proximity");
+      if (this.currentParadigm === "ma_proximity" && bot?.strategy_mode === "ma_proximity") TerminalCommon.renderMaPivotStatus("crypto_", "Live", evaluation, {use_ma_pivot_direction:false,use_ma_pivot_7:false,use_ma_pivot_24:false,use_ma_pivot_60:false,...bot,...bot?.strategy_params}, time, fresh && bot?.strategy_mode === "ma_proximity");
       const liveGroups = {};
       if (bot?.strategy_mode === this.currentParadigm) {
         for (const key of ["entry", "exit"]) {
