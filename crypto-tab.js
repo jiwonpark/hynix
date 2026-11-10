@@ -5549,6 +5549,7 @@
       )].filter((target, index, values) => target <= maxNetProfitPct && values.indexOf(target) === index);
       return netProfitTargets.map((netProfitPct) => ({
         netProfitPct,
+        feeRate,
         title: netProfitPct === 0 ? `EST. B/E (${feeLabel}; no funding)` : `EST. NET +${netProfitPct}% (${feeLabel}; no funding)`,
         price: isLong
           ? entry * (1 + feeRate + netProfitPct / 100) / (1 - feeRate)
@@ -5565,11 +5566,18 @@
     renderShortTermReferenceLines(entrySpread, options = {}) {
       const entry = Number(entrySpread);
       if (!(entry > 0) || !this.executionChartController) return;
+      const levels = this.shortSpreadProfitLadder(entry, 5, options.isLong);
+      const stop = window.TerminalCommon?.singleLegStopLossLevel?.(
+        "crypto_", this.botState, this.latestReplayConditionResult, entry,
+        options.isLong === true, levels[0]?.feeRate ?? 0,
+        options.stopSource || "paper"
+      );
+      if (stop) levels.unshift(stop);
       this.executionChartController.renderReferenceLines({
         entry,
         entryDirection: options.isLong === true ? "long" : options.isLong === false ? "short" : null,
         selected: Boolean(options.selected),
-        levels: this.shortSpreadProfitLadder(entry, 5, options.isLong),
+        levels,
         showScaleIn: Boolean(options.showScaleIn),
         scaleInSpread: options.scaleInSpread,
         exit: options.exitSpread,
@@ -5591,6 +5599,7 @@
         this.renderShortTermReferenceLines(livePosition.entry, {
           selected: false,
           isLong: livePosition.isLong,
+          stopSource: "live",
         });
         return;
       }

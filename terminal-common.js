@@ -1113,6 +1113,57 @@
     return result;
   }
 
+  function singleLegNetTargetPrice({entry, isLong, targetPct, exitFeeRate = 0, evaluation = null} = {}) {
+    const target = Number(targetPct);
+    const evaluatedRate = Number(evaluation?.exit_fee_rate);
+    const rate = Number.isFinite(evaluatedRate) ? evaluatedRate : Number(exitFeeRate);
+    if (!Number.isFinite(target) || !Number.isFinite(rate) || rate < 0 || rate >= 1) return null;
+    const quantity = Number(evaluation?.quantity);
+    const basis = Number(evaluation?.entry_notional_usd);
+    const entryFee = Number(evaluation?.entry_fee_usd);
+    const side = Number(evaluation?.side);
+    if (quantity > 0 && basis > 0 && entryFee >= 0 && (side === 1 || side === -1)) {
+      const price = side > 0
+        ? (basis * (1 + target / 100) + entryFee) / (quantity * (1 - rate))
+        : (basis * (1 - target / 100) - entryFee) / (quantity * (1 + rate));
+      return Number.isFinite(price) && price > 0 ? price : null;
+    }
+    const basisPrice = Number(entry);
+    if (!(basisPrice > 0)) return null;
+    const price = isLong
+      ? basisPrice * (1 + rate + target / 100) / (1 - rate)
+      : basisPrice * (1 - rate - target / 100) / (1 + rate);
+    return Number.isFinite(price) && price > 0 ? price : null;
+  }
+
+  function singleLegStopLossLevel(prefix, bot, replay, entry, isLong, exitFeeRate = 0, source = "paper") {
+    const saved = {...(bot || {}), ...((bot || {}).strategy_params || {})};
+    const settings = source === "live" ? saved : takeProfitSettings(prefix, bot, "stop_loss");
+    if (settings.use_stop_loss !== true) return null;
+    const evaluation = source === "live" ? bot?.stop_loss_evaluation : replay?.stop_loss_evaluation;
+    const configuredTarget = -Math.abs(Number(settings.stop_loss_pct ?? 0.2));
+    const mode = prefix === "lighterCrypto_" ? String(settings.stop_loss_mode || "fixed") : "fixed";
+    const evaluatedTarget = Number(evaluation?.target_pct);
+    const targetPct = source === "live" && mode === "trailing" && Number.isFinite(evaluatedTarget)
+      ? evaluatedTarget : configuredTarget;
+    const price = singleLegNetTargetPrice({
+      entry, isLong, targetPct, exitFeeRate,
+      evaluation: source === "live" && Number.isFinite(evaluatedTarget) ? evaluation : null,
+    });
+    if (!(price > 0)) return null;
+    const signed = `${targetPct > 0 ? "+" : ""}${Number(targetPct.toFixed(4))}%`;
+    const trailing = source === "live" && mode === "trailing" && evaluation?.trail_active === true;
+    return {
+      price,
+      netProfitPct: targetPct,
+      axisTitle: `${trailing ? "TRAIL" : "STOP"} ${signed}`,
+      title: `${trailing ? "TRAILING NET STOP" : "NET STOP"} ${signed} · ${source.toUpperCase()} · fees included; funding excluded`,
+      color: "rgba(220, 38, 38, 0.82)",
+      lineWidth: 1,
+      stopLoss: true,
+    };
+  }
+
   function saveTakeProfitDraft(prefix, settings, rule = "take_profit") {
     try { localStorage.setItem(`${prefix}${rule}_draft`, JSON.stringify(settings)); } catch (_) {}
   }
@@ -1162,12 +1213,15 @@
       input.addEventListener("input", () => {
         saveTakeProfitDraft(prefix, takeProfitSettings(prefix, engine.botState, rule), rule);
         engine.updateRulesMatchStatus();
+        engine.renderCurrentPositionReferenceLines?.();
       });
       input.addEventListener("change", () => engine.runBacktest());
     });
     const mode = document.getElementById(prefix + "stopLossMode");
     if (mode) mode.addEventListener("change", () => {
       document.getElementById(prefix + "stopTrailFields").hidden = mode.value !== "trailing";
+      saveTakeProfitDraft(prefix, takeProfitSettings(prefix, engine.botState, rule), rule);
+      engine.renderCurrentPositionReferenceLines?.();
     });
   }
 
@@ -1180,7 +1234,7 @@
     node.textContent = `${kind.toUpperCase()} · ${state} · ${evaluation?.net_pct != null ? evaluation.net_pct.toFixed(4) + "% net / " + evaluation.target_pct + "% target · " : ""}${time}${evaluation?.error ? " · " + evaluation.error : ""}`;
   }
 
-  const TerminalCommon = { maPivotSettings, maPivotGuideSettings, bindMaPivotControls, syncMaPivotControls, renderMaPivotStatus, maPivotAnalysis, alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, segmentCurveIntersections, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
+  const TerminalCommon = { maPivotSettings, maPivotGuideSettings, bindMaPivotControls, syncMaPivotControls, renderMaPivotStatus, maPivotAnalysis, alignNetExitControls, renderMaProximityControls, invalidMaProximityInput, syncInheritedConditionControls, inheritedConditionValue, inheritedStrategyConditions, settleReplayPlaceholders, replayProgressPart, fetchReplay, renderReplayFailure, resetGroupedLiveConditions, groupedLiveCondition, prepareConditionGroups, groupConditionControls, syncHourlyHistogram, hourlyHistogramSettings, alignHourlyHistogram, mountHourlyHistogram, renderHourlyHistogram, terminalLoadingMarkup, takeProfitSettings, singleLegNetTargetPrice, singleLegStopLossLevel, saveTakeProfitDraft, mountTakeProfitControls, renderTakeProfitStatus, revealChartSection, setTerminalAccountLoading, setTerminalLoading, alignTime, movingAverage, previousLocalExtremumSegment, segmentCurveIntersections, createMaExtremumHoverSeries, renderMaExtremumHover, movingAverageDiff, exponentialMovingAverage, macd, replaySignalLinks, namespaceFragment, renderTerminal, getCachedCandles, setCachedCandles, singleLegPositionReference, bindSingleLegDirectionControl, syncSingleLegDirectionControl, syncLiveToggleAvailability };
   if (typeof window !== "undefined") {
     window.TerminalCommon = TerminalCommon;
     if (typeof document !== "undefined" && document.getElementById("tradingTerminalTemplate")) {

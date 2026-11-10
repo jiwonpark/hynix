@@ -327,6 +327,16 @@ entry_signals remain position-independent; summary/triangle P&L retains the exis
 pre-fee basis, while net take-profit and stop-loss trades additionally return net_pnl_pct. Do not
 present that paper gross summary as realized account net P&L.
 
+The price chart P&L ladder includes a red stop line only while Net stop loss is
+enabled. Paper and historical-marker ladders derive the initial fixed threshold
+from the active replay draft and the same estimated round-trip fee basis as the
+green profit levels. A live open position uses the saved bot rule and, when an
+authoritative evaluation is available, its matched quantity, entry notional,
+allocated entry fee, exit fee rate, and current trailing target. Tab 5 therefore
+labels an activated ratcheted floor as `TRAIL`; before activation it shows the
+configured initial `STOP`. Disabled or unpriceable stops render no line. Tabs 2
+and 3 do not expose this single-leg net stop rule and must not fabricate one.
+
 ## Hourly MACD histogram direction regime (Tabs 4 and 5)
 
 All single-leg strategies expose an additional optional entry filter, default ON:
