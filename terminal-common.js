@@ -515,15 +515,16 @@
   function renderMacdSignalRegimes(prefix, host, chart, signalPoints, options = {}) {
     if (!host || typeof document === "undefined") return macdSignalRegimeComparison(signalPoints);
     host.style.position = "relative";
+    const ariaLabel = options.ariaLabel || "MACD signal sign regimes. Green above zero, red below zero.";
     let layer = options.layer || document.getElementById(`${prefix}macdSignalRegimeLayer`);
     if (!layer) {
       layer = document.createElement("div");
       layer.id = `${prefix}macdSignalRegimeLayer`;
-      layer.setAttribute("aria-label", "MACD signal sign regimes. Green above zero, red below zero.");
+      layer.setAttribute("aria-label", ariaLabel);
       layer.style.cssText = "position:absolute;inset:0;z-index:4;overflow:hidden;pointer-events:none";
       host.appendChild(layer);
     } else if (options.layer) {
-      layer.setAttribute?.("aria-label", "MACD signal sign regimes. Green above zero, red below zero.");
+      layer.setAttribute?.("aria-label", ariaLabel);
     }
     layer.replaceChildren();
     const comparison = macdSignalRegimeComparison(signalPoints);

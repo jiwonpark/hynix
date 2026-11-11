@@ -2682,7 +2682,6 @@
           this.assetSeries.zeroLine.setData(bars.map((b) => ({ time: b.time, value: 0 })));
         }
       }
-      TerminalCommon.renderMacdSignalRegimes("crypto_", lid("shortTermAssetHost"), this.assetChart, macd.signal);
       this.renderTrendRanges();
 
       this.renderMaLegendValues(bars.at(-1)?.time);
@@ -2765,7 +2764,6 @@
           this.renderTrendRanges();
           this.renderTradeMarkerTargets();
           this.renderTradeTriangles();
-          TerminalCommon.renderMacdSignalRegimes("crypto_", lid("shortTermAssetHost"), this.assetChart, this._currentMacd?.signal);
         });
       });
       this.stopPriceScaleWatch = StrategyExecutionChartController.watchPriceScale({
@@ -2878,7 +2876,6 @@
               this.renderTradeMarkerTargets();
               this.renderTradeTriangles();
               this.chartSync?.sync();
-              TerminalCommon.renderMacdSignalRegimes("crypto_", assetHost, this.assetChart, this._currentMacd?.signal);
             }
           }
         });
@@ -4096,6 +4093,19 @@
       });
     },
 
+    hourlyEntryRegimeActive() {
+      return this.entryTrendResult?.enabled === true
+        && String(this.entryTrendResult?.basis || "").includes("completed 1h MACD-H");
+    },
+
+    activeEntryRegimePoints() {
+      if (!this.hourlyEntryRegimeActive()) return this._currentMacd?.signal || [];
+      return (this.entryTrendResult?.points || []).map((point) => ({
+        time: point.time,
+        value: point.long_ok === true ? 1 : point.short_ok === true ? -1 : NaN,
+      }));
+    },
+
     applyEntryTrend(result) {
       this.entryTrendResult = result || null;
       const macroPeriod = lid("macroMaPeriod");
@@ -4134,13 +4144,36 @@
       const host = lid("shortTermSpreadChartHost");
       if (!layer || !host || !this.chart) return;
       layer.innerHTML = "";
+      const hourlyGate = this.hourlyEntryRegimeActive();
       const entryRuleEnabled = $("crypto_macdUseSignalStreak")?.checked === true;
-      TerminalCommon.renderMacdSignalRegimes("crypto_", host, this.chart, this._currentMacd?.signal, {
+      const regimePoints = this.activeEntryRegimePoints();
+      const ariaLabel = hourlyGate
+        ? "Completed hourly MACD histogram entry regimes. Green permits long, red permits short."
+        : "MACD signal sign regimes. Green above zero, red below zero.";
+      TerminalCommon.renderMacdSignalRegimes("crypto_", host, this.chart, regimePoints, {
         layer,
         summary: false,
+        ariaLabel,
       });
+      TerminalCommon.renderMacdSignalRegimes("crypto_", lid("shortTermAssetHost"), this.assetChart, regimePoints, {
+        summary: hourlyGate ? false : undefined,
+        ariaLabel,
+      });
+      if (hourlyGate) {
+        const summary = $("crypto_macdSignalRegimeSummary");
+        const current = [...regimePoints].reverse().find((point) => Number.isFinite(Number(point?.value)));
+        if (summary) {
+          summary.textContent = Number(current?.value) > 0
+            ? "Hourly MACD-H + · LONG only"
+            : Number(current?.value) < 0 ? "Hourly MACD-H − · SHORT only" : "Hourly MACD-H —";
+          summary.style.color = Number(current?.value) > 0 ? "#15803d" : Number(current?.value) < 0 ? "#b91c1c" : "#64748b";
+          summary.title = "Completed hourly MACD histogram regime currently governing entry direction";
+        }
+      }
       const legend = $("cryptoEntryTrendLegend");
-      if (legend) legend.textContent = entryRuleEnabled
+      if (legend) legend.textContent = hourlyGate
+        ? "HOURLY MACD-H REGIME · ENTRY ON · red short · green long"
+        : entryRuleEnabled
         ? "MACD REGIME · ENTRY ON · red short · green long"
         : "MACD REGIME · DISPLAY ONLY · entry rule off";
     },

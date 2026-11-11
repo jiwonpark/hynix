@@ -642,8 +642,13 @@ gates exits or reads positions,
 balances, tranche capacity, recovery, or account state, so the independent
 `entry_signals` stream remains position-invariant.
 
-The MACD panes on Tabs 4 and 5 shade every displayed signal-line run across
-strategies. Positive values are green, negative values are red, and zero or
+When the hourly MACD histogram entry-direction gate is enabled, the price and
+MACD panes on Tabs 4 and 5 both shade that governing completed-hour regime:
+positive histogram is green/LONG-only and negative histogram is red/SHORT-only.
+The legend and MACD summary must explicitly say `Hourly MACD-H`; chart-interval
+signal-line shading must not overwrite it during scroll, resize, or refresh.
+When the hourly gate is disabled, both panes shade the displayed signal-line
+runs instead. Positive values are green, negative values are red, and zero or
 missing values are unshaded. The current and previous same-sign runs retain
 their comparison outlines and length summary.
 
