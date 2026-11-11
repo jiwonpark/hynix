@@ -229,6 +229,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         result["blocked_reason"] = self.state.get("blocked_reason") or self.state.get("last_error")
         result["can_execute_entry"] = bool(self.state.get("enabled") and not result["execution_blocked"])
         result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
+        result["five_minute_histogram"] = result.get("hourly_histogram")
         return result
 
     async def save_strategy_draft(self, mode: str, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -467,7 +468,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                 candidate[key] = str(value)
             elif key in {"hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"}:
                 if isinstance(value,bool) or not float(value).is_integer():
-                    raise ValueError("Hourly MACD periods must be integers")
+                    raise ValueError("5m MACD periods must be integers")
                 candidate[key] = int(value)
             elif key == "use_macd_hist_exit":
                 candidate[key] = bool(value)
@@ -569,9 +570,9 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         if candidate["macd_streak_min_samples"] > candidate["macd_streak_lookback"]:
             raise ValueError("MACD streak minimum samples cannot exceed the lookback")
         if candidate.get("macro_macd_fast_period", 12) >= candidate.get("macro_macd_slow_period", 26):
-            raise ValueError("Hourly MACD slow period must be greater than hourly MACD fast period")
+            raise ValueError("Macro MACD slow period must be greater than macro MACD fast period")
         if candidate["hourly_hist_slow"] <= candidate["hourly_hist_fast"]:
-            raise ValueError("Hourly MACD slow period must exceed fast")
+            raise ValueError("5m MACD slow period must exceed fast")
         if not 0 <= candidate["ma_max_distance_pct"] <= 100:
             raise ValueError("Maximum MA distance must be between 0 and 100 percent")
         async with self.lock:
@@ -744,7 +745,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         price = ask if side > 0 else bid
         if reason != "manual" and not reduce_only:
             if not await self.hourly_entry_allowed(side):
-                raise ValueError("Hourly MACD histogram direction blocks this entry")
+                raise ValueError("Completed 5m MACD histogram direction blocks this entry")
             if not await self.five_minute_signal_entry_allowed(side):
                 raise ValueError("Completed 5m MACD signal slope blocks this entry")
         if signal_values is not None and not reduce_only:

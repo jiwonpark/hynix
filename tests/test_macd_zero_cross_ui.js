@@ -63,10 +63,10 @@ function load(file, globalName, prefix, defaultMode) {
   for (const suffix of ["LongPaper", "ShortPaper", "PaperSource"]) nodes.set(`${prefix}hourlyHist${suffix}`, {textContent: ""});
   context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", {
     ready:true,long_ok:true,short_ok:false,source_time:100,periods:[8,21,5],
-    source:"COMPLETED_1H_MACD_HISTOGRAM_REGIME",histogram:2,previous_histogram:-1,histogram_cross:"CROSS_UP"}, true);
+    source:"COMPLETED_5M_MACD_HISTOGRAM_REGIME",histogram:2,previous_histogram:-1,histogram_cross:"CROSS_UP"}, true);
   assert.match(nodes.get(`${prefix}hourlyHistLongPaper`).textContent, /PASS/);
   assert.match(nodes.get(`${prefix}hourlyHistShortPaper`).textContent, /WAITING/);
-  context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", {ready:true,long_ok:false,short_ok:true,source:"COMPLETED_1H_MACD_HISTOGRAM_REGIME",histogram:-1,previous_histogram:2,histogram_cross:"CROSS_DOWN"}, true);
+  context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", {ready:true,long_ok:false,short_ok:true,source:"COMPLETED_5M_MACD_HISTOGRAM_REGIME",histogram:-1,previous_histogram:2,histogram_cross:"CROSS_DOWN"}, true);
   assert.match(nodes.get(`${prefix}hourlyHistLongPaper`).textContent, /WAITING/);
   assert.match(nodes.get(`${prefix}hourlyHistShortPaper`).textContent, /PASS/);
   assert.match(nodes.get(`${prefix}hourlyHistPaperSource`).textContent,/H 2.00000 → -1.00000 · CROSS_DOWN · permits SHORT/);

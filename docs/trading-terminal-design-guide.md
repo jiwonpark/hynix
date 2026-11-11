@@ -342,10 +342,10 @@ labels an activated ratcheted floor as `TRAIL`; before activation it shows the
 configured initial `STOP`. Disabled or unpriceable stops render no line. Tabs 2
 and 3 do not expose this single-leg net stop rule and must not fabricate one.
 
-## Hourly MACD histogram direction regime (Tabs 4 and 5)
+## 5-minute MACD histogram direction regime (Tabs 4 and 5)
 
 All single-leg strategies expose an additional optional entry filter, default ON:
-compute H = MACD − signal from the latest **completed 1h candle**. Positive H
+compute H = MACD − signal from the latest **completed 5m candle**. Positive H
 permits LONG entries only; negative H permits SHORT entries only; exactly zero
 or unavailable permits neither. A completed H zero-cross therefore changes the
 permitted entry direction. Fast/Slow/Signal are independently adjustable (default 20/60/9)
@@ -355,12 +355,12 @@ persist in the browser; deploying saves live, explicit Align restores live value
 
 Show separate direction-correct LONG/H-positive and SHORT/H-negative PAPER and LIVE
 PASS/WAITING/OFF/UNAVAILABLE states, exact periods, previous/current histogram,
-zero-cross state and completed-hour source timestamp in KST. Replay background uses this hourly entry filter
+zero-cross state and completed-5m source timestamp in KST. Replay background uses this 5m entry filter
 when enabled; the other strategy conditions remain independently evaluated.
 Replay maps each chart bar's close to the newest hourly close available then.
 Never use the forming hourly candle or let future hourly data change old signals.
-Retain legacy `use_hourly_hist` and period/condition API keys for saved controls;
-return source `COMPLETED_1H_MACD_HISTOGRAM_REGIME` plus previous/current histogram
+Retain legacy `use_hourly_hist` and period API keys for saved controls so existing
+settings are not reset; return source `COMPLETED_5M_MACD_HISTOGRAM_REGIME` plus previous/current histogram
 and `histogram_cross`. Do not label a cached old-rule evaluation as the new rule.
 Hourly direction is evaluated independently of inventory for entry_signals.
 
@@ -642,12 +642,12 @@ gates exits or reads positions,
 balances, tranche capacity, recovery, or account state, so the independent
 `entry_signals` stream remains position-invariant.
 
-When the hourly MACD histogram entry-direction gate is enabled, the price and
-MACD panes on Tabs 4 and 5 both shade that governing completed-hour regime:
+When the 5-minute MACD histogram entry-direction gate is enabled, the price and
+MACD panes on Tabs 4 and 5 both shade that governing completed-5m regime:
 positive histogram is green/LONG-only and negative histogram is red/SHORT-only.
-The legend and MACD summary must explicitly say `Hourly MACD-H`; chart-interval
+The legend and MACD summary must explicitly say `5m MACD-H`; chart-interval
 signal-line shading must not overwrite it during scroll, resize, or refresh.
-When the hourly gate is disabled, both panes shade the displayed signal-line
+When the 5m gate is disabled, both panes shade the displayed signal-line
 runs instead. Positive values are green, negative values are red, and zero or
 missing values are unshaded. The current and previous same-sign runs retain
 their comparison outlines and length summary.

@@ -2233,23 +2233,24 @@ def _run_crypto_backtest_sync(
         return None
 
     import bisect
-    hourly_config = dict(use_hourly_hist=use_hourly_hist, hourly_hist_fast=hourly_hist_fast,
-                         hourly_hist_slow=hourly_hist_slow, hourly_hist_signal=hourly_hist_signal)
-    hourly_points = hourly_histogram_points(macro_bars or [], hourly_config) if use_hourly_hist else []
-    hourly_times = [p['available_time'] for p in hourly_points]
-    hourly_by_bar = []
+    entry_hist_config = dict(use_hourly_hist=use_hourly_hist, hourly_hist_fast=hourly_hist_fast,
+                             hourly_hist_slow=hourly_hist_slow, hourly_hist_signal=hourly_hist_signal)
+    entry_hist_points = hourly_histogram_points(five_minute_bars or [], entry_hist_config) if use_hourly_hist else []
+    entry_hist_times = [p['available_time'] for p in entry_hist_points]
+    entry_hist_by_bar = []
     for b in bars:
-        point_index = bisect.bisect_right(hourly_times, b['time'] + interval_seconds) - 1
-        point = hourly_points[point_index] if point_index >= 0 else None
-        if point and point['source_time'] != int((b['time'] + interval_seconds)//3600)*3600-3600:
+        completed_at = int(b['time']) + interval_seconds
+        point_index = bisect.bisect_right(entry_hist_times, completed_at) - 1
+        point = entry_hist_points[point_index] if point_index >= 0 else None
+        if point and point['source_time'] != completed_at // 300 * 300 - 300:
             point = None
-        hourly_by_bar.append(point)
+        entry_hist_by_bar.append(point)
 
     def filter_hourly(entry, side, index):
         if not use_hourly_hist:
             return entry
         details = {'condition_pass':latest_conditions}
-        return apply_hourly_filter(entry, side, details, hourly_config, hourly_by_bar[index])
+        return apply_hourly_filter(entry, side, details, entry_hist_config, entry_hist_by_bar[index])
 
     five_config = dict(
         use_macd_signal_slope_5m=use_macd_signal_slope_5m,
@@ -3261,13 +3262,13 @@ def _run_crypto_backtest_sync(
     mode_metrics["open_tranches"] = len(open_positions)
     mode_metrics["capacity_mode"] = "SINGLE_LEG_CRYPTO"
 
-    hourly_entry_trend = {"enabled":bool(use_hourly_hist), "source":market_source.upper(),
-        "basis":f"completed 1h MACD-H({hourly_hist_fast}, {hourly_hist_slow}, {hourly_hist_signal}) regime: H > 0 LONG / H < 0 SHORT",
+    five_minute_entry_trend = {"enabled":bool(use_hourly_hist), "source":market_source.upper(),
+        "basis":f"completed 5m MACD-H({hourly_hist_fast}, {hourly_hist_slow}, {hourly_hist_signal}) regime: H > 0 LONG / H < 0 SHORT",
         "points":[{"time":bar['time'], "source_time":point.get('source_time') if point else None,
                    "long_ok":bool(point and point.get('long_ok')), "short_ok":bool(point and point.get('short_ok')),
                    "direction":"UNAVAILABLE" if not point or not point.get('ready') else
                        "UPTREND" if point['long_ok'] else "DOWNTREND" if point['short_ok'] else "NEUTRAL"}
-                  for bar,point in zip(bars,hourly_by_bar)]}
+                  for bar,point in zip(bars,entry_hist_by_bar)]}
     wins = sum(1 for trade in trades if trade["pnl_pct"] > 0)
     return {
         "success": candle_success,
@@ -3275,7 +3276,7 @@ def _run_crypto_backtest_sync(
         "strategy_mode": strategy_mode,
         "series": series,
         "entry_signals": entry_signals,
-        "entry_trend": hourly_entry_trend if use_hourly_hist else _crypto_entry_trend(
+        "entry_trend": five_minute_entry_trend if use_hourly_hist else _crypto_entry_trend(
             bars, macro_aligned_list,
             enabled=(False if strategy_mode in {"macd_zero_cross", "macd_hist_turn", "ma_proximity"} else
                      ou_use_macro_trend if strategy_mode == "ou_quant" else use_ma_stack_1h),
@@ -3293,7 +3294,8 @@ def _run_crypto_backtest_sync(
         "take_profit_evaluation": latest_take_profit,
         "stop_loss_evaluation": latest_stop_loss,
         "take_profit_fee_rate": take_profit_fee_rate,
-        "hourly_histogram": hourly_by_bar[-1] if hourly_by_bar else None,
+        "five_minute_histogram": entry_hist_by_bar[-1] if entry_hist_by_bar else None,
+        "hourly_histogram": entry_hist_by_bar[-1] if entry_hist_by_bar else None,
         "five_minute_macd_signal": five_by_bar[-1] if five_by_bar else None,
         "latest_evaluation": latest_evaluation,
         "latest_conditions": latest_conditions,
@@ -3394,7 +3396,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     if strategy_mode == "ma_proximity" and ma_direction_period in (1, 2):
         raise ValueError("Direction SMA period must be 0 or between 3 and 498")
     if not (2 <= hourly_hist_fast <= 100 and hourly_hist_fast < hourly_hist_slow <= 200 and 2 <= hourly_hist_signal <= 100):
-        raise ValueError("Invalid hourly MACD periods")
+        raise ValueError("Invalid 5m MACD periods")
     if not math.isfinite(take_profit_pct) or not 0.01 <= take_profit_pct <= 100:
         raise ValueError("Take profit must be between 0.01 and 100 percent")
     if stop_loss_mode not in {"fixed", "trailing"}:
@@ -3424,9 +3426,8 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
     interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(interval, 900)
     macro_limit = min(500, max(125, math.ceil(min(500, limit) * interval_seconds / 3600)
                                + macro_ma_period + 2))
-    macro_limit = min(1000, max(macro_limit, math.ceil(min(500,limit)*interval_seconds/3600) + max(150, hourly_hist_slow + hourly_hist_signal + 3) + 2))
-    needs_hourly = use_hourly_hist or strategy_mode not in {"ma_proximity", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}
-    needs_five_minute = strategy_mode == "macd_hist_turn" and use_macd_signal_slope_5m
+    needs_hourly = strategy_mode not in {"ma_proximity", "macd_reversal", "macd_strength_scaleout", "macd_zero_cross", "macd_hist_turn"}
+    needs_five_minute = use_hourly_hist or (strategy_mode == "macd_hist_turn" and use_macd_signal_slope_5m)
     five_limit = min(1500, max(500, math.ceil(min(500, limit) * interval_seconds / 300) + 152))
     # A 498-period direction SMA needs all 500 candles to be completed.
     completed_window = (strategy_mode == "ma_proximity" and (ma_direction_period or ma_accel_period) == 498)

@@ -281,6 +281,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             stop_trail_activation_pct=float(self.state.get("stop_trail_activation_pct", 0.3)),
             stop_trail_distance_pct=float(self.state.get("stop_trail_distance_pct", 0.2)),
             stop_trail_min_step_pct=float(self.state.get("stop_trail_min_step_pct", 0.05)))
+        result["five_minute_histogram"] = result.get("hourly_histogram")
         return result
 
     async def save_strategy_draft(self, mode: str, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -594,7 +595,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 candidate[key] = str(value)
             elif key in {"hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal"}:
                 if isinstance(value,bool) or not float(value).is_integer():
-                    raise ValueError("Hourly MACD periods must be integers")
+                    raise ValueError("5m MACD periods must be integers")
                 candidate[key] = int(value)
             elif key == "use_macd_hist_exit":
                 candidate[key] = bool(value)
@@ -714,9 +715,9 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
         if candidate["macd_streak_min_samples"] > candidate["macd_streak_lookback"]:
             raise ValueError("MACD streak minimum samples cannot exceed the lookback")
         if candidate.get("macro_macd_fast_period", 12) >= candidate.get("macro_macd_slow_period", 26):
-            raise ValueError("Hourly MACD slow period must be greater than hourly MACD fast period")
+            raise ValueError("Macro MACD slow period must be greater than macro MACD fast period")
         if candidate["hourly_hist_slow"] <= candidate["hourly_hist_fast"]:
-            raise ValueError("Hourly MACD slow period must exceed fast")
+            raise ValueError("5m MACD slow period must exceed fast")
         if not 0 <= candidate["ma_max_distance_pct"] <= 100:
             raise ValueError("Maximum MA distance must be between 0 and 100 percent")
         async with self.lock:
@@ -1313,7 +1314,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             price = ask if side > 0 else bid
             if reason != "manual" and not reduce_only:
                 if not await self.hourly_entry_allowed(side):
-                    raise ValueError("Hourly MACD histogram direction blocks this entry")
+                    raise ValueError("Completed 5m MACD histogram direction blocks this entry")
                 if not await self.five_minute_signal_entry_allowed(side):
                     raise ValueError("Completed 5m MACD signal slope blocks this entry")
             if signal_values is not None and not reduce_only:

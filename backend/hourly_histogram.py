@@ -1,4 +1,8 @@
-"""Causal completed-hour MACD histogram-regime entry gate, shared by Tabs 4/5."""
+"""Causal completed-5m MACD histogram-regime entry gate, shared by Tabs 4/5.
+
+The ``hourly_hist_*`` names are retained as persisted API keys for backwards
+compatibility; the condition itself is intentionally evaluated on 5m candles.
+"""
 import math
 import time
 
@@ -57,6 +61,7 @@ def apply_five_minute_signal_filter(entry, side, details, config, point=None):
 
 
 def hourly_histogram_points(bars, config):
+    """Return completed-5m histogram regimes using legacy persisted key names."""
     ordered = sorted(bars, key=lambda b: b['time'])
     periods = [int(config.get('hourly_hist_' + key, default)) for key, default in [('fast',20),('slow',60),('signal',9)]]
     values = [float(b['value']) for b in ordered]
@@ -70,9 +75,9 @@ def hourly_histogram_points(bars, config):
         current_histogram, previous_histogram = hist[-2:][::-1] if len(window) >= warmup else (None, None)
         ready = (all(v is not None and math.isfinite(v)
                      for v in (current, previous, current_histogram, previous_histogram))
-                 and i >= 1 and int(bar["time"]) - int(ordered[i-1]["time"]) == 3600)
+                 and i >= 1 and int(bar["time"]) - int(ordered[i-1]["time"]) == 300)
         delta = current - previous if ready else None
-        points.append({'source_time':int(bar['time']), 'available_time':int(bar['time'])+3600,
+        points.append({'source_time':int(bar['time']), 'available_time':int(bar['time'])+300,
                        'signal':current, 'previous_signal':previous, 'signal_delta':delta,
                        'histogram':current_histogram if ready else None,
                        'previous_histogram':previous_histogram if ready else None,
@@ -82,7 +87,8 @@ def hourly_histogram_points(bars, config):
                                           else 'NONE'),
                        'long_ok':bool(ready and current_histogram>0),
                        'short_ok':bool(ready and current_histogram<0),
-                       'ready':ready, 'periods':periods, 'source':'COMPLETED_1H_MACD_HISTOGRAM_REGIME'})
+                       'ready':ready, 'periods':periods, 'timeframe':'5m',
+                       'source':'COMPLETED_5M_MACD_HISTOGRAM_REGIME'})
     return points
 
 
@@ -90,11 +96,11 @@ def apply_hourly_filter(entry, side, details, config, hourly=None):
     enabled = bool(config.get('use_hourly_hist', False))
     ready = bool(hourly and hourly.get('ready'))
     allowed = bool(ready and hourly.get('long_ok' if side > 0 else 'short_ok'))
-    details['hourly_histogram'] = hourly
+    details['five_minute_histogram'] = hourly
     checks=details.setdefault('condition_pass', {})
     toggles=details.setdefault('condition_enabled', {})
     for direction in ('long','short'):
-        key='entry_hourly_hist_'+direction
+        key='entry_5m_hist_'+direction
         checks[key]=bool(hourly.get(direction+'_ok')) if ready else None
         toggles[key]=enabled
     return bool(entry and (not enabled or allowed))
@@ -142,7 +148,7 @@ class HourlyHistogramMixin:
             return None
         now=time.time()
         params=tuple(self.state.get('hourly_hist_'+k,d) for k,d in [('fast',20),('slow',60),('signal',9)])
-        key=(self.state['selected_symbol'],params,int(now//3600))
+        key=(self.state['selected_symbol'],params,int(now//300))
         cache=getattr(self,'_hourly_hist_cache',None)
         if cache and cache[0]==key and now-cache[1]<15:
             self.state['hourly_histogram']=cache[2]
@@ -150,16 +156,16 @@ class HourlyHistogramMixin:
         try:
             limit=min(500,max(150,params[1]+params[2]+3)+2)
             if self.profit_venue=='binance':
-                raw=await self.client.request('GET','/fapi/v1/klines',{'symbol':key[0],'interval':'1h','limit':limit})
+                raw=await self.client.request('GET','/fapi/v1/klines',{'symbol':key[0],'interval':'5m','limit':limit})
                 bars=[{'time':int(r[0])//1000,'value':float(r[4])} for r in raw if int(r[6])<int(now*1000)]
             else:
                 market_id,_,_=await self._market(key[0])
-                raw=await self.client.candles(market_id,'1h',limit,fresh=True)
-                bars=[{'time':int(r['t'])//1000,'value':float(r['c'])} for r in raw if int(r['t'])/1000+3600<=now-1]
+                raw=await self.client.candles(market_id,'5m',limit,fresh=True)
+                bars=[{'time':int(r['t'])//1000,'value':float(r['c'])} for r in raw if int(r['t'])/1000+300<=now-1]
             points=hourly_histogram_points(bars,self.state)
             result=points[-1] if points else {'ready':False}
-            if result.get('source_time')!=int(now//3600)*3600-3600:
-                result={**result,'ready':False,'long_ok':False,'short_ok':False,'error':'Latest completed hour unavailable'}
+            if result.get('source_time')!=int(now//300)*300-300:
+                result={**result,'ready':False,'long_ok':False,'short_ok':False,'error':'Latest completed 5m candle unavailable'}
         except Exception as exc:
             result={'ready':False,'long_ok':False,'short_ok':False,'error':str(exc)}
         self.state['hourly_histogram']=result
