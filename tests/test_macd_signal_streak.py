@@ -13,7 +13,7 @@ def oscillating_prices(count=180):
 
 def test_signal_streak_metric_uses_completed_same_sign_history():
     metric = macd_signal_streak_exhaustion(
-        oscillating_prices(100), candidate_side=-1,
+        oscillating_prices(100), candidate_side=1,
         macd_fast_period=3, macd_slow_period=8, macd_signal_period=3,
         lookback=20, min_samples=3, min_percentile=0,
         min_reversal_probability_pct=0, require_turn=False,
@@ -27,6 +27,26 @@ def test_signal_streak_metric_uses_completed_same_sign_history():
     assert metric["percentile"] == 33.3333
     assert metric["reversal_probability_pct"] == 25.0
     assert metric["pass"] is True
+
+    wrong_direction = macd_signal_streak_exhaustion(
+        oscillating_prices(100), candidate_side=-1,
+        macd_fast_period=3, macd_slow_period=8, macd_signal_period=3,
+        lookback=20, min_samples=3, min_percentile=0,
+        min_reversal_probability_pct=0, require_turn=False,
+    )
+    assert wrong_direction["current_sign"] == 1
+    assert wrong_direction["direction_ok"] is False
+    assert wrong_direction["pass"] is False
+
+    negative = macd_signal_streak_exhaustion(
+        oscillating_prices(120), candidate_side=-1,
+        macd_fast_period=3, macd_slow_period=8, macd_signal_period=3,
+        lookback=20, min_samples=3, min_percentile=0,
+        min_reversal_probability_pct=0, require_turn=False,
+    )
+    assert negative["current_sign"] == -1
+    assert negative["direction_ok"] is True
+    assert negative["pass"] is True
 
 
 def test_optional_streak_condition_is_position_independent_and_can_block_entry():
@@ -103,7 +123,7 @@ def test_ma_proximity_replay_returns_streak_status_from_completed_bars():
     evaluation = replay["latest_evaluation"]
     assert evaluation["condition_enabled"]["entry_signal_streak_exhaustion"] is True
     assert evaluation["condition_pass"]["entry_signal_streak_exhaustion"] == evaluation["macd_signal_streak"]["pass"]
-    assert evaluation["macd_signal_streak"]["rule"] == "macd_signal_streak_hazard_v1"
+    assert evaluation["macd_signal_streak"]["rule"] == "macd_signal_regime_streak_v2"
 
 
 def test_streak_condition_can_be_the_only_ma_proximity_entry_trigger():
@@ -125,7 +145,7 @@ def test_streak_condition_can_be_the_only_ma_proximity_entry_trigger():
     assert entry is True
     assert streak["standalone_trigger"] is True
     assert streak["pass"] is True
-    assert side == (-1 if streak["current_sign"] > 0 else 1)
+    assert side == (1 if streak["current_sign"] > 0 else -1)
 
 
 def test_streak_only_replay_emits_position_independent_chart_signals():
@@ -149,3 +169,25 @@ def test_streak_only_replay_emits_position_independent_chart_signals():
     assert replay["entry_signals"]
     assert all(signal["conditions"]["entry_signal_streak_exhaustion"] is True
                for signal in replay["entry_signals"])
+
+
+def test_streak_only_macd_replay_uses_regime_direction_without_another_trigger():
+    from backend.server import _run_crypto_backtest_sync
+
+    bars = [{"time": (index + 1) * 300, "value": value}
+            for index, value in enumerate(oscillating_prices(300))]
+    replay = _run_crypto_backtest_sync(
+        bars, True, strategy_mode="macd_zero_cross", use_hourly_hist=False,
+        use_macd_zero_cross=False, use_macd_signal_zone=False,
+        use_macd_signal_streak=True,
+        macd_fast_period=3, macd_slow_period=8, macd_signal_period=3,
+        macd_streak_lookback=20, macd_streak_min_samples=3,
+        macd_streak_min_percentile=0,
+        macd_streak_min_reversal_prob_pct=0,
+        macd_streak_require_turn=False,
+    )
+
+    assert replay["entry_signals"]
+    assert all(signal["conditions"]["entry_signal_streak_exhaustion"] is True
+               for signal in replay["entry_signals"])
+    assert replay["latest_evaluation"]["macd_signal_streak"]["standalone_trigger"] is True

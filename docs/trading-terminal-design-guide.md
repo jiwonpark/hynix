@@ -627,14 +627,15 @@ executions remain blocked. Throttle recovery reads to avoid hammering venue
 rate limits; a disabled worker without pending execution must not touch the
 exchange. Explicit operator recovery retains its separately guarded repair path.
 
-## MACD signal-streak exhaustion entry condition
+## MACD signal-regime and streak entry condition
 
-Tabs 4 and 5 expose the same optional MACD signal-streak exhaustion condition
+Tabs 4 and 5 expose the same optional MACD signal-regime and streak condition
 in all four MACD strategies and MA Proximity. The MA Proximity panel includes
 the applicable MACD fast, slow, and signal periods beside the streak controls.
-It is an AND entry gate and defaults OFF. A negative
-completed signal-line streak may support a long candidate; a positive streak
-may support a short candidate. It never gates exits and never reads positions,
+It is an AND entry gate and defaults OFF. A negative/red completed signal-line
+regime permits only short candidates; a positive/green regime permits only long
+candidates. The streak exhaustion thresholds determine when an entry is eligible
+inside that direction and never reverse the regime direction. It never gates exits and never reads positions,
 balances, tranche capacity, recovery, or account state, so the independent
 `entry_signals` stream remains position-invariant.
 

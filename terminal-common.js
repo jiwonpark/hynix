@@ -1347,8 +1347,8 @@
   function macdSignalStreakControls(prefix, live, row, toggle, options = {}) {
     const checked = (live?.use_macd_signal_streak === true) ? "checked" : "";
     const turnChecked = live?.macd_streak_require_turn !== false ? "checked" : "";
-    return `<div style="${row}"><input id="${prefix}macdUseSignalStreak" aria-label="Enable MACD signal streak exhaustion entry condition" type="checkbox" style="${toggle}" ${checked}>
-      <span><b>Signal streak exhaustion</b> · negative streak → long; positive streak → short · standalone alone, AND with other entry rules</span><span id="${prefix}macdStatusSignalStreak" class="condBadge neutral">${checked ? "WAITING" : "OFF"}</span>
+    return `<div style="${row}"><input id="${prefix}macdUseSignalStreak" aria-label="Enable MACD signal regime and streak entry condition" type="checkbox" style="${toggle}" ${checked}>
+      <span><b>Signal regime + streak timing</b> · red/negative → short only; green/positive → long only · standalone alone, AND with other entry rules</span><span id="${prefix}macdStatusSignalStreak" class="condBadge neutral">${checked ? "WAITING" : "OFF"}</span>
       <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;padding-left:24px;">
         ${options.showPeriods ? `<label>MACD Fast <input id="${prefix}macdFastPeriod" aria-label="MACD fast period" type="number" min="2" max="100" step="1" value="${Number(live?.macd_fast_period ?? 12)}" style="width:52px"></label>
         <label>Slow <input id="${prefix}macdSlowPeriod" aria-label="MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live?.macd_slow_period ?? 26)}" style="width:52px"></label>
@@ -1393,7 +1393,7 @@
       source.textContent = `${kind.toUpperCase()} · OFF · completed-candle condition does not gate entries`;
       return;
     }
-    const sign = metric?.current_sign > 0 ? "positive" : metric?.current_sign < 0 ? "negative" : "flat";
+    const sign = metric?.current_sign > 0 ? "positive · LONG only" : metric?.current_sign < 0 ? "negative · SHORT only" : "flat · entries blocked";
     const time = sourceTime ? new Date(Number(sourceTime) * 1000).toLocaleString("en-GB", {timeZone:"Asia/Seoul"}) + " KST" : "source unavailable";
     const pct = metric?.percentile == null ? "—" : `${Number(metric.percentile).toFixed(1)}%`;
     const hazard = metric?.reversal_probability_pct == null ? "—" : `${Number(metric.reversal_probability_pct).toFixed(1)}%`;

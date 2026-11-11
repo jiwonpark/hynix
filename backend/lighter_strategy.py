@@ -1202,7 +1202,7 @@ def macd_signal_streak_exhaustion(
         "min_percentile": float(min_percentile),
         "min_reversal_probability_pct": float(min_reversal_probability_pct),
         "require_turn": bool(require_turn), "pass": False,
-        "rule": "macd_signal_streak_hazard_v1",
+        "rule": "macd_signal_regime_streak_v2",
     }
     if len(signal_values) < 2 or signal_values[-1] == 0:
         return base
@@ -1236,7 +1236,10 @@ def macd_signal_streak_exhaustion(
     ended_now = sum(length == current_length for length in sample_lengths)
     hazard = ((ended_now + 1) / (at_risk + 2) * 100.0) if count else None
     turning = signal_values[-1] < signal_values[-2] if current_sign > 0 else signal_values[-1] > signal_values[-2]
-    direction_ok = (candidate_side > 0 and current_sign < 0) or (candidate_side < 0 and current_sign > 0)
+    # The signal-line regime is a directional gate.  Exhaustion metrics decide
+    # whether this is an eligible moment within that regime; they do not invert
+    # its direction.  Positive/green permits longs, negative/red permits shorts.
+    direction_ok = (candidate_side > 0 and current_sign > 0) or (candidate_side < 0 and current_sign < 0)
     ready = count >= max(1, int(min_samples))
     passed = bool(ready and direction_ok
                   and percentile is not None and percentile + 1e-10 >= float(min_percentile)
@@ -1991,7 +1994,7 @@ def evaluate_strategy_signal(strategy_mode, prices, config, *, hourly_histogram=
             require_turn=bool(config.get("macd_streak_require_turn", True)),
         )
         if standalone and streak["current_sign"]:
-            side = 1 if streak["current_sign"] < 0 else -1
+            side = 1 if streak["current_sign"] > 0 else -1
             streak = macd_signal_streak_exhaustion(
                 prices, candidate_side=side,
                 macd_fast_period=int(config.get("macd_fast_period", 12)),

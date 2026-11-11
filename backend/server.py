@@ -3123,11 +3123,29 @@ def _run_crypto_backtest_sync(
                 min_reversal_probability_pct=macd_streak_min_reversal_prob_pct,
                 require_turn=macd_streak_require_turn,
             )
+            enabled_conditions = entry_eval.get("condition_enabled", {})
+            streak_standalone = use_macd_signal_streak and not any(
+                bool(value) for key, value in enabled_conditions.items()
+                if key.startswith("entry_") and key != "entry_signal_streak_exhaustion"
+            )
+            if streak_standalone and streak["current_sign"]:
+                candidate_side = 1 if streak["current_sign"] > 0 else -1
+                streak = macd_signal_streak_exhaustion(
+                    prefix, candidate_side=candidate_side,
+                    macd_fast_period=fast_w, macd_slow_period=slow_w,
+                    macd_signal_period=signal_w, lookback=macd_streak_lookback,
+                    min_samples=macd_streak_min_samples,
+                    min_percentile=macd_streak_min_percentile,
+                    min_reversal_probability_pct=macd_streak_min_reversal_prob_pct,
+                    require_turn=macd_streak_require_turn,
+                )
+                entry_eval["candidate_side"] = candidate_side
+            streak["standalone_trigger"] = streak_standalone
             entry_eval["macd_signal_streak"] = streak
             entry_eval.setdefault("condition_enabled", {})["entry_signal_streak_exhaustion"] = use_macd_signal_streak
             entry_eval.setdefault("condition_pass", {})["entry_signal_streak_exhaustion"] = bool(streak["pass"])
             if use_macd_signal_streak:
-                entry_signal = bool(entry_signal and streak["pass"])
+                entry_signal = bool(streak["pass"] if streak_standalone else entry_signal and streak["pass"])
             _, _, exit_signal, exit_eval = macd_evaluator(
                 prefix,
                 macd_fast_period=fast_w, macd_slow_period=slow_w, macd_signal_period=signal_w,

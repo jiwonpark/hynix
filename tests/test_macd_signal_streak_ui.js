@@ -34,6 +34,7 @@ for (const file of ['crypto-tab.js', 'lighter-crypto-tab.js']) {
 const sharedSource = fs.readFileSync(path.join(__dirname, '..', 'terminal-common.js'), 'utf8');
 assert.ok(sharedSource.includes('macdSignalStreakControls(prefix, saved, streakRow, streakToggle, {showPeriods:true})'), 'MA Proximity visibly renders the shared streak condition');
 assert.ok(sharedSource.includes('options.showPeriods'), 'MA Proximity exposes the applicable MACD periods');
+assert.ok(sharedSource.includes('red/negative → short only; green/positive → long only'), 'UI explains regime-aligned entry direction');
 assert.ok(sharedSource.includes('standalone alone, AND with other entry rules'), 'UI explains standalone and combined replay behavior');
 
 const comparison = TerminalCommon.macdSignalRegimeComparison([
