@@ -1348,7 +1348,7 @@
     const checked = (live?.use_macd_signal_streak === true) ? "checked" : "";
     const turnChecked = live?.macd_streak_require_turn !== false ? "checked" : "";
     return `<div style="${row}"><input id="${prefix}macdUseSignalStreak" aria-label="Enable MACD signal regime and streak entry condition" type="checkbox" style="${toggle}" ${checked}>
-      <span><b>Signal regime + streak timing</b> · red/negative → short only; green/positive → long only · standalone alone, AND with other entry rules</span><span id="${prefix}macdStatusSignalStreak" class="condBadge neutral">${checked ? "WAITING" : "OFF"}</span>
+      <span><b>MACD regime entry</b> · red = short · green = long</span><span id="${prefix}macdStatusSignalStreak" class="condBadge neutral">${checked ? "WAITING" : "OFF"}</span>
       <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%;padding-left:24px;">
         ${options.showPeriods ? `<label>MACD Fast <input id="${prefix}macdFastPeriod" aria-label="MACD fast period" type="number" min="2" max="100" step="1" value="${Number(live?.macd_fast_period ?? 12)}" style="width:52px"></label>
         <label>Slow <input id="${prefix}macdSlowPeriod" aria-label="MACD slow period" type="number" min="3" max="200" step="1" value="${Number(live?.macd_slow_period ?? 26)}" style="width:52px"></label>
