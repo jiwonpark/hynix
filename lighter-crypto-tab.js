@@ -1844,7 +1844,7 @@
       if (["macd_zero_cross", "macd_hist_turn"].includes(mode)) {
         const isTurn = mode === "macd_hist_turn";
         const inheritedPeriods = isTurn ? Object.fromEntries(["macd_fast_period", "macd_slow_period", "macd_signal_period"].map(key => [key, this.botState?.strategy_params?.[key] ?? this.botState?.[key] ?? ({macd_fast_period:12,macd_slow_period:26,macd_signal_period:9}[key])])) : {};
-        const inheritedStreak = Object.fromEntries(["use_macd_signal_streak", "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn"].map(key => [key, this.botState?.strategy_params?.[key] ?? this.botState?.[key]]));
+        const inheritedStreak = Object.fromEntries(["use_macd_signal_streak", "macd_streak_use_timing", "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn"].map(key => [key, this.botState?.strategy_params?.[key] ?? this.botState?.[key]]));
         const live = { ...inheritedPeriods, ...inheritedStreak, ...(this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {}),
           ...(this.botState?.strategy_drafts?.[mode] || {}) };
         const awaitingSavedSettings = !this.botState;
@@ -1882,7 +1882,7 @@
       }
       if (["macd_reversal", "macd_strength_scaleout"].includes(mode)) {
         const chartInterval = this.interval || "5m";
-        const inheritedStreak = Object.fromEntries(["use_macd_signal_streak", "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn"].map(key => [key, this.botState?.strategy_params?.[key] ?? this.botState?.[key]]));
+        const inheritedStreak = Object.fromEntries(["use_macd_signal_streak", "macd_streak_use_timing", "macd_streak_lookback", "macd_streak_min_samples", "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn"].map(key => [key, this.botState?.strategy_params?.[key] ?? this.botState?.[key]]));
         const live = { ...inheritedStreak, ...(this.botState?.strategy_mode === mode ? { ...this.botState, ...(this.botState?.strategy_params || {}) } : {}),
           ...(this.botState?.strategy_drafts?.[mode] || {}) };
         const awaitingSavedSettings = !this.botState;
@@ -3619,9 +3619,9 @@
           diffs.push(`Macro regime ${settings.macro_regime_mode} ≠ ${liveParams.macro_regime_mode ?? "ma_slope"}`);
         ["use_macd_signal_negative", "use_macd_hist_negative", "use_macd_hist_reversal",
          "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
-         "use_macd_signal_streak", "macd_streak_require_turn",
+         "use_macd_signal_streak", "macd_streak_use_timing", "macd_streak_require_turn",
          ...(currentMode === "macd_strength_scaleout" ? ["use_macd_strength", "use_macd_two_stage_exit"] : [])].forEach((key) => {
-          const fallback = key === "use_macd_signal_streak" ? false : true;
+          const fallback = ["use_macd_signal_streak", "macd_streak_use_timing"].includes(key) ? false : true;
           if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? fallback)) diffs.push(`${key}: paper ≠ live`);
         });
       }
@@ -3629,13 +3629,13 @@
         [...(currentMode === "macd_hist_turn" ? ["use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m"] : ["use_macd_zero_cross"]), "use_macd_signal_zone", "use_macd_hist_exit"].forEach((key) => {
           if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? (key !== "use_macd_signal_zone"))) diffs.push(`${key}: paper ≠ live`);
         });
-        ["use_macd_signal_streak", "macd_streak_require_turn"].forEach((key) => {
+        ["use_macd_signal_streak", "macd_streak_use_timing", "macd_streak_require_turn"].forEach((key) => {
           const fallback = key === "macd_streak_require_turn";
           if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? fallback)) diffs.push(`${key}: paper ≠ live`);
         });
       }
       if (isParadigmMatch && currentMode === "ma_proximity") {
-        ["use_macd_signal_streak", "macd_streak_require_turn"].forEach((key) => {
+        ["use_macd_signal_streak", "macd_streak_use_timing", "macd_streak_require_turn"].forEach((key) => {
           const fallback = key === "macd_streak_require_turn";
           if (Boolean(settings[key]) !== Boolean(liveParams[key] ?? fallback)) diffs.push(`${key}: paper ≠ live`);
         });
@@ -4253,7 +4253,7 @@
       if (liveMode === "ma_proximity") {
         const controls = {
           macd_fast_period: "lighterCrypto_macdFastPeriod", macd_slow_period: "lighterCrypto_macdSlowPeriod", macd_signal_period: "lighterCrypto_macdSignalPeriod",
-          use_macd_signal_streak: "lighterCrypto_macdUseSignalStreak", macd_streak_lookback: "lighterCrypto_macdStreakLookback",
+          use_macd_signal_streak: "lighterCrypto_macdUseSignalStreak", macd_streak_use_timing: "lighterCrypto_macdStreakUseTiming", macd_streak_lookback: "lighterCrypto_macdStreakLookback",
           macd_streak_min_samples: "lighterCrypto_macdStreakMinSamples", macd_streak_min_percentile: "lighterCrypto_macdStreakMinPercentile",
           macd_streak_min_reversal_prob_pct: "lighterCrypto_macdStreakMinReversalProb", macd_streak_require_turn: "lighterCrypto_macdStreakRequireTurn",
         };
@@ -4289,6 +4289,7 @@
           use_macd_hist_exit: "lighterCrypto_macdZeroUseExitCross",
           use_macd_hist_exit_zone: "lighterCrypto_macdTurnUseExitZone",
           use_macd_signal_streak: "lighterCrypto_macdUseSignalStreak",
+          macd_streak_use_timing: "lighterCrypto_macdStreakUseTiming",
           macd_streak_lookback: "lighterCrypto_macdStreakLookback",
           macd_streak_min_samples: "lighterCrypto_macdStreakMinSamples",
           macd_streak_min_percentile: "lighterCrypto_macdStreakMinPercentile",
@@ -4319,6 +4320,7 @@
           use_macd_two_stage_exit: "lighterCrypto_macdUseTwoStageExit",
           macd_first_exit_pct: "lighterCrypto_macdFirstExitPct",
           use_macd_signal_streak: "lighterCrypto_macdUseSignalStreak",
+          macd_streak_use_timing: "lighterCrypto_macdStreakUseTiming",
           macd_streak_lookback: "lighterCrypto_macdStreakLookback",
           macd_streak_min_samples: "lighterCrypto_macdStreakMinSamples",
           macd_streak_min_percentile: "lighterCrypto_macdStreakMinPercentile",

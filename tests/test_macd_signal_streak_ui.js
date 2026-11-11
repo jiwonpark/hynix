@@ -5,6 +5,8 @@ const TerminalCommon = require('../terminal-common.js');
 
 const nodes = new Map([
   ['crypto_macdUseSignalStreak', {checked:true}],
+  ['crypto_macdStreakUseTiming', {checked:false}],
+  ['crypto_macdStreakTimingFields', {hidden:false}],
   ['crypto_macdStreakLookback', {value:'30'}],
   ['crypto_macdStreakMinSamples', {value:'7'}],
   ['crypto_macdStreakMinPercentile', {value:'80'}],
@@ -15,6 +17,7 @@ global.document = {getElementById: id => nodes.get(id) || null};
 
 assert.deepEqual(TerminalCommon.macdSignalStreakSettings('crypto_'), {
   use_macd_signal_streak:true,
+  macd_streak_use_timing:false,
   macd_streak_lookback:30,
   macd_streak_min_samples:7,
   macd_streak_min_percentile:80,
@@ -36,6 +39,8 @@ assert.ok(sharedSource.includes('macdSignalStreakControls(prefix, saved, streakR
 assert.ok(sharedSource.includes('options.showPeriods'), 'MA Proximity exposes the applicable MACD periods');
 assert.ok(sharedSource.includes('MACD regime entry'), 'UI gives the condition a concise name');
 assert.ok(sharedSource.includes('red = short · green = long'), 'UI explains regime-aligned entry direction plainly');
+assert.ok(sharedSource.includes('Also require streak-exhaustion timing'), 'UI separates optional streak timing from the simple regime direction gate');
+assert.equal(nodes.get('crypto_macdStreakTimingFields').hidden, true, 'timing thresholds are hidden while their gate is off');
 
 const comparison = TerminalCommon.macdSignalRegimeComparison([
   {time:1,value:-1},{time:2,value:-2},

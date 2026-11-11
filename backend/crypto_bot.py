@@ -77,6 +77,7 @@ DEFAULT_STATE = {
     "use_macd_signal_streak": False, "macd_streak_lookback": 20,
     "macd_streak_min_samples": 5, "macd_streak_min_percentile": 70.0,
     "macd_streak_min_reversal_prob_pct": 20.0, "macd_streak_require_turn": True,
+    "macd_streak_use_timing": False,
     "long_multiplier": 1.0, "short_multiplier": 1.0, "entry_direction_mode": "two_way",
     "use_convergence": True, "use_dwell": True, "use_bottoming": False, "base_spacing_pct": 0.2, "min_dwell_bars": 4,
     "tranches": [], "execution_history": [], "pending_order": None,
@@ -184,6 +185,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "macd_streak_min_percentile": float(self.state.get("macd_streak_min_percentile", 70.0)),
             "macd_streak_min_reversal_prob_pct": float(self.state.get("macd_streak_min_reversal_prob_pct", 20.0)),
             "macd_streak_require_turn": bool(self.state.get("macd_streak_require_turn", True)),
+            "macd_streak_use_timing": bool(self.state.get("macd_streak_use_timing", False)),
             "use_convergence": bool(self.state.get("use_convergence", True)),
             "use_dwell": bool(self.state.get("use_dwell", True)),
             "use_bottoming": bool(self.state.get("use_bottoming", False)),
@@ -447,7 +449,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
             "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone",
             "use_macd_signal_streak", "macd_streak_lookback", "macd_streak_min_samples",
-            "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn",
+            "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn", "macd_streak_use_timing",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "macro_ma_period", "macro_regime_mode",
             "macro_macd_fast_period", "macro_macd_slow_period", "macro_macd_signal_period",
@@ -512,7 +514,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                           "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
                           "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone"}:
                 candidate[key] = bool(value)
-            elif key in {"use_macd_signal_streak", "macd_streak_require_turn"}:
+            elif key in {"use_macd_signal_streak", "macd_streak_require_turn", "macd_streak_use_timing"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
@@ -583,7 +585,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
                  "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
                  "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone",
                  "use_macd_signal_streak", "macd_streak_lookback", "macd_streak_min_samples",
-                 "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn",
+                 "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn", "macd_streak_use_timing",
                  "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")
             if self.state["tranches"] and candidate["selected_symbol"] != self.state["selected_symbol"]:

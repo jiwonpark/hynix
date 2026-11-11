@@ -1174,6 +1174,7 @@ def macd_signal_streak_exhaustion(
     min_samples: int = 5, min_percentile: float = 70.0,
     min_reversal_probability_pct: float = 20.0,
     require_turn: bool = True,
+    use_timing: bool = False,
 ) -> Dict[str, Any]:
     """Estimate completed-signal streak exhaustion without future candles.
 
@@ -1202,6 +1203,7 @@ def macd_signal_streak_exhaustion(
         "min_percentile": float(min_percentile),
         "min_reversal_probability_pct": float(min_reversal_probability_pct),
         "require_turn": bool(require_turn), "pass": False,
+        "timing_enabled": bool(use_timing), "timing_pass": False,
         "rule": "macd_signal_regime_streak_v2",
     }
     if len(signal_values) < 2 or signal_values[-1] == 0:
@@ -1241,10 +1243,13 @@ def macd_signal_streak_exhaustion(
     # its direction.  Positive/green permits longs, negative/red permits shorts.
     direction_ok = (candidate_side > 0 and current_sign > 0) or (candidate_side < 0 and current_sign < 0)
     ready = count >= max(1, int(min_samples))
-    passed = bool(ready and direction_ok
-                  and percentile is not None and percentile + 1e-10 >= float(min_percentile)
-                  and hazard is not None and hazard + 1e-10 >= float(min_reversal_probability_pct)
-                  and (not require_turn or turning))
+    timing_pass = bool(ready
+                       and percentile is not None and percentile + 1e-10 >= float(min_percentile)
+                       and hazard is not None and hazard + 1e-10 >= float(min_reversal_probability_pct)
+                       and (not require_turn or turning))
+    # The primary switch is a simple directional regime gate. Streak
+    # exhaustion is an independent optional timing refinement.
+    passed = bool(direction_ok and (timing_pass if use_timing else True))
     return {**base, "ready": ready, "current_sign": current_sign,
             "current_streak_length": current_length,
             "last_same_sign_streak_length": sample_lengths[-1] if sample_lengths else None,
@@ -1252,6 +1257,7 @@ def macd_signal_streak_exhaustion(
             "percentile": round(percentile, 4) if percentile is not None else None,
             "reversal_probability_pct": round(hazard, 4) if hazard is not None else None,
             "turning_toward_zero": turning, "direction_ok": direction_ok,
+            "timing_pass": timing_pass,
             "pass": passed}
 
 
@@ -1663,8 +1669,10 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
             fast = max(2, int(params.get("macd_fast_period", 12)))
             slow = max(fast + 1, int(params.get("macd_slow_period", 26)))
             signal = max(2, int(params.get("macd_signal_period", 9)))
-            streak_lookback = max(5, min(200, int(params.get("macd_streak_lookback", 20))))
-            required = max(required, min(500, slow + signal + streak_lookback * 12))
+            required = max(required, slow + signal)
+            if bool(params.get("macd_streak_use_timing", False)):
+                streak_lookback = max(5, min(200, int(params.get("macd_streak_lookback", 20))))
+                required = max(required, min(500, slow + signal + streak_lookback * 12))
         return required
     if strategy_mode == "ma_acceleration":
         return max(3, min(120, int(params.get("ma_accel_period", 24)))) + 2
@@ -1677,7 +1685,7 @@ def required_strategy_bars(strategy_mode: str, params: Dict[str, Any]) -> int:
         slow = max(fast + 1, int(params.get("macd_slow_period", 26)))
         signal = max(2, int(params.get("macd_signal_period", 9)))
         required = slow + signal + 1
-        if bool(params.get("use_macd_signal_streak", False)):
+        if bool(params.get("use_macd_signal_streak", False)) and bool(params.get("macd_streak_use_timing", False)):
             streak_lookback = max(5, min(200, int(params.get("macd_streak_lookback", 20))))
             required = max(required, min(500, slow + signal + streak_lookback * 12))
         if strategy_mode in {"macd_zero_cross", "macd_hist_turn"}:
@@ -1992,6 +2000,7 @@ def evaluate_strategy_signal(strategy_mode, prices, config, *, hourly_histogram=
             min_percentile=float(config.get("macd_streak_min_percentile", 70.0)),
             min_reversal_probability_pct=float(config.get("macd_streak_min_reversal_prob_pct", 20.0)),
             require_turn=bool(config.get("macd_streak_require_turn", True)),
+            use_timing=bool(config.get("macd_streak_use_timing", False)),
         )
         if standalone and streak["current_sign"]:
             side = 1 if streak["current_sign"] > 0 else -1
@@ -2005,6 +2014,7 @@ def evaluate_strategy_signal(strategy_mode, prices, config, *, hourly_histogram=
                 min_percentile=float(config.get("macd_streak_min_percentile", 70.0)),
                 min_reversal_probability_pct=float(config.get("macd_streak_min_reversal_prob_pct", 20.0)),
                 require_turn=bool(config.get("macd_streak_require_turn", True)),
+                use_timing=bool(config.get("macd_streak_use_timing", False)),
             )
             details["candidate_side"] = side
         streak["standalone_trigger"] = standalone

@@ -86,6 +86,7 @@ DEFAULT_STATE = {
     "use_macd_signal_streak": False, "macd_streak_lookback": 20,
     "macd_streak_min_samples": 5, "macd_streak_min_percentile": 70.0,
     "macd_streak_min_reversal_prob_pct": 20.0, "macd_streak_require_turn": True,
+    "macd_streak_use_timing": False,
     "use_macd_strength": True, "macd_strength_min_pct": 30.0,
     "use_macd_two_stage_exit": True, "macd_first_exit_pct": 50.0, "macd_exit_stage": 0,
     "long_multiplier": 1.0, "short_multiplier": 1.0, "entry_direction_mode": "two_way",
@@ -256,6 +257,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                           "macd_streak_min_percentile": float(self.state.get("macd_streak_min_percentile", 70.0)),
                           "macd_streak_min_reversal_prob_pct": float(self.state.get("macd_streak_min_reversal_prob_pct", 20.0)),
                           "macd_streak_require_turn": bool(self.state.get("macd_streak_require_turn", True)),
+                          "macd_streak_use_timing": bool(self.state.get("macd_streak_use_timing", False)),
                           "use_macd_strength": bool(self.state.get("use_macd_strength", True)),
                           "macd_strength_min_pct": float(self.state.get("macd_strength_min_pct", 30.0)),
                           "use_macd_two_stage_exit": bool(self.state.get("use_macd_two_stage_exit", True)),
@@ -572,7 +574,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
             "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone",
             "use_macd_signal_streak", "macd_streak_lookback", "macd_streak_min_samples",
-            "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn",
+            "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn", "macd_streak_use_timing",
             "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct",
             "use_ma_stretch", "use_base_spacing", "use_peak", "use_ma_stack",
             "use_ma_stack_1h", "macro_ma_period", "macro_regime_mode",
@@ -640,7 +642,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                           "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
                           "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone"}:
                 candidate[key] = bool(value)
-            elif key in {"use_macd_strength", "use_macd_two_stage_exit", "use_macd_signal_streak", "macd_streak_require_turn"}:
+            elif key in {"use_macd_strength", "use_macd_two_stage_exit", "use_macd_signal_streak", "macd_streak_require_turn", "macd_streak_use_timing"}:
                 candidate[key] = bool(value)
             else:
                 candidate[key] = float(value)
@@ -728,7 +730,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                  "use_macd_signal_positive", "use_macd_hist_positive", "use_macd_hist_reversal_exit",
                  "use_macd_hist_turn", "use_macd_hist_zone", "use_macd_hist_exit_zone", "use_macd_signal_slope_5m", "use_macd_zero_cross", "use_macd_signal_zone",
                  "use_macd_signal_streak", "macd_streak_lookback", "macd_streak_min_samples",
-                 "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn",
+                 "macd_streak_min_percentile", "macd_streak_min_reversal_prob_pct", "macd_streak_require_turn", "macd_streak_use_timing",
                  "use_hourly_hist", "hourly_hist_fast", "hourly_hist_slow", "hourly_hist_signal",
                  "use_macd_strength", "macd_strength_min_pct", "use_macd_two_stage_exit", "macd_first_exit_pct")):
                 raise ValueError("Pause the live bot before changing strategy or sizing")

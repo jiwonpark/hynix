@@ -629,13 +629,16 @@ exchange. Explicit operator recovery retains its separately guarded repair path.
 
 ## MACD signal-regime and streak entry condition
 
-Tabs 4 and 5 expose the same optional MACD signal-regime and streak condition
+Tabs 4 and 5 expose the same optional MACD signal-regime condition
 in all four MACD strategies and MA Proximity. The MA Proximity panel includes
-the applicable MACD fast, slow, and signal periods beside the streak controls.
+the applicable MACD fast, slow, and signal periods beside the regime controls.
 It is an AND entry gate and defaults OFF. A negative/red completed signal-line
 regime permits only short candidates; a positive/green regime permits only long
-candidates. The streak exhaustion thresholds determine when an entry is eligible
-inside that direction and never reverse the regime direction. It never gates exits and never reads positions,
+candidates. By default the regime sign is the entire rule: historical streak
+statistics are informational and do not delay an otherwise matching entry.
+An independently adjustable “streak-exhaustion timing” switch can additionally
+require its thresholds. It never reverses the regime direction. Neither rule
+gates exits or reads positions,
 balances, tranche capacity, recovery, or account state, so the independent
 `entry_signals` stream remains position-invariant.
 
@@ -650,7 +653,9 @@ the same sign. Show the current length, most recent same-sign completed length,
 sample count, empirical percentile, and Laplace-smoothed next-bar reversal
 hazard `(ended_at_length + 1) / (survived_to_length + 2)`. Users can adjust the
 history count, minimum samples, minimum percentile, minimum reversal probability,
-and whether the signal must also turn toward zero. Insufficient samples or an
-unavailable completed source fails closed when enabled. PASS/WAITING/OFF and the
-completed candle time must appear for paper and live status. This is a historical
-exhaustion estimate, not a guaranteed reversal countdown.
+and whether the signal must also turn toward zero. Hide these thresholds while
+streak timing is OFF and state explicitly that the regime is direction-only.
+Insufficient samples or an unavailable completed source fails closed only when
+streak timing is enabled. PASS/WAITING/OFF and the completed candle time must
+appear for paper and live status. This is a historical exhaustion estimate, not
+a guaranteed reversal countdown.

@@ -2162,6 +2162,7 @@ def _run_crypto_backtest_sync(
     macd_streak_min_percentile: float = 70.0,
     macd_streak_min_reversal_prob_pct: float = 20.0,
     macd_streak_require_turn: bool = True,
+    macd_streak_use_timing: bool = False,
     use_macd_two_stage_exit: bool = True,
     macd_first_exit_pct: float = 50.0,
     base_spacing_pct: float = 0.2,
@@ -2798,10 +2799,11 @@ def _run_crypto_backtest_sync(
         direction_period = ma_direction_period if strategy_mode == "ma_proximity" else 0
         first_index = max(w, (direction_period or w) + 1) if strategy_mode == "ma_proximity" else w + 1
         if strategy_mode == "ma_proximity" and use_macd_signal_streak:
-            streak_required = min(500, max(int(macd_slow_period), int(macd_fast_period) + 1)
-                                  + max(2, int(macd_signal_period))
-                                  + max(5, min(200, int(macd_streak_lookback))) * 12)
-            first_index = max(first_index, streak_required - 1)
+            regime_required = max(int(macd_slow_period), int(macd_fast_period) + 1) + max(2, int(macd_signal_period))
+            first_index = max(first_index, regime_required - 1)
+            if macd_streak_use_timing:
+                timing_required = min(500, regime_required + max(5, min(200, int(macd_streak_lookback))) * 12)
+                first_index = max(first_index, timing_required - 1)
         for index, bar in enumerate(bars):
             position = close_net_exit(position, bar)
             if active_positions:
@@ -2847,6 +2849,7 @@ def _run_crypto_backtest_sync(
                     "macd_streak_min_percentile": macd_streak_min_percentile,
                     "macd_streak_min_reversal_prob_pct": macd_streak_min_reversal_prob_pct,
                     "macd_streak_require_turn": macd_streak_require_turn,
+                    "macd_streak_use_timing": macd_streak_use_timing,
                 },
                 macro_alignment=evaluator_macro_alignment[index],
                 evaluation_time=int(bar["time"]),
@@ -3094,7 +3097,7 @@ def _run_crypto_backtest_sync(
         slow_w = max(fast_w + 1, int(macd_slow_period))
         signal_w = max(2, int(macd_signal_period))
         required = slow_w + signal_w + 1
-        if use_macd_signal_streak:
+        if use_macd_signal_streak and macd_streak_use_timing:
             required = max(required, min(500, slow_w + signal_w + macd_streak_lookback * 12))
         for index, bar in enumerate(bars):
             position = close_net_exit(position, bar)
@@ -3122,6 +3125,7 @@ def _run_crypto_backtest_sync(
                 min_percentile=macd_streak_min_percentile,
                 min_reversal_probability_pct=macd_streak_min_reversal_prob_pct,
                 require_turn=macd_streak_require_turn,
+                use_timing=macd_streak_use_timing,
             )
             enabled_conditions = entry_eval.get("condition_enabled", {})
             streak_standalone = use_macd_signal_streak and not any(
@@ -3138,6 +3142,7 @@ def _run_crypto_backtest_sync(
                     min_percentile=macd_streak_min_percentile,
                     min_reversal_probability_pct=macd_streak_min_reversal_prob_pct,
                     require_turn=macd_streak_require_turn,
+                    use_timing=macd_streak_use_timing,
                 )
                 entry_eval["candidate_side"] = candidate_side
             streak["standalone_trigger"] = streak_standalone
@@ -3368,6 +3373,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
                               macd_streak_min_percentile: float = 70.0,
                               macd_streak_min_reversal_prob_pct: float = 20.0,
                               macd_streak_require_turn: bool = True,
+                              macd_streak_use_timing: bool = False,
                               use_macd_two_stage_exit: bool = True, macd_first_exit_pct: float = 50.0,
                               base_spacing_pct: float = 0.2, min_dwell_bars: int = 4,
                               long_multiplier: float = 1.0, short_multiplier: float = 1.0,
@@ -3534,6 +3540,7 @@ async def get_crypto_backtest(symbol: str = "BTCUSDT", interval: str = "15m", li
         macd_streak_min_percentile=macd_streak_min_percentile,
         macd_streak_min_reversal_prob_pct=macd_streak_min_reversal_prob_pct,
         macd_streak_require_turn=macd_streak_require_turn,
+        macd_streak_use_timing=macd_streak_use_timing,
         use_macd_two_stage_exit=use_macd_two_stage_exit, macd_first_exit_pct=macd_first_exit_pct,
         base_spacing_pct=base_spacing_pct, min_dwell_bars=min_dwell_bars,
         long_multiplier=long_multiplier, short_multiplier=short_multiplier,
