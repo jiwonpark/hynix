@@ -229,6 +229,45 @@ async function run() {
 
       console.log("Cold-profile loading timings:", {tab: t.name, chartMs: firstChartMs, accountMs: firstAccountMs});
       console.log("Tab Diagnostic:", JSON.stringify(diag, null, 2));
+
+      if (["crypto", "lighterCrypto"].includes(t.name) && diag?.seriesVisible) {
+        const originalInterval = await evaluate(`${t.engine}.interval`);
+        const targetInterval = originalInterval === "15m" ? "5m" : "15m";
+        const prefix = t.name === "crypto" ? "crypto_" : "lighterCrypto_";
+        const switched = await evaluate(`(() => {
+          const button = document.getElementById("${prefix}btnShortInterval${targetInterval}");
+          if (!button) return false;
+          button.click();
+          return true;
+        })()`);
+        let intervalDiag = null;
+        const intervalStart = Date.now();
+        while (switched && Date.now() - intervalStart < 30000) {
+          intervalDiag = await evaluate(`(() => {
+            const engine = ${t.engine};
+            const bars = engine?.${t.data || "bars"} || [];
+            const series = engine?.${t.series || "series"};
+            return {
+              interval: engine?.interval,
+              chartInterval: engine?.chartInterval,
+              bars: bars.length,
+              points: series?.data?.().length || 0,
+              lastCandleTime: bars.at(-1)?.time || null,
+            };
+          })()`);
+          if (intervalDiag?.interval === targetInterval
+              && intervalDiag?.chartInterval === targetInterval
+              && intervalDiag?.bars > 1 && intervalDiag?.points > 1) break;
+          await new Promise((r) => setTimeout(r, 500));
+        }
+        console.log("Interval-switch diagnostic:", {tab:t.name, from:originalInterval, to:targetInterval, elapsedMs:Date.now()-intervalStart, ...intervalDiag});
+        if (!switched || intervalDiag?.interval !== targetInterval
+            || intervalDiag?.chartInterval !== targetInterval
+            || intervalDiag?.bars <= 1 || intervalDiag?.points <= 1) {
+          failures.push(`${t.name}: ${originalInterval} -> ${targetInterval} interval switch did not render populated data`);
+        }
+      }
+
       await evaluate(`document.getElementById("${t.hostId}")?.scrollIntoView({block: "center"})`);
       await new Promise(r => setTimeout(r, 200));
       await captureScreenshot(`/tmp/live_${t.name}.png`);
