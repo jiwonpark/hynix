@@ -4380,7 +4380,8 @@
       if (!this.hourlyEntryRegimeActive()) return this._currentMacd?.signal || [];
       return (this.entryTrendResult?.points || []).map((point) => ({
         time: point.time,
-        value: point.long_ok === true ? 1 : point.short_ok === true ? -1 : NaN,
+        value: point.signal_second_difference != null && Number.isFinite(Number(point.signal_second_difference))
+          ? Number(point.signal_second_difference) : NaN,
       }));
     },
 
@@ -4426,31 +4427,35 @@
       const entryRuleEnabled = $("lighterCrypto_macdUseSignalStreak")?.checked === true;
       const regimePoints = this.activeEntryRegimePoints();
       const ariaLabel = hourlyGate
-        ? "Completed 5-minute MACD signal second-difference entry regimes. Green permits long, red permits short."
+        ? "Completed 5-minute MACD signal second-difference entry spectrum. Green permits long, red permits short, and deeper color means stronger acceleration."
         : "MACD signal sign regimes. Green above zero, red below zero.";
       TerminalCommon.renderMacdSignalRegimes("lighterCrypto_", host, this.chart, regimePoints, {
         layer,
         summary: false,
         ariaLabel,
+        spectrum: hourlyGate,
       });
       TerminalCommon.renderMacdSignalRegimes("lighterCrypto_", lid("shortTermAssetHost"), this.assetChart, regimePoints, {
         summary: hourlyGate ? false : undefined,
         ariaLabel,
+        spectrum: hourlyGate,
       });
       if (hourlyGate) {
         const summary = $("lighterCrypto_macdSignalRegimeSummary");
         const current = [...regimePoints].reverse().find((point) => Number.isFinite(Number(point?.value)));
         if (summary) {
+          const formatted = Number.isFinite(Number(current?.value))
+            ? `${Number(current.value) >= 0 ? "+" : ""}${Number(current.value).toFixed(5)}` : "—";
           summary.textContent = Number(current?.value) > 0
-            ? "5m MACD Δ²S + · LONG only"
-            : Number(current?.value) < 0 ? "5m MACD Δ²S − · SHORT only" : "5m MACD Δ²S —";
+            ? `5m MACD Δ²S ${formatted} · LONG only`
+            : Number(current?.value) < 0 ? `5m MACD Δ²S ${formatted} · SHORT only` : "5m MACD Δ²S —";
           summary.style.color = Number(current?.value) > 0 ? "#15803d" : Number(current?.value) < 0 ? "#b91c1c" : "#64748b";
           summary.title = "Completed 5-minute MACD signal second difference currently governing entry direction";
         }
       }
       const legend = $("lighterCryptoEntryTrendLegend");
       if (legend) legend.textContent = hourlyGate
-        ? "5M MACD Δ²S · ENTRY ON · red short · green long"
+        ? "5M MACD Δ²S SPECTRUM · pale weak · red short · green long"
         : entryRuleEnabled
         ? "MACD REGIME · ENTRY ON · red short · green long"
         : "MACD REGIME · DISPLAY ONLY · entry rule off";

@@ -357,8 +357,8 @@ Show separate direction-correct LONG/Δ²S-positive and SHORT/Δ²S-negative PAP
 PASS/WAITING/OFF/UNAVAILABLE states, exact periods, the three signal values,
 both first differences, second difference, and completed-5m source timestamp in KST. Replay background uses this 5m entry filter
 when enabled; the other strategy conditions remain independently evaluated.
-Replay maps each chart bar's close to the newest hourly close available then.
-Never use the forming hourly candle or let future hourly data change old signals.
+Replay maps each chart bar to its completed 5m Δ²S value.
+Never use the forming 5m candle or let future data change old signals.
 Retain legacy `use_hourly_hist` and period API keys for saved controls so existing
 settings are not reset; return source `COMPLETED_5M_MACD_SIGNAL_SECOND_DIFF` plus
 the signal and difference values. Do not label a cached old-rule evaluation as the new rule.
@@ -644,7 +644,12 @@ balances, tranche capacity, recovery, or account state, so the independent
 
 When the 5-minute MACD signal second-difference entry-direction gate is enabled,
 the price and MACD panes on Tabs 4 and 5 both shade that governing completed-5m
-regime: positive Δ²S is green/LONG-only and negative Δ²S is red/SHORT-only.
+regime as a strength spectrum: positive Δ²S is green/LONG-only and negative Δ²S
+is red/SHORT-only, while color opacity increases with the absolute Δ²S magnitude.
+Normalize visual strength against the 90th percentile of the currently returned
+finite magnitudes so a single outlier does not wash out the remaining history.
+This spectrum is informational and must not introduce an unconfigured trading
+threshold: every nonzero sign continues to permit its corresponding direction.
 The legend and MACD summary must explicitly say `5m MACD Δ²S`; chart-interval
 signal-line shading must not overwrite it during scroll, resize, or refresh.
 When the 5m gate is disabled, both panes shade the displayed signal-line

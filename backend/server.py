@@ -3265,6 +3265,7 @@ def _run_crypto_backtest_sync(
     five_minute_entry_trend = {"enabled":bool(use_hourly_hist), "source":market_source.upper(),
         "basis":f"completed 5m MACD signal Δ²S({hourly_hist_fast}, {hourly_hist_slow}, {hourly_hist_signal}) regime: Δ²S > 0 LONG / Δ²S < 0 SHORT",
         "points":[{"time":bar['time'], "source_time":point.get('source_time') if point else None,
+                   "signal_second_difference":point.get('signal_second_difference') if point else None,
                    "long_ok":bool(point and point.get('long_ok')), "short_ok":bool(point and point.get('short_ok')),
                    "direction":"UNAVAILABLE" if not point or not point.get('ready') else
                        "UPTREND" if point['long_ok'] else "DOWNTREND" if point['short_ok'] else "NEUTRAL"}

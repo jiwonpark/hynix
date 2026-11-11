@@ -76,6 +76,10 @@ class HourlyHistogramTests(unittest.TestCase):
         for point in on['entry_trend']['points']:
             if point['source_time'] is not None:
                 self.assertLessEqual(point['source_time']+300,point['time']+300)
+            if point['direction'] in {'UPTREND','DOWNTREND'}:
+                self.assertIsInstance(point['signal_second_difference'], float)
+                self.assertEqual(point['signal_second_difference'] > 0, point['long_ok'])
+                self.assertEqual(point['signal_second_difference'] < 0, point['short_ok'])
         old=[dict(b) for b in self.hours]
         for b in old:
             if b['time']>=280*300:b['value']*=10

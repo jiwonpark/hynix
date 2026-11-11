@@ -551,6 +551,31 @@
       if (Number.isFinite(lastX) && Number.isFinite(priorX)) barWidth = Math.max(2, Math.abs(lastX - priorX));
     }
     const hostWidth = host.clientWidth || 0;
+    if (options.spectrum === true) {
+      const finitePoints = points.filter((point) => Number.isFinite(Number(point?.value)) && Number(point.value) !== 0);
+      const magnitudes = finitePoints.map((point) => Math.abs(Number(point.value))).sort((a, b) => a - b);
+      const scaleIndex = Math.max(0, Math.ceil(magnitudes.length * 0.9) - 1);
+      const strengthScale = magnitudes[scaleIndex] || magnitudes.at(-1) || 1;
+      for (const point of finitePoints) {
+        const value = Number(point.value);
+        const x = timeScale.timeToCoordinate(point.time);
+        if (!Number.isFinite(x)) continue;
+        const left = Math.max(0, Math.min(hostWidth, x - barWidth / 2));
+        const right = Math.max(0, Math.min(hostWidth, x + barWidth / 2));
+        if (right <= left) continue;
+        const strength = Math.min(1, Math.abs(value) / strengthScale);
+        const alpha = 0.035 + 0.185 * Math.sqrt(strength);
+        const color = value > 0 ? "22,163,74" : "220,38,38";
+        const band = document.createElement("div");
+        band.dataset.regimeRole = "spectrum";
+        band.dataset.regimeSign = value > 0 ? "positive" : "negative";
+        band.dataset.regimeStrength = strength.toFixed(4);
+        band.dataset.regimeValue = String(value);
+        band.style.cssText = `position:absolute;top:0;bottom:0;left:${left}px;width:${right-left}px;box-sizing:border-box;background:rgba(${color},${alpha.toFixed(3)})`;
+        layer.appendChild(band);
+      }
+      return comparison;
+    }
     for (const run of comparison.runs) {
       const role = run === comparison.current ? "current" : run === comparison.previous ? "previous" : "history";
       const color = run.sign > 0 ? "22,163,74" : "220,38,38";

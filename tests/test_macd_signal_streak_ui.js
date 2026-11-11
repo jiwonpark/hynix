@@ -89,4 +89,16 @@ for (const band of bands) {
   assert.ok(band.style.cssText.includes(`background:rgba(${rgb},`));
 }
 
+const spectrumHost = element();
+TerminalCommon.renderMacdSignalRegimes('spectrum_', spectrumHost, chart, [
+  {time:1,value:-1},{time:2,value:-4},{time:3,value:2},{time:4,value:8},
+], {spectrum:true});
+const spectrumBands = spectrumHost.children[0].children;
+assert.equal(spectrumBands.length, 4, 'spectrum renders every finite nonzero candle');
+assert.ok(Number(spectrumBands[1].dataset.regimeStrength) > Number(spectrumBands[0].dataset.regimeStrength),
+  'stronger negative Δ²S has a deeper red band');
+assert.ok(Number(spectrumBands[3].dataset.regimeStrength) > Number(spectrumBands[2].dataset.regimeStrength),
+  'stronger positive Δ²S has a deeper green band');
+assert.ok(spectrumBands.every(band => band.dataset.regimeRole === 'spectrum'));
+
 console.log('MACD signal streak UI tests passed');
