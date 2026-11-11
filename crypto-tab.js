@@ -2683,6 +2683,7 @@
         }
       }
       TerminalCommon.renderMacdSignalRegimes("crypto_", lid("shortTermAssetHost"), this.assetChart, macd.signal);
+      this.renderTrendRanges();
 
       this.renderMaLegendValues(bars.at(-1)?.time);
     },
@@ -4138,6 +4139,15 @@
       const host = lid("shortTermSpreadChartHost");
       if (!layer || !host || !this.chart) return;
       layer.innerHTML = "";
+      if ($("crypto_macdUseSignalStreak")?.checked === true) {
+        TerminalCommon.renderMacdSignalRegimes("crypto_", host, this.chart, this._currentMacd?.signal, {
+          layer,
+          summary: false,
+        });
+        const legend = $("cryptoEntryTrendLegend");
+        if (legend) legend.textContent = "MACD REGIME · red short · green long";
+        return;
+      }
       if (!this.trendRanges.length) return;
       const scale = this.chart.timeScale();
       const width = this.alignChartOverlay(layer);

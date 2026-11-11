@@ -49,6 +49,8 @@ for (const file of ['crypto-tab.js', 'lighter-crypto-tab.js']) {
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
   assert.ok(source.includes('macdSignalRegimeSummary'), `${file} shows the current/previous regime comparison`);
   assert.ok(source.includes('renderMacdSignalRegimes'), `${file} renders shared MACD regime bands`);
+  assert.ok(source.includes('MACD REGIME · red short · green long'), `${file} labels the synchronized price-chart regime`);
+  assert.ok(source.includes('summary: false'), `${file} reuses the MACD regime on the price chart without replacing the MACD summary`);
 }
 
 function element() {

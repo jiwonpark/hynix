@@ -5,7 +5,21 @@ const vm = require('node:vm');
 for (const [file, prefix, name] of [['crypto-tab.js', 'crypto', 'cryptoEngine'], ['lighter-crypto-tab.js', 'lighterCrypto', 'lighterCryptoEngine']]) {
   const layer = {style: {}, innerHTML: ''}, legend = {};
   const elements = new Map([[`${prefix}TrendBandLayer`, layer], [`${prefix}EntryTrendLegend`, legend], [`${prefix}_shortTermSpreadChartHost`, {}]]);
-  const context = {setTimeout, clearTimeout, TerminalCommon: {replaySignalLinks: () => new Map()}, window: {}, document: {getElementById: id => elements.get(id), readyState: 'loading', addEventListener() {}}, console, URLSearchParams};
+  let priceRegimeSignal = null;
+  let replayResponse = null;
+  let replayFailure = null;
+  const context = {setTimeout, clearTimeout, TerminalCommon: {
+    replaySignalLinks: () => new Map(),
+    fetchReplay: async () => {
+      if (replayFailure) throw replayFailure;
+      return replayResponse;
+    },
+    renderMacdSignalRegimes: (_prefix, _host, _chart, signal, options) => {
+      priceRegimeSignal = signal;
+      options.layer.innerHTML = 'authoritative MACD regime';
+    },
+  }, window: {}, document: {getElementById: id => elements.get(id), readyState: 'loading', addEventListener() {}}, console, URLSearchParams};
+  context.window.TerminalCommon = context.TerminalCommon;
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(file, 'utf8'), context);
   const engine = context.window[name];
@@ -21,6 +35,14 @@ for (const [file, prefix, name] of [['crypto-tab.js', 'crypto', 'cryptoEngine'],
   assert.match(layer.innerHTML, /rgba\(220,38,38,.12\)/);
   assert.match(legend.textContent, /PAPER ENTRY FILTER ON.*completed 1h/);
   assert.match(layer.innerHTML, /source candle.*KST/);
+  const regimeToggle = {checked: true};
+  elements.set(`${prefix}_macdUseSignalStreak`, regimeToggle);
+  engine._currentMacd = {signal: [{time: 0, value: -1}, {time: 300, value: 1}]};
+  engine.applyEntryTrend(result);
+  assert.equal(layer.innerHTML, 'authoritative MACD regime');
+  assert.equal(priceRegimeSignal, engine._currentMacd.signal, 'price and MACD panes must use the same signal regime data');
+  assert.equal(legend.textContent, 'MACD REGIME · red short · green long');
+  regimeToggle.checked = false;
   engine.applyEntryTrend({...result, enabled: false, points: [{time: 0, direction: 'OFF'}]});
   assert.doesNotMatch(layer.innerHTML, /rgba\(22,163,74|rgba\(220,38,38/);
   assert.match(legend.textContent, /OFF/);
@@ -41,11 +63,11 @@ for (const [file, prefix, name] of [['crypto-tab.js', 'crypto', 'cryptoEngine'],
   engine.executionChartFrame = {setStatus: text => { replayStatus = text; }};
   engine.replaySettings = () => ({strategy_mode: 'grid'});
   for (const method of ['renderMarkers', 'renderCurrentPositionReferenceLines', 'updateRulesMatchStatus', 'updateMaAndDiffs']) engine[method] = () => {};
-  context.fetch = async () => ({ok: true, json: async () => ({success: true, entry_trend: result, trades: [], entry_signals: [], metrics: {}, summary: {trades: 0, win_rate: 0, net_pct: 0}})});
+  replayResponse = {success: true, entry_trend: result, trades: [], entry_signals: [], metrics: {}, summary: {trades: 0, win_rate: 0, net_pct: 0}, latest_conditions: {}, latest_condition_time: 900};
   await engine.runBacktest();
   assert.match(legend.textContent, /PAPER ENTRY FILTER ON/, `${file} must apply the replay response: ${replayStatus}`);
   assert.match(layer.innerHTML, /rgba\(220,38,38,.12\)/);
-  context.fetch = async () => { throw new Error('test unavailable'); };
+  replayFailure = new Error('test unavailable');
   await engine.runBacktest();
   assert.match(legend.textContent, /failed/, 'failed same-settings refresh must be labeled');
   assert.equal(layer.style.opacity, '.38', 'previous same-settings background must be visibly stale');
