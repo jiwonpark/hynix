@@ -29,27 +29,25 @@ for (const [file, prefix, name] of [['crypto-tab.js', 'crypto', 'cryptoEngine'],
     {time: 0, direction: 'UPTREND', source_time: 0}, {time: 300, direction: 'DOWNTREND', source_time: 0},
     {time: 600, direction: 'SIDEWAYS', source_time: 0},
   ]};
-  engine.applyEntryTrend(result);
-  assert.equal(engine.trendRanges.length, 3, 'forming/uncovered candles must not inherit a trend');
-  assert.match(layer.innerHTML, /rgba\(22,163,74,.12\)/);
-  assert.match(layer.innerHTML, /rgba\(220,38,38,.12\)/);
-  assert.match(legend.textContent, /PAPER ENTRY FILTER ON.*completed 1h/);
-  assert.match(layer.innerHTML, /source candle.*KST/);
-  const regimeToggle = {checked: true};
-  elements.set(`${prefix}_macdUseSignalStreak`, regimeToggle);
   engine._currentMacd = {signal: [{time: 0, value: -1}, {time: 300, value: 1}]};
   engine.applyEntryTrend(result);
+  assert.equal(engine.trendRanges.length, 3, 'forming/uncovered candles must not inherit a trend');
   assert.equal(layer.innerHTML, 'authoritative MACD regime');
-  assert.equal(priceRegimeSignal, engine._currentMacd.signal, 'price and MACD panes must use the same signal regime data');
-  assert.equal(legend.textContent, 'MACD REGIME · red short · green long');
+  assert.equal(priceRegimeSignal, engine._currentMacd.signal, 'price and MACD panes must always use the same signal regime data');
+  assert.equal(legend.textContent, 'MACD REGIME · DISPLAY ONLY · entry rule off');
+  const regimeToggle = {checked: true};
+  elements.set(`${prefix}_macdUseSignalStreak`, regimeToggle);
+  engine.applyEntryTrend(result);
+  assert.equal(layer.innerHTML, 'authoritative MACD regime');
+  assert.equal(legend.textContent, 'MACD REGIME · ENTRY ON · red short · green long');
   regimeToggle.checked = false;
   engine.applyEntryTrend({...result, enabled: false, points: [{time: 0, direction: 'OFF'}]});
-  assert.doesNotMatch(layer.innerHTML, /rgba\(22,163,74|rgba\(220,38,38/);
-  assert.match(legend.textContent, /OFF/);
+  assert.equal(layer.innerHTML, 'authoritative MACD regime');
+  assert.equal(legend.textContent, 'MACD REGIME · DISPLAY ONLY · entry rule off');
   engine.clearEntryTrend();
-  assert.equal(layer.innerHTML, '');
+  assert.equal(layer.innerHTML, 'authoritative MACD regime');
   assert.equal(engine.calculateTrendRanges(engine.bars).length, 0);
-  assert.match(legend.textContent, /awaiting replay/);
+  assert.equal(legend.textContent, 'MACD REGIME · DISPLAY ONLY · entry rule off');
   // Exercise the actual async response path, not just the rendering helper.
   const input = {value: '7', dataset: {}, checkValidity: () => true};
   elements.set(`${prefix}_macroMaPeriod`, input);
@@ -65,13 +63,13 @@ for (const [file, prefix, name] of [['crypto-tab.js', 'crypto', 'cryptoEngine'],
   for (const method of ['renderMarkers', 'renderCurrentPositionReferenceLines', 'updateRulesMatchStatus', 'updateMaAndDiffs']) engine[method] = () => {};
   replayResponse = {success: true, entry_trend: result, trades: [], entry_signals: [], metrics: {}, summary: {trades: 0, win_rate: 0, net_pct: 0}, latest_conditions: {}, latest_condition_time: 900};
   await engine.runBacktest();
-  assert.match(legend.textContent, /PAPER ENTRY FILTER ON/, `${file} must apply the replay response: ${replayStatus}`);
-  assert.match(layer.innerHTML, /rgba\(220,38,38,.12\)/);
+  assert.match(legend.textContent, /MACD REGIME · DISPLAY ONLY/, `${file} must keep chart regimes synchronized: ${replayStatus}`);
+  assert.equal(layer.innerHTML, 'authoritative MACD regime');
   replayFailure = new Error('test unavailable');
   await engine.runBacktest();
-  assert.match(legend.textContent, /failed/, 'failed same-settings refresh must be labeled');
-  assert.equal(layer.style.opacity, '.38', 'previous same-settings background must be visibly stale');
+  assert.match(legend.textContent, /MACD REGIME · DISPLAY ONLY/, 'replay failure must not replace the MACD regime label');
+  assert.equal(layer.style.opacity, '1', 'replay failure must not dim the independently computed MACD regime');
 }
-console.log('Both crypto tabs render authoritative entry-filter colors and clear stale shading');
+console.log('Both crypto tabs always synchronize price-chart and MACD regimes');
 
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -4354,21 +4354,14 @@
       this.entryTrendResult = null;
       this.trendRanges = [];
       const layer = $("lighterCryptoTrendBandLayer");
-      if (layer) layer.innerHTML = "";
-      const legend = $("lighterCryptoEntryTrendLegend");
-      if (legend) legend.textContent = "PAPER ENTRY TREND · awaiting replay";
+      if (layer) layer.style.opacity = "1";
+      this.renderTrendRanges();
     },
 
-    setEntryTrendLoading(message = "replay updating…") {
+    setEntryTrendLoading() {
       const layer = $("lighterCryptoTrendBandLayer");
-      const legend = $("lighterCryptoEntryTrendLegend");
-      if (layer) layer.style.opacity = this.entryTrendResult ? ".38" : "1";
-      if (legend) {
-        const previous = this.entryTrendResult
-          ? `PAPER ENTRY FILTER · ${this.entryTrendResult.source || ""} · ${this.entryTrendResult.basis || ""}`
-          : "PAPER ENTRY FILTER";
-        legend.textContent = `${previous} · ${message}`;
-      }
+      if (layer) layer.style.opacity = "1";
+      this.renderTrendRanges();
     },
 
     calculateTrendRanges(bars) {
@@ -4417,36 +4410,15 @@
       const host = lid("shortTermSpreadChartHost");
       if (!layer || !host || !this.chart) return;
       layer.innerHTML = "";
-      if ($("lighterCrypto_macdUseSignalStreak")?.checked === true) {
-        TerminalCommon.renderMacdSignalRegimes("lighterCrypto_", host, this.chart, this._currentMacd?.signal, {
-          layer,
-          summary: false,
-        });
-        const legend = $("lighterCryptoEntryTrendLegend");
-        if (legend) legend.textContent = "MACD REGIME · red short · green long";
-        return;
-      }
-      if (!this.trendRanges.length) return;
-      const scale = this.chart.timeScale();
-      const width = this.alignChartOverlay(layer);
-      const html = [];
-      this.trendRanges.forEach((point) => {
-        const x = scale.timeToCoordinate(point.time);
-        if (x == null) return;
-        const nextBar = this.bars[point.index + 1];
-        const previousBar = this.bars[point.index - 1];
-        const adjacentX = nextBar ? scale.timeToCoordinate(nextBar.time) : (previousBar ? scale.timeToCoordinate(previousBar.time) : null);
-        const barWidth = adjacentX == null ? 7 : Math.max(2, Math.abs(adjacentX - x));
-        const left = Math.max(0, x - barWidth / 2);
-        const right = Math.min(width, x + barWidth / 2);
-        if (right <= 0 || left >= width || right - left < 1) return;
-        const up = point.direction === "UPTREND", down = point.direction === "DOWNTREND";
-        const background = up ? "rgba(22,163,74,.12)" : down ? "rgba(220,38,38,.12)" : "rgba(100,116,139,.025)";
-        const strip = up ? "#16a34a" : down ? "#dc2626" : "#94a3b8";
-        const sourceTime = point.source_time == null ? "unavailable" : new Date(point.source_time * 1000).toLocaleString("en-GB", { timeZone: "Asia/Seoul" }) + " KST";
-        html.push(`<div title="PAPER entry filter ${point.direction} · ${this.entryTrendResult?.source || ""} · source candle ${sourceTime}" style="position:absolute;top:0;bottom:0;left:${left.toFixed(1)}px;width:${Math.max(1, right - left).toFixed(1)}px;background:${background};border-top:4px solid ${strip}"></div>`);
+      const entryRuleEnabled = $("lighterCrypto_macdUseSignalStreak")?.checked === true;
+      TerminalCommon.renderMacdSignalRegimes("lighterCrypto_", host, this.chart, this._currentMacd?.signal, {
+        layer,
+        summary: false,
       });
-      layer.innerHTML = html.join("");
+      const legend = $("lighterCryptoEntryTrendLegend");
+      if (legend) legend.textContent = entryRuleEnabled
+        ? "MACD REGIME · ENTRY ON · red short · green long"
+        : "MACD REGIME · DISPLAY ONLY · entry rule off";
     },
 
     syncMacroRegimeControlsFromBot(bot) {
