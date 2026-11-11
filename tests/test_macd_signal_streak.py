@@ -218,7 +218,7 @@ def test_ma7_price_side_and_simple_macd_regime_emit_many_entry_signals():
     )
 
     assert len(replay["entry_signals"]) > 20
-    assert all(signal["conditions"]["entry_price_side_7"] is True
+    assert all(signal["conditions"]["entry_ma_price_7"] is True
                and signal["conditions"]["entry_signal_streak_exhaustion"] is True
                for signal in replay["entry_signals"])
     latest = replay["latest_evaluation"]
