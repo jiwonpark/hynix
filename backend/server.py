@@ -3263,7 +3263,7 @@ def _run_crypto_backtest_sync(
     mode_metrics["capacity_mode"] = "SINGLE_LEG_CRYPTO"
 
     five_minute_entry_trend = {"enabled":bool(use_hourly_hist), "source":market_source.upper(),
-        "basis":f"completed 5m MACD-H({hourly_hist_fast}, {hourly_hist_slow}, {hourly_hist_signal}) regime: H > 0 LONG / H < 0 SHORT",
+        "basis":f"completed 5m MACD signal Δ²S({hourly_hist_fast}, {hourly_hist_slow}, {hourly_hist_signal}) regime: Δ²S > 0 LONG / Δ²S < 0 SHORT",
         "points":[{"time":bar['time'], "source_time":point.get('source_time') if point else None,
                    "long_ok":bool(point and point.get('long_ok')), "short_ok":bool(point and point.get('short_ok')),
                    "direction":"UNAVAILABLE" if not point or not point.get('ready') else
@@ -3294,6 +3294,7 @@ def _run_crypto_backtest_sync(
         "take_profit_evaluation": latest_take_profit,
         "stop_loss_evaluation": latest_stop_loss,
         "take_profit_fee_rate": take_profit_fee_rate,
+        "five_minute_signal_second_diff": entry_hist_by_bar[-1] if entry_hist_by_bar else None,
         "five_minute_histogram": entry_hist_by_bar[-1] if entry_hist_by_bar else None,
         "hourly_histogram": entry_hist_by_bar[-1] if entry_hist_by_bar else None,
         "five_minute_macd_signal": five_by_bar[-1] if five_by_bar else None,

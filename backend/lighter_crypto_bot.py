@@ -281,6 +281,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             stop_trail_activation_pct=float(self.state.get("stop_trail_activation_pct", 0.3)),
             stop_trail_distance_pct=float(self.state.get("stop_trail_distance_pct", 0.2)),
             stop_trail_min_step_pct=float(self.state.get("stop_trail_min_step_pct", 0.05)))
+        result["five_minute_signal_second_diff"] = result.get("hourly_histogram")
         result["five_minute_histogram"] = result.get("hourly_histogram")
         return result
 
@@ -1314,7 +1315,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             price = ask if side > 0 else bid
             if reason != "manual" and not reduce_only:
                 if not await self.hourly_entry_allowed(side):
-                    raise ValueError("Completed 5m MACD histogram direction blocks this entry")
+                    raise ValueError("Completed 5m MACD signal second difference blocks this entry")
                 if not await self.five_minute_signal_entry_allowed(side):
                     raise ValueError("Completed 5m MACD signal slope blocks this entry")
             if signal_values is not None and not reduce_only:

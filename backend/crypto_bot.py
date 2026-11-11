@@ -229,6 +229,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         result["blocked_reason"] = self.state.get("blocked_reason") or self.state.get("last_error")
         result["can_execute_entry"] = bool(self.state.get("enabled") and not result["execution_blocked"])
         result["can_execute_exit"] = bool(self.state.get("enabled") and not self.state.get("recovery_required") and not self.state.get("pending_order"))
+        result["five_minute_signal_second_diff"] = result.get("hourly_histogram")
         result["five_minute_histogram"] = result.get("hourly_histogram")
         return result
 
@@ -745,7 +746,7 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
         price = ask if side > 0 else bid
         if reason != "manual" and not reduce_only:
             if not await self.hourly_entry_allowed(side):
-                raise ValueError("Completed 5m MACD histogram direction blocks this entry")
+                raise ValueError("Completed 5m MACD signal second difference blocks this entry")
             if not await self.five_minute_signal_entry_allowed(side):
                 raise ValueError("Completed 5m MACD signal slope blocks this entry")
         if signal_values is not None and not reduce_only:

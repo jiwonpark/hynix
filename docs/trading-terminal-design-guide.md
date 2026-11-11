@@ -342,26 +342,26 @@ labels an activated ratcheted floor as `TRAIL`; before activation it shows the
 configured initial `STOP`. Disabled or unpriceable stops render no line. Tabs 2
 and 3 do not expose this single-leg net stop rule and must not fabricate one.
 
-## 5-minute MACD histogram direction regime (Tabs 4 and 5)
+## 5-minute MACD signal second-difference direction regime (Tabs 4 and 5)
 
 All single-leg strategies expose an additional optional entry filter, default ON:
-compute H = MACD − signal from the latest **completed 5m candle**. Positive H
-permits LONG entries only; negative H permits SHORT entries only; exactly zero
-or unavailable permits neither. A completed H zero-cross therefore changes the
-permitted entry direction. Fast/Slow/Signal are independently adjustable (default 20/60/9)
+compute `Δ²S = Sₜ − 2Sₜ₋₁ + Sₜ₋₂` from the MACD signal line on the latest three
+**completed 5m candles**. Positive Δ²S permits LONG entries only; negative Δ²S
+permits SHORT entries only; exactly zero or unavailable permits neither.
+Fast/Slow/Signal are independently adjustable (default 20/60/9)
 from the selected strategy/chart MACD. The switch and periods persist through the
 authenticated bot config and are reported in strategy_params. Replay drafts may
 persist in the browser; deploying saves live, explicit Align restores live values.
 
-Show separate direction-correct LONG/H-positive and SHORT/H-negative PAPER and LIVE
-PASS/WAITING/OFF/UNAVAILABLE states, exact periods, previous/current histogram,
-zero-cross state and completed-5m source timestamp in KST. Replay background uses this 5m entry filter
+Show separate direction-correct LONG/Δ²S-positive and SHORT/Δ²S-negative PAPER and LIVE
+PASS/WAITING/OFF/UNAVAILABLE states, exact periods, the three signal values,
+both first differences, second difference, and completed-5m source timestamp in KST. Replay background uses this 5m entry filter
 when enabled; the other strategy conditions remain independently evaluated.
 Replay maps each chart bar's close to the newest hourly close available then.
 Never use the forming hourly candle or let future hourly data change old signals.
 Retain legacy `use_hourly_hist` and period API keys for saved controls so existing
-settings are not reset; return source `COMPLETED_5M_MACD_HISTOGRAM_REGIME` plus previous/current histogram
-and `histogram_cross`. Do not label a cached old-rule evaluation as the new rule.
+settings are not reset; return source `COMPLETED_5M_MACD_SIGNAL_SECOND_DIFF` plus
+the signal and difference values. Do not label a cached old-rule evaluation as the new rule.
 Hourly direction is evaluated independently of inventory for entry_signals.
 
 This filter is entry-only: keep every existing signal, emergency and net-profit
@@ -524,7 +524,7 @@ a later refresh failure keeps those values visible as an explicitly stale
 snapshot with the failed-refresh reason and retry state; it must not replace
 known balances or positions with dashes or zeros.
 
-The completed-hour histogram regime remains an independent entry-direction filter.
+The completed-5m MACD signal second difference remains an independent entry-direction filter.
 Exits use the opposite ΔH turn and H zone: close long when previous ΔH ≥ 0,
 current ΔH < 0 and H > 0; close short when previous ΔH ≤ 0, current ΔH > 0
 and H < 0. Give the exit turn (`use_macd_hist_exit`) and exit H zone
@@ -642,10 +642,10 @@ gates exits or reads positions,
 balances, tranche capacity, recovery, or account state, so the independent
 `entry_signals` stream remains position-invariant.
 
-When the 5-minute MACD histogram entry-direction gate is enabled, the price and
-MACD panes on Tabs 4 and 5 both shade that governing completed-5m regime:
-positive histogram is green/LONG-only and negative histogram is red/SHORT-only.
-The legend and MACD summary must explicitly say `5m MACD-H`; chart-interval
+When the 5-minute MACD signal second-difference entry-direction gate is enabled,
+the price and MACD panes on Tabs 4 and 5 both shade that governing completed-5m
+regime: positive Δ²S is green/LONG-only and negative Δ²S is red/SHORT-only.
+The legend and MACD summary must explicitly say `5m MACD Δ²S`; chart-interval
 signal-line shading must not overwrite it during scroll, resize, or refresh.
 When the 5m gate is disabled, both panes shade the displayed signal-line
 runs instead. Positive values are green, negative values are red, and zero or

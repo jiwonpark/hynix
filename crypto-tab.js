@@ -3465,7 +3465,7 @@
         window.TerminalCommon?.renderReplayFailure?.("crypto_", this.replayError);
         return;
       }
-      window.TerminalCommon?.renderHourlyHistogram?.("crypto_", "Paper", result?.five_minute_histogram || result?.hourly_histogram, settings.use_hourly_hist);
+      window.TerminalCommon?.renderHourlyHistogram?.("crypto_", "Paper", result?.five_minute_signal_second_diff || result?.hourly_histogram, settings.use_hourly_hist);
       window.TerminalCommon?.renderTakeProfitStatus?.("crypto_", "Paper", result?.take_profit_evaluation, settings.use_take_profit);
       window.TerminalCommon?.renderTakeProfitStatus?.("crypto_", "Paper", result?.stop_loss_evaluation, settings.use_stop_loss === true, "stop_loss");
       if (this.currentParadigm === "ma_proximity") {
@@ -4095,7 +4095,7 @@
 
     hourlyEntryRegimeActive() {
       return this.entryTrendResult?.enabled === true
-        && String(this.entryTrendResult?.basis || "").includes("completed 5m MACD-H");
+        && String(this.entryTrendResult?.basis || "").includes("completed 5m MACD signal Δ²S");
     },
 
     activeEntryRegimePoints() {
@@ -4148,7 +4148,7 @@
       const entryRuleEnabled = $("crypto_macdUseSignalStreak")?.checked === true;
       const regimePoints = this.activeEntryRegimePoints();
       const ariaLabel = hourlyGate
-        ? "Completed 5-minute MACD histogram entry regimes. Green permits long, red permits short."
+        ? "Completed 5-minute MACD signal second-difference entry regimes. Green permits long, red permits short."
         : "MACD signal sign regimes. Green above zero, red below zero.";
       TerminalCommon.renderMacdSignalRegimes("crypto_", host, this.chart, regimePoints, {
         layer,
@@ -4164,15 +4164,15 @@
         const current = [...regimePoints].reverse().find((point) => Number.isFinite(Number(point?.value)));
         if (summary) {
           summary.textContent = Number(current?.value) > 0
-            ? "5m MACD-H + · LONG only"
-            : Number(current?.value) < 0 ? "5m MACD-H − · SHORT only" : "5m MACD-H —";
+            ? "5m MACD Δ²S + · LONG only"
+            : Number(current?.value) < 0 ? "5m MACD Δ²S − · SHORT only" : "5m MACD Δ²S —";
           summary.style.color = Number(current?.value) > 0 ? "#15803d" : Number(current?.value) < 0 ? "#b91c1c" : "#64748b";
-          summary.title = "Completed 5-minute MACD histogram regime currently governing entry direction";
+          summary.title = "Completed 5-minute MACD signal second difference currently governing entry direction";
         }
       }
       const legend = $("cryptoEntryTrendLegend");
       if (legend) legend.textContent = hourlyGate
-        ? "5M MACD-H REGIME · ENTRY ON · red short · green long"
+        ? "5M MACD Δ²S · ENTRY ON · red short · green long"
         : entryRuleEnabled
         ? "MACD REGIME · ENTRY ON · red short · green long"
         : "MACD REGIME · DISPLAY ONLY · entry rule off";
@@ -4235,7 +4235,7 @@
       bot = this.retainVerifiedRealizedSnapshot(bot);
       this.botState = bot;
       window.TerminalCommon?.syncHourlyHistogram?.("crypto_", bot);
-      window.TerminalCommon?.renderHourlyHistogram?.("crypto_", "Live", bot.five_minute_histogram || bot.hourly_histogram, bot.use_hourly_hist);
+      window.TerminalCommon?.renderHourlyHistogram?.("crypto_", "Live", bot.five_minute_signal_second_diff || bot.hourly_histogram, bot.use_hourly_hist);
       this.syncMacdDraftControls(bot);
       window.TerminalCommon?.renderTakeProfitStatus?.("crypto_", "Live", bot.take_profit_evaluation, bot.use_take_profit);
       window.TerminalCommon?.renderTakeProfitStatus?.("crypto_", "Live", bot.stop_loss_evaluation, bot.use_stop_loss === true, "stop_loss");

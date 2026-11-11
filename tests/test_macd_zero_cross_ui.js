@@ -63,15 +63,18 @@ function load(file, globalName, prefix, defaultMode) {
   for (const suffix of ["LongPaper", "ShortPaper", "PaperSource"]) nodes.set(`${prefix}hourlyHist${suffix}`, {textContent: ""});
   context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", {
     ready:true,long_ok:true,short_ok:false,source_time:100,periods:[8,21,5],
-    source:"COMPLETED_5M_MACD_HISTOGRAM_REGIME",histogram:2,previous_histogram:-1,histogram_cross:"CROSS_UP"}, true);
+    source:"COMPLETED_5M_MACD_SIGNAL_SECOND_DIFF",prior_signal:-2,previous_signal:-1,signal:1,
+    previous_signal_delta:1,signal_delta:2,signal_second_difference:1}, true);
   assert.match(nodes.get(`${prefix}hourlyHistLongPaper`).textContent, /PASS/);
   assert.match(nodes.get(`${prefix}hourlyHistShortPaper`).textContent, /WAITING/);
-  context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", {ready:true,long_ok:false,short_ok:true,source:"COMPLETED_5M_MACD_HISTOGRAM_REGIME",histogram:-1,previous_histogram:2,histogram_cross:"CROSS_DOWN"}, true);
+  context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", {ready:true,long_ok:false,short_ok:true,
+    source:"COMPLETED_5M_MACD_SIGNAL_SECOND_DIFF",prior_signal:2,previous_signal:1,signal:-1,
+    previous_signal_delta:-1,signal_delta:-2,signal_second_difference:-1}, true);
   assert.match(nodes.get(`${prefix}hourlyHistLongPaper`).textContent, /WAITING/);
   assert.match(nodes.get(`${prefix}hourlyHistShortPaper`).textContent, /PASS/);
-  assert.match(nodes.get(`${prefix}hourlyHistPaperSource`).textContent,/H 2.00000 → -1.00000 · CROSS_DOWN · permits SHORT/);
-  context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", {ready:true,long_ok:true,source:"COMPLETED_1H_MACD_SIGNAL_SECOND_DIFF",signal_acceleration:2}, true);
-  assert.match(nodes.get(`${prefix}hourlyHistLongPaper`).textContent,/UNAVAILABLE/,'old cached second-difference data cannot masquerade as the new rule');
+  assert.match(nodes.get(`${prefix}hourlyHistPaperSource`).textContent,/S 2.00000 → 1.00000 → -1.00000 · ΔS -1.00000 → -2.00000 · Δ²S -1.00000 · permits SHORT/);
+  context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", {ready:true,long_ok:true,source:"COMPLETED_5M_MACD_HISTOGRAM_REGIME",histogram:2}, true);
+  assert.match(nodes.get(`${prefix}hourlyHistLongPaper`).textContent,/UNAVAILABLE/,'old cached histogram data cannot masquerade as the new rule');
   context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", null, true);
   assert.match(nodes.get(`${prefix}hourlyHistLongPaper`).textContent, /UNAVAILABLE/);
   context.TerminalCommon.renderHourlyHistogram(prefix, "Paper", null, false);

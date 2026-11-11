@@ -1,4 +1,4 @@
-"""Causal completed-5m MACD histogram-regime entry gate, shared by Tabs 4/5.
+"""Causal completed-5m MACD signal-second-difference entry gate, Tabs 4/5.
 
 The ``hourly_hist_*`` names are retained as persisted API keys for backwards
 compatibility; the condition itself is intentionally evaluated on 5m candles.
@@ -61,7 +61,7 @@ def apply_five_minute_signal_filter(entry, side, details, config, point=None):
 
 
 def hourly_histogram_points(bars, config):
-    """Return completed-5m histogram regimes using legacy persisted key names."""
+    """Return completed-5m signal Δ² regimes using legacy persisted key names."""
     ordered = sorted(bars, key=lambda b: b['time'])
     periods = [int(config.get('hourly_hist_' + key, default)) for key, default in [('fast',20),('slow',60),('signal',9)]]
     values = [float(b['value']) for b in ordered]
@@ -70,25 +70,24 @@ def hourly_histogram_points(bars, config):
     points = []
     for i, bar in enumerate(ordered):
         window = values[max(0,i-warmup+1):i+1]
-        hist, signals = macd_hourly_series(window, *periods)
-        current, previous = signals[-2:][::-1] if len(window) >= warmup else (None, None)
-        current_histogram, previous_histogram = hist[-2:][::-1] if len(window) >= warmup else (None, None)
+        _, signals = macd_hourly_series(window, *periods)
+        current, previous, prior = signals[-3:][::-1] if len(window) >= warmup else (None, None, None)
         ready = (all(v is not None and math.isfinite(v)
-                     for v in (current, previous, current_histogram, previous_histogram))
-                 and i >= 1 and int(bar["time"]) - int(ordered[i-1]["time"]) == 300)
+                     for v in (current, previous, prior))
+                 and i >= 2
+                 and int(bar["time"]) - int(ordered[i-1]["time"]) == 300
+                 and int(ordered[i-1]["time"]) - int(ordered[i-2]["time"]) == 300)
         delta = current - previous if ready else None
+        previous_delta = previous - prior if ready else None
+        second_difference = delta - previous_delta if ready else None
         points.append({'source_time':int(bar['time']), 'available_time':int(bar['time'])+300,
-                       'signal':current, 'previous_signal':previous, 'signal_delta':delta,
-                       'histogram':current_histogram if ready else None,
-                       'previous_histogram':previous_histogram if ready else None,
-                       'slope':current_histogram-previous_histogram if ready else None,
-                       'histogram_cross':('CROSS_UP' if ready and previous_histogram <= 0 < current_histogram
-                                          else 'CROSS_DOWN' if ready and previous_histogram >= 0 > current_histogram
-                                          else 'NONE'),
-                       'long_ok':bool(ready and current_histogram>0),
-                       'short_ok':bool(ready and current_histogram<0),
+                       'signal':current, 'previous_signal':previous, 'prior_signal':prior,
+                       'signal_delta':delta, 'previous_signal_delta':previous_delta,
+                       'signal_second_difference':second_difference,
+                       'long_ok':bool(ready and second_difference>0),
+                       'short_ok':bool(ready and second_difference<0),
                        'ready':ready, 'periods':periods, 'timeframe':'5m',
-                       'source':'COMPLETED_5M_MACD_HISTOGRAM_REGIME'})
+                       'source':'COMPLETED_5M_MACD_SIGNAL_SECOND_DIFF'})
     return points
 
 
@@ -96,11 +95,11 @@ def apply_hourly_filter(entry, side, details, config, hourly=None):
     enabled = bool(config.get('use_hourly_hist', False))
     ready = bool(hourly and hourly.get('ready'))
     allowed = bool(ready and hourly.get('long_ok' if side > 0 else 'short_ok'))
-    details['five_minute_histogram'] = hourly
+    details['five_minute_signal_second_diff'] = hourly
     checks=details.setdefault('condition_pass', {})
     toggles=details.setdefault('condition_enabled', {})
     for direction in ('long','short'):
-        key='entry_5m_hist_'+direction
+        key='entry_5m_signal_second_diff_'+direction
         checks[key]=bool(hourly.get(direction+'_ok')) if ready else None
         toggles[key]=enabled
     return bool(entry and (not enabled or allowed))

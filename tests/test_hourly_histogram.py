@@ -17,31 +17,32 @@ class HourlyHistogramTests(unittest.TestCase):
         self.config=dict(use_hourly_hist=True,hourly_hist_fast=4,hourly_hist_slow=10,hourly_hist_signal=3)
         self.hours=[{'time':i*300,'value':100+3*math.sin(i/5)} for i in range(300)]
 
-    def test_histogram_sign_sets_direction_and_cross_reports_flip(self):
-        for values,expected,cross in [([-2.,1.],1,'CROSS_UP'),([2.,-1.],-1,'CROSS_DOWN'),
-                                      ([-1.,-2.],-1,'NONE'),([1.,2.],1,'NONE'),
-                                      ([0.,0.],0,'NONE')]:
+    def test_signal_second_difference_sets_direction(self):
+        for values,expected in [([0.,0.,1.],1),([0.,0.,-1.],-1),
+                                ([0.,1.,2.],0),([2.,1.,0.],0),
+                                ([0.,2.,1.],-3)]:
             def components(window,*periods):
-                hist = [0.] * len(window)
-                if len(window) >= 2:
-                    hist[-2:] = values
-                return hist, [0.] * len(window)
+                signals = [0.] * len(window)
+                if len(window) >= 3:
+                    signals[-3:] = values
+                return [0.] * len(window), signals
             with patch('backend.hourly_histogram.macd_hourly_series',side_effect=components):
                 point=hourly_histogram_points(self.hours,self.config)[-1]
-            self.assertEqual(point['histogram'], values[-1])
-            self.assertEqual(point['previous_histogram'], values[-2])
+            self.assertEqual(point['prior_signal'], values[-3])
+            self.assertEqual(point['previous_signal'], values[-2])
+            self.assertEqual(point['signal'], values[-1])
+            self.assertEqual(point['signal_second_difference'], expected)
             self.assertEqual(point['long_ok'], expected>0)
             self.assertEqual(point['short_ok'], expected<0)
-            self.assertEqual(point['histogram_cross'],cross)
-            self.assertEqual(point['source'],'COMPLETED_5M_MACD_HISTOGRAM_REGIME')
+            self.assertEqual(point['source'],'COMPLETED_5M_MACD_SIGNAL_SECOND_DIFF')
         missing=self.hours[:-2]+self.hours[-1:]
         self.assertFalse(hourly_histogram_points(missing,self.config)[-1]['ready'])
 
-    def test_histogram_regime_sign_and_flat_unavailable(self):
+    def test_signal_acceleration_sign_and_flat_unavailable(self):
         points=hourly_histogram_points(self.hours,self.config)
         self.assertTrue(any(p['long_ok'] for p in points if p['ready']))
         self.assertTrue(any(p['short_ok'] for p in points if p['ready']))
-        self.assertTrue(all(p['long_ok']==(p['histogram']>0) and p['short_ok']==(p['histogram']<0) for p in points if p['ready']))
+        self.assertTrue(all(p['long_ok']==(p['signal_second_difference']>0) and p['short_ok']==(p['signal_second_difference']<0) for p in points if p['ready']))
         self.assertTrue(all(not p['ready'] for p in points[:12]))
         flat=hourly_histogram_points([dict(b,value=100) for b in self.hours],self.config)[-1]
         self.assertTrue(flat['ready']);self.assertFalse(flat['long_ok']);self.assertFalse(flat['short_ok'])
@@ -71,8 +72,7 @@ class HourlyHistogramTests(unittest.TestCase):
                     use_macd_signal_zone=False,macd_fast_period=4,macd_slow_period=10,macd_signal_period=3)
         off=_run_crypto_backtest_sync(bars,True,**kwargs)
         on=_run_crypto_backtest_sync(bars,True,**kwargs,**self.config)
-        self.assertLessEqual(len(on['entry_signals']),len(off['entry_signals']))
-        self.assertGreater(len(on['entry_signals']),0)
+        self.assertLess(len(on['entry_signals']),len(off['entry_signals']))
         for point in on['entry_trend']['points']:
             if point['source_time'] is not None:
                 self.assertLessEqual(point['source_time']+300,point['time']+300)
@@ -82,7 +82,7 @@ class HourlyHistogramTests(unittest.TestCase):
         future=_run_crypto_backtest_sync(bars,True,**{**kwargs,'five_minute_bars':old},**self.config)
         self.assertEqual(on['entry_signals'],future['entry_signals'])
         for signal in on['entry_signals']:
-            key='entry_5m_hist_long' if signal['side']>0 else 'entry_5m_hist_short'
+            key='entry_5m_signal_second_diff_long' if signal['side']>0 else 'entry_5m_signal_second_diff_short'
             self.assertTrue(signal['conditions'][key])
 
 
