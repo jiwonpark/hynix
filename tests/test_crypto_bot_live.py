@@ -219,6 +219,69 @@ class TestCryptoBotLive(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored.state["execution_history"][-1]["event"], "EXIT")
         self.assertEqual(len(self.client.orders), 2)
 
+    async def test_worker_auto_reconciles_late_fill_without_duplicate_order(self):
+        self.bot.state.update(
+            enabled=True,
+            pending_order={
+                "client_order_id": "hxcryptolatefill", "symbol": "BTCUSDT",
+                "side": 1, "qty": "0.500", "reduce_only": False,
+                "reason": "closed_bar_signal", "created_at": 1,
+            },
+            recovery_required=True,
+            execution_blocked=True,
+        )
+        self.client.amount = .5
+        self.client.last_order = {
+            "status": "FILLED", "executedQty": "0.500",
+            "avgPrice": "100.01", "orderId": 99,
+        }
+
+        self.assertTrue(await self.bot._auto_reconcile_pending_order())
+
+        self.assertIsNone(self.bot.state["pending_order"])
+        self.assertFalse(self.bot.state["recovery_required"])
+        self.assertFalse(self.bot.state["execution_blocked"])
+        self.assertEqual(len(self.bot.state["tranches"]), 1)
+        self.assertEqual(self.client.orders, [])
+
+    async def test_worker_keeps_ambiguous_order_blocked_without_resubmit(self):
+        self.bot.state.update(
+            enabled=True,
+            pending_order={
+                "client_order_id": "hxcryptostillopen", "symbol": "BTCUSDT",
+                "side": 1, "qty": "0.500", "reduce_only": False,
+                "reason": "closed_bar_signal", "created_at": 1,
+            },
+            recovery_required=True,
+            execution_blocked=True,
+        )
+        self.client.last_order = {
+            "status": "PARTIALLY_FILLED", "executedQty": "0.100",
+            "avgPrice": "100.01", "orderId": 99,
+        }
+
+        self.assertFalse(await self.bot._auto_reconcile_pending_order())
+
+        self.assertIsNotNone(self.bot.state["pending_order"])
+        self.assertTrue(self.bot.state["recovery_required"])
+        self.assertEqual(self.client.orders, [])
+
+    async def test_worker_clears_transient_recovery_after_inventory_matches(self):
+        self.bot.state.update(
+            enabled=True,
+            pending_order=None,
+            recovery_required=True,
+            execution_blocked=True,
+            tranches=[{"side": 1, "qty": .5, "price": 100.01,
+                       "order_id": "99", "time": 1}],
+        )
+        self.client.amount = .5
+
+        self.assertTrue(await self.bot._auto_reconcile_pending_order())
+
+        self.assertFalse(self.bot.state["recovery_required"])
+        self.assertFalse(self.bot.state["execution_blocked"])
+
     async def test_startup_keeps_ambiguous_pending_order_blocked(self):
         self.bot.state["enabled"] = True
         self.bot.state["pending_order"] = {

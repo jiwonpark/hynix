@@ -113,6 +113,10 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
     GROSS_LEVERAGE_CAP = 8.0
     MARGIN_LEVERAGE_ASSUMPTION = 10.0
     MARGIN_BUFFER_MULTIPLIER = 1.25
+    # Lighter can continue counting the just-filled market order while its
+    # order list converges.  Preserve one temporary slot instead of relying on
+    # an exact cap fit that can leave the new slice without native protection.
+    NATIVE_PROTECTION_PENDING_HEADROOM = 1
     MIN_MARGIN_BUFFER_USD = 2.50
 
     def __init__(self, client: Any, state_path: Optional[Path] = None):
@@ -1449,14 +1453,17 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 and str(order.get("trigger_status", "")).lower() not in {"", "na"})
             for order in orders
         )
+        headroom = self.NATIVE_PROTECTION_PENDING_HEADROOM
         capacity = {"source": "LIGHTER_ACCOUNT_ACTIVE_ORDERS", "tier": tier,
                     "pending": pending, "limit": cap, "required_for_next_slice": required,
+                    "temporary_headroom": headroom,
                     "available": max(0, cap - pending), "checked_at": int(time.time())}
         self.state["native_pending_capacity"] = capacity
         self._save()
-        if pending + required > cap:
+        if pending + required + headroom > cap:
             raise ValueError(
-                f"Lighter pending-order capacity {pending}/{cap}; next slice needs {required} native TP/SL orders"
+                f"Lighter pending-order capacity {pending}/{cap}; next slice needs {required} native TP/SL orders "
+                f"plus {headroom} temporary safety slot"
             )
 
     async def _resolve_pending_order(self) -> tuple[bool, Optional[Dict[str, Any]]]:

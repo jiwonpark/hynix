@@ -121,6 +121,22 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.bot.state['pending_order'])
         self.assertEqual(self.bot.state['native_pending_capacity']['required_for_next_slice'], 2)
 
+    async def test_entry_is_withheld_when_native_children_only_exactly_fit_capacity(self):
+        self.bot.state['tranches'] = []
+        self.bot.state['native_brackets'] = []
+        self.client.amount = 0
+        self.client.active_orders = [
+            {'status': 'pending', 'type': 'take-profit', 'trigger_status': 'mark-price'}
+            for _ in range(8)
+        ]
+
+        with self.assertRaisesRegex(ValueError, 'plus 1 temporary safety slot'):
+            await self.bot._submit(1, 25, reduce_only=False, reason='manual')
+
+        self.assertEqual(self.client.amount, 0)
+        self.assertIsNone(self.bot.state['pending_order'])
+        self.assertEqual(self.bot.state['native_pending_capacity']['temporary_headroom'], 1)
+
     async def test_plus_tier_capacity_allows_same_native_entry(self):
         self.bot.state['tranches'] = []
         self.bot.state['native_brackets'] = []

@@ -871,6 +871,39 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             return None
         raise ValueError("Order is still open, partially filled, or not conclusively canceled")
 
+    async def _auto_reconcile_pending_order(self) -> bool:
+        """Resolve a late Binance acknowledgement without requiring UI recovery.
+
+        The worker calls this on its normal five-second cadence.  It never
+        resubmits the order: the persisted client ID is queried, any confirmed
+        fill is recorded once, and live inventory must match before execution
+        is unblocked.
+        """
+        try:
+            if self.state.get("pending_order"):
+                await self._reconcile_pending_order()
+            _, amount = await self._account_position(self.state["selected_symbol"])
+            self._check_position(amount)
+        except Exception as exc:
+            message = f"Automatic Binance reconciliation pending: {exc}"
+            self.state.update(
+                recovery_required=True,
+                execution_blocked=True,
+                blocked_reason=message,
+                last_error=message,
+            )
+            self._save()
+            return False
+        self.state.update(
+            recovery_required=False,
+            execution_blocked=False,
+            blocked_reason=None,
+            last_error=None,
+        )
+        self._save()
+        logger.info("Automatically reconciled pending Binance order")
+        return True
+
     async def reconcile(self) -> Dict[str, Any]:
         """Read exchange order/position history to resolve a stopped executor."""
         async with self.lock:
@@ -1038,8 +1071,11 @@ class CryptoBot(HourlyHistogramMixin, TakeProfitMixin):
             await self._refresh_paused_condition_evaluation()
             return
         async with self.lock:
-            if not self.state["enabled"] or self.state["pending_order"] or self.state["recovery_required"]:
+            if not self.state["enabled"]:
                 return
+            if self.state["pending_order"] or self.state["recovery_required"]:
+                if not await self._auto_reconcile_pending_order():
+                    return
             interval = self.state["strategy_interval"]
             seconds = INTERVAL_SECONDS[interval]
             symbol = self.state["selected_symbol"]
