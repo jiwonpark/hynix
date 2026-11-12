@@ -1096,8 +1096,9 @@
       this.renderCurrentPositionReferenceLines();
       const p = this.paradigms[mode];
 
-      if (typeof document.querySelectorAll === "function") {
-        document.querySelectorAll(".lighterParadigmBtn").forEach((btn) => {
+      const terminal = $("tabContentLighter");
+      if (typeof terminal?.querySelectorAll === "function") {
+        terminal.querySelectorAll(".lighterParadigmBtn").forEach((btn) => {
           const isCurrent = btn.dataset.mode === mode;
           btn.style.background = isCurrent ? "#7c3aed" : "#fff";
           btn.style.color = isCurrent ? "#fff" : "#475569";

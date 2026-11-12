@@ -78,6 +78,8 @@ class TestLighterTab(unittest.TestCase):
         script = (ROOT / "lighter-tab.js").read_text(encoding="utf-8")
         self.assertIn('this.setParadigm(mode);', script)
         self.assertNotIn('this.setParadigm(mode, { deployLive: true })', script)
+        self.assertIn('terminal.querySelectorAll(".lighterParadigmBtn")', script)
+        self.assertNotIn('document.querySelectorAll(".lighterParadigmBtn")', script)
         self.assertIn('liveStrategyPayload(mode', script)
         for control_id in (
             "lighter_inpOuEntryZ", "lighter_inpOuExitZ", "lighter_inpMaStretchMin",
