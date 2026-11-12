@@ -137,6 +137,21 @@ class NativeProtectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.bot.state['pending_order'])
         self.assertEqual(self.bot.state['native_pending_capacity']['temporary_headroom'], 1)
 
+    async def test_resume_stays_paused_when_existing_slices_cannot_all_be_protected(self):
+        self.bot.state.update(enabled=False, native_protection_pending_activation=True)
+        self.client.active_orders = [
+            {'status': 'pending', 'type': 'take-profit', 'trigger_status': 'mark-price'}
+            for _ in range(8)
+        ]
+
+        with self.assertRaisesRegex(ValueError, 'protection needs 4 native TP/SL orders'):
+            await self.bot.toggle(True)
+
+        self.assertFalse(self.bot.state['enabled'])
+        self.assertTrue(self.bot.state['native_protection_pending_activation'])
+        self.assertEqual(self.bot.state['native_pending_capacity']['required_for_action'], 4)
+        self.assertEqual(self.client.placements, [])
+
     async def test_plus_tier_capacity_allows_same_native_entry(self):
         self.bot.state['tranches'] = []
         self.bot.state['native_brackets'] = []

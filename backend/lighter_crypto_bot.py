@@ -971,6 +971,17 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
                 )
                 self._save()
                 raise
+            if (self.state.get("use_native_protection")
+                    and self.state.get("native_protection_pending_activation")):
+                covered = {str(group.get("entry_order_id")) for group in self.state.get("native_brackets", [])}
+                unprotected = [
+                    tranche for tranche in self.state["tranches"]
+                    if str(tranche.get("order_id")) not in covered
+                ]
+                if unprotected:
+                    # Keep the bot paused unless all existing slices can be
+                    # protected with venue capacity plus the temporary slot.
+                    await self._check_native_pending_capacity(market_id, slice_count=len(unprotected))
             blocked = False
             blocked_reason = None
             if float(account.get("collateral", 0)) <= 0:
@@ -1425,7 +1436,7 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
             await self.arm_native_protection()
             return event
 
-    async def _check_native_pending_capacity(self, market_id: int) -> None:
+    async def _check_native_pending_capacity(self, market_id: int, *, slice_count: int = 1) -> None:
         """Fail before entry when its native children cannot fit at the venue.
 
         Lighter counts untriggered TP, SL and TWAP orders against an account-wide
@@ -1435,8 +1446,9 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
         if not self.state.get("use_native_protection"):
             self.state["native_pending_capacity"] = None
             return
-        required = int(bool(self.state.get("use_take_profit", True))) + int(bool(self.state.get("use_stop_loss", False)))
-        if required <= 0:
+        required_per_slice = int(bool(self.state.get("use_take_profit", True))) + int(bool(self.state.get("use_stop_loss", False)))
+        required = required_per_slice * max(1, int(slice_count))
+        if required_per_slice <= 0:
             self.state["native_pending_capacity"] = None
             return
         if not hasattr(self.client, "account_active_orders") or not hasattr(self.client, "account_limits"):
@@ -1455,14 +1467,15 @@ class LighterCryptoBot(NativeProtectionMixin, HourlyHistogramMixin, TakeProfitMi
         )
         headroom = self.NATIVE_PROTECTION_PENDING_HEADROOM
         capacity = {"source": "LIGHTER_ACCOUNT_ACTIVE_ORDERS", "tier": tier,
-                    "pending": pending, "limit": cap, "required_for_next_slice": required,
+                    "pending": pending, "limit": cap, "required_for_next_slice": required_per_slice,
+                    "required_for_action": required, "unprotected_slices": max(1, int(slice_count)),
                     "temporary_headroom": headroom,
                     "available": max(0, cap - pending), "checked_at": int(time.time())}
         self.state["native_pending_capacity"] = capacity
         self._save()
         if pending + required + headroom > cap:
             raise ValueError(
-                f"Lighter pending-order capacity {pending}/{cap}; next slice needs {required} native TP/SL orders "
+                f"Lighter pending-order capacity {pending}/{cap}; protection needs {required} native TP/SL orders "
                 f"plus {headroom} temporary safety slot"
             )
 
