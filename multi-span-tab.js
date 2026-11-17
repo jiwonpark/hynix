@@ -60,6 +60,7 @@
       this.syncMode = "anchor"; // "anchor" (center-time + zoom ratio) or "range" (strict timestamp window)
       this.syncZoomRatio = true;
       this.activeLayout = "grid"; // "grid", "hero", "stack"
+      this.chartsPerRow = (typeof localStorage !== "undefined" && localStorage.getItem("ms_charts_per_row")) || "auto"; // "1", "2", "3", "4", "5", "auto"
       this.heroSpan = "1s";
       
       this.charts = {}; // span -> chart
@@ -152,6 +153,16 @@
               <button type="button" class="msLayoutBtn" data-layout="hero" style="background:transparent;color:#64748b;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Hero + Strip view">▣ HERO</button>
               <button type="button" class="msLayoutBtn" data-layout="stack" style="background:transparent;color:#64748b;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Full vertical stack">☰ STACK</button>
             </div>
+
+            <!-- Charts Per Row Selector -->
+            <div id="msPerRowGroup" style="display:inline-flex;align-items:center;background:#f1f5f9;padding:2px;border-radius:6px;gap:2px;border:1px solid #e2e8f0;">
+              <span style="font-size:10px;font-weight:800;color:#64748b;padding:0 4px;" title="Adjust number of charts per row">PER ROW:</span>
+              ${["1", "2", "3", "4", "5", "auto"].map((c) => {
+                const isActive = (this.chartsPerRow === c) || (c === "auto" && (!this.chartsPerRow || this.chartsPerRow === "auto"));
+                const label = c === "auto" ? "AUTO" : c;
+                return `<button type="button" class="msColBtn${isActive ? " active" : ""}" data-cols="${c}" style="background:${isActive ? "#0284c7" : "transparent"};color:${isActive ? "#ffffff" : "#64748b"};border:none;padding:3px 7px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="${c === "auto" ? "Auto-responsive grid" : `${c} chart${c === "1" ? "" : "s"} per row`}">${label}</button>`;
+              }).join("")}
+            </div>
           </div>
         </div>
 
@@ -175,14 +186,14 @@
         <div id="msChartsWrapper" class="msLayoutGrid" style="display:grid;gap:12px;width:100%;">
           ${SPANS.map((s) => `
             <div id="msCard_${s.id}" class="msChartCard" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 4px rgba(0,0,0,0.05);">
-              <div class="msCardHeader" style="background:#f8fafc;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e2e8f0;">
-                <div style="display:flex;align-items:center;gap:8px;">
+              <div class="msCardHeader" style="background:#f8fafc;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;gap:6px;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                   <span style="background:${s.color};color:#ffffff;font-weight:900;font-size:11px;padding:2px 6px;border-radius:4px;letter-spacing:0.5px;">${s.id.toUpperCase()}</span>
                   <span style="color:#0f172a;font-weight:700;font-size:12px;">${s.label}</span>
                   <small style="color:#64748b;font-size:11px;">${s.sub}</small>
                   <span id="msCardModeBadge_${s.id}" class="msCardModeBadge" data-span="${s.id}" style="display:none;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;cursor:pointer;"></span>
                 </div>
-                <div style="display:flex;align-items:center;gap:10px;font-size:11px;">
+                <div style="display:flex;align-items:center;gap:6px;font-size:11px;flex-wrap:wrap;">
                   <div style="color:#64748b;font-family:monospace;" id="msCardOhlc_${s.id}">O:-- H:-- L:-- C:--</div>
                   <span id="msCardPrice_${s.id}" style="font-weight:800;color:#059669;font-size:13px;">--</span>
                   <button type="button" class="msCardLoadMoreBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Load older historical candles">+ LOAD MORE</button>
@@ -209,14 +220,43 @@
 
       if (this.activeLayout === "grid") {
         wrapper.style.display = "grid";
-        wrapper.style.gridTemplateColumns = "repeat(auto-fit, minmax(460px, 1fr))";
+        wrapper.style.flexDirection = "";
+
+        const cols = this.chartsPerRow || "auto";
+        const winWidth = typeof window !== "undefined" ? window.innerWidth : 1200;
+
+        if (cols === "auto") {
+          wrapper.style.gridTemplateColumns = "repeat(auto-fit, minmax(420px, 1fr))";
+        } else {
+          let numCols = parseInt(cols, 10) || 3;
+          if (winWidth <= 640 && numCols > 1) {
+            numCols = 1;
+          } else if (winWidth <= 1024 && numCols > 2) {
+            numCols = 2;
+          }
+          wrapper.style.gridTemplateColumns = `repeat(${numCols}, minmax(0, 1fr))`;
+        }
+
+        const heightMap = {
+          "1": "380px",
+          "2": "340px",
+          "3": "320px",
+          "4": "300px",
+          "5": "280px",
+          "auto": "320px",
+        };
+        const targetHeight = heightMap[cols] || "320px";
+
         SPANS.forEach((s) => {
+          const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
-          if (host) host.style.height = "320px";
+          if (card) card.style.order = "0";
+          if (host) host.style.height = targetHeight;
         });
       } else if (this.activeLayout === "hero") {
         wrapper.style.display = "flex";
         wrapper.style.flexDirection = "column";
+        wrapper.style.gridTemplateColumns = "";
         SPANS.forEach((s) => {
           const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
@@ -231,14 +271,18 @@
       } else if (this.activeLayout === "stack") {
         wrapper.style.display = "flex";
         wrapper.style.flexDirection = "column";
+        wrapper.style.gridTemplateColumns = "";
         SPANS.forEach((s) => {
           const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
           if (card) card.style.order = "0";
-          if (host) host.style.height = "340px";
+          if (host) host.style.height = "360px";
         });
       }
       this.resizeAll();
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => this.resizeAll());
+      }
     }
 
     initCharts() {
@@ -1341,10 +1385,72 @@
           }
         });
       });
+
+      // Charts per row buttons
+      document.querySelectorAll(".msColBtn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const cols = btn.getAttribute("data-cols");
+          if (cols) {
+            this.setChartsPerRow(cols);
+          }
+        });
+      });
+    }
+
+    setChartsPerRow(cols) {
+      this.chartsPerRow = String(cols);
+      try {
+        localStorage.setItem("ms_charts_per_row", this.chartsPerRow);
+      } catch (_) {}
+
+      // Selecting a column count activates grid layout mode
+      this.activeLayout = "grid";
+
+      // Update layout selector buttons
+      document.querySelectorAll(".msLayoutBtn").forEach((btn) => {
+        const l = btn.getAttribute("data-layout");
+        const isActive = l === "grid";
+        btn.classList.toggle("active", isActive);
+        btn.style.background = isActive ? "#0284c7" : "transparent";
+        btn.style.color = isActive ? "#ffffff" : "#64748b";
+      });
+
+      // Update per-row buttons
+      document.querySelectorAll(".msColBtn").forEach((btn) => {
+        const c = btn.getAttribute("data-cols");
+        const isActive = c === this.chartsPerRow;
+        btn.classList.toggle("active", isActive);
+        btn.style.background = isActive ? "#0284c7" : "transparent";
+        btn.style.color = isActive ? "#ffffff" : "#64748b";
+      });
+
+      this.applyLayoutStyles();
     }
 
     setLayout(layout) {
       this.activeLayout = layout;
+      if (layout === "stack") {
+        this.chartsPerRow = "1";
+      }
+
+      // Update layout buttons
+      document.querySelectorAll(".msLayoutBtn").forEach((btn) => {
+        const l = btn.getAttribute("data-layout");
+        const isActive = l === layout;
+        btn.classList.toggle("active", isActive);
+        btn.style.background = isActive ? "#0284c7" : "transparent";
+        btn.style.color = isActive ? "#ffffff" : "#64748b";
+      });
+
+      // Update col buttons
+      document.querySelectorAll(".msColBtn").forEach((btn) => {
+        const c = btn.getAttribute("data-cols");
+        const isActive = this.activeLayout === "grid" && c === this.chartsPerRow;
+        btn.classList.toggle("active", isActive);
+        btn.style.background = isActive ? "#0284c7" : "transparent";
+        btn.style.color = isActive ? "#ffffff" : "#64748b";
+      });
+
       this.applyLayoutStyles();
     }
 

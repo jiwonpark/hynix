@@ -238,4 +238,33 @@ assert.equal(rangeCandles.length, 4, "Should aggregate all unique candles from b
 assert.equal(rangeCandles[0].time, 1000);
 assert.equal(rangeCandles[3].time, 4000);
 
+// 10. Test Adjustable Charts Per Row (1..5 and auto)
+const mockWrapper = { style: {} };
+sandbox.document.getElementById = (id) => (id === "msChartsWrapper" ? mockWrapper : null);
+
+MultiSpan.setChartsPerRow(1);
+assert.equal(MultiSpan.chartsPerRow, "1");
+assert.equal(MultiSpan.activeLayout, "grid");
+assert.equal(mockWrapper.style.gridTemplateColumns, "repeat(1, minmax(0, 1fr))");
+
+MultiSpan.setChartsPerRow(2);
+assert.equal(MultiSpan.chartsPerRow, "2");
+assert.equal(mockWrapper.style.gridTemplateColumns, "repeat(2, minmax(0, 1fr))");
+
+MultiSpan.setChartsPerRow(3);
+assert.equal(MultiSpan.chartsPerRow, "3");
+assert.equal(mockWrapper.style.gridTemplateColumns, "repeat(3, minmax(0, 1fr))");
+
+MultiSpan.setChartsPerRow(4);
+assert.equal(MultiSpan.chartsPerRow, "4");
+assert.equal(mockWrapper.style.gridTemplateColumns, "repeat(4, minmax(0, 1fr))");
+
+MultiSpan.setChartsPerRow(5);
+assert.equal(MultiSpan.chartsPerRow, "5");
+assert.equal(mockWrapper.style.gridTemplateColumns, "repeat(5, minmax(0, 1fr))");
+
+MultiSpan.setChartsPerRow("auto");
+assert.equal(MultiSpan.chartsPerRow, "auto");
+assert.equal(mockWrapper.style.gridTemplateColumns, "repeat(auto-fit, minmax(420px, 1fr))");
+
 console.log("All Multi-Span synchronization unit tests passed!");
