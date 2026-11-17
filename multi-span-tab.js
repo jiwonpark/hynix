@@ -11,11 +11,11 @@
   "use strict";
 
   const SPANS = [
-    { id: "1s", label: "1-SECOND", sub: "Ultra HF Tick Momentum", color: "#38bdf8", defaultLimit: 1000 },
-    { id: "5m", label: "5-MINUTE", sub: "Micro Intraday Scalp", color: "#34d399", defaultLimit: 500 },
-    { id: "15m", label: "15-MINUTE", sub: "Intraday Swing Structure", color: "#fbbf24", defaultLimit: 500 },
-    { id: "1h", label: "1-HOUR", sub: "Intermediate Trend Regime", color: "#a78bfa", defaultLimit: 500 },
-    { id: "1d", label: "1-DAY", sub: "Macro Daily Context", color: "#f472b6", defaultLimit: 365 },
+    { id: "1s", label: "1-SECOND", sub: "Ultra HF Tick Momentum", color: "#0284c7", defaultLimit: 1000 },
+    { id: "5m", label: "5-MINUTE", sub: "Micro Intraday Scalp", color: "#059669", defaultLimit: 500 },
+    { id: "15m", label: "15-MINUTE", sub: "Intraday Swing Structure", color: "#d97706", defaultLimit: 500 },
+    { id: "1h", label: "1-HOUR", sub: "Intermediate Trend Regime", color: "#7c3aed", defaultLimit: 500 },
+    { id: "1d", label: "1-DAY", sub: "Macro Daily Context", color: "#db2777", defaultLimit: 365 },
   ];
 
   const formatKst = (dateOrSec) => {
@@ -85,74 +85,74 @@
 
     renderSkeleton(container) {
       container.innerHTML = `
-        <div class="multiSpanToolbar" style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:0 4px 16px rgba(0,0,0,0.3);">
+        <div class="multiSpanToolbar" style="background:#ffffff;border:1px solid #dbe2e7;border-radius:12px;padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
             <div style="display:flex;align-items:center;gap:6px;">
               <span style="font-size:20px;">🔭</span>
               <div>
-                <strong style="font-size:15px;color:#f8fafc;letter-spacing:-0.3px;display:block;">Multi-Span Synchronized Matrix</strong>
+                <strong style="font-size:15px;color:#0f172a;letter-spacing:-0.3px;display:block;">Multi-Span Synchronized Matrix</strong>
                 <small style="color:#64748b;font-size:11px;">1s · 5m · 15m · 1h · 1d Multi-Timeframe Engine</small>
               </div>
             </div>
-            <div style="height:28px;width:1px;background:#334155;margin:0 4px;"></div>
+            <div style="height:28px;width:1px;background:#e2e8f0;margin:0 4px;"></div>
             <!-- Symbol Selector -->
             <div class="multiSpanSymbolGroup" style="display:flex;align-items:center;gap:4px;">
-              <span style="font-size:11px;color:#94a3b8;font-weight:700;">SYMBOL:</span>
-              <div id="msSymbolButtons" style="display:inline-flex;background:#1e293b;padding:2px;border-radius:6px;gap:2px;">
+              <span style="font-size:11px;color:#64748b;font-weight:700;">SYMBOL:</span>
+              <div id="msSymbolButtons" style="display:inline-flex;background:#f1f5f9;padding:2px;border-radius:6px;gap:2px;border:1px solid #e2e8f0;">
                 <button type="button" class="msSymBtn active" data-sym="BTCUSDT" style="background:#0284c7;color:#fff;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">BTC</button>
-                <button type="button" class="msSymBtn" data-sym="ETHUSDT" style="background:transparent;color:#94a3b8;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">ETH</button>
-                <button type="button" class="msSymBtn" data-sym="SOLUSDT" style="background:transparent;color:#94a3b8;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">SOL</button>
-                <button type="button" class="msSymBtn" data-sym="DOGEUSDT" style="background:transparent;color:#94a3b8;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">DOGE</button>
-                <button type="button" class="msSymBtn" data-sym="XRPUSDT" style="background:transparent;color:#94a3b8;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">XRP</button>
+                <button type="button" class="msSymBtn" data-sym="ETHUSDT" style="background:transparent;color:#475569;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">ETH</button>
+                <button type="button" class="msSymBtn" data-sym="SOLUSDT" style="background:transparent;color:#475569;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">SOL</button>
+                <button type="button" class="msSymBtn" data-sym="DOGEUSDT" style="background:transparent;color:#475569;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">DOGE</button>
+                <button type="button" class="msSymBtn" data-sym="XRPUSDT" style="background:transparent;color:#475569;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">XRP</button>
               </div>
-              <input type="text" id="msCustomSymbolInput" placeholder="CUSTOM" style="background:#1e293b;border:1px solid #334155;color:#f8fafc;padding:3px 8px;border-radius:4px;font-size:11px;width:70px;text-transform:uppercase;font-weight:700;margin-left:4px;" />
-              <button type="button" id="msApplyCustomSym" style="background:#334155;color:#e2e8f0;border:none;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">GO</button>
+              <input type="text" id="msCustomSymbolInput" placeholder="CUSTOM" style="background:#ffffff;border:1px solid #cbd5e1;color:#0f172a;padding:3px 8px;border-radius:4px;font-size:11px;width:70px;text-transform:uppercase;font-weight:700;margin-left:4px;" />
+              <button type="button" id="msApplyCustomSym" style="background:#f1f5f9;border:1px solid #cbd5e1;color:#334155;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">GO</button>
             </div>
           </div>
 
           <!-- Controls: Sync & Layout -->
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <!-- Sync Toggle -->
-            <div style="display:flex;align-items:center;gap:6px;background:#1e293b;padding:3px 10px;border-radius:6px;border:1px solid #334155;">
-              <span style="font-size:11px;color:#94a3b8;font-weight:700;">SYNC:</span>
-              <button type="button" id="msToggleSync" style="background:#10b981;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Toggle synchronized panning & zooming">🔗 ON</button>
-              <button type="button" id="msToggleSyncMode" style="background:#334155;color:#f8fafc;border:none;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Anchor mode keeps optimal zoom per span; Range mode forces identical time window">⚓ ANCHOR</button>
+            <div style="display:flex;align-items:center;gap:6px;background:#f8fafc;padding:3px 10px;border-radius:6px;border:1px solid #e2e8f0;">
+              <span style="font-size:11px;color:#64748b;font-weight:700;">SYNC:</span>
+              <button type="button" id="msToggleSync" style="background:#059669;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Toggle synchronized panning & zooming">🔗 ON</button>
+              <button type="button" id="msToggleSyncMode" style="background:#ffffff;border:1px solid #cbd5e1;color:#0f172a;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Anchor mode keeps optimal zoom per span; Range mode forces identical time window">⚓ ANCHOR</button>
             </div>
 
             <!-- Zoom Level & Presets (Synchronized Candle Count) -->
-            <div style="display:flex;align-items:center;gap:4px;background:#1e293b;padding:3px 8px;border-radius:6px;border:1px solid #334155;">
-              <span style="font-size:11px;color:#94a3b8;font-weight:700;">ZOOM:</span>
+            <div style="display:flex;align-items:center;gap:4px;background:#f8fafc;padding:3px 8px;border-radius:6px;border:1px solid #e2e8f0;">
+              <span style="font-size:11px;color:#64748b;font-weight:700;">ZOOM:</span>
               <span id="msCandleCountBadge" style="background:#0284c7;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;" title="Visible candles per chart">100 BARS</span>
-              <button type="button" class="msZoomPresetBtn" data-count="30" style="background:#334155;color:#94a3b8;border:none;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 30 candles">30</button>
-              <button type="button" class="msZoomPresetBtn" data-count="60" style="background:#334155;color:#94a3b8;border:none;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 60 candles">60</button>
-              <button type="button" class="msZoomPresetBtn" data-count="100" style="background:#0284c7;color:#fff;border:none;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 100 candles">100</button>
-              <button type="button" class="msZoomPresetBtn" data-count="200" style="background:#334155;color:#94a3b8;border:none;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 200 candles">200</button>
+              <button type="button" class="msZoomPresetBtn" data-count="30" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 30 candles">30</button>
+              <button type="button" class="msZoomPresetBtn" data-count="60" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 60 candles">60</button>
+              <button type="button" class="msZoomPresetBtn active" data-count="100" style="background:#0284c7;color:#fff;border:1px solid #0284c7;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 100 candles">100</button>
+              <button type="button" class="msZoomPresetBtn" data-count="200" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 200 candles">200</button>
             </div>
 
             <!-- Quick Actions -->
-            <button type="button" id="msAlignLatest" style="background:#1e293b;border:1px solid #334155;color:#38bdf8;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px;" title="Align all 5 charts to the latest live candle">🎯 LATEST</button>
-            <button type="button" id="msFitAll" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;" title="Auto-fit all candles">📐 FIT ALL</button>
+            <button type="button" id="msAlignLatest" style="background:#f8fafc;border:1px solid #cbd5e1;color:#0284c7;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px;" title="Align all 5 charts to the latest live candle">🎯 LATEST</button>
+            <button type="button" id="msFitAll" style="background:#f8fafc;border:1px solid #cbd5e1;color:#475569;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;" title="Auto-fit all candles">📐 FIT ALL</button>
 
             <!-- Layout Selector -->
-            <div style="display:inline-flex;background:#1e293b;padding:2px;border-radius:6px;gap:2px;">
+            <div style="display:inline-flex;background:#f1f5f9;padding:2px;border-radius:6px;gap:2px;border:1px solid #e2e8f0;">
               <button type="button" class="msLayoutBtn active" data-layout="grid" style="background:#0284c7;color:#fff;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Grid view">⊞ GRID</button>
-              <button type="button" class="msLayoutBtn" data-layout="hero" style="background:transparent;color:#94a3b8;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Hero + Strip view">▣ HERO</button>
-              <button type="button" class="msLayoutBtn" data-layout="stack" style="background:transparent;color:#94a3b8;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Full vertical stack">☰ STACK</button>
+              <button type="button" class="msLayoutBtn" data-layout="hero" style="background:transparent;color:#64748b;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Hero + Strip view">▣ HERO</button>
+              <button type="button" class="msLayoutBtn" data-layout="stack" style="background:transparent;color:#64748b;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Full vertical stack">☰ STACK</button>
             </div>
           </div>
         </div>
 
         <!-- Integrated Synchronized Crosshair HUD -->
-        <div id="msCrosshairHud" style="background:rgba(15,23,42,0.85);backdrop-filter:blur(6px);border:1px solid #1e293b;border-radius:8px;padding:8px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;font-variant-numeric:tabular-nums;color:#e2e8f0;">
+        <div id="msCrosshairHud" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;font-variant-numeric:tabular-nums;color:#1e293b;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
           <div style="display:flex;align-items:center;gap:12px;">
-            <span style="font-weight:800;color:#38bdf8;font-size:13px;" id="msHudSymbol">BTCUSDT</span>
-            <span style="color:#64748b;">|</span>
-            <span style="color:#94a3b8;">TIME: <strong id="msHudTime" style="color:#f8fafc;">--</strong></span>
+            <span style="font-weight:800;color:#0284c7;font-size:13px;" id="msHudSymbol">BTCUSDT</span>
+            <span style="color:#cbd5e1;">|</span>
+            <span style="color:#64748b;">TIME: <strong id="msHudTime" style="color:#0f172a;">--</strong></span>
           </div>
           <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:11px;">
             ${SPANS.map((s) => `
               <span id="msHudSpan_${s.id}" style="color:${s.color};">
-                <strong>${s.id}:</strong> <span id="msHudVal_${s.id}" style="color:#f8fafc;">--</span>
+                <strong>${s.id}:</strong> <span id="msHudVal_${s.id}" style="color:#0f172a;font-weight:700;">--</span>
               </span>
             `).join("")}
           </div>
@@ -161,18 +161,18 @@
         <!-- Charts Container (Switched via activeLayout class) -->
         <div id="msChartsWrapper" class="msLayoutGrid" style="display:grid;gap:12px;width:100%;">
           ${SPANS.map((s) => `
-            <div id="msCard_${s.id}" class="msChartCard" style="background:#0b1329;border:1px solid #1e293b;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 4px 12px rgba(0,0,0,0.25);">
-              <div class="msCardHeader" style="background:#0f172a;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1e293b;">
+            <div id="msCard_${s.id}" class="msChartCard" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 4px rgba(0,0,0,0.05);">
+              <div class="msCardHeader" style="background:#f8fafc;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e2e8f0;">
                 <div style="display:flex;align-items:center;gap:8px;">
-                  <span style="background:${s.color};color:#0b1329;font-weight:900;font-size:11px;padding:2px 6px;border-radius:4px;letter-spacing:0.5px;">${s.id.toUpperCase()}</span>
-                  <span style="color:#f8fafc;font-weight:700;font-size:12px;">${s.label}</span>
+                  <span style="background:${s.color};color:#ffffff;font-weight:900;font-size:11px;padding:2px 6px;border-radius:4px;letter-spacing:0.5px;">${s.id.toUpperCase()}</span>
+                  <span style="color:#0f172a;font-weight:700;font-size:12px;">${s.label}</span>
                   <small style="color:#64748b;font-size:11px;">${s.sub}</small>
                 </div>
                 <div style="display:flex;align-items:center;gap:10px;font-size:11px;">
-                  <div style="color:#94a3b8;font-family:monospace;" id="msCardOhlc_${s.id}">O:-- H:-- L:-- C:--</div>
-                  <span id="msCardPrice_${s.id}" style="font-weight:800;color:#10b981;font-size:13px;">--</span>
-                  <button type="button" class="msCardHeroBtn" data-span="${s.id}" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Set as Hero focus">HERO</button>
-                  <button type="button" class="msCardFitBtn" data-span="${s.id}" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Fit this chart">FIT</button>
+                  <div style="color:#64748b;font-family:monospace;" id="msCardOhlc_${s.id}">O:-- H:-- L:-- C:--</div>
+                  <span id="msCardPrice_${s.id}" style="font-weight:800;color:#059669;font-size:13px;">--</span>
+                  <button type="button" class="msCardHeroBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Set as Hero focus">HERO</button>
+                  <button type="button" class="msCardFitBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Fit this chart">FIT</button>
                 </div>
               </div>
               <div id="msChartHost_${s.id}" class="msChartHost" style="width:100%;height:320px;position:relative;"></div>
@@ -233,13 +233,13 @@
           width: host.clientWidth || 500,
           height: host.clientHeight || 320,
           layout: {
-            background: { type: "solid", color: "#0b1329" },
-            textColor: "#94a3b8",
+            background: { type: "solid", color: "#f8fafc" },
+            textColor: "#475569",
             fontSize: 11,
           },
           grid: {
-            vertLines: { color: "rgba(255, 255, 255, 0.04)" },
-            horzLines: { color: "rgba(255, 255, 255, 0.04)" },
+            vertLines: { color: "#f1f5f9" },
+            horzLines: { color: "#f1f5f9" },
           },
           crosshair: {
             mode: LightweightCharts.CrosshairMode.Normal,
@@ -247,11 +247,11 @@
             horzLine: { color: s.color, width: 1, style: 2, labelBackgroundColor: "#0284c7" },
           },
           rightPriceScale: {
-            borderColor: "#1e293b",
+            borderColor: "#e2e8f0",
             scaleMargins: { top: 0.1, bottom: 0.15 },
           },
           timeScale: {
-            borderColor: "#1e293b",
+            borderColor: "#e2e8f0",
             timeVisible: true,
             secondsVisible: s.id === "1s",
             rightOffset: 6,
@@ -261,23 +261,23 @@
         });
 
         const candleSeries = chart.addCandlestickSeries({
-          upColor: "#10b981",
-          downColor: "#ef4444",
+          upColor: "#059669",
+          downColor: "#dc2626",
           borderVisible: false,
-          wickUpColor: "#10b981",
-          wickDownColor: "#ef4444",
+          wickUpColor: "#059669",
+          wickDownColor: "#dc2626",
         });
 
         const ma20 = chart.addLineSeries({
           color: s.color,
-          lineWidth: 1,
+          lineWidth: 1.5,
           priceLineVisible: false,
           title: "MA20",
         });
 
         const ma50 = chart.addLineSeries({
-          color: "#f59e0b",
-          lineWidth: 1,
+          color: "#d97706",
+          lineWidth: 1.5,
           priceLineVisible: false,
           title: "MA50",
         });
@@ -488,8 +488,9 @@
       document.querySelectorAll(".msZoomPresetBtn").forEach((btn) => {
         const c = Number(btn.getAttribute("data-count"));
         const isActive = Math.abs(c - count) <= 2;
-        btn.style.background = isActive ? "#0284c7" : "#334155";
-        btn.style.color = isActive ? "#fff" : "#94a3b8";
+        btn.style.background = isActive ? "#0284c7" : "#ffffff";
+        btn.style.color = isActive ? "#ffffff" : "#475569";
+        btn.style.borderColor = isActive ? "#0284c7" : "#cbd5e1";
       });
     }
 
@@ -542,50 +543,61 @@
       // Source index to determine which charts are narrower
       const sourceIdx = sourceSpan ? SPANS.findIndex((p) => p.id === sourceSpan) : -1;
 
-      // Update crosshairs across all other charts & update HUD
-      SPANS.forEach((s, idx) => {
-        const series = this.series[s.id];
-        const chart = this.charts[s.id];
-        const valEl = document.getElementById(`msHudVal_${s.id}`);
-        const cardOhlc = document.getElementById(`msCardOhlc_${s.id}`);
+      const shouldRecenter = recenterNarrower && sourceIdx > 0;
+      if (shouldRecenter) {
+        this.isLogicalSyncing = true;
+      }
 
-        const candle = this.findCandleAtOrBefore(s.id, time);
+      try {
+        // Update crosshairs across all other charts & update HUD
+        SPANS.forEach((s, idx) => {
+          const series = this.series[s.id];
+          const chart = this.charts[s.id];
+          const valEl = document.getElementById(`msHudVal_${s.id}`);
+          const cardOhlc = document.getElementById(`msCardOhlc_${s.id}`);
 
-        if (chart && series && s.id !== sourceSpan) {
-          try {
-            if (candle) {
-              chart.setCrosshairPosition(candle.close, candle.time, series);
+          const candle = this.findCandleAtOrBefore(s.id, time);
+
+          if (chart && series && s.id !== sourceSpan) {
+            try {
+              if (candle) {
+                chart.setCrosshairPosition(candle.close, candle.time, series);
+              }
+            } catch (_) {}
+          }
+
+          if (candle) {
+            const closeP = formatPrice(candle.close);
+            if (valEl) valEl.textContent = closeP;
+            if (cardOhlc) {
+              cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${closeP}`;
             }
-          } catch (_) {}
-        }
+          }
 
-        if (candle) {
-          const closeP = formatPrice(candle.close);
-          if (valEl) valEl.textContent = closeP;
-          if (cardOhlc) {
-            cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${closeP}`;
+          // Drill-down: if clicking a coarser chart, center narrower charts on the clicked timestamp without breaking candle count
+          if (shouldRecenter && chart && candle && idx < sourceIdx) {
+            try {
+              const candleIdx = this.findCandleIndexAtOrBefore(s.id, time);
+              const count = this.syncedCandleCount || 100;
+              if (candleIdx !== -1) {
+                const from = Math.round(candleIdx - count / 2);
+                const to = from + count;
+                chart.timeScale().setVisibleLogicalRange({ from, to });
+              }
+            } catch (_) {}
+          }
+        });
+      } finally {
+        if (shouldRecenter) {
+          if (!this.logicalRafPending) {
+            this.logicalRafPending = true;
+            requestAnimationFrame(() => {
+              this.isLogicalSyncing = false;
+              this.logicalRafPending = false;
+            });
           }
         }
-
-        // Drill-down: if clicking a coarser chart, center narrower charts on the clicked timestamp
-        if (recenterNarrower && chart && candle && sourceIdx > 0 && idx < sourceIdx) {
-          try {
-            const candleIdx = this.findCandleIndexAtOrBefore(s.id, time);
-            const count = this.syncedCandleCount || 100;
-            if (candleIdx !== -1) {
-              chart.timeScale().setVisibleLogicalRange({ from: candleIdx - count / 2, to: candleIdx + count / 2 });
-            } else {
-              const range = chart.timeScale().getVisibleRange();
-              if (range && range.to > range.from) {
-                const duration = range.to - range.from;
-                const targetFrom = Math.round(time - duration / 2);
-                const targetTo = Math.round(time + duration / 2);
-                chart.timeScale().setVisibleRange({ from: targetFrom, to: targetTo });
-              }
-            }
-          } catch (_) {}
-        }
-      });
+      }
     }
 
     findCandleAtOrBefore(spanId, time) {
@@ -846,7 +858,7 @@
             symBtns.forEach((b) => {
               b.classList.toggle("active", b === btn);
               b.style.background = b === btn ? "#0284c7" : "transparent";
-              b.style.color = b === btn ? "#fff" : "#94a3b8";
+              b.style.color = b === btn ? "#ffffff" : "#64748b";
             });
             this.setSymbol(sym);
           }
@@ -863,7 +875,7 @@
           symBtns.forEach((b) => {
             b.classList.remove("active");
             b.style.background = "transparent";
-            b.style.color = "#94a3b8";
+            b.style.color = "#64748b";
           });
           this.setSymbol(val);
         }
@@ -877,7 +889,8 @@
         syncToggle.addEventListener("click", () => {
           this.syncEnabled = !this.syncEnabled;
           syncToggle.textContent = this.syncEnabled ? "🔗 ON" : "🔓 OFF";
-          syncToggle.style.background = this.syncEnabled ? "#10b981" : "#475569";
+          syncToggle.style.background = this.syncEnabled ? "#059669" : "#ffffff";
+          syncToggle.style.color = this.syncEnabled ? "#ffffff" : "#64748b";
         });
       }
 
@@ -887,7 +900,7 @@
         modeToggle.addEventListener("click", () => {
           this.syncMode = this.syncMode === "anchor" ? "range" : "anchor";
           modeToggle.textContent = this.syncMode === "anchor" ? "⚓ ANCHOR" : "⏱️ RANGE";
-          modeToggle.style.color = this.syncMode === "anchor" ? "#f8fafc" : "#38bdf8";
+          modeToggle.style.color = this.syncMode === "anchor" ? "#0284c7" : "#d97706";
         });
       }
 
@@ -944,7 +957,7 @@
           layoutBtns.forEach((b) => {
             b.classList.toggle("active", b === btn);
             b.style.background = b === btn ? "#0284c7" : "transparent";
-            b.style.color = b === btn ? "#fff" : "#94a3b8";
+            b.style.color = b === btn ? "#ffffff" : "#64748b";
           });
           this.setLayout(l);
         });
