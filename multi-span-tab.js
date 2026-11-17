@@ -107,6 +107,16 @@
 
     renderSkeleton(container) {
       container.innerHTML = `
+        <style>
+          #tabContentMultiSpan button {
+            width: auto;
+            height: auto;
+            flex: 0 0 auto;
+          }
+          #tabContentMultiSpan .msRangeHighlight {
+            transition: opacity 0.14s ease-out;
+          }
+        </style>
         <div class="multiSpanToolbar" style="background:#ffffff;border:1px solid #dbe2e7;border-radius:12px;padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
             <div style="display:flex;align-items:center;gap:6px;">
@@ -420,11 +430,34 @@
       SPANS.forEach((s) => {
         const host = document.getElementById(`msChartHost_${s.id}`);
         const chart = this.charts[s.id];
-        if (host && chart) {
-          chart.applyOptions({
-            width: host.clientWidth,
-            height: host.clientHeight,
-          });
+        if (host && chart && host.clientWidth > 0 && host.clientHeight > 0) {
+          this.programmaticSpans[s.id] = true;
+          let savedRange = null;
+          try {
+            savedRange = chart.timeScale().getVisibleLogicalRange();
+          } catch (_) {}
+          try {
+            chart.applyOptions({
+              width: host.clientWidth,
+              height: host.clientHeight,
+            });
+            if (savedRange && savedRange.to > savedRange.from && !this.animatingSpans[s.id]) {
+              chart.timeScale().setVisibleLogicalRange(savedRange);
+            }
+          } catch (_) {
+          } finally {
+            const settleResize = () => {
+              if (!this.animatingSpans[s.id]) {
+                this.programmaticSpans[s.id] = false;
+              }
+              this.updateRangeHighlight(s.id);
+            };
+            if (typeof requestAnimationFrame === "function") {
+              requestAnimationFrame(settleResize);
+            } else {
+              settleResize();
+            }
+          }
         }
       });
       this.updateAllRangeHighlights();
@@ -1120,8 +1153,18 @@
 
       const resolveCoord = (logicalIdx) => {
         if (typeof timeScale.logicalToCoordinate === "function") {
-          const c = timeScale.logicalToCoordinate(logicalIdx);
-          if (c !== null && typeof c === "number" && !isNaN(c)) return c;
+          const baseIdx = Math.floor(logicalIdx);
+          const frac = logicalIdx - baseIdx;
+          const c0 = timeScale.logicalToCoordinate(baseIdx);
+          const c1 = timeScale.logicalToCoordinate(baseIdx + 1);
+          if (
+            c0 !== null && c1 !== null &&
+            typeof c0 === "number" && typeof c1 === "number" &&
+            !isNaN(c0) && !isNaN(c1) &&
+            c1 !== c0
+          ) {
+            return c0 + frac * (c1 - c0);
+          }
         }
         if (vis && vis.to > vis.from) {
           return ((logicalIdx - vis.from) / (vis.to - vis.from)) * chartWidth;
