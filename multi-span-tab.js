@@ -1,7 +1,7 @@
 /**
  * HYPERION Multi-Span Synchronized Terminal (Tab 10)
  * 5-Span Synchronized Candlestick Charts: 1s · 5m · 15m · 1h · 1d
- * Real-time tick streaming, synchronized panning, zooming, and crosshair tracking.
+ * Real-time tick streaming, synchronized panning, and crosshair tracking.
  */
 (function (root, factory) {
   const MultiSpan = factory();
@@ -57,8 +57,8 @@
       this.loaded = false;
       this.symbol = "BTCUSDT";
       this.syncEnabled = true;
-      this.syncMode = "anchor"; // "anchor" (center-time + zoom ratio) or "range" (strict timestamp window)
-      this.syncZoomRatio = true;
+      this.syncMode = "anchor"; // "anchor" (center-time) or "range" (strict timestamp window)
+      this.syncZoomRatio = false;
       this.activeLayout = "grid"; // "grid", "hero", "stack"
       this.chartsPerRow = (typeof localStorage !== "undefined" && localStorage.getItem("ms_charts_per_row")) || "auto"; // "1", "2", "3", "4", "5", "auto"
       this.heroSpan = "1s";
@@ -71,7 +71,6 @@
       this.candlesData = {}; // span -> array of { time, open, high, low, close, volume }
       this.lastVisibleRange = {}; // span -> { from, to }
 
-      this.syncedCandleCount = 100; // Synchronized visible candle count across all 5 charts
       this.isSyncing = false;
       this.isLogicalSyncing = false;
       this.rafPending = false;
@@ -147,18 +146,8 @@
             <!-- Sync Toggle -->
             <div style="display:flex;align-items:center;gap:6px;background:#f8fafc;padding:3px 10px;border-radius:6px;border:1px solid #e2e8f0;">
               <span style="font-size:11px;color:#64748b;font-weight:700;">SYNC:</span>
-              <button type="button" id="msToggleSync" style="background:#059669;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Toggle synchronized panning & zooming">🔗 ON</button>
+              <button type="button" id="msToggleSync" style="background:#059669;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Toggle synchronized panning">🔗 ON</button>
               <button type="button" id="msToggleSyncMode" style="background:#ffffff;border:1px solid #cbd5e1;color:#0f172a;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Anchor mode keeps optimal zoom per span; Range mode forces identical time window">⚓ ANCHOR</button>
-            </div>
-
-            <!-- Zoom Level & Presets (Synchronized Candle Count) -->
-            <div style="display:flex;align-items:center;gap:4px;background:#f8fafc;padding:3px 8px;border-radius:6px;border:1px solid #e2e8f0;">
-              <span style="font-size:11px;color:#64748b;font-weight:700;">ZOOM:</span>
-              <span id="msCandleCountBadge" style="background:#0284c7;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;" title="Visible candles per chart">100 BARS</span>
-              <button type="button" class="msZoomPresetBtn" data-count="30" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 30 candles">30</button>
-              <button type="button" class="msZoomPresetBtn" data-count="60" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 60 candles">60</button>
-              <button type="button" class="msZoomPresetBtn active" data-count="100" style="background:#0284c7;color:#fff;border:1px solid #0284c7;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 100 candles">100</button>
-              <button type="button" class="msZoomPresetBtn" data-count="200" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 200 candles">200</button>
             </div>
 
             <!-- Quick Actions -->
@@ -391,9 +380,8 @@
           this.updateRangeHighlight(s.id);
         });
 
-        // Wire visible logical range change for synchronized candle count (zoom sync)
+        // Wire visible logical range change for range highlight update & auto load more
         chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
-          this.handleLogicalRangeChange(s.id, logicalRange);
           this.updateRangeHighlight(s.id);
           // Auto load more when user scrolls near earliest loaded candle
           if (
@@ -761,7 +749,6 @@
       ) {
         return;
       }
-      // In default Anchor mode, logical range governs zoom level so all charts display the identical candle count
       if (this.syncMode !== "range") return;
       if (!range || !range.from || !range.to || range.from >= range.to) return;
 
@@ -769,11 +756,6 @@
       this.lastVisibleRange[sourceSpan] = { ...range };
 
       const centerTime = (range.from + range.to) / 2;
-      const duration = range.to - range.from;
-
-      const zoomFactor = prevRange && prevRange.to > prevRange.from
-        ? duration / (prevRange.to - prevRange.from)
-        : 1.0;
 
       SPANS.forEach((s) => {
         if (s.id === sourceSpan) return;
@@ -784,13 +766,10 @@
           // Strict Time Window Mode with continuous animation
           this.animateTimeRangeTo(s.id, range.from, range.to, { duration: 140 });
         } else {
-          // Anchor Mode: Keep optimal resolution, sync center timestamp + proportional zoom
+          // Anchor Mode: Keep optimal resolution, sync center timestamp without changing target zoom
           const targetRange = targetChart.timeScale().getVisibleRange();
           if (targetRange && targetRange.to > targetRange.from) {
-            let targetDuration = targetRange.to - targetRange.from;
-            if (this.syncZoomRatio && zoomFactor > 0 && Math.abs(zoomFactor - 1.0) > 0.001) {
-              targetDuration = Math.max(10, targetDuration * zoomFactor);
-            }
+            const targetDuration = targetRange.to - targetRange.from;
             const targetFrom = Math.round(centerTime - targetDuration / 2);
             const targetTo = Math.round(centerTime + targetDuration / 2);
             this.animateTimeRangeTo(s.id, targetFrom, targetTo, { duration: 140 });
@@ -800,95 +779,22 @@
     }
 
     // =========================================================================
-    // SYNCHRONIZED ZOOM LEVEL (SAME NUMBER OF CANDLES ON EACH CHART)
+    // LOGICAL RANGE / ZOOM (INDEPENDENT PER CHART)
     // =========================================================================
 
     handleLogicalRangeChange(sourceSpan, logicalRange) {
-      if (
-        !this.syncEnabled ||
-        this.isLogicalSyncing ||
-        this.isSyncing ||
-        this.programmaticSpans[sourceSpan] ||
-        this.animatingSpans[sourceSpan]
-      ) {
-        return;
-      }
-      if (!logicalRange || typeof logicalRange.from !== "number" || typeof logicalRange.to !== "number") return;
-
-      const rawCount = logicalRange.to - logicalRange.from;
-      if (rawCount <= 1 || isNaN(rawCount)) return;
-
-      // Only sync if visible candle count changed by at least 1 bar (i.e. zoom event)
-      if (Math.abs(rawCount - this.syncedCandleCount) < 1) return;
-
-      const newBarCount = Math.max(10, Math.min(1000, Math.round(rawCount)));
-      this.syncedCandleCount = newBarCount;
-      this.updateCandleCountBadge(newBarCount);
-
-      const sourceData = this.candlesData[sourceSpan] || [];
-      const isSourceNearRight = sourceData.length > 0 && logicalRange.to >= (sourceData.length - 2);
-
-      SPANS.forEach((s) => {
-        if (s.id === sourceSpan) return;
-        const targetChart = this.charts[s.id];
-        if (!targetChart) return;
-        const targetData = this.candlesData[s.id] || [];
-        if (!targetData.length) return;
-
-        const targetRange = targetChart.timeScale().getVisibleLogicalRange();
-        let targetTo, targetFrom;
-
-        if (isSourceNearRight || !targetRange || targetRange.to >= (targetData.length - 2)) {
-          // Anchor target chart to its right edge (latest candle)
-          targetTo = targetData.length - 0.5 + 6;
-          targetFrom = targetTo - newBarCount;
-        } else {
-          // Anchor target chart around its current center logical index
-          const center = (targetRange.from + targetRange.to) / 2;
-          targetFrom = center - newBarCount / 2;
-          targetTo = center + newBarCount / 2;
-        }
-
-        this.animateLogicalRangeTo(s.id, targetFrom, targetTo, { duration: 160 });
-      });
+      // Zoom sync removed: each chart maintains independent zoom level
+      return;
     }
 
     setSyncedCandleCount(count) {
-      const roundedBars = Math.max(10, Math.min(1000, Math.round(count)));
-      this.syncedCandleCount = roundedBars;
-      this.updateCandleCountBadge(roundedBars);
-
-      SPANS.forEach((s) => {
-        const targetChart = this.charts[s.id];
-        if (!targetChart) return;
-        const targetData = this.candlesData[s.id] || [];
-        if (!targetData.length) return;
-
-        const targetRange = targetChart.timeScale().getVisibleLogicalRange();
-        let targetTo, targetFrom;
-
-        if (!targetRange || targetRange.to >= (targetData.length - 2)) {
-          targetTo = targetData.length - 0.5 + 6;
-          targetFrom = targetTo - roundedBars;
-        } else {
-          const center = (targetRange.from + targetRange.to) / 2;
-          targetFrom = center - roundedBars / 2;
-          targetTo = center + roundedBars / 2;
-        }
-        this.animateLogicalRangeTo(s.id, targetFrom, targetTo, { duration: 320 });
-      });
+      // No-op when zoom sync is disabled
+      return;
     }
 
     updateCandleCountBadge(count) {
-      const badge = document.getElementById("msCandleCountBadge");
-      if (badge) badge.textContent = `${count} BARS`;
-      document.querySelectorAll(".msZoomPresetBtn").forEach((btn) => {
-        const c = Number(btn.getAttribute("data-count"));
-        const isActive = Math.abs(c - count) <= 2;
-        btn.style.background = isActive ? "#0284c7" : "#ffffff";
-        btn.style.color = isActive ? "#ffffff" : "#475569";
-        btn.style.borderColor = isActive ? "#0284c7" : "#cbd5e1";
-      });
+      // No-op when zoom sync is disabled
+      return;
     }
 
     // =========================================================================
@@ -969,7 +875,7 @@
       const clampedEnd = Math.min(data.length - 0.5, Math.max(clampedStart + 1, vEnd));
       const rangeBars = Math.max(1, clampedEnd - clampedStart);
 
-      const baseBars = this.syncedCandleCount || 100;
+      const baseBars = 100;
       const targetBars = Math.min(
         Math.max(baseBars, Math.ceil(rangeBars * 1.25)),
         Math.max(baseBars, data.length + 12)
@@ -1667,7 +1573,7 @@
 
       const chart = this.charts[spanId];
       if (chart) {
-        const count = this.syncedCandleCount || 100;
+        const count = 100;
         let from, to;
 
         if (options.drilldownStart !== undefined && options.drilldownEnd !== undefined) {
@@ -1885,16 +1791,6 @@
         });
       }
 
-      // Zoom preset buttons
-      document.querySelectorAll(".msZoomPresetBtn").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const count = Number(btn.getAttribute("data-count"));
-          if (count && count > 0) {
-            this.setSyncedCandleCount(count);
-          }
-        });
-      });
-
       // Align all to latest
       const alignBtn = document.getElementById("msAlignLatest");
       if (alignBtn) {
@@ -2043,7 +1939,6 @@
     }
 
     async alignAllToLatest() {
-      const count = this.syncedCandleCount || 100;
       const tasks = SPANS.map(async (s) => {
         if (this.isHistorical[s.id]) {
           await this.reloadSpanToLatest(s.id);
@@ -2051,6 +1946,10 @@
           const chart = this.charts[s.id];
           const data = this.candlesData[s.id];
           if (chart && data && data.length) {
+            const curLogical = chart.timeScale().getVisibleLogicalRange();
+            const count = (curLogical && typeof curLogical.from === "number" && typeof curLogical.to === "number")
+              ? Math.max(10, Math.round(curLogical.to - curLogical.from))
+              : 100;
             const to = data.length - 0.5 + 6;
             const from = to - count;
             this.animateLogicalRangeTo(s.id, from, to, { duration: 360 });

@@ -145,7 +145,6 @@ MultiSpan.charts["1s"].timeScale = () => ({
   },
   width: () => 500,
 });
-MultiSpan.syncedCandleCount = 100;
 MultiSpan.handleChartClick("5m", { time: 300 });
 assert.equal(crosshairCalls.length, 1, "Click on coarser chart must broadcast crosshair");
 assert.equal(crosshairCalls[0].span, "1s");
@@ -171,13 +170,11 @@ MultiSpan.candlesData["5m"] = [
   { time: baseT + 600, close: 110 },
 ];
 narrowerChart1sSetRange = { from: 1094, to: 1200 };
-MultiSpan.syncedCandleCount = 100;
 MultiSpan.handleChartClick("5m", { time: baseT + 300 });
 assert.equal(hlEl1s.style.display, "none", "Highlight resets and hides on new click until zoom & pan complete");
 await flushAnimations(60);
 const zoomedCount1s = narrowerChart1sSetRange.to - narrowerChart1sSetRange.from;
 assert.ok(zoomedCount1s >= 375, `1s chart must zoom out to frame full 5m range (>= 375 bars, got ${zoomedCount1s})`);
-assert.equal(MultiSpan.syncedCandleCount, 100, "Drill-down range framing must NOT overwrite global syncedCandleCount");
 assert.equal(hlEl1s.style.display, "block", "Highlight shows once drill-down zoom & pan settle");
 sandbox.document.getElementById = origGetById;
 
@@ -193,7 +190,7 @@ assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 300), 2);
 assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 450), 3);
 assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 50), -1);
 
-// 5. Test Zoom Level (Visible Candle Count) Synchronization with continuous animation
+// 5. Verify Independent Zoom (Zoom sync removed: zooming one chart does NOT alter other charts)
 let targetSetLogicalRangeCalled = null;
 let mock5mLogicalRange = { from: 400, to: 500 };
 MultiSpan.candlesData["1s"] = new Array(1000).fill(0).map((_, i) => ({ time: 1000 + i, close: 100 + i }));
@@ -218,22 +215,13 @@ MultiSpan.cancelSpanAnimation("5m");
 MultiSpan.isLogicalSyncing = false;
 MultiSpan.isSyncing = false;
 MultiSpan.programmaticSpans = {};
-MultiSpan.syncedCandleCount = 100;
 
-// User zooms 1s chart from 100 bars to 60 bars (from: 940, to: 1000)
+// When 1s chart logical range changes (user zooms 1s), 5m chart must NOT be forced to match
 MultiSpan.handleLogicalRangeChange("1s", { from: 940, to: 1000 });
 await flushAnimations(50);
-assert.ok(targetSetLogicalRangeCalled, "Target chart setVisibleLogicalRange should be called on zoom");
-assert.equal(targetSetLogicalRangeCalled.to - targetSetLogicalRangeCalled.from, 60, "Target chart must have exactly 60 visible candles");
-assert.equal(MultiSpan.syncedCandleCount, 60, "syncedCandleCount must be updated to 60");
-
-// Test setSyncedCandleCount preset
-targetSetLogicalRangeCalled = null;
-MultiSpan.setSyncedCandleCount(30);
-await flushAnimations(50);
-assert.ok(targetSetLogicalRangeCalled, "Target chart setVisibleLogicalRange must be called by preset");
-assert.equal(targetSetLogicalRangeCalled.to - targetSetLogicalRangeCalled.from, 30, "Target chart must have exactly 30 visible candles");
-assert.equal(MultiSpan.syncedCandleCount, 30, "syncedCandleCount must be 30");
+assert.equal(targetSetLogicalRangeCalled, null, "Target chart setVisibleLogicalRange must NOT be called on zoom (independent zoom)");
+assert.equal(mock5mLogicalRange.from, 400, "5m chart logical range 'from' must remain unchanged");
+assert.equal(mock5mLogicalRange.to, 500, "5m chart logical range 'to' must remain unchanged");
 
 // 6. Test reloading finer chart when clicked range is not fully loaded
 let reloadSpanCalled = null;

@@ -103,9 +103,15 @@ async function verifyMultiSpanZoom() {
   const initialBadge = await evalExpr(`document.getElementById('msCandleCountBadge')?.textContent`);
   console.log("Candle count badge:", initialBadge);
 
-  // Click 60 preset button
-  console.log("Clicking 60 preset button...");
-  await evalExpr(`window.multiSpanTab.setSyncedCandleCount(60)`);
+  // Zoom 1s chart independently to 50 bars
+  console.log("Zooming 1s chart independently to 50 bars...");
+  await evalExpr(`(() => {
+    const c1s = window.multiSpanTab?.charts?.['1s'];
+    const cur = c1s?.timeScale()?.getVisibleLogicalRange?.();
+    if (cur) {
+      c1s.timeScale().setVisibleLogicalRange({ from: cur.to - 50, to: cur.to });
+    }
+  })()`);
   await new Promise((r) => setTimeout(r, 1000));
 
   const zoomedRanges = await evalExpr(`
@@ -115,30 +121,27 @@ async function verifyMultiSpanZoom() {
       return { span, range: r, barCount: r ? Math.round(r.to - r.from) : null };
     })
   `);
-  console.log("Visible candle counts after setting 60 bars:", zoomedRanges);
-
-  const zoomedBadge = await evalExpr(`document.getElementById('msCandleCountBadge')?.textContent`);
-  console.log("Candle count badge after zoom:", zoomedBadge);
+  console.log("Visible candle counts after zooming 1s chart:", zoomedRanges);
 
   // Take screenshot
   const shot = await send("Page.captureScreenshot", { format: "png" });
   const shotBuf = Buffer.from(shot.result.data, "base64");
-  const shotPath = "/Users/jiwon/.gemini/antigravity/brain/bc1a8af0-8af1-4cd1-a3fa-8fb2d3be2d43/multispan_zoom_synced.png";
+  const shotPath = "/tmp/multispan_independent_zoom.png";
   fs.writeFileSync(shotPath, shotBuf);
   console.log("Saved live screenshot to", shotPath);
 
   cleanup();
 
-  // Validate results
-  const allInitial100 = initialRanges.every(item => item.barCount === 100);
-  const allZoomed60 = zoomedRanges.every(item => item.barCount === 60);
+  // Validate that 1s zoomed to ~50 bars while 5m, 15m, 1h, 1d remained at ~100 bars
+  const c1sZoomed = zoomedRanges.find(r => r.span === '1s')?.barCount <= 55;
+  const othersUnchanged = zoomedRanges.filter(r => r.span !== '1s').every(r => Math.abs(r.barCount - 100) <= 5);
 
-  if (allInitial100 && allZoomed60) {
-    console.log("SUCCESS: All 5 charts synchronized to exact same # of candles (100 -> 60)!");
+  if (c1sZoomed && othersUnchanged) {
+    console.log("SUCCESS: 1s chart zoomed independently while other 4 charts preserved their zoom!");
     process.exit(0);
   } else {
-    console.warn("Ranges check result:", { allInitial100, allZoomed60 });
-    process.exit(0); // Exit cleanly
+    console.warn("Ranges check result:", { c1sZoomed, othersUnchanged, zoomedRanges });
+    process.exit(0);
   }
 }
 
