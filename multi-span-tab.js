@@ -556,6 +556,10 @@
 
     handleChartClick(sourceSpan, param) {
       if (!param || !param.time) return;
+      if (sourceSpan === "1s") {
+        this.activeRangeHighlight = null;
+        this.updateAllRangeHighlights();
+      }
       // Click on ANY chart (especially coarser charts) broadcasts time point, updates HUD, aligns crosshairs, and centers narrower charts
       this.broadcastTimePoint(param.time, sourceSpan, sourceSpan !== "1s");
     }
@@ -588,8 +592,6 @@
             finerSpans: finerSpans,
           };
         }
-      } else if (sourceSpan === "1s") {
-        this.activeRangeHighlight = null;
       }
 
       const shouldRecenter = recenterNarrower && sourceIdx > 0;
