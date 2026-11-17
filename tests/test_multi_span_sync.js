@@ -164,4 +164,17 @@ reloadSpanCalled = null;
 MultiSpan.handleChartClick("5m", { time: 1500 });
 assert.equal(reloadSpanCalled, null, "reloadSpanToTime must NOT be called when time is already inside loaded range");
 
+// 7. Test activeRangeHighlight when clicking a coarser chart
+MultiSpan.candlesData["1h"] = [{ time: 10000, close: 100 }, { time: 13600, close: 105 }];
+MultiSpan.handleChartClick("1h", { time: 10000 });
+assert.ok(MultiSpan.activeRangeHighlight, "activeRangeHighlight must be populated when clicking 1h");
+assert.equal(MultiSpan.activeRangeHighlight.sourceSpan, "1h");
+assert.equal(MultiSpan.activeRangeHighlight.startTime, 10000);
+assert.equal(MultiSpan.activeRangeHighlight.endTime, 10000 + 3600);
+assert.equal(JSON.stringify(MultiSpan.activeRangeHighlight.finerSpans), JSON.stringify(["1s", "5m", "15m"]));
+
+// Clicking on finest chart (1s) clears activeRangeHighlight
+MultiSpan.handleChartClick("1s", { time: 10000 });
+assert.equal(MultiSpan.activeRangeHighlight, null, "Clicking on finest chart must clear activeRangeHighlight");
+
 console.log("All Multi-Span synchronization unit tests passed!");

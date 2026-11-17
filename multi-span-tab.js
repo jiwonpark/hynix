@@ -42,6 +42,15 @@
     return num.toFixed(6);
   };
 
+  const hexToRgba = (hex, alpha) => {
+    if (!hex) return `rgba(2, 132, 199, ${alpha})`;
+    const c = hex.replace("#", "");
+    const r = parseInt(c.substring(0, 2), 16);
+    const g = parseInt(c.substring(2, 4), 16);
+    const b = parseInt(c.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
   class MultiSpanTab {
     constructor() {
       this.mounted = false;
@@ -68,6 +77,7 @@
       this.logicalRafPending = false;
       this.reloadingSpans = {}; // spanId -> boolean
       this.isHistorical = {};   // spanId -> boolean
+      this.activeRangeHighlight = null; // { sourceSpan, sourceLabel, sourceColor, startTime, endTime, finerSpans }
       this.ws = null;
       this.pollInterval = null;
       this.resizeObserver = null;
@@ -178,7 +188,11 @@
                   <button type="button" class="msCardFitBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Fit this chart">FIT</button>
                 </div>
               </div>
-              <div id="msChartHost_${s.id}" class="msChartHost" style="width:100%;height:320px;position:relative;"></div>
+              <div id="msChartHost_${s.id}" class="msChartHost" style="width:100%;height:320px;position:relative;">
+                <div id="msRangeHighlight_${s.id}" class="msRangeHighlight" style="display:none;position:absolute;top:0;bottom:26px;pointer-events:none;z-index:3;">
+                  <div id="msRangeBadge_${s.id}" style="position:absolute;top:4px;left:4px;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);pointer-events:none;color:#ffffff;"></div>
+                </div>
+              </div>
             </div>
           `).join("")}
         </div>
@@ -293,11 +307,13 @@
         // Wire range & logical range synchronization
         chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
           this.handleRangeChange(s.id, range);
+          this.updateRangeHighlight(s.id);
         });
 
         // Wire visible logical range change for synchronized candle count (zoom sync)
         chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
           this.handleLogicalRangeChange(s.id, logicalRange);
+          this.updateRangeHighlight(s.id);
         });
 
         // Wire crosshair tracking
@@ -330,6 +346,7 @@
           });
         }
       });
+      this.updateAllRangeHighlights();
     }
 
     // =========================================================================
@@ -611,6 +628,94 @@
           }
         }
       }
+
+      // Highlight the whole range of the clicked coarser candle across all finer charts
+      if (sourceIdx > 0) {
+        const sourceCandle = this.findCandleAtOrBefore(sourceSpan, time);
+        if (sourceCandle) {
+          const sourceSpanObj = SPANS[sourceIdx];
+          const startTime = sourceCandle.time;
+          const endTime = sourceCandle.time + (sourceSpanObj.sec || 60);
+          const finerSpans = SPANS.slice(0, sourceIdx).map((p) => p.id);
+          this.activeRangeHighlight = {
+            sourceSpan: sourceSpan,
+            sourceLabel: sourceSpanObj.label,
+            sourceColor: sourceSpanObj.color,
+            startTime: startTime,
+            endTime: endTime,
+            finerSpans: finerSpans,
+          };
+        }
+      } else if (sourceSpan === "1s") {
+        this.activeRangeHighlight = null;
+      }
+      this.updateAllRangeHighlights();
+    }
+
+    updateRangeHighlight(spanId) {
+      const highlightEl = document.getElementById(`msRangeHighlight_${spanId}`);
+      const badgeEl = document.getElementById(`msRangeBadge_${spanId}`);
+      if (!highlightEl) return;
+
+      const hl = this.activeRangeHighlight;
+      if (!hl || !hl.finerSpans || !hl.finerSpans.includes(spanId)) {
+        highlightEl.style.display = "none";
+        return;
+      }
+
+      const chart = this.charts[spanId];
+      if (!chart) return;
+
+      const timeScale = chart.timeScale();
+      const host = document.getElementById(`msChartHost_${spanId}`);
+      const hostWidth = host ? host.clientWidth : 500;
+      // Reserve right price scale width (~55px)
+      const chartWidth = Math.max(10, hostWidth - 55);
+
+      let x1 = timeScale.timeToCoordinate(hl.startTime);
+      let x2 = timeScale.timeToCoordinate(hl.endTime);
+
+      if (x1 === null || x2 === null) {
+        const idx1 = this.findCandleIndexAtOrBefore(spanId, hl.startTime);
+        const idx2 = this.findCandleIndexAtOrBefore(spanId, hl.endTime);
+        if (x1 === null && idx1 !== -1) x1 = timeScale.logicalToCoordinate(idx1);
+        if (x2 === null && idx2 !== -1) x2 = timeScale.logicalToCoordinate(idx2);
+      }
+
+      const data = this.candlesData[spanId] || [];
+      if (x1 === null) {
+        x1 = data.length && hl.startTime < data[0].time ? -200 : 0;
+      }
+      if (x2 === null) {
+        x2 = data.length && hl.endTime > data[data.length - 1].time ? chartWidth + 200 : chartWidth;
+      }
+
+      const leftPx = Math.max(0, Math.min(x1, x2));
+      const rightPx = Math.min(chartWidth, Math.max(x1, x2));
+      const widthPx = rightPx - leftPx;
+
+      if ((x1 < 0 && x2 < 0) || (x1 > chartWidth && x2 > chartWidth) || widthPx <= 0) {
+        highlightEl.style.display = "none";
+        return;
+      }
+
+      highlightEl.style.display = "block";
+      highlightEl.style.left = `${leftPx}px`;
+      highlightEl.style.width = `${widthPx}px`;
+      highlightEl.style.background = hexToRgba(hl.sourceColor, 0.12);
+      highlightEl.style.borderLeft = `2px dashed ${hl.sourceColor || "#0284c7"}`;
+      highlightEl.style.borderRight = `2px dashed ${hl.sourceColor || "#0284c7"}`;
+
+      if (badgeEl) {
+        badgeEl.style.background = hl.sourceColor || "#0284c7";
+        badgeEl.textContent = `${hl.sourceLabel} RANGE`;
+      }
+    }
+
+    updateAllRangeHighlights() {
+      SPANS.forEach((s) => {
+        this.updateRangeHighlight(s.id);
+      });
     }
 
     async reloadSpanToTime(spanId, time) {
@@ -873,6 +978,7 @@
           }
         }
         this.lastVisibleRange[spanId] = chart.timeScale().getVisibleRange();
+        this.updateRangeHighlight(spanId);
       }
     }
 
