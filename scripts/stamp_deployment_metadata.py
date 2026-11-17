@@ -23,7 +23,7 @@ def stamp(path: Path, build_version: str, deployed_at: str) -> None:
     if version_count != 1 or date_count != 1:
         raise ValueError("deployment metadata markers were not found exactly once")
     text = re.sub(
-        r'src="(lighter-tab\.js|crypto-tab\.js|lighter-crypto-tab\.js|held-pair-pnl\.js|strategy-lab\.js|strategy-execution-chart\.js|terminal-common\.js)(\?v=[^"]*)?"',
+        r'src="(lighter-tab\.js|crypto-tab\.js|lighter-crypto-tab\.js|held-pair-pnl\.js|strategy-lab\.js|strategy-execution-chart\.js|terminal-common\.js|multi-span-tab\.js)(\?v=[^"]*)?"',
         rf'src="\g<1>?v={build_version}"',
         text,
     )
