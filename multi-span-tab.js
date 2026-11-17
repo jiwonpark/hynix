@@ -78,6 +78,7 @@
       this.reloadingSpans = {}; // spanId -> boolean
       this.isHistorical = {};   // spanId -> boolean
       this.activeRangeHighlight = null; // { sourceSpan, sourceLabel, sourceColor, startTime, endTime, finerSpans }
+      this.loadMoreTimeout = {}; // spanId -> timeoutId
       this.ws = null;
       this.pollInterval = null;
       this.resizeObserver = null;
@@ -184,6 +185,7 @@
                 <div style="display:flex;align-items:center;gap:10px;font-size:11px;">
                   <div style="color:#64748b;font-family:monospace;" id="msCardOhlc_${s.id}">O:-- H:-- L:-- C:--</div>
                   <span id="msCardPrice_${s.id}" style="font-weight:800;color:#059669;font-size:13px;">--</span>
+                  <button type="button" class="msCardLoadMoreBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Load older historical candles">+ LOAD MORE</button>
                   <button type="button" class="msCardHeroBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Set as Hero focus">HERO</button>
                   <button type="button" class="msCardFitBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Fit this chart">FIT</button>
                 </div>
@@ -314,6 +316,10 @@
         chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
           this.handleLogicalRangeChange(s.id, logicalRange);
           this.updateRangeHighlight(s.id);
+          // Auto load more when scrolling near earliest loaded candle
+          if (logicalRange && logicalRange.from < 25 && !this.reloadingSpans[s.id]) {
+            this.debouncedLoadMore(s.id);
+          }
         });
 
         // Wire crosshair tracking
@@ -562,6 +568,29 @@
 
       // Source index to determine which charts are narrower
       const sourceIdx = sourceSpan ? SPANS.findIndex((p) => p.id === sourceSpan) : -1;
+      const sourceSpanObj = sourceIdx >= 0 ? SPANS[sourceIdx] : null;
+
+      // Calculate target range if clicked on a coarser chart
+      let targetRangeStart = time;
+      let targetRangeEnd = time;
+      if (sourceIdx > 0 && sourceSpanObj) {
+        const sourceCandle = this.findCandleAtOrBefore(sourceSpan, time);
+        if (sourceCandle) {
+          targetRangeStart = sourceCandle.time;
+          targetRangeEnd = sourceCandle.time + (sourceSpanObj.sec || 60);
+          const finerSpans = SPANS.slice(0, sourceIdx).map((p) => p.id);
+          this.activeRangeHighlight = {
+            sourceSpan: sourceSpan,
+            sourceLabel: sourceSpanObj.label,
+            sourceColor: sourceSpanObj.color,
+            startTime: targetRangeStart,
+            endTime: targetRangeEnd,
+            finerSpans: finerSpans,
+          };
+        }
+      } else if (sourceSpan === "1s") {
+        this.activeRangeHighlight = null;
+      }
 
       const shouldRecenter = recenterNarrower && sourceIdx > 0;
       if (shouldRecenter) {
@@ -594,14 +623,14 @@
             }
           }
 
-          // Drill-down: if clicking a coarser chart, center or reload narrower charts
+          // Drill-down: if clicking a coarser chart, center or reload narrower charts to cover whole range
           if (shouldRecenter && chart && idx < sourceIdx) {
             const data = this.candlesData[s.id] || [];
             const spanSec = s.sec || 60;
             const hasData = data.length > 0;
-            const isInside = hasData && time >= data[0].time && time <= (data[data.length - 1].time + spanSec);
+            const hasWholeRange = hasData && data[0].time <= targetRangeStart && (data[data.length - 1].time + spanSec) >= targetRangeEnd;
 
-            if (isInside) {
+            if (hasWholeRange) {
               try {
                 const candleIdx = this.findCandleIndexAtOrBefore(s.id, time);
                 const count = this.syncedCandleCount || 100;
@@ -612,8 +641,8 @@
                 }
               } catch (_) {}
             } else {
-              // Outside loaded range of finer chart: reload that finer chart to that range!
-              this.reloadSpanToTime(s.id, time);
+              // Not enough loaded to show the whole range: batch-fetch and reload that finer chart!
+              this.reloadSpanToRange(s.id, targetRangeStart, targetRangeEnd);
             }
           }
         });
@@ -629,26 +658,6 @@
         }
       }
 
-      // Highlight the whole range of the clicked coarser candle across all finer charts
-      if (sourceIdx > 0) {
-        const sourceCandle = this.findCandleAtOrBefore(sourceSpan, time);
-        if (sourceCandle) {
-          const sourceSpanObj = SPANS[sourceIdx];
-          const startTime = sourceCandle.time;
-          const endTime = sourceCandle.time + (sourceSpanObj.sec || 60);
-          const finerSpans = SPANS.slice(0, sourceIdx).map((p) => p.id);
-          this.activeRangeHighlight = {
-            sourceSpan: sourceSpan,
-            sourceLabel: sourceSpanObj.label,
-            sourceColor: sourceSpanObj.color,
-            startTime: startTime,
-            endTime: endTime,
-            finerSpans: finerSpans,
-          };
-        }
-      } else if (sourceSpan === "1s") {
-        this.activeRangeHighlight = null;
-      }
       this.updateAllRangeHighlights();
     }
 
@@ -718,7 +727,7 @@
       });
     }
 
-    async reloadSpanToTime(spanId, time) {
+    async reloadSpanToRange(spanId, startTime, endTime) {
       const spanObj = SPANS.find((p) => p.id === spanId);
       if (!spanObj) return;
       const chart = this.charts[spanId];
@@ -737,22 +746,30 @@
       }
 
       try {
-        const limit = spanObj.defaultLimit;
         const spanSec = spanObj.sec || 60;
-        const halfSpanTime = Math.round((limit / 2) * spanSec);
         const nowSec = Math.floor(Date.now() / 1000);
-        let targetEndSec = time + halfSpanTime;
-        if (targetEndSec > nowSec) targetEndSec = nowSec;
-        const endTimeMs = targetEndSec * 1000;
-        const isHistorical = targetEndSec < (nowSec - Math.max(300, spanSec * 5));
+        // Add buffer candles before and after range
+        const bufferSec = Math.max(spanSec * 30, 300);
+        let targetStart = Math.max(0, startTime - bufferSec);
+        let targetEnd = Math.min(nowSec, endTime + bufferSec);
+        if (targetEnd <= targetStart) targetEnd = targetStart + spanSec * 100;
+
+        // Cap to 5000 candles to avoid excessive pagination/browser freeze
+        const maxCandlesForSpan = 5000;
+        if ((targetEnd - targetStart) / spanSec > maxCandlesForSpan) {
+          targetEnd = Math.min(nowSec, targetStart + maxCandlesForSpan * spanSec);
+        }
+
+        const isHistorical = targetEnd < (nowSec - Math.max(300, spanSec * 5));
         if (isHistorical) this.isHistorical[spanId] = true;
 
-        const raw = await this.fetchKlinesForSpan(this.symbol, spanId, limit, endTimeMs);
+        const raw = await this.fetchKlinesRange(this.symbol, spanId, targetStart, targetEnd, 6);
         if (Array.isArray(raw) && raw.length) {
           this.isHistorical[spanId] = isHistorical;
-          this.setSpanData(spanId, raw, time);
+          const centerTime = Math.round((startTime + endTime) / 2);
+          this.setSpanData(spanId, raw, centerTime);
 
-          const candle = this.findCandleAtOrBefore(spanId, time);
+          const candle = this.findCandleAtOrBefore(spanId, centerTime);
           if (candle) {
             try {
               chart.setCrosshairPosition(candle.close, candle.time, this.series[spanId]);
@@ -785,14 +802,22 @@
             badgeEl.style.background = "#f1f5f9";
             badgeEl.style.color = "#64748b";
             badgeEl.style.border = "1px solid #cbd5e1";
-            badgeEl.title = "No candles available for this timestamp.";
+            badgeEl.title = "No candles available for this timestamp range.";
           }
         }
       } catch (err) {
-        console.error(`Failed to reload span ${spanId} to time ${time}:`, err);
+        console.error(`Failed to reload span ${spanId} to range [${startTime}, ${endTime}]:`, err);
       } finally {
         this.reloadingSpans[spanId] = false;
+        this.updateRangeHighlight(spanId);
       }
+    }
+
+    async reloadSpanToTime(spanId, time) {
+      const spanObj = SPANS.find((p) => p.id === spanId);
+      const spanSec = spanObj ? (spanObj.sec || 60) : 60;
+      const halfSpan = spanSec * 250;
+      return this.reloadSpanToRange(spanId, time - halfSpan, time + halfSpan);
     }
 
     async reloadSpanToLatest(spanId) {
@@ -804,6 +829,75 @@
       const raw = await this.fetchKlinesForSpan(this.symbol, spanId, s.defaultLimit);
       if (raw && raw.length) {
         this.setSpanData(spanId, raw);
+      }
+    }
+
+    debouncedLoadMore(spanId) {
+      if (this.loadMoreTimeout[spanId]) clearTimeout(this.loadMoreTimeout[spanId]);
+      this.loadMoreTimeout[spanId] = setTimeout(() => {
+        this.loadMoreHistorical(spanId);
+      }, 300);
+    }
+
+    async loadMoreHistorical(spanId) {
+      if (this.reloadingSpans[spanId]) return;
+      const data = this.candlesData[spanId];
+      if (!data || !data.length) return;
+
+      const btn = typeof document !== "undefined" && typeof document.querySelector === "function"
+        ? document.querySelector(`.msCardLoadMoreBtn[data-span="${spanId}"]`)
+        : null;
+      if (btn) btn.textContent = "⏳...";
+
+      this.reloadingSpans[spanId] = true;
+      try {
+        const earliestTime = data[0].time;
+        const endMs = earliestTime * 1000 - 1;
+        const raw = await this.fetchKlinesForSpan(this.symbol, spanId, 1000, endMs);
+        if (Array.isArray(raw) && raw.length) {
+          const older = raw.filter((c) => c.time < earliestTime);
+          if (older.length) {
+            const merged = [...older, ...data].sort((a, b) => a.time - b.time);
+            const addedCount = merged.length - data.length;
+            this.candlesData[spanId] = merged;
+
+            const series = this.series[spanId];
+            if (series) series.setData(merged);
+
+            const ma20Data = this.calculateSma(merged, 20);
+            const ma50Data = this.calculateSma(merged, 50);
+            if (this.ma20[spanId]) this.ma20[spanId].setData(ma20Data);
+            if (this.ma50[spanId]) this.ma50[spanId].setData(ma50Data);
+
+            const chart = this.charts[spanId];
+            if (chart) {
+              const currentLogical = chart.timeScale().getVisibleLogicalRange();
+              if (currentLogical) {
+                this.isLogicalSyncing = true;
+                try {
+                  chart.timeScale().setVisibleLogicalRange({
+                    from: currentLogical.from + addedCount,
+                    to: currentLogical.to + addedCount,
+                  });
+                } finally {
+                  if (!this.logicalRafPending) {
+                    this.logicalRafPending = true;
+                    requestAnimationFrame(() => {
+                      this.isLogicalSyncing = false;
+                      this.logicalRafPending = false;
+                    });
+                  }
+                }
+              }
+            }
+            this.updateRangeHighlight(spanId);
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to load more for span ${spanId}:`, err);
+      } finally {
+        this.reloadingSpans[spanId] = false;
+        if (btn) btn.textContent = "+ LOAD MORE";
       }
     }
 
@@ -912,6 +1006,38 @@
       return [];
     }
 
+    async fetchKlinesRange(symbol, span, startTime, endTime, maxBatches = 6) {
+      let allCandles = [];
+      let currentEndMs = endTime * 1000;
+      const seenTimes = new Set();
+
+      for (let batch = 0; batch < maxBatches; batch++) {
+        const raw = await this.fetchKlinesForSpan(symbol, span, 1000, currentEndMs);
+        if (!Array.isArray(raw) || !raw.length) {
+          break;
+        }
+
+        let addedAny = false;
+        for (let i = raw.length - 1; i >= 0; i--) {
+          const c = raw[i];
+          if (!seenTimes.has(c.time)) {
+            seenTimes.add(c.time);
+            allCandles.push(c);
+            addedAny = true;
+          }
+        }
+
+        const earliestInBatch = raw[0].time;
+        if (earliestInBatch <= startTime || !addedAny) {
+          break;
+        }
+        currentEndMs = earliestInBatch * 1000 - 1;
+      }
+
+      allCandles.sort((a, b) => a.time - b.time);
+      return allCandles;
+    }
+
     setSpanData(spanId, rawCandles, centerTime = null) {
       if (!rawCandles || !rawCandles.length) return;
       // Deduplicate by time
@@ -1006,7 +1132,7 @@
         list[list.length - 1] = candle;
       } else if (last && candle.time > last.time) {
         list.push(candle);
-        if (list.length > 2000) list.shift();
+        if (list.length > 10000) list.shift();
       }
       const s = this.series[spanId];
       if (s) s.update(candle);
@@ -1200,6 +1326,16 @@
           const span = e.currentTarget.getAttribute("data-span");
           if (span && this.isHistorical[span]) {
             this.reloadSpanToLatest(span);
+          }
+        });
+      });
+
+      // Load more historical candles button
+      document.querySelectorAll(".msCardLoadMoreBtn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          const span = e.currentTarget.getAttribute("data-span");
+          if (span) {
+            this.loadMoreHistorical(span);
           }
         });
       });

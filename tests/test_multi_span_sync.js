@@ -1,8 +1,10 @@
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const vm = require("node:vm");
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import vm from "node:vm";
+import { fileURLToPath } from "node:url";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const code = fs.readFileSync(path.join(__dirname, "../multi-span-tab.js"), "utf8");
 
 // Create test sandbox
@@ -10,6 +12,7 @@ const sandbox = {
   document: {
     getElementById: () => null,
     querySelectorAll: () => [],
+    querySelector: () => null,
   },
   window: {},
   requestAnimationFrame: (cb) => setTimeout(cb, 0),
@@ -99,8 +102,15 @@ assert.equal(crosshairCalls[0].t, 200);
 // 3. Click on coarser chart (5m) MUST broadcast crosshairs AND re-center narrower charts (1s)
 crosshairCalls = [];
 let narrowerChart1sSetRange = null;
+MultiSpan.candlesData["1s"] = [
+  { time: 100, close: 10 },
+  { time: 200, close: 20 },
+  { time: 300, close: 30 },
+  { time: 450, close: 45 },
+  { time: 600, close: 60 },
+];
 MultiSpan.charts["1s"].timeScale = () => ({
-  getVisibleRange: () => ({ from: 100, to: 200 }),
+  getVisibleRange: () => ({ from: 100, to: 600 }),
   setVisibleRange: (r) => { narrowerChart1sSetRange = r; },
   setVisibleLogicalRange: (r) => { narrowerChart1sSetRange = r; },
 });
@@ -108,7 +118,7 @@ MultiSpan.handleChartClick("5m", { time: 300 });
 assert.equal(crosshairCalls.length, 1, "Click on coarser chart must broadcast crosshair");
 assert.equal(crosshairCalls[0].span, "1s");
 assert.equal(crosshairCalls[0].t, 300);
-assert.ok(narrowerChart1sSetRange, "Click on coarser chart must re-center narrower chart");
+assert.ok(narrowerChart1sSetRange, "Click on coarser chart must re-center narrower chart when range is covered");
 assert.equal((narrowerChart1sSetRange.from + narrowerChart1sSetRange.to) / 2, 2, "Narrower chart must be centered on candle index 2 (time 300)");
 // 4. Test findCandleIndexAtOrBefore
 assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 250), 1);
@@ -150,19 +160,21 @@ assert.ok(targetSetLogicalRangeCalled, "Target chart setVisibleLogicalRange must
 assert.equal(targetSetLogicalRangeCalled.to - targetSetLogicalRangeCalled.from, 30, "Target chart must have exactly 30 visible candles");
 assert.equal(MultiSpan.syncedCandleCount, 30, "syncedCandleCount must be 30");
 
-// 6. Test reloading finer chart when clicked time is outside loaded range
+// 6. Test reloading finer chart when clicked range is not fully loaded
 let reloadSpanCalled = null;
-MultiSpan.reloadSpanToTime = (span, time) => { reloadSpanCalled = { span, time }; };
-// 1s currently has times 1000..1999. Click 5m at time 500 (outside 1s loaded range):
+MultiSpan.reloadSpanToRange = (span, start, end) => { reloadSpanCalled = { span, start, end }; };
+// Add 5m candle at time 500. 1s currently only has times 1000..1999 (outside 1s loaded range):
+MultiSpan.candlesData["5m"].unshift({ time: 500, close: 50 });
 MultiSpan.handleChartClick("5m", { time: 500 });
-assert.ok(reloadSpanCalled, "reloadSpanToTime must be called when clicked time is outside finer chart loaded range");
+assert.ok(reloadSpanCalled, "reloadSpanToRange must be called when clicked time is outside finer chart loaded range");
 assert.equal(reloadSpanCalled.span, "1s");
-assert.equal(reloadSpanCalled.time, 500);
+assert.equal(reloadSpanCalled.start, 500);
+assert.equal(reloadSpanCalled.end, 800);
 
-// If clicked time is INSIDE loaded range (e.g. time 1500), reloadSpanToTime must NOT be called
+// If clicked range is INSIDE loaded range (e.g. 5m candle at 1500 spans 1500..1800, inside 1000..1999), reload must NOT be called
 reloadSpanCalled = null;
 MultiSpan.handleChartClick("5m", { time: 1500 });
-assert.equal(reloadSpanCalled, null, "reloadSpanToTime must NOT be called when time is already inside loaded range");
+assert.equal(reloadSpanCalled, null, "reloadSpanToRange must NOT be called when range is already inside loaded range");
 
 // 7. Test activeRangeHighlight when clicking a coarser chart
 MultiSpan.candlesData["1h"] = [{ time: 10000, close: 100 }, { time: 13600, close: 105 }];
@@ -176,5 +188,54 @@ assert.equal(JSON.stringify(MultiSpan.activeRangeHighlight.finerSpans), JSON.str
 // Clicking on finest chart (1s) clears activeRangeHighlight
 MultiSpan.handleChartClick("1s", { time: 10000 });
 assert.equal(MultiSpan.activeRangeHighlight, null, "Clicking on finest chart must clear activeRangeHighlight");
+
+// 8. Test loadMoreHistorical prepending older candles & shifting logical range
+let shiftedLogicalRange = null;
+MultiSpan.candlesData["1s"] = [
+  { time: 1000, open: 1, high: 2, low: 1, close: 2 },
+  { time: 1001, open: 2, high: 3, low: 2, close: 3 },
+];
+MultiSpan.series["1s"] = { setData: () => {} };
+MultiSpan.charts["1s"] = {
+  timeScale: () => ({
+    getVisibleLogicalRange: () => ({ from: 0, to: 2 }),
+    setVisibleLogicalRange: (r) => { shiftedLogicalRange = r; },
+  }),
+};
+MultiSpan.fetchKlinesForSpan = async (sym, span, limit, endMs) => {
+  return [
+    { time: 998, open: 1, high: 2, low: 1, close: 1 },
+    { time: 999, open: 1, high: 2, low: 1, close: 2 },
+  ];
+};
+await MultiSpan.loadMoreHistorical("1s");
+assert.equal(MultiSpan.candlesData["1s"].length, 4, "Prepended 2 candles so total length must be 4");
+assert.equal(MultiSpan.candlesData["1s"][0].time, 998, "Earliest candle must now be time 998");
+assert.ok(shiftedLogicalRange, "Visible logical range must be shifted when older candles are prepended");
+assert.equal(shiftedLogicalRange.from, 2, "from index must shift by +2 added candles");
+assert.equal(shiftedLogicalRange.to, 4, "to index must shift by +2 added candles");
+
+// 9. Test fetchKlinesRange multi-batch pagination
+const batchCalls = [];
+MultiSpan.fetchKlinesForSpan = async (sym, span, limit, endMs) => {
+  batchCalls.push(endMs);
+  if (batchCalls.length === 1) {
+    return [
+      { time: 3000, open: 1, high: 2, low: 1, close: 1 },
+      { time: 4000, open: 1, high: 2, low: 1, close: 1 },
+    ];
+  } else if (batchCalls.length === 2) {
+    return [
+      { time: 1000, open: 1, high: 2, low: 1, close: 1 },
+      { time: 2000, open: 1, high: 2, low: 1, close: 1 },
+    ];
+  }
+  return [];
+};
+const rangeCandles = await MultiSpan.fetchKlinesRange("BTCUSDT", "1s", 1500, 4000, 5);
+assert.equal(batchCalls.length, 2, "Should fetch 2 batches backwards until earliest candle <= startTime (1500)");
+assert.equal(rangeCandles.length, 4, "Should aggregate all unique candles from batches");
+assert.equal(rangeCandles[0].time, 1000);
+assert.equal(rangeCandles[3].time, 4000);
 
 console.log("All Multi-Span synchronization unit tests passed!");

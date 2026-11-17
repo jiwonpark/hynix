@@ -32,9 +32,10 @@
       -webkit-font-smoothing: antialiased;
     }
     main {
-      width: min(1280px, calc(100vw - 32px));
+      width: calc(100% - 32px);
+      max-width: none;
       margin: 0 auto;
-      padding: 28px 0 40px;
+      padding: 20px 0 40px;
     }
     .top {
       display: grid;
@@ -2630,7 +2631,7 @@
     }
 
     @media (max-width: 860px) {
-      main { width: min(100vw - 20px, 1280px); padding-top: 18px; }
+      main { width: calc(100% - 16px); max-width: none; padding-top: 18px; }
       .top { grid-template-columns: minmax(0, 1fr); grid-template-areas: "meta" "title" "actions"; }
       .topRight { justify-self: start; }
       .chartHeader, .tableHead { flex-direction: column; }
