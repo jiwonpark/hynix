@@ -283,6 +283,11 @@
         chart.subscribeCrosshairMove((param) => {
           this.handleCrosshairMove(s.id, param);
         });
+
+        // Wire click for drill-down / synchronization on coarser charts
+        chart.subscribeClick((param) => {
+          this.handleChartClick(s.id, param);
+        });
       });
 
       // Handle window / element resizing smoothly
@@ -367,48 +372,85 @@
 
     handleCrosshairMove(sourceSpan, param) {
       if (!param || !param.time) {
-        // Clear crosshairs on other charts
-        SPANS.forEach((s) => {
-          if (s.id !== sourceSpan && this.charts[s.id]) {
-            this.charts[s.id].clearCrosshairPosition();
-          }
-        });
+        // Clear crosshairs on other charts only if leaving finest chart
+        if (sourceSpan === "1s") {
+          SPANS.forEach((s) => {
+            if (s.id !== sourceSpan && this.charts[s.id]) {
+              this.charts[s.id].clearCrosshairPosition();
+            }
+          });
+        }
         return;
       }
 
-      const time = param.time;
+      // If hovered on a COARSER chart: only update that local chart's own card OHLC, do NOT broadcast to other charts!
+      if (sourceSpan !== "1s") {
+        const series = this.series[sourceSpan];
+        const hoveredCandle = (param.seriesData?.get(series)) || this.findCandleAtOrBefore(sourceSpan, param.time);
+        if (hoveredCandle) {
+          const cardOhlc = document.getElementById(`msCardOhlc_${sourceSpan}`);
+          if (cardOhlc) {
+            cardOhlc.textContent = `O:${formatPrice(hoveredCandle.open)} H:${formatPrice(hoveredCandle.high)} L:${formatPrice(hoveredCandle.low)} C:${formatPrice(hoveredCandle.close)}`;
+          }
+        }
+        return;
+      }
+
+      // Hover on FINEST chart ("1s"): broadcast time point & crosshair across all charts in real time!
+      this.broadcastTimePoint(param.time, sourceSpan, false);
+    }
+
+    handleChartClick(sourceSpan, param) {
+      if (!param || !param.time) return;
+      // Click on ANY chart (especially coarser charts) broadcasts time point, updates HUD, aligns crosshairs, and centers narrower charts
+      this.broadcastTimePoint(param.time, sourceSpan, sourceSpan !== "1s");
+    }
+
+    broadcastTimePoint(time, sourceSpan = null, recenterNarrower = false) {
+      if (!time) return;
       const timeStr = formatKst(time);
       const hudTime = document.getElementById("msHudTime");
       if (hudTime) hudTime.textContent = timeStr;
 
+      // Source index to determine which charts are narrower
+      const sourceIdx = sourceSpan ? SPANS.findIndex((p) => p.id === sourceSpan) : -1;
+
       // Update crosshairs across all other charts & update HUD
-      SPANS.forEach((s) => {
+      SPANS.forEach((s, idx) => {
         const series = this.series[s.id];
         const chart = this.charts[s.id];
         const valEl = document.getElementById(`msHudVal_${s.id}`);
         const cardOhlc = document.getElementById(`msCardOhlc_${s.id}`);
 
-        if (chart && s.id !== sourceSpan && series) {
+        const candle = this.findCandleAtOrBefore(s.id, time);
+
+        if (chart && series && s.id !== sourceSpan) {
           try {
-            // Find candle in data closest to this timestamp
-            const candle = this.findCandleAtOrBefore(s.id, time);
             if (candle) {
               chart.setCrosshairPosition(candle.close, candle.time, series);
             }
           } catch (_) {}
         }
 
-        // Update HUD OHLC
-        const hoveredCandle = (s.id === sourceSpan && param.seriesData?.get(series))
-          ? param.seriesData.get(series)
-          : this.findCandleAtOrBefore(s.id, time);
-
-        if (hoveredCandle) {
-          const closeP = formatPrice(hoveredCandle.close);
+        if (candle) {
+          const closeP = formatPrice(candle.close);
           if (valEl) valEl.textContent = closeP;
           if (cardOhlc) {
-            cardOhlc.textContent = `O:${formatPrice(hoveredCandle.open)} H:${formatPrice(hoveredCandle.high)} L:${formatPrice(hoveredCandle.low)} C:${closeP}`;
+            cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${closeP}`;
           }
+        }
+
+        // Drill-down: if clicking a coarser chart, center narrower charts on the clicked timestamp
+        if (recenterNarrower && chart && candle && sourceIdx > 0 && idx < sourceIdx) {
+          try {
+            const range = chart.timeScale().getVisibleRange();
+            if (range && range.to > range.from) {
+              const duration = range.to - range.from;
+              const targetFrom = Math.round(time - duration / 2);
+              const targetTo = Math.round(time + duration / 2);
+              chart.timeScale().setVisibleRange({ from: targetFrom, to: targetTo });
+            }
+          } catch (_) {}
         }
       });
     }

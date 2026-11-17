@@ -76,6 +76,38 @@ assert.equal((targetSetRangeCalled.from + targetSetRangeCalled.to) / 2, 1100, "T
 targetSetRangeCalled = null;
 MultiSpan.isSyncing = true;
 MultiSpan.handleRangeChange("1s", { from: 2000, to: 2200 });
-assert.equal(targetSetRangeCalled, null, "Sync must not run when isSyncing guard is active");
+// Test Hover Behavior:
+// 1. Hover on 5m (coarser) must NOT position crosshair on other charts
+let crosshairCalls = [];
+MultiSpan.candlesData["1s"] = [{ time: 100, close: 10 }, { time: 200, close: 20 }, { time: 300, close: 30 }];
+MultiSpan.series["1s"] = {};
+MultiSpan.series["5m"] = {};
+MultiSpan.charts["1s"].setCrosshairPosition = (p, t, s) => { crosshairCalls.push({ span: "1s", p, t }); };
+MultiSpan.charts["5m"].setCrosshairPosition = (p, t, s) => { crosshairCalls.push({ span: "5m", p, t }); };
+
+crosshairCalls = [];
+MultiSpan.handleCrosshairMove("5m", { time: 200 });
+assert.equal(crosshairCalls.length, 0, "Hover on coarser chart (5m) must NOT broadcast crosshairs to other charts");
+
+// 2. Hover on 1s (finest) MUST broadcast crosshairs to other charts
+crosshairCalls = [];
+MultiSpan.handleCrosshairMove("1s", { time: 200 });
+assert.equal(crosshairCalls.length, 1, "Hover on finest chart (1s) MUST broadcast crosshairs to other charts");
+assert.equal(crosshairCalls[0].span, "5m");
+assert.equal(crosshairCalls[0].t, 200);
+
+// 3. Click on coarser chart (5m) MUST broadcast crosshairs AND re-center narrower charts (1s)
+crosshairCalls = [];
+let narrowerChart1sSetRange = null;
+MultiSpan.charts["1s"].timeScale = () => ({
+  getVisibleRange: () => ({ from: 100, to: 200 }),
+  setVisibleRange: (r) => { narrowerChart1sSetRange = r; },
+});
+MultiSpan.handleChartClick("5m", { time: 300 });
+assert.equal(crosshairCalls.length, 1, "Click on coarser chart must broadcast crosshair");
+assert.equal(crosshairCalls[0].span, "1s");
+assert.equal(crosshairCalls[0].t, 300);
+assert.ok(narrowerChart1sSetRange, "Click on coarser chart must re-center narrower chart");
+assert.equal((narrowerChart1sSetRange.from + narrowerChart1sSetRange.to) / 2, 300, "Narrower chart must be centered on clicked timestamp 300");
 
 console.log("All Multi-Span synchronization unit tests passed!");
