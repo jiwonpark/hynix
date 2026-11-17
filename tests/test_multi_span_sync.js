@@ -150,4 +150,18 @@ assert.ok(targetSetLogicalRangeCalled, "Target chart setVisibleLogicalRange must
 assert.equal(targetSetLogicalRangeCalled.to - targetSetLogicalRangeCalled.from, 30, "Target chart must have exactly 30 visible candles");
 assert.equal(MultiSpan.syncedCandleCount, 30, "syncedCandleCount must be 30");
 
+// 6. Test reloading finer chart when clicked time is outside loaded range
+let reloadSpanCalled = null;
+MultiSpan.reloadSpanToTime = (span, time) => { reloadSpanCalled = { span, time }; };
+// 1s currently has times 1000..1999. Click 5m at time 500 (outside 1s loaded range):
+MultiSpan.handleChartClick("5m", { time: 500 });
+assert.ok(reloadSpanCalled, "reloadSpanToTime must be called when clicked time is outside finer chart loaded range");
+assert.equal(reloadSpanCalled.span, "1s");
+assert.equal(reloadSpanCalled.time, 500);
+
+// If clicked time is INSIDE loaded range (e.g. time 1500), reloadSpanToTime must NOT be called
+reloadSpanCalled = null;
+MultiSpan.handleChartClick("5m", { time: 1500 });
+assert.equal(reloadSpanCalled, null, "reloadSpanToTime must NOT be called when time is already inside loaded range");
+
 console.log("All Multi-Span synchronization unit tests passed!");

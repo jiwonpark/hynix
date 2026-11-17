@@ -11,11 +11,11 @@
   "use strict";
 
   const SPANS = [
-    { id: "1s", label: "1-SECOND", sub: "Ultra HF Tick Momentum", color: "#0284c7", defaultLimit: 1000 },
-    { id: "5m", label: "5-MINUTE", sub: "Micro Intraday Scalp", color: "#059669", defaultLimit: 500 },
-    { id: "15m", label: "15-MINUTE", sub: "Intraday Swing Structure", color: "#d97706", defaultLimit: 500 },
-    { id: "1h", label: "1-HOUR", sub: "Intermediate Trend Regime", color: "#7c3aed", defaultLimit: 500 },
-    { id: "1d", label: "1-DAY", sub: "Macro Daily Context", color: "#db2777", defaultLimit: 365 },
+    { id: "1s", label: "1-SECOND", sub: "Ultra HF Tick Momentum", color: "#0284c7", defaultLimit: 1000, sec: 1 },
+    { id: "5m", label: "5-MINUTE", sub: "Micro Intraday Scalp", color: "#059669", defaultLimit: 500, sec: 300 },
+    { id: "15m", label: "15-MINUTE", sub: "Intraday Swing Structure", color: "#d97706", defaultLimit: 500, sec: 900 },
+    { id: "1h", label: "1-HOUR", sub: "Intermediate Trend Regime", color: "#7c3aed", defaultLimit: 500, sec: 3600 },
+    { id: "1d", label: "1-DAY", sub: "Macro Daily Context", color: "#db2777", defaultLimit: 365, sec: 86400 },
   ];
 
   const formatKst = (dateOrSec) => {
@@ -66,6 +66,8 @@
       this.isLogicalSyncing = false;
       this.rafPending = false;
       this.logicalRafPending = false;
+      this.reloadingSpans = {}; // spanId -> boolean
+      this.isHistorical = {};   // spanId -> boolean
       this.ws = null;
       this.pollInterval = null;
       this.resizeObserver = null;
@@ -167,6 +169,7 @@
                   <span style="background:${s.color};color:#ffffff;font-weight:900;font-size:11px;padding:2px 6px;border-radius:4px;letter-spacing:0.5px;">${s.id.toUpperCase()}</span>
                   <span style="color:#0f172a;font-weight:700;font-size:12px;">${s.label}</span>
                   <small style="color:#64748b;font-size:11px;">${s.sub}</small>
+                  <span id="msCardModeBadge_${s.id}" class="msCardModeBadge" data-span="${s.id}" style="display:none;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;cursor:pointer;"></span>
                 </div>
                 <div style="display:flex;align-items:center;gap:10px;font-size:11px;">
                   <div style="color:#64748b;font-family:monospace;" id="msCardOhlc_${s.id}">O:-- H:-- L:-- C:--</div>
@@ -574,17 +577,27 @@
             }
           }
 
-          // Drill-down: if clicking a coarser chart, center narrower charts on the clicked timestamp without breaking candle count
-          if (shouldRecenter && chart && candle && idx < sourceIdx) {
-            try {
-              const candleIdx = this.findCandleIndexAtOrBefore(s.id, time);
-              const count = this.syncedCandleCount || 100;
-              if (candleIdx !== -1) {
-                const from = Math.round(candleIdx - count / 2);
-                const to = from + count;
-                chart.timeScale().setVisibleLogicalRange({ from, to });
-              }
-            } catch (_) {}
+          // Drill-down: if clicking a coarser chart, center or reload narrower charts
+          if (shouldRecenter && chart && idx < sourceIdx) {
+            const data = this.candlesData[s.id] || [];
+            const spanSec = s.sec || 60;
+            const hasData = data.length > 0;
+            const isInside = hasData && time >= data[0].time && time <= (data[data.length - 1].time + spanSec);
+
+            if (isInside) {
+              try {
+                const candleIdx = this.findCandleIndexAtOrBefore(s.id, time);
+                const count = this.syncedCandleCount || 100;
+                if (candleIdx !== -1) {
+                  const from = Math.round(candleIdx - count / 2);
+                  const to = from + count;
+                  chart.timeScale().setVisibleLogicalRange({ from, to });
+                }
+              } catch (_) {}
+            } else {
+              // Outside loaded range of finer chart: reload that finer chart to that range!
+              this.reloadSpanToTime(s.id, time);
+            }
           }
         });
       } finally {
@@ -597,6 +610,94 @@
             });
           }
         }
+      }
+    }
+
+    async reloadSpanToTime(spanId, time) {
+      const spanObj = SPANS.find((p) => p.id === spanId);
+      if (!spanObj) return;
+      const chart = this.charts[spanId];
+      if (!chart) return;
+
+      if (this.reloadingSpans[spanId]) return;
+      this.reloadingSpans[spanId] = true;
+
+      const badgeEl = document.getElementById(`msCardModeBadge_${spanId}`);
+      if (badgeEl) {
+        badgeEl.style.display = "inline-block";
+        badgeEl.textContent = "⏳ RELOADING...";
+        badgeEl.style.background = "#fef3c7";
+        badgeEl.style.color = "#d97706";
+        badgeEl.style.border = "1px solid #fde68a";
+      }
+
+      try {
+        const limit = spanObj.defaultLimit;
+        const spanSec = spanObj.sec || 60;
+        const halfSpanTime = Math.round((limit / 2) * spanSec);
+        const nowSec = Math.floor(Date.now() / 1000);
+        let targetEndSec = time + halfSpanTime;
+        if (targetEndSec > nowSec) targetEndSec = nowSec;
+        const endTimeMs = targetEndSec * 1000;
+
+        const raw = await this.fetchKlinesForSpan(this.symbol, spanId, limit, endTimeMs);
+        if (Array.isArray(raw) && raw.length) {
+          const isHistorical = targetEndSec < (nowSec - Math.max(300, spanSec * 5));
+          this.isHistorical[spanId] = isHistorical;
+          this.setSpanData(spanId, raw, time);
+
+          const candle = this.findCandleAtOrBefore(spanId, time);
+          if (candle) {
+            try {
+              chart.setCrosshairPosition(candle.close, candle.time, this.series[spanId]);
+            } catch (_) {}
+            const pStr = formatPrice(candle.close);
+            const valEl = document.getElementById(`msHudVal_${spanId}`);
+            const cardOhlc = document.getElementById(`msCardOhlc_${spanId}`);
+            if (valEl) valEl.textContent = pStr;
+            if (cardOhlc) {
+              cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${pStr}`;
+            }
+          }
+
+          if (badgeEl) {
+            if (isHistorical) {
+              badgeEl.style.display = "inline-block";
+              badgeEl.textContent = "⏮️ HISTORICAL";
+              badgeEl.style.background = "#fee2e2";
+              badgeEl.style.color = "#dc2626";
+              badgeEl.style.border = "1px solid #fca5a5";
+              badgeEl.title = "Viewing historical window. Click to return to latest.";
+            } else {
+              badgeEl.style.display = "none";
+            }
+          }
+        } else {
+          if (badgeEl) {
+            badgeEl.style.display = "inline-block";
+            badgeEl.textContent = "⚠️ NO DATA";
+            badgeEl.style.background = "#f1f5f9";
+            badgeEl.style.color = "#64748b";
+            badgeEl.style.border = "1px solid #cbd5e1";
+            badgeEl.title = "No candles available for this timestamp.";
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to reload span ${spanId} to time ${time}:`, err);
+      } finally {
+        this.reloadingSpans[spanId] = false;
+      }
+    }
+
+    async reloadSpanToLatest(spanId) {
+      const s = SPANS.find((p) => p.id === spanId);
+      if (!s) return;
+      this.isHistorical[spanId] = false;
+      const badgeEl = document.getElementById(`msCardModeBadge_${spanId}`);
+      if (badgeEl) badgeEl.style.display = "none";
+      const raw = await this.fetchKlinesForSpan(this.symbol, spanId, s.defaultLimit);
+      if (raw && raw.length) {
+        this.setSpanData(spanId, raw);
       }
     }
 
@@ -671,17 +772,18 @@
       }
     }
 
-    async fetchKlinesForSpan(symbol, span, limit) {
+    async fetchKlinesForSpan(symbol, span, limit, endTime = null) {
       const is1s = span === "1s";
       const proxyPath = window.location.pathname.startsWith("/skhynix") ? "/skhynix/api/klines" : "/api/klines";
+      const endParam = endTime ? `&endTime=${endTime}` : "";
       const endpoints = [
-        `${window.location.origin}${proxyPath}?symbol=${symbol}&interval=${span}&limit=${limit}${is1s ? "&market=spot" : ""}`,
+        `${window.location.origin}${proxyPath}?symbol=${symbol}&interval=${span}&limit=${limit}${is1s ? "&market=spot" : ""}${endParam}`,
         is1s
-          ? `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1s&limit=${limit}`
-          : `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${span}&limit=${limit}`,
+          ? `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1s&limit=${limit}${endParam}`
+          : `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${span}&limit=${limit}${endParam}`,
         is1s
-          ? `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1s&limit=${limit}`)}`
-          : `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${span}&limit=${limit}`)}`,
+          ? `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1s&limit=${limit}${endParam}`)}`
+          : `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${span}&limit=${limit}${endParam}`)}`,
       ];
 
       for (const url of endpoints) {
@@ -704,7 +806,7 @@
       return [];
     }
 
-    setSpanData(spanId, rawCandles) {
+    setSpanData(spanId, rawCandles, centerTime = null) {
       if (!rawCandles || !rawCandles.length) return;
       // Deduplicate by time
       const clean = [];
@@ -743,12 +845,31 @@
       const chart = this.charts[spanId];
       if (chart) {
         const count = this.syncedCandleCount || 100;
-        const to = clean.length - 0.5 + 6;
-        const from = to - count;
+        let from, to;
+        if (centerTime !== null) {
+          const candleIdx = this.findCandleIndexAtOrBefore(spanId, centerTime);
+          if (candleIdx !== -1) {
+            from = Math.round(candleIdx - count / 2);
+            to = from + count;
+          }
+        }
+        if (from === undefined) {
+          to = clean.length - 0.5 + 6;
+          from = to - count;
+        }
+        this.isLogicalSyncing = true;
         try {
           chart.timeScale().setVisibleLogicalRange({ from, to });
         } catch (_) {
           chart.timeScale().fitContent();
+        } finally {
+          if (!this.logicalRafPending) {
+            this.logicalRafPending = true;
+            requestAnimationFrame(() => {
+              this.isLogicalSyncing = false;
+              this.logicalRafPending = false;
+            });
+          }
         }
         this.lastVisibleRange[spanId] = chart.timeScale().getVisibleRange();
       }
@@ -768,6 +889,9 @@
     }
 
     updateCandle(spanId, candle) {
+      if (this.isHistorical[spanId]) {
+        return;
+      }
       const list = this.candlesData[spanId] || [];
       if (!list.length) return;
       const last = list[list.length - 1];
@@ -962,6 +1086,16 @@
           this.setLayout(l);
         });
       });
+
+      // Historical mode badges click to return to latest
+      document.querySelectorAll(".msCardModeBadge").forEach((badge) => {
+        badge.addEventListener("click", (e) => {
+          const span = e.currentTarget.getAttribute("data-span");
+          if (span && this.isHistorical[span]) {
+            this.reloadSpanToLatest(span);
+          }
+        });
+      });
     }
 
     setLayout(layout) {
@@ -969,21 +1103,34 @@
       this.applyLayoutStyles();
     }
 
-    alignAllToLatest() {
+    async alignAllToLatest() {
       const count = this.syncedCandleCount || 100;
-      SPANS.forEach((s) => {
-        const chart = this.charts[s.id];
-        const data = this.candlesData[s.id];
-        if (chart && data && data.length) {
-          const to = data.length - 0.5 + 6;
-          const from = to - count;
-          try {
-            chart.timeScale().setVisibleLogicalRange({ from, to });
-          } catch (_) {
-            chart.timeScale().scrollToRealTime();
+      for (const s of SPANS) {
+        if (this.isHistorical[s.id]) {
+          await this.reloadSpanToLatest(s.id);
+        } else {
+          const chart = this.charts[s.id];
+          const data = this.candlesData[s.id];
+          if (chart && data && data.length) {
+            const to = data.length - 0.5 + 6;
+            const from = to - count;
+            this.isLogicalSyncing = true;
+            try {
+              chart.timeScale().setVisibleLogicalRange({ from, to });
+            } catch (_) {
+              chart.timeScale().scrollToRealTime();
+            } finally {
+              if (!this.logicalRafPending) {
+                this.logicalRafPending = true;
+                requestAnimationFrame(() => {
+                  this.isLogicalSyncing = false;
+                  this.logicalRafPending = false;
+                });
+              }
+            }
           }
         }
-      });
+      }
     }
 
     setSymbol(sym) {
