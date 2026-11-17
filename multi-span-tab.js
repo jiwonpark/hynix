@@ -78,8 +78,16 @@
       this.logicalRafPending = false;
       this.reloadingSpans = {}; // spanId -> boolean
       this.isHistorical = {};   // spanId -> boolean
-      this.activeRangeHighlight = null; // { sourceSpan, sourceLabel, sourceColor, startTime, endTime, finerSpans }
+      this.activeRangeHighlight = null; // { navId, sourceSpan, sourceLabel, sourceColor, startTime, endTime, finerSpans, readySpans }
       this.loadMoreTimeout = {}; // spanId -> timeoutId
+      this.animations = {};       // spanId -> active pan/zoom animation state
+      this.animatingSpans = {};   // spanId -> boolean
+      this.programmaticSpans = {}; // spanId -> boolean
+      this.animRafId = null;
+      this.animationDurationScale = 1.0;
+      this.activeNavId = 0;
+      this.spanNavIds = {};       // spanId -> latest navId
+      this.fetchSeq = {};         // spanId -> fetch sequence counter
       this.ws = null;
       this.pollInterval = null;
       this.resizeObserver = null;
@@ -318,8 +326,12 @@
             timeVisible: true,
             secondsVisible: s.id === "1s",
             rightOffset: 6,
-            minBarSpacing: 1.0,
+            minBarSpacing: 0.02,
             lockVisibleTimeRangeOnResize: true,
+          },
+          kineticScroll: {
+            touch: true,
+            mouse: true,
           },
         });
 
@@ -350,6 +362,19 @@
         this.ma20[s.id] = ma20;
         this.ma50[s.id] = ma50;
 
+        // Cancel active animation on that span if user interacts directly
+        const cancelOnInput = () => {
+          if (this.animatingSpans[s.id]) {
+            this.cancelSpanAnimation(s.id);
+            this.programmaticSpans[s.id] = false;
+          }
+        };
+        if (typeof host.addEventListener === "function") {
+          host.addEventListener("pointerdown", cancelOnInput, { passive: true });
+          host.addEventListener("wheel", cancelOnInput, { passive: true });
+          host.addEventListener("touchstart", cancelOnInput, { passive: true });
+        }
+
         // Wire range & logical range synchronization
         chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
           this.handleRangeChange(s.id, range);
@@ -360,8 +385,14 @@
         chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
           this.handleLogicalRangeChange(s.id, logicalRange);
           this.updateRangeHighlight(s.id);
-          // Auto load more when scrolling near earliest loaded candle
-          if (logicalRange && logicalRange.from < 25 && !this.reloadingSpans[s.id]) {
+          // Auto load more when user scrolls near earliest loaded candle
+          if (
+            logicalRange &&
+            logicalRange.from < 25 &&
+            !this.reloadingSpans[s.id] &&
+            !this.animatingSpans[s.id] &&
+            !this.programmaticSpans[s.id]
+          ) {
             this.debouncedLoadMore(s.id);
           }
         });
@@ -400,11 +431,303 @@
     }
 
     // =========================================================================
+    // CONTINUOUS PAN & ZOOM ANIMATION ENGINE
+    // =========================================================================
+
+    nowMs() {
+      return typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+    }
+
+    easeOutCubic(t) {
+      const clamped = Math.max(0, Math.min(1, t));
+      return 1 - Math.pow(1 - clamped, 3);
+    }
+
+    cancelSpanAnimation(spanId) {
+      if (this.animations[spanId]) {
+        delete this.animations[spanId];
+      }
+      this.animatingSpans[spanId] = false;
+    }
+
+    ensureAnimationLoop() {
+      if (this.animRafId !== null) return;
+      const step = () => {
+        this.animRafId = null;
+        this.tickAnimations();
+      };
+      if (typeof requestAnimationFrame === "function") {
+        this.animRafId = requestAnimationFrame(step);
+      } else {
+        this.animRafId = setTimeout(step, 16);
+      }
+    }
+
+    tickAnimations() {
+      const now = this.nowMs();
+      const spanIds = Object.keys(this.animations);
+      if (!spanIds.length) return;
+
+      for (const spanId of spanIds) {
+        const anim = this.animations[spanId];
+        if (!anim) continue;
+        const chart = this.charts[spanId];
+        if (!chart) {
+          this.cancelSpanAnimation(spanId);
+          continue;
+        }
+        const ts = chart.timeScale();
+        const dur = Math.max(1, anim.duration * (this.animationDurationScale || 1));
+        const rawT = (now - anim.startTime) / dur;
+
+        if (rawT >= 1) {
+          delete this.animations[spanId];
+          this.animatingSpans[spanId] = false;
+          this.programmaticSpans[spanId] = true;
+          try {
+            if (anim.type === "logical") {
+              ts.setVisibleLogicalRange({ from: anim.targetFrom, to: anim.targetTo });
+            } else {
+              ts.setVisibleRange({ from: anim.targetFrom, to: anim.targetTo });
+            }
+          } catch (_) {
+          } finally {
+            const finishSettle = () => {
+              // Only finalize if no newer animation started on this span
+              if (!this.animations[spanId] && !this.animatingSpans[spanId]) {
+                this.programmaticSpans[spanId] = false;
+                if (anim.onComplete) anim.onComplete();
+                if (this.activeRangeHighlight?.readySpans?.[spanId]) {
+                  this.updateRangeHighlight(spanId);
+                }
+              }
+            };
+            if (typeof requestAnimationFrame === "function") {
+              requestAnimationFrame(finishSettle);
+            } else {
+              setTimeout(finishSettle, 0);
+            }
+          }
+          continue;
+        }
+
+        const p = this.easeOutCubic(rawT);
+        const c0 = (anim.startFrom + anim.startTo) / 2;
+        const c1 = (anim.targetFrom + anim.targetTo) / 2;
+        const w0 = Math.max(1e-6, anim.startTo - anim.startFrom);
+        const w1 = Math.max(1e-6, anim.targetTo - anim.targetFrom);
+        const center = c0 + (c1 - c0) * p;
+        // Log-space zoom interpolation produces constant perceptual zoom speed
+        const width = w0 * Math.pow(w1 / w0, p);
+        const nextFrom = center - width / 2;
+        const nextTo = center + width / 2;
+
+        anim.currentFrom = nextFrom;
+        anim.currentTo = nextTo;
+
+        this.programmaticSpans[spanId] = true;
+        try {
+          if (anim.type === "logical") {
+            ts.setVisibleLogicalRange({ from: nextFrom, to: nextTo });
+          } else {
+            ts.setVisibleRange({ from: Math.round(nextFrom), to: Math.round(nextTo) });
+          }
+        } catch (_) {
+        } finally {
+          this.programmaticSpans[spanId] = false;
+        }
+
+        if (this.activeRangeHighlight?.readySpans?.[spanId]) {
+          this.updateRangeHighlight(spanId);
+        }
+      }
+
+      if (Object.keys(this.animations).length > 0) {
+        this.ensureAnimationLoop();
+      }
+    }
+
+    animateLogicalRangeTo(spanId, targetFrom, targetTo, options = {}) {
+      const chart = this.charts[spanId];
+      if (!chart) return;
+      const { duration = 340, immediate = false, onComplete = null } = options;
+
+      if (
+        typeof targetFrom !== "number" ||
+        typeof targetTo !== "number" ||
+        isNaN(targetFrom) ||
+        isNaN(targetTo) ||
+        targetTo <= targetFrom
+      ) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      const ts = chart.timeScale();
+      const curr = ts && typeof ts.getVisibleLogicalRange === "function" ? ts.getVisibleLogicalRange() : null;
+      const scaledDuration = duration * (this.animationDurationScale || 1);
+
+      const hasDelta = curr &&
+        typeof curr.from === "number" &&
+        typeof curr.to === "number" &&
+        curr.to > curr.from &&
+        (Math.abs(curr.from - targetFrom) > 0.05 || Math.abs(curr.to - targetTo) > 0.05);
+
+      if (immediate || scaledDuration <= 0 || !curr || !hasDelta) {
+        this.cancelSpanAnimation(spanId);
+        this.programmaticSpans[spanId] = true;
+        try {
+          ts.setVisibleLogicalRange({ from: targetFrom, to: targetTo });
+        } catch (_) {
+        } finally {
+          const finishImmediate = () => {
+            if (!this.animations[spanId] && !this.animatingSpans[spanId]) {
+              this.programmaticSpans[spanId] = false;
+              if (onComplete) onComplete();
+              if (this.activeRangeHighlight?.readySpans?.[spanId]) {
+                this.updateRangeHighlight(spanId);
+              }
+            }
+          };
+          if (immediate) {
+            this.programmaticSpans[spanId] = false;
+            if (onComplete) onComplete();
+          } else if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(finishImmediate);
+          } else {
+            setTimeout(finishImmediate, 0);
+          }
+        }
+        return;
+      }
+
+      const existing = this.animations[spanId];
+      if (
+        existing &&
+        existing.type === "logical" &&
+        Math.abs(existing.targetFrom - targetFrom) < 0.05 &&
+        Math.abs(existing.targetTo - targetTo) < 0.05
+      ) {
+        if (onComplete) {
+          const prevCb = existing.onComplete;
+          existing.onComplete = () => {
+            if (prevCb) prevCb();
+            onComplete();
+          };
+        }
+        return;
+      }
+
+      const startFrom = existing && existing.currentFrom !== undefined ? existing.currentFrom : curr.from;
+      const startTo = existing && existing.currentTo !== undefined ? existing.currentTo : curr.to;
+
+      this.animatingSpans[spanId] = true;
+      this.animations[spanId] = {
+        type: "logical",
+        startFrom,
+        startTo,
+        currentFrom: startFrom,
+        currentTo: startTo,
+        targetFrom,
+        targetTo,
+        startTime: this.nowMs(),
+        duration,
+        onComplete,
+      };
+      this.ensureAnimationLoop();
+    }
+
+    animateTimeRangeTo(spanId, targetFrom, targetTo, options = {}) {
+      const chart = this.charts[spanId];
+      if (!chart) return;
+      const { duration = 150, immediate = false, onComplete = null } = options;
+
+      if (
+        typeof targetFrom !== "number" ||
+        typeof targetTo !== "number" ||
+        isNaN(targetFrom) ||
+        isNaN(targetTo) ||
+        targetTo <= targetFrom
+      ) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      const ts = chart.timeScale();
+      const curr = ts && typeof ts.getVisibleRange === "function" ? ts.getVisibleRange() : null;
+      const scaledDuration = duration * (this.animationDurationScale || 1);
+
+      const hasDelta = curr &&
+        typeof curr.from === "number" &&
+        typeof curr.to === "number" &&
+        curr.to > curr.from &&
+        (Math.abs(curr.from - targetFrom) > 0.5 || Math.abs(curr.to - targetTo) > 0.5);
+
+      if (immediate || scaledDuration <= 0 || !curr || !hasDelta) {
+        this.cancelSpanAnimation(spanId);
+        this.programmaticSpans[spanId] = true;
+        try {
+          ts.setVisibleRange({ from: targetFrom, to: targetTo });
+        } catch (_) {
+        } finally {
+          this.programmaticSpans[spanId] = false;
+          if (onComplete) onComplete();
+        }
+        return;
+      }
+
+      const existing = this.animations[spanId];
+      if (
+        existing &&
+        existing.type === "time" &&
+        Math.abs(existing.targetFrom - targetFrom) < 0.5 &&
+        Math.abs(existing.targetTo - targetTo) < 0.5
+      ) {
+        if (onComplete) {
+          const prevCb = existing.onComplete;
+          existing.onComplete = () => {
+            if (prevCb) prevCb();
+            onComplete();
+          };
+        }
+        return;
+      }
+
+      const startFrom = existing && existing.currentFrom !== undefined ? existing.currentFrom : curr.from;
+      const startTo = existing && existing.currentTo !== undefined ? existing.currentTo : curr.to;
+
+      this.animatingSpans[spanId] = true;
+      this.animations[spanId] = {
+        type: "time",
+        startFrom,
+        startTo,
+        currentFrom: startFrom,
+        currentTo: startTo,
+        targetFrom,
+        targetTo,
+        startTime: this.nowMs(),
+        duration,
+        onComplete,
+      };
+      this.ensureAnimationLoop();
+    }
+
+    // =========================================================================
     // SYNCHRONIZED PANNING & ZOOMING ENGINE
     // =========================================================================
 
     handleRangeChange(sourceSpan, range) {
-      if (!this.syncEnabled || this.isSyncing || this.isLogicalSyncing) return;
+      if (
+        !this.syncEnabled ||
+        this.isSyncing ||
+        this.isLogicalSyncing ||
+        this.programmaticSpans[sourceSpan] ||
+        this.animatingSpans[sourceSpan]
+      ) {
+        return;
+      }
       // In default Anchor mode, logical range governs zoom level so all charts display the identical candle count
       if (this.syncMode !== "range") return;
       if (!range || !range.from || !range.to || range.from >= range.to) return;
@@ -419,41 +742,28 @@
         ? duration / (prevRange.to - prevRange.from)
         : 1.0;
 
-      this.isSyncing = true;
-      try {
-        SPANS.forEach((s) => {
-          if (s.id === sourceSpan) return;
-          const targetChart = this.charts[s.id];
-          if (!targetChart) return;
+      SPANS.forEach((s) => {
+        if (s.id === sourceSpan) return;
+        const targetChart = this.charts[s.id];
+        if (!targetChart) return;
 
-          if (this.syncMode === "range") {
-            // Strict Time Window Mode
-            targetChart.timeScale().setVisibleRange({ from: range.from, to: range.to });
-          } else {
-            // Anchor Mode: Keep optimal resolution, sync center timestamp + proportional zoom
-            const targetRange = targetChart.timeScale().getVisibleRange();
-            if (targetRange && targetRange.to > targetRange.from) {
-              let targetDuration = targetRange.to - targetRange.from;
-              if (this.syncZoomRatio && zoomFactor > 0 && Math.abs(zoomFactor - 1.0) > 0.001) {
-                targetDuration = Math.max(10, targetDuration * zoomFactor);
-              }
-              const targetFrom = Math.round(centerTime - targetDuration / 2);
-              const targetTo = Math.round(centerTime + targetDuration / 2);
-              targetChart.timeScale().setVisibleRange({ from: targetFrom, to: targetTo });
+        if (this.syncMode === "range") {
+          // Strict Time Window Mode with continuous animation
+          this.animateTimeRangeTo(s.id, range.from, range.to, { duration: 140 });
+        } else {
+          // Anchor Mode: Keep optimal resolution, sync center timestamp + proportional zoom
+          const targetRange = targetChart.timeScale().getVisibleRange();
+          if (targetRange && targetRange.to > targetRange.from) {
+            let targetDuration = targetRange.to - targetRange.from;
+            if (this.syncZoomRatio && zoomFactor > 0 && Math.abs(zoomFactor - 1.0) > 0.001) {
+              targetDuration = Math.max(10, targetDuration * zoomFactor);
             }
+            const targetFrom = Math.round(centerTime - targetDuration / 2);
+            const targetTo = Math.round(centerTime + targetDuration / 2);
+            this.animateTimeRangeTo(s.id, targetFrom, targetTo, { duration: 140 });
           }
-        });
-      } catch (_) {
-      } finally {
-        // Debounce releasing sync lock using requestAnimationFrame to prevent feedback loops
-        if (!this.rafPending) {
-          this.rafPending = true;
-          requestAnimationFrame(() => {
-            this.isSyncing = false;
-            this.rafPending = false;
-          });
         }
-      }
+      });
     }
 
     // =========================================================================
@@ -461,7 +771,15 @@
     // =========================================================================
 
     handleLogicalRangeChange(sourceSpan, logicalRange) {
-      if (!this.syncEnabled || this.isLogicalSyncing || this.isSyncing) return;
+      if (
+        !this.syncEnabled ||
+        this.isLogicalSyncing ||
+        this.isSyncing ||
+        this.programmaticSpans[sourceSpan] ||
+        this.animatingSpans[sourceSpan]
+      ) {
+        return;
+      }
       if (!logicalRange || typeof logicalRange.from !== "number" || typeof logicalRange.to !== "number") return;
 
       const rawCount = logicalRange.to - logicalRange.from;
@@ -474,44 +792,32 @@
       this.syncedCandleCount = newBarCount;
       this.updateCandleCountBadge(newBarCount);
 
-      this.isLogicalSyncing = true;
-      try {
-        const sourceData = this.candlesData[sourceSpan] || [];
-        const isSourceNearRight = sourceData.length > 0 && logicalRange.to >= (sourceData.length - 2);
+      const sourceData = this.candlesData[sourceSpan] || [];
+      const isSourceNearRight = sourceData.length > 0 && logicalRange.to >= (sourceData.length - 2);
 
-        SPANS.forEach((s) => {
-          if (s.id === sourceSpan) return;
-          const targetChart = this.charts[s.id];
-          if (!targetChart) return;
-          const targetData = this.candlesData[s.id] || [];
-          if (!targetData.length) return;
+      SPANS.forEach((s) => {
+        if (s.id === sourceSpan) return;
+        const targetChart = this.charts[s.id];
+        if (!targetChart) return;
+        const targetData = this.candlesData[s.id] || [];
+        if (!targetData.length) return;
 
-          const targetRange = targetChart.timeScale().getVisibleLogicalRange();
-          let targetTo, targetFrom;
+        const targetRange = targetChart.timeScale().getVisibleLogicalRange();
+        let targetTo, targetFrom;
 
-          if (isSourceNearRight || !targetRange || targetRange.to >= (targetData.length - 2)) {
-            // Anchor target chart to its right edge (latest candle)
-            targetTo = targetData.length - 0.5 + 6;
-            targetFrom = targetTo - newBarCount;
-          } else {
-            // Anchor target chart around its current center logical index
-            const center = (targetRange.from + targetRange.to) / 2;
-            targetFrom = center - newBarCount / 2;
-            targetTo = center + newBarCount / 2;
-          }
-
-          targetChart.timeScale().setVisibleLogicalRange({ from: targetFrom, to: targetTo });
-        });
-      } catch (_) {
-      } finally {
-        if (!this.logicalRafPending) {
-          this.logicalRafPending = true;
-          requestAnimationFrame(() => {
-            this.isLogicalSyncing = false;
-            this.logicalRafPending = false;
-          });
+        if (isSourceNearRight || !targetRange || targetRange.to >= (targetData.length - 2)) {
+          // Anchor target chart to its right edge (latest candle)
+          targetTo = targetData.length - 0.5 + 6;
+          targetFrom = targetTo - newBarCount;
+        } else {
+          // Anchor target chart around its current center logical index
+          const center = (targetRange.from + targetRange.to) / 2;
+          targetFrom = center - newBarCount / 2;
+          targetTo = center + newBarCount / 2;
         }
-      }
+
+        this.animateLogicalRangeTo(s.id, targetFrom, targetTo, { duration: 160 });
+      });
     }
 
     setSyncedCandleCount(count) {
@@ -519,37 +825,25 @@
       this.syncedCandleCount = roundedBars;
       this.updateCandleCountBadge(roundedBars);
 
-      this.isLogicalSyncing = true;
-      try {
-        SPANS.forEach((s) => {
-          const targetChart = this.charts[s.id];
-          if (!targetChart) return;
-          const targetData = this.candlesData[s.id] || [];
-          if (!targetData.length) return;
+      SPANS.forEach((s) => {
+        const targetChart = this.charts[s.id];
+        if (!targetChart) return;
+        const targetData = this.candlesData[s.id] || [];
+        if (!targetData.length) return;
 
-          const targetRange = targetChart.timeScale().getVisibleLogicalRange();
-          let targetTo, targetFrom;
+        const targetRange = targetChart.timeScale().getVisibleLogicalRange();
+        let targetTo, targetFrom;
 
-          if (!targetRange || targetRange.to >= (targetData.length - 2)) {
-            targetTo = targetData.length - 0.5 + 6;
-            targetFrom = targetTo - roundedBars;
-          } else {
-            const center = (targetRange.from + targetRange.to) / 2;
-            targetFrom = center - roundedBars / 2;
-            targetTo = center + roundedBars / 2;
-          }
-          targetChart.timeScale().setVisibleLogicalRange({ from: targetFrom, to: targetTo });
-        });
-      } catch (_) {
-      } finally {
-        if (!this.logicalRafPending) {
-          this.logicalRafPending = true;
-          requestAnimationFrame(() => {
-            this.isLogicalSyncing = false;
-            this.logicalRafPending = false;
-          });
+        if (!targetRange || targetRange.to >= (targetData.length - 2)) {
+          targetTo = targetData.length - 0.5 + 6;
+          targetFrom = targetTo - roundedBars;
+        } else {
+          const center = (targetRange.from + targetRange.to) / 2;
+          targetFrom = center - roundedBars / 2;
+          targetTo = center + roundedBars / 2;
         }
-      }
+        this.animateLogicalRangeTo(s.id, targetFrom, targetTo, { duration: 320 });
+      });
     }
 
     updateCandleCountBadge(count) {
@@ -601,11 +895,72 @@
     handleChartClick(sourceSpan, param) {
       if (!param || !param.time) return;
       if (sourceSpan === "1s") {
+        this.activeNavId += 1;
         this.activeRangeHighlight = null;
         this.updateAllRangeHighlights();
       }
-      // Click on ANY chart (especially coarser charts) broadcasts time point, updates HUD, aligns crosshairs, and centers narrower charts
+      // Click on ANY chart (especially coarser charts) broadcasts time point, updates HUD, aligns crosshairs, and zooms/pans narrower charts
       this.broadcastTimePoint(param.time, sourceSpan, sourceSpan !== "1s");
+    }
+
+    getLogicalIndexForTime(spanId, time) {
+      const data = this.candlesData[spanId];
+      if (!data || !data.length) return null;
+      const spanObj = SPANS.find((p) => p.id === spanId);
+      const spanSec = spanObj ? (spanObj.sec || 60) : 60;
+      const idx = this.findCandleIndexAtOrBefore(spanId, time);
+      if (idx === -1) {
+        return (time - data[0].time) / spanSec;
+      }
+      if (idx === data.length - 1) {
+        return idx + (time - data[idx].time) / spanSec;
+      }
+      const t0 = data[idx].time;
+      const t1 = data[idx + 1].time;
+      const dt = t1 - t0;
+      return idx + (dt > 0 ? (time - t0) / dt : 0);
+    }
+
+    computeDrilldownLogicalRange(spanId, startTime, endTime) {
+      const data = this.candlesData[spanId];
+      if (!data || !data.length) return null;
+      const lStart = this.getLogicalIndexForTime(spanId, startTime);
+      const lEnd = this.getLogicalIndexForTime(spanId, endTime);
+      if (lStart === null || lEnd === null) return null;
+
+      // Visual bounds enclose whole candle bodies cleanly: [lStart - 0.5, lEnd - 0.5]
+      const vStart = lStart - 0.5;
+      const vEnd = Math.max(vStart + 1, lEnd - 0.5);
+
+      const clampedStart = Math.max(-0.5, vStart);
+      const clampedEnd = Math.min(data.length - 0.5, Math.max(clampedStart + 1, vEnd));
+      const rangeBars = Math.max(1, clampedEnd - clampedStart);
+
+      const baseBars = this.syncedCandleCount || 100;
+      const targetBars = Math.min(
+        Math.max(baseBars, Math.ceil(rangeBars * 1.25)),
+        Math.max(baseBars, data.length + 12)
+      );
+
+      const center = (clampedStart + clampedEnd) / 2;
+      let from = center - targetBars / 2;
+      let to = center + targetBars / 2;
+
+      if (data.length >= targetBars) {
+        const padBars = Math.max(6, Math.round(targetBars * 0.08));
+        const maxRight = data.length - 0.5 + padBars;
+        const minLeft = -0.5 - padBars;
+        if (to > maxRight) {
+          to = maxRight;
+          from = to - targetBars;
+        }
+        if (from < minLeft) {
+          from = minLeft;
+          to = from + targetBars;
+        }
+      }
+
+      return { from, to };
     }
 
     broadcastTimePoint(time, sourceSpan = null, recenterNarrower = false) {
@@ -617,92 +972,101 @@
       // Source index to determine which charts are narrower
       const sourceIdx = sourceSpan ? SPANS.findIndex((p) => p.id === sourceSpan) : -1;
       const sourceSpanObj = sourceIdx >= 0 ? SPANS[sourceIdx] : null;
+      const shouldRecenter = recenterNarrower && sourceIdx > 0;
 
       // Calculate target range if clicked on a coarser chart
       let targetRangeStart = time;
       let targetRangeEnd = time;
-      if (sourceIdx > 0 && sourceSpanObj) {
+      let navId = this.activeNavId || 0;
+
+      if (shouldRecenter && sourceSpanObj) {
+        navId = ++this.activeNavId;
         const sourceCandle = this.findCandleAtOrBefore(sourceSpan, time);
         if (sourceCandle) {
           targetRangeStart = sourceCandle.time;
           targetRangeEnd = sourceCandle.time + (sourceSpanObj.sec || 60);
           const finerSpans = SPANS.slice(0, sourceIdx).map((p) => p.id);
+          // Initialize highlight with empty readySpans so highlights stay hidden until zoom & pan complete cleanly
           this.activeRangeHighlight = {
-            sourceSpan: sourceSpan,
+            navId,
+            sourceSpan,
             sourceLabel: sourceSpanObj.label,
             sourceColor: sourceSpanObj.color,
             startTime: targetRangeStart,
             endTime: targetRangeEnd,
-            finerSpans: finerSpans,
+            finerSpans,
+            readySpans: {},
           };
+          this.updateAllRangeHighlights();
         }
       }
 
-      const shouldRecenter = recenterNarrower && sourceIdx > 0;
-      if (shouldRecenter) {
-        this.isLogicalSyncing = true;
-      }
+      const nowSec = Math.floor(Date.now() / 1000);
 
-      try {
-        // Update crosshairs across all other charts & update HUD
-        SPANS.forEach((s, idx) => {
-          const series = this.series[s.id];
-          const chart = this.charts[s.id];
-          const valEl = document.getElementById(`msHudVal_${s.id}`);
-          const cardOhlc = document.getElementById(`msCardOhlc_${s.id}`);
+      // Update crosshairs, HUD & smoothly pan/zoom narrower charts
+      SPANS.forEach((s, idx) => {
+        const series = this.series[s.id];
+        const chart = this.charts[s.id];
+        const valEl = document.getElementById(`msHudVal_${s.id}`);
+        const cardOhlc = document.getElementById(`msCardOhlc_${s.id}`);
 
-          const candle = this.findCandleAtOrBefore(s.id, time);
+        const candle = this.findCandleAtOrBefore(s.id, time);
 
-          if (chart && series && s.id !== sourceSpan) {
-            try {
-              if (candle) {
-                chart.setCrosshairPosition(candle.close, candle.time, series);
-              }
-            } catch (_) {}
-          }
-
-          if (candle) {
-            const closeP = formatPrice(candle.close);
-            if (valEl) valEl.textContent = closeP;
-            if (cardOhlc) {
-              cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${closeP}`;
+        if (chart && series && s.id !== sourceSpan && !this.reloadingSpans[s.id]) {
+          try {
+            if (candle) {
+              chart.setCrosshairPosition(candle.close, candle.time, series);
             }
-          }
+          } catch (_) {}
+        }
 
-          // Drill-down: if clicking a coarser chart, center or reload narrower charts to cover whole range
-          if (shouldRecenter && chart && idx < sourceIdx) {
-            const data = this.candlesData[s.id] || [];
-            const spanSec = s.sec || 60;
-            const hasData = data.length > 0;
-            const hasWholeRange = hasData && data[0].time <= targetRangeStart && (data[data.length - 1].time + spanSec) >= targetRangeEnd;
-
-            if (hasWholeRange) {
-              try {
-                const candleIdx = this.findCandleIndexAtOrBefore(s.id, time);
-                const count = this.syncedCandleCount || 100;
-                if (candleIdx !== -1) {
-                  const from = Math.round(candleIdx - count / 2);
-                  const to = from + count;
-                  chart.timeScale().setVisibleLogicalRange({ from, to });
-                }
-              } catch (_) {}
-            } else {
-              // Not enough loaded to show the whole range: batch-fetch and reload that finer chart!
-              this.reloadSpanToRange(s.id, targetRangeStart, targetRangeEnd);
-            }
-          }
-        });
-      } finally {
-        if (shouldRecenter) {
-          if (!this.logicalRafPending) {
-            this.logicalRafPending = true;
-            requestAnimationFrame(() => {
-              this.isLogicalSyncing = false;
-              this.logicalRafPending = false;
-            });
+        if (candle) {
+          const closeP = formatPrice(candle.close);
+          if (valEl) valEl.textContent = closeP;
+          if (cardOhlc) {
+            cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${closeP}`;
           }
         }
-      }
+
+        // Drill-down: if clicking a coarser chart, pan/zoom or reload narrower charts first BEFORE revealing highlight
+        if (shouldRecenter && chart && idx < sourceIdx) {
+          this.spanNavIds[s.id] = navId;
+          const data = this.candlesData[s.id] || [];
+          const spanSec = s.sec || 60;
+          const hasData = data.length > 0;
+          const effectiveEnd = Math.min(targetRangeEnd, nowSec - Math.max(spanSec * 2, 10));
+          const hasWholeRange =
+            hasData &&
+            data[0].time <= targetRangeStart &&
+            (data[data.length - 1].time + spanSec) >= effectiveEnd;
+
+          if (hasWholeRange) {
+            // Invalidate any pending fetch sequence on this span
+            this.fetchSeq[s.id] = (this.fetchSeq[s.id] || 0) + 1;
+            this.reloadingSpans[s.id] = false;
+            const targetRange = this.computeDrilldownLogicalRange(s.id, targetRangeStart, targetRangeEnd);
+            if (targetRange) {
+              this.animateLogicalRangeTo(s.id, targetRange.from, targetRange.to, {
+                duration: 360,
+                onComplete: () => {
+                  if (
+                    this.activeRangeHighlight &&
+                    this.activeRangeHighlight.navId === navId &&
+                    this.activeRangeHighlight.finerSpans?.includes(s.id)
+                  ) {
+                    if (!this.activeRangeHighlight.readySpans) this.activeRangeHighlight.readySpans = {};
+                    this.activeRangeHighlight.readySpans[s.id] = true;
+                    this.updateRangeHighlight(s.id);
+                  }
+                },
+              });
+            }
+          } else {
+            // Not enough loaded to show the whole range: batch-fetch, animate to target range, then highlight
+            this.reloadSpanToRange(s.id, targetRangeStart, targetRangeEnd, navId);
+          }
+        }
+      });
 
       this.updateAllRangeHighlights();
     }
@@ -713,7 +1077,14 @@
       if (!highlightEl) return;
 
       const hl = this.activeRangeHighlight;
-      if (!hl || !hl.finerSpans || !hl.finerSpans.includes(spanId)) {
+      if (
+        !hl ||
+        !hl.finerSpans ||
+        !hl.finerSpans.includes(spanId) ||
+        !hl.readySpans ||
+        !hl.readySpans[spanId] ||
+        this.reloadingSpans[spanId]
+      ) {
         highlightEl.style.display = "none";
         return;
       }
@@ -724,45 +1095,75 @@
       const timeScale = chart.timeScale();
       const host = document.getElementById(`msChartHost_${spanId}`);
       const hostWidth = host ? host.clientWidth : 500;
-      // Reserve right price scale width (~55px)
-      const chartWidth = Math.max(10, hostWidth - 55);
-
-      let x1 = timeScale.timeToCoordinate(hl.startTime);
-      let x2 = timeScale.timeToCoordinate(hl.endTime);
-
-      if (x1 === null || x2 === null) {
-        const idx1 = this.findCandleIndexAtOrBefore(spanId, hl.startTime);
-        const idx2 = this.findCandleIndexAtOrBefore(spanId, hl.endTime);
-        if (x1 === null && idx1 !== -1) x1 = timeScale.logicalToCoordinate(idx1);
-        if (x2 === null && idx2 !== -1) x2 = timeScale.logicalToCoordinate(idx2);
-      }
+      const chartWidth = (typeof timeScale.width === "function" && timeScale.width() > 0)
+        ? timeScale.width()
+        : Math.max(10, hostWidth - 60);
 
       const data = this.candlesData[spanId] || [];
-      if (x1 === null) {
-        x1 = data.length && hl.startTime < data[0].time ? -200 : 0;
-      }
-      if (x2 === null) {
-        x2 = data.length && hl.endTime > data[data.length - 1].time ? chartWidth + 200 : chartWidth;
-      }
-
-      const leftPx = Math.max(0, Math.min(x1, x2));
-      const rightPx = Math.min(chartWidth, Math.max(x1, x2));
-      const widthPx = rightPx - leftPx;
-
-      if ((x1 < 0 && x2 < 0) || (x1 > chartWidth && x2 > chartWidth) || widthPx <= 0) {
+      if (!data.length) {
         highlightEl.style.display = "none";
         return;
       }
 
+      const lStart = this.getLogicalIndexForTime(spanId, hl.startTime);
+      const lEnd = this.getLogicalIndexForTime(spanId, hl.endTime);
+      if (lStart === null || lEnd === null) {
+        highlightEl.style.display = "none";
+        return;
+      }
+
+      const vStart = lStart - 0.5;
+      const vEnd = Math.max(vStart + 1, lEnd - 0.5);
+      const vis = typeof timeScale.getVisibleLogicalRange === "function"
+        ? timeScale.getVisibleLogicalRange()
+        : null;
+
+      const resolveCoord = (logicalIdx) => {
+        if (typeof timeScale.logicalToCoordinate === "function") {
+          const c = timeScale.logicalToCoordinate(logicalIdx);
+          if (c !== null && typeof c === "number" && !isNaN(c)) return c;
+        }
+        if (vis && vis.to > vis.from) {
+          return ((logicalIdx - vis.from) / (vis.to - vis.from)) * chartWidth;
+        }
+        return null;
+      };
+
+      const x1 = resolveCoord(vStart);
+      const x2 = resolveCoord(vEnd);
+
+      if (x1 === null || x2 === null) {
+        highlightEl.style.display = "none";
+        return;
+      }
+
+      const rawLeft = Math.min(x1, x2);
+      const rawRight = Math.max(x1, x2);
+
+      if (rawRight <= 0 || rawLeft >= chartWidth) {
+        highlightEl.style.display = "none";
+        return;
+      }
+
+      const leftPx = Math.max(0, rawLeft);
+      const rightPx = Math.min(chartWidth, rawRight);
+      const widthPx = rightPx - leftPx;
+
+      if (widthPx <= 0) {
+        highlightEl.style.display = "none";
+        return;
+      }
+
+      const color = hl.sourceColor || "#0284c7";
       highlightEl.style.display = "block";
       highlightEl.style.left = `${leftPx}px`;
       highlightEl.style.width = `${widthPx}px`;
       highlightEl.style.background = hexToRgba(hl.sourceColor, 0.12);
-      highlightEl.style.borderLeft = `2px dashed ${hl.sourceColor || "#0284c7"}`;
-      highlightEl.style.borderRight = `2px dashed ${hl.sourceColor || "#0284c7"}`;
+      highlightEl.style.borderLeft = rawLeft >= -1 ? `2px dashed ${color}` : "none";
+      highlightEl.style.borderRight = rawRight <= chartWidth + 1 ? `2px dashed ${color}` : "none";
 
       if (badgeEl) {
-        badgeEl.style.background = hl.sourceColor || "#0284c7";
+        badgeEl.style.background = color;
         badgeEl.textContent = `${hl.sourceLabel} RANGE`;
       }
     }
@@ -773,14 +1174,21 @@
       });
     }
 
-    async reloadSpanToRange(spanId, startTime, endTime) {
+    async reloadSpanToRange(spanId, startTime, endTime, navId = null) {
       const spanObj = SPANS.find((p) => p.id === spanId);
       if (!spanObj) return;
       const chart = this.charts[spanId];
       if (!chart) return;
 
-      if (this.reloadingSpans[spanId]) return;
+      const reqNavId = navId !== null ? navId : (this.spanNavIds[spanId] || 0);
+      const fetchSeq = (this.fetchSeq[spanId] || 0) + 1;
+      this.fetchSeq[spanId] = fetchSeq;
       this.reloadingSpans[spanId] = true;
+      this.cancelSpanAnimation(spanId);
+
+      // Keep highlight hidden cleanly until fetch + pan/zoom complete
+      const hlEl = document.getElementById(`msRangeHighlight_${spanId}`);
+      if (hlEl) hlEl.style.display = "none";
 
       const badgeEl = document.getElementById(`msCardModeBadge_${spanId}`);
       if (badgeEl) {
@@ -791,14 +1199,29 @@
         badgeEl.style.border = "1px solid #fde68a";
       }
 
+      let oldTimeRange = null;
+      try {
+        oldTimeRange = chart.timeScale().getVisibleRange();
+      } catch (_) {}
+
       try {
         const spanSec = spanObj.sec || 60;
         const nowSec = Math.floor(Date.now() / 1000);
-        // Add buffer candles before and after range
-        const bufferSec = Math.max(spanSec * 30, 60);
+        const effectiveRangeEnd = Math.min(endTime, nowSec);
+        const rangeSec = Math.max(spanSec * 20, effectiveRangeEnd - startTime);
+        const desiredBuffer = Math.round(rangeSec * 0.15);
+        const bufferSec = Math.max(spanSec * 30, Math.min(desiredBuffer, 600 * spanSec));
+
         let targetStart = Math.max(0, startTime - bufferSec);
         let targetEnd = Math.min(nowSec, endTime + bufferSec);
-        if (targetEnd <= targetStart) targetEnd = targetStart + spanSec * 100;
+
+        // If range + buffer fits comfortably in 1 batch, fetch ~900 candles around it for rich context
+        const minWindowSec = 900 * spanSec;
+        if (targetEnd - targetStart < minWindowSec) {
+          const mid = Math.round((startTime + effectiveRangeEnd) / 2);
+          targetStart = Math.max(0, mid - Math.round(minWindowSec / 2));
+          targetEnd = Math.min(nowSec, targetStart + minWindowSec);
+        }
 
         // Cap to 5000 candles to avoid excessive pagination/browser freeze
         const maxCandlesForSpan = 5000;
@@ -810,11 +1233,35 @@
         if (isHistorical) this.isHistorical[spanId] = true;
 
         const raw = await this.fetchKlinesRange(this.symbol, spanId, targetStart, targetEnd, 6);
+
+        // Discard stale response if a newer click/reload superseded this fetch
+        if (this.fetchSeq[spanId] !== fetchSeq) return;
+        if (navId !== null && this.activeRangeHighlight && this.activeRangeHighlight.navId !== reqNavId) return;
+
         if (Array.isArray(raw) && raw.length) {
           this.isHistorical[spanId] = isHistorical;
-          const centerTime = Math.round((startTime + endTime) / 2);
-          this.setSpanData(spanId, raw, centerTime);
 
+          const onAnimationDone = () => {
+            if (
+              this.activeRangeHighlight &&
+              this.activeRangeHighlight.navId === reqNavId &&
+              this.activeRangeHighlight.finerSpans?.includes(spanId)
+            ) {
+              if (!this.activeRangeHighlight.readySpans) this.activeRangeHighlight.readySpans = {};
+              this.activeRangeHighlight.readySpans[spanId] = true;
+              this.updateRangeHighlight(spanId);
+            }
+          };
+
+          this.setSpanData(spanId, raw, null, {
+            animate: true,
+            drilldownStart: startTime,
+            drilldownEnd: endTime,
+            oldTimeRange,
+            onComplete: onAnimationDone,
+          });
+
+          const centerTime = Math.round((startTime + effectiveRangeEnd) / 2);
           const candle = this.findCandleAtOrBefore(spanId, centerTime);
           if (candle) {
             try {
@@ -854,7 +1301,9 @@
       } catch (err) {
         console.error(`Failed to reload span ${spanId} to range [${startTime}, ${endTime}]:`, err);
       } finally {
-        this.reloadingSpans[spanId] = false;
+        if (this.fetchSeq[spanId] === fetchSeq) {
+          this.reloadingSpans[spanId] = false;
+        }
         this.updateRangeHighlight(spanId);
       }
     }
@@ -869,12 +1318,30 @@
     async reloadSpanToLatest(spanId) {
       const s = SPANS.find((p) => p.id === spanId);
       if (!s) return;
+      const fetchSeq = (this.fetchSeq[spanId] || 0) + 1;
+      this.fetchSeq[spanId] = fetchSeq;
+      this.reloadingSpans[spanId] = true;
+      this.cancelSpanAnimation(spanId);
       this.isHistorical[spanId] = false;
       const badgeEl = document.getElementById(`msCardModeBadge_${spanId}`);
       if (badgeEl) badgeEl.style.display = "none";
-      const raw = await this.fetchKlinesForSpan(this.symbol, spanId, s.defaultLimit);
-      if (raw && raw.length) {
-        this.setSpanData(spanId, raw);
+
+      let oldTimeRange = null;
+      try {
+        oldTimeRange = this.charts[spanId]?.timeScale()?.getVisibleRange() || null;
+      } catch (_) {}
+
+      try {
+        const raw = await this.fetchKlinesForSpan(this.symbol, spanId, s.defaultLimit);
+        if (this.fetchSeq[spanId] !== fetchSeq) return;
+        if (raw && raw.length) {
+          this.setSpanData(spanId, raw, null, { animate: true, oldTimeRange });
+        }
+      } finally {
+        if (this.fetchSeq[spanId] === fetchSeq) {
+          this.reloadingSpans[spanId] = false;
+        }
+        this.updateRangeHighlight(spanId);
       }
     }
 
@@ -896,6 +1363,7 @@
       if (btn) btn.textContent = "⏳...";
 
       this.reloadingSpans[spanId] = true;
+      this.cancelSpanAnimation(spanId);
       try {
         const earliestTime = data[0].time;
         const endMs = earliestTime * 1000 - 1;
@@ -919,24 +1387,25 @@
             if (chart) {
               const currentLogical = chart.timeScale().getVisibleLogicalRange();
               if (currentLogical) {
-                this.isLogicalSyncing = true;
+                this.programmaticSpans[spanId] = true;
                 try {
                   chart.timeScale().setVisibleLogicalRange({
                     from: currentLogical.from + addedCount,
                     to: currentLogical.to + addedCount,
                   });
                 } finally {
-                  if (!this.logicalRafPending) {
-                    this.logicalRafPending = true;
-                    requestAnimationFrame(() => {
-                      this.isLogicalSyncing = false;
-                      this.logicalRafPending = false;
-                    });
+                  const settleLoadMore = () => {
+                    this.programmaticSpans[spanId] = false;
+                    this.updateRangeHighlight(spanId);
+                  };
+                  if (typeof requestAnimationFrame === "function") {
+                    requestAnimationFrame(settleLoadMore);
+                  } else {
+                    settleLoadMore();
                   }
                 }
               }
             }
-            this.updateRangeHighlight(spanId);
           }
         }
       } catch (err) {
@@ -944,6 +1413,7 @@
       } finally {
         this.reloadingSpans[spanId] = false;
         if (btn) btn.textContent = "+ LOAD MORE";
+        this.updateRangeHighlight(spanId);
       }
     }
 
@@ -1053,16 +1523,13 @@
     }
 
     async fetchKlinesRange(symbol, span, startTime, endTime, maxBatches = 6) {
-      let allCandles = [];
-      let currentEndMs = endTime * 1000;
+      const spanObj = SPANS.find((p) => p.id === span);
+      const spanSec = spanObj ? (spanObj.sec || 60) : 60;
+      const allCandles = [];
       const seenTimes = new Set();
 
-      for (let batch = 0; batch < maxBatches; batch++) {
-        const raw = await this.fetchKlinesForSpan(symbol, span, 1000, currentEndMs);
-        if (!Array.isArray(raw) || !raw.length) {
-          break;
-        }
-
+      const addBatch = (raw) => {
+        if (!Array.isArray(raw) || !raw.length) return false;
         let addedAny = false;
         for (let i = raw.length - 1; i >= 0; i--) {
           const c = raw[i];
@@ -1072,19 +1539,54 @@
             addedAny = true;
           }
         }
+        return addedAny;
+      };
 
-        const earliestInBatch = raw[0].time;
-        if (earliestInBatch <= startTime || !addedAny) {
-          break;
+      const firstRaw = await this.fetchKlinesForSpan(symbol, span, 1000, endTime * 1000);
+      const firstAdded = addBatch(firstRaw);
+      if (!firstAdded || !firstRaw.length) {
+        return [];
+      }
+
+      let earliestTime = firstRaw[0].time;
+      let usedBatches = 1;
+
+      if (earliestTime > startTime && usedBatches < maxBatches) {
+        if (firstRaw.length >= 900) {
+          const batchWidth = Math.max(spanSec, firstRaw[firstRaw.length - 1].time - earliestTime);
+          const remainingSpan = earliestTime - startTime;
+          const stepWidth = Math.max(spanSec * 980, batchWidth);
+          const estRemaining = Math.min(maxBatches - usedBatches, Math.max(1, Math.ceil(remainingSpan / stepWidth)));
+
+          const endMsList = [];
+          for (let b = 0; b < estRemaining; b++) {
+            endMsList.push((earliestTime - b * stepWidth) * 1000 - 1);
+          }
+          const batchResults = await Promise.all(
+            endMsList.map((endMs) => this.fetchKlinesForSpan(symbol, span, 1000, endMs))
+          );
+          batchResults.forEach((raw) => addBatch(raw));
+          usedBatches += estRemaining;
+          allCandles.sort((a, b) => a.time - b.time);
+          earliestTime = allCandles.length ? allCandles[0].time : earliestTime;
         }
-        currentEndMs = earliestInBatch * 1000 - 1;
+
+        // Sequential loop for remainder or sparse/small mock responses
+        while (earliestTime > startTime && usedBatches < maxBatches) {
+          const extraRaw = await this.fetchKlinesForSpan(symbol, span, 1000, earliestTime * 1000 - 1);
+          const addedExtra = addBatch(extraRaw);
+          usedBatches += 1;
+          if (!addedExtra || !extraRaw.length) break;
+          allCandles.sort((a, b) => a.time - b.time);
+          earliestTime = allCandles[0].time;
+        }
       }
 
       allCandles.sort((a, b) => a.time - b.time);
       return allCandles;
     }
 
-    setSpanData(spanId, rawCandles, centerTime = null) {
+    setSpanData(spanId, rawCandles, centerTime = null, options = {}) {
       if (!rawCandles || !rawCandles.length) return;
       // Deduplicate by time
       const clean = [];
@@ -1124,7 +1626,15 @@
       if (chart) {
         const count = this.syncedCandleCount || 100;
         let from, to;
-        if (centerTime !== null) {
+
+        if (options.drilldownStart !== undefined && options.drilldownEnd !== undefined) {
+          const drill = this.computeDrilldownLogicalRange(spanId, options.drilldownStart, options.drilldownEnd);
+          if (drill) {
+            from = drill.from;
+            to = drill.to;
+          }
+        }
+        if (from === undefined && centerTime !== null) {
           const candleIdx = this.findCandleIndexAtOrBefore(spanId, centerTime);
           if (candleIdx !== -1) {
             from = Math.round(candleIdx - count / 2);
@@ -1135,19 +1645,44 @@
           to = clean.length - 0.5 + 6;
           from = to - count;
         }
-        this.isLogicalSyncing = true;
-        try {
-          chart.timeScale().setVisibleLogicalRange({ from, to });
-        } catch (_) {
-          chart.timeScale().fitContent();
-        } finally {
-          if (!this.logicalRafPending) {
-            this.logicalRafPending = true;
-            requestAnimationFrame(() => {
-              this.isLogicalSyncing = false;
-              this.logicalRafPending = false;
-            });
+
+        const shouldAnimate = Boolean(options.animate);
+        if (shouldAnimate) {
+          const ts = chart.timeScale();
+          const oldTR = options.oldTimeRange;
+          let entryFrom = null;
+          let entryTo = null;
+          if (oldTR && oldTR.from < oldTR.to && oldTR.to >= clean[0].time && oldTR.from <= clean[clean.length - 1].time) {
+            const mFrom = this.getLogicalIndexForTime(spanId, oldTR.from);
+            const mTo = this.getLogicalIndexForTime(spanId, oldTR.to);
+            if (mFrom !== null && mTo !== null && mTo - mFrom >= 2) {
+              entryFrom = mFrom;
+              entryTo = mTo;
+            }
           }
+          if (entryFrom === null || entryTo === null) {
+            const targetW = Math.max(10, to - from);
+            const targetCenter = (from + to) / 2;
+            const entryW = Math.max(10, Math.min(clean.length, Math.round(targetW * 0.55)));
+            entryFrom = targetCenter + entryW * 0.15 - entryW / 2;
+            entryTo = entryFrom + entryW;
+          }
+          this.programmaticSpans[spanId] = true;
+          try {
+            ts.setVisibleLogicalRange({ from: entryFrom, to: entryTo });
+          } catch (_) {
+          } finally {
+            this.programmaticSpans[spanId] = false;
+          }
+          this.animateLogicalRangeTo(spanId, from, to, {
+            duration: 360,
+            onComplete: options.onComplete || null,
+          });
+        } else {
+          this.animateLogicalRangeTo(spanId, from, to, {
+            immediate: true,
+            onComplete: options.onComplete || null,
+          });
         }
         this.lastVisibleRange[spanId] = chart.timeScale().getVisibleRange();
         this.updateRangeHighlight(spanId);
@@ -1329,10 +1864,7 @@
       const fitBtn = document.getElementById("msFitAll");
       if (fitBtn) {
         fitBtn.addEventListener("click", () => {
-          SPANS.forEach((s) => {
-            const chart = this.charts[s.id];
-            if (chart) chart.timeScale().fitContent();
-          });
+          SPANS.forEach((s) => this.fitSpan(s.id));
         });
       }
 
@@ -1340,7 +1872,7 @@
       document.querySelectorAll(".msCardFitBtn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           const span = e.currentTarget.getAttribute("data-span");
-          if (this.charts[span]) this.charts[span].timeScale().fitContent();
+          if (span) this.fitSpan(span);
         });
       });
 
@@ -1454,9 +1986,22 @@
       this.applyLayoutStyles();
     }
 
+    fitSpan(spanId) {
+      const data = this.candlesData[spanId];
+      const chart = this.charts[spanId];
+      if (!chart) return;
+      if (data && data.length) {
+        const from = -0.5;
+        const to = data.length - 0.5 + 6;
+        this.animateLogicalRangeTo(spanId, from, to, { duration: 360 });
+      } else {
+        chart.timeScale().fitContent();
+      }
+    }
+
     async alignAllToLatest() {
       const count = this.syncedCandleCount || 100;
-      for (const s of SPANS) {
+      const tasks = SPANS.map(async (s) => {
         if (this.isHistorical[s.id]) {
           await this.reloadSpanToLatest(s.id);
         } else {
@@ -1465,23 +2010,11 @@
           if (chart && data && data.length) {
             const to = data.length - 0.5 + 6;
             const from = to - count;
-            this.isLogicalSyncing = true;
-            try {
-              chart.timeScale().setVisibleLogicalRange({ from, to });
-            } catch (_) {
-              chart.timeScale().scrollToRealTime();
-            } finally {
-              if (!this.logicalRafPending) {
-                this.logicalRafPending = true;
-                requestAnimationFrame(() => {
-                  this.isLogicalSyncing = false;
-                  this.logicalRafPending = false;
-                });
-              }
-            }
+            this.animateLogicalRangeTo(s.id, from, to, { duration: 360 });
           }
         }
-      }
+      });
+      await Promise.all(tasks);
     }
 
     setSymbol(sym) {

@@ -50,18 +50,27 @@ assert.equal(MultiSpan.findCandleAtOrBefore("5m", 300).time, 300);
 assert.equal(MultiSpan.findCandleAtOrBefore("5m", 450).time, 400);
 assert.equal(MultiSpan.findCandleAtOrBefore("5m", 50).time, 100);
 
+// Use fast compressed animation scale so unit tests run real RAF animation loops rapidly
+MultiSpan.animationDurationScale = 0.05;
+const flushAnimations = async (ms = 40) => {
+  await new Promise((r) => setTimeout(r, ms));
+};
+
 // Test range change synchronization (Anchor & Range modes)
 let targetSetRangeCalled = null;
+let targetVisibleRange = { from: 50, to: 150 };
 const mockTargetChart = {
   timeScale: () => ({
-    getVisibleRange: () => ({ from: 50, to: 150 }),
-    setVisibleRange: (r) => { targetSetRangeCalled = r; },
+    getVisibleRange: () => targetVisibleRange,
+    setVisibleRange: (r) => { targetVisibleRange = r; targetSetRangeCalled = r; },
+    width: () => 500,
   }),
 };
 MultiSpan.charts["1s"] = {
   timeScale: () => ({
     getVisibleRange: () => ({ from: 1000, to: 1200 }),
     setVisibleRange: () => {},
+    width: () => 500,
   }),
 };
 MultiSpan.charts["5m"] = mockTargetChart;
@@ -71,7 +80,8 @@ MultiSpan.isSyncing = false;
 
 // Trigger range change on 1s
 MultiSpan.handleRangeChange("1s", { from: 1000, to: 1200 });
-assert.ok(targetSetRangeCalled, "Target chart setVisibleRange should be called in range mode");
+await flushAnimations();
+assert.ok(targetSetRangeCalled, "Target chart setVisibleRange should be called in range mode after animation");
 assert.equal(targetSetRangeCalled.from, 1000, "Target from should match source from in range mode");
 assert.equal(targetSetRangeCalled.to, 1200, "Target to should match source to in range mode");
 
@@ -79,6 +89,10 @@ assert.equal(targetSetRangeCalled.to, 1200, "Target to should match source to in
 targetSetRangeCalled = null;
 MultiSpan.isSyncing = true;
 MultiSpan.handleRangeChange("1s", { from: 2000, to: 2200 });
+await flushAnimations();
+assert.equal(targetSetRangeCalled, null, "Must not sync while isSyncing guard is active");
+MultiSpan.isSyncing = false;
+
 // Test Hover Behavior:
 // 1. Hover on 5m (coarser) must NOT position crosshair on other charts
 let crosshairCalls = [];
@@ -99,9 +113,20 @@ assert.equal(crosshairCalls.length, 1, "Hover on finest chart (1s) MUST broadcas
 assert.equal(crosshairCalls[0].span, "5m");
 assert.equal(crosshairCalls[0].t, 200);
 
-// 3. Click on coarser chart (5m) MUST broadcast crosshairs AND re-center narrower charts (1s)
+// 3. Click on coarser chart (5m):
+// - MUST NOT highlight range until zoom & pan animation finishes
+// - MUST animate smoothly to centered zoom & pan and reveal highlight cleanly upon completion
 crosshairCalls = [];
-let narrowerChart1sSetRange = null;
+let narrowerChart1sSetRange = { from: 0, to: 1 };
+let hlEl1s = { style: { display: "none" } };
+let badgeEl1s = { style: {} };
+const origGetById = sandbox.document.getElementById;
+sandbox.document.getElementById = (id) => {
+  if (id === "msRangeHighlight_1s") return hlEl1s;
+  if (id === "msRangeBadge_1s") return badgeEl1s;
+  return origGetById(id);
+};
+
 MultiSpan.candlesData["1s"] = [
   { time: 100, close: 10 },
   { time: 200, close: 20 },
@@ -111,23 +136,66 @@ MultiSpan.candlesData["1s"] = [
 ];
 MultiSpan.charts["1s"].timeScale = () => ({
   getVisibleRange: () => ({ from: 100, to: 600 }),
+  getVisibleLogicalRange: () => narrowerChart1sSetRange,
   setVisibleRange: (r) => { narrowerChart1sSetRange = r; },
   setVisibleLogicalRange: (r) => { narrowerChart1sSetRange = r; },
+  logicalToCoordinate: (idx) => {
+    const span = narrowerChart1sSetRange.to - narrowerChart1sSetRange.from;
+    return span > 0 ? ((idx - narrowerChart1sSetRange.from) / span) * 500 : 0;
+  },
+  width: () => 500,
 });
+MultiSpan.syncedCandleCount = 100;
 MultiSpan.handleChartClick("5m", { time: 300 });
 assert.equal(crosshairCalls.length, 1, "Click on coarser chart must broadcast crosshair");
 assert.equal(crosshairCalls[0].span, "1s");
 assert.equal(crosshairCalls[0].t, 300);
-assert.ok(narrowerChart1sSetRange, "Click on coarser chart must re-center narrower chart when range is covered");
-assert.equal((narrowerChart1sSetRange.from + narrowerChart1sSetRange.to) / 2, 2, "Narrower chart must be centered on candle index 2 (time 300)");
+
+// Immediately after click (mid-animation), highlight MUST still be hidden & readySpans["1s"] falsy!
+assert.equal(hlEl1s.style.display, "none", "Highlight must NOT be shown until pan & zoom animation finishes");
+assert.ok(!MultiSpan.activeRangeHighlight.readySpans["1s"], "readySpans['1s'] must remain false during animation");
+assert.equal(MultiSpan.animatingSpans["1s"], true, "1s chart must animate continuously to target pan/zoom");
+
+await flushAnimations(60);
+assert.equal(MultiSpan.animatingSpans["1s"], false, "1s chart animation should complete cleanly");
+assert.equal(MultiSpan.activeRangeHighlight.readySpans["1s"], true, "readySpans['1s'] must turn true after pan & zoom finish");
+assert.equal(hlEl1s.style.display, "block", "Highlight must be revealed only after zoom & pan settle");
+assert.equal((narrowerChart1sSetRange.from + narrowerChart1sSetRange.to) / 2, 2.5, "Narrower chart must center cleanly on visual candle range [1.5, 3.5]");
+
+// 3b. Click drill-down zooms out 1s chart enough to frame full 5m candle (300 bars -> ~375 bars) without changing syncedCandleCount
+const baseT = Math.floor(Date.now() / 1000) - 2000;
+MultiSpan.candlesData["1s"] = new Array(1200).fill(0).map((_, i) => ({ time: baseT + i, close: 100 }));
+MultiSpan.candlesData["5m"] = [
+  { time: baseT, close: 100 },
+  { time: baseT + 300, close: 105 },
+  { time: baseT + 600, close: 110 },
+];
+narrowerChart1sSetRange = { from: 1094, to: 1200 };
+MultiSpan.syncedCandleCount = 100;
+MultiSpan.handleChartClick("5m", { time: baseT + 300 });
+assert.equal(hlEl1s.style.display, "none", "Highlight resets and hides on new click until zoom & pan complete");
+await flushAnimations(60);
+const zoomedCount1s = narrowerChart1sSetRange.to - narrowerChart1sSetRange.from;
+assert.ok(zoomedCount1s >= 375, `1s chart must zoom out to frame full 5m range (>= 375 bars, got ${zoomedCount1s})`);
+assert.equal(MultiSpan.syncedCandleCount, 100, "Drill-down range framing must NOT overwrite global syncedCandleCount");
+assert.equal(hlEl1s.style.display, "block", "Highlight shows once drill-down zoom & pan settle");
+sandbox.document.getElementById = origGetById;
+
 // 4. Test findCandleIndexAtOrBefore
+MultiSpan.candlesData["5m"] = [
+  { time: 100, close: 10 },
+  { time: 200, close: 20 },
+  { time: 300, close: 30 },
+  { time: 400, close: 40 },
+];
 assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 250), 1);
 assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 300), 2);
 assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 450), 3);
 assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 50), -1);
 
-// 5. Test Zoom Level (Visible Candle Count) Synchronization
+// 5. Test Zoom Level (Visible Candle Count) Synchronization with continuous animation
 let targetSetLogicalRangeCalled = null;
+let mock5mLogicalRange = { from: 400, to: 500 };
 MultiSpan.candlesData["1s"] = new Array(1000).fill(0).map((_, i) => ({ time: 1000 + i, close: 100 + i }));
 MultiSpan.candlesData["5m"] = new Array(500).fill(0).map((_, i) => ({ time: 1000 + i * 300, close: 100 + i }));
 
@@ -135,20 +203,26 @@ MultiSpan.charts["1s"] = {
   timeScale: () => ({
     getVisibleLogicalRange: () => ({ from: 940, to: 1000 }),
     setVisibleLogicalRange: () => {},
+    width: () => 500,
   }),
 };
 MultiSpan.charts["5m"] = {
   timeScale: () => ({
-    getVisibleLogicalRange: () => ({ from: 400, to: 500 }),
-    setVisibleLogicalRange: (r) => { targetSetLogicalRangeCalled = r; },
+    getVisibleLogicalRange: () => mock5mLogicalRange,
+    setVisibleLogicalRange: (r) => { mock5mLogicalRange = r; targetSetLogicalRangeCalled = r; },
+    width: () => 500,
   }),
 };
+MultiSpan.cancelSpanAnimation("1s");
+MultiSpan.cancelSpanAnimation("5m");
 MultiSpan.isLogicalSyncing = false;
 MultiSpan.isSyncing = false;
+MultiSpan.programmaticSpans = {};
 MultiSpan.syncedCandleCount = 100;
 
 // User zooms 1s chart from 100 bars to 60 bars (from: 940, to: 1000)
 MultiSpan.handleLogicalRangeChange("1s", { from: 940, to: 1000 });
+await flushAnimations(50);
 assert.ok(targetSetLogicalRangeCalled, "Target chart setVisibleLogicalRange should be called on zoom");
 assert.equal(targetSetLogicalRangeCalled.to - targetSetLogicalRangeCalled.from, 60, "Target chart must have exactly 60 visible candles");
 assert.equal(MultiSpan.syncedCandleCount, 60, "syncedCandleCount must be updated to 60");
@@ -156,13 +230,15 @@ assert.equal(MultiSpan.syncedCandleCount, 60, "syncedCandleCount must be updated
 // Test setSyncedCandleCount preset
 targetSetLogicalRangeCalled = null;
 MultiSpan.setSyncedCandleCount(30);
+await flushAnimations(50);
 assert.ok(targetSetLogicalRangeCalled, "Target chart setVisibleLogicalRange must be called by preset");
 assert.equal(targetSetLogicalRangeCalled.to - targetSetLogicalRangeCalled.from, 30, "Target chart must have exactly 30 visible candles");
 assert.equal(MultiSpan.syncedCandleCount, 30, "syncedCandleCount must be 30");
 
 // 6. Test reloading finer chart when clicked range is not fully loaded
 let reloadSpanCalled = null;
-MultiSpan.reloadSpanToRange = (span, start, end) => { reloadSpanCalled = { span, start, end }; };
+const origReload = MultiSpan.reloadSpanToRange;
+MultiSpan.reloadSpanToRange = (span, start, end, navId) => { reloadSpanCalled = { span, start, end, navId }; };
 // Add 5m candle at time 500. 1s currently only has times 1000..1999 (outside 1s loaded range):
 MultiSpan.candlesData["5m"].unshift({ time: 500, close: 50 });
 MultiSpan.handleChartClick("5m", { time: 500 });
@@ -176,14 +252,25 @@ reloadSpanCalled = null;
 MultiSpan.handleChartClick("5m", { time: 1500 });
 assert.equal(reloadSpanCalled, null, "reloadSpanToRange must NOT be called when range is already inside loaded range");
 
+// Forming/live candle whose endTime is slightly in the future must NOT trigger spurious reload if data goes up to now
+const nowSec = Math.floor(Date.now() / 1000);
+MultiSpan.candlesData["1s"] = new Array(600).fill(0).map((_, i) => ({ time: nowSec - 600 + i, close: 100 }));
+MultiSpan.candlesData["5m"].push({ time: nowSec - 120, close: 100 });
+reloadSpanCalled = null;
+MultiSpan.handleChartClick("5m", { time: nowSec - 120 });
+assert.equal(reloadSpanCalled, null, "Clicking forming live candle must NOT spuriously trigger reloadSpanToRange");
+MultiSpan.reloadSpanToRange = origReload;
+
 // 7. Test activeRangeHighlight when clicking a coarser chart
 MultiSpan.candlesData["1h"] = [{ time: 10000, close: 100 }, { time: 13600, close: 105 }];
+MultiSpan.reloadSpanToRange = () => {};
 MultiSpan.handleChartClick("1h", { time: 10000 });
 assert.ok(MultiSpan.activeRangeHighlight, "activeRangeHighlight must be populated when clicking 1h");
 assert.equal(MultiSpan.activeRangeHighlight.sourceSpan, "1h");
 assert.equal(MultiSpan.activeRangeHighlight.startTime, 10000);
 assert.equal(MultiSpan.activeRangeHighlight.endTime, 10000 + 3600);
 assert.equal(JSON.stringify(MultiSpan.activeRangeHighlight.finerSpans), JSON.stringify(["1s", "5m", "15m"]));
+MultiSpan.reloadSpanToRange = origReload;
 
 // Clicking on finest chart (1s) clears activeRangeHighlight
 MultiSpan.handleChartClick("1s", { time: 10000 });
