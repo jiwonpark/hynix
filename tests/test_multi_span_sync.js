@@ -93,7 +93,7 @@ await flushAnimations();
 assert.equal(targetSetRangeCalled, null, "Must not sync while isSyncing guard is active");
 MultiSpan.isSyncing = false;
 
-// Test Hover Behavior:
+// Test Hover & Click Behavior:
 // 1. Hover on 5m (coarser) must NOT position crosshair on other charts
 let crosshairCalls = [];
 MultiSpan.candlesData["1s"] = [{ time: 100, close: 10 }, { time: 200, close: 20 }, { time: 300, close: 30 }];
@@ -106,12 +106,22 @@ crosshairCalls = [];
 MultiSpan.handleCrosshairMove("5m", { time: 200 });
 assert.equal(crosshairCalls.length, 0, "Hover on coarser chart (5m) must NOT broadcast crosshairs to other charts");
 
-// 2. Hover on 1s (finest) MUST broadcast crosshairs to other charts
+// 2. Hover on finest chart (1s) must ALSO be separate: NO crosshair broadcast to other charts
 crosshairCalls = [];
 MultiSpan.handleCrosshairMove("1s", { time: 200 });
-assert.equal(crosshairCalls.length, 1, "Hover on finest chart (1s) MUST broadcast crosshairs to other charts");
-assert.equal(crosshairCalls[0].span, "5m");
-assert.equal(crosshairCalls[0].t, 200);
+assert.equal(crosshairCalls.length, 0, "Hover on finest chart (1s) must NOT broadcast crosshairs to other charts (hover is local and separate)");
+
+// 2b. Click on 1s chart sets pinnedTime and broadcasts crosshairs to other charts
+crosshairCalls = [];
+MultiSpan.handleChartClick("1s", { time: 200 });
+assert.equal(MultiSpan.pinnedTime, 200, "Clicking 1s chart must set pinnedTime");
+assert.ok(crosshairCalls.some((c) => c.span === "5m" && c.t === 200), "Clicking 1s chart must broadcast crosshair to 5m");
+
+// 2c. Subsequent hover on 5m chart does NOT clear or change 1s pinned crosshair
+crosshairCalls = [];
+MultiSpan.handleCrosshairMove("5m", { time: 100 });
+assert.equal(crosshairCalls.length, 0, "Hovering on 5m must NOT alter 1s chart crosshair");
+assert.equal(MultiSpan.pinnedTime, 200, "pinnedTime must stay locked across hovers");
 
 // 3. Click on coarser chart (5m):
 // - MUST NOT highlight range until zoom & pan animation finishes
@@ -146,9 +156,8 @@ MultiSpan.charts["1s"].timeScale = () => ({
   width: () => 500,
 });
 MultiSpan.handleChartClick("5m", { time: 300 });
-assert.equal(crosshairCalls.length, 1, "Click on coarser chart must broadcast crosshair");
-assert.equal(crosshairCalls[0].span, "1s");
-assert.equal(crosshairCalls[0].t, 300);
+assert.ok(crosshairCalls.some((c) => c.span === "1s" && c.t === 300), "Click on coarser chart must broadcast crosshair to 1s");
+assert.equal(MultiSpan.pinnedTime, 300, "Click on coarser chart must set pinnedTime to stay");
 
 // Immediately after click (mid-animation), highlight MUST still be hidden & readySpans["1s"] falsy!
 assert.equal(hlEl1s.style.display, "none", "Highlight must NOT be shown until pan & zoom animation finishes");

@@ -77,6 +77,8 @@
       this.logicalRafPending = false;
       this.reloadingSpans = {}; // spanId -> boolean
       this.isHistorical = {};   // spanId -> boolean
+      this.pinnedTime = null;   // active clicked timestamp
+      this.pinnedSpan = null;   // source span of active click
       this.activeRangeHighlight = null; // { navId, sourceSpan, sourceLabel, sourceColor, startTime, endTime, finerSpans, readySpans }
       this.loadMoreTimeout = {}; // spanId -> timeoutId
       this.animations = {};       // spanId -> active pan/zoom animation state
@@ -802,44 +804,63 @@
     // =========================================================================
 
     handleCrosshairMove(sourceSpan, param) {
-      if (!param || !param.time) {
-        // Clear crosshairs on other charts only if leaving finest chart
-        if (sourceSpan === "1s") {
-          SPANS.forEach((s) => {
-            if (s.id !== sourceSpan && this.charts[s.id]) {
-              this.charts[s.id].clearCrosshairPosition();
-            }
-          });
-        }
-        return;
-      }
+      const cardOhlc = document.getElementById(`msCardOhlc_${sourceSpan}`);
+      const series = this.series[sourceSpan];
+      const chart = this.charts[sourceSpan];
 
-      // If hovered on a COARSER chart: only update that local chart's own card OHLC, do NOT broadcast to other charts!
-      if (sourceSpan !== "1s") {
-        const series = this.series[sourceSpan];
-        const hoveredCandle = (param.seriesData?.get(series)) || this.findCandleAtOrBefore(sourceSpan, param.time);
-        if (hoveredCandle) {
-          const cardOhlc = document.getElementById(`msCardOhlc_${sourceSpan}`);
-          if (cardOhlc) {
-            cardOhlc.textContent = `O:${formatPrice(hoveredCandle.open)} H:${formatPrice(hoveredCandle.high)} L:${formatPrice(hoveredCandle.low)} C:${formatPrice(hoveredCandle.close)}`;
+      // Hover is purely separate and local for all charts (including 1s): never broadcast to other charts!
+      if (!param || !param.time) {
+        // Mouse left this chart: restore to pinned clicked candle if active, otherwise latest candle
+        if (this.pinnedTime !== null) {
+          const pinnedCandle = this.findCandleAtOrBefore(sourceSpan, this.pinnedTime);
+          if (pinnedCandle) {
+            if (cardOhlc) {
+              cardOhlc.textContent = `O:${formatPrice(pinnedCandle.open)} H:${formatPrice(pinnedCandle.high)} L:${formatPrice(pinnedCandle.low)} C:${formatPrice(pinnedCandle.close)}`;
+            }
+            if (chart && series && !this.reloadingSpans[sourceSpan]) {
+              try {
+                chart.setCrosshairPosition(pinnedCandle.close, pinnedCandle.time, series);
+              } catch (_) {}
+            }
+          }
+        } else {
+          // No pinned candle: restore to latest loaded candle
+          const list = this.candlesData[sourceSpan] || [];
+          if (list.length && cardOhlc) {
+            const latest = list[list.length - 1];
+            cardOhlc.textContent = `O:${formatPrice(latest.open)} H:${formatPrice(latest.high)} L:${formatPrice(latest.low)} C:${formatPrice(latest.close)}`;
+          }
+          if (chart) {
+            try {
+              chart.clearCrosshairPosition();
+            } catch (_) {}
           }
         }
         return;
       }
 
-      // Hover on FINEST chart ("1s"): broadcast time point & crosshair across all charts in real time!
-      this.broadcastTimePoint(param.time, sourceSpan, false);
+      // Cursor over a candle on sourceSpan: show this candle's OHLC locally only
+      const hoveredCandle = (param.seriesData?.get(series)) || this.findCandleAtOrBefore(sourceSpan, param.time);
+      if (hoveredCandle && cardOhlc) {
+        cardOhlc.textContent = `O:${formatPrice(hoveredCandle.open)} H:${formatPrice(hoveredCandle.high)} L:${formatPrice(hoveredCandle.low)} C:${formatPrice(hoveredCandle.close)}`;
+      }
     }
 
     handleChartClick(sourceSpan, param) {
       if (!param || !param.time) return;
+
+      this.pinnedTime = param.time;
+      this.pinnedSpan = sourceSpan;
+
       if (sourceSpan === "1s") {
         this.activeNavId += 1;
         this.activeRangeHighlight = null;
         this.updateAllRangeHighlights();
+        this.broadcastTimePoint(param.time, sourceSpan, false);
+      } else {
+        // Click on coarser charts broadcasts time point, updates HUD, aligns crosshairs, and frames narrower charts
+        this.broadcastTimePoint(param.time, sourceSpan, true);
       }
-      // Click on ANY chart (especially coarser charts) broadcasts time point, updates HUD, aligns crosshairs, and zooms/pans narrower charts
-      this.broadcastTimePoint(param.time, sourceSpan, sourceSpan !== "1s");
     }
 
     getLogicalIndexForTime(spanId, time) {
@@ -951,11 +972,10 @@
 
         const candle = this.findCandleAtOrBefore(s.id, time);
 
-        if (chart && series && s.id !== sourceSpan && !this.reloadingSpans[s.id]) {
+        // Position crosshair on ALL charts (including clicked chart) and keep it pinned
+        if (chart && series && candle && !this.reloadingSpans[s.id]) {
           try {
-            if (candle) {
-              chart.setCrosshairPosition(candle.close, candle.time, series);
-            }
+            chart.setCrosshairPosition(candle.close, candle.time, series);
           } catch (_) {}
         }
 
@@ -988,6 +1008,12 @@
               this.animateLogicalRangeTo(s.id, targetRange.from, targetRange.to, {
                 duration: 360,
                 onComplete: () => {
+                  // Ensure pinned crosshair stays visible after drill-down animation
+                  if (candle && chart && series) {
+                    try {
+                      chart.setCrosshairPosition(candle.close, candle.time, series);
+                    } catch (_) {}
+                  }
                   if (
                     this.activeRangeHighlight &&
                     this.activeRangeHighlight.navId === navId &&
@@ -1672,9 +1698,12 @@
       const cardOhlc = document.getElementById(`msCardOhlc_${spanId}`);
       const pStr = formatPrice(candle.close);
       if (priceEl) priceEl.textContent = pStr;
-      if (hudVal) hudVal.textContent = pStr;
-      if (cardOhlc) {
-        cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${pStr}`;
+      // If a user has clicked a candle, keep card OHLC and HUD locked to the clicked selection
+      if (this.pinnedTime === null) {
+        if (hudVal) hudVal.textContent = pStr;
+        if (cardOhlc) {
+          cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${pStr}`;
+        }
       }
     }
 
@@ -1939,6 +1968,18 @@
     }
 
     async alignAllToLatest() {
+      this.pinnedTime = null;
+      this.pinnedSpan = null;
+      this.activeRangeHighlight = null;
+      this.updateAllRangeHighlights();
+      const hudTime = document.getElementById("msHudTime");
+      if (hudTime) hudTime.textContent = "--";
+      SPANS.forEach((s) => {
+        try {
+          this.charts[s.id]?.clearCrosshairPosition();
+        } catch (_) {}
+      });
+
       const tasks = SPANS.map(async (s) => {
         if (this.isHistorical[s.id]) {
           await this.reloadSpanToLatest(s.id);
