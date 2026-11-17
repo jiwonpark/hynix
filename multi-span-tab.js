@@ -61,8 +61,11 @@
       this.candlesData = {}; // span -> array of { time, open, high, low, close, volume }
       this.lastVisibleRange = {}; // span -> { from, to }
 
+      this.syncedCandleCount = 100; // Synchronized visible candle count across all 5 charts
       this.isSyncing = false;
+      this.isLogicalSyncing = false;
       this.rafPending = false;
+      this.logicalRafPending = false;
       this.ws = null;
       this.pollInterval = null;
       this.resizeObserver = null;
@@ -114,6 +117,16 @@
               <span style="font-size:11px;color:#94a3b8;font-weight:700;">SYNC:</span>
               <button type="button" id="msToggleSync" style="background:#10b981;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Toggle synchronized panning & zooming">🔗 ON</button>
               <button type="button" id="msToggleSyncMode" style="background:#334155;color:#f8fafc;border:none;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;" title="Anchor mode keeps optimal zoom per span; Range mode forces identical time window">⚓ ANCHOR</button>
+            </div>
+
+            <!-- Zoom Level & Presets (Synchronized Candle Count) -->
+            <div style="display:flex;align-items:center;gap:4px;background:#1e293b;padding:3px 8px;border-radius:6px;border:1px solid #334155;">
+              <span style="font-size:11px;color:#94a3b8;font-weight:700;">ZOOM:</span>
+              <span id="msCandleCountBadge" style="background:#0284c7;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;" title="Visible candles per chart">100 BARS</span>
+              <button type="button" class="msZoomPresetBtn" data-count="30" style="background:#334155;color:#94a3b8;border:none;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 30 candles">30</button>
+              <button type="button" class="msZoomPresetBtn" data-count="60" style="background:#334155;color:#94a3b8;border:none;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 60 candles">60</button>
+              <button type="button" class="msZoomPresetBtn" data-count="100" style="background:#0284c7;color:#fff;border:none;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 100 candles">100</button>
+              <button type="button" class="msZoomPresetBtn" data-count="200" style="background:#334155;color:#94a3b8;border:none;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;" title="Zoom to 200 candles">200</button>
             </div>
 
             <!-- Quick Actions -->
@@ -279,6 +292,11 @@
           this.handleRangeChange(s.id, range);
         });
 
+        // Wire visible logical range change for synchronized candle count (zoom sync)
+        chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
+          this.handleLogicalRangeChange(s.id, logicalRange);
+        });
+
         // Wire crosshair tracking
         chart.subscribeCrosshairMove((param) => {
           this.handleCrosshairMove(s.id, param);
@@ -316,7 +334,7 @@
     // =========================================================================
 
     handleRangeChange(sourceSpan, range) {
-      if (!this.syncEnabled || this.isSyncing) return;
+      if (!this.syncEnabled || this.isSyncing || this.isLogicalSyncing) return;
       if (!range || !range.from || !range.to || range.from >= range.to) return;
 
       const prevRange = this.lastVisibleRange[sourceSpan];
@@ -364,6 +382,113 @@
           });
         }
       }
+    }
+
+    // =========================================================================
+    // SYNCHRONIZED ZOOM LEVEL (SAME NUMBER OF CANDLES ON EACH CHART)
+    // =========================================================================
+
+    handleLogicalRangeChange(sourceSpan, logicalRange) {
+      if (!this.syncEnabled || this.isLogicalSyncing || this.isSyncing) return;
+      if (!logicalRange || typeof logicalRange.from !== "number" || typeof logicalRange.to !== "number") return;
+
+      const rawCount = logicalRange.to - logicalRange.from;
+      if (rawCount <= 1 || isNaN(rawCount)) return;
+
+      // Only sync if visible candle count changed by at least 1 bar (i.e. zoom event)
+      if (Math.abs(rawCount - this.syncedCandleCount) < 1) return;
+
+      const newBarCount = Math.max(10, Math.min(1000, Math.round(rawCount)));
+      this.syncedCandleCount = newBarCount;
+      this.updateCandleCountBadge(newBarCount);
+
+      this.isLogicalSyncing = true;
+      try {
+        const sourceData = this.candlesData[sourceSpan] || [];
+        const isSourceNearRight = sourceData.length > 0 && logicalRange.to >= (sourceData.length - 2);
+
+        SPANS.forEach((s) => {
+          if (s.id === sourceSpan) return;
+          const targetChart = this.charts[s.id];
+          if (!targetChart) return;
+          const targetData = this.candlesData[s.id] || [];
+          if (!targetData.length) return;
+
+          const targetRange = targetChart.timeScale().getVisibleLogicalRange();
+          let targetTo, targetFrom;
+
+          if (isSourceNearRight || !targetRange || targetRange.to >= (targetData.length - 2)) {
+            // Anchor target chart to its right edge (latest candle)
+            targetTo = targetData.length - 0.5 + 6;
+            targetFrom = targetTo - newBarCount;
+          } else {
+            // Anchor target chart around its current center logical index
+            const center = (targetRange.from + targetRange.to) / 2;
+            targetFrom = center - newBarCount / 2;
+            targetTo = center + newBarCount / 2;
+          }
+
+          targetChart.timeScale().setVisibleLogicalRange({ from: targetFrom, to: targetTo });
+        });
+      } catch (_) {
+      } finally {
+        if (!this.logicalRafPending) {
+          this.logicalRafPending = true;
+          requestAnimationFrame(() => {
+            this.isLogicalSyncing = false;
+            this.logicalRafPending = false;
+          });
+        }
+      }
+    }
+
+    setSyncedCandleCount(count) {
+      const roundedBars = Math.max(10, Math.min(1000, Math.round(count)));
+      this.syncedCandleCount = roundedBars;
+      this.updateCandleCountBadge(roundedBars);
+
+      this.isLogicalSyncing = true;
+      try {
+        SPANS.forEach((s) => {
+          const targetChart = this.charts[s.id];
+          if (!targetChart) return;
+          const targetData = this.candlesData[s.id] || [];
+          if (!targetData.length) return;
+
+          const targetRange = targetChart.timeScale().getVisibleLogicalRange();
+          let targetTo, targetFrom;
+
+          if (!targetRange || targetRange.to >= (targetData.length - 2)) {
+            targetTo = targetData.length - 0.5 + 6;
+            targetFrom = targetTo - roundedBars;
+          } else {
+            const center = (targetRange.from + targetRange.to) / 2;
+            targetFrom = center - roundedBars / 2;
+            targetTo = center + roundedBars / 2;
+          }
+          targetChart.timeScale().setVisibleLogicalRange({ from: targetFrom, to: targetTo });
+        });
+      } catch (_) {
+      } finally {
+        if (!this.logicalRafPending) {
+          this.logicalRafPending = true;
+          requestAnimationFrame(() => {
+            this.isLogicalSyncing = false;
+            this.logicalRafPending = false;
+          });
+        }
+      }
+    }
+
+    updateCandleCountBadge(count) {
+      const badge = document.getElementById("msCandleCountBadge");
+      if (badge) badge.textContent = `${count} BARS`;
+      document.querySelectorAll(".msZoomPresetBtn").forEach((btn) => {
+        const c = Number(btn.getAttribute("data-count"));
+        const isActive = Math.abs(c - count) <= 2;
+        btn.style.background = isActive ? "#0284c7" : "#334155";
+        btn.style.color = isActive ? "#fff" : "#94a3b8";
+      });
     }
 
     // =========================================================================
@@ -443,12 +568,18 @@
         // Drill-down: if clicking a coarser chart, center narrower charts on the clicked timestamp
         if (recenterNarrower && chart && candle && sourceIdx > 0 && idx < sourceIdx) {
           try {
-            const range = chart.timeScale().getVisibleRange();
-            if (range && range.to > range.from) {
-              const duration = range.to - range.from;
-              const targetFrom = Math.round(time - duration / 2);
-              const targetTo = Math.round(time + duration / 2);
-              chart.timeScale().setVisibleRange({ from: targetFrom, to: targetTo });
+            const candleIdx = this.findCandleIndexAtOrBefore(s.id, time);
+            const count = this.syncedCandleCount || 100;
+            if (candleIdx !== -1) {
+              chart.timeScale().setVisibleLogicalRange({ from: candleIdx - count / 2, to: candleIdx + count / 2 });
+            } else {
+              const range = chart.timeScale().getVisibleRange();
+              if (range && range.to > range.from) {
+                const duration = range.to - range.from;
+                const targetFrom = Math.round(time - duration / 2);
+                const targetTo = Math.round(time + duration / 2);
+                chart.timeScale().setVisibleRange({ from: targetFrom, to: targetTo });
+              }
             }
           } catch (_) {}
         }
@@ -471,6 +602,24 @@
         }
       }
       return best || data[0];
+    }
+
+    findCandleIndexAtOrBefore(spanId, time) {
+      const data = this.candlesData[spanId];
+      if (!data || !data.length) return -1;
+      let low = 0;
+      let high = data.length - 1;
+      let best = -1;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        if (data[mid].time <= time) {
+          best = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      return best;
     }
 
     // =========================================================================
@@ -579,7 +728,14 @@
 
       const chart = this.charts[spanId];
       if (chart) {
-        chart.timeScale().fitContent();
+        const count = this.syncedCandleCount || 100;
+        const to = clean.length - 0.5 + 6;
+        const from = to - count;
+        try {
+          chart.timeScale().setVisibleLogicalRange({ from, to });
+        } catch (_) {
+          chart.timeScale().fitContent();
+        }
         this.lastVisibleRange[spanId] = chart.timeScale().getVisibleRange();
       }
     }
@@ -733,14 +889,21 @@
         });
       }
 
+      // Zoom preset buttons
+      document.querySelectorAll(".msZoomPresetBtn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const count = Number(btn.getAttribute("data-count"));
+          if (count && count > 0) {
+            this.setSyncedCandleCount(count);
+          }
+        });
+      });
+
       // Align all to latest
       const alignBtn = document.getElementById("msAlignLatest");
       if (alignBtn) {
         alignBtn.addEventListener("click", () => {
-          SPANS.forEach((s) => {
-            const chart = this.charts[s.id];
-            if (chart) chart.timeScale().scrollToRealTime();
-          });
+          this.alignAllToLatest();
         });
       }
 
@@ -789,6 +952,23 @@
     setLayout(layout) {
       this.activeLayout = layout;
       this.applyLayoutStyles();
+    }
+
+    alignAllToLatest() {
+      const count = this.syncedCandleCount || 100;
+      SPANS.forEach((s) => {
+        const chart = this.charts[s.id];
+        const data = this.candlesData[s.id];
+        if (chart && data && data.length) {
+          const to = data.length - 0.5 + 6;
+          const from = to - count;
+          try {
+            chart.timeScale().setVisibleLogicalRange({ from, to });
+          } catch (_) {
+            chart.timeScale().scrollToRealTime();
+          }
+        }
+      });
     }
 
     setSymbol(sym) {

@@ -102,12 +102,52 @@ let narrowerChart1sSetRange = null;
 MultiSpan.charts["1s"].timeScale = () => ({
   getVisibleRange: () => ({ from: 100, to: 200 }),
   setVisibleRange: (r) => { narrowerChart1sSetRange = r; },
+  setVisibleLogicalRange: (r) => { narrowerChart1sSetRange = r; },
 });
 MultiSpan.handleChartClick("5m", { time: 300 });
 assert.equal(crosshairCalls.length, 1, "Click on coarser chart must broadcast crosshair");
 assert.equal(crosshairCalls[0].span, "1s");
 assert.equal(crosshairCalls[0].t, 300);
 assert.ok(narrowerChart1sSetRange, "Click on coarser chart must re-center narrower chart");
-assert.equal((narrowerChart1sSetRange.from + narrowerChart1sSetRange.to) / 2, 300, "Narrower chart must be centered on clicked timestamp 300");
+assert.equal((narrowerChart1sSetRange.from + narrowerChart1sSetRange.to) / 2, 2, "Narrower chart must be centered on candle index 2 (time 300)");
+// 4. Test findCandleIndexAtOrBefore
+assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 250), 1);
+assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 300), 2);
+assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 450), 3);
+assert.equal(MultiSpan.findCandleIndexAtOrBefore("5m", 50), -1);
+
+// 5. Test Zoom Level (Visible Candle Count) Synchronization
+let targetSetLogicalRangeCalled = null;
+MultiSpan.candlesData["1s"] = new Array(1000).fill(0).map((_, i) => ({ time: 1000 + i, close: 100 + i }));
+MultiSpan.candlesData["5m"] = new Array(500).fill(0).map((_, i) => ({ time: 1000 + i * 300, close: 100 + i }));
+
+MultiSpan.charts["1s"] = {
+  timeScale: () => ({
+    getVisibleLogicalRange: () => ({ from: 940, to: 1000 }),
+    setVisibleLogicalRange: () => {},
+  }),
+};
+MultiSpan.charts["5m"] = {
+  timeScale: () => ({
+    getVisibleLogicalRange: () => ({ from: 400, to: 500 }),
+    setVisibleLogicalRange: (r) => { targetSetLogicalRangeCalled = r; },
+  }),
+};
+MultiSpan.isLogicalSyncing = false;
+MultiSpan.isSyncing = false;
+MultiSpan.syncedCandleCount = 100;
+
+// User zooms 1s chart from 100 bars to 60 bars (from: 940, to: 1000)
+MultiSpan.handleLogicalRangeChange("1s", { from: 940, to: 1000 });
+assert.ok(targetSetLogicalRangeCalled, "Target chart setVisibleLogicalRange should be called on zoom");
+assert.equal(targetSetLogicalRangeCalled.to - targetSetLogicalRangeCalled.from, 60, "Target chart must have exactly 60 visible candles");
+assert.equal(MultiSpan.syncedCandleCount, 60, "syncedCandleCount must be updated to 60");
+
+// Test setSyncedCandleCount preset
+targetSetLogicalRangeCalled = null;
+MultiSpan.setSyncedCandleCount(30);
+assert.ok(targetSetLogicalRangeCalled, "Target chart setVisibleLogicalRange must be called by preset");
+assert.equal(targetSetLogicalRangeCalled.to - targetSetLogicalRangeCalled.from, 30, "Target chart must have exactly 30 visible candles");
+assert.equal(MultiSpan.syncedCandleCount, 30, "syncedCandleCount must be 30");
 
 console.log("All Multi-Span synchronization unit tests passed!");
