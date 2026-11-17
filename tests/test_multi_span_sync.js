@@ -63,14 +63,14 @@ MultiSpan.charts["1s"] = {
 };
 MultiSpan.charts["5m"] = mockTargetChart;
 MultiSpan.syncEnabled = true;
-MultiSpan.syncMode = "anchor";
+MultiSpan.syncMode = "range";
 MultiSpan.isSyncing = false;
 
 // Trigger range change on 1s
 MultiSpan.handleRangeChange("1s", { from: 1000, to: 1200 });
-// Center is 1100. Target duration was 100 (150-50). So target should center around 1100 => [1050, 1150]
-assert.ok(targetSetRangeCalled, "Target chart setVisibleRange should be called");
-assert.equal((targetSetRangeCalled.from + targetSetRangeCalled.to) / 2, 1100, "Target center should match source center 1100");
+assert.ok(targetSetRangeCalled, "Target chart setVisibleRange should be called in range mode");
+assert.equal(targetSetRangeCalled.from, 1000, "Target from should match source from in range mode");
+assert.equal(targetSetRangeCalled.to, 1200, "Target to should match source to in range mode");
 
 // Re-entrancy guard test: when isSyncing is true, nothing should happen
 targetSetRangeCalled = null;

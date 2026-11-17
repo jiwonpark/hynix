@@ -335,6 +335,8 @@
 
     handleRangeChange(sourceSpan, range) {
       if (!this.syncEnabled || this.isSyncing || this.isLogicalSyncing) return;
+      // In default Anchor mode, logical range governs zoom level so all charts display the identical candle count
+      if (this.syncMode !== "range") return;
       if (!range || !range.from || !range.to || range.from >= range.to) return;
 
       const prevRange = this.lastVisibleRange[sourceSpan];
