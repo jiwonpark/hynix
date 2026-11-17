@@ -749,7 +749,7 @@
         const spanSec = spanObj.sec || 60;
         const nowSec = Math.floor(Date.now() / 1000);
         // Add buffer candles before and after range
-        const bufferSec = Math.max(spanSec * 30, 300);
+        const bufferSec = Math.max(spanSec * 30, 60);
         let targetStart = Math.max(0, startTime - bufferSec);
         let targetEnd = Math.min(nowSec, endTime + bufferSec);
         if (targetEnd <= targetStart) targetEnd = targetStart + spanSec * 100;
@@ -988,7 +988,7 @@
 
       for (const url of endpoints) {
         try {
-          const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+          const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
           if (!res.ok) continue;
           const rows = await res.json();
           if (Array.isArray(rows) && rows.length) {
