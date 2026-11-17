@@ -11419,9 +11419,8 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
         activateEngineWhenReady(() => window.strategyLab, isStrategyLab, "tabContentStrategyLab");
         if (isUpbitScanner) upbitCoinScanner.onTabActivated();
-        if (isMultiSpan && window.multiSpanTab) {
-          window.multiSpanTab.onTabActivated();
-        } else if (!isMultiSpan && window.multiSpanTab) {
+        activateEngineWhenReady(() => window.multiSpanTab, isMultiSpan, "tabContentMultiSpan");
+        if (!isMultiSpan && window.multiSpanTab) {
           window.multiSpanTab.onTabDeactivated();
         }
       }, 60);
