@@ -1331,28 +1331,33 @@ async def create_lighter_order(request: Request) -> JSONResponse:
 _klines_cache: Dict[str, tuple[float, Any]] = {}
 
 @app.get("/api/klines")
-async def get_klines(symbol: str, interval: str = "15m", limit: int = 1000, endTime: Optional[int] = None):
-    """Proxy Binance Futures klines endpoint with in-memory caching to bypass browser CORS / ISP blocks with server-side speed."""
+async def get_klines(symbol: str, interval: str = "15m", limit: int = 1000, endTime: Optional[int] = None, market: Optional[str] = None):
+    """Proxy Binance klines endpoint with in-memory caching to bypass browser CORS / ISP blocks with server-side speed."""
     params = {"symbol": symbol, "interval": interval, "limit": min(1500, max(1, limit))}
     if endTime:
         params["endTime"] = endTime
-    cache_key = f"{symbol}:{interval}:{limit}:{endTime or 'latest'}"
+    use_spot = (interval == "1s") or (market == "spot")
+    cache_key = f"{symbol}:{interval}:{limit}:{endTime or 'latest'}:{'spot' if use_spot else 'futures'}"
     now = time.time()
-    ttl = 4.0 if not endTime else 3600.0
+    ttl = 1.0 if interval == "1s" else (4.0 if not endTime else 3600.0)
     if cache_key in _klines_cache:
         cached_time, cached_data = _klines_cache[cache_key]
         if now - cached_time < ttl:
             return cached_data
     try:
-        data = await binance_client.request("GET", "/fapi/v1/klines", params=params)
+        if use_spot:
+            data = await binance_client.request("GET", "/api/v3/klines", params=params, base_url="https://api.binance.com")
+        else:
+            data = await binance_client.request("GET", "/fapi/v1/klines", params=params)
         if isinstance(data, list) and data:
             _klines_cache[cache_key] = (now, data)
         return data
     except Exception as e:
-        logger.error(f"Error fetching klines for {symbol}: {e}")
+        logger.error(f"Error fetching klines for {symbol} ({interval}, spot={use_spot}): {e}")
         if cache_key in _klines_cache:
             return _klines_cache[cache_key][1]
         return []
+
 
 # ==============================================================================
 # SINGLE-LEG CRYPTO QUANTITATIVE ENGINE (TAB 4)

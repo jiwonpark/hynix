@@ -3003,6 +3003,14 @@
         </div>
         <span class="navLivePill" style="background:#059669;color:#fff;">RANK</span>
       </button>
+      <button id="navTabMultiSpan" class="mainNavBtn" type="button">
+        <span class="navBtnIcon">🔭</span>
+        <div class="navBtnText">
+          <strong>Multi-Span Matrix</strong>
+          <small>1s · 5m · 15m · 1h · 1d Synced</small>
+        </div>
+        <span class="navLivePill" style="background:#0284c7;color:#fff;">SYNC</span>
+      </button>
     </nav>
 
     <!-- ======================================================= -->
@@ -5251,6 +5259,10 @@
       </section>
       <p style="font-size:11px;color:#64748b;line-height:1.5;margin-top:10px;">Research use only. Rankings are relative snapshots derived from recent price action and liquidity. They do not model news, market manipulation, slippage, or future events, and should not be treated as investment advice.</p>
     </div>
+    <!-- ======================================================= -->
+    <!-- TAB 10: MULTI-SPAN SYNCHRONIZED MATRIX (1s·5m·15m·1h·1d)-->
+    <!-- ======================================================= -->
+    <div id="tabContentMultiSpan" class="mainTabLoading" data-loading-message="Loading multi-span charts…" aria-busy="true" style="display:none;"></div>
 
     <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">HYPERION &middot; Quantitative Trading System &middot; Dual-Leg Parity Engine</span>
@@ -5335,6 +5347,7 @@
   <script src="lighter-tab.js?v=20261019_chart_fix2"></script>
   <script src="crypto-tab.js?v=20261019_chart_fix2"></script>
   <script src="lighter-crypto-tab.js?v=20261019_chart_fix2"></script>
+  <script src="multi-span-tab.js?v=20261019_chart_fix2"></script>
   <script>
     // scripts/deploy_frontend.sh stamps these two fields in the deployed copy.
     // Keep one metadata source so the header, footer, and translations cannot drift.
@@ -11213,6 +11226,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       compound: { id: "tabContentCompound", ready: () => Boolean(compoundingEngine?.chart && compoundingEngine?.wealthSeries) },
       strategylab: { id: "tabContentStrategyLab", ready: () => Boolean(window.strategyLab?.loaded && window.strategyLab?.data?.bars?.length) },
       upbitscanner: { id: "tabContentUpbitScanner", ready: () => Boolean(upbitCoinScanner?.loaded && upbitCoinScanner?.rows?.length) },
+      multispan: { id: "tabContentMultiSpan", ready: () => Boolean(window.multiSpanTab?.loaded) },
     };
 
     function renderMainTabProgress(container, config) {
@@ -11305,6 +11319,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       const isCompound = normalized === "compound";
       const isStrategyLab = normalized === "strategylab";
       const isUpbitScanner = normalized === "upbitscanner";
+      const isMultiSpan = normalized === "multispan";
       if ($("navTabBacktest")) $("navTabBacktest").classList.toggle("active", isBacktest);
       if ($("navTabTrading")) $("navTabTrading").classList.toggle("active", isTrading);
       if ($("navTabLighter")) $("navTabLighter").classList.toggle("active", isLighter);
@@ -11314,6 +11329,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("navTabCompound")) $("navTabCompound").classList.toggle("active", isCompound);
       if ($("navTabStrategyLab")) $("navTabStrategyLab").classList.toggle("active", isStrategyLab);
       if ($("navTabUpbitScanner")) $("navTabUpbitScanner").classList.toggle("active", isUpbitScanner);
+      if ($("navTabMultiSpan")) $("navTabMultiSpan").classList.toggle("active", isMultiSpan);
       if ($("tabContentBacktest")) $("tabContentBacktest").style.display = isBacktest ? "block" : "none";
       if ($("tabContentTrading")) $("tabContentTrading").style.display = isTrading ? "block" : "none";
       if ($("tabContentLighter")) $("tabContentLighter").style.display = isLighter ? "block" : "none";
@@ -11323,6 +11339,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
       if ($("tabContentCompound")) $("tabContentCompound").style.display = isCompound ? "block" : "none";
       if ($("tabContentStrategyLab")) $("tabContentStrategyLab").style.display = isStrategyLab ? "block" : "none";
       if ($("tabContentUpbitScanner")) $("tabContentUpbitScanner").style.display = isUpbitScanner ? "block" : "none";
+      if ($("tabContentMultiSpan")) $("tabContentMultiSpan").style.display = isMultiSpan ? "block" : "none";
       const activeNav = isBacktest ? $("navTabBacktest")
         : isTrading ? $("navTabTrading")
         : isLighter ? $("navTabLighter")
@@ -11331,6 +11348,7 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         : isPairs ? $("navTabPairs")
         : isCompound ? $("navTabCompound")
         : isStrategyLab ? $("navTabStrategyLab")
+        : isMultiSpan ? $("navTabMultiSpan")
         : $("navTabUpbitScanner");
       if (activeNav && window.matchMedia("(max-width: 1024px)").matches) {
         // Center the tab only inside the horizontal navigation strip. Native
@@ -11401,6 +11419,11 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
         }
         activateEngineWhenReady(() => window.strategyLab, isStrategyLab, "tabContentStrategyLab");
         if (isUpbitScanner) upbitCoinScanner.onTabActivated();
+        if (isMultiSpan && window.multiSpanTab) {
+          window.multiSpanTab.onTabActivated();
+        } else if (!isMultiSpan && window.multiSpanTab) {
+          window.multiSpanTab.onTabDeactivated();
+        }
       }, 60);
     }
     window.switchMainTab = switchMainTab;
@@ -11414,11 +11437,12 @@ Blends microstructural momentum (+6h), intermediate funding carry (+12h), and st
     if ($("navTabCompound")) $("navTabCompound").addEventListener("click", () => switchMainTab("compound"));
     if ($("navTabStrategyLab")) $("navTabStrategyLab").addEventListener("click", () => switchMainTab("strategyLab"));
     if ($("navTabUpbitScanner")) $("navTabUpbitScanner").addEventListener("click", () => switchMainTab("upbitScanner"));
+    if ($("navTabMultiSpan")) $("navTabMultiSpan").addEventListener("click", () => switchMainTab("multiSpan"));
 
     // Restore saved tab on load
     try {
       const savedTab = localStorage.getItem("skhynix_active_tab");
-      if (savedTab === "trading" || savedTab === "lighter" || savedTab === "crypto" || savedTab === "lighterCrypto" || savedTab === "backtest" || savedTab === "pairs" || savedTab === "compound" || savedTab === "strategyLab" || savedTab === "upbitScanner") {
+      if (savedTab === "trading" || savedTab === "lighter" || savedTab === "crypto" || savedTab === "lighterCrypto" || savedTab === "backtest" || savedTab === "pairs" || savedTab === "compound" || savedTab === "strategyLab" || savedTab === "upbitScanner" || savedTab === "multiSpan") {
         switchMainTab(savedTab);
       }
     } catch (e) {}
