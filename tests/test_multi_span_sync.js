@@ -351,4 +351,73 @@ MultiSpan.setChartsPerRow("auto");
 assert.equal(MultiSpan.chartsPerRow, "auto");
 assert.equal(mockWrapper.style.gridTemplateColumns, "repeat(auto-fit, minmax(420px, 1fr))");
 
+// 11. Test MACD calculation (fast=12, slow=26, signal=9)
+const dummyCandles = [];
+for (let i = 0; i < 50; i++) {
+  dummyCandles.push({
+    time: 1000 + i * 60,
+    open: 100 + i * 0.5,
+    high: 102 + i * 0.5,
+    low: 99 + i * 0.5,
+    close: 100 + i * 0.5 + (i % 2 === 0 ? 1 : -1),
+    volume: 10,
+  });
+}
+
+const macdOutput = MultiSpan.calculateMacd(dummyCandles, 12, 26, 9);
+assert.ok(macdOutput.macd.length > 0, "MACD line must have points for 50 candles");
+assert.equal(macdOutput.macd.length, 50 - 26 + 1, "MACD line length should match candles - slowPeriod + 1");
+assert.equal(macdOutput.signal.length, macdOutput.macd.length - 9 + 1, "Signal line length should match macd - signalPeriod + 1");
+assert.equal(macdOutput.histogram.length, macdOutput.signal.length, "Histogram length should match signal line length");
+
+macdOutput.histogram.forEach((h) => {
+  if (h.value >= 0) {
+    assert.equal(h.color, "rgba(5, 150, 105, 0.75)", "Positive histogram bar must be green");
+  } else {
+    assert.equal(h.color, "rgba(220, 38, 38, 0.75)", "Negative histogram bar must be red");
+  }
+});
+
+const shortCandles = dummyCandles.slice(0, 20);
+const shortMacd = MultiSpan.calculateMacd(shortCandles, 12, 26, 9);
+assert.equal(shortMacd.macd.length, 0, "calculateMacd should return empty arrays if candles < slowPeriod");
+
+// 12. Test MACD Legend DOM Updating
+const mockElements = {
+  msMacdVal_1s: { textContent: "" },
+  msSigVal_1s: { textContent: "" },
+  msHistVal_1s: { textContent: "", style: {} },
+};
+sandbox.document.getElementById = (id) => mockElements[id] || null;
+
+MultiSpan.updateMacdLegend("1s", 1.23456, 0.87654, 0.35802);
+assert.equal(mockElements.msMacdVal_1s.textContent, "1.2346", "MACD value formatted to 4 decimals");
+assert.equal(mockElements.msSigVal_1s.textContent, "0.8765", "Signal value formatted to 4 decimals");
+assert.equal(mockElements.msHistVal_1s.textContent, "+0.3580", "Positive histogram formatted with + prefix");
+assert.equal(mockElements.msHistVal_1s.style.color, "#059669", "Positive histogram styled green");
+
+MultiSpan.updateMacdLegend("1s", -0.5, 0.1, -0.6);
+assert.equal(mockElements.msHistVal_1s.textContent, "-0.6000", "Negative histogram formatted without double minus");
+assert.equal(mockElements.msHistVal_1s.style.color, "#dc2626", "Negative histogram styled red");
+
+// 13. Test MACD Sub-Chart Crosshair Synchronization
+let macdCrosshairCalls = [];
+MultiSpan.macdCharts["5m"] = {
+  setCrosshairPosition: (v, t, s) => { macdCrosshairCalls.push({ v, t, s }); },
+  clearCrosshairPosition: () => { macdCrosshairCalls.push({ clear: true }); },
+};
+MultiSpan.macdHist["5m"] = {};
+MultiSpan.macdData["5m"] = {
+  macd: [{ time: 1000, value: 1.5 }],
+  signal: [{ time: 1000, value: 1.2 }],
+  histogram: [{ time: 1000, value: 0.3 }],
+  byTime: new Map([[1000, { macd: 1.5, signal: 1.2, hist: 0.3, histogram: 0.3 }]]),
+};
+
+macdCrosshairCalls = [];
+MultiSpan.handleCrosshairMove("5m", { time: 1000 }, "main");
+assert.equal(macdCrosshairCalls.length, 1, "Moving crosshair on main chart must update MACD crosshair on same card");
+assert.equal(macdCrosshairCalls[0].t, 1000, "MACD crosshair time must match main chart hovered time");
+assert.equal(macdCrosshairCalls[0].v, 0.3, "MACD crosshair value must match histogram at hovered time");
+
 console.log("All Multi-Span synchronization unit tests passed!");

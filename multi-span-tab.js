@@ -68,6 +68,12 @@
       this.ma20 = {};   // span -> lineSeries
       this.ma50 = {};   // span -> lineSeries
       this.volumeSeries = {}; // span -> histogramSeries
+      this.macdCharts = {};   // span -> macdChart
+      this.macdHist = {};     // span -> histogramSeries
+      this.macdLine = {};     // span -> lineSeries
+      this.macdSignal = {};   // span -> lineSeries
+      this.macdZero = {};     // span -> lineSeries
+      this.macdData = {};     // span -> { macd, signal, histogram, byTime }
       this.candlesData = {}; // span -> array of { time, open, high, low, close, volume }
       this.lastVisibleRange = {}; // span -> { from, to }
 
@@ -210,10 +216,22 @@
                   <button type="button" class="msCardFitBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Fit this chart">FIT</button>
                 </div>
               </div>
-              <div id="msChartHost_${s.id}" class="msChartHost" style="width:100%;height:320px;position:relative;">
+              <div id="msChartHost_${s.id}" class="msChartHost" style="width:100%;height:240px;position:relative;">
                 <div id="msRangeHighlight_${s.id}" class="msRangeHighlight" style="display:none;position:absolute;top:0;bottom:26px;pointer-events:none;z-index:3;">
                   <div id="msRangeBadge_${s.id}" style="position:absolute;top:4px;left:4px;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);pointer-events:none;color:#ffffff;"></div>
                 </div>
+              </div>
+              <!-- MACD Sub-pane -->
+              <div class="msMacdHeader" style="background:#f8fafc;padding:3px 12px;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;font-size:10px;line-height:1.4;">
+                <span style="font-weight:700;color:#64748b;">MACD (12, 26, 9)</span>
+                <div id="msMacdLegend_${s.id}" style="display:flex;gap:8px;font-family:monospace;font-size:10px;">
+                  <span style="color:#0284c7;font-weight:600;">MACD: <span id="msMacdVal_${s.id}">--</span></span>
+                  <span style="color:#ea580c;font-weight:600;">SIG: <span id="msSigVal_${s.id}">--</span></span>
+                  <span style="color:#475569;font-weight:600;">HIST: <span id="msHistVal_${s.id}">--</span></span>
+                </div>
+              </div>
+              <div id="msMacdHost_${s.id}" class="msMacdHost" style="width:100%;height:90px;position:relative;">
+                <div id="msMacdRangeHighlight_${s.id}" class="msMacdRangeHighlight" style="display:none;position:absolute;top:0;bottom:26px;pointer-events:none;z-index:3;"></div>
               </div>
             </div>
           `).join("")}
@@ -247,20 +265,22 @@
         }
 
         const heightMap = {
-          "1": "380px",
-          "2": "340px",
-          "3": "320px",
-          "4": "300px",
-          "5": "280px",
-          "auto": "320px",
+          "1": { chart: "320px", macd: "100px" },
+          "2": { chart: "260px", macd: "90px" },
+          "3": { chart: "240px", macd: "85px" },
+          "4": { chart: "220px", macd: "80px" },
+          "5": { chart: "200px", macd: "75px" },
+          "auto": { chart: "240px", macd: "85px" },
         };
-        const targetHeight = heightMap[cols] || "320px";
+        const targetHeights = heightMap[cols] || heightMap["auto"];
 
         SPANS.forEach((s) => {
           const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
+          const macdHost = document.getElementById(`msMacdHost_${s.id}`);
           if (card) card.style.order = "0";
-          if (host) host.style.height = targetHeight;
+          if (host) host.style.height = targetHeights.chart;
+          if (macdHost) macdHost.style.height = targetHeights.macd;
         });
       } else if (this.activeLayout === "hero") {
         wrapper.style.display = "flex";
@@ -269,12 +289,15 @@
         SPANS.forEach((s) => {
           const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
+          const macdHost = document.getElementById(`msMacdHost_${s.id}`);
           if (s.id === this.heroSpan) {
             if (card) card.style.order = "-1";
-            if (host) host.style.height = "460px";
+            if (host) host.style.height = "380px";
+            if (macdHost) macdHost.style.height = "110px";
           } else {
             if (card) card.style.order = "1";
-            if (host) host.style.height = "260px";
+            if (host) host.style.height = "200px";
+            if (macdHost) macdHost.style.height = "75px";
           }
         });
       } else if (this.activeLayout === "stack") {
@@ -284,8 +307,10 @@
         SPANS.forEach((s) => {
           const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
+          const macdHost = document.getElementById(`msMacdHost_${s.id}`);
           if (card) card.style.order = "0";
-          if (host) host.style.height = "360px";
+          if (host) host.style.height = "260px";
+          if (macdHost) macdHost.style.height = "90px";
         });
       }
       this.resizeAll();
@@ -376,6 +401,108 @@
           host.addEventListener("touchstart", cancelOnInput, { passive: true });
         }
 
+        // Initialize MACD Sub-Chart
+        const macdHost = document.getElementById(`msMacdHost_${s.id}`);
+        if (macdHost) {
+          const macdChart = LightweightCharts.createChart(macdHost, {
+            width: macdHost.clientWidth || 500,
+            height: macdHost.clientHeight || 90,
+            layout: {
+              background: { type: "solid", color: "#f8fafc" },
+              textColor: "#64748b",
+              fontSize: 10,
+            },
+            grid: {
+              vertLines: { color: "#f1f5f9" },
+              horzLines: { color: "#f1f5f9" },
+            },
+            crosshair: {
+              mode: LightweightCharts.CrosshairMode.Normal,
+              vertLine: { color: s.color, width: 1, style: 2, labelBackgroundColor: "#0284c7" },
+              horzLine: { color: "#94a3b8", width: 1, style: 2, labelBackgroundColor: "#475569" },
+            },
+            rightPriceScale: {
+              borderColor: "#e2e8f0",
+              scaleMargins: { top: 0.1, bottom: 0.1 },
+              autoScale: true,
+            },
+            timeScale: {
+              borderColor: "#e2e8f0",
+              timeVisible: false,
+              secondsVisible: false,
+              rightOffset: 6,
+              minBarSpacing: 0.02,
+              lockVisibleTimeRangeOnResize: true,
+            },
+            kineticScroll: { touch: true, mouse: true },
+          });
+
+          const macdHist = macdChart.addHistogramSeries({
+            color: "#059669",
+            priceFormat: { type: "price", precision: 4, minMove: 0.0001 },
+          });
+          const macdZero = macdChart.addLineSeries({
+            color: "#cbd5e1",
+            lineWidth: 1,
+            lineStyle: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          });
+          const macdLine = macdChart.addLineSeries({
+            color: "#0284c7",
+            lineWidth: 1.5,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            title: "MACD",
+          });
+          const macdSignal = macdChart.addLineSeries({
+            color: "#ea580c",
+            lineWidth: 1.5,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            title: "Signal",
+          });
+
+          this.macdCharts[s.id] = macdChart;
+          this.macdHist[s.id] = macdHist;
+          this.macdZero[s.id] = macdZero;
+          this.macdLine[s.id] = macdLine;
+          this.macdSignal[s.id] = macdSignal;
+
+          // Bidirectional timeScale synchronization between price chart and MACD chart
+          let isSyncingMacd = false;
+          chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
+            if (isSyncingMacd || !logicalRange) return;
+            isSyncingMacd = true;
+            try {
+              macdChart.timeScale().setVisibleLogicalRange(logicalRange);
+            } catch (_) {}
+            isSyncingMacd = false;
+          });
+
+          macdChart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
+            if (isSyncingMacd || !logicalRange) return;
+            isSyncingMacd = true;
+            try {
+              chart.timeScale().setVisibleLogicalRange(logicalRange);
+            } catch (_) {}
+            isSyncingMacd = false;
+          });
+
+          if (typeof macdHost.addEventListener === "function") {
+            macdHost.addEventListener("pointerdown", cancelOnInput, { passive: true });
+            macdHost.addEventListener("wheel", cancelOnInput, { passive: true });
+            macdHost.addEventListener("touchstart", cancelOnInput, { passive: true });
+          }
+
+          macdChart.subscribeCrosshairMove((param) => {
+            this.handleCrosshairMove(s.id, param, "macd");
+          });
+          macdChart.subscribeClick((param) => {
+            this.handleChartClick(s.id, param);
+          });
+        }
+
         // Wire range & logical range synchronization
         chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
           this.handleRangeChange(s.id, range);
@@ -399,7 +526,7 @@
 
         // Wire crosshair tracking
         chart.subscribeCrosshairMove((param) => {
-          this.handleCrosshairMove(s.id, param);
+          this.handleCrosshairMove(s.id, param, "main");
         });
 
         // Wire click for drill-down / synchronization on coarser charts
@@ -420,9 +547,9 @@
       SPANS.forEach((s) => {
         const host = document.getElementById(`msChartHost_${s.id}`);
         const chart = this.charts[s.id];
+        let savedRange = null;
         if (host && chart && host.clientWidth > 0 && host.clientHeight > 0) {
           this.programmaticSpans[s.id] = true;
-          let savedRange = null;
           try {
             savedRange = chart.timeScale().getVisibleLogicalRange();
           } catch (_) {}
@@ -448,6 +575,19 @@
               settleResize();
             }
           }
+        }
+        const macdHost = document.getElementById(`msMacdHost_${s.id}`);
+        const macdChart = this.macdCharts[s.id];
+        if (macdHost && macdChart && macdHost.clientWidth > 0 && macdHost.clientHeight > 0) {
+          try {
+            macdChart.applyOptions({
+              width: macdHost.clientWidth,
+              height: macdHost.clientHeight,
+            });
+            if (savedRange && savedRange.to > savedRange.from && !this.animatingSpans[s.id]) {
+              macdChart.timeScale().setVisibleLogicalRange(savedRange);
+            }
+          } catch (_) {}
         }
       });
       this.updateAllRangeHighlights();
@@ -803,10 +943,13 @@
     // SYNCHRONIZED CROSSHAIR & MULTI-SPAN HUD
     // =========================================================================
 
-    handleCrosshairMove(sourceSpan, param) {
+    handleCrosshairMove(sourceSpan, param, origin = "main") {
+      if (this._syncingCardCrosshair) return;
       const cardOhlc = document.getElementById(`msCardOhlc_${sourceSpan}`);
       const series = this.series[sourceSpan];
       const chart = this.charts[sourceSpan];
+      const macdChart = this.macdCharts[sourceSpan];
+      const macdHist = this.macdHist[sourceSpan];
 
       // Hover is purely separate and local for all charts (including 1s): never broadcast to other charts!
       if (!param || !param.time) {
@@ -819,8 +962,25 @@
             }
             if (chart && series && !this.reloadingSpans[sourceSpan]) {
               try {
+                this._syncingCardCrosshair = true;
                 chart.setCrosshairPosition(pinnedCandle.close, pinnedCandle.time, series);
-              } catch (_) {}
+              } catch (_) {
+              } finally {
+                this._syncingCardCrosshair = false;
+              }
+            }
+          }
+          const pinnedMacd = this.findMacdAtOrBefore(sourceSpan, this.pinnedTime);
+          if (pinnedMacd) {
+            this.updateMacdLegend(sourceSpan, pinnedMacd.macd, pinnedMacd.signal, pinnedMacd.hist ?? pinnedMacd.histogram);
+            if (macdChart && macdHist && !this.reloadingSpans[sourceSpan]) {
+              try {
+                this._syncingCardCrosshair = true;
+                macdChart.setCrosshairPosition(pinnedMacd.hist ?? pinnedMacd.histogram ?? 0, this.pinnedTime, macdHist);
+              } catch (_) {
+              } finally {
+                this._syncingCardCrosshair = false;
+              }
             }
           }
         } else {
@@ -835,14 +995,50 @@
               chart.clearCrosshairPosition();
             } catch (_) {}
           }
+          if (macdChart) {
+            try {
+              macdChart.clearCrosshairPosition();
+            } catch (_) {}
+          }
+          const macdList = this.macdData[sourceSpan]?.macd || [];
+          if (macdList.length) {
+            const lastM = macdList[macdList.length - 1];
+            const sigList = this.macdData[sourceSpan]?.signal || [];
+            const lastS = sigList.length ? sigList[sigList.length - 1] : null;
+            const histList = this.macdData[sourceSpan]?.histogram || [];
+            const lastH = histList.length ? histList[histList.length - 1] : null;
+            this.updateMacdLegend(sourceSpan, lastM?.value, lastS?.value, lastH?.value);
+          }
         }
         return;
       }
 
-      // Cursor over a candle on sourceSpan: show this candle's OHLC locally only
+      // Cursor over a candle on sourceSpan: show this candle's OHLC and MACD locally only
       const hoveredCandle = (param.seriesData?.get(series)) || this.findCandleAtOrBefore(sourceSpan, param.time);
       if (hoveredCandle && cardOhlc) {
         cardOhlc.textContent = `O:${formatPrice(hoveredCandle.open)} H:${formatPrice(hoveredCandle.high)} L:${formatPrice(hoveredCandle.low)} C:${formatPrice(hoveredCandle.close)}`;
+      }
+
+      const hoveredMacd = this.findMacdAtOrBefore(sourceSpan, param.time);
+      if (hoveredMacd) {
+        this.updateMacdLegend(sourceSpan, hoveredMacd.macd, hoveredMacd.signal, hoveredMacd.hist ?? hoveredMacd.histogram);
+      }
+
+      // Synchronize vertical crosshair line between price chart and MACD chart within this card
+      this._syncingCardCrosshair = true;
+      try {
+        if (origin === "main") {
+          if (macdChart && macdHist && hoveredMacd) {
+            macdChart.setCrosshairPosition(hoveredMacd.hist ?? hoveredMacd.histogram ?? 0, param.time, macdHist);
+          }
+        } else if (origin === "macd") {
+          if (chart && series && hoveredCandle) {
+            chart.setCrosshairPosition(hoveredCandle.close, param.time, series);
+          }
+        }
+      } catch (_) {
+      } finally {
+        this._syncingCardCrosshair = false;
       }
     }
 
@@ -987,6 +1183,18 @@
           }
         }
 
+        const macdPoint = this.findMacdAtOrBefore(s.id, time);
+        if (macdPoint) {
+          this.updateMacdLegend(s.id, macdPoint.macd, macdPoint.signal, macdPoint.hist ?? macdPoint.histogram);
+        }
+        const macdChart = this.macdCharts[s.id];
+        const macdHist = this.macdHist[s.id];
+        if (macdChart && macdHist && macdPoint && !this.reloadingSpans[s.id]) {
+          try {
+            macdChart.setCrosshairPosition(macdPoint.hist ?? macdPoint.histogram ?? 0, candle ? candle.time : time, macdHist);
+          } catch (_) {}
+        }
+
         // Drill-down: if clicking a coarser chart, pan/zoom or reload narrower charts first BEFORE revealing highlight
         if (shouldRecenter && chart && idx < sourceIdx) {
           this.spanNavIds[s.id] = navId;
@@ -1014,6 +1222,11 @@
                       chart.setCrosshairPosition(candle.close, candle.time, series);
                     } catch (_) {}
                   }
+                  if (macdPoint && this.macdCharts[s.id] && this.macdHist[s.id]) {
+                    try {
+                      this.macdCharts[s.id].setCrosshairPosition(macdPoint.hist ?? macdPoint.histogram ?? 0, candle ? candle.time : time, this.macdHist[s.id]);
+                    } catch (_) {}
+                  }
                   if (
                     this.activeRangeHighlight &&
                     this.activeRangeHighlight.navId === navId &&
@@ -1038,6 +1251,7 @@
 
     updateRangeHighlight(spanId) {
       const highlightEl = document.getElementById(`msRangeHighlight_${spanId}`);
+      const macdHighlightEl = document.getElementById(`msMacdRangeHighlight_${spanId}`);
       const badgeEl = document.getElementById(`msRangeBadge_${spanId}`);
       if (!highlightEl) return;
 
@@ -1051,6 +1265,7 @@
         this.reloadingSpans[spanId]
       ) {
         highlightEl.style.display = "none";
+        if (macdHighlightEl) macdHighlightEl.style.display = "none";
         return;
       }
 
@@ -1067,6 +1282,7 @@
       const data = this.candlesData[spanId] || [];
       if (!data.length) {
         highlightEl.style.display = "none";
+        if (macdHighlightEl) macdHighlightEl.style.display = "none";
         return;
       }
 
@@ -1074,6 +1290,7 @@
       const lEnd = this.getLogicalIndexForTime(spanId, hl.endTime);
       if (lStart === null || lEnd === null) {
         highlightEl.style.display = "none";
+        if (macdHighlightEl) macdHighlightEl.style.display = "none";
         return;
       }
 
@@ -1109,6 +1326,7 @@
 
       if (x1 === null || x2 === null) {
         highlightEl.style.display = "none";
+        if (macdHighlightEl) macdHighlightEl.style.display = "none";
         return;
       }
 
@@ -1117,6 +1335,7 @@
 
       if (rawRight <= 0 || rawLeft >= chartWidth) {
         highlightEl.style.display = "none";
+        if (macdHighlightEl) macdHighlightEl.style.display = "none";
         return;
       }
 
@@ -1126,6 +1345,7 @@
 
       if (widthPx <= 0) {
         highlightEl.style.display = "none";
+        if (macdHighlightEl) macdHighlightEl.style.display = "none";
         return;
       }
 
@@ -1136,6 +1356,15 @@
       highlightEl.style.background = hexToRgba(hl.sourceColor, 0.12);
       highlightEl.style.borderLeft = rawLeft >= -1 ? `2px dashed ${color}` : "none";
       highlightEl.style.borderRight = rawRight <= chartWidth + 1 ? `2px dashed ${color}` : "none";
+
+      if (macdHighlightEl) {
+        macdHighlightEl.style.display = "block";
+        macdHighlightEl.style.left = `${leftPx}px`;
+        macdHighlightEl.style.width = `${widthPx}px`;
+        macdHighlightEl.style.background = hexToRgba(hl.sourceColor, 0.12);
+        macdHighlightEl.style.borderLeft = rawLeft >= -1 ? `2px dashed ${color}` : "none";
+        macdHighlightEl.style.borderRight = rawRight <= chartWidth + 1 ? `2px dashed ${color}` : "none";
+      }
 
       if (badgeEl) {
         badgeEl.style.background = color;
@@ -1584,6 +1813,36 @@
       if (this.ma20[spanId]) this.ma20[spanId].setData(ma20Data);
       if (this.ma50[spanId]) this.ma50[spanId].setData(ma50Data);
 
+      // Compute MACD (12, 26, 9)
+      const macdRes = this.calculateMacd(clean, 12, 26, 9);
+      this.macdData[spanId] = {
+        ...macdRes,
+        byTime: new Map(macdRes.macd.map((m, i) => [
+          m.time,
+          {
+            macd: m.value,
+            signal: macdRes.signal[i]?.value ?? null,
+            hist: macdRes.histogram[i]?.value ?? null,
+            histogram: macdRes.histogram[i]?.value ?? null,
+          }
+        ]))
+      };
+      if (this.macdCharts[spanId]) {
+        if (this.macdHist[spanId]) this.macdHist[spanId].setData(macdRes.histogram);
+        if (this.macdLine[spanId]) this.macdLine[spanId].setData(macdRes.macd);
+        if (this.macdSignal[spanId]) this.macdSignal[spanId].setData(macdRes.signal);
+        if (this.macdZero[spanId]) {
+          const zeroData = clean.map((c) => ({ time: c.time, value: 0 }));
+          this.macdZero[spanId].setData(zeroData);
+        }
+        if (macdRes.macd.length && this.pinnedTime === null) {
+          const lastM = macdRes.macd[macdRes.macd.length - 1];
+          const lastS = macdRes.signal[macdRes.signal.length - 1];
+          const lastH = macdRes.histogram[macdRes.histogram.length - 1];
+          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value);
+        }
+      }
+
       const latest = clean[clean.length - 1];
       if (latest) {
         const priceEl = document.getElementById(`msCardPrice_${spanId}`);
@@ -1677,6 +1936,105 @@
       return res;
     }
 
+    calculateMacd(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+      if (!Array.isArray(data) || data.length < slowPeriod) {
+        return { macd: [], signal: [], histogram: [] };
+      }
+
+      const calcEma = (period) => {
+        const k = 2 / (period + 1);
+        let ema = 0;
+        for (let i = 0; i < period; i++) ema += data[i].close;
+        ema /= period;
+        const res = [{ time: data[period - 1].time, value: ema }];
+        for (let i = period; i < data.length; i++) {
+          ema = (data[i].close - ema) * k + ema;
+          res.push({ time: data[i].time, value: ema });
+        }
+        return res;
+      };
+
+      const fastEma = calcEma(fastPeriod);
+      const slowEma = calcEma(slowPeriod);
+
+      const fastMap = new Map(fastEma.map((p) => [p.time, p.value]));
+      const macdLine = [];
+      for (const p of slowEma) {
+        const fVal = fastMap.get(p.time);
+        if (fVal !== undefined) {
+          macdLine.push({ time: p.time, value: +(fVal - p.value).toFixed(4) });
+        }
+      }
+
+      if (macdLine.length < signalPeriod) {
+        return { macd: macdLine, signal: [], histogram: [] };
+      }
+
+      const sigK = 2 / (signalPeriod + 1);
+      let sigEma = 0;
+      for (let i = 0; i < signalPeriod; i++) sigEma += macdLine[i].value;
+      sigEma /= signalPeriod;
+      const signalLine = [{ time: macdLine[signalPeriod - 1].time, value: +sigEma.toFixed(4) }];
+      for (let i = signalPeriod; i < macdLine.length; i++) {
+        sigEma = (macdLine[i].value - sigEma) * sigK + sigEma;
+        signalLine.push({ time: macdLine[i].time, value: +sigEma.toFixed(4) });
+      }
+
+      const sigMap = new Map(signalLine.map((p) => [p.time, p.value]));
+      const histogram = [];
+      for (const p of macdLine) {
+        const sVal = sigMap.get(p.time);
+        if (sVal !== undefined) {
+          const diff = +(p.value - sVal).toFixed(4);
+          histogram.push({
+            time: p.time,
+            value: diff,
+            color: diff >= 0 ? "rgba(5, 150, 105, 0.75)" : "rgba(220, 38, 38, 0.75)",
+          });
+        }
+      }
+
+      return { macd: macdLine, signal: signalLine, histogram };
+    }
+
+    findMacdAtOrBefore(spanId, time) {
+      const data = this.macdData[spanId]?.macd || [];
+      if (!data.length) return null;
+      let low = 0;
+      let high = data.length - 1;
+      let best = null;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        if (data[mid].time <= time) {
+          best = data[mid];
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      if (!best) return null;
+      const byTime = this.macdData[spanId]?.byTime;
+      return byTime?.get(best.time) || { macd: best.value, signal: null, hist: null, histogram: null };
+    }
+
+    updateMacdLegend(spanId, macdVal, sigVal, histVal) {
+      const mEl = document.getElementById(`msMacdVal_${spanId}`);
+      const sEl = document.getElementById(`msSigVal_${spanId}`);
+      const hEl = document.getElementById(`msHistVal_${spanId}`);
+      if (mEl) mEl.textContent = macdVal != null && !isNaN(macdVal) ? Number(macdVal).toFixed(4) : "--";
+      if (sEl) sEl.textContent = sigVal != null && !isNaN(sigVal) ? Number(sigVal).toFixed(4) : "--";
+      if (hEl) {
+        if (histVal != null && !isNaN(histVal)) {
+          const num = Number(histVal);
+          hEl.textContent = (num >= 0 ? "+" : "") + num.toFixed(4);
+          hEl.style.color = num >= 0 ? "#059669" : "#dc2626";
+        } else {
+          hEl.textContent = "--";
+          hEl.style.color = "#475569";
+        }
+      }
+    }
+
     updateCandle(spanId, candle) {
       if (this.isHistorical[spanId] || this.reloadingSpans[spanId]) {
         return;
@@ -1703,6 +2061,33 @@
         if (hudVal) hudVal.textContent = pStr;
         if (cardOhlc) {
           cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${pStr}`;
+        }
+      }
+
+      // Update MACD dynamically on candle update
+      if (list.length >= 35) {
+        const macdRes = this.calculateMacd(list, 12, 26, 9);
+        this.macdData[spanId] = {
+          ...macdRes,
+          byTime: new Map(macdRes.macd.map((m, i) => [
+            m.time,
+            {
+              macd: m.value,
+              signal: macdRes.signal[i]?.value ?? null,
+              hist: macdRes.histogram[i]?.value ?? null,
+              histogram: macdRes.histogram[i]?.value ?? null,
+            }
+          ]))
+        };
+        const lastM = macdRes.macd[macdRes.macd.length - 1];
+        const lastS = macdRes.signal[macdRes.signal.length - 1];
+        const lastH = macdRes.histogram[macdRes.histogram.length - 1];
+        if (this.macdHist[spanId] && lastH) this.macdHist[spanId].update(lastH);
+        if (this.macdLine[spanId] && lastM) this.macdLine[spanId].update(lastM);
+        if (this.macdSignal[spanId] && lastS) this.macdSignal[spanId].update(lastS);
+        if (this.macdZero[spanId]) this.macdZero[spanId].update({ time: candle.time, value: 0 });
+        if (this.pinnedTime === null) {
+          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value);
         }
       }
     }
@@ -1977,7 +2362,17 @@
       SPANS.forEach((s) => {
         try {
           this.charts[s.id]?.clearCrosshairPosition();
+          this.macdCharts[s.id]?.clearCrosshairPosition();
         } catch (_) {}
+        const macdList = this.macdData[s.id]?.macd || [];
+        if (macdList.length) {
+          const lastM = macdList[macdList.length - 1];
+          const sigList = this.macdData[s.id]?.signal || [];
+          const lastS = sigList.length ? sigList[sigList.length - 1] : null;
+          const histList = this.macdData[s.id]?.histogram || [];
+          const lastH = histList.length ? histList[histList.length - 1] : null;
+          this.updateMacdLegend(s.id, lastM?.value, lastS?.value, lastH?.value);
+        }
       });
 
       const tasks = SPANS.map(async (s) => {
