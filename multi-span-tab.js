@@ -639,10 +639,11 @@
         let targetEndSec = time + halfSpanTime;
         if (targetEndSec > nowSec) targetEndSec = nowSec;
         const endTimeMs = targetEndSec * 1000;
+        const isHistorical = targetEndSec < (nowSec - Math.max(300, spanSec * 5));
+        if (isHistorical) this.isHistorical[spanId] = true;
 
         const raw = await this.fetchKlinesForSpan(this.symbol, spanId, limit, endTimeMs);
         if (Array.isArray(raw) && raw.length) {
-          const isHistorical = targetEndSec < (nowSec - Math.max(300, spanSec * 5));
           this.isHistorical[spanId] = isHistorical;
           this.setSpanData(spanId, raw, time);
 
@@ -889,7 +890,7 @@
     }
 
     updateCandle(spanId, candle) {
-      if (this.isHistorical[spanId]) {
+      if (this.isHistorical[spanId] || this.reloadingSpans[spanId]) {
         return;
       }
       const list = this.candlesData[spanId] || [];
