@@ -420,4 +420,17 @@ assert.equal(macdCrosshairCalls.length, 1, "Moving crosshair on main chart must 
 assert.equal(macdCrosshairCalls[0].t, 1000, "MACD crosshair time must match main chart hovered time");
 assert.equal(macdCrosshairCalls[0].v, 0.3, "MACD crosshair value must match histogram at hovered time");
 
+// 14. Test KST Timezone & Localization
+const fileContent = fs.readFileSync(path.join(__dirname, "../multi-span-tab.js"), "utf8");
+assert.ok(fileContent.includes('timeZone: KST_TIME_ZONE') || fileContent.includes('Asia/Seoul'), "Must use Asia/Seoul timezone");
+assert.ok(fileContent.includes('locale: "ko-KR"'), "Chart localization must specify ko-KR locale");
+assert.ok(fileContent.includes('tickMarkFormatter: (time, tickMarkType) => formatKstTick'), "Chart time scale must specify formatKstTick");
+assert.ok(fileContent.includes('TIME (KST):'), "HUD time must explicitly display (KST) label");
+
+const hudTimeEl = { textContent: "" };
+sandbox.document.getElementById = (id) => (id === "msHudTime" ? hudTimeEl : mockElements[id] || null);
+MultiSpan.broadcastTimePoint(1763441544, "1s", false);
+assert.ok(hudTimeEl.textContent.includes("KST"), "Broadcast time point must format in KST");
+assert.ok(hudTimeEl.textContent.includes("13:52:24"), "Timestamp must correspond to KST wall-clock time");
+
 console.log("All Multi-Span synchronization unit tests passed!");

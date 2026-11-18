@@ -18,20 +18,73 @@
     { id: "1d", label: "1-DAY", sub: "Macro Daily Context", color: "#db2777", defaultLimit: 365, sec: 86400 },
   ];
 
-  const formatKst = (dateOrSec) => {
+  const KST_TIME_ZONE = "Asia/Seoul";
+
+  const formatKst = (dateOrSec, includeSeconds = true) => {
     if (!dateOrSec && dateOrSec !== 0) return "--";
     const ms = typeof dateOrSec === "number" ? (dateOrSec < 1e11 ? dateOrSec * 1000 : dateOrSec) : Number(dateOrSec);
     const d = new Date(ms);
     if (isNaN(d.getTime())) return "--";
-    return d.toLocaleString("ko-KR", {
-      timeZone: "Asia/Seoul",
+    const options = {
+      timeZone: KST_TIME_ZONE,
+      year: "numeric",
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
-      second: "2-digit",
       hour12: false,
-    }) + " KST";
+    };
+    if (includeSeconds) options.second = "2-digit";
+    return d.toLocaleString("en-CA", options).replace(",", "") + " KST";
+  };
+
+  const formatKstShort = (dateOrSec, spanId = null) => {
+    if (!dateOrSec && dateOrSec !== 0) return "--";
+    const ms = typeof dateOrSec === "number" ? (dateOrSec < 1e11 ? dateOrSec * 1000 : dateOrSec) : Number(dateOrSec);
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return "--";
+    if (spanId === "1s") {
+      return d.toLocaleTimeString("en-GB", { timeZone: KST_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) + " KST";
+    }
+    if (spanId === "1d") {
+      return d.toLocaleDateString("en-CA", { timeZone: KST_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }) + " KST";
+    }
+    return d.toLocaleString("en-CA", { timeZone: KST_TIME_ZONE, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).replace(",", "") + " KST";
+  };
+
+  const formatKstTick = (time, tickMarkType, spanId) => {
+    const d = new Date(Number(time) * 1000);
+    if (isNaN(d.getTime())) return "";
+    if (spanId === "1s" || tickMarkType === 4) {
+      return d.toLocaleTimeString("en-GB", {
+        timeZone: KST_TIME_ZONE,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+    }
+    if (spanId === "1d" || tickMarkType === 0) {
+      return d.toLocaleDateString("en-CA", {
+        timeZone: KST_TIME_ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+    }
+    if (tickMarkType === 1 || tickMarkType === 2) {
+      return d.toLocaleDateString("en-CA", {
+        timeZone: KST_TIME_ZONE,
+        month: "2-digit",
+        day: "2-digit",
+      });
+    }
+    return d.toLocaleTimeString("en-GB", {
+      timeZone: KST_TIME_ZONE,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
   };
 
   const formatPrice = (p) => {
@@ -186,7 +239,7 @@
           <div style="display:flex;align-items:center;gap:12px;">
             <span style="font-weight:800;color:#0284c7;font-size:13px;" id="msHudSymbol">BTCUSDT</span>
             <span style="color:#cbd5e1;">|</span>
-            <span style="color:#64748b;">TIME: <strong id="msHudTime" style="color:#0f172a;">--</strong></span>
+            <span style="color:#64748b;">TIME (KST): <strong id="msHudTime" style="color:#0f172a;">--</strong></span>
           </div>
           <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:11px;">
             ${SPANS.map((s) => `
@@ -206,6 +259,7 @@
                   <span style="background:${s.color};color:#ffffff;font-weight:900;font-size:11px;padding:2px 6px;border-radius:4px;letter-spacing:0.5px;">${s.id.toUpperCase()}</span>
                   <span style="color:#0f172a;font-weight:700;font-size:12px;">${s.label}</span>
                   <small style="color:#64748b;font-size:11px;">${s.sub}</small>
+                  <span id="msCardTime_${s.id}" style="color:#475569;font-family:monospace;font-size:10px;background:#f1f5f9;padding:1px 5px;border-radius:3px;border:1px solid #e2e8f0;" title="Candle timestamp (KST)">--</span>
                   <span id="msCardModeBadge_${s.id}" class="msCardModeBadge" data-span="${s.id}" style="display:none;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;cursor:pointer;"></span>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;font-size:11px;flex-wrap:wrap;">
@@ -334,6 +388,10 @@
             textColor: "#475569",
             fontSize: 11,
           },
+          localization: {
+            locale: "ko-KR",
+            timeFormatter: (time) => formatKst(time),
+          },
           grid: {
             vertLines: { color: "#f1f5f9" },
             horzLines: { color: "#f1f5f9" },
@@ -354,6 +412,7 @@
             rightOffset: 6,
             minBarSpacing: 0.02,
             lockVisibleTimeRangeOnResize: true,
+            tickMarkFormatter: (time, tickMarkType) => formatKstTick(time, tickMarkType, s.id),
           },
           kineticScroll: {
             touch: true,
@@ -412,6 +471,10 @@
               textColor: "#64748b",
               fontSize: 10,
             },
+            localization: {
+              locale: "ko-KR",
+              timeFormatter: (time) => formatKst(time),
+            },
             grid: {
               vertLines: { color: "#f1f5f9" },
               horzLines: { color: "#f1f5f9" },
@@ -433,6 +496,7 @@
               rightOffset: 6,
               minBarSpacing: 0.02,
               lockVisibleTimeRangeOnResize: true,
+              tickMarkFormatter: (time, tickMarkType) => formatKstTick(time, tickMarkType, s.id),
             },
             kineticScroll: { touch: true, mouse: true },
           });
@@ -946,6 +1010,7 @@
     handleCrosshairMove(sourceSpan, param, origin = "main") {
       if (this._syncingCardCrosshair) return;
       const cardOhlc = document.getElementById(`msCardOhlc_${sourceSpan}`);
+      const cardTime = document.getElementById(`msCardTime_${sourceSpan}`);
       const series = this.series[sourceSpan];
       const chart = this.charts[sourceSpan];
       const macdChart = this.macdCharts[sourceSpan];
@@ -959,6 +1024,9 @@
           if (pinnedCandle) {
             if (cardOhlc) {
               cardOhlc.textContent = `O:${formatPrice(pinnedCandle.open)} H:${formatPrice(pinnedCandle.high)} L:${formatPrice(pinnedCandle.low)} C:${formatPrice(pinnedCandle.close)}`;
+            }
+            if (cardTime) {
+              cardTime.textContent = formatKstShort(pinnedCandle.time, sourceSpan);
             }
             if (chart && series && !this.reloadingSpans[sourceSpan]) {
               try {
@@ -986,9 +1054,14 @@
         } else {
           // No pinned candle: restore to latest loaded candle
           const list = this.candlesData[sourceSpan] || [];
-          if (list.length && cardOhlc) {
+          if (list.length) {
             const latest = list[list.length - 1];
-            cardOhlc.textContent = `O:${formatPrice(latest.open)} H:${formatPrice(latest.high)} L:${formatPrice(latest.low)} C:${formatPrice(latest.close)}`;
+            if (cardOhlc) {
+              cardOhlc.textContent = `O:${formatPrice(latest.open)} H:${formatPrice(latest.high)} L:${formatPrice(latest.low)} C:${formatPrice(latest.close)}`;
+            }
+            if (cardTime) {
+              cardTime.textContent = formatKstShort(latest.time, sourceSpan);
+            }
           }
           if (chart) {
             try {
@@ -1015,8 +1088,13 @@
 
       // Cursor over a candle on sourceSpan: show this candle's OHLC and MACD locally only
       const hoveredCandle = (param.seriesData?.get(series)) || this.findCandleAtOrBefore(sourceSpan, param.time);
-      if (hoveredCandle && cardOhlc) {
-        cardOhlc.textContent = `O:${formatPrice(hoveredCandle.open)} H:${formatPrice(hoveredCandle.high)} L:${formatPrice(hoveredCandle.low)} C:${formatPrice(hoveredCandle.close)}`;
+      if (hoveredCandle) {
+        if (cardOhlc) {
+          cardOhlc.textContent = `O:${formatPrice(hoveredCandle.open)} H:${formatPrice(hoveredCandle.high)} L:${formatPrice(hoveredCandle.low)} C:${formatPrice(hoveredCandle.close)}`;
+        }
+        if (cardTime) {
+          cardTime.textContent = formatKstShort(hoveredCandle.time, sourceSpan);
+        }
       }
 
       const hoveredMacd = this.findMacdAtOrBefore(sourceSpan, param.time);
@@ -1180,6 +1258,10 @@
           if (valEl) valEl.textContent = closeP;
           if (cardOhlc) {
             cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${closeP}`;
+          }
+          const cardTime = document.getElementById(`msCardTime_${s.id}`);
+          if (cardTime) {
+            cardTime.textContent = formatKstShort(candle.time, s.id);
           }
         }
 
@@ -1848,11 +1930,19 @@
         const priceEl = document.getElementById(`msCardPrice_${spanId}`);
         const hudVal = document.getElementById(`msHudVal_${spanId}`);
         const cardOhlc = document.getElementById(`msCardOhlc_${spanId}`);
+        const cardTime = document.getElementById(`msCardTime_${spanId}`);
         const pStr = formatPrice(latest.close);
         if (priceEl) priceEl.textContent = pStr;
         if (hudVal) hudVal.textContent = pStr;
         if (cardOhlc) {
           cardOhlc.textContent = `O:${formatPrice(latest.open)} H:${formatPrice(latest.high)} L:${formatPrice(latest.low)} C:${pStr}`;
+        }
+        if (cardTime && this.pinnedTime === null) {
+          cardTime.textContent = formatKstShort(latest.time, spanId);
+        }
+        if (spanId === "1s" && this.pinnedTime === null) {
+          const hudTime = document.getElementById("msHudTime");
+          if (hudTime) hudTime.textContent = formatKst(latest.time);
         }
       }
 
@@ -2061,6 +2151,14 @@
         if (hudVal) hudVal.textContent = pStr;
         if (cardOhlc) {
           cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${pStr}`;
+        }
+        const cardTime = document.getElementById(`msCardTime_${spanId}`);
+        if (cardTime) {
+          cardTime.textContent = formatKstShort(candle.time, spanId);
+        }
+        if (spanId === "1s") {
+          const hudTime = document.getElementById("msHudTime");
+          if (hudTime) hudTime.textContent = formatKst(candle.time);
         }
       }
 
@@ -2358,12 +2456,18 @@
       this.activeRangeHighlight = null;
       this.updateAllRangeHighlights();
       const hudTime = document.getElementById("msHudTime");
-      if (hudTime) hudTime.textContent = "--";
+      const latest1s = this.candlesData["1s"]?.slice(-1)[0];
+      if (hudTime) hudTime.textContent = latest1s ? formatKst(latest1s.time) : "--";
       SPANS.forEach((s) => {
         try {
           this.charts[s.id]?.clearCrosshairPosition();
           this.macdCharts[s.id]?.clearCrosshairPosition();
         } catch (_) {}
+        const lastCandle = this.candlesData[s.id]?.slice(-1)[0];
+        const cardTime = document.getElementById(`msCardTime_${s.id}`);
+        if (cardTime && lastCandle) {
+          cardTime.textContent = formatKstShort(lastCandle.time, s.id);
+        }
         const macdList = this.macdData[s.id]?.macd || [];
         if (macdList.length) {
           const lastM = macdList[macdList.length - 1];
