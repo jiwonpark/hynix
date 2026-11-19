@@ -1155,6 +1155,84 @@ const centerVisibleD = (range5mOn1s.from + range5mOn1s.to) / 2;
 const centerTargetD = (vStartD + vEndD) / 2;
 assert.ok(Math.abs(centerVisibleD - centerTargetD) < 1e-4, "5m on 1s must be centered");
 
+// -------------------------------------------------------------
+// Test 27: CandleStore in-memory cache & adjacent prefetching
+// -------------------------------------------------------------
+const cache = MultiSpan.candleCache;
+assert.ok(cache, "CandleCache instance must exist on MultiSpanTab");
+
+// Test 27a: Store, sort & deduplicate
+cache.clear();
+const testBars = [
+  { time: 1000, open: 10, high: 12, low: 9, close: 11, volume: 100 },
+  { time: 1060, open: 11, high: 13, low: 10, close: 12, volume: 150 },
+  { time: 1120, open: 12, high: 14, low: 11, close: 13, volume: 120 },
+];
+cache.put("BTCUSDT", "5m", testBars);
+// Overwrite bar 1060 with updated close
+cache.put("BTCUSDT", "5m", [{ time: 1060, open: 11, high: 13.5, low: 10, close: 12.5, volume: 180 }]);
+const cachedRange = cache.getRange("BTCUSDT", "5m", 1000, 1120);
+assert.ok(cachedRange, "Must return cached range");
+assert.equal(cachedRange.length, 3, "Range must contain 3 deduplicated candles");
+assert.equal(cachedRange[1].close, 12.5, "Incoming updated candle must overwrite older values");
+
+// Test 27b: Missing boundaries or gaps return null
+const missingStart = cache.getRange("BTCUSDT", "5m", 500, 1120);
+assert.equal(missingStart, null, "Range missing start boundary must return null");
+const missingEnd = cache.getRange("BTCUSDT", "5m", 1000, 2000);
+assert.equal(missingEnd, null, "Range missing end boundary must return null");
+
+// Test 27c: Historical query ending at endTime
+const endingBars = cache.getCandlesEndingAt("BTCUSDT", "5m", 2, 1120);
+assert.ok(endingBars, "Must return candles ending at 1120");
+assert.equal(endingBars.length, 2);
+assert.equal(endingBars[endingBars.length - 1].time, 1120);
+
+// Test 27d: Cache capacity bounding
+const bigBatch = [];
+for (let i = 0; i < 35000; i++) {
+  bigBatch.push({ time: i, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 });
+}
+cache.put("BTCUSDT", "1s", bigBatch);
+const oneSecList = cache.cache.get("BTCUSDT:1s");
+assert.ok(oneSecList.length <= cache.maxBars["1s"], `1s cache must not exceed maxBars (${cache.maxBars["1s"]})`);
+assert.equal(oneSecList.length, 30000, "1s cache must clamp to 30,000 bars");
+assert.equal(oneSecList[oneSecList.length - 1].time, 34999, "Most recent candles must be preserved on trim");
+
+// Test 27e: fetchKlinesRange instant cache hit
+const protoFetchKlinesRange = Object.getPrototypeOf(MultiSpan).fetchKlinesRange;
+MultiSpan.fetchKlinesRange = protoFetchKlinesRange;
+let fetchCalled = false;
+const prevFetchKlinesForSpan = MultiSpan.fetchKlinesForSpan;
+MultiSpan.fetchKlinesForSpan = async () => {
+  fetchCalled = true;
+  return [];
+};
+cache.put("BTCUSDT", "15m", [
+  { time: 2000, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 },
+  { time: 2900, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 },
+]);
+const hitResult = await MultiSpan.fetchKlinesRange("BTCUSDT", "15m", 2000, 2900);
+assert.equal(fetchCalled, false, "Cache hit must bypass network requests completely (0ms latency)");
+assert.equal(hitResult.length, 2, "Must return cached bars");
+MultiSpan.fetchKlinesForSpan = prevFetchKlinesForSpan;
+
+// Test 27f: Left & Right prefetch window computation
+MultiSpan.symbol = "BTCUSDT";
+let scheduledPrefetches = [];
+const origFetchRange = MultiSpan.fetchKlinesRange;
+MultiSpan.fetchKlinesRange = async (sym, span, start, end, batches) => {
+  scheduledPrefetches.push({ span, start, end, batches });
+  return [];
+};
+MultiSpan.scheduleAdjacentPrefetch("BTCUSDT", "1h", 100000, 103600);
+assert.ok(MultiSpan.prefetchTimers["1h"], "Prefetch timer must be set");
+await new Promise((r) => setTimeout(r, 350));
+assert.ok(scheduledPrefetches.length >= 1, "Must execute background prefetch for adjacent left/right windows");
+const leftWindow = scheduledPrefetches.find((p) => p.end === 100000);
+assert.ok(leftWindow, "Must schedule older (left) window prefetch ending at targetStart");
+MultiSpan.fetchKlinesRange = protoFetchKlinesRange;
+
 // Restore sandbox hooks cleanly
 if (prevLightweightCharts === undefined) delete sandbox.LightweightCharts;
 else sandbox.LightweightCharts = prevLightweightCharts;

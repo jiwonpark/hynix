@@ -138,6 +138,164 @@
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   };
 
+  /**
+   * High-performance in-memory candle cache.
+   * Stores unified, deduplicated, sorted timelines per symbol and span.
+   * Closed candles (historical) are immutable; forming candles are dynamically updated.
+   */
+  class CandleStore {
+    constructor() {
+      // Key: `${symbol}:${spanId}` -> Candle[] sorted by time ascending
+      this.cache = new Map();
+      this.maxBars = {
+        "1s": 30000,
+        "5m": 8000,
+        "15m": 6000,
+        "1h": 4000,
+        "1d": 2000,
+      };
+    }
+
+    _key(symbol, spanId) {
+      return `${symbol || "BTCUSDT"}:${spanId}`;
+    }
+
+    put(symbol, spanId, candles) {
+      if (!Array.isArray(candles) || !candles.length) return;
+      const key = this._key(symbol, spanId);
+      const existing = this.cache.get(key);
+      if (!existing || !existing.length) {
+        const sorted = [...candles].sort((a, b) => a.time - b.time);
+        this._trimAndSet(key, spanId, sorted);
+        return;
+      }
+
+      // Merge sorted timelines, deduplicating by time (incoming overwrites existing)
+      const merged = [];
+      let i = 0, j = 0;
+      const n = existing.length;
+      const incoming = [...candles].sort((a, b) => a.time - b.time);
+      const m = incoming.length;
+
+      while (i < n && j < m) {
+        if (existing[i].time < incoming[j].time) {
+          merged.push(existing[i++]);
+        } else if (existing[i].time > incoming[j].time) {
+          merged.push(incoming[j++]);
+        } else {
+          merged.push(incoming[j++]);
+          i++;
+        }
+      }
+      while (i < n) merged.push(existing[i++]);
+      while (j < m) merged.push(incoming[j++]);
+
+      this._trimAndSet(key, spanId, merged);
+    }
+
+    _trimAndSet(key, spanId, list) {
+      const max = this.maxBars[spanId] || 6000;
+      if (list.length > max) {
+        list = list.slice(list.length - max);
+      }
+      this.cache.set(key, list);
+    }
+
+    getRange(symbol, spanId, startTime, endTime) {
+      const key = this._key(symbol, spanId);
+      const list = this.cache.get(key);
+      if (!list || !list.length) return null;
+
+      const spanObj = SPANS.find((p) => p.id === spanId);
+      const spanSec = spanObj ? (spanObj.sec || 60) : 60;
+
+      // Binary search for first candle with time >= startTime
+      let low = 0, high = list.length - 1;
+      let startIdx = -1;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        if (list[mid].time >= startTime) {
+          startIdx = mid;
+          high = mid - 1;
+        } else {
+          low = mid + 1;
+        }
+      }
+      if (startIdx === -1) return null;
+
+      // Binary search for last candle with time <= endTime
+      low = 0; high = list.length - 1;
+      let endIdx = -1;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        if (list[mid].time <= endTime) {
+          endIdx = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      if (endIdx === -1 || endIdx < startIdx) return null;
+
+      const firstC = list[startIdx];
+      const lastC = list[endIdx];
+
+      // Check boundary coverage (within 1 bar tolerance)
+      const startCovered = firstC.time <= (startTime + spanSec);
+      const endCovered = lastC.time >= (endTime - spanSec);
+      if (!startCovered || !endCovered) return null;
+
+      // Check continuity
+      const barCount = endIdx - startIdx + 1;
+      const expectedBars = Math.round((lastC.time - firstC.time) / spanSec);
+      if (spanId !== "1d" && Math.abs(expectedBars - (barCount - 1)) > 6) {
+        return null;
+      }
+
+      return list.slice(startIdx, endIdx + 1);
+    }
+
+    hasRange(symbol, spanId, startTime, endTime) {
+      return Boolean(this.getRange(symbol, spanId, startTime, endTime));
+    }
+
+    getCandlesEndingAt(symbol, spanId, limit, endTime) {
+      const key = this._key(symbol, spanId);
+      const list = this.cache.get(key);
+      if (!list || !list.length) return null;
+
+      const spanObj = SPANS.find((p) => p.id === spanId);
+      const spanSec = spanObj ? (spanObj.sec || 60) : 60;
+
+      let low = 0, high = list.length - 1;
+      let endIdx = -1;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        if (list[mid].time <= endTime) {
+          endIdx = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      if (endIdx === -1) return null;
+
+      const lastC = list[endIdx];
+      if (endTime - lastC.time > spanSec * 2) return null;
+
+      const startIdx = Math.max(0, endIdx - limit + 1);
+      const slice = list.slice(startIdx, endIdx + 1);
+      if (slice.length >= Math.min(limit, 300)) {
+        return slice;
+      }
+      return null;
+    }
+
+    clear() {
+      this.cache.clear();
+    }
+  }
+
   class MultiSpanTab {
     constructor() {
       this.mounted = false;
@@ -150,6 +308,9 @@
       this.chartsPerRow = (typeof localStorage !== "undefined" && localStorage.getItem("ms_charts_per_row")) || "auto"; // "1", "2", "3", "4", "5", "auto"
       this.heroSpan = "1s";
       
+      this.candleCache = new CandleStore();
+      this.prefetchTimers = {}; // spanId -> timerId
+
       this.charts = {}; // span -> chart
       this.series = {}; // span -> candlestickSeries
       this.ma20 = {};   // span -> lineSeries
@@ -1733,6 +1894,7 @@
           this.setSpanData(spanId, raw, null, setOpts);
           this.applySpanCrosshairState(spanId, preferredTime, { updateHudVal: true });
           this.syncCardHistoricalUI(spanId, { isHistorical, isPartialSlice });
+          this.scheduleAdjacentPrefetch(this.symbol, spanId, targetStart, targetEnd);
         } else {
           this.syncCardHistoricalUI(spanId, { isHistorical: false });
           if (badgeEl) {
@@ -1883,7 +2045,12 @@
 
         if (!isNewer) {
           const earliestTime = data[0].time;
-          raw = await this.fetchKlinesForSpan(reqSymbol, spanId, 1000, earliestTime * 1000 - 1);
+          const cachedOlder = this.candleCache?.getCandlesEndingAt(reqSymbol, spanId, 1000, earliestTime - 1);
+          if (cachedOlder && cachedOlder.length) {
+            raw = cachedOlder;
+          } else {
+            raw = await this.fetchKlinesForSpan(reqSymbol, spanId, 1000, earliestTime * 1000 - 1);
+          }
           if (this.symbol !== reqSymbol || (this.fetchSeq?.[spanId] || 0) !== reqSeq) return;
           additions = Array.isArray(raw)
             ? raw.filter((c) => c.time < earliestTime && !existingTimes.has(c.time))
@@ -1894,16 +2061,23 @@
             return;
           }
           if (this.noOlderBefore) delete this.noOlderBefore[spanId];
+          const newEarliest = Math.min(...additions.map((c) => c.time));
+          this.scheduleAdjacentPrefetch(reqSymbol, spanId, newEarliest, data[data.length - 1].time);
         } else {
           const stepSec = 950 * spanSec;
           const targetEndSec = latestTime + stepSec;
           const nearLive = targetEndSec >= nowSec - Math.max(spanSec * 2, 30);
-          raw = await this.fetchKlinesForSpan(
-            reqSymbol,
-            spanId,
-            1000,
-            nearLive ? null : targetEndSec * 1000
-          );
+          const cachedNewer = this.candleCache?.getRange(reqSymbol, spanId, latestTime + 1, targetEndSec);
+          if (cachedNewer && cachedNewer.length) {
+            raw = cachedNewer;
+          } else {
+            raw = await this.fetchKlinesForSpan(
+              reqSymbol,
+              spanId,
+              1000,
+              nearLive ? null : targetEndSec * 1000
+            );
+          }
           if (this.symbol !== reqSymbol || (this.fetchSeq?.[spanId] || 0) !== reqSeq) return;
           additions = Array.isArray(raw)
             ? raw.filter((c) => c.time > latestTime && !existingTimes.has(c.time))
@@ -1923,6 +2097,11 @@
             additions = Array.isArray(raw)
               ? raw.filter((c) => c.time > latestTime && !existingTimes.has(c.time))
               : [];
+          }
+
+          if (additions.length && !nearLive) {
+            const newLatest = Math.max(...additions.map((c) => c.time));
+            this.scheduleAdjacentPrefetch(reqSymbol, spanId, data[0].time, newLatest);
           }
 
           const refreshNowSec = Math.floor(Date.now() / 1000);
@@ -2157,6 +2336,14 @@
     }
 
     async fetchKlinesForSpan(symbol, span, limit, endTime = null) {
+      // Return immediately if historical chunk ending at endTime is already cached
+      if (endTime && this.candleCache) {
+        const cached = this.candleCache.getCandlesEndingAt(symbol, span, limit, Math.floor(Number(endTime) / 1000));
+        if (cached && cached.length) {
+          return cached;
+        }
+      }
+
       const is1s = span === "1s";
       const loc = typeof window !== "undefined" ? window.location : null;
       const pathname = loc && typeof loc.pathname === "string" ? loc.pathname : "";
@@ -2171,8 +2358,8 @@
         : "";
       const fallbackUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`;
 
-      const parseRows = (rows) =>
-        rows.map((r) => ({
+      const parseRows = (rows) => {
+        const parsed = rows.map((r) => ({
           time: Math.floor(Number(r[0]) / 1000),
           open: parseFloat(r[1]),
           high: parseFloat(r[2]),
@@ -2180,6 +2367,11 @@
           close: parseFloat(r[4]),
           volume: parseFloat(r[5] || 0),
         })).sort((a, b) => a.time - b.time);
+        if (parsed.length && this.candleCache) {
+          this.candleCache.put(symbol, span, parsed);
+        }
+        return parsed;
+      };
 
       const timeoutFor = (url) => (url === proxyUrl ? 15000 : 2500);
 
@@ -2300,6 +2492,14 @@
     }
 
     async fetchKlinesRange(symbol, span, startTime, endTime, maxBatches = 6) {
+      // 1. Instant cache hit: return immediately with 0 network latency if covered
+      if (this.candleCache) {
+        const cached = this.candleCache.getRange(symbol, span, startTime, endTime);
+        if (cached && cached.length) {
+          return cached;
+        }
+      }
+
       const spanObj = SPANS.find((p) => p.id === span);
       const spanSec = spanObj ? (spanObj.sec || 60) : 60;
       const allCandles = [];
@@ -2360,7 +2560,56 @@
       }
 
       allCandles.sort((a, b) => a.time - b.time);
+      if (allCandles.length && this.candleCache) {
+        this.candleCache.put(symbol, span, allCandles);
+      }
       return allCandles;
+    }
+
+    /**
+     * Background prefetcher for adjacent left (older) and right (newer) windows.
+     * Keeps neighboring time slices warm in client-side RAM cache so panning left/right
+     * or drilling into adjacent candles completes with 0ms delay.
+     */
+    scheduleAdjacentPrefetch(symbol, spanId, targetStart, targetEnd) {
+      if (!symbol || !spanId || !this.candleCache) return;
+      const spanObj = SPANS.find((p) => p.id === spanId);
+      if (!spanObj) return;
+      const spanSec = spanObj.sec || 60;
+      const nowSec = Math.floor(Date.now() / 1000);
+
+      if (this.prefetchTimers[spanId]) {
+        clearTimeout(this.prefetchTimers[spanId]);
+        this.prefetchTimers[spanId] = null;
+      }
+
+      this.prefetchTimers[spanId] = setTimeout(async () => {
+        this.prefetchTimers[spanId] = null;
+        if (this.symbol !== symbol) return;
+
+        // Size the adjacent prefetch slice: at least 400 bars, up to 950 bars per side
+        const windowSec = Math.max(spanSec * 400, Math.min(spanSec * 950, (targetEnd - targetStart)));
+
+        // 1. Left (older) adjacent window: [targetStart - windowSec, targetStart]
+        const leftStart = Math.max(0, targetStart - windowSec);
+        const leftEnd = targetStart;
+        if (leftStart < leftEnd && !this.candleCache.hasRange(symbol, spanId, leftStart, leftEnd)) {
+          try {
+            await this.fetchKlinesRange(symbol, spanId, leftStart, leftEnd, 2);
+          } catch (_) {}
+        }
+
+        if (this.symbol !== symbol) return;
+
+        // 2. Right (newer) adjacent window: [targetEnd, min(nowSec, targetEnd + windowSec)]
+        const rightStart = targetEnd;
+        const rightEnd = Math.min(nowSec, targetEnd + windowSec);
+        if (rightStart < (rightEnd - spanSec) && !this.candleCache.hasRange(symbol, spanId, rightStart, rightEnd)) {
+          try {
+            await this.fetchKlinesRange(symbol, spanId, rightStart, rightEnd, 2);
+          } catch (_) {}
+        }
+      }, 250);
     }
 
     updateMacdForSpan(spanId, candles, options = {}) {
@@ -2424,6 +2673,9 @@
       }
       clean.sort((a, b) => a.time - b.time);
       this.candlesData[spanId] = clean;
+      if (this.candleCache) {
+        this.candleCache.put(this.symbol, spanId, clean);
+      }
 
       if (this.loadMoreTimeout?.[spanId] && (options.animate || options.drilldownStart !== undefined)) {
         clearTimeout(this.loadMoreTimeout[spanId]);
@@ -2666,6 +2918,9 @@
       }
       const s = this.series[spanId];
       if (s) s.update(candle);
+      if (this.candleCache) {
+        this.candleCache.put(this.symbol, spanId, [candle]);
+      }
 
       const priceEl = document.getElementById(`msCardPrice_${spanId}`);
       const hudVal = document.getElementById(`msHudVal_${spanId}`);
@@ -3020,6 +3275,14 @@
           if (this.loadMoreTimeout[k]) {
             clearTimeout(this.loadMoreTimeout[k]);
             this.loadMoreTimeout[k] = null;
+          }
+        });
+      }
+      if (this.prefetchTimers) {
+        Object.keys(this.prefetchTimers).forEach((k) => {
+          if (this.prefetchTimers[k]) {
+            clearTimeout(this.prefetchTimers[k]);
+            this.prefetchTimers[k] = null;
           }
         });
       }
