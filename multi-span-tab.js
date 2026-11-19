@@ -1879,24 +1879,34 @@
 
     async fetchInitialData() {
       const sym = this.symbol;
+      if (this._initialRetryTimer) {
+        clearTimeout(this._initialRetryTimer);
+        this._initialRetryTimer = null;
+      }
       const hudSym = document.getElementById("msHudSymbol");
       if (hudSym) hudSym.textContent = sym;
 
       try {
+        const missingSpans = [];
         const promises = SPANS.map(async (s) => {
+          const startedAt = Date.now();
           let raw = await this.fetchKlinesForSpan(sym, s.id, s.defaultLimit);
-          if ((!Array.isArray(raw) || !raw.length) && sym === this.symbol) {
-            raw = await this.fetchKlinesForSpan(sym, s.id, s.defaultLimit);
+          if (sym !== this.symbol) return { span: s.id, data: [] };
+          if (!Array.isArray(raw) || !raw.length) {
+            if (Date.now() - startedAt < 5000) {
+              raw = await this.fetchKlinesForSpan(sym, s.id, s.defaultLimit);
+            }
+          }
+          if (sym === this.symbol && Array.isArray(raw) && raw.length) {
+            this.setSpanData(s.id, raw);
+          } else if (sym === this.symbol) {
+            missingSpans.push(s);
           }
           return { span: s.id, data: raw };
         });
 
-        const results = await Promise.all(promises);
-        results.forEach(({ span, data }) => {
-          if (Array.isArray(data) && data.length) {
-            this.setSpanData(span, data);
-          }
-        });
+        await Promise.all(promises);
+        if (sym !== this.symbol) return;
 
         this.loaded = true;
         const container = document.getElementById("tabContentMultiSpan");
@@ -1906,6 +1916,22 @@
         }
 
         this.startRealtimeFeeds();
+
+        if (missingSpans.length) {
+          this._initialRetryTimer = setTimeout(async () => {
+            this._initialRetryTimer = null;
+            if (this.symbol !== sym) return;
+            await Promise.all(
+              missingSpans.map(async (s) => {
+                if (this.symbol !== sym || (this.data[s.id] && this.data[s.id].length)) return;
+                const retryRaw = await this.fetchKlinesForSpan(sym, s.id, s.defaultLimit);
+                if (this.symbol === sym && Array.isArray(retryRaw) && retryRaw.length && !(this.data[s.id] && this.data[s.id].length)) {
+                  this.setSpanData(s.id, retryRaw);
+                }
+              })
+            );
+          }, 1200);
+        }
       } catch (err) {
         console.error("MultiSpanTab fetch error:", err);
       }
@@ -1936,7 +1962,7 @@
           volume: parseFloat(r[5] || 0),
         })).sort((a, b) => a.time - b.time);
 
-      const timeoutFor = (url) => (url === proxyUrl ? 12000 : 4000);
+      const timeoutFor = (url) => (url === proxyUrl ? 15000 : 2500);
 
       const fetchUrl = async (url, timeoutMs, ctrl = null) => {
         if (!url || typeof fetch !== "function") throw new Error("fetch unavailable");
@@ -1947,7 +1973,11 @@
           if (!res || !res.ok) throw new Error(`HTTP ${res?.status || 0}`);
           const rows = await res.json();
           if (!Array.isArray(rows)) throw new Error("Invalid klines payload");
-          return rows.length ? parseRows(rows) : [];
+          if (!rows.length) {
+            if (!endTime) throw new Error("Empty latest klines payload");
+            return [];
+          }
+          return parseRows(rows);
         } finally {
           if (timer) clearTimeout(timer);
         }
@@ -1957,7 +1987,7 @@
       const directFirst = now >= (this.directFailUntil || 0);
       const primaryUrl = directFirst ? directUrl : (proxyUrl || directUrl);
       const secondaryUrl = directFirst ? proxyUrl : directUrl;
-      const hedgeDelayMs = (directFirst && now < (this.proxySlowUntil || 0)) ? 2200 : 900;
+      const hedgeDelayMs = (directFirst && now < (this.proxySlowUntil || 0)) ? 2000 : 650;
 
       // Primary attempt with quick fallback hedge if primary is slow or fails immediately
       if (secondaryUrl && secondaryUrl !== primaryUrl) {
@@ -1965,6 +1995,7 @@
         const secondaryCtrl = typeof AbortController !== "undefined" ? new AbortController() : null;
         let settled = false;
         let secondaryStarted = false;
+        let primaryFailed = false;
         let hedgeTimer = null;
         let resolveSec;
         let rejectSec;
@@ -1986,6 +2017,7 @@
           const primaryPromise = fetchUrl(primaryUrl, timeoutFor(primaryUrl), primaryCtrl)
             .then((data) => ({ source: "primary", data }))
             .catch((err) => {
+              primaryFailed = true;
               startSecondary();
               throw err;
             });
@@ -2011,6 +2043,9 @@
           if (!secondaryStarted) rejectSec(new Error("aborted"));
           if (primaryCtrl) primaryCtrl.abort();
           if (secondaryCtrl) secondaryCtrl.abort();
+          if (directFirst && primaryFailed) {
+            this.directFailUntil = Date.now() + 60000;
+          }
           if (directFirst && !secondaryStarted && proxyUrl) {
             try {
               const proxyData = await fetchUrl(proxyUrl, timeoutFor(proxyUrl));
@@ -2023,19 +2058,24 @@
         try {
           return await fetchUrl(primaryUrl, timeoutFor(primaryUrl));
         } catch (_) {
-          if (primaryUrl === directUrl && proxyUrl) {
-            try {
-              const proxyData = await fetchUrl(proxyUrl, timeoutFor(proxyUrl));
-              this.directFailUntil = Date.now() + 60000;
-              return proxyData;
-            } catch (_) {}
+          if (primaryUrl === directUrl) {
+            this.directFailUntil = Date.now() + 60000;
+            if (proxyUrl) {
+              try {
+                return await fetchUrl(proxyUrl, timeoutFor(proxyUrl));
+              } catch (_) {}
+            }
           }
         }
       }
 
+      if (Date.now() < (this.fallbackFailUntil || 0)) {
+        return [];
+      }
       try {
-        return await fetchUrl(fallbackUrl, 6000);
+        return await fetchUrl(fallbackUrl, 3500);
       } catch (_) {
+        this.fallbackFailUntil = Date.now() + 120000;
         return [];
       }
     }
@@ -2732,6 +2772,10 @@
 
     setSymbol(sym) {
       if (sym === this.symbol) return;
+      if (this._initialRetryTimer) {
+        clearTimeout(this._initialRetryTimer);
+        this._initialRetryTimer = null;
+      }
       this.symbol = sym;
       this.loaded = false;
       this.pinnedTime = null;
@@ -2775,6 +2819,10 @@
     }
 
     onTabDeactivated() {
+      if (this._initialRetryTimer) {
+        clearTimeout(this._initialRetryTimer);
+        this._initialRetryTimer = null;
+      }
       this.stopRealtimeFeeds();
     }
   }

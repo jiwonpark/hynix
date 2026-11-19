@@ -658,4 +658,57 @@ assert.equal(fallbackRes[0].time, 1700000060);
 assert.ok(freshClient.directFailUntil > Date.now(), "Must activate directFailUntil cooldown after proxy wins on direct error");
 assert.ok(fetchCalls.some((u) => u.includes("/skhynix/api/klines")), "Must fall back immediately to /skhynix/api/klines");
 
+// Test 23: Empty latest payload does not mask working source, and total failure sets cooldowns for next retry
+const emptyMaskCalls = [];
+sandbox.fetch = async (url) => {
+  emptyMaskCalls.push(url);
+  if (url.includes("/skhynix/api/klines")) {
+    return { ok: true, json: async () => [] };
+  }
+  return {
+    ok: true,
+    json: async () => [[1700000120000, "105", "109", "104", "108", "12"]],
+  };
+};
+const clientEmptyLatest = Object.assign(Object.create(Object.getPrototypeOf(MultiSpan)), {
+  directFailUntil: Date.now() + 60000,
+  proxySlowUntil: 0,
+  fallbackFailUntil: 0,
+});
+const nonEmptyWinner = await protoFetchKlines.call(clientEmptyLatest, "BTCUSDT", "5m", 10, null);
+assert.equal(nonEmptyWinner.length, 1, "Empty latest 200 [] must not beat valid kline payload");
+assert.equal(nonEmptyWinner[0].time, 1700000120);
+assert.ok(emptyMaskCalls.some((u) => u.includes("/skhynix/api/klines")), "Must try proxy first when directFailUntil is active");
+assert.ok(emptyMaskCalls.some((u) => u.startsWith("https://fapi.binance.com")), "Must fail over to direct Binance when proxy returns 200 []");
+
+const allFailCalls = [];
+let allFailPhase = 1;
+sandbox.fetch = async (url) => {
+  allFailCalls.push({ phase: allFailPhase, url });
+  if (allFailPhase === 2 && url.includes("/skhynix/api/klines")) {
+    return {
+      ok: true,
+      json: async () => [[1700000180000, "110", "112", "109", "111", "4"]],
+    };
+  }
+  throw new Error("network down");
+};
+const cooldownClient = Object.assign(Object.create(Object.getPrototypeOf(MultiSpan)), {
+  directFailUntil: 0,
+  proxySlowUntil: 0,
+  fallbackFailUntil: 0,
+});
+const phase1Res = await protoFetchKlines.call(cooldownClient, "BTCUSDT", "5m", 10, null);
+assert.equal(phase1Res.length, 0);
+assert.ok(cooldownClient.directFailUntil > Date.now(), "Total failure must still mark directFailUntil cooldown");
+assert.ok(cooldownClient.fallbackFailUntil > Date.now(), "Total failure must mark fallbackFailUntil cooldown");
+allFailPhase = 2;
+const phase2Res = await protoFetchKlines.call(cooldownClient, "BTCUSDT", "5m", 10, null);
+assert.equal(phase2Res.length, 1);
+assert.equal(
+  allFailCalls.filter((c) => c.phase === 2 && c.url.includes("fapi.binance.com") && !c.url.includes("allorigins")).length,
+  0,
+  "Retry during directFailUntil must go straight to proxy without retrying dead directUrl first",
+);
+
 console.log("All Multi-Span synchronization unit tests passed!");
