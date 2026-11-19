@@ -1788,40 +1788,42 @@
         if (Array.isArray(raw) && raw.length) {
           const older = raw.filter((c) => c.time < earliestTime);
           if (older.length) {
+            const chart = this.charts[spanId];
+            const prevLogical = chart ? chart.timeScale().getVisibleLogicalRange() : null;
+
             const merged = [...older, ...data].sort((a, b) => a.time - b.time);
             const addedCount = merged.length - data.length;
             this.candlesData[spanId] = merged;
 
-            const series = this.series[spanId];
-            if (series) series.setData(merged);
+            this.programmaticSpans[spanId] = true;
+            try {
+              const series = this.series[spanId];
+              if (series) series.setData(merged);
 
-            const ma20Data = this.calculateSma(merged, 20);
-            const ma50Data = this.calculateSma(merged, 50);
-            if (this.ma20[spanId]) this.ma20[spanId].setData(ma20Data);
-            if (this.ma50[spanId]) this.ma50[spanId].setData(ma50Data);
-            this.updateMacdForSpan(spanId, merged, { updateLatestOnly: false });
+              const ma20Data = this.calculateSma(merged, 20);
+              const ma50Data = this.calculateSma(merged, 50);
+              if (this.ma20[spanId]) this.ma20[spanId].setData(ma20Data);
+              if (this.ma50[spanId]) this.ma50[spanId].setData(ma50Data);
+              this.updateMacdForSpan(spanId, merged, { updateLatestOnly: false });
 
-            const chart = this.charts[spanId];
-            if (chart) {
-              const currentLogical = chart.timeScale().getVisibleLogicalRange();
-              if (currentLogical) {
-                this.programmaticSpans[spanId] = true;
-                try {
-                  chart.timeScale().setVisibleLogicalRange({
-                    from: currentLogical.from + addedCount,
-                    to: currentLogical.to + addedCount,
-                  });
-                } finally {
-                  const settleLoadMore = () => {
-                    this.programmaticSpans[spanId] = false;
-                    this.updateRangeHighlight(spanId);
-                  };
-                  if (typeof requestAnimationFrame === "function") {
-                    requestAnimationFrame(settleLoadMore);
-                  } else {
-                    settleLoadMore();
-                  }
+              if (chart && prevLogical) {
+                chart.timeScale().setVisibleLogicalRange({
+                  from: prevLogical.from + addedCount,
+                  to: prevLogical.to + addedCount,
+                });
+              }
+            } finally {
+              const settleLoadMore = () => {
+                this.programmaticSpans[spanId] = false;
+                if (this.pinnedTime !== null) {
+                  this.applySpanCrosshairState(spanId, this.pinnedTime, { updateHudVal: false });
                 }
+                this.updateRangeHighlight(spanId);
+              };
+              if (typeof requestAnimationFrame === "function") {
+                requestAnimationFrame(settleLoadMore);
+              } else {
+                settleLoadMore();
               }
             }
           }
@@ -1882,7 +1884,10 @@
 
       try {
         const promises = SPANS.map(async (s) => {
-          const raw = await this.fetchKlinesForSpan(sym, s.id, s.defaultLimit);
+          let raw = await this.fetchKlinesForSpan(sym, s.id, s.defaultLimit);
+          if ((!Array.isArray(raw) || !raw.length) && sym === this.symbol) {
+            raw = await this.fetchKlinesForSpan(sym, s.id, s.defaultLimit);
+          }
           return { span: s.id, data: raw };
         });
 
@@ -1931,6 +1936,8 @@
           volume: parseFloat(r[5] || 0),
         })).sort((a, b) => a.time - b.time);
 
+      const timeoutFor = (url) => (url === proxyUrl ? 12000 : 4000);
+
       const fetchUrl = async (url, timeoutMs, ctrl = null) => {
         if (!url || typeof fetch !== "function") throw new Error("fetch unavailable");
         const ownCtrl = ctrl || (typeof AbortController !== "undefined" ? new AbortController() : null);
@@ -1949,9 +1956,8 @@
       const now = Date.now();
       const directFirst = now >= (this.directFailUntil || 0);
       const primaryUrl = directFirst ? directUrl : (proxyUrl || directUrl);
-      const secondaryUrl = directFirst
-        ? (now >= (this.proxySlowUntil || 0) ? proxyUrl : "")
-        : directUrl;
+      const secondaryUrl = directFirst ? proxyUrl : directUrl;
+      const hedgeDelayMs = (directFirst && now < (this.proxySlowUntil || 0)) ? 2200 : 900;
 
       // Primary attempt with quick fallback hedge if primary is slow or fails immediately
       if (secondaryUrl && secondaryUrl !== primaryUrl) {
@@ -1971,20 +1977,20 @@
         const startSecondary = () => {
           if (secondaryStarted || settled) return;
           secondaryStarted = true;
-          fetchUrl(secondaryUrl, 5000, secondaryCtrl)
+          fetchUrl(secondaryUrl, timeoutFor(secondaryUrl), secondaryCtrl)
             .then((data) => resolveSec({ source: "secondary", data }))
             .catch(rejectSec);
         };
 
         try {
-          const primaryPromise = fetchUrl(primaryUrl, 4500, primaryCtrl)
+          const primaryPromise = fetchUrl(primaryUrl, timeoutFor(primaryUrl), primaryCtrl)
             .then((data) => ({ source: "primary", data }))
             .catch((err) => {
               startSecondary();
               throw err;
             });
 
-          hedgeTimer = setTimeout(startSecondary, 900);
+          hedgeTimer = setTimeout(startSecondary, hedgeDelayMs);
 
           const winner = await Promise.any([primaryPromise, secondaryPromise]);
           settled = true;
@@ -2007,7 +2013,7 @@
           if (secondaryCtrl) secondaryCtrl.abort();
           if (directFirst && !secondaryStarted && proxyUrl) {
             try {
-              const proxyData = await fetchUrl(proxyUrl, 5000);
+              const proxyData = await fetchUrl(proxyUrl, timeoutFor(proxyUrl));
               this.directFailUntil = Date.now() + 60000;
               return proxyData;
             } catch (_) {}
@@ -2015,11 +2021,11 @@
         }
       } else {
         try {
-          return await fetchUrl(primaryUrl, 5000);
+          return await fetchUrl(primaryUrl, timeoutFor(primaryUrl));
         } catch (_) {
           if (primaryUrl === directUrl && proxyUrl) {
             try {
-              const proxyData = await fetchUrl(proxyUrl, 5000);
+              const proxyData = await fetchUrl(proxyUrl, timeoutFor(proxyUrl));
               this.directFailUntil = Date.now() + 60000;
               return proxyData;
             } catch (_) {}

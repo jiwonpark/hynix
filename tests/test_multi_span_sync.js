@@ -463,7 +463,14 @@ const macdCandles = new Array(50).fill(0).map((_, i) => ({
   low: 99 + i,
   close: 100 + i * 1.1 + (i % 3),
 }));
-MultiSpan.series["5m"] = { setData: () => {}, update: () => {} };
+let logical5mState = { from: 10, to: 50 };
+MultiSpan.series["5m"] = {
+  setData: (d) => {
+    // Simulate Lightweight Charts scrolling/resetting range inside setData when length grows
+    logical5mState = { from: d.length - 20, to: d.length };
+  },
+  update: () => {},
+};
 MultiSpan.ma20["5m"] = { setData: () => {} };
 MultiSpan.ma50["5m"] = { setData: () => {} };
 MultiSpan.macdHist["5m"] = { setData: (d) => macdSetDataCalls.push({ kind: "hist", len: d.length }), update: () => {} };
@@ -473,21 +480,22 @@ MultiSpan.macdZero["5m"] = { setData: (d) => macdSetDataCalls.push({ kind: "zero
 MultiSpan.charts["5m"] = {
   timeScale: () => ({
     getVisibleRange: () => ({ from: 10000, to: 13000 }),
-    getVisibleLogicalRange: () => ({ from: 10, to: 50 }),
-    setVisibleLogicalRange: () => {},
+    getVisibleLogicalRange: () => logical5mState,
+    setVisibleLogicalRange: (r) => { logical5mState = r; },
     width: () => 500,
   }),
   setCrosshairPosition: () => {},
   clearCrosshairPosition: () => {},
 };
 MultiSpan.setSpanData("5m", macdCandles);
+logical5mState = { from: 10, to: 50 };
 const lastBarTime = macdCandles[macdCandles.length - 1].time;
 const lastMacdEntry = MultiSpan.macdData["5m"].byTime.get(lastBarTime);
 assert.ok(lastMacdEntry && lastMacdEntry.signal !== null && lastMacdEntry.hist !== null, "Latest candle must have non-null MACD signal and histogram");
 assert.equal(lastMacdEntry.signal, MultiSpan.macdData["5m"].signal.slice(-1)[0].value, "Signal in byTime must match same timestamp");
 assert.equal(lastMacdEntry.hist, MultiSpan.macdData["5m"].histogram.slice(-1)[0].value, "Histogram in byTime must match same timestamp");
 
-// 17. Test loadMoreHistorical also updates MACD data & series
+// 17. Test loadMoreHistorical also updates MACD data & series AND preserves pre-setData logical range
 macdSetDataCalls.length = 0;
 const olderMacdCandles = new Array(20).fill(0).map((_, i) => ({
   time: 10000 - (20 - i) * 60,
@@ -499,6 +507,8 @@ const olderMacdCandles = new Array(20).fill(0).map((_, i) => ({
 MultiSpan.fetchKlinesForSpan = async () => olderMacdCandles;
 await MultiSpan.loadMoreHistorical("5m");
 assert.equal(MultiSpan.candlesData["5m"].length, 70, "loadMoreHistorical should prepend 20 bars to 50 -> 70");
+assert.equal(logical5mState.from, 30, "loadMoreHistorical must capture pre-setData logical range (10 + 20 = 30)");
+assert.equal(logical5mState.to, 70, "loadMoreHistorical must shift pre-setData logical range to (50 + 20 = 70)");
 assert.equal(MultiSpan.macdData["5m"].macd.length, 70 - 26 + 1, "loadMoreHistorical must recalculate MACD length for merged candles");
 assert.ok(macdSetDataCalls.some((c) => c.kind === "hist" && c.len === 70 - 34 + 1), "loadMoreHistorical must update macdHist series");
 assert.ok(macdSetDataCalls.some((c) => c.kind === "zero" && c.len === 70), "loadMoreHistorical must update macdZero baseline series");
