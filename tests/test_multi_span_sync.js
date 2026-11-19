@@ -764,4 +764,191 @@ assert.equal(Object.keys(fakeInitClient.candlesData).length, 0, "setSymbol must 
 assert.equal(Object.keys(fakeInitClient.macdData).length, 0, "setSymbol must clear stale macdData");
 sandbox.setTimeout = savedSetTimeout;
 
+// Test 25: Right-side pagination from historical 1s slice (loadMoreNewer) appends newer bars, updates MACD, and keeps viewport pinned
+const nowEpochSec = Math.floor(Date.now() / 1000);
+const pastBaseSec = nowEpochSec - 50000;
+const pastSlice = new Array(60).fill(0).map((_, i) => ({
+  time: pastBaseSec + i,
+  open: 60000 + i,
+  high: 60005 + i,
+  low: 59995 + i,
+  close: 60002 + i,
+  volume: 10,
+}));
+const newerBtnEl = { style: { display: "inline-block" }, textContent: "NEWER >" };
+const badge1sEl = { style: { display: "inline-block" }, textContent: "⏮️ HISTORICAL · 30M SLICE" };
+const prevDocGetById = sandbox.document.getElementById;
+const prevDocQuerySelector = sandbox.document.querySelector;
+sandbox.document.getElementById = (id) => (id === "msCardModeBadge_1s" ? badge1sEl : prevDocGetById(id));
+sandbox.document.querySelector = (sel) => (sel === '.msCardLoadNewerBtn[data-span="1s"]' ? newerBtnEl : prevDocQuerySelector(sel));
+
+let vis1sRightState = { from: 20, to: 55 };
+const newerFetchArgs = [];
+const histRightClient = Object.assign(new MultiSpan.constructor(), {
+  symbol: "BTCUSDT",
+  isHistorical: { "1s": true },
+  fetchSeq: { "1s": 3 },
+  pinnedTime: null,
+  series: {
+    "1s": {
+      setData: (d) => {
+        // Simulate LightweightCharts auto-scrolling right on setData unless restored
+        vis1sRightState = { from: d.length - 10, to: d.length };
+      },
+      update: () => {},
+    },
+  },
+  ma20: { "1s": { setData: () => {} } },
+  ma50: { "1s": { setData: () => {} } },
+  macdCharts: {},
+  macdHist: { "1s": { setData: () => {}, update: () => {} } },
+  macdLine: { "1s": { setData: () => {}, update: () => {} } },
+  macdSignal: { "1s": { setData: () => {}, update: () => {} } },
+  macdZero: { "1s": { setData: () => {}, update: () => {} } },
+  charts: {
+    "1s": {
+      timeScale: () => ({
+        getVisibleRange: () => ({ from: pastBaseSec + 20, to: pastBaseSec + 55 }),
+        getVisibleLogicalRange: () => vis1sRightState,
+        setVisibleLogicalRange: (r) => { vis1sRightState = r; },
+        width: () => 500,
+      }),
+      setCrosshairPosition: () => {},
+      clearCrosshairPosition: () => {},
+    },
+  },
+  cancelSpanAnimation() {},
+  updateRangeHighlight() {},
+  applySpanCrosshairState() {},
+  async fetchKlinesForSpan(sym, span, limit, endTime) {
+    newerFetchArgs.push({ sym, span, limit, endTime });
+    const prevLast = pastSlice[pastSlice.length - 1].time;
+    // Include 5 overlapping bars <= prevLast and 40 newer bars > prevLast
+    return new Array(45).fill(0).map((_, i) => ({
+      time: prevLast - 4 + i,
+      open: 60100 + i,
+      high: 60105 + i,
+      low: 60095 + i,
+      close: 60102 + i,
+      volume: 12,
+    }));
+  },
+});
+histRightClient.setSpanData("1s", pastSlice);
+vis1sRightState = { from: 20, to: 55 };
+await protoObj.loadMoreNewer.call(histRightClient, "1s");
+assert.equal(newerFetchArgs.length, 1);
+assert.equal(newerFetchArgs[0].endTime, (pastSlice[pastSlice.length - 1].time + 950) * 1000, "Historical right-load must query latestTime + 950 * spanSec");
+assert.equal(histRightClient.candlesData["1s"].length, 100, "Must append 40 unique newer candles without duplicates");
+assert.equal(histRightClient.candlesData["1s"][99].time, pastSlice[59].time + 40);
+assert.ok(Math.abs(vis1sRightState.from - 20) < 0.001 && Math.abs(vis1sRightState.to - 55) < 0.001, "Right-append must keep pre-setData visible logical range unchanged");
+assert.ok(histRightClient.macdData["1s"].byTime.get(pastSlice[59].time + 40), "MACD byTime must be computed for newly appended right-side candles");
+assert.equal(histRightClient.isHistorical["1s"], true, "Still >5s/5bars behind now -> remain in historical mode");
+assert.equal(newerBtnEl.style.display, "inline-block", "NEWER > button must remain visible while historical");
+assert.equal(newerBtnEl.textContent, "NEWER >", "Button label must restore after loading");
+
+// Test 26: Right-side load reaching nowSec transitions span cleanly out of historical mode into live updates
+const nearNowStart = nowEpochSec - 120;
+const nearNowSlice = new Array(60).fill(0).map((_, i) => ({
+  time: nearNowStart + i,
+  open: 63000 + i,
+  high: 63005 + i,
+  low: 62995 + i,
+  close: 63001 + i,
+  volume: 5,
+}));
+histRightClient.setSpanData("1s", nearNowSlice);
+histRightClient.isHistorical["1s"] = true;
+histRightClient.syncCardHistoricalUI("1s", { isHistorical: true });
+assert.equal(newerBtnEl.style.display, "inline-block");
+newerFetchArgs.length = 0;
+histRightClient.fetchKlinesForSpan = async (sym, span, limit, endTime) => {
+  newerFetchArgs.push({ sym, span, limit, endTime });
+  const prevLast = nearNowSlice[nearNowSlice.length - 1].time;
+  return new Array(nowEpochSec - prevLast + 1).fill(0).map((_, i) => ({
+    time: prevLast + i,
+    open: 63100 + i,
+    high: 63105 + i,
+    low: 63095 + i,
+    close: 63101 + i,
+    volume: 6,
+  }));
+};
+await protoObj.loadMoreNewer.call(histRightClient, "1s");
+assert.equal(newerFetchArgs[0].endTime, null, "Near-live right load must omit endTime to fetch up to latest live bar");
+assert.equal(histRightClient.isHistorical["1s"], false, "Reaching live tail must exit historical mode");
+assert.equal(badge1sEl.style.display, "none", "Reaching live tail must hide HISTORICAL badge");
+assert.equal(newerBtnEl.style.display, "none", "Reaching live tail must hide NEWER > button");
+let liveTickApplied = false;
+histRightClient.series["1s"].update = () => { liveTickApplied = true; };
+histRightClient.updateCandle("1s", { time: nowEpochSec + 1, open: 63200, high: 63205, low: 63195, close: 63202, volume: 3 });
+assert.equal(liveTickApplied, true, "After right-loading reaches live tail, WebSocket/live ticks must update the chart");
+
+// Test 27: VisibleLogicalRange listener detects right-edge panning only when historical/stale and enforces cooldown on empty fetch
+const rangeCbs = [];
+const prevLightweightCharts = sandbox.LightweightCharts;
+sandbox.LightweightCharts = {
+  CrosshairMode: { Normal: 0 },
+  createChart: () => ({
+    addCandlestickSeries: () => ({ setData: () => {}, update: () => {}, priceToCoordinate: () => 50 }),
+    addLineSeries: () => ({ setData: () => {}, update: () => {} }),
+    addHistogramSeries: () => ({ setData: () => {}, update: () => {} }),
+    priceScale: () => ({ applyOptions: () => {} }),
+    timeScale: () => ({
+      subscribeVisibleTimeRangeChange: () => {},
+      subscribeVisibleLogicalRangeChange: (cb) => rangeCbs.push(cb),
+      getVisibleRange: () => ({ from: 1000, to: 1100 }),
+      getVisibleLogicalRange: () => ({ from: 0, to: 100 }),
+      setVisibleLogicalRange: () => {},
+      width: () => 500,
+    }),
+    subscribeCrosshairMove: () => {},
+    subscribeClick: () => {},
+    applyOptions: () => {},
+    resize: () => {},
+  }),
+};
+const scrollClient = Object.assign(new MultiSpan.constructor(), {
+  symbol: "BTCUSDT",
+  candlesData: { "1s": pastSlice.slice() },
+  isHistorical: { "1s": true },
+  debounceCalls: [],
+  debouncedLoadMore(span, dir) {
+    this.debounceCalls.push({ span, dir });
+  },
+  updateRangeHighlight() {},
+});
+sandbox.document.getElementById = () => ({ addEventListener: () => {}, clientWidth: 500, clientHeight: 200 });
+protoObj.initCharts.call(scrollClient);
+assert.ok(rangeCbs.length >= 3, "initCharts must register logical range listeners including main chart");
+// For 1s: main-macd-sync (0), macd-main-sync (1), 1s main load-more cb (2)
+const oneSecLoadMoreCb = rangeCbs[2];
+scrollClient.debounceCalls.length = 0;
+// Panning near right edge while historical -> triggers newer
+oneSecLoadMoreCb({ from: 25, to: 50 });
+assert.deepEqual(scrollClient.debounceCalls, [{ span: "1s", dir: "newer" }], "Right-edge pan while historical must queue 'newer' load");
+// Zoomed out past both edges with greater right overshoot -> prioritizes newer
+scrollClient.debounceCalls.length = 0;
+oneSecLoadMoreCb({ from: 15, to: 85 }); // leftOvershoot=10, rightOvershoot=85-(60-25)=50
+assert.deepEqual(scrollClient.debounceCalls, [{ span: "1s", dir: "newer" }], "Greater right overshoot must choose 'newer'");
+// Live mode right-edge pan -> must NOT queue newer load when tail is fresh
+scrollClient.isHistorical["1s"] = false;
+scrollClient.candlesData["1s"] = [{ time: Math.floor(Date.now() / 1000) - 2, close: 100 }];
+scrollClient.debounceCalls.length = 0;
+oneSecLoadMoreCb({ from: 0, to: 10 });
+assert.equal(scrollClient.debounceCalls.some((c) => c.dir === "newer"), false, "Live tail near right edge must not trigger newer load");
+
+// Empty response on historical newer load sets cooldown
+histRightClient.isHistorical["1s"] = true;
+histRightClient.candlesData["1s"] = pastSlice.slice();
+histRightClient.fetchKlinesForSpan = async () => [];
+await protoObj.loadMoreNewer.call(histRightClient, "1s");
+assert.ok(histRightClient.noNewerBefore["1s"] > Date.now(), "Empty newer fetch must activate noNewerBefore cooldown");
+
+// Restore sandbox hooks cleanly
+if (prevLightweightCharts === undefined) delete sandbox.LightweightCharts;
+else sandbox.LightweightCharts = prevLightweightCharts;
+sandbox.document.getElementById = prevDocGetById;
+sandbox.document.querySelector = prevDocQuerySelector;
+
 console.log("All Multi-Span synchronization unit tests passed!");

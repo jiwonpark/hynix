@@ -174,6 +174,8 @@
       this.pinnedSpan = null;   // source span of active click
       this.activeRangeHighlight = null; // { navId, sourceSpan, sourceLabel, sourceColor, startTime, endTime, finerSpans, readySpans }
       this.loadMoreTimeout = {}; // spanId -> timeoutId
+      this.noOlderBefore = {};   // spanId -> cooldown epoch ms when left history exhausted/failed
+      this.noNewerBefore = {};   // spanId -> cooldown epoch ms when right history failed/empty
       this.animations = {};       // spanId -> active pan/zoom animation state
       this.animatingSpans = {};   // spanId -> boolean
       this.programmaticSpans = {}; // spanId -> boolean
@@ -302,6 +304,7 @@
                   <div style="color:#64748b;font-family:monospace;" id="msCardOhlc_${s.id}">O:-- H:-- L:-- C:--</div>
                   <span id="msCardPrice_${s.id}" style="font-weight:800;color:#059669;font-size:13px;">--</span>
                   <button type="button" class="msCardLoadMoreBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Load older historical candles">+ LOAD MORE</button>
+                  <button type="button" class="msCardLoadNewerBtn" data-span="${s.id}" style="display:none;background:#ffffff;border:1px solid #cbd5e1;color:#0284c7;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;font-weight:700;" title="Load newer candles to the right">NEWER &gt;</button>
                   <button type="button" class="msCardHeroBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Set as Hero focus">HERO</button>
                   <button type="button" class="msCardFitBtn" data-span="${s.id}" style="background:#ffffff;border:1px solid #cbd5e1;color:#475569;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;" title="Fit this chart">FIT</button>
                 </div>
@@ -611,18 +614,41 @@
           this.updateRangeHighlight(s.id);
         });
 
-        // Wire visible logical range change for range highlight update & auto load more
+        // Wire visible logical range change for range highlight update & auto load more (left/older & right/newer)
         chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
           this.updateRangeHighlight(s.id);
-          // Auto load more when user scrolls near earliest loaded candle
           if (
-            logicalRange &&
-            logicalRange.from < 25 &&
-            !this.reloadingSpans[s.id] &&
-            !this.animatingSpans[s.id] &&
-            !this.programmaticSpans[s.id]
+            !logicalRange ||
+            this.reloadingSpans[s.id] ||
+            this.animatingSpans[s.id] ||
+            this.programmaticSpans[s.id]
           ) {
-            this.debouncedLoadMore(s.id);
+            return;
+          }
+          const data = this.candlesData?.[s.id];
+          const dataLen = data ? data.length : 0;
+          if (!dataLen) return;
+          const nowMs = Date.now();
+          const leftNeed = logicalRange.from < 25 && nowMs >= (this.noOlderBefore?.[s.id] || 0);
+          const latestTime = data[dataLen - 1].time;
+          const spanSec = s.sec || 60;
+          const nowSec = Math.floor(nowMs / 1000);
+          const canLoadRight =
+            Boolean(this.isHistorical?.[s.id]) ||
+            (nowSec - latestTime) > Math.max(spanSec * 5, 300);
+          const rightNeed =
+            canLoadRight &&
+            logicalRange.to > (dataLen - 25) &&
+            nowMs >= (this.noNewerBefore?.[s.id] || 0);
+
+          if (leftNeed && rightNeed) {
+            const leftOvershoot = 25 - logicalRange.from;
+            const rightOvershoot = logicalRange.to - (dataLen - 25);
+            this.debouncedLoadMore(s.id, rightOvershoot >= leftOvershoot ? "newer" : "older");
+          } else if (rightNeed) {
+            this.debouncedLoadMore(s.id, "newer");
+          } else if (leftNeed) {
+            this.debouncedLoadMore(s.id, "older");
           }
         });
 
@@ -1567,6 +1593,12 @@
       if (!chart) return;
 
       const reqNavId = navId !== null ? navId : (this.spanNavIds[spanId] || 0);
+      if (this.loadMoreTimeout?.[spanId]) {
+        clearTimeout(this.loadMoreTimeout[spanId]);
+        this.loadMoreTimeout[spanId] = null;
+      }
+      if (this.noOlderBefore) delete this.noOlderBefore[spanId];
+      if (this.noNewerBefore) delete this.noNewerBefore[spanId];
       const fetchSeq = (this.fetchSeq[spanId] || 0) + 1;
       this.fetchSeq[spanId] = fetchSeq;
       this.reloadingSpans[spanId] = true;
@@ -1578,6 +1610,7 @@
       const macdHlEl = document.getElementById(`msMacdRangeHighlight_${spanId}`);
       if (macdHlEl) macdHlEl.style.display = "none";
 
+      this.syncCardHistoricalUI(spanId, { isHistorical: false });
       const badgeEl = document.getElementById(`msCardModeBadge_${spanId}`);
       if (badgeEl) {
         badgeEl.style.display = "inline-block";
@@ -1690,22 +1723,9 @@
 
           this.setSpanData(spanId, raw, null, setOpts);
           this.applySpanCrosshairState(spanId, preferredTime, { updateHudVal: true });
-
-          if (badgeEl) {
-            if (isHistorical) {
-              badgeEl.style.display = "inline-block";
-              badgeEl.textContent = isPartialSlice ? "⏮️ HISTORICAL · 30M SLICE" : "⏮️ HISTORICAL";
-              badgeEl.style.background = "#fee2e2";
-              badgeEl.style.color = "#dc2626";
-              badgeEl.style.border = "1px solid #fca5a5";
-              badgeEl.title = isPartialSlice
-                ? "Showing focused 30m historical slice around clicked period. Click to return to latest, or click a 5m/15m candle to inspect another slice."
-                : "Viewing historical window. Click to return to latest.";
-            } else {
-              badgeEl.style.display = "none";
-            }
-          }
+          this.syncCardHistoricalUI(spanId, { isHistorical, isPartialSlice });
         } else {
+          this.syncCardHistoricalUI(spanId, { isHistorical: false });
           if (badgeEl) {
             badgeEl.style.display = "inline-block";
             badgeEl.textContent = "⚠️ NO DATA";
@@ -1725,6 +1745,32 @@
       }
     }
 
+    syncCardHistoricalUI(spanId, options = {}) {
+      const { isHistorical = Boolean(this.isHistorical?.[spanId]), isPartialSlice = false } = options;
+      if (typeof document === "undefined") return;
+      const badgeEl = document.getElementById(`msCardModeBadge_${spanId}`);
+      if (badgeEl) {
+        if (isHistorical) {
+          badgeEl.style.display = "inline-block";
+          badgeEl.textContent = isPartialSlice ? "⏮️ HISTORICAL · 30M SLICE" : "⏮️ HISTORICAL";
+          badgeEl.style.background = "#fee2e2";
+          badgeEl.style.color = "#dc2626";
+          badgeEl.style.border = "1px solid #fca5a5";
+          badgeEl.title = isPartialSlice
+            ? "Showing focused 30m historical slice around clicked period. Pan right or use NEWER > to load forward, or click badge to return to latest."
+            : "Viewing historical window. Pan right or use NEWER > to load forward, or click badge to return to latest.";
+        } else {
+          badgeEl.style.display = "none";
+        }
+      }
+      if (typeof document.querySelector === "function") {
+        const newerBtn = document.querySelector(`.msCardLoadNewerBtn[data-span="${spanId}"]`);
+        if (newerBtn) {
+          newerBtn.style.display = isHistorical ? "inline-block" : "none";
+        }
+      }
+    }
+
     async reloadSpanToTime(spanId, time) {
       const spanObj = SPANS.find((p) => p.id === spanId);
       const spanSec = spanObj ? (spanObj.sec || 60) : 60;
@@ -1735,13 +1781,18 @@
     async reloadSpanToLatest(spanId) {
       const s = SPANS.find((p) => p.id === spanId);
       if (!s) return;
+      if (this.loadMoreTimeout?.[spanId]) {
+        clearTimeout(this.loadMoreTimeout[spanId]);
+        this.loadMoreTimeout[spanId] = null;
+      }
       const fetchSeq = (this.fetchSeq[spanId] || 0) + 1;
       this.fetchSeq[spanId] = fetchSeq;
       this.reloadingSpans[spanId] = true;
       this.cancelSpanAnimation(spanId);
       this.isHistorical[spanId] = false;
-      const badgeEl = document.getElementById(`msCardModeBadge_${spanId}`);
-      if (badgeEl) badgeEl.style.display = "none";
+      if (this.noNewerBefore) delete this.noNewerBefore[spanId];
+      if (this.noOlderBefore) delete this.noOlderBefore[spanId];
+      this.syncCardHistoricalUI(spanId, { isHistorical: false });
 
       let oldTimeRange = null;
       try {
@@ -1762,77 +1813,217 @@
       }
     }
 
-    debouncedLoadMore(spanId) {
+    debouncedLoadMore(spanId, direction = "older") {
+      if (!this.loadMoreTimeout) this.loadMoreTimeout = {};
       if (this.loadMoreTimeout[spanId]) clearTimeout(this.loadMoreTimeout[spanId]);
       this.loadMoreTimeout[spanId] = setTimeout(() => {
-        this.loadMoreHistorical(spanId);
+        this.loadMoreTimeout[spanId] = null;
+        this.loadMoreSpanData(spanId, direction);
       }, 300);
     }
 
     async loadMoreHistorical(spanId) {
+      return this.loadMoreSpanData(spanId, "older");
+    }
+
+    async loadMoreNewer(spanId) {
+      return this.loadMoreSpanData(spanId, "newer");
+    }
+
+    async loadMoreSpanData(spanId, direction = "older") {
+      const isNewer = direction === "newer";
       if (this.reloadingSpans[spanId]) return;
-      const data = this.candlesData[spanId];
+      const data = this.candlesData?.[spanId];
       if (!data || !data.length) return;
 
+      if (this.loadMoreTimeout?.[spanId]) {
+        clearTimeout(this.loadMoreTimeout[spanId]);
+        this.loadMoreTimeout[spanId] = null;
+      }
+
+      const spanObj = SPANS.find((p) => p.id === spanId);
+      const spanSec = spanObj ? (spanObj.sec || 60) : 60;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const latestTime = data[data.length - 1].time;
+
+      if (isNewer && !this.isHistorical?.[spanId] && (nowSec - latestTime) <= Math.max(spanSec * 5, 300)) {
+        return;
+      }
+
+      const btnSelector = isNewer
+        ? `.msCardLoadNewerBtn[data-span="${spanId}"]`
+        : `.msCardLoadMoreBtn[data-span="${spanId}"]`;
+      const idleBtnText = isNewer ? "NEWER >" : "+ LOAD MORE";
       const btn = typeof document !== "undefined" && typeof document.querySelector === "function"
-        ? document.querySelector(`.msCardLoadMoreBtn[data-span="${spanId}"]`)
+        ? document.querySelector(btnSelector)
         : null;
       if (btn) btn.textContent = "⏳...";
 
+      const reqSymbol = this.symbol;
+      const reqSeq = this.fetchSeq?.[spanId] || 0;
       this.reloadingSpans[spanId] = true;
       this.cancelSpanAnimation(spanId);
       try {
-        const earliestTime = data[0].time;
-        const endMs = earliestTime * 1000 - 1;
-        const raw = await this.fetchKlinesForSpan(this.symbol, spanId, 1000, endMs);
-        if (Array.isArray(raw) && raw.length) {
-          const older = raw.filter((c) => c.time < earliestTime);
-          if (older.length) {
-            const chart = this.charts[spanId];
-            const prevLogical = chart ? chart.timeScale().getVisibleLogicalRange() : null;
+        let raw;
+        let additions;
+        const existingTimes = new Set(data.map((c) => c.time));
 
-            const merged = [...older, ...data].sort((a, b) => a.time - b.time);
-            const addedCount = merged.length - data.length;
-            this.candlesData[spanId] = merged;
+        if (!isNewer) {
+          const earliestTime = data[0].time;
+          raw = await this.fetchKlinesForSpan(reqSymbol, spanId, 1000, earliestTime * 1000 - 1);
+          if (this.symbol !== reqSymbol || (this.fetchSeq?.[spanId] || 0) !== reqSeq) return;
+          additions = Array.isArray(raw)
+            ? raw.filter((c) => c.time < earliestTime && !existingTimes.has(c.time))
+            : [];
+          if (!additions.length) {
+            if (!this.noOlderBefore) this.noOlderBefore = {};
+            this.noOlderBefore[spanId] = Date.now() + 4000;
+            return;
+          }
+          if (this.noOlderBefore) delete this.noOlderBefore[spanId];
+        } else {
+          const stepSec = 950 * spanSec;
+          const targetEndSec = latestTime + stepSec;
+          const nearLive = targetEndSec >= nowSec - Math.max(spanSec * 2, 30);
+          raw = await this.fetchKlinesForSpan(
+            reqSymbol,
+            spanId,
+            1000,
+            nearLive ? null : targetEndSec * 1000
+          );
+          if (this.symbol !== reqSymbol || (this.fetchSeq?.[spanId] || 0) !== reqSeq) return;
+          additions = Array.isArray(raw)
+            ? raw.filter((c) => c.time > latestTime && !existingTimes.has(c.time))
+            : [];
 
-            this.programmaticSpans[spanId] = true;
-            try {
-              const series = this.series[spanId];
-              if (series) series.setData(merged);
+          // Bridge rare exchange maintenance gaps larger than one forward window
+          if (!additions.length && !nearLive && targetEndSec < nowSec - spanSec) {
+            const probeEndSec = latestTime + 4000 * spanSec;
+            const probeNearLive = probeEndSec >= nowSec - Math.max(spanSec * 2, 30);
+            raw = await this.fetchKlinesForSpan(
+              reqSymbol,
+              spanId,
+              1000,
+              probeNearLive ? null : probeEndSec * 1000
+            );
+            if (this.symbol !== reqSymbol || (this.fetchSeq?.[spanId] || 0) !== reqSeq) return;
+            additions = Array.isArray(raw)
+              ? raw.filter((c) => c.time > latestTime && !existingTimes.has(c.time))
+              : [];
+          }
 
-              const ma20Data = this.calculateSma(merged, 20);
-              const ma50Data = this.calculateSma(merged, 50);
-              if (this.ma20[spanId]) this.ma20[spanId].setData(ma20Data);
-              if (this.ma50[spanId]) this.ma50[spanId].setData(ma50Data);
-              this.updateMacdForSpan(spanId, merged, { updateLatestOnly: false });
+          const refreshNowSec = Math.floor(Date.now() / 1000);
+          if (!additions.length) {
+            if (
+              (nearLive && Array.isArray(raw) && raw.length) ||
+              latestTime >= refreshNowSec - Math.max(spanSec * 5, 300)
+            ) {
+              this.isHistorical[spanId] = false;
+              this.syncCardHistoricalUI(spanId, { isHistorical: false });
+            } else {
+              if (!this.noNewerBefore) this.noNewerBefore = {};
+              this.noNewerBefore[spanId] = Date.now() + 4000;
+            }
+            return;
+          }
+          if (this.noNewerBefore) delete this.noNewerBefore[spanId];
+        }
 
-              if (chart && prevLogical) {
-                chart.timeScale().setVisibleLogicalRange({
-                  from: prevLogical.from + addedCount,
-                  to: prevLogical.to + addedCount,
-                });
-              }
-            } finally {
-              const settleLoadMore = () => {
-                this.programmaticSpans[spanId] = false;
-                if (this.pinnedTime !== null) {
-                  this.applySpanCrosshairState(spanId, this.pinnedTime, { updateHudVal: false });
-                }
-                this.updateRangeHighlight(spanId);
-              };
-              if (typeof requestAnimationFrame === "function") {
-                requestAnimationFrame(settleLoadMore);
-              } else {
-                settleLoadMore();
+        const chart = this.charts?.[spanId];
+        const prevLogical = chart ? chart.timeScale().getVisibleLogicalRange() : null;
+
+        additions.sort((a, b) => a.time - b.time);
+        let merged = isNewer ? [...data, ...additions] : [...additions, ...data];
+        merged.sort((a, b) => a.time - b.time);
+        const seenMerged = new Set();
+        merged = merged.filter((c) => {
+          if (seenMerged.has(c.time)) return false;
+          seenMerged.add(c.time);
+          return true;
+        });
+
+        const MAX_LOADED_BARS = 12000;
+        let logicalShift = 0;
+        let trimmedBack = false;
+        if (!isNewer) {
+          const prependedCount = merged.length - data.length;
+          logicalShift = prependedCount;
+          if (merged.length > MAX_LOADED_BARS) {
+            const maxRightSafeTrim = prevLogical
+              ? Math.max(0, Math.floor(merged.length - 1 - (prevLogical.to + prependedCount) - 30))
+              : (merged.length - MAX_LOADED_BARS);
+            const trimRight = Math.min(merged.length - MAX_LOADED_BARS, maxRightSafeTrim);
+            if (trimRight > 0) {
+              merged = merged.slice(0, merged.length - trimRight);
+              trimmedBack = true;
+            }
+          }
+        } else if (merged.length > MAX_LOADED_BARS) {
+          const maxLeftSafeTrim = prevLogical
+            ? Math.max(0, Math.floor(prevLogical.from) - 30)
+            : (merged.length - MAX_LOADED_BARS);
+          const trimFront = Math.min(merged.length - MAX_LOADED_BARS, maxLeftSafeTrim);
+          if (trimFront > 0) {
+            merged = merged.slice(trimFront);
+            logicalShift = -trimFront;
+          }
+        }
+
+        this.candlesData[spanId] = merged;
+
+        this.programmaticSpans[spanId] = true;
+        try {
+          const series = this.series?.[spanId];
+          if (series) series.setData(merged);
+
+          const ma20Data = this.calculateSma(merged, 20);
+          const ma50Data = this.calculateSma(merged, 50);
+          if (this.ma20?.[spanId]) this.ma20[spanId].setData(ma20Data);
+          if (this.ma50?.[spanId]) this.ma50[spanId].setData(ma50Data);
+          this.updateMacdForSpan(spanId, merged, { updateLatestOnly: false });
+
+          if (chart && prevLogical) {
+            chart.timeScale().setVisibleLogicalRange({
+              from: prevLogical.from + logicalShift,
+              to: prevLogical.to + logicalShift,
+            });
+          }
+
+          if (isNewer) {
+            const refreshNowSec = Math.floor(Date.now() / 1000);
+            const reachedLive = merged[merged.length - 1].time >= refreshNowSec - Math.max(spanSec * 5, 300);
+            if (reachedLive) {
+              this.isHistorical[spanId] = false;
+              this.syncCardHistoricalUI(spanId, { isHistorical: false });
+              if (this.pinnedTime === null) {
+                this.applySpanCrosshairState(spanId, merged[merged.length - 1].time, { updateHudVal: true });
               }
             }
+          } else if (trimmedBack) {
+            this.isHistorical[spanId] = true;
+            this.syncCardHistoricalUI(spanId, { isHistorical: true });
+          }
+        } finally {
+          const settleLoadMore = () => {
+            this.programmaticSpans[spanId] = false;
+            if (this.pinnedTime !== null) {
+              this.applySpanCrosshairState(spanId, this.pinnedTime, { updateHudVal: false });
+            }
+            this.updateRangeHighlight(spanId);
+          };
+          if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(settleLoadMore);
+          } else {
+            settleLoadMore();
           }
         }
       } catch (err) {
-        console.error(`Failed to load more for span ${spanId}:`, err);
+        console.error(`Failed to load ${direction} candles for span ${spanId}:`, err);
       } finally {
-        this.reloadingSpans[spanId] = false;
-        if (btn) btn.textContent = "+ LOAD MORE";
+        if (this.fetchSeq?.[spanId] === reqSeq || this.symbol === reqSymbol) {
+          this.reloadingSpans[spanId] = false;
+        }
+        if (btn) btn.textContent = idleBtnText;
         this.updateRangeHighlight(spanId);
       }
     }
@@ -2645,12 +2836,21 @@
         });
       });
 
-      // Load more historical candles button
+      // Load more older/newer historical candles buttons
       document.querySelectorAll(".msCardLoadMoreBtn").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           const span = e.currentTarget.getAttribute("data-span");
           if (span) {
             this.loadMoreHistorical(span);
+          }
+        });
+      });
+
+      document.querySelectorAll(".msCardLoadNewerBtn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          const span = e.currentTarget.getAttribute("data-span");
+          if (span) {
+            this.loadMoreNewer(span);
           }
         });
       });
@@ -2785,12 +2985,24 @@
       await Promise.all(tasks);
     }
 
-    setSymbol(sym) {
-      if (sym === this.symbol) return;
+    clearPendingLoadTimers() {
       if (this._initialRetryTimer) {
         clearTimeout(this._initialRetryTimer);
         this._initialRetryTimer = null;
       }
+      if (this.loadMoreTimeout) {
+        Object.keys(this.loadMoreTimeout).forEach((k) => {
+          if (this.loadMoreTimeout[k]) {
+            clearTimeout(this.loadMoreTimeout[k]);
+            this.loadMoreTimeout[k] = null;
+          }
+        });
+      }
+    }
+
+    setSymbol(sym) {
+      if (sym === this.symbol) return;
+      this.clearPendingLoadTimers();
       this.symbol = sym;
       this.loaded = false;
       this.pinnedTime = null;
@@ -2799,6 +3011,8 @@
       this.activeRangeHighlight = null;
       this.isHistorical = {};
       this.reloadingSpans = {};
+      this.noOlderBefore = {};
+      this.noNewerBefore = {};
       this.candlesData = {};
       this.macdData = {};
       this.stopRealtimeFeeds();
@@ -2806,8 +3020,7 @@
       SPANS.forEach((s) => {
         this.cancelSpanAnimation(s.id);
         this.fetchSeq[s.id] = (this.fetchSeq[s.id] || 0) + 1;
-        const badgeEl = document.getElementById(`msCardModeBadge_${s.id}`);
-        if (badgeEl) badgeEl.style.display = "none";
+        this.syncCardHistoricalUI(s.id, { isHistorical: false });
         try {
           this.charts[s.id]?.clearCrosshairPosition();
           this.macdCharts[s.id]?.clearCrosshairPosition();
@@ -2836,10 +3049,7 @@
     }
 
     onTabDeactivated() {
-      if (this._initialRetryTimer) {
-        clearTimeout(this._initialRetryTimer);
-        this._initialRetryTimer = null;
-      }
+      this.clearPendingLoadTimers();
       this.stopRealtimeFeeds();
     }
   }
