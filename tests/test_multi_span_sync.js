@@ -711,4 +711,57 @@ assert.equal(
   "Retry during directFailUntil must go straight to proxy without retrying dead directUrl first",
 );
 
+// Test 24: fetchInitialData renders incrementally, retries slow missing span in background into candlesData, and setSymbol clears stale data
+const protoObj = Object.getPrototypeOf(MultiSpan);
+let scheduledCb = null;
+const savedSetTimeout = sandbox.setTimeout;
+sandbox.setTimeout = (cb, ms) => {
+  if (ms === 1200) {
+    scheduledCb = cb;
+    return 9999;
+  }
+  return savedSetTimeout(cb, ms);
+};
+let oneSecCallCount = 0;
+const fakeInitClient = Object.assign(Object.create(protoObj), {
+  symbol: "BTCUSDT",
+  loaded: false,
+  fetchSeq: { "1s": 1, "5m": 1, "15m": 1, "1h": 1, "1d": 1 },
+  candlesData: {},
+  macdData: {},
+  charts: {},
+  macdCharts: {},
+  animations: {},
+  reloadingSpans: {},
+  isHistorical: {},
+  startRealtimeFeeds() {},
+  stopRealtimeFeeds() {},
+  cancelSpanAnimation() {},
+  updateAllRangeHighlights() {},
+  setSpanData(spanId, rawCandles) {
+    this.candlesData[spanId] = rawCandles;
+    this.macdData[spanId] = { macd: [{ time: rawCandles[0].time, value: 0 }] };
+  },
+  async fetchKlinesForSpan(sym, span) {
+    if (span === "1s") {
+      oneSecCallCount += 1;
+      if (oneSecCallCount <= 2) return [];
+      return [{ time: 1700000000, open: 100, high: 101, low: 99, close: 100, volume: 1 }];
+    }
+    return [{ time: 1700000000, open: 100, high: 101, low: 99, close: 100, volume: 1 }];
+  },
+});
+await protoObj.fetchInitialData.call(fakeInitClient);
+assert.equal(fakeInitClient.loaded, true, "fetchInitialData must mark loaded even if 1s went to background retry");
+assert.equal(fakeInitClient.candlesData["5m"].length, 1, "Healthy spans must render incrementally on Attempt 1");
+assert.equal(fakeInitClient.candlesData["1s"], undefined, "Missing span must remain empty until background retry runs");
+assert.ok(typeof scheduledCb === "function", "Missing span must schedule background retry callback");
+await scheduledCb();
+assert.equal(fakeInitClient.candlesData["1s"].length, 1, "Background retry must populate candlesData['1s'] without TypeError");
+fakeInitClient.fetchInitialData = () => {};
+protoObj.setSymbol.call(fakeInitClient, "ETHUSDT");
+assert.equal(Object.keys(fakeInitClient.candlesData).length, 0, "setSymbol must clear stale candlesData");
+assert.equal(Object.keys(fakeInitClient.macdData).length, 0, "setSymbol must clear stale macdData");
+sandbox.setTimeout = savedSetTimeout;
+
 console.log("All Multi-Span synchronization unit tests passed!");

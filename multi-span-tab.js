@@ -1918,14 +1918,29 @@
         this.startRealtimeFeeds();
 
         if (missingSpans.length) {
+          const seqSnapshot = Object.fromEntries(
+            missingSpans.map((s) => [s.id, this.fetchSeq?.[s.id] || 0])
+          );
           this._initialRetryTimer = setTimeout(async () => {
             this._initialRetryTimer = null;
             if (this.symbol !== sym) return;
             await Promise.all(
               missingSpans.map(async (s) => {
-                if (this.symbol !== sym || (this.data[s.id] && this.data[s.id].length)) return;
+                if (
+                  this.symbol !== sym ||
+                  (this.fetchSeq?.[s.id] || 0) !== seqSnapshot[s.id] ||
+                  this.candlesData?.[s.id]?.length
+                ) {
+                  return;
+                }
                 const retryRaw = await this.fetchKlinesForSpan(sym, s.id, s.defaultLimit);
-                if (this.symbol === sym && Array.isArray(retryRaw) && retryRaw.length && !(this.data[s.id] && this.data[s.id].length)) {
+                if (
+                  this.symbol === sym &&
+                  (this.fetchSeq?.[s.id] || 0) === seqSnapshot[s.id] &&
+                  Array.isArray(retryRaw) &&
+                  retryRaw.length &&
+                  !this.candlesData?.[s.id]?.length
+                ) {
                   this.setSpanData(s.id, retryRaw);
                 }
               })
@@ -2784,6 +2799,8 @@
       this.activeRangeHighlight = null;
       this.isHistorical = {};
       this.reloadingSpans = {};
+      this.candlesData = {};
+      this.macdData = {};
       this.stopRealtimeFeeds();
 
       SPANS.forEach((s) => {
