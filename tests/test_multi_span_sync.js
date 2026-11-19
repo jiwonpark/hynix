@@ -945,6 +945,123 @@ histRightClient.fetchKlinesForSpan = async () => [];
 await protoObj.loadMoreNewer.call(histRightClient, "1s");
 assert.ok(histRightClient.noNewerBefore["1s"] > Date.now(), "Empty newer fetch must activate noNewerBefore cooldown");
 
+// 28. Test setSpanData programmaticSpans guard, cancelSpanAnimation({runSettle}), and updateRangeHighlight during pagination/full coverage
+const setDataSawDebounce = [];
+const guardLogicalListeners = [];
+const guardClient = Object.assign(new MultiSpan.constructor(), {
+  symbol: "BTCUSDT",
+  isHistorical: { "1s": true },
+  debouncedLoadMore(span, dir) {
+    setDataSawDebounce.push({ span, dir });
+  },
+  updateRangeHighlight() {},
+});
+guardClient.charts["1s"] = {
+  timeScale: () => ({
+    getVisibleLogicalRange: () => ({ from: 50, to: 150 }),
+    setVisibleLogicalRange: (r) => {
+      guardLogicalListeners.forEach((cb) => cb(r));
+    },
+    getVisibleRange: () => ({ from: 1000, to: 1100 }),
+    logicalToCoordinate: (idx) => idx * 5,
+    width: () => 500,
+    subscribeVisibleLogicalRangeChange: (cb) => guardLogicalListeners.push(cb),
+  }),
+};
+guardClient.series["1s"] = {
+  setData: (rows) => {
+    const tailRange = { from: rows.length - 10, to: rows.length + 5 };
+    guardLogicalListeners.forEach((cb) => cb(tailRange));
+  },
+};
+guardLogicalListeners.push((lr) => {
+  if (!guardClient.reloadingSpans["1s"] && !guardClient.animatingSpans["1s"] && !guardClient.programmaticSpans["1s"]) {
+    guardClient.debouncedLoadMore("1s", lr.to > 10 ? "newer" : "older");
+  }
+});
+guardClient.loadMoreTimeout["1s"] = setTimeout(() => {}, 5000);
+const guardCandles = new Array(200).fill(0).map((_, i) => ({
+  time: pastDayStart + i,
+  open: 100,
+  high: 101,
+  low: 99,
+  close: 100,
+}));
+guardClient.setSpanData("1s", guardCandles, null, {
+  animate: true,
+  drilldownStart: pastDayStart,
+  drilldownEnd: pastDayStart + 86400,
+  isPartialSlice: true,
+});
+assert.equal(setDataSawDebounce.length, 0, "setSpanData must guard series.setData and entry range with programmaticSpans");
+assert.equal(guardClient.loadMoreTimeout["1s"], null, "setSpanData with animate/drilldown must clear stale loadMoreTimeout");
+
+// Clear animation safely with runSettle
+let settleRan = false;
+guardClient.animations["1s"] = {
+  type: "logical",
+  startFrom: 0,
+  startTo: 50,
+  currentFrom: 10,
+  currentTo: 60,
+  targetFrom: 20,
+  targetTo: 80,
+  startTime: Date.now(),
+  duration: 360,
+  onComplete: () => {
+    settleRan = true;
+  },
+};
+guardClient.animatingSpans["1s"] = true;
+guardClient.cancelSpanAnimation("1s", { runSettle: true });
+assert.equal(settleRan, true, "cancelSpanAnimation({ runSettle: true }) must invoke onComplete");
+assert.equal(guardClient.animatingSpans["1s"], false, "cancelSpanAnimation must clear animatingSpans");
+
+// Ready highlight stays visible during pagination and drops (30M SLICE) suffix when full range covered
+const pgHlEl = { style: { display: "none" } };
+const pgBadgeEl = { style: {}, textContent: "" };
+sandbox.document.getElementById = (id) => {
+  if (id === "msRangeHighlight_1s") return pgHlEl;
+  if (id === "msRangeBadge_1s") return pgBadgeEl;
+  if (id === "msChartHost_1s") return { clientWidth: 500 };
+  return null;
+};
+guardClient.charts["1s"].timeScale = () => ({
+  getVisibleLogicalRange: () => ({ from: 0, to: 150 }),
+  logicalToCoordinate: (idx) => idx * 5,
+  width: () => 500,
+});
+guardClient.candlesData["1s"] = guardCandles.slice();
+guardClient.activeRangeHighlight = {
+  navId: 99,
+  sourceSpan: "1d",
+  sourceLabel: "1-DAY",
+  sourceColor: "#e11d48",
+  startTime: pastDayStart,
+  endTime: pastDayStart + 86400,
+  finerSpans: ["1s"],
+  readySpans: { "1s": true },
+  sliceSpans: { "1s": "slice" },
+};
+guardClient.reloadingSpans["1s"] = true;
+guardClient.rangeReloadingSpans["1s"] = false;
+protoObj.updateRangeHighlight.call(guardClient, "1s");
+assert.equal(pgHlEl.style.display, "block", "Ready highlight must remain visible during incremental loadMore pagination");
+assert.equal(pgBadgeEl.textContent, "1-DAY RANGE (30M SLICE)", "Partial slice coverage must keep (30M SLICE) suffix");
+
+guardClient.rangeReloadingSpans["1s"] = true;
+protoObj.updateRangeHighlight.call(guardClient, "1s");
+assert.equal(pgHlEl.style.display, "none", "Full range reload must hide highlight until reload settles");
+
+guardClient.rangeReloadingSpans["1s"] = false;
+guardClient.candlesData["1s"] = [
+  { time: pastDayStart, open: 100, high: 101, low: 99, close: 100 },
+  { time: pastDayStart + 86399, open: 100, high: 101, low: 99, close: 100 },
+];
+protoObj.updateRangeHighlight.call(guardClient, "1s");
+assert.equal(pgHlEl.style.display, "block", "Highlight must show across covered range");
+assert.equal(pgBadgeEl.textContent, "1-DAY RANGE", "Slice suffix must clear automatically once loaded candles cover full highlighted range");
+
 // Restore sandbox hooks cleanly
 if (prevLightweightCharts === undefined) delete sandbox.LightweightCharts;
 else sandbox.LightweightCharts = prevLightweightCharts;

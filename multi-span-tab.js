@@ -168,7 +168,8 @@
       this.isLogicalSyncing = false;
       this.rafPending = false;
       this.logicalRafPending = false;
-      this.reloadingSpans = {}; // spanId -> boolean
+      this.reloadingSpans = {}; // spanId -> boolean (includes pagination + range reloads)
+      this.rangeReloadingSpans = {}; // spanId -> boolean (full range jump/reset only)
       this.isHistorical = {};   // spanId -> boolean
       this.pinnedTime = null;   // active clicked timestamp
       this.pinnedSpan = null;   // source span of active click
@@ -490,8 +491,8 @@
         // Cancel active animation on that span if user interacts directly
         const cancelOnInput = () => {
           if (this.animatingSpans[s.id]) {
-            this.cancelSpanAnimation(s.id);
             this.programmaticSpans[s.id] = false;
+            this.cancelSpanAnimation(s.id, { runSettle: !this.rangeReloadingSpans?.[s.id] });
           }
         };
         if (typeof host.addEventListener === "function") {
@@ -736,11 +737,16 @@
       return 1 - Math.pow(1 - clamped, 3);
     }
 
-    cancelSpanAnimation(spanId) {
-      if (this.animations[spanId]) {
+    cancelSpanAnimation(spanId, options = {}) {
+      const { runSettle = false } = options;
+      const existing = this.animations?.[spanId];
+      if (existing) {
         delete this.animations[spanId];
       }
       this.animatingSpans[spanId] = false;
+      if (runSettle && existing && typeof existing.onComplete === "function") {
+        existing.onComplete();
+      }
     }
 
     ensureAnimationLoop() {
@@ -1392,6 +1398,7 @@
             if (hasLiveTail) {
               this.fetchSeq[s.id] = (this.fetchSeq[s.id] || 0) + 1;
               this.reloadingSpans[s.id] = false;
+              if (this.rangeReloadingSpans) this.rangeReloadingSpans[s.id] = false;
               if (this.activeRangeHighlight?.navId === navId) {
                 if (!this.activeRangeHighlight.sliceSpans) this.activeRangeHighlight.sliceSpans = {};
                 this.activeRangeHighlight.sliceSpans[s.id] = "live";
@@ -1421,6 +1428,7 @@
             if (hasSliceAlready) {
               this.fetchSeq[s.id] = (this.fetchSeq[s.id] || 0) + 1;
               this.reloadingSpans[s.id] = false;
+              if (this.rangeReloadingSpans) this.rangeReloadingSpans[s.id] = false;
               if (this.activeRangeHighlight?.navId === navId) {
                 if (!this.activeRangeHighlight.sliceSpans) this.activeRangeHighlight.sliceSpans = {};
                 this.activeRangeHighlight.sliceSpans[s.id] = "slice";
@@ -1428,6 +1436,8 @@
               const sliceRange = this.computeDrilldownLogicalRange(s.id, targetRangeStart, targetRangeEnd, { isPartialSlice: true });
               if (sliceRange) {
                 this.animateLogicalRangeTo(s.id, sliceRange.from, sliceRange.to, { duration: 360, onComplete: markReadyOnSettle });
+              } else {
+                markReadyOnSettle();
               }
             } else {
               this.reloadSpanToRange(s.id, targetRangeStart, targetRangeEnd, navId);
@@ -1444,12 +1454,15 @@
             // Invalidate any pending fetch sequence on this span
             this.fetchSeq[s.id] = (this.fetchSeq[s.id] || 0) + 1;
             this.reloadingSpans[s.id] = false;
+            if (this.rangeReloadingSpans) this.rangeReloadingSpans[s.id] = false;
             const targetRange = this.computeDrilldownLogicalRange(s.id, targetRangeStart, targetRangeEnd);
             if (targetRange) {
               this.animateLogicalRangeTo(s.id, targetRange.from, targetRange.to, {
                 duration: 360,
                 onComplete: markReadyOnSettle,
               });
+            } else {
+              markReadyOnSettle();
             }
           } else {
             // Not enough loaded to show the whole range: batch-fetch, animate to target range, then highlight
@@ -1479,7 +1492,7 @@
         !hl.finerSpans.includes(spanId) ||
         !hl.readySpans ||
         !hl.readySpans[spanId] ||
-        this.reloadingSpans[spanId]
+        this.rangeReloadingSpans?.[spanId]
       ) {
         hideAll();
         return;
@@ -1518,9 +1531,8 @@
             const c0 = ts.logicalToCoordinate(baseIdx);
             const c1 = ts.logicalToCoordinate(baseIdx + 1);
             if (
-              c0 !== null && c1 !== null &&
-              typeof c0 === "number" && typeof c1 === "number" &&
-              !isNaN(c0) && !isNaN(c1) &&
+              Number.isFinite(c0) &&
+              Number.isFinite(c1) &&
               c1 !== c0
             ) {
               return c0 + frac * (c1 - c0);
@@ -1573,8 +1585,22 @@
       }
 
       if (badgeEl) {
+        const spanObj = SPANS.find((s) => s.id === spanId);
+        const spanSec = spanObj ? spanObj.sec : 60;
+        const nowSec = Math.floor(Date.now() / 1000);
+        const targetCoveredEnd = Math.min(hl.endTime, nowSec - Math.max(spanSec * 2, 10));
+        const coversWholeRange =
+          data.length > 0 &&
+          data[0].time <= hl.startTime &&
+          (data[data.length - 1].time + spanSec) >= targetCoveredEnd;
         const sliceKind = hl.sliceSpans?.[spanId];
-        const suffix = sliceKind === "live" ? " (LIVE TAIL)" : sliceKind === "slice" ? " (30M SLICE)" : "";
+        const suffix = coversWholeRange
+          ? ""
+          : sliceKind === "live"
+            ? " (LIVE TAIL)"
+            : sliceKind === "slice"
+              ? " (30M SLICE)"
+              : "";
         badgeEl.style.background = color;
         badgeEl.textContent = `${hl.sourceLabel} RANGE${suffix}`;
       }
@@ -1602,6 +1628,8 @@
       const fetchSeq = (this.fetchSeq[spanId] || 0) + 1;
       this.fetchSeq[spanId] = fetchSeq;
       this.reloadingSpans[spanId] = true;
+      if (!this.rangeReloadingSpans) this.rangeReloadingSpans = {};
+      this.rangeReloadingSpans[spanId] = true;
       this.cancelSpanAnimation(spanId);
 
       // Keep highlights hidden cleanly until fetch + pan/zoom complete
@@ -1679,6 +1707,7 @@
         if (Array.isArray(raw) && raw.length) {
           this.isHistorical[spanId] = isHistorical;
           this.reloadingSpans[spanId] = false;
+          if (this.rangeReloadingSpans) this.rangeReloadingSpans[spanId] = false;
 
           if (this.activeRangeHighlight && this.activeRangeHighlight.navId === reqNavId) {
             if (!this.activeRangeHighlight.sliceSpans) this.activeRangeHighlight.sliceSpans = {};
@@ -1740,6 +1769,7 @@
       } finally {
         if (this.fetchSeq[spanId] === fetchSeq) {
           this.reloadingSpans[spanId] = false;
+          if (this.rangeReloadingSpans) this.rangeReloadingSpans[spanId] = false;
         }
         this.updateRangeHighlight(spanId);
       }
@@ -1788,6 +1818,8 @@
       const fetchSeq = (this.fetchSeq[spanId] || 0) + 1;
       this.fetchSeq[spanId] = fetchSeq;
       this.reloadingSpans[spanId] = true;
+      if (!this.rangeReloadingSpans) this.rangeReloadingSpans = {};
+      this.rangeReloadingSpans[spanId] = true;
       this.cancelSpanAnimation(spanId);
       this.isHistorical[spanId] = false;
       if (this.noNewerBefore) delete this.noNewerBefore[spanId];
@@ -1808,6 +1840,7 @@
       } finally {
         if (this.fetchSeq[spanId] === fetchSeq) {
           this.reloadingSpans[spanId] = false;
+          if (this.rangeReloadingSpans) this.rangeReloadingSpans[spanId] = false;
         }
         this.updateRangeHighlight(spanId);
       }
@@ -1862,7 +1895,7 @@
       const reqSymbol = this.symbol;
       const reqSeq = this.fetchSeq?.[spanId] || 0;
       this.reloadingSpans[spanId] = true;
-      this.cancelSpanAnimation(spanId);
+      this.cancelSpanAnimation(spanId, { runSettle: !this.rangeReloadingSpans?.[spanId] });
       try {
         let raw;
         let additions;
@@ -2412,103 +2445,115 @@
       clean.sort((a, b) => a.time - b.time);
       this.candlesData[spanId] = clean;
 
-      const series = this.series[spanId];
-      if (series) series.setData(clean);
-
-      // Compute simple moving averages (MA20 and MA50)
-      const ma20Data = this.calculateSma(clean, 20);
-      const ma50Data = this.calculateSma(clean, 50);
-      if (this.ma20[spanId]) this.ma20[spanId].setData(ma20Data);
-      if (this.ma50[spanId]) this.ma50[spanId].setData(ma50Data);
-
-      // Compute MACD (12, 26, 9)
-      this.updateMacdForSpan(spanId, clean, { updateLatestOnly: false });
-
-      const latest = clean[clean.length - 1];
-      if (latest) {
-        const priceEl = document.getElementById(`msCardPrice_${spanId}`);
-        const hudVal = document.getElementById(`msHudVal_${spanId}`);
-        const cardOhlc = document.getElementById(`msCardOhlc_${spanId}`);
-        const cardTime = document.getElementById(`msCardTime_${spanId}`);
-        const pStr = formatPrice(latest.close);
-        if (priceEl) priceEl.textContent = pStr;
-        if (hudVal) hudVal.textContent = pStr;
-        if (cardOhlc) {
-          cardOhlc.textContent = `O:${formatPrice(latest.open)} H:${formatPrice(latest.high)} L:${formatPrice(latest.low)} C:${pStr}`;
-        }
-        if (cardTime && this.pinnedTime === null) {
-          cardTime.textContent = formatKstShort(latest.time, spanId);
-        }
-        if (spanId === "1s" && this.pinnedTime === null) {
-          const hudTime = document.getElementById("msHudTime");
-          if (hudTime) hudTime.textContent = formatKst(latest.time);
-        }
+      if (this.loadMoreTimeout?.[spanId] && (options.animate || options.drilldownStart !== undefined)) {
+        clearTimeout(this.loadMoreTimeout[spanId]);
+        this.loadMoreTimeout[spanId] = null;
       }
 
+      const series = this.series[spanId];
       const chart = this.charts[spanId];
-      if (chart) {
-        const count = options.visibleBars || 100;
-        let from, to;
+      if (!this.programmaticSpans) this.programmaticSpans = {};
+      const wasProgrammatic = Boolean(this.programmaticSpans[spanId]);
+      this.programmaticSpans[spanId] = true;
+      let from;
+      let to;
+      let shouldAnimate = false;
+      try {
+        if (series) series.setData(clean);
 
-        if (options.drilldownStart !== undefined && options.drilldownEnd !== undefined) {
-          const drill = this.computeDrilldownLogicalRange(spanId, options.drilldownStart, options.drilldownEnd, {
-            isPartialSlice: Boolean(options.isPartialSlice),
-          });
-          if (drill) {
-            from = drill.from;
-            to = drill.to;
+        // Compute simple moving averages (MA20 and MA50)
+        const ma20Data = this.calculateSma(clean, 20);
+        const ma50Data = this.calculateSma(clean, 50);
+        if (this.ma20[spanId]) this.ma20[spanId].setData(ma20Data);
+        if (this.ma50[spanId]) this.ma50[spanId].setData(ma50Data);
+
+        // Compute MACD (12, 26, 9)
+        this.updateMacdForSpan(spanId, clean, { updateLatestOnly: false });
+
+        const latest = clean[clean.length - 1];
+        if (latest) {
+          const priceEl = document.getElementById(`msCardPrice_${spanId}`);
+          const hudVal = document.getElementById(`msHudVal_${spanId}`);
+          const cardOhlc = document.getElementById(`msCardOhlc_${spanId}`);
+          const cardTime = document.getElementById(`msCardTime_${spanId}`);
+          const pStr = formatPrice(latest.close);
+          if (priceEl) priceEl.textContent = pStr;
+          if (hudVal) hudVal.textContent = pStr;
+          if (cardOhlc) {
+            cardOhlc.textContent = `O:${formatPrice(latest.open)} H:${formatPrice(latest.high)} L:${formatPrice(latest.low)} C:${pStr}`;
+          }
+          if (cardTime && this.pinnedTime === null) {
+            cardTime.textContent = formatKstShort(latest.time, spanId);
+          }
+          if (spanId === "1s" && this.pinnedTime === null) {
+            const hudTime = document.getElementById("msHudTime");
+            if (hudTime) hudTime.textContent = formatKst(latest.time);
           }
         }
-        if (from === undefined && centerTime !== null) {
-          const candleIdx = this.findCandleIndexAtOrBefore(spanId, centerTime);
-          if (candleIdx !== -1) {
-            from = Math.round(candleIdx - count / 2);
-            to = from + count;
-          }
-        }
-        if (from === undefined) {
-          to = clean.length - 0.5 + 6;
-          from = to - count;
-        }
 
-        const shouldAnimate = Boolean(options.animate);
-        if (shouldAnimate) {
-          const ts = chart.timeScale();
-          const oldTR = options.oldTimeRange;
-          let entryFrom = null;
-          let entryTo = null;
-          if (oldTR && oldTR.from < oldTR.to && oldTR.to >= clean[0].time && oldTR.from <= clean[clean.length - 1].time) {
-            const mFrom = this.getLogicalIndexForTime(spanId, oldTR.from);
-            const mTo = this.getLogicalIndexForTime(spanId, oldTR.to);
-            if (mFrom !== null && mTo !== null && mTo - mFrom >= 2) {
-              entryFrom = mFrom;
-              entryTo = mTo;
+        if (chart) {
+          const count = options.visibleBars || 100;
+
+          if (options.drilldownStart !== undefined && options.drilldownEnd !== undefined) {
+            const drill = this.computeDrilldownLogicalRange(spanId, options.drilldownStart, options.drilldownEnd, {
+              isPartialSlice: Boolean(options.isPartialSlice),
+            });
+            if (drill) {
+              from = drill.from;
+              to = drill.to;
             }
           }
-          if (entryFrom === null || entryTo === null) {
-            const targetW = Math.max(10, to - from);
-            const targetCenter = (from + to) / 2;
-            const entryW = Math.max(10, Math.min(clean.length, Math.round(targetW * 0.55)));
-            entryFrom = targetCenter + entryW * 0.15 - entryW / 2;
-            entryTo = entryFrom + entryW;
+          if (from === undefined && centerTime !== null) {
+            const candleIdx = this.findCandleIndexAtOrBefore(spanId, centerTime);
+            if (candleIdx !== -1) {
+              from = Math.round(candleIdx - count / 2);
+              to = from + count;
+            }
           }
-          this.programmaticSpans[spanId] = true;
-          try {
-            ts.setVisibleLogicalRange({ from: entryFrom, to: entryTo });
-          } catch (_) {
-          } finally {
-            this.programmaticSpans[spanId] = false;
+          if (from === undefined) {
+            to = clean.length - 0.5 + 6;
+            from = to - count;
           }
-          this.animateLogicalRangeTo(spanId, from, to, {
-            duration: 360,
-            onComplete: options.onComplete || null,
-          });
-        } else {
-          this.animateLogicalRangeTo(spanId, from, to, {
-            immediate: true,
-            onComplete: options.onComplete || null,
-          });
+
+          shouldAnimate = Boolean(options.animate);
+          if (shouldAnimate) {
+            const ts = chart.timeScale();
+            const oldTR = options.oldTimeRange;
+            let entryFrom = null;
+            let entryTo = null;
+            if (oldTR && oldTR.from < oldTR.to && oldTR.to >= clean[0].time && oldTR.from <= clean[clean.length - 1].time) {
+              const mFrom = this.getLogicalIndexForTime(spanId, oldTR.from);
+              const mTo = this.getLogicalIndexForTime(spanId, oldTR.to);
+              if (mFrom !== null && mTo !== null && mTo - mFrom >= 2) {
+                entryFrom = mFrom;
+                entryTo = mTo;
+              }
+            }
+            if (entryFrom === null || entryTo === null) {
+              const targetW = Math.max(10, to - from);
+              const targetCenter = (from + to) / 2;
+              const entryW = Math.max(10, Math.min(clean.length, Math.round(targetW * 0.55)));
+              entryFrom = targetCenter + entryW * 0.15 - entryW / 2;
+              entryTo = entryFrom + entryW;
+            }
+            try {
+              ts.setVisibleLogicalRange({ from: entryFrom, to: entryTo });
+            } catch (_) {}
+          }
         }
+      } finally {
+        this.programmaticSpans[spanId] = wasProgrammatic;
+      }
+
+      if (chart) {
+        this.animateLogicalRangeTo(
+          spanId,
+          from,
+          to,
+          shouldAnimate
+            ? { duration: 360, onComplete: options.onComplete || null }
+            : { immediate: true, onComplete: options.onComplete || null }
+        );
         this.lastVisibleRange[spanId] = chart.timeScale().getVisibleRange();
         this.updateRangeHighlight(spanId);
       }
@@ -3011,6 +3056,7 @@
       this.activeRangeHighlight = null;
       this.isHistorical = {};
       this.reloadingSpans = {};
+      this.rangeReloadingSpans = {};
       this.noOlderBefore = {};
       this.noNewerBefore = {};
       this.candlesData = {};
