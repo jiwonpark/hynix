@@ -1287,34 +1287,14 @@
       // Visual bounds enclose whole candle bodies cleanly: [lStart - 0.5, lEnd - 0.5]
       const vStart = lStart - 0.5;
       const vEnd = Math.max(vStart + 1, lEnd - 0.5);
+      const rangeBars = Math.max(1, vEnd - vStart);
 
-      const clampedStart = Math.max(-0.5, vStart);
-      const clampedEnd = Math.min(data.length - 0.5, Math.max(clampedStart + 1, vEnd));
-      const rangeBars = Math.max(1, clampedEnd - clampedStart);
-
-      const baseBars = 100;
-      const targetBars = Math.min(
-        Math.max(baseBars, Math.ceil(rangeBars * 1.25)),
-        Math.max(baseBars, data.length + 12)
-      );
-
-      const center = (clampedStart + clampedEnd) / 2;
-      let from = center - targetBars / 2;
-      let to = center + targetBars / 2;
-
-      if (data.length >= targetBars) {
-        const padBars = Math.max(6, Math.round(targetBars * 0.08));
-        const maxRight = data.length - 0.5 + padBars;
-        const minLeft = -0.5 - padBars;
-        if (to > maxRight) {
-          to = maxRight;
-          from = to - targetBars;
-        }
-        if (from < minLeft) {
-          from = minLeft;
-          to = from + targetBars;
-        }
-      }
+      // Range occupies exactly 80% of the visible chart width, centered:
+      // targetBars = rangeBars / 0.80 = rangeBars * 1.25 (10% left margin, 80% range, 10% right margin)
+      const targetBars = rangeBars * 1.25;
+      const center = (vStart + vEnd) / 2;
+      const from = center - targetBars / 2;
+      const to = center + targetBars / 2;
 
       return { from, to };
     }
@@ -2530,11 +2510,11 @@
               }
             }
             if (entryFrom === null || entryTo === null) {
-              const targetW = Math.max(10, to - from);
+              const targetW = Math.max(1, to - from);
               const targetCenter = (from + to) / 2;
-              const entryW = Math.max(10, Math.min(clean.length, Math.round(targetW * 0.55)));
-              entryFrom = targetCenter + entryW * 0.15 - entryW / 2;
-              entryTo = entryFrom + entryW;
+              const entryW = Math.max(1, Math.min(clean.length, targetW * 0.75));
+              entryFrom = targetCenter - entryW / 2;
+              entryTo = targetCenter + entryW / 2;
             }
             try {
               ts.setVisibleLogicalRange({ from: entryFrom, to: entryTo });

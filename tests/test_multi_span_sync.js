@@ -1062,6 +1062,99 @@ protoObj.updateRangeHighlight.call(guardClient, "1s");
 assert.equal(pgHlEl.style.display, "block", "Highlight must show across covered range");
 assert.equal(pgBadgeEl.textContent, "1-DAY RANGE", "Slice suffix must clear automatically once loaded candles cover full highlighted range");
 
+// 26. Test Finer Charts Range Occupies Exactly 80% Width Centered on Click
+const testBaseTime = 1700000000;
+const testHarness = {
+  candlesData: {
+    "1h": new Array(100).fill(0).map((_, i) => ({ time: testBaseTime + i * 3600, open: 100, high: 105, low: 95, close: 100 })),
+    "15m": new Array(400).fill(0).map((_, i) => ({ time: testBaseTime + i * 900, open: 100, high: 105, low: 95, close: 100 })),
+    "5m": new Array(1200).fill(0).map((_, i) => ({ time: testBaseTime + i * 300, open: 100, high: 105, low: 95, close: 100 })),
+    "1s": new Array(3600).fill(0).map((_, i) => ({ time: testBaseTime + i, open: 100, high: 105, low: 95, close: 100 })),
+  },
+  getLogicalIndexForTime: protoObj.getLogicalIndexForTime,
+  findCandleIndexAtOrBefore: protoObj.findCandleIndexAtOrBefore,
+};
+
+// Case A: Click 15m candle on 5m chart (3 bars)
+const range15mOn5m = protoObj.computeDrilldownLogicalRange.call(
+  testHarness,
+  "5m",
+  testBaseTime + 900 * 10,
+  testBaseTime + 900 * 11
+);
+assert.ok(range15mOn5m, "Must compute range for 15m on 5m");
+const width15mOn5m = range15mOn5m.to - range15mOn5m.from;
+const lStartA = testHarness.getLogicalIndexForTime("5m", testBaseTime + 900 * 10);
+const lEndA = testHarness.getLogicalIndexForTime("5m", testBaseTime + 900 * 11);
+const vStartA = lStartA - 0.5;
+const vEndA = Math.max(vStartA + 1, lEndA - 0.5);
+const rangeBarsA = vEndA - vStartA;
+const pctA = rangeBarsA / width15mOn5m;
+assert.ok(Math.abs(pctA - 0.80) < 1e-4, `15m on 5m must occupy 80% width (got ${pctA * 100}%)`);
+const centerVisibleA = (range15mOn5m.from + range15mOn5m.to) / 2;
+const centerTargetA = (vStartA + vEndA) / 2;
+assert.ok(Math.abs(centerVisibleA - centerTargetA) < 1e-4, "15m on 5m must be centered");
+
+// Case B: Click 1h candle on 15m chart (4 bars)
+const range1hOn15m = protoObj.computeDrilldownLogicalRange.call(
+  testHarness,
+  "15m",
+  testBaseTime + 3600 * 5,
+  testBaseTime + 3600 * 6
+);
+assert.ok(range1hOn15m, "Must compute range for 1h on 15m");
+const width1hOn15m = range1hOn15m.to - range1hOn15m.from;
+const lStartB = testHarness.getLogicalIndexForTime("15m", testBaseTime + 3600 * 5);
+const lEndB = testHarness.getLogicalIndexForTime("15m", testBaseTime + 3600 * 6);
+const vStartB = lStartB - 0.5;
+const vEndB = Math.max(vStartB + 1, lEndB - 0.5);
+const rangeBarsB = vEndB - vStartB;
+const pctB = rangeBarsB / width1hOn15m;
+assert.ok(Math.abs(pctB - 0.80) < 1e-4, `1h on 15m must occupy 80% width (got ${pctB * 100}%)`);
+const centerVisibleB = (range1hOn15m.from + range1hOn15m.to) / 2;
+const centerTargetB = (vStartB + vEndB) / 2;
+assert.ok(Math.abs(centerVisibleB - centerTargetB) < 1e-4, "1h on 15m must be centered");
+
+// Case C: Click 1d candle on 1h chart (24 bars)
+const range1dOn1h = protoObj.computeDrilldownLogicalRange.call(
+  testHarness,
+  "1h",
+  testBaseTime,
+  testBaseTime + 86400
+);
+assert.ok(range1dOn1h, "Must compute range for 1d on 1h");
+const width1dOn1h = range1dOn1h.to - range1dOn1h.from;
+const lStartC = testHarness.getLogicalIndexForTime("1h", testBaseTime);
+const lEndC = testHarness.getLogicalIndexForTime("1h", testBaseTime + 86400);
+const vStartC = lStartC - 0.5;
+const vEndC = Math.max(vStartC + 1, lEndC - 0.5);
+const rangeBarsC = vEndC - vStartC;
+const pctC = rangeBarsC / width1dOn1h;
+assert.ok(Math.abs(pctC - 0.80) < 1e-4, `1d on 1h must occupy 80% width (got ${pctC * 100}%)`);
+const centerVisibleC = (range1dOn1h.from + range1dOn1h.to) / 2;
+const centerTargetC = (vStartC + vEndC) / 2;
+assert.ok(Math.abs(centerVisibleC - centerTargetC) < 1e-4, "1d on 1h must be centered");
+
+// Case D: Click 5m candle on 1s chart (300 bars)
+const range5mOn1s = protoObj.computeDrilldownLogicalRange.call(
+  testHarness,
+  "1s",
+  testBaseTime + 300 * 2,
+  testBaseTime + 300 * 3
+);
+assert.ok(range5mOn1s, "Must compute range for 5m on 1s");
+const width5mOn1s = range5mOn1s.to - range5mOn1s.from;
+const lStartD = testHarness.getLogicalIndexForTime("1s", testBaseTime + 300 * 2);
+const lEndD = testHarness.getLogicalIndexForTime("1s", testBaseTime + 300 * 3);
+const vStartD = lStartD - 0.5;
+const vEndD = Math.max(vStartD + 1, lEndD - 0.5);
+const rangeBarsD = vEndD - vStartD;
+const pctD = rangeBarsD / width5mOn1s;
+assert.ok(Math.abs(pctD - 0.80) < 1e-4, `5m on 1s must occupy 80% width (got ${pctD * 100}%)`);
+const centerVisibleD = (range5mOn1s.from + range5mOn1s.to) / 2;
+const centerTargetD = (vStartD + vEndD) / 2;
+assert.ok(Math.abs(centerVisibleD - centerTargetD) < 1e-4, "5m on 1s must be centered");
+
 // Restore sandbox hooks cleanly
 if (prevLightweightCharts === undefined) delete sandbox.LightweightCharts;
 else sandbox.LightweightCharts = prevLightweightCharts;
