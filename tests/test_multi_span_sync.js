@@ -15,6 +15,8 @@ const sandbox = {
     querySelector: () => null,
   },
   window: {},
+  setTimeout,
+  clearTimeout,
   requestAnimationFrame: (cb) => setTimeout(cb, 0),
   module: { exports: {} },
 };
@@ -432,5 +434,218 @@ sandbox.document.getElementById = (id) => (id === "msHudTime" ? hudTimeEl : mock
 MultiSpan.broadcastTimePoint(1763441544, "1s", false);
 assert.ok(hudTimeEl.textContent.includes("KST"), "Broadcast time point must format in KST");
 assert.ok(hudTimeEl.textContent.includes("13:52:24"), "Timestamp must correspond to KST wall-clock time");
+
+// 15. Test KST midnight formatting (no 24:xx) and KST tick boundary formatting
+const midnightKstSec = Date.UTC(2026, 10, 18, 15, 5, 9) / 1000; // 2026-11-19 00:05:09 KST
+const kstMidnightHudEl = { textContent: "" };
+const kstMidnightBadgeEl = { textContent: "" };
+sandbox.document.getElementById = (id) => {
+  if (id === "msHudTime") return kstMidnightHudEl;
+  if (id === "msCardTime_5m") return kstMidnightBadgeEl;
+  return mockElements[id] || null;
+};
+MultiSpan.candlesData["5m"] = [{ time: midnightKstSec, open: 10, high: 11, low: 9, close: 10 }];
+MultiSpan.broadcastTimePoint(midnightKstSec, "5m", false);
+assert.equal(kstMidnightHudEl.textContent, "2026-11-19 00:05:09 KST", "00:05 KST must format as 00:xx, not 24:xx");
+assert.equal(kstMidnightBadgeEl.textContent, "11-19 00:05 KST", "Card time at 00:05 KST must format as 00:05, not 24:05");
+
+const utcMidnightSec = Date.UTC(2026, 10, 19, 0, 0, 0) / 1000; // 09:00 KST
+const kstZeroSec = Date.UTC(2026, 10, 18, 15, 0, 0) / 1000; // 00:00 KST
+assert.equal(MultiSpan.formatKstTick(kstZeroSec, 2, "15m"), "11-19", "KST 00:00 boundary must label as date MM-DD");
+assert.equal(MultiSpan.formatKstTick(utcMidnightSec, 2, "15m"), "11-19 09:00", "UTC midnight (09:00 KST) must include time instead of impersonating KST midnight");
+
+// 16. Test MACD timestamp alignment (signal & histogram aligned to their own timestamps, not shifted by warmup offset)
+const macdSetDataCalls = [];
+const macdCandles = new Array(50).fill(0).map((_, i) => ({
+  time: 10000 + i * 60,
+  open: 100 + i,
+  high: 102 + i,
+  low: 99 + i,
+  close: 100 + i * 1.1 + (i % 3),
+}));
+MultiSpan.series["5m"] = { setData: () => {}, update: () => {} };
+MultiSpan.ma20["5m"] = { setData: () => {} };
+MultiSpan.ma50["5m"] = { setData: () => {} };
+MultiSpan.macdHist["5m"] = { setData: (d) => macdSetDataCalls.push({ kind: "hist", len: d.length }), update: () => {} };
+MultiSpan.macdLine["5m"] = { setData: (d) => macdSetDataCalls.push({ kind: "macd", len: d.length }), update: () => {} };
+MultiSpan.macdSignal["5m"] = { setData: (d) => macdSetDataCalls.push({ kind: "sig", len: d.length }), update: () => {} };
+MultiSpan.macdZero["5m"] = { setData: (d) => macdSetDataCalls.push({ kind: "zero", len: d.length }), update: () => {} };
+MultiSpan.charts["5m"] = {
+  timeScale: () => ({
+    getVisibleRange: () => ({ from: 10000, to: 13000 }),
+    getVisibleLogicalRange: () => ({ from: 10, to: 50 }),
+    setVisibleLogicalRange: () => {},
+    width: () => 500,
+  }),
+  setCrosshairPosition: () => {},
+  clearCrosshairPosition: () => {},
+};
+MultiSpan.setSpanData("5m", macdCandles);
+const lastBarTime = macdCandles[macdCandles.length - 1].time;
+const lastMacdEntry = MultiSpan.macdData["5m"].byTime.get(lastBarTime);
+assert.ok(lastMacdEntry && lastMacdEntry.signal !== null && lastMacdEntry.hist !== null, "Latest candle must have non-null MACD signal and histogram");
+assert.equal(lastMacdEntry.signal, MultiSpan.macdData["5m"].signal.slice(-1)[0].value, "Signal in byTime must match same timestamp");
+assert.equal(lastMacdEntry.hist, MultiSpan.macdData["5m"].histogram.slice(-1)[0].value, "Histogram in byTime must match same timestamp");
+
+// 17. Test loadMoreHistorical also updates MACD data & series
+macdSetDataCalls.length = 0;
+const olderMacdCandles = new Array(20).fill(0).map((_, i) => ({
+  time: 10000 - (20 - i) * 60,
+  open: 90 + i * 0.2,
+  high: 91 + i * 0.2,
+  low: 89 + i * 0.2,
+  close: 90 + i * 0.2,
+}));
+MultiSpan.fetchKlinesForSpan = async () => olderMacdCandles;
+await MultiSpan.loadMoreHistorical("5m");
+assert.equal(MultiSpan.candlesData["5m"].length, 70, "loadMoreHistorical should prepend 20 bars to 50 -> 70");
+assert.equal(MultiSpan.macdData["5m"].macd.length, 70 - 26 + 1, "loadMoreHistorical must recalculate MACD length for merged candles");
+assert.ok(macdSetDataCalls.some((c) => c.kind === "hist" && c.len === 70 - 34 + 1), "loadMoreHistorical must update macdHist series");
+assert.ok(macdSetDataCalls.some((c) => c.kind === "zero" && c.len === 70), "loadMoreHistorical must update macdZero baseline series");
+
+// 18. Test historical 1d click -> focused 30m slice on 1s (not 5000-bar clamp / 5500-bar zoom)
+const pastDayStart = nowSec - 5 * 86400;
+const fetchRangeRequests = [];
+const histBadge1s = { style: {}, textContent: "" };
+const hlEl1sDrill = { style: { display: "none" } };
+const badgeEl1sDrill = { style: {}, textContent: "" };
+let logicalRange1sDrill = { from: 900, to: 1000 };
+MultiSpan.candlesData["1d"] = [
+  { time: pastDayStart - 86400, open: 100, high: 105, low: 95, close: 102 },
+  { time: pastDayStart, open: 102, high: 110, low: 100, close: 108 },
+  { time: pastDayStart + 86400, open: 108, high: 112, low: 104, close: 109 },
+];
+MultiSpan.candlesData["1s"] = new Array(1000).fill(0).map((_, i) => ({ time: nowSec - 1000 + i, open: 100, high: 101, low: 99, close: 100 }));
+MultiSpan.isHistorical = {};
+MultiSpan.reloadingSpans = {};
+MultiSpan.series["1s"] = { setData: () => {}, update: () => {} };
+MultiSpan.ma20["1s"] = { setData: () => {} };
+MultiSpan.ma50["1s"] = { setData: () => {} };
+MultiSpan.charts["1s"] = {
+  timeScale: () => ({
+    getVisibleRange: () => ({ from: nowSec - 100, to: nowSec }),
+    getVisibleLogicalRange: () => logicalRange1sDrill,
+    setVisibleLogicalRange: (r) => { logicalRange1sDrill = r; },
+    logicalToCoordinate: (idx) => {
+      const span = logicalRange1sDrill.to - logicalRange1sDrill.from;
+      return span > 0 ? ((idx - logicalRange1sDrill.from) / span) * 500 : 0;
+    },
+    width: () => 500,
+  }),
+  setCrosshairPosition: () => {},
+  clearCrosshairPosition: () => {},
+};
+MultiSpan.fetchKlinesRange = async (sym, span, sTime, eTime, batches) => {
+  fetchRangeRequests.push({ span, sTime, eTime, batches, widthSec: eTime - sTime });
+  const len = span === "1s" ? 1800 : 300;
+  const step = span === "1s" ? 1 : (span === "5m" ? 300 : span === "15m" ? 900 : 3600);
+  return new Array(len).fill(0).map((_, i) => ({
+    time: sTime + i * step,
+    open: 100,
+    high: 102,
+    low: 99,
+    close: 101,
+  }));
+};
+sandbox.document.getElementById = (id) => {
+  if (id === "msRangeHighlight_1s") return hlEl1sDrill;
+  if (id === "msRangeBadge_1s") return badgeEl1sDrill;
+  if (id === "msCardModeBadge_1s") return histBadge1s;
+  return null;
+};
+MultiSpan.handleChartClick("1d", { time: pastDayStart });
+await flushAnimations(80);
+const req1sDrill = fetchRangeRequests.find((r) => r.span === "1s");
+assert.ok(req1sDrill, "Clicking past 1d bar must request 1s slice");
+assert.equal(req1sDrill.batches, 2, "1d -> 1s slice should batch at most 2 requests instead of 6");
+assert.equal(req1sDrill.widthSec, 1800, "1d -> 1s slice should fetch focused 1800s (30m) window around day start");
+const visBars1sDrill = logicalRange1sDrill.to - logicalRange1sDrill.from;
+assert.ok(visBars1sDrill >= 200 && visBars1sDrill <= 300, `1d -> 1s must zoom to readable slice (~240 bars, got ${visBars1sDrill})`);
+assert.equal(histBadge1s.textContent, "⏮️ HISTORICAL · 30M SLICE", "Partial slice badge must clearly label 30M SLICE");
+assert.equal(badgeEl1sDrill.textContent, "1-DAY RANGE (30M SLICE)", "Range highlight badge must indicate 30M SLICE");
+
+// 19. Test clicking today's live 1d candle (>4000s elapsed) keeps 1s live on live tail without rewinding or freezing
+fetchRangeRequests.length = 0;
+MultiSpan.isHistorical["1s"] = false;
+MultiSpan.candlesData["1s"] = new Array(1000).fill(0).map((_, i) => ({ time: nowSec - 1000 + i, open: 100, high: 101, low: 99, close: 100 }));
+const todayLiveDayStart = nowSec - 12000;
+MultiSpan.candlesData["1d"].push({ time: todayLiveDayStart, open: 109, high: 112, low: 107, close: 111 });
+MultiSpan.handleChartClick("1d", { time: todayLiveDayStart });
+await flushAnimations(80);
+assert.equal(fetchRangeRequests.filter((r) => r.span === "1s").length, 0, "Clicking today's live 1d candle when 1s is live must NOT rewind/reload 1s backward");
+assert.equal(MultiSpan.isHistorical["1s"], false, "1s must stay non-historical (live WebSocket enabled) when clicking today's 1d candle");
+
+// 20. Test mouse-leave crosshair restoration on macdChart uses pinnedCandle.time (not raw pinnedTime)
+let restoredMacdCrosshair = null;
+MultiSpan.candlesData["5m"] = [{ time: 5000, close: 100 }, { time: 5300, close: 102 }];
+MultiSpan.macdData["5m"] = {
+  macd: [{ time: 5000, value: 1.0 }],
+  signal: [{ time: 5000, value: 0.8 }],
+  histogram: [{ time: 5000, value: 0.2 }],
+  byTime: new Map([[5000, { macd: 1.0, signal: 0.8, hist: 0.2, histogram: 0.2 }]]),
+};
+MultiSpan.macdCharts["5m"] = {
+  setCrosshairPosition: (v, t) => { restoredMacdCrosshair = { v, t }; },
+  clearCrosshairPosition: () => { restoredMacdCrosshair = { cleared: true }; },
+};
+MultiSpan.pinnedTime = 5150; // between 5000 and 5300 5m candles
+MultiSpan.handleCrosshairMove("5m", null, "main");
+assert.equal(restoredMacdCrosshair?.t, 5000, "Mouse-leave must restore macdChart crosshair at matched candle time (5000), not raw 5150");
+
+// 21. Test setSymbol resets pinned state, activeRangeHighlight, and historical flags cleanly
+MultiSpan.pinnedTime = 5150;
+MultiSpan.pinnedSpan = "5m";
+MultiSpan.isHistorical["1s"] = true;
+MultiSpan.activeRangeHighlight = { navId: 9, sourceSpan: "1d", finerSpans: ["1s"], readySpans: { "1s": true } };
+let initFetchedFor = null;
+MultiSpan.fetchInitialData = async () => { initFetchedFor = MultiSpan.symbol; };
+MultiSpan.setSymbol("ETHUSDT");
+assert.equal(MultiSpan.pinnedTime, null, "setSymbol must clear pinnedTime");
+assert.equal(MultiSpan.pinnedSpan, null, "setSymbol must clear pinnedSpan");
+assert.equal(MultiSpan.activeRangeHighlight, null, "setSymbol must clear activeRangeHighlight");
+assert.equal(Object.keys(MultiSpan.isHistorical).length, 0, "setSymbol must clear isHistorical flags");
+assert.equal(initFetchedFor, "ETHUSDT", "setSymbol must reload initial data for new symbol");
+
+// 22. Test fetchKlinesForSpan hedged direct/proxy selection without 6s timeout cascade
+const fetchCalls = [];
+sandbox.AbortController = AbortController;
+sandbox.window.location = { origin: "https://control.jiwonova.com", pathname: "/skhynix/" };
+const protoFetchKlines = Object.getPrototypeOf(MultiSpan).fetchKlinesForSpan;
+const freshClient = Object.assign(Object.create(Object.getPrototypeOf(MultiSpan)), {
+  proxySlowUntil: 0,
+  directFailUntil: 0,
+});
+
+// Case A: Direct Binance succeeds rapidly -> proxy should NOT even be called (<900ms)
+sandbox.fetch = async (url) => {
+  fetchCalls.push(url);
+  return {
+    ok: true,
+    json: async () => [[1700000000000, "100", "105", "99", "102", "5"]],
+  };
+};
+const directRes = await protoFetchKlines.call(freshClient, "BTCUSDT", "1s", 10, 1700000010000);
+assert.equal(directRes.length, 1);
+assert.equal(directRes[0].time, 1700000000);
+assert.equal(fetchCalls.length, 1, "Fast direct response must avoid redundant proxy request");
+assert.ok(fetchCalls[0].startsWith("https://api.binance.com/api/v3/klines"), "Must try direct Binance first");
+
+// Case B: Direct Binance fails immediately -> falls back to proxy and caches directFailUntil cooldown
+fetchCalls.length = 0;
+sandbox.fetch = async (url) => {
+  fetchCalls.push(url);
+  if (url.startsWith("https://api.binance.com")) {
+    throw new Error("CORS or network blocked");
+  }
+  return {
+    ok: true,
+    json: async () => [[1700000060000, "102", "106", "101", "104", "8"]],
+  };
+};
+const fallbackRes = await protoFetchKlines.call(freshClient, "BTCUSDT", "1s", 10, 1700000070000);
+assert.equal(fallbackRes.length, 1);
+assert.equal(fallbackRes[0].time, 1700000060);
+assert.ok(freshClient.directFailUntil > Date.now(), "Must activate directFailUntil cooldown after proxy wins on direct error");
+assert.ok(fetchCalls.some((u) => u.includes("/skhynix/api/klines")), "Must fall back immediately to /skhynix/api/klines");
 
 console.log("All Multi-Span synchronization unit tests passed!");

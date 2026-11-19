@@ -100,9 +100,6 @@ async function verifyMultiSpanZoom() {
   `);
   console.log("Initial visible candle counts on load:", initialRanges);
 
-  const initialBadge = await evalExpr(`document.getElementById('msCandleCountBadge')?.textContent`);
-  console.log("Candle count badge:", initialBadge);
-
   // Zoom 1s chart independently to 50 bars
   console.log("Zooming 1s chart independently to 50 bars...");
   await evalExpr(`(() => {
@@ -140,8 +137,8 @@ async function verifyMultiSpanZoom() {
     console.log("SUCCESS: 1s chart zoomed independently while other 4 charts preserved their zoom!");
     process.exit(0);
   } else {
-    console.warn("Ranges check result:", { c1sZoomed, othersUnchanged, zoomedRanges });
-    process.exit(0);
+    console.error("FAILED independent zoom check:", { c1sZoomed, othersUnchanged, zoomedRanges });
+    process.exit(1);
   }
 }
 

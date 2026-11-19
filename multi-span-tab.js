@@ -18,24 +18,72 @@
     { id: "1d", label: "1-DAY", sub: "Macro Daily Context", color: "#db2777", defaultLimit: 365, sec: 86400 },
   ];
 
+  // Upper bound for full-range finer-chart loading; wider spans (e.g. 1d -> 1s = 86,400 bars)
+  // load a focused readable slice instead of truncating blindly and zooming to <0.1px/bar.
+  const MAX_FULL_DRILLDOWN_BARS = 4000;
+  const PARTIAL_SLICE_CANDLES = 1800;
+  const PARTIAL_SLICE_VISIBLE_BARS = 240;
+
   const KST_TIME_ZONE = "Asia/Seoul";
+  const KST_FULL_SEC_FMT = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const KST_FULL_MIN_FMT = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const KST_SHORT_MDHM_FMT = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TIME_ZONE,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const KST_DATE_FMT = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const KST_MD_FMT = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TIME_ZONE,
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const KST_HMS_FMT = new Intl.DateTimeFormat("en-GB", {
+    timeZone: KST_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const KST_HM_FMT = new Intl.DateTimeFormat("en-GB", {
+    timeZone: KST_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
 
   const formatKst = (dateOrSec, includeSeconds = true) => {
     if (!dateOrSec && dateOrSec !== 0) return "--";
     const ms = typeof dateOrSec === "number" ? (dateOrSec < 1e11 ? dateOrSec * 1000 : dateOrSec) : Number(dateOrSec);
     const d = new Date(ms);
     if (isNaN(d.getTime())) return "--";
-    const options = {
-      timeZone: KST_TIME_ZONE,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    };
-    if (includeSeconds) options.second = "2-digit";
-    return d.toLocaleString("en-CA", options).replace(",", "") + " KST";
+    const fmt = includeSeconds ? KST_FULL_SEC_FMT : KST_FULL_MIN_FMT;
+    return fmt.format(d).replace(",", "") + " KST";
   };
 
   const formatKstShort = (dateOrSec, spanId = null) => {
@@ -44,47 +92,33 @@
     const d = new Date(ms);
     if (isNaN(d.getTime())) return "--";
     if (spanId === "1s") {
-      return d.toLocaleTimeString("en-GB", { timeZone: KST_TIME_ZONE, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) + " KST";
+      return KST_HMS_FMT.format(d) + " KST";
     }
     if (spanId === "1d") {
-      return d.toLocaleDateString("en-CA", { timeZone: KST_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }) + " KST";
+      return KST_DATE_FMT.format(d) + " KST";
     }
-    return d.toLocaleString("en-CA", { timeZone: KST_TIME_ZONE, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).replace(",", "") + " KST";
+    return KST_SHORT_MDHM_FMT.format(d).replace(",", "") + " KST";
   };
 
   const formatKstTick = (time, tickMarkType, spanId) => {
-    const d = new Date(Number(time) * 1000);
+    const numTime = Number(time);
+    const d = new Date(numTime * 1000);
     if (isNaN(d.getTime())) return "";
     if (spanId === "1s" || tickMarkType === 4) {
-      return d.toLocaleTimeString("en-GB", {
-        timeZone: KST_TIME_ZONE,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      });
+      return KST_HMS_FMT.format(d);
     }
-    if (spanId === "1d" || tickMarkType === 0) {
-      return d.toLocaleDateString("en-CA", {
-        timeZone: KST_TIME_ZONE,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      });
+    if (spanId === "1d") {
+      return KST_DATE_FMT.format(d);
     }
-    if (tickMarkType === 1 || tickMarkType === 2) {
-      return d.toLocaleDateString("en-CA", {
-        timeZone: KST_TIME_ZONE,
-        month: "2-digit",
-        day: "2-digit",
-      });
+    // Korea Standard Time is UTC+9 year-round (no DST): show date-only only on actual KST midnight.
+    const kstSecOfDay = ((Math.floor(numTime) + 32400) % 86400 + 86400) % 86400;
+    if (kstSecOfDay === 0) {
+      return tickMarkType === 0 ? KST_DATE_FMT.format(d) : KST_MD_FMT.format(d);
     }
-    return d.toLocaleTimeString("en-GB", {
-      timeZone: KST_TIME_ZONE,
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+    if (tickMarkType === 0 || tickMarkType === 1 || tickMarkType === 2) {
+      return `${KST_MD_FMT.format(d)} ${KST_HM_FMT.format(d)}`;
+    }
+    return KST_HM_FMT.format(d);
   };
 
   const formatPrice = (p) => {
@@ -148,6 +182,8 @@
       this.activeNavId = 0;
       this.spanNavIds = {};       // spanId -> latest navId
       this.fetchSeq = {};         // spanId -> fetch sequence counter
+      this.proxySlowUntil = 0;    // timestamp until which direct Binance is preferred over slow local proxy
+      this.directFailUntil = 0;   // timestamp until which local proxy is preferred due to direct failure/CORS
       this.ws = null;
       this.pollInterval = null;
       this.resizeObserver = null;
@@ -404,6 +440,7 @@
           rightPriceScale: {
             borderColor: "#e2e8f0",
             scaleMargins: { top: 0.1, bottom: 0.15 },
+            minimumWidth: 74,
           },
           timeScale: {
             borderColor: "#e2e8f0",
@@ -486,13 +523,14 @@
             },
             rightPriceScale: {
               borderColor: "#e2e8f0",
-              scaleMargins: { top: 0.1, bottom: 0.1 },
+              scaleMargins: { top: 0.12, bottom: 0.12 },
               autoScale: true,
+              minimumWidth: 74,
             },
             timeScale: {
               borderColor: "#e2e8f0",
-              timeVisible: false,
-              secondsVisible: false,
+              timeVisible: s.id !== "1d",
+              secondsVisible: s.id === "1s",
               rightOffset: 6,
               minBarSpacing: 0.02,
               lockVisibleTimeRangeOnResize: true,
@@ -503,6 +541,8 @@
 
           const macdHist = macdChart.addHistogramSeries({
             color: "#059669",
+            priceLineVisible: false,
+            lastValueVisible: false,
             priceFormat: { type: "price", precision: 4, minMove: 0.0001 },
           });
           const macdZero = macdChart.addLineSeries({
@@ -517,14 +557,12 @@
             lineWidth: 1.5,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: "MACD",
           });
           const macdSignal = macdChart.addLineSeries({
             color: "#ea580c",
             lineWidth: 1.5,
             priceLineVisible: false,
             lastValueVisible: false,
-            title: "Signal",
           });
 
           this.macdCharts[s.id] = macdChart;
@@ -1007,6 +1045,62 @@
     // SYNCHRONIZED CROSSHAIR & MULTI-SPAN HUD
     // =========================================================================
 
+    applySpanCrosshairState(spanId, targetTime, options = {}) {
+      const { updateHudVal = false } = options;
+      const chart = this.charts[spanId];
+      const series = this.series[spanId];
+      const macdChart = this.macdCharts[spanId];
+      const macdHist = this.macdHist[spanId];
+      const cardOhlc = document.getElementById(`msCardOhlc_${spanId}`);
+      const cardTime = document.getElementById(`msCardTime_${spanId}`);
+      const valEl = document.getElementById(`msHudVal_${spanId}`);
+
+      const candle = this.findCandleAtOrBefore(spanId, targetTime);
+      const syncTime = candle ? candle.time : targetTime;
+
+      if (candle) {
+        const closeP = formatPrice(candle.close);
+        if (updateHudVal && valEl) valEl.textContent = closeP;
+        if (cardOhlc) {
+          cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${closeP}`;
+        }
+        if (cardTime) {
+          cardTime.textContent = formatKstShort(candle.time, spanId);
+        }
+      }
+
+      const macdPoint = this.findMacdAtOrBefore(spanId, targetTime);
+      if (macdPoint) {
+        this.updateMacdLegend(spanId, macdPoint.macd, macdPoint.signal, macdPoint.hist ?? macdPoint.histogram);
+      } else {
+        this.updateMacdLegend(spanId, null, null, null);
+      }
+
+      if (this.reloadingSpans[spanId]) return { candle, macdPoint };
+
+      this._syncingCardCrosshair = true;
+      try {
+        if (chart && series && candle) {
+          try {
+            chart.setCrosshairPosition(candle.close, candle.time, series);
+          } catch (_) {}
+        }
+        if (macdChart && macdHist) {
+          try {
+            if (macdPoint) {
+              macdChart.setCrosshairPosition(macdPoint.hist ?? macdPoint.histogram ?? 0, syncTime, macdHist);
+            } else if (typeof macdChart.clearCrosshairPosition === "function") {
+              macdChart.clearCrosshairPosition();
+            }
+          } catch (_) {}
+        }
+      } finally {
+        this._syncingCardCrosshair = false;
+      }
+
+      return { candle, macdPoint };
+    }
+
     handleCrosshairMove(sourceSpan, param, origin = "main") {
       if (this._syncingCardCrosshair) return;
       const cardOhlc = document.getElementById(`msCardOhlc_${sourceSpan}`);
@@ -1020,37 +1114,7 @@
       if (!param || !param.time) {
         // Mouse left this chart: restore to pinned clicked candle if active, otherwise latest candle
         if (this.pinnedTime !== null) {
-          const pinnedCandle = this.findCandleAtOrBefore(sourceSpan, this.pinnedTime);
-          if (pinnedCandle) {
-            if (cardOhlc) {
-              cardOhlc.textContent = `O:${formatPrice(pinnedCandle.open)} H:${formatPrice(pinnedCandle.high)} L:${formatPrice(pinnedCandle.low)} C:${formatPrice(pinnedCandle.close)}`;
-            }
-            if (cardTime) {
-              cardTime.textContent = formatKstShort(pinnedCandle.time, sourceSpan);
-            }
-            if (chart && series && !this.reloadingSpans[sourceSpan]) {
-              try {
-                this._syncingCardCrosshair = true;
-                chart.setCrosshairPosition(pinnedCandle.close, pinnedCandle.time, series);
-              } catch (_) {
-              } finally {
-                this._syncingCardCrosshair = false;
-              }
-            }
-          }
-          const pinnedMacd = this.findMacdAtOrBefore(sourceSpan, this.pinnedTime);
-          if (pinnedMacd) {
-            this.updateMacdLegend(sourceSpan, pinnedMacd.macd, pinnedMacd.signal, pinnedMacd.hist ?? pinnedMacd.histogram);
-            if (macdChart && macdHist && !this.reloadingSpans[sourceSpan]) {
-              try {
-                this._syncingCardCrosshair = true;
-                macdChart.setCrosshairPosition(pinnedMacd.hist ?? pinnedMacd.histogram ?? 0, this.pinnedTime, macdHist);
-              } catch (_) {
-              } finally {
-                this._syncingCardCrosshair = false;
-              }
-            }
-          }
+          this.applySpanCrosshairState(sourceSpan, this.pinnedTime, { updateHudVal: false });
         } else {
           // No pinned candle: restore to latest loaded candle
           const list = this.candlesData[sourceSpan] || [];
@@ -1155,12 +1219,38 @@
       return idx + (dt > 0 ? (time - t0) / dt : 0);
     }
 
-    computeDrilldownLogicalRange(spanId, startTime, endTime) {
+    computeDrilldownLogicalRange(spanId, startTime, endTime, options = {}) {
+      const { isPartialSlice = false } = options;
       const data = this.candlesData[spanId];
       if (!data || !data.length) return null;
       const lStart = this.getLogicalIndexForTime(spanId, startTime);
       const lEnd = this.getLogicalIndexForTime(spanId, endTime);
       if (lStart === null || lEnd === null) return null;
+
+      const spanObj = SPANS.find((p) => p.id === spanId);
+      const spanSec = spanObj ? (spanObj.sec || 60) : 60;
+      const estSpanBars = (endTime - startTime) / spanSec;
+
+      if (isPartialSlice || estSpanBars > MAX_FULL_DRILLDOWN_BARS) {
+        const visBars = Math.min(PARTIAL_SLICE_VISIBLE_BARS, Math.max(100, data.length + 6));
+        const clampedStart = Math.max(-0.5, lStart - 0.5);
+        const padLeft = Math.round(visBars * 0.1);
+        let from = clampedStart - padLeft;
+        let to = from + visBars;
+        if (data.length >= visBars) {
+          const minLeft = -0.5 - 6;
+          const maxRight = data.length - 0.5 + 6;
+          if (to > maxRight) {
+            to = maxRight;
+            from = to - visBars;
+          }
+          if (from < minLeft) {
+            from = minLeft;
+            to = from + visBars;
+          }
+        }
+        return { from, to };
+      }
 
       // Visual bounds enclose whole candle bodies cleanly: [lStart - 0.5, lEnd - 0.5]
       const vStart = lStart - 0.5;
@@ -1230,6 +1320,7 @@
             endTime: targetRangeEnd,
             finerSpans,
             readySpans: {},
+            sliceSpans: {},
           };
           this.updateAllRangeHighlights();
         }
@@ -1239,43 +1330,8 @@
 
       // Update crosshairs, HUD & smoothly pan/zoom narrower charts
       SPANS.forEach((s, idx) => {
-        const series = this.series[s.id];
         const chart = this.charts[s.id];
-        const valEl = document.getElementById(`msHudVal_${s.id}`);
-        const cardOhlc = document.getElementById(`msCardOhlc_${s.id}`);
-
-        const candle = this.findCandleAtOrBefore(s.id, time);
-
-        // Position crosshair on ALL charts (including clicked chart) and keep it pinned
-        if (chart && series && candle && !this.reloadingSpans[s.id]) {
-          try {
-            chart.setCrosshairPosition(candle.close, candle.time, series);
-          } catch (_) {}
-        }
-
-        if (candle) {
-          const closeP = formatPrice(candle.close);
-          if (valEl) valEl.textContent = closeP;
-          if (cardOhlc) {
-            cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${closeP}`;
-          }
-          const cardTime = document.getElementById(`msCardTime_${s.id}`);
-          if (cardTime) {
-            cardTime.textContent = formatKstShort(candle.time, s.id);
-          }
-        }
-
-        const macdPoint = this.findMacdAtOrBefore(s.id, time);
-        if (macdPoint) {
-          this.updateMacdLegend(s.id, macdPoint.macd, macdPoint.signal, macdPoint.hist ?? macdPoint.histogram);
-        }
-        const macdChart = this.macdCharts[s.id];
-        const macdHist = this.macdHist[s.id];
-        if (macdChart && macdHist && macdPoint && !this.reloadingSpans[s.id]) {
-          try {
-            macdChart.setCrosshairPosition(macdPoint.hist ?? macdPoint.histogram ?? 0, candle ? candle.time : time, macdHist);
-          } catch (_) {}
-        }
+        this.applySpanCrosshairState(s.id, time, { updateHudVal: true });
 
         // Drill-down: if clicking a coarser chart, pan/zoom or reload narrower charts first BEFORE revealing highlight
         if (shouldRecenter && chart && idx < sourceIdx) {
@@ -1284,6 +1340,75 @@
           const spanSec = s.sec || 60;
           const hasData = data.length > 0;
           const effectiveEnd = Math.min(targetRangeEnd, nowSec - Math.max(spanSec * 2, 10));
+          const fullRangeBarsEst = Math.max(0, effectiveEnd - targetRangeStart) / spanSec;
+          const isLiveTodayForming = targetRangeEnd > (nowSec - Math.max(spanSec * 2, 10));
+          const isWideLiveWindow = isLiveTodayForming && fullRangeBarsEst > MAX_FULL_DRILLDOWN_BARS;
+
+          const markReadyOnSettle = () => {
+            this.applySpanCrosshairState(s.id, time, { updateHudVal: false });
+            if (
+              this.activeRangeHighlight &&
+              this.activeRangeHighlight.navId === navId &&
+              this.activeRangeHighlight.finerSpans?.includes(s.id)
+            ) {
+              if (!this.activeRangeHighlight.readySpans) this.activeRangeHighlight.readySpans = {};
+              this.activeRangeHighlight.readySpans[s.id] = true;
+              this.updateRangeHighlight(s.id);
+            }
+          };
+
+          if (isWideLiveWindow) {
+            // Clicked today's wide candle (e.g. 1d -> 1s mid-day): keep finer chart live instead of rewinding/freezing
+            const hasLiveTail =
+              hasData &&
+              !this.isHistorical[s.id] &&
+              (nowSec - data[data.length - 1].time) <= Math.max(spanSec * 30, 120);
+            if (hasLiveTail) {
+              this.fetchSeq[s.id] = (this.fetchSeq[s.id] || 0) + 1;
+              this.reloadingSpans[s.id] = false;
+              if (this.activeRangeHighlight?.navId === navId) {
+                if (!this.activeRangeHighlight.sliceSpans) this.activeRangeHighlight.sliceSpans = {};
+                this.activeRangeHighlight.sliceSpans[s.id] = "live";
+              }
+              const tailBars = Math.min(PARTIAL_SLICE_VISIBLE_BARS, Math.max(100, data.length + 6));
+              const to = data.length - 0.5 + 6;
+              const from = to - tailBars;
+              this.animateLogicalRangeTo(s.id, from, to, { duration: 360, onComplete: markReadyOnSettle });
+            } else {
+              this.reloadSpanToRange(
+                s.id,
+                Math.max(targetRangeStart, nowSec - PARTIAL_SLICE_CANDLES * spanSec),
+                nowSec,
+                navId,
+                { liveTail: true }
+              );
+            }
+            return;
+          }
+
+          if (fullRangeBarsEst > MAX_FULL_DRILLDOWN_BARS) {
+            const minSliceEnd = targetRangeStart + PARTIAL_SLICE_CANDLES * 0.7 * spanSec;
+            const hasSliceAlready =
+              hasData &&
+              data[0].time <= targetRangeStart &&
+              (data[data.length - 1].time + spanSec) >= Math.min(effectiveEnd, minSliceEnd);
+            if (hasSliceAlready) {
+              this.fetchSeq[s.id] = (this.fetchSeq[s.id] || 0) + 1;
+              this.reloadingSpans[s.id] = false;
+              if (this.activeRangeHighlight?.navId === navId) {
+                if (!this.activeRangeHighlight.sliceSpans) this.activeRangeHighlight.sliceSpans = {};
+                this.activeRangeHighlight.sliceSpans[s.id] = "slice";
+              }
+              const sliceRange = this.computeDrilldownLogicalRange(s.id, targetRangeStart, targetRangeEnd, { isPartialSlice: true });
+              if (sliceRange) {
+                this.animateLogicalRangeTo(s.id, sliceRange.from, sliceRange.to, { duration: 360, onComplete: markReadyOnSettle });
+              }
+            } else {
+              this.reloadSpanToRange(s.id, targetRangeStart, targetRangeEnd, navId);
+            }
+            return;
+          }
+
           const hasWholeRange =
             hasData &&
             data[0].time <= targetRangeStart &&
@@ -1297,28 +1422,7 @@
             if (targetRange) {
               this.animateLogicalRangeTo(s.id, targetRange.from, targetRange.to, {
                 duration: 360,
-                onComplete: () => {
-                  // Ensure pinned crosshair stays visible after drill-down animation
-                  if (candle && chart && series) {
-                    try {
-                      chart.setCrosshairPosition(candle.close, candle.time, series);
-                    } catch (_) {}
-                  }
-                  if (macdPoint && this.macdCharts[s.id] && this.macdHist[s.id]) {
-                    try {
-                      this.macdCharts[s.id].setCrosshairPosition(macdPoint.hist ?? macdPoint.histogram ?? 0, candle ? candle.time : time, this.macdHist[s.id]);
-                    } catch (_) {}
-                  }
-                  if (
-                    this.activeRangeHighlight &&
-                    this.activeRangeHighlight.navId === navId &&
-                    this.activeRangeHighlight.finerSpans?.includes(s.id)
-                  ) {
-                    if (!this.activeRangeHighlight.readySpans) this.activeRangeHighlight.readySpans = {};
-                    this.activeRangeHighlight.readySpans[s.id] = true;
-                    this.updateRangeHighlight(s.id);
-                  }
-                },
+                onComplete: markReadyOnSettle,
               });
             }
           } else {
@@ -1337,6 +1441,11 @@
       const badgeEl = document.getElementById(`msRangeBadge_${spanId}`);
       if (!highlightEl) return;
 
+      const hideAll = () => {
+        highlightEl.style.display = "none";
+        if (macdHighlightEl) macdHighlightEl.style.display = "none";
+      };
+
       const hl = this.activeRangeHighlight;
       if (
         !hl ||
@@ -1346,111 +1455,102 @@
         !hl.readySpans[spanId] ||
         this.reloadingSpans[spanId]
       ) {
-        highlightEl.style.display = "none";
-        if (macdHighlightEl) macdHighlightEl.style.display = "none";
+        hideAll();
         return;
       }
 
       const chart = this.charts[spanId];
       if (!chart) return;
 
-      const timeScale = chart.timeScale();
-      const host = document.getElementById(`msChartHost_${spanId}`);
-      const hostWidth = host ? host.clientWidth : 500;
-      const chartWidth = (typeof timeScale.width === "function" && timeScale.width() > 0)
-        ? timeScale.width()
-        : Math.max(10, hostWidth - 60);
-
       const data = this.candlesData[spanId] || [];
       if (!data.length) {
-        highlightEl.style.display = "none";
-        if (macdHighlightEl) macdHighlightEl.style.display = "none";
+        hideAll();
         return;
       }
 
       const lStart = this.getLogicalIndexForTime(spanId, hl.startTime);
       const lEnd = this.getLogicalIndexForTime(spanId, hl.endTime);
       if (lStart === null || lEnd === null) {
-        highlightEl.style.display = "none";
-        if (macdHighlightEl) macdHighlightEl.style.display = "none";
+        hideAll();
         return;
       }
 
       const vStart = lStart - 0.5;
       const vEnd = Math.max(vStart + 1, lEnd - 0.5);
-      const vis = typeof timeScale.getVisibleLogicalRange === "function"
-        ? timeScale.getVisibleLogicalRange()
-        : null;
+      const color = hl.sourceColor || "#0284c7";
 
-      const resolveCoord = (logicalIdx) => {
-        if (typeof timeScale.logicalToCoordinate === "function") {
-          const baseIdx = Math.floor(logicalIdx);
-          const frac = logicalIdx - baseIdx;
-          const c0 = timeScale.logicalToCoordinate(baseIdx);
-          const c1 = timeScale.logicalToCoordinate(baseIdx + 1);
-          if (
-            c0 !== null && c1 !== null &&
-            typeof c0 === "number" && typeof c1 === "number" &&
-            !isNaN(c0) && !isNaN(c1) &&
-            c1 !== c0
-          ) {
-            return c0 + frac * (c1 - c0);
+      const computeBoxForScale = (ts, fallbackWidth) => {
+        if (!ts) return null;
+        const chartWidth = (typeof ts.width === "function" && ts.width() > 0)
+          ? ts.width()
+          : fallbackWidth;
+        const vis = typeof ts.getVisibleLogicalRange === "function" ? ts.getVisibleLogicalRange() : null;
+        const resolveCoord = (logicalIdx) => {
+          if (typeof ts.logicalToCoordinate === "function") {
+            const baseIdx = Math.floor(logicalIdx);
+            const frac = logicalIdx - baseIdx;
+            const c0 = ts.logicalToCoordinate(baseIdx);
+            const c1 = ts.logicalToCoordinate(baseIdx + 1);
+            if (
+              c0 !== null && c1 !== null &&
+              typeof c0 === "number" && typeof c1 === "number" &&
+              !isNaN(c0) && !isNaN(c1) &&
+              c1 !== c0
+            ) {
+              return c0 + frac * (c1 - c0);
+            }
           }
-        }
-        if (vis && vis.to > vis.from) {
-          return ((logicalIdx - vis.from) / (vis.to - vis.from)) * chartWidth;
-        }
-        return null;
+          if (vis && vis.to > vis.from) {
+            return ((logicalIdx - vis.from) / (vis.to - vis.from)) * chartWidth;
+          }
+          return null;
+        };
+
+        const x1 = resolveCoord(vStart);
+        const x2 = resolveCoord(vEnd);
+        if (x1 === null || x2 === null) return null;
+        const rawLeft = Math.min(x1, x2);
+        const rawRight = Math.max(x1, x2);
+        if (rawRight <= 0 || rawLeft >= chartWidth) return null;
+        const leftPx = Math.max(0, rawLeft);
+        const rightPx = Math.min(chartWidth, rawRight);
+        const widthPx = rightPx - leftPx;
+        if (widthPx <= 0) return null;
+        return { leftPx, widthPx, rawLeft, rawRight, chartWidth };
       };
 
-      const x1 = resolveCoord(vStart);
-      const x2 = resolveCoord(vEnd);
-
-      if (x1 === null || x2 === null) {
-        highlightEl.style.display = "none";
-        if (macdHighlightEl) macdHighlightEl.style.display = "none";
+      const host = document.getElementById(`msChartHost_${spanId}`);
+      const mainBox = computeBoxForScale(chart.timeScale?.(), Math.max(10, (host ? host.clientWidth : 500) - 74));
+      if (!mainBox) {
+        hideAll();
         return;
       }
 
-      const rawLeft = Math.min(x1, x2);
-      const rawRight = Math.max(x1, x2);
+      const paintBox = (el, box) => {
+        el.style.display = "block";
+        el.style.left = `${box.leftPx}px`;
+        el.style.width = `${box.widthPx}px`;
+        el.style.background = hexToRgba(hl.sourceColor, 0.12);
+        el.style.borderLeft = box.rawLeft >= -1 ? `2px dashed ${color}` : "none";
+        el.style.borderRight = box.rawRight <= box.chartWidth + 1 ? `2px dashed ${color}` : "none";
+      };
 
-      if (rawRight <= 0 || rawLeft >= chartWidth) {
-        highlightEl.style.display = "none";
-        if (macdHighlightEl) macdHighlightEl.style.display = "none";
-        return;
-      }
-
-      const leftPx = Math.max(0, rawLeft);
-      const rightPx = Math.min(chartWidth, rawRight);
-      const widthPx = rightPx - leftPx;
-
-      if (widthPx <= 0) {
-        highlightEl.style.display = "none";
-        if (macdHighlightEl) macdHighlightEl.style.display = "none";
-        return;
-      }
-
-      const color = hl.sourceColor || "#0284c7";
-      highlightEl.style.display = "block";
-      highlightEl.style.left = `${leftPx}px`;
-      highlightEl.style.width = `${widthPx}px`;
-      highlightEl.style.background = hexToRgba(hl.sourceColor, 0.12);
-      highlightEl.style.borderLeft = rawLeft >= -1 ? `2px dashed ${color}` : "none";
-      highlightEl.style.borderRight = rawRight <= chartWidth + 1 ? `2px dashed ${color}` : "none";
+      paintBox(highlightEl, mainBox);
 
       if (macdHighlightEl) {
-        macdHighlightEl.style.display = "block";
-        macdHighlightEl.style.left = `${leftPx}px`;
-        macdHighlightEl.style.width = `${widthPx}px`;
-        macdHighlightEl.style.background = hexToRgba(hl.sourceColor, 0.12);
-        macdHighlightEl.style.borderLeft = rawLeft >= -1 ? `2px dashed ${color}` : "none";
-        macdHighlightEl.style.borderRight = rawRight <= chartWidth + 1 ? `2px dashed ${color}` : "none";
+        const macdChart = this.macdCharts[spanId];
+        const macdHost = document.getElementById(`msMacdHost_${spanId}`);
+        const macdBox = macdChart && typeof macdChart.timeScale === "function"
+          ? computeBoxForScale(macdChart.timeScale(), Math.max(10, (macdHost ? macdHost.clientWidth : 500) - 74))
+          : null;
+        paintBox(macdHighlightEl, macdBox || mainBox);
       }
 
       if (badgeEl) {
+        const sliceKind = hl.sliceSpans?.[spanId];
+        const suffix = sliceKind === "live" ? " (LIVE TAIL)" : sliceKind === "slice" ? " (30M SLICE)" : "";
         badgeEl.style.background = color;
-        badgeEl.textContent = `${hl.sourceLabel} RANGE`;
+        badgeEl.textContent = `${hl.sourceLabel} RANGE${suffix}`;
       }
     }
 
@@ -1460,7 +1560,7 @@
       });
     }
 
-    async reloadSpanToRange(spanId, startTime, endTime, navId = null) {
+    async reloadSpanToRange(spanId, startTime, endTime, navId = null, options = {}) {
       const spanObj = SPANS.find((p) => p.id === spanId);
       if (!spanObj) return;
       const chart = this.charts[spanId];
@@ -1472,9 +1572,11 @@
       this.reloadingSpans[spanId] = true;
       this.cancelSpanAnimation(spanId);
 
-      // Keep highlight hidden cleanly until fetch + pan/zoom complete
+      // Keep highlights hidden cleanly until fetch + pan/zoom complete
       const hlEl = document.getElementById(`msRangeHighlight_${spanId}`);
       if (hlEl) hlEl.style.display = "none";
+      const macdHlEl = document.getElementById(`msMacdRangeHighlight_${spanId}`);
+      if (macdHlEl) macdHlEl.style.display = "none";
 
       const badgeEl = document.getElementById(`msCardModeBadge_${spanId}`);
       if (badgeEl) {
@@ -1494,31 +1596,48 @@
         const spanSec = spanObj.sec || 60;
         const nowSec = Math.floor(Date.now() / 1000);
         const effectiveRangeEnd = Math.min(endTime, nowSec);
-        const rangeSec = Math.max(spanSec * 20, effectiveRangeEnd - startTime);
-        const desiredBuffer = Math.round(rangeSec * 0.15);
-        const bufferSec = Math.max(spanSec * 30, Math.min(desiredBuffer, 600 * spanSec));
+        const rangeBarsEst = Math.max(0, effectiveRangeEnd - startTime) / spanSec;
+        const isLiveTail = Boolean(options.liveTail);
+        const isPartialSlice = !isLiveTail && rangeBarsEst > MAX_FULL_DRILLDOWN_BARS;
 
-        let targetStart = Math.max(0, startTime - bufferSec);
-        let targetEnd = Math.min(nowSec, endTime + bufferSec);
+        let targetStart;
+        let targetEnd;
+        let maxBatches = 6;
 
-        // If range + buffer fits comfortably in 1 batch, fetch ~900 candles around it for rich context
-        const minWindowSec = 900 * spanSec;
-        if (targetEnd - targetStart < minWindowSec) {
-          const mid = Math.round((startTime + effectiveRangeEnd) / 2);
-          targetStart = Math.max(0, mid - Math.round(minWindowSec / 2));
-          targetEnd = Math.min(nowSec, targetStart + minWindowSec);
+        if (isLiveTail) {
+          targetEnd = nowSec;
+          targetStart = Math.max(0, nowSec - PARTIAL_SLICE_CANDLES * spanSec);
+          maxBatches = 2;
+        } else if (isPartialSlice) {
+          // Wide coarser range (e.g. 1d -> 1s = 86,400 bars): load a focused 30m slice around startTime
+          const leadPad = Math.round(PARTIAL_SLICE_CANDLES * 0.25) * spanSec;
+          targetStart = Math.max(0, startTime - leadPad);
+          targetEnd = Math.min(nowSec, targetStart + PARTIAL_SLICE_CANDLES * spanSec);
+          maxBatches = 2;
+        } else {
+          const rangeSec = Math.max(spanSec * 20, effectiveRangeEnd - startTime);
+          const desiredBuffer = Math.round(rangeSec * 0.15);
+          const bufferSec = Math.max(spanSec * 30, Math.min(desiredBuffer, 600 * spanSec));
+
+          targetStart = Math.max(0, startTime - bufferSec);
+          targetEnd = Math.min(nowSec, endTime + bufferSec);
+
+          // If range + buffer fits comfortably in 1 batch, fetch ~900 candles around it for rich context
+          const minWindowSec = 900 * spanSec;
+          if (targetEnd - targetStart < minWindowSec) {
+            const mid = Math.round((startTime + effectiveRangeEnd) / 2);
+            targetStart = Math.max(0, mid - Math.round(minWindowSec / 2));
+            targetEnd = Math.min(nowSec, targetStart + minWindowSec);
+          }
+
+          const maxCandlesForSpan = MAX_FULL_DRILLDOWN_BARS + 800;
+          if ((targetEnd - targetStart) / spanSec > maxCandlesForSpan) {
+            targetEnd = Math.min(nowSec, targetStart + maxCandlesForSpan * spanSec);
+          }
         }
 
-        // Cap to 5000 candles to avoid excessive pagination/browser freeze
-        const maxCandlesForSpan = 5000;
-        if ((targetEnd - targetStart) / spanSec > maxCandlesForSpan) {
-          targetEnd = Math.min(nowSec, targetStart + maxCandlesForSpan * spanSec);
-        }
-
-        const isHistorical = targetEnd < (nowSec - Math.max(300, spanSec * 5));
-        if (isHistorical) this.isHistorical[spanId] = true;
-
-        const raw = await this.fetchKlinesRange(this.symbol, spanId, targetStart, targetEnd, 6);
+        const isHistorical = !isLiveTail && targetEnd < (nowSec - Math.max(300, spanSec * 5));
+        const raw = await this.fetchKlinesRange(this.symbol, spanId, targetStart, targetEnd, maxBatches);
 
         // Discard stale response if a newer click/reload superseded this fetch
         if (this.fetchSeq[spanId] !== fetchSeq) return;
@@ -1526,8 +1645,25 @@
 
         if (Array.isArray(raw) && raw.length) {
           this.isHistorical[spanId] = isHistorical;
+          this.reloadingSpans[spanId] = false;
+
+          if (this.activeRangeHighlight && this.activeRangeHighlight.navId === reqNavId) {
+            if (!this.activeRangeHighlight.sliceSpans) this.activeRangeHighlight.sliceSpans = {};
+            if (isLiveTail) {
+              this.activeRangeHighlight.sliceSpans[spanId] = "live";
+            } else if (isPartialSlice) {
+              this.activeRangeHighlight.sliceSpans[spanId] = "slice";
+            }
+          }
+
+          const preferredTime = isLiveTail
+            ? raw[raw.length - 1].time
+            : (this.pinnedTime !== null
+              ? Math.max(raw[0].time, Math.min(raw[raw.length - 1].time, this.pinnedTime))
+              : Math.round((startTime + Math.min(targetEnd, effectiveRangeEnd)) / 2));
 
           const onAnimationDone = () => {
+            this.applySpanCrosshairState(spanId, preferredTime, { updateHudVal: false });
             if (
               this.activeRangeHighlight &&
               this.activeRangeHighlight.navId === reqNavId &&
@@ -1539,37 +1675,32 @@
             }
           };
 
-          this.setSpanData(spanId, raw, null, {
+          const setOpts = {
             animate: true,
-            drilldownStart: startTime,
-            drilldownEnd: endTime,
             oldTimeRange,
             onComplete: onAnimationDone,
-          });
-
-          const centerTime = Math.round((startTime + effectiveRangeEnd) / 2);
-          const candle = this.findCandleAtOrBefore(spanId, centerTime);
-          if (candle) {
-            try {
-              chart.setCrosshairPosition(candle.close, candle.time, this.series[spanId]);
-            } catch (_) {}
-            const pStr = formatPrice(candle.close);
-            const valEl = document.getElementById(`msHudVal_${spanId}`);
-            const cardOhlc = document.getElementById(`msCardOhlc_${spanId}`);
-            if (valEl) valEl.textContent = pStr;
-            if (cardOhlc) {
-              cardOhlc.textContent = `O:${formatPrice(candle.open)} H:${formatPrice(candle.high)} L:${formatPrice(candle.low)} C:${pStr}`;
-            }
+          };
+          if (isLiveTail) {
+            setOpts.visibleBars = PARTIAL_SLICE_VISIBLE_BARS;
+          } else {
+            setOpts.drilldownStart = startTime;
+            setOpts.drilldownEnd = endTime;
+            setOpts.isPartialSlice = isPartialSlice;
           }
+
+          this.setSpanData(spanId, raw, null, setOpts);
+          this.applySpanCrosshairState(spanId, preferredTime, { updateHudVal: true });
 
           if (badgeEl) {
             if (isHistorical) {
               badgeEl.style.display = "inline-block";
-              badgeEl.textContent = "⏮️ HISTORICAL";
+              badgeEl.textContent = isPartialSlice ? "⏮️ HISTORICAL · 30M SLICE" : "⏮️ HISTORICAL";
               badgeEl.style.background = "#fee2e2";
               badgeEl.style.color = "#dc2626";
               badgeEl.style.border = "1px solid #fca5a5";
-              badgeEl.title = "Viewing historical window. Click to return to latest.";
+              badgeEl.title = isPartialSlice
+                ? "Showing focused 30m historical slice around clicked period. Click to return to latest, or click a 5m/15m candle to inspect another slice."
+                : "Viewing historical window. Click to return to latest.";
             } else {
               badgeEl.style.display = "none";
             }
@@ -1668,6 +1799,7 @@
             const ma50Data = this.calculateSma(merged, 50);
             if (this.ma20[spanId]) this.ma20[spanId].setData(ma20Data);
             if (this.ma50[spanId]) this.ma50[spanId].setData(ma50Data);
+            this.updateMacdForSpan(spanId, merged, { updateLatestOnly: false });
 
             const chart = this.charts[spanId];
             if (chart) {
@@ -1776,36 +1908,130 @@
 
     async fetchKlinesForSpan(symbol, span, limit, endTime = null) {
       const is1s = span === "1s";
-      const proxyPath = window.location.pathname.startsWith("/skhynix") ? "/skhynix/api/klines" : "/api/klines";
+      const loc = typeof window !== "undefined" ? window.location : null;
+      const pathname = loc && typeof loc.pathname === "string" ? loc.pathname : "";
+      const origin = loc && typeof loc.origin === "string" && loc.origin !== "null" ? loc.origin : "";
+      const proxyPath = pathname.startsWith("/skhynix") ? "/skhynix/api/klines" : "/api/klines";
       const endParam = endTime ? `&endTime=${endTime}` : "";
-      const endpoints = [
-        `${window.location.origin}${proxyPath}?symbol=${symbol}&interval=${span}&limit=${limit}${is1s ? "&market=spot" : ""}${endParam}`,
-        is1s
-          ? `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1s&limit=${limit}${endParam}`
-          : `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${span}&limit=${limit}${endParam}`,
-        is1s
-          ? `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1s&limit=${limit}${endParam}`)}`
-          : `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${span}&limit=${limit}${endParam}`)}`,
-      ];
+      const directUrl = is1s
+        ? `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1s&limit=${limit}${endParam}`
+        : `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${span}&limit=${limit}${endParam}`;
+      const proxyUrl = origin
+        ? `${origin}${proxyPath}?symbol=${symbol}&interval=${span}&limit=${limit}${is1s ? "&market=spot" : ""}${endParam}`
+        : "";
+      const fallbackUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`;
 
-      for (const url of endpoints) {
+      const parseRows = (rows) =>
+        rows.map((r) => ({
+          time: Math.floor(Number(r[0]) / 1000),
+          open: parseFloat(r[1]),
+          high: parseFloat(r[2]),
+          low: parseFloat(r[3]),
+          close: parseFloat(r[4]),
+          volume: parseFloat(r[5] || 0),
+        })).sort((a, b) => a.time - b.time);
+
+      const fetchUrl = async (url, timeoutMs, ctrl = null) => {
+        if (!url || typeof fetch !== "function") throw new Error("fetch unavailable");
+        const ownCtrl = ctrl || (typeof AbortController !== "undefined" ? new AbortController() : null);
+        const timer = ownCtrl ? setTimeout(() => ownCtrl.abort(), timeoutMs) : null;
         try {
-          const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
-          if (!res.ok) continue;
+          const res = await fetch(url, ownCtrl ? { signal: ownCtrl.signal } : undefined);
+          if (!res || !res.ok) throw new Error(`HTTP ${res?.status || 0}`);
           const rows = await res.json();
-          if (Array.isArray(rows) && rows.length) {
-            return rows.map((r) => ({
-              time: Math.floor(Number(r[0]) / 1000),
-              open: parseFloat(r[1]),
-              high: parseFloat(r[2]),
-              low: parseFloat(r[3]),
-              close: parseFloat(r[4]),
-              volume: parseFloat(r[5] || 0),
-            })).sort((a, b) => a.time - b.time);
+          if (!Array.isArray(rows)) throw new Error("Invalid klines payload");
+          return rows.length ? parseRows(rows) : [];
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      };
+
+      const now = Date.now();
+      const directFirst = now >= (this.directFailUntil || 0);
+      const primaryUrl = directFirst ? directUrl : (proxyUrl || directUrl);
+      const secondaryUrl = directFirst
+        ? (now >= (this.proxySlowUntil || 0) ? proxyUrl : "")
+        : directUrl;
+
+      // Primary attempt with quick fallback hedge if primary is slow or fails immediately
+      if (secondaryUrl && secondaryUrl !== primaryUrl) {
+        const primaryCtrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const secondaryCtrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+        let settled = false;
+        let secondaryStarted = false;
+        let hedgeTimer = null;
+        let resolveSec;
+        let rejectSec;
+        const secondaryPromise = new Promise((res, rej) => {
+          resolveSec = res;
+          rejectSec = rej;
+        });
+        secondaryPromise.catch(() => {});
+
+        const startSecondary = () => {
+          if (secondaryStarted || settled) return;
+          secondaryStarted = true;
+          fetchUrl(secondaryUrl, 5000, secondaryCtrl)
+            .then((data) => resolveSec({ source: "secondary", data }))
+            .catch(rejectSec);
+        };
+
+        try {
+          const primaryPromise = fetchUrl(primaryUrl, 4500, primaryCtrl)
+            .then((data) => ({ source: "primary", data }))
+            .catch((err) => {
+              startSecondary();
+              throw err;
+            });
+
+          hedgeTimer = setTimeout(startSecondary, 900);
+
+          const winner = await Promise.any([primaryPromise, secondaryPromise]);
+          settled = true;
+          if (hedgeTimer) clearTimeout(hedgeTimer);
+          if (!secondaryStarted) rejectSec(new Error("primary won"));
+          if (winner.source === "primary") {
+            if (secondaryCtrl) secondaryCtrl.abort();
+            if (!directFirst) this.proxySlowUntil = 0;
+          } else {
+            if (primaryCtrl) primaryCtrl.abort();
+            if (directFirst) this.directFailUntil = Date.now() + 60000;
+            else this.proxySlowUntil = Date.now() + 60000;
           }
-        } catch (_) {}
+          return winner.data;
+        } catch (_) {
+          settled = true;
+          if (hedgeTimer) clearTimeout(hedgeTimer);
+          if (!secondaryStarted) rejectSec(new Error("aborted"));
+          if (primaryCtrl) primaryCtrl.abort();
+          if (secondaryCtrl) secondaryCtrl.abort();
+          if (directFirst && !secondaryStarted && proxyUrl) {
+            try {
+              const proxyData = await fetchUrl(proxyUrl, 5000);
+              this.directFailUntil = Date.now() + 60000;
+              return proxyData;
+            } catch (_) {}
+          }
+        }
+      } else {
+        try {
+          return await fetchUrl(primaryUrl, 5000);
+        } catch (_) {
+          if (primaryUrl === directUrl && proxyUrl) {
+            try {
+              const proxyData = await fetchUrl(proxyUrl, 5000);
+              this.directFailUntil = Date.now() + 60000;
+              return proxyData;
+            } catch (_) {}
+          }
+        }
       }
-      return [];
+
+      try {
+        return await fetchUrl(fallbackUrl, 6000);
+      } catch (_) {
+        return [];
+      }
     }
 
     async fetchKlinesRange(symbol, span, startTime, endTime, maxBatches = 6) {
@@ -1872,6 +2098,54 @@
       return allCandles;
     }
 
+    updateMacdForSpan(spanId, candles, options = {}) {
+      const { updateLatestOnly = false } = options;
+      if (!Array.isArray(candles) || candles.length < 34) return null;
+
+      const macdRes = this.calculateMacd(candles, 12, 26, 9);
+      const sigByTime = new Map(macdRes.signal.map((p) => [p.time, p.value]));
+      const histByTime = new Map(macdRes.histogram.map((p) => [p.time, p.value]));
+      const byTime = new Map();
+      for (const m of macdRes.macd) {
+        const hVal = histByTime.get(m.time) ?? null;
+        byTime.set(m.time, {
+          macd: m.value,
+          signal: sigByTime.get(m.time) ?? null,
+          hist: hVal,
+          histogram: hVal,
+        });
+      }
+      this.macdData[spanId] = { ...macdRes, byTime };
+
+      const lastM = macdRes.macd[macdRes.macd.length - 1];
+      const lastS = macdRes.signal[macdRes.signal.length - 1];
+      const lastH = macdRes.histogram[macdRes.histogram.length - 1];
+      const latestTime = candles[candles.length - 1].time;
+
+      if (updateLatestOnly) {
+        if (this.macdHist[spanId] && lastH) this.macdHist[spanId].update(lastH);
+        if (this.macdLine[spanId] && lastM) this.macdLine[spanId].update(lastM);
+        if (this.macdSignal[spanId] && lastS) this.macdSignal[spanId].update(lastS);
+        if (this.macdZero[spanId]) this.macdZero[spanId].update({ time: latestTime, value: 0 });
+        if (this.pinnedTime === null) {
+          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value);
+        }
+      } else {
+        if (this.macdCharts[spanId] || this.macdHist[spanId] || this.macdLine[spanId] || this.macdSignal[spanId] || this.macdZero[spanId]) {
+          if (this.macdHist[spanId]) this.macdHist[spanId].setData(macdRes.histogram);
+          if (this.macdLine[spanId]) this.macdLine[spanId].setData(macdRes.macd);
+          if (this.macdSignal[spanId]) this.macdSignal[spanId].setData(macdRes.signal);
+          if (this.macdZero[spanId]) {
+            this.macdZero[spanId].setData(candles.map((c) => ({ time: c.time, value: 0 })));
+          }
+          if (macdRes.macd.length && this.pinnedTime === null) {
+            this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value);
+          }
+        }
+      }
+      return macdRes;
+    }
+
     setSpanData(spanId, rawCandles, centerTime = null, options = {}) {
       if (!rawCandles || !rawCandles.length) return;
       // Deduplicate by time
@@ -1896,34 +2170,7 @@
       if (this.ma50[spanId]) this.ma50[spanId].setData(ma50Data);
 
       // Compute MACD (12, 26, 9)
-      const macdRes = this.calculateMacd(clean, 12, 26, 9);
-      this.macdData[spanId] = {
-        ...macdRes,
-        byTime: new Map(macdRes.macd.map((m, i) => [
-          m.time,
-          {
-            macd: m.value,
-            signal: macdRes.signal[i]?.value ?? null,
-            hist: macdRes.histogram[i]?.value ?? null,
-            histogram: macdRes.histogram[i]?.value ?? null,
-          }
-        ]))
-      };
-      if (this.macdCharts[spanId]) {
-        if (this.macdHist[spanId]) this.macdHist[spanId].setData(macdRes.histogram);
-        if (this.macdLine[spanId]) this.macdLine[spanId].setData(macdRes.macd);
-        if (this.macdSignal[spanId]) this.macdSignal[spanId].setData(macdRes.signal);
-        if (this.macdZero[spanId]) {
-          const zeroData = clean.map((c) => ({ time: c.time, value: 0 }));
-          this.macdZero[spanId].setData(zeroData);
-        }
-        if (macdRes.macd.length && this.pinnedTime === null) {
-          const lastM = macdRes.macd[macdRes.macd.length - 1];
-          const lastS = macdRes.signal[macdRes.signal.length - 1];
-          const lastH = macdRes.histogram[macdRes.histogram.length - 1];
-          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value);
-        }
-      }
+      this.updateMacdForSpan(spanId, clean, { updateLatestOnly: false });
 
       const latest = clean[clean.length - 1];
       if (latest) {
@@ -1948,11 +2195,13 @@
 
       const chart = this.charts[spanId];
       if (chart) {
-        const count = 100;
+        const count = options.visibleBars || 100;
         let from, to;
 
         if (options.drilldownStart !== undefined && options.drilldownEnd !== undefined) {
-          const drill = this.computeDrilldownLogicalRange(spanId, options.drilldownStart, options.drilldownEnd);
+          const drill = this.computeDrilldownLogicalRange(spanId, options.drilldownStart, options.drilldownEnd, {
+            isPartialSlice: Boolean(options.isPartialSlice),
+          });
           if (drill) {
             from = drill.from;
             to = drill.to;
@@ -2163,31 +2412,7 @@
       }
 
       // Update MACD dynamically on candle update
-      if (list.length >= 35) {
-        const macdRes = this.calculateMacd(list, 12, 26, 9);
-        this.macdData[spanId] = {
-          ...macdRes,
-          byTime: new Map(macdRes.macd.map((m, i) => [
-            m.time,
-            {
-              macd: m.value,
-              signal: macdRes.signal[i]?.value ?? null,
-              hist: macdRes.histogram[i]?.value ?? null,
-              histogram: macdRes.histogram[i]?.value ?? null,
-            }
-          ]))
-        };
-        const lastM = macdRes.macd[macdRes.macd.length - 1];
-        const lastS = macdRes.signal[macdRes.signal.length - 1];
-        const lastH = macdRes.histogram[macdRes.histogram.length - 1];
-        if (this.macdHist[spanId] && lastH) this.macdHist[spanId].update(lastH);
-        if (this.macdLine[spanId] && lastM) this.macdLine[spanId].update(lastM);
-        if (this.macdSignal[spanId] && lastS) this.macdSignal[spanId].update(lastS);
-        if (this.macdZero[spanId]) this.macdZero[spanId].update({ time: candle.time, value: 0 });
-        if (this.pinnedTime === null) {
-          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value);
-        }
-      }
+      this.updateMacdForSpan(spanId, list, { updateLatestOnly: true });
     }
 
     startRealtimeFeeds() {
@@ -2503,12 +2728,38 @@
       if (sym === this.symbol) return;
       this.symbol = sym;
       this.loaded = false;
+      this.pinnedTime = null;
+      this.pinnedSpan = null;
+      this.activeNavId += 1;
+      this.activeRangeHighlight = null;
+      this.isHistorical = {};
+      this.reloadingSpans = {};
+      this.stopRealtimeFeeds();
+
+      SPANS.forEach((s) => {
+        this.cancelSpanAnimation(s.id);
+        this.fetchSeq[s.id] = (this.fetchSeq[s.id] || 0) + 1;
+        const badgeEl = document.getElementById(`msCardModeBadge_${s.id}`);
+        if (badgeEl) badgeEl.style.display = "none";
+        try {
+          this.charts[s.id]?.clearCrosshairPosition();
+          this.macdCharts[s.id]?.clearCrosshairPosition();
+        } catch (_) {}
+      });
+      this.updateAllRangeHighlights();
+      const hudTime = document.getElementById("msHudTime");
+      if (hudTime) hudTime.textContent = "--";
+
       const container = document.getElementById("tabContentMultiSpan");
       if (container) {
         container.classList.add("mainTabLoading");
         container.setAttribute("aria-busy", "true");
       }
       this.fetchInitialData();
+    }
+
+    formatKstTick(time, tickMarkType, spanId) {
+      return formatKstTick(time, tickMarkType, spanId);
     }
 
     onTabActivated() {
