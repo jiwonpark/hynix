@@ -19,6 +19,7 @@
       --blue: #2563eb;
       --green: #059669;
       --purple: #7c3aed;
+      --terminal-space-min: 4px;
     }
     * { box-sizing: border-box; }
     body {
@@ -35,17 +36,17 @@
       width: 100%;
       max-width: none;
       margin: 0;
-      padding: 14px 0 40px;
+      padding: var(--terminal-space-min) 0;
     }
     .top {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       grid-template-areas: "meta actions" "title title";
       align-items: start;
-      column-gap: 16px;
-      row-gap: 4px;
-      padding: 0 8px;
-      margin-bottom: 16px;
+      column-gap: var(--terminal-space-min);
+      row-gap: var(--terminal-space-min);
+      padding: 0 var(--terminal-space-min);
+      margin-bottom: var(--terminal-space-min);
     }
     .topMeta { grid-area: meta; min-width: 0; }
     #topTitle { grid-area: title; white-space: nowrap; }
@@ -874,11 +875,62 @@
     .mainNavTabs {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 6px;
-      margin: 14px 0 16px 0;
+      gap: var(--terminal-space-min);
+      margin: var(--terminal-space-min) 0;
       border-bottom: 2px solid #cbd5e1;
       padding-bottom: 0;
       width: 100%;
+    }
+
+    /* Unified compact density across every main tab. Keep component padding intact,
+       but use one minimal token for page margins and spacing between layout items. */
+    main > [id^="tabContent"] {
+      margin: 0;
+      padding-inline: var(--terminal-space-min);
+    }
+    main > [id^="tabContent"] > * {
+      margin-bottom: var(--terminal-space-min) !important;
+    }
+    main > [id^="tabContent"] > *:last-child {
+      margin-bottom: 0 !important;
+    }
+    main > footer {
+      margin-top: var(--terminal-space-min) !important;
+      padding: var(--terminal-space-min) var(--terminal-space-min) 0 !important;
+      gap: var(--terminal-space-min) !important;
+    }
+    main [id^="tabContent"] [style*="gap:"] {
+      gap: var(--terminal-space-min) !important;
+    }
+    main [id^="tabContent"] :is(
+      .controls,
+      .controlGrid,
+      .chartHeader,
+      .legend,
+      .modelCard,
+      .tableHead,
+      .topHedgedAndTicketGrid,
+      .execTerminalGrid,
+      .shortTermGrid,
+      .shortTermCriteriaGrid,
+      .executionChartToolbar,
+      .executionChartFooter,
+      .executionChartLegend,
+      .deepDiveGrid,
+      .condChecklist,
+      .condRow
+    ) {
+      gap: var(--terminal-space-min);
+    }
+    main [id^="tabContent"] :is(
+      .controls,
+      .stats,
+      .panel,
+      .tablePanel,
+      .topHedgedAndTicketGrid,
+      .shortTermExecutionSection
+    ) {
+      margin-bottom: var(--terminal-space-min);
     }
     .mainNavBtn {
       display: flex;
@@ -2632,7 +2684,7 @@
     }
 
     @media (max-width: 860px) {
-      main { width: 100%; max-width: none; padding-top: 14px; }
+      main { width: 100%; max-width: none; padding-top: var(--terminal-space-min); }
       .top { grid-template-columns: minmax(0, 1fr); grid-template-areas: "meta" "title" "actions"; }
       .topRight { justify-self: start; }
       .chartHeader, .tableHead { flex-direction: column; }
@@ -2647,12 +2699,12 @@
       main {
         width: 100%;
         max-width: 100%;
-        padding: 12px 0 28px;
+        padding: var(--terminal-space-min) 0;
         overflow: hidden;
       }
       .top {
-        gap: 10px;
-        margin-bottom: 12px;
+        gap: var(--terminal-space-min);
+        margin-bottom: var(--terminal-space-min);
       }
       .top > div:first-child,
       .topRight,
@@ -2705,8 +2757,8 @@
       .mainNavTabs {
         width: 100%;
         max-width: 100%;
-        gap: 6px;
-        margin: 10px 0 12px;
+        gap: var(--terminal-space-min);
+        margin: var(--terminal-space-min) 0;
         padding: 0 0 3px;
         overscroll-behavior-inline: contain;
         scroll-snap-type: inline proximity;
