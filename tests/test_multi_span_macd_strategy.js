@@ -7,6 +7,16 @@ const engine = require(modulePath);
 
 const DAY = 86400;
 const spans = ["1s", "5m", "15m", "1h", "1d"];
+assert.deepEqual(engine.macdStrategyPreset("quick"), {
+  clock_span: "5m",
+  enabled_spans: ["5m", "15m"],
+});
+assert.deepEqual(engine.macdStrategyPreset("all"), {
+  clock_span: "1s",
+  enabled_spans: spans,
+});
+assert.equal(engine.macdStrategySettings().clock_span, "5m");
+assert.deepEqual(engine.macdStrategySettings().enabled_spans, ["5m", "15m"]);
 const points = [
   { time: 0, value: -1, color: "red" },
   { time: DAY, value: -2, color: "red" },
