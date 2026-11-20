@@ -323,6 +323,9 @@
       this.macdZero = {};     // span -> lineSeries
       this.macdData = {};     // span -> { macd, signal, histogram, byTime }
       this.candlesData = {}; // span -> array of { time, open, high, low, close, volume }
+      this.strategyReplayResult = null; // completed-candle all-MACD-H paper replay
+      this.entrySignals = []; // position-independent entry-condition matches
+      this.strategyReplayTimer = null;
       this.lastVisibleRange = {}; // span -> { from, to }
 
       this.isSyncing = false;
@@ -433,6 +436,46 @@
             </div>
           </div>
         </div>
+
+        <!-- Paper-only all-MACD-H strategy tester -->
+        <section id="msStrategyPanel" style="background:#ffffff;border:1px solid #dbe2e7;border-radius:10px;padding:10px 12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <strong style="color:#0f172a;font-size:13px;">Simple all-MACD-H strategy test</strong>
+                <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;">PAPER REPLAY ONLY</span>
+              </div>
+              <small style="display:block;color:#64748b;margin-top:3px;">BUY matches on every completed signal-clock candle when every enabled MACD histogram is below the buy level. SELL exits a simulated long when every enabled histogram is above the sell level. No orders are sent.</small>
+            </div>
+            <button type="button" id="msRunStrategyReplay" style="background:#0284c7;color:#ffffff;border:0;border-radius:5px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;">RUN PAPER TEST</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:#334155;">
+            <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;font-weight:700;">Signal clock
+              <select id="msStrategyClock" style="border:1px solid #cbd5e1;border-radius:4px;padding:3px 5px;font-weight:800;background:#ffffff;">
+                ${SPANS.map((s) => `<option value="${s.id}"${s.id === "1s" ? " selected" : ""}>${s.id}</option>`).join("")}
+              </select>
+            </label>
+            <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;font-weight:700;color:#166534;">BUY: every H &lt;
+              <input id="msStrategyBuyThreshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #86efac;border-radius:4px;padding:3px 5px;font-weight:800;">
+            </label>
+            <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;font-weight:700;color:#991b1b;">SELL: every H &gt;
+              <input id="msStrategySellThreshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #fca5a5;border-radius:4px;padding:3px 5px;font-weight:800;">
+            </label>
+            <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;font-weight:700;">Capital $
+              <input id="msStrategyCapital" type="number" value="10000" min="1" step="100" style="width:82px;border:1px solid #cbd5e1;border-radius:4px;padding:3px 5px;font-weight:800;">
+            </label>
+            <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;font-weight:700;">Fee
+              <input id="msStrategyFeeBps" type="number" value="5" min="0" max="1000" step="0.1" style="width:58px;border:1px solid #cbd5e1;border-radius:4px;padding:3px 5px;font-weight:800;"> bps/side
+            </label>
+          </div>
+          <div id="msStrategySpanToggles" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:11px;">
+            <strong style="color:#475569;">Required histograms:</strong>
+            ${SPANS.map((s) => `<label style="display:inline-flex;flex-direction:row;align-items:center;gap:3px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;color:${s.color};font-weight:800;"><input class="msStrategySpanToggle" data-span="${s.id}" type="checkbox" checked style="width:14px;height:14px;flex:0 0 auto;"> ${s.id} H</label>`).join("")}
+          </div>
+          <div id="msStrategySummary" style="margin-top:8px;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;color:#475569;font-size:11px;">Awaiting completed chart data…</div>
+          <div id="msStrategyConditions" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:6px;"></div>
+          <small id="msStrategySource" style="display:block;color:#64748b;margin-top:6px;">Source: completed Binance candles · MACD-H(12,26,9) · loaded chart history only</small>
+        </section>
 
         <!-- Integrated Synchronized Crosshair HUD -->
         <div id="msCrosshairHud" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;font-variant-numeric:tabular-nums;color:#1e293b;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
@@ -2354,6 +2397,7 @@
         }
 
         this.startRealtimeFeeds();
+        this.runMacdStrategyReplay();
 
         if (missingSpans.length) {
           const seqSnapshot = Object.fromEntries(
@@ -2712,6 +2756,7 @@
           }
         }
       }
+      this.scheduleMacdStrategyReplay();
       return macdRes;
     }
 
@@ -2920,6 +2965,335 @@
       return { macd: macdLine, signal: signalLine, histogram };
     }
 
+    macdStrategySettings() {
+      const validSpans = new Set(SPANS.map((s) => s.id));
+      const readNumber = (id, fallback, min, max) => {
+        if (typeof document === "undefined") return fallback;
+        const value = Number(document.getElementById(id)?.value);
+        if (!Number.isFinite(value)) return fallback;
+        return Math.max(min, Math.min(max, value));
+      };
+      const clockValue = typeof document !== "undefined"
+        ? document.getElementById("msStrategyClock")?.value
+        : "1s";
+      let enabledSpans = SPANS.map((s) => s.id);
+      if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
+        const toggles = [...document.querySelectorAll(".msStrategySpanToggle")];
+        if (toggles.length) {
+          enabledSpans = toggles
+            .filter((input) => input.checked && validSpans.has(input.getAttribute("data-span")))
+            .map((input) => input.getAttribute("data-span"));
+        }
+      }
+      return {
+        strategy_mode: "all_macd_histogram_contrarian",
+        clock_span: validSpans.has(clockValue) ? clockValue : "1s",
+        enabled_spans: enabledSpans,
+        buy_threshold: readNumber("msStrategyBuyThreshold", 0, -1e9, 1e9),
+        sell_threshold: readNumber("msStrategySellThreshold", 0, -1e9, 1e9),
+        initial_capital: readNumber("msStrategyCapital", 10000, 1, 1e12),
+        fee_bps: readNumber("msStrategyFeeBps", 5, 0, 1000),
+      };
+    }
+
+    findCompletedHistogramAt(spanId, decisionTime) {
+      const histogram = this.macdData?.[spanId]?.histogram || [];
+      const spanSec = SPANS.find((s) => s.id === spanId)?.sec || 1;
+      let low = 0;
+      let high = histogram.length - 1;
+      let best = null;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        const point = histogram[mid];
+        if (Number(point.time) + spanSec <= decisionTime) {
+          best = point;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      if (!best || !Number.isFinite(Number(best.value))) return null;
+      return {
+        time: Number(best.time),
+        completed_time: Number(best.time) + spanSec,
+        value: Number(best.value),
+      };
+    }
+
+    evaluateMacdStrategyReplay(rawSettings = {}, nowSec = Math.floor(Date.now() / 1000)) {
+      const validSpanIds = SPANS.map((s) => s.id);
+      const clockSpan = validSpanIds.includes(rawSettings.clock_span) ? rawSettings.clock_span : "1s";
+      const enabledSpans = [...new Set(
+        (Array.isArray(rawSettings.enabled_spans) ? rawSettings.enabled_spans : validSpanIds)
+          .filter((spanId) => validSpanIds.includes(spanId))
+      )];
+      const buyThreshold = Number.isFinite(Number(rawSettings.buy_threshold)) ? Number(rawSettings.buy_threshold) : 0;
+      const sellThreshold = Number.isFinite(Number(rawSettings.sell_threshold)) ? Number(rawSettings.sell_threshold) : 0;
+      const initialCapital = Math.max(1, Number(rawSettings.initial_capital) || 10000);
+      const feeBps = Math.max(0, Math.min(1000, Number(rawSettings.fee_bps) || 0));
+      const settings = {
+        strategy_mode: "all_macd_histogram_contrarian",
+        clock_span: clockSpan,
+        enabled_spans: enabledSpans,
+        buy_threshold: buyThreshold,
+        sell_threshold: sellThreshold,
+        initial_capital: initialCapital,
+        fee_bps: feeBps,
+      };
+      const emptyResult = (error) => ({
+        settings,
+        error,
+        entry_signals: [],
+        exit_signals: [],
+        fills: [],
+        trades: [],
+        latest_evaluation: null,
+        metrics: {
+          evaluated_candles: 0,
+          skipped_unaligned: 0,
+          entry_signal_count: 0,
+          simulated_entry_fills: 0,
+          closed_trades: 0,
+          win_rate_pct: 0,
+          net_return_pct: 0,
+          max_drawdown_pct: 0,
+          final_equity: initialCapital,
+        },
+      });
+
+      if (!enabledSpans.length) return emptyResult("Enable at least one MACD histogram condition.");
+      if (buyThreshold > sellThreshold) {
+        return emptyResult("BUY threshold must be less than or equal to the SELL threshold.");
+      }
+
+      const clockSec = SPANS.find((s) => s.id === clockSpan)?.sec || 1;
+      const clockCandles = (this.candlesData?.[clockSpan] || [])
+        .filter((c) => Number.isFinite(Number(c.time)) && Number.isFinite(Number(c.close)))
+        .filter((c) => Number(c.time) + clockSec <= nowSec)
+        .sort((a, b) => Number(a.time) - Number(b.time));
+      if (!clockCandles.length) return emptyResult(`No completed ${clockSpan} candles are loaded.`);
+
+      const entrySignals = [];
+      const exitSignals = [];
+      const fills = [];
+      const trades = [];
+      const feeRate = feeBps / 10000;
+      let cash = initialCapital;
+      let quantity = 0;
+      let openTrade = null;
+      let peakEquity = initialCapital;
+      let maxDrawdown = 0;
+      let evaluatedCandles = 0;
+      let skippedUnaligned = 0;
+      let latestEvaluation = null;
+      let lastEvaluatedPrice = null;
+
+      for (const candle of clockCandles) {
+        const candleTime = Number(candle.time);
+        const decisionTime = candleTime + clockSec;
+        const price = Number(candle.close);
+        const histograms = {};
+        let aligned = true;
+        for (const spanId of enabledSpans) {
+          const point = this.findCompletedHistogramAt(spanId, decisionTime);
+          if (!point) {
+            aligned = false;
+            break;
+          }
+          histograms[spanId] = point;
+        }
+        if (!aligned) {
+          skippedUnaligned += 1;
+          continue;
+        }
+
+        evaluatedCandles += 1;
+        lastEvaluatedPrice = price;
+        const buyPass = enabledSpans.every((spanId) => histograms[spanId].value < buyThreshold);
+        const sellPass = enabledSpans.every((spanId) => histograms[spanId].value > sellThreshold);
+        latestEvaluation = {
+          time: candleTime,
+          decision_time: decisionTime,
+          price,
+          histograms,
+          condition_pass: {
+            entry_all_histograms_below: buyPass,
+            exit_all_histograms_above: sellPass,
+          },
+        };
+
+        // Entry-condition matches are deliberately evaluated without consulting position state.
+        if (buyPass) {
+          entrySignals.push({
+            time: candleTime,
+            decision_time: decisionTime,
+            price,
+            side: 1,
+            histograms,
+            source: "all_macd_h",
+          });
+        }
+        if (sellPass) {
+          exitSignals.push({
+            time: candleTime,
+            decision_time: decisionTime,
+            price,
+            side: -1,
+            histograms,
+            source: "all_macd_h",
+          });
+        }
+
+        if (quantity > 0 && sellPass) {
+          const grossProceeds = quantity * price;
+          const exitFee = grossProceeds * feeRate;
+          cash = grossProceeds - exitFee;
+          const pnl = cash - openTrade.total_cost;
+          const trade = {
+            entry_time: openTrade.time,
+            entry_price: openTrade.price,
+            exit_time: candleTime,
+            exit_price: price,
+            quantity,
+            entry_fee: openTrade.fee,
+            exit_fee: exitFee,
+            pnl,
+            pnl_pct: openTrade.total_cost > 0 ? (pnl / openTrade.total_cost) * 100 : 0,
+          };
+          trades.push(trade);
+          fills.push({ time: candleTime, price, side: -1, fee: exitFee, source: "simulated_fill" });
+          quantity = 0;
+          openTrade = null;
+        } else if (quantity === 0 && buyPass) {
+          const totalCost = cash;
+          const entryNotional = totalCost / (1 + feeRate);
+          const entryFee = entryNotional * feeRate;
+          quantity = entryNotional / price;
+          cash = 0;
+          openTrade = { time: candleTime, price, fee: entryFee, total_cost: totalCost };
+          fills.push({ time: candleTime, price, side: 1, fee: entryFee, source: "simulated_fill" });
+        }
+
+        const equity = quantity > 0 ? quantity * price : cash;
+        peakEquity = Math.max(peakEquity, equity);
+        if (peakEquity > 0) maxDrawdown = Math.max(maxDrawdown, (peakEquity - equity) / peakEquity);
+      }
+
+      const finalEquity = quantity > 0 && lastEvaluatedPrice !== null ? quantity * lastEvaluatedPrice : cash;
+      const winningTrades = trades.filter((trade) => trade.pnl > 0).length;
+      return {
+        settings,
+        error: evaluatedCandles ? null : "No clock candle has completed MACD-H data for every enabled span.",
+        entry_signals: entrySignals,
+        exit_signals: exitSignals,
+        fills,
+        trades,
+        open_position: openTrade && quantity > 0
+          ? { ...openTrade, quantity, mark_price: lastEvaluatedPrice, equity: finalEquity }
+          : null,
+        latest_evaluation: latestEvaluation,
+        metrics: {
+          evaluated_candles: evaluatedCandles,
+          skipped_unaligned: skippedUnaligned,
+          entry_signal_count: entrySignals.length,
+          simulated_entry_fills: fills.filter((fill) => fill.side === 1).length,
+          closed_trades: trades.length,
+          win_rate_pct: trades.length ? (winningTrades / trades.length) * 100 : 0,
+          net_return_pct: ((finalEquity / initialCapital) - 1) * 100,
+          max_drawdown_pct: maxDrawdown * 100,
+          final_equity: finalEquity,
+        },
+      };
+    }
+
+    applyMacdStrategyMarkers(result) {
+      for (const span of SPANS) {
+        const series = this.series?.[span.id];
+        if (series && typeof series.setMarkers === "function") series.setMarkers([]);
+      }
+      if (!result || result.error) return;
+      const clockSeries = this.series?.[result.settings.clock_span];
+      if (!clockSeries || typeof clockSeries.setMarkers !== "function") return;
+      const markers = [
+        ...result.entry_signals.map((signal) => ({
+          time: signal.time,
+          position: "belowBar",
+          color: "#86efac",
+          shape: "circle",
+          text: "",
+          _priority: 0,
+        })),
+        ...result.fills.map((fill) => ({
+          time: fill.time,
+          position: fill.side > 0 ? "belowBar" : "aboveBar",
+          color: fill.side > 0 ? "#16a34a" : "#dc2626",
+          shape: fill.side > 0 ? "arrowUp" : "arrowDown",
+          text: fill.side > 0 ? "BUY" : "SELL",
+          _priority: fill.side > 0 ? 1 : 2,
+        })),
+      ].sort((a, b) => Number(a.time) - Number(b.time) || a._priority - b._priority)
+        .map(({ _priority, ...marker }) => marker);
+      clockSeries.setMarkers(markers);
+    }
+
+    renderMacdStrategyReplay(result) {
+      if (typeof document === "undefined") return;
+      const summary = document.getElementById("msStrategySummary");
+      const conditions = document.getElementById("msStrategyConditions");
+      const source = document.getElementById("msStrategySource");
+      if (!summary || !conditions) return;
+
+      const settings = result?.settings || this.macdStrategySettings();
+      const metrics = result?.metrics || {};
+      const latest = result?.latest_evaluation;
+      if (result?.error) {
+        summary.innerHTML = `<strong style="color:#b45309;">WAITING</strong> · ${result.error}`;
+      } else {
+        const state = latest?.condition_pass?.entry_all_histograms_below
+          ? '<strong style="color:#16a34a;">BUY MATCH</strong>'
+          : latest?.condition_pass?.exit_all_histograms_above
+            ? '<strong style="color:#dc2626;">SELL MATCH</strong>'
+            : '<strong style="color:#64748b;">WAITING</strong>';
+        const openLabel = result.open_position ? "LONG OPEN" : "FLAT";
+        summary.innerHTML = `${state} · ${openLabel} · return <strong>${Number(metrics.net_return_pct || 0).toFixed(2)}%</strong> · equity <strong>$${Number(metrics.final_equity || 0).toFixed(2)}</strong> · max DD ${Number(metrics.max_drawdown_pct || 0).toFixed(2)}% · entry signals ${metrics.entry_signal_count || 0} · simulated buys ${metrics.simulated_entry_fills || 0} · closed trades ${metrics.closed_trades || 0} · win rate ${Number(metrics.win_rate_pct || 0).toFixed(1)}%`;
+      }
+
+      const enabled = new Set(settings.enabled_spans || []);
+      conditions.innerHTML = SPANS.map((span) => {
+        if (!enabled.has(span.id)) {
+          return `<div style="border:1px solid #e2e8f0;border-radius:5px;padding:5px 7px;background:#f8fafc;font-size:10px;color:#94a3b8;"><strong>${span.id} MACD-H</strong> · OFF</div>`;
+        }
+        const point = latest?.histograms?.[span.id];
+        if (!point) {
+          return `<div style="border:1px solid #fde68a;border-radius:5px;padding:5px 7px;background:#fffbeb;font-size:10px;color:#92400e;"><strong>${span.id} MACD-H</strong> · WAITING<br><span>completed source unavailable</span></div>`;
+        }
+        const buyPass = point.value < settings.buy_threshold;
+        const sellPass = point.value > settings.sell_threshold;
+        return `<div style="border:1px solid #e2e8f0;border-radius:5px;padding:5px 7px;background:#ffffff;font-size:10px;color:#475569;"><strong style="color:${span.color};">${span.id} H ${point.value >= 0 ? "+" : ""}${point.value.toFixed(4)}</strong><br><span style="color:${buyPass ? "#16a34a" : "#94a3b8"};font-weight:800;">BUY ${buyPass ? "PASS" : "WAITING"}</span> · <span style="color:${sellPass ? "#dc2626" : "#94a3b8"};font-weight:800;">SELL ${sellPass ? "PASS" : "WAITING"}</span><br><span>${formatKst(point.completed_time)} completed</span></div>`;
+      }).join("");
+      if (source) {
+        source.textContent = `Source: completed Binance candles · MACD-H(12,26,9) · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · green dots are entry_signals; arrows are simulated fills · loaded chart history only`;
+      }
+    }
+
+    runMacdStrategyReplay(settings = null, nowSec = Math.floor(Date.now() / 1000)) {
+      const result = this.evaluateMacdStrategyReplay(settings || this.macdStrategySettings(), nowSec);
+      this.strategyReplayResult = result;
+      this.entrySignals = result.entry_signals;
+      this.renderMacdStrategyReplay(result);
+      this.applyMacdStrategyMarkers(result);
+      return result;
+    }
+
+    scheduleMacdStrategyReplay(delayMs = 180) {
+      if (!this.mounted || typeof document === "undefined") return;
+      if (this.strategyReplayTimer) clearTimeout(this.strategyReplayTimer);
+      this.strategyReplayTimer = setTimeout(() => {
+        this.strategyReplayTimer = null;
+        this.runMacdStrategyReplay();
+      }, delayMs);
+    }
+
     findMacdAtOrBefore(spanId, time) {
       const data = this.macdData[spanId]?.macd || [];
       if (!data.length) return null;
@@ -3060,6 +3434,23 @@
     // =========================================================================
 
     bindControls() {
+      const runStrategy = () => this.runMacdStrategyReplay();
+      const runStrategyButton = document.getElementById("msRunStrategyReplay");
+      if (runStrategyButton) runStrategyButton.addEventListener("click", runStrategy);
+      [
+        "msStrategyClock",
+        "msStrategyBuyThreshold",
+        "msStrategySellThreshold",
+        "msStrategyCapital",
+        "msStrategyFeeBps",
+      ].forEach((id) => {
+        const control = document.getElementById(id);
+        if (control) control.addEventListener("change", runStrategy);
+      });
+      document.querySelectorAll(".msStrategySpanToggle").forEach((input) => {
+        input.addEventListener("change", runStrategy);
+      });
+
       // Symbol buttons
       const symBtns = document.querySelectorAll(".msSymBtn");
       symBtns.forEach((btn) => {
@@ -3321,6 +3712,10 @@
     }
 
     clearPendingLoadTimers() {
+      if (this.strategyReplayTimer) {
+        clearTimeout(this.strategyReplayTimer);
+        this.strategyReplayTimer = null;
+      }
       if (this._initialRetryTimer) {
         clearTimeout(this._initialRetryTimer);
         this._initialRetryTimer = null;
@@ -3357,6 +3752,8 @@
       this.rangeReloadingSpans = {};
       this.noOlderBefore = {};
       this.noNewerBefore = {};
+      this.strategyReplayResult = null;
+      this.entrySignals = [];
       this.candlesData = {};
       this.macdData = {};
       this.stopRealtimeFeeds();
@@ -3368,6 +3765,7 @@
         try {
           this.charts[s.id]?.clearCrosshairPosition();
           this.macdCharts[s.id]?.clearCrosshairPosition();
+          if (typeof this.series[s.id]?.setMarkers === "function") this.series[s.id].setMarkers([]);
         } catch (_) {}
       });
       this.updateAllRangeHighlights();
