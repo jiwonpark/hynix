@@ -326,6 +326,8 @@
       this.strategyReplayResult = null; // completed-candle all-MACD-H paper replay
       this.entrySignals = []; // position-independent entry-condition matches
       this.strategyExecutionMarkers = []; // Tab 4/5-style entry/exit overlays on the strategy clock
+      this.strategyExecutionFrame = null;
+      this.showStrategyPaperMarkers = true;
       this.activeStrategyMarkerKey = null;
       this.selectedStrategyMarkerKey = null;
       this.strategyMarkerRenderRaf = null;
@@ -366,6 +368,7 @@
       if (!container) return;
 
       this.renderSkeleton(container);
+      this.mountMacdStrategyFrame();
       this.initCharts();
       this.bindControls();
       this.mounted = true;
@@ -441,48 +444,9 @@
           </div>
         </div>
 
-        <!-- Paper-only all-MACD-H strategy tester -->
-        <section id="msStrategyPanel" style="background:#ffffff;border:1px solid #dbe2e7;border-radius:10px;padding:10px 12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-            <div>
-              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                <strong style="color:#0f172a;font-size:13px;">Simple all-enabled-MACD-H strategy test</strong>
-                <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;">PAPER REPLAY ONLY</span>
-              </div>
-              <small style="display:block;color:#64748b;margin-top:3px;">BUY matches on every completed signal-clock candle when every enabled MACD histogram is below the buy level. SELL exits a simulated long when every enabled histogram is above the sell level. Quick Replay starts with 5m+15m so the loaded history is long enough to inspect trades; All 5 Strict applies your exact five-chart rule. No orders are sent.</small>
-            </div>
-            <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-              <button type="button" id="msStrategyPresetQuick" style="background:#e0f2fe;color:#075985;border:1px solid #7dd3fc;border-radius:5px;padding:5px 8px;font-size:10px;font-weight:800;cursor:pointer;">QUICK 5m+15m</button>
-              <button type="button" id="msStrategyPresetAll" style="background:#ffffff;color:#475569;border:1px solid #cbd5e1;border-radius:5px;padding:5px 8px;font-size:10px;font-weight:800;cursor:pointer;">ALL 5 STRICT</button>
-              <button type="button" id="msRunStrategyReplay" style="background:#0284c7;color:#ffffff;border:0;border-radius:5px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;">RUN PAPER TEST</button>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:#334155;">
-            <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;font-weight:700;">Signal clock
-              <select id="msStrategyClock" style="border:1px solid #cbd5e1;border-radius:4px;padding:3px 5px;font-weight:800;background:#ffffff;">
-                ${SPANS.map((s) => `<option value="${s.id}"${s.id === "5m" ? " selected" : ""}>${s.id}</option>`).join("")}
-              </select>
-            </label>
-            <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;font-weight:700;color:#166534;">BUY: every H &lt;
-              <input id="msStrategyBuyThreshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #86efac;border-radius:4px;padding:3px 5px;font-weight:800;">
-            </label>
-            <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;font-weight:700;color:#991b1b;">SELL: every H &gt;
-              <input id="msStrategySellThreshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #fca5a5;border-radius:4px;padding:3px 5px;font-weight:800;">
-            </label>
-            <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;font-weight:700;">Capital $
-              <input id="msStrategyCapital" type="number" value="10000" min="1" step="100" style="width:82px;border:1px solid #cbd5e1;border-radius:4px;padding:3px 5px;font-weight:800;">
-            </label>
-            <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;font-weight:700;">Fee
-              <input id="msStrategyFeeBps" type="number" value="5" min="0" max="1000" step="0.1" style="width:58px;border:1px solid #cbd5e1;border-radius:4px;padding:3px 5px;font-weight:800;"> bps/side
-            </label>
-          </div>
-          <div id="msStrategySpanToggles" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:11px;">
-            <strong style="color:#475569;">Required histograms:</strong>
-            ${SPANS.map((s) => `<label style="display:inline-flex;flex-direction:row;align-items:center;gap:3px;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;color:${s.color};font-weight:800;"><input class="msStrategySpanToggle" data-span="${s.id}" type="checkbox"${["5m", "15m"].includes(s.id) ? " checked" : ""} style="width:14px;height:14px;flex:0 0 auto;"> ${s.id} H</label>`).join("")}
-          </div>
-          <div id="msStrategySummary" style="margin-top:8px;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;color:#475569;font-size:11px;">Awaiting completed chart data…</div>
-          <div id="msStrategyConditions" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:6px;"></div>
-          <small id="msStrategySource" style="display:block;color:#64748b;margin-top:6px;">Source: completed Binance candles · MACD-H(12,26,9) · loaded chart history only</small>
+        <!-- Paper-only all-MACD-H strategy tester; mounted through the shared Tabs 3-5 execution frame. -->
+        <section id="msStrategyPanel" class="shortTermExecutionSection" aria-label="Multi-chart paper replay">
+          <div id="msStrategyExecutionFrame"></div>
         </section>
 
         <!-- Integrated Synchronized Crosshair HUD -->
@@ -548,6 +512,113 @@
       `;
 
       this.applyLayoutStyles();
+    }
+
+    macdStrategyFrameBody() {
+      return `
+        <div class="strategyReplayPresetBar">
+          <div class="executionChartGrouping" aria-label="Paper replay preset">
+            <span>PRESET</span>
+            <button type="button" id="msStrategyPresetQuick" class="isActive" aria-pressed="true" title="Use the 5-minute signal clock with 5m and 15m histogram rules">Quick 5m+15m</button>
+            <button type="button" id="msStrategyPresetAll" aria-pressed="false" title="Require all five MACD histograms on the 1-second signal clock">All 5 strict</button>
+          </div>
+          <strong style="font-size:12px;color:#0f172a;">Simple all-enabled-MACD-H strategy test</strong>
+          <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;">PAPER REPLAY ONLY</span>
+        </div>
+        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">BUY matches on every completed signal-clock candle when every enabled MACD histogram is below the buy level. SELL exits a simulated long when every enabled histogram is above the sell level. Quick uses 5m+15m so the loaded overlap contains inspectable trades; All 5 strict applies the exact five-chart rule. No orders are sent.</small>
+        <div class="strategyReplaySetup" aria-label="Paper replay setup">
+          <strong style="color:#475569;">Replay setup</strong>
+          <label>Signal clock
+            <select id="msStrategyClock">
+              ${SPANS.map((s) => `<option value="${s.id}"${s.id === "5m" ? " selected" : ""}>${s.id}</option>`).join("")}
+            </select>
+          </label>
+          <label>Capital $
+            <input id="msStrategyCapital" type="number" value="10000" min="1" step="100" style="width:82px;">
+          </label>
+          <label>Fee
+            <input id="msStrategyFeeBps" type="number" value="5" min="0" max="1000" step="0.1" style="width:58px;"> bps/side
+          </label>
+        </div>
+        <div id="msStrategySpanToggles" class="strategyReplaySetup" aria-label="Enabled MACD histogram conditions" style="margin-top:var(--terminal-space-min);">
+          <strong style="color:#475569;">Enabled timeframe rules</strong>
+          ${SPANS.map((s) => `<label style="color:${s.color};">
+            <span class="toggleSwitch">
+              <input class="msStrategySpanToggle" data-span="${s.id}" aria-label="Use ${s.id} MACD histogram for paper entry and exit" type="checkbox"${["5m", "15m"].includes(s.id) ? " checked" : ""}>
+              <span class="toggleSlider"></span>
+            </span>
+            ${s.id} MACD-H
+          </label>`).join("")}
+        </div>
+        <div id="msStrategySummary" class="executionChartSecondaryStatus" style="height:auto;min-height:0;white-space:normal;margin:var(--terminal-space-min) 0 0;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">Awaiting completed chart data…</div>
+        <div id="msStrategyConditionGroups" class="terminalConditionGroups" aria-label="Paper replay trading conditions">
+          <section class="terminalConditionGroup" aria-labelledby="msStrategyEntryHeading">
+            <h3 id="msStrategyEntryHeading" class="terminalConditionGroupTitle">Entry conditions</h3>
+            <small class="terminalConditionGroupNote">Every enabled rule must pass on the same completed signal-clock candle. Entry signals remain independent of simulated position state.</small>
+            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#166534;">BUY when every enabled H &lt;
+              <input id="msStrategyBuyThreshold" aria-label="Paper buy MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #86efac;border-radius:4px;padding:3px 5px;font-weight:800;">
+            </label>
+            <div id="msStrategyEntryConditions" class="condChecklist" aria-live="polite"></div>
+          </section>
+          <section class="terminalConditionGroup" aria-labelledby="msStrategyExitHeading">
+            <h3 id="msStrategyExitHeading" class="terminalConditionGroupTitle">Exit conditions</h3>
+            <small class="terminalConditionGroupNote">Every enabled rule is evaluated on completed candles. A passing SELL setup closes the simulated long when one is open.</small>
+            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#991b1b;">SELL when every enabled H &gt;
+              <input id="msStrategySellThreshold" aria-label="Paper sell MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #fca5a5;border-radius:4px;padding:3px 5px;font-weight:800;">
+            </label>
+            <div id="msStrategyExitConditions" class="condChecklist" aria-live="polite"></div>
+          </section>
+        </div>
+        <small id="msStrategySource" style="display:block;color:#64748b;">Source: completed Binance candles · MACD-H(12,26,9) · loaded chart history only</small>
+      `;
+    }
+
+    mountMacdStrategyFrame() {
+      if (typeof document === "undefined") return;
+      const container = document.getElementById("msStrategyExecutionFrame");
+      if (!container) return;
+      const Frame = typeof globalThis !== "undefined" ? globalThis.StrategyExecutionChartFrame : null;
+      if (!Frame?.mount) {
+        container.classList.add("executionChartFrame");
+        container.innerHTML = this.macdStrategyFrameBody();
+        return;
+      }
+      this.strategyExecutionFrame = Frame.mount({
+        container,
+        id: "msStrategyExecution",
+        showHost: false,
+        ids: {
+          action: "msRunStrategyReplay",
+          actual: "msStrategyActualMarkers",
+          virtual: "msStrategyPaperMarkers",
+          status: "msStrategyReplayStatus",
+          legend: "msStrategyLegend",
+          sync: "msStrategySync",
+        },
+        title: "PAPER REPLAY · INTERVAL-DEPENDENT · NOT LIVE EXECUTION",
+        action: { label: "Rerun Paper", onClick: () => this.runMacdStrategyReplay() },
+        actual: { label: "Actual (none)", enabled: false, visible: false },
+        virtual: {
+          label: "Paper",
+          visible: this.showStrategyPaperMarkers,
+          onToggle: () => {
+            this.showStrategyPaperMarkers = !this.showStrategyPaperMarkers;
+            this.strategyExecutionFrame?.setVisibility("virtual", this.showStrategyPaperMarkers);
+            if (!this.showStrategyPaperMarkers) {
+              this.activeStrategyMarkerKey = null;
+              this.selectedStrategyMarkerKey = null;
+              this.updateMacdStrategyMarkerHover(null);
+            }
+            this.renderMacdStrategyMarkers();
+          },
+        },
+        status: "PAPER ONLY · Awaiting completed chart data",
+        description: "Paper results intentionally change with the signal clock, enabled timeframe rules, thresholds, and loaded overlap. These controls never reconfigure a live bot.",
+        body: this.macdStrategyFrameBody(),
+        legendPosition: "top",
+        legend: '<span><strong style="color:#16a34a">▷</strong> Entry signal</span><span><strong style="color:#16a34a">▶</strong> Simulated buy</span><span><strong style="color:#dc2626">◀</strong> Simulated sell</span><span>Hover or click a fill for paired P&amp;L</span>',
+        syncText: "Completed candles · loaded history",
+      });
     }
 
     getEffectiveGridCols(wrapper) {
@@ -3038,8 +3109,7 @@
         const button = document.getElementById(id);
         if (!button) return;
         button.setAttribute("aria-pressed", active ? "true" : "false");
-        button.style.boxShadow = active ? "inset 0 0 0 1px currentColor" : "none";
-        button.style.opacity = active ? "1" : ".72";
+        button.classList.toggle("isActive", active);
       };
       setState("msStrategyPresetQuick", settings?.clock_span === "5m" && enabled === "15m,5m");
       setState("msStrategyPresetAll", settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
@@ -3419,6 +3489,7 @@
         if (triangles) triangles.innerHTML = "";
         if (hover) { hover.style.display = "none"; hover.textContent = ""; }
       });
+      if (!this.showStrategyPaperMarkers) return;
 
       const spanId = this.strategyReplayResult?.settings?.clock_span;
       const markers = this.strategyExecutionMarkers || [];
@@ -3528,18 +3599,22 @@
     renderMacdStrategyReplay(result) {
       if (typeof document === "undefined") return;
       const summary = document.getElementById("msStrategySummary");
-      const conditions = document.getElementById("msStrategyConditions");
+      const entryConditions = document.getElementById("msStrategyEntryConditions");
+      const exitConditions = document.getElementById("msStrategyExitConditions");
       const source = document.getElementById("msStrategySource");
-      if (!summary || !conditions) return;
+      if (!summary || !entryConditions || !exitConditions) return;
 
       const settings = result?.settings || this.macdStrategySettings();
       const metrics = result?.metrics || {};
       const latest = result?.latest_evaluation;
+      let frameStatus = "PAPER ONLY · Awaiting completed chart data";
       this.updateMacdStrategyPresetButtons(settings);
       if (result?.error) {
         summary.innerHTML = `<strong style="color:#b45309;">WAITING</strong> · ${result.error}`;
+        frameStatus = `PAPER · WAITING · ${result.error}`;
       } else if (!(metrics.entry_signal_count > 0) && !(metrics.simulated_entry_fills > 0)) {
         summary.innerHTML = `<strong style="color:#b45309;">NO TRADES IN LOADED OVERLAP</strong> · ${(settings.enabled_spans || []).join(" + ")} enabled · ${metrics.evaluated_candles || 0} completed-candle evaluations · this is a real zero-result, not hidden markers · choose <strong>QUICK 5m+15m</strong> to inspect actual trades or adjust the enabled conditions.`;
+        frameStatus = `PAPER · 0 entry signals · 0 simulated fills · ${metrics.evaluated_candles || 0} completed-candle evaluations`;
       } else {
         const state = latest?.condition_pass?.entry_all_histograms_below
           ? '<strong style="color:#16a34a;">BUY MATCH</strong>'
@@ -3548,21 +3623,33 @@
             : '<strong style="color:#64748b;">WAITING</strong>';
         const openLabel = result.open_position ? "LONG OPEN" : "FLAT";
         summary.innerHTML = `${state} · ${openLabel} · return <strong>${Number(metrics.net_return_pct || 0).toFixed(2)}%</strong> · equity <strong>$${Number(metrics.final_equity || 0).toFixed(2)}</strong> · max DD ${Number(metrics.max_drawdown_pct || 0).toFixed(2)}% · entry signals ${metrics.entry_signal_count || 0} · simulated buys ${metrics.simulated_entry_fills || 0} · closed trades ${metrics.closed_trades || 0} · win rate ${Number(metrics.win_rate_pct || 0).toFixed(1)}%`;
+        frameStatus = `✓ ${metrics.entry_signal_count || 0} entry signals · ${metrics.simulated_entry_fills || 0} simulated buys · ${metrics.closed_trades || 0} closed trades (${Number(metrics.win_rate_pct || 0).toFixed(1)}% win)`;
       }
 
       const enabled = new Set(settings.enabled_spans || []);
-      conditions.innerHTML = SPANS.map((span) => {
+      const conditionRow = (span, kind) => {
+        const isEntry = kind === "entry";
+        const threshold = isEntry ? Number(settings.buy_threshold) : Number(settings.sell_threshold);
+        const operator = isEntry ? "<" : ">";
+        const action = isEntry ? "BUY" : "SELL";
         if (!enabled.has(span.id)) {
-          return `<div style="border:1px solid #e2e8f0;border-radius:5px;padding:5px 7px;background:#f8fafc;font-size:10px;color:#94a3b8;"><strong>${span.id} MACD-H</strong> · OFF</div>`;
+          return `<div class="condRow disabled-cond"><span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;">PAPER · timeframe rule disabled</small></span><span class="condValue"><span class="condBadge neutral">OFF</span></span></div>`;
         }
         const point = latest?.histograms?.[span.id];
         if (!point) {
-          return `<div style="border:1px solid #fde68a;border-radius:5px;padding:5px 7px;background:#fffbeb;font-size:10px;color:#92400e;"><strong>${span.id} MACD-H</strong> · WAITING<br><span>completed source unavailable</span></div>`;
+          return `<div class="condRow"><span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;color:#64748b;">PAPER · completed source unavailable</small></span><span class="condValue"><span class="condBadge neutral">UNAVAILABLE</span></span></div>`;
         }
-        const buyPass = point.value < settings.buy_threshold;
-        const sellPass = point.value > settings.sell_threshold;
-        return `<div style="border:1px solid #e2e8f0;border-radius:5px;padding:5px 7px;background:#ffffff;font-size:10px;color:#475569;"><strong style="color:${span.color};">${span.id} H ${point.value >= 0 ? "+" : ""}${point.value.toFixed(4)}</strong><br><span style="color:${buyPass ? "#16a34a" : "#94a3b8"};font-weight:800;">BUY ${buyPass ? "PASS" : "WAITING"}</span> · <span style="color:${sellPass ? "#dc2626" : "#94a3b8"};font-weight:800;">SELL ${sellPass ? "PASS" : "WAITING"}</span><br><span>${formatKst(point.completed_time)} completed</span></div>`;
-      }).join("");
+        const pass = isEntry ? point.value < threshold : point.value > threshold;
+        const measured = `${point.value >= 0 ? "+" : ""}${point.value.toFixed(4)}`;
+        const badgeTitle = `${action} ${pass ? "passes" : "waits"}: ${span.id} H ${measured} ${operator} ${threshold}`;
+        return `<div class="condRow"><span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;color:#64748b;">PAPER · H ${measured} · ${formatKst(point.completed_time)} completed</small></span><span class="condValue"><span class="condBadge ${pass ? "pass" : "wait"}" title="${badgeTitle}">${pass ? "PASS" : "WAITING"}</span></span></div>`;
+      };
+      entryConditions.innerHTML = SPANS.map((span) => conditionRow(span, "entry")).join("");
+      exitConditions.innerHTML = SPANS.map((span) => conditionRow(span, "exit")).join("");
+      this.strategyExecutionFrame?.setStatus(frameStatus);
+      this.strategyExecutionFrame?.setSync(latest?.decision_time
+        ? `${settings.clock_span} completed ${formatKst(latest.decision_time)} · loaded history`
+        : `${settings.clock_span} completed candles · source unavailable`);
       if (source) {
         source.textContent = `Source: completed Binance candles · MACD-H(12,26,9) · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · faint dashed ▷ are entry_signals without fills; bold ▷/◁ are simulated BUY/SELL fills · hover or click a marker for the paired trade · loaded chart history only`;
       }
@@ -3728,7 +3815,7 @@
     bindControls() {
       const runStrategy = () => this.runMacdStrategyReplay();
       const runStrategyButton = document.getElementById("msRunStrategyReplay");
-      if (runStrategyButton) runStrategyButton.addEventListener("click", runStrategy);
+      if (runStrategyButton && !this.strategyExecutionFrame) runStrategyButton.addEventListener("click", runStrategy);
       const quickPresetButton = document.getElementById("msStrategyPresetQuick");
       const allPresetButton = document.getElementById("msStrategyPresetAll");
       if (quickPresetButton) quickPresetButton.addEventListener("click", () => this.applyMacdStrategyPreset("quick"));

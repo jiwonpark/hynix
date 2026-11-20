@@ -1077,6 +1077,7 @@
     if (!anchor?.parentNode || typeof anchor.querySelectorAll !== "function") return;
     const groups = document.createElement("section");
     groups.id = `${prefix}conditionGroups`;
+    groups.className = "terminalConditionGroups";
     groups.setAttribute("aria-label", "Trading conditions");
     groups.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px;margin:14px 0;";
     const buckets = {};
@@ -1087,12 +1088,15 @@
     ]) {
       const section = document.createElement("section");
       section.id = `${prefix}${key}ConditionGroup`;
+      section.className = "terminalConditionGroup";
       section.style.cssText = "min-width:0;padding:14px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;display:flex;flex-direction:column;gap:10px;";
       const heading = document.createElement("h3");
       heading.textContent = title;
+      heading.className = "terminalConditionGroupTitle";
       heading.style.cssText = "margin:0;font-size:14px;color:#0f172a;";
       const description = document.createElement("small");
       description.textContent = note;
+      description.className = "terminalConditionGroupNote";
       description.style.color = "#64748b";
       section.append(heading, description);
       groups.append(section);

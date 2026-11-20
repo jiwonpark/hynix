@@ -25,6 +25,10 @@
       const virtual = options.virtual || {};
       const action = options.action || {};
       const grouping = options.grouping || null;
+      const showHost = options.showHost !== false;
+      const bodyMarkup = options.body
+        ? `<div class="executionChartBody">${options.body}</div>`
+        : "";
       const legendMarkup = `<div class="executionChartFooter">
           <div id="${ids.legend}" class="executionChartLegend">${options.legend || ""}</div>
           <span id="${ids.sync}" class="executionChartSync">${options.syncText || ""}</span>
@@ -54,7 +58,8 @@
         ${options.description ? `<div class="executionChartDescription">${options.description}</div>` : ""}
         ${options.secondaryStatus ? `<div id="${ids.secondaryStatus}" class="executionChartSecondaryStatus">${options.secondaryStatus}</div>` : ""}
         ${options.legendPosition === "top" ? legendMarkup : ""}
-        <div id="${ids.host}" class="executionChartHost" style="height:${Number(options.height) || 420}px"></div>
+        ${bodyMarkup}
+        ${showHost ? `<div id="${ids.host}" class="executionChartHost" style="height:${Number(options.height) || 420}px"></div>` : ""}
         ${options.showAssetPane ? `
         <div id="${ids.assetPaneShell}" class="assetPricePaneShell" style="position:relative;height:${Number(options.assetHeight) || 185}px;border-top:2px solid #cbd5e1;background:#fff;width:100%;display:block;">
           <div class="assetPriceLegendBar" style="position:absolute;top:6px;left:12px;max-width:calc(100% - 24px);height:24px;box-sizing:border-box;z-index:10;display:flex;align-items:center;flex-wrap:nowrap;gap:10px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);padding:3px 8px;border-radius:4px;border:1px solid #cbd5e1;pointer-events:none;">

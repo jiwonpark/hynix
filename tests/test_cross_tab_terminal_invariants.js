@@ -9,6 +9,7 @@ const crypto = fs.readFileSync(path.join(root, "crypto-tab.js"), "utf8");
 const lighterCrypto = fs.readFileSync(path.join(root, "lighter-crypto-tab.js"), "utf8");
 const common = fs.readFileSync(path.join(root, "terminal-common.js"), "utf8");
 const executionChart = fs.readFileSync(path.join(root, "strategy-execution-chart.js"), "utf8");
+const multiSpan = fs.readFileSync(path.join(root, "multi-span-tab.js"), "utf8");
 
 assert.match(executionChart, /EXIT\$\{groupedCount > 1 \? ` ×\$\{groupedCount\}` : ""\}/,
   "the shared chart must retain grouped exit detail for hover and legacy consumers");
@@ -18,6 +19,14 @@ assert.match(index, /compactHoverOnly: true/,
   "Tab 2 alone must opt into compact arrows with hover-only labels");
 assert.match(executionChart, /size: this\.compactHoverOnly \? 1/,
   "Tab 2 compact mode must use the smaller native arrow size");
+assert.match(executionChart, /const showHost = options\.showHost !== false/,
+  "the common execution frame must support shared strategy-only layouts without a decorative chart");
+assert.match(common, /groups\.className = "terminalConditionGroups"/,
+  "Tabs 4 and 5 must expose their Entry and Exit groups through the common terminal layout contract");
+assert.match(multiSpan, /Frame\.mount\(\{[\s\S]*?showHost: false/,
+  "Multi-Chart replay must reuse the shared execution frame instead of a tab-local shell");
+assert.match(multiSpan, /class="terminalConditionGroup"[\s\S]*?Entry conditions[\s\S]*?class="terminalConditionGroup"[\s\S]*?Exit conditions/,
+  "Multi-Chart must share the Entry and Exit condition layout used by the single-leg terminals");
 for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", lighterCrypto]]) {
   assert.match(source, /TerminalCommon\?\.syncLiveToggleAvailability\?\./,
     `${name} must use the shared backend-authoritative Full-Auto availability contract`);

@@ -1,9 +1,28 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const path = require("node:path");
 
 const modulePath = path.join(__dirname, "../multi-span-tab.js");
 delete require.cache[require.resolve(modulePath)];
 const engine = require(modulePath);
+const multiSpanSource = fs.readFileSync(modulePath, "utf8");
+const executionFrameSource = fs.readFileSync(path.join(__dirname, "../strategy-execution-chart.js"), "utf8");
+
+assert.match(multiSpanSource, /StrategyExecutionChartFrame/,
+  "Multi-Chart paper replay must mount through the shared execution frame");
+assert.match(executionFrameSource, /const showHost = options\.showHost !== false/,
+  "the shared execution frame must support control-only strategy panels without a fake chart host");
+const strategyBody = engine.macdStrategyFrameBody();
+assert.match(strategyBody, /class="terminalConditionGroup"[\s\S]*?>Entry conditions</,
+  "Multi-Chart must use the common terminal Entry conditions layout");
+assert.match(strategyBody, /class="terminalConditionGroup"[\s\S]*?>Exit conditions</,
+  "Multi-Chart must use the common terminal Exit conditions layout");
+assert.match(strategyBody, /id="msStrategyEntryConditions"/);
+assert.match(strategyBody, /id="msStrategyExitConditions"/);
+assert.match(strategyBody, /class="msStrategySpanToggle"/,
+  "every visible timeframe rule must remain a real adjustable replay control");
+assert.doesNotMatch(strategyBody, /id="msStrategyConditions"/,
+  "the obsolete combined condition-card layout must not return");
 
 const DAY = 86400;
 const spans = ["1s", "5m", "15m", "1h", "1d"];
