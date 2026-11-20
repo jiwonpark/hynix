@@ -1262,6 +1262,11 @@ spanMockWrapper.clientWidth = 2300; // 5 cols -> all 5 in one row
 MultiSpan.syncGridColumnsToWidth();
 assert.equal(spanMockCards["1d"].style.gridColumn, "", "At 2300px auto (5 cols), no card needs extra column span");
 
+spanMockWrapper.clientWidth = 390; // narrow mobile -> 1 col minmax(0, 1fr)
+MultiSpan.syncGridColumnsToWidth();
+assert.equal(spanMockWrapper.style.gridTemplateColumns, "repeat(1, minmax(0, 1fr))", "Narrow viewports (<=460px) must stack cleanly without 420px overflow");
+assert.equal(spanMockCards["1d"].style.gridColumn, "");
+
 MultiSpan.setChartsPerRow(2);
 assert.equal(spanMockCards["1d"].style.gridColumn, "span 2", "2-column grid must stretch 5th card across row");
 

@@ -502,6 +502,13 @@
       if (cols === "auto") {
         const availW = (wrapper && wrapper.clientWidth > 0) ? wrapper.clientWidth : winWidth;
         const gapPx = 12;
+        if (winWidth <= 460 || availW <= 460) {
+          return {
+            cols,
+            effCols: 1,
+            gridTemplateColumns: "repeat(1, minmax(0, 1fr))",
+          };
+        }
         return {
           cols,
           effCols: Math.max(1, Math.min(SPANS.length, Math.floor((availW + gapPx) / (420 + gapPx)))),
