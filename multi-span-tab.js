@@ -496,6 +496,62 @@
       this.applyLayoutStyles();
     }
 
+    getEffectiveGridCols(wrapper) {
+      const cols = this.chartsPerRow || "auto";
+      const winWidth = typeof window !== "undefined" ? window.innerWidth : 1200;
+      if (cols === "auto") {
+        const availW = (wrapper && wrapper.clientWidth > 0) ? wrapper.clientWidth : winWidth;
+        const gapPx = 12;
+        return {
+          cols,
+          effCols: Math.max(1, Math.min(SPANS.length, Math.floor((availW + gapPx) / (420 + gapPx)))),
+          gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
+        };
+      }
+      let numCols = parseInt(cols, 10) || 3;
+      if (winWidth <= 640 && numCols > 1) {
+        numCols = 1;
+      } else if (winWidth <= 1024 && numCols > 2) {
+        numCols = 2;
+      }
+      return {
+        cols,
+        effCols: Math.max(1, Math.min(SPANS.length, numCols)),
+        gridTemplateColumns: `repeat(${numCols}, minmax(0, 1fr))`,
+      };
+    }
+
+    syncGridColumnsToWidth() {
+      const wrapper = document.getElementById("msChartsWrapper");
+      if (!wrapper) return "auto";
+      if (this.activeLayout !== "grid") {
+        SPANS.forEach((s) => {
+          const card = document.getElementById(`msCard_${s.id}`);
+          if (card && card.style.gridColumn !== "") card.style.gridColumn = "";
+        });
+        return this.chartsPerRow || "auto";
+      }
+
+      const { cols, effCols, gridTemplateColumns } = this.getEffectiveGridCols(wrapper);
+      if (wrapper.style.gridTemplateColumns !== gridTemplateColumns) {
+        wrapper.style.gridTemplateColumns = gridTemplateColumns;
+      }
+
+      const rem = SPANS.length % effCols;
+      const lastIdx = SPANS.length - 1;
+      const lastSpanCols = rem > 0 ? (effCols - rem + 1) : 1;
+
+      SPANS.forEach((s, idx) => {
+        const card = document.getElementById(`msCard_${s.id}`);
+        if (!card) return;
+        const nextCol = (idx === lastIdx && lastSpanCols > 1) ? `span ${lastSpanCols}` : "";
+        if (card.style.gridColumn !== nextCol) {
+          card.style.gridColumn = nextCol;
+        }
+      });
+      return cols;
+    }
+
     applyLayoutStyles() {
       const wrapper = document.getElementById("msChartsWrapper");
       if (!wrapper) return;
@@ -504,20 +560,7 @@
         wrapper.style.display = "grid";
         wrapper.style.flexDirection = "";
 
-        const cols = this.chartsPerRow || "auto";
-        const winWidth = typeof window !== "undefined" ? window.innerWidth : 1200;
-
-        if (cols === "auto") {
-          wrapper.style.gridTemplateColumns = "repeat(auto-fit, minmax(420px, 1fr))";
-        } else {
-          let numCols = parseInt(cols, 10) || 3;
-          if (winWidth <= 640 && numCols > 1) {
-            numCols = 1;
-          } else if (winWidth <= 1024 && numCols > 2) {
-            numCols = 2;
-          }
-          wrapper.style.gridTemplateColumns = `repeat(${numCols}, minmax(0, 1fr))`;
-        }
+        const cols = this.syncGridColumnsToWidth();
 
         const heightMap = {
           "1": { chart: "320px", macd: "100px" },
@@ -541,6 +584,7 @@
         wrapper.style.display = "flex";
         wrapper.style.flexDirection = "column";
         wrapper.style.gridTemplateColumns = "";
+        this.syncGridColumnsToWidth();
         SPANS.forEach((s) => {
           const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
@@ -559,6 +603,7 @@
         wrapper.style.display = "flex";
         wrapper.style.flexDirection = "column";
         wrapper.style.gridTemplateColumns = "";
+        this.syncGridColumnsToWidth();
         SPANS.forEach((s) => {
           const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
@@ -827,7 +872,10 @@
 
       // Handle window / element resizing smoothly
       if (typeof ResizeObserver !== "undefined") {
-        this.resizeObserver = new ResizeObserver(() => this.resizeAll());
+        this.resizeObserver = new ResizeObserver(() => {
+          this.syncGridColumnsToWidth();
+          this.resizeAll();
+        });
         const wrapper = document.getElementById("msChartsWrapper");
         if (wrapper) this.resizeObserver.observe(wrapper);
       }

@@ -1233,6 +1233,46 @@ const leftWindow = scheduledPrefetches.find((p) => p.end === 100000);
 assert.ok(leftWindow, "Must schedule older (left) window prefetch ending at targetStart");
 MultiSpan.fetchKlinesRange = protoFetchKlinesRange;
 
+// 29. Test full-width bottom-row spanning in Multi-Span grid across auto and explicit column modes
+const spanMockWrapper = { clientWidth: 1920, style: {} };
+const spanMockCards = {
+  "1s": { style: { gridColumn: "" } },
+  "5m": { style: { gridColumn: "" } },
+  "15m": { style: { gridColumn: "" } },
+  "1h": { style: { gridColumn: "" } },
+  "1d": { style: { gridColumn: "" } },
+};
+sandbox.document.getElementById = (id) => {
+  if (id === "msChartsWrapper") return spanMockWrapper;
+  if (id.startsWith("msCard_")) return spanMockCards[id.slice(7)] || null;
+  return null;
+};
+MultiSpan.activeLayout = "grid";
+MultiSpan.chartsPerRow = "auto";
+spanMockWrapper.clientWidth = 1920; // 4 cols -> 4 + 1 => 1d spans all 4 cols
+MultiSpan.syncGridColumnsToWidth();
+assert.equal(spanMockCards["1d"].style.gridColumn, "span 4", "At 1920px auto (4 cols), last card 1d must span full row");
+assert.equal(spanMockCards["1h"].style.gridColumn, "", "First-row card 1h must not span extra columns");
+
+spanMockWrapper.clientWidth = 1600; // 3 cols -> 3 + 2 => 1d spans 2 cols
+MultiSpan.syncGridColumnsToWidth();
+assert.equal(spanMockCards["1d"].style.gridColumn, "span 2", "At 1600px auto (3 cols), last card 1d must fill remaining 2 cols");
+
+spanMockWrapper.clientWidth = 2300; // 5 cols -> all 5 in one row
+MultiSpan.syncGridColumnsToWidth();
+assert.equal(spanMockCards["1d"].style.gridColumn, "", "At 2300px auto (5 cols), no card needs extra column span");
+
+MultiSpan.setChartsPerRow(2);
+assert.equal(spanMockCards["1d"].style.gridColumn, "span 2", "2-column grid must stretch 5th card across row");
+
+MultiSpan.setChartsPerRow(5);
+assert.equal(spanMockCards["1d"].style.gridColumn, "", "5-column grid must clear extra column span");
+
+MultiSpan.setLayout("hero");
+assert.equal(spanMockCards["1d"].style.gridColumn, "", "Hero layout must clear gridColumn spans");
+
+MultiSpan.setChartsPerRow("auto");
+
 // Restore sandbox hooks cleanly
 if (prevLightweightCharts === undefined) delete sandbox.LightweightCharts;
 else sandbox.LightweightCharts = prevLightweightCharts;

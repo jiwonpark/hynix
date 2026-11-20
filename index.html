@@ -32,10 +32,10 @@
       -webkit-font-smoothing: antialiased;
     }
     main {
-      width: calc(100% - 32px);
+      width: 100%;
       max-width: none;
-      margin: 0 auto;
-      padding: 20px 0 40px;
+      margin: 0;
+      padding: 14px 0 40px;
     }
     .top {
       display: grid;
@@ -44,7 +44,8 @@
       align-items: start;
       column-gap: 16px;
       row-gap: 4px;
-      margin-bottom: 20px;
+      padding: 0 8px;
+      margin-bottom: 16px;
     }
     .topMeta { grid-area: meta; min-width: 0; }
     #topTitle { grid-area: title; white-space: nowrap; }
@@ -2631,7 +2632,7 @@
     }
 
     @media (max-width: 860px) {
-      main { width: calc(100% - 16px); max-width: none; padding-top: 18px; }
+      main { width: 100%; max-width: none; padding-top: 14px; }
       .top { grid-template-columns: minmax(0, 1fr); grid-template-areas: "meta" "title" "actions"; }
       .topRight { justify-self: start; }
       .chartHeader, .tableHead { flex-direction: column; }
@@ -2646,7 +2647,7 @@
       main {
         width: 100%;
         max-width: 100%;
-        padding: 12px 8px 28px;
+        padding: 12px 0 28px;
         overflow: hidden;
       }
       .top {
@@ -5265,7 +5266,7 @@
     <!-- ======================================================= -->
     <div id="tabContentMultiSpan" class="mainTabLoading" data-loading-message="Loading multi-span charts…" aria-busy="true" style="display:none;"></div>
 
-    <footer style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
+    <footer style="margin-top: 24px; padding: 14px 8px 0; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; gap: 8px;">
       <span id="footerTitle">HYPERION &middot; Quantitative Trading System &middot; Dual-Leg Parity Engine</span>
       <span>Build: <strong id="footerVersion">v1.7.1+local</strong> &middot; <span id="footerDeploy">Development build</span></span>
     </footer>
