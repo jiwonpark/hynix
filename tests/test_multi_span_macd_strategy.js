@@ -68,10 +68,17 @@ engine.series = Object.fromEntries(spans.map((span) => [span, {
   setMarkers(markers) { markerCalls[span] = markers; },
 }]));
 engine.applyMacdStrategyMarkers(result);
-assert.equal(markerCalls["1d"].filter((marker) => marker.shape === "circle").length, 2,
+for (const span of spans) assert.deepEqual(markerCalls[span], [], "native markers are replaced by exact-price Tab 4/5 overlays");
+
+const visualMarkers = engine.strategyExecutionMarkers;
+assert.equal(visualMarkers.filter((marker) => marker.is_entry).length, 2,
   "entry chart markers must come from the complete entry_signals stream");
-assert.equal(markerCalls["1d"].filter((marker) => marker.shape === "arrowUp").length, 1);
-assert.equal(markerCalls["1d"].filter((marker) => marker.shape === "arrowDown").length, 1);
-for (const span of spans.filter((span) => span !== "1d")) assert.deepEqual(markerCalls[span], []);
+assert.equal(visualMarkers.filter((marker) => marker.is_entry && marker.is_fill).length, 1,
+  "the simulated buy must enrich its entry signal instead of fabricating another marker");
+assert.equal(visualMarkers.filter((marker) => marker.signal_only).length, 1,
+  "position-suppressed fills must remain visible as entry-signal-only markers");
+assert.equal(visualMarkers.filter((marker) => marker.is_exit && marker.is_fill).length, 1);
+assert.equal(visualMarkers.filter((marker) => marker.pairKey === "paper:0").length, 2,
+  "the filled entry and exit must share a pair for hover/selection P&L rendering");
 
 console.log("Multi-span all-MACD-H completed-candle paper strategy tests passed");

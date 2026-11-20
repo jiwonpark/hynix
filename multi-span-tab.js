@@ -325,6 +325,10 @@
       this.candlesData = {}; // span -> array of { time, open, high, low, close, volume }
       this.strategyReplayResult = null; // completed-candle all-MACD-H paper replay
       this.entrySignals = []; // position-independent entry-condition matches
+      this.strategyExecutionMarkers = []; // Tab 4/5-style entry/exit overlays on the strategy clock
+      this.activeStrategyMarkerKey = null;
+      this.selectedStrategyMarkerKey = null;
+      this.strategyMarkerRenderRaf = null;
       this.strategyReplayTimer = null;
       this.lastVisibleRange = {}; // span -> { from, to }
 
@@ -518,6 +522,9 @@
                 <div id="msRangeHighlight_${s.id}" class="msRangeHighlight" style="display:none;position:absolute;top:0;bottom:26px;pointer-events:none;z-index:3;">
                   <div id="msRangeBadge_${s.id}" style="position:absolute;top:4px;left:4px;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);pointer-events:none;color:#ffffff;"></div>
                 </div>
+                <svg id="msTradeTriangles_${s.id}" aria-label="Paper trade entry-exit triangles" style="position:absolute;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;overflow:hidden;"></svg>
+                <div id="msTradeMarkerTargets_${s.id}" aria-label="Paper replay trade markers" style="position:absolute;inset:0;z-index:7;pointer-events:none;overflow:hidden;"></div>
+                <div id="msTradeMarkerHover_${s.id}" role="status" aria-live="polite" style="display:none;position:absolute;z-index:8;top:8px;left:12px;max-width:min(420px,calc(100% - 24px));padding:6px 10px;border-radius:6px;border:1px solid #cbd5e1;background:rgba(255,255,255,.97);box-shadow:0 2px 8px rgba(15,23,42,.12);font-size:11px;font-weight:800;line-height:1.35;color:#0f172a;pointer-events:none;white-space:normal;"></div>
               </div>
               <!-- MACD Sub-pane -->
               <div class="msMacdHeader" style="background:#f8fafc;padding:3px 12px;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;font-size:10px;line-height:1.4;">
@@ -755,6 +762,8 @@
           host.addEventListener("pointerdown", cancelOnInput, { passive: true });
           host.addEventListener("wheel", cancelOnInput, { passive: true });
           host.addEventListener("touchstart", cancelOnInput, { passive: true });
+          host.addEventListener("pointerup", () => this.scheduleMacdStrategyMarkerRender(), { passive: true });
+          host.addEventListener("wheel", () => this.scheduleMacdStrategyMarkerRender(), { passive: true });
         }
 
         // Initialize MACD Sub-Chart
@@ -869,6 +878,7 @@
         chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
           this.handleRangeChange(s.id, range);
           this.updateRangeHighlight(s.id);
+          this.scheduleMacdStrategyMarkerRender();
         });
 
         // Wire visible logical range change for range highlight update & auto load more (left/older & right/newer)
@@ -916,6 +926,7 @@
 
         // Wire click for drill-down / synchronization on coarser charts
         chart.subscribeClick((param) => {
+          this.clearMacdStrategyMarkerSelection(s.id);
           this.handleChartClick(s.id, param);
         });
       });
@@ -979,6 +990,7 @@
         }
       });
       this.updateAllRangeHighlights();
+      this.scheduleMacdStrategyMarkerRender();
     }
 
     // =========================================================================
@@ -3206,34 +3218,272 @@
       };
     }
 
+    buildMacdStrategyExecutionMarkers(result) {
+      if (!result || result.error) return [];
+      const trades = Array.isArray(result.trades) ? result.trades : [];
+      const fills = Array.isArray(result.fills) ? result.fills : [];
+      const entryFillTimes = new Set(fills.filter((fill) => Number(fill.side) > 0).map((fill) => Number(fill.time)));
+      const exitConditions = new Map((result.exit_signals || []).map((signal) => [Number(signal.time), signal.histograms]));
+      const tradeByEntryTime = new Map();
+      const tradeByExitTime = new Map();
+      trades.forEach((trade, index) => {
+        const pairKey = `paper:${index}`;
+        tradeByEntryTime.set(Number(trade.entry_time), { trade, pairKey });
+        tradeByExitTime.set(Number(trade.exit_time), { trade, pairKey });
+      });
+
+      const entries = (result.entry_signals || []).map((signal, index) => {
+        const paired = tradeByEntryTime.get(Number(signal.time));
+        const isFill = entryFillTimes.has(Number(signal.time));
+        return {
+          markerKey: `entry-signal:${Number(signal.time)}:${index}`,
+          pairKey: paired?.pairKey || (isFill ? `paper:open:${Number(signal.time)}` : null),
+          time: Number(signal.time),
+          price: Number(signal.price),
+          is_entry: true,
+          is_exit: false,
+          is_fill: isFill,
+          signal_only: !isFill,
+          source: isFill ? "simulated_fill" : "entry_signal",
+          histograms: signal.histograms || {},
+          trade: paired?.trade || null,
+        };
+      });
+      const exits = fills.filter((fill) => Number(fill.side) < 0).map((fill, index) => {
+        const paired = tradeByExitTime.get(Number(fill.time));
+        return {
+          markerKey: `exit-fill:${Number(fill.time)}:${index}`,
+          pairKey: paired?.pairKey || null,
+          time: Number(fill.time),
+          price: Number(fill.price),
+          is_entry: false,
+          is_exit: true,
+          is_fill: true,
+          signal_only: false,
+          source: "simulated_fill",
+          histograms: exitConditions.get(Number(fill.time)) || {},
+          trade: paired?.trade || null,
+        };
+      });
+      return [...entries, ...exits]
+        .filter((marker) => Number.isFinite(marker.time) && Number.isFinite(marker.price))
+        .sort((a, b) => a.time - b.time || (a.is_entry ? -1 : 1));
+    }
+
+    scheduleMacdStrategyMarkerRender() {
+      if (typeof document === "undefined") return;
+      if (this.strategyMarkerRenderRaf !== null) return;
+      const render = () => {
+        this.strategyMarkerRenderRaf = null;
+        this.renderMacdStrategyMarkers();
+      };
+      this.strategyMarkerRenderRaf = typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame(render)
+        : setTimeout(render, 0);
+    }
+
+    clearMacdStrategyMarkerSelection(spanId = null) {
+      if (spanId && spanId !== this.strategyReplayResult?.settings?.clock_span) return;
+      if (!this.selectedStrategyMarkerKey) return;
+      this.selectedStrategyMarkerKey = null;
+      this.updateMacdStrategyMarkerHover(null);
+      this.renderMacdStrategyPairTriangle();
+    }
+
+    macdStrategyMarkerPair(marker) {
+      if (!marker?.pairKey) return null;
+      const paired = (this.strategyExecutionMarkers || []).filter((candidate) =>
+        candidate.pairKey === marker.pairKey && candidate.is_fill
+      );
+      const entry = paired.find((candidate) => candidate.is_entry);
+      const exit = paired.find((candidate) => candidate.is_exit);
+      return entry && exit ? { entry, exit } : null;
+    }
+
+    updateMacdStrategyMarkerHover(marker) {
+      if (typeof document === "undefined") return;
+      SPANS.forEach((span) => {
+        const overlay = document.getElementById(`msTradeMarkerHover_${span.id}`);
+        if (!overlay) return;
+        if (!marker || span.id !== this.strategyReplayResult?.settings?.clock_span) {
+          overlay.style.display = "none";
+          overlay.textContent = "";
+          return;
+        }
+        const histText = Object.entries(marker.histograms || {})
+          .map(([spanId, point]) => `${spanId} H ${Number(point?.value) >= 0 ? "+" : ""}${Number(point?.value).toFixed(4)}`)
+          .join(" · ");
+        let title;
+        if (marker.is_exit) {
+          const pnl = Number(marker.trade?.pnl);
+          const pnlText = Number.isFinite(pnl) ? ` · net P&L ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}` : "";
+          title = `PAPER SELL FILL · closed long${pnlText} · configured fees included`;
+        } else if (marker.is_fill) {
+          title = "ENTRY SIGNAL · PAPER BUY FILL · configured fee included";
+        } else {
+          title = "ENTRY SIGNAL ONLY · no simulated fill because the paper long was already open";
+        }
+        overlay.textContent = `${title} · ${formatPrice(marker.price)} · ${formatKst(marker.time)}${histText ? ` · ${histText}` : ""}`;
+        overlay.style.display = "block";
+        overlay.style.borderColor = marker.is_exit ? "#fca5a5" : "#86efac";
+        overlay.style.color = marker.is_exit ? "#991b1b" : "#166534";
+      });
+    }
+
+    renderMacdStrategyPairTriangle(spanId = this.strategyReplayResult?.settings?.clock_span) {
+      if (typeof document === "undefined") return;
+      SPANS.forEach((span) => {
+        const layer = document.getElementById(`msTradeTriangles_${span.id}`);
+        if (layer) layer.innerHTML = "";
+      });
+      if (!spanId) return;
+      const layer = document.getElementById(`msTradeTriangles_${spanId}`);
+      const chart = this.charts?.[spanId];
+      const series = this.series?.[spanId];
+      if (!layer || !chart || !series) return;
+      const markerKey = this.activeStrategyMarkerKey || this.selectedStrategyMarkerKey;
+      const marker = (this.strategyExecutionMarkers || []).find((candidate) => candidate.markerKey === markerKey);
+      const pair = this.macdStrategyMarkerPair(marker);
+      if (!pair) return;
+
+      const x1 = Number(pair.entry._targetX ?? chart.timeScale().timeToCoordinate(pair.entry.time));
+      const x2 = Number(pair.exit._targetX ?? chart.timeScale().timeToCoordinate(pair.exit.time));
+      const y1 = Number(pair.entry._targetY ?? series.priceToCoordinate(pair.entry.price));
+      const y2 = Number(pair.exit._targetY ?? series.priceToCoordinate(pair.exit.price));
+      if (![x1, x2, y1, y2].every(Number.isFinite) || Math.abs(x1 - x2) < 1) return;
+
+      const profit = Number(pair.exit.trade?.pnl) > 0;
+      const cornerX = y1 <= y2 ? x1 : x2;
+      const cornerY = y1 <= y2 ? y2 : y1;
+      const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      polygon.setAttribute("points", `${x1.toFixed(1)},${y1.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`);
+      polygon.setAttribute("fill", profit ? "rgba(34,197,94,.12)" : "rgba(239,68,68,.12)");
+      polygon.setAttribute("stroke", profit ? "rgba(22,163,74,.65)" : "rgba(220,38,38,.65)");
+      polygon.setAttribute("stroke-width", "1");
+      layer.appendChild(polygon);
+
+      const diagonal = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      diagonal.setAttribute("x1", x1.toFixed(1));
+      diagonal.setAttribute("y1", y1.toFixed(1));
+      diagonal.setAttribute("x2", x2.toFixed(1));
+      diagonal.setAttribute("y2", y2.toFixed(1));
+      diagonal.setAttribute("stroke", profit ? "#16a34a" : "#dc2626");
+      diagonal.setAttribute("stroke-width", "1");
+      layer.appendChild(diagonal);
+    }
+
+    renderMacdStrategyMarkers() {
+      if (typeof document === "undefined") return;
+      SPANS.forEach((span) => {
+        const targets = document.getElementById(`msTradeMarkerTargets_${span.id}`);
+        const triangles = document.getElementById(`msTradeTriangles_${span.id}`);
+        const hover = document.getElementById(`msTradeMarkerHover_${span.id}`);
+        if (targets) targets.textContent = "";
+        if (triangles) triangles.innerHTML = "";
+        if (hover) { hover.style.display = "none"; hover.textContent = ""; }
+      });
+
+      const spanId = this.strategyReplayResult?.settings?.clock_span;
+      const markers = this.strategyExecutionMarkers || [];
+      const host = document.getElementById(`msChartHost_${spanId}`);
+      const layer = document.getElementById(`msTradeMarkerTargets_${spanId}`);
+      const svg = document.getElementById(`msTradeTriangles_${spanId}`);
+      const chart = this.charts?.[spanId];
+      const series = this.series?.[spanId];
+      if (!spanId || !markers.length || !host || !layer || !svg || !chart || !series) return;
+
+      const plotWidth = Number(chart.timeScale().width?.()) || host.clientWidth || 0;
+      const plotHeight = host.clientHeight || 0;
+      [layer, svg].forEach((overlay) => {
+        overlay.style.left = "0px";
+        overlay.style.right = "auto";
+        overlay.style.width = `${plotWidth}px`;
+      });
+      const fragment = document.createDocumentFragment();
+      const targetsByMarkerKey = new Map();
+      const blink = (target, enabled) => {
+        if (!target) return;
+        target._blinkAnimation?.cancel?.();
+        target._blinkAnimation = null;
+        if (enabled && typeof target.animate === "function") {
+          target._blinkAnimation = target.animate(
+            [{ opacity: 1 }, { opacity: 0.12 }, { opacity: 1 }],
+            { duration: 650, iterations: Infinity, easing: "ease-in-out" }
+          );
+        }
+      };
+
+      markers.forEach((marker) => {
+        const x = Number(chart.timeScale().timeToCoordinate(marker.time));
+        const y = Number(series.priceToCoordinate(marker.price));
+        if (!Number.isFinite(x) || !Number.isFinite(y) || x < -12 || x > plotWidth + 12 || y < 0 || y > plotHeight) return;
+        marker._targetX = x;
+        marker._targetY = y;
+        const size = marker.signal_only ? 6 : 8;
+        const opacity = marker.signal_only ? 0.48 : 0.92;
+        const color = marker.is_exit ? "#dc2626" : "#16a34a";
+        const target = document.createElement("button");
+        target.type = "button";
+        target.setAttribute("aria-label", marker.is_exit
+          ? `Paper sell fill at ${formatPrice(marker.price)}`
+          : `${marker.signal_only ? "Entry signal" : "Paper buy fill"} at ${formatPrice(marker.price)}`);
+        const points = marker.is_entry
+          ? `0.5,0.5 ${size - 0.5},${size / 2} 0.5,${size - 0.5}`
+          : `${size - 0.5},0.5 0.5,${size / 2} ${size - 0.5},${size - 0.5}`;
+        const dash = marker.signal_only ? ' stroke-dasharray="1.5 1"' : "";
+        target.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="display:block;overflow:visible;pointer-events:none;"><polygon points="${points}" fill="none" stroke="${color}" stroke-width="${marker.signal_only ? 1 : 1.25}" stroke-linejoin="round"${dash}/></svg>`;
+        const translate = marker.is_entry ? "translate(-100%,-50%)" : "translate(0,-50%)";
+        target.style.cssText = `appearance:none;position:absolute;left:${x}px;top:${y}px;transform:${translate};width:${size}px;height:${size}px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${opacity};cursor:pointer;pointer-events:auto`;
+        targetsByMarkerKey.set(marker.markerKey, target);
+
+        const pairedTargets = () => {
+          const pair = this.macdStrategyMarkerPair(marker);
+          if (!pair) return [target];
+          return [...new Set([target, targetsByMarkerKey.get(pair.entry.markerKey), targetsByMarkerKey.get(pair.exit.markerKey)].filter(Boolean))];
+        };
+        target.addEventListener("mouseenter", () => {
+          pairedTargets().forEach((candidate) => blink(candidate, true));
+          this.activeStrategyMarkerKey = marker.markerKey;
+          this.updateMacdStrategyMarkerHover(marker);
+          this.renderMacdStrategyPairTriangle(spanId);
+        });
+        target.addEventListener("mouseleave", () => {
+          pairedTargets().forEach((candidate) => blink(candidate, false));
+          this.activeStrategyMarkerKey = null;
+          const selected = markers.find((candidate) => candidate.markerKey === this.selectedStrategyMarkerKey) || null;
+          this.updateMacdStrategyMarkerHover(selected);
+          this.renderMacdStrategyPairTriangle(spanId);
+        });
+        target.addEventListener("click", (event) => {
+          event.stopPropagation();
+          this.selectedStrategyMarkerKey = marker.markerKey;
+          this.updateMacdStrategyMarkerHover(marker);
+          this.renderMacdStrategyPairTriangle(spanId);
+        });
+        fragment.appendChild(target);
+      });
+      layer.appendChild(fragment);
+      const active = markers.find((marker) => marker.markerKey === this.activeStrategyMarkerKey) || null;
+      const selected = markers.find((marker) => marker.markerKey === this.selectedStrategyMarkerKey) || null;
+      this.updateMacdStrategyMarkerHover(active || selected);
+      this.renderMacdStrategyPairTriangle(spanId);
+    }
+
     applyMacdStrategyMarkers(result) {
+      // Native Lightweight Charts markers are deliberately cleared. Tabs 4/5
+      // use exact-price DOM triangles, which also preserve signal/fill identity.
       for (const span of SPANS) {
         const series = this.series?.[span.id];
         if (series && typeof series.setMarkers === "function") series.setMarkers([]);
       }
-      if (!result || result.error) return;
-      const clockSeries = this.series?.[result.settings.clock_span];
-      if (!clockSeries || typeof clockSeries.setMarkers !== "function") return;
-      const markers = [
-        ...result.entry_signals.map((signal) => ({
-          time: signal.time,
-          position: "belowBar",
-          color: "#86efac",
-          shape: "circle",
-          text: "",
-          _priority: 0,
-        })),
-        ...result.fills.map((fill) => ({
-          time: fill.time,
-          position: fill.side > 0 ? "belowBar" : "aboveBar",
-          color: fill.side > 0 ? "#16a34a" : "#dc2626",
-          shape: fill.side > 0 ? "arrowUp" : "arrowDown",
-          text: fill.side > 0 ? "BUY" : "SELL",
-          _priority: fill.side > 0 ? 1 : 2,
-        })),
-      ].sort((a, b) => Number(a.time) - Number(b.time) || a._priority - b._priority)
-        .map(({ _priority, ...marker }) => marker);
-      clockSeries.setMarkers(markers);
+      this.strategyExecutionMarkers = this.buildMacdStrategyExecutionMarkers(result);
+      if (this.activeStrategyMarkerKey && !this.strategyExecutionMarkers.some((marker) => marker.markerKey === this.activeStrategyMarkerKey)) {
+        this.activeStrategyMarkerKey = null;
+      }
+      if (this.selectedStrategyMarkerKey && !this.strategyExecutionMarkers.some((marker) => marker.markerKey === this.selectedStrategyMarkerKey)) {
+        this.selectedStrategyMarkerKey = null;
+      }
+      this.scheduleMacdStrategyMarkerRender();
     }
 
     renderMacdStrategyReplay(result) {
@@ -3272,7 +3522,7 @@
         return `<div style="border:1px solid #e2e8f0;border-radius:5px;padding:5px 7px;background:#ffffff;font-size:10px;color:#475569;"><strong style="color:${span.color};">${span.id} H ${point.value >= 0 ? "+" : ""}${point.value.toFixed(4)}</strong><br><span style="color:${buyPass ? "#16a34a" : "#94a3b8"};font-weight:800;">BUY ${buyPass ? "PASS" : "WAITING"}</span> · <span style="color:${sellPass ? "#dc2626" : "#94a3b8"};font-weight:800;">SELL ${sellPass ? "PASS" : "WAITING"}</span><br><span>${formatKst(point.completed_time)} completed</span></div>`;
       }).join("");
       if (source) {
-        source.textContent = `Source: completed Binance candles · MACD-H(12,26,9) · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · green dots are entry_signals; arrows are simulated fills · loaded chart history only`;
+        source.textContent = `Source: completed Binance candles · MACD-H(12,26,9) · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · faint dashed ▷ are entry_signals without fills; bold ▷/◁ are simulated BUY/SELL fills · hover or click a marker for the paired trade · loaded chart history only`;
       }
     }
 
