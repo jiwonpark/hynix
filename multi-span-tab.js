@@ -547,7 +547,7 @@
           <strong style="font-size:12px;color:#0f172a;">Multi-Span MACD Dynamics Strategy Test</strong>
           <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;">PAPER REPLAY ONLY</span>
         </div>
-        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">BUY and SELL match when all enabled rules across configured timeframes pass on completed signal-clock candles. Toggle individual rules (MACD-H, H crossing, MACD-S, ΔS, Δ²S, ΔH) and toggle sign (+/-) on any row. Quick uses 5m+15m MACD-H; Full Wave enables all MACD dynamics. No orders are sent.</small>
+        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">LONG and SHORT match when all enabled rules across configured timeframes pass on completed signal-clock candles. Toggle individual rules (MACD-H, H crossing, MACD-S, ΔS, Δ²S, ΔH, ΔMA20, ΔMA50) and toggle sign (+/-) on any row. Quick uses 5m+15m MACD-H; Full Wave enables all dynamics. No orders are sent.</small>
         <div class="strategyReplaySetup" aria-label="Paper replay setup">
           <strong style="color:#475569;">Replay setup</strong>
           <label>Signal clock
@@ -565,10 +565,10 @@
         <div id="msStrategySummary" class="executionChartSecondaryStatus" style="height:auto;min-height:0;white-space:normal;margin:var(--terminal-space-min) 0 0;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">Awaiting completed chart data…</div>
         <div id="msStrategyConditionGroups" class="terminalConditionGroups" aria-label="Paper replay trading conditions">
           <section class="terminalConditionGroup" aria-labelledby="msStrategyEntryHeading">
-            <h3 id="msStrategyEntryHeading" class="terminalConditionGroupTitle">Entry conditions</h3>
-            <small class="terminalConditionGroupNote">Every enabled rule must pass on the same completed signal-clock candle. Entry signals remain independent of simulated position state.</small>
-            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#166534;">BUY when enabled H &lt;
-              <input id="msStrategyBuyThreshold" aria-label="Paper buy MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #86efac;border-radius:4px;padding:3px 5px;font-weight:800;">
+            <h3 id="msStrategyEntryHeading" class="terminalConditionGroupTitle">Long conditions</h3>
+            <small class="terminalConditionGroupNote">Every enabled rule must pass on the same completed signal-clock candle to match a LONG setup (highlighted green on each chart).</small>
+            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#166534;">LONG when enabled H &lt;
+              <input id="msStrategyBuyThreshold" aria-label="Paper long MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #86efac;border-radius:4px;padding:3px 5px;font-weight:800;">
             </label>
             <div id="msStrategyEntryConditions" class="condChecklist" aria-live="polite" style="max-height:420px;overflow-y:auto;padding-right:4px;">
               ${SPANS.map((s) => `
@@ -586,7 +586,7 @@
                     return `
                       <div class="condRow${isDefault ? "" : " disabled-cond"}" data-span="${s.id}" data-rule="${rule.id}" data-kind="entry">
                         <label class="toggleSwitch" title="Turn ${s.id} ${rule.label} rule ON/OFF">
-                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="entry" aria-label="Use ${s.id} ${rule.label} for paper entry" type="checkbox"${isDefault ? " checked" : ""}>
+                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="entry" aria-label="Use ${s.id} ${rule.label} for paper long" type="checkbox"${isDefault ? " checked" : ""}>
                           <span class="toggleSlider"></span>
                         </label>
                         <span class="condLabel">
@@ -606,10 +606,10 @@
             </div>
           </section>
           <section class="terminalConditionGroup" aria-labelledby="msStrategyExitHeading">
-            <h3 id="msStrategyExitHeading" class="terminalConditionGroupTitle">Exit conditions</h3>
-            <small class="terminalConditionGroupNote">Every enabled rule is evaluated on completed candles. A passing SELL setup closes the simulated long when one is open.</small>
-            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#991b1b;">SELL when enabled H &gt;
-              <input id="msStrategySellThreshold" aria-label="Paper sell MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #fca5a5;border-radius:4px;padding:3px 5px;font-weight:800;">
+            <h3 id="msStrategyExitHeading" class="terminalConditionGroupTitle">Short conditions</h3>
+            <small class="terminalConditionGroupNote">Every enabled rule must pass on the same completed signal-clock candle to match a SHORT setup (highlighted red on each chart).</small>
+            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#991b1b;">SHORT when enabled H &gt;
+              <input id="msStrategySellThreshold" aria-label="Paper short MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #fca5a5;border-radius:4px;padding:3px 5px;font-weight:800;">
             </label>
             <div id="msStrategyExitConditions" class="condChecklist" aria-live="polite" style="max-height:420px;overflow-y:auto;padding-right:4px;">
               ${SPANS.map((s) => `
@@ -627,7 +627,7 @@
                     return `
                       <div class="condRow${isDefault ? "" : " disabled-cond"}" data-span="${s.id}" data-rule="${rule.id}" data-kind="exit">
                         <label class="toggleSwitch" title="Turn ${s.id} ${rule.label} rule ON/OFF">
-                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="exit" aria-label="Use ${s.id} ${rule.label} for paper exit" type="checkbox"${isDefault ? " checked" : ""}>
+                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="exit" aria-label="Use ${s.id} ${rule.label} for paper short" type="checkbox"${isDefault ? " checked" : ""}>
                           <span class="toggleSlider"></span>
                         </label>
                         <span class="condLabel">
@@ -3791,8 +3791,8 @@
           const entryCount = matches.filter((m) => m.entry_pass).length;
           const exitCount = matches.filter((m) => m.exit_pass).length;
           const parts = [];
-          if (hasEntryRules) parts.push(`BUY ${entryCount}`);
-          if (hasExitRules) parts.push(`SELL ${exitCount}`);
+          if (hasEntryRules) parts.push(`LONG ${entryCount}`);
+          if (hasExitRules) parts.push(`SHORT ${exitCount}`);
           badgeEl.textContent = `MATCH: ${parts.join(" · ")}`;
           badgeEl.style.display = "inline-block";
           badgeEl.style.background = "#f0fdf4";
@@ -4045,18 +4045,19 @@
       if (result?.error) {
         summary.innerHTML = `<strong style="color:#b45309;">WAITING</strong> · ${result.error}`;
         frameStatus = `PAPER · WAITING · ${result.error}`;
-      } else if (!(metrics.entry_signal_count > 0) && !(metrics.simulated_entry_fills > 0)) {
-        summary.innerHTML = `<strong style="color:#b45309;">NO TRADES IN LOADED OVERLAP</strong> · ${(settings.enabled_spans || []).join(" + ")} enabled · ${metrics.evaluated_candles || 0} completed-candle evaluations · this is a real zero-result, not hidden markers · choose <strong>QUICK 5m+15m</strong> to inspect actual trades or adjust the enabled conditions.`;
-        frameStatus = `PAPER · 0 entry signals · 0 simulated fills · ${metrics.evaluated_candles || 0} completed-candle evaluations`;
+      } else if (!(metrics.entry_signal_count > 0) && !(metrics.simulated_entry_fills > 0) && !((result?.exit_signals || []).length > 0)) {
+        summary.innerHTML = `<strong style="color:#b45309;">NO SIGNALS IN LOADED OVERLAP</strong> · ${(settings.enabled_spans || []).join(" + ")} enabled · ${metrics.evaluated_candles || 0} completed-candle evaluations · this is a real zero-result, not hidden markers · choose <strong>QUICK 5m+15m</strong> to inspect actual signals or adjust the enabled conditions.`;
+        frameStatus = `PAPER · 0 long signals · 0 short signals · ${metrics.evaluated_candles || 0} completed-candle evaluations`;
       } else {
         const state = latest?.condition_pass?.entry_all_histograms_below
-          ? '<strong style="color:#16a34a;">BUY MATCH</strong>'
+          ? '<strong style="color:#16a34a;">LONG MATCH</strong>'
           : latest?.condition_pass?.exit_all_histograms_above
-            ? '<strong style="color:#dc2626;">SELL MATCH</strong>'
+            ? '<strong style="color:#dc2626;">SHORT MATCH</strong>'
             : '<strong style="color:#64748b;">WAITING</strong>';
         const openLabel = result.open_position ? "LONG OPEN" : "FLAT";
-        summary.innerHTML = `${state} · ${openLabel} · return <strong>${Number(metrics.net_return_pct || 0).toFixed(2)}%</strong> · equity <strong>$${Number(metrics.final_equity || 0).toFixed(2)}</strong> · max DD ${Number(metrics.max_drawdown_pct || 0).toFixed(2)}% · entry signals ${metrics.entry_signal_count || 0} · simulated buys ${metrics.simulated_entry_fills || 0} · closed trades ${metrics.closed_trades || 0} · win rate ${Number(metrics.win_rate_pct || 0).toFixed(1)}%`;
-        frameStatus = `✓ ${metrics.entry_signal_count || 0} entry signals · ${metrics.simulated_entry_fills || 0} simulated buys · ${metrics.closed_trades || 0} closed trades (${Number(metrics.win_rate_pct || 0).toFixed(1)}% win)`;
+        const shortSignalCount = (result?.exit_signals || []).length;
+        summary.innerHTML = `${state} · ${openLabel} · return <strong>${Number(metrics.net_return_pct || 0).toFixed(2)}%</strong> · equity <strong>$${Number(metrics.final_equity || 0).toFixed(2)}</strong> · max DD ${Number(metrics.max_drawdown_pct || 0).toFixed(2)}% · long signals ${metrics.entry_signal_count || 0} · short signals ${shortSignalCount} · simulated longs ${metrics.simulated_entry_fills || 0} · closed trades ${metrics.closed_trades || 0} · win rate ${Number(metrics.win_rate_pct || 0).toFixed(1)}%`;
+        frameStatus = `✓ ${metrics.entry_signal_count || 0} long signals · ${shortSignalCount} short signals · ${metrics.closed_trades || 0} closed trades (${Number(metrics.win_rate_pct || 0).toFixed(1)}% win)`;
       }
 
       const renderConditionGroup = (kind) => {
@@ -4135,7 +4136,7 @@
               subtitleDetail = measured;
             }
             const valColor = pass ? "#16a34a" : (numVal < 0 ? "#dc2626" : "#64748b");
-            const badgeTitle = `${isEntry ? "BUY" : "SELL"} ${pass ? "passes" : "waits"}: ${span.id} ${rule.label} ${subtitleDetail}`;
+            const badgeTitle = `${isEntry ? "LONG" : "SHORT"} ${pass ? "passes" : "waits"}: ${span.id} ${rule.label} ${subtitleDetail}`;
 
             return `<div class="condRow" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${titleText}</strong>${signBtnHtml}<small style="display:block;color:#64748b;">PAPER · ${subtitleDetail} · ${formatKst(point.completed_time)} completed</small></span><span class="condValue"><strong style="color:${valColor};">${measured}</strong></span><span class="condBadge ${pass ? "pass" : "wait"}" title="${badgeTitle}">${pass ? "PASS" : "WAITING"}</span></div>`;
           }).join("");
@@ -4158,7 +4159,7 @@
         ? `${settings.clock_span} completed ${formatKst(latest.decision_time)} · loaded history`
         : `${settings.clock_span} completed candles · source unavailable`);
       if (source) {
-        source.textContent = `Source: completed Binance candles · MACD(12,26,9) [H, H×, S, ΔS, Δ²S, ΔH] · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · faint dashed ▷ are entry_signals without fills; bold ▷/◁ are simulated BUY/SELL fills · hover or click a marker for the paired trade · loaded chart history only`;
+        source.textContent = `Source: completed Binance candles · MACD(12,26,9) + MA20/MA50 [H, H×, S, ΔS, Δ²S, ΔH, ΔMA20, ΔMA50] · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · green/red candle columns show per-chart LONG/SHORT condition matches · loaded chart history only`;
       }
     }
 

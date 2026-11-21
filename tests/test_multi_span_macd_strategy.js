@@ -13,10 +13,10 @@ assert.match(multiSpanSource, /StrategyExecutionChartFrame/,
 assert.match(executionFrameSource, /const showHost = options\.showHost !== false/,
   "the shared execution frame must support control-only strategy panels without a fake chart host");
 const strategyBody = engine.macdStrategyFrameBody();
-assert.match(strategyBody, /class="terminalConditionGroup"[\s\S]*?>Entry conditions</,
-  "Multi-Chart must use the common terminal Entry conditions layout");
-assert.match(strategyBody, /class="terminalConditionGroup"[\s\S]*?>Exit conditions</,
-  "Multi-Chart must use the common terminal Exit conditions layout");
+assert.match(strategyBody, /class="terminalConditionGroup"[\s\S]*?>Long conditions</,
+  "Multi-Chart must use the Long conditions layout");
+assert.match(strategyBody, /class="terminalConditionGroup"[\s\S]*?>Short conditions</,
+  "Multi-Chart must use the Short conditions layout");
 assert.match(strategyBody, /id="msStrategyEntryConditions"/);
 assert.match(strategyBody, /id="msStrategyExitConditions"/);
 assert.match(strategyBody, /class="msStrategySpanToggle"/,
@@ -254,7 +254,7 @@ engine.macdCharts = { "1d": engine.charts["1d"] };
 engine.renderSpanConditionCandleHighlights("1d");
 global.document = prevDoc;
 
-assert.equal(mockCondBadge.textContent, "MATCH: BUY 1 · SELL 1", "chart header badge must summarize matching candles for that chart");
+assert.equal(mockCondBadge.textContent, "MATCH: LONG 1 · SHORT 1", "chart header badge must summarize matching LONG and SHORT candles for that chart");
 assert.equal(mockMainLayer.children.length, 2, "main chart layer must render highlight bars for each matching candle");
 assert.equal(mockMacdLayer.children.length, 2, "MACD sub-chart layer must render highlight bars for each matching candle");
 assert.equal(mockMainLayer.children[0].dataset.kind, "entry");
