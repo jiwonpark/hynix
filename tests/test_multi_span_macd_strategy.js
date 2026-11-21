@@ -116,6 +116,20 @@ assert.equal(visualMarkers.filter((marker) => marker.is_exit && marker.is_fill).
 assert.equal(visualMarkers.filter((marker) => marker.pairKey === "paper:0").length, 2,
   "the filled entry and exit must share a pair for hover/selection P&L rendering");
 
+const shortSignalOnlyResult = engine.evaluateMacdStrategyReplay({
+  clock_span: "1d",
+  entry_rules: [],
+  exit_rules: [{ span: "1d", rule: "macd_h", sign: "+" }],
+  buy_threshold: 0,
+  sell_threshold: 0,
+  initial_capital: 10000,
+  fee_bps: 5,
+}, DAY * 4);
+const shortOnlyMarkers = engine.buildMacdStrategyExecutionMarkers(shortSignalOnlyResult);
+assert.equal(shortOnlyMarkers.length, 1, "short signals without an open long position must still produce a visible short-signal marker");
+assert.equal(shortOnlyMarkers[0].is_exit, true);
+assert.equal(shortOnlyMarkers[0].signal_only, true);
+
 // Test MACD_RULES definition and legend/DOM elements
 assert.ok(Array.isArray(engine.MACD_RULES), "engine.MACD_RULES must be an array");
 assert.equal(engine.MACD_RULES.length, 9, "engine.MACD_RULES must contain 9 indicator definitions");

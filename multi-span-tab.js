@@ -697,7 +697,7 @@
         description: "Paper results intentionally change with the signal clock, enabled timeframe rules, thresholds, and loaded overlap. These controls never reconfigure a live bot.",
         body: this.macdStrategyFrameBody(),
         legendPosition: "top",
-        legend: '<span><strong style="color:#16a34a">▷</strong> Entry signal</span><span><strong style="color:#16a34a">▶</strong> Simulated buy</span><span><strong style="color:#dc2626">◀</strong> Simulated sell</span><span>Hover or click a fill for paired P&amp;L</span>',
+        legend: '<span><strong style="color:#16a34a">▷</strong> Long signal</span><span><strong style="color:#16a34a">▶</strong> Simulated buy / long</span><span><strong style="color:#dc2626">◁</strong> Short signal</span><span><strong style="color:#dc2626">◀</strong> Simulated sell / short</span><span>Hover or click a fill for paired P&amp;L</span>',
         syncText: "Completed candles · loaded history",
       });
       this.restoreSavedMacdStrategySettingsToDom();
@@ -1041,6 +1041,7 @@
         // Wire visible logical range change for range highlight update & auto load more (left/older & right/newer)
         chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
           this.updateRangeHighlight(s.id);
+          this.scheduleMacdStrategyMarkerRender();
           if (
             !logicalRange ||
             this.reloadingSpans[s.id] ||
@@ -3091,6 +3092,7 @@
         );
         this.lastVisibleRange[spanId] = chart.timeScale().getVisibleRange();
         this.updateRangeHighlight(spanId);
+        this.scheduleMacdStrategyMarkerRender();
       }
     }
 
@@ -3869,6 +3871,7 @@
       const trades = Array.isArray(result.trades) ? result.trades : [];
       const fills = Array.isArray(result.fills) ? result.fills : [];
       const entryFillTimes = new Set(fills.filter((fill) => Number(fill.side) > 0).map((fill) => Number(fill.time)));
+      const exitFillByTime = new Map(fills.filter((fill) => Number(fill.side) < 0).map((fill) => [Number(fill.time), fill]));
       const exitConditions = new Map((result.exit_signals || []).map((signal) => [Number(signal.time), signal.histograms]));
       const tradeByEntryTime = new Map();
       const tradeByExitTime = new Map();
@@ -3895,22 +3898,48 @@
           trade: paired?.trade || null,
         };
       });
-      const exits = fills.filter((fill) => Number(fill.side) < 0).map((fill, index) => {
-        const paired = tradeByExitTime.get(Number(fill.time));
-        return {
-          markerKey: `exit-fill:${Number(fill.time)}:${index}`,
+
+      const seenExitTimes = new Set();
+      const exits = [];
+      (result.exit_signals || []).forEach((signal, index) => {
+        const sigTime = Number(signal.time);
+        seenExitTimes.add(sigTime);
+        const paired = tradeByExitTime.get(sigTime);
+        const fill = exitFillByTime.get(sigTime);
+        const isFill = Boolean(fill);
+        exits.push({
+          markerKey: isFill ? `exit-fill:${sigTime}:${index}` : `exit-signal:${sigTime}:${index}`,
           pairKey: paired?.pairKey || null,
-          time: Number(fill.time),
+          time: sigTime,
+          price: Number(fill?.price ?? signal.price),
+          is_entry: false,
+          is_exit: true,
+          is_fill: isFill,
+          signal_only: !isFill,
+          source: isFill ? "simulated_fill" : "exit_signal",
+          histograms: signal.histograms || exitConditions.get(sigTime) || {},
+          trade: paired?.trade || null,
+        });
+      });
+      fills.filter((fill) => Number(fill.side) < 0).forEach((fill, index) => {
+        const fillTime = Number(fill.time);
+        if (seenExitTimes.has(fillTime)) return;
+        const paired = tradeByExitTime.get(fillTime);
+        exits.push({
+          markerKey: `exit-fill:${fillTime}:${index}`,
+          pairKey: paired?.pairKey || null,
+          time: fillTime,
           price: Number(fill.price),
           is_entry: false,
           is_exit: true,
           is_fill: true,
           signal_only: false,
           source: "simulated_fill",
-          histograms: exitConditions.get(Number(fill.time)) || {},
+          histograms: exitConditions.get(fillTime) || {},
           trade: paired?.trade || null,
-        };
+        });
       });
+
       return [...entries, ...exits]
         .filter((marker) => Number.isFinite(marker.time) && Number.isFinite(marker.price))
         .sort((a, b) => a.time - b.time || (a.is_entry ? -1 : 1));
@@ -3929,7 +3958,6 @@
     }
 
     clearMacdStrategyMarkerSelection(spanId = null) {
-      if (spanId && spanId !== this.strategyReplayResult?.settings?.clock_span) return;
       if (!this.selectedStrategyMarkerKey) return;
       this.selectedStrategyMarkerKey = null;
       this.updateMacdStrategyMarkerHover(null);
@@ -3946,12 +3974,55 @@
       return entry && exit ? { entry, exit } : null;
     }
 
-    updateMacdStrategyMarkerHover(marker) {
+    resolveMarkerCoordinatesOnSpan(spanId, markerTime, fallbackPrice = null) {
+      const chart = this.charts?.[spanId];
+      const series = this.series?.[spanId];
+      if (!chart || !series) return null;
+      const spanSec = SPANS.find((s) => s.id === spanId)?.sec || 1;
+      const candles = this.candlesData?.[spanId] || [];
+      let barTime = Number(markerTime);
+      let barPrice = Number(fallbackPrice);
+      const candle = this.findCandleAtOrBefore(spanId, markerTime);
+      if (candle && Number(markerTime) < Number(candle.time) + spanSec * 2) {
+        barTime = Number(candle.time);
+        if (!Number.isFinite(barPrice) || spanId !== this.strategyReplayResult?.settings?.clock_span) {
+          barPrice = Number(candle.close);
+        }
+      } else if (candles.length) {
+        const firstT = Number(candles[0].time);
+        const lastT = Number(candles[candles.length - 1].time);
+        if (barTime < firstT || barTime > lastT + spanSec * 2) return null;
+      }
+
+      const ts = typeof chart.timeScale === "function" ? chart.timeScale() : null;
+      if (!ts) return null;
+      let x = typeof ts.timeToCoordinate === "function" ? Number(ts.timeToCoordinate(barTime)) : NaN;
+      if (!Number.isFinite(x)) {
+        const lIdx = this.getLogicalIndexForTime(spanId, barTime);
+        if (lIdx !== null && typeof ts.logicalToCoordinate === "function") {
+          const baseIdx = Math.floor(lIdx);
+          const frac = lIdx - baseIdx;
+          const c0 = Number(ts.logicalToCoordinate(baseIdx));
+          const c1 = Number(ts.logicalToCoordinate(baseIdx + 1));
+          if (Number.isFinite(c0) && Number.isFinite(c1) && c1 !== c0) {
+            x = c0 + frac * (c1 - c0);
+          } else if (Number.isFinite(c0)) {
+            x = c0;
+          }
+        }
+      }
+      const y = typeof series.priceToCoordinate === "function" ? Number(series.priceToCoordinate(barPrice)) : NaN;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return { x, y, barTime, barPrice };
+    }
+
+    updateMacdStrategyMarkerHover(marker, activeSpanId = this.strategyReplayResult?.settings?.clock_span) {
       if (typeof document === "undefined") return;
+      const targetSpan = activeSpanId || this.strategyReplayResult?.settings?.clock_span;
       SPANS.forEach((span) => {
         const overlay = document.getElementById(`msTradeMarkerHover_${span.id}`);
         if (!overlay) return;
-        if (!marker || span.id !== this.strategyReplayResult?.settings?.clock_span) {
+        if (!marker || span.id !== targetSpan) {
           overlay.style.display = "none";
           overlay.textContent = "";
           return;
@@ -3961,13 +4032,17 @@
           .join(" · ");
         let title;
         if (marker.is_exit) {
-          const pnl = Number(marker.trade?.pnl);
-          const pnlText = Number.isFinite(pnl) ? ` · net P&L ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}` : "";
-          title = `PAPER SELL FILL · closed long${pnlText} · configured fees included`;
+          if (marker.is_fill) {
+            const pnl = Number(marker.trade?.pnl);
+            const pnlText = Number.isFinite(pnl) ? ` · net P&L ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}` : "";
+            title = `SHORT SIGNAL · PAPER SELL FILL · closed long${pnlText} · configured fees included`;
+          } else {
+            title = "SHORT SIGNAL ONLY · no simulated sell fill because no paper long was open";
+          }
         } else if (marker.is_fill) {
-          title = "ENTRY SIGNAL · PAPER BUY FILL · configured fee included";
+          title = "LONG SIGNAL · PAPER BUY FILL · configured fee included";
         } else {
-          title = "ENTRY SIGNAL ONLY · no simulated fill because the paper long was already open";
+          title = "LONG SIGNAL ONLY · no simulated fill because the paper long was already open";
         }
         overlay.textContent = `${title} · ${formatPrice(marker.price)} · ${formatKst(marker.time)}${histText ? ` · ${histText}` : ""}`;
         overlay.style.display = "block";
@@ -3982,40 +4057,45 @@
         const layer = document.getElementById(`msTradeTriangles_${span.id}`);
         if (layer) layer.innerHTML = "";
       });
-      if (!spanId) return;
-      const layer = document.getElementById(`msTradeTriangles_${spanId}`);
-      const chart = this.charts?.[spanId];
-      const series = this.series?.[spanId];
-      if (!layer || !chart || !series) return;
       const markerKey = this.activeStrategyMarkerKey || this.selectedStrategyMarkerKey;
       const marker = (this.strategyExecutionMarkers || []).find((candidate) => candidate.markerKey === markerKey);
       const pair = this.macdStrategyMarkerPair(marker);
       if (!pair) return;
 
-      const x1 = Number(pair.entry._targetX ?? chart.timeScale().timeToCoordinate(pair.entry.time));
-      const x2 = Number(pair.exit._targetX ?? chart.timeScale().timeToCoordinate(pair.exit.time));
-      const y1 = Number(pair.entry._targetY ?? series.priceToCoordinate(pair.entry.price));
-      const y2 = Number(pair.exit._targetY ?? series.priceToCoordinate(pair.exit.price));
-      if (![x1, x2, y1, y2].every(Number.isFinite) || Math.abs(x1 - x2) < 1) return;
+      const enabledSet = new Set(this.strategyReplayResult?.settings?.enabled_spans || []);
+      const clockSpan = this.strategyReplayResult?.settings?.clock_span;
+      SPANS.forEach((span) => {
+        if (span.id !== clockSpan && span.id !== spanId && !enabledSet.has(span.id)) return;
+        const layer = document.getElementById(`msTradeTriangles_${span.id}`);
+        if (!layer) return;
+        const c1 = this.resolveMarkerCoordinatesOnSpan(span.id, pair.entry.time, pair.entry.price);
+        const c2 = this.resolveMarkerCoordinatesOnSpan(span.id, pair.exit.time, pair.exit.price);
+        if (!c1 || !c2) return;
+        const x1 = c1.x;
+        const y1 = c1.y;
+        const x2 = c2.x;
+        const y2 = c2.y;
+        if (![x1, x2, y1, y2].every(Number.isFinite) || Math.abs(x1 - x2) < 1) return;
 
-      const profit = Number(pair.exit.trade?.pnl) > 0;
-      const cornerX = y1 <= y2 ? x1 : x2;
-      const cornerY = y1 <= y2 ? y2 : y1;
-      const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-      polygon.setAttribute("points", `${x1.toFixed(1)},${y1.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`);
-      polygon.setAttribute("fill", profit ? "rgba(34,197,94,.12)" : "rgba(239,68,68,.12)");
-      polygon.setAttribute("stroke", profit ? "rgba(22,163,74,.65)" : "rgba(220,38,38,.65)");
-      polygon.setAttribute("stroke-width", "1");
-      layer.appendChild(polygon);
+        const profit = Number(pair.exit.trade?.pnl) > 0;
+        const cornerX = y1 <= y2 ? x1 : x2;
+        const cornerY = y1 <= y2 ? y2 : y1;
+        const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+        polygon.setAttribute("points", `${x1.toFixed(1)},${y1.toFixed(1)} ${cornerX.toFixed(1)},${cornerY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`);
+        polygon.setAttribute("fill", profit ? "rgba(34,197,94,.12)" : "rgba(239,68,68,.12)");
+        polygon.setAttribute("stroke", profit ? "rgba(22,163,74,.65)" : "rgba(220,38,38,.65)");
+        polygon.setAttribute("stroke-width", "1");
+        layer.appendChild(polygon);
 
-      const diagonal = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      diagonal.setAttribute("x1", x1.toFixed(1));
-      diagonal.setAttribute("y1", y1.toFixed(1));
-      diagonal.setAttribute("x2", x2.toFixed(1));
-      diagonal.setAttribute("y2", y2.toFixed(1));
-      diagonal.setAttribute("stroke", profit ? "#16a34a" : "#dc2626");
-      diagonal.setAttribute("stroke-width", "1");
-      layer.appendChild(diagonal);
+        const diagonal = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        diagonal.setAttribute("x1", x1.toFixed(1));
+        diagonal.setAttribute("y1", y1.toFixed(1));
+        diagonal.setAttribute("x2", x2.toFixed(1));
+        diagonal.setAttribute("y2", y2.toFixed(1));
+        diagonal.setAttribute("stroke", profit ? "#16a34a" : "#dc2626");
+        diagonal.setAttribute("stroke-width", "1");
+        layer.appendChild(diagonal);
+      });
     }
 
     renderSpanConditionCandleHighlights(spanId) {
@@ -4175,24 +4255,16 @@
       });
       if (!this.showStrategyPaperMarkers) return;
 
-      const spanId = this.strategyReplayResult?.settings?.clock_span;
+      const clockSpanId = this.strategyReplayResult?.settings?.clock_span;
+      const enabledSet = new Set(this.strategyReplayResult?.settings?.enabled_spans || []);
       const markers = this.strategyExecutionMarkers || [];
-      const host = document.getElementById(`msChartHost_${spanId}`);
-      const layer = document.getElementById(`msTradeMarkerTargets_${spanId}`);
-      const svg = document.getElementById(`msTradeTriangles_${spanId}`);
-      const chart = this.charts?.[spanId];
-      const series = this.series?.[spanId];
-      if (!spanId || !markers.length || !host || !layer || !svg || !chart || !series) return;
+      if (!clockSpanId || !markers.length) return;
 
-      const plotWidth = Number(chart.timeScale().width?.()) || host.clientWidth || 0;
-      const plotHeight = host.clientHeight || 0;
-      [layer, svg].forEach((overlay) => {
-        overlay.style.left = "0px";
-        overlay.style.right = "auto";
-        overlay.style.width = `${plotWidth}px`;
-      });
-      const fragment = document.createDocumentFragment();
       const targetsByMarkerKey = new Map();
+      const addTargetForKey = (key, el) => {
+        if (!targetsByMarkerKey.has(key)) targetsByMarkerKey.set(key, []);
+        targetsByMarkerKey.get(key).push(el);
+      };
       const blink = (target, enabled) => {
         if (!target) return;
         target._blinkAnimation?.cancel?.();
@@ -4205,62 +4277,100 @@
         }
       };
 
-      markers.forEach((marker) => {
-        const x = Number(chart.timeScale().timeToCoordinate(marker.time));
-        const y = Number(series.priceToCoordinate(marker.price));
-        if (!Number.isFinite(x) || !Number.isFinite(y) || x < -12 || x > plotWidth + 12 || y < 0 || y > plotHeight) return;
-        marker._targetX = x;
-        marker._targetY = y;
-        const size = marker.signal_only ? 6 : 8;
-        const opacity = marker.signal_only ? 0.48 : 0.92;
-        const color = marker.is_exit ? "#dc2626" : "#16a34a";
-        const target = document.createElement("button");
-        target.type = "button";
-        target.dataset.markerKey = marker.markerKey;
-        if (marker.pairKey) target.dataset.pairKey = marker.pairKey;
-        target.setAttribute("aria-label", marker.is_exit
-          ? `Paper sell fill at ${formatPrice(marker.price)}`
-          : `${marker.signal_only ? "Entry signal" : "Paper buy fill"} at ${formatPrice(marker.price)}`);
-        const points = marker.is_entry
-          ? `0.5,0.5 ${size - 0.5},${size / 2} 0.5,${size - 0.5}`
-          : `${size - 0.5},0.5 0.5,${size / 2} ${size - 0.5},${size - 0.5}`;
-        const dash = marker.signal_only ? ' stroke-dasharray="1.5 1"' : "";
-        target.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="display:block;overflow:visible;pointer-events:none;"><polygon points="${points}" fill="none" stroke="${color}" stroke-width="${marker.signal_only ? 1 : 1.25}" stroke-linejoin="round"${dash}/></svg>`;
-        const translate = marker.is_entry ? "translate(-100%,-50%)" : "translate(0,-50%)";
-        target.style.cssText = `appearance:none;position:absolute;left:${x}px;top:${y}px;transform:${translate};width:${size}px;height:${size}px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${opacity};cursor:pointer;pointer-events:auto`;
-        targetsByMarkerKey.set(marker.markerKey, target);
+      const targetSpans = SPANS.map((s) => s.id).filter((id) => id === clockSpanId || enabledSet.has(id));
+      targetSpans.forEach((spanId) => {
+        const host = document.getElementById(`msChartHost_${spanId}`);
+        const layer = document.getElementById(`msTradeMarkerTargets_${spanId}`);
+        const svg = document.getElementById(`msTradeTriangles_${spanId}`);
+        const chart = this.charts?.[spanId];
+        const series = this.series?.[spanId];
+        if (!host || !layer || !svg || !chart || !series) return;
 
-        const pairedTargets = () => {
-          const pair = this.macdStrategyMarkerPair(marker);
-          if (!pair) return [target];
-          return [...new Set([target, targetsByMarkerKey.get(pair.entry.markerKey), targetsByMarkerKey.get(pair.exit.markerKey)].filter(Boolean))];
-        };
-        target.addEventListener("mouseenter", () => {
-          pairedTargets().forEach((candidate) => blink(candidate, true));
-          this.activeStrategyMarkerKey = marker.markerKey;
-          this.updateMacdStrategyMarkerHover(marker);
-          this.renderMacdStrategyPairTriangle(spanId);
+        const plotWidth = Number(chart.timeScale().width?.()) || Math.max(10, (host.clientWidth || 500) - 74);
+        const plotHeight = host.clientHeight || 240;
+        [layer, svg].forEach((overlay) => {
+          overlay.style.left = "0px";
+          overlay.style.right = "auto";
+          overlay.style.width = `${plotWidth}px`;
         });
-        target.addEventListener("mouseleave", () => {
-          pairedTargets().forEach((candidate) => blink(candidate, false));
-          this.activeStrategyMarkerKey = null;
-          const selected = markers.find((candidate) => candidate.markerKey === this.selectedStrategyMarkerKey) || null;
-          this.updateMacdStrategyMarkerHover(selected);
-          this.renderMacdStrategyPairTriangle(spanId);
+        const fragment = document.createDocumentFragment();
+        const seenSpanBarMarker = new Set();
+
+        markers.forEach((marker) => {
+          const coords = this.resolveMarkerCoordinatesOnSpan(spanId, marker.time, marker.price);
+          if (!coords) return;
+          const { x, y, barTime } = coords;
+          if (!Number.isFinite(x) || !Number.isFinite(y) || x < -12 || x > plotWidth + 12 || y < 0 || y > plotHeight) return;
+
+          // Deduplicate if multiple fine-clock signals map onto the same coarser candle with identical fill/side state
+          const dedupKey = `${barTime}:${marker.is_entry ? "L" : "S"}:${marker.is_fill ? "F" : "S"}`;
+          if (spanId !== clockSpanId && seenSpanBarMarker.has(dedupKey)) return;
+          seenSpanBarMarker.add(dedupKey);
+
+          if (spanId === clockSpanId) {
+            marker._targetX = x;
+            marker._targetY = y;
+          }
+          const size = marker.signal_only ? 8 : 10;
+          const opacity = marker.signal_only ? 0.72 : 0.96;
+          const color = marker.is_exit ? "#dc2626" : "#16a34a";
+          const fillColor = marker.signal_only
+            ? "rgba(255,255,255,0.85)"
+            : (marker.is_exit ? "rgba(220,38,38,0.28)" : "rgba(22,163,74,0.28)");
+          const target = document.createElement("button");
+          target.type = "button";
+          target.dataset.markerKey = marker.markerKey;
+          target.dataset.span = spanId;
+          if (marker.pairKey) target.dataset.pairKey = marker.pairKey;
+          target.setAttribute("aria-label", marker.is_exit
+            ? `${marker.signal_only ? "Short signal" : "Paper sell fill"} at ${formatPrice(marker.price)}`
+            : `${marker.signal_only ? "Long signal" : "Paper buy fill"} at ${formatPrice(marker.price)}`);
+          const points = marker.is_entry
+            ? `0.5,0.5 ${size - 0.5},${size / 2} 0.5,${size - 0.5}`
+            : `${size - 0.5},0.5 0.5,${size / 2} ${size - 0.5},${size - 0.5}`;
+          const dash = marker.signal_only ? ' stroke-dasharray="2 1"' : "";
+          target.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="display:block;overflow:visible;pointer-events:none;"><polygon points="${points}" fill="${fillColor}" stroke="${color}" stroke-width="${marker.signal_only ? 1.35 : 1.6}" stroke-linejoin="round"${dash}/></svg>`;
+          const translate = marker.is_entry ? "translate(-100%,-50%)" : "translate(0,-50%)";
+          target.style.cssText = `appearance:none;position:absolute;left:${x}px;top:${y}px;transform:${translate};width:${size}px;height:${size}px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;opacity:${opacity};cursor:pointer;pointer-events:auto`;
+          addTargetForKey(marker.markerKey, target);
+
+          const pairedTargets = () => {
+            const pair = this.macdStrategyMarkerPair(marker);
+            const keys = pair ? [marker.markerKey, pair.entry.markerKey, pair.exit.markerKey] : [marker.markerKey];
+            const els = [];
+            keys.forEach((k) => {
+              (targetsByMarkerKey.get(k) || []).forEach((el) => els.push(el));
+            });
+            return [...new Set([target, ...els].filter(Boolean))];
+          };
+          target.addEventListener("mouseenter", () => {
+            pairedTargets().forEach((candidate) => blink(candidate, true));
+            this.activeStrategyMarkerKey = marker.markerKey;
+            this.updateMacdStrategyMarkerHover(marker, spanId);
+            this.renderMacdStrategyPairTriangle(spanId);
+          });
+          target.addEventListener("mouseleave", () => {
+            pairedTargets().forEach((candidate) => blink(candidate, false));
+            this.activeStrategyMarkerKey = null;
+            const selected = markers.find((candidate) => candidate.markerKey === this.selectedStrategyMarkerKey) || null;
+            this.updateMacdStrategyMarkerHover(selected, clockSpanId);
+            this.renderMacdStrategyPairTriangle(clockSpanId);
+          });
+          target.addEventListener("click", (event) => {
+            event.stopPropagation();
+            this.selectedStrategyMarkerKey = marker.markerKey;
+            this.updateMacdStrategyMarkerHover(marker, spanId);
+            this.renderMacdStrategyPairTriangle(spanId);
+          });
+          fragment.appendChild(target);
         });
-        target.addEventListener("click", (event) => {
-          event.stopPropagation();
-          this.selectedStrategyMarkerKey = marker.markerKey;
-          this.updateMacdStrategyMarkerHover(marker);
-          this.renderMacdStrategyPairTriangle(spanId);
-        });
-        fragment.appendChild(target);
+        layer.appendChild(fragment);
       });
-      layer.appendChild(fragment);
+
       const active = markers.find((marker) => marker.markerKey === this.activeStrategyMarkerKey) || null;
       const selected = markers.find((marker) => marker.markerKey === this.selectedStrategyMarkerKey) || null;
-      this.updateMacdStrategyMarkerHover(active || selected);
-      this.renderMacdStrategyPairTriangle(spanId);
+      this.updateMacdStrategyMarkerHover(active || selected, clockSpanId);
+      this.renderMacdStrategyPairTriangle(clockSpanId);
     }
 
     applyMacdStrategyMarkers(result) {
