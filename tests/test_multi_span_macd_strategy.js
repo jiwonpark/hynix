@@ -275,6 +275,7 @@ global.localStorage = {
 
 const customPersistedSettings = {
   clock_span: "15m",
+  signal_basis: "parabolic",
   buy_threshold: -0.05,
   sell_threshold: 0.08,
   initial_capital: 25000,
@@ -296,6 +297,7 @@ engine.saveMacdStrategySettings(customPersistedSettings);
 
 const restoredSettings = engine.macdStrategySettings();
 assert.equal(restoredSettings.clock_span, "15m", "must restore persisted clock_span");
+assert.equal(restoredSettings.signal_basis, "parabolic", "must restore persisted signal_basis");
 assert.equal(restoredSettings.buy_threshold, -0.05, "must restore persisted buy_threshold");
 assert.equal(restoredSettings.sell_threshold, 0.08, "must restore persisted sell_threshold");
 assert.deepEqual(restoredSettings.entry_rules, customPersistedSettings.entry_rules, "must restore persisted entry_rules");
@@ -303,5 +305,35 @@ assert.deepEqual(restoredSettings.exit_rules, customPersistedSettings.exit_rules
 assert.equal(restoredSettings.rule_signs["entry:5m:macd_h"], "+", "must preserve custom sign even for disabled rule");
 
 global.localStorage = prevLocalStorage;
+
+// Test Parabolic / 2nd-order Taylor projection from completed (t-2, t-1) to candle t:
+// At t = DAY*2:
+// t-2 (0): H = -1.0, ΔH = -0.5
+// t-1 (DAY): H = -0.5, ΔH = +0.5, Δ²H = +0.5 - (-0.5) = +1.0
+// Parabolic prediction for t (DAY*2):
+// ΔH_hat_t = ΔH_{t-1} + 0.5 * Δ²H_{t-1} = 0.5 + 0.5 * 1.0 = +1.0
+// H_hat_t = H_{t-1} + ΔH_hat_t = -0.5 + 1.0 = +0.5
+// Since H_{t-1} = -0.5 < 0 and H_hat_t = +0.5 > 0, predicted hist_cross = +1!
+const parabolicAtDay2 = engine.findCompletedHistogramAt("1d", DAY * 3, "parabolic");
+assert.ok(parabolicAtDay2, "must compute parabolic projection for candle t from prior completed candles");
+assert.equal(parabolicAtDay2.signal_basis, "parabolic");
+assert.equal(parabolicAtDay2.time, DAY * 2, "projected point must stay anchored at candle t's timestamp");
+assert.equal(parabolicAtDay2.hist_diff, 1.0, "parabolic ΔH_hat_t = ΔH_{t-1} + 0.5*Δ²H_{t-1} = 0.5 + 0.5*(1.0) = 1.0");
+assert.equal(parabolicAtDay2.histogram, 0.5, "parabolic H_hat_t = H_{t-1} + ΔH_hat_t = -0.5 + 1.0 = 0.5");
+assert.equal(parabolicAtDay2.hist_cross, 1, "parabolic H_hat_t crosses zero from -0.5 to +0.5");
+
+const parabolicReplay = engine.evaluateMacdStrategyReplay({
+  clock_span: "1d",
+  signal_basis: "parabolic",
+  entry_rules: [{ span: "1d", rule: "macd_h_cross", sign: "+" }],
+  exit_rules: [],
+  buy_threshold: 0,
+  sell_threshold: 0,
+  initial_capital: 10000,
+  fee_bps: 5,
+}, DAY * 4);
+assert.equal(parabolicReplay.error, null);
+assert.equal(parabolicReplay.entry_signals.length, 1, "parabolic replay must trigger entry signal at DAY*2 where predicted H crosses +");
+assert.equal(parabolicReplay.entry_signals[0].time, DAY * 2);
 
 console.log("Multi-span all-MACD-H completed-candle paper strategy tests passed");

@@ -559,6 +559,12 @@
               ${SPANS.map((s) => `<option value="${s.id}"${s.id === "5m" ? " selected" : ""}>${s.id}</option>`).join("")}
             </select>
           </label>
+          <label title="Completed evaluates actual closed bar t; Parabolic 2nd-Order Taylor projects candle t from prior completed (t-2, t-1): x̂_t = x_{t-1} + Δx_{t-1} + ½Δ²x_{t-1}">Signal basis
+            <select id="msStrategySignalBasis" aria-label="Signal evaluation basis">
+              <option value="completed" selected>Completed (actual t)</option>
+              <option value="parabolic">Predicted (Parabolic Taylor t-2 → t-1 → t̂)</option>
+            </select>
+          </label>
           <label>Capital $
             <input id="msStrategyCapital" type="number" value="10000" min="1" step="100" style="width:82px;">
           </label>
@@ -2913,12 +2919,15 @@
           prev_histogram: hPoint ? (hPoint.prev ?? null) : null,
           hist_diff: hPoint ? (hPoint.diff ?? null) : null,
           prev_hist_diff: hPoint ? (hPoint.prev_diff ?? null) : null,
+          hist_diff2: hPoint ? (hPoint.diff2 ?? null) : null,
           hist_cross: hPoint ? (hPoint.cross ?? null) : null,
           hist_diff_cross: hPoint ? (hPoint.diff_cross ?? null) : null,
           ma20: ma20Point ? ma20Point.value : null,
           ma20_diff: ma20Point ? (ma20Point.diff ?? null) : null,
+          ma20_diff2: ma20Point ? (ma20Point.diff2 ?? null) : null,
           ma50: ma50Point ? ma50Point.value : null,
           ma50_diff: ma50Point ? (ma50Point.diff ?? null) : null,
+          ma50_diff2: ma50Point ? (ma50Point.diff2 ?? null) : null,
         });
       }
       this.macdData[spanId] = { ...macdRes, ma20: ma20Res, ma50: ma50Res, byTime };
@@ -3101,9 +3110,12 @@
         if (i >= period) sum -= data[i - period].close;
         if (i >= period - 1) {
           const val = +(sum / period).toFixed(4);
-          const prev = res.length >= 1 ? res[res.length - 1].value : null;
+          const prevElem = res.length >= 1 ? res[res.length - 1] : null;
+          const prev = prevElem ? prevElem.value : null;
           const diff = prev !== null ? +(val - prev).toFixed(4) : null;
-          res.push({ time: data[i].time, value: val, diff });
+          const prevDiff = prevElem ? (prevElem.diff ?? null) : null;
+          const diff2 = (diff !== null && prevDiff !== null) ? +(diff - prevDiff).toFixed(4) : null;
+          res.push({ time: data[i].time, value: val, diff, diff2 });
         }
       }
       return res;
@@ -3186,6 +3198,8 @@
         histogram[i].diff = diff;
         const prevDiff = i >= 1 ? (histogram[i - 1].diff ?? null) : null;
         histogram[i].prev_diff = prevDiff;
+        const diff2 = (diff !== null && prevDiff !== null) ? +(diff - prevDiff).toFixed(4) : null;
+        histogram[i].diff2 = diff2;
         histogram[i].cross = prev !== null
           ? (prev < 0 && curr > 0 ? 1 : (prev > 0 && curr < 0 ? -1 : 0))
           : null;
@@ -3215,6 +3229,7 @@
         const s = settings || this.macdStrategySettings();
         const payload = {
           clock_span: s.clock_span,
+          signal_basis: s.signal_basis || "completed",
           buy_threshold: s.buy_threshold,
           sell_threshold: s.sell_threshold,
           initial_capital: s.initial_capital,
@@ -3233,6 +3248,10 @@
       if (saved.clock_span && validSpans.has(saved.clock_span)) {
         const clockEl = document.getElementById("msStrategyClock");
         if (clockEl) clockEl.value = saved.clock_span;
+      }
+      if (saved.signal_basis === "completed" || saved.signal_basis === "parabolic") {
+        const basisEl = document.getElementById("msStrategySignalBasis");
+        if (basisEl) basisEl.value = saved.signal_basis;
       }
       if (Number.isFinite(Number(saved.buy_threshold))) {
         const buyEl = document.getElementById("msStrategyBuyThreshold");
@@ -3305,6 +3324,11 @@
         ? document.getElementById("msStrategyClock")?.value
         : null;
       const clockValue = domClock || saved?.clock_span || "5m";
+      const domBasis = (typeof document !== "undefined" && typeof document.getElementById === "function")
+        ? document.getElementById("msStrategySignalBasis")?.value
+        : null;
+      const basisRaw = domBasis || saved?.signal_basis || "completed";
+      const signalBasis = basisRaw === "parabolic" ? "parabolic" : "completed";
 
       const entryRules = [];
       const exitRules = [];
@@ -3368,6 +3392,7 @@
       return {
         strategy_mode: "all_macd_histogram_contrarian",
         clock_span: validSpans.has(clockValue) ? clockValue : "5m",
+        signal_basis: signalBasis,
         enabled_spans: Array.from(enabledSpansSet),
         entry_rules: entryRules,
         exit_rules: exitRules,
@@ -3428,7 +3453,7 @@
       setState("msStrategyPresetAllFullWave", hasFullWave && settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
     }
 
-    findCompletedHistogramAt(spanId, decisionTime) {
+    findCompletedHistogramAt(spanId, decisionTime, signalBasis = "completed") {
       const histogram = this.macdData?.[spanId]?.histogram || [];
       const spanSec = SPANS.find((s) => s.id === spanId)?.sec || 1;
       let low = 0;
@@ -3447,6 +3472,81 @@
         }
       }
       if (!best || !Number.isFinite(Number(best.value))) return null;
+
+      if (signalBasis === "parabolic") {
+        // Parabolic / 2nd-order Taylor projection for candle t (best) from prior completed candles (t-2, t-1):
+        // x̂_t = x_{t-1} + Δx_{t-1} + ½Δ²x_{t-1}, so Δx̂_t = Δx_{t-1} + ½Δ²x_{t-1} and Δ²x̂_t = Δx̂_t - Δx_{t-1} = ½Δ²x_{t-1}
+        const prevHistElem = bestIdx >= 1 ? histogram[bestIdx - 1] : null;
+        if (!prevHistElem || !Number.isFinite(Number(prevHistElem.value))) return null;
+        const priorHistElem = bestIdx >= 2 ? histogram[bestIdx - 2] : null;
+        const prev3HistElem = bestIdx >= 3 ? histogram[bestIdx - 3] : null;
+        const byPrev = this.macdData?.[spanId]?.byTime?.get(prevHistElem.time);
+        const byPrior = priorHistElem ? this.macdData?.[spanId]?.byTime?.get(priorHistElem.time) : null;
+        const byPrev3 = prev3HistElem ? this.macdData?.[spanId]?.byTime?.get(prev3HistElem.time) : null;
+
+        const h1 = Number(prevHistElem.value);
+        const h2 = byPrev?.prev_histogram ?? (prevHistElem.prev ?? (priorHistElem && Number.isFinite(Number(priorHistElem.value)) ? Number(priorHistElem.value) : null));
+        const h3 = byPrior?.prev_histogram ?? (priorHistElem?.prev ?? (prev3HistElem && Number.isFinite(Number(prev3HistElem.value)) ? Number(prev3HistElem.value) : null));
+
+        const dh1 = byPrev?.hist_diff ?? (prevHistElem.diff ?? (h2 !== null ? +(h1 - h2).toFixed(4) : null));
+        const dh2 = byPrev?.prev_hist_diff ?? (prevHistElem.prev_diff ?? (byPrior?.hist_diff ?? (priorHistElem?.diff ?? (h2 !== null && h3 !== null ? +(h2 - h3).toFixed(4) : null))));
+        const d2h1 = byPrev?.hist_diff2 ?? (prevHistElem.diff2 ?? (dh1 !== null && dh2 !== null ? +(dh1 - dh2).toFixed(4) : null));
+
+        const predHistDiff = dh1 !== null ? +(dh1 + 0.5 * (d2h1 ?? 0)).toFixed(4) : null;
+        const predHist = predHistDiff !== null ? +(h1 + predHistDiff).toFixed(4) : h1;
+        const predHistCross = (h1 < 0 && predHist > 0 ? 1 : (h1 > 0 && predHist < 0 ? -1 : 0));
+        const predHistDiffCross = (dh1 !== null && predHistDiff !== null)
+          ? (dh1 < 0 && predHistDiff > 0 ? 1 : (dh1 > 0 && predHistDiff < 0 ? -1 : 0))
+          : null;
+
+        const s1 = byPrev?.signal ?? (prevHistElem.signal ?? null);
+        const s2 = byPrior?.signal ?? (priorHistElem?.signal ?? null);
+        const s3 = byPrev3?.signal ?? (prev3HistElem?.signal ?? null);
+        const ds1 = byPrev?.signal_diff ?? (prevHistElem.signal_diff ?? (s1 !== null && s2 !== null ? +(Number(s1) - Number(s2)).toFixed(4) : null));
+        const ds2 = byPrior?.signal_diff ?? (priorHistElem?.signal_diff ?? (s2 !== null && s3 !== null ? +(Number(s2) - Number(s3)).toFixed(4) : null));
+        const d2s1 = byPrev?.signal_diff2 ?? (prevHistElem.signal_diff2 ?? (ds1 !== null && ds2 !== null ? +(Number(ds1) - Number(ds2)).toFixed(4) : null));
+        const predSigDiff = ds1 !== null ? +(Number(ds1) + 0.5 * Number(d2s1 ?? 0)).toFixed(4) : null;
+        const predSig = (s1 !== null && predSigDiff !== null) ? +(Number(s1) + predSigDiff).toFixed(4) : (s1 !== null ? Number(s1) : null);
+        const predSigDiff2 = (predSigDiff !== null && ds1 !== null) ? +(predSigDiff - Number(ds1)).toFixed(4) : null;
+
+        const ma20_1 = byPrev?.ma20 ?? (prevHistElem.ma20 ?? null);
+        const ma20_2 = byPrior?.ma20 ?? (priorHistElem?.ma20 ?? null);
+        const dma20_1 = byPrev?.ma20_diff ?? (prevHistElem.ma20_diff ?? (ma20_1 !== null && ma20_2 !== null ? +(Number(ma20_1) - Number(ma20_2)).toFixed(4) : null));
+        const dma20_2 = byPrior?.ma20_diff ?? (priorHistElem?.ma20_diff ?? null);
+        const d2ma20_1 = byPrev?.ma20_diff2 ?? (dma20_1 !== null && dma20_2 !== null ? +(Number(dma20_1) - Number(dma20_2)).toFixed(4) : null);
+        const predMa20Diff = dma20_1 !== null ? +(Number(dma20_1) + 0.5 * Number(d2ma20_1 ?? 0)).toFixed(4) : null;
+        const predMa20 = (ma20_1 !== null && predMa20Diff !== null) ? +(Number(ma20_1) + predMa20Diff).toFixed(4) : (ma20_1 !== null ? Number(ma20_1) : null);
+
+        const ma50_1 = byPrev?.ma50 ?? (prevHistElem.ma50 ?? null);
+        const ma50_2 = byPrior?.ma50 ?? (priorHistElem?.ma50 ?? null);
+        const dma50_1 = byPrev?.ma50_diff ?? (prevHistElem.ma50_diff ?? (ma50_1 !== null && ma50_2 !== null ? +(Number(ma50_1) - Number(ma50_2)).toFixed(4) : null));
+        const dma50_2 = byPrior?.ma50_diff ?? (priorHistElem?.ma50_diff ?? null);
+        const d2ma50_1 = byPrev?.ma50_diff2 ?? (dma50_1 !== null && dma50_2 !== null ? +(Number(dma50_1) - Number(dma50_2)).toFixed(4) : null);
+        const predMa50Diff = dma50_1 !== null ? +(Number(dma50_1) + 0.5 * Number(d2ma50_1 ?? 0)).toFixed(4) : null;
+        const predMa50 = (ma50_1 !== null && predMa50Diff !== null) ? +(Number(ma50_1) + predMa50Diff).toFixed(4) : (ma50_1 !== null ? Number(ma50_1) : null);
+
+        return {
+          time: Number(best.time),
+          completed_time: Number(best.time) + spanSec,
+          signal_basis: "parabolic",
+          actual_histogram: Number(best.value),
+          value: predHist,
+          histogram: predHist,
+          prev_histogram: h1,
+          hist_diff: predHistDiff,
+          prev_hist_diff: dh1,
+          hist_cross: predHistCross,
+          hist_diff_cross: predHistDiffCross,
+          signal: predSig,
+          signal_diff: predSigDiff,
+          signal_diff2: predSigDiff2,
+          ma20: predMa20,
+          ma20_diff: predMa20Diff,
+          ma50: predMa50,
+          ma50_diff: predMa50Diff,
+        };
+      }
+
       const byPoint = this.macdData?.[spanId]?.byTime?.get(best.time);
       const currHist = Number(best.value);
       const prevHistElem = bestIdx >= 1 ? histogram[bestIdx - 1] : null;
@@ -3468,6 +3568,7 @@
       return {
         time: Number(best.time),
         completed_time: Number(best.time) + spanSec,
+        signal_basis: "completed",
         value: currHist,
         histogram: currHist,
         prev_histogram: prevHist,
@@ -3517,6 +3618,7 @@
 
     evaluateSpanConditionCandles(spanId, settings, nowSec = Math.floor(Date.now() / 1000)) {
       const spanSec = SPANS.find((s) => s.id === spanId)?.sec || 1;
+      const signalBasis = settings?.signal_basis === "parabolic" ? "parabolic" : "completed";
       const buyThreshold = Number.isFinite(Number(settings?.buy_threshold)) ? Number(settings.buy_threshold) : 0;
       const sellThreshold = Number.isFinite(Number(settings?.sell_threshold)) ? Number(settings.sell_threshold) : 0;
       const spanEntryRules = (settings?.entry_rules || []).filter((r) => r.span === spanId);
@@ -3538,7 +3640,7 @@
 
       const matches = [];
       for (const candleTime of completedTimes) {
-        const point = this.findCompletedHistogramAt(spanId, candleTime + spanSec);
+        const point = this.findCompletedHistogramAt(spanId, candleTime + spanSec, signalBasis);
         if (!point || point.time !== candleTime) continue;
         const entryPass = spanEntryRules.length > 0
           && spanEntryRules.every((r) => this.evaluateMacdRuleOnPoint(point, r, true, buyThreshold, sellThreshold));
@@ -3561,6 +3663,7 @@
     evaluateMacdStrategyReplay(rawSettings = {}, nowSec = Math.floor(Date.now() / 1000)) {
       const validSpanIds = SPANS.map((s) => s.id);
       const clockSpan = validSpanIds.includes(rawSettings.clock_span) ? rawSettings.clock_span : "1s";
+      const signalBasis = rawSettings.signal_basis === "parabolic" ? "parabolic" : "completed";
       const buyThreshold = Number.isFinite(Number(rawSettings.buy_threshold)) ? Number(rawSettings.buy_threshold) : 0;
       const sellThreshold = Number.isFinite(Number(rawSettings.sell_threshold)) ? Number(rawSettings.sell_threshold) : 0;
       const initialCapital = Math.max(1, Number(rawSettings.initial_capital) || 10000);
@@ -3582,6 +3685,7 @@
       const settings = {
         strategy_mode: "all_macd_histogram_contrarian",
         clock_span: clockSpan,
+        signal_basis: signalBasis,
         enabled_spans: activeSpans,
         entry_rules: entryRules,
         exit_rules: exitRules,
@@ -3650,7 +3754,7 @@
         const histograms = {};
         let aligned = true;
         for (const spanId of activeSpans) {
-          const point = this.findCompletedHistogramAt(spanId, decisionTime);
+          const point = this.findCompletedHistogramAt(spanId, decisionTime, signalBasis);
           if (!point) {
             aligned = false;
             break;
@@ -4297,14 +4401,16 @@
           subtitleDetail = measured;
         }
         const valColor = pass ? "#16a34a" : (numVal < 0 ? "#dc2626" : "#64748b");
-        const badgeTitle = `${isEntry ? "LONG" : "SHORT"} ${pass ? "passes" : "waits"}: ${span.id} ${rule.label} ${subtitleDetail}`;
+        const isParabolic = settings.signal_basis === "parabolic" || point.signal_basis === "parabolic";
+        const basisTag = isParabolic ? "PARABOLIC t̂ (t-2→t-1)" : "ACTUAL t";
+        const badgeTitle = `${isEntry ? "LONG" : "SHORT"} ${pass ? "passes" : "waits"} (${basisTag}): ${span.id} ${rule.label} ${subtitleDetail}`;
 
         return {
           isEnabled: true,
           sign,
           signLabel,
           titleText,
-          subtitleText: `PAPER · ${subtitleDetail} · ${formatKst(point.completed_time)} completed`,
+          subtitleText: `PAPER · ${basisTag} · ${subtitleDetail} · ${formatKst(point.completed_time)} completed`,
           valText: measured,
           valColor,
           badgeClass: pass ? "pass" : "wait",
@@ -4394,7 +4500,10 @@
         ? `${settings.clock_span} completed ${formatKst(latest.decision_time)} · loaded history`
         : `${settings.clock_span} completed candles · source unavailable`);
       if (source) {
-        source.textContent = `Source: completed Binance candles · MACD(12,26,9) + MA20/MA50 [H, H×, S, ΔS, Δ²S, ΔH, ΔH×, ΔMA20, ΔMA50] · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · green/red candle columns show per-chart LONG/SHORT condition matches · loaded chart history only`;
+        const basisDesc = settings.signal_basis === "parabolic"
+          ? "Parabolic 2nd-order Taylor projection x̂_t = x_{t-1} + Δx_{t-1} + ½Δ²x_{t-1} from (t-2, t-1)"
+          : "completed actual bar t";
+        source.textContent = `Source: completed Binance candles (${basisDesc}) · MACD(12,26,9) + MA20/MA50 [H, H×, S, ΔS, Δ²S, ΔH, ΔH×, ΔMA20, ΔMA50] · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · green/red candle columns show per-chart LONG/SHORT condition matches · loaded chart history only`;
       }
     }
 
@@ -4650,6 +4759,7 @@
       if (allFullWaveButton) allFullWaveButton.addEventListener("click", () => this.applyMacdStrategyPreset("all_full_wave"));
       [
         "msStrategyClock",
+        "msStrategySignalBasis",
         "msStrategyBuyThreshold",
         "msStrategySellThreshold",
         "msStrategyCapital",
