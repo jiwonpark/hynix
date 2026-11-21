@@ -589,7 +589,7 @@
                 </label>
               </div>
             </div>
-            <div id="msStrategyUnifiedConditions" class="condChecklist" aria-live="polite" style="max-height:540px;overflow-y:auto;padding-right:4px;">
+            <div id="msStrategyUnifiedConditions" class="condChecklist" aria-live="polite" style="display:block;max-height:600px;overflow-y:auto;padding-right:4px;">
               ${SPANS.map((s) => {
                 const renderKindRows = (kind) => {
                   const isEntry = kind === "entry";
@@ -619,8 +619,8 @@
                   }).join("");
                 };
                 return `
-                  <div class="msSpanSection" data-span="${s.id}" style="margin-bottom:10px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;background:#ffffff;">
-                    <div style="font-weight:800;font-size:10.5px;color:${s.color};padding:5px 8px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                  <div class="msSpanSection" data-span="${s.id}" style="margin-bottom:10px;border:1px solid #e2e8f0;border-radius:6px;background:#ffffff;flex-shrink:0;">
+                    <div style="font-weight:800;font-size:10.5px;color:${s.color};padding:5px 8px;background:#f8fafc;border-bottom:1px solid #e2e8f0;border-radius:6px 6px 0 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
                       <span>● ${s.id} · ${s.label}</span>
                       <div style="display:flex;align-items:center;gap:6px;">
                         <button type="button" class="msSpanToggleAllBtn" data-span="${s.id}" data-kind="entry" style="border:1px solid #86efac;background:#f0fdf4;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#166534;">Toggle ${s.id} Long</button>
@@ -628,14 +628,14 @@
                       </div>
                     </div>
                     <div class="msSpanDualColumns" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:0;">
-                      <div class="msSpanLongCol" data-span="${s.id}" data-kind="entry" style="padding:4px 8px;border-right:1px solid #f1f5f9;">
+                      <div class="msSpanLongCol" data-span="${s.id}" data-kind="entry" style="padding:6px 8px 8px;border-right:1px solid #f1f5f9;">
                         <div style="font-size:10px;font-weight:800;color:#166534;padding:2px 4px;margin-bottom:2px;background:#f0fdf4;border-radius:3px;display:flex;align-items:center;justify-content:space-between;">
                           <span>▲ Long conditions (${s.id})</span>
                           <span style="font-size:9px;font-weight:700;color:#15803d;">BUY / LONG</span>
                         </div>
                         ${renderKindRows("entry")}
                       </div>
-                      <div class="msSpanShortCol" data-span="${s.id}" data-kind="exit" style="padding:4px 8px;">
+                      <div class="msSpanShortCol" data-span="${s.id}" data-kind="exit" style="padding:6px 8px 8px;">
                         <div style="font-size:10px;font-weight:800;color:#991b1b;padding:2px 4px;margin-bottom:2px;background:#fef2f2;border-radius:3px;display:flex;align-items:center;justify-content:space-between;">
                           <span>▼ Short conditions (${s.id})</span>
                           <span style="font-size:9px;font-weight:700;color:#b91c1c;">SELL / SHORT</span>
@@ -4484,8 +4484,8 @@
               renderRowHtml(span, rule, "exit", computeRowState(span, rule, "exit", exitRulesMap))
             ).join("");
             return `
-              <div class="msSpanSection" data-span="${span.id}" style="margin-bottom:10px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;background:#ffffff;">
-                <div style="font-weight:800;font-size:10.5px;color:${span.color};padding:5px 8px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+              <div class="msSpanSection" data-span="${span.id}" style="margin-bottom:10px;border:1px solid #e2e8f0;border-radius:6px;background:#ffffff;flex-shrink:0;">
+                <div style="font-weight:800;font-size:10.5px;color:${span.color};padding:5px 8px;background:#f8fafc;border-bottom:1px solid #e2e8f0;border-radius:6px 6px 0 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
                   <span>● ${span.id} · ${span.label}</span>
                   <div style="display:flex;align-items:center;gap:6px;">
                     <button type="button" class="msSpanToggleAllBtn" data-span="${span.id}" data-kind="entry" style="border:1px solid #86efac;background:#f0fdf4;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#166534;">Toggle ${span.id} Long</button>
@@ -4493,14 +4493,14 @@
                   </div>
                 </div>
                 <div class="msSpanDualColumns" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:0;">
-                  <div class="msSpanLongCol" data-span="${span.id}" data-kind="entry" style="padding:4px 8px;border-right:1px solid #f1f5f9;">
+                  <div class="msSpanLongCol" data-span="${span.id}" data-kind="entry" style="padding:6px 8px 8px;border-right:1px solid #f1f5f9;">
                     <div style="font-size:10px;font-weight:800;color:#166534;padding:2px 4px;margin-bottom:2px;background:#f0fdf4;border-radius:3px;display:flex;align-items:center;justify-content:space-between;">
                       <span>▲ Long conditions (${span.id})</span>
                       <span style="font-size:9px;font-weight:700;color:#15803d;">BUY / LONG</span>
                     </div>
                     ${entryRowsHtml}
                   </div>
-                  <div class="msSpanShortCol" data-span="${span.id}" data-kind="exit" style="padding:4px 8px;">
+                  <div class="msSpanShortCol" data-span="${span.id}" data-kind="exit" style="padding:6px 8px 8px;">
                     <div style="font-size:10px;font-weight:800;color:#991b1b;padding:2px 4px;margin-bottom:2px;background:#fef2f2;border-radius:3px;display:flex;align-items:center;justify-content:space-between;">
                       <span>▼ Short conditions (${span.id})</span>
                       <span style="font-size:9px;font-weight:700;color:#b91c1c;">SELL / SHORT</span>
