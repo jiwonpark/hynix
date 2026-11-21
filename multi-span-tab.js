@@ -29,6 +29,8 @@
     { id: "ma50_diff", label: "MA50 diff", title: "MA50 Δ", key: "ma50_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "MA50 1st difference (slope)" },
   ];
 
+  const MS_STRATEGY_STORAGE_KEY = "skhynix_ms_strategy_settings_v1";
+
   // Upper bound for full-range finer-chart loading; wider spans (e.g. 1d -> 1s = 86,400 bars)
   // load a focused readable slice instead of truncating blindly and zooming to <0.1px/bar.
   const MAX_FULL_DRILLDOWN_BARS = 4000;
@@ -659,6 +661,7 @@
       if (!Frame?.mount) {
         container.classList.add("executionChartFrame");
         container.innerHTML = this.macdStrategyFrameBody();
+        this.restoreSavedMacdStrategySettingsToDom();
         return;
       }
       this.strategyExecutionFrame = Frame.mount({
@@ -697,6 +700,7 @@
         legend: '<span><strong style="color:#16a34a">▷</strong> Entry signal</span><span><strong style="color:#16a34a">▶</strong> Simulated buy</span><span><strong style="color:#dc2626">◀</strong> Simulated sell</span><span>Hover or click a fill for paired P&amp;L</span>',
         syncText: "Completed candles · loaded history",
       });
+      this.restoreSavedMacdStrategySettingsToDom();
     }
 
     getEffectiveGridCols(wrapper) {
@@ -3183,35 +3187,139 @@
       return { macd: macdLine, signal: signalLine, histogram };
     }
 
+    loadSavedMacdStrategySettings() {
+      try {
+        if (typeof localStorage === "undefined" || typeof localStorage.getItem !== "function") return null;
+        const raw = localStorage.getItem(MS_STRATEGY_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    saveMacdStrategySettings(settings = null) {
+      try {
+        if (typeof localStorage === "undefined" || typeof localStorage.setItem !== "function") return;
+        const s = settings || this.macdStrategySettings();
+        const payload = {
+          clock_span: s.clock_span,
+          buy_threshold: s.buy_threshold,
+          sell_threshold: s.sell_threshold,
+          initial_capital: s.initial_capital,
+          fee_bps: s.fee_bps,
+          entry_rules: s.entry_rules,
+          exit_rules: s.exit_rules,
+          rule_signs: s.rule_signs || {},
+        };
+        localStorage.setItem(MS_STRATEGY_STORAGE_KEY, JSON.stringify(payload));
+      } catch (_) {}
+    }
+
+    restoreSavedMacdStrategySettingsToDom(saved = this.loadSavedMacdStrategySettings()) {
+      if (!saved || typeof document === "undefined" || typeof document.getElementById !== "function") return false;
+      const validSpans = new Set(SPANS.map((s) => s.id));
+      if (saved.clock_span && validSpans.has(saved.clock_span)) {
+        const clockEl = document.getElementById("msStrategyClock");
+        if (clockEl) clockEl.value = saved.clock_span;
+      }
+      if (Number.isFinite(Number(saved.buy_threshold))) {
+        const buyEl = document.getElementById("msStrategyBuyThreshold");
+        if (buyEl) buyEl.value = String(saved.buy_threshold);
+      }
+      if (Number.isFinite(Number(saved.sell_threshold))) {
+        const sellEl = document.getElementById("msStrategySellThreshold");
+        if (sellEl) sellEl.value = String(saved.sell_threshold);
+      }
+      if (Number.isFinite(Number(saved.initial_capital))) {
+        const capEl = document.getElementById("msStrategyCapital");
+        if (capEl) capEl.value = String(saved.initial_capital);
+      }
+      if (Number.isFinite(Number(saved.fee_bps))) {
+        const feeEl = document.getElementById("msStrategyFeeBps");
+        if (feeEl) feeEl.value = String(saved.fee_bps);
+      }
+
+      if (typeof document.querySelectorAll !== "function") return true;
+      const entryMap = new Map(
+        (Array.isArray(saved.entry_rules) ? saved.entry_rules : []).map((r) => [`${r.span}:${r.rule}`, r])
+      );
+      const exitMap = new Map(
+        (Array.isArray(saved.exit_rules) ? saved.exit_rules : []).map((r) => [`${r.span}:${r.rule}`, r])
+      );
+      const ruleSigns = (saved.rule_signs && typeof saved.rule_signs === "object") ? saved.rule_signs : {};
+      const hasSavedRules = Array.isArray(saved.entry_rules) || Array.isArray(saved.exit_rules);
+
+      document.querySelectorAll(".msStrategySpanToggle").forEach((input) => {
+        const spanId = input.getAttribute("data-span");
+        const ruleId = input.getAttribute("data-rule") || "macd_h";
+        const kind = input.getAttribute("data-kind") || "entry";
+        const map = kind === "entry" ? entryMap : exitMap;
+        const ruleObj = map.get(`${spanId}:${ruleId}`);
+        if (hasSavedRules) {
+          input.checked = Boolean(ruleObj);
+        }
+        const signKey = `${kind}:${spanId}:${ruleId}`;
+        const savedSign = ruleObj?.sign || ruleSigns[signKey];
+        if (savedSign === "+" || savedSign === "-") {
+          const row = input.closest?.(".condRow");
+          const signBtn = row?.querySelector?.(".condSignToggle");
+          if (signBtn) {
+            const isCross = ruleId === "macd_h_cross";
+            signBtn.setAttribute("data-sign", savedSign);
+            signBtn.textContent = isCross
+              ? (savedSign === "+" ? "+ (−→+)" : "− (+→−)")
+              : (savedSign === "+" ? "+ (>0)" : "− (<0)");
+            signBtn.style.color = savedSign === "+" ? "#166534" : "#991b1b";
+          }
+        }
+      });
+      return true;
+    }
+
     macdStrategySettings() {
       const validSpans = new Set(SPANS.map((s) => s.id));
+      const saved = this.loadSavedMacdStrategySettings();
       const readNumber = (id, fallback, min, max) => {
-        if (typeof document === "undefined") return fallback;
-        const value = Number(document.getElementById(id)?.value);
-        if (!Number.isFinite(value)) return fallback;
-        return Math.max(min, Math.min(max, value));
+        if (typeof document !== "undefined" && typeof document.getElementById === "function") {
+          const el = document.getElementById(id);
+          if (el && el.value !== undefined && el.value !== "") {
+            const value = Number(el.value);
+            if (Number.isFinite(value)) return Math.max(min, Math.min(max, value));
+          }
+        }
+        return fallback;
       };
-      const clockValue = typeof document !== "undefined"
+      const domClock = (typeof document !== "undefined" && typeof document.getElementById === "function")
         ? document.getElementById("msStrategyClock")?.value
-        : "5m";
+        : null;
+      const clockValue = domClock || saved?.clock_span || "5m";
 
       const entryRules = [];
       const exitRules = [];
+      const ruleSigns = { ...(saved?.rule_signs || {}) };
       const enabledSpansSet = new Set();
+      let hasDomToggles = false;
 
       if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
         const toggles = [...document.querySelectorAll(".msStrategySpanToggle")];
         if (toggles.length) {
+          hasDomToggles = true;
           toggles.forEach((input) => {
             const spanId = input.getAttribute("data-span");
             const ruleId = input.getAttribute("data-rule") || "macd_h";
             const kind = input.getAttribute("data-kind") || "entry";
-            const row = input.closest(".condRow");
-            const signBtn = row?.querySelector(".condSignToggle");
+            const row = input.closest?.(".condRow");
+            const signBtn = row?.querySelector?.(".condSignToggle");
             const sign = signBtn?.getAttribute("data-sign")
+              || ruleSigns[`${kind}:${spanId}:${ruleId}`]
               || (kind === "entry"
                 ? (ruleId === "macd_h" || ruleId === "macd_s" ? "-" : "+")
                 : (ruleId === "macd_h" || ruleId === "macd_s" ? "+" : "-"));
+            if (validSpans.has(spanId)) {
+              ruleSigns[`${kind}:${spanId}:${ruleId}`] = sign;
+            }
             if (input.checked && validSpans.has(spanId)) {
               enabledSpansSet.add(spanId);
               const item = { span: spanId, rule: ruleId, sign };
@@ -3222,12 +3330,29 @@
         }
       }
 
-      if (!entryRules.length && !exitRules.length && enabledSpansSet.size === 0) {
-        ["5m", "15m"].forEach((spanId) => {
-          enabledSpansSet.add(spanId);
-          entryRules.push({ span: spanId, rule: "macd_h", sign: "-" });
-          exitRules.push({ span: spanId, rule: "macd_h", sign: "+" });
-        });
+      if (!hasDomToggles) {
+        if (saved && (Array.isArray(saved.entry_rules) || Array.isArray(saved.exit_rules))) {
+          (saved.entry_rules || []).forEach((r) => {
+            if (validSpans.has(r?.span)) {
+              enabledSpansSet.add(r.span);
+              entryRules.push({ span: r.span, rule: r.rule || "macd_h", sign: r.sign || "-" });
+              ruleSigns[`entry:${r.span}:${r.rule || "macd_h"}`] = r.sign || "-";
+            }
+          });
+          (saved.exit_rules || []).forEach((r) => {
+            if (validSpans.has(r?.span)) {
+              enabledSpansSet.add(r.span);
+              exitRules.push({ span: r.span, rule: r.rule || "macd_h", sign: r.sign || "+" });
+              ruleSigns[`exit:${r.span}:${r.rule || "macd_h"}`] = r.sign || "+";
+            }
+          });
+        } else {
+          ["5m", "15m"].forEach((spanId) => {
+            enabledSpansSet.add(spanId);
+            entryRules.push({ span: spanId, rule: "macd_h", sign: "-" });
+            exitRules.push({ span: spanId, rule: "macd_h", sign: "+" });
+          });
+        }
       }
 
       return {
@@ -3236,10 +3361,11 @@
         enabled_spans: Array.from(enabledSpansSet),
         entry_rules: entryRules,
         exit_rules: exitRules,
-        buy_threshold: readNumber("msStrategyBuyThreshold", 0, -1e9, 1e9),
-        sell_threshold: readNumber("msStrategySellThreshold", 0, -1e9, 1e9),
-        initial_capital: readNumber("msStrategyCapital", 10000, 1, 1e12),
-        fee_bps: readNumber("msStrategyFeeBps", 5, 0, 1000),
+        rule_signs: ruleSigns,
+        buy_threshold: readNumber("msStrategyBuyThreshold", Number.isFinite(Number(saved?.buy_threshold)) ? Number(saved.buy_threshold) : 0, -1e9, 1e9),
+        sell_threshold: readNumber("msStrategySellThreshold", Number.isFinite(Number(saved?.sell_threshold)) ? Number(saved.sell_threshold) : 0, -1e9, 1e9),
+        initial_capital: readNumber("msStrategyCapital", Number.isFinite(Number(saved?.initial_capital)) ? Number(saved.initial_capital) : 10000, 1, 1e12),
+        fee_bps: readNumber("msStrategyFeeBps", Number.isFinite(Number(saved?.fee_bps)) ? Number(saved.fee_bps) : 5, 0, 1000),
       };
     }
 
@@ -3272,6 +3398,7 @@
           input.checked = enabled.has(spanId) && ruleId === "macd_h";
         }
       });
+      this.saveMacdStrategySettings();
       return this.runMacdStrategyReplay();
     }
 
@@ -3431,6 +3558,7 @@
         enabled_spans: activeSpans,
         entry_rules: entryRules,
         exit_rules: exitRules,
+        rule_signs: (rawSettings.rule_signs && typeof rawSettings.rule_signs === "object") ? { ...rawSettings.rule_signs } : {},
         buy_threshold: buyThreshold,
         sell_threshold: sellThreshold,
         initial_capital: initialCapital,
@@ -4060,85 +4188,164 @@
         frameStatus = `✓ ${metrics.entry_signal_count || 0} long signals · ${shortSignalCount} short signals · ${metrics.closed_trades || 0} closed trades (${Number(metrics.win_rate_pct || 0).toFixed(1)}% win)`;
       }
 
-      const renderConditionGroup = (kind) => {
+      const computeRowState = (span, rule, kind, rulesMap) => {
+        const isEntry = kind === "entry";
+        const ruleKey = `${span.id}:${rule.id}`;
+        const activeRule = rulesMap.get(ruleKey);
+        const isEnabled = Boolean(activeRule);
+        const savedSign = settings.rule_signs?.[`${kind}:${span.id}:${rule.id}`];
+        const sign = activeRule?.sign || savedSign || (isEntry ? rule.defaultEntrySign : rule.defaultExitSign);
+        const threshold = isEntry ? Number(settings.buy_threshold) : Number(settings.sell_threshold);
+        const point = latest?.histograms?.[span.id];
+
+        const isCross = rule.id === "macd_h_cross";
+        let val = null;
+        if (point) {
+          if (rule.id === "macd_h") val = point.histogram;
+          else if (isCross) val = point.hist_cross;
+          else if (rule.id === "macd_s") val = point.signal;
+          else if (rule.id === "macd_s_diff") val = point.signal_diff;
+          else if (rule.id === "macd_s_diff2") val = point.signal_diff2;
+          else if (rule.id === "macd_h_diff") val = point.hist_diff;
+          else if (rule.id === "ma20_diff") val = point.ma20_diff;
+          else if (rule.id === "ma50_diff") val = point.ma50_diff;
+        }
+
+        const signLabel = isCross
+          ? (sign === "+" ? "+ (−→+)" : "− (+→−)")
+          : (sign === "+" ? "+ (>0)" : "− (<0)");
+        const operator = sign === "+" ? ">" : "<";
+        const ruleThreshold = rule.id === "macd_h" ? threshold : 0;
+        const titleText = isCross
+          ? `${span.id} ${rule.label} ${sign === "+" ? "+ (−→+)" : "− (+→−)"}`
+          : `${span.id} ${rule.label} ${operator} ${ruleThreshold}`;
+
+        if (!isEnabled) {
+          return {
+            isEnabled: false,
+            sign,
+            signLabel,
+            titleText,
+            subtitleText: "PAPER · condition disabled",
+            valText: "—",
+            valColor: "#64748b",
+            badgeClass: "neutral",
+            badgeText: "OFF",
+            badgeTitle: "",
+          };
+        }
+
+        if (!point || val === null || val === undefined || !Number.isFinite(Number(val))) {
+          return {
+            isEnabled: true,
+            sign,
+            signLabel,
+            titleText,
+            subtitleText: "PAPER · source unavailable",
+            valText: "—",
+            valColor: "#64748b",
+            badgeClass: "neutral",
+            badgeText: "UNAVAILABLE",
+            badgeTitle: "",
+          };
+        }
+
+        const numVal = Number(val);
+        let pass;
+        let measured;
+        let subtitleDetail;
+        if (isCross) {
+          pass = sign === "+" ? numVal === 1 : numVal === -1;
+          measured = numVal === 1 ? "+CROSS" : (numVal === -1 ? "−CROSS" : "NO CROSS");
+          const prevH = point.prev_histogram;
+          const currH = point.histogram;
+          const trans = (prevH != null && currH != null && Number.isFinite(Number(prevH)) && Number.isFinite(Number(currH)))
+            ? `${Number(prevH) > 0 ? "+" : ""}${Number(prevH).toFixed(4)} → ${Number(currH) > 0 ? "+" : ""}${Number(currH).toFixed(4)}`
+            : measured;
+          subtitleDetail = `${trans} (${measured})`;
+        } else {
+          pass = sign === "+" ? numVal > ruleThreshold : numVal < ruleThreshold;
+          measured = `${numVal > 0 ? "+" : ""}${numVal.toFixed(4)}`;
+          subtitleDetail = measured;
+        }
+        const valColor = pass ? "#16a34a" : (numVal < 0 ? "#dc2626" : "#64748b");
+        const badgeTitle = `${isEntry ? "LONG" : "SHORT"} ${pass ? "passes" : "waits"}: ${span.id} ${rule.label} ${subtitleDetail}`;
+
+        return {
+          isEnabled: true,
+          sign,
+          signLabel,
+          titleText,
+          subtitleText: `PAPER · ${subtitleDetail} · ${formatKst(point.completed_time)} completed`,
+          valText: measured,
+          valColor,
+          badgeClass: pass ? "pass" : "wait",
+          badgeText: pass ? "PASS" : "WAITING",
+          badgeTitle,
+        };
+      };
+
+      const updateConditionGroupDom = (container, kind) => {
         const isEntry = kind === "entry";
         const rules = isEntry ? (settings.entry_rules || []) : (settings.exit_rules || []);
         const rulesMap = new Map(rules.map((r) => [`${r.span}:${r.rule}`, r]));
 
-        return SPANS.map((span) => {
-          const point = latest?.histograms?.[span.id];
-          const rowsHtml = MACD_RULES.map((rule) => {
-            const ruleKey = `${span.id}:${rule.id}`;
-            const activeRule = rulesMap.get(ruleKey);
-            const isEnabled = Boolean(activeRule);
-            const sign = activeRule?.sign || (isEntry ? rule.defaultEntrySign : rule.defaultExitSign);
-            const threshold = isEntry ? Number(settings.buy_threshold) : Number(settings.sell_threshold);
-
-            const isCross = rule.id === "macd_h_cross";
-            let val = null;
-            if (point) {
-              if (rule.id === "macd_h") val = point.histogram;
-              else if (isCross) val = point.hist_cross;
-              else if (rule.id === "macd_s") val = point.signal;
-              else if (rule.id === "macd_s_diff") val = point.signal_diff;
-              else if (rule.id === "macd_s_diff2") val = point.signal_diff2;
-              else if (rule.id === "macd_h_diff") val = point.hist_diff;
-              else if (rule.id === "ma20_diff") val = point.ma20_diff;
-              else if (rule.id === "ma50_diff") val = point.ma50_diff;
+        const existingRows = typeof container.querySelectorAll === "function"
+          ? [...container.querySelectorAll(".condRow[data-span][data-rule]")]
+          : [];
+        if (existingRows.length === SPANS.length * MACD_RULES.length) {
+          const spanById = new Map(SPANS.map((s) => [s.id, s]));
+          const ruleById = new Map(MACD_RULES.map((r) => [r.id, r]));
+          existingRows.forEach((row) => {
+            const span = spanById.get(row.getAttribute("data-span"));
+            const rule = ruleById.get(row.getAttribute("data-rule"));
+            if (!span || !rule) return;
+            const st = computeRowState(span, rule, kind, rulesMap);
+            row.classList?.toggle("disabled-cond", !st.isEnabled);
+            const input = row.querySelector?.(".msStrategySpanToggle");
+            if (input && input.checked !== st.isEnabled) input.checked = st.isEnabled;
+            const titleStrong = row.querySelector?.(".condLabel > strong");
+            if (titleStrong) titleStrong.textContent = st.titleText;
+            const signBtn = row.querySelector?.(".condSignToggle");
+            if (signBtn) {
+              signBtn.setAttribute("data-sign", st.sign);
+              signBtn.textContent = st.signLabel;
+              if (signBtn.style) signBtn.style.color = st.sign === "+" ? "#166534" : "#991b1b";
             }
+            const subSmall = row.querySelector?.(".condLabel > small");
+            if (subSmall) subSmall.textContent = st.subtitleText;
+            const valStrong = row.querySelector?.(".condValue > strong");
+            if (valStrong) {
+              valStrong.textContent = st.valText;
+              if (valStrong.style) valStrong.style.color = st.valColor;
+            }
+            const badge = row.querySelector?.(".condBadge");
+            if (badge) {
+              badge.className = `condBadge ${st.badgeClass}`;
+              badge.textContent = st.badgeText;
+              if (st.badgeTitle) badge.setAttribute?.("title", st.badgeTitle);
+              else badge.removeAttribute?.("title");
+            }
+          });
+          return;
+        }
 
-            const signLabel = isCross
-              ? (sign === "+" ? "+ (−→+)" : "− (+→−)")
-              : (sign === "+" ? "+ (>0)" : "− (<0)");
-            const operator = sign === "+" ? ">" : "<";
-            const ruleThreshold = rule.id === "macd_h" ? threshold : 0;
-            const titleText = isCross
-              ? `${span.id} ${rule.label} ${sign === "+" ? "+ (−→+)" : "− (+→−)"}`
-              : `${span.id} ${rule.label} ${operator} ${ruleThreshold}`;
-
+        container.innerHTML = SPANS.map((span) => {
+          const rowsHtml = MACD_RULES.map((rule) => {
+            const st = computeRowState(span, rule, kind, rulesMap);
             const switchHtml = `
               <label class="toggleSwitch" title="Turn ${span.id} ${rule.label} rule ON/OFF">
-                <input class="msStrategySpanToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" aria-label="Use ${span.id} ${rule.label} for paper ${kind}" type="checkbox"${isEnabled ? " checked" : ""}>
+                <input class="msStrategySpanToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" aria-label="Use ${span.id} ${rule.label} for paper ${isEntry ? "long" : "short"}" type="checkbox"${st.isEnabled ? " checked" : ""}>
                 <span class="toggleSlider"></span>
               </label>
             `;
-
             const signBtnHtml = `
-              <button type="button" class="condSignToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" data-sign="${sign}" title="Click to toggle condition between + and -" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${sign === '+' ? '#166534' : '#991b1b'};">
-                ${signLabel}
+              <button type="button" class="condSignToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" data-sign="${st.sign}" title="Click to toggle condition between + and -" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${st.sign === '+' ? '#166534' : '#991b1b'};">
+                ${st.signLabel}
               </button>
             `;
-
-            if (!isEnabled) {
-              return `<div class="condRow disabled-cond" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${titleText}</strong>${signBtnHtml}<small style="display:block;color:#64748b;">PAPER · condition disabled</small></span><span class="condValue"><strong style="color:#64748b;">—</strong></span><span class="condBadge neutral">OFF</span></div>`;
-            }
-
-            if (!point || val === null || val === undefined || !Number.isFinite(Number(val))) {
-              return `<div class="condRow" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${titleText}</strong>${signBtnHtml}<small style="display:block;color:#64748b;">PAPER · source unavailable</small></span><span class="condValue"><strong style="color:#64748b;">—</strong></span><span class="condBadge neutral">UNAVAILABLE</span></div>`;
-            }
-
-            const numVal = Number(val);
-            let pass;
-            let measured;
-            let subtitleDetail;
-            if (isCross) {
-              pass = sign === "+" ? numVal === 1 : numVal === -1;
-              measured = numVal === 1 ? "+CROSS" : (numVal === -1 ? "−CROSS" : "NO CROSS");
-              const prevH = point.prev_histogram;
-              const currH = point.histogram;
-              const trans = (prevH != null && currH != null && Number.isFinite(Number(prevH)) && Number.isFinite(Number(currH)))
-                ? `${Number(prevH) > 0 ? "+" : ""}${Number(prevH).toFixed(4)} → ${Number(currH) > 0 ? "+" : ""}${Number(currH).toFixed(4)}`
-                : measured;
-              subtitleDetail = `${trans} (${measured})`;
-            } else {
-              pass = sign === "+" ? numVal > ruleThreshold : numVal < ruleThreshold;
-              measured = `${numVal > 0 ? "+" : ""}${numVal.toFixed(4)}`;
-              subtitleDetail = measured;
-            }
-            const valColor = pass ? "#16a34a" : (numVal < 0 ? "#dc2626" : "#64748b");
-            const badgeTitle = `${isEntry ? "LONG" : "SHORT"} ${pass ? "passes" : "waits"}: ${span.id} ${rule.label} ${subtitleDetail}`;
-
-            return `<div class="condRow" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${titleText}</strong>${signBtnHtml}<small style="display:block;color:#64748b;">PAPER · ${subtitleDetail} · ${formatKst(point.completed_time)} completed</small></span><span class="condValue"><strong style="color:${valColor};">${measured}</strong></span><span class="condBadge ${pass ? "pass" : "wait"}" title="${badgeTitle}">${pass ? "PASS" : "WAITING"}</span></div>`;
+            const titleAttr = st.badgeTitle ? ` title="${st.badgeTitle}"` : "";
+            return `<div class="condRow${st.isEnabled ? "" : " disabled-cond"}" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${st.titleText}</strong>${signBtnHtml}<small style="display:block;color:#64748b;">${st.subtitleText}</small></span><span class="condValue"><strong style="color:${st.valColor};">${st.valText}</strong></span><span class="condBadge ${st.badgeClass}"${titleAttr}>${st.badgeText}</span></div>`;
           }).join("");
 
           return `
@@ -4152,8 +4359,8 @@
           `;
         }).join("");
       };
-      entryConditions.innerHTML = renderConditionGroup("entry");
-      exitConditions.innerHTML = renderConditionGroup("exit");
+      updateConditionGroupDom(entryConditions, "entry");
+      updateConditionGroupDom(exitConditions, "exit");
       this.strategyExecutionFrame?.setStatus(frameStatus);
       this.strategyExecutionFrame?.setSync(latest?.decision_time
         ? `${settings.clock_span} completed ${formatKst(latest.decision_time)} · loaded history`
@@ -4392,8 +4599,12 @@
 
     bindControls() {
       const runStrategy = () => this.runMacdStrategyReplay();
+      const saveAndRunStrategy = () => {
+        this.saveMacdStrategySettings();
+        return this.runMacdStrategyReplay();
+      };
       const runStrategyButton = document.getElementById("msRunStrategyReplay");
-      if (runStrategyButton && !this.strategyExecutionFrame) runStrategyButton.addEventListener("click", runStrategy);
+      if (runStrategyButton && !this.strategyExecutionFrame) runStrategyButton.addEventListener("click", saveAndRunStrategy);
       const quickPresetButton = document.getElementById("msStrategyPresetQuick");
       const allPresetButton = document.getElementById("msStrategyPresetAll");
       const fullWaveButton = document.getElementById("msStrategyPresetFullWave");
@@ -4410,14 +4621,14 @@
         "msStrategyFeeBps",
       ].forEach((id) => {
         const control = document.getElementById(id);
-        if (control) control.addEventListener("change", runStrategy);
+        if (control) control.addEventListener("change", saveAndRunStrategy);
       });
       const condGroups = document.getElementById("msStrategyConditionGroups");
       if (condGroups) {
         condGroups.addEventListener("change", (e) => {
           const toggle = e.target.closest(".msStrategySpanToggle");
           if (!toggle) return;
-          runStrategy();
+          saveAndRunStrategy();
         });
 
         condGroups.addEventListener("click", (e) => {
@@ -4432,7 +4643,7 @@
               ? (nextSign === "+" ? "+ (−→+)" : "− (+→−)")
               : (nextSign === "+" ? "+ (>0)" : "− (<0)");
             signBtn.style.color = nextSign === "+" ? "#166534" : "#991b1b";
-            runStrategy();
+            saveAndRunStrategy();
             return;
           }
 
@@ -4444,7 +4655,7 @@
             const checkboxes = Array.from(document.querySelectorAll(`.msStrategySpanToggle[data-span="${spanId}"][data-kind="${kind}"]`));
             const someUnchecked = checkboxes.some((cb) => !cb.checked);
             checkboxes.forEach((cb) => { cb.checked = someUnchecked; });
-            runStrategy();
+            saveAndRunStrategy();
             return;
           }
         });

@@ -262,4 +262,44 @@ assert.equal(mockMainLayer.children[0].dataset.time, String(DAY));
 assert.equal(mockMainLayer.children[1].dataset.kind, "exit");
 assert.equal(mockMainLayer.children[1].dataset.time, String(DAY * 2));
 
+// Test condition persistence via localStorage and in-place DOM updates without resetting signs or unchecked states
+const storageBacking = new Map();
+const prevLocalStorage = global.localStorage;
+global.localStorage = {
+  getItem(k) { return storageBacking.has(k) ? storageBacking.get(k) : null; },
+  setItem(k, v) { storageBacking.set(k, String(v)); },
+  removeItem(k) { storageBacking.delete(k); },
+};
+
+const customPersistedSettings = {
+  clock_span: "15m",
+  buy_threshold: -0.05,
+  sell_threshold: 0.08,
+  initial_capital: 25000,
+  fee_bps: 4,
+  entry_rules: [
+    { span: "1h", rule: "macd_s_diff", sign: "-" },
+    { span: "1d", rule: "ma20_diff", sign: "+" },
+  ],
+  exit_rules: [
+    { span: "15m", rule: "macd_h_cross", sign: "-" },
+  ],
+  rule_signs: {
+    "entry:1h:macd_s_diff": "-",
+    "entry:5m:macd_h": "+", // custom sign on a disabled row!
+    "exit:15m:macd_h_cross": "-",
+  },
+};
+engine.saveMacdStrategySettings(customPersistedSettings);
+
+const restoredSettings = engine.macdStrategySettings();
+assert.equal(restoredSettings.clock_span, "15m", "must restore persisted clock_span");
+assert.equal(restoredSettings.buy_threshold, -0.05, "must restore persisted buy_threshold");
+assert.equal(restoredSettings.sell_threshold, 0.08, "must restore persisted sell_threshold");
+assert.deepEqual(restoredSettings.entry_rules, customPersistedSettings.entry_rules, "must restore persisted entry_rules");
+assert.deepEqual(restoredSettings.exit_rules, customPersistedSettings.exit_rules, "must restore persisted exit_rules");
+assert.equal(restoredSettings.rule_signs["entry:5m:macd_h"], "+", "must preserve custom sign even for disabled rule");
+
+global.localStorage = prevLocalStorage;
+
 console.log("Multi-span all-MACD-H completed-candle paper strategy tests passed");
