@@ -484,6 +484,7 @@
                   <span style="color:#0f172a;font-weight:700;font-size:12px;">${s.label}</span>
                   <small style="color:#64748b;font-size:11px;">${s.sub}</small>
                   <span id="msCardTime_${s.id}" style="color:#475569;font-family:monospace;font-size:10px;background:#f1f5f9;padding:1px 5px;border-radius:3px;border:1px solid #e2e8f0;" title="Candle timestamp (KST)">--</span>
+                  <span id="msCardCondBadge_${s.id}" class="msCardCondBadge" data-span="${s.id}" style="display:none;font-size:10px;font-weight:800;padding:1px 6px;border-radius:4px;" title="Candles on this chart matching its enabled conditions"></span>
                   <span id="msCardModeBadge_${s.id}" class="msCardModeBadge" data-span="${s.id}" style="display:none;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;cursor:pointer;"></span>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;font-size:11px;flex-wrap:wrap;">
@@ -496,7 +497,8 @@
                 </div>
               </div>
               <div id="msChartHost_${s.id}" class="msChartHost" style="width:100%;height:240px;position:relative;">
-                <div id="msRangeHighlight_${s.id}" class="msRangeHighlight" style="display:none;position:absolute;top:0;bottom:26px;pointer-events:none;z-index:3;">
+                <div id="msCondHighlight_${s.id}" class="msCondHighlightLayer" aria-label="Condition-matching candle highlights for ${s.id}" style="position:absolute;top:0;bottom:26px;left:0;right:0;pointer-events:none;z-index:3;overflow:hidden;"></div>
+                <div id="msRangeHighlight_${s.id}" class="msRangeHighlight" style="display:none;position:absolute;top:0;bottom:26px;pointer-events:none;z-index:4;">
                   <div id="msRangeBadge_${s.id}" style="position:absolute;top:4px;left:4px;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);pointer-events:none;color:#ffffff;"></div>
                 </div>
                 <svg id="msTradeTriangles_${s.id}" aria-label="Paper trade entry-exit triangles" style="position:absolute;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;overflow:hidden;"></svg>
@@ -517,7 +519,8 @@
                 </div>
               </div>
               <div id="msMacdHost_${s.id}" class="msMacdHost" style="width:100%;height:90px;position:relative;">
-                <div id="msMacdRangeHighlight_${s.id}" class="msMacdRangeHighlight" style="display:none;position:absolute;top:0;bottom:26px;pointer-events:none;z-index:3;"></div>
+                <div id="msMacdCondHighlight_${s.id}" class="msMacdCondHighlightLayer" aria-label="MACD condition-matching candle highlights for ${s.id}" style="position:absolute;top:0;bottom:26px;left:0;right:0;pointer-events:none;z-index:3;overflow:hidden;"></div>
+                <div id="msMacdRangeHighlight_${s.id}" class="msMacdRangeHighlight" style="display:none;position:absolute;top:0;bottom:26px;pointer-events:none;z-index:4;"></div>
               </div>
             </div>
           `).join("")}
@@ -1873,6 +1876,7 @@
     }
 
     updateRangeHighlight(spanId) {
+      this.renderSpanConditionCandleHighlights(spanId);
       const highlightEl = document.getElementById(`msRangeHighlight_${spanId}`);
       const macdHighlightEl = document.getElementById(`msMacdRangeHighlight_${spanId}`);
       const badgeEl = document.getElementById(`msRangeBadge_${spanId}`);
@@ -3303,6 +3307,72 @@
       };
     }
 
+    evaluateMacdRuleOnPoint(point, rule, isEntry, buyThreshold = 0, sellThreshold = 0) {
+      if (!point || !rule) return false;
+      if (rule.rule === "macd_h_cross") {
+        const cross = point.hist_cross;
+        if (cross === null || cross === undefined || !Number.isFinite(Number(cross))) return false;
+        return rule.sign === "+" ? Number(cross) === 1 : Number(cross) === -1;
+      }
+      let val = null;
+      if (rule.rule === "macd_h") val = point.histogram ?? point.value;
+      else if (rule.rule === "macd_s") val = point.signal;
+      else if (rule.rule === "macd_s_diff") val = point.signal_diff;
+      else if (rule.rule === "macd_s_diff2") val = point.signal_diff2;
+      else if (rule.rule === "macd_h_diff") val = point.hist_diff;
+      if (val === null || val === undefined || !Number.isFinite(Number(val))) return false;
+
+      const numVal = Number(val);
+      if (rule.rule === "macd_h") {
+        const thresh = isEntry ? buyThreshold : sellThreshold;
+        return rule.sign === "+" ? numVal > thresh : numVal < thresh;
+      }
+      return rule.sign === "+" ? numVal > 0 : numVal < 0;
+    }
+
+    evaluateSpanConditionCandles(spanId, settings, nowSec = Math.floor(Date.now() / 1000)) {
+      const spanSec = SPANS.find((s) => s.id === spanId)?.sec || 1;
+      const buyThreshold = Number.isFinite(Number(settings?.buy_threshold)) ? Number(settings.buy_threshold) : 0;
+      const sellThreshold = Number.isFinite(Number(settings?.sell_threshold)) ? Number(settings.sell_threshold) : 0;
+      const spanEntryRules = (settings?.entry_rules || []).filter((r) => r.span === spanId);
+      const spanExitRules = (settings?.exit_rules || []).filter((r) => r.span === spanId);
+      if (!spanEntryRules.length && !spanExitRules.length) return [];
+
+      const rawCandles = this.candlesData?.[spanId];
+      const rawHist = this.macdData?.[spanId]?.histogram;
+      const sourceList = (Array.isArray(rawCandles) && rawCandles.length)
+        ? rawCandles
+        : (Array.isArray(rawHist) ? rawHist : []);
+      if (!sourceList.length) return [];
+
+      const completedTimes = [...new Set(
+        sourceList
+          .map((item) => Number(item?.time))
+          .filter((t) => Number.isFinite(t) && t + spanSec <= nowSec)
+      )].sort((a, b) => a - b);
+
+      const matches = [];
+      for (const candleTime of completedTimes) {
+        const point = this.findCompletedHistogramAt(spanId, candleTime + spanSec);
+        if (!point || point.time !== candleTime) continue;
+        const entryPass = spanEntryRules.length > 0
+          && spanEntryRules.every((r) => this.evaluateMacdRuleOnPoint(point, r, true, buyThreshold, sellThreshold));
+        const exitPass = spanExitRules.length > 0
+          && spanExitRules.every((r) => this.evaluateMacdRuleOnPoint(point, r, false, buyThreshold, sellThreshold));
+        if (entryPass || exitPass) {
+          matches.push({
+            time: candleTime,
+            completed_time: candleTime + spanSec,
+            entry_pass: entryPass,
+            exit_pass: exitPass,
+            kind: entryPass && exitPass ? "both" : (entryPass ? "entry" : "exit"),
+            point,
+          });
+        }
+      }
+      return matches;
+    }
+
     evaluateMacdStrategyReplay(rawSettings = {}, nowSec = Math.floor(Date.now() / 1000)) {
       const validSpanIds = SPANS.map((s) => s.id);
       const clockSpan = validSpanIds.includes(rawSettings.clock_span) ? rawSettings.clock_span : "1s";
@@ -3335,9 +3405,13 @@
         initial_capital: initialCapital,
         fee_bps: feeBps,
       };
+      const spanMatches = Object.fromEntries(
+        SPANS.map((s) => [s.id, this.evaluateSpanConditionCandles(s.id, settings, nowSec)])
+      );
       const emptyResult = (error) => ({
         settings,
         error,
+        span_matches: spanMatches,
         entry_signals: [],
         exit_signals: [],
         fills: [],
@@ -3405,29 +3479,8 @@
         evaluatedCandles += 1;
         lastEvaluatedPrice = price;
 
-        const evalRule = (rule, isEntry) => {
-          const point = histograms[rule.span];
-          if (!point) return false;
-          if (rule.rule === "macd_h_cross") {
-            const cross = point.hist_cross;
-            if (cross === null || cross === undefined || !Number.isFinite(Number(cross))) return false;
-            return rule.sign === "+" ? Number(cross) === 1 : Number(cross) === -1;
-          }
-          let val = null;
-          if (rule.rule === "macd_h") val = point.histogram;
-          else if (rule.rule === "macd_s") val = point.signal;
-          else if (rule.rule === "macd_s_diff") val = point.signal_diff;
-          else if (rule.rule === "macd_s_diff2") val = point.signal_diff2;
-          else if (rule.rule === "macd_h_diff") val = point.hist_diff;
-          if (val === null || !Number.isFinite(Number(val))) return false;
-
-          const numVal = Number(val);
-          if (rule.rule === "macd_h") {
-            const thresh = isEntry ? buyThreshold : sellThreshold;
-            return rule.sign === "+" ? numVal > thresh : numVal < thresh;
-          }
-          return rule.sign === "+" ? numVal > 0 : numVal < 0;
-        };
+        const evalRule = (rule, isEntry) =>
+          this.evaluateMacdRuleOnPoint(histograms[rule.span], rule, isEntry, buyThreshold, sellThreshold);
 
         const buyPass = entryRules.length > 0 && entryRules.every((r) => evalRule(r, true));
         const sellPass = exitRules.length > 0 && exitRules.every((r) => evalRule(r, false));
@@ -3506,6 +3559,7 @@
       return {
         settings,
         error: evaluatedCandles ? null : "No clock candle has completed MACD-H data for every enabled span.",
+        span_matches: spanMatches,
         entry_signals: entrySignals,
         exit_signals: exitSignals,
         fills,
@@ -3682,8 +3736,153 @@
       layer.appendChild(diagonal);
     }
 
+    renderSpanConditionCandleHighlights(spanId) {
+      if (typeof document === "undefined" || typeof document.getElementById !== "function" || typeof document.createElement !== "function") return;
+      const mainLayer = document.getElementById(`msCondHighlight_${spanId}`);
+      const macdLayer = document.getElementById(`msMacdCondHighlight_${spanId}`);
+      const badgeEl = document.getElementById(`msCardCondBadge_${spanId}`);
+      if (!mainLayer && !macdLayer && !badgeEl) return;
+
+      if (mainLayer) mainLayer.textContent = "";
+      if (macdLayer) macdLayer.textContent = "";
+
+      const result = this.strategyReplayResult;
+      const settings = result?.settings;
+      const matches = result?.span_matches?.[spanId] || [];
+      const hasEntryRules = (settings?.entry_rules || []).some((r) => r.span === spanId);
+      const hasExitRules = (settings?.exit_rules || []).some((r) => r.span === spanId);
+
+      if (badgeEl && badgeEl.style) {
+        if (!hasEntryRules && !hasExitRules) {
+          badgeEl.style.display = "none";
+          badgeEl.textContent = "";
+        } else {
+          const entryCount = matches.filter((m) => m.entry_pass).length;
+          const exitCount = matches.filter((m) => m.exit_pass).length;
+          const parts = [];
+          if (hasEntryRules) parts.push(`BUY ${entryCount}`);
+          if (hasExitRules) parts.push(`SELL ${exitCount}`);
+          badgeEl.textContent = `MATCH: ${parts.join(" · ")}`;
+          badgeEl.style.display = "inline-block";
+          badgeEl.style.background = "#f0fdf4";
+          badgeEl.style.color = "#166534";
+          badgeEl.style.border = "1px solid #bbf7d0";
+        }
+      }
+
+      if (!this.showStrategyPaperMarkers || !matches.length) return;
+
+      const paintChartLayer = (layer, chart, host) => {
+        if (!layer || !chart || !host || !layer.style) return;
+        const ts = typeof chart.timeScale === "function" ? chart.timeScale() : null;
+        if (!ts) return;
+        const plotWidth = (typeof ts.width === "function" && Number(ts.width()) > 0)
+          ? Number(ts.width())
+          : Math.max(10, (Number(host.clientWidth) || 500) - 74);
+        layer.style.left = "0px";
+        layer.style.right = "auto";
+        layer.style.width = `${plotWidth}px`;
+
+        const visLogical = typeof ts.getVisibleLogicalRange === "function" ? ts.getVisibleLogicalRange() : null;
+        let fallbackStep = (visLogical && visLogical.to > visLogical.from)
+          ? Math.max(2, plotWidth / (visLogical.to - visLogical.from))
+          : 8;
+        const candles = this.candlesData?.[spanId] || [];
+        if (candles.length > 1 && typeof ts.timeToCoordinate === "function") {
+          const cA = Number(ts.timeToCoordinate(candles[candles.length - 1].time));
+          const cB = Number(ts.timeToCoordinate(candles[candles.length - 2].time));
+          if (Number.isFinite(cA) && Number.isFinite(cB) && cA !== cB) {
+            fallbackStep = Math.max(2, Math.abs(cA - cB));
+          }
+        }
+
+        const resolveLogicalCoord = (logicalIdx) => {
+          if (typeof ts.logicalToCoordinate === "function") {
+            const baseIdx = Math.floor(logicalIdx);
+            const frac = logicalIdx - baseIdx;
+            const c0 = Number(ts.logicalToCoordinate(baseIdx));
+            const c1 = Number(ts.logicalToCoordinate(baseIdx + 1));
+            if (Number.isFinite(c0) && Number.isFinite(c1) && c1 !== c0) {
+              return c0 + frac * (c1 - c0);
+            }
+            if (Number.isFinite(c0)) return c0;
+          }
+          if (visLogical && visLogical.to > visLogical.from) {
+            return ((logicalIdx - visLogical.from) / (visLogical.to - visLogical.from)) * plotWidth;
+          }
+          return null;
+        };
+
+        const fragment = typeof document.createDocumentFragment === "function"
+          ? document.createDocumentFragment()
+          : layer;
+
+        for (const match of matches) {
+          let x1 = null;
+          let x2 = null;
+          const lIdx = this.getLogicalIndexForTime(spanId, match.time);
+          if (lIdx !== null) {
+            const leftCoord = resolveLogicalCoord(lIdx - 0.5);
+            const rightCoord = resolveLogicalCoord(lIdx + 0.5);
+            if (leftCoord !== null && rightCoord !== null && Number.isFinite(leftCoord) && Number.isFinite(rightCoord)) {
+              x1 = Math.min(leftCoord, rightCoord);
+              x2 = Math.max(leftCoord, rightCoord);
+            }
+          }
+          if ((x1 === null || x2 === null) && typeof ts.timeToCoordinate === "function") {
+            const center = Number(ts.timeToCoordinate(match.time));
+            if (Number.isFinite(center)) {
+              x1 = center - fallbackStep / 2;
+              x2 = center + fallbackStep / 2;
+            }
+          }
+          if (x1 === null || x2 === null || !Number.isFinite(x1) || !Number.isFinite(x2)) continue;
+          if (x2 <= 0 || x1 >= plotWidth) continue;
+
+          const leftPx = Math.max(0, x1);
+          const rightPx = Math.min(plotWidth, x2);
+          const widthPx = Math.max(1.5, rightPx - leftPx);
+
+          const bar = document.createElement("div");
+          bar.className = "msCandleCondHighlight";
+          if (bar.dataset) {
+            bar.dataset.time = String(match.time);
+            bar.dataset.kind = match.kind;
+            bar.dataset.span = spanId;
+          }
+          let kindCss;
+          if (match.kind === "both") {
+            kindCss = "background:linear-gradient(180deg,rgba(22,163,74,0.20) 0%,rgba(220,38,38,0.20) 100%);border-top:2px solid rgba(22,163,74,0.85);border-bottom:2px solid rgba(220,38,38,0.85);";
+          } else if (match.kind === "entry") {
+            kindCss = "background:rgba(22,163,74,0.16);border-top:2px solid rgba(22,163,74,0.82);border-bottom:2px solid rgba(22,163,74,0.48);box-shadow:inset 0 0 0 0.5px rgba(22,163,74,0.26);";
+          } else {
+            kindCss = "background:rgba(220,38,38,0.14);border-top:2px solid rgba(220,38,38,0.80);border-bottom:2px solid rgba(220,38,38,0.45);box-shadow:inset 0 0 0 0.5px rgba(220,38,38,0.24);";
+          }
+          if (bar.style) {
+            bar.style.cssText = `position:absolute;top:0;bottom:0;left:${leftPx.toFixed(2)}px;width:${widthPx.toFixed(2)}px;box-sizing:border-box;pointer-events:none;${kindCss}`;
+          }
+          if (typeof fragment.appendChild === "function") {
+            fragment.appendChild(bar);
+          }
+        }
+        if (fragment !== layer && typeof layer.appendChild === "function") {
+          layer.appendChild(fragment);
+        }
+      };
+
+      paintChartLayer(mainLayer, this.charts?.[spanId], document.getElementById(`msChartHost_${spanId}`));
+      paintChartLayer(macdLayer, this.macdCharts?.[spanId], document.getElementById(`msMacdHost_${spanId}`));
+    }
+
+    renderAllSpanConditionCandleHighlights() {
+      SPANS.forEach((span) => {
+        this.renderSpanConditionCandleHighlights(span.id);
+      });
+    }
+
     renderMacdStrategyMarkers() {
       if (typeof document === "undefined") return;
+      this.renderAllSpanConditionCandleHighlights();
       SPANS.forEach((span) => {
         const targets = document.getElementById(`msTradeMarkerTargets_${span.id}`);
         const triangles = document.getElementById(`msTradeTriangles_${span.id}`);

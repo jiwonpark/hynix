@@ -199,4 +199,58 @@ assert.equal(crossResult.error, null);
 assert.equal(crossResult.entry_signals.length, 1, "H crossing + matches only when histogram crosses from negative (-0.5) to positive (+1)");
 assert.equal(crossResult.entry_signals[0].time, DAY * 2);
 
+// Test per-chart condition candle highlights (span_matches & DOM layer rendering)
+assert.ok(fullWaveResult.span_matches, "replay result must include per-chart span_matches");
+assert.equal(fullWaveResult.span_matches["1d"].length, 2, "1d chart must match 1 entry candle (DAY) and 1 exit candle (DAY*2)");
+assert.equal(fullWaveResult.span_matches["1d"][0].time, DAY);
+assert.equal(fullWaveResult.span_matches["1d"][0].kind, "entry");
+assert.equal(fullWaveResult.span_matches["1d"][1].time, DAY * 2);
+assert.equal(fullWaveResult.span_matches["1d"][1].kind, "exit");
+assert.equal(fullWaveResult.span_matches["5m"].length, 0, "spans without enabled rules must have 0 highlighted candles");
+
+const createdHighlights = [];
+const mockMainLayer = { style: {}, textContent: "", children: [], appendChild(child) { this.children.push(child); } };
+const mockMacdLayer = { style: {}, textContent: "", children: [], appendChild(child) { this.children.push(child); } };
+const mockCondBadge = { style: {}, textContent: "" };
+const mockChartHost = { clientWidth: 500, clientHeight: 240 };
+const mockMacdHost = { clientWidth: 500, clientHeight: 90 };
+const prevDoc = global.document;
+global.document = {
+  getElementById(id) {
+    if (id === "msCondHighlight_1d") return mockMainLayer;
+    if (id === "msMacdCondHighlight_1d") return mockMacdLayer;
+    if (id === "msCardCondBadge_1d") return mockCondBadge;
+    if (id === "msChartHost_1d") return mockChartHost;
+    if (id === "msMacdHost_1d") return mockMacdHost;
+    return null;
+  },
+  createElement(tag) {
+    const el = { tag, className: "", dataset: {}, style: {} };
+    createdHighlights.push(el);
+    return el;
+  },
+};
+engine.strategyReplayResult = fullWaveResult;
+engine.charts = {
+  "1d": {
+    timeScale: () => ({
+      width: () => 420,
+      getVisibleLogicalRange: () => ({ from: 0, to: 10 }),
+      logicalToCoordinate: (idx) => 50 + idx * 30,
+      timeToCoordinate: (t) => 50 + (t / DAY) * 30,
+    }),
+  },
+};
+engine.macdCharts = { "1d": engine.charts["1d"] };
+engine.renderSpanConditionCandleHighlights("1d");
+global.document = prevDoc;
+
+assert.equal(mockCondBadge.textContent, "MATCH: BUY 1 · SELL 1", "chart header badge must summarize matching candles for that chart");
+assert.equal(mockMainLayer.children.length, 2, "main chart layer must render highlight bars for each matching candle");
+assert.equal(mockMacdLayer.children.length, 2, "MACD sub-chart layer must render highlight bars for each matching candle");
+assert.equal(mockMainLayer.children[0].dataset.kind, "entry");
+assert.equal(mockMainLayer.children[0].dataset.time, String(DAY));
+assert.equal(mockMainLayer.children[1].dataset.kind, "exit");
+assert.equal(mockMainLayer.children[1].dataset.time, String(DAY * 2));
+
 console.log("Multi-span all-MACD-H completed-candle paper strategy tests passed");
