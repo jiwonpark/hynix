@@ -25,6 +25,7 @@
     { id: "macd_s_diff", label: "MACD-S diff", title: "MACD-S Δ", key: "signal_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "Signal 1st difference (slope)" },
     { id: "macd_s_diff2", label: "MACD-S 2nd diff", title: "MACD-S Δ²", key: "signal_diff2", defaultEntrySign: "+", defaultExitSign: "-", desc: "Signal 2nd difference (accel)" },
     { id: "macd_h_diff", label: "MACD-H diff", title: "MACD-H Δ", key: "hist_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "Histogram 1st difference (momentum turn)" },
+    { id: "macd_h_diff_cross", label: "MACD-H diff cross", title: "MACD-H Δ×", key: "hist_diff_cross", defaultEntrySign: "+", defaultExitSign: "-", desc: "Histogram 1st difference zero-crossing (turnaround +/-)" },
     { id: "ma20_diff", label: "MA20 diff", title: "MA20 Δ", key: "ma20_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "MA20 1st difference (slope)" },
     { id: "ma50_diff", label: "MA50 diff", title: "MA50 Δ", key: "ma50_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "MA50 1st difference (slope)" },
   ];
@@ -521,6 +522,7 @@
                   <span style="color:#475569;font-weight:600;">Δ²S: <span id="msSigDiff2Val_${s.id}">--</span></span>
                   <span style="color:#475569;font-weight:600;">HIST: <span id="msHistVal_${s.id}">--</span></span>
                   <span style="color:#475569;font-weight:600;">ΔH: <span id="msHistDiffVal_${s.id}">--</span></span>
+                  <span style="color:#475569;font-weight:600;">ΔH×: <span id="msHistDiffCrossVal_${s.id}">--</span></span>
                   <span style="color:#475569;font-weight:600;">H×: <span id="msHistCrossVal_${s.id}">--</span></span>
                 </div>
               </div>
@@ -549,7 +551,7 @@
           <strong style="font-size:12px;color:#0f172a;">Multi-Span MACD Dynamics Strategy Test</strong>
           <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;">PAPER REPLAY ONLY</span>
         </div>
-        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">LONG and SHORT match when all enabled rules across configured timeframes pass on completed signal-clock candles. Toggle individual rules (MACD-H, H crossing, MACD-S, ΔS, Δ²S, ΔH, ΔMA20, ΔMA50) and toggle sign (+/-) on any row. Quick uses 5m+15m MACD-H; Full Wave enables all dynamics. No orders are sent.</small>
+        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">LONG and SHORT match when all enabled rules across configured timeframes pass on completed signal-clock candles. Toggle individual rules (MACD-H, H crossing, MACD-S, ΔS, Δ²S, ΔH, ΔH crossing, ΔMA20, ΔMA50) and toggle sign (+/-) on any row. Quick uses 5m+15m MACD-H; Full Wave enables all dynamics. No orders are sent.</small>
         <div class="strategyReplaySetup" aria-label="Paper replay setup">
           <strong style="color:#475569;">Replay setup</strong>
           <label>Signal clock
@@ -582,7 +584,7 @@
                   ${MACD_RULES.map((rule) => {
                     const isDefault = ["5m", "15m"].includes(s.id) && rule.id === "macd_h";
                     const sign = rule.defaultEntrySign;
-                    const isCross = rule.id === "macd_h_cross";
+                    const isCross = rule.id === "macd_h_cross" || rule.id === "macd_h_diff_cross";
                     const op = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : `${sign === "+" ? ">" : "<"} 0`;
                     const signBtnText = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : (sign === "+" ? "+ (>0)" : "− (<0)");
                     return `
@@ -623,7 +625,7 @@
                   ${MACD_RULES.map((rule) => {
                     const isDefault = ["5m", "15m"].includes(s.id) && rule.id === "macd_h";
                     const sign = rule.defaultExitSign;
-                    const isCross = rule.id === "macd_h_cross";
+                    const isCross = rule.id === "macd_h_cross" || rule.id === "macd_h_diff_cross";
                     const op = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : `${sign === "+" ? ">" : "<"} 0`;
                     const signBtnText = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : (sign === "+" ? "+ (>0)" : "− (<0)");
                     return `
@@ -1531,7 +1533,7 @@
 
       const macdPoint = this.findMacdAtOrBefore(spanId, targetTime);
       if (macdPoint) {
-        this.updateMacdLegend(spanId, macdPoint.macd, macdPoint.signal, macdPoint.hist ?? macdPoint.histogram, macdPoint.signal_diff, macdPoint.signal_diff2, macdPoint.hist_diff, macdPoint.hist_cross, macdPoint.ma20_diff, macdPoint.ma50_diff);
+        this.updateMacdLegend(spanId, macdPoint.macd, macdPoint.signal, macdPoint.hist ?? macdPoint.histogram, macdPoint.signal_diff, macdPoint.signal_diff2, macdPoint.hist_diff, macdPoint.hist_cross, macdPoint.ma20_diff, macdPoint.ma50_diff, macdPoint.hist_diff_cross);
       } else {
         this.updateMacdLegend(spanId, null, null, null);
       }
@@ -1605,7 +1607,7 @@
             const histList = this.macdData[sourceSpan]?.histogram || [];
             const lastH = histList.length ? histList[histList.length - 1] : null;
             const lastPt = this.findMacdAtOrBefore(sourceSpan, latest.time);
-            this.updateMacdLegend(sourceSpan, lastPt?.macd ?? lastM?.value, lastPt?.signal ?? lastS?.value, lastPt?.hist ?? lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross, lastPt?.ma20_diff, lastPt?.ma50_diff);
+            this.updateMacdLegend(sourceSpan, lastPt?.macd ?? lastM?.value, lastPt?.signal ?? lastS?.value, lastPt?.hist ?? lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross, lastPt?.ma20_diff, lastPt?.ma50_diff, lastPt?.hist_diff_cross);
           }
         }
         return;
@@ -1624,7 +1626,7 @@
 
       const hoveredMacd = this.findMacdAtOrBefore(sourceSpan, param.time);
       if (hoveredMacd) {
-        this.updateMacdLegend(sourceSpan, hoveredMacd.macd, hoveredMacd.signal, hoveredMacd.hist ?? hoveredMacd.histogram, hoveredMacd.signal_diff, hoveredMacd.signal_diff2, hoveredMacd.hist_diff, hoveredMacd.hist_cross, hoveredMacd.ma20_diff, hoveredMacd.ma50_diff);
+        this.updateMacdLegend(sourceSpan, hoveredMacd.macd, hoveredMacd.signal, hoveredMacd.hist ?? hoveredMacd.histogram, hoveredMacd.signal_diff, hoveredMacd.signal_diff2, hoveredMacd.hist_diff, hoveredMacd.hist_cross, hoveredMacd.ma20_diff, hoveredMacd.ma50_diff, hoveredMacd.hist_diff_cross);
       }
 
       // Synchronize vertical crosshair line between price chart and MACD chart within this card
@@ -2910,7 +2912,9 @@
           histogram: hVal,
           prev_histogram: hPoint ? (hPoint.prev ?? null) : null,
           hist_diff: hPoint ? (hPoint.diff ?? null) : null,
+          prev_hist_diff: hPoint ? (hPoint.prev_diff ?? null) : null,
           hist_cross: hPoint ? (hPoint.cross ?? null) : null,
+          hist_diff_cross: hPoint ? (hPoint.diff_cross ?? null) : null,
           ma20: ma20Point ? ma20Point.value : null,
           ma20_diff: ma20Point ? (ma20Point.diff ?? null) : null,
           ma50: ma50Point ? ma50Point.value : null,
@@ -2939,7 +2943,7 @@
         if (this.macdSignal[spanId] && lastS) this.macdSignal[spanId].update(lastS);
         if (this.macdZero[spanId]) this.macdZero[spanId].update({ time: latestTime, value: 0 });
         if (this.pinnedTime === null) {
-          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross, lastPt?.ma20_diff, lastPt?.ma50_diff);
+          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross, lastPt?.ma20_diff, lastPt?.ma50_diff, lastPt?.hist_diff_cross);
         }
       } else {
         if (this.macdCharts[spanId] || this.macdHist[spanId] || this.macdLine[spanId] || this.macdSignal[spanId] || this.macdZero[spanId]) {
@@ -2950,7 +2954,7 @@
             this.macdZero[spanId].setData(candles.map((c) => ({ time: c.time, value: 0 })));
           }
           if (macdRes.macd.length && this.pinnedTime === null) {
-            this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross, lastPt?.ma20_diff, lastPt?.ma50_diff);
+            this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross, lastPt?.ma20_diff, lastPt?.ma50_diff, lastPt?.hist_diff_cross);
           }
         }
       }
@@ -3178,9 +3182,15 @@
         const curr = histogram[i].value;
         const prev = i >= 1 ? histogram[i - 1].value : null;
         histogram[i].prev = prev;
-        histogram[i].diff = prev !== null ? +(curr - prev).toFixed(4) : null;
+        const diff = prev !== null ? +(curr - prev).toFixed(4) : null;
+        histogram[i].diff = diff;
+        const prevDiff = i >= 1 ? (histogram[i - 1].diff ?? null) : null;
+        histogram[i].prev_diff = prevDiff;
         histogram[i].cross = prev !== null
           ? (prev < 0 && curr > 0 ? 1 : (prev > 0 && curr < 0 ? -1 : 0))
+          : null;
+        histogram[i].diff_cross = (prevDiff !== null && diff !== null)
+          ? (prevDiff < 0 && diff > 0 ? 1 : (prevDiff > 0 && diff < 0 ? -1 : 0))
           : null;
       }
 
@@ -3266,7 +3276,7 @@
           const row = input.closest?.(".condRow");
           const signBtn = row?.querySelector?.(".condSignToggle");
           if (signBtn) {
-            const isCross = ruleId === "macd_h_cross";
+            const isCross = ruleId === "macd_h_cross" || ruleId === "macd_h_diff_cross";
             signBtn.setAttribute("data-sign", savedSign);
             signBtn.textContent = isCross
               ? (savedSign === "+" ? "+ (−→+)" : "− (+→−)")
@@ -3440,10 +3450,20 @@
       const byPoint = this.macdData?.[spanId]?.byTime?.get(best.time);
       const currHist = Number(best.value);
       const prevHistElem = bestIdx >= 1 ? histogram[bestIdx - 1] : null;
+      const priorHistElem = bestIdx >= 2 ? histogram[bestIdx - 2] : null;
       const prevHist = byPoint?.prev_histogram ?? (best.prev ?? (prevHistElem && Number.isFinite(Number(prevHistElem.value)) ? Number(prevHistElem.value) : null));
+      const priorHist = priorHistElem && Number.isFinite(Number(priorHistElem.value)) ? Number(priorHistElem.value) : null;
       const computedDiff = prevHist !== null ? +(currHist - prevHist).toFixed(4) : null;
+      const resolvedDiff = byPoint?.hist_diff ?? (best.diff ?? computedDiff);
+      const computedPrevDiff = (prevHistElem && Number.isFinite(Number(prevHistElem.diff)))
+        ? Number(prevHistElem.diff)
+        : ((prevHist !== null && priorHist !== null) ? +(prevHist - priorHist).toFixed(4) : null);
+      const resolvedPrevDiff = byPoint?.prev_hist_diff ?? (best.prev_diff ?? computedPrevDiff);
       const computedCross = prevHist !== null
         ? (prevHist < 0 && currHist > 0 ? 1 : (prevHist > 0 && currHist < 0 ? -1 : 0))
+        : null;
+      const computedDiffCross = (resolvedPrevDiff !== null && resolvedDiff !== null)
+        ? (resolvedPrevDiff < 0 && resolvedDiff > 0 ? 1 : (resolvedPrevDiff > 0 && resolvedDiff < 0 ? -1 : 0))
         : null;
       return {
         time: Number(best.time),
@@ -3451,8 +3471,10 @@
         value: currHist,
         histogram: currHist,
         prev_histogram: prevHist,
-        hist_diff: byPoint?.hist_diff ?? (best.diff ?? computedDiff),
+        hist_diff: resolvedDiff,
+        prev_hist_diff: resolvedPrevDiff,
         hist_cross: byPoint?.hist_cross ?? (best.cross ?? computedCross),
+        hist_diff_cross: byPoint?.hist_diff_cross ?? (best.diff_cross ?? computedDiffCross),
         signal: byPoint?.signal ?? (best.signal ?? null),
         signal_diff: byPoint?.signal_diff ?? (best.signal_diff ?? null),
         signal_diff2: byPoint?.signal_diff2 ?? (best.signal_diff2 ?? null),
@@ -3467,6 +3489,11 @@
       if (!point || !rule) return false;
       if (rule.rule === "macd_h_cross") {
         const cross = point.hist_cross;
+        if (cross === null || cross === undefined || !Number.isFinite(Number(cross))) return false;
+        return rule.sign === "+" ? Number(cross) === 1 : Number(cross) === -1;
+      }
+      if (rule.rule === "macd_h_diff_cross") {
+        const cross = point.hist_diff_cross;
         if (cross === null || cross === undefined || !Number.isFinite(Number(cross))) return false;
         return rule.sign === "+" ? Number(cross) === 1 : Number(cross) === -1;
       }
@@ -4198,11 +4225,12 @@
         const threshold = isEntry ? Number(settings.buy_threshold) : Number(settings.sell_threshold);
         const point = latest?.histograms?.[span.id];
 
-        const isCross = rule.id === "macd_h_cross";
+        const isCross = rule.id === "macd_h_cross" || rule.id === "macd_h_diff_cross";
         let val = null;
         if (point) {
           if (rule.id === "macd_h") val = point.histogram;
-          else if (isCross) val = point.hist_cross;
+          else if (rule.id === "macd_h_cross") val = point.hist_cross;
+          else if (rule.id === "macd_h_diff_cross") val = point.hist_diff_cross;
           else if (rule.id === "macd_s") val = point.signal;
           else if (rule.id === "macd_s_diff") val = point.signal_diff;
           else if (rule.id === "macd_s_diff2") val = point.signal_diff2;
@@ -4257,10 +4285,10 @@
         if (isCross) {
           pass = sign === "+" ? numVal === 1 : numVal === -1;
           measured = numVal === 1 ? "+CROSS" : (numVal === -1 ? "−CROSS" : "NO CROSS");
-          const prevH = point.prev_histogram;
-          const currH = point.histogram;
-          const trans = (prevH != null && currH != null && Number.isFinite(Number(prevH)) && Number.isFinite(Number(currH)))
-            ? `${Number(prevH) > 0 ? "+" : ""}${Number(prevH).toFixed(4)} → ${Number(currH) > 0 ? "+" : ""}${Number(currH).toFixed(4)}`
+          const prevVal = rule.id === "macd_h_cross" ? point.prev_histogram : point.prev_hist_diff;
+          const currVal = rule.id === "macd_h_cross" ? point.histogram : point.hist_diff;
+          const trans = (prevVal != null && currVal != null && Number.isFinite(Number(prevVal)) && Number.isFinite(Number(currVal)))
+            ? `${Number(prevVal) > 0 ? "+" : ""}${Number(prevVal).toFixed(4)} → ${Number(currVal) > 0 ? "+" : ""}${Number(currVal).toFixed(4)}`
             : measured;
           subtitleDetail = `${trans} (${measured})`;
         } else {
@@ -4366,7 +4394,7 @@
         ? `${settings.clock_span} completed ${formatKst(latest.decision_time)} · loaded history`
         : `${settings.clock_span} completed candles · source unavailable`);
       if (source) {
-        source.textContent = `Source: completed Binance candles · MACD(12,26,9) + MA20/MA50 [H, H×, S, ΔS, Δ²S, ΔH, ΔMA20, ΔMA50] · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · green/red candle columns show per-chart LONG/SHORT condition matches · loaded chart history only`;
+        source.textContent = `Source: completed Binance candles · MACD(12,26,9) + MA20/MA50 [H, H×, S, ΔS, Δ²S, ΔH, ΔH×, ΔMA20, ΔMA50] · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · green/red candle columns show per-chart LONG/SHORT condition matches · loaded chart history only`;
       }
     }
 
@@ -4414,7 +4442,9 @@
         histogram: null,
         prev_histogram: null,
         hist_diff: null,
+        prev_hist_diff: null,
         hist_cross: null,
+        hist_diff_cross: null,
         ma20: null,
         ma20_diff: null,
         ma50: null,
@@ -4422,13 +4452,14 @@
       };
     }
 
-    updateMacdLegend(spanId, macdVal, sigVal, histVal, sigDiffVal = null, sigDiff2Val = null, histDiffVal = null, histCrossVal = null, ma20DiffVal = null, ma50DiffVal = null) {
+    updateMacdLegend(spanId, macdVal, sigVal, histVal, sigDiffVal = null, sigDiff2Val = null, histDiffVal = null, histCrossVal = null, ma20DiffVal = null, ma50DiffVal = null, histDiffCrossVal = null) {
       const mEl = document.getElementById(`msMacdVal_${spanId}`);
       const sEl = document.getElementById(`msSigVal_${spanId}`);
       const sdEl = document.getElementById(`msSigDiffVal_${spanId}`);
       const sd2El = document.getElementById(`msSigDiff2Val_${spanId}`);
       const hEl = document.getElementById(`msHistVal_${spanId}`);
       const hdEl = document.getElementById(`msHistDiffVal_${spanId}`);
+      const hdcEl = document.getElementById(`msHistDiffCrossVal_${spanId}`);
       const hcEl = document.getElementById(`msHistCrossVal_${spanId}`);
       const ma20dEl = document.getElementById(`msMa20DiffVal_${spanId}`);
       const ma50dEl = document.getElementById(`msMa50DiffVal_${spanId}`);
@@ -4458,7 +4489,7 @@
         }
       };
 
-      if ((sigDiffVal === null || sigDiff2Val === null || histDiffVal === null || histCrossVal === null || ma20DiffVal === null || ma50DiffVal === null) && this.macdData?.[spanId]?.byTime) {
+      if ((sigDiffVal === null || sigDiff2Val === null || histDiffVal === null || histCrossVal === null || ma20DiffVal === null || ma50DiffVal === null || histDiffCrossVal === null) && this.macdData?.[spanId]?.byTime) {
         const histList = this.macdData[spanId].histogram || [];
         const lastH = histList[histList.length - 1];
         if (lastH) {
@@ -4468,6 +4499,7 @@
             if (sigDiff2Val === null) sigDiff2Val = pt.signal_diff2;
             if (histDiffVal === null) histDiffVal = pt.hist_diff;
             if (histCrossVal === null) histCrossVal = pt.hist_cross;
+            if (histDiffCrossVal === null) histDiffCrossVal = pt.hist_diff_cross;
             if (ma20DiffVal === null) ma20DiffVal = pt.ma20_diff;
             if (ma50DiffVal === null) ma50DiffVal = pt.ma50_diff;
           }
@@ -4479,21 +4511,24 @@
       updateDiffEl(sdEl, sigDiffVal);
       updateDiffEl(sd2El, sigDiff2Val);
       updateDiffEl(hdEl, histDiffVal);
-      if (hcEl) {
-        if (histCrossVal === 1) {
-          hcEl.textContent = "+CROSS";
-          hcEl.style.color = "#059669";
-        } else if (histCrossVal === -1) {
-          hcEl.textContent = "−CROSS";
-          hcEl.style.color = "#dc2626";
-        } else if (histCrossVal === 0) {
-          hcEl.textContent = "0";
-          hcEl.style.color = "#64748b";
+      const updateCrossEl = (el, crossVal) => {
+        if (!el) return;
+        if (crossVal === 1) {
+          el.textContent = "+CROSS";
+          el.style.color = "#059669";
+        } else if (crossVal === -1) {
+          el.textContent = "−CROSS";
+          el.style.color = "#dc2626";
+        } else if (crossVal === 0) {
+          el.textContent = "0";
+          el.style.color = "#64748b";
         } else {
-          hcEl.textContent = "--";
-          hcEl.style.color = "#64748b";
+          el.textContent = "--";
+          el.style.color = "#64748b";
         }
-      }
+      };
+      updateCrossEl(hcEl, histCrossVal);
+      updateCrossEl(hdcEl, histDiffCrossVal);
     }
 
     updateCandle(spanId, candle) {
@@ -4637,7 +4672,7 @@
             e.preventDefault();
             const currSign = signBtn.getAttribute("data-sign") || "+";
             const nextSign = currSign === "+" ? "-" : "+";
-            const isCross = signBtn.getAttribute("data-rule") === "macd_h_cross";
+            const isCross = ["macd_h_cross", "macd_h_diff_cross"].includes(signBtn.getAttribute("data-rule"));
             signBtn.setAttribute("data-sign", nextSign);
             signBtn.textContent = isCross
               ? (nextSign === "+" ? "+ (−→+)" : "− (+→−)")
