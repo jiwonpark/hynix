@@ -25,6 +25,8 @@
     { id: "macd_s_diff", label: "MACD-S diff", title: "MACD-S Δ", key: "signal_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "Signal 1st difference (slope)" },
     { id: "macd_s_diff2", label: "MACD-S 2nd diff", title: "MACD-S Δ²", key: "signal_diff2", defaultEntrySign: "+", defaultExitSign: "-", desc: "Signal 2nd difference (accel)" },
     { id: "macd_h_diff", label: "MACD-H diff", title: "MACD-H Δ", key: "hist_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "Histogram 1st difference (momentum turn)" },
+    { id: "ma20_diff", label: "MA20 diff", title: "MA20 Δ", key: "ma20_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "MA20 1st difference (slope)" },
+    { id: "ma50_diff", label: "MA50 diff", title: "MA50 Δ", key: "ma50_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "MA50 1st difference (slope)" },
   ];
 
   // Upper bound for full-range finer-chart loading; wider spans (e.g. 1d -> 1s = 86,400 bars)
@@ -509,6 +511,8 @@
               <div class="msMacdHeader" style="background:#f8fafc;padding:3px 12px;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;font-size:10px;line-height:1.4;flex-wrap:wrap;gap:4px;">
                 <span style="font-weight:700;color:#64748b;">MACD (12, 26, 9)</span>
                 <div id="msMacdLegend_${s.id}" style="display:flex;gap:6px 10px;font-family:monospace;font-size:10px;flex-wrap:wrap;align-items:center;">
+                  <span style="color:${s.color};font-weight:700;" title="MA20 1st difference (bar-to-bar slope)">ΔMA20: <span id="msMa20DiffVal_${s.id}">--</span></span>
+                  <span style="color:#d97706;font-weight:700;" title="MA50 1st difference (bar-to-bar slope)">ΔMA50: <span id="msMa50DiffVal_${s.id}">--</span></span>
                   <span style="color:#0284c7;font-weight:600;">MACD: <span id="msMacdVal_${s.id}">--</span></span>
                   <span style="color:#ea580c;font-weight:600;">SIG: <span id="msSigVal_${s.id}">--</span></span>
                   <span style="color:#475569;font-weight:600;">ΔS: <span id="msSigDiffVal_${s.id}">--</span></span>
@@ -1523,7 +1527,7 @@
 
       const macdPoint = this.findMacdAtOrBefore(spanId, targetTime);
       if (macdPoint) {
-        this.updateMacdLegend(spanId, macdPoint.macd, macdPoint.signal, macdPoint.hist ?? macdPoint.histogram, macdPoint.signal_diff, macdPoint.signal_diff2, macdPoint.hist_diff, macdPoint.hist_cross);
+        this.updateMacdLegend(spanId, macdPoint.macd, macdPoint.signal, macdPoint.hist ?? macdPoint.histogram, macdPoint.signal_diff, macdPoint.signal_diff2, macdPoint.hist_diff, macdPoint.hist_cross, macdPoint.ma20_diff, macdPoint.ma50_diff);
       } else {
         this.updateMacdLegend(spanId, null, null, null);
       }
@@ -1597,7 +1601,7 @@
             const histList = this.macdData[sourceSpan]?.histogram || [];
             const lastH = histList.length ? histList[histList.length - 1] : null;
             const lastPt = this.findMacdAtOrBefore(sourceSpan, latest.time);
-            this.updateMacdLegend(sourceSpan, lastPt?.macd ?? lastM?.value, lastPt?.signal ?? lastS?.value, lastPt?.hist ?? lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross);
+            this.updateMacdLegend(sourceSpan, lastPt?.macd ?? lastM?.value, lastPt?.signal ?? lastS?.value, lastPt?.hist ?? lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross, lastPt?.ma20_diff, lastPt?.ma50_diff);
           }
         }
         return;
@@ -1616,7 +1620,7 @@
 
       const hoveredMacd = this.findMacdAtOrBefore(sourceSpan, param.time);
       if (hoveredMacd) {
-        this.updateMacdLegend(sourceSpan, hoveredMacd.macd, hoveredMacd.signal, hoveredMacd.hist ?? hoveredMacd.histogram, hoveredMacd.signal_diff, hoveredMacd.signal_diff2, hoveredMacd.hist_diff, hoveredMacd.hist_cross);
+        this.updateMacdLegend(sourceSpan, hoveredMacd.macd, hoveredMacd.signal, hoveredMacd.hist ?? hoveredMacd.histogram, hoveredMacd.signal_diff, hoveredMacd.signal_diff2, hoveredMacd.hist_diff, hoveredMacd.hist_cross, hoveredMacd.ma20_diff, hoveredMacd.ma50_diff);
       }
 
       // Synchronize vertical crosshair line between price chart and MACD chart within this card
@@ -2879,12 +2883,18 @@
       if (!Array.isArray(candles) || candles.length < 34) return null;
 
       const macdRes = this.calculateMacd(candles, 12, 26, 9);
+      const ma20Res = this.calculateSma(candles, 20);
+      const ma50Res = this.calculateSma(candles, 50);
       const sigByTime = new Map(macdRes.signal.map((p) => [p.time, p]));
       const histByTime = new Map(macdRes.histogram.map((p) => [p.time, p]));
+      const ma20ByTime = new Map(ma20Res.map((p) => [p.time, p]));
+      const ma50ByTime = new Map(ma50Res.map((p) => [p.time, p]));
       const byTime = new Map();
       for (const m of macdRes.macd) {
         const sPoint = sigByTime.get(m.time);
         const hPoint = histByTime.get(m.time);
+        const ma20Point = ma20ByTime.get(m.time);
+        const ma50Point = ma50ByTime.get(m.time);
         const hVal = hPoint ? hPoint.value : null;
         byTime.set(m.time, {
           time: m.time,
@@ -2897,23 +2907,35 @@
           prev_histogram: hPoint ? (hPoint.prev ?? null) : null,
           hist_diff: hPoint ? (hPoint.diff ?? null) : null,
           hist_cross: hPoint ? (hPoint.cross ?? null) : null,
+          ma20: ma20Point ? ma20Point.value : null,
+          ma20_diff: ma20Point ? (ma20Point.diff ?? null) : null,
+          ma50: ma50Point ? ma50Point.value : null,
+          ma50_diff: ma50Point ? (ma50Point.diff ?? null) : null,
         });
       }
-      this.macdData[spanId] = { ...macdRes, byTime };
+      this.macdData[spanId] = { ...macdRes, ma20: ma20Res, ma50: ma50Res, byTime };
 
       const lastM = macdRes.macd[macdRes.macd.length - 1];
       const lastS = macdRes.signal[macdRes.signal.length - 1];
       const lastH = macdRes.histogram[macdRes.histogram.length - 1];
+      const lastMa20 = ma20Res[ma20Res.length - 1];
+      const lastMa50 = ma50Res[ma50Res.length - 1];
       const latestTime = candles[candles.length - 1].time;
       const lastPt = byTime.get(latestTime) || byTime.get(lastM?.time);
 
       if (updateLatestOnly) {
+        if (this.ma20?.[spanId] && lastMa20 && typeof this.ma20[spanId].update === "function") {
+          this.ma20[spanId].update(lastMa20);
+        }
+        if (this.ma50?.[spanId] && lastMa50 && typeof this.ma50[spanId].update === "function") {
+          this.ma50[spanId].update(lastMa50);
+        }
         if (this.macdHist[spanId] && lastH) this.macdHist[spanId].update(lastH);
         if (this.macdLine[spanId] && lastM) this.macdLine[spanId].update(lastM);
         if (this.macdSignal[spanId] && lastS) this.macdSignal[spanId].update(lastS);
         if (this.macdZero[spanId]) this.macdZero[spanId].update({ time: latestTime, value: 0 });
         if (this.pinnedTime === null) {
-          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross);
+          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross, lastPt?.ma20_diff, lastPt?.ma50_diff);
         }
       } else {
         if (this.macdCharts[spanId] || this.macdHist[spanId] || this.macdLine[spanId] || this.macdSignal[spanId] || this.macdZero[spanId]) {
@@ -2924,7 +2946,7 @@
             this.macdZero[spanId].setData(candles.map((c) => ({ time: c.time, value: 0 })));
           }
           if (macdRes.macd.length && this.pinnedTime === null) {
-            this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross);
+            this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross, lastPt?.ma20_diff, lastPt?.ma50_diff);
           }
         }
       }
@@ -3070,7 +3092,10 @@
         sum += data[i].close;
         if (i >= period) sum -= data[i - period].close;
         if (i >= period - 1) {
-          res.push({ time: data[i].time, value: +(sum / period).toFixed(4) });
+          const val = +(sum / period).toFixed(4);
+          const prev = res.length >= 1 ? res[res.length - 1].value : null;
+          const diff = prev !== null ? +(val - prev).toFixed(4) : null;
+          res.push({ time: data[i].time, value: val, diff });
         }
       }
       return res;
@@ -3301,9 +3326,13 @@
         prev_histogram: prevHist,
         hist_diff: byPoint?.hist_diff ?? (best.diff ?? computedDiff),
         hist_cross: byPoint?.hist_cross ?? (best.cross ?? computedCross),
-        signal: byPoint?.signal ?? null,
-        signal_diff: byPoint?.signal_diff ?? null,
-        signal_diff2: byPoint?.signal_diff2 ?? null,
+        signal: byPoint?.signal ?? (best.signal ?? null),
+        signal_diff: byPoint?.signal_diff ?? (best.signal_diff ?? null),
+        signal_diff2: byPoint?.signal_diff2 ?? (best.signal_diff2 ?? null),
+        ma20: byPoint?.ma20 ?? (best.ma20 ?? null),
+        ma20_diff: byPoint?.ma20_diff ?? (best.ma20_diff ?? null),
+        ma50: byPoint?.ma50 ?? (best.ma50 ?? null),
+        ma50_diff: byPoint?.ma50_diff ?? (best.ma50_diff ?? null),
       };
     }
 
@@ -3320,6 +3349,8 @@
       else if (rule.rule === "macd_s_diff") val = point.signal_diff;
       else if (rule.rule === "macd_s_diff2") val = point.signal_diff2;
       else if (rule.rule === "macd_h_diff") val = point.hist_diff;
+      else if (rule.rule === "ma20_diff") val = point.ma20_diff;
+      else if (rule.rule === "ma50_diff") val = point.ma50_diff;
       if (val === null || val === undefined || !Number.isFinite(Number(val))) return false;
 
       const numVal = Number(val);
@@ -4051,6 +4082,8 @@
               else if (rule.id === "macd_s_diff") val = point.signal_diff;
               else if (rule.id === "macd_s_diff2") val = point.signal_diff2;
               else if (rule.id === "macd_h_diff") val = point.hist_diff;
+              else if (rule.id === "ma20_diff") val = point.ma20_diff;
+              else if (rule.id === "ma50_diff") val = point.ma50_diff;
             }
 
             const signLabel = isCross
@@ -4174,10 +4207,14 @@
         prev_histogram: null,
         hist_diff: null,
         hist_cross: null,
+        ma20: null,
+        ma20_diff: null,
+        ma50: null,
+        ma50_diff: null,
       };
     }
 
-    updateMacdLegend(spanId, macdVal, sigVal, histVal, sigDiffVal = null, sigDiff2Val = null, histDiffVal = null, histCrossVal = null) {
+    updateMacdLegend(spanId, macdVal, sigVal, histVal, sigDiffVal = null, sigDiff2Val = null, histDiffVal = null, histCrossVal = null, ma20DiffVal = null, ma50DiffVal = null) {
       const mEl = document.getElementById(`msMacdVal_${spanId}`);
       const sEl = document.getElementById(`msSigVal_${spanId}`);
       const sdEl = document.getElementById(`msSigDiffVal_${spanId}`);
@@ -4185,6 +4222,8 @@
       const hEl = document.getElementById(`msHistVal_${spanId}`);
       const hdEl = document.getElementById(`msHistDiffVal_${spanId}`);
       const hcEl = document.getElementById(`msHistCrossVal_${spanId}`);
+      const ma20dEl = document.getElementById(`msMa20DiffVal_${spanId}`);
+      const ma50dEl = document.getElementById(`msMa50DiffVal_${spanId}`);
 
       if (mEl) mEl.textContent = macdVal != null && !isNaN(macdVal) ? Number(macdVal).toFixed(4) : "--";
       if (sEl) sEl.textContent = sigVal != null && !isNaN(sigVal) ? Number(sigVal).toFixed(4) : "--";
@@ -4211,7 +4250,7 @@
         }
       };
 
-      if ((sigDiffVal === null || sigDiff2Val === null || histDiffVal === null || histCrossVal === null) && this.macdData?.[spanId]?.byTime) {
+      if ((sigDiffVal === null || sigDiff2Val === null || histDiffVal === null || histCrossVal === null || ma20DiffVal === null || ma50DiffVal === null) && this.macdData?.[spanId]?.byTime) {
         const histList = this.macdData[spanId].histogram || [];
         const lastH = histList[histList.length - 1];
         if (lastH) {
@@ -4221,10 +4260,14 @@
             if (sigDiff2Val === null) sigDiff2Val = pt.signal_diff2;
             if (histDiffVal === null) histDiffVal = pt.hist_diff;
             if (histCrossVal === null) histCrossVal = pt.hist_cross;
+            if (ma20DiffVal === null) ma20DiffVal = pt.ma20_diff;
+            if (ma50DiffVal === null) ma50DiffVal = pt.ma50_diff;
           }
         }
       }
 
+      updateDiffEl(ma20dEl, ma20DiffVal);
+      updateDiffEl(ma50dEl, ma50DiffVal);
       updateDiffEl(sdEl, sigDiffVal);
       updateDiffEl(sd2El, sigDiff2Val);
       updateDiffEl(hdEl, histDiffVal);

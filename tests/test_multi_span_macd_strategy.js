@@ -116,10 +116,10 @@ assert.equal(visualMarkers.filter((marker) => marker.pairKey === "paper:0").leng
 
 // Test MACD_RULES definition and legend/DOM elements
 assert.ok(Array.isArray(engine.MACD_RULES), "engine.MACD_RULES must be an array");
-assert.equal(engine.MACD_RULES.length, 6, "engine.MACD_RULES must contain 6 indicator definitions");
+assert.equal(engine.MACD_RULES.length, 8, "engine.MACD_RULES must contain 8 indicator definitions");
 const ruleIds = engine.MACD_RULES.map((r) => r.id);
-assert.deepEqual(ruleIds, ["macd_h", "macd_h_cross", "macd_s", "macd_s_diff", "macd_s_diff2", "macd_h_diff"],
-  "must support macd_h, macd_h_cross, macd_s, macd_s_diff, macd_s_diff2, and macd_h_diff");
+assert.deepEqual(ruleIds, ["macd_h", "macd_h_cross", "macd_s", "macd_s_diff", "macd_s_diff2", "macd_h_diff", "ma20_diff", "ma50_diff"],
+  "must support macd_h, macd_h_cross, macd_s, macd_s_diff, macd_s_diff2, macd_h_diff, ma20_diff, and ma50_diff");
 
 for (const span of spans) {
   for (const rule of engine.MACD_RULES) {
@@ -130,11 +130,16 @@ for (const span of spans) {
   }
 }
 
-// Test calculateMacd difference and zero-crossing metrics
+// Test calculateSma and calculateMacd difference and zero-crossing metrics
 const testCandles = [];
-for (let i = 0; i < 40; i++) {
+for (let i = 0; i < 60; i++) {
   testCandles.push({ time: i * 60, close: 100 + Math.sin(i / 3) * 5 });
 }
+const sma20Calc = engine.calculateSma(testCandles, 20);
+const sma50Calc = engine.calculateSma(testCandles, 50);
+assert.ok(sma20Calc.length > 2 && sma20Calc[1].diff !== null, "MA20 must include 1st diff");
+assert.ok(sma50Calc.length > 2 && sma50Calc[1].diff !== null, "MA50 must include 1st diff");
+
 const macdCalc = engine.calculateMacd(testCandles, 12, 26, 9);
 assert.ok(macdCalc.signal.length > 2, "must compute signal line");
 assert.ok(macdCalc.signal[1].diff !== null, "signal line must have diff (1st diff)");
@@ -142,11 +147,11 @@ assert.ok(macdCalc.signal[2].diff2 !== null, "signal line must have diff2 (2nd d
 assert.ok(macdCalc.histogram[1].diff !== null, "histogram must have diff");
 assert.ok(macdCalc.histogram[1].cross !== null, "histogram must have cross (1, -1, or 0)");
 
-// Test evaluateMacdStrategyReplay with explicit S, S-diff, S-2nd-diff, H-diff, and H-cross rules
+// Test evaluateMacdStrategyReplay with explicit S, S-diff, S-2nd-diff, H-diff, H-cross, MA20-diff, and MA50-diff rules
 const richPoints = [
-  { time: 0, histogram: -1, prev_histogram: null, hist_diff: -0.5, hist_cross: 0, signal: -2, signal_diff: 0.1, signal_diff2: 0.05 },
-  { time: DAY, histogram: -0.5, prev_histogram: -1, hist_diff: 0.5, hist_cross: 0, signal: -1.8, signal_diff: 0.2, signal_diff2: 0.1 },
-  { time: DAY * 2, histogram: 1, prev_histogram: -0.5, hist_diff: 1.5, hist_cross: 1, signal: 0.5, signal_diff: -0.1, signal_diff2: -0.05 },
+  { time: 0, histogram: -1, prev_histogram: null, hist_diff: -0.5, hist_cross: 0, signal: -2, signal_diff: 0.1, signal_diff2: 0.05, ma20_diff: -0.2, ma50_diff: -0.1 },
+  { time: DAY, histogram: -0.5, prev_histogram: -1, hist_diff: 0.5, hist_cross: 0, signal: -1.8, signal_diff: 0.2, signal_diff2: 0.1, ma20_diff: 0.4, ma50_diff: 0.15 },
+  { time: DAY * 2, histogram: 1, prev_histogram: -0.5, hist_diff: 1.5, hist_cross: 1, signal: 0.5, signal_diff: -0.1, signal_diff2: -0.05, ma20_diff: -0.3, ma50_diff: -0.05 },
 ];
 engine.macdData = Object.fromEntries(spans.map((span) => [span, {
   histogram: richPoints.map((p) => ({ time: p.time, value: p.histogram, prev: p.prev_histogram, cross: p.hist_cross })),
@@ -161,6 +166,8 @@ const fullWaveSettings = {
     { span: "1d", rule: "macd_s_diff", sign: "+" },
     { span: "1d", rule: "macd_s_diff2", sign: "+" },
     { span: "1d", rule: "macd_h_diff", sign: "+" },
+    { span: "1d", rule: "ma20_diff", sign: "+" },
+    { span: "1d", rule: "ma50_diff", sign: "+" },
   ],
   exit_rules: [
     { span: "1d", rule: "macd_h", sign: "+" },
@@ -169,6 +176,8 @@ const fullWaveSettings = {
     { span: "1d", rule: "macd_s_diff", sign: "-" },
     { span: "1d", rule: "macd_s_diff2", sign: "-" },
     { span: "1d", rule: "macd_h_diff", sign: "+" },
+    { span: "1d", rule: "ma20_diff", sign: "-" },
+    { span: "1d", rule: "ma50_diff", sign: "-" },
   ],
   buy_threshold: 0,
   sell_threshold: 0,
