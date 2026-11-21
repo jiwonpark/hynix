@@ -13,12 +13,14 @@ assert.match(multiSpanSource, /StrategyExecutionChartFrame/,
 assert.match(executionFrameSource, /const showHost = options\.showHost !== false/,
   "the shared execution frame must support control-only strategy panels without a fake chart host");
 const strategyBody = engine.macdStrategyFrameBody();
-assert.match(strategyBody, /class="terminalConditionGroup"[\s\S]*?>Long conditions</,
-  "Multi-Chart must use the Long conditions layout");
-assert.match(strategyBody, /class="terminalConditionGroup"[\s\S]*?>Short conditions</,
-  "Multi-Chart must use the Short conditions layout");
-assert.match(strategyBody, /id="msStrategyEntryConditions"/);
-assert.match(strategyBody, /id="msStrategyExitConditions"/);
+assert.match(strategyBody, /id="msStrategyUnifiedConditions"/,
+  "Multi-Chart must render Long and Short conditions in the unified single-pane checklist");
+assert.match(strategyBody, /class="msSpanDualColumns"/,
+  "each timeframe card must split Long conditions (left) and Short conditions (right) inside the same pane");
+assert.match(strategyBody, /class="msSpanLongCol"[\s\S]*?Long conditions/,
+  "Multi-Chart must render the Long conditions column in each timeframe section");
+assert.match(strategyBody, /class="msSpanShortCol"[\s\S]*?Short conditions/,
+  "Multi-Chart must render the Short conditions column in each timeframe section");
 assert.match(strategyBody, /class="msStrategySpanToggle"/,
   "every visible timeframe rule must remain a real adjustable replay control");
 assert.match(strategyBody, /class="condRow[^"]*"[\s\S]*?class="toggleSwitch"[\s\S]*?class="msStrategySpanToggle"/,

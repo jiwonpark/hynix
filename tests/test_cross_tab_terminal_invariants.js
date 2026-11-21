@@ -25,8 +25,8 @@ assert.match(common, /groups\.className = "terminalConditionGroups"/,
   "Tabs 4 and 5 must expose their Entry and Exit groups through the common terminal layout contract");
 assert.match(multiSpan, /Frame\.mount\(\{[\s\S]*?showHost: false/,
   "Multi-Chart replay must reuse the shared execution frame instead of a tab-local shell");
-assert.match(multiSpan, /class="terminalConditionGroup"[\s\S]*?Long conditions[\s\S]*?class="terminalConditionGroup"[\s\S]*?Short conditions/,
-  "Multi-Chart must present its two terminal condition groups as Long conditions and Short conditions");
+assert.match(multiSpan, /class="terminalConditionGroup"[\s\S]*?Long conditions[\s\S]*?Short conditions/,
+  "Multi-Chart must present Long conditions and Short conditions in the shared terminal condition pane");
 assert.match(multiSpan, /class="condRow[^"]*"[\s\S]*?class="toggleSwitch"[\s\S]*?class="msStrategySpanToggle"/,
   "Multi-Chart condition rows must contain inline toggleSwitch controls like in other tabs");
 assert.doesNotMatch(multiSpan, /id="msStrategySpanToggles"/,

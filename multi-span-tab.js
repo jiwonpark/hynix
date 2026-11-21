@@ -573,76 +573,41 @@
           </label>
         </div>
         <div id="msStrategySummary" class="executionChartSecondaryStatus" style="height:auto;min-height:0;white-space:normal;margin:var(--terminal-space-min) 0 0;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">Awaiting completed chart data…</div>
-        <div id="msStrategyConditionGroups" class="terminalConditionGroups" aria-label="Paper replay trading conditions">
-          <section class="terminalConditionGroup" aria-labelledby="msStrategyEntryHeading">
-            <h3 id="msStrategyEntryHeading" class="terminalConditionGroupTitle">Long conditions</h3>
-            <small class="terminalConditionGroupNote">Every enabled rule must pass on the same completed signal-clock candle to match a LONG setup (highlighted green on each chart).</small>
-            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#166534;">LONG when enabled H &lt;
-              <input id="msStrategyBuyThreshold" aria-label="Paper long MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #86efac;border-radius:4px;padding:3px 5px;font-weight:800;">
-            </label>
-            <div id="msStrategyEntryConditions" class="condChecklist" aria-live="polite" style="max-height:420px;overflow-y:auto;padding-right:4px;">
-              ${SPANS.map((s) => `
-                <div class="msSpanSection" style="margin-bottom:8px;">
-                  <div style="font-weight:800;font-size:10px;color:${s.color};padding:3px 6px;background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;margin-top:4px;display:flex;align-items:center;justify-content:space-between;border-radius:4px;">
-                    <span>● ${s.id} · ${s.label}</span>
-                    <button type="button" class="msSpanToggleAllBtn" data-span="${s.id}" data-kind="entry" style="border:1px solid #cbd5e1;background:#fff;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#334155;">Toggle ${s.id}</button>
-                  </div>
-                  ${MACD_RULES.map((rule) => {
-                    const isDefault = ["5m", "15m"].includes(s.id) && rule.id === "macd_h";
-                    const sign = rule.defaultEntrySign;
-                    const isCross = rule.id === "macd_h_cross" || rule.id === "macd_h_diff_cross";
-                    const op = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : `${sign === "+" ? ">" : "<"} 0`;
-                    const signBtnText = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : (sign === "+" ? "+ (>0)" : "− (<0)");
-                    return `
-                      <div class="condRow${isDefault ? "" : " disabled-cond"}" data-span="${s.id}" data-rule="${rule.id}" data-kind="entry">
-                        <label class="toggleSwitch" title="Turn ${s.id} ${rule.label} rule ON/OFF">
-                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="entry" aria-label="Use ${s.id} ${rule.label} for paper long" type="checkbox"${isDefault ? " checked" : ""}>
-                          <span class="toggleSlider"></span>
-                        </label>
-                        <span class="condLabel">
-                          <strong style="color:${s.color};">${s.id} ${rule.label} ${op}</strong>
-                          <button type="button" class="condSignToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="entry" data-sign="${sign}" title="Click to toggle condition between + and -" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${sign === '+' ? '#166534' : '#991b1b'};">
-                            ${signBtnText}
-                          </button>
-                          <small style="display:block;color:#64748b;">PAPER · awaiting data</small>
-                        </span>
-                        <span class="condValue"><strong style="color:#64748b;">—</strong></span>
-                        <span class="condBadge ${isDefault ? "wait" : "neutral"}">${isDefault ? "WAITING" : "OFF"}</span>
-                      </div>
-                    `;
-                  }).join("")}
-                </div>
-              `).join("")}
+        <div id="msStrategyConditionGroups" class="terminalConditionGroups" aria-label="Paper replay trading conditions" style="display:block;">
+          <section class="terminalConditionGroup" aria-labelledby="msStrategyUnifiedHeading" style="width:100%;">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;">
+              <div>
+                <h3 id="msStrategyUnifiedHeading" class="terminalConditionGroupTitle" style="margin:0;">Long conditions &amp; Short conditions</h3>
+                <small class="terminalConditionGroupNote" style="display:block;">Every enabled rule must pass on the same completed signal-clock candle to match a LONG (left, green) or SHORT (right, red) setup.</small>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#166534;">LONG when enabled H &lt;
+                  <input id="msStrategyBuyThreshold" aria-label="Paper long MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #86efac;border-radius:4px;padding:3px 5px;font-weight:800;">
+                </label>
+                <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#991b1b;">SHORT when enabled H &gt;
+                  <input id="msStrategySellThreshold" aria-label="Paper short MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #fca5a5;border-radius:4px;padding:3px 5px;font-weight:800;">
+                </label>
+              </div>
             </div>
-          </section>
-          <section class="terminalConditionGroup" aria-labelledby="msStrategyExitHeading">
-            <h3 id="msStrategyExitHeading" class="terminalConditionGroupTitle">Short conditions</h3>
-            <small class="terminalConditionGroupNote">Every enabled rule must pass on the same completed signal-clock candle to match a SHORT setup (highlighted red on each chart).</small>
-            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#991b1b;">SHORT when enabled H &gt;
-              <input id="msStrategySellThreshold" aria-label="Paper short MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #fca5a5;border-radius:4px;padding:3px 5px;font-weight:800;">
-            </label>
-            <div id="msStrategyExitConditions" class="condChecklist" aria-live="polite" style="max-height:420px;overflow-y:auto;padding-right:4px;">
-              ${SPANS.map((s) => `
-                <div class="msSpanSection" style="margin-bottom:8px;">
-                  <div style="font-weight:800;font-size:10px;color:${s.color};padding:3px 6px;background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;margin-top:4px;display:flex;align-items:center;justify-content:space-between;border-radius:4px;">
-                    <span>● ${s.id} · ${s.label}</span>
-                    <button type="button" class="msSpanToggleAllBtn" data-span="${s.id}" data-kind="exit" style="border:1px solid #cbd5e1;background:#fff;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#334155;">Toggle ${s.id}</button>
-                  </div>
-                  ${MACD_RULES.map((rule) => {
+            <div id="msStrategyUnifiedConditions" class="condChecklist" aria-live="polite" style="max-height:540px;overflow-y:auto;padding-right:4px;">
+              ${SPANS.map((s) => {
+                const renderKindRows = (kind) => {
+                  const isEntry = kind === "entry";
+                  return MACD_RULES.map((rule) => {
                     const isDefault = ["5m", "15m"].includes(s.id) && rule.id === "macd_h";
-                    const sign = rule.defaultExitSign;
+                    const sign = isEntry ? rule.defaultEntrySign : rule.defaultExitSign;
                     const isCross = rule.id === "macd_h_cross" || rule.id === "macd_h_diff_cross";
                     const op = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : `${sign === "+" ? ">" : "<"} 0`;
                     const signBtnText = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : (sign === "+" ? "+ (>0)" : "− (<0)");
                     return `
-                      <div class="condRow${isDefault ? "" : " disabled-cond"}" data-span="${s.id}" data-rule="${rule.id}" data-kind="exit">
+                      <div class="condRow${isDefault ? "" : " disabled-cond"}" data-span="${s.id}" data-rule="${rule.id}" data-kind="${kind}">
                         <label class="toggleSwitch" title="Turn ${s.id} ${rule.label} rule ON/OFF">
-                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="exit" aria-label="Use ${s.id} ${rule.label} for paper short" type="checkbox"${isDefault ? " checked" : ""}>
+                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="${kind}" aria-label="Use ${s.id} ${rule.label} for paper ${isEntry ? "long" : "short"}" type="checkbox"${isDefault ? " checked" : ""}>
                           <span class="toggleSlider"></span>
                         </label>
                         <span class="condLabel">
                           <strong style="color:${s.color};">${s.id} ${rule.label} ${op}</strong>
-                          <button type="button" class="condSignToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="exit" data-sign="${sign}" title="Click to toggle condition between + and -" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${sign === '+' ? '#166534' : '#991b1b'};">
+                          <button type="button" class="condSignToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="${kind}" data-sign="${sign}" title="Click to toggle condition between + and -" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${sign === '+' ? '#166534' : '#991b1b'};">
                             ${signBtnText}
                           </button>
                           <small style="display:block;color:#64748b;">PAPER · awaiting data</small>
@@ -651,9 +616,36 @@
                         <span class="condBadge ${isDefault ? "wait" : "neutral"}">${isDefault ? "WAITING" : "OFF"}</span>
                       </div>
                     `;
-                  }).join("")}
-                </div>
-              `).join("")}
+                  }).join("");
+                };
+                return `
+                  <div class="msSpanSection" data-span="${s.id}" style="margin-bottom:10px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;background:#ffffff;">
+                    <div style="font-weight:800;font-size:10.5px;color:${s.color};padding:5px 8px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                      <span>● ${s.id} · ${s.label}</span>
+                      <div style="display:flex;align-items:center;gap:6px;">
+                        <button type="button" class="msSpanToggleAllBtn" data-span="${s.id}" data-kind="entry" style="border:1px solid #86efac;background:#f0fdf4;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#166534;">Toggle ${s.id} Long</button>
+                        <button type="button" class="msSpanToggleAllBtn" data-span="${s.id}" data-kind="exit" style="border:1px solid #fca5a5;background:#fef2f2;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#991b1b;">Toggle ${s.id} Short</button>
+                      </div>
+                    </div>
+                    <div class="msSpanDualColumns" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:0;">
+                      <div class="msSpanLongCol" data-span="${s.id}" data-kind="entry" style="padding:4px 8px;border-right:1px solid #f1f5f9;">
+                        <div style="font-size:10px;font-weight:800;color:#166534;padding:2px 4px;margin-bottom:2px;background:#f0fdf4;border-radius:3px;display:flex;align-items:center;justify-content:space-between;">
+                          <span>▲ Long conditions (${s.id})</span>
+                          <span style="font-size:9px;font-weight:700;color:#15803d;">BUY / LONG</span>
+                        </div>
+                        ${renderKindRows("entry")}
+                      </div>
+                      <div class="msSpanShortCol" data-span="${s.id}" data-kind="exit" style="padding:4px 8px;">
+                        <div style="font-size:10px;font-weight:800;color:#991b1b;padding:2px 4px;margin-bottom:2px;background:#fef2f2;border-radius:3px;display:flex;align-items:center;justify-content:space-between;">
+                          <span>▼ Short conditions (${s.id})</span>
+                          <span style="font-size:9px;font-weight:700;color:#b91c1c;">SELL / SHORT</span>
+                        </div>
+                        ${renderKindRows("exit")}
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }).join("")}
             </div>
           </section>
         </div>
@@ -4291,10 +4283,11 @@
     renderMacdStrategyReplay(result) {
       if (typeof document === "undefined") return;
       const summary = document.getElementById("msStrategySummary");
+      const unifiedConditions = document.getElementById("msStrategyUnifiedConditions");
       const entryConditions = document.getElementById("msStrategyEntryConditions");
       const exitConditions = document.getElementById("msStrategyExitConditions");
       const source = document.getElementById("msStrategySource");
-      if (!summary || !entryConditions || !exitConditions) return;
+      if (!summary || (!unifiedConditions && (!entryConditions || !exitConditions))) return;
 
       const settings = result?.settings || this.macdStrategySettings();
       const metrics = result?.metrics || {};
@@ -4419,82 +4412,141 @@
         };
       };
 
-      const updateConditionGroupDom = (container, kind) => {
-        const isEntry = kind === "entry";
-        const rules = isEntry ? (settings.entry_rules || []) : (settings.exit_rules || []);
-        const rulesMap = new Map(rules.map((r) => [`${r.span}:${r.rule}`, r]));
+      const entryRulesMap = new Map((settings.entry_rules || []).map((r) => [`${r.span}:${r.rule}`, r]));
+      const exitRulesMap = new Map((settings.exit_rules || []).map((r) => [`${r.span}:${r.rule}`, r]));
 
-        const existingRows = typeof container.querySelectorAll === "function"
-          ? [...container.querySelectorAll(".condRow[data-span][data-rule]")]
+      const applyRowStateToDom = (row, st) => {
+        row.classList?.toggle("disabled-cond", !st.isEnabled);
+        const input = row.querySelector?.(".msStrategySpanToggle");
+        if (input && input.checked !== st.isEnabled) input.checked = st.isEnabled;
+        const titleStrong = row.querySelector?.(".condLabel > strong");
+        if (titleStrong) titleStrong.textContent = st.titleText;
+        const signBtn = row.querySelector?.(".condSignToggle");
+        if (signBtn) {
+          signBtn.setAttribute("data-sign", st.sign);
+          signBtn.textContent = st.signLabel;
+          if (signBtn.style) signBtn.style.color = st.sign === "+" ? "#166534" : "#991b1b";
+        }
+        const subSmall = row.querySelector?.(".condLabel > small");
+        if (subSmall) subSmall.textContent = st.subtitleText;
+        const valStrong = row.querySelector?.(".condValue > strong");
+        if (valStrong) {
+          valStrong.textContent = st.valText;
+          if (valStrong.style) valStrong.style.color = st.valColor;
+        }
+        const badge = row.querySelector?.(".condBadge");
+        if (badge) {
+          badge.className = `condBadge ${st.badgeClass}`;
+          badge.textContent = st.badgeText;
+          if (st.badgeTitle) badge.setAttribute?.("title", st.badgeTitle);
+          else badge.removeAttribute?.("title");
+        }
+      };
+
+      const renderRowHtml = (span, rule, kind, st) => {
+        const isEntry = kind === "entry";
+        const switchHtml = `
+          <label class="toggleSwitch" title="Turn ${span.id} ${rule.label} rule ON/OFF">
+            <input class="msStrategySpanToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" aria-label="Use ${span.id} ${rule.label} for paper ${isEntry ? "long" : "short"}" type="checkbox"${st.isEnabled ? " checked" : ""}>
+            <span class="toggleSlider"></span>
+          </label>
+        `;
+        const signBtnHtml = `
+          <button type="button" class="condSignToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" data-sign="${st.sign}" title="Click to toggle condition between + and -" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${st.sign === '+' ? '#166534' : '#991b1b'};">
+            ${st.signLabel}
+          </button>
+        `;
+        const titleAttr = st.badgeTitle ? ` title="${st.badgeTitle}"` : "";
+        return `<div class="condRow${st.isEnabled ? "" : " disabled-cond"}" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${st.titleText}</strong>${signBtnHtml}<small style="display:block;color:#64748b;">${st.subtitleText}</small></span><span class="condValue"><strong style="color:${st.valColor};">${st.valText}</strong></span><span class="condBadge ${st.badgeClass}"${titleAttr}>${st.badgeText}</span></div>`;
+      };
+
+      if (unifiedConditions) {
+        const existingRows = typeof unifiedConditions.querySelectorAll === "function"
+          ? [...unifiedConditions.querySelectorAll(".condRow[data-span][data-rule][data-kind]")]
           : [];
-        if (existingRows.length === SPANS.length * MACD_RULES.length) {
+        if (existingRows.length === SPANS.length * MACD_RULES.length * 2) {
           const spanById = new Map(SPANS.map((s) => [s.id, s]));
           const ruleById = new Map(MACD_RULES.map((r) => [r.id, r]));
           existingRows.forEach((row) => {
             const span = spanById.get(row.getAttribute("data-span"));
             const rule = ruleById.get(row.getAttribute("data-rule"));
+            const kind = row.getAttribute("data-kind") || "entry";
             if (!span || !rule) return;
-            const st = computeRowState(span, rule, kind, rulesMap);
-            row.classList?.toggle("disabled-cond", !st.isEnabled);
-            const input = row.querySelector?.(".msStrategySpanToggle");
-            if (input && input.checked !== st.isEnabled) input.checked = st.isEnabled;
-            const titleStrong = row.querySelector?.(".condLabel > strong");
-            if (titleStrong) titleStrong.textContent = st.titleText;
-            const signBtn = row.querySelector?.(".condSignToggle");
-            if (signBtn) {
-              signBtn.setAttribute("data-sign", st.sign);
-              signBtn.textContent = st.signLabel;
-              if (signBtn.style) signBtn.style.color = st.sign === "+" ? "#166534" : "#991b1b";
-            }
-            const subSmall = row.querySelector?.(".condLabel > small");
-            if (subSmall) subSmall.textContent = st.subtitleText;
-            const valStrong = row.querySelector?.(".condValue > strong");
-            if (valStrong) {
-              valStrong.textContent = st.valText;
-              if (valStrong.style) valStrong.style.color = st.valColor;
-            }
-            const badge = row.querySelector?.(".condBadge");
-            if (badge) {
-              badge.className = `condBadge ${st.badgeClass}`;
-              badge.textContent = st.badgeText;
-              if (st.badgeTitle) badge.setAttribute?.("title", st.badgeTitle);
-              else badge.removeAttribute?.("title");
-            }
+            const st = computeRowState(span, rule, kind, kind === "entry" ? entryRulesMap : exitRulesMap);
+            applyRowStateToDom(row, st);
           });
-          return;
-        }
-
-        container.innerHTML = SPANS.map((span) => {
-          const rowsHtml = MACD_RULES.map((rule) => {
-            const st = computeRowState(span, rule, kind, rulesMap);
-            const switchHtml = `
-              <label class="toggleSwitch" title="Turn ${span.id} ${rule.label} rule ON/OFF">
-                <input class="msStrategySpanToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" aria-label="Use ${span.id} ${rule.label} for paper ${isEntry ? "long" : "short"}" type="checkbox"${st.isEnabled ? " checked" : ""}>
-                <span class="toggleSlider"></span>
-              </label>
-            `;
-            const signBtnHtml = `
-              <button type="button" class="condSignToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" data-sign="${st.sign}" title="Click to toggle condition between + and -" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${st.sign === '+' ? '#166534' : '#991b1b'};">
-                ${st.signLabel}
-              </button>
-            `;
-            const titleAttr = st.badgeTitle ? ` title="${st.badgeTitle}"` : "";
-            return `<div class="condRow${st.isEnabled ? "" : " disabled-cond"}" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${st.titleText}</strong>${signBtnHtml}<small style="display:block;color:#64748b;">${st.subtitleText}</small></span><span class="condValue"><strong style="color:${st.valColor};">${st.valText}</strong></span><span class="condBadge ${st.badgeClass}"${titleAttr}>${st.badgeText}</span></div>`;
-          }).join("");
-
-          return `
-            <div class="msSpanSection" style="margin-bottom:8px;">
-              <div style="font-weight:800;font-size:10px;color:${span.color};padding:3px 6px;background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;margin-top:4px;display:flex;align-items:center;justify-content:space-between;border-radius:4px;">
-                <span>● ${span.id} · ${span.label}</span>
-                <button type="button" class="msSpanToggleAllBtn" data-span="${span.id}" data-kind="${kind}" style="border:1px solid #cbd5e1;background:#fff;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#334155;">Toggle ${span.id}</button>
+        } else {
+          unifiedConditions.innerHTML = SPANS.map((span) => {
+            const entryRowsHtml = MACD_RULES.map((rule) =>
+              renderRowHtml(span, rule, "entry", computeRowState(span, rule, "entry", entryRulesMap))
+            ).join("");
+            const exitRowsHtml = MACD_RULES.map((rule) =>
+              renderRowHtml(span, rule, "exit", computeRowState(span, rule, "exit", exitRulesMap))
+            ).join("");
+            return `
+              <div class="msSpanSection" data-span="${span.id}" style="margin-bottom:10px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;background:#ffffff;">
+                <div style="font-weight:800;font-size:10.5px;color:${span.color};padding:5px 8px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                  <span>● ${span.id} · ${span.label}</span>
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <button type="button" class="msSpanToggleAllBtn" data-span="${span.id}" data-kind="entry" style="border:1px solid #86efac;background:#f0fdf4;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#166534;">Toggle ${span.id} Long</button>
+                    <button type="button" class="msSpanToggleAllBtn" data-span="${span.id}" data-kind="exit" style="border:1px solid #fca5a5;background:#fef2f2;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#991b1b;">Toggle ${span.id} Short</button>
+                  </div>
+                </div>
+                <div class="msSpanDualColumns" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:0;">
+                  <div class="msSpanLongCol" data-span="${span.id}" data-kind="entry" style="padding:4px 8px;border-right:1px solid #f1f5f9;">
+                    <div style="font-size:10px;font-weight:800;color:#166534;padding:2px 4px;margin-bottom:2px;background:#f0fdf4;border-radius:3px;display:flex;align-items:center;justify-content:space-between;">
+                      <span>▲ Long conditions (${span.id})</span>
+                      <span style="font-size:9px;font-weight:700;color:#15803d;">BUY / LONG</span>
+                    </div>
+                    ${entryRowsHtml}
+                  </div>
+                  <div class="msSpanShortCol" data-span="${span.id}" data-kind="exit" style="padding:4px 8px;">
+                    <div style="font-size:10px;font-weight:800;color:#991b1b;padding:2px 4px;margin-bottom:2px;background:#fef2f2;border-radius:3px;display:flex;align-items:center;justify-content:space-between;">
+                      <span>▼ Short conditions (${span.id})</span>
+                      <span style="font-size:9px;font-weight:700;color:#b91c1c;">SELL / SHORT</span>
+                    </div>
+                    ${exitRowsHtml}
+                  </div>
+                </div>
               </div>
-              ${rowsHtml}
-            </div>
-          `;
-        }).join("");
-      };
-      updateConditionGroupDom(entryConditions, "entry");
-      updateConditionGroupDom(exitConditions, "exit");
+            `;
+          }).join("");
+        }
+      } else if (entryConditions && exitConditions) {
+        const updateConditionGroupDom = (container, kind) => {
+          const rulesMap = kind === "entry" ? entryRulesMap : exitRulesMap;
+          const existingRows = typeof container.querySelectorAll === "function"
+            ? [...container.querySelectorAll(".condRow[data-span][data-rule]")]
+            : [];
+          if (existingRows.length === SPANS.length * MACD_RULES.length) {
+            const spanById = new Map(SPANS.map((s) => [s.id, s]));
+            const ruleById = new Map(MACD_RULES.map((r) => [r.id, r]));
+            existingRows.forEach((row) => {
+              const span = spanById.get(row.getAttribute("data-span"));
+              const rule = ruleById.get(row.getAttribute("data-rule"));
+              if (!span || !rule) return;
+              applyRowStateToDom(row, computeRowState(span, rule, kind, rulesMap));
+            });
+            return;
+          }
+          container.innerHTML = SPANS.map((span) => {
+            const rowsHtml = MACD_RULES.map((rule) =>
+              renderRowHtml(span, rule, kind, computeRowState(span, rule, kind, rulesMap))
+            ).join("");
+            return `
+              <div class="msSpanSection" style="margin-bottom:8px;">
+                <div style="font-weight:800;font-size:10px;color:${span.color};padding:3px 6px;background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;margin-top:4px;display:flex;align-items:center;justify-content:space-between;border-radius:4px;">
+                  <span>● ${span.id} · ${span.label}</span>
+                  <button type="button" class="msSpanToggleAllBtn" data-span="${span.id}" data-kind="${kind}" style="border:1px solid #cbd5e1;background:#fff;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#334155;">Toggle ${span.id}</button>
+                </div>
+                ${rowsHtml}
+              </div>
+            `;
+          }).join("");
+        };
+        updateConditionGroupDom(entryConditions, "entry");
+        updateConditionGroupDom(exitConditions, "exit");
+      }
       this.strategyExecutionFrame?.setStatus(frameStatus);
       this.strategyExecutionFrame?.setSync(latest?.decision_time
         ? `${settings.clock_span} completed ${formatKst(latest.decision_time)} · loaded history`
