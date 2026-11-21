@@ -21,6 +21,10 @@ assert.match(strategyBody, /id="msStrategyEntryConditions"/);
 assert.match(strategyBody, /id="msStrategyExitConditions"/);
 assert.match(strategyBody, /class="msStrategySpanToggle"/,
   "every visible timeframe rule must remain a real adjustable replay control");
+assert.match(strategyBody, /class="condRow[^"]*"[\s\S]*?class="toggleSwitch"[\s\S]*?class="msStrategySpanToggle"/,
+  "every condition row must contain an inline toggle switch matching other tabs");
+assert.doesNotMatch(strategyBody, /id="msStrategySpanToggles"/,
+  "detached timeframe toggle bar must be replaced by inline condition row switches");
 assert.doesNotMatch(strategyBody, /id="msStrategyConditions"/,
   "the obsolete combined condition-card layout must not return");
 

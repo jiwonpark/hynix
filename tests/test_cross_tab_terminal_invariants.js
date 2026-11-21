@@ -27,6 +27,10 @@ assert.match(multiSpan, /Frame\.mount\(\{[\s\S]*?showHost: false/,
   "Multi-Chart replay must reuse the shared execution frame instead of a tab-local shell");
 assert.match(multiSpan, /class="terminalConditionGroup"[\s\S]*?Entry conditions[\s\S]*?class="terminalConditionGroup"[\s\S]*?Exit conditions/,
   "Multi-Chart must share the Entry and Exit condition layout used by the single-leg terminals");
+assert.match(multiSpan, /class="condRow[^"]*"[\s\S]*?class="toggleSwitch"[\s\S]*?class="msStrategySpanToggle"/,
+  "Multi-Chart condition rows must contain inline toggleSwitch controls like in other tabs");
+assert.doesNotMatch(multiSpan, /id="msStrategySpanToggles"/,
+  "Multi-Chart must not use a detached toggle container outside condition rows");
 for (const [name, source] of [["Tab 3", lighter], ["Tab 4", crypto], ["Tab 5", lighterCrypto]]) {
   assert.match(source, /TerminalCommon\?\.syncLiveToggleAvailability\?\./,
     `${name} must use the shared backend-authoritative Full-Auto availability contract`);

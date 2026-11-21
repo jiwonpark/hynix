@@ -540,16 +540,6 @@
             <input id="msStrategyFeeBps" type="number" value="5" min="0" max="1000" step="0.1" style="width:58px;"> bps/side
           </label>
         </div>
-        <div id="msStrategySpanToggles" class="strategyReplaySetup" aria-label="Enabled MACD histogram conditions" style="margin-top:var(--terminal-space-min);">
-          <strong style="color:#475569;">Enabled timeframe rules</strong>
-          ${SPANS.map((s) => `<label style="color:${s.color};">
-            <span class="toggleSwitch">
-              <input class="msStrategySpanToggle" data-span="${s.id}" aria-label="Use ${s.id} MACD histogram for paper entry and exit" type="checkbox"${["5m", "15m"].includes(s.id) ? " checked" : ""}>
-              <span class="toggleSlider"></span>
-            </span>
-            ${s.id} MACD-H
-          </label>`).join("")}
-        </div>
         <div id="msStrategySummary" class="executionChartSecondaryStatus" style="height:auto;min-height:0;white-space:normal;margin:var(--terminal-space-min) 0 0;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">Awaiting completed chart data…</div>
         <div id="msStrategyConditionGroups" class="terminalConditionGroups" aria-label="Paper replay trading conditions">
           <section class="terminalConditionGroup" aria-labelledby="msStrategyEntryHeading">
@@ -558,7 +548,19 @@
             <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#166534;">BUY when every enabled H &lt;
               <input id="msStrategyBuyThreshold" aria-label="Paper buy MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #86efac;border-radius:4px;padding:3px 5px;font-weight:800;">
             </label>
-            <div id="msStrategyEntryConditions" class="condChecklist" aria-live="polite"></div>
+            <div id="msStrategyEntryConditions" class="condChecklist" aria-live="polite">
+              ${SPANS.map((s) => `
+                <div class="condRow${["5m", "15m"].includes(s.id) ? "" : " disabled-cond"}">
+                  <label class="toggleSwitch" title="Turn ${s.id} MACD-H rule ON/OFF">
+                    <input class="msStrategySpanToggle" data-span="${s.id}" data-kind="entry" aria-label="Use ${s.id} MACD histogram for paper entry" type="checkbox"${["5m", "15m"].includes(s.id) ? " checked" : ""}>
+                    <span class="toggleSlider"></span>
+                  </label>
+                  <span class="condLabel"><strong style="color:${s.color};">${s.id} MACD-H &lt; 0</strong><small style="display:block;color:#64748b;">PAPER · awaiting data</small></span>
+                  <span class="condValue"><strong style="color:#64748b;">—</strong></span>
+                  <span class="condBadge ${["5m", "15m"].includes(s.id) ? "wait" : "neutral"}">${["5m", "15m"].includes(s.id) ? "WAITING" : "OFF"}</span>
+                </div>
+              `).join("")}
+            </div>
           </section>
           <section class="terminalConditionGroup" aria-labelledby="msStrategyExitHeading">
             <h3 id="msStrategyExitHeading" class="terminalConditionGroupTitle">Exit conditions</h3>
@@ -566,7 +568,19 @@
             <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#991b1b;">SELL when every enabled H &gt;
               <input id="msStrategySellThreshold" aria-label="Paper sell MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #fca5a5;border-radius:4px;padding:3px 5px;font-weight:800;">
             </label>
-            <div id="msStrategyExitConditions" class="condChecklist" aria-live="polite"></div>
+            <div id="msStrategyExitConditions" class="condChecklist" aria-live="polite">
+              ${SPANS.map((s) => `
+                <div class="condRow${["5m", "15m"].includes(s.id) ? "" : " disabled-cond"}">
+                  <label class="toggleSwitch" title="Turn ${s.id} MACD-H rule ON/OFF">
+                    <input class="msStrategySpanToggle" data-span="${s.id}" data-kind="exit" aria-label="Use ${s.id} MACD histogram for paper exit" type="checkbox"${["5m", "15m"].includes(s.id) ? " checked" : ""}>
+                    <span class="toggleSlider"></span>
+                  </label>
+                  <span class="condLabel"><strong style="color:${s.color};">${s.id} MACD-H &gt; 0</strong><small style="display:block;color:#64748b;">PAPER · awaiting data</small></span>
+                  <span class="condValue"><strong style="color:#64748b;">—</strong></span>
+                  <span class="condBadge ${["5m", "15m"].includes(s.id) ? "wait" : "neutral"}">${["5m", "15m"].includes(s.id) ? "WAITING" : "OFF"}</span>
+                </div>
+              `).join("")}
+            </div>
           </section>
         </div>
         <small id="msStrategySource" style="display:block;color:#64748b;">Source: completed Binance candles · MACD-H(12,26,9) · loaded chart history only</small>
@@ -3067,9 +3081,14 @@
       if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
         const toggles = [...document.querySelectorAll(".msStrategySpanToggle")];
         if (toggles.length) {
-          enabledSpans = toggles
-            .filter((input) => input.checked && validSpans.has(input.getAttribute("data-span")))
-            .map((input) => input.getAttribute("data-span"));
+          const checkedSet = new Set();
+          toggles.forEach((input) => {
+            const spanId = input.getAttribute("data-span");
+            if (input.checked && validSpans.has(spanId)) {
+              checkedSet.add(spanId);
+            }
+          });
+          enabledSpans = Array.from(checkedSet);
         }
       }
       return {
@@ -3632,17 +3651,24 @@
         const threshold = isEntry ? Number(settings.buy_threshold) : Number(settings.sell_threshold);
         const operator = isEntry ? "<" : ">";
         const action = isEntry ? "BUY" : "SELL";
-        if (!enabled.has(span.id)) {
-          return `<div class="condRow disabled-cond"><span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;">PAPER · timeframe rule disabled</small></span><span class="condValue"><span class="condBadge neutral">OFF</span></span></div>`;
+        const isEnabled = enabled.has(span.id);
+        const switchHtml = `
+          <label class="toggleSwitch" title="Turn ${span.id} MACD-H rule ON/OFF">
+            <input class="msStrategySpanToggle" data-span="${span.id}" data-kind="${kind}" aria-label="Use ${span.id} MACD histogram for paper ${isEntry ? "entry" : "exit"}" type="checkbox"${isEnabled ? " checked" : ""}>
+            <span class="toggleSlider"></span>
+          </label>
+        `;
+        if (!isEnabled) {
+          return `<div class="condRow disabled-cond">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;color:#64748b;">PAPER · timeframe rule disabled</small></span><span class="condValue"><strong style="color:#64748b;">—</strong></span><span class="condBadge neutral">OFF</span></div>`;
         }
         const point = latest?.histograms?.[span.id];
         if (!point) {
-          return `<div class="condRow"><span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;color:#64748b;">PAPER · completed source unavailable</small></span><span class="condValue"><span class="condBadge neutral">UNAVAILABLE</span></span></div>`;
+          return `<div class="condRow">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;color:#64748b;">PAPER · completed source unavailable</small></span><span class="condValue"><strong style="color:#64748b;">—</strong></span><span class="condBadge neutral">UNAVAILABLE</span></div>`;
         }
         const pass = isEntry ? point.value < threshold : point.value > threshold;
         const measured = `${point.value >= 0 ? "+" : ""}${point.value.toFixed(4)}`;
         const badgeTitle = `${action} ${pass ? "passes" : "waits"}: ${span.id} H ${measured} ${operator} ${threshold}`;
-        return `<div class="condRow"><span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;color:#64748b;">PAPER · H ${measured} · ${formatKst(point.completed_time)} completed</small></span><span class="condValue"><span class="condBadge ${pass ? "pass" : "wait"}" title="${badgeTitle}">${pass ? "PASS" : "WAITING"}</span></span></div>`;
+        return `<div class="condRow">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;color:#64748b;">PAPER · H ${measured} · ${formatKst(point.completed_time)} completed</small></span><span class="condValue"><strong style="color:${pass ? "#16a34a" : "#64748b"};">${measured}</strong></span><span class="condBadge ${pass ? "pass" : "wait"}" title="${badgeTitle}">${pass ? "PASS" : "WAITING"}</span></div>`;
       };
       entryConditions.innerHTML = SPANS.map((span) => conditionRow(span, "entry")).join("");
       exitConditions.innerHTML = SPANS.map((span) => conditionRow(span, "exit")).join("");
@@ -3830,9 +3856,20 @@
         const control = document.getElementById(id);
         if (control) control.addEventListener("change", runStrategy);
       });
-      document.querySelectorAll(".msStrategySpanToggle").forEach((input) => {
-        input.addEventListener("change", runStrategy);
-      });
+      const condGroups = document.getElementById("msStrategyConditionGroups");
+      if (condGroups) {
+        condGroups.addEventListener("change", (e) => {
+          const toggle = e.target.closest(".msStrategySpanToggle");
+          if (!toggle) return;
+          const spanId = toggle.getAttribute("data-span");
+          const isChecked = toggle.checked;
+          // Synchronize switches matching this timeframe (both Entry and Exit)
+          document.querySelectorAll(`.msStrategySpanToggle[data-span="${spanId}"]`).forEach((input) => {
+            input.checked = isChecked;
+          });
+          runStrategy();
+        });
+      }
 
       // Symbol buttons
       const symBtns = document.querySelectorAll(".msSymBtn");
