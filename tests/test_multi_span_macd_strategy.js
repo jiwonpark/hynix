@@ -114,4 +114,72 @@ assert.equal(visualMarkers.filter((marker) => marker.is_exit && marker.is_fill).
 assert.equal(visualMarkers.filter((marker) => marker.pairKey === "paper:0").length, 2,
   "the filled entry and exit must share a pair for hover/selection P&L rendering");
 
+// Test MACD_RULES definition and legend/DOM elements
+assert.ok(Array.isArray(engine.MACD_RULES), "engine.MACD_RULES must be an array");
+assert.equal(engine.MACD_RULES.length, 5, "engine.MACD_RULES must contain 5 indicator definitions");
+const ruleIds = engine.MACD_RULES.map((r) => r.id);
+assert.deepEqual(ruleIds, ["macd_h", "macd_s", "macd_s_diff", "macd_s_diff2", "macd_h_diff"],
+  "must support macd_h, macd_s, macd_s_diff, macd_s_diff2, and macd_h_diff");
+
+for (const span of spans) {
+  for (const rule of engine.MACD_RULES) {
+    assert.match(strategyBody, new RegExp(`data-span="${span}"[^>]*data-rule="${rule.id}"[^>]*data-kind="entry"`),
+      `must render entry row for ${span} ${rule.id}`);
+    assert.match(strategyBody, new RegExp(`data-span="${span}"[^>]*data-rule="${rule.id}"[^>]*data-kind="exit"`),
+      `must render exit row for ${span} ${rule.id}`);
+  }
+}
+
+// Test calculateMacd difference metrics
+const testCandles = [];
+for (let i = 0; i < 40; i++) {
+  testCandles.push({ time: i * 60, close: 100 + Math.sin(i / 3) * 5 });
+}
+const macdCalc = engine.calculateMacd(testCandles, 12, 26, 9);
+assert.ok(macdCalc.signal.length > 2, "must compute signal line");
+assert.ok(macdCalc.signal[1].diff !== null, "signal line must have diff (1st diff)");
+assert.ok(macdCalc.signal[2].diff2 !== null, "signal line must have diff2 (2nd diff)");
+assert.ok(macdCalc.histogram[1].diff !== null, "histogram must have diff");
+
+// Test evaluateMacdStrategyReplay with explicit S, S-diff, S-2nd-diff, and H-diff rules
+const richPoints = [
+  { time: 0, histogram: -1, hist_diff: -0.5, signal: -2, signal_diff: 0.1, signal_diff2: 0.05 },
+  { time: DAY, histogram: -0.5, hist_diff: 0.5, signal: -1.8, signal_diff: 0.2, signal_diff2: 0.1 },
+  { time: DAY * 2, histogram: 1, hist_diff: 1.5, signal: 0.5, signal_diff: -0.1, signal_diff2: -0.05 },
+];
+engine.macdData = Object.fromEntries(spans.map((span) => [span, {
+  histogram: richPoints.map((p) => ({ time: p.time, value: p.histogram })),
+  byTime: new Map(richPoints.map((p) => [p.time, { ...p, value: p.histogram }])),
+}]));
+
+const fullWaveSettings = {
+  clock_span: "1d",
+  entry_rules: [
+    { span: "1d", rule: "macd_h", sign: "-" },
+    { span: "1d", rule: "macd_s", sign: "-" },
+    { span: "1d", rule: "macd_s_diff", sign: "+" },
+    { span: "1d", rule: "macd_s_diff2", sign: "+" },
+    { span: "1d", rule: "macd_h_diff", sign: "+" },
+  ],
+  exit_rules: [
+    { span: "1d", rule: "macd_h", sign: "+" },
+    { span: "1d", rule: "macd_s", sign: "+" },
+    { span: "1d", rule: "macd_s_diff", sign: "-" },
+    { span: "1d", rule: "macd_s_diff2", sign: "-" },
+    { span: "1d", rule: "macd_h_diff", sign: "+" },
+  ],
+  buy_threshold: 0,
+  sell_threshold: 0,
+  initial_capital: 10000,
+  fee_bps: 5,
+};
+
+const fullWaveResult = engine.evaluateMacdStrategyReplay(fullWaveSettings, DAY * 4);
+assert.equal(fullWaveResult.error, null);
+assert.equal(fullWaveResult.entry_signals.length, 1, "only candle 1 (DAY) satisfies all 5 entry conditions");
+assert.equal(fullWaveResult.entry_signals[0].time, DAY);
+assert.equal(fullWaveResult.exit_signals.length, 1, "candle 2 (DAY*2) satisfies exit conditions");
+assert.equal(fullWaveResult.trades.length, 1, "1 closed trade completed");
+assert.ok(fullWaveResult.trades[0].pnl > 0, "trade was profitable");
+
 console.log("Multi-span all-MACD-H completed-candle paper strategy tests passed");

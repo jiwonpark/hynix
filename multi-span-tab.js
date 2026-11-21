@@ -18,6 +18,14 @@
     { id: "1d", label: "1-DAY", sub: "Macro Daily Context", color: "#db2777", defaultLimit: 365, sec: 86400 },
   ];
 
+  const MACD_RULES = [
+    { id: "macd_h", label: "MACD-H", title: "MACD-H", key: "histogram", defaultEntrySign: "-", defaultExitSign: "+", desc: "Histogram zone" },
+    { id: "macd_s", label: "MACD-S", title: "MACD-S", key: "signal", defaultEntrySign: "-", defaultExitSign: "+", desc: "Signal line zone" },
+    { id: "macd_s_diff", label: "MACD-S diff", title: "MACD-S Δ", key: "signal_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "Signal 1st difference (slope)" },
+    { id: "macd_s_diff2", label: "MACD-S 2nd diff", title: "MACD-S Δ²", key: "signal_diff2", defaultEntrySign: "+", defaultExitSign: "-", desc: "Signal 2nd difference (accel)" },
+    { id: "macd_h_diff", label: "MACD-H diff", title: "MACD-H Δ", key: "hist_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "Histogram 1st difference (momentum turn)" },
+  ];
+
   // Upper bound for full-range finer-chart loading; wider spans (e.g. 1d -> 1s = 86,400 bars)
   // load a focused readable slice instead of truncating blindly and zooming to <0.1px/bar.
   const MAX_FULL_DRILLDOWN_BARS = 4000;
@@ -495,12 +503,15 @@
                 <div id="msTradeMarkerHover_${s.id}" role="status" aria-live="polite" style="display:none;position:absolute;z-index:8;top:8px;left:12px;max-width:min(420px,calc(100% - 24px));padding:6px 10px;border-radius:6px;border:1px solid #cbd5e1;background:rgba(255,255,255,.97);box-shadow:0 2px 8px rgba(15,23,42,.12);font-size:11px;font-weight:800;line-height:1.35;color:#0f172a;pointer-events:none;white-space:normal;"></div>
               </div>
               <!-- MACD Sub-pane -->
-              <div class="msMacdHeader" style="background:#f8fafc;padding:3px 12px;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;font-size:10px;line-height:1.4;">
+              <div class="msMacdHeader" style="background:#f8fafc;padding:3px 12px;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;font-size:10px;line-height:1.4;flex-wrap:wrap;gap:4px;">
                 <span style="font-weight:700;color:#64748b;">MACD (12, 26, 9)</span>
-                <div id="msMacdLegend_${s.id}" style="display:flex;gap:8px;font-family:monospace;font-size:10px;">
+                <div id="msMacdLegend_${s.id}" style="display:flex;gap:6px 10px;font-family:monospace;font-size:10px;flex-wrap:wrap;align-items:center;">
                   <span style="color:#0284c7;font-weight:600;">MACD: <span id="msMacdVal_${s.id}">--</span></span>
                   <span style="color:#ea580c;font-weight:600;">SIG: <span id="msSigVal_${s.id}">--</span></span>
+                  <span style="color:#475569;font-weight:600;">ΔS: <span id="msSigDiffVal_${s.id}">--</span></span>
+                  <span style="color:#475569;font-weight:600;">Δ²S: <span id="msSigDiff2Val_${s.id}">--</span></span>
                   <span style="color:#475569;font-weight:600;">HIST: <span id="msHistVal_${s.id}">--</span></span>
+                  <span style="color:#475569;font-weight:600;">ΔH: <span id="msHistDiffVal_${s.id}">--</span></span>
                 </div>
               </div>
               <div id="msMacdHost_${s.id}" class="msMacdHost" style="width:100%;height:90px;position:relative;">
@@ -521,11 +532,13 @@
             <span>PRESET</span>
             <button type="button" id="msStrategyPresetQuick" class="isActive" aria-pressed="true" title="Use the 5-minute signal clock with 5m and 15m histogram rules">Quick 5m+15m</button>
             <button type="button" id="msStrategyPresetAll" aria-pressed="false" title="Require all five MACD histograms on the 1-second signal clock">All 5 strict</button>
+            <button type="button" id="msStrategyPresetFullWave" aria-pressed="false" title="Enable all 5 MACD indicators across 5m and 15m">5m+15m Full Wave</button>
+            <button type="button" id="msStrategyPresetAllFullWave" aria-pressed="false" title="Enable all 5 MACD indicators across all 5 timeframes">All 5 Full Wave</button>
           </div>
-          <strong style="font-size:12px;color:#0f172a;">Simple all-enabled-MACD-H strategy test</strong>
+          <strong style="font-size:12px;color:#0f172a;">Multi-Span MACD Dynamics Strategy Test</strong>
           <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;">PAPER REPLAY ONLY</span>
         </div>
-        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">BUY matches on every completed signal-clock candle when every enabled MACD histogram is below the buy level. SELL exits a simulated long when every enabled histogram is above the sell level. Quick uses 5m+15m so the loaded overlap contains inspectable trades; All 5 strict applies the exact five-chart rule. No orders are sent.</small>
+        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">BUY and SELL match when all enabled rules across configured timeframes pass on completed signal-clock candles. Toggle individual rules (MACD-H, MACD-S, ΔS, Δ²S, ΔH) and toggle sign (+/-) on any row. Quick uses 5m+15m MACD-H; Full Wave enables all 5 MACD dynamics. No orders are sent.</small>
         <div class="strategyReplaySetup" aria-label="Paper replay setup">
           <strong style="color:#475569;">Replay setup</strong>
           <label>Signal clock
@@ -545,19 +558,38 @@
           <section class="terminalConditionGroup" aria-labelledby="msStrategyEntryHeading">
             <h3 id="msStrategyEntryHeading" class="terminalConditionGroupTitle">Entry conditions</h3>
             <small class="terminalConditionGroupNote">Every enabled rule must pass on the same completed signal-clock candle. Entry signals remain independent of simulated position state.</small>
-            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#166534;">BUY when every enabled H &lt;
+            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#166534;">BUY when enabled H &lt;
               <input id="msStrategyBuyThreshold" aria-label="Paper buy MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #86efac;border-radius:4px;padding:3px 5px;font-weight:800;">
             </label>
-            <div id="msStrategyEntryConditions" class="condChecklist" aria-live="polite">
+            <div id="msStrategyEntryConditions" class="condChecklist" aria-live="polite" style="max-height:420px;overflow-y:auto;padding-right:4px;">
               ${SPANS.map((s) => `
-                <div class="condRow${["5m", "15m"].includes(s.id) ? "" : " disabled-cond"}">
-                  <label class="toggleSwitch" title="Turn ${s.id} MACD-H rule ON/OFF">
-                    <input class="msStrategySpanToggle" data-span="${s.id}" data-kind="entry" aria-label="Use ${s.id} MACD histogram for paper entry" type="checkbox"${["5m", "15m"].includes(s.id) ? " checked" : ""}>
-                    <span class="toggleSlider"></span>
-                  </label>
-                  <span class="condLabel"><strong style="color:${s.color};">${s.id} MACD-H &lt; 0</strong><small style="display:block;color:#64748b;">PAPER · awaiting data</small></span>
-                  <span class="condValue"><strong style="color:#64748b;">—</strong></span>
-                  <span class="condBadge ${["5m", "15m"].includes(s.id) ? "wait" : "neutral"}">${["5m", "15m"].includes(s.id) ? "WAITING" : "OFF"}</span>
+                <div class="msSpanSection" style="margin-bottom:8px;">
+                  <div style="font-weight:800;font-size:10px;color:${s.color};padding:3px 6px;background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;margin-top:4px;display:flex;align-items:center;justify-content:space-between;border-radius:4px;">
+                    <span>● ${s.id} · ${s.label}</span>
+                    <button type="button" class="msSpanToggleAllBtn" data-span="${s.id}" data-kind="entry" style="border:1px solid #cbd5e1;background:#fff;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#334155;">Toggle ${s.id}</button>
+                  </div>
+                  ${MACD_RULES.map((rule) => {
+                    const isDefault = ["5m", "15m"].includes(s.id) && rule.id === "macd_h";
+                    const sign = rule.defaultEntrySign;
+                    const op = sign === "+" ? ">" : "<";
+                    return `
+                      <div class="condRow${isDefault ? "" : " disabled-cond"}" data-span="${s.id}" data-rule="${rule.id}" data-kind="entry">
+                        <label class="toggleSwitch" title="Turn ${s.id} ${rule.label} rule ON/OFF">
+                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="entry" aria-label="Use ${s.id} ${rule.label} for paper entry" type="checkbox"${isDefault ? " checked" : ""}>
+                          <span class="toggleSlider"></span>
+                        </label>
+                        <span class="condLabel">
+                          <strong style="color:${s.color};">${s.id} ${rule.label} ${op} 0</strong>
+                          <button type="button" class="condSignToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="entry" data-sign="${sign}" title="Click to toggle condition between + (>0) and - (<0)" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${sign === '+' ? '#166534' : '#991b1b'};">
+                            ${sign === "+" ? "+ (>0)" : "− (<0)"}
+                          </button>
+                          <small style="display:block;color:#64748b;">PAPER · awaiting data</small>
+                        </span>
+                        <span class="condValue"><strong style="color:#64748b;">—</strong></span>
+                        <span class="condBadge ${isDefault ? "wait" : "neutral"}">${isDefault ? "WAITING" : "OFF"}</span>
+                      </div>
+                    `;
+                  }).join("")}
                 </div>
               `).join("")}
             </div>
@@ -565,19 +597,38 @@
           <section class="terminalConditionGroup" aria-labelledby="msStrategyExitHeading">
             <h3 id="msStrategyExitHeading" class="terminalConditionGroupTitle">Exit conditions</h3>
             <small class="terminalConditionGroupNote">Every enabled rule is evaluated on completed candles. A passing SELL setup closes the simulated long when one is open.</small>
-            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#991b1b;">SELL when every enabled H &gt;
+            <label style="display:flex;flex-direction:row;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#991b1b;">SELL when enabled H &gt;
               <input id="msStrategySellThreshold" aria-label="Paper sell MACD histogram threshold" type="number" value="0" step="0.0001" style="width:78px;border:1px solid #fca5a5;border-radius:4px;padding:3px 5px;font-weight:800;">
             </label>
-            <div id="msStrategyExitConditions" class="condChecklist" aria-live="polite">
+            <div id="msStrategyExitConditions" class="condChecklist" aria-live="polite" style="max-height:420px;overflow-y:auto;padding-right:4px;">
               ${SPANS.map((s) => `
-                <div class="condRow${["5m", "15m"].includes(s.id) ? "" : " disabled-cond"}">
-                  <label class="toggleSwitch" title="Turn ${s.id} MACD-H rule ON/OFF">
-                    <input class="msStrategySpanToggle" data-span="${s.id}" data-kind="exit" aria-label="Use ${s.id} MACD histogram for paper exit" type="checkbox"${["5m", "15m"].includes(s.id) ? " checked" : ""}>
-                    <span class="toggleSlider"></span>
-                  </label>
-                  <span class="condLabel"><strong style="color:${s.color};">${s.id} MACD-H &gt; 0</strong><small style="display:block;color:#64748b;">PAPER · awaiting data</small></span>
-                  <span class="condValue"><strong style="color:#64748b;">—</strong></span>
-                  <span class="condBadge ${["5m", "15m"].includes(s.id) ? "wait" : "neutral"}">${["5m", "15m"].includes(s.id) ? "WAITING" : "OFF"}</span>
+                <div class="msSpanSection" style="margin-bottom:8px;">
+                  <div style="font-weight:800;font-size:10px;color:${s.color};padding:3px 6px;background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;margin-top:4px;display:flex;align-items:center;justify-content:space-between;border-radius:4px;">
+                    <span>● ${s.id} · ${s.label}</span>
+                    <button type="button" class="msSpanToggleAllBtn" data-span="${s.id}" data-kind="exit" style="border:1px solid #cbd5e1;background:#fff;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#334155;">Toggle ${s.id}</button>
+                  </div>
+                  ${MACD_RULES.map((rule) => {
+                    const isDefault = ["5m", "15m"].includes(s.id) && rule.id === "macd_h";
+                    const sign = rule.defaultExitSign;
+                    const op = sign === "+" ? ">" : "<";
+                    return `
+                      <div class="condRow${isDefault ? "" : " disabled-cond"}" data-span="${s.id}" data-rule="${rule.id}" data-kind="exit">
+                        <label class="toggleSwitch" title="Turn ${s.id} ${rule.label} rule ON/OFF">
+                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="exit" aria-label="Use ${s.id} ${rule.label} for paper exit" type="checkbox"${isDefault ? " checked" : ""}>
+                          <span class="toggleSlider"></span>
+                        </label>
+                        <span class="condLabel">
+                          <strong style="color:${s.color};">${s.id} ${rule.label} ${op} 0</strong>
+                          <button type="button" class="condSignToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="exit" data-sign="${sign}" title="Click to toggle condition between + (>0) and - (<0)" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${sign === '+' ? '#166534' : '#991b1b'};">
+                            ${sign === "+" ? "+ (>0)" : "− (<0)"}
+                          </button>
+                          <small style="display:block;color:#64748b;">PAPER · awaiting data</small>
+                        </span>
+                        <span class="condValue"><strong style="color:#64748b;">—</strong></span>
+                        <span class="condBadge ${isDefault ? "wait" : "neutral"}">${isDefault ? "WAITING" : "OFF"}</span>
+                      </div>
+                    `;
+                  }).join("")}
                 </div>
               `).join("")}
             </div>
@@ -1463,7 +1514,7 @@
 
       const macdPoint = this.findMacdAtOrBefore(spanId, targetTime);
       if (macdPoint) {
-        this.updateMacdLegend(spanId, macdPoint.macd, macdPoint.signal, macdPoint.hist ?? macdPoint.histogram);
+        this.updateMacdLegend(spanId, macdPoint.macd, macdPoint.signal, macdPoint.hist ?? macdPoint.histogram, macdPoint.signal_diff, macdPoint.signal_diff2, macdPoint.hist_diff);
       } else {
         this.updateMacdLegend(spanId, null, null, null);
       }
@@ -1536,7 +1587,8 @@
             const lastS = sigList.length ? sigList[sigList.length - 1] : null;
             const histList = this.macdData[sourceSpan]?.histogram || [];
             const lastH = histList.length ? histList[histList.length - 1] : null;
-            this.updateMacdLegend(sourceSpan, lastM?.value, lastS?.value, lastH?.value);
+            const lastPt = this.findMacdAtOrBefore(sourceSpan, latest.time);
+            this.updateMacdLegend(sourceSpan, lastPt?.macd ?? lastM?.value, lastPt?.signal ?? lastS?.value, lastPt?.hist ?? lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff);
           }
         }
         return;
@@ -1555,7 +1607,7 @@
 
       const hoveredMacd = this.findMacdAtOrBefore(sourceSpan, param.time);
       if (hoveredMacd) {
-        this.updateMacdLegend(sourceSpan, hoveredMacd.macd, hoveredMacd.signal, hoveredMacd.hist ?? hoveredMacd.histogram);
+        this.updateMacdLegend(sourceSpan, hoveredMacd.macd, hoveredMacd.signal, hoveredMacd.hist ?? hoveredMacd.histogram, hoveredMacd.signal_diff, hoveredMacd.signal_diff2, hoveredMacd.hist_diff);
       }
 
       // Synchronize vertical crosshair line between price chart and MACD chart within this card
@@ -2817,16 +2869,22 @@
       if (!Array.isArray(candles) || candles.length < 34) return null;
 
       const macdRes = this.calculateMacd(candles, 12, 26, 9);
-      const sigByTime = new Map(macdRes.signal.map((p) => [p.time, p.value]));
-      const histByTime = new Map(macdRes.histogram.map((p) => [p.time, p.value]));
+      const sigByTime = new Map(macdRes.signal.map((p) => [p.time, p]));
+      const histByTime = new Map(macdRes.histogram.map((p) => [p.time, p]));
       const byTime = new Map();
       for (const m of macdRes.macd) {
-        const hVal = histByTime.get(m.time) ?? null;
+        const sPoint = sigByTime.get(m.time);
+        const hPoint = histByTime.get(m.time);
+        const hVal = hPoint ? hPoint.value : null;
         byTime.set(m.time, {
+          time: m.time,
           macd: m.value,
-          signal: sigByTime.get(m.time) ?? null,
+          signal: sPoint ? sPoint.value : null,
+          signal_diff: sPoint ? (sPoint.diff ?? null) : null,
+          signal_diff2: sPoint ? (sPoint.diff2 ?? null) : null,
           hist: hVal,
           histogram: hVal,
+          hist_diff: hPoint ? (hPoint.diff ?? null) : null,
         });
       }
       this.macdData[spanId] = { ...macdRes, byTime };
@@ -2835,6 +2893,7 @@
       const lastS = macdRes.signal[macdRes.signal.length - 1];
       const lastH = macdRes.histogram[macdRes.histogram.length - 1];
       const latestTime = candles[candles.length - 1].time;
+      const lastPt = byTime.get(latestTime) || byTime.get(lastM?.time);
 
       if (updateLatestOnly) {
         if (this.macdHist[spanId] && lastH) this.macdHist[spanId].update(lastH);
@@ -2842,7 +2901,7 @@
         if (this.macdSignal[spanId] && lastS) this.macdSignal[spanId].update(lastS);
         if (this.macdZero[spanId]) this.macdZero[spanId].update({ time: latestTime, value: 0 });
         if (this.pinnedTime === null) {
-          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value);
+          this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff);
         }
       } else {
         if (this.macdCharts[spanId] || this.macdHist[spanId] || this.macdLine[spanId] || this.macdSignal[spanId] || this.macdZero[spanId]) {
@@ -2853,7 +2912,7 @@
             this.macdZero[spanId].setData(candles.map((c) => ({ time: c.time, value: 0 })));
           }
           if (macdRes.macd.length && this.pinnedTime === null) {
-            this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value);
+            this.updateMacdLegend(spanId, lastM?.value, lastS?.value, lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff);
           }
         }
       }
@@ -3049,18 +3108,35 @@
         signalLine.push({ time: macdLine[i].time, value: +sigEma.toFixed(4) });
       }
 
-      const sigMap = new Map(signalLine.map((p) => [p.time, p.value]));
+      for (let i = 0; i < signalLine.length; i++) {
+        const curr = signalLine[i].value;
+        const prev = i >= 1 ? signalLine[i - 1].value : null;
+        const prior = i >= 2 ? signalLine[i - 2].value : null;
+        const diff = prev !== null ? +(curr - prev).toFixed(4) : null;
+        const prevDiff = (prev !== null && prior !== null) ? +(prev - prior).toFixed(4) : null;
+        const diff2 = (diff !== null && prevDiff !== null) ? +(diff - prevDiff).toFixed(4) : null;
+        signalLine[i].diff = diff;
+        signalLine[i].diff2 = diff2;
+      }
+
+      const sigMap = new Map(signalLine.map((p) => [p.time, p]));
       const histogram = [];
       for (const p of macdLine) {
-        const sVal = sigMap.get(p.time);
-        if (sVal !== undefined) {
-          const diff = +(p.value - sVal).toFixed(4);
+        const sPoint = sigMap.get(p.time);
+        if (sPoint !== undefined) {
+          const diff = +(p.value - sPoint.value).toFixed(4);
           histogram.push({
             time: p.time,
             value: diff,
             color: diff >= 0 ? "rgba(5, 150, 105, 0.75)" : "rgba(220, 38, 38, 0.75)",
           });
         }
+      }
+
+      for (let i = 0; i < histogram.length; i++) {
+        const curr = histogram[i].value;
+        const prev = i >= 1 ? histogram[i - 1].value : null;
+        histogram[i].diff = prev !== null ? +(curr - prev).toFixed(4) : null;
       }
 
       return { macd: macdLine, signal: signalLine, histogram };
@@ -3077,24 +3153,48 @@
       const clockValue = typeof document !== "undefined"
         ? document.getElementById("msStrategyClock")?.value
         : "5m";
-      let enabledSpans = ["5m", "15m"];
+
+      const entryRules = [];
+      const exitRules = [];
+      const enabledSpansSet = new Set();
+
       if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
         const toggles = [...document.querySelectorAll(".msStrategySpanToggle")];
         if (toggles.length) {
-          const checkedSet = new Set();
           toggles.forEach((input) => {
             const spanId = input.getAttribute("data-span");
+            const ruleId = input.getAttribute("data-rule") || "macd_h";
+            const kind = input.getAttribute("data-kind") || "entry";
+            const row = input.closest(".condRow");
+            const signBtn = row?.querySelector(".condSignToggle");
+            const sign = signBtn?.getAttribute("data-sign")
+              || (kind === "entry"
+                ? (ruleId === "macd_h" || ruleId === "macd_s" ? "-" : "+")
+                : (ruleId === "macd_h" || ruleId === "macd_s" ? "+" : "-"));
             if (input.checked && validSpans.has(spanId)) {
-              checkedSet.add(spanId);
+              enabledSpansSet.add(spanId);
+              const item = { span: spanId, rule: ruleId, sign };
+              if (kind === "entry") entryRules.push(item);
+              else exitRules.push(item);
             }
           });
-          enabledSpans = Array.from(checkedSet);
         }
       }
+
+      if (!entryRules.length && !exitRules.length && enabledSpansSet.size === 0) {
+        ["5m", "15m"].forEach((spanId) => {
+          enabledSpansSet.add(spanId);
+          entryRules.push({ span: spanId, rule: "macd_h", sign: "-" });
+          exitRules.push({ span: spanId, rule: "macd_h", sign: "+" });
+        });
+      }
+
       return {
         strategy_mode: "all_macd_histogram_contrarian",
         clock_span: validSpans.has(clockValue) ? clockValue : "5m",
-        enabled_spans: enabledSpans,
+        enabled_spans: Array.from(enabledSpansSet),
+        entry_rules: entryRules,
+        exit_rules: exitRules,
         buy_threshold: readNumber("msStrategyBuyThreshold", 0, -1e9, 1e9),
         sell_threshold: readNumber("msStrategySellThreshold", 0, -1e9, 1e9),
         initial_capital: readNumber("msStrategyCapital", 10000, 1, 1e12),
@@ -3106,6 +3206,12 @@
       if (name === "all") {
         return { clock_span: "1s", enabled_spans: SPANS.map((span) => span.id) };
       }
+      if (name === "full_wave") {
+        return { clock_span: "5m", enabled_spans: ["5m", "15m"] };
+      }
+      if (name === "all_full_wave") {
+        return { clock_span: "1s", enabled_spans: SPANS.map((span) => span.id) };
+      }
       return { clock_span: "5m", enabled_spans: ["5m", "15m"] };
     }
 
@@ -3113,10 +3219,17 @@
       if (typeof document === "undefined") return null;
       const preset = this.macdStrategyPreset(name);
       const clock = document.getElementById("msStrategyClock");
-      if (clock) clock.value = preset.clock_span;
+      if (clock && preset.clock_span) clock.value = preset.clock_span;
       const enabled = new Set(preset.enabled_spans);
+      const isFullWave = name === "full_wave" || name === "all_full_wave";
       document.querySelectorAll(".msStrategySpanToggle").forEach((input) => {
-        input.checked = enabled.has(input.getAttribute("data-span"));
+        const spanId = input.getAttribute("data-span");
+        const ruleId = input.getAttribute("data-rule") || "macd_h";
+        if (isFullWave) {
+          input.checked = enabled.has(spanId);
+        } else {
+          input.checked = enabled.has(spanId) && ruleId === "macd_h";
+        }
       });
       return this.runMacdStrategyReplay();
     }
@@ -3124,14 +3237,17 @@
     updateMacdStrategyPresetButtons(settings) {
       if (typeof document === "undefined") return;
       const enabled = [...(settings?.enabled_spans || [])].sort().join(",");
+      const hasFullWave = (settings?.entry_rules || []).some((r) => r.rule !== "macd_h");
       const setState = (id, active) => {
         const button = document.getElementById(id);
         if (!button) return;
         button.setAttribute("aria-pressed", active ? "true" : "false");
         button.classList.toggle("isActive", active);
       };
-      setState("msStrategyPresetQuick", settings?.clock_span === "5m" && enabled === "15m,5m");
-      setState("msStrategyPresetAll", settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
+      setState("msStrategyPresetQuick", !hasFullWave && settings?.clock_span === "5m" && enabled === "15m,5m");
+      setState("msStrategyPresetAll", !hasFullWave && settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
+      setState("msStrategyPresetFullWave", hasFullWave && settings?.clock_span === "5m" && enabled === "15m,5m");
+      setState("msStrategyPresetAllFullWave", hasFullWave && settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
     }
 
     findCompletedHistogramAt(spanId, decisionTime) {
@@ -3151,28 +3267,46 @@
         }
       }
       if (!best || !Number.isFinite(Number(best.value))) return null;
+      const byPoint = this.macdData?.[spanId]?.byTime?.get(best.time);
       return {
         time: Number(best.time),
         completed_time: Number(best.time) + spanSec,
         value: Number(best.value),
+        histogram: Number(best.value),
+        hist_diff: byPoint?.hist_diff ?? (best.diff ?? null),
+        signal: byPoint?.signal ?? null,
+        signal_diff: byPoint?.signal_diff ?? null,
+        signal_diff2: byPoint?.signal_diff2 ?? null,
       };
     }
 
     evaluateMacdStrategyReplay(rawSettings = {}, nowSec = Math.floor(Date.now() / 1000)) {
       const validSpanIds = SPANS.map((s) => s.id);
       const clockSpan = validSpanIds.includes(rawSettings.clock_span) ? rawSettings.clock_span : "1s";
-      const enabledSpans = [...new Set(
-        (Array.isArray(rawSettings.enabled_spans) ? rawSettings.enabled_spans : validSpanIds)
-          .filter((spanId) => validSpanIds.includes(spanId))
-      )];
       const buyThreshold = Number.isFinite(Number(rawSettings.buy_threshold)) ? Number(rawSettings.buy_threshold) : 0;
       const sellThreshold = Number.isFinite(Number(rawSettings.sell_threshold)) ? Number(rawSettings.sell_threshold) : 0;
       const initialCapital = Math.max(1, Number(rawSettings.initial_capital) || 10000);
       const feeBps = Math.max(0, Math.min(1000, Number(rawSettings.fee_bps) || 0));
+
+      let entryRules = Array.isArray(rawSettings.entry_rules) ? [...rawSettings.entry_rules] : null;
+      let exitRules = Array.isArray(rawSettings.exit_rules) ? [...rawSettings.exit_rules] : null;
+
+      // Legacy fallback: if entry_rules/exit_rules omitted, derive from enabled_spans (MACD-H contrarian)
+      if (!entryRules || !exitRules) {
+        const rawSpans = Array.isArray(rawSettings.enabled_spans)
+          ? rawSettings.enabled_spans.filter((s) => validSpanIds.includes(s))
+          : validSpanIds;
+        entryRules = rawSpans.map((spanId) => ({ span: spanId, rule: "macd_h", sign: "-" }));
+        exitRules = rawSpans.map((spanId) => ({ span: spanId, rule: "macd_h", sign: "+" }));
+      }
+
+      const activeSpans = [...new Set([...entryRules.map((r) => r.span), ...exitRules.map((r) => r.span)])];
       const settings = {
         strategy_mode: "all_macd_histogram_contrarian",
         clock_span: clockSpan,
-        enabled_spans: enabledSpans,
+        enabled_spans: activeSpans,
+        entry_rules: entryRules,
+        exit_rules: exitRules,
         buy_threshold: buyThreshold,
         sell_threshold: sellThreshold,
         initial_capital: initialCapital,
@@ -3199,7 +3333,7 @@
         },
       });
 
-      if (!enabledSpans.length) return emptyResult("Enable at least one MACD histogram condition.");
+      if (!entryRules.length && !exitRules.length) return emptyResult("Enable at least one MACD condition.");
       if (buyThreshold > sellThreshold) {
         return emptyResult("BUY threshold must be less than or equal to the SELL threshold.");
       }
@@ -3232,7 +3366,7 @@
         const price = Number(candle.close);
         const histograms = {};
         let aligned = true;
-        for (const spanId of enabledSpans) {
+        for (const spanId of activeSpans) {
           const point = this.findCompletedHistogramAt(spanId, decisionTime);
           if (!point) {
             aligned = false;
@@ -3247,14 +3381,36 @@
 
         evaluatedCandles += 1;
         lastEvaluatedPrice = price;
-        const buyPass = enabledSpans.every((spanId) => histograms[spanId].value < buyThreshold);
-        const sellPass = enabledSpans.every((spanId) => histograms[spanId].value > sellThreshold);
+
+        const evalRule = (rule, isEntry) => {
+          const point = histograms[rule.span];
+          if (!point) return false;
+          let val = null;
+          if (rule.rule === "macd_h") val = point.histogram;
+          else if (rule.rule === "macd_s") val = point.signal;
+          else if (rule.rule === "macd_s_diff") val = point.signal_diff;
+          else if (rule.rule === "macd_s_diff2") val = point.signal_diff2;
+          else if (rule.rule === "macd_h_diff") val = point.hist_diff;
+          if (val === null || !Number.isFinite(Number(val))) return false;
+
+          const numVal = Number(val);
+          if (rule.rule === "macd_h") {
+            const thresh = isEntry ? buyThreshold : sellThreshold;
+            return rule.sign === "+" ? numVal > thresh : numVal < thresh;
+          }
+          return rule.sign === "+" ? numVal > 0 : numVal < 0;
+        };
+
+        const buyPass = entryRules.length > 0 && entryRules.every((r) => evalRule(r, true));
+        const sellPass = exitRules.length > 0 && exitRules.every((r) => evalRule(r, false));
         latestEvaluation = {
           time: candleTime,
           decision_time: decisionTime,
           price,
           histograms,
           condition_pass: {
+            entry_pass: buyPass,
+            exit_pass: sellPass,
             entry_all_histograms_below: buyPass,
             exit_all_histograms_above: sellPass,
           },
@@ -3268,7 +3424,7 @@
             price,
             side: 1,
             histograms,
-            source: "all_macd_h",
+            source: "all_macd_rules",
           });
         }
         if (sellPass) {
@@ -3278,7 +3434,7 @@
             price,
             side: -1,
             histograms,
-            source: "all_macd_h",
+            source: "all_macd_rules",
           });
         }
 
@@ -3645,39 +3801,83 @@
         frameStatus = `✓ ${metrics.entry_signal_count || 0} entry signals · ${metrics.simulated_entry_fills || 0} simulated buys · ${metrics.closed_trades || 0} closed trades (${Number(metrics.win_rate_pct || 0).toFixed(1)}% win)`;
       }
 
-      const enabled = new Set(settings.enabled_spans || []);
-      const conditionRow = (span, kind) => {
+      const renderConditionGroup = (kind) => {
         const isEntry = kind === "entry";
-        const threshold = isEntry ? Number(settings.buy_threshold) : Number(settings.sell_threshold);
-        const operator = isEntry ? "<" : ">";
-        const action = isEntry ? "BUY" : "SELL";
-        const isEnabled = enabled.has(span.id);
-        const switchHtml = `
-          <label class="toggleSwitch" title="Turn ${span.id} MACD-H rule ON/OFF">
-            <input class="msStrategySpanToggle" data-span="${span.id}" data-kind="${kind}" aria-label="Use ${span.id} MACD histogram for paper ${isEntry ? "entry" : "exit"}" type="checkbox"${isEnabled ? " checked" : ""}>
-            <span class="toggleSlider"></span>
-          </label>
-        `;
-        if (!isEnabled) {
-          return `<div class="condRow disabled-cond">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;color:#64748b;">PAPER · timeframe rule disabled</small></span><span class="condValue"><strong style="color:#64748b;">—</strong></span><span class="condBadge neutral">OFF</span></div>`;
-        }
-        const point = latest?.histograms?.[span.id];
-        if (!point) {
-          return `<div class="condRow">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;color:#64748b;">PAPER · completed source unavailable</small></span><span class="condValue"><strong style="color:#64748b;">—</strong></span><span class="condBadge neutral">UNAVAILABLE</span></div>`;
-        }
-        const pass = isEntry ? point.value < threshold : point.value > threshold;
-        const measured = `${point.value >= 0 ? "+" : ""}${point.value.toFixed(4)}`;
-        const badgeTitle = `${action} ${pass ? "passes" : "waits"}: ${span.id} H ${measured} ${operator} ${threshold}`;
-        return `<div class="condRow">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${span.id} MACD-H ${operator} ${threshold}</strong><small style="display:block;color:#64748b;">PAPER · H ${measured} · ${formatKst(point.completed_time)} completed</small></span><span class="condValue"><strong style="color:${pass ? "#16a34a" : "#64748b"};">${measured}</strong></span><span class="condBadge ${pass ? "pass" : "wait"}" title="${badgeTitle}">${pass ? "PASS" : "WAITING"}</span></div>`;
+        const rules = isEntry ? (settings.entry_rules || []) : (settings.exit_rules || []);
+        const rulesMap = new Map(rules.map((r) => [`${r.span}:${r.rule}`, r]));
+
+        return SPANS.map((span) => {
+          const point = latest?.histograms?.[span.id];
+          const rowsHtml = MACD_RULES.map((rule) => {
+            const ruleKey = `${span.id}:${rule.id}`;
+            const activeRule = rulesMap.get(ruleKey);
+            const isEnabled = Boolean(activeRule);
+            const sign = activeRule?.sign || (isEntry ? rule.defaultEntrySign : rule.defaultExitSign);
+            const threshold = isEntry ? Number(settings.buy_threshold) : Number(settings.sell_threshold);
+
+            let val = null;
+            if (point) {
+              if (rule.id === "macd_h") val = point.histogram;
+              else if (rule.id === "macd_s") val = point.signal;
+              else if (rule.id === "macd_s_diff") val = point.signal_diff;
+              else if (rule.id === "macd_s_diff2") val = point.signal_diff2;
+              else if (rule.id === "macd_h_diff") val = point.hist_diff;
+            }
+
+            const signLabel = sign === "+" ? "+ (>0)" : "− (<0)";
+            const operator = sign === "+" ? ">" : "<";
+            const ruleThreshold = rule.id === "macd_h" ? threshold : 0;
+            const titleText = `${span.id} ${rule.label} ${operator} ${ruleThreshold}`;
+
+            const switchHtml = `
+              <label class="toggleSwitch" title="Turn ${span.id} ${rule.label} rule ON/OFF">
+                <input class="msStrategySpanToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" aria-label="Use ${span.id} ${rule.label} for paper ${kind}" type="checkbox"${isEnabled ? " checked" : ""}>
+                <span class="toggleSlider"></span>
+              </label>
+            `;
+
+            const signBtnHtml = `
+              <button type="button" class="condSignToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" data-sign="${sign}" title="Click to toggle condition between + (>0) and - (<0)" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${sign === '+' ? '#166534' : '#991b1b'};">
+                ${signLabel}
+              </button>
+            `;
+
+            if (!isEnabled) {
+              return `<div class="condRow disabled-cond" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${titleText}</strong>${signBtnHtml}<small style="display:block;color:#64748b;">PAPER · condition disabled</small></span><span class="condValue"><strong style="color:#64748b;">—</strong></span><span class="condBadge neutral">OFF</span></div>`;
+            }
+
+            if (!point || val === null || !Number.isFinite(Number(val))) {
+              return `<div class="condRow" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${titleText}</strong>${signBtnHtml}<small style="display:block;color:#64748b;">PAPER · source unavailable</small></span><span class="condValue"><strong style="color:#64748b;">—</strong></span><span class="condBadge neutral">UNAVAILABLE</span></div>`;
+            }
+
+            const numVal = Number(val);
+            const pass = sign === "+" ? numVal > ruleThreshold : numVal < ruleThreshold;
+            const measured = `${numVal > 0 ? "+" : ""}${numVal.toFixed(4)}`;
+            const valColor = pass ? "#16a34a" : (numVal < 0 ? "#dc2626" : "#64748b");
+            const badgeTitle = `${isEntry ? "BUY" : "SELL"} ${pass ? "passes" : "waits"}: ${span.id} ${rule.label} ${measured} ${operator} ${ruleThreshold}`;
+
+            return `<div class="condRow" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}">${switchHtml}<span class="condLabel"><strong style="color:${span.color};">${titleText}</strong>${signBtnHtml}<small style="display:block;color:#64748b;">PAPER · ${measured} · ${formatKst(point.completed_time)} completed</small></span><span class="condValue"><strong style="color:${valColor};">${measured}</strong></span><span class="condBadge ${pass ? "pass" : "wait"}" title="${badgeTitle}">${pass ? "PASS" : "WAITING"}</span></div>`;
+          }).join("");
+
+          return `
+            <div class="msSpanSection" style="margin-bottom:8px;">
+              <div style="font-weight:800;font-size:10px;color:${span.color};padding:3px 6px;background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;margin-top:4px;display:flex;align-items:center;justify-content:space-between;border-radius:4px;">
+                <span>● ${span.id} · ${span.label}</span>
+                <button type="button" class="msSpanToggleAllBtn" data-span="${span.id}" data-kind="${kind}" style="border:1px solid #cbd5e1;background:#fff;border-radius:3px;padding:1px 6px;font-size:9.5px;font-weight:700;cursor:pointer;color:#334155;">Toggle ${span.id}</button>
+              </div>
+              ${rowsHtml}
+            </div>
+          `;
+        }).join("");
       };
-      entryConditions.innerHTML = SPANS.map((span) => conditionRow(span, "entry")).join("");
-      exitConditions.innerHTML = SPANS.map((span) => conditionRow(span, "exit")).join("");
+      entryConditions.innerHTML = renderConditionGroup("entry");
+      exitConditions.innerHTML = renderConditionGroup("exit");
       this.strategyExecutionFrame?.setStatus(frameStatus);
       this.strategyExecutionFrame?.setSync(latest?.decision_time
         ? `${settings.clock_span} completed ${formatKst(latest.decision_time)} · loaded history`
         : `${settings.clock_span} completed candles · source unavailable`);
       if (source) {
-        source.textContent = `Source: completed Binance candles · MACD-H(12,26,9) · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · faint dashed ▷ are entry_signals without fills; bold ▷/◁ are simulated BUY/SELL fills · hover or click a marker for the paired trade · loaded chart history only`;
+        source.textContent = `Source: completed Binance candles · MACD(12,26,9) [H, S, ΔS, Δ²S, ΔH] · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · faint dashed ▷ are entry_signals without fills; bold ▷/◁ are simulated BUY/SELL fills · hover or click a marker for the paired trade · loaded chart history only`;
       }
     }
 
@@ -3716,13 +3916,25 @@
       }
       if (!best) return null;
       const byTime = this.macdData[spanId]?.byTime;
-      return byTime?.get(best.time) || { macd: best.value, signal: null, hist: null, histogram: null };
+      return byTime?.get(best.time) || {
+        macd: best.value,
+        signal: null,
+        signal_diff: null,
+        signal_diff2: null,
+        hist: null,
+        histogram: null,
+        hist_diff: null,
+      };
     }
 
-    updateMacdLegend(spanId, macdVal, sigVal, histVal) {
+    updateMacdLegend(spanId, macdVal, sigVal, histVal, sigDiffVal = null, sigDiff2Val = null, histDiffVal = null) {
       const mEl = document.getElementById(`msMacdVal_${spanId}`);
       const sEl = document.getElementById(`msSigVal_${spanId}`);
+      const sdEl = document.getElementById(`msSigDiffVal_${spanId}`);
+      const sd2El = document.getElementById(`msSigDiff2Val_${spanId}`);
       const hEl = document.getElementById(`msHistVal_${spanId}`);
+      const hdEl = document.getElementById(`msHistDiffVal_${spanId}`);
+
       if (mEl) mEl.textContent = macdVal != null && !isNaN(macdVal) ? Number(macdVal).toFixed(4) : "--";
       if (sEl) sEl.textContent = sigVal != null && !isNaN(sigVal) ? Number(sigVal).toFixed(4) : "--";
       if (hEl) {
@@ -3735,6 +3947,35 @@
           hEl.style.color = "#475569";
         }
       }
+
+      const updateDiffEl = (el, val) => {
+        if (!el) return;
+        if (val != null && !isNaN(val)) {
+          const num = Number(val);
+          el.textContent = (num > 0 ? "+" : "") + num.toFixed(4);
+          el.style.color = num > 0 ? "#059669" : num < 0 ? "#dc2626" : "#64748b";
+        } else {
+          el.textContent = "--";
+          el.style.color = "#64748b";
+        }
+      };
+
+      if ((sigDiffVal === null || sigDiff2Val === null || histDiffVal === null) && this.macdData?.[spanId]?.byTime) {
+        const histList = this.macdData[spanId].histogram || [];
+        const lastH = histList[histList.length - 1];
+        if (lastH) {
+          const pt = this.macdData[spanId].byTime.get(lastH.time);
+          if (pt) {
+            if (sigDiffVal === null) sigDiffVal = pt.signal_diff;
+            if (sigDiff2Val === null) sigDiff2Val = pt.signal_diff2;
+            if (histDiffVal === null) histDiffVal = pt.hist_diff;
+          }
+        }
+      }
+
+      updateDiffEl(sdEl, sigDiffVal);
+      updateDiffEl(sd2El, sigDiff2Val);
+      updateDiffEl(hdEl, histDiffVal);
     }
 
     updateCandle(spanId, candle) {
@@ -3844,8 +4085,12 @@
       if (runStrategyButton && !this.strategyExecutionFrame) runStrategyButton.addEventListener("click", runStrategy);
       const quickPresetButton = document.getElementById("msStrategyPresetQuick");
       const allPresetButton = document.getElementById("msStrategyPresetAll");
+      const fullWaveButton = document.getElementById("msStrategyPresetFullWave");
+      const allFullWaveButton = document.getElementById("msStrategyPresetAllFullWave");
       if (quickPresetButton) quickPresetButton.addEventListener("click", () => this.applyMacdStrategyPreset("quick"));
       if (allPresetButton) allPresetButton.addEventListener("click", () => this.applyMacdStrategyPreset("all"));
+      if (fullWaveButton) fullWaveButton.addEventListener("click", () => this.applyMacdStrategyPreset("full_wave"));
+      if (allFullWaveButton) allFullWaveButton.addEventListener("click", () => this.applyMacdStrategyPreset("all_full_wave"));
       [
         "msStrategyClock",
         "msStrategyBuyThreshold",
@@ -3861,13 +4106,33 @@
         condGroups.addEventListener("change", (e) => {
           const toggle = e.target.closest(".msStrategySpanToggle");
           if (!toggle) return;
-          const spanId = toggle.getAttribute("data-span");
-          const isChecked = toggle.checked;
-          // Synchronize switches matching this timeframe (both Entry and Exit)
-          document.querySelectorAll(`.msStrategySpanToggle[data-span="${spanId}"]`).forEach((input) => {
-            input.checked = isChecked;
-          });
           runStrategy();
+        });
+
+        condGroups.addEventListener("click", (e) => {
+          const signBtn = e.target.closest(".condSignToggle");
+          if (signBtn) {
+            e.preventDefault();
+            const currSign = signBtn.getAttribute("data-sign") || "+";
+            const nextSign = currSign === "+" ? "-" : "+";
+            signBtn.setAttribute("data-sign", nextSign);
+            signBtn.textContent = nextSign === "+" ? "+ (>0)" : "− (<0)";
+            signBtn.style.color = nextSign === "+" ? "#166534" : "#991b1b";
+            runStrategy();
+            return;
+          }
+
+          const spanAllBtn = e.target.closest(".msSpanToggleAllBtn");
+          if (spanAllBtn) {
+            e.preventDefault();
+            const spanId = spanAllBtn.getAttribute("data-span");
+            const kind = spanAllBtn.getAttribute("data-kind");
+            const checkboxes = Array.from(document.querySelectorAll(`.msStrategySpanToggle[data-span="${spanId}"][data-kind="${kind}"]`));
+            const someUnchecked = checkboxes.some((cb) => !cb.checked);
+            checkboxes.forEach((cb) => { cb.checked = someUnchecked; });
+            runStrategy();
+            return;
+          }
         });
       }
 
@@ -4216,5 +4481,8 @@
     }
   }
 
-  return new MultiSpanTab();
+  const instance = new MultiSpanTab();
+  instance.SPANS = SPANS;
+  instance.MACD_RULES = MACD_RULES;
+  return instance;
 });
