@@ -116,10 +116,10 @@ assert.equal(visualMarkers.filter((marker) => marker.pairKey === "paper:0").leng
 
 // Test MACD_RULES definition and legend/DOM elements
 assert.ok(Array.isArray(engine.MACD_RULES), "engine.MACD_RULES must be an array");
-assert.equal(engine.MACD_RULES.length, 5, "engine.MACD_RULES must contain 5 indicator definitions");
+assert.equal(engine.MACD_RULES.length, 6, "engine.MACD_RULES must contain 6 indicator definitions");
 const ruleIds = engine.MACD_RULES.map((r) => r.id);
-assert.deepEqual(ruleIds, ["macd_h", "macd_s", "macd_s_diff", "macd_s_diff2", "macd_h_diff"],
-  "must support macd_h, macd_s, macd_s_diff, macd_s_diff2, and macd_h_diff");
+assert.deepEqual(ruleIds, ["macd_h", "macd_h_cross", "macd_s", "macd_s_diff", "macd_s_diff2", "macd_h_diff"],
+  "must support macd_h, macd_h_cross, macd_s, macd_s_diff, macd_s_diff2, and macd_h_diff");
 
 for (const span of spans) {
   for (const rule of engine.MACD_RULES) {
@@ -130,7 +130,7 @@ for (const span of spans) {
   }
 }
 
-// Test calculateMacd difference metrics
+// Test calculateMacd difference and zero-crossing metrics
 const testCandles = [];
 for (let i = 0; i < 40; i++) {
   testCandles.push({ time: i * 60, close: 100 + Math.sin(i / 3) * 5 });
@@ -140,15 +140,16 @@ assert.ok(macdCalc.signal.length > 2, "must compute signal line");
 assert.ok(macdCalc.signal[1].diff !== null, "signal line must have diff (1st diff)");
 assert.ok(macdCalc.signal[2].diff2 !== null, "signal line must have diff2 (2nd diff)");
 assert.ok(macdCalc.histogram[1].diff !== null, "histogram must have diff");
+assert.ok(macdCalc.histogram[1].cross !== null, "histogram must have cross (1, -1, or 0)");
 
-// Test evaluateMacdStrategyReplay with explicit S, S-diff, S-2nd-diff, and H-diff rules
+// Test evaluateMacdStrategyReplay with explicit S, S-diff, S-2nd-diff, H-diff, and H-cross rules
 const richPoints = [
-  { time: 0, histogram: -1, hist_diff: -0.5, signal: -2, signal_diff: 0.1, signal_diff2: 0.05 },
-  { time: DAY, histogram: -0.5, hist_diff: 0.5, signal: -1.8, signal_diff: 0.2, signal_diff2: 0.1 },
-  { time: DAY * 2, histogram: 1, hist_diff: 1.5, signal: 0.5, signal_diff: -0.1, signal_diff2: -0.05 },
+  { time: 0, histogram: -1, prev_histogram: null, hist_diff: -0.5, hist_cross: 0, signal: -2, signal_diff: 0.1, signal_diff2: 0.05 },
+  { time: DAY, histogram: -0.5, prev_histogram: -1, hist_diff: 0.5, hist_cross: 0, signal: -1.8, signal_diff: 0.2, signal_diff2: 0.1 },
+  { time: DAY * 2, histogram: 1, prev_histogram: -0.5, hist_diff: 1.5, hist_cross: 1, signal: 0.5, signal_diff: -0.1, signal_diff2: -0.05 },
 ];
 engine.macdData = Object.fromEntries(spans.map((span) => [span, {
-  histogram: richPoints.map((p) => ({ time: p.time, value: p.histogram })),
+  histogram: richPoints.map((p) => ({ time: p.time, value: p.histogram, prev: p.prev_histogram, cross: p.hist_cross })),
   byTime: new Map(richPoints.map((p) => [p.time, { ...p, value: p.histogram }])),
 }]));
 
@@ -163,6 +164,7 @@ const fullWaveSettings = {
   ],
   exit_rules: [
     { span: "1d", rule: "macd_h", sign: "+" },
+    { span: "1d", rule: "macd_h_cross", sign: "+" },
     { span: "1d", rule: "macd_s", sign: "+" },
     { span: "1d", rule: "macd_s_diff", sign: "-" },
     { span: "1d", rule: "macd_s_diff2", sign: "-" },
@@ -178,8 +180,23 @@ const fullWaveResult = engine.evaluateMacdStrategyReplay(fullWaveSettings, DAY *
 assert.equal(fullWaveResult.error, null);
 assert.equal(fullWaveResult.entry_signals.length, 1, "only candle 1 (DAY) satisfies all 5 entry conditions");
 assert.equal(fullWaveResult.entry_signals[0].time, DAY);
-assert.equal(fullWaveResult.exit_signals.length, 1, "candle 2 (DAY*2) satisfies exit conditions");
+assert.equal(fullWaveResult.exit_signals.length, 1, "candle 2 (DAY*2) satisfies exit conditions including H crossing +");
 assert.equal(fullWaveResult.trades.length, 1, "1 closed trade completed");
 assert.ok(fullWaveResult.trades[0].pnl > 0, "trade was profitable");
+
+// Test H crossing +/- rule standalone
+const crossEntrySettings = {
+  clock_span: "1d",
+  entry_rules: [{ span: "1d", rule: "macd_h_cross", sign: "+" }],
+  exit_rules: [{ span: "1d", rule: "macd_h_cross", sign: "-" }],
+  buy_threshold: 0,
+  sell_threshold: 0,
+  initial_capital: 10000,
+  fee_bps: 5,
+};
+const crossResult = engine.evaluateMacdStrategyReplay(crossEntrySettings, DAY * 4);
+assert.equal(crossResult.error, null);
+assert.equal(crossResult.entry_signals.length, 1, "H crossing + matches only when histogram crosses from negative (-0.5) to positive (+1)");
+assert.equal(crossResult.entry_signals[0].time, DAY * 2);
 
 console.log("Multi-span all-MACD-H completed-candle paper strategy tests passed");
