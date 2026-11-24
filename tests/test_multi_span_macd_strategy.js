@@ -378,6 +378,30 @@ assert.equal(rsiValues.length, rsiCandles.length - 14, "RSI must begin after the
 assert.equal(rsiValues[0].value, 0, "a strictly declining Wilder seed must produce RSI 0");
 assert.ok(rsiValues.some((point) => point.value > 70), "the recovery leg must produce overbought RSI values");
 
+const alignedRsi = engine.getRsiDataForSpan("1d", 14);
+assert.equal(alignedRsi.plotValues.length, rsiCandles.length,
+  "the plotted RSI timeline must preserve every price-candle timestamp");
+assert.deepEqual(alignedRsi.plotValues.map((point) => point.time), rsiCandles.map((candle) => candle.time),
+  "price and RSI panes must contain the same ordered timestamps");
+assert.ok(alignedRsi.plotValues.slice(0, 14).every((point) => !("value" in point)),
+  "Wilder warm-up candles must be represented as whitespace instead of removed bars");
+assert.equal(alignedRsi.plotValues[14].value, rsiValues[0].value,
+  "the first computed RSI must remain attached to its original candle");
+
+const plottedRsiRows = {};
+engine.rsiLine["1d"] = { setData(rows) { plottedRsiRows.line = rows; } };
+engine.rsiUpper["1d"] = { setData(rows) { plottedRsiRows.upper = rows; } };
+engine.rsiLower["1d"] = { setData(rows) { plottedRsiRows.lower = rows; } };
+engine.updateRsiForSpan("1d", rsiCandles, {
+  settings: { rsi_period: 14, rsi_entry_threshold: 30, rsi_exit_threshold: 70 },
+});
+assert.equal(plottedRsiRows.line.length, rsiCandles.length,
+  "RSI line data must keep the price timeline length");
+assert.deepEqual(plottedRsiRows.upper.map((point) => point.time), rsiCandles.map((candle) => candle.time),
+  "the upper threshold must anchor the RSI time scale to every candle");
+assert.deepEqual(plottedRsiRows.lower.map((point) => point.time), rsiCandles.map((candle) => candle.time),
+  "the lower threshold must anchor the RSI time scale to every candle");
+
 const rsiResult = engine.evaluateMacdStrategyReplay({
   clock_span: "1d",
   signal_basis: "completed",

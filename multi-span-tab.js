@@ -3096,7 +3096,20 @@
       const cached = this.rsiCache[spanId].get(signature);
       if (cached) return cached;
       const values = this.calculateRsi(candles, p);
-      const result = { period: p, values, byTime: new Map(values.map((point) => [Number(point.time), point])) };
+      const byTime = new Map(values.map((point) => [Number(point.time), point]));
+      // Logical-range synchronization is index-based in Lightweight Charts.
+      // Preserve every price-candle timestamp in the RSI pane so its logical
+      // index remains identical during the Wilder warm-up period. Missing RSI
+      // observations are whitespace points, not removed bars.
+      const plotValues = candles
+        .map((candle) => {
+          const time = Number(candle?.time);
+          if (!Number.isFinite(time)) return null;
+          const point = byTime.get(time);
+          return point ? { time, value: point.value } : { time };
+        })
+        .filter(Boolean);
+      const result = { period: p, values, plotValues, byTime };
       this.rsiCache[spanId].clear();
       this.rsiCache[spanId].set(signature, result);
       return result;
@@ -3112,21 +3125,23 @@
       this.candlesData[spanId] = Array.isArray(candles) ? candles : (this.candlesData[spanId] || []);
       const data = this.getRsiDataForSpan(spanId, period);
       this.rsiData[spanId] = data;
-      const last = data.values[data.values.length - 1] || null;
       const latestTime = Number(candles?.[candles.length - 1]?.time);
-      const thresholdTimes = data.values.map((point) => Number(point.time));
+      const latestPoint = Number.isFinite(latestTime) ? (data.byTime.get(latestTime) || null) : null;
+      const thresholdTimes = (candles || [])
+        .map((candle) => Number(candle?.time))
+        .filter(Number.isFinite);
       if (options.updateLatestOnly) {
-        if (last) this.rsiLine[spanId]?.update(last);
         if (Number.isFinite(latestTime)) {
+          this.rsiLine[spanId]?.update(latestPoint || { time: latestTime });
           this.rsiUpper[spanId]?.update({ time: latestTime, value: upper });
           this.rsiLower[spanId]?.update({ time: latestTime, value: lower });
         }
       } else {
-        this.rsiLine[spanId]?.setData(data.values);
+        this.rsiLine[spanId]?.setData(data.plotValues);
         this.rsiUpper[spanId]?.setData(thresholdTimes.map((time) => ({ time, value: upper })));
         this.rsiLower[spanId]?.setData(thresholdTimes.map((time) => ({ time, value: lower })));
       }
-      this.updateRsiLegend(spanId, last?.value, period, lower, upper);
+      this.updateRsiLegend(spanId, latestPoint?.value, period, lower, upper);
       return data;
     }
 
