@@ -1119,6 +1119,7 @@
             priceLineVisible: false,
             lastValueVisible: true,
             priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+            autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
           });
           const rsiUpper = rsiChart.addLineSeries({
             color: "rgba(220,38,38,.65)",
@@ -3088,8 +3089,9 @@
     getRsiDataForSpan(spanId, period = 14) {
       const candles = this.candlesData?.[spanId] || [];
       const p = Math.max(2, Math.min(200, Math.round(Number(period) || 14)));
+      const first = candles[0];
       const last = candles[candles.length - 1];
-      const signature = `${p}:${candles.length}:${Number(last?.time) || 0}:${Number(last?.close) || 0}`;
+      const signature = `${p}:${candles.length}:${Number(first?.time) || 0}:${Number(first?.close) || 0}:${Number(last?.time) || 0}:${Number(last?.close) || 0}`;
       if (!this.rsiCache[spanId]) this.rsiCache[spanId] = new Map();
       const cached = this.rsiCache[spanId].get(signature);
       if (cached) return cached;
