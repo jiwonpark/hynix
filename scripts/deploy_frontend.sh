@@ -38,8 +38,18 @@ for relative_path in "$@"; do
   FILES+=("$STAGE_DIR/$relative_path")
 done
 
-SSH=(ssh)
-SCP=(scp)
+SSH_CONTROL_PATH="$STAGE_DIR/ssh-control-%C"
+COMMON_SSH_OPTS=(
+  -o "ConnectTimeout=12"
+  -o "ConnectionAttempts=3"
+  -o "ServerAliveInterval=10"
+  -o "ServerAliveCountMax=2"
+  -o "ControlMaster=auto"
+  -o "ControlPersist=60"
+  -o "ControlPath=$SSH_CONTROL_PATH"
+)
+SSH=(ssh "${COMMON_SSH_OPTS[@]}")
+SCP=(scp "${COMMON_SSH_OPTS[@]}")
 if [[ -n "$CONNECT_HOST" ]]; then
   SSH+=(-o "Hostname=$CONNECT_HOST")
   SCP+=(-o "Hostname=$CONNECT_HOST")
