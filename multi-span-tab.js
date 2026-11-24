@@ -28,6 +28,7 @@
     { id: "macd_h_diff_cross", label: "MACD-H diff cross", title: "MACD-H Δ×", key: "hist_diff_cross", defaultEntrySign: "+", defaultExitSign: "-", desc: "Histogram 1st difference zero-crossing (turnaround +/-)" },
     { id: "ma20_diff", label: "MA20 diff", title: "MA20 Δ", key: "ma20_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "MA20 1st difference (slope)" },
     { id: "ma50_diff", label: "MA50 diff", title: "MA50 Δ", key: "ma50_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "MA50 1st difference (slope)" },
+    { id: "rsi", label: "RSI", title: "RSI", key: "rsi", defaultEntrySign: "-", defaultExitSign: "+", desc: "RSI zone using the configured period and thresholds" },
   ];
 
   const MS_STRATEGY_STORAGE_KEY = "skhynix_ms_strategy_settings_v1";
@@ -336,6 +337,12 @@
       this.macdSignal = {};   // span -> lineSeries
       this.macdZero = {};     // span -> lineSeries
       this.macdData = {};     // span -> { macd, signal, histogram, byTime }
+      this.rsiCharts = {};    // span -> RSI chart
+      this.rsiLine = {};      // span -> RSI line series
+      this.rsiUpper = {};     // span -> overbought threshold series
+      this.rsiLower = {};     // span -> oversold threshold series
+      this.rsiData = {};      // span -> { period, values, byTime }
+      this.rsiCache = {};     // span -> Map(period/signature -> calculated RSI)
       this.candlesData = {}; // span -> array of { time, open, high, low, close, volume }
       this.strategyReplayResult = null; // completed-candle all-MACD-H paper replay
       this.entrySignals = []; // position-independent entry-condition matches
@@ -530,6 +537,19 @@
                 <div id="msMacdCondHighlight_${s.id}" class="msMacdCondHighlightLayer" aria-label="MACD condition-matching candle highlights for ${s.id}" style="position:absolute;top:0;bottom:26px;left:0;right:0;pointer-events:none;z-index:3;overflow:hidden;"></div>
                 <div id="msMacdRangeHighlight_${s.id}" class="msMacdRangeHighlight" style="display:none;position:absolute;top:0;bottom:26px;pointer-events:none;z-index:4;"></div>
               </div>
+              <!-- RSI Sub-pane -->
+              <div class="msRsiHeader" style="background:#f8fafc;padding:3px 12px;border-top:1px solid #e2e8f0;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;font-size:10px;line-height:1.4;flex-wrap:wrap;gap:4px;">
+                <span style="font-weight:700;color:#64748b;">RSI (<span id="msRsiPeriodLabel_${s.id}">14</span>)</span>
+                <div style="display:flex;gap:8px;font-family:monospace;font-size:10px;align-items:center;">
+                  <span style="color:#7c3aed;font-weight:700;">RSI: <span id="msRsiVal_${s.id}">--</span></span>
+                  <span style="color:#dc2626;">OB <span id="msRsiUpperVal_${s.id}">70</span></span>
+                  <span style="color:#16a34a;">OS <span id="msRsiLowerVal_${s.id}">30</span></span>
+                </div>
+              </div>
+              <div id="msRsiHost_${s.id}" class="msRsiHost" style="width:100%;height:72px;position:relative;">
+                <div id="msRsiCondHighlight_${s.id}" class="msRsiCondHighlightLayer" aria-label="RSI condition-matching candle highlights for ${s.id}" style="position:absolute;top:0;bottom:26px;left:0;right:0;pointer-events:none;z-index:3;overflow:hidden;"></div>
+                <div id="msRsiRangeHighlight_${s.id}" class="msRsiRangeHighlight" style="display:none;position:absolute;top:0;bottom:26px;pointer-events:none;z-index:4;"></div>
+              </div>
             </div>
           `).join("")}
         </div>
@@ -547,11 +567,12 @@
             <button type="button" id="msStrategyPresetAll" aria-pressed="false" title="Require all five MACD histograms on the 1-second signal clock">All 5 strict</button>
             <button type="button" id="msStrategyPresetFullWave" aria-pressed="false" title="Enable all MACD indicators across 5m and 15m">5m+15m Full Wave</button>
             <button type="button" id="msStrategyPresetAllFullWave" aria-pressed="false" title="Enable all MACD indicators across all 5 timeframes">All 5 Full Wave</button>
+            <button type="button" id="msStrategyPresetRsi" aria-pressed="false" title="Use completed 5m candles with 5m and 15m RSI oversold entries and overbought exits">RSI 30/70</button>
           </div>
-          <strong style="font-size:12px;color:#0f172a;">Multi-Span MACD Dynamics Strategy Test</strong>
+          <strong style="font-size:12px;color:#0f172a;">Multi-Span MACD + RSI Strategy Test</strong>
           <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;">PAPER REPLAY ONLY</span>
         </div>
-        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">LONG and SHORT match when all enabled rules across configured timeframes pass on completed signal-clock candles. Toggle individual rules (MACD-H, H crossing, MACD-S, ΔS, Δ²S, ΔH, ΔH crossing, ΔMA20, ΔMA50) and toggle sign (+/-) on any row. Quick uses 5m+15m MACD-H; Full Wave enables all dynamics. No orders are sent.</small>
+        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">ENTRY and EXIT match when all enabled rules across configured timeframes pass on completed signal-clock candles. Toggle MACD/MA/RSI rules and their direction independently. RSI 30/70 uses Wilder RSI on 5m+15m; RSI rules are completed-candle only. No orders are sent.</small>
         <div class="strategyReplaySetup" aria-label="Paper replay setup">
           <strong style="color:#475569;">Replay setup</strong>
           <label>Signal clock
@@ -570,6 +591,15 @@
           </label>
           <label>Fee
             <input id="msStrategyFeeBps" type="number" value="5" min="0" max="1000" step="0.1" style="width:58px;"> bps/side
+          </label>
+          <label>RSI period
+            <input id="msStrategyRsiPeriod" type="number" value="14" min="2" max="200" step="1" style="width:58px;">
+          </label>
+          <label style="color:#166534;font-weight:800;">RSI entry &lt;
+            <input id="msStrategyRsiEntryThreshold" type="number" value="30" min="0" max="100" step="0.1" style="width:58px;border-color:#86efac;">
+          </label>
+          <label style="color:#991b1b;font-weight:800;">RSI exit &gt;
+            <input id="msStrategyRsiExitThreshold" type="number" value="70" min="0" max="100" step="0.1" style="width:58px;border-color:#fca5a5;">
           </label>
         </div>
         <div id="msStrategySummary" class="executionChartSecondaryStatus" style="height:auto;min-height:0;white-space:normal;margin:var(--terminal-space-min) 0 0;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">Awaiting completed chart data…</div>
@@ -597,8 +627,9 @@
                     const isDefault = ["5m", "15m"].includes(s.id) && rule.id === "macd_h";
                     const sign = isEntry ? rule.defaultEntrySign : rule.defaultExitSign;
                     const isCross = rule.id === "macd_h_cross" || rule.id === "macd_h_diff_cross";
-                    const op = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : `${sign === "+" ? ">" : "<"} 0`;
-                    const signBtnText = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : (sign === "+" ? "+ (>0)" : "− (<0)");
+                    const defaultThreshold = rule.id === "rsi" ? (isEntry ? 30 : 70) : 0;
+                    const op = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : `${sign === "+" ? ">" : "<"} ${defaultThreshold}`;
+                    const signBtnText = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : (sign === "+" ? "+ (>)" : "− (<)");
                     return `
                       <div class="condRow${isDefault ? "" : " disabled-cond"}" data-span="${s.id}" data-rule="${rule.id}" data-kind="${kind}">
                         <label class="toggleSwitch" title="Turn ${s.id} ${rule.label} rule ON/OFF">
@@ -649,7 +680,7 @@
             </div>
           </section>
         </div>
-        <small id="msStrategySource" style="display:block;color:#64748b;">Source: completed Binance candles · MACD-H(12,26,9) · loaded chart history only</small>
+        <small id="msStrategySource" style="display:block;color:#64748b;">Source: completed Binance candles · MACD(12,26,9) + Wilder RSI(14) · loaded chart history only</small>
       `;
     }
 
@@ -777,12 +808,12 @@
         const cols = this.syncGridColumnsToWidth();
 
         const heightMap = {
-          "1": { chart: "320px", macd: "100px" },
-          "2": { chart: "260px", macd: "90px" },
-          "3": { chart: "240px", macd: "85px" },
-          "4": { chart: "220px", macd: "80px" },
-          "5": { chart: "200px", macd: "75px" },
-          "auto": { chart: "240px", macd: "85px" },
+          "1": { chart: "320px", macd: "100px", rsi: "82px" },
+          "2": { chart: "260px", macd: "90px", rsi: "76px" },
+          "3": { chart: "240px", macd: "85px", rsi: "72px" },
+          "4": { chart: "220px", macd: "80px", rsi: "68px" },
+          "5": { chart: "200px", macd: "75px", rsi: "64px" },
+          "auto": { chart: "240px", macd: "85px", rsi: "72px" },
         };
         const targetHeights = heightMap[cols] || heightMap["auto"];
 
@@ -790,9 +821,11 @@
           const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
           const macdHost = document.getElementById(`msMacdHost_${s.id}`);
+          const rsiHost = document.getElementById(`msRsiHost_${s.id}`);
           if (card) card.style.order = "0";
           if (host) host.style.height = targetHeights.chart;
           if (macdHost) macdHost.style.height = targetHeights.macd;
+          if (rsiHost) rsiHost.style.height = targetHeights.rsi;
         });
       } else if (this.activeLayout === "hero") {
         wrapper.style.display = "flex";
@@ -803,14 +836,17 @@
           const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
           const macdHost = document.getElementById(`msMacdHost_${s.id}`);
+          const rsiHost = document.getElementById(`msRsiHost_${s.id}`);
           if (s.id === this.heroSpan) {
             if (card) card.style.order = "-1";
             if (host) host.style.height = "380px";
             if (macdHost) macdHost.style.height = "110px";
+            if (rsiHost) rsiHost.style.height = "88px";
           } else {
             if (card) card.style.order = "1";
             if (host) host.style.height = "200px";
             if (macdHost) macdHost.style.height = "75px";
+            if (rsiHost) rsiHost.style.height = "64px";
           }
         });
       } else if (this.activeLayout === "stack") {
@@ -822,9 +858,11 @@
           const card = document.getElementById(`msCard_${s.id}`);
           const host = document.getElementById(`msChartHost_${s.id}`);
           const macdHost = document.getElementById(`msMacdHost_${s.id}`);
+          const rsiHost = document.getElementById(`msRsiHost_${s.id}`);
           if (card) card.style.order = "0";
           if (host) host.style.height = "260px";
           if (macdHost) macdHost.style.height = "90px";
+          if (rsiHost) rsiHost.style.height = "76px";
         });
       }
       this.resizeAll();
@@ -1004,6 +1042,7 @@
             isSyncingMacd = true;
             try {
               macdChart.timeScale().setVisibleLogicalRange(logicalRange);
+              this.rsiCharts[s.id]?.timeScale().setVisibleLogicalRange(logicalRange);
             } catch (_) {}
             isSyncingMacd = false;
           });
@@ -1013,6 +1052,7 @@
             isSyncingMacd = true;
             try {
               chart.timeScale().setVisibleLogicalRange(logicalRange);
+              this.rsiCharts[s.id]?.timeScale().setVisibleLogicalRange(logicalRange);
             } catch (_) {}
             isSyncingMacd = false;
           });
@@ -1027,6 +1067,87 @@
             this.handleCrosshairMove(s.id, param, "macd");
           });
           macdChart.subscribeClick((param) => {
+            this.handleChartClick(s.id, param);
+          });
+        }
+
+        // Initialize RSI sub-chart. Its thresholds are real replay controls and
+        // the plotted period/levels are refreshed whenever those controls change.
+        const rsiHost = document.getElementById(`msRsiHost_${s.id}`);
+        if (rsiHost) {
+          const rsiChart = LightweightCharts.createChart(rsiHost, {
+            width: rsiHost.clientWidth || 500,
+            height: rsiHost.clientHeight || 72,
+            layout: {
+              background: { type: "solid", color: "#f8fafc" },
+              textColor: "#64748b",
+              fontSize: 10,
+            },
+            localization: {
+              locale: "ko-KR",
+              timeFormatter: (time) => formatKst(time),
+            },
+            grid: {
+              vertLines: { color: "#f1f5f9" },
+              horzLines: { color: "#f1f5f9" },
+            },
+            crosshair: {
+              mode: LightweightCharts.CrosshairMode.Normal,
+              vertLine: { color: s.color, width: 1, style: 2, labelBackgroundColor: "#0284c7" },
+              horzLine: { color: "#7c3aed", width: 1, style: 2, labelBackgroundColor: "#6d28d9" },
+            },
+            rightPriceScale: {
+              borderColor: "#e2e8f0",
+              scaleMargins: { top: 0.08, bottom: 0.08 },
+              autoScale: true,
+              minimumWidth: 74,
+            },
+            timeScale: {
+              borderColor: "#e2e8f0",
+              timeVisible: s.id !== "1d",
+              secondsVisible: s.id === "1s",
+              rightOffset: 6,
+              minBarSpacing: 0.02,
+              lockVisibleTimeRangeOnResize: true,
+              tickMarkFormatter: (time, tickMarkType) => formatKstTick(time, tickMarkType, s.id),
+            },
+            kineticScroll: { touch: true, mouse: true },
+          });
+          const rsiLine = rsiChart.addLineSeries({
+            color: "#7c3aed",
+            lineWidth: 1.6,
+            priceLineVisible: false,
+            lastValueVisible: true,
+            priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+          });
+          const rsiUpper = rsiChart.addLineSeries({
+            color: "rgba(220,38,38,.65)",
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          });
+          const rsiLower = rsiChart.addLineSeries({
+            color: "rgba(22,163,74,.65)",
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          });
+          this.rsiCharts[s.id] = rsiChart;
+          this.rsiLine[s.id] = rsiLine;
+          this.rsiUpper[s.id] = rsiUpper;
+          this.rsiLower[s.id] = rsiLower;
+
+          if (typeof rsiHost.addEventListener === "function") {
+            rsiHost.addEventListener("pointerdown", cancelOnInput, { passive: true });
+            rsiHost.addEventListener("wheel", cancelOnInput, { passive: true });
+            rsiHost.addEventListener("touchstart", cancelOnInput, { passive: true });
+          }
+          rsiChart.subscribeCrosshairMove((param) => {
+            this.handleCrosshairMove(s.id, param, "rsi");
+          });
+          rsiChart.subscribeClick((param) => {
             this.handleChartClick(s.id, param);
           });
         }
@@ -1076,6 +1197,22 @@
             this.debouncedLoadMore(s.id, "older");
           }
         });
+
+        // Keep RSI-driven navigation synchronized after the main chart's load-more
+        // listener is registered, preserving the common chart navigation contract.
+        const rsiChart = this.rsiCharts[s.id];
+        if (rsiChart) {
+          let isSyncingRsi = false;
+          rsiChart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
+            if (isSyncingRsi || !logicalRange) return;
+            isSyncingRsi = true;
+            try {
+              chart.timeScale().setVisibleLogicalRange(logicalRange);
+              this.macdCharts[s.id]?.timeScale().setVisibleLogicalRange(logicalRange);
+            } catch (_) {}
+            isSyncingRsi = false;
+          });
+        }
 
         // Wire crosshair tracking
         chart.subscribeCrosshairMove((param) => {
@@ -1143,6 +1280,19 @@
             });
             if (savedRange && savedRange.to > savedRange.from && !this.animatingSpans[s.id]) {
               macdChart.timeScale().setVisibleLogicalRange(savedRange);
+            }
+          } catch (_) {}
+        }
+        const rsiHost = document.getElementById(`msRsiHost_${s.id}`);
+        const rsiChart = this.rsiCharts[s.id];
+        if (rsiHost && rsiChart && rsiHost.clientWidth > 0 && rsiHost.clientHeight > 0) {
+          try {
+            rsiChart.applyOptions({
+              width: rsiHost.clientWidth,
+              height: rsiHost.clientHeight,
+            });
+            if (savedRange && savedRange.to > savedRange.from && !this.animatingSpans[s.id]) {
+              rsiChart.timeScale().setVisibleLogicalRange(savedRange);
             }
           } catch (_) {}
         }
@@ -1512,6 +1662,8 @@
       const series = this.series[spanId];
       const macdChart = this.macdCharts[spanId];
       const macdHist = this.macdHist[spanId];
+      const rsiChart = this.rsiCharts[spanId];
+      const rsiSeries = this.rsiLine[spanId];
       const cardOhlc = document.getElementById(`msCardOhlc_${spanId}`);
       const cardTime = document.getElementById(`msCardTime_${spanId}`);
       const valEl = document.getElementById(`msHudVal_${spanId}`);
@@ -1536,8 +1688,11 @@
       } else {
         this.updateMacdLegend(spanId, null, null, null);
       }
+      const rsiPoint = this.findRsiAtOrBefore(spanId, targetTime);
+      const rsiSettings = this.strategyReplayResult?.settings || this.macdStrategySettings();
+      this.updateRsiLegend(spanId, rsiPoint?.value, rsiSettings.rsi_period, rsiSettings.rsi_entry_threshold, rsiSettings.rsi_exit_threshold);
 
-      if (this.reloadingSpans[spanId]) return { candle, macdPoint };
+      if (this.reloadingSpans[spanId]) return { candle, macdPoint, rsiPoint };
 
       this._syncingCardCrosshair = true;
       try {
@@ -1555,11 +1710,20 @@
             }
           } catch (_) {}
         }
+        if (rsiChart && rsiSeries) {
+          try {
+            if (rsiPoint) {
+              rsiChart.setCrosshairPosition(rsiPoint.value, syncTime, rsiSeries);
+            } else if (typeof rsiChart.clearCrosshairPosition === "function") {
+              rsiChart.clearCrosshairPosition();
+            }
+          } catch (_) {}
+        }
       } finally {
         this._syncingCardCrosshair = false;
       }
 
-      return { candle, macdPoint };
+      return { candle, macdPoint, rsiPoint };
     }
 
     handleCrosshairMove(sourceSpan, param, origin = "main") {
@@ -1570,6 +1734,8 @@
       const chart = this.charts[sourceSpan];
       const macdChart = this.macdCharts[sourceSpan];
       const macdHist = this.macdHist[sourceSpan];
+      const rsiChart = this.rsiCharts[sourceSpan];
+      const rsiSeries = this.rsiLine[sourceSpan];
 
       // Hover is purely separate and local for all charts (including 1s): never broadcast to other charts!
       if (!param || !param.time) {
@@ -1598,6 +1764,11 @@
               macdChart.clearCrosshairPosition();
             } catch (_) {}
           }
+          if (rsiChart) {
+            try {
+              rsiChart.clearCrosshairPosition();
+            } catch (_) {}
+          }
           const macdList = this.macdData[sourceSpan]?.macd || [];
           if (macdList.length) {
             const lastM = macdList[macdList.length - 1];
@@ -1608,6 +1779,9 @@
             const lastPt = this.findMacdAtOrBefore(sourceSpan, latest.time);
             this.updateMacdLegend(sourceSpan, lastPt?.macd ?? lastM?.value, lastPt?.signal ?? lastS?.value, lastPt?.hist ?? lastH?.value, lastPt?.signal_diff, lastPt?.signal_diff2, lastPt?.hist_diff, lastPt?.hist_cross, lastPt?.ma20_diff, lastPt?.ma50_diff, lastPt?.hist_diff_cross);
           }
+          const rsiSettings = this.strategyReplayResult?.settings || this.macdStrategySettings();
+          const latestRsi = this.findRsiAtOrBefore(sourceSpan, latest.time, rsiSettings.rsi_period);
+          this.updateRsiLegend(sourceSpan, latestRsi?.value, rsiSettings.rsi_period, rsiSettings.rsi_entry_threshold, rsiSettings.rsi_exit_threshold);
         }
         return;
       }
@@ -1627,17 +1801,33 @@
       if (hoveredMacd) {
         this.updateMacdLegend(sourceSpan, hoveredMacd.macd, hoveredMacd.signal, hoveredMacd.hist ?? hoveredMacd.histogram, hoveredMacd.signal_diff, hoveredMacd.signal_diff2, hoveredMacd.hist_diff, hoveredMacd.hist_cross, hoveredMacd.ma20_diff, hoveredMacd.ma50_diff, hoveredMacd.hist_diff_cross);
       }
+      const rsiSettings = this.strategyReplayResult?.settings || this.macdStrategySettings();
+      const hoveredRsi = this.findRsiAtOrBefore(sourceSpan, param.time, rsiSettings.rsi_period);
+      this.updateRsiLegend(sourceSpan, hoveredRsi?.value, rsiSettings.rsi_period, rsiSettings.rsi_entry_threshold, rsiSettings.rsi_exit_threshold);
 
-      // Synchronize vertical crosshair line between price chart and MACD chart within this card
+      // Synchronize the vertical crosshair between price, MACD, and RSI within this card.
       this._syncingCardCrosshair = true;
       try {
         if (origin === "main") {
           if (macdChart && macdHist && hoveredMacd) {
             macdChart.setCrosshairPosition(hoveredMacd.hist ?? hoveredMacd.histogram ?? 0, param.time, macdHist);
           }
+          if (rsiChart && rsiSeries && hoveredRsi) {
+            rsiChart.setCrosshairPosition(hoveredRsi.value, param.time, rsiSeries);
+          }
         } else if (origin === "macd") {
           if (chart && series && hoveredCandle) {
             chart.setCrosshairPosition(hoveredCandle.close, param.time, series);
+          }
+          if (rsiChart && rsiSeries && hoveredRsi) {
+            rsiChart.setCrosshairPosition(hoveredRsi.value, param.time, rsiSeries);
+          }
+        } else if (origin === "rsi") {
+          if (chart && series && hoveredCandle) {
+            chart.setCrosshairPosition(hoveredCandle.close, param.time, series);
+          }
+          if (macdChart && macdHist && hoveredMacd) {
+            macdChart.setCrosshairPosition(hoveredMacd.hist ?? hoveredMacd.histogram ?? 0, param.time, macdHist);
           }
         }
       } catch (_) {
@@ -1888,12 +2078,14 @@
       this.renderSpanConditionCandleHighlights(spanId);
       const highlightEl = document.getElementById(`msRangeHighlight_${spanId}`);
       const macdHighlightEl = document.getElementById(`msMacdRangeHighlight_${spanId}`);
+      const rsiHighlightEl = document.getElementById(`msRsiRangeHighlight_${spanId}`);
       const badgeEl = document.getElementById(`msRangeBadge_${spanId}`);
       if (!highlightEl) return;
 
       const hideAll = () => {
         highlightEl.style.display = "none";
         if (macdHighlightEl) macdHighlightEl.style.display = "none";
+        if (rsiHighlightEl) rsiHighlightEl.style.display = "none";
       };
 
       const hl = this.activeRangeHighlight;
@@ -1994,6 +2186,14 @@
           : null;
         paintBox(macdHighlightEl, macdBox || mainBox);
       }
+      if (rsiHighlightEl) {
+        const rsiChart = this.rsiCharts[spanId];
+        const rsiHost = document.getElementById(`msRsiHost_${spanId}`);
+        const rsiBox = rsiChart && typeof rsiChart.timeScale === "function"
+          ? computeBoxForScale(rsiChart.timeScale(), Math.max(10, (rsiHost ? rsiHost.clientWidth : 500) - 74))
+          : null;
+        paintBox(rsiHighlightEl, rsiBox || mainBox);
+      }
 
       if (badgeEl) {
         const spanObj = SPANS.find((s) => s.id === spanId);
@@ -2048,6 +2248,8 @@
       if (hlEl) hlEl.style.display = "none";
       const macdHlEl = document.getElementById(`msMacdRangeHighlight_${spanId}`);
       if (macdHlEl) macdHlEl.style.display = "none";
+      const rsiHlEl = document.getElementById(`msRsiRangeHighlight_${spanId}`);
+      if (rsiHlEl) rsiHlEl.style.display = "none";
 
       this.syncCardHistoricalUI(spanId, { isHistorical: false });
       const badgeEl = document.getElementById(`msCardModeBadge_${spanId}`);
@@ -2883,9 +3085,63 @@
       }, 250);
     }
 
+    getRsiDataForSpan(spanId, period = 14) {
+      const candles = this.candlesData?.[spanId] || [];
+      const p = Math.max(2, Math.min(200, Math.round(Number(period) || 14)));
+      const last = candles[candles.length - 1];
+      const signature = `${p}:${candles.length}:${Number(last?.time) || 0}:${Number(last?.close) || 0}`;
+      if (!this.rsiCache[spanId]) this.rsiCache[spanId] = new Map();
+      const cached = this.rsiCache[spanId].get(signature);
+      if (cached) return cached;
+      const values = this.calculateRsi(candles, p);
+      const result = { period: p, values, byTime: new Map(values.map((point) => [Number(point.time), point])) };
+      this.rsiCache[spanId].clear();
+      this.rsiCache[spanId].set(signature, result);
+      return result;
+    }
+
+    updateRsiForSpan(spanId, candles, options = {}) {
+      const settings = options.settings || this.strategyReplayResult?.settings || this.macdStrategySettings();
+      const period = Math.max(2, Math.min(200, Math.round(Number(settings.rsi_period) || 14)));
+      const lowerRaw = Number(settings.rsi_entry_threshold);
+      const upperRaw = Number(settings.rsi_exit_threshold);
+      const lower = Math.max(0, Math.min(100, Number.isFinite(lowerRaw) ? lowerRaw : 30));
+      const upper = Math.max(0, Math.min(100, Number.isFinite(upperRaw) ? upperRaw : 70));
+      this.candlesData[spanId] = Array.isArray(candles) ? candles : (this.candlesData[spanId] || []);
+      const data = this.getRsiDataForSpan(spanId, period);
+      this.rsiData[spanId] = data;
+      const last = data.values[data.values.length - 1] || null;
+      const latestTime = Number(candles?.[candles.length - 1]?.time);
+      const thresholdTimes = data.values.map((point) => Number(point.time));
+      if (options.updateLatestOnly) {
+        if (last) this.rsiLine[spanId]?.update(last);
+        if (Number.isFinite(latestTime)) {
+          this.rsiUpper[spanId]?.update({ time: latestTime, value: upper });
+          this.rsiLower[spanId]?.update({ time: latestTime, value: lower });
+        }
+      } else {
+        this.rsiLine[spanId]?.setData(data.values);
+        this.rsiUpper[spanId]?.setData(thresholdTimes.map((time) => ({ time, value: upper })));
+        this.rsiLower[spanId]?.setData(thresholdTimes.map((time) => ({ time, value: lower })));
+      }
+      this.updateRsiLegend(spanId, last?.value, period, lower, upper);
+      return data;
+    }
+
+    updateAllRsiSeries(settings = this.macdStrategySettings()) {
+      SPANS.forEach((span) => {
+        const candles = this.candlesData?.[span.id] || [];
+        if (candles.length) this.updateRsiForSpan(span.id, candles, { settings });
+      });
+    }
+
     updateMacdForSpan(spanId, candles, options = {}) {
       const { updateLatestOnly = false } = options;
-      if (!Array.isArray(candles) || candles.length < 34) return null;
+      if (!Array.isArray(candles)) return null;
+      if (candles.length < 34) {
+        this.updateRsiForSpan(spanId, candles, options);
+        return null;
+      }
 
       const macdRes = this.calculateMacd(candles, 12, 26, 9);
       const ma20Res = this.calculateSma(candles, 20);
@@ -2961,6 +3217,7 @@
         }
       }
       this.scheduleMacdStrategyReplay();
+      this.updateRsiForSpan(spanId, candles, options);
       return macdRes;
     }
 
@@ -3115,6 +3372,41 @@
       return res;
     }
 
+    calculateRsi(data, period = 14) {
+      const candles = Array.isArray(data) ? data : [];
+      const p = Math.max(2, Math.min(200, Math.round(Number(period) || 14)));
+      if (candles.length <= p) return [];
+
+      let avgGain = 0;
+      let avgLoss = 0;
+      for (let i = 1; i <= p; i += 1) {
+        const change = Number(candles[i].close) - Number(candles[i - 1].close);
+        if (change > 0) avgGain += change;
+        else avgLoss -= change;
+      }
+      avgGain /= p;
+      avgLoss /= p;
+
+      const valueFor = () => {
+        if (avgGain === 0 && avgLoss === 0) return 50;
+        if (avgLoss === 0) return 100;
+        if (avgGain === 0) return 0;
+        const rs = avgGain / avgLoss;
+        return +(100 - 100 / (1 + rs)).toFixed(4);
+      };
+
+      const values = [{ time: Number(candles[p].time), value: valueFor() }];
+      for (let i = p + 1; i < candles.length; i += 1) {
+        const change = Number(candles[i].close) - Number(candles[i - 1].close);
+        const gain = change > 0 ? change : 0;
+        const loss = change < 0 ? -change : 0;
+        avgGain = ((avgGain * (p - 1)) + gain) / p;
+        avgLoss = ((avgLoss * (p - 1)) + loss) / p;
+        values.push({ time: Number(candles[i].time), value: valueFor() });
+      }
+      return values;
+    }
+
     calculateMacd(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
       if (!Array.isArray(data) || data.length < slowPeriod) {
         return { macd: [], signal: [], histogram: [] };
@@ -3226,6 +3518,9 @@
           signal_basis: s.signal_basis || "completed",
           buy_threshold: s.buy_threshold,
           sell_threshold: s.sell_threshold,
+          rsi_period: s.rsi_period,
+          rsi_entry_threshold: s.rsi_entry_threshold,
+          rsi_exit_threshold: s.rsi_exit_threshold,
           initial_capital: s.initial_capital,
           fee_bps: s.fee_bps,
           entry_rules: s.entry_rules,
@@ -3263,6 +3558,18 @@
         const feeEl = document.getElementById("msStrategyFeeBps");
         if (feeEl) feeEl.value = String(saved.fee_bps);
       }
+      if (Number.isFinite(Number(saved.rsi_period))) {
+        const periodEl = document.getElementById("msStrategyRsiPeriod");
+        if (periodEl) periodEl.value = String(saved.rsi_period);
+      }
+      if (Number.isFinite(Number(saved.rsi_entry_threshold))) {
+        const entryEl = document.getElementById("msStrategyRsiEntryThreshold");
+        if (entryEl) entryEl.value = String(saved.rsi_entry_threshold);
+      }
+      if (Number.isFinite(Number(saved.rsi_exit_threshold))) {
+        const exitEl = document.getElementById("msStrategyRsiExitThreshold");
+        if (exitEl) exitEl.value = String(saved.rsi_exit_threshold);
+      }
 
       if (typeof document.querySelectorAll !== "function") return true;
       const entryMap = new Map(
@@ -3293,7 +3600,9 @@
             signBtn.setAttribute("data-sign", savedSign);
             signBtn.textContent = isCross
               ? (savedSign === "+" ? "+ (−→+)" : "− (+→−)")
-              : (savedSign === "+" ? "+ (>0)" : "− (<0)");
+              : (ruleId === "rsi"
+                ? (savedSign === "+" ? "+ (>)" : "− (<)")
+                : (savedSign === "+" ? "+ (>0)" : "− (<0)"));
             signBtn.style.color = savedSign === "+" ? "#166534" : "#991b1b";
           }
         }
@@ -3393,6 +3702,9 @@
         rule_signs: ruleSigns,
         buy_threshold: readNumber("msStrategyBuyThreshold", Number.isFinite(Number(saved?.buy_threshold)) ? Number(saved.buy_threshold) : 0, -1e9, 1e9),
         sell_threshold: readNumber("msStrategySellThreshold", Number.isFinite(Number(saved?.sell_threshold)) ? Number(saved.sell_threshold) : 0, -1e9, 1e9),
+        rsi_period: Math.round(readNumber("msStrategyRsiPeriod", Number.isFinite(Number(saved?.rsi_period)) ? Number(saved.rsi_period) : 14, 2, 200)),
+        rsi_entry_threshold: readNumber("msStrategyRsiEntryThreshold", Number.isFinite(Number(saved?.rsi_entry_threshold)) ? Number(saved.rsi_entry_threshold) : 30, 0, 100),
+        rsi_exit_threshold: readNumber("msStrategyRsiExitThreshold", Number.isFinite(Number(saved?.rsi_exit_threshold)) ? Number(saved.rsi_exit_threshold) : 70, 0, 100),
         initial_capital: readNumber("msStrategyCapital", Number.isFinite(Number(saved?.initial_capital)) ? Number(saved.initial_capital) : 10000, 1, 1e12),
         fee_bps: readNumber("msStrategyFeeBps", Number.isFinite(Number(saved?.fee_bps)) ? Number(saved.fee_bps) : 5, 0, 1000),
       };
@@ -3408,6 +3720,9 @@
       if (name === "all_full_wave") {
         return { clock_span: "1s", enabled_spans: SPANS.map((span) => span.id) };
       }
+      if (name === "rsi") {
+        return { clock_span: "5m", enabled_spans: ["5m", "15m"] };
+      }
       return { clock_span: "5m", enabled_spans: ["5m", "15m"] };
     }
 
@@ -3418,33 +3733,61 @@
       if (clock && preset.clock_span) clock.value = preset.clock_span;
       const enabled = new Set(preset.enabled_spans);
       const isFullWave = name === "full_wave" || name === "all_full_wave";
+      const isRsi = name === "rsi";
       document.querySelectorAll(".msStrategySpanToggle").forEach((input) => {
         const spanId = input.getAttribute("data-span");
         const ruleId = input.getAttribute("data-rule") || "macd_h";
-        if (isFullWave) {
-          input.checked = enabled.has(spanId);
+        if (isRsi) {
+          input.checked = enabled.has(spanId) && ruleId === "rsi";
+          if (ruleId === "rsi") {
+            const kind = input.getAttribute("data-kind") || "entry";
+            const sign = kind === "entry" ? "-" : "+";
+            const signButton = input.closest?.(".condRow")?.querySelector?.(".condSignToggle");
+            if (signButton) {
+              signButton.setAttribute("data-sign", sign);
+              signButton.textContent = sign === "+" ? "+ (>)" : "− (<)";
+              signButton.style.color = sign === "+" ? "#166534" : "#991b1b";
+            }
+          }
+        } else if (isFullWave) {
+          input.checked = enabled.has(spanId) && ruleId !== "rsi";
         } else {
           input.checked = enabled.has(spanId) && ruleId === "macd_h";
         }
       });
+      if (isRsi) {
+        const basis = document.getElementById("msStrategySignalBasis");
+        const period = document.getElementById("msStrategyRsiPeriod");
+        const entry = document.getElementById("msStrategyRsiEntryThreshold");
+        const exit = document.getElementById("msStrategyRsiExitThreshold");
+        if (basis) basis.value = "completed";
+        if (period) period.value = "14";
+        if (entry) entry.value = "30";
+        if (exit) exit.value = "70";
+      }
       this.saveMacdStrategySettings();
-      return this.runMacdStrategyReplay();
+      const result = this.runMacdStrategyReplay();
+      this.updateAllRsiSeries(result.settings);
+      return result;
     }
 
     updateMacdStrategyPresetButtons(settings) {
       if (typeof document === "undefined") return;
       const enabled = [...(settings?.enabled_spans || [])].sort().join(",");
-      const hasFullWave = (settings?.entry_rules || []).some((r) => r.rule !== "macd_h");
+      const activeRules = [...(settings?.entry_rules || []), ...(settings?.exit_rules || [])];
+      const isRsi = activeRules.length > 0 && activeRules.every((r) => r.rule === "rsi");
+      const hasFullWave = !isRsi && (settings?.entry_rules || []).some((r) => r.rule !== "macd_h");
       const setState = (id, active) => {
         const button = document.getElementById(id);
         if (!button) return;
         button.setAttribute("aria-pressed", active ? "true" : "false");
         button.classList.toggle("isActive", active);
       };
-      setState("msStrategyPresetQuick", !hasFullWave && settings?.clock_span === "5m" && enabled === "15m,5m");
-      setState("msStrategyPresetAll", !hasFullWave && settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
+      setState("msStrategyPresetQuick", !isRsi && !hasFullWave && settings?.clock_span === "5m" && enabled === "15m,5m");
+      setState("msStrategyPresetAll", !isRsi && !hasFullWave && settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
       setState("msStrategyPresetFullWave", hasFullWave && settings?.clock_span === "5m" && enabled === "15m,5m");
       setState("msStrategyPresetAllFullWave", hasFullWave && settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
+      setState("msStrategyPresetRsi", isRsi && settings?.clock_span === "5m" && enabled === "15m,5m");
     }
 
     findCompletedHistogramAt(spanId, decisionTime, signalBasis = "completed") {
@@ -3580,7 +3923,51 @@
       };
     }
 
-    evaluateMacdRuleOnPoint(point, rule, isEntry, buyThreshold = 0, sellThreshold = 0) {
+    findCompletedRsiAt(spanId, decisionTime, period = 14) {
+      const data = this.getRsiDataForSpan(spanId, period)?.values || [];
+      const spanSec = SPANS.find((span) => span.id === spanId)?.sec || 1;
+      let low = 0;
+      let high = data.length - 1;
+      let best = null;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        const point = data[mid];
+        if (Number(point.time) + spanSec <= Number(decisionTime)) {
+          best = point;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      if (!best || !Number.isFinite(Number(best.value))) return null;
+      return {
+        time: Number(best.time),
+        completed_time: Number(best.time) + spanSec,
+        signal_basis: "completed",
+        rsi: Number(best.value),
+        value: Number(best.value),
+      };
+    }
+
+    findCompletedStrategyPointAt(spanId, decisionTime, settings, spanRules = []) {
+      const rules = Array.isArray(spanRules) ? spanRules : [];
+      const needsRsi = rules.some((rule) => rule.rule === "rsi");
+      const needsMacd = rules.some((rule) => rule.rule !== "rsi");
+      let point = null;
+      if (needsMacd) {
+        point = this.findCompletedHistogramAt(spanId, decisionTime, settings?.signal_basis || "completed");
+        if (!point) return null;
+      }
+      if (needsRsi) {
+        const rsiPoint = this.findCompletedRsiAt(spanId, decisionTime, settings?.rsi_period || 14);
+        if (!rsiPoint) return null;
+        if (point && Number(point.time) !== Number(rsiPoint.time)) return null;
+        point = point ? { ...point, rsi: rsiPoint.rsi } : rsiPoint;
+      }
+      return point;
+    }
+
+    evaluateMacdRuleOnPoint(point, rule, isEntry, buyThreshold = 0, sellThreshold = 0, rsiEntryThreshold = 30, rsiExitThreshold = 70) {
       if (!point || !rule) return false;
       if (rule.rule === "macd_h_cross") {
         const cross = point.hist_cross;
@@ -3600,11 +3987,14 @@
       else if (rule.rule === "macd_h_diff") val = point.hist_diff;
       else if (rule.rule === "ma20_diff") val = point.ma20_diff;
       else if (rule.rule === "ma50_diff") val = point.ma50_diff;
+      else if (rule.rule === "rsi") val = point.rsi;
       if (val === null || val === undefined || !Number.isFinite(Number(val))) return false;
 
       const numVal = Number(val);
-      if (rule.rule === "macd_h") {
-        const thresh = isEntry ? buyThreshold : sellThreshold;
+      if (rule.rule === "macd_h" || rule.rule === "rsi") {
+        const thresh = rule.rule === "rsi"
+          ? (isEntry ? rsiEntryThreshold : rsiExitThreshold)
+          : (isEntry ? buyThreshold : sellThreshold);
         return rule.sign === "+" ? numVal > thresh : numVal < thresh;
       }
       return rule.sign === "+" ? numVal > 0 : numVal < 0;
@@ -3615,6 +4005,8 @@
       const signalBasis = settings?.signal_basis === "parabolic" ? "parabolic" : "completed";
       const buyThreshold = Number.isFinite(Number(settings?.buy_threshold)) ? Number(settings.buy_threshold) : 0;
       const sellThreshold = Number.isFinite(Number(settings?.sell_threshold)) ? Number(settings.sell_threshold) : 0;
+      const rsiEntryThreshold = Number.isFinite(Number(settings?.rsi_entry_threshold)) ? Number(settings.rsi_entry_threshold) : 30;
+      const rsiExitThreshold = Number.isFinite(Number(settings?.rsi_exit_threshold)) ? Number(settings.rsi_exit_threshold) : 70;
       const spanEntryRules = (settings?.entry_rules || []).filter((r) => r.span === spanId);
       const spanExitRules = (settings?.exit_rules || []).filter((r) => r.span === spanId);
       if (!spanEntryRules.length && !spanExitRules.length) return [];
@@ -3634,12 +4026,17 @@
 
       const matches = [];
       for (const candleTime of completedTimes) {
-        const point = this.findCompletedHistogramAt(spanId, candleTime + spanSec, signalBasis);
+        const point = this.findCompletedStrategyPointAt(
+          spanId,
+          candleTime + spanSec,
+          { ...settings, signal_basis: signalBasis },
+          [...spanEntryRules, ...spanExitRules],
+        );
         if (!point || point.time !== candleTime) continue;
         const entryPass = spanEntryRules.length > 0
-          && spanEntryRules.every((r) => this.evaluateMacdRuleOnPoint(point, r, true, buyThreshold, sellThreshold));
+          && spanEntryRules.every((r) => this.evaluateMacdRuleOnPoint(point, r, true, buyThreshold, sellThreshold, rsiEntryThreshold, rsiExitThreshold));
         const exitPass = spanExitRules.length > 0
-          && spanExitRules.every((r) => this.evaluateMacdRuleOnPoint(point, r, false, buyThreshold, sellThreshold));
+          && spanExitRules.every((r) => this.evaluateMacdRuleOnPoint(point, r, false, buyThreshold, sellThreshold, rsiEntryThreshold, rsiExitThreshold));
         if (entryPass || exitPass) {
           matches.push({
             time: candleTime,
@@ -3660,6 +4057,9 @@
       const signalBasis = rawSettings.signal_basis === "parabolic" ? "parabolic" : "completed";
       const buyThreshold = Number.isFinite(Number(rawSettings.buy_threshold)) ? Number(rawSettings.buy_threshold) : 0;
       const sellThreshold = Number.isFinite(Number(rawSettings.sell_threshold)) ? Number(rawSettings.sell_threshold) : 0;
+      const rsiPeriod = Math.max(2, Math.min(200, Math.round(Number(rawSettings.rsi_period) || 14)));
+      const rsiEntryThreshold = Math.max(0, Math.min(100, Number.isFinite(Number(rawSettings.rsi_entry_threshold)) ? Number(rawSettings.rsi_entry_threshold) : 30));
+      const rsiExitThreshold = Math.max(0, Math.min(100, Number.isFinite(Number(rawSettings.rsi_exit_threshold)) ? Number(rawSettings.rsi_exit_threshold) : 70));
       const initialCapital = Math.max(1, Number(rawSettings.initial_capital) || 10000);
       const feeBps = Math.max(0, Math.min(1000, Number(rawSettings.fee_bps) || 0));
 
@@ -3675,9 +4075,14 @@
         exitRules = rawSpans.map((spanId) => ({ span: spanId, rule: "macd_h", sign: "+" }));
       }
 
-      const activeSpans = [...new Set([...entryRules.map((r) => r.span), ...exitRules.map((r) => r.span)])];
+      const allRules = [...entryRules, ...exitRules];
+      const activeSpans = [...new Set(allRules.map((r) => r.span))];
+      const usesRsi = allRules.some((rule) => rule.rule === "rsi");
+      const usesMacd = allRules.some((rule) => rule.rule !== "rsi");
       const settings = {
-        strategy_mode: "all_macd_histogram_contrarian",
+        strategy_mode: usesRsi && !usesMacd
+          ? "all_rsi_reversion"
+          : (usesRsi ? "multi_indicator_confluence" : "all_macd_histogram_contrarian"),
         clock_span: clockSpan,
         signal_basis: signalBasis,
         enabled_spans: activeSpans,
@@ -3686,6 +4091,9 @@
         rule_signs: (rawSettings.rule_signs && typeof rawSettings.rule_signs === "object") ? { ...rawSettings.rule_signs } : {},
         buy_threshold: buyThreshold,
         sell_threshold: sellThreshold,
+        rsi_period: rsiPeriod,
+        rsi_entry_threshold: rsiEntryThreshold,
+        rsi_exit_threshold: rsiExitThreshold,
         initial_capital: initialCapital,
         fee_bps: feeBps,
       };
@@ -3714,9 +4122,15 @@
         },
       });
 
-      if (!entryRules.length && !exitRules.length) return emptyResult("Enable at least one MACD condition.");
+      if (!entryRules.length && !exitRules.length) return emptyResult("Enable at least one strategy condition.");
       if (buyThreshold > sellThreshold) {
         return emptyResult("BUY threshold must be less than or equal to the SELL threshold.");
+      }
+      if (usesRsi && rsiEntryThreshold >= rsiExitThreshold) {
+        return emptyResult("RSI entry threshold must be lower than the RSI exit threshold.");
+      }
+      if (usesRsi && signalBasis === "parabolic") {
+        return emptyResult("RSI replay uses completed candles only; switch Signal basis to Completed (actual t).");
       }
 
       const clockSec = SPANS.find((s) => s.id === clockSpan)?.sec || 1;
@@ -3748,7 +4162,8 @@
         const histograms = {};
         let aligned = true;
         for (const spanId of activeSpans) {
-          const point = this.findCompletedHistogramAt(spanId, decisionTime, signalBasis);
+          const spanRules = allRules.filter((rule) => rule.span === spanId);
+          const point = this.findCompletedStrategyPointAt(spanId, decisionTime, settings, spanRules);
           if (!point) {
             aligned = false;
             break;
@@ -3764,7 +4179,7 @@
         lastEvaluatedPrice = price;
 
         const evalRule = (rule, isEntry) =>
-          this.evaluateMacdRuleOnPoint(histograms[rule.span], rule, isEntry, buyThreshold, sellThreshold);
+          this.evaluateMacdRuleOnPoint(histograms[rule.span], rule, isEntry, buyThreshold, sellThreshold, rsiEntryThreshold, rsiExitThreshold);
 
         const buyPass = entryRules.length > 0 && entryRules.every((r) => evalRule(r, true));
         const sellPass = exitRules.length > 0 && exitRules.every((r) => evalRule(r, false));
@@ -4027,8 +4442,11 @@
           overlay.textContent = "";
           return;
         }
+        const usesRsiOnly = this.strategyReplayResult?.settings?.strategy_mode === "all_rsi_reversion";
         const histText = Object.entries(marker.histograms || {})
-          .map(([spanId, point]) => `${spanId} H ${Number(point?.value) >= 0 ? "+" : ""}${Number(point?.value).toFixed(4)}`)
+          .map(([spanId, point]) => usesRsiOnly
+            ? `${spanId} RSI ${Number(point?.rsi).toFixed(2)}`
+            : `${spanId} ${Number.isFinite(Number(point?.rsi)) ? `RSI ${Number(point.rsi).toFixed(2)} / ` : ""}H ${Number(point?.histogram ?? point?.value) >= 0 ? "+" : ""}${Number(point?.histogram ?? point?.value).toFixed(4)}`)
           .join(" · ");
         let title;
         if (marker.is_exit) {
@@ -4102,11 +4520,13 @@
       if (typeof document === "undefined" || typeof document.getElementById !== "function" || typeof document.createElement !== "function") return;
       const mainLayer = document.getElementById(`msCondHighlight_${spanId}`);
       const macdLayer = document.getElementById(`msMacdCondHighlight_${spanId}`);
+      const rsiLayer = document.getElementById(`msRsiCondHighlight_${spanId}`);
       const badgeEl = document.getElementById(`msCardCondBadge_${spanId}`);
-      if (!mainLayer && !macdLayer && !badgeEl) return;
+      if (!mainLayer && !macdLayer && !rsiLayer && !badgeEl) return;
 
       if (mainLayer) mainLayer.textContent = "";
       if (macdLayer) macdLayer.textContent = "";
+      if (rsiLayer) rsiLayer.textContent = "";
 
       const result = this.strategyReplayResult;
       const settings = result?.settings;
@@ -4234,6 +4654,7 @@
 
       paintChartLayer(mainLayer, this.charts?.[spanId], document.getElementById(`msChartHost_${spanId}`));
       paintChartLayer(macdLayer, this.macdCharts?.[spanId], document.getElementById(`msMacdHost_${spanId}`));
+      paintChartLayer(rsiLayer, this.rsiCharts?.[spanId], document.getElementById(`msRsiHost_${spanId}`));
     }
 
     renderAllSpanConditionCandleHighlights() {
@@ -4429,7 +4850,9 @@
         const isEnabled = Boolean(activeRule);
         const savedSign = settings.rule_signs?.[`${kind}:${span.id}:${rule.id}`];
         const sign = activeRule?.sign || savedSign || (isEntry ? rule.defaultEntrySign : rule.defaultExitSign);
-        const threshold = isEntry ? Number(settings.buy_threshold) : Number(settings.sell_threshold);
+        const threshold = rule.id === "rsi"
+          ? (isEntry ? Number(settings.rsi_entry_threshold) : Number(settings.rsi_exit_threshold))
+          : (isEntry ? Number(settings.buy_threshold) : Number(settings.sell_threshold));
         const point = latest?.histograms?.[span.id];
 
         const isCross = rule.id === "macd_h_cross" || rule.id === "macd_h_diff_cross";
@@ -4444,13 +4867,14 @@
           else if (rule.id === "macd_h_diff") val = point.hist_diff;
           else if (rule.id === "ma20_diff") val = point.ma20_diff;
           else if (rule.id === "ma50_diff") val = point.ma50_diff;
+          else if (rule.id === "rsi") val = point.rsi;
         }
 
         const signLabel = isCross
           ? (sign === "+" ? "+ (−→+)" : "− (+→−)")
-          : (sign === "+" ? "+ (>0)" : "− (<0)");
+          : (sign === "+" ? "+ (>)" : "− (<)");
         const operator = sign === "+" ? ">" : "<";
-        const ruleThreshold = rule.id === "macd_h" ? threshold : 0;
+        const ruleThreshold = rule.id === "macd_h" || rule.id === "rsi" ? threshold : 0;
         const titleText = isCross
           ? `${span.id} ${rule.label} ${sign === "+" ? "+ (−→+)" : "− (+→−)"}`
           : `${span.id} ${rule.label} ${operator} ${ruleThreshold}`;
@@ -4500,7 +4924,9 @@
           subtitleDetail = `${trans} (${measured})`;
         } else {
           pass = sign === "+" ? numVal > ruleThreshold : numVal < ruleThreshold;
-          measured = `${numVal > 0 ? "+" : ""}${numVal.toFixed(4)}`;
+          measured = rule.id === "rsi"
+            ? numVal.toFixed(2)
+            : `${numVal > 0 ? "+" : ""}${numVal.toFixed(4)}`;
           subtitleDetail = measured;
         }
         const valColor = pass ? "#16a34a" : (numVal < 0 ? "#dc2626" : "#64748b");
@@ -4665,7 +5091,14 @@
         const basisDesc = settings.signal_basis === "parabolic"
           ? "Parabolic 2nd-order Taylor projection x̂_t = x_{t-1} + Δx_{t-1} + ½Δ²x_{t-1} from (t-2, t-1)"
           : "completed actual bar t";
-        source.textContent = `Source: completed Binance candles (${basisDesc}) · MACD(12,26,9) + MA20/MA50 [H, H×, S, ΔS, Δ²S, ΔH, ΔH×, ΔMA20, ΔMA50] · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · green/red candle columns show per-chart LONG/SHORT condition matches · loaded chart history only`;
+        const rules = [...(settings.entry_rules || []), ...(settings.exit_rules || [])];
+        const hasRsi = rules.some((rule) => rule.rule === "rsi");
+        const hasMacd = rules.some((rule) => rule.rule !== "rsi");
+        const indicators = [
+          hasMacd ? "MACD(12,26,9) + MA20/MA50 [H, H×, S, ΔS, Δ²S, ΔH, ΔH×, ΔMA20, ΔMA50]" : null,
+          hasRsi ? `Wilder RSI(${settings.rsi_period}) [entry ${settings.rsi_entry_threshold}, exit ${settings.rsi_exit_threshold}]` : null,
+        ].filter(Boolean).join(" + ");
+        source.textContent = `Source: completed Binance candles (${basisDesc}) · ${indicators || "no enabled indicators"} · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · green/red candle columns show per-chart ENTRY/EXIT condition matches · loaded chart history only`;
       }
     }
 
@@ -4721,6 +5154,45 @@
         ma50: null,
         ma50_diff: null,
       };
+    }
+
+    findRsiAtOrBefore(spanId, time, period = null) {
+      const resolvedPeriod = period || this.rsiData?.[spanId]?.period || 14;
+      const data = this.getRsiDataForSpan(spanId, resolvedPeriod)?.values || [];
+      if (!data.length) return null;
+      let low = 0;
+      let high = data.length - 1;
+      let best = null;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        if (Number(data[mid].time) <= Number(time)) {
+          best = data[mid];
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      return best;
+    }
+
+    updateRsiLegend(spanId, rsiVal, period = 14, lower = 30, upper = 70) {
+      if (typeof document === "undefined") return;
+      const valEl = document.getElementById(`msRsiVal_${spanId}`);
+      const periodEl = document.getElementById(`msRsiPeriodLabel_${spanId}`);
+      const lowerEl = document.getElementById(`msRsiLowerVal_${spanId}`);
+      const upperEl = document.getElementById(`msRsiUpperVal_${spanId}`);
+      if (periodEl) periodEl.textContent = String(period);
+      if (lowerEl) lowerEl.textContent = Number(lower).toFixed(Number(lower) % 1 ? 1 : 0);
+      if (upperEl) upperEl.textContent = Number(upper).toFixed(Number(upper) % 1 ? 1 : 0);
+      if (!valEl) return;
+      if (rsiVal === null || rsiVal === undefined || !Number.isFinite(Number(rsiVal))) {
+        valEl.textContent = "--";
+        if (valEl.style) valEl.style.color = "#7c3aed";
+        return;
+      }
+      const value = Number(rsiVal);
+      valEl.textContent = value.toFixed(2);
+      if (valEl.style) valEl.style.color = value <= lower ? "#16a34a" : value >= upper ? "#dc2626" : "#7c3aed";
     }
 
     updateMacdLegend(spanId, macdVal, sigVal, histVal, sigDiffVal = null, sigDiff2Val = null, histDiffVal = null, histCrossVal = null, ma20DiffVal = null, ma50DiffVal = null, histDiffCrossVal = null) {
@@ -4907,7 +5379,9 @@
       const runStrategy = () => this.runMacdStrategyReplay();
       const saveAndRunStrategy = () => {
         this.saveMacdStrategySettings();
-        return this.runMacdStrategyReplay();
+        const result = this.runMacdStrategyReplay();
+        this.updateAllRsiSeries(result.settings);
+        return result;
       };
       const runStrategyButton = document.getElementById("msRunStrategyReplay");
       if (runStrategyButton && !this.strategyExecutionFrame) runStrategyButton.addEventListener("click", saveAndRunStrategy);
@@ -4915,10 +5389,12 @@
       const allPresetButton = document.getElementById("msStrategyPresetAll");
       const fullWaveButton = document.getElementById("msStrategyPresetFullWave");
       const allFullWaveButton = document.getElementById("msStrategyPresetAllFullWave");
+      const rsiPresetButton = document.getElementById("msStrategyPresetRsi");
       if (quickPresetButton) quickPresetButton.addEventListener("click", () => this.applyMacdStrategyPreset("quick"));
       if (allPresetButton) allPresetButton.addEventListener("click", () => this.applyMacdStrategyPreset("all"));
       if (fullWaveButton) fullWaveButton.addEventListener("click", () => this.applyMacdStrategyPreset("full_wave"));
       if (allFullWaveButton) allFullWaveButton.addEventListener("click", () => this.applyMacdStrategyPreset("all_full_wave"));
+      if (rsiPresetButton) rsiPresetButton.addEventListener("click", () => this.applyMacdStrategyPreset("rsi"));
       [
         "msStrategyClock",
         "msStrategySignalBasis",
@@ -4926,6 +5402,9 @@
         "msStrategySellThreshold",
         "msStrategyCapital",
         "msStrategyFeeBps",
+        "msStrategyRsiPeriod",
+        "msStrategyRsiEntryThreshold",
+        "msStrategyRsiExitThreshold",
       ].forEach((id) => {
         const control = document.getElementById(id);
         if (control) control.addEventListener("change", saveAndRunStrategy);
@@ -4944,11 +5423,14 @@
             e.preventDefault();
             const currSign = signBtn.getAttribute("data-sign") || "+";
             const nextSign = currSign === "+" ? "-" : "+";
-            const isCross = ["macd_h_cross", "macd_h_diff_cross"].includes(signBtn.getAttribute("data-rule"));
+            const ruleId = signBtn.getAttribute("data-rule");
+            const isCross = ["macd_h_cross", "macd_h_diff_cross"].includes(ruleId);
             signBtn.setAttribute("data-sign", nextSign);
             signBtn.textContent = isCross
               ? (nextSign === "+" ? "+ (−→+)" : "− (+→−)")
-              : (nextSign === "+" ? "+ (>0)" : "− (<0)");
+              : (ruleId === "rsi"
+                ? (nextSign === "+" ? "+ (>)" : "− (<)")
+                : (nextSign === "+" ? "+ (>0)" : "− (<0)"));
             signBtn.style.color = nextSign === "+" ? "#166534" : "#991b1b";
             saveAndRunStrategy();
             return;
@@ -5191,6 +5673,7 @@
         try {
           this.charts[s.id]?.clearCrosshairPosition();
           this.macdCharts[s.id]?.clearCrosshairPosition();
+          this.rsiCharts[s.id]?.clearCrosshairPosition();
         } catch (_) {}
         const lastCandle = this.candlesData[s.id]?.slice(-1)[0];
         const cardTime = document.getElementById(`msCardTime_${s.id}`);
@@ -5206,6 +5689,9 @@
           const lastH = histList.length ? histList[histList.length - 1] : null;
           this.updateMacdLegend(s.id, lastM?.value, lastS?.value, lastH?.value);
         }
+        const rsiSettings = this.strategyReplayResult?.settings || this.macdStrategySettings();
+        const lastRsi = this.rsiData[s.id]?.values?.slice(-1)[0];
+        this.updateRsiLegend(s.id, lastRsi?.value, rsiSettings.rsi_period, rsiSettings.rsi_entry_threshold, rsiSettings.rsi_exit_threshold);
       });
 
       const tasks = SPANS.map(async (s) => {
@@ -5273,6 +5759,8 @@
       this.entrySignals = [];
       this.candlesData = {};
       this.macdData = {};
+      this.rsiData = {};
+      this.rsiCache = {};
       this.stopRealtimeFeeds();
 
       SPANS.forEach((s) => {
@@ -5282,6 +5770,10 @@
         try {
           this.charts[s.id]?.clearCrosshairPosition();
           this.macdCharts[s.id]?.clearCrosshairPosition();
+          this.rsiCharts[s.id]?.clearCrosshairPosition();
+          this.rsiLine[s.id]?.setData([]);
+          this.rsiUpper[s.id]?.setData([]);
+          this.rsiLower[s.id]?.setData([]);
           if (typeof this.series[s.id]?.setMarkers === "function") this.series[s.id].setMarkers([]);
         } catch (_) {}
       });

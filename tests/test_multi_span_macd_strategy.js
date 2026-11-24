@@ -23,6 +23,10 @@ assert.match(strategyBody, /class="msSpanShortCol"[\s\S]*?Short conditions/,
   "Multi-Chart must render the Short conditions column in each timeframe section");
 assert.match(strategyBody, /class="msStrategySpanToggle"/,
   "every visible timeframe rule must remain a real adjustable replay control");
+assert.match(strategyBody, /id="msStrategyPresetRsi"/,
+  "Multi-Chart must provide a real RSI strategy preset");
+assert.match(strategyBody, /id="msStrategyRsiPeriod"[\s\S]*?id="msStrategyRsiEntryThreshold"[\s\S]*?id="msStrategyRsiExitThreshold"/,
+  "RSI period, entry threshold, and exit threshold must be adjustable replay controls");
 assert.match(strategyBody, /class="condRow[^"]*"[\s\S]*?class="toggleSwitch"[\s\S]*?class="msStrategySpanToggle"/,
   "every condition row must contain an inline toggle switch matching other tabs");
 assert.doesNotMatch(strategyBody, /id="msStrategySpanToggles"/,
@@ -132,10 +136,10 @@ assert.equal(shortOnlyMarkers[0].signal_only, true);
 
 // Test MACD_RULES definition and legend/DOM elements
 assert.ok(Array.isArray(engine.MACD_RULES), "engine.MACD_RULES must be an array");
-assert.equal(engine.MACD_RULES.length, 9, "engine.MACD_RULES must contain 9 indicator definitions");
+assert.equal(engine.MACD_RULES.length, 10, "engine.MACD_RULES must contain the 9 MACD/MA definitions plus RSI");
 const ruleIds = engine.MACD_RULES.map((r) => r.id);
-assert.deepEqual(ruleIds, ["macd_h", "macd_h_cross", "macd_s", "macd_s_diff", "macd_s_diff2", "macd_h_diff", "macd_h_diff_cross", "ma20_diff", "ma50_diff"],
-  "must support macd_h, macd_h_cross, macd_s, macd_s_diff, macd_s_diff2, macd_h_diff, macd_h_diff_cross, ma20_diff, and ma50_diff");
+assert.deepEqual(ruleIds, ["macd_h", "macd_h_cross", "macd_s", "macd_s_diff", "macd_s_diff2", "macd_h_diff", "macd_h_diff_cross", "ma20_diff", "ma50_diff", "rsi"],
+  "must support MACD/MA dynamics plus RSI");
 
 for (const span of spans) {
   for (const rule of engine.MACD_RULES) {
@@ -294,6 +298,9 @@ const customPersistedSettings = {
   signal_basis: "parabolic",
   buy_threshold: -0.05,
   sell_threshold: 0.08,
+  rsi_period: 21,
+  rsi_entry_threshold: 25,
+  rsi_exit_threshold: 75,
   initial_capital: 25000,
   fee_bps: 4,
   entry_rules: [
@@ -316,6 +323,9 @@ assert.equal(restoredSettings.clock_span, "15m", "must restore persisted clock_s
 assert.equal(restoredSettings.signal_basis, "parabolic", "must restore persisted signal_basis");
 assert.equal(restoredSettings.buy_threshold, -0.05, "must restore persisted buy_threshold");
 assert.equal(restoredSettings.sell_threshold, 0.08, "must restore persisted sell_threshold");
+assert.equal(restoredSettings.rsi_period, 21, "must restore persisted RSI period");
+assert.equal(restoredSettings.rsi_entry_threshold, 25, "must restore persisted RSI entry threshold");
+assert.equal(restoredSettings.rsi_exit_threshold, 75, "must restore persisted RSI exit threshold");
 assert.deepEqual(restoredSettings.entry_rules, customPersistedSettings.entry_rules, "must restore persisted entry_rules");
 assert.deepEqual(restoredSettings.exit_rules, customPersistedSettings.exit_rules, "must restore persisted exit_rules");
 assert.equal(restoredSettings.rule_signs["entry:5m:macd_h"], "+", "must preserve custom sign even for disabled rule");
@@ -352,4 +362,61 @@ assert.equal(parabolicReplay.error, null);
 assert.equal(parabolicReplay.entry_signals.length, 1, "parabolic replay must trigger entry signal at DAY*2 where predicted H crosses +");
 assert.equal(parabolicReplay.entry_signals[0].time, DAY * 2);
 
-console.log("Multi-span all-MACD-H completed-candle paper strategy tests passed");
+// Wilder RSI strategy: oversold matches remain position-independent signals,
+// while the paper portfolio opens only once and exits when RSI becomes overbought.
+const rsiCandles = [];
+for (let i = 0; i < 24; i += 1) {
+  rsiCandles.push({ time: i * DAY, close: 130 - i * 2 });
+}
+for (let i = 24; i < 52; i += 1) {
+  rsiCandles.push({ time: i * DAY, close: 84 + (i - 23) * 4 });
+}
+engine.candlesData["1d"] = rsiCandles;
+engine.rsiCache = {};
+const rsiValues = engine.calculateRsi(rsiCandles, 14);
+assert.equal(rsiValues.length, rsiCandles.length - 14, "RSI must begin after the configured Wilder seed period");
+assert.equal(rsiValues[0].value, 0, "a strictly declining Wilder seed must produce RSI 0");
+assert.ok(rsiValues.some((point) => point.value > 70), "the recovery leg must produce overbought RSI values");
+
+const rsiResult = engine.evaluateMacdStrategyReplay({
+  clock_span: "1d",
+  signal_basis: "completed",
+  entry_rules: [{ span: "1d", rule: "rsi", sign: "-" }],
+  exit_rules: [{ span: "1d", rule: "rsi", sign: "+" }],
+  rsi_period: 14,
+  rsi_entry_threshold: 30,
+  rsi_exit_threshold: 70,
+  buy_threshold: 0,
+  sell_threshold: 0,
+  initial_capital: 10000,
+  fee_bps: 5,
+}, DAY * 53);
+assert.equal(rsiResult.error, null);
+assert.equal(rsiResult.settings.strategy_mode, "all_rsi_reversion");
+assert.ok(rsiResult.entry_signals.length > 1, "every completed oversold RSI candle must remain an entry signal");
+assert.equal(rsiResult.metrics.simulated_entry_fills, 1, "open-position state may suppress RSI fills, never RSI entry signals");
+assert.ok(rsiResult.exit_signals.length > 0, "overbought completed candles must produce exit signals");
+assert.equal(rsiResult.trades.length, 1, "RSI 30/70 replay must close the paper long once");
+assert.ok(Number.isFinite(rsiResult.latest_evaluation.histograms["1d"].rsi));
+
+const invalidRsi = engine.evaluateMacdStrategyReplay({
+  clock_span: "1d",
+  entry_rules: [{ span: "1d", rule: "rsi", sign: "-" }],
+  exit_rules: [{ span: "1d", rule: "rsi", sign: "+" }],
+  rsi_entry_threshold: 75,
+  rsi_exit_threshold: 70,
+}, DAY * 53);
+assert.match(invalidRsi.error, /entry threshold must be lower/);
+
+const predictedRsi = engine.evaluateMacdStrategyReplay({
+  clock_span: "1d",
+  signal_basis: "parabolic",
+  entry_rules: [{ span: "1d", rule: "rsi", sign: "-" }],
+  exit_rules: [{ span: "1d", rule: "rsi", sign: "+" }],
+  rsi_entry_threshold: 30,
+  rsi_exit_threshold: 70,
+}, DAY * 53);
+assert.match(predictedRsi.error, /completed candles only/,
+  "the UI/replay must clearly reject unsupported parabolic RSI modeling");
+
+console.log("Multi-span MACD + RSI completed-candle paper strategy tests passed");
