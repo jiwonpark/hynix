@@ -14,7 +14,7 @@ GIT_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD)"
 BUILD_STAMP="$("$PYTHON_BIN" -c 'from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d%H%M%S"))')"
 DEPLOYED_AT="$("$PYTHON_BIN" -c 'from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M:%S KST"))')"
 BUILD_VERSION="v${BASE_VERSION}+${GIT_SHA}.${BUILD_STAMP}"
-STAGE_DIR="$(mktemp -d)"
+STAGE_DIR="$(mktemp -d /tmp/hynix-deploy.XXXXXX)"
 
 cleanup() {
   rm -rf "$STAGE_DIR"
