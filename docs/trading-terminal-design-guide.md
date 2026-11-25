@@ -698,22 +698,23 @@ The Multi-Span paper replay exposes one fixed-direction condition per timeframe:
 button that can reverse those meanings. Both rows default OFF and use completed
 candles only; Parabolic prediction is unavailable whenever either row is enabled.
 
-The detector normalizes slope and touch distance with Wilder ATR. Every input is
+The detector normalizes MA20 slope with Wilder ATR. Every applicable input is
 adjustable and persisted: ATR period, MA20 slope lookback, minimum absolute slope
-in ATR units, price-side lookback, required same-side closes, touch lookback,
-touch-band distance in ATR units, and optional MA20/MA50 ordering. Ride requires
-the current close above MA20, a positive slope at or above the configured
-threshold, the configured above-MA close quorum, a recent low within the touch
-band whose candle closes above MA20, and MA20 > MA50 when ordering is enabled.
-Hang is the exact bearish counterpart: current close below MA20, sufficiently
-negative slope, below-MA quorum, a recent high touching the band while closing
-below MA20, and optional MA20 < MA50.
+in ATR units, and optional MA20/MA50 ordering. Ride requires the prior completed
+close at or above its MA20 followed by the current completed close below its MA20,
+a positive MA20 slope at or above the configured threshold, and MA20 > MA50 when
+ordering is enabled. Hang is the exact bearish counterpart: the prior completed
+close at or below its MA20 followed by the current completed close above its MA20,
+a sufficiently negative MA20 slope, and optional MA20 < MA50. Merely remaining
+below or above the MA does not emit another match; the completed-close crossing is
+the event.
 
 Each row reports PAPER PASS/WAITING/OFF/UNAVAILABLE from the replay predicate,
-including measured slope, close quorum, touch distance, MA ordering, and the
-completed KST timestamp. Chart condition columns and Ride entry arrows use the
-same detector. Every completed Ride match belongs in `entry_signals` even while a
-simulated long is open; position state may suppress fills but never Ride markers.
+including the previous/current close-to-MA transition, measured slope, MA
+ordering, and the completed KST timestamp. Chart condition columns and Ride entry
+arrows use the same detector. Every completed Ride match belongs in
+`entry_signals` even while a simulated long is open; position state may suppress
+fills but never Ride markers.
 
 ## MACD signal-regime and streak entry condition
 
