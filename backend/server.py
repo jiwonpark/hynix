@@ -222,6 +222,12 @@ _lighter_crypto_history_cache: Optional[Dict[str, Any]] = None
 _lighter_crypto_history_cache_time = 0.0
 _lighter_account_refresh_task: Optional[asyncio.Task] = None
 
+LIGHTER_ACCOUNT_REFRESH_AFTER_MS = 10_000
+LIGHTER_ACCOUNT_STALE_AFTER_MS = 15_000
+LIGHTER_ACCOUNT_REFRESH_TIMEOUT_SECONDS = 20.0
+LIGHTER_MICRO_CHART_LIMIT = 180
+LIGHTER_MICRO_CHART_INTERVALS = frozenset({"1m", "5m", "15m"})
+LIGHTER_MICRO_CHART_TIMEOUT_SECONDS = 25.0
 LIGHTER_MICRO_MAX_ACCOUNT_GROSS_LEVERAGE = 2.0
 LIGHTER_MICRO_SNAPSHOT_DEPTH = 20
 LIGHTER_MICRO_MANDATORY_PREREQUISITE_KEYS = {"entry_direction"}
@@ -720,7 +726,10 @@ async def _refresh_lighter_crypto_history_snapshot() -> None:
 async def _refresh_lighter_account_cache() -> None:
     """Refresh the REST fallback without holding the dashboard response open."""
     try:
-        await asyncio.wait_for(lighter_client.account_status(), timeout=6.0)
+        await asyncio.wait_for(
+            lighter_client.account_status(),
+            timeout=LIGHTER_ACCOUNT_REFRESH_TIMEOUT_SECONDS,
+        )
     except Exception as exc:
         logger.warning("Lighter account-cache refresh failed: %s", exc)
 
@@ -2442,16 +2451,18 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
         market_id = LIGHTER_CRYPTO_MARKETS[symbol]
         snapshot = lighter_client.account_telemetry_snapshot()
         updated_at_ms = int((snapshot or {}).get("updated_at_ms", 0) or 0)
-        snapshot_stale = (not updated_at_ms
-                          or int(time.time() * 1000) - updated_at_ms > 15_000)
-        if snapshot_stale and (_lighter_account_refresh_task is None
-                               or _lighter_account_refresh_task.done()):
+        server_time_ms = int(time.time() * 1000)
+        account_age_ms = max(0, server_time_ms - updated_at_ms) if updated_at_ms else None
+        refresh_due = (account_age_ms is None
+                       or account_age_ms >= LIGHTER_ACCOUNT_REFRESH_AFTER_MS)
+        if refresh_due and (_lighter_account_refresh_task is None
+                            or _lighter_account_refresh_task.done()):
             _lighter_account_refresh_task = asyncio.create_task(_refresh_lighter_account_cache())
         if not snapshot:
             return {"success": False, "symbol": symbol,
                     "error": "Lighter account snapshot unavailable; waiting for account stream",
                     "bot": lighter_crypto_bot.public_state(),
-                    "server_time_ms": int(time.time() * 1000)}
+                    "server_time_ms": server_time_ms}
         account = snapshot["account"]
         positions = account.get("positions") or []
         if isinstance(positions, dict):
@@ -2506,8 +2517,8 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
         # Raw Lighter account snapshots are authoritative when present; unlike
         # the normalized account_status helper they do not carry this flag.
         authenticated = bool(account) and collateral is not None
-        account_age_ms = max(0, int(time.time() * 1000) - updated_at_ms) if updated_at_ms else None
-        account_stale = account_age_ms is None or account_age_ms > 15_000
+        account_stale = (account_age_ms is None
+                         or account_age_ms > LIGHTER_ACCOUNT_STALE_AFTER_MS)
         return {"success": True, "symbol": symbol, "market_id": market_id,
                 "mark_price": mark or None, "price_ratio": mark or None,
                 "venue": "Lighter Single-Leg Perpetual", "authenticated": authenticated,
@@ -2527,7 +2538,7 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
                 "account_age_ms": account_age_ms,
                 "account_stale": account_stale,
                 "bot": lighter_crypto_bot.public_state(),
-                "server_time_ms": int(time.time() * 1000)}
+                "server_time_ms": server_time_ms}
     except Exception as error:
         return {"success": False, "symbol": symbol, "error": str(error),
                 "bot": lighter_crypto_bot.public_state(),
@@ -2535,11 +2546,21 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
 
 
 _lighter_crypto_chart_cache = ChartResponseCache()
+_lighter_micro_chart_cache = ChartResponseCache(timeout=LIGHTER_MICRO_CHART_TIMEOUT_SECONDS)
+
+
+def _is_lighter_micro_chart_request(symbol: str, interval: str, count: int,
+                                    target_end: Optional[int]) -> bool:
+    return (symbol == "BTC"
+            and interval in LIGHTER_MICRO_CHART_INTERVALS
+            and count == LIGHTER_MICRO_CHART_LIMIT
+            and target_end is None)
 
 async def _load_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
                                      limit: int = 300,
                                      end_timestamp: Optional[int] = None,
-                                     endTime: Optional[int] = None) -> Dict[str, Any]:
+                                     endTime: Optional[int] = None,
+                                     *, bounded_latest: bool = False) -> Dict[str, Any]:
     try:
         if symbol not in LIGHTER_CRYPTO_MARKETS:
             raise ValueError("Unsupported Lighter crypto symbol")
@@ -2549,7 +2570,10 @@ async def _load_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m
         if target_end and target_end < 100_000_000_000:
             target_end *= 1000
         rows = await lighter_client.candles(LIGHTER_CRYPTO_MARKETS[symbol], interval,
-                                            min(500, max(20, limit)), end_timestamp=target_end, allow_stale=False)
+                                            min(500, max(20, limit)),
+                                            end_timestamp=target_end,
+                                            fresh=bounded_latest,
+                                            allow_stale=False)
         bars = [{"time": int(row["t"]) // 1000, "value": float(row["c"]),
                  "open": float(row["o"]), "high": float(row["h"]),
                  "low": float(row["l"]), "close": float(row["c"]),
@@ -2595,9 +2619,14 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
         target_end *= 1000
     count = min(500, max(20, limit))
     key = (symbol, interval, count, target_end)
+    micro_read = _is_lighter_micro_chart_request(symbol, interval, count, target_end)
+    chart_cache = _lighter_micro_chart_cache if micro_read else _lighter_crypto_chart_cache
     try:
-        return await _lighter_crypto_chart_cache.get(
-            key, lambda: _load_lighter_crypto_candles(symbol, interval, count, target_end),
+        return await chart_cache.get(
+            key,
+            lambda: _load_lighter_crypto_candles(
+                symbol, interval, count, target_end, bounded_latest=micro_read
+            ),
             ttl=3600 if target_end else 15,
         )
     except Exception as error:

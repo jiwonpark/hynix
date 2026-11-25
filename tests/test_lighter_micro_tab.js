@@ -140,6 +140,8 @@ function candles(interval) {
 
 const calls = [];
 let failCandles = false;
+let failCandleAttempts = 0;
+let failAccountAttempts = 0;
 const fetchImpl = async (url, options = {}) => {
   calls.push({url, options});
   if (url.includes("/api/lighter-micro/snapshot")) return response({
@@ -188,20 +190,29 @@ const fetchImpl = async (url, options = {}) => {
         label: "Directional edge available", source: "micro replay", source_timestamp_ms: wallNow},
     },
   });
-  if (url.includes("/api/lighter-crypto/status")) return response({
-    success: true,
-    authenticated: true,
-    symbol: "BTC",
-    collateral: 250.5,
-    available_margin: 200.25,
-    positions: [{position_amt: 0.01, size: 0.01, entry_price: 59_500, mark_price: 60_725, unrealized_pnl: 12.25}],
-    account_source: "LIGHTER_ACCOUNT_STREAM",
-    account_updated_ms: wallNow - 500,
-    account_age_ms: 500,
-    account_stale: false,
-  });
+  if (url.includes("/api/lighter-crypto/status")) {
+    if (failAccountAttempts > 0) {
+      failAccountAttempts -= 1;
+      return response({success: false, error: "account temporarily unavailable"}, 503);
+    }
+    return response({
+      success: true,
+      authenticated: true,
+      symbol: "BTC",
+      collateral: 250.5,
+      available_margin: 200.25,
+      positions: [{position_amt: 0.01, size: 0.01, entry_price: 59_500, mark_price: 60_725, unrealized_pnl: 12.25}],
+      account_source: "LIGHTER_ACCOUNT_STREAM",
+      account_updated_ms: wallNow - 500,
+      account_age_ms: 500,
+      account_stale: false,
+    });
+  }
   if (url.includes("/api/lighter-crypto/candles")) {
-    if (failCandles) return response({success: false, error: "candle feed unavailable"});
+    if (failCandles || failCandleAttempts > 0) {
+      if (failCandleAttempts > 0) failCandleAttempts -= 1;
+      return response({success: false, error: "candle feed unavailable"});
+    }
     const interval = new URL(`https://example.test${url}`).searchParams.get("interval");
     return response({success: true, symbol: "BTC", interval, source: "LIGHTER_CANDLE_API", bars: candles(interval)});
   }
@@ -223,6 +234,7 @@ async function run() {
     storage,
     wallNowProvider: () => wallNow,
     elapsedNowProvider: () => { elapsed += 11; return elapsed; },
+    retryDelayMs: 0,
     tokenProvider: () => null,
     confirmImpl: () => true,
   });
@@ -240,6 +252,14 @@ async function run() {
 
   const refreshed = await tab.onTabActivated();
   assert.equal(refreshed, true);
+  assert.deepEqual(calls.slice(0, 5).map((call) => new URL(`https://example.test${call.url}`).pathname), [
+    "/skhynix/api/lighter-crypto/status",
+    "/skhynix/api/lighter-crypto/candles",
+    "/skhynix/api/lighter-micro/snapshot",
+    "/skhynix/api/lighter-micro/status",
+    "/skhynix/api/lighter-micro/replay",
+  ], "activation serializes account and price before ancillary microstructure reads");
+  assert.equal(tab.pollIntervalMs, 15_000, "default polling does not hammer account telemetry every two seconds");
   assert.equal(tab.snapshot.source, "lighter websocket book");
   assert.equal(tab.status.authenticated, false);
   assert.equal(tab.replay.entry_signals.length, 3);
@@ -357,6 +377,29 @@ async function run() {
   assert.match(tab.refs.chartError.textContent, /candle feed unavailable/);
   failCandles = false;
   assert.equal(await tab.refreshChart(), true);
+
+  const candleCallsBeforeRetry = calls.filter((call) => call.url.includes("/api/lighter-crypto/candles")).length;
+  failCandleAttempts = 1;
+  assert.equal(await tab.refresh({includeReplay: false, includeAccount: false, includeChart: true}), true,
+    "a transient candle failure is retried without running critical reads concurrently");
+  assert.equal(
+    calls.filter((call) => call.url.includes("/api/lighter-crypto/candles")).length - candleCallsBeforeRetry,
+    2,
+    "critical candle loading has one bounded retry",
+  );
+  assert.equal(tab.errors.chart, null);
+
+  const accountCallsBeforeRetry = calls.filter((call) => call.url.includes("/api/lighter-crypto/status")).length;
+  failAccountAttempts = 1;
+  assert.equal(await tab.refresh({includeReplay: false, includeAccount: true, includeChart: false}), true,
+    "a transient account failure recovers from the last-good stale display on its bounded retry");
+  assert.equal(
+    calls.filter((call) => call.url.includes("/api/lighter-crypto/status")).length - accountCallsBeforeRetry,
+    2,
+    "critical account loading has one bounded retry",
+  );
+  assert.equal(tab.errors.account, null);
+  assert.equal(tab.refs.accountCollateral.textContent, "$250.50 USD");
 
   const conditionTime = 1791500000123;
   tab.replay = {evaluations: [{
@@ -484,6 +527,32 @@ async function run() {
   tab.destroy();
   assert.equal(chartRemoved, true, "destroy releases the LightweightCharts instance");
   assert.equal(tab.mounted, false);
+
+  let stagedInFlight = 0;
+  let stagedMaxInFlight = 0;
+  const stagedFetch = async (...args) => {
+    stagedInFlight += 1;
+    stagedMaxInFlight = Math.max(stagedMaxInFlight, stagedInFlight);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    try {
+      return await fetchImpl(...args);
+    } finally {
+      stagedInFlight -= 1;
+    }
+  };
+  const stagedTab = new LighterMicroTab(new FakeHost(), {
+    fetchImpl: stagedFetch,
+    apiPrefix: "/skhynix",
+    autoPoll: false,
+    chartLibrary,
+    storage,
+    wallNowProvider: () => wallNow,
+    retryDelayMs: 0,
+  });
+  assert.equal(await stagedTab.onTabActivated(), true);
+  assert.equal(stagedMaxInFlight, 1,
+    "activation never overlaps account, candle, L2, status, or replay requests on a loaded backend");
+  stagedTab.destroy();
 
   console.log("Standalone Lighter micro account, chart, interval, lifecycle, and evaluator-lock checks passed");
 }

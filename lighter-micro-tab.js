@@ -17,6 +17,8 @@
   const INTERVAL_SECONDS = Object.freeze({"1m": 60, "5m": 300, "15m": 900});
   const SNAPSHOT_DEPTH_LIMIT = 20;
   const INTERVAL_STORAGE_KEY = "skhynix_lighter_micro_interval";
+  const DEFAULT_POLL_INTERVAL_MS = 15000;
+  const DEFAULT_RETRY_DELAY_MS = 1000;
   const DEFAULT_ENDPOINTS = Object.freeze({
     snapshot: "/api/lighter-micro/snapshot",
     status: "/api/lighter-micro/status",
@@ -481,13 +483,22 @@
       this.chartLibrary = options.chartLibrary || root.LightweightCharts || null;
       this.elapsedNow = options.elapsedNowProvider || (() => root.performance?.now?.() ?? Date.now());
       this.wallNow = options.wallNowProvider || (() => Date.now());
-      this.pollIntervalMs = Math.max(1000, finiteNumber(options.pollIntervalMs) ?? 2000);
+      this.pollIntervalMs = Math.max(1000, finiteNumber(options.pollIntervalMs) ?? DEFAULT_POLL_INTERVAL_MS);
+      this.retryDelayMs = Math.max(0, finiteNumber(options.retryDelayMs) ?? DEFAULT_RETRY_DELAY_MS);
+      this.criticalRetryAttempts = Math.max(1, Math.min(3, Math.floor(finiteNumber(options.criticalRetryAttempts) ?? 2)));
+      this.accountRequestTimeoutMs = Math.max(5000, finiteNumber(options.accountRequestTimeoutMs) ?? 35000);
+      this.chartRequestTimeoutMs = Math.max(5000, finiteNumber(options.chartRequestTimeoutMs) ?? 30000);
+      this.delayImpl = options.delayImpl || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
       this.depth = Math.max(1, Math.min(SNAPSHOT_DEPTH_LIMIT, Math.floor(finiteNumber(options.depth) ?? 10)));
       this.interval = validChartInterval(options.interval)
         || validChartInterval(storageGet(this.storage, INTERVAL_STORAGE_KEY))
         || "1m";
       this.mounted = false;
       this.refreshing = false;
+      this.refreshPromise = null;
+      this.refreshController = null;
+      this.active = false;
+      this.activationSequence = 0;
       this.pollTimer = null;
       this.snapshot = null;
       this.status = null;
@@ -897,7 +908,11 @@
       }
       const timeoutMs = Math.max(1000, finiteNumber(options.timeoutMs) ?? 15000);
       let timer = null;
-      if (controller) timer = setTimeout(() => controller.abort(), timeoutMs);
+      let timedOut = false;
+      if (controller) timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs);
       const headers = {Accept: "application/json", ...(options.headers || {})};
       if (options.body !== undefined) headers["Content-Type"] = "application/json";
       const requestOptions = {
@@ -918,7 +933,10 @@
         if (payload.success === false) throw new Error(payload.error || payload.message || "Request failed");
         return payload;
       } catch (error) {
-        if (error?.name === "AbortError") throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+        if (error?.name === "AbortError") {
+          if (!timedOut && externalSignal?.aborted) throw new Error("Request cancelled");
+          throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+        }
         throw error;
       } finally {
         if (timer) clearTimeout(timer);
@@ -926,12 +944,17 @@
       }
     }
 
-    replayRequest() {
+    replayRequest(options = {}) {
+      const signal = options.signal || null;
       const common = root.TerminalCommon;
       if (common?.fetchReplay) {
-        return common.fetchReplay((path, fetchOptions = {}) => this.requestJson(path, {...fetchOptions, timeoutMs: 30000}), this.endpoints.replay, 30000);
+        return common.fetchReplay(
+          (path, fetchOptions = {}) => this.requestJson(path, {...fetchOptions, signal, timeoutMs: 30000}),
+          this.endpoints.replay,
+          30000,
+        );
       }
-      return this.requestJson(this.endpoints.replay, {timeoutMs: 30000});
+      return this.requestJson(this.endpoints.replay, {signal, timeoutMs: 30000});
     }
 
     applyAccountPayload(payload) {
@@ -970,6 +993,40 @@
         ? {...this.accountLastFresh, account_stale: true, refresh_error: message}
         : null;
       this.renderAccount();
+    }
+
+    async waitBeforeRetry(signal) {
+      if (signal?.aborted || this.retryDelayMs <= 0) return !signal?.aborted;
+      await this.delayImpl(this.retryDelayMs);
+      return !signal?.aborted;
+    }
+
+    async retryCritical(operation, signal) {
+      let result = false;
+      for (let attempt = 0; attempt < this.criticalRetryAttempts; attempt += 1) {
+        if (signal?.aborted) return false;
+        result = await operation();
+        if (result || signal?.aborted) return result;
+        if (attempt + 1 < this.criticalRetryAttempts && !(await this.waitBeforeRetry(signal))) return false;
+      }
+      return result;
+    }
+
+    async refreshAccount(options = {}) {
+      const signal = options.signal || null;
+      try {
+        const payload = await this.requestJson(this.endpoints.account, {
+          signal,
+          timeoutMs: this.accountRequestTimeoutMs,
+        });
+        if (signal?.aborted) return false;
+        this.applyAccountPayload(payload);
+        return !this.errors.account;
+      } catch (error) {
+        if (signal?.aborted) return false;
+        this.applyAccountFailure(error);
+        return false;
+      }
     }
 
     renderAccount() {
@@ -1016,15 +1073,16 @@
       if (fresh) this.recordAccountReady();
     }
 
-    async refreshChart() {
+    async refreshChart(options = {}) {
       this.mount();
+      const signal = options.signal || null;
       const interval = this.interval;
       const request = ++this.chartRequest;
       const path = `${this.endpoints.candles}${this.endpoints.candles.includes("?") ? "&" : "?"}symbol=BTC&interval=${encodeURIComponent(interval)}&limit=180`;
       this.setText("chartSource", `CHART · loading Lighter BTC ${interval} candles`);
       this.setText("chartError", "");
       try {
-        const payload = await this.requestJson(path, {timeoutMs: 30000});
+        const payload = await this.requestJson(path, {signal, timeoutMs: this.chartRequestTimeoutMs});
         if (request !== this.chartRequest || interval !== this.interval) return false;
         const bars = normalizeCandleBars(payload);
         if (!bars.length) throw new Error("No valid BTC candle prices returned");
@@ -1047,6 +1105,7 @@
         return !this.errors.chart;
       } catch (error) {
         if (request !== this.chartRequest || interval !== this.interval) return false;
+        if (signal?.aborted) return false;
         this.errors.chart = error?.message || String(error);
         if (this.chartPayload) this.chartPayload = {...this.chartPayload, stale: true};
         this.renderChartMeta();
@@ -1070,44 +1129,75 @@
 
     async refresh(options = {}) {
       this.mount();
-      if (this.refreshing) return false;
+      if (this.refreshPromise) return this.refreshPromise;
       this.refreshing = true;
       if (this.refs.refreshButton) this.refs.refreshButton.disabled = true;
       if (this.refs.rerunButton) this.refs.rerunButton.disabled = true;
       const includeReplay = options.includeReplay !== false;
       const includeAccount = options.includeAccount !== false;
       const includeChart = options.includeChart !== false;
-      const chartPromise = includeChart ? this.refreshChart() : null;
-      const accountPromise = includeAccount
-        ? this.requestJson(this.endpoints.account, {timeoutMs: 35000})
-          .then((payload) => { this.applyAccountPayload(payload); return !this.errors.account; })
-          .catch((error) => { this.applyAccountFailure(error); return false; })
-        : Promise.resolve(true);
-      const requests = [
-        ["snapshot", this.requestJson(`${this.endpoints.snapshot}${this.endpoints.snapshot.includes("?") ? "&" : "?"}depth=${this.depth}`)],
-        ["status", this.requestJson(this.endpoints.status)],
-      ];
-      if (includeReplay) requests.push(["replay", this.replayRequest()]);
-      const settledPromise = Promise.allSettled(requests.map((entry) => entry[1]));
-      const [settled, accountResult, chartResult] = await Promise.all([
-        settledPromise,
-        accountPromise,
-        chartPromise || Promise.resolve(true),
-      ]);
-      settled.forEach((result, index) => {
-        const key = requests[index][0];
-        if (result.status === "fulfilled") {
-          this[key] = result.value;
-          this.errors[key] = null;
-        } else {
-          this.errors[key] = result.reason?.message || String(result.reason || "Unavailable");
+      const retryCritical = options.retryCritical !== false;
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const signal = controller?.signal || null;
+      this.refreshController = controller;
+
+      const task = (async () => {
+        const results = [];
+        const runCritical = (operation) => retryCritical
+          ? this.retryCritical(operation, signal)
+          : operation();
+
+        // Price and account data are the critical path. Serialize these calls so
+        // a loaded single-worker backend does not make both requests time out.
+        if (includeAccount) {
+          results.push(await runCritical(() => this.refreshAccount({signal})));
         }
+        if (includeChart && !signal?.aborted) {
+          results.push(await runCritical(() => this.refreshChart({signal})));
+        }
+
+        const requests = [
+          ["snapshot", () => this.requestJson(
+            `${this.endpoints.snapshot}${this.endpoints.snapshot.includes("?") ? "&" : "?"}depth=${this.depth}`,
+            {signal},
+          )],
+          ["status", () => this.requestJson(this.endpoints.status, {signal})],
+        ];
+        if (includeReplay) requests.push(["replay", () => this.replayRequest({signal})]);
+
+        // Ancillary L2/status/replay reads are deliberately serialized behind
+        // the critical path. Render each result as it arrives without inventing
+        // replacement values for failed or stale responses.
+        for (const [key, request] of requests) {
+          if (signal?.aborted) {
+            results.push(false);
+            break;
+          }
+          try {
+            this[key] = await request();
+            this.errors[key] = null;
+            results.push(true);
+          } catch (error) {
+            if (!signal?.aborted) this.errors[key] = error?.message || String(error || "Unavailable");
+            results.push(false);
+          }
+          this.renderAll();
+        }
+        return results.every(Boolean);
+      })();
+
+      let trackedTask = null;
+      trackedTask = task.finally(() => {
+        if (this.refreshPromise !== trackedTask) return;
+        this.refreshing = false;
+        this.refreshPromise = null;
+        this.refreshController = null;
+        if (this.refs.refreshButton) this.refs.refreshButton.disabled = false;
+        if (this.refs.rerunButton) this.refs.rerunButton.disabled = false;
+        this.renderAll();
       });
-      this.refreshing = false;
-      if (this.refs.refreshButton) this.refs.refreshButton.disabled = false;
-      if (this.refs.rerunButton) this.refs.rerunButton.disabled = false;
-      this.renderAll();
-      return settled.every((result) => result.status === "fulfilled") && accountResult !== false && chartResult !== false;
+      this.refreshPromise = trackedTask;
+      return trackedTask;
     }
 
     setText(ref, value) {
@@ -1495,7 +1585,9 @@
     startPolling() {
       if (this.pollTimer) return;
       this.pollTimer = setInterval(() => {
-        if (!this.liveUnlocked && !this.refreshing) this.refresh({includeReplay: false, includeChart: false, includeAccount: true});
+        if (this.active && !this.liveUnlocked && !this.refreshing) {
+          this.refresh({includeReplay: false, includeChart: false, includeAccount: true, retryCritical: false});
+        }
       }, this.pollIntervalMs);
     }
 
@@ -1505,24 +1597,42 @@
       this.pollTimer = null;
     }
 
+    cancelRefresh() {
+      this.refreshController?.abort?.();
+    }
+
     async onTabActivated() {
       this.mount();
+      const activation = ++this.activationSequence;
+      this.active = true;
+      this.stopPolling();
+      if (this.refreshPromise) {
+        this.cancelRefresh();
+        await this.refreshPromise.catch(() => false);
+      }
+      if (!this.active || activation !== this.activationSequence) return false;
       this.beginReadinessCycle();
       root.TerminalCommon?.revealChartSection?.(this.refs.terminal);
       this.ensureChart();
       this.resizeChart();
       const result = await this.refresh({includeReplay: true, includeChart: true, includeAccount: true});
-      if (this.options.autoPoll !== false) this.startPolling();
+      if (this.active && activation === this.activationSequence && this.options.autoPoll !== false) this.startPolling();
       return result;
     }
 
     onTabDeactivated() {
+      this.active = false;
+      this.activationSequence += 1;
       this.captureChartRange();
       this.stopPolling();
+      this.cancelRefresh();
     }
 
     destroy() {
+      this.active = false;
+      this.activationSequence += 1;
       this.stopPolling();
+      this.cancelRefresh();
       this.resizeObserver?.disconnect?.();
       this.resizeObserver = null;
       this.chart?.remove?.();

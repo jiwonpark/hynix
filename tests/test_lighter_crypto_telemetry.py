@@ -9,9 +9,16 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         source = (ROOT / "backend" / "server.py").read_text(encoding="utf-8")
+        cls.server_source = source
         start = source.index('async def get_lighter_crypto_status')
         end = source.index('_lighter_crypto_chart_cache', start)
         cls.status_source = source[start:end]
+        refresh_start = source.index('async def _refresh_lighter_account_cache')
+        refresh_end = source.index('# Active WebSocket connections', refresh_start)
+        cls.account_refresh_source = source[refresh_start:refresh_end]
+        chart_start = source.index('_lighter_crypto_chart_cache')
+        chart_end = source.index('@app.get("/api/lighter-crypto/trends")', chart_start)
+        cls.chart_source = source[chart_start:chart_end]
         bot_start = source.index('async def get_lighter_crypto_bot_status')
         bot_end = source.index('@app.post("/api/lighter-crypto/bot/config")', bot_start)
         cls.bot_status_source = source[bot_start:bot_end]
@@ -32,6 +39,34 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
         self.assertIn('"positions_updated_ms": snapshot.get("positions_updated_ms")', self.status_source)
         self.assertIn('"collateral_updated_ms": snapshot.get("collateral_updated_ms")', self.status_source)
         self.assertIn('"account_stale": account_stale', self.status_source)
+
+    def test_account_refresh_starts_before_truthful_stale_boundary(self) -> None:
+        self.assertIn("LIGHTER_ACCOUNT_REFRESH_AFTER_MS = 10_000", self.server_source)
+        self.assertIn("LIGHTER_ACCOUNT_STALE_AFTER_MS = 15_000", self.server_source)
+        self.assertIn(
+            "account_age_ms >= LIGHTER_ACCOUNT_REFRESH_AFTER_MS",
+            self.status_source,
+        )
+        self.assertIn(
+            "account_age_ms > LIGHTER_ACCOUNT_STALE_AFTER_MS",
+            self.status_source,
+        )
+        self.assertIn(
+            "timeout=LIGHTER_ACCOUNT_REFRESH_TIMEOUT_SECONDS",
+            self.account_refresh_source,
+        )
+
+    def test_micro_chart_has_bounded_fresh_read_and_dedicated_deadline(self) -> None:
+        self.assertIn("LIGHTER_MICRO_CHART_LIMIT = 180", self.server_source)
+        self.assertIn(
+            "_lighter_micro_chart_cache = ChartResponseCache(", self.chart_source
+        )
+        self.assertIn("fresh=bounded_latest", self.chart_source)
+        self.assertIn("allow_stale=False", self.chart_source)
+        self.assertIn(
+            "chart_cache = _lighter_micro_chart_cache if micro_read else",
+            self.chart_source,
+        )
 
     def test_account_status_piggybacks_authoritative_bot_settings(self) -> None:
         self.assertGreaterEqual(

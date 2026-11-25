@@ -313,3 +313,137 @@ def test_micro_routes_expose_no_order_or_arm_endpoint():
         "/api/lighter-micro/config",
     }
     assert not any("order" in path or "arm" in path for path in paths)
+
+
+def test_micro_chart_uses_bounded_fresh_read_without_changing_other_reads(
+    monkeypatch,
+):
+    calls = []
+
+    async def candles(market_id, resolution, count, end_timestamp=None, **kwargs):
+        calls.append({
+            "market_id": market_id,
+            "resolution": resolution,
+            "count": count,
+            "end_timestamp": end_timestamp,
+            **kwargs,
+        })
+        return [{
+            "t": 1_800_000_000_000,
+            "o": "100",
+            "h": "101",
+            "l": "99",
+            "c": "100.5",
+            "v": "2",
+        }]
+
+    class StubBot:
+        def public_state(self):
+            return {"execution_history": []}
+
+    monkeypatch.setattr(server.lighter_client, "candles", candles)
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+    monkeypatch.setattr(server, "_lighter_micro_chart_cache", server.ChartResponseCache())
+    monkeypatch.setattr(server, "_lighter_crypto_chart_cache", server.ChartResponseCache())
+
+    micro = asyncio.run(
+        server.get_lighter_crypto_candles("BTC", "1m", server.LIGHTER_MICRO_CHART_LIMIT)
+    )
+    regular = asyncio.run(server.get_lighter_crypto_candles("BTC", "1m", 181))
+
+    assert micro["success"] is True
+    assert micro["stale"] is False
+    assert regular["success"] is True
+    assert regular["stale"] is False
+    assert calls[0]["count"] == 180
+    assert calls[0]["fresh"] is True
+    assert calls[0]["allow_stale"] is False
+    assert calls[1]["count"] == 181
+    assert calls[1]["fresh"] is False
+    assert calls[1]["allow_stale"] is False
+
+
+def test_micro_chart_cold_timeout_returns_explicit_error_not_stale_data(monkeypatch):
+    async def slow_candles(*args, **kwargs):
+        await asyncio.sleep(0.05)
+        return []
+
+    monkeypatch.setattr(server.lighter_client, "candles", slow_candles)
+    monkeypatch.setattr(
+        server,
+        "_lighter_micro_chart_cache",
+        server.ChartResponseCache(timeout=0.001),
+    )
+
+    payload = asyncio.run(
+        server.get_lighter_crypto_candles("BTC", "1m", server.LIGHTER_MICRO_CHART_LIMIT)
+    )
+
+    assert payload["success"] is False
+    assert payload["bars"] == []
+    assert payload["markers"] == []
+    assert payload.get("stale") is not False
+    assert payload["error"]
+
+
+@pytest.mark.parametrize(
+    ("age_ms", "expected_stale", "expected_refreshes"),
+    ((5_000, False, 0), (11_000, False, 1), (16_000, True, 1)),
+)
+def test_account_refreshes_before_stale_boundary_and_preserves_truthful_age(
+    age_ms, expected_stale, expected_refreshes, monkeypatch
+):
+    now_ms = server.time.time_ns() // 1_000_000
+    snapshot = {
+        "source": "TEST_ACCOUNT_STREAM",
+        "updated_at_ms": now_ms - age_ms,
+        "positions_updated_ms": now_ms - age_ms,
+        "collateral_updated_ms": now_ms - age_ms,
+        "account": {
+            "collateral": "100",
+            "available_balance": "80",
+            "positions": [],
+        },
+    }
+    refreshes = []
+
+    async def refresh():
+        refreshes.append(True)
+
+    class StubBot:
+        GROSS_LEVERAGE_CAP = 8.0
+        state = {
+            "last_evaluation": {},
+            "last_error": None,
+            "recovery_required": False,
+        }
+
+        def public_state(self):
+            return {"execution_history": []}
+
+    monkeypatch.setattr(
+        server.lighter_client, "account_telemetry_snapshot", lambda: snapshot
+    )
+    monkeypatch.setattr(
+        server.lighter_client,
+        "market_detail_snapshot",
+        lambda market_id: {"status": "active", "mark_price": "100"},
+    )
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+    monkeypatch.setattr(server, "_refresh_lighter_account_cache", refresh)
+    monkeypatch.setattr(server, "_lighter_account_refresh_task", None)
+
+    async def read_status():
+        payload = await server.get_lighter_crypto_status("BTC")
+        task = server._lighter_account_refresh_task
+        if task is not None:
+            await task
+        return payload
+
+    payload = asyncio.run(read_status())
+
+    assert payload["success"] is True
+    assert payload["authenticated"] is True
+    assert payload["account_stale"] is expected_stale
+    assert payload["account_age_ms"] >= age_ms
+    assert len(refreshes) == expected_refreshes

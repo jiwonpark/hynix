@@ -28,6 +28,8 @@ class LighterClient:
     CREDENTIALS_FILE = Path(__file__).with_name("lighter_credentials.json")
     MAX_CLIENT_ORDER_INDEX = (1 << 48) - 1
     MICRO_BOOK_MAX_AGE_MS = 500
+    STREAM_FAIRNESS_MESSAGES = 32
+    STREAM_FAIRNESS_SECONDS = 0.005
     MICRO_SUBSCRIPTION_TIMEOUT_SECONDS = 5.0
     MICRO_STREAM_FAIRNESS_MESSAGES = 32
     MICRO_STREAM_FAIRNESS_SECONDS = 0.005
@@ -43,6 +45,9 @@ class LighterClient:
         self._cache_locks: Dict[str, asyncio.Lock] = {}
         self._ws_task: Optional[asyncio.Task] = None
         self._ws_books: Dict[int, Dict[str, Any]] = {}
+        self._ws_book_prices: Dict[
+            int, Dict[str, List[tuple[Decimal, str]]]
+        ] = {}
         self._ws_book_times: Dict[int, float] = {}
         self._ws_account: Optional[Dict[str, Any]] = None
         self._ws_account_time = 0.0
@@ -1121,6 +1126,161 @@ class LighterClient:
             "stream": self.micro_stream_status(market_id),
         }
 
+    def _stream_fairness_due(
+        self, messages_since_yield: int, elapsed_seconds: float
+    ) -> bool:
+        """Bound uninterrupted work on the inherited account/market socket."""
+
+        return (
+            messages_since_yield >= max(1, int(self.STREAM_FAIRNESS_MESSAGES))
+            or elapsed_seconds >= max(0.001, float(self.STREAM_FAIRNESS_SECONDS))
+        )
+
+    @staticmethod
+    def _stream_price(value: Any) -> Decimal:
+        """Return a stable sortable price without changing the public row."""
+
+        try:
+            parsed = Decimal(str(value))
+        except Exception as error:
+            raise ValueError("Lighter order-book price is not numeric") from error
+        if not parsed.is_finite():
+            raise ValueError("Lighter order-book price must be finite")
+        return parsed
+
+    @classmethod
+    def _indexed_stream_snapshot(
+        cls, update: Dict[str, Any]
+    ) -> tuple[
+        Dict[str, Any],
+        Dict[str, List[tuple[Decimal, str]]],
+    ]:
+        """Build one canonical full-depth map and ascending price index."""
+
+        book = {
+            key: cls._clone(value)
+            for key, value in update.items()
+            if key not in {"asks", "bids"}
+        }
+        prices: Dict[str, List[tuple[Decimal, str]]] = {}
+        for side in ("asks", "bids"):
+            raw = update.get(side) or []
+            if not isinstance(raw, list):
+                raise ValueError(f"Lighter order-book {side} must be a list")
+            levels: Dict[str, Dict[str, Any]] = {}
+            entries: List[tuple[Decimal, str]] = []
+            for row in raw:
+                if not isinstance(row, dict):
+                    raise ValueError(f"Lighter order-book {side} row must be an object")
+                price_key = str(row.get("price"))
+                entry = (cls._stream_price(row.get("price")), price_key)
+                if price_key not in levels:
+                    insort(entries, entry)
+                levels[price_key] = dict(row)
+            book[side] = levels
+            prices[side] = entries
+        return book, prices
+
+    def _apply_indexed_stream_delta(
+        self,
+        book: Dict[str, Any],
+        prices: Dict[str, List[tuple[Decimal, str]]],
+        update: Dict[str, Any],
+    ) -> None:
+        """Apply changed levels in place and preserve the last valid book on error."""
+
+        prepared: Dict[
+            str, List[tuple[str, tuple[Decimal, str], Dict[str, Any], float]]
+        ] = {}
+        for side in ("asks", "bids"):
+            raw = update.get(side, [])
+            if not isinstance(raw, list):
+                raise ValueError(f"Lighter order-book {side} delta must be a list")
+            rows = []
+            for row in raw:
+                if not isinstance(row, dict):
+                    raise ValueError(
+                        f"Lighter order-book {side} delta row must be an object"
+                    )
+                price_key = str(row.get("price"))
+                entry = (self._stream_price(row.get("price")), price_key)
+                size = float(row.get("size", 0) or 0)
+                rows.append((price_key, entry, dict(row), size))
+            prepared[side] = rows
+
+        undo: List[
+            tuple[
+                str,
+                str,
+                tuple[Decimal, str],
+                bool,
+                Optional[Dict[str, Any]],
+            ]
+        ] = []
+        try:
+            for side in ("asks", "bids"):
+                levels = book[side]
+                entries = prices[side]
+                for price_key, entry, row, size in prepared[side]:
+                    existed = price_key in levels
+                    previous = levels.get(price_key)
+                    if size <= 0:
+                        if not existed:
+                            continue
+                        undo.append((side, price_key, entry, True, previous))
+                        levels.pop(price_key)
+                        index = bisect_left(entries, entry)
+                        if index >= len(entries) or entries[index] != entry:
+                            raise ValueError("Lighter order-book price index is inconsistent")
+                        entries.pop(index)
+                    else:
+                        undo.append((side, price_key, entry, existed, previous))
+                        levels[price_key] = row
+                        if not existed:
+                            insort(entries, entry)
+            if any(len(book[side]) != len(prices[side]) for side in ("asks", "bids")):
+                raise ValueError("Lighter order-book price index is inconsistent")
+        except Exception:
+            for side, price_key, entry, existed, previous in reversed(undo):
+                levels = book[side]
+                entries = prices[side]
+                index = bisect_left(entries, entry)
+                indexed = index < len(entries) and entries[index] == entry
+                if existed:
+                    assert previous is not None
+                    levels[price_key] = previous
+                    if not indexed:
+                        entries.insert(index, entry)
+                else:
+                    levels.pop(price_key, None)
+                    if indexed:
+                        entries.pop(index)
+            raise
+
+    def _indexed_stream_book_view(
+        self, market_id: int, limit: int
+    ) -> Dict[str, Any]:
+        """Materialize only the requested top levels in the legacy API shape."""
+
+        book = self._ws_books[market_id]
+        prices = self._ws_book_prices[market_id]
+        result = {
+            key: self._clone(value)
+            for key, value in book.items()
+            if key not in {"asks", "bids"}
+        }
+        ask_entries = prices["asks"][:limit]
+        bid_entries = reversed(prices["bids"][-limit:])
+        result["asks"] = [
+            self._clone(book["asks"][price_key])
+            for _, price_key in ask_entries
+        ]
+        result["bids"] = [
+            self._clone(book["bids"][price_key])
+            for _, price_key in bid_entries
+        ]
+        return result
+
     async def _stream_loop(self) -> None:
         delay = 1.0
         ws_url = self.base_url.replace("https://", "wss://").replace("http://", "ws://").rstrip("/") + "/stream"
@@ -1134,6 +1294,8 @@ class LighterClient:
                     self._ws_last_error = None
                     delay = 1.0
                     subscribed = False
+                    messages_since_yield = 0
+                    last_yield_at = time.monotonic()
                     async for message in ws:
                         if message.type == aiohttp.WSMsgType.TEXT:
                             payload = json.loads(message.data)
@@ -1148,6 +1310,15 @@ class LighterClient:
                                 await ws.send_json({"type": "pong"})
                             else:
                                 self._handle_stream_message(payload)
+                            messages_since_yield += 1
+                            fairness_now = time.monotonic()
+                            if self._stream_fairness_due(
+                                messages_since_yield,
+                                fairness_now - last_yield_at,
+                            ):
+                                messages_since_yield = 0
+                                await asyncio.sleep(0)
+                                last_yield_at = time.monotonic()
                         elif message.type in {aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR}:
                             break
             except asyncio.CancelledError:
@@ -1179,18 +1350,20 @@ class LighterClient:
             if market_id not in {self.ADR_MARKET_ID, self.DOMESTIC_MARKET_ID} or not isinstance(update, dict):
                 return
             if message_type == "subscribed/order_book" or market_id not in self._ws_books:
-                self._ws_books[market_id] = self._clone(update)
+                book, prices = self._indexed_stream_snapshot(update)
+                self._ws_books[market_id] = book
+                self._ws_book_prices[market_id] = prices
             else:
-                book = self._ws_books[market_id]
-                for side in ("asks", "bids"):
-                    levels = {str(row.get("price")): dict(row) for row in book.get(side, [])}
-                    for row in update.get(side, []):
-                        price = str(row.get("price"))
-                        if float(row.get("size", 0) or 0) <= 0:
-                            levels.pop(price, None)
-                        else:
-                            levels[price] = dict(row)
-                    book[side] = list(levels.values())
+                prices = self._ws_book_prices.get(market_id)
+                if prices is None:
+                    book, prices = self._indexed_stream_snapshot(
+                        self._ws_books[market_id]
+                    )
+                    self._ws_books[market_id] = book
+                    self._ws_book_prices[market_id] = prices
+                self._apply_indexed_stream_delta(
+                    self._ws_books[market_id], prices, update
+                )
             self._ws_book_times[market_id] = time.monotonic()
         elif message_type in {"subscribed/account_all", "update/account_all"}:
             self._ws_account = self._clone(payload)
@@ -1748,9 +1921,19 @@ class LighterClient:
         bounded_limit = min(100, max(1, limit))
         updated = self._ws_book_times.get(market_id, 0.0)
         if time.monotonic() - updated <= (2.0 if fresh else 15.0) and market_id in self._ws_books:
+            if market_id in self._ws_book_prices:
+                return self._indexed_stream_book_view(market_id, bounded_limit)
+            # Compatibility for callers/tests that seeded the old raw shape
+            # directly rather than going through the websocket handler.
             book = self._clone(self._ws_books[market_id])
-            book["asks"] = sorted(book.get("asks") or [], key=lambda row: float(row["price"]))[:bounded_limit]
-            book["bids"] = sorted(book.get("bids") or [], key=lambda row: float(row["price"]), reverse=True)[:bounded_limit]
+            book["asks"] = sorted(
+                book.get("asks") or [], key=lambda row: float(row["price"])
+            )[:bounded_limit]
+            book["bids"] = sorted(
+                book.get("bids") or [],
+                key=lambda row: float(row["price"]),
+                reverse=True,
+            )[:bounded_limit]
             return book
 
         async def load() -> Dict[str, Any]:
