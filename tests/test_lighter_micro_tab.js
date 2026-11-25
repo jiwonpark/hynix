@@ -920,6 +920,11 @@ async function run() {
   let holdInterleavedStatus = true;
   let resolveFiveMinuteStarted;
   const fiveMinuteStarted = new Promise((resolve) => { resolveFiveMinuteStarted = resolve; });
+  let resolveResumedReplayStarted;
+  const resumedReplayStarted = new Promise((resolve) => { resolveResumedReplayStarted = resolve; });
+  let releaseResumedReplay;
+  const resumedReplayReleased = new Promise((resolve) => { releaseResumedReplay = resolve; });
+  let resumedReplayCalls = 0;
   const interleavedFetch = async (url, options = {}) => {
     if (holdInterleavedStatus && url.includes("/api/lighter-micro/status")) {
       holdInterleavedStatus = false;
@@ -938,6 +943,11 @@ async function run() {
     }
     if (url.includes("/api/lighter-crypto/candles") && url.includes("interval=5m")) {
       resolveFiveMinuteStarted();
+    }
+    if (url.includes("/api/lighter-micro/replay")) {
+      resumedReplayCalls += 1;
+      resolveResumedReplayStarted();
+      await resumedReplayReleased;
     }
     return fetchImpl(url, options);
   };
@@ -980,7 +990,18 @@ async function run() {
   assert.equal(interleavedTab.snapshotLoading, false);
   assert.equal(interleavedTab.statusLoading, false,
     "preemption settles the cancelled ancillary loading flag");
+  await resumedReplayStarted;
+  assert.equal(resumedReplayCalls, 1,
+    "interval navigation resumes the one-time replay request cancelled during activation");
+  assert.equal(interleavedTab.replayLoading, true);
+  assert.equal(interleavedTab.chartDataInterval, "5m",
+    "the selected chart is usable while the recovery replay remains in flight");
+  const resumedReplayRefresh = interleavedTab.refreshPromise;
+  assert.ok(resumedReplayRefresh);
+  releaseResumedReplay();
+  assert.equal(await resumedReplayRefresh, true);
   assert.equal(interleavedTab.replayLoading, false);
+  assert.equal(interleavedTab.refs.entrySignals.textContent, "3");
   assert.notEqual(interleavedTab.refs.spread.textContent, "UNAVAILABLE");
   assert.match(interleavedTab.refs.mandatoryPrerequisites.innerHTML, /LIVE · UNAVAILABLE/);
   assert.ok(interleavedTab.pollTimer,
@@ -1008,6 +1029,8 @@ async function run() {
   assert.equal(await lateIntervalSwitch, false,
     "a candle success arriving after deactivation is rejected by abort/generation guards");
   assert.notEqual(interleavedTab.chartDataInterval, "15m");
+  assert.equal(resumedReplayCalls, 1,
+    "later interval navigation never duplicates an already completed replay");
   assert.notEqual(interleavedStorageValues.get("skhynix_lighter_micro_interval"), "15m");
   assert.equal(interleavedTab.readiness.chartMs, null);
   interleavedTab.destroy();

@@ -572,6 +572,7 @@
       this.statusReceivedAtMs = null;
       this.replay = null;
       this.replayInvalidatedByConfig = false;
+      this.replayRecoveryPending = false;
       this.account = null;
       this.accountLastFresh = null;
       this.chartPayload = null;
@@ -1112,6 +1113,9 @@
       if (!interval) throw new Error("Unsupported chart interval");
       const pendingRefresh = this.refreshPromise;
       if (pendingRefresh) {
+        if (this.replayLoading && !this.completedReplayAvailable()) {
+          this.replayRecoveryPending = true;
+        }
         this.cancelRefresh();
         await pendingRefresh.catch(() => false);
       }
@@ -1125,6 +1129,7 @@
       if (!this.active || interval !== this.interval) return false;
       if (!this.chartIsStale() && this.chartDataInterval === interval) {
         storageSet(this.storage, INTERVAL_STORAGE_KEY, interval);
+        this.resumeReplayIfMissing();
         return true;
       }
       this.intervalChartController?.abort?.();
@@ -1132,7 +1137,10 @@
       this.intervalChartController = controller;
       try {
         const refreshed = await this.refreshChart({signal: controller?.signal || null});
-        if (refreshed && interval === this.interval) storageSet(this.storage, INTERVAL_STORAGE_KEY, interval);
+        if (refreshed && interval === this.interval) {
+          storageSet(this.storage, INTERVAL_STORAGE_KEY, interval);
+          this.resumeReplayIfMissing();
+        }
         return refreshed;
       } finally {
         if (this.intervalChartController === controller) this.intervalChartController = null;
@@ -1481,6 +1489,7 @@
     }
 
     beginReplayRefresh() {
+      this.replayRecoveryPending = false;
       this.replayLoading = true;
       this.errors.replay = null;
       this.renderErrors();
@@ -1489,6 +1498,23 @@
       this.renderMandatoryPrerequisites();
       this.renderConditions();
       this.lastFreshnessSignature = this.freshnessSignature();
+    }
+
+    resumeReplayIfMissing() {
+      if (!this.replayRecoveryPending) return false;
+      if (this.completedReplayAvailable()) {
+        this.replayRecoveryPending = false;
+        return false;
+      }
+      if (!this.active || this.replayLoading || this.refreshPromise) return false;
+      this.replayRecoveryPending = false;
+      this.rerunReplay().catch((error) => {
+        if (!this.active) return false;
+        this.errors.replay = error?.message || String(error || "Replay unavailable");
+        this.renderAll();
+        return false;
+      });
+      return true;
     }
 
     async rerunReplay(options = {}) {
@@ -1525,6 +1551,7 @@
       const includeChart = options.includeChart !== false;
       const includeMarket = options.includeMarket !== false;
       const retryCritical = options.retryCritical !== false;
+      if (includeReplay) this.replayRecoveryPending = false;
       this.fullRefreshOwnsMarket = includeMarket;
       const pendingMarketRefresh = includeMarket ? this.cancelMarketRefresh() : null;
       const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -1574,6 +1601,7 @@
             if (key === "snapshot" || key === "status") this.applyMarketResponse(key, payload);
             else this[key] = payload;
             if (key === "replay") {
+              this.replayRecoveryPending = false;
               this.replayInvalidatedByConfig = false;
               this.replayLoading = false;
             }
