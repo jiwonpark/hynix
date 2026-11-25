@@ -257,12 +257,12 @@ async function run() {
   const refreshed = await tab.onTabActivated();
   assert.equal(refreshed, true);
   assert.deepEqual(calls.slice(0, 5).map((call) => new URL(`https://example.test${call.url}`).pathname), [
-    "/skhynix/api/lighter-crypto/status",
     "/skhynix/api/lighter-crypto/candles",
+    "/skhynix/api/lighter-crypto/status",
     "/skhynix/api/lighter-micro/snapshot",
     "/skhynix/api/lighter-micro/status",
     "/skhynix/api/lighter-micro/replay",
-  ], "activation serializes account and price before ancillary microstructure reads");
+  ], "activation serializes chart then account before ancillary microstructure reads");
   assert.equal(tab.pollIntervalMs, 10_000, "default polling refreshes proactively without hammering account telemetry every two seconds");
   assert.equal(tab.snapshot.source, "lighter websocket book");
   assert.equal(tab.status.authenticated, false);
@@ -801,19 +801,19 @@ async function run() {
   assert.deepEqual(tab.chartRanges[tab.interval], {from: 6, to: 17}, "deactivation preserves chart navigation state");
 
   const normalFetch = tab.fetchImpl;
-  let releaseDelayedAccount;
-  const delayedAccount = new Promise((resolve) => { releaseDelayedAccount = resolve; });
-  let accountRequestPending = true;
+  let releaseDelayedChart;
+  const delayedChart = new Promise((resolve) => { releaseDelayedChart = resolve; });
+  let chartRequestPending = true;
   tab.fetchImpl = async (url, options) => {
-    if (accountRequestPending && url.includes("/api/lighter-crypto/status")) {
-      accountRequestPending = false;
-      await delayedAccount;
+    if (chartRequestPending && url.includes("/api/lighter-crypto/candles")) {
+      chartRequestPending = false;
+      await delayedChart;
     }
     return normalFetch(url, options);
   };
   const cycleBeforeDelayedReactivation = tab.readiness.cycle;
   const delayedReactivation = tab.onTabActivated();
-  assert.equal(accountRequestPending, false, "reactivation starts the staged account request immediately");
+  assert.equal(chartRequestPending, false, "reactivation starts the staged chart request immediately");
   assert.equal(tab.readiness.cycle, cycleBeforeDelayedReactivation + 1);
   assert.equal(tab.readiness.accountMs, null);
   assert.equal(tab.readiness.chartMs, null);
@@ -848,7 +848,7 @@ async function run() {
   assert.deepEqual(tab.entryMarkers, completedMarkers);
   assert.doesNotMatch(tab.refs.replaySource.textContent, /UPDATING/);
   assert.match(tab.refs.mandatoryPrerequisites.innerHTML, /PAPER · PASS/);
-  releaseDelayedAccount();
+  releaseDelayedChart();
   assert.equal(await delayedReactivation, true);
   assert.equal(tab.account.account_stale, false);
   assert.equal(tab.chartPayload.stale, false);
@@ -930,6 +930,7 @@ async function run() {
     retryDelayMs: 0,
   });
   const interleavedActivation = interleavedTab.onTabActivated();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(holdInterleavedAccount, false, "interleaving fixture pauses the activation account request");
   const interleavedIntervalSwitch = interleavedTab.setChartInterval("5m");
   assert.equal(interleavedTab.interval, "5m");

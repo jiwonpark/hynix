@@ -1538,11 +1538,14 @@
 
         // Price and account data are the critical path. Serialize these calls so
         // a loaded single-worker backend does not make both requests time out.
-        if (includeAccount) {
-          results.push(await runCritical(() => this.refreshAccount({signal})));
-        }
+        // Candles go first because they tolerate a three-interval freshness
+        // window; fetching the 15-second account snapshot second keeps both
+        // datasets usable when a cold chart request is slow.
         if (includeChart && !signal?.aborted) {
           results.push(await runCritical(() => this.refreshChart({signal})));
+        }
+        if (includeAccount && !signal?.aborted) {
+          results.push(await runCritical(() => this.refreshAccount({signal})));
         }
 
         const requests = includeMarket ? this.marketRequests(signal) : [];
@@ -2029,7 +2032,7 @@
     startPolling() {
       if (this.pollTimer) return;
       this.pollTimer = setInterval(() => {
-        if (this.active && !this.refreshing) {
+        if (this.active && !this.refreshing && !this.intervalChartController) {
           this.refresh({
             includeReplay: false,
             includeChart: this.chartIsStale(),
