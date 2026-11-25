@@ -6,9 +6,11 @@ import threading
 
 import pytest
 
+from backend.lighter_microstructure import evaluate_entry
 from backend.lighter_micro_runtime import (
     LIVE_CONFIRMATION,
     LighterMicroRuntime,
+    PERSIST_INTERVAL_SECONDS,
 )
 
 
@@ -184,6 +186,57 @@ def test_config_round_trips_exactly_and_raw_snapshot_history_is_not_persisted(tm
     assert restored.public_state()["entry_conditions"]["entry_trade_flow"]["status"] == "OFF"
 
 
+def test_compact_causal_history_preserves_full_history_evaluation(tmp_path):
+    snapshots = [
+        market_snapshot(BASE_TIME + offset)
+        for offset in (0, 250, 500, 750, 1_500)
+    ]
+    runtime = LighterMicroRuntime(SnapshotClient(snapshots), tmp_path / "state.json")
+
+    for offset in (0, 250, 500, 750, 1_500):
+        run(runtime.tick(evaluated_at_ms=BASE_TIME + offset))
+
+    compact = runtime._causal_evaluation_history()
+    full_evaluation = evaluate_entry(list(runtime._snapshots), runtime.entry_config)
+    compact_evaluation = evaluate_entry(compact, runtime.entry_config)
+
+    assert [row.timestamp_ms for row in compact] == [BASE_TIME + 500, BASE_TIME + 1_500]
+    assert compact_evaluation == full_evaluation
+
+
+def test_background_run_once_skips_unused_public_state_copy(tmp_path, monkeypatch):
+    runtime = LighterMicroRuntime(
+        SnapshotClient([market_snapshot(BASE_TIME)]),
+        tmp_path / "state.json",
+    )
+
+    def unexpected_public_state():
+        raise AssertionError("background worker must not build an unused public response")
+
+    monkeypatch.setattr(runtime, "public_state", unexpected_public_state)
+    assert run(runtime.run_once(evaluated_at_ms=BASE_TIME)) == {}
+    assert runtime._state["recorder_total_snapshots"] == 1
+
+
+def test_lightweight_public_state_empties_only_history_streams(tmp_path):
+    runtime = LighterMicroRuntime(SnapshotClient([]), tmp_path / "state.json")
+    runtime._state["entry_signals"] = [{"timestamp_ms": 1, "side": 1}]
+    runtime._state["exit_signals"] = [{"timestamp_ms": 2, "side": -1}]
+    runtime._state["paper_fills"] = [{"fill_id": 3}]
+    runtime._state["paper_trades"] = [{"position_id": 4}]
+
+    full = runtime.public_state()
+    lightweight = runtime.public_state(include_history=False)
+    history_keys = ("entry_signals", "exit_signals", "paper_fills", "paper_trades")
+
+    for key in history_keys:
+        assert full[key]
+        assert lightweight[key] == []
+    assert {key: value for key, value in lightweight.items() if key not in history_keys} == {
+        key: value for key, value in full.items() if key not in history_keys
+    }
+
+
 def test_entry_signals_continue_when_paper_position_uses_all_capacity(tmp_path):
     client = SnapshotClient(
         [
@@ -292,7 +345,7 @@ def test_public_state_exposes_condition_status_source_ladder_and_streams(tmp_pat
         "first_timestamp_ms": BASE_TIME,
         "latest_timestamp_ms": BASE_TIME,
         "latest_rejection": None,
-        "state_persist_interval_seconds": 5.0,
+        "state_persist_interval_seconds": PERSIST_INTERVAL_SECONDS,
         "state_write_pending": True,
     }
     assert "entry_signals" in state
@@ -372,6 +425,27 @@ def test_tick_state_writes_are_batched_and_flush_is_atomic(tmp_path):
     persisted = json.loads(state_path.read_text())
     assert persisted["state"]["recorder_total_snapshots"] == 1
     assert runtime.public_state()["recorder"]["state_write_pending"] is False
+
+
+def test_due_background_save_runs_off_event_loop_thread(tmp_path, monkeypatch):
+    runtime = LighterMicroRuntime(
+        SnapshotClient([market_snapshot(BASE_TIME)]),
+        tmp_path / "state.json",
+    )
+    runtime._last_persist_monotonic -= PERSIST_INTERVAL_SECONDS + 1
+    event_loop_thread = threading.get_ident()
+    save_threads = []
+    original_save = runtime._save
+
+    def tracked_save():
+        save_threads.append(threading.get_ident())
+        original_save()
+
+    monkeypatch.setattr(runtime, "_save", tracked_save)
+    assert run(runtime.run_once(evaluated_at_ms=BASE_TIME)) == {}
+    assert save_threads
+    assert all(thread_id != event_loop_thread for thread_id in save_threads)
+    assert runtime._dirty is False
 
 
 def test_exit_signal_survives_failed_ioc_and_remains_distinct_from_trade(tmp_path):

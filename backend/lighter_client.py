@@ -1,4 +1,5 @@
 import asyncio
+from bisect import bisect_left, insort
 import copy
 import json
 import logging
@@ -28,6 +29,8 @@ class LighterClient:
     MAX_CLIENT_ORDER_INDEX = (1 << 48) - 1
     MICRO_BOOK_MAX_AGE_MS = 500
     MICRO_SUBSCRIPTION_TIMEOUT_SECONDS = 5.0
+    MICRO_STREAM_FAIRNESS_MESSAGES = 32
+    MICRO_STREAM_FAIRNESS_SECONDS = 0.005
     MICRO_TRADE_BUFFER_LIMIT = 5_000
     MICRO_TRADE_ID_LIMIT = 20_000
     MICRO_DEFAULT_TRADE_LOOKBACK_MS = 1_000
@@ -50,7 +53,14 @@ class LighterClient:
         # updates or the existing pair engine's two order books.
         self._micro_ws_task: Optional[asyncio.Task] = None
         self._micro_market_ids: set[int] = set()
+        # Validated full-depth books are kept as price-keyed maps with a
+        # separate ascending price index.  Lighter sends small deltas against a
+        # potentially very deep book; reparsing and deep-copying the whole book
+        # for every delta can monopolize the asyncio event loop for hundreds of
+        # milliseconds.  The indexed representation makes an existing-level
+        # update O(1), an insert/delete O(n) in C, and a top-N read O(depth).
         self._micro_books: Dict[int, Dict[str, Any]] = {}
+        self._micro_book_prices: Dict[int, Dict[str, List[Decimal]]] = {}
         self._micro_book_times: Dict[int, float] = {}
         self._micro_book_received_ms: Dict[int, int] = {}
         self._micro_book_exchange_ms: Dict[int, int] = {}
@@ -230,6 +240,7 @@ class LighterClient:
         """Discard every datum that could have come from an older socket."""
         for mapping in (
             self._micro_books,
+            self._micro_book_prices,
             self._micro_book_times,
             self._micro_book_received_ms,
             self._micro_book_exchange_ms,
@@ -376,6 +387,94 @@ class LighterClient:
                 f"order book is crossed or locked: best_bid={best_bid}, best_ask={best_ask}"
             )
 
+    @staticmethod
+    def _micro_price_index(
+        levels: Dict[str, Dict[Decimal, Dict[str, Any]]]
+    ) -> Dict[str, List[Decimal]]:
+        """Build the canonical ascending price index for a full snapshot."""
+
+        return {
+            "bids": sorted(levels["bids"]),
+            "asks": sorted(levels["asks"]),
+        }
+
+    @staticmethod
+    def _validate_indexed_micro_book_shape(
+        levels: Dict[str, Dict[Decimal, Dict[str, Any]]],
+        prices: Dict[str, List[Decimal]],
+    ) -> None:
+        """Validate the merged book using the maintained O(1) best prices."""
+
+        if not prices["bids"] or not prices["asks"]:
+            raise ValueError("full order book must contain at least one bid and ask")
+        if (
+            len(prices["bids"]) != len(levels["bids"])
+            or len(prices["asks"]) != len(levels["asks"])
+        ):
+            raise ValueError("order book price index is inconsistent")
+        best_bid = prices["bids"][-1]
+        best_ask = prices["asks"][0]
+        if best_bid >= best_ask:
+            raise ValueError(
+                f"order book is crossed or locked: best_bid={best_bid}, best_ask={best_ask}"
+            )
+
+    def _apply_micro_book_delta(
+        self,
+        levels: Dict[str, Dict[Decimal, Dict[str, Any]]],
+        prices: Dict[str, List[Decimal]],
+        incoming: Dict[str, Dict[Decimal, Dict[str, Any]]],
+    ) -> None:
+        """Apply one validated delta and roll it back if shape checks fail.
+
+        No awaits occur while a websocket message is handled, so this in-place
+        update remains atomic to other asyncio tasks.  The undo log preserves
+        the last valid book for direct callers/tests as well as the normal
+        reconnect path after a malformed or crossed delta.
+        """
+
+        undo: list[tuple[str, Decimal, bool, Optional[Dict[str, Any]]]] = []
+        try:
+            for side in ("asks", "bids"):
+                side_levels = levels[side]
+                side_prices = prices[side]
+                for price, row in incoming[side].items():
+                    existed = price in side_levels
+                    previous = side_levels.get(price)
+                    undo.append((side, price, existed, previous))
+                    size = self._micro_decimal(
+                        row.get("size"), "order book delta size", allow_zero=True
+                    )
+                    if size == 0:
+                        if not existed:
+                            continue
+                        side_levels.pop(price)
+                        index = bisect_left(side_prices, price)
+                        if index >= len(side_prices) or side_prices[index] != price:
+                            raise ValueError("order book price index is inconsistent")
+                        side_prices.pop(index)
+                    else:
+                        side_levels[price] = dict(row)
+                        if not existed:
+                            insort(side_prices, price)
+            self._validate_indexed_micro_book_shape(levels, prices)
+        except Exception:
+            for side, price, existed, previous in reversed(undo):
+                side_levels = levels[side]
+                side_prices = prices[side]
+                index = bisect_left(side_prices, price)
+                indexed = index < len(side_prices) and side_prices[index] == price
+                if existed:
+                    assert previous is not None
+                    side_levels[price] = previous
+                    if not indexed:
+                        side_prices.insert(index, price)
+                else:
+                    side_levels.pop(price, None)
+                    if indexed:
+                        side_prices.pop(index)
+            raise
+
     def _refresh_micro_warmup(self, market_id: int) -> None:
         current = self._micro_connection_id
         ready = (
@@ -431,6 +530,51 @@ class LighterClient:
         if missing:
             return "Lighter subscription acknowledgement timeout: " + ", ".join(missing)
         return None
+
+    def _micro_deadline_after_valid_message(
+        self,
+        payload: Dict[str, Any],
+        deadline: float,
+        *,
+        acknowledged_before: bool,
+        now: Optional[float] = None,
+    ) -> float:
+        """Renew once when a successfully handled channel becomes acknowledged."""
+
+        if acknowledged_before or not self._micro_message_acknowledged(payload):
+            return deadline
+        return (time.monotonic() if now is None else now) + float(
+            self.MICRO_SUBSCRIPTION_TIMEOUT_SECONDS
+        )
+
+    def _micro_message_acknowledged(self, payload: Dict[str, Any]) -> bool:
+        market_id = self._channel_id(payload.get("channel"))
+        if market_id not in self._micro_market_ids:
+            return False
+        if payload.get("type") == "subscribed/order_book":
+            return bool(
+                self._micro_book_acknowledged.get(market_id, False)
+                and self._micro_book_connection_ids.get(market_id)
+                == self._micro_connection_id
+            )
+        if payload.get("type") == "subscribed/trade":
+            return bool(
+                self._micro_tape_acknowledged.get(market_id, False)
+                and self._micro_tape_connection_ids.get(market_id)
+                == self._micro_connection_id
+            )
+        return False
+
+    def _micro_stream_fairness_due(
+        self, messages_since_yield: int, elapsed_seconds: float
+    ) -> bool:
+        return (
+            messages_since_yield
+            >= max(1, int(self.MICRO_STREAM_FAIRNESS_MESSAGES))
+            or elapsed_seconds >= max(
+                0.001, float(self.MICRO_STREAM_FAIRNESS_SECONDS)
+            )
+        )
 
     def _remember_micro_trade_id(self, market_id: int, trade_id: str) -> bool:
         known = self._micro_trade_ids.setdefault(market_id, set())
@@ -501,6 +645,8 @@ class LighterClient:
                 async with session.ws_connect(ws_url, heartbeat=20, receive_timeout=None) as ws:
                     self._begin_micro_connection()
                     subscribed = False
+                    messages_since_yield = 0
+                    last_yield_at = time.monotonic()
                     deadline = time.monotonic() + self.MICRO_SUBSCRIPTION_TIMEOUT_SECONDS
                     while True:
                         try:
@@ -544,7 +690,15 @@ class LighterClient:
                             elif payload.get("type") == "ping":
                                 await ws.send_json({"type": "pong"})
                             else:
+                                acknowledged_before = (
+                                    self._micro_message_acknowledged(payload)
+                                )
                                 self._handle_micro_stream_message(payload)
+                                deadline = self._micro_deadline_after_valid_message(
+                                    payload,
+                                    deadline,
+                                    acknowledged_before=acknowledged_before,
+                                )
                             if self._micro_subscriptions_ready():
                                 self._micro_last_error = None
                                 delay = 1.0
@@ -553,6 +707,19 @@ class LighterClient:
                             )
                             if reason:
                                 raise TimeoutError(reason)
+                            # aiohttp may satisfy receive() immediately from its
+                            # internal buffer during a burst.  Yield explicitly
+                            # at a bounded cadence so account/API/runtime tasks
+                            # cannot be starved by a continuously readable tape.
+                            messages_since_yield += 1
+                            fairness_now = time.monotonic()
+                            if self._micro_stream_fairness_due(
+                                messages_since_yield,
+                                fairness_now - last_yield_at,
+                            ):
+                                messages_since_yield = 0
+                                await asyncio.sleep(0)
+                                last_yield_at = time.monotonic()
                         elif message.type in {
                             aiohttp.WSMsgType.CLOSE,
                             aiohttp.WSMsgType.CLOSED,
@@ -626,10 +793,8 @@ class LighterClient:
                         market_id, f"Lighter market {market_id} malformed snapshot: {error}",
                         book=True,
                     )
-                clean = self._clone(update)
-                clean["bids"] = list(incoming["bids"].values())
-                clean["asks"] = list(incoming["asks"].values())
-                self._micro_books[market_id] = clean
+                self._micro_books[market_id] = incoming
+                self._micro_book_prices[market_id] = self._micro_price_index(incoming)
                 self._micro_book_acknowledged[market_id] = True
                 self._micro_book_connection_ids[market_id] = self._micro_connection_id
             else:
@@ -651,38 +816,21 @@ class LighterClient:
                         book=True,
                         gap=True,
                     )
-                try:
-                    current = self._validated_micro_ladders(
-                        self._micro_books[market_id], allow_zero_size=False
-                    )
-                except (KeyError, ValueError) as error:
+                current = self._micro_books.get(market_id)
+                prices = self._micro_book_prices.get(market_id)
+                if current is None or prices is None:
                     self._micro_payload_failure(
-                        market_id, f"Lighter market {market_id} cached book invalid: {error}",
+                        market_id,
+                        f"Lighter market {market_id} cached book is unavailable",
                         book=True,
                     )
-                for side in ("asks", "bids"):
-                    for price, row in incoming[side].items():
-                        size = self._micro_decimal(
-                            row.get("size"), "order book delta size", allow_zero=True
-                        )
-                        if size == 0:
-                            current[side].pop(price, None)
-                        else:
-                            current[side][price] = dict(row)
                 try:
-                    self._validate_micro_book_shape(current)
-                except ValueError as error:
+                    self._apply_micro_book_delta(current, prices, incoming)
+                except (KeyError, TypeError, ValueError) as error:
                     self._micro_payload_failure(
                         market_id, f"Lighter market {market_id} malformed merged book: {error}",
                         book=True,
                     )
-                book = self._clone(self._micro_books[market_id])
-                book["bids"] = list(current["bids"].values())
-                book["asks"] = list(current["asks"].values())
-                for key, value in update.items():
-                    if key not in {"asks", "bids"}:
-                        book[key] = self._clone(value)
-                self._micro_books[market_id] = book
             self._micro_book_nonces[market_id] = nonce
             self._micro_book_valid[market_id] = True
             self._micro_book_times[market_id] = time.monotonic()
@@ -895,6 +1043,7 @@ class LighterClient:
         if market_id not in self._micro_market_ids:
             await self.start_micro_streams([market_id])
         book = self._micro_books.get(market_id)
+        prices = self._micro_book_prices.get(market_id)
         received_at_ms = self._micro_book_received_ms.get(market_id)
         updated = self._micro_book_times.get(market_id)
         current_connection = self._micro_connection_id
@@ -914,7 +1063,7 @@ class LighterClient:
                 f"Lighter market {market_id} microstructure streams are disconnected, "
                 "unacknowledged, invalid, or from an older connection"
             )
-        if not book or received_at_ms is None or updated is None:
+        if not book or not prices or received_at_ms is None or updated is None:
             raise RuntimeError(f"Lighter market {market_id} microstructure snapshot is not ready")
         quote_age_ms = max(0, int((time.monotonic() - updated) * 1000))
         if quote_age_ms > self.MICRO_BOOK_MAX_AGE_MS:
@@ -928,21 +1077,29 @@ class LighterClient:
                 f"Lighter market {market_id} tape is warming up for {remaining_ms}ms"
             )
         bounded_depth = min(100, max(1, int(depth)))
-        bids = sorted(
-            book.get("bids") or [], key=lambda row: Decimal(str(row["price"])), reverse=True
-        )[:bounded_depth]
-        asks = sorted(
-            book.get("asks") or [], key=lambda row: Decimal(str(row["price"]))
-        )[:bounded_depth]
+        bid_prices = reversed(prices["bids"][-bounded_depth:])
+        ask_prices = prices["asks"][:bounded_depth]
+        try:
+            bids = [self._clone(book["bids"][price]) for price in bid_prices]
+            asks = [self._clone(book["asks"][price]) for price in ask_prices]
+        except (KeyError, TypeError) as error:
+            self._micro_book_valid[market_id] = False
+            raise RuntimeError(
+                f"Lighter market {market_id} microstructure price index is invalid"
+            ) from error
         cutoff = int(time.time() * 1000) - lookback_ms
         overflow_at_ms = self._micro_last_overflow_ms.get(market_id)
         if overflow_at_ms is not None and overflow_at_ms >= cutoff:
             raise RuntimeError(
                 f"Lighter market {market_id} trade buffer overflowed inside the configured lookback"
             )
-        trades = [dict(row) for row in self._micro_trades.get(market_id, ())
-                  if (int(row.get("received_at_ms", 0)) >= cutoff
-                      and row.get("connection_id") == current_connection)]
+        trades_reversed = []
+        for row in reversed(self._micro_trades.get(market_id, ())):
+            if int(row.get("received_at_ms", 0)) < cutoff:
+                break
+            if row.get("connection_id") == current_connection:
+                trades_reversed.append(dict(row))
+        trades = list(reversed(trades_reversed))
         return {
             "market_id": market_id,
             "timestamp_ms": received_at_ms,
@@ -958,8 +1115,8 @@ class LighterClient:
             "book_valid": bool(self._micro_book_valid.get(market_id, False)),
             "nonce_contiguous": True,
             "quote_age_ms": quote_age_ms,
-            "bids": self._clone(bids),
-            "asks": self._clone(asks),
+            "bids": bids,
+            "asks": asks,
             "trades": trades,
             "stream": self.micro_stream_status(market_id),
         }

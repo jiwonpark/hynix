@@ -46,7 +46,7 @@ LIVE_CONFIRMATION = "ENABLE LIGHTER MICRO LIVE"
 SUPPORTED_MARKETS = {"BTC": 1}
 ENTRY_SIGNAL_LIMIT = 1_000
 PAPER_HISTORY_LIMIT = 1_000
-PERSIST_INTERVAL_SECONDS = 5.0
+PERSIST_INTERVAL_SECONDS = 15.0
 MAX_REPLAY_LIMIT = 2_000
 MAX_RAW_SNAPSHOT_HISTORY = 1_000
 MAX_TRADE_PRINTS_PER_SNAPSHOT = 1_000
@@ -396,8 +396,10 @@ class LighterMicroRuntime:
             json.dump(
                 self._persistent_document(),
                 stream,
-                indent=2,
-                sort_keys=True,
+                # This is machine-owned state, not a user-facing artifact.
+                # Compact encoding materially shortens the GIL-held JSON phase
+                # for bounded 1,000-row signal/fill histories.
+                separators=(",", ":"),
                 allow_nan=False,
             )
             stream.flush()
@@ -407,11 +409,31 @@ class LighterMicroRuntime:
         self._last_persist_monotonic = time.monotonic()
 
     def _persist_if_due(self) -> None:
-        """Batch high-frequency tick state writes to protect the event loop/disk."""
+        """Mark high-frequency tick state dirty for a batched async write."""
 
         self._dirty = True
-        if time.monotonic() - self._last_persist_monotonic >= PERSIST_INTERVAL_SECONDS:
-            self._save()
+
+    async def _save_if_due_async(self) -> None:
+        """Serialize/fsync a due worker save off the asyncio event loop.
+
+        The caller holds ``self.lock`` for the entire save, so the worker thread
+        sees one stable state document.  If shutdown cancels the worker during
+        a save, wait for the atomic replace to finish before propagating
+        cancellation; this prevents ``flush`` from racing the same temp file.
+        """
+
+        if (
+            not self._dirty
+            or time.monotonic() - self._last_persist_monotonic
+            < PERSIST_INTERVAL_SECONDS
+        ):
+            return
+        save_task = asyncio.create_task(asyncio.to_thread(self._save))
+        try:
+            await asyncio.shield(save_task)
+        except asyncio.CancelledError:
+            await save_task
+            raise
 
     def flush(self) -> None:
         """Persist pending batched state, intended for graceful shutdown."""
@@ -718,11 +740,40 @@ class LighterMicroRuntime:
         self._state["last_error_timestamp_ms"] = int(evaluated_at_ms)
         self._persist_if_due()
 
+    def _causal_evaluation_history(self) -> Tuple[OrderBookSnapshot, ...]:
+        """Return only the snapshots that can affect the latest evaluation.
+
+        ``evaluate_entry`` uses the current snapshot plus the latest snapshot at
+        or before the momentum cutoff.  Every retained snapshot was validated
+        when it arrived, so repeatedly sorting and revalidating all 600 retained
+        snapshots on each 4 Hz tick adds CPU work without adding integrity.  A
+        compact prefix preserves the exact causal momentum reference and keeps
+        entry/exit evaluation independent of recorder length.
+        """
+
+        if not self._snapshots:
+            return ()
+        current = self._snapshots[-1]
+        cutoff = current.timestamp_ms - int(self.entry_config.momentum_lookback_ms)
+        skipped_current = False
+        for candidate in reversed(self._snapshots):
+            if not skipped_current:
+                skipped_current = True
+                continue
+            if candidate.timestamp_ms <= cutoff:
+                return (candidate, current)
+        return (current,)
+
+    async def _tick_result(self, include_public_state: bool) -> Dict[str, Any]:
+        await self._save_if_due_async()
+        return self.public_state() if include_public_state else {}
+
     async def tick(
         self,
         *,
         evaluated_at_ms: Optional[int] = None,
         live_gates: Optional[Mapping[str, Optional[bool]]] = None,
+        include_public_state: bool = True,
     ) -> Dict[str, Any]:
         """Fetch, causally evaluate, paper-simulate, persist, and return state."""
 
@@ -752,7 +803,7 @@ class LighterMicroRuntime:
                         now_ms,
                         (f"invalid snapshot payload: {exc}",),
                     )
-                    return self.public_state()
+                    return await self._tick_result(include_public_state)
                 # Retain the actual causal decision clock so replay applies the
                 # same quote-freshness verdict instead of assuming zero age.
                 metadata["evaluated_at_ms"] = now_ms
@@ -764,7 +815,7 @@ class LighterMicroRuntime:
                         metadata.get("feed_integrity_reasons")
                         or ("feed integrity unavailable",),
                     )
-                    return self.public_state()
+                    return await self._tick_result(include_public_state)
                 if self._snapshots and snapshot.timestamp_ms <= self._snapshots[-1].timestamp_ms:
                     self._state["recorder_dropped_snapshots"] += 1
                     self._state["last_error"] = (
@@ -773,7 +824,7 @@ class LighterMicroRuntime:
                     )
                     self._state["last_error_timestamp_ms"] = now_ms
                     self._persist_if_due()
-                    return self.public_state()
+                    return await self._tick_result(include_public_state)
 
                 self._snapshots.append(snapshot)
                 self._snapshot_metadata.append(copy.deepcopy(metadata))
@@ -788,7 +839,7 @@ class LighterMicroRuntime:
                 )
                 self._state["recorder_latest_timestamp_ms"] = snapshot.timestamp_ms
 
-                history = list(self._snapshots)
+                history = self._causal_evaluation_history()
                 evaluation = evaluate_entry(history, self.entry_config)
                 self._latest_entry_evaluation = evaluation
                 if evaluation["entry_signal"]:
@@ -865,9 +916,21 @@ class LighterMicroRuntime:
                     now_ms,
                     (f"market feed unavailable: {exc}",),
                 )
-            return self.public_state()
+            return await self._tick_result(include_public_state)
 
-    run_once = tick
+    async def run_once(
+        self,
+        *,
+        evaluated_at_ms: Optional[int] = None,
+        live_gates: Optional[Mapping[str, Optional[bool]]] = None,
+    ) -> Dict[str, Any]:
+        """Run one background-worker tick without building an unused response."""
+
+        return await self.tick(
+            evaluated_at_ms=evaluated_at_ms,
+            live_gates=live_gates,
+            include_public_state=False,
+        )
 
     def _append_entry_signal(self, evaluation: Mapping[str, Any]) -> None:
         signal = {
@@ -1514,7 +1577,7 @@ class LighterMicroRuntime:
             simulation._snapshots.append(snapshot)
             simulation._snapshot_metadata.append(copy.deepcopy(snapshot_metadata))
             simulation._latest_snapshot_metadata = copy.deepcopy(snapshot_metadata)
-            history = list(simulation._snapshots)
+            history = simulation._causal_evaluation_history()
             entry_evaluation = evaluate_entry(history, simulation.entry_config)
             simulation._latest_entry_evaluation = entry_evaluation
             if entry_evaluation["entry_signal"]:
@@ -1647,7 +1710,15 @@ class LighterMicroRuntime:
             )
         return await asyncio.to_thread(captured.replay, limit)
 
-    def public_state(self) -> Dict[str, Any]:
+    def public_state(self, *, include_history: bool = True) -> Dict[str, Any]:
+        """Return current evaluator state, optionally without bounded histories.
+
+        Snapshot/status polling needs the latest evaluation, ladder, account,
+        recorder, and live gates but not the four 1,000-row history streams.
+        Keeping their keys as empty lists preserves the response shape while
+        avoiding repeated deep copies. Replay remains the explicit history API.
+        """
+
         entry_placeholders, exit_placeholders = self._condition_placeholders()
         entry_evaluation = copy.deepcopy(self._latest_entry_evaluation)
         exit_evaluation = copy.deepcopy(self._latest_exit_evaluation)
@@ -1679,11 +1750,27 @@ class LighterMicroRuntime:
                 }
             ),
             "orderbook": self._ladder(),
-            "entry_signals": copy.deepcopy(self._state["entry_signals"]),
-            "exit_signals": copy.deepcopy(self._state["exit_signals"]),
+            "entry_signals": (
+                copy.deepcopy(self._state["entry_signals"])
+                if include_history
+                else []
+            ),
+            "exit_signals": (
+                copy.deepcopy(self._state["exit_signals"])
+                if include_history
+                else []
+            ),
             "paper_positions": copy.deepcopy(self._state["paper_positions"]),
-            "paper_fills": copy.deepcopy(self._state["paper_fills"]),
-            "paper_trades": copy.deepcopy(self._state["paper_trades"]),
+            "paper_fills": (
+                copy.deepcopy(self._state["paper_fills"])
+                if include_history
+                else []
+            ),
+            "paper_trades": (
+                copy.deepcopy(self._state["paper_trades"])
+                if include_history
+                else []
+            ),
             "paper_account": {
                 "initial_equity_usd": self.runtime_config.paper_initial_equity_usd,
                 "realized_pnl_usd": self._state["paper_realized_pnl_usd"],

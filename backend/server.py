@@ -2097,7 +2097,7 @@ def _lighter_micro_decorated_prerequisites(
 
 
 def _lighter_micro_snapshot_payload(depth: int) -> Dict[str, Any]:
-    state = lighter_micro_runtime.public_state()
+    state = lighter_micro_runtime.public_state(include_history=False)
     ladder = state.get("orderbook") or {}
     metadata = ladder.get("metadata") or {}
     timestamp_ms = int(ladder.get("timestamp_ms") or 0) or None
@@ -2268,7 +2268,7 @@ async def get_lighter_micro_snapshot(
 
 @app.get("/api/lighter-micro/status")
 async def get_lighter_micro_status() -> Dict[str, Any]:
-    state = lighter_micro_runtime.public_state()
+    state = lighter_micro_runtime.public_state(include_history=False)
     account = _lighter_micro_account_facts()
     stream = lighter_client.micro_stream_status(1)
     server_time_ms = int(time.time() * 1000)

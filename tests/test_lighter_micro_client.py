@@ -1,4 +1,5 @@
 import asyncio
+from decimal import Decimal
 import time
 import unittest
 
@@ -126,6 +127,73 @@ class LighterMicroClientTests(unittest.TestCase):
         self.assertTrue(all(row["connection_id"] == 1 for row in snapshot["trades"]))
         self.assertEqual(snapshot["source"], "LIGHTER_PUBLIC_WS_ORDER_BOOK_TRADE")
         self.assertGreaterEqual(snapshot["quote_age_ms"], 0)
+
+    def test_deep_book_delta_mutates_only_changed_levels_and_keeps_top_order(self):
+        depth = 2_000
+        bids = [
+            {"price": str(100_000 - index), "size": "1"}
+            for index in range(depth)
+        ]
+        asks = [
+            {"price": str(100_001 + index), "size": "1"}
+            for index in range(depth)
+        ]
+        self._ready(book=self._book(nonce=50, bids=bids, asks=asks))
+        book = self.client._micro_books[1]
+        bid_map_id = id(book["bids"])
+        untouched_row = book["bids"][Decimal("99999")]
+
+        self.client._handle_micro_stream_message({
+            "type": "update/order_book",
+            "channel": "order_book:1",
+            "order_book": {
+                "code": 0,
+                "begin_nonce": 50,
+                "nonce": 51,
+                "bids": [
+                    {"price": "100000", "size": "2"},
+                    {"price": "100000.5", "size": "3"},
+                ],
+                "asks": [{"price": "100001", "size": "0"}],
+            },
+        })
+
+        self.assertEqual(id(self.client._micro_books[1]["bids"]), bid_map_id)
+        self.assertIs(
+            self.client._micro_books[1]["bids"][Decimal("99999")],
+            untouched_row,
+        )
+        snapshot = self._snapshot(depth=2)
+        self.assertEqual(
+            [row["price"] for row in snapshot["bids"]],
+            ["100000.5", "100000"],
+        )
+        self.assertEqual(
+            [row["price"] for row in snapshot["asks"]],
+            ["100002", "100003"],
+        )
+
+    def test_crossed_delta_rolls_back_indexed_book_before_failing_closed(self):
+        self._ready()
+        previous_bids = dict(self.client._micro_books[1]["bids"])
+        previous_prices = list(self.client._micro_book_prices[1]["bids"])
+
+        with self.assertRaisesRegex(RuntimeError, "crossed or locked"):
+            self.client._handle_micro_stream_message({
+                "type": "update/order_book",
+                "channel": "order_book:1",
+                "order_book": {
+                    "code": 0,
+                    "begin_nonce": 10,
+                    "nonce": 11,
+                    "bids": [{"price": "101", "size": "9"}],
+                    "asks": [],
+                },
+            })
+
+        self.assertEqual(self.client._micro_books[1]["bids"], previous_bids)
+        self.assertEqual(self.client._micro_book_prices[1]["bids"], previous_prices)
+        self.assertFalse(self.client._micro_book_valid[1])
 
     def test_nonce_gap_fails_closed_and_counts_gap(self):
         self._ack_book(self._book(nonce=100))
@@ -354,6 +422,78 @@ class LighterMicroClientTests(unittest.TestCase):
         )
         self.assertIn("order_book/1", timeout)
         self.assertIn("trade/1", timeout)
+
+    def test_valid_ack_renews_timeout_window_and_fairness_is_bounded(self):
+        expired_deadline = 100.0
+        acknowledged_at = 113.0
+        book_ack = self._book()
+        self.client._handle_micro_stream_message(book_ack)
+
+        renewed = self.client._micro_deadline_after_valid_message(
+            book_ack,
+            expired_deadline,
+            acknowledged_before=False,
+            now=acknowledged_at,
+        )
+        self.assertEqual(
+            renewed,
+            acknowledged_at + self.client.MICRO_SUBSCRIPTION_TIMEOUT_SECONDS,
+        )
+        trade_ack = {
+            "type": "subscribed/trade",
+            "channel": "trade:1",
+            "nonce": 20,
+            "trades": [],
+            "liquidation_trades": [],
+        }
+        self.client._handle_micro_stream_message(trade_ack)
+        second_ack_at = renewed - 1
+        renewed = self.client._micro_deadline_after_valid_message(
+            trade_ack,
+            renewed,
+            acknowledged_before=False,
+            now=second_ack_at,
+        )
+        self.assertEqual(
+            renewed,
+            second_ack_at + self.client.MICRO_SUBSCRIPTION_TIMEOUT_SECONDS,
+        )
+        update = {
+            **book_ack,
+            "type": "update/order_book",
+        }
+        self.assertEqual(
+            self.client._micro_deadline_after_valid_message(
+                update,
+                renewed,
+                acknowledged_before=False,
+                now=acknowledged_at + 1,
+            ),
+            renewed,
+        )
+        # A duplicate acknowledgement must not indefinitely hide a missing
+        # trade-channel acknowledgement.
+        self.client._handle_micro_stream_message(book_ack)
+        self.assertEqual(
+            self.client._micro_deadline_after_valid_message(
+                book_ack,
+                renewed,
+                acknowledged_before=True,
+                now=acknowledged_at + 2,
+            ),
+            renewed,
+        )
+        cadence = self.client.MICRO_STREAM_FAIRNESS_MESSAGES
+        budget = self.client.MICRO_STREAM_FAIRNESS_SECONDS
+        self.assertFalse(
+            self.client._micro_stream_fairness_due(cadence - 1, budget / 2)
+        )
+        self.assertTrue(
+            self.client._micro_stream_fairness_due(cadence, budget / 2)
+        )
+        self.assertTrue(
+            self.client._micro_stream_fairness_due(1, budget)
+        )
 
     def test_status_exposes_ages_counters_warmup_and_buffer_overflow(self):
         client = self._connected_client(MICRO_TRADE_BUFFER_LIMIT=2)

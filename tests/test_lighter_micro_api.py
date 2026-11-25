@@ -217,6 +217,14 @@ def test_status_route_propagates_disconnected_state_to_live_payload(
     tmp_path, monkeypatch
 ):
     runtime = LighterMicroRuntime(NoOrderClient(), tmp_path / "micro-state.json")
+    public_state_calls = []
+    original_public_state = runtime.public_state
+
+    def tracked_public_state(*, include_history=True):
+        public_state_calls.append(include_history)
+        return original_public_state(include_history=include_history)
+
+    monkeypatch.setattr(runtime, "public_state", tracked_public_state)
     monkeypatch.setattr(server, "lighter_micro_runtime", runtime)
     monkeypatch.setattr(
         server.lighter_client,
@@ -241,6 +249,7 @@ def test_status_route_propagates_disconnected_state_to_live_payload(
     assert payload["safeguards_stale"] is True
     assert "stream_disconnected" in payload["stale_reasons"]
     assert "stream_error" in payload["stale_reasons"]
+    assert public_state_calls == [False]
 
 
 def test_snapshot_depth_is_capped_to_collected_twenty_levels(monkeypatch):
@@ -266,8 +275,11 @@ def test_snapshot_depth_is_capped_to_collected_twenty_levels(monkeypatch):
         "last_error": None,
     }
 
+    public_state_calls = []
+
     class StubRuntime:
-        def public_state(self):
+        def public_state(self, *, include_history=True):
+            public_state_calls.append(include_history)
             return state
 
     monkeypatch.setattr(server, "lighter_micro_runtime", StubRuntime())
@@ -285,6 +297,7 @@ def test_snapshot_depth_is_capped_to_collected_twenty_levels(monkeypatch):
     assert len(payload["order_book"]["bids"]) == 20
     assert len(payload["order_book"]["asks"]) == 20
     assert payload["metric_context"]["depth_levels"] == 5
+    assert public_state_calls == [False]
 
 
 def test_micro_routes_expose_no_order_or_arm_endpoint():
