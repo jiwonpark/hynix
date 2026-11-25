@@ -31,6 +31,9 @@ assert.ok(lighter.includes('if (this.botStatusPromise) return this.botStatusProm
 assert.ok(lighter.includes('if (status?.bot) this.updateBotStatus(status.bot, status)'), 'account status must unblock replay with its authoritative bot snapshot');
 assert.ok(lighter.includes('Full-Auto will be paused and exchange inventory reconciled before the reduction'), 'live reduction must disclose automatic pause and reconciliation');
 assert.ok(lighter.includes('safeStorage.setItem("skhynix_lighterCrypto_mode", "semi_auto")'), 'successful live reduction must remain in Manual Live mode');
+assert.ok(lighter.includes('freshVenueMark(venue = this.liveVenue)'), 'live valuation must use an explicit freshness-gated mark');
+assert.ok(lighter.includes('authoritativeVenueGross(venue = this.liveVenue)'), 'live leverage must distinguish unknown gross exposure from zero');
+assert.doesNotMatch(lighter, /this\.marketDetail\?\.mark_price \|\| bot\?\.last_evaluation\?\.ratio \|\| this\.currentPrice/, 'dust reconciliation must not reuse a paused bot evaluation');
 
 const context = {
   window: {},
@@ -57,6 +60,19 @@ const nodes = new Map([
   ['lighterCrypto_LiveRiskBudget', { textContent: '' }],
   ['lighterCrypto_valCondEntryMargin', { textContent: '' }],
   ['lighterCrypto_valCondEntryLeverage', { textContent: '' }],
+  ['lighterCrypto_valCritGrossHeadroom', { textContent: '' }],
+  ['lighterCrypto_badgeCondEntryLeverage', { textContent: '', className: '', style: {} }],
+  ['lighterCrypto_badgeCondEntryCapacity', { textContent: '', className: '', style: {} }],
+  ['lighterCrypto_badgeCondEntryMargin', { textContent: '', className: '', style: {} }],
+  ['lighterCrypto_chkCondEntryLeverage', { checked: true }],
+  ['lighterCrypto_chkCondEntryCapacity', { checked: true }],
+  ['lighterCrypto_chkCondEntryMargin', { checked: true }],
+  ['lighterCrypto_valLivePriceBadge', { textContent: '', style: {} }],
+  ['lighterCrypto_valShortTermCurrentPrice', { textContent: '' }],
+  ['lighterCrypto_valShortTermCurrentParity', { textContent: '' }],
+  ['lighterCrypto_valAutoCurrentEdge', { textContent: '' }],
+  ['lighterCrypto_valCritCurrentSpread', { textContent: '' }],
+  ['lighterCrypto_valCritTpCurrentSpread', { textContent: '' }],
 ]);
 context.document.getElementById = (id) => nodes.get(id) || null;
 const tab5 = context.window.lighterCryptoEngine;
@@ -207,7 +223,12 @@ assert.equal(maReplay.use_convergence, false);
 assert.equal(maReplay.use_dwell, false);
 assert.equal(maReplay.use_bottoming, false);
 tab5.mode = 'live';
-tab5.liveVenue = { collateral: 170, available_margin: 170, account_gross_notional: 0 };
+tab5.liveVenue = {
+  authenticated: true, account_stale: false,
+  collateral: 170, available_margin: 170, account_gross_notional: 0,
+  mark_price: 60_000, mark_stale: false,
+  mark_source: 'TEST_VALIDATED_L2', mark_updated_ms: Date.now(),
+};
 tab5.livePositions = [];
 tab5.botState = { enabled: true, tranches: [], risk_capacity: {
   gross_leverage_cap: 1, margin_leverage_assumption: 10,
@@ -218,6 +239,53 @@ tab5.updateLeverageMetrics();
 assert.match(nodes.get('lighterCrypto_valCondEntryMargin').textContent, /\$170\.00 ≥ \$18\.75/);
 assert.match(nodes.get('lighterCrypto_LiveRiskBudget').textContent, /−\$15\.00 \(8\.8% of equity, limit 10%\)/);
 assert.match(nodes.get('lighterCrypto_valCondEntryLeverage').textContent, /0\.88x projected ≤ 1\.0x/);
+assert.equal(nodes.get('lighterCrypto_badgeCondEntryLeverage').textContent, 'PASS');
+
+tab5.liveVenue = {
+  authenticated: true, account_stale: true,
+  collateral: 170, available_margin: 170, selected_gross_notional: 0,
+  mark_price: 60_000, mark_stale: false,
+  mark_source: 'TEST_VALIDATED_L2', mark_updated_ms: Date.now(),
+};
+tab5.updateLeverageMetrics();
+assert.equal(nodes.get('lighterCrypto_badgeCondEntryLeverage').textContent, 'BLOCKED');
+assert.equal(nodes.get('lighterCrypto_badgeCondEntryCapacity').textContent, 'BLOCKED');
+assert.equal(nodes.get('lighterCrypto_badgeCondEntryMargin').textContent, 'BLOCKED');
+assert.match(nodes.get('lighterCrypto_valCritGrossHeadroom').textContent, /UNKNOWN.*BLOCKED/);
+
+// Unknown is not zero: a stale/null mark and null selected gross must block all
+// live risk PASS states while the chart price remains available only to charting.
+tab5.currentRatio = 61_234.56;
+tab5.liveVenue = {
+  authenticated: true,
+  collateral: 170,
+  available_margin: 170,
+  selected_gross_notional: null,
+  account_gross_notional: 999,
+  mark_price: null,
+  price_ratio: null,
+  mark_stale: true,
+};
+tab5.livePositions = [{
+  market_id: 1, position_amt: 0.01, size: 0.01,
+  entry_price: null, mark_price: 123, notional: null, unrealized_pnl: null,
+}];
+assert.equal(tab5.authoritativeVenueGross(tab5.liveVenue), null, 'explicit null selected gross must not fall back to another number');
+assert.equal(tab5.syncLiveMarkPresentation(tab5.liveVenue), null);
+tab5.updateLeverageMetrics();
+assert.equal(tab5.currentRatio, 61_234.56, 'chart price may remain available internally');
+assert.match(nodes.get('lighterCrypto_valLivePriceBadge').textContent, /LIVE MARK UNAVAILABLE/);
+assert.match(nodes.get('lighterCrypto_valShortTermCurrentPrice').textContent, /LIVE MARK UNAVAILABLE/);
+assert.doesNotMatch(nodes.get('lighterCrypto_valShortTermCurrentPrice').textContent, /61,234|50,000/);
+assert.match(nodes.get('lighterCrypto_valCondEntryLeverage').textContent, /UNKNOWN.*BLOCKED/);
+assert.match(nodes.get('lighterCrypto_valCritGrossHeadroom').textContent, /UNKNOWN.*BLOCKED/);
+assert.match(nodes.get('lighterCrypto_LiveRiskBudget').textContent, /BLOCKED.*unavailable/i);
+assert.equal(nodes.get('lighterCrypto_badgeCondEntryLeverage').textContent, 'BLOCKED');
+assert.equal(nodes.get('lighterCrypto_badgeCondEntryCapacity').textContent, 'BLOCKED');
+assert.equal(nodes.get('lighterCrypto_badgeCondEntryMargin').textContent, 'BLOCKED');
+assert.equal(nodes.get('lighterCrypto_chkCondEntryLeverage').checked, false);
+assert.equal(nodes.get('lighterCrypto_chkCondEntryCapacity').checked, false);
+assert.equal(nodes.get('lighterCrypto_chkCondEntryMargin').checked, false);
 
 // Test updateBotStatus runs without error and detects mismatch
 nodes.set('lighterCrypto_chkAutoPeriodic48h', { checked: false, disabled: false });
@@ -232,6 +300,44 @@ nodes.set('lighterCrypto_activePositionsBody', { innerHTML: '' });
 nodes.set('lighterCrypto_activePositionsSummary', { innerHTML: '' });
 nodes.set('lighterCrypto_executionHistoryBody', { innerHTML: '' });
 nodes.set('lighterCrypto_executionHistorySummary', { innerHTML: '' });
+nodes.set('lighterCrypto_valHedgedQuantities', { textContent: '' });
+
+tab5.mode = 'live';
+tab5.accountDataReady = true;
+tab5.botState = { enabled: false, tranches: [], risk_capacity: { gross_leverage_cap: 1 } };
+tab5.renderVirtualState();
+assert.match(nodes.get('lighterCrypto_activePositionsSummary').innerHTML, /UNKNOWN · BLOCKED/);
+assert.match(nodes.get('lighterCrypto_activePositionsBody').innerHTML, /UNKNOWN · BLOCKED/);
+assert.doesNotMatch(nodes.get('lighterCrypto_activePositionsBody').innerHTML, /\$500\.00 USD/, 'entry price must not fabricate current notional');
+assert.doesNotMatch(nodes.get('lighterCrypto_activePositionsBody').innerHTML, /\$1\.23 USD/, 'unqualified position mark must not bypass the status freshness gate');
+assert.match(nodes.get('lighterCrypto_activePositionsBody').innerHTML, /UNAVAILABLE/, 'missing entry and P&L must remain unavailable');
+
+tab5.liveVenue = {
+  authenticated: true, account_stale: false, collateral: 170, available_margin: null,
+  selected_gross_notional: 100, mark_price: 100, mark_stale: false,
+  mark_source: 'TEST_VALIDATED_L2', mark_updated_ms: Date.now(),
+};
+tab5.livePositions = [{
+  market_id: 1, position_amt: 1, entry_price: 90, mark_price: 100,
+  notional: 100, initial_margin: null, unrealized_pnl: null, roe_percent: null,
+}];
+tab5.renderVirtualState();
+assert.match(nodes.get('lighterCrypto_activePositionsBody').innerHTML, /\$100\.00 USD/);
+assert.match(nodes.get('lighterCrypto_activePositionsBody').innerHTML, /<td>UNKNOWN<\/td>/, 'missing exchange margin must remain unknown');
+assert.match(nodes.get('lighterCrypto_activePositionsBody').innerHTML, /UNAVAILABLE/, 'missing unrealized P&L must not render as fresh zero');
+assert.doesNotMatch(nodes.get('lighterCrypto_activePositionsBody').innerHTML, /\$12\.50/, 'bot leverage must not fabricate account margin');
+
+// A paused bot's old evaluation must not classify a quantity difference as
+// harmless dust when the authenticated live mark is unavailable.
+tab5.updateBotStatus(
+  { enabled: false, tranches: [], last_evaluation: { ratio: 60_000 } },
+  {
+    positions: [{ market_id: 1, position_amt: 0.00006 }],
+    mark_price: null, mark_stale: true, execution_enabled: false,
+  },
+);
+assert.equal(nodes.get('lighterCrypto_btnReconcileBot').style.display, 'inline-flex');
+assert.match(nodes.get('lighterCrypto_lblAutoTradeStatusDetail').textContent, /live mark is unavailable/);
 
 tab5.updateBotStatus({ enabled: false, tranches: [] }, { positions: [{ market_id: 1, position_amt: 0.00026 }] });
 assert.equal(nodes.get('lighterCrypto_btnReconcileBot').style.display, 'inline-flex');

@@ -109,6 +109,76 @@ def test_account_capacity_uses_all_positions_and_never_fabricates_zero(monkeypat
     assert missing["gross_leverage"] is None
 
 
+def test_account_capacity_never_values_open_exposure_at_entry_price(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    monkeypatch.setattr(
+        server.lighter_client,
+        "account_telemetry_snapshot",
+        lambda: {
+            "source": "TEST_ACCOUNT_STREAM",
+            "updated_at_ms": now_ms,
+            "account": {
+                "collateral": "100",
+                "positions": [{"position": "0.01", "avg_entry_price": "50000"}],
+            },
+        },
+    )
+
+    facts = server._lighter_micro_account_facts()
+
+    assert facts["gross_notional"] is None
+    assert facts["gross_leverage"] is None
+    assert facts["account_capacity_ok"] is False
+
+
+@pytest.mark.parametrize(
+    "position",
+    [
+        {"position": "0", "position_value": "10"},
+        {"position": "1", "position_value": "nan"},
+        {"position": "1", "mark_price": "-5"},
+        {"position": "inf", "position_value": "10"},
+    ],
+)
+def test_account_capacity_rejects_inconsistent_or_nonfinite_exposure(
+    position, monkeypatch
+):
+    now_ms = server.time.time_ns() // 1_000_000
+    monkeypatch.setattr(
+        server.lighter_client,
+        "account_telemetry_snapshot",
+        lambda: {
+            "source": "TEST_ACCOUNT_STREAM",
+            "updated_at_ms": now_ms,
+            "account": {"collateral": "100", "positions": [position]},
+        },
+    )
+
+    facts = server._lighter_micro_account_facts()
+
+    assert facts["gross_notional"] is None
+    assert facts["gross_leverage"] is None
+    assert facts["account_capacity_ok"] is False
+
+
+def test_account_capacity_rejects_future_account_timestamp(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    monkeypatch.setattr(
+        server.lighter_client,
+        "account_telemetry_snapshot",
+        lambda: {
+            "source": "TEST_ACCOUNT_STREAM",
+            "updated_at_ms": now_ms + server.LIGHTER_MAX_FUTURE_SKEW_MS + 60_000,
+            "account": {"collateral": "100", "positions": []},
+        },
+    )
+
+    facts = server._lighter_micro_account_facts()
+
+    assert facts["account_stale"] is True
+    assert facts["account_capacity_ok"] is False
+
+
 def test_legacy_pause_safeguard_never_claims_exchange_inventory(monkeypatch):
     state = {
         "source": {"timestamp_ms": 1_800_000_000_000},
@@ -538,3 +608,508 @@ def test_account_refreshes_before_stale_boundary_and_preserves_truthful_age(
     assert payload["account_stale"] is expected_stale
     assert payload["account_age_ms"] >= age_ms
     assert len(refreshes) == expected_refreshes
+
+
+def test_account_mark_uses_fresh_book_not_paused_bot_evaluation(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    snapshot = {
+        "source": "TEST_ACCOUNT_STREAM",
+        "updated_at_ms": now_ms,
+        "positions_updated_ms": now_ms,
+        "collateral_updated_ms": now_ms,
+        "account": {
+            "collateral": "104.25",
+            "available_balance": "104.25",
+            "positions": [{"market_id": 1, "position": "0", "position_value": "0"}],
+        },
+    }
+
+    class StubBot:
+        GROSS_LEVERAGE_CAP = 8.0
+        state = {
+            "last_evaluation": {"ratio": 68_681.7},
+            "last_error": None,
+            "recovery_required": True,
+        }
+
+        def public_state(self):
+            return {"enabled": False, "recovery_required": True}
+
+    monkeypatch.setattr(
+        server.lighter_client, "account_telemetry_snapshot", lambda: snapshot
+    )
+    monkeypatch.setattr(
+        server.lighter_client,
+        "market_detail_snapshot",
+        lambda market_id: {"status": "active", "mark_price": "68681.7"},
+    )
+    monkeypatch.setattr(
+        server,
+        "_lighter_crypto_live_mark",
+        lambda market_id: {
+            "mark_price": 58_808.2,
+            "source": "TEST_VALIDATED_L2",
+            "timestamp_ms": now_ms,
+            "stale": False,
+        },
+    )
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+
+    payload = asyncio.run(server.get_lighter_crypto_status("BTC"))
+
+    assert payload["mark_price"] == pytest.approx(58_808.2)
+    assert payload["price_ratio"] == pytest.approx(58_808.2)
+    assert payload["mark_source"] == "TEST_VALIDATED_L2"
+    assert payload["mark_updated_ms"] == now_ms
+    assert payload["mark_stale"] is False
+    assert payload["positions"] == []
+    assert payload["execution_enabled"] is False
+
+
+def test_account_mark_fails_closed_when_validated_book_is_stale(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    monkeypatch.setattr(
+        server.lighter_client,
+        "account_telemetry_snapshot",
+        lambda: {
+            "source": "TEST_ACCOUNT_STREAM",
+            "updated_at_ms": now_ms,
+            "account": {"collateral": "100", "positions": []},
+        },
+    )
+    monkeypatch.setattr(
+        server.lighter_client,
+        "market_detail_snapshot",
+        lambda market_id: {"status": "active", "mark_price": "68681.7"},
+    )
+    monkeypatch.setattr(
+        server,
+        "_lighter_crypto_live_mark",
+        lambda market_id: {
+            "mark_price": None,
+            "source": None,
+            "timestamp_ms": None,
+            "stale": True,
+        },
+    )
+
+    class StubBot:
+        state = {"last_error": None, "recovery_required": False}
+
+        def public_state(self):
+            return {"enabled": False}
+
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+
+    payload = asyncio.run(server.get_lighter_crypto_status("BTC"))
+
+    assert payload["mark_price"] is None
+    assert payload["price_ratio"] is None
+    assert payload["mark_source"] is None
+    assert payload["mark_updated_ms"] is None
+    assert payload["mark_stale"] is True
+    assert payload["execution_enabled"] is False
+
+
+def _validated_mark_state(now_ms, *, connection_id=7, nonce=22):
+    return {
+        "config": {"runtime": {"market_id": 1, "max_quote_age_ms": 500}},
+        "source": {"timestamp_ms": now_ms},
+        "latest_entry_evaluation": {
+            "feed_ready": True,
+            "source": {"timestamp_ms": now_ms},
+        },
+        "orderbook": {
+            "source": "TEST_VALIDATED_L2",
+            "timestamp_ms": now_ms,
+            "sequence": nonce,
+            "bids": [{"price": 58_807.2, "size": 1}],
+            "asks": [{"price": 58_809.2, "size": 1}],
+            "metadata": {
+                "market_id": 1,
+                "feed_ready": True,
+                "connection_id": connection_id,
+            },
+        },
+    }
+
+
+def _validated_mark_stream(*, connection_id=7, nonce=22):
+    return {
+        "connected": True,
+        "connection_id": connection_id,
+        "last_error": None,
+        "markets": {
+            "1": {"book_valid": True, "quote_age_ms": 0, "nonce": nonce},
+        },
+    }
+
+
+def test_live_mark_requires_matching_market_connection_epoch_and_nonce(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    state = _validated_mark_state(now_ms)
+    stream = _validated_mark_stream()
+    monkeypatch.setattr(
+        server.lighter_micro_runtime, "public_state", lambda **kwargs: state
+    )
+    monkeypatch.setattr(
+        server.lighter_client, "micro_stream_status", lambda market_id: stream
+    )
+
+    fresh = server._lighter_crypto_live_mark(1)
+    assert fresh == {
+        "mark_price": pytest.approx(58_808.2),
+        "source": "TEST_VALIDATED_L2",
+        "timestamp_ms": now_ms,
+        "stale": False,
+    }
+
+    state["orderbook"]["sequence"] = 21
+    assert server._lighter_crypto_live_mark(1)["mark_price"] is None
+    state["orderbook"]["sequence"] = 22
+    state["orderbook"]["metadata"]["connection_id"] = 6
+    assert server._lighter_crypto_live_mark(1)["mark_price"] is None
+
+
+def test_live_mark_rejects_future_source_timestamp(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    future_ms = now_ms + server.LIGHTER_MAX_FUTURE_SKEW_MS + 60_000
+    monkeypatch.setattr(
+        server.lighter_micro_runtime,
+        "public_state",
+        lambda **kwargs: _validated_mark_state(future_ms),
+    )
+    monkeypatch.setattr(
+        server.lighter_client,
+        "micro_stream_status",
+        lambda market_id: _validated_mark_stream(),
+    )
+
+    mark = server._lighter_crypto_live_mark(1)
+
+    assert mark["mark_price"] is None
+    assert mark["stale"] is True
+
+
+def test_live_mark_never_reuses_btc_book_for_another_symbol(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    calls = []
+    monkeypatch.setattr(
+        server.lighter_micro_runtime,
+        "public_state",
+        lambda **kwargs: _validated_mark_state(now_ms),
+    )
+    monkeypatch.setattr(
+        server.lighter_client,
+        "micro_stream_status",
+        lambda market_id: calls.append(market_id),
+    )
+
+    unavailable = server._lighter_crypto_live_mark(0)
+    assert unavailable["mark_price"] is None
+    assert unavailable["stale"] is True
+    assert calls == []
+
+
+def test_non_btc_and_missing_position_valuation_fail_closed(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    monkeypatch.setattr(
+        server.lighter_client,
+        "account_telemetry_snapshot",
+        lambda: {
+            "source": "TEST_ACCOUNT_STREAM",
+            "updated_at_ms": now_ms,
+            "account": {
+                "collateral": "100",
+                "available_balance": "90",
+                "positions": [{
+                    "market_id": 0,
+                    "position": "0.5",
+                    "avg_entry_price": "2500",
+                }],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        server.lighter_client,
+        "market_detail_snapshot",
+        lambda market_id: {"status": "active", "mark_price": "2600"},
+    )
+    monkeypatch.setattr(
+        server,
+        "_lighter_crypto_live_mark",
+        lambda market_id: {
+            "mark_price": None, "source": None, "timestamp_ms": None, "stale": True,
+        },
+    )
+
+    class StubBot:
+        GROSS_LEVERAGE_CAP = 8.0
+        state = {"last_error": None, "recovery_required": False}
+
+        def public_state(self):
+            return {"enabled": False}
+
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+    payload = asyncio.run(server.get_lighter_crypto_status("ETH"))
+
+    assert payload["mark_price"] is None
+    assert payload["mark_stale"] is True
+    assert payload["execution_enabled"] is False
+    assert payload["account_gross_notional"] is None
+    assert payload["selected_gross_notional"] is None
+    assert payload["positions"] == [{
+        "symbol": "ETH",
+        "market_id": 0,
+        "position_amt": 0.5,
+        "size": 0.5,
+        "notional": None,
+        "entry_price": 2500.0,
+        "mark_price": None,
+        "unrealized_pnl": None,
+        "initial_margin": None,
+        "roe_percent": None,
+    }]
+
+
+def test_zero_size_nonzero_value_is_inconsistent_not_a_position(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    monkeypatch.setattr(
+        server.lighter_client,
+        "account_telemetry_snapshot",
+        lambda: {
+            "source": "TEST_ACCOUNT_STREAM",
+            "updated_at_ms": now_ms,
+            "account": {
+                "collateral": "100",
+                "positions": [{
+                    "market_id": 1, "position": "0", "position_value": "123",
+                }],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        server.lighter_client,
+        "market_detail_snapshot",
+        lambda market_id: {"status": "active"},
+    )
+    monkeypatch.setattr(
+        server,
+        "_lighter_crypto_live_mark",
+        lambda market_id: {
+            "mark_price": 58_808.2,
+            "source": "TEST_VALIDATED_L2",
+            "timestamp_ms": now_ms,
+            "stale": False,
+        },
+    )
+
+    class StubBot:
+        GROSS_LEVERAGE_CAP = 8.0
+        state = {"last_error": None, "recovery_required": False}
+
+        def public_state(self):
+            return {"enabled": False}
+
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+    payload = asyncio.run(server.get_lighter_crypto_status("BTC"))
+
+    assert payload["positions"] == []
+    assert payload["account_gross_notional"] is None
+    assert payload["selected_gross_notional"] is None
+
+
+@pytest.mark.parametrize(
+    "position",
+    [
+        {"market_id": 1, "position": "nan", "position_value": "100"},
+        {"market_id": 1, "position": "1", "position_value": "nan"},
+        {"market_id": 1, "position": "1", "position_value": "-100"},
+        {"market_id": 1, "position": "1", "mark_price": "-1"},
+    ],
+)
+def test_malformed_position_numbers_never_become_fresh_zero(position, monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    monkeypatch.setattr(
+        server.lighter_client,
+        "account_telemetry_snapshot",
+        lambda: {
+            "source": "TEST_ACCOUNT_STREAM",
+            "updated_at_ms": now_ms,
+            "account": {"collateral": "100", "positions": [position]},
+        },
+    )
+    monkeypatch.setattr(
+        server.lighter_client,
+        "market_detail_snapshot",
+        lambda market_id: {"status": "active"},
+    )
+    monkeypatch.setattr(
+        server,
+        "_lighter_crypto_live_mark",
+        lambda market_id: {
+            "mark_price": None, "source": None, "timestamp_ms": None, "stale": True,
+        },
+    )
+
+    class StubBot:
+        GROSS_LEVERAGE_CAP = 8.0
+        state = {"last_error": None, "recovery_required": False}
+
+        def public_state(self):
+            return {"enabled": False}
+
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+    payload = asyncio.run(server.get_lighter_crypto_status("BTC"))
+
+    assert payload["execution_enabled"] is False
+    assert payload["account_gross_notional"] is None
+    assert payload["selected_gross_notional"] is None
+    if payload["positions"]:
+        assert payload["positions"][0]["notional"] is None
+        assert payload["positions"][0]["initial_margin"] is None
+        assert payload["positions"][0]["roe_percent"] is None
+
+
+def test_future_account_timestamp_is_stale_and_cannot_enable_execution(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    future_ms = now_ms + server.LIGHTER_MAX_FUTURE_SKEW_MS + 60_000
+    monkeypatch.setattr(
+        server.lighter_client,
+        "account_telemetry_snapshot",
+        lambda: {
+            "source": "TEST_ACCOUNT_STREAM",
+            "updated_at_ms": future_ms,
+            "account": {"collateral": "100", "positions": []},
+        },
+    )
+    monkeypatch.setattr(
+        server.lighter_client,
+        "market_detail_snapshot",
+        lambda market_id: {"status": "active"},
+    )
+    monkeypatch.setattr(
+        server,
+        "_lighter_crypto_live_mark",
+        lambda market_id: {
+            "mark_price": 58_808.2,
+            "source": "TEST_VALIDATED_L2",
+            "timestamp_ms": now_ms,
+            "stale": False,
+        },
+    )
+
+    class StubBot:
+        state = {"last_error": None, "recovery_required": False}
+
+        def public_state(self):
+            return {"enabled": False}
+
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+    async def refresh():
+        return None
+
+    monkeypatch.setattr(server, "_refresh_lighter_account_cache", refresh)
+    monkeypatch.setattr(server, "_lighter_account_refresh_task", None)
+    payload = asyncio.run(server.get_lighter_crypto_status("BTC"))
+
+    assert payload["account_stale"] is True
+    assert payload["execution_enabled"] is False
+
+
+def test_invalid_sign_fails_position_and_gross_aggregates_closed(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    monkeypatch.setattr(
+        server.lighter_client,
+        "account_telemetry_snapshot",
+        lambda: {
+            "source": "TEST_ACCOUNT_STREAM",
+            "updated_at_ms": now_ms,
+            "account": {
+                "collateral": "100",
+                "available_balance": "90",
+                "positions": [{
+                    "market_id": 1,
+                    "position": "1",
+                    "sign": "0.5",
+                    "position_value": "100",
+                    "allocated_margin": "10",
+                }],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        server.lighter_client, "market_detail_snapshot", lambda market_id: {"status": "active"}
+    )
+    monkeypatch.setattr(
+        server,
+        "_lighter_crypto_live_mark",
+        lambda market_id: {
+            "mark_price": 100.0,
+            "source": "TEST_VALIDATED_L2",
+            "timestamp_ms": now_ms,
+            "stale": False,
+        },
+    )
+
+    class StubBot:
+        state = {"last_error": None, "recovery_required": False}
+
+        def public_state(self):
+            return {"enabled": False}
+
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+    payload = asyncio.run(server.get_lighter_crypto_status("BTC"))
+
+    assert payload["positions"] == []
+    assert payload["account_gross_notional"] is None
+    assert payload["selected_gross_notional"] is None
+
+
+def test_missing_exchange_margin_never_fabricates_available_or_roe(monkeypatch):
+    now_ms = server.time.time_ns() // 1_000_000
+    monkeypatch.setattr(
+        server.lighter_client,
+        "account_telemetry_snapshot",
+        lambda: {
+            "source": "TEST_ACCOUNT_STREAM",
+            "updated_at_ms": now_ms,
+            "account": {
+                "collateral": "100",
+                "positions": [{
+                    "market_id": 1,
+                    "position": "1",
+                    "position_value": "100",
+                    "unrealized_pnl": "1",
+                }],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        server.lighter_client, "market_detail_snapshot", lambda market_id: {"status": "active"}
+    )
+    monkeypatch.setattr(
+        server,
+        "_lighter_crypto_live_mark",
+        lambda market_id: {
+            "mark_price": 100.0,
+            "source": "TEST_VALIDATED_L2",
+            "timestamp_ms": now_ms,
+            "stale": False,
+        },
+    )
+
+    class StubBot:
+        state = {"last_error": None, "recovery_required": False}
+
+        def public_state(self):
+            return {"enabled": False}
+
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+    payload = asyncio.run(server.get_lighter_crypto_status("BTC"))
+
+    assert payload["available_margin"] is None
+    assert payload["account_gross_notional"] == pytest.approx(100)
+    assert payload["selected_gross_notional"] == pytest.approx(100)
+    assert payload["positions"][0]["initial_margin"] is None
+    assert payload["positions"][0]["roe_percent"] is None

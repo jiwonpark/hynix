@@ -225,6 +225,7 @@ _lighter_account_refresh_task: Optional[asyncio.Task] = None
 LIGHTER_ACCOUNT_REFRESH_AFTER_MS = 10_000
 LIGHTER_ACCOUNT_STALE_AFTER_MS = 15_000
 LIGHTER_ACCOUNT_REFRESH_TIMEOUT_SECONDS = 20.0
+LIGHTER_MAX_FUTURE_SKEW_MS = 1_000
 LIGHTER_MICRO_CHART_LIMIT = 180
 LIGHTER_MICRO_CHART_INTERVALS = frozenset({"1m", "5m", "15m"})
 LIGHTER_MICRO_CHART_TIMEOUT_SECONDS = 25.0
@@ -420,6 +421,9 @@ def _lighter_micro_status_health(
         )
     except (TypeError, ValueError):
         timestamp_ms = None
+    evaluation_future_skew_ms = (
+        max(0, timestamp_ms - current_ms) if timestamp_ms else None
+    )
     evaluation_age_ms = max(0, current_ms - timestamp_ms) if timestamp_ms else None
 
     reasons = []
@@ -443,6 +447,8 @@ def _lighter_micro_status_health(
         reasons.append("quote_stale")
     if timestamp_ms is None:
         reasons.append("evaluation_unavailable")
+    elif evaluation_future_skew_ms > LIGHTER_MAX_FUTURE_SKEW_MS:
+        reasons.append("evaluation_timestamp_in_future")
     elif evaluation_age_ms > max_quote_age_ms:
         reasons.append("evaluation_stale")
     return {
@@ -457,10 +463,31 @@ def _lighter_micro_status_health(
         "quote_age_ms": quote_age_ms,
         "evaluation_timestamp_ms": timestamp_ms,
         "evaluation_age_ms": evaluation_age_ms,
+        "evaluation_future_skew_ms": evaluation_future_skew_ms,
         "max_quote_age_ms": max_quote_age_ms,
         "stale": bool(reasons),
         "stale_reasons": reasons,
     }
+
+
+def _lighter_finite_number(
+    value: Any, *, positive: bool = False, nonnegative: bool = False,
+) -> Optional[float]:
+    """Parse an exchange number without accepting booleans, NaN, or infinity."""
+
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(parsed):
+        return None
+    if positive and parsed <= 0:
+        return None
+    if nonnegative and parsed < 0:
+        return None
+    return parsed
 
 
 def _lighter_micro_account_facts() -> Dict[str, Any]:
@@ -469,36 +496,49 @@ def _lighter_micro_account_facts() -> Dict[str, Any]:
     account = snapshot.get("account") or {}
     raw_positions = account.get("positions") or []
     positions = list(raw_positions.values()) if isinstance(raw_positions, dict) else list(raw_positions)
-    updated_at_ms = int(snapshot.get("updated_at_ms", 0) or 0)
+    updated_raw = _lighter_finite_number(snapshot.get("updated_at_ms"), positive=True)
+    updated_at_ms = (
+        int(updated_raw)
+        if updated_raw is not None and updated_raw.is_integer()
+        else 0
+    )
     now_ms = int(time.time() * 1000)
+    account_future_skew_ms = (
+        max(0, updated_at_ms - now_ms) if updated_at_ms else None
+    )
     account_age_ms = max(0, now_ms - updated_at_ms) if updated_at_ms else None
-    account_stale = account_age_ms is None or account_age_ms > 15_000
+    account_stale = (
+        account_age_ms is None
+        or account_age_ms > 15_000
+        or account_future_skew_ms > LIGHTER_MAX_FUTURE_SKEW_MS
+    )
 
-    collateral_raw = account.get("collateral")
-    try:
-        collateral = (float(collateral_raw)
-                      if collateral_raw not in (None, "") else None)
-    except (TypeError, ValueError):
-        collateral = None
+    collateral = _lighter_finite_number(account.get("collateral"), nonnegative=True)
 
     gross_notional = 0.0
     gross_available = True
     for position in positions:
-        try:
-            size = abs(float(position.get("position", 0)
-                             or position.get("size", 0) or 0))
-            value_raw = position.get("position_value")
-            value = abs(float(value_raw)) if value_raw not in (None, "") else 0.0
-            if size and not value:
-                mark = float(position.get("mark_price", 0)
-                             or position.get("avg_entry_price", 0) or 0)
-                if mark <= 0:
-                    gross_available = False
-                    continue
-                value = size * mark
-            gross_notional += value
-        except (TypeError, ValueError):
+        raw_size = position.get("position")
+        if raw_size in (None, ""):
+            raw_size = position.get("size")
+        parsed_size = _lighter_finite_number(raw_size)
+        value_raw = position.get("position_value")
+        value = _lighter_finite_number(value_raw, nonnegative=True)
+        if parsed_size is None or (value_raw not in (None, "") and value is None):
             gross_available = False
+            continue
+        size = abs(parsed_size)
+        if size <= 0:
+            if value not in (None, 0.0):
+                gross_available = False
+            continue
+        if value in (None, 0.0):
+            mark = _lighter_finite_number(position.get("mark_price"), positive=True)
+            if mark is None:
+                gross_available = False
+                continue
+            value = size * mark
+        gross_notional += value
 
     authenticated = bool(account) and collateral is not None
     gross_leverage = (gross_notional / collateral
@@ -2452,6 +2492,69 @@ async def get_lighter_crypto_markets() -> Dict[str, Any]:
         return {"success": False, "markets": [], "error": str(error)}
 
 
+def _lighter_crypto_live_mark(market_id: int) -> Dict[str, Any]:
+    """Return a validated current mark without consulting paused bot state.
+
+    The one-leg bot's last evaluation can remain in state after it is paused and
+    must never masquerade as a live account quote. The microstructure recorder
+    currently subscribes to one configured market, so other markets fail closed
+    instead of reusing its BTC book. The connection epoch, book nonce, and source
+    timestamp must all match the current stream before a midpoint is exposed.
+    """
+
+    unavailable = {
+        "mark_price": None,
+        "source": None,
+        "timestamp_ms": None,
+        "stale": True,
+    }
+    try:
+        requested_market_id = int(market_id)
+        state = lighter_micro_runtime.public_state(include_history=False)
+        runtime = (state.get("config") or {}).get("runtime") or {}
+        runtime_market_id = _lighter_finite_number(runtime.get("market_id"), nonnegative=True)
+        if (runtime_market_id is None or not runtime_market_id.is_integer()
+                or int(runtime_market_id) != requested_market_id):
+            return unavailable
+        stream = lighter_client.micro_stream_status(requested_market_id)
+        health = _lighter_micro_status_health(state, stream, int(time.time() * 1000))
+        if health.get("data_valid") is not True:
+            return unavailable
+        book = state.get("orderbook") or {}
+        metadata = book.get("metadata") or {}
+        metadata_market_id = _lighter_finite_number(
+            metadata.get("market_id"), nonnegative=True,
+        )
+        timestamp_ms = _lighter_finite_number(book.get("timestamp_ms"), positive=True)
+        if (metadata_market_id is None
+                or not metadata_market_id.is_integer()
+                or int(metadata_market_id) != requested_market_id
+                or timestamp_ms is None
+                or not timestamp_ms.is_integer()
+                or int(timestamp_ms) != health.get("evaluation_timestamp_ms")):
+            return unavailable
+        bids = book.get("bids") or []
+        asks = book.get("asks") or []
+        bid_prices = [_lighter_finite_number(row.get("price"), positive=True) for row in bids]
+        ask_prices = [_lighter_finite_number(row.get("price"), positive=True) for row in asks]
+        if (not bid_prices or not ask_prices
+                or any(price is None for price in bid_prices + ask_prices)):
+            return unavailable
+        best_bid = max(price for price in bid_prices if price is not None)
+        best_ask = min(price for price in ask_prices if price is not None)
+        source = book.get("source")
+        if best_bid >= best_ask or not isinstance(source, str) or not source:
+            return unavailable
+        return {
+            "mark_price": (best_bid + best_ask) / 2.0,
+            "source": source,
+            "timestamp_ms": int(timestamp_ms),
+            "stale": False,
+        }
+    except Exception:
+        return unavailable
+
+
 @app.get("/api/lighter-crypto/status")
 async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
     global _lighter_account_refresh_task
@@ -2460,10 +2563,21 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
             raise ValueError("Unsupported Lighter crypto symbol")
         market_id = LIGHTER_CRYPTO_MARKETS[symbol]
         snapshot = lighter_client.account_telemetry_snapshot()
-        updated_at_ms = int((snapshot or {}).get("updated_at_ms", 0) or 0)
+        updated_raw = _lighter_finite_number(
+            (snapshot or {}).get("updated_at_ms"), positive=True,
+        )
+        updated_at_ms = (
+            int(updated_raw)
+            if updated_raw is not None and updated_raw.is_integer()
+            else 0
+        )
         server_time_ms = int(time.time() * 1000)
+        account_future_skew_ms = (
+            max(0, updated_at_ms - server_time_ms) if updated_at_ms else None
+        )
         account_age_ms = max(0, server_time_ms - updated_at_ms) if updated_at_ms else None
         refresh_due = (account_age_ms is None
+                       or account_future_skew_ms > LIGHTER_MAX_FUTURE_SKEW_MS
                        or account_age_ms >= LIGHTER_ACCOUNT_REFRESH_AFTER_MS)
         if refresh_due and (_lighter_account_refresh_task is None
                             or _lighter_account_refresh_task.done()):
@@ -2478,68 +2592,163 @@ async def get_lighter_crypto_status(symbol: str = "BTC") -> Dict[str, Any]:
         if isinstance(positions, dict):
             positions = list(positions.values())
         detail = lighter_client.market_detail_snapshot(market_id) or {}
-        evaluation = lighter_crypto_bot.state.get("last_evaluation") or {}
-        mark = float(evaluation.get("ratio", 0) or detail.get("mark_price", 0) or 0)
+        live_mark = _lighter_crypto_live_mark(market_id)
+        mark = _lighter_finite_number(live_mark.get("mark_price"), positive=True)
         selected = []
-        allocated = sum(abs(float(p.get("allocated_margin", 0) or 0)) for p in positions)
-        account_gross = 0.0
-        selected_gross = 0.0
+        allocated = 0.0
+        allocated_complete = True
         for position in positions:
-            size = abs(float(position.get("position", 0) or position.get("size", 0) or 0))
-            value = abs(float(position.get("position_value", 0) or 0))
-            derived_mark = value / size if size > 0 and value > 0 else 0.0
-            mark_price = float(position.get("mark_price", 0) or derived_mark
-                               or detail.get("mark_price", 0)
-                               or position.get("avg_entry_price", 0) or 0)
-            if size and not value:
-                value = size * mark_price
-            account_gross += value
-            if int(position.get("market_id", -1)) != market_id:
+            position_size_raw = position.get("position")
+            if position_size_raw in (None, ""):
+                position_size_raw = position.get("size")
+            position_size = _lighter_finite_number(position_size_raw)
+            if position_size is None:
+                allocated_complete = False
                 continue
-            selected_gross += value
-            raw = float(position.get("position", 0) or position.get("size", 0) or 0)
-            sign = int(position.get("sign", 1 if raw >= 0 else -1))
-            amount = abs(raw) * (1 if sign > 0 else -1)
-            notional = value or (abs(amount) * mark_price)
-            allocated_margin = abs(float(position.get("allocated_margin", 0) or 0))
-            initial_margin_fraction = abs(float(position.get("initial_margin_fraction", 0) or 0))
-            leverage_cap = float(lighter_crypto_bot.GROSS_LEVERAGE_CAP or 8.0)
-            initial_margin = (allocated_margin
-                              or (notional * initial_margin_fraction / 100.0 if initial_margin_fraction > 0 else 0.0)
-                              or ((notional / leverage_cap) if leverage_cap > 0 else notional))
-            unrealized_pnl = float(position.get("unrealized_pnl", 0) or 0)
-            roe_percent = (unrealized_pnl / initial_margin * 100.0) if initial_margin > 0 else (
-                (unrealized_pnl / notional * 100.0) if notional > 0 else 0.0
+            if abs(position_size) <= 0:
+                continue
+            allocated_raw = position.get("allocated_margin")
+            if allocated_raw in (None, ""):
+                allocated_complete = False
+                continue
+            allocated_value = _lighter_finite_number(allocated_raw, nonnegative=True)
+            if allocated_value is None:
+                allocated_complete = False
+            else:
+                allocated += allocated_value
+        account_gross = 0.0
+        account_gross_complete = True
+        selected_gross = 0.0
+        selected_gross_complete = True
+        for position in positions:
+            position_market_raw = _lighter_finite_number(
+                position.get("market_id"), nonnegative=True,
             )
+            position_market_id = (
+                int(position_market_raw)
+                if position_market_raw is not None and position_market_raw.is_integer()
+                else None
+            )
+            is_selected = position_market_id == market_id
+            raw_value = position.get("position")
+            if raw_value in (None, ""):
+                raw_value = position.get("size")
+            raw = _lighter_finite_number(raw_value)
+            position_value_raw = position.get("position_value")
+            position_value = _lighter_finite_number(
+                position_value_raw, nonnegative=True,
+            )
+            malformed_value = (
+                position_value_raw not in (None, "") and position_value is None
+            )
+            if position_market_id is None or raw is None or malformed_value:
+                account_gross_complete = False
+                # An unidentified row could belong to the selected market.
+                selected_gross_complete = False
+                continue
+            size = abs(raw)
+            if size <= 0:
+                if position_value not in (None, 0.0):
+                    account_gross_complete = False
+                    if is_selected:
+                        selected_gross_complete = False
+                continue
+
+            provided_sign = position.get("sign")
+            if provided_sign in (None, ""):
+                sign = 1 if raw >= 0 else -1
+            else:
+                sign_raw = _lighter_finite_number(provided_sign)
+                if sign_raw not in (-1.0, 1.0):
+                    account_gross_complete = False
+                    if is_selected:
+                        selected_gross_complete = False
+                    continue
+                sign = int(sign_raw)
+
+            position_mark = _lighter_finite_number(
+                position.get("mark_price"), positive=True,
+            )
+            derived_mark = (
+                position_value / size
+                if position_value is not None and position_value > 0
+                else None
+            )
+            mark_price = position_mark or derived_mark or (mark if is_selected else None)
+            notional = (
+                position_value
+                if position_value is not None and position_value > 0
+                else (size * mark_price if mark_price is not None else None)
+            )
+            if notional is None:
+                account_gross_complete = False
+            else:
+                account_gross += notional
+            if not is_selected:
+                continue
+            if notional is None:
+                selected_gross_complete = False
+            else:
+                selected_gross += notional
+            amount = abs(raw) * (1 if sign > 0 else -1)
+            allocated_margin = _lighter_finite_number(
+                position.get("allocated_margin"), nonnegative=True,
+            )
+            initial_margin_fraction = _lighter_finite_number(
+                position.get("initial_margin_fraction"), nonnegative=True,
+            )
+            initial_margin = None
+            if notional is not None:
+                if allocated_margin is not None and allocated_margin > 0:
+                    initial_margin = allocated_margin
+                elif initial_margin_fraction is not None and initial_margin_fraction > 0:
+                    initial_margin = notional * initial_margin_fraction / 100.0
+            unrealized_pnl = _lighter_finite_number(position.get("unrealized_pnl"))
+            roe_percent = None
+            if unrealized_pnl is not None and initial_margin is not None and initial_margin > 0:
+                roe_percent = unrealized_pnl / initial_margin * 100.0
             selected.append({"symbol": symbol, "market_id": market_id,
                              "position_amt": amount, "size": abs(amount),
                              "notional": notional,
-                             "entry_price": float(position.get("avg_entry_price", 0) or 0),
+                             "entry_price": _lighter_finite_number(
+                                 position.get("avg_entry_price"), positive=True,
+                             ),
                              "mark_price": mark_price,
                              "unrealized_pnl": unrealized_pnl,
                              "initial_margin": initial_margin,
-                             "roe_percent": round(roe_percent, 4)})
-        collateral_raw = account.get("collateral")
-        collateral = float(collateral_raw) if collateral_raw not in (None, "") else None
+                             "roe_percent": (
+                                 round(roe_percent, 4) if roe_percent is not None else None
+                             )})
+        collateral = _lighter_finite_number(account.get("collateral"), nonnegative=True)
         available_raw = account.get("available_balance")
-        available_margin = (float(available_raw) if available_raw not in (None, "")
-                            else (max(0.0, collateral - allocated) if collateral is not None else None))
+        available_margin = _lighter_finite_number(available_raw, nonnegative=True)
+        if available_raw in (None, "") and collateral is not None and allocated_complete:
+            available_margin = max(0.0, collateral - allocated)
         # Raw Lighter account snapshots are authoritative when present; unlike
         # the normalized account_status helper they do not carry this flag.
         authenticated = bool(account) and collateral is not None
         account_stale = (account_age_ms is None
+                         or account_future_skew_ms > LIGHTER_MAX_FUTURE_SKEW_MS
                          or account_age_ms > LIGHTER_ACCOUNT_STALE_AFTER_MS)
         return {"success": True, "symbol": symbol, "market_id": market_id,
-                "mark_price": mark or None, "price_ratio": mark or None,
+                "mark_price": mark, "price_ratio": mark,
+                "mark_source": live_mark["source"],
+                "mark_updated_ms": live_mark["timestamp_ms"],
+                "mark_stale": live_mark["stale"],
                 "venue": "Lighter Single-Leg Perpetual", "authenticated": authenticated,
                 "execution_enabled": bool(authenticated and detail.get("status") == "active"
+                                          and mark is not None
                                           and not account_stale
-                                          and not lighter_crypto_bot.state["recovery_required"]),
+                                          and not lighter_crypto_bot.state.get("recovery_required")),
                 "execution_message": lighter_crypto_bot.state.get("last_error"),
                 "collateral": collateral,
                 "available_margin": available_margin,
-                "account_gross_notional": account_gross if collateral is not None else None,
-                "selected_gross_notional": selected_gross if collateral is not None else None,
+                "account_gross_notional": (
+                    account_gross if collateral is not None and account_gross_complete else None
+                ),
+                "selected_gross_notional": (
+                    selected_gross if collateral is not None and selected_gross_complete else None
+                ),
                 "positions": selected,
                 "account_source": snapshot.get("source"),
                 "account_updated_ms": updated_at_ms or None,

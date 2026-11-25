@@ -75,6 +75,11 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
         )
         self.assertIn("if (status?.bot) this.updateBotStatus(status.bot, status)", self.ui_source)
 
+    def test_account_mark_never_reuses_paused_bot_evaluation(self) -> None:
+        self.assertIn("live_mark = _lighter_crypto_live_mark(market_id)", self.status_source)
+        self.assertNotIn('evaluation.get("ratio"', self.status_source)
+        self.assertIn('"mark_stale": live_mark["stale"]', self.status_source)
+
     def test_saved_bot_settings_retry_is_bounded_and_deduplicated(self) -> None:
         self.assertIn("if (this.botStatusPromise) return this.botStatusPromise", self.ui_source)
         self.assertIn('api("/api/lighter-crypto/bot/status", { timeoutMs: 35000 })', self.ui_source)
@@ -126,7 +131,10 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
 
     def test_failed_refresh_preserves_last_authenticated_snapshot(self) -> None:
         self.assertIn("const previousStatus = this.liveVenue?.authenticated === true", self.ui_source)
-        self.assertIn("{ ...previousStatus, success: true, account_stale: true", self.ui_source)
+        self.assertIn("...previousStatus,", self.ui_source)
+        self.assertIn("account_stale: true,", self.ui_source)
+        self.assertIn("mark_price: null,", self.ui_source)
+        self.assertIn("mark_stale: true,", self.ui_source)
         self.assertIn("refresh failed: ${refreshError} · retrying", self.ui_source)
 
 

@@ -149,6 +149,10 @@
     selectedSymbol: "BTC",
     supportedSymbols: ["BTC", "ETH", "SOL", "DOGE", "XRP"],
     currentRatio: null,
+    liveMarkPrice: null,
+    liveMarkSource: null,
+    liveMarkUpdatedMs: null,
+    liveMarkStale: true,
     currentAdrPrice: null,
     currentDomesticPrice: null,
     entries: [],
@@ -775,6 +779,63 @@
       return q.toFixed(4);
     },
 
+    freshVenueMark(venue = this.liveVenue) {
+      if (!venue || venue.mark_stale !== false) return null;
+      const timestampMs = Number(venue.mark_updated_ms);
+      if (!Number.isFinite(timestampMs) || timestampMs <= 0 || !venue.mark_source) return null;
+      const raw = venue.mark_price ?? venue.price_ratio;
+      if (raw === null || raw === undefined || raw === "") return null;
+      const mark = Number(raw);
+      return Number.isFinite(mark) && mark > 0 ? mark : null;
+    },
+
+    authoritativeVenueGross(venue = this.liveVenue) {
+      if (!venue) return null;
+      const hasSelectedGross = Object.prototype.hasOwnProperty.call(
+        venue, "selected_gross_notional"
+      );
+      const raw = hasSelectedGross
+        ? venue.selected_gross_notional
+        : venue.account_gross_notional;
+      if (raw === null || raw === undefined || raw === "") return null;
+      const gross = Number(raw);
+      return Number.isFinite(gross) && gross >= 0 ? gross : null;
+    },
+
+    syncLiveMarkPresentation(venue = this.liveVenue) {
+      const mark = this.freshVenueMark(venue);
+      this.liveMarkPrice = mark;
+      this.liveMarkSource = mark !== null ? (venue?.mark_source || null) : null;
+      this.liveMarkUpdatedMs = mark !== null
+        ? (Number(venue?.mark_updated_ms) || null)
+        : null;
+      this.liveMarkStale = mark === null;
+
+      const display = mark !== null
+        ? this.formatCryptoPrice(mark)
+        : "— LIVE MARK UNAVAILABLE";
+      ["valShortTermCurrentPrice", "valShortTermCurrentParity", "valAutoCurrentEdge",
+        "valCritCurrentSpread", "valCritTpCurrentSpread"].forEach((id) => {
+        this.setText(id, display);
+      });
+
+      const priceBadge = $("lighterCrypto_valLivePriceBadge");
+      if (priceBadge) {
+        if (mark !== null) {
+          priceBadge.textContent = `${this.selectedSymbol || "BTC"}: ${display} · LIVE`;
+          priceBadge.style.background = "#f0fdf4";
+          priceBadge.style.color = "#15803d";
+          priceBadge.style.borderColor = "#bbf7d0";
+        } else {
+          priceBadge.textContent = `${this.selectedSymbol || "BTC"}: LIVE MARK UNAVAILABLE`;
+          priceBadge.style.background = "#fef2f2";
+          priceBadge.style.color = "#b91c1c";
+          priceBadge.style.borderColor = "#fecaca";
+        }
+      }
+      return mark;
+    },
+
     async selectSymbol(sym) {
       if (!sym) return;
       this.selectedSymbol = sym;
@@ -796,6 +857,11 @@
       });
       this.labelTerminal();
       this.currentRatio = null;
+      this.liveMarkPrice = null;
+      this.liveMarkSource = null;
+      this.liveMarkUpdatedMs = null;
+      this.liveMarkStale = true;
+      this.syncLiveMarkPresentation({ mark_price: null, mark_stale: true });
       this.accountDataReady = false;
       TerminalCommon.setTerminalLoading("lighterCrypto_");
       await this.refresh();
@@ -3229,7 +3295,16 @@
         // Preserve it as explicitly stale while the bounded retry continues.
         const status = freshAccountReady || !previousStatus
           ? responseStatus
-          : { ...previousStatus, success: true, account_stale: true, refresh_error: refreshError };
+          : {
+              ...previousStatus,
+              success: true,
+              account_stale: true,
+              mark_price: null,
+              price_ratio: null,
+              mark_stale: true,
+              refresh_error: refreshError,
+            };
+        const freshLiveMark = this.syncLiveMarkPresentation(status);
         // Account status carries the same authoritative local bot snapshot so
         // replay does not remain blocked when the parallel bot-status request
         // is the one request lost during an overloaded API window.
@@ -3244,17 +3319,10 @@
         }
         this.liveVenue = status;
         this.livePositions = accountReady && Array.isArray(status?.positions) ? status.positions : [];
-        if (status && (status.mark_price != null || status.price_ratio != null)) {
-          this.currentRatio = Number(status.mark_price ?? status.price_ratio);
-          const priceBadge = $("lighterCrypto_valLivePriceBadge");
-          if (priceBadge) {
-            const chgSign = (status.change_pct ?? 0) >= 0 ? "+" : "";
-            priceBadge.textContent = `${sym}: ${this.formatCryptoPrice(this.currentRatio)} (${chgSign}${status.change_pct ?? 0}%)`;
-            priceBadge.style.background = (status.change_pct ?? 0) >= 0 ? "#f0fdf4" : "#fef2f2";
-            priceBadge.style.color = (status.change_pct ?? 0) >= 0 ? "#15803d" : "#b91c1c";
-            priceBadge.style.borderColor = (status.change_pct ?? 0) >= 0 ? "#bbf7d0" : "#fecaca";
-          }
-        }
+        // Keep the chart's last candle available for chart/replay work, but
+        // never present it as the authenticated live mark when the quote gate
+        // failed. A fresh status mark may still advance the chart cursor.
+        if (freshLiveMark !== null) this.currentRatio = freshLiveMark;
         const accountTimestamp = Number(status.account_updated_ms || 0);
         const accountFreshness = status.account_stale ? " · STALE SNAPSHOT" : "";
         const retryDetail = refreshError && previousStatus ? ` · refresh failed: ${refreshError} · retrying` : "";
@@ -3278,14 +3346,8 @@
       this.setText("valAvailMargin", Number.isFinite(Number(status.available_margin)) && status.available_margin != null
         ? `$${Number(status.available_margin).toFixed(2)}` : "—");
 
-        const hasCurrentPrice = Number.isFinite(Number(this.currentRatio)) && Number(this.currentRatio) > 0;
-        const formattedPrice = hasCurrentPrice ? this.formatCryptoPrice(this.currentRatio) : "—";
-        this.setText("valShortTermCurrentPrice", formattedPrice);
-        this.setText("valShortTermCurrentParity", formattedPrice);
+        this.syncLiveMarkPresentation(status);
         this.setText("valHedgedCombinedPnl", this.virtualPnlText());
-        this.setText("valAutoCurrentEdge", formattedPrice);
-        this.setText("valCritCurrentSpread", formattedPrice);
-        this.setText("valCritTpCurrentSpread", formattedPrice);
         // Account and position cards are now usable even if the two background
         // reads below are still reconciling.
         this.renderVirtualState();
@@ -4564,10 +4626,15 @@
       const tranches = Array.isArray(bot?.tranches) ? bot.tranches : [];
       const expectedAmt = Math.abs(tranches.reduce((sum, t) => sum + (Number(t.qty) || 0) * (Number(t.side) || 1), 0));
       const diff = Math.abs(venueAmt - expectedAmt);
-      const markPx = Number(this.marketDetail?.mark_price || bot?.last_evaluation?.ratio || this.currentPrice || 0);
-      const diffNotional = markPx > 0 ? diff * markPx : 0;
-      const isDust = diffNotional > 0 ? diffNotional < 5.0 : diff <= 0.00005;
-      const hasMismatch = !isDust && diff > 0.00005;
+      // Reconciliation must use the freshness-gated venue mark. A paused
+      // bot's last candle evaluation, an entry price, or a retained chart
+      // value cannot prove that an inventory difference is harmless dust.
+      const markPx = this.freshVenueMark(venue);
+      const quantityMatches = diff <= 0.00005;
+      const diffNotional = markPx !== null ? diff * markPx : null;
+      const isDust = !quantityMatches && diffNotional !== null && diffNotional < 5.0;
+      const valuationUnknown = !quantityMatches && markPx === null;
+      const hasMismatch = !quantityMatches && !isDust;
       const isRecovery = Boolean(bot?.recovery_required || (hasMismatch && !isEnabled) || (bot?.blocked_reason && bot.blocked_reason.toLowerCase().includes("reconcil") && !isDust));
       const reconcileButton = $("lighterCrypto_btnReconcileBot");
       if (reconcileButton) reconcileButton.style.display = isRecovery ? "inline-flex" : "none";
@@ -4615,7 +4682,15 @@
           badge.style.color = "#991b1b";
         }
         if (headingEl) headingEl.textContent = isKo ? "그리드 봇: 복구/동기화 대기" : "BOT: RECONCILIATION REQUIRED";
-        if (detailEl) detailEl.textContent = blockedReason || (hasMismatch ? (isKo ? `거래소 포지션(${venueAmt} ${symbol})과 봇 포지션(${expectedAmt} ${symbol})이 일치하지 않습니다. 복구 동기화 또는 청산 후 시작하세요.` : `Exchange position (${venueAmt} ${symbol}) differs from bot's inventory (${expectedAmt} ${symbol}); reconcile or flatten required.`) : "Check pending orders & exchange position before execution resumes");
+        if (detailEl) detailEl.textContent = blockedReason || (hasMismatch
+          ? (valuationUnknown
+              ? (isKo
+                  ? `거래소 포지션 차이를 실시간 가격으로 평가할 수 없습니다. 복구 동기화 또는 청산이 필요합니다.`
+                  : "Exchange inventory differs from bot state and the live mark is unavailable; reconciliation or flattening is required.")
+              : (isKo
+                  ? `거래소 포지션(${venueAmt} ${symbol})과 봇 포지션(${expectedAmt} ${symbol})이 일치하지 않습니다. 복구 동기화 또는 청산 후 시작하세요.`
+                  : `Exchange position (${venueAmt} ${symbol}) differs from bot's inventory (${expectedAmt} ${symbol}); reconcile or flatten required.`))
+          : "Check pending orders & exchange position before execution resumes");
       } else if (isEntryCapped) {
         if (banner) banner.classList.add("active");
         if (pulseEl) pulseEl.className = "autoTradePulseIndicator blocked";
@@ -4878,42 +4953,42 @@
 
     updateLeverageMetrics() {
       const riskCapacity = this.botState?.risk_capacity || {};
-      const levCap = Number(riskCapacity.gross_leverage_cap || 8.0);
+      const configuredLevCap = Number(riskCapacity.gross_leverage_cap || 8.0);
+      const levCap = Number.isFinite(configuredLevCap) && configuredLevCap > 0
+        ? configuredLevCap : 8.0;
       let grossNotional = 0;
+      let grossNotionalKnown = true;
       let collateral = 0;
+      let collateralKnown = true;
       let adrQty = 0;
-      let domesticQty = 0;
-      let adrNotional = 0;
-      let domesticNotional = 0;
       let tranchesCount = 0;
       let maxTranches = 5;
 
       const hasLiveExposure = (this.livePositions || []).some((pos) => Math.abs(Number(pos.position_amt ?? pos.size ?? 0)) > 1e-6);
-      if (this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure) {
-        collateral = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : 0;
+      const isLiveAccount = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
+      const liveAccountFresh = !isLiveAccount || (
+        this.liveVenue?.authenticated === true && this.liveVenue?.account_stale === false
+      );
+      if (isLiveAccount) {
+        const collateralRaw = this.liveVenue?.collateral;
+        const parsedCollateral = collateralRaw === null || collateralRaw === undefined || collateralRaw === ""
+          ? null : Number(collateralRaw);
+        collateralKnown = liveAccountFresh && parsedCollateral !== null
+          && Number.isFinite(parsedCollateral) && parsedCollateral >= 0;
+        collateral = collateralKnown ? parsedCollateral : 0;
         const positions = Array.isArray(this.livePositions) ? this.livePositions : [];
         positions.forEach((pos) => {
           const rawSize = Number(pos.position_amt ?? pos.size ?? 0);
           const size = Math.abs(rawSize);
-          const price = Number(pos.avg_entry_price || pos.entry_price || pos.price || 0);
-          const positionValue = Math.abs(Number(pos.notional || 0));
-          const notional = positionValue > 0 ? positionValue : (size * price);
-          grossNotional += notional;
-
-          adrQty += size;
-          adrNotional += notional;
+          if (Number.isFinite(size)) adrQty += size;
         });
 
         const validTranches = (this.botState?.tranches || []).filter((t) => Number(t.qty) > 0);
         tranchesCount = validTranches.length;
         maxTranches = (this.botState?.max_tranches === null ? Infinity : Number(this.botState?.max_tranches ?? 5));
-
-        // Fallback to tranche notional if livePositions hasn't returned yet or is zero
-        if (grossNotional === 0 && tranchesCount > 0) {
-          const singleLeg = Number(this.botState?.notional_usd || 25);
-          const ratio = Number(this.botState?.last_evaluation?.ratio || this.currentRatio || 0);
-          grossNotional = tranchesCount * singleLeg;
-        }
+        const venueGross = this.authoritativeVenueGross(this.liveVenue);
+        grossNotionalKnown = liveAccountFresh && venueGross !== null;
+        grossNotional = grossNotionalKnown ? venueGross : 0;
       } else {
         collateral = 10000.0;
         tranchesCount = this.entries.length;
@@ -4921,43 +4996,67 @@
         grossNotional = this.entries.reduce((sum, entry) => sum + (Number(entry.notional) || 0), 0);
       }
 
-      const grossLev = collateral > 0 ? (grossNotional / collateral) : 0;
-      const isLiveAccount = this.mode === "live" || Boolean(this.botState?.enabled) || hasLiveExposure;
-      const venueGross = this.liveVenue?.selected_gross_notional ?? this.liveVenue?.account_gross_notional;
-      const accountGross = isLiveAccount && Number.isFinite(Number(venueGross))
-        ? Number(venueGross) : grossNotional;
-      const dynamicCapUsd = collateral * levCap;
-      const headroomUsd = Math.max(0, dynamicCapUsd - accountGross);
+      const liveMark = isLiveAccount ? this.freshVenueMark(this.liveVenue) : null;
+      const valuationReady = !isLiveAccount
+        || (grossNotionalKnown && collateralKnown && liveMark !== null);
+      const grossLev = grossNotionalKnown && collateralKnown && collateral > 0
+        ? grossNotional / collateral : null;
+      const dynamicCapUsd = collateralKnown ? collateral * levCap : null;
+      const headroomUsd = valuationReady && dynamicCapUsd !== null
+        ? Math.max(0, dynamicCapUsd - grossNotional) : null;
+      const availableRaw = this.liveVenue?.available_margin;
+      const parsedAvailable = availableRaw === null || availableRaw === undefined || availableRaw === ""
+        ? null : Number(availableRaw);
+      const freeMarginKnown = isLiveAccount
+        ? liveAccountFresh && parsedAvailable !== null
+          && Number.isFinite(parsedAvailable) && parsedAvailable >= 0
+        : true;
       const freeMarginUsd = isLiveAccount
-        ? Number(this.liveVenue?.available_margin ?? 0)
+        ? (freeMarginKnown ? parsedAvailable : null)
         : Math.max(0, collateral - (grossNotional / levCap));
-      const nextOrderUsd = Number(this.orderNotional() || 25);
-      const projectedGross = accountGross + nextOrderUsd;
-      const projectedLeverage = collateral > 0 ? projectedGross / collateral : Infinity;
-      const hasLeverage = projectedLeverage <= levCap;
-      const netDeltaUsd = grossNotional;
+      const configuredNextOrder = Number(this.orderNotional() || 25);
+      const nextOrderUsd = Number.isFinite(configuredNextOrder) && configuredNextOrder > 0
+        ? configuredNextOrder : 25;
+      const projectedGross = valuationReady ? grossNotional + nextOrderUsd : null;
+      const projectedLeverage = projectedGross !== null && collateral > 0
+        ? projectedGross / collateral : null;
+      const hasLeverage = projectedLeverage !== null
+        && Number.isFinite(projectedLeverage) && projectedLeverage <= levCap;
+      const netDeltaUsd = grossNotionalKnown ? grossNotional : null;
       const netShares = adrQty;
-      const loss10 = grossNotional * 0.10;
-      const maxDiv = grossNotional > 0 ? ((collateral / grossNotional) * 100) : 999;
-      const utilPct = Math.min(100, Math.max(0, (grossLev / levCap) * 100));
+      const loss10 = grossNotionalKnown ? grossNotional * 0.10 : null;
+      const maxDiv = grossNotionalKnown && grossNotional > 0 && collateralKnown
+        ? (collateral / grossNotional) * 100 : null;
+      const utilPct = grossLev !== null
+        ? Math.min(100, Math.max(0, (grossLev / levCap) * 100)) : null;
 
       // 1. Gross Leverage Card
-      this.setText("valHedgedLeverage", `${grossLev.toFixed(2)}x`);
+      this.setText("valHedgedLeverage", grossLev !== null ? `${grossLev.toFixed(2)}x` : "UNKNOWN");
       const levEl = lid("valHedgedLeverage");
       if (levEl) {
-        levEl.style.color = grossLev > levCap ? "#dc2626" : (grossLev > levCap * 0.75 ? "#d97706" : "#0284c7");
+        levEl.style.color = grossLev === null || grossLev > levCap
+          ? "#dc2626" : (grossLev > levCap * 0.75 ? "#d97706" : "#0284c7");
       }
-      this.setText("valHedgedNotional", `Selected contract size: $${grossNotional.toFixed(2)} USD`);
+      this.setText("valHedgedNotional", grossNotionalKnown
+        ? `Selected contract size: $${grossNotional.toFixed(2)} USD`
+        : "Selected contract size: UNKNOWN · live valuation unavailable");
       this.setText("valDeployedMaxLeverage", `Selected contract ≤ ${levCap.toFixed(1)}x Futures equity`);
-      this.setText("valMarginRisk", `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x cap`);
+      this.setText("valMarginRisk", grossLev !== null
+        ? `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x cap`
+        : `UNKNOWN / ${levCap.toFixed(1)}x cap · BLOCKED`);
 
       // 2. Telemetry Cards
-      this.setText("valHedgedDelta", `$${Math.abs(netDeltaUsd).toFixed(2)}`);
-      this.setText("valHedgedNetDeltaSubtitle", tranchesCount > 0
-        ? `${netShares.toFixed(4)} selected-contract units · no hedge leg`
-        : "Single-leg exposure · no hedge leg");
-      this.setText("valHedgedLoss10", `-$${loss10.toFixed(2)} USD`);
-      this.setText("valHedgedMaxDiv", maxDiv >= 900 ? "+∞ % pts" : `+${maxDiv.toFixed(1)}% pts`);
+      this.setText("valHedgedDelta", netDeltaUsd !== null
+        ? `$${Math.abs(netDeltaUsd).toFixed(2)}` : "UNKNOWN");
+      this.setText("valHedgedNetDeltaSubtitle", !liveAccountFresh
+        ? `${netShares.toFixed(4)} retained units · ACCOUNT SNAPSHOT STALE · BLOCKED`
+        : (adrQty > 0
+            ? `${netShares.toFixed(4)} selected-contract units · no hedge leg`
+            : "Single-leg exposure · no hedge leg"));
+      this.setText("valHedgedLoss10", loss10 !== null
+        ? `-$${loss10.toFixed(2)} USD` : "UNKNOWN · live valuation unavailable");
+      this.setText("valHedgedMaxDiv", maxDiv === null
+        ? "UNKNOWN" : (maxDiv >= 900 ? "+∞ % pts" : `+${maxDiv.toFixed(1)}% pts`));
 
       // 3. BTC Shares Exposure Bar
       this.setText("pillAdrShares", `Selected contract: ${adrQty.toFixed(4)} units`);
@@ -4968,26 +5067,31 @@
       const capacityBlock = riskCapacity.blocked_reason === "CAMPAIGN_CAPACITY"
         ? ` · ENTRY BLOCKED: ${tranchesCount}/${Number.isFinite(maxTranches) ? maxTranches : "Unlimited"} slot hard cap`
         : "";
-      this.setText("lblTranchePct", `${utilPct.toFixed(1)}% (${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x)${capacityBlock}`);
+      this.setText("lblTranchePct", utilPct !== null && grossLev !== null
+        ? `${utilPct.toFixed(1)}% (${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x)${capacityBlock}`
+        : `UNKNOWN · live mark/gross exposure unavailable · BLOCKED${capacityBlock}`);
       const progressBar = lid("barTrancheProgress");
       if (progressBar) {
-        progressBar.style.width = `${utilPct.toFixed(1)}%`;
+        progressBar.style.width = `${utilPct !== null ? utilPct.toFixed(1) : "0.0"}%`;
       }
 
       // 5. Conditions & Criteria Checklist
-      this.setText("valCondEntryLeverage", `${Number.isFinite(projectedLeverage) ? projectedLeverage.toFixed(2) : "—"}x projected ≤ ${levCap.toFixed(1)}x`);
+      this.setText("valCondEntryLeverage", projectedLeverage !== null && Number.isFinite(projectedLeverage)
+        ? `${projectedLeverage.toFixed(2)}x projected ≤ ${levCap.toFixed(1)}x`
+        : "UNKNOWN · fresh live mark and gross exposure required · BLOCKED");
       const chkLev = lid("chkCondEntryLeverage");
       if (chkLev) chkLev.checked = hasLeverage;
       const badgeLev = lid("badgeCondEntryLeverage");
       if (badgeLev) {
-        badgeLev.textContent = hasLeverage ? "PASS" : "LEV CAP";
+        badgeLev.textContent = hasLeverage ? "PASS" : (valuationReady ? "LEV CAP" : "BLOCKED");
         badgeLev.className = hasLeverage ? "condBadge pass" : "condBadge fail";
         badgeLev.style.background = hasLeverage ? "#dcfce7" : "#fee2e2";
         badgeLev.style.color = hasLeverage ? "#166534" : "#dc2626";
       }
 
       const remCapacity = Math.max(0, maxTranches - tranchesCount);
-      const hasCapacity = tranchesCount < maxTranches;
+      const countCapacityAvailable = tranchesCount < maxTranches;
+      const hasCapacity = countCapacityAvailable && valuationReady;
       this.setText("valCritRemainingTranches", Number.isFinite(maxTranches)
         ? `${remCapacity} / ${maxTranches} ${isLiveAccount ? "COUNT" : "PAPER"} SLOTS LEFT`
         : "UNLIMITED COUNT · RISK LIMITS APPLY");
@@ -4996,7 +5100,7 @@
       if (chkCap) chkCap.checked = hasCapacity;
       const badgeCap = lid("badgeCondEntryCapacity");
       if (badgeCap) {
-        badgeCap.textContent = hasCapacity ? "PASS" : "MAX CAP";
+        badgeCap.textContent = hasCapacity ? "PASS" : (valuationReady ? "MAX CAP" : "BLOCKED");
         badgeCap.className = hasCapacity ? "condBadge pass" : "condBadge fail";
         badgeCap.style.background = hasCapacity ? "#dcfce7" : "#fee2e2";
         badgeCap.style.color = hasCapacity ? "#166534" : "#dc2626";
@@ -5006,34 +5110,47 @@
       const riskMarginMultiplier = Number(riskCapacity.margin_buffer_multiplier || 1.25);
       const minimumMargin = Number(riskCapacity.min_margin_buffer_usd || 2.50);
       const reqMarginPerTranche = Math.max(minimumMargin, nextOrderUsd / riskMarginLeverage * riskMarginMultiplier);
-      const hasMargin = freeMarginUsd >= reqMarginPerTranche;
+      const hasMargin = valuationReady && freeMarginKnown
+        && freeMarginUsd !== null && freeMarginUsd >= reqMarginPerTranche;
       const stressMovePct = Number(riskCapacity.stress_move_pct || 10);
       const stressBudgetPct = Number(riskCapacity.stress_loss_budget_pct_equity || 10);
-      const projectedLossUsd = projectedGross * stressMovePct / 100;
-      const projectedLossEquityPct = collateral > 0 ? projectedLossUsd / collateral * 100 : 0;
-      this.setText("LiveRiskBudget", collateral > 0
+      const projectedLossUsd = projectedGross !== null
+        ? projectedGross * stressMovePct / 100 : null;
+      const projectedLossEquityPct = projectedLossUsd !== null && collateral > 0
+        ? projectedLossUsd / collateral * 100 : null;
+      this.setText("LiveRiskBudget", !valuationReady
+        ? "BLOCKED · live mark or gross exposure is unavailable; projected account risk cannot be valued."
+        : collateral > 0 && projectedLeverage !== null && projectedLossUsd !== null
         ? `Next $${nextOrderUsd.toFixed(2)} → ${projectedLeverage.toFixed(2)}x account gross; ${stressMovePct.toFixed(0)}% adverse move ≈ −$${projectedLossUsd.toFixed(2)} (${projectedLossEquityPct.toFixed(1)}% of equity, limit ${stressBudgetPct.toFixed(0)}%). Buffered 10× margin estimate: $${reqMarginPerTranche.toFixed(2)}. Pre-rounding estimate.`
         : "Account equity unavailable");
-      this.setText("valCondEntryMargin", `$${freeMarginUsd.toFixed(2)} ≥ $${reqMarginPerTranche.toFixed(2)}`);
+      this.setText("valCondEntryMargin", hasMargin || (valuationReady && freeMarginKnown && freeMarginUsd !== null)
+        ? `$${freeMarginUsd.toFixed(2)} ≥ $${reqMarginPerTranche.toFixed(2)}`
+        : "UNKNOWN · fresh valuation and available margin required · BLOCKED");
       const chkMargin = lid("chkCondEntryMargin");
       if (chkMargin) chkMargin.checked = hasMargin;
       const badgeMargin = lid("badgeCondEntryMargin");
       if (badgeMargin) {
-        badgeMargin.textContent = hasMargin ? "PASS" : "LOW MARGIN";
+        badgeMargin.textContent = hasMargin ? "PASS" : (valuationReady && freeMarginKnown ? "LOW MARGIN" : "BLOCKED");
         badgeMargin.className = hasMargin ? "condBadge pass" : "condBadge fail";
         badgeMargin.style.background = hasMargin ? "#dcfce7" : "#fee2e2";
         badgeMargin.style.color = hasMargin ? "#166534" : "#dc2626";
       }
 
       // 6. Leverage & Capacity Breakdown Section
-      this.setText("valCritGrossLev", `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x`);
+      this.setText("valCritGrossLev", grossLev !== null
+        ? `${grossLev.toFixed(2)}x / ${levCap.toFixed(1)}x`
+        : `UNKNOWN / ${levCap.toFixed(1)}x · BLOCKED`);
       const capLabel = lid("valCritGrossCap")?.parentElement;
       if (capLabel) capLabel.firstChild.textContent = (this.mode === "paper" && !this.botState?.enabled)
         ? "Paper cap: " : "Selected-contract cap: ";
-      this.setText("valCritGrossCap", `$${dynamicCapUsd.toFixed(2)} (${levCap.toFixed(1)}x)`);
-      this.setText("valCritGrossHeadroom", `$${headroomUsd.toFixed(2)} free`);
-      this.setText("valAvailMargin", this.liveVenue?.available_margin != null
-        ? `$${Number(this.liveVenue.available_margin).toFixed(2)}` : "—");
+      this.setText("valCritGrossCap", dynamicCapUsd !== null
+        ? `$${dynamicCapUsd.toFixed(2)} (${levCap.toFixed(1)}x)`
+        : `UNKNOWN (${levCap.toFixed(1)}x)`);
+      this.setText("valCritGrossHeadroom", headroomUsd !== null
+        ? `$${headroomUsd.toFixed(2)} free`
+        : "UNKNOWN · BLOCKED");
+      this.setText("valAvailMargin", freeMarginKnown && freeMarginUsd !== null
+        ? `$${freeMarginUsd.toFixed(2)}` : "— UNAVAILABLE");
     },
 
     async toggleLiveBot(enabled) {
@@ -5236,7 +5353,10 @@
         else this.chart.timeScale().setVisibleLogicalRange(viewport);
         this.chartInterval = interval;
         window.requestAnimationFrame(() => this.renderTrendRanges());
-        this.setText("valShortTermCurrentPrice", this.formatCryptoPrice(this.currentRatio));
+        // The candle remains available to the chart and paper evaluator, but
+        // the live-price card must continue to reflect the independent,
+        // freshness-gated account mark.
+        this.syncLiveMarkPresentation(this.liveVenue);
         ["1m", "5m", "15m", "1h", "4h", "1d"].forEach((value) => {
           const button = lid(`btnShortInterval${value}`);
           if (button) button.classList.toggle("active", value === this.interval);
@@ -7262,38 +7382,70 @@
           return;
         }
         this.setText("lblUnrealizedPnl", "Closed-Trade Net PnL");
-        const col = this.liveVenue?.collateral != null ? Number(this.liveVenue.collateral) : null;
+        const liveAccountFresh = this.liveVenue?.authenticated === true
+          && this.liveVenue?.account_stale === false;
+        const collateralRaw = this.liveVenue?.collateral;
+        const collateralParsed = collateralRaw === null || collateralRaw === undefined || collateralRaw === ""
+          ? null : Number(collateralRaw);
+        const col = liveAccountFresh && Number.isFinite(collateralParsed)
+          ? collateralParsed : null;
         const validTranches = (this.botState?.tranches || []).filter(t => Number(t.qty) > 0);
-        const liveUnrealized = (this.livePositions || []).reduce((acc, pos) => acc + Number(pos.unrealized_pnl || 0), 0);
         const openLive = (this.livePositions || []).filter(p => Math.abs(Number(p.position_amt ?? p.size ?? 0)) > 1e-6);
-        const liveGross = openLive.reduce((sum, pos) => {
-          const quantity = Math.abs(Number(pos.position_amt ?? pos.size ?? 0));
-          const mark = Number(pos.mark_price || pos.avg_entry_price || pos.entry_price || pos.price || 0);
-          return sum + (Math.abs(Number(pos.notional || 0)) || quantity * mark);
-        }, 0);
-        const pnlPct = col > 0 ? (liveUnrealized / col) * 100 : (liveGross > 0 ? (liveUnrealized / liveGross) * 100 : 0);
-        const pnlPctSign = pnlPct > 0 ? "+" : (pnlPct < 0 ? "-" : (liveUnrealized < 0 ? "-" : (liveUnrealized > 0 ? "+" : "")));
-        const pnlAmountSign = liveUnrealized >= 0 ? "+" : "-";
-        const pnlText = `${pnlAmountSign}$${Math.abs(liveUnrealized).toFixed(2)} (${pnlPctSign}${Math.abs(pnlPct).toFixed(2)}%)`;
+        const unrealizedValues = openLive.map((pos) => {
+          const raw = pos.unrealized_pnl;
+          if (raw === null || raw === undefined || raw === "") return null;
+          const parsed = Number(raw);
+          return Number.isFinite(parsed) ? parsed : null;
+        });
+        const liveUnrealizedKnown = liveAccountFresh
+          && unrealizedValues.every((value) => value !== null);
+        const liveUnrealized = liveUnrealizedKnown
+          ? unrealizedValues.reduce((sum, value) => sum + value, 0)
+          : null;
+        const liveGross = liveAccountFresh
+          ? this.authoritativeVenueGross(this.liveVenue) : null;
+        const liveGrossKnown = liveGross !== null;
+        const pnlPct = liveUnrealizedKnown && col > 0
+          ? (liveUnrealized / col) * 100
+          : (liveUnrealizedKnown && liveGrossKnown && liveGross > 0
+              ? (liveUnrealized / liveGross) * 100 : null);
+        const pnlPctSign = pnlPct === null ? ""
+          : (pnlPct > 0 ? "+" : (pnlPct < 0 ? "-" : (liveUnrealized < 0 ? "-" : (liveUnrealized > 0 ? "+" : ""))));
+        const pnlAmountSign = liveUnrealized !== null && liveUnrealized >= 0 ? "+" : "-";
+        const pnlText = liveUnrealized !== null && pnlPct !== null
+          ? `${pnlAmountSign}$${Math.abs(liveUnrealized).toFixed(2)} (${pnlPctSign}${Math.abs(pnlPct).toFixed(2)}%)`
+          : "UNAVAILABLE · exchange unrealized P&L missing";
         const realized = this.verifiedRealizedSummary();
         const estimatedClosed = (this.botState?.execution_history || []).filter(
           (trade) => trade.event === "EXIT" && Number.isFinite(Number(trade.net_pnl_usd)));
         const estimatedClosedNet = estimatedClosed.reduce((sum, trade) => sum + Number(trade.net_pnl_usd), 0);
         const realizedSign = realized.pnl >= 0 ? "+" : "";
         this.setText("valAccountEquity", col != null ? `$${col.toFixed(2)}` : "—");
-        this.setText("badgeEquitySource", col != null ? "REAL FUTURES" : "UNAVAILABLE");
-        const actualFreeMargin = this.liveVenue?.available_margin;
-        this.setText("valActivePairs", `${openLive.length} Open on Exchange`);
+        this.setText("badgeEquitySource", col != null
+          ? "REAL FUTURES" : (this.liveVenue?.account_stale === true ? "STALE · BLOCKED" : "UNAVAILABLE"));
+        const availableRaw = this.liveVenue?.available_margin;
+        const availableParsed = availableRaw === null || availableRaw === undefined || availableRaw === ""
+          ? null : Number(availableRaw);
+        const actualFreeMargin = liveAccountFresh && Number.isFinite(availableParsed)
+          ? availableParsed : null;
+        this.setText("valActivePairs", liveAccountFresh
+          ? `${openLive.length} Open on Exchange`
+          : `${openLive.length} retained · ACCOUNT SNAPSHOT STALE`);
         const maxTranches = (this.botState?.max_tranches === null ? Infinity : Number(this.botState?.max_tranches ?? 5));
         this.setText("valHedgedTranches", `${validTranches.length} / ${Number.isFinite(maxTranches) ? maxTranches : "Unlimited"} Campaign Slots`);
-        this.setText("valHedgedQuantities", `Selected contract $${liveGross.toFixed(2)} USD`);
+        this.setText("valHedgedQuantities", liveGrossKnown
+          ? `Selected contract $${liveGross.toFixed(2)} USD`
+          : "Selected contract UNKNOWN · live valuation unavailable");
         this.setText("valHedgedCombinedPnl", pnlText);
         const pnlEl = lid("valHedgedCombinedPnl");
-        if (pnlEl) pnlEl.style.color = liveUnrealized > 0 ? "#16a34a" : (liveUnrealized < 0 ? "#dc2626" : "#0f172a");
+        if (pnlEl) pnlEl.style.color = liveUnrealized === null
+          ? "#b45309" : (liveUnrealized > 0 ? "#16a34a" : (liveUnrealized < 0 ? "#dc2626" : "#0f172a"));
         const execStatus = this.botState?.blocked_reason || this.botState?.last_error;
         this.setText("valHedgedPnlSubtitle", execStatus
           ? `Execution status: ${execStatus}`
-          : (validTranches.length > 0 ? "Exchange unrealized PnL; fees excluded" : "No bot-owned open tranche"));
+          : (!liveAccountFresh
+              ? "Account snapshot stale/unavailable · execution safeguards blocked"
+              : (validTranches.length > 0 ? "Exchange unrealized PnL; fees excluded" : "No bot-owned open tranche")));
         this.setText("valUnrealizedPnl", realized.count
           ? `${realizedSign}$${realized.pnl.toFixed(2)} · ${realized.count} verified exits`
           : estimatedClosed.length
@@ -7308,7 +7460,7 @@
         if (positionSummary) {
           const liveRisk = this.botState?.risk_capacity || {};
           const liveLevCap = Number(liveRisk.gross_leverage_cap || 8);
-          positionSummary.innerHTML = `<span>Selected contract <b>$${liveGross.toFixed(2)} USD</b></span><span>Futures equity <b>${col != null ? `$${col.toFixed(2)}` : "unavailable"}</b></span><span>Available margin <b>${actualFreeMargin != null ? `$${Number(actualFreeMargin).toFixed(2)}` : "unavailable"}</b></span><span style="color:#64748b">Authenticated exchange account</span>`;
+          positionSummary.innerHTML = `<span>Selected contract <b>${liveGrossKnown ? `$${liveGross.toFixed(2)} USD` : "UNKNOWN · BLOCKED"}</b></span><span>Futures equity <b>${col != null ? `$${col.toFixed(2)}` : "unavailable"}</b></span><span>Available margin <b>${actualFreeMargin != null ? `$${Number(actualFreeMargin).toFixed(2)}` : "unavailable"}</b></span><span style="color:#64748b">${liveAccountFresh ? "Authenticated exchange account" : "ACCOUNT SNAPSHOT STALE/UNAVAILABLE · BLOCKED"}</span>`;
         }
         if (body) {
           if (openLive.length) {
@@ -7318,22 +7470,51 @@
               const sign = pos.sign != null ? Number(pos.sign) : (rawSize < 0 ? -1 : 1);
               const isLong = sign === 1;
               const signedSize = sign === -1 ? -Math.abs(rawSize) : Math.abs(rawSize);
-              const pnl = Number(pos.unrealized_pnl || 0);
-              const price = Number(pos.avg_entry_price || pos.entry_price || pos.price || 0);
-              const mark = Number(pos.mark_price || pos.price || price);
-              const notional = Math.abs(Number(pos.notional || 0)) || Math.abs(rawSize) * mark;
-              const levCap = Number(this.botState?.risk_capacity?.gross_leverage_cap || 8);
-              const margin = Math.abs(Number(pos.initial_margin || pos.allocated_margin || 0)) || (levCap > 0 ? notional / levCap : notional);
-              let roePct = Number(pos.roe_percent);
-              if (!Number.isFinite(roePct) || (roePct === 0 && pnl !== 0)) {
-                roePct = margin > 0 ? (pnl / margin) * 100 : (notional > 0 ? (pnl / notional) * 100 : 0);
-              }
-              const roeSign = roePct > 0 ? "+" : (roePct < 0 ? "-" : (pnl < 0 ? "-" : (pnl > 0 ? "+" : "")));
-              const roeFormatted = `${roeSign}${Math.abs(roePct).toFixed(3)}%`;
+              const pnlRaw = pos.unrealized_pnl;
+              const pnlParsed = pnlRaw === null || pnlRaw === undefined || pnlRaw === ""
+                ? null : Number(pnlRaw);
+              const pnl = liveAccountFresh && pnlParsed !== null && Number.isFinite(pnlParsed)
+                ? pnlParsed : null;
+              const entryRaw = pos.avg_entry_price ?? pos.entry_price;
+              const entryParsed = entryRaw === null || entryRaw === undefined || entryRaw === ""
+                ? null : Number(entryRaw);
+              const entryPrice = Number.isFinite(entryParsed) && entryParsed > 0 ? entryParsed : null;
+              // Position rows have no independent freshness metadata. Only the
+              // status-level validated mark may fill a missing current notional.
+              const mark = liveAccountFresh ? this.freshVenueMark(this.liveVenue) : null;
+              const rawNotional = pos.notional;
+              const parsedNotional = rawNotional === null || rawNotional === undefined || rawNotional === ""
+                ? null : Math.abs(Number(rawNotional));
+              const notional = liveAccountFresh && parsedNotional !== null
+                && Number.isFinite(parsedNotional) && parsedNotional > 0
+                ? parsedNotional
+                : (mark !== null ? Math.abs(rawSize) * mark : null);
+              const marginRaw = pos.initial_margin ?? pos.allocated_margin;
+              const marginParsed = marginRaw === null || marginRaw === undefined || marginRaw === ""
+                ? null : Math.abs(Number(marginRaw));
+              const margin = liveAccountFresh && marginParsed !== null
+                && Number.isFinite(marginParsed) && marginParsed > 0
+                ? marginParsed : null;
+              const roeRaw = pos.roe_percent;
+              const roeParsed = roeRaw === null || roeRaw === undefined || roeRaw === ""
+                ? null : Number(roeRaw);
+              const roePct = liveAccountFresh && roeParsed !== null && Number.isFinite(roeParsed)
+                ? roeParsed : null;
+              const roeSign = Number.isFinite(roePct)
+                ? (roePct > 0 ? "+" : (roePct < 0 ? "-" : (pnl !== null && pnl < 0 ? "-" : (pnl !== null && pnl > 0 ? "+" : ""))))
+                : "";
+              const roeFormatted = Number.isFinite(roePct)
+                ? `${roeSign}${Math.abs(roePct).toFixed(3)}%` : "UNKNOWN";
               const sideBadge = isLong
                 ? '<span style="color:#16a34a;font-weight:800;background:#dcfce7;padding:2px 6px;border-radius:4px;">LONG</span>'
                 : '<span style="color:#dc2626;font-weight:800;background:#fee2e2;padding:2px 6px;border-radius:4px;">SHORT</span>';
-              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td>$${price.toFixed(price > 500 ? 3 : 2)}</td><td><b>$${notional.toFixed(2)}</b> USD</td><td>$${margin.toFixed(2)}</td><td style="font-weight:700;color:${pnl >= 0 ? "#16a34a" : "#dc2626"}">${pnl >= 0 ? "+" : "-"}$${Math.abs(pnl).toFixed(4)}<br><small>${roeFormatted}</small></td></tr>`;
+              const pnlDisplay = pnl !== null
+                ? `${pnl >= 0 ? "+" : "-"}$${Math.abs(pnl).toFixed(4)}`
+                : "UNAVAILABLE";
+              const pnlColor = pnl === null ? "#b45309" : (pnl >= 0 ? "#16a34a" : "#dc2626");
+              const entryDisplay = entryPrice !== null
+                ? `$${entryPrice.toFixed(entryPrice > 500 ? 3 : 2)}` : "UNAVAILABLE";
+              return `<tr><td>L-${idx + 1}</td><td><strong>${sym}</strong></td><td>${sideBadge}</td><td style="font-family:monospace">${signedSize > 0 ? "+" : ""}${signedSize.toFixed(4)}</td><td>${entryDisplay}</td><td><b>${notional !== null ? `$${notional.toFixed(2)} USD` : "UNKNOWN · BLOCKED"}</b></td><td>${margin !== null ? `$${margin.toFixed(2)}` : "UNKNOWN"}</td><td style="font-weight:700;color:${pnlColor}">${pnlDisplay}<br><small>${roeFormatted}</small></td></tr>`;
             }).join("");
           } else {
             body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#64748b;padding:24px 16px;line-height:1.6;">No selected-contract Futures position on the exchange.</td></tr>';
