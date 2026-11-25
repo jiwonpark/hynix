@@ -209,10 +209,13 @@ class LighterMicroClientTests(unittest.TestCase):
         )
 
         self._ack_book()
-        self.client._micro_trade_lookback_ms[1] = 1
-        self.client._micro_warmup_started[1] = time.monotonic() - 0.01
+        # Keep the assertion independent of scheduler speed on constrained hosts.
+        # This test is about acknowledgement gating, not a 1 ms retention window.
+        lookback_ms = 1_000
+        self.client._micro_trade_lookback_ms[1] = lookback_ms
+        self.client._micro_warmup_started[1] = time.monotonic() - 1.1
         self.client._handle_micro_stream_message(update)
-        self.assertEqual(len(self._snapshot()["trades"]), 1)
+        self.assertEqual(len(self._snapshot(lookback_ms=lookback_ms)["trades"]), 1)
 
     def test_configured_lookback_must_warm_before_snapshot_is_consumable(self):
         self._ack_book()
