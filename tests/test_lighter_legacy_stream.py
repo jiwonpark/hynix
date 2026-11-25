@@ -115,6 +115,51 @@ class LighterLegacyStreamTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_snapshot_bulk_sort_preserves_exact_string_price_keys(self):
+        async def run():
+            client = LighterClient()
+            client._handle_stream_message({
+                "type": "subscribed/order_book",
+                "channel": "order_book:216",
+                "order_book": {
+                    "bids": [
+                        {"price": "99", "size": "1"},
+                        {"price": "100", "size": "first"},
+                        {"price": "100.0", "size": "equivalent-string"},
+                        {"price": "100", "size": "last"},
+                    ],
+                    "asks": [
+                        {"price": "102", "size": "1"},
+                        {"price": "101.0", "size": "equivalent-string"},
+                        {"price": "101", "size": "first"},
+                        {"price": "101", "size": "last"},
+                    ],
+                },
+            })
+
+            book = await client.order_book(216, 10)
+
+            self.assertEqual(
+                [(row["price"], row["size"]) for row in book["bids"]],
+                [
+                    ("100.0", "equivalent-string"),
+                    ("100", "last"),
+                    ("99", "1"),
+                ],
+            )
+            self.assertEqual(
+                [(row["price"], row["size"]) for row in book["asks"]],
+                [
+                    ("101", "last"),
+                    ("101.0", "equivalent-string"),
+                    ("102", "1"),
+                ],
+            )
+            self.assertEqual(len(client._ws_book_prices[216]["bids"]), 3)
+            self.assertEqual(len(client._ws_book_prices[216]["asks"]), 3)
+
+        asyncio.run(run())
+
     def test_malformed_delta_does_not_partially_change_last_good_book(self):
         async def run():
             client = LighterClient()

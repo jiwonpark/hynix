@@ -110,7 +110,7 @@ const storage = {
   setItem: (key, value) => storageValues.set(key, String(value)),
 };
 
-const wallNow = 1_800_000_000_000;
+let wallNow = 1_800_000_000_000;
 const fixedAssumptions = {
   editable: false,
   source: "LIGHTER_MICRO_RUNTIME_CONFIG",
@@ -142,6 +142,7 @@ const calls = [];
 let failCandles = false;
 let failCandleAttempts = 0;
 let failAccountAttempts = 0;
+let failReplay = false;
 const fetchImpl = async (url, options = {}) => {
   calls.push({url, options});
   if (url.includes("/api/lighter-micro/snapshot")) return response({
@@ -174,7 +175,9 @@ const fetchImpl = async (url, options = {}) => {
     config: {strategy_enabled_editable: false, conditions: [], fixed_assumptions: fixedAssumptions, raw: {entry: {depth_levels: 5}}},
     safeguards: [],
   });
-  if (url.includes("/api/lighter-micro/replay")) return response({
+  if (url.includes("/api/lighter-micro/replay")) {
+    if (failReplay) return response({success: false, error: "replay temporarily unavailable"}, 503);
+    return response({
     success: true,
     source: "micro replay",
     timestamp_ms: wallNow,
@@ -189,7 +192,8 @@ const fetchImpl = async (url, options = {}) => {
       entry_direction: {enabled: true, pass: true, status: "PASS", mandatory: true, editable: false,
         label: "Directional edge available", source: "micro replay", source_timestamp_ms: wallNow},
     },
-  });
+    });
+  }
   if (url.includes("/api/lighter-crypto/status")) {
     if (failAccountAttempts > 0) {
       failAccountAttempts -= 1;
@@ -259,7 +263,7 @@ async function run() {
     "/skhynix/api/lighter-micro/status",
     "/skhynix/api/lighter-micro/replay",
   ], "activation serializes account and price before ancillary microstructure reads");
-  assert.equal(tab.pollIntervalMs, 15_000, "default polling does not hammer account telemetry every two seconds");
+  assert.equal(tab.pollIntervalMs, 10_000, "default polling refreshes proactively without hammering account telemetry every two seconds");
   assert.equal(tab.snapshot.source, "lighter websocket book");
   assert.equal(tab.status.authenticated, false);
   assert.equal(tab.replay.entry_signals.length, 3);
@@ -326,11 +330,162 @@ async function run() {
   assert.ok(calls.some((call) => call.url === "/skhynix/api/lighter-crypto/status?symbol=BTC"));
   assert.ok(calls.some((call) => call.url === "/skhynix/api/lighter-crypto/candles?symbol=BTC&interval=1m&limit=180"));
   assert.ok(calls.every((call) => !call.url.includes("/order")), "read-only refresh exposes no order route");
+  assert.equal(tab.marketPollIntervalMs, 400,
+    "the independent market loop refreshes inside the 500 ms quote-freshness limit");
+
+  const accountCallsBeforeFastRefresh = calls.filter((call) => call.url.includes("/api/lighter-crypto/status")).length;
+  const candleCallsBeforeFastRefresh = calls.filter((call) => call.url.includes("/api/lighter-crypto/candles")).length;
+  assert.equal(await tab.refreshMarket(), true);
+  assert.equal(calls.filter((call) => call.url.includes("/api/lighter-crypto/status")).length, accountCallsBeforeFastRefresh,
+    "fast market refresh never requests account telemetry");
+  assert.equal(calls.filter((call) => call.url.includes("/api/lighter-crypto/candles")).length, candleCallsBeforeFastRefresh,
+    "fast market refresh never requests candles");
+
+  const normalFastFetch = tab.fetchImpl;
+  let releaseFastSnapshot;
+  const fastSnapshotReleased = new Promise((resolve) => { releaseFastSnapshot = resolve; });
+  let fastSnapshotStarts = 0;
+  let holdFastSnapshot = true;
+  tab.fetchImpl = async (url, options) => {
+    if (holdFastSnapshot && url.includes("/api/lighter-micro/snapshot")) {
+      holdFastSnapshot = false;
+      fastSnapshotStarts += 1;
+      await fastSnapshotReleased;
+    }
+    return normalFastFetch(url, options);
+  };
+  const firstFastRefresh = tab.refreshMarket();
+  const secondFastRefresh = tab.refreshMarket();
+  assert.equal(fastSnapshotStarts, 1, "fast market ticks are single-flight");
+  releaseFastSnapshot();
+  assert.equal(await firstFastRefresh, true);
+  assert.equal(await secondFastRefresh, true);
+  tab.fetchImpl = normalFastFetch;
+
+  let releaseRacingFastSnapshot;
+  const racingFastSnapshotReleased = new Promise((resolve) => { releaseRacingFastSnapshot = resolve; });
+  let racingSnapshotCalls = 0;
+  let racingSnapshotInFlight = 0;
+  let racingSnapshotMaxInFlight = 0;
+  tab.fetchImpl = async (url, options) => {
+    if (url.includes("/api/lighter-micro/snapshot")) {
+      racingSnapshotCalls += 1;
+      racingSnapshotInFlight += 1;
+      racingSnapshotMaxInFlight = Math.max(racingSnapshotMaxInFlight, racingSnapshotInFlight);
+      if (racingSnapshotCalls === 1) {
+        await racingFastSnapshotReleased;
+        racingSnapshotInFlight -= 1;
+        return response({
+          success: true,
+          source: "superseded fast snapshot",
+          timestamp_ms: wallNow,
+          order_book: {bids: [[90, 1]], asks: [[91, 1]]},
+        });
+      }
+      racingSnapshotInFlight -= 1;
+    }
+    return normalFastFetch(url, options);
+  };
+  const racingFastRefresh = tab.refreshMarket();
+  const owningFullRefresh = tab.refresh({
+    includeReplay: false,
+    includeAccount: false,
+    includeChart: false,
+    includeMarket: true,
+    retryCritical: false,
+  });
+  assert.equal(racingSnapshotCalls, 1,
+    "a full market refresh waits for the superseded fast request instead of racing it");
+  releaseRacingFastSnapshot();
+  assert.equal(await racingFastRefresh, false);
+  assert.equal(await owningFullRefresh, true);
+  assert.equal(racingSnapshotCalls, 2);
+  assert.equal(racingSnapshotMaxInFlight, 1);
+  assert.equal(tab.snapshot.source, "lighter websocket book",
+    "the aborted fast generation cannot overwrite the full refresh result");
+  tab.fetchImpl = normalFastFetch;
+
+  const baseWallNow = wallNow;
+  wallNow = baseWallNow + 501;
+  assert.equal(tab.renderFreshnessState(), true,
+    "crossing a freshness boundary triggers one transition render");
+  assert.equal(tab.renderFreshnessState(), false,
+    "unchanged stale/loading state does not rerender heavy DOM or markers every 250 ms");
+  assert.equal(tab.refs.spread.textContent, "UNAVAILABLE",
+    "L2 values are withheld one millisecond beyond the local 500 ms freshness limit");
+  assert.match(tab.refs.marketSource.textContent, /MARKET · STALE/);
+  assert.match(tab.refs.mandatoryPrerequisites.innerHTML, /LIVE · UNAVAILABLE/,
+    "locally stale live status cannot keep showing a PASS verdict");
+  assert.equal(tab.refs.entrySignals.textContent, "3",
+    "historical replay results do not expire on the live quote freshness clock");
+  assert.equal(tab.entryMarkers.length, 2,
+    "historical replay markers remain visible during ordinary live-feed aging");
+  assert.doesNotMatch(tab.refs.replaySource.textContent, /UPDATING/);
+
+  wallNow = baseWallNow + 14_501;
+  tab.renderFreshnessState();
+  assert.equal(tab.refs.accountCollateral.textContent, "UNAVAILABLE · STALE",
+    "account values are withheld when account_updated_ms is over 15 seconds old");
+  assert.equal(tab.readiness.accountMs, null, "aged account data no longer satisfies readiness");
+
+  wallNow = baseWallNow + 180_001;
+  tab.renderFreshnessState();
+  assert.match(tab.refs.chartSource.textContent, /CHART · STALE/,
+    "candles age stale beyond three selected intervals without another API request");
+  assert.equal(tab.readiness.chartMs, null, "aged candle data no longer satisfies readiness");
+  assert.equal(tab.refs.entrySignals.textContent, "3", "chart aging does not invalidate replay history");
+
+  wallNow = baseWallNow;
+  tab.renderFreshnessState();
+  assert.equal(tab.refs.accountCollateral.textContent, "$250.50 USD");
+  assert.notEqual(tab.refs.spread.textContent, "UNAVAILABLE");
+
+  const retainedReplay = tab.replay;
+  const replayCallsBeforeOrdinaryRefresh = calls.filter((call) => call.url.includes("/api/lighter-micro/replay")).length;
+  tab.beginReadinessCycle({includeReplay: false});
+  assert.equal(tab.replay, retainedReplay);
+  assert.equal(tab.replayLoading, false);
+  assert.equal(tab.refs.entrySignals.textContent, "3",
+    "ordinary live refresh preserves the last completed replay while feeds update");
+  assert.equal(await tab.refresh({includeReplay: false, includeAccount: true, includeChart: true, includeMarket: true}), true);
+  assert.equal(
+    calls.filter((call) => call.url.includes("/api/lighter-micro/replay")).length,
+    replayCallsBeforeOrdinaryRefresh,
+    "ordinary live refresh does not silently rerun replay",
+  );
+  assert.equal(tab.replay, retainedReplay);
 
   visibleRange = {from: 4, to: 18};
   await tab.refreshChart();
   assert.deepEqual(visibleRange, {from: 4, to: 18}, "same-interval refresh preserves the visible chart range");
-  await tab.setChartInterval("5m");
+  const normalIntervalFetch = tab.fetchImpl;
+  let releaseFiveMinuteCandles;
+  const fiveMinuteCandlesReleased = new Promise((resolve) => { releaseFiveMinuteCandles = resolve; });
+  let delayFiveMinuteCandles = true;
+  tab.fetchImpl = async (url, options) => {
+    if (delayFiveMinuteCandles && url.includes("/api/lighter-crypto/candles") && url.includes("interval=5m")) {
+      delayFiveMinuteCandles = false;
+      await fiveMinuteCandlesReleased;
+    }
+    return normalIntervalFetch(url, options);
+  };
+  const fiveMinuteSwitch = tab.setChartInterval("5m");
+  assert.equal(tab.interval, "5m");
+  assert.equal(tab.chartLoading, true);
+  assert.equal(tab.chartRendered, false);
+  assert.equal(tab.chartDataInterval, null,
+    "the prior interval cannot remain rendered under the newly selected interval label");
+  assert.deepEqual(tab.bars, []);
+  assert.deepEqual(seriesByTitle.get("BTC").data, []);
+  assert.match(tab.refs.chartSource.textContent, /CHART · STALE/);
+  assert.match(tab.refs.chartSource.textContent, /interval 5m/);
+  assert.match(tab.refs.chartError.textContent, /CHART REFRESHING/);
+  assert.equal(tab.readiness.chartMs, null);
+  assert.notEqual(storageValues.get("skhynix_lighter_micro_interval"), "5m",
+    "the selected interval is persisted only after its own response succeeds");
+  releaseFiveMinuteCandles();
+  assert.equal(await fiveMinuteSwitch, true);
+  tab.fetchImpl = normalIntervalFetch;
   assert.equal(tab.interval, "5m");
   assert.deepEqual(tab.chartRanges["1m"], {from: 4, to: 18}, "interval switch preserves the prior interval viewport");
   assert.equal(storageValues.get("skhynix_lighter_micro_interval"), "5m");
@@ -380,7 +535,7 @@ async function run() {
 
   const candleCallsBeforeRetry = calls.filter((call) => call.url.includes("/api/lighter-crypto/candles")).length;
   failCandleAttempts = 1;
-  assert.equal(await tab.refresh({includeReplay: false, includeAccount: false, includeChart: true}), true,
+  assert.equal(await tab.refresh({includeReplay: false, includeAccount: false, includeChart: true, includeMarket: false}), true,
     "a transient candle failure is retried without running critical reads concurrently");
   assert.equal(
     calls.filter((call) => call.url.includes("/api/lighter-crypto/candles")).length - candleCallsBeforeRetry,
@@ -390,18 +545,23 @@ async function run() {
   assert.equal(tab.errors.chart, null);
 
   const accountCallsBeforeRetry = calls.filter((call) => call.url.includes("/api/lighter-crypto/status")).length;
+  const snapshotCallsBeforeSlowRefresh = calls.filter((call) => call.url.includes("/api/lighter-micro/snapshot")).length;
+  const statusCallsBeforeSlowRefresh = calls.filter((call) => call.url.includes("/api/lighter-micro/status")).length;
   failAccountAttempts = 1;
-  assert.equal(await tab.refresh({includeReplay: false, includeAccount: true, includeChart: false}), true,
+  assert.equal(await tab.refresh({includeReplay: false, includeAccount: true, includeChart: false, includeMarket: false}), true,
     "a transient account failure recovers from the last-good stale display on its bounded retry");
   assert.equal(
     calls.filter((call) => call.url.includes("/api/lighter-crypto/status")).length - accountCallsBeforeRetry,
     2,
     "critical account loading has one bounded retry",
   );
+  assert.equal(calls.filter((call) => call.url.includes("/api/lighter-micro/snapshot")).length, snapshotCallsBeforeSlowRefresh);
+  assert.equal(calls.filter((call) => call.url.includes("/api/lighter-micro/status")).length, statusCallsBeforeSlowRefresh,
+    "slow account/chart polling leaves snapshot/status to the fast market loop");
   assert.equal(tab.errors.account, null);
   assert.equal(tab.refs.accountCollateral.textContent, "$250.50 USD");
 
-  const conditionTime = 1791500000123;
+  const conditionTime = wallNow - 100;
   tab.replay = {evaluations: [{
     source: {name: "LIGHTER_REPLAY", instrument: "SKHY-USDT", timestamp_ms: conditionTime},
     source_timestamp_ms: conditionTime,
@@ -472,7 +632,9 @@ async function run() {
 
   tab.status = {
     authenticated: true,
-    live: {order_submission_implemented: false},
+    timestamp_ms: wallNow,
+    stale: false,
+    live: {order_submission_implemented: false, timestamp_ms: wallNow, stale: false},
     config: {strategy_enabled: false, strategy_enabled_editable: false, conditions: []},
   };
   await assert.rejects(tab.saveLiveConfig(), /Unlock the authenticated terminal first/);
@@ -487,9 +649,73 @@ async function run() {
     "locked execution is a status disclosure, not a decorative checkbox");
   assert.equal(evaluatorInput.disabled, false, "authenticated unlock still permits shared evaluator edits");
   assert.equal(tab.refs.saveLive.disabled, false, "locked execution does not block saving evaluator thresholds");
+  const configEditWallNow = wallNow;
+  wallNow = configEditWallNow + 501;
+  tab.renderFreshnessState();
+  assert.equal(tab.statusIsStale(), true, "live evaluator verdicts still fail closed after 500 ms");
+  assert.equal(tab.configEnvelopeIsStale(), false,
+    "the authenticated config response has an independent editing freshness window");
+  assert.equal(tab.liveUnlocked, true);
+  assert.equal(evaluatorInput.disabled, false,
+    "live-verdict aging cannot deadlock an authenticated evaluator draft");
+  assert.equal(tab.refs.unlockLive.checked, true);
+  wallNow = configEditWallNow;
+  tab.renderFreshnessState();
+
+  const fetchBeforeTransientStatusFailure = tab.fetchImpl;
+  const recoveredAuthenticatedStatus = {
+    ...tab.status,
+    timestamp_ms: wallNow,
+    stale: false,
+    live: {...tab.status.live, timestamp_ms: wallNow, stale: false},
+  };
+  let transientStatusAttempts = 0;
+  tab.fetchImpl = async (url, options) => {
+    if (url.includes("/api/lighter-micro/status")) {
+      transientStatusAttempts += 1;
+      if (transientStatusAttempts === 1) {
+        return response({success: false, error: "status temporarily unavailable"}, 503);
+      }
+      return response(recoveredAuthenticatedStatus);
+    }
+    return fetchBeforeTransientStatusFailure(url, options);
+  };
+  tab.draftDirty = true;
+  tab.refs.liveControls.innerHTML = '<div data-unsaved-draft="true">unsaved threshold draft</div>';
+  const unsavedDraftMarkup = tab.refs.liveControls.innerHTML;
+  assert.equal(await tab.refreshMarket(), false);
+  assert.equal(tab.statusIsStale(), true,
+    "a transient fast-status failure still fails live evaluator verdicts closed");
+  assert.match(tab.refs.mandatoryPrerequisites.innerHTML, /LIVE · UNAVAILABLE/);
+  assert.equal(tab.configEnvelopeIsStale(), false,
+    "the last successful authenticated config envelope remains fresh through a transient status failure");
+  assert.equal(tab.liveUnlocked, true, "a transient status failure cannot revoke the editor unlock");
+  assert.equal(tab.draftDirty, true, "a transient status failure cannot clear the dirty draft flag");
+  assert.equal(tab.refs.liveControls.innerHTML, unsavedDraftMarkup,
+    "a transient status failure cannot rebuild and discard unsaved controls");
+  assert.equal(evaluatorInput.disabled, false);
+  assert.equal(tab.refs.saveLive.disabled, false,
+    "a fresh authenticated config envelope may remain saveable while live verdicts are unavailable");
+  assert.equal(tab.refs.unlockLive.checked, true);
+  wallNow = configEditWallNow + 30_001;
+  assert.equal(tab.configEnvelopeIsStale(), true,
+    "the retained authenticated config envelope still expires after its 30 second freshness window");
+  wallNow = configEditWallNow;
+
+  assert.equal(await tab.refreshMarket(), true);
+  assert.equal(tab.errors.status, null);
+  assert.equal(tab.statusIsStale(), false);
+  assert.equal(tab.liveUnlocked, true);
+  assert.equal(tab.draftDirty, true);
+  assert.equal(tab.refs.liveControls.innerHTML, unsavedDraftMarkup,
+    "status recovery preserves the same in-progress editor DOM");
+  tab.fetchImpl = fetchBeforeTransientStatusFailure;
+
   assert.deepEqual(tab.collectLiveConfig(), {conditions: []},
     "locked execution omits strategy_enabled from the evaluator payload");
   tab.collectLiveConfig = () => ({conditions: [{key: "spread_ok", enabled: true, threshold: 2.5}]});
+  const replayBeforeConfigSave = tab.replay;
+  const replayCallsBeforeConfigSave = calls.filter((call) => call.url.includes("/api/lighter-micro/replay")).length;
   const saved = await tab.saveLiveConfig();
   assert.equal(saved, true);
   const post = calls.find((call) => call.url.endsWith("/api/lighter-micro/config"));
@@ -499,6 +725,14 @@ async function run() {
   assert.deepEqual(JSON.parse(post.options.body), {
     conditions: [{key: "spread_ok", enabled: true, threshold: 2.5}],
   });
+  assert.equal(
+    calls.filter((call) => call.url.includes("/api/lighter-micro/replay")).length,
+    replayCallsBeforeConfigSave + 1,
+    "saving shared evaluator settings immediately reruns replay under the saved thresholds",
+  );
+  assert.notEqual(tab.replay, replayBeforeConfigSave,
+    "the completed replay is replaced after a successful evaluator config save");
+  assert.equal(tab.replayInvalidatedByConfig, false);
   assert.equal(tab.liveUnlocked, false, "successful evaluator save returns the module to read-only mode");
   assert.ok(calls.every((call) => !call.url.includes("/order")), "evaluator configuration never calls an order endpoint");
 
@@ -513,17 +747,127 @@ async function run() {
   assert.doesNotMatch(source, /api\/lighter-micro\/order/);
   assert.doesNotMatch(source, /\$187\.55|mock|sample price/i, "module must not contain fabricated market/account values");
 
+  tab.replay = replayWithSignals;
+  tab.replayLoading = false;
+  tab.errors.replay = null;
+  tab.renderAll();
+  const completedReplay = tab.replay;
+  tab.replayInvalidatedByConfig = true;
+  tab.errors.replay = "replay temporarily unavailable";
+  tab.renderAll();
+  assert.equal(tab.refs.entrySignals.textContent, "UNAVAILABLE",
+    "a replay evaluated under pre-save settings is withheld after a config change");
+  assert.deepEqual(tab.entryMarkers, []);
+  assert.match(tab.refs.replaySource.textContent, /CONFIG CHANGED · RERUN FAILED · prior replay withheld/);
+  assert.match(tab.refs.mandatoryPrerequisites.innerHTML, /PAPER · UNAVAILABLE/);
+  tab.replayInvalidatedByConfig = false;
+  tab.errors.replay = null;
+  tab.renderAll();
+  const replayCallsBeforeNavigation = calls.filter((call) => call.url.includes("/api/lighter-micro/replay")).length;
   const previousCycle = tab.readiness.cycle;
   await tab.onTabActivated();
   assert.equal(tab.readiness.cycle, previousCycle + 1, "each activation starts a new readiness timing cycle");
   assert.notEqual(tab.readiness.accountMs, null);
   assert.notEqual(tab.readiness.chartMs, null);
+  assert.equal(tab.replay, completedReplay, "navigation preserves the last completed replay object");
+  assert.equal(calls.filter((call) => call.url.includes("/api/lighter-micro/replay")).length, replayCallsBeforeNavigation,
+    "navigation does not rerun a completed replay");
+
+  const completedMarkers = tab.entryMarkers.map((marker) => ({...marker}));
+  failReplay = true;
+  const failedRerun = tab.rerunReplay();
+  assert.equal(tab.replayLoading, true);
+  assert.equal(tab.refs.entrySignals.textContent, "3");
+  assert.deepEqual(tab.entryMarkers, completedMarkers);
+  assert.match(tab.refs.replaySource.textContent, /UPDATING · showing last completed replay/);
+  assert.equal(await failedRerun, false);
+  assert.equal(tab.replay, completedReplay, "failed rerun cannot replace the last completed replay");
+  assert.equal(tab.refs.entrySignals.textContent, "3");
+  assert.deepEqual(tab.entryMarkers, completedMarkers);
+  assert.match(tab.refs.replaySource.textContent, /RERUN FAILED · showing last completed replay/);
+  assert.match(tab.refs.mandatoryPrerequisites.innerHTML, /PAPER · PASS/);
+  failReplay = false;
+  tab.errors.replay = null;
+  tab.renderAll();
+
   tab.startPolling();
   assert.ok(tab.pollTimer, "active tab can poll read-only telemetry");
+  tab.startMarketPolling();
+  assert.ok(tab.marketPollTimer, "active tab has an independent fast snapshot/status loop");
   visibleRange = {from: 6, to: 17};
   tab.onTabDeactivated();
   assert.equal(tab.pollTimer, null, "deactivation stops telemetry polling");
+  assert.equal(tab.marketPollTimer, null, "deactivation stops fast market polling");
   assert.deepEqual(tab.chartRanges[tab.interval], {from: 6, to: 17}, "deactivation preserves chart navigation state");
+
+  const normalFetch = tab.fetchImpl;
+  let releaseDelayedAccount;
+  const delayedAccount = new Promise((resolve) => { releaseDelayedAccount = resolve; });
+  let accountRequestPending = true;
+  tab.fetchImpl = async (url, options) => {
+    if (accountRequestPending && url.includes("/api/lighter-crypto/status")) {
+      accountRequestPending = false;
+      await delayedAccount;
+    }
+    return normalFetch(url, options);
+  };
+  const cycleBeforeDelayedReactivation = tab.readiness.cycle;
+  const delayedReactivation = tab.onTabActivated();
+  assert.equal(accountRequestPending, false, "reactivation starts the staged account request immediately");
+  assert.equal(tab.readiness.cycle, cycleBeforeDelayedReactivation + 1);
+  assert.equal(tab.readiness.accountMs, null);
+  assert.equal(tab.readiness.chartMs, null);
+  assert.equal(tab.account.account_stale, true, "retained account payload is marked stale before the request resolves");
+  assert.equal(tab.account.refresh_pending, true);
+  assert.equal(tab.refs.accountCollateral.textContent, "UNAVAILABLE · STALE · LOADING");
+  assert.match(tab.refs.accountPositions.innerHTML, /CACHED VALUES MARKED STALE AND WITHHELD/);
+  assert.match(tab.refs.accountSource.textContent, /ACCOUNT · STALE .*refresh pending/);
+  assert.match(tab.refs.accountError.textContent, /ACCOUNT REFRESHING/);
+  assert.equal(tab.chartPayload.stale, true, "retained candles are marked stale before the request resolves");
+  assert.equal(tab.chartPayload.refresh_pending, true);
+  assert.equal(tab.chartRendered, false, "retained chart cannot satisfy readiness while reload is pending");
+  assert.match(tab.refs.chartSource.textContent, /CHART · STALE .*refresh pending/);
+  assert.match(tab.refs.chartError.textContent, /CHART REFRESHING/);
+  assert.equal(tab.snapshotLoading, true);
+  assert.equal(tab.snapshot.stale, true,
+    "retained L2 is marked stale immediately when activation starts");
+  assert.equal(tab.snapshot.refresh_pending, true);
+  assert.equal(tab.refs.spread.textContent, "UNAVAILABLE");
+  assert.match(tab.refs.asks.innerHTML, /UNAVAILABLE/);
+  assert.match(tab.refs.marketSource.textContent, /MARKET · STALE .*UPDATING/);
+  assert.equal(tab.statusLoading, true);
+  assert.equal(tab.status.stale, true,
+    "retained live condition and safeguard status is marked stale during activation");
+  assert.equal(tab.status.refresh_pending, true);
+  assert.match(tab.refs.mandatoryPrerequisites.innerHTML, /LIVE · UNAVAILABLE/);
+  assert.match(tab.refs.safeguards.innerHTML, /UNAVAILABLE/);
+  assert.match(tab.refs.safeguardSource.textContent, /STALE .*UPDATING/);
+  assert.equal(tab.replayLoading, false);
+  assert.equal(tab.replay, completedReplay);
+  assert.equal(tab.refs.entrySignals.textContent, "3");
+  assert.deepEqual(tab.entryMarkers, completedMarkers);
+  assert.doesNotMatch(tab.refs.replaySource.textContent, /UPDATING/);
+  assert.match(tab.refs.mandatoryPrerequisites.innerHTML, /PAPER · PASS/);
+  releaseDelayedAccount();
+  assert.equal(await delayedReactivation, true);
+  assert.equal(tab.account.account_stale, false);
+  assert.equal(tab.chartPayload.stale, false);
+  assert.equal(tab.snapshotLoading, false);
+  assert.equal(tab.statusLoading, false);
+  assert.equal(tab.replayLoading, false);
+  assert.equal(tab.snapshot.stale, undefined);
+  assert.equal(tab.status.stale, false);
+  assert.equal(tab.replay.stale, undefined);
+  assert.equal(tab.refs.entrySignals.textContent, "3");
+  assert.equal(calls.filter((call) => call.url.includes("/api/lighter-micro/replay")).length,
+    replayCallsBeforeNavigation + 1,
+    "only the explicit failed rerun called the replay endpoint across navigation");
+  assert.match(tab.refs.mandatoryPrerequisites.innerHTML, /PAPER · PASS/);
+  assert.match(tab.refs.mandatoryPrerequisites.innerHTML, /LIVE · PASS/);
+  assert.notEqual(tab.readiness.accountMs, null);
+  assert.notEqual(tab.readiness.chartMs, null);
+  tab.fetchImpl = normalFetch;
+  tab.onTabDeactivated();
   tab.destroy();
   assert.equal(chartRemoved, true, "destroy releases the LightweightCharts instance");
   assert.equal(tab.mounted, false);
@@ -544,6 +888,7 @@ async function run() {
     fetchImpl: stagedFetch,
     apiPrefix: "/skhynix",
     autoPoll: false,
+    autoMarketPoll: true,
     chartLibrary,
     storage,
     wallNowProvider: () => wallNow,
@@ -552,7 +897,81 @@ async function run() {
   assert.equal(await stagedTab.onTabActivated(), true);
   assert.equal(stagedMaxInFlight, 1,
     "activation never overlaps account, candle, L2, status, or replay requests on a loaded backend");
+  assert.equal(stagedTab.pollTimer, null);
+  assert.ok(stagedTab.marketPollTimer,
+    "autoMarketPoll can run independently when the slow autoPoll loop is disabled");
   stagedTab.destroy();
+  assert.equal(stagedTab.marketPollTimer, null, "destroy cleans the independent market timer");
+
+  const interleavedStorageValues = new Map();
+  const interleavedStorage = {
+    getItem: (key) => interleavedStorageValues.get(key) ?? null,
+    setItem: (key, value) => interleavedStorageValues.set(key, String(value)),
+  };
+  let releaseInterleavedAccount;
+  const interleavedAccountReleased = new Promise((resolve) => { releaseInterleavedAccount = resolve; });
+  let holdInterleavedAccount = true;
+  const interleavedFetch = async (url, options) => {
+    if (holdInterleavedAccount && url.includes("/api/lighter-crypto/status")) {
+      holdInterleavedAccount = false;
+      await interleavedAccountReleased;
+    }
+    return fetchImpl(url, options);
+  };
+  const interleavedTab = new LighterMicroTab(new FakeHost(), {
+    fetchImpl: interleavedFetch,
+    apiPrefix: "/skhynix",
+    autoPoll: false,
+    autoFreshness: false,
+    chartLibrary,
+    storage: interleavedStorage,
+    interval: "1m",
+    wallNowProvider: () => wallNow,
+    retryDelayMs: 0,
+  });
+  const interleavedActivation = interleavedTab.onTabActivated();
+  assert.equal(holdInterleavedAccount, false, "interleaving fixture pauses the activation account request");
+  const interleavedIntervalSwitch = interleavedTab.setChartInterval("5m");
+  assert.equal(interleavedTab.interval, "5m");
+  releaseInterleavedAccount();
+  assert.equal(await interleavedActivation, true);
+  assert.equal(await interleavedIntervalSwitch, true,
+    "interval switching waits for shared activation instead of aborting the other staged feeds");
+  assert.equal(interleavedTab.chartDataInterval, "5m");
+  assert.equal(interleavedStorageValues.get("skhynix_lighter_micro_interval"), "5m");
+  assert.equal(interleavedTab.accountLoading, false);
+  assert.equal(interleavedTab.snapshotLoading, false);
+  assert.equal(interleavedTab.statusLoading, false);
+  assert.equal(interleavedTab.replayLoading, false);
+  assert.equal(interleavedTab.refs.entrySignals.textContent, "3");
+  assert.notEqual(interleavedTab.refs.spread.textContent, "UNAVAILABLE");
+  assert.match(interleavedTab.refs.mandatoryPrerequisites.innerHTML, /LIVE · PASS/);
+
+  const interleavedNormalFetch = interleavedTab.fetchImpl;
+  let releaseLateFifteenMinuteCandles;
+  const lateFifteenMinuteCandlesReleased = new Promise((resolve) => {
+    releaseLateFifteenMinuteCandles = resolve;
+  });
+  let holdLateFifteenMinuteCandles = true;
+  interleavedTab.fetchImpl = async (url, options) => {
+    if (holdLateFifteenMinuteCandles
+        && url.includes("/api/lighter-crypto/candles")
+        && url.includes("interval=15m")) {
+      holdLateFifteenMinuteCandles = false;
+      await lateFifteenMinuteCandlesReleased;
+    }
+    return interleavedNormalFetch(url, options);
+  };
+  const lateIntervalSwitch = interleavedTab.setChartInterval("15m");
+  assert.equal(interleavedTab.chartLoading, true);
+  interleavedTab.onTabDeactivated();
+  releaseLateFifteenMinuteCandles();
+  assert.equal(await lateIntervalSwitch, false,
+    "a candle success arriving after deactivation is rejected by abort/generation guards");
+  assert.notEqual(interleavedTab.chartDataInterval, "15m");
+  assert.notEqual(interleavedStorageValues.get("skhynix_lighter_micro_interval"), "15m");
+  assert.equal(interleavedTab.readiness.chartMs, null);
+  interleavedTab.destroy();
 
   console.log("Standalone Lighter micro account, chart, interval, lifecycle, and evaluator-lock checks passed");
 }

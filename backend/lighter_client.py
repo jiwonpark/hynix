@@ -1175,8 +1175,9 @@ class LighterClient:
                 price_key = str(row.get("price"))
                 entry = (cls._stream_price(row.get("price")), price_key)
                 if price_key not in levels:
-                    insort(entries, entry)
+                    entries.append(entry)
                 levels[price_key] = dict(row)
+            entries.sort()
             book[side] = levels
             prices[side] = entries
         return book, prices

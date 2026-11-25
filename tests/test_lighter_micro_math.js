@@ -11,6 +11,11 @@ const {
     movingAverageSeries,
     accountUnrealizedPnl,
     accountPayloadUsable,
+    sourceTimestampMilliseconds,
+    sourceAgeMilliseconds,
+    payloadStaleByAge,
+    accountAgeMilliseconds,
+    accountPayloadStale,
     chartPayloadStale,
     replayEntrySignalMarkers,
     usdDisplay,
@@ -182,10 +187,33 @@ assert.equal(accountPayloadUsable({...freshAccount, account_stale: true}), false
 assert.equal(accountUnrealizedPnl({...freshAccount, positions: [{unrealized_pnl: null}]}), null,
   "missing position P&L is not replaced with zero");
 
+assert.equal(sourceTimestampMilliseconds({timestamp_ms: accountTimestamp}), accountTimestamp);
+assert.equal(sourceTimestampMilliseconds({source: {timestamp_ms: accountTimestamp}}), accountTimestamp);
+assert.equal(sourceAgeMilliseconds({timestamp_ms: accountTimestamp}, accountTimestamp + 500), 500);
+assert.equal(payloadStaleByAge({timestamp_ms: accountTimestamp}, accountTimestamp + 500, 500), false,
+  "a quote exactly on its 500 ms freshness boundary remains usable");
+assert.equal(payloadStaleByAge({timestamp_ms: accountTimestamp}, accountTimestamp + 501, 500), true,
+  "a quote one millisecond beyond its 500 ms freshness boundary is stale");
+assert.equal(payloadStaleByAge({}, accountTimestamp, 500), true,
+  "a missing source timestamp fails closed");
+assert.equal(payloadStaleByAge({timestamp_ms: accountTimestamp + 2_001}, accountTimestamp, 500), true,
+  "a source timestamp beyond the bounded future-clock tolerance fails closed");
+assert.equal(accountAgeMilliseconds(freshAccount, accountTimestamp + 15_000), 15_000);
+assert.equal(accountPayloadStale(freshAccount, accountTimestamp + 15_000), false,
+  "an account exactly on its 15 second freshness boundary remains usable");
+assert.equal(accountPayloadStale(freshAccount, accountTimestamp + 15_001), true,
+  "an account one millisecond beyond its freshness boundary is withheld");
+
 const chartPayload = {bars: thirtyBars};
 const latestMs = thirtyBars.at(-1).time * 1000;
 assert.equal(chartPayloadStale(chartPayload, thirtyBars, "1m", latestMs + 120_000), false);
+assert.equal(chartPayloadStale(chartPayload, thirtyBars, "1m", latestMs + 180_000), false,
+  "a chart exactly three selected intervals old remains usable");
+assert.equal(chartPayloadStale(chartPayload, thirtyBars, "1m", latestMs + 180_001), true,
+  "a chart one millisecond beyond three selected intervals is stale");
 assert.equal(chartPayloadStale(chartPayload, thirtyBars, "1m", latestMs + 181_000), true);
+assert.equal(chartPayloadStale(chartPayload, thirtyBars, "1m", latestMs - 2_001), true,
+  "a latest candle beyond the bounded future-clock tolerance fails closed");
 assert.equal(chartPayloadStale({stale: true}, thirtyBars, "1m", latestMs), true);
 
 const markerBars = Array.from({length: 4}, (_, index) => ({time: 1_800_000_000 + index * 60, value: 100 + index}));

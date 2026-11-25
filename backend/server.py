@@ -820,6 +820,7 @@ async def realized_history_worker(refresh):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _lighter_account_refresh_task
     logger.info("Starting HYPERION Trading & Multi-Exchange Telemetry Daemon...")
     logger.info(f"Connecting to Binance ({'TESTNET' if config.USE_TESTNET else 'PRODUCTION'})...")
     if config.BINANCE_API_KEY:
@@ -834,38 +835,42 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("No Upbit Access Key detected (checked .env, arbiter/keys.json, midas/keys.json).")
 
-    await lighter_client.start_streams()
-    await lighter_client.start_micro_streams([1])
-    await crypto_bot.verify_startup()
-    await lighter_crypto_bot.verify_startup()
-    broadcaster_task = asyncio.create_task(account_broadcaster())
-    auto_tranche_task = asyncio.create_task(auto_tranche_worker())
-    upbit_strategy_task = asyncio.create_task(upbit_strategy_worker())
-    upbit_forecast_validation_task = asyncio.create_task(upbit_forecast_validation_worker())
-    lighter_pair_task = asyncio.create_task(lighter_pair_worker())
-    crypto_bot_task = asyncio.create_task(crypto_bot_worker())
-    lighter_crypto_bot_task = asyncio.create_task(lighter_crypto_bot_worker())
-    lighter_micro_task = asyncio.create_task(lighter_micro_worker())
-    history_task = asyncio.create_task(realized_history_worker(_refresh_crypto_history_snapshot))
-    lighter_history_task = asyncio.create_task(realized_history_worker(_refresh_lighter_crypto_history_snapshot))
-    yield
-    broadcaster_task.cancel()
-    auto_tranche_task.cancel()
-    upbit_strategy_task.cancel()
-    upbit_forecast_validation_task.cancel()
-    lighter_pair_task.cancel()
-    crypto_bot_task.cancel()
-    lighter_crypto_bot_task.cancel()
-    lighter_micro_task.cancel()
-    history_task.cancel()
-    lighter_history_task.cancel()
-    await asyncio.gather(
-        lighter_micro_task, history_task, lighter_history_task,
-        return_exceptions=True,
-    )
-    lighter_micro_runtime.flush()
-    await asyncio.gather(binance_client.close(), upbit_client.close(), lighter_client.close(), return_exceptions=True)
-    logger.info("HYPERION Trading Daemon shutdown complete.")
+    background_tasks: List[asyncio.Task] = []
+    try:
+        await lighter_client.start_streams()
+        await lighter_client.start_micro_streams([1])
+        await crypto_bot.verify_startup()
+        await lighter_crypto_bot.verify_startup()
+        background_tasks = [
+            asyncio.create_task(account_broadcaster()),
+            asyncio.create_task(auto_tranche_worker()),
+            asyncio.create_task(upbit_strategy_worker()),
+            asyncio.create_task(upbit_forecast_validation_worker()),
+            asyncio.create_task(lighter_pair_worker()),
+            asyncio.create_task(crypto_bot_worker()),
+            asyncio.create_task(lighter_crypto_bot_worker()),
+            asyncio.create_task(lighter_micro_worker()),
+            asyncio.create_task(realized_history_worker(_refresh_crypto_history_snapshot)),
+            asyncio.create_task(realized_history_worker(_refresh_lighter_crypto_history_snapshot)),
+        ]
+        yield
+    finally:
+        for task in background_tasks:
+            task.cancel()
+        if _lighter_account_refresh_task is not None:
+            _lighter_account_refresh_task.cancel()
+            background_tasks.append(_lighter_account_refresh_task)
+        await asyncio.gather(*background_tasks, return_exceptions=True)
+        _lighter_account_refresh_task = None
+        try:
+            lighter_micro_runtime.flush()
+        except Exception:
+            logger.exception("Failed to flush Lighter micro runtime during shutdown")
+        await asyncio.gather(
+            binance_client.close(), upbit_client.close(), lighter_client.close(),
+            return_exceptions=True,
+        )
+        logger.info("HYPERION Trading Daemon shutdown complete.")
 
 app = FastAPI(
     title="HYPERION // Dual-Leg Arbitrage Daemon",
