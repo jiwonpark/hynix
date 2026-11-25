@@ -807,7 +807,7 @@
       this.snapshotLoading = true;
       this.statusLoading = true;
       this.errors.account = null;
-      this.errors.chart = null;
+      this.setChartError(null);
       this.errors.snapshot = null;
       this.errors.status = null;
       if (this.account) this.account = {...this.account, account_stale: true, refresh_pending: true};
@@ -976,7 +976,7 @@
       const host = this.refs.chartHost;
       const library = this.chartLibrary || root.LightweightCharts;
       if (!host || !library?.createChart) {
-        this.errors.chart = "LightweightCharts renderer unavailable";
+        this.setChartError("LightweightCharts renderer unavailable");
         return false;
       }
       try {
@@ -1009,10 +1009,10 @@
           this.resizeObserver = new ResizeObserverImpl(() => this.resizeChart());
           this.resizeObserver.observe?.(host);
         }
-        this.errors.chart = null;
+        this.setChartError(null);
         return true;
       } catch (error) {
-        this.errors.chart = `Chart renderer unavailable: ${error?.message || error}`;
+        this.setChartError(`Chart renderer unavailable: ${error?.message || error}`);
         this.chart = null;
         this.priceSeries = null;
         this.ma7Series = null;
@@ -1085,7 +1085,7 @@
       this.chartRequest += 1;
       this.chartLoading = true;
       this.chartRendered = false;
-      this.errors.chart = null;
+      this.setChartError(null);
       if (this.chartPayload) {
         this.chartPayload = {
           ...this.chartPayload,
@@ -1360,7 +1360,7 @@
           : !ma7.length ? "MA7 unavailable: fewer than 7 valid candles"
           : !ma24.length ? "MA24 unavailable: fewer than 24 valid candles"
           : null;
-        this.errors.chart = stale ? "BTC candle data is stale" : missingSeries;
+        this.setChartError(stale ? "BTC candle data is stale" : missingSeries);
         this.renderChartMeta();
         if (!this.errors.chart) this.recordChartReady();
         return !this.errors.chart;
@@ -1368,7 +1368,7 @@
         if (request !== this.chartRequest || interval !== this.interval) return false;
         if (signal?.aborted) return false;
         this.chartLoading = false;
-        this.errors.chart = error?.message || String(error);
+        this.setChartError(error?.message || String(error));
         if (this.chartPayload) this.chartPayload = {...this.chartPayload, stale: true, refresh_pending: false};
         this.renderChartMeta();
         return false;
@@ -1609,6 +1609,11 @@
 
     setText(ref, value) {
       if (this.refs[ref]) this.refs[ref].textContent = value;
+    }
+
+    setChartError(message) {
+      this.errors.chart = message || null;
+      this.renderErrors();
     }
 
     renderAll() {

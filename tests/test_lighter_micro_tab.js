@@ -469,6 +469,9 @@ async function run() {
     }
     return normalIntervalFetch(url, options);
   };
+  tab.errors.chart = "BTC candle data is stale";
+  tab.renderErrors();
+  assert.match(tab.refs.error.textContent, /chart: BTC candle data is stale/);
   const fiveMinuteSwitch = tab.setChartInterval("5m");
   assert.equal(tab.interval, "5m");
   assert.equal(tab.chartLoading, true);
@@ -494,6 +497,8 @@ async function run() {
   assert.equal(seriesByTitle.get("BTC").data.at(-1).value, 60_825);
   assert.equal(seriesByTitle.get("MA7").data.length, 24);
   assert.equal(seriesByTitle.get("MA24").data.length, 7);
+  assert.doesNotMatch(tab.refs.error.textContent, /chart:/,
+    "a successful interval recovery clears the aggregate chart error immediately");
   assert.ok(tab.entryMarkers.every((marker) => marker.time % 300 === 0),
     "interval change remaps signals to containing 5m candles");
 
