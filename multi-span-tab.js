@@ -29,7 +29,25 @@
     { id: "ma20_diff", label: "MA20 diff", title: "MA20 Δ", key: "ma20_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "MA20 1st difference (slope)" },
     { id: "ma50_diff", label: "MA50 diff", title: "MA50 Δ", key: "ma50_diff", defaultEntrySign: "+", defaultExitSign: "-", desc: "MA50 1st difference (slope)" },
     { id: "rsi", label: "RSI", title: "RSI", key: "rsi", defaultEntrySign: "-", defaultExitSign: "+", desc: "RSI zone using the configured period and thresholds" },
+    {
+      id: "ma_ride_hang",
+      label: "MA20 ride / hang",
+      entryLabel: "MA20 ride",
+      exitLabel: "MA20 hang",
+      title: "MA20 ride / hang",
+      key: "ma_ride_hang",
+      defaultEntrySign: "+",
+      defaultExitSign: "-",
+      fixedDirection: true,
+      desc: "Completed candles ride above a rising MA20 for longs or hang below a falling MA20 for shorts",
+    },
   ];
+
+  const strategyRuleLabel = (rule, isEntry) => {
+    if (!rule) return "Condition";
+    if (rule.id === "ma_ride_hang") return isEntry ? rule.entryLabel : rule.exitLabel;
+    return rule.label;
+  };
 
   const MS_STRATEGY_STORAGE_KEY = "skhynix_ms_strategy_settings_v1";
 
@@ -343,6 +361,7 @@
       this.rsiLower = {};     // span -> oversold threshold series
       this.rsiData = {};      // span -> { period, values, byTime }
       this.rsiCache = {};     // span -> Map(period/signature -> calculated RSI)
+      this.maRideCache = {};  // span -> Map(settings/signature -> calculated MA ride/hang states)
       this.candlesData = {}; // span -> array of { time, open, high, low, close, volume }
       this.strategyReplayResult = null; // completed-candle all-MACD-H paper replay
       this.entrySignals = []; // position-independent entry-condition matches
@@ -569,10 +588,10 @@
             <button type="button" id="msStrategyPresetAllFullWave" aria-pressed="false" title="Enable all MACD indicators across all 5 timeframes">All 5 Full Wave</button>
             <button type="button" id="msStrategyPresetRsi" aria-pressed="false" title="Use completed 5m candles with 5m and 15m RSI oversold entries and overbought exits">RSI 30/70</button>
           </div>
-          <strong style="font-size:12px;color:#0f172a;">Multi-Span MACD + RSI Strategy Test</strong>
+          <strong style="font-size:12px;color:#0f172a;">Multi-Span MACD + RSI + MA Ride/Hang Strategy Test</strong>
           <span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;padding:2px 6px;font-size:10px;font-weight:800;">PAPER REPLAY ONLY</span>
         </div>
-        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">ENTRY and EXIT match when all enabled rules across configured timeframes pass on completed signal-clock candles. Toggle MACD/MA/RSI rules and their direction independently. RSI 30/70 uses Wilder RSI on 5m+15m; RSI rules are completed-candle only. No orders are sent.</small>
+        <small style="display:block;color:#64748b;margin-bottom:var(--terminal-space-min);">ENTRY and EXIT match when all enabled rules across configured timeframes pass on completed signal-clock candles. Toggle MACD/MA/RSI rules independently. MA20 Ride is fixed LONG; MA20 Hang is fixed SHORT. RSI and MA ride/hang rules are completed-candle only. No orders are sent.</small>
         <div class="strategyReplaySetup" aria-label="Paper replay setup">
           <strong style="color:#475569;">Replay setup</strong>
           <label>Signal clock
@@ -602,6 +621,35 @@
             <input id="msStrategyRsiExitThreshold" type="number" value="70" min="0" max="100" step="0.1" style="width:58px;border-color:#fca5a5;">
           </label>
         </div>
+        <div class="strategyReplaySetup" aria-label="MA ride and hang detector" style="margin-top:var(--terminal-space-min);">
+          <strong style="color:#475569;">MA20 ride/hang detector</strong>
+          <label>ATR period
+            <input id="msStrategyMaRideAtrPeriod" aria-label="MA ride ATR period" type="number" value="14" min="2" max="200" step="1" style="width:54px;">
+          </label>
+          <label>Slope bars
+            <input id="msStrategyMaRideSlopeLookback" aria-label="MA ride slope lookback bars" type="number" value="3" min="1" max="50" step="1" style="width:48px;">
+          </label>
+          <label>Min slope ATR
+            <input id="msStrategyMaRideMinSlopeAtr" aria-label="MA ride minimum slope in ATR" type="number" value="0.10" min="0" max="10" step="0.01" style="width:58px;">
+          </label>
+          <label>Side bars
+            <input id="msStrategyMaRideSideLookback" aria-label="MA ride price side lookback bars" type="number" value="5" min="2" max="50" step="1" style="width:48px;">
+          </label>
+          <label>Required closes
+            <input id="msStrategyMaRideRequiredCloses" aria-label="MA ride required closes on the trend side" type="number" value="4" min="1" max="50" step="1" style="width:48px;">
+          </label>
+          <label>Touch bars
+            <input id="msStrategyMaRideTouchLookback" aria-label="MA ride touch lookback bars" type="number" value="3" min="1" max="50" step="1" style="width:48px;">
+          </label>
+          <label>Touch band ATR
+            <input id="msStrategyMaRideTouchToleranceAtr" aria-label="MA ride touch distance in ATR" type="number" value="0.15" min="0" max="5" step="0.01" style="width:58px;">
+          </label>
+          <label style="display:flex;flex-direction:row;align-items:center;gap:5px;">
+            <input id="msStrategyMaRideRequireMa50" aria-label="Require MA20 and MA50 trend order" type="checkbox" checked>
+            Require MA20/MA50 order
+          </label>
+        </div>
+        <small style="display:block;color:#64748b;margin-top:2px;">LONG Ride: closes persist above a rising MA20 and recently touch it from above. SHORT Hang: closes persist below a falling MA20 and recently reject it from below. Distances and slope are normalized by Wilder ATR.</small>
         <div id="msStrategySummary" class="executionChartSecondaryStatus" style="height:auto;min-height:0;white-space:normal;margin:var(--terminal-space-min) 0 0;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">Awaiting completed chart data…</div>
         <div id="msStrategyConditionGroups" class="terminalConditionGroups" aria-label="Paper replay trading conditions" style="display:block;">
           <section class="terminalConditionGroup" aria-labelledby="msStrategyUnifiedHeading" style="width:100%;">
@@ -626,21 +674,22 @@
                   return MACD_RULES.map((rule) => {
                     const isDefault = ["5m", "15m"].includes(s.id) && rule.id === "macd_h";
                     const sign = isEntry ? rule.defaultEntrySign : rule.defaultExitSign;
+                    const ruleLabel = strategyRuleLabel(rule, isEntry);
                     const isCross = rule.id === "macd_h_cross" || rule.id === "macd_h_diff_cross";
                     const defaultThreshold = rule.id === "rsi" ? (isEntry ? 30 : 70) : 0;
-                    const op = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : `${sign === "+" ? ">" : "<"} ${defaultThreshold}`;
+                    const op = rule.fixedDirection ? `(${isEntry ? "LONG" : "SHORT"})` : (isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : `${sign === "+" ? ">" : "<"} ${defaultThreshold}`);
                     const signBtnText = isCross ? (sign === "+" ? "+ (−→+)" : "− (+→−)") : (sign === "+" ? "+ (>)" : "− (<)");
                     return `
                       <div class="condRow${isDefault ? "" : " disabled-cond"}" data-span="${s.id}" data-rule="${rule.id}" data-kind="${kind}">
-                        <label class="toggleSwitch" title="Turn ${s.id} ${rule.label} rule ON/OFF">
-                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="${kind}" aria-label="Use ${s.id} ${rule.label} for paper ${isEntry ? "long" : "short"}" type="checkbox"${isDefault ? " checked" : ""}>
+                        <label class="toggleSwitch" title="Turn ${s.id} ${ruleLabel} rule ON/OFF">
+                          <input class="msStrategySpanToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="${kind}" aria-label="Use ${s.id} ${ruleLabel} for paper ${isEntry ? "long" : "short"}" type="checkbox"${isDefault ? " checked" : ""}>
                           <span class="toggleSlider"></span>
                         </label>
                         <span class="condLabel">
-                          <strong style="color:${s.color};">${s.id} ${rule.label} ${op}</strong>
-                          <button type="button" class="condSignToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="${kind}" data-sign="${sign}" title="Click to toggle condition between + and -" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${sign === '+' ? '#166534' : '#991b1b'};">
+                          <strong style="color:${s.color};">${s.id} ${ruleLabel} ${op}</strong>
+                          ${rule.fixedDirection ? "" : `<button type="button" class="condSignToggle" data-span="${s.id}" data-rule="${rule.id}" data-kind="${kind}" data-sign="${sign}" title="Click to toggle condition between + and -" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${sign === '+' ? '#166534' : '#991b1b'};">
                             ${signBtnText}
-                          </button>
+                          </button>`}
                           <small style="display:block;color:#64748b;">PAPER · awaiting data</small>
                         </span>
                         <span class="condValue"><strong style="color:#64748b;">—</strong></span>
@@ -680,7 +729,7 @@
             </div>
           </section>
         </div>
-        <small id="msStrategySource" style="display:block;color:#64748b;">Source: completed Binance candles · MACD(12,26,9) + Wilder RSI(14) · loaded chart history only</small>
+        <small id="msStrategySource" style="display:block;color:#64748b;">Source: completed Binance candles · MACD(12,26,9) + Wilder RSI(14) + MA20 Ride/Hang with Wilder ATR(14) · loaded chart history only</small>
       `;
     }
 
@@ -3389,6 +3438,162 @@
       return res;
     }
 
+    calculateAtr(data, period = 14) {
+      const candles = Array.isArray(data) ? data : [];
+      const p = Math.max(2, Math.min(200, Math.round(Number(period) || 14)));
+      if (candles.length < p) return [];
+      const trueRanges = candles.map((candle, index) => {
+        const close = Number(candle?.close);
+        const highRaw = Number(candle?.high);
+        const lowRaw = Number(candle?.low);
+        const high = Number.isFinite(highRaw) ? highRaw : close;
+        const low = Number.isFinite(lowRaw) ? lowRaw : close;
+        const prevClose = index > 0 ? Number(candles[index - 1]?.close) : close;
+        if (![high, low, prevClose].every(Number.isFinite)) return null;
+        return Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+      });
+      if (trueRanges.slice(0, p).some((value) => !Number.isFinite(value))) return [];
+      let atr = trueRanges.slice(0, p).reduce((sum, value) => sum + value, 0) / p;
+      const result = [{ time: Number(candles[p - 1].time), value: +atr.toFixed(8) }];
+      for (let i = p; i < candles.length; i += 1) {
+        if (!Number.isFinite(trueRanges[i])) continue;
+        atr = ((atr * (p - 1)) + trueRanges[i]) / p;
+        result.push({ time: Number(candles[i].time), value: +atr.toFixed(8) });
+      }
+      return result;
+    }
+
+    getMaRideDataForSpan(spanId, rawSettings = {}) {
+      const candles = this.candlesData?.[spanId] || [];
+      const atrPeriod = Math.max(2, Math.min(200, Math.round(Number(rawSettings.ma_ride_atr_period) || 14)));
+      const slopeLookback = Math.max(1, Math.min(50, Math.round(Number(rawSettings.ma_ride_slope_lookback) || 3)));
+      const minSlopeAtr = Math.max(0, Math.min(10, Number.isFinite(Number(rawSettings.ma_ride_min_slope_atr)) ? Number(rawSettings.ma_ride_min_slope_atr) : 0.10));
+      const sideLookback = Math.max(2, Math.min(50, Math.round(Number(rawSettings.ma_ride_side_lookback) || 5)));
+      const requiredCloses = Math.max(1, Math.min(50, Math.round(Number(rawSettings.ma_ride_required_closes) || 4)));
+      const touchLookback = Math.max(1, Math.min(50, Math.round(Number(rawSettings.ma_ride_touch_lookback) || 3)));
+      const touchToleranceAtr = Math.max(0, Math.min(5, Number.isFinite(Number(rawSettings.ma_ride_touch_tolerance_atr)) ? Number(rawSettings.ma_ride_touch_tolerance_atr) : 0.15));
+      const requireMa50 = rawSettings.ma_ride_require_ma50 !== false;
+      const first = candles[0];
+      const last = candles[candles.length - 1];
+      const signature = [
+        atrPeriod, slopeLookback, minSlopeAtr, sideLookback, requiredCloses,
+        touchLookback, touchToleranceAtr, requireMa50 ? 1 : 0,
+        candles.length, Number(first?.time) || 0, Number(first?.close) || 0,
+        Number(last?.time) || 0, Number(last?.open) || 0, Number(last?.high) || 0,
+        Number(last?.low) || 0, Number(last?.close) || 0,
+      ].join(":");
+      if (!this.maRideCache[spanId]) this.maRideCache[spanId] = new Map();
+      const cached = this.maRideCache[spanId].get(signature);
+      if (cached) return cached;
+
+      const ma20ByTime = new Map(this.calculateSma(candles, 20).map((point) => [Number(point.time), point]));
+      const ma50ByTime = new Map(this.calculateSma(candles, 50).map((point) => [Number(point.time), point]));
+      const atrByTime = new Map(this.calculateAtr(candles, atrPeriod).map((point) => [Number(point.time), point]));
+      const values = [];
+
+      for (let i = 0; i < candles.length; i += 1) {
+        const candle = candles[i];
+        const time = Number(candle?.time);
+        const close = Number(candle?.close);
+        const ma20 = Number(ma20ByTime.get(time)?.value);
+        const ma50Point = ma50ByTime.get(time);
+        const ma50 = Number(ma50Point?.value);
+        const atr = Number(atrByTime.get(time)?.value);
+        const slopeIndex = i - slopeLookback;
+        const priorTime = slopeIndex >= 0 ? Number(candles[slopeIndex]?.time) : NaN;
+        const priorMa20 = Number(ma20ByTime.get(priorTime)?.value);
+        if (![time, close, ma20, atr, priorMa20].every(Number.isFinite) || atr <= 0) continue;
+        if (requireMa50 && !Number.isFinite(ma50)) continue;
+
+        const sideStart = i - sideLookback + 1;
+        const touchStart = i - touchLookback + 1;
+        if (sideStart < 0 || touchStart < 0) continue;
+        let aboveCount = 0;
+        let belowCount = 0;
+        let sideReady = true;
+        for (let j = sideStart; j <= i; j += 1) {
+          const sideCandle = candles[j];
+          const sideMa = Number(ma20ByTime.get(Number(sideCandle?.time))?.value);
+          const sideClose = Number(sideCandle?.close);
+          if (![sideMa, sideClose].every(Number.isFinite)) {
+            sideReady = false;
+            break;
+          }
+          if (sideClose > sideMa) aboveCount += 1;
+          if (sideClose < sideMa) belowCount += 1;
+        }
+        if (!sideReady) continue;
+
+        let rideTouchDistanceAtr = Infinity;
+        let hangTouchDistanceAtr = Infinity;
+        let touchReady = true;
+        for (let j = touchStart; j <= i; j += 1) {
+          const touchCandle = candles[j];
+          const touchTime = Number(touchCandle?.time);
+          const touchMa = Number(ma20ByTime.get(touchTime)?.value);
+          const touchAtr = Number(atrByTime.get(touchTime)?.value);
+          const touchClose = Number(touchCandle?.close);
+          const touchLow = Number.isFinite(Number(touchCandle?.low)) ? Number(touchCandle.low) : touchClose;
+          const touchHigh = Number.isFinite(Number(touchCandle?.high)) ? Number(touchCandle.high) : touchClose;
+          if (![touchMa, touchAtr, touchClose, touchLow, touchHigh].every(Number.isFinite) || touchAtr <= 0) {
+            touchReady = false;
+            break;
+          }
+          if (touchClose > touchMa) rideTouchDistanceAtr = Math.min(rideTouchDistanceAtr, Math.abs(touchLow - touchMa) / touchAtr);
+          if (touchClose < touchMa) hangTouchDistanceAtr = Math.min(hangTouchDistanceAtr, Math.abs(touchHigh - touchMa) / touchAtr);
+        }
+        if (!touchReady) continue;
+
+        const slopeAtr = (ma20 - priorMa20) / atr;
+        const ma50LongPass = !requireMa50 || ma20 > ma50;
+        const ma50ShortPass = !requireMa50 || ma20 < ma50;
+        const ridePass = close > ma20
+          && slopeAtr >= minSlopeAtr
+          && aboveCount >= requiredCloses
+          && rideTouchDistanceAtr <= touchToleranceAtr
+          && ma50LongPass;
+        const hangPass = close < ma20
+          && slopeAtr <= -minSlopeAtr
+          && belowCount >= requiredCloses
+          && hangTouchDistanceAtr <= touchToleranceAtr
+          && ma50ShortPass;
+        values.push({
+          time,
+          value: ridePass ? 1 : (hangPass ? -1 : 0),
+          ma20,
+          ma50: Number.isFinite(ma50) ? ma50 : null,
+          atr,
+          ma_ride_slope_atr: +slopeAtr.toFixed(6),
+          ma_ride_above_count: aboveCount,
+          ma_ride_below_count: belowCount,
+          ma_ride_ride_touch_distance_atr: Number.isFinite(rideTouchDistanceAtr) ? +rideTouchDistanceAtr.toFixed(6) : null,
+          ma_ride_hang_touch_distance_atr: Number.isFinite(hangTouchDistanceAtr) ? +hangTouchDistanceAtr.toFixed(6) : null,
+          ma_ride_ma50_long_pass: ma50LongPass,
+          ma_ride_ma50_short_pass: ma50ShortPass,
+          ma_ride_long: ridePass,
+          ma_hang_short: hangPass,
+        });
+      }
+
+      const result = {
+        values,
+        byTime: new Map(values.map((point) => [Number(point.time), point])),
+        settings: {
+          atr_period: atrPeriod,
+          slope_lookback: slopeLookback,
+          min_slope_atr: minSlopeAtr,
+          side_lookback: sideLookback,
+          required_closes: requiredCloses,
+          touch_lookback: touchLookback,
+          touch_tolerance_atr: touchToleranceAtr,
+          require_ma50: requireMa50,
+        },
+      };
+      this.maRideCache[spanId].clear();
+      this.maRideCache[spanId].set(signature, result);
+      return result;
+    }
+
     calculateRsi(data, period = 14) {
       const candles = Array.isArray(data) ? data : [];
       const p = Math.max(2, Math.min(200, Math.round(Number(period) || 14)));
@@ -3538,6 +3743,14 @@
           rsi_period: s.rsi_period,
           rsi_entry_threshold: s.rsi_entry_threshold,
           rsi_exit_threshold: s.rsi_exit_threshold,
+          ma_ride_atr_period: s.ma_ride_atr_period,
+          ma_ride_slope_lookback: s.ma_ride_slope_lookback,
+          ma_ride_min_slope_atr: s.ma_ride_min_slope_atr,
+          ma_ride_side_lookback: s.ma_ride_side_lookback,
+          ma_ride_required_closes: s.ma_ride_required_closes,
+          ma_ride_touch_lookback: s.ma_ride_touch_lookback,
+          ma_ride_touch_tolerance_atr: s.ma_ride_touch_tolerance_atr,
+          ma_ride_require_ma50: s.ma_ride_require_ma50,
           initial_capital: s.initial_capital,
           fee_bps: s.fee_bps,
           entry_rules: s.entry_rules,
@@ -3586,6 +3799,22 @@
       if (Number.isFinite(Number(saved.rsi_exit_threshold))) {
         const exitEl = document.getElementById("msStrategyRsiExitThreshold");
         if (exitEl) exitEl.value = String(saved.rsi_exit_threshold);
+      }
+      const restoreNumber = (field, id) => {
+        if (!Number.isFinite(Number(saved[field]))) return;
+        const el = document.getElementById(id);
+        if (el) el.value = String(saved[field]);
+      };
+      restoreNumber("ma_ride_atr_period", "msStrategyMaRideAtrPeriod");
+      restoreNumber("ma_ride_slope_lookback", "msStrategyMaRideSlopeLookback");
+      restoreNumber("ma_ride_min_slope_atr", "msStrategyMaRideMinSlopeAtr");
+      restoreNumber("ma_ride_side_lookback", "msStrategyMaRideSideLookback");
+      restoreNumber("ma_ride_required_closes", "msStrategyMaRideRequiredCloses");
+      restoreNumber("ma_ride_touch_lookback", "msStrategyMaRideTouchLookback");
+      restoreNumber("ma_ride_touch_tolerance_atr", "msStrategyMaRideTouchToleranceAtr");
+      if (typeof saved.ma_ride_require_ma50 === "boolean") {
+        const confirmEl = document.getElementById("msStrategyMaRideRequireMa50");
+        if (confirmEl) confirmEl.checked = saved.ma_ride_require_ma50;
       }
 
       if (typeof document.querySelectorAll !== "function") return true;
@@ -3666,11 +3895,14 @@
             const kind = input.getAttribute("data-kind") || "entry";
             const row = input.closest?.(".condRow");
             const signBtn = row?.querySelector?.(".condSignToggle");
-            const sign = signBtn?.getAttribute("data-sign")
+            const ruleDef = MACD_RULES.find((rule) => rule.id === ruleId);
+            const sign = ruleDef?.fixedDirection
+              ? (kind === "entry" ? ruleDef.defaultEntrySign : ruleDef.defaultExitSign)
+              : (signBtn?.getAttribute("data-sign")
               || ruleSigns[`${kind}:${spanId}:${ruleId}`]
               || (kind === "entry"
                 ? (ruleId === "macd_h" || ruleId === "macd_s" ? "-" : "+")
-                : (ruleId === "macd_h" || ruleId === "macd_s" ? "+" : "-"));
+                : (ruleId === "macd_h" || ruleId === "macd_s" ? "+" : "-")));
             if (validSpans.has(spanId)) {
               ruleSigns[`${kind}:${spanId}:${ruleId}`] = sign;
             }
@@ -3722,6 +3954,20 @@
         rsi_period: Math.round(readNumber("msStrategyRsiPeriod", Number.isFinite(Number(saved?.rsi_period)) ? Number(saved.rsi_period) : 14, 2, 200)),
         rsi_entry_threshold: readNumber("msStrategyRsiEntryThreshold", Number.isFinite(Number(saved?.rsi_entry_threshold)) ? Number(saved.rsi_entry_threshold) : 30, 0, 100),
         rsi_exit_threshold: readNumber("msStrategyRsiExitThreshold", Number.isFinite(Number(saved?.rsi_exit_threshold)) ? Number(saved.rsi_exit_threshold) : 70, 0, 100),
+        ma_ride_atr_period: Math.round(readNumber("msStrategyMaRideAtrPeriod", Number.isFinite(Number(saved?.ma_ride_atr_period)) ? Number(saved.ma_ride_atr_period) : 14, 2, 200)),
+        ma_ride_slope_lookback: Math.round(readNumber("msStrategyMaRideSlopeLookback", Number.isFinite(Number(saved?.ma_ride_slope_lookback)) ? Number(saved.ma_ride_slope_lookback) : 3, 1, 50)),
+        ma_ride_min_slope_atr: readNumber("msStrategyMaRideMinSlopeAtr", Number.isFinite(Number(saved?.ma_ride_min_slope_atr)) ? Number(saved.ma_ride_min_slope_atr) : 0.10, 0, 10),
+        ma_ride_side_lookback: Math.round(readNumber("msStrategyMaRideSideLookback", Number.isFinite(Number(saved?.ma_ride_side_lookback)) ? Number(saved.ma_ride_side_lookback) : 5, 2, 50)),
+        ma_ride_required_closes: Math.round(readNumber("msStrategyMaRideRequiredCloses", Number.isFinite(Number(saved?.ma_ride_required_closes)) ? Number(saved.ma_ride_required_closes) : 4, 1, 50)),
+        ma_ride_touch_lookback: Math.round(readNumber("msStrategyMaRideTouchLookback", Number.isFinite(Number(saved?.ma_ride_touch_lookback)) ? Number(saved.ma_ride_touch_lookback) : 3, 1, 50)),
+        ma_ride_touch_tolerance_atr: readNumber("msStrategyMaRideTouchToleranceAtr", Number.isFinite(Number(saved?.ma_ride_touch_tolerance_atr)) ? Number(saved.ma_ride_touch_tolerance_atr) : 0.15, 0, 5),
+        ma_ride_require_ma50: (() => {
+          if (typeof document !== "undefined" && typeof document.getElementById === "function") {
+            const el = document.getElementById("msStrategyMaRideRequireMa50");
+            if (el && typeof el.checked === "boolean") return el.checked;
+          }
+          return typeof saved?.ma_ride_require_ma50 === "boolean" ? saved.ma_ride_require_ma50 : true;
+        })(),
         initial_capital: readNumber("msStrategyCapital", Number.isFinite(Number(saved?.initial_capital)) ? Number(saved.initial_capital) : 10000, 1, 1e12),
         fee_bps: readNumber("msStrategyFeeBps", Number.isFinite(Number(saved?.fee_bps)) ? Number(saved.fee_bps) : 5, 0, 1000),
       };
@@ -3767,7 +4013,7 @@
             }
           }
         } else if (isFullWave) {
-          input.checked = enabled.has(spanId) && ruleId !== "rsi";
+          input.checked = enabled.has(spanId) && ruleId !== "rsi" && ruleId !== "ma_ride_hang";
         } else {
           input.checked = enabled.has(spanId) && ruleId === "macd_h";
         }
@@ -3793,15 +4039,18 @@
       const enabled = [...(settings?.enabled_spans || [])].sort().join(",");
       const activeRules = [...(settings?.entry_rules || []), ...(settings?.exit_rules || [])];
       const isRsi = activeRules.length > 0 && activeRules.every((r) => r.rule === "rsi");
-      const hasFullWave = !isRsi && (settings?.entry_rules || []).some((r) => r.rule !== "macd_h");
+      const isOnlyMacdH = activeRules.length > 0 && activeRules.every((r) => r.rule === "macd_h");
+      const hasFullWave = !isRsi
+        && !activeRules.some((r) => r.rule === "ma_ride_hang")
+        && activeRules.some((r) => r.rule !== "macd_h");
       const setState = (id, active) => {
         const button = document.getElementById(id);
         if (!button) return;
         button.setAttribute("aria-pressed", active ? "true" : "false");
         button.classList.toggle("isActive", active);
       };
-      setState("msStrategyPresetQuick", !isRsi && !hasFullWave && settings?.clock_span === "5m" && enabled === "15m,5m");
-      setState("msStrategyPresetAll", !isRsi && !hasFullWave && settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
+      setState("msStrategyPresetQuick", isOnlyMacdH && settings?.clock_span === "5m" && enabled === "15m,5m");
+      setState("msStrategyPresetAll", isOnlyMacdH && settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
       setState("msStrategyPresetFullWave", hasFullWave && settings?.clock_span === "5m" && enabled === "15m,5m");
       setState("msStrategyPresetAllFullWave", hasFullWave && settings?.clock_span === "1s" && enabled === "15m,1d,1h,1s,5m");
       setState("msStrategyPresetRsi", isRsi && settings?.clock_span === "5m" && enabled === "15m,5m");
@@ -3966,10 +4215,35 @@
       };
     }
 
+    findCompletedMaRideAt(spanId, decisionTime, settings = {}) {
+      const data = this.getMaRideDataForSpan(spanId, settings)?.values || [];
+      const spanSec = SPANS.find((span) => span.id === spanId)?.sec || 1;
+      let low = 0;
+      let high = data.length - 1;
+      let best = null;
+      while (low <= high) {
+        const mid = (low + high) >> 1;
+        const point = data[mid];
+        if (Number(point.time) + spanSec <= Number(decisionTime)) {
+          best = point;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      if (!best) return null;
+      return {
+        ...best,
+        completed_time: Number(best.time) + spanSec,
+        signal_basis: "completed",
+      };
+    }
+
     findCompletedStrategyPointAt(spanId, decisionTime, settings, spanRules = []) {
       const rules = Array.isArray(spanRules) ? spanRules : [];
       const needsRsi = rules.some((rule) => rule.rule === "rsi");
-      const needsMacd = rules.some((rule) => rule.rule !== "rsi");
+      const needsMaRide = rules.some((rule) => rule.rule === "ma_ride_hang");
+      const needsMacd = rules.some((rule) => rule.rule !== "rsi" && rule.rule !== "ma_ride_hang");
       let point = null;
       if (needsMacd) {
         point = this.findCompletedHistogramAt(spanId, decisionTime, settings?.signal_basis || "completed");
@@ -3980,6 +4254,12 @@
         if (!rsiPoint) return null;
         if (point && Number(point.time) !== Number(rsiPoint.time)) return null;
         point = point ? { ...point, rsi: rsiPoint.rsi } : rsiPoint;
+      }
+      if (needsMaRide) {
+        const maRidePoint = this.findCompletedMaRideAt(spanId, decisionTime, settings);
+        if (!maRidePoint) return null;
+        if (point && Number(point.time) !== Number(maRidePoint.time)) return null;
+        point = point ? { ...point, ...maRidePoint } : maRidePoint;
       }
       return point;
     }
@@ -3995,6 +4275,9 @@
         const cross = point.hist_diff_cross;
         if (cross === null || cross === undefined || !Number.isFinite(Number(cross))) return false;
         return rule.sign === "+" ? Number(cross) === 1 : Number(cross) === -1;
+      }
+      if (rule.rule === "ma_ride_hang") {
+        return isEntry ? point.ma_ride_long === true : point.ma_hang_short === true;
       }
       let val = null;
       if (rule.rule === "macd_h") val = point.histogram ?? point.value;
@@ -4077,6 +4360,14 @@
       const rsiPeriod = Math.max(2, Math.min(200, Math.round(Number(rawSettings.rsi_period) || 14)));
       const rsiEntryThreshold = Math.max(0, Math.min(100, Number.isFinite(Number(rawSettings.rsi_entry_threshold)) ? Number(rawSettings.rsi_entry_threshold) : 30));
       const rsiExitThreshold = Math.max(0, Math.min(100, Number.isFinite(Number(rawSettings.rsi_exit_threshold)) ? Number(rawSettings.rsi_exit_threshold) : 70));
+      const maRideAtrPeriod = Math.max(2, Math.min(200, Math.round(Number(rawSettings.ma_ride_atr_period) || 14)));
+      const maRideSlopeLookback = Math.max(1, Math.min(50, Math.round(Number(rawSettings.ma_ride_slope_lookback) || 3)));
+      const maRideMinSlopeAtr = Math.max(0, Math.min(10, Number.isFinite(Number(rawSettings.ma_ride_min_slope_atr)) ? Number(rawSettings.ma_ride_min_slope_atr) : 0.10));
+      const maRideSideLookback = Math.max(2, Math.min(50, Math.round(Number(rawSettings.ma_ride_side_lookback) || 5)));
+      const maRideRequiredCloses = Math.max(1, Math.min(50, Math.round(Number(rawSettings.ma_ride_required_closes) || 4)));
+      const maRideTouchLookback = Math.max(1, Math.min(50, Math.round(Number(rawSettings.ma_ride_touch_lookback) || 3)));
+      const maRideTouchToleranceAtr = Math.max(0, Math.min(5, Number.isFinite(Number(rawSettings.ma_ride_touch_tolerance_atr)) ? Number(rawSettings.ma_ride_touch_tolerance_atr) : 0.15));
+      const maRideRequireMa50 = rawSettings.ma_ride_require_ma50 !== false;
       const initialCapital = Math.max(1, Number(rawSettings.initial_capital) || 10000);
       const feeBps = Math.max(0, Math.min(1000, Number(rawSettings.fee_bps) || 0));
 
@@ -4095,11 +4386,14 @@
       const allRules = [...entryRules, ...exitRules];
       const activeSpans = [...new Set(allRules.map((r) => r.span))];
       const usesRsi = allRules.some((rule) => rule.rule === "rsi");
-      const usesMacd = allRules.some((rule) => rule.rule !== "rsi");
+      const usesMaRide = allRules.some((rule) => rule.rule === "ma_ride_hang");
+      const usesMacd = allRules.some((rule) => rule.rule !== "rsi" && rule.rule !== "ma_ride_hang");
       const settings = {
-        strategy_mode: usesRsi && !usesMacd
+        strategy_mode: usesMaRide && !usesRsi && !usesMacd
+          ? "ma_ride_hang"
+          : (usesRsi && !usesMacd && !usesMaRide
           ? "all_rsi_reversion"
-          : (usesRsi ? "multi_indicator_confluence" : "all_macd_histogram_contrarian"),
+          : ((usesRsi || usesMaRide) ? "multi_indicator_confluence" : "all_macd_histogram_contrarian")),
         clock_span: clockSpan,
         signal_basis: signalBasis,
         enabled_spans: activeSpans,
@@ -4111,6 +4405,14 @@
         rsi_period: rsiPeriod,
         rsi_entry_threshold: rsiEntryThreshold,
         rsi_exit_threshold: rsiExitThreshold,
+        ma_ride_atr_period: maRideAtrPeriod,
+        ma_ride_slope_lookback: maRideSlopeLookback,
+        ma_ride_min_slope_atr: maRideMinSlopeAtr,
+        ma_ride_side_lookback: maRideSideLookback,
+        ma_ride_required_closes: maRideRequiredCloses,
+        ma_ride_touch_lookback: maRideTouchLookback,
+        ma_ride_touch_tolerance_atr: maRideTouchToleranceAtr,
+        ma_ride_require_ma50: maRideRequireMa50,
         initial_capital: initialCapital,
         fee_bps: feeBps,
       };
@@ -4148,6 +4450,12 @@
       }
       if (usesRsi && signalBasis === "parabolic") {
         return emptyResult("RSI replay uses completed candles only; switch Signal basis to Completed (actual t).");
+      }
+      if (usesMaRide && maRideRequiredCloses > maRideSideLookback) {
+        return emptyResult("MA ride/hang required closes cannot exceed the price-side lookback.");
+      }
+      if (usesMaRide && signalBasis === "parabolic") {
+        return emptyResult("MA ride/hang replay uses completed candles only; switch Signal basis to Completed (actual t).");
       }
 
       const clockSec = SPANS.find((s) => s.id === clockSpan)?.sec || 1;
@@ -4221,7 +4529,7 @@
             price,
             side: 1,
             histograms,
-            source: "all_macd_rules",
+            source: "all_strategy_rules",
           });
         }
         if (sellPass) {
@@ -4231,7 +4539,7 @@
             price,
             side: -1,
             histograms,
-            source: "all_macd_rules",
+            source: "all_strategy_rules",
           });
         }
 
@@ -4274,7 +4582,7 @@
       const winningTrades = trades.filter((trade) => trade.pnl > 0).length;
       return {
         settings,
-        error: evaluatedCandles ? null : "No clock candle has completed MACD-H data for every enabled span.",
+        error: evaluatedCandles ? null : "No clock candle has completed data for every enabled strategy condition.",
         span_matches: spanMatches,
         entry_signals: entrySignals,
         exit_signals: exitSignals,
@@ -4862,6 +5170,7 @@
 
       const computeRowState = (span, rule, kind, rulesMap) => {
         const isEntry = kind === "entry";
+        const ruleLabel = strategyRuleLabel(rule, isEntry);
         const ruleKey = `${span.id}:${rule.id}`;
         const activeRule = rulesMap.get(ruleKey);
         const isEnabled = Boolean(activeRule);
@@ -4885,16 +5194,21 @@
           else if (rule.id === "ma20_diff") val = point.ma20_diff;
           else if (rule.id === "ma50_diff") val = point.ma50_diff;
           else if (rule.id === "rsi") val = point.rsi;
+          else if (rule.id === "ma_ride_hang") val = isEntry ? point.ma_ride_long : point.ma_hang_short;
         }
 
-        const signLabel = isCross
+        const signLabel = rule.fixedDirection
+          ? (isEntry ? "LONG only" : "SHORT only")
+          : (isCross
           ? (sign === "+" ? "+ (−→+)" : "− (+→−)")
-          : (sign === "+" ? "+ (>)" : "− (<)");
+          : (sign === "+" ? "+ (>)" : "− (<)"));
         const operator = sign === "+" ? ">" : "<";
         const ruleThreshold = rule.id === "macd_h" || rule.id === "rsi" ? threshold : 0;
-        const titleText = isCross
-          ? `${span.id} ${rule.label} ${sign === "+" ? "+ (−→+)" : "− (+→−)"}`
-          : `${span.id} ${rule.label} ${operator} ${ruleThreshold}`;
+        const titleText = rule.fixedDirection
+          ? `${span.id} ${ruleLabel} (${isEntry ? "LONG" : "SHORT"})`
+          : (isCross
+            ? `${span.id} ${ruleLabel} ${sign === "+" ? "+ (−→+)" : "− (+→−)"}`
+            : `${span.id} ${ruleLabel} ${operator} ${ruleThreshold}`);
 
         if (!isEnabled) {
           return {
@@ -4930,7 +5244,19 @@
         let pass;
         let measured;
         let subtitleDetail;
-        if (isCross) {
+        if (rule.id === "ma_ride_hang") {
+          pass = val === true;
+          measured = pass ? (isEntry ? "RIDE" : "HANG") : "NO MATCH";
+          const slope = Number(point.ma_ride_slope_atr);
+          const sideCount = isEntry ? Number(point.ma_ride_above_count) : Number(point.ma_ride_below_count);
+          const touchDistance = Number(isEntry ? point.ma_ride_ride_touch_distance_atr : point.ma_ride_hang_touch_distance_atr);
+          const slopeText = Number.isFinite(slope) ? `${slope >= 0 ? "+" : ""}${slope.toFixed(2)}` : "—";
+          const touchText = Number.isFinite(touchDistance) ? touchDistance.toFixed(2) : "—";
+          const orderText = settings.ma_ride_require_ma50
+            ? (isEntry ? `MA20>MA50 ${point.ma_ride_ma50_long_pass ? "PASS" : "WAIT"}` : `MA20<MA50 ${point.ma_ride_ma50_short_pass ? "PASS" : "WAIT"}`)
+            : "MA50 order OFF";
+          subtitleDetail = `slope ${slopeText} ATR ${isEntry ? "≥" : "≤ −"}${Number(settings.ma_ride_min_slope_atr).toFixed(2)} · ${sideCount}/${settings.ma_ride_side_lookback} closes ${isEntry ? "above" : "below"} (need ${settings.ma_ride_required_closes}) · touch ${touchText}≤${Number(settings.ma_ride_touch_tolerance_atr).toFixed(2)} ATR/${settings.ma_ride_touch_lookback} bars · ${orderText}`;
+        } else if (isCross) {
           pass = sign === "+" ? numVal === 1 : numVal === -1;
           measured = numVal === 1 ? "+CROSS" : (numVal === -1 ? "−CROSS" : "NO CROSS");
           const prevVal = rule.id === "macd_h_cross" ? point.prev_histogram : point.prev_hist_diff;
@@ -4946,10 +5272,10 @@
             : `${numVal > 0 ? "+" : ""}${numVal.toFixed(4)}`;
           subtitleDetail = measured;
         }
-        const valColor = pass ? "#16a34a" : (numVal < 0 ? "#dc2626" : "#64748b");
+        const valColor = pass ? "#16a34a" : (rule.id === "ma_ride_hang" ? "#64748b" : (numVal < 0 ? "#dc2626" : "#64748b"));
         const isParabolic = settings.signal_basis === "parabolic" || point.signal_basis === "parabolic";
         const basisTag = isParabolic ? "PARABOLIC t̂ (t-2→t-1)" : "ACTUAL t";
-        const badgeTitle = `${isEntry ? "LONG" : "SHORT"} ${pass ? "passes" : "waits"} (${basisTag}): ${span.id} ${rule.label} ${subtitleDetail}`;
+        const badgeTitle = `${isEntry ? "LONG" : "SHORT"} ${pass ? "passes" : "waits"} (${basisTag}): ${span.id} ${ruleLabel} ${subtitleDetail}`;
 
         return {
           isEnabled: true,
@@ -4998,13 +5324,14 @@
 
       const renderRowHtml = (span, rule, kind, st) => {
         const isEntry = kind === "entry";
+        const ruleLabel = strategyRuleLabel(rule, isEntry);
         const switchHtml = `
-          <label class="toggleSwitch" title="Turn ${span.id} ${rule.label} rule ON/OFF">
-            <input class="msStrategySpanToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" aria-label="Use ${span.id} ${rule.label} for paper ${isEntry ? "long" : "short"}" type="checkbox"${st.isEnabled ? " checked" : ""}>
+          <label class="toggleSwitch" title="Turn ${span.id} ${ruleLabel} rule ON/OFF">
+            <input class="msStrategySpanToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" aria-label="Use ${span.id} ${ruleLabel} for paper ${isEntry ? "long" : "short"}" type="checkbox"${st.isEnabled ? " checked" : ""}>
             <span class="toggleSlider"></span>
           </label>
         `;
-        const signBtnHtml = `
+        const signBtnHtml = rule.fixedDirection ? "" : `
           <button type="button" class="condSignToggle" data-span="${span.id}" data-rule="${rule.id}" data-kind="${kind}" data-sign="${st.sign}" title="Click to toggle condition between + and -" style="margin-left:6px;padding:1px 5px;font-size:10px;font-weight:800;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;color:${st.sign === '+' ? '#166534' : '#991b1b'};">
             ${st.signLabel}
           </button>
@@ -5110,10 +5437,12 @@
           : "completed actual bar t";
         const rules = [...(settings.entry_rules || []), ...(settings.exit_rules || [])];
         const hasRsi = rules.some((rule) => rule.rule === "rsi");
-        const hasMacd = rules.some((rule) => rule.rule !== "rsi");
+        const hasMaRide = rules.some((rule) => rule.rule === "ma_ride_hang");
+        const hasMacd = rules.some((rule) => rule.rule !== "rsi" && rule.rule !== "ma_ride_hang");
         const indicators = [
           hasMacd ? "MACD(12,26,9) + MA20/MA50 [H, H×, S, ΔS, Δ²S, ΔH, ΔH×, ΔMA20, ΔMA50]" : null,
           hasRsi ? `Wilder RSI(${settings.rsi_period}) [entry ${settings.rsi_entry_threshold}, exit ${settings.rsi_exit_threshold}]` : null,
+          hasMaRide ? `MA20 Ride LONG / Hang SHORT [Wilder ATR(${settings.ma_ride_atr_period}), slope ${settings.ma_ride_slope_lookback} bars ≥ ${Number(settings.ma_ride_min_slope_atr).toFixed(2)} ATR, ${settings.ma_ride_required_closes}/${settings.ma_ride_side_lookback} closes, touch ≤ ${Number(settings.ma_ride_touch_tolerance_atr).toFixed(2)} ATR in ${settings.ma_ride_touch_lookback} bars, MA50 order ${settings.ma_ride_require_ma50 ? "ON" : "OFF"}]` : null,
         ].filter(Boolean).join(" + ");
         source.textContent = `Source: completed Binance candles (${basisDesc}) · ${indicators || "no enabled indicators"} · enabled ${(settings.enabled_spans || []).join("+") || "none"} · ${settings.clock_span} decision clock · ${metrics.evaluated_candles || 0} aligned evaluations · green/red candle columns show per-chart ENTRY/EXIT condition matches · loaded chart history only`;
       }
@@ -5422,6 +5751,14 @@
         "msStrategyRsiPeriod",
         "msStrategyRsiEntryThreshold",
         "msStrategyRsiExitThreshold",
+        "msStrategyMaRideAtrPeriod",
+        "msStrategyMaRideSlopeLookback",
+        "msStrategyMaRideMinSlopeAtr",
+        "msStrategyMaRideSideLookback",
+        "msStrategyMaRideRequiredCloses",
+        "msStrategyMaRideTouchLookback",
+        "msStrategyMaRideTouchToleranceAtr",
+        "msStrategyMaRideRequireMa50",
       ].forEach((id) => {
         const control = document.getElementById(id);
         if (control) control.addEventListener("change", saveAndRunStrategy);
@@ -5778,6 +6115,7 @@
       this.macdData = {};
       this.rsiData = {};
       this.rsiCache = {};
+      this.maRideCache = {};
       this.stopRealtimeFeeds();
 
       SPANS.forEach((s) => {

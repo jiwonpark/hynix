@@ -627,6 +627,30 @@ executions remain blocked. Throttle recovery reads to avoid hammering venue
 rate limits; a disabled worker without pending execution must not touch the
 exchange. Explicit operator recovery retains its separately guarded repair path.
 
+## Multi-Span MA20 ride and hang condition
+
+The Multi-Span paper replay exposes one fixed-direction condition per timeframe:
+**MA20 Ride** is LONG-only and **MA20 Hang** is SHORT-only. Do not expose a sign
+button that can reverse those meanings. Both rows default OFF and use completed
+candles only; Parabolic prediction is unavailable whenever either row is enabled.
+
+The detector normalizes slope and touch distance with Wilder ATR. Every input is
+adjustable and persisted: ATR period, MA20 slope lookback, minimum absolute slope
+in ATR units, price-side lookback, required same-side closes, touch lookback,
+touch-band distance in ATR units, and optional MA20/MA50 ordering. Ride requires
+the current close above MA20, a positive slope at or above the configured
+threshold, the configured above-MA close quorum, a recent low within the touch
+band whose candle closes above MA20, and MA20 > MA50 when ordering is enabled.
+Hang is the exact bearish counterpart: current close below MA20, sufficiently
+negative slope, below-MA quorum, a recent high touching the band while closing
+below MA20, and optional MA20 < MA50.
+
+Each row reports PAPER PASS/WAITING/OFF/UNAVAILABLE from the replay predicate,
+including measured slope, close quorum, touch distance, MA ordering, and the
+completed KST timestamp. Chart condition columns and Ride entry arrows use the
+same detector. Every completed Ride match belongs in `entry_signals` even while a
+simulated long is open; position state may suppress fills but never Ride markers.
+
 ## MACD signal-regime and streak entry condition
 
 Tabs 4 and 5 expose the same optional MACD signal-regime condition

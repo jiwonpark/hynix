@@ -27,6 +27,10 @@ assert.match(strategyBody, /id="msStrategyPresetRsi"/,
   "Multi-Chart must provide a real RSI strategy preset");
 assert.match(strategyBody, /id="msStrategyRsiPeriod"[\s\S]*?id="msStrategyRsiEntryThreshold"[\s\S]*?id="msStrategyRsiExitThreshold"/,
   "RSI period, entry threshold, and exit threshold must be adjustable replay controls");
+assert.match(strategyBody, /id="msStrategyMaRideAtrPeriod"[\s\S]*?id="msStrategyMaRideSlopeLookback"[\s\S]*?id="msStrategyMaRideMinSlopeAtr"[\s\S]*?id="msStrategyMaRideSideLookback"[\s\S]*?id="msStrategyMaRideRequiredCloses"[\s\S]*?id="msStrategyMaRideTouchLookback"[\s\S]*?id="msStrategyMaRideTouchToleranceAtr"[\s\S]*?id="msStrategyMaRideRequireMa50"/,
+  "MA ride/hang ATR, slope, persistence, touch, and MA50-order parameters must all be adjustable replay controls");
+assert.match(strategyBody, /MA20 Ride is fixed LONG; MA20 Hang is fixed SHORT/,
+  "the strategy panel must state the fixed ride-long and hang-short directions");
 assert.match(strategyBody, /class="condRow[^"]*"[\s\S]*?class="toggleSwitch"[\s\S]*?class="msStrategySpanToggle"/,
   "every condition row must contain an inline toggle switch matching other tabs");
 assert.doesNotMatch(strategyBody, /id="msStrategySpanToggles"/,
@@ -136,10 +140,14 @@ assert.equal(shortOnlyMarkers[0].signal_only, true);
 
 // Test MACD_RULES definition and legend/DOM elements
 assert.ok(Array.isArray(engine.MACD_RULES), "engine.MACD_RULES must be an array");
-assert.equal(engine.MACD_RULES.length, 10, "engine.MACD_RULES must contain the 9 MACD/MA definitions plus RSI");
+assert.equal(engine.MACD_RULES.length, 11, "engine.MACD_RULES must contain the MACD/MA definitions, RSI, and MA ride/hang");
 const ruleIds = engine.MACD_RULES.map((r) => r.id);
-assert.deepEqual(ruleIds, ["macd_h", "macd_h_cross", "macd_s", "macd_s_diff", "macd_s_diff2", "macd_h_diff", "macd_h_diff_cross", "ma20_diff", "ma50_diff", "rsi"],
-  "must support MACD/MA dynamics plus RSI");
+assert.deepEqual(ruleIds, ["macd_h", "macd_h_cross", "macd_s", "macd_s_diff", "macd_s_diff2", "macd_h_diff", "macd_h_diff_cross", "ma20_diff", "ma50_diff", "rsi", "ma_ride_hang"],
+  "must support MACD/MA dynamics, RSI, and fixed-direction MA ride/hang");
+const maRideRule = engine.MACD_RULES.find((rule) => rule.id === "ma_ride_hang");
+assert.equal(maRideRule.fixedDirection, true);
+assert.equal(maRideRule.entryLabel, "MA20 ride");
+assert.equal(maRideRule.exitLabel, "MA20 hang");
 
 for (const span of spans) {
   for (const rule of engine.MACD_RULES) {
@@ -149,6 +157,8 @@ for (const span of spans) {
       `must render exit row for ${span} ${rule.id}`);
   }
 }
+assert.equal((strategyBody.match(/class="condSignToggle"/g) || []).length, spans.length * (engine.MACD_RULES.length - 1) * 2,
+  "MA ride/hang rows must not expose a direction switch that could reverse Ride LONG or Hang SHORT");
 
 // Test calculateSma and calculateMacd difference and zero-crossing metrics
 const testCandles = [];
@@ -301,6 +311,14 @@ const customPersistedSettings = {
   rsi_period: 21,
   rsi_entry_threshold: 25,
   rsi_exit_threshold: 75,
+  ma_ride_atr_period: 18,
+  ma_ride_slope_lookback: 4,
+  ma_ride_min_slope_atr: 0.12,
+  ma_ride_side_lookback: 7,
+  ma_ride_required_closes: 5,
+  ma_ride_touch_lookback: 4,
+  ma_ride_touch_tolerance_atr: 0.2,
+  ma_ride_require_ma50: false,
   initial_capital: 25000,
   fee_bps: 4,
   entry_rules: [
@@ -326,6 +344,14 @@ assert.equal(restoredSettings.sell_threshold, 0.08, "must restore persisted sell
 assert.equal(restoredSettings.rsi_period, 21, "must restore persisted RSI period");
 assert.equal(restoredSettings.rsi_entry_threshold, 25, "must restore persisted RSI entry threshold");
 assert.equal(restoredSettings.rsi_exit_threshold, 75, "must restore persisted RSI exit threshold");
+assert.equal(restoredSettings.ma_ride_atr_period, 18, "must restore persisted MA ride ATR period");
+assert.equal(restoredSettings.ma_ride_slope_lookback, 4, "must restore persisted MA ride slope lookback");
+assert.equal(restoredSettings.ma_ride_min_slope_atr, 0.12, "must restore persisted MA ride slope threshold");
+assert.equal(restoredSettings.ma_ride_side_lookback, 7, "must restore persisted MA ride side lookback");
+assert.equal(restoredSettings.ma_ride_required_closes, 5, "must restore persisted MA ride close quorum");
+assert.equal(restoredSettings.ma_ride_touch_lookback, 4, "must restore persisted MA ride touch lookback");
+assert.equal(restoredSettings.ma_ride_touch_tolerance_atr, 0.2, "must restore persisted MA ride touch tolerance");
+assert.equal(restoredSettings.ma_ride_require_ma50, false, "must restore persisted MA50 order switch");
 assert.deepEqual(restoredSettings.entry_rules, customPersistedSettings.entry_rules, "must restore persisted entry_rules");
 assert.deepEqual(restoredSettings.exit_rules, customPersistedSettings.exit_rules, "must restore persisted exit_rules");
 assert.equal(restoredSettings.rule_signs["entry:5m:macd_h"], "+", "must preserve custom sign even for disabled rule");
@@ -443,4 +469,94 @@ const predictedRsi = engine.evaluateMacdStrategyReplay({
 assert.match(predictedRsi.error, /completed candles only/,
   "the UI/replay must clearly reject unsupported parabolic RSI modeling");
 
-console.log("Multi-span MACD + RSI completed-candle paper strategy tests passed");
+// Fixed-direction MA20 Ride (long) / Hang (short) strategy. A steady trend uses
+// wide candles whose near-side wick repeatedly touches MA20 within 0.15 ATR.
+const maRideCandles = [];
+for (let i = 0; i < 160; i += 1) {
+  const rising = i < 80;
+  const close = rising ? 100 + i * 1.5 : 218.5 - (i - 79) * 1.5;
+  maRideCandles.push({
+    time: i * DAY,
+    open: close + (rising ? -0.25 : 0.25),
+    high: close + 15,
+    low: close - 15,
+    close,
+  });
+}
+engine.candlesData["1d"] = maRideCandles;
+engine.maRideCache = {};
+const atr14 = engine.calculateAtr(maRideCandles, 14);
+assert.ok(atr14.length > 100, "Wilder ATR must cover the MA ride/hang replay window");
+assert.ok(Math.abs(atr14[atr14.length - 1].value - 30) < 1e-8, "constant 30-point true ranges must produce ATR 30");
+
+const maRideSettings = {
+  clock_span: "1d",
+  signal_basis: "completed",
+  entry_rules: [{ span: "1d", rule: "ma_ride_hang", sign: "-" }], // sign is intentionally wrong: direction is fixed LONG
+  exit_rules: [{ span: "1d", rule: "ma_ride_hang", sign: "+" }], // sign is intentionally wrong: direction is fixed SHORT
+  ma_ride_atr_period: 14,
+  ma_ride_slope_lookback: 3,
+  ma_ride_min_slope_atr: 0.10,
+  ma_ride_side_lookback: 5,
+  ma_ride_required_closes: 4,
+  ma_ride_touch_lookback: 3,
+  ma_ride_touch_tolerance_atr: 0.15,
+  ma_ride_require_ma50: true,
+  initial_capital: 10000,
+  fee_bps: 5,
+};
+const maRideData = engine.getMaRideDataForSpan("1d", maRideSettings);
+const ridingPoint = maRideData.byTime.get(60 * DAY);
+const hangingPoint = maRideData.byTime.get(130 * DAY);
+assert.ok(ridingPoint?.ma_ride_long, "rising candles above and touching MA20 must classify as LONG Ride");
+assert.equal(ridingPoint.ma_hang_short, false);
+assert.equal(ridingPoint.ma_ride_above_count, 5);
+assert.ok(ridingPoint.ma_ride_slope_atr >= 0.10);
+assert.ok(ridingPoint.ma_ride_ride_touch_distance_atr <= 0.15);
+assert.ok(hangingPoint?.ma_hang_short, "falling candles below and rejecting MA20 must classify as SHORT Hang");
+assert.equal(hangingPoint.ma_ride_long, false);
+assert.equal(hangingPoint.ma_ride_below_count, 5);
+assert.ok(hangingPoint.ma_ride_slope_atr <= -0.10);
+assert.ok(hangingPoint.ma_ride_hang_touch_distance_atr <= 0.15);
+assert.equal(engine.evaluateMacdRuleOnPoint(ridingPoint, maRideSettings.entry_rules[0], true), true,
+  "Ride must remain a LONG condition even when stale storage supplies the opposite sign");
+assert.equal(engine.evaluateMacdRuleOnPoint(hangingPoint, maRideSettings.exit_rules[0], false), true,
+  "Hang must remain a SHORT condition even when stale storage supplies the opposite sign");
+
+const maRideResult = engine.evaluateMacdStrategyReplay(maRideSettings, DAY * 161);
+assert.equal(maRideResult.error, null);
+assert.equal(maRideResult.settings.strategy_mode, "ma_ride_hang");
+assert.ok(maRideResult.entry_signals.length > 1,
+  "every completed riding candle must remain an entry signal while the simulated long is open");
+assert.equal(maRideResult.metrics.simulated_entry_fills, 1,
+  "position state may suppress Ride fills but never Ride entry signals");
+assert.ok(maRideResult.exit_signals.length > 1, "completed hanging candles must produce SHORT signals");
+assert.equal(maRideResult.trades.length, 1, "the first Hang signal must close the simulated Ride long");
+assert.ok(maRideResult.span_matches["1d"].some((match) => match.kind === "entry"));
+assert.ok(maRideResult.span_matches["1d"].some((match) => match.kind === "exit"));
+
+const strictSlopeResult = engine.evaluateMacdStrategyReplay({
+  ...maRideSettings,
+  ma_ride_min_slope_atr: 0.20,
+}, DAY * 161);
+assert.equal(strictSlopeResult.error, null);
+assert.equal(strictSlopeResult.entry_signals.length, 0,
+  "raising the wired slope threshold above the measured trend must flip Ride to WAITING");
+assert.equal(strictSlopeResult.exit_signals.length, 0,
+  "raising the wired slope threshold above the measured trend must flip Hang to WAITING");
+
+const invalidMaRideQuorum = engine.evaluateMacdStrategyReplay({
+  ...maRideSettings,
+  ma_ride_side_lookback: 5,
+  ma_ride_required_closes: 6,
+}, DAY * 161);
+assert.match(invalidMaRideQuorum.error, /required closes cannot exceed/);
+
+const predictedMaRide = engine.evaluateMacdStrategyReplay({
+  ...maRideSettings,
+  signal_basis: "parabolic",
+}, DAY * 161);
+assert.match(predictedMaRide.error, /completed candles only/,
+  "the UI/replay must clearly reject unsupported parabolic MA ride/hang modeling");
+
+console.log("Multi-span MACD + RSI + MA ride/hang completed-candle paper strategy tests passed");
