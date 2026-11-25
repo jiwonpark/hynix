@@ -922,9 +922,23 @@ async function run() {
   const fiveMinuteStarted = new Promise((resolve) => { resolveFiveMinuteStarted = resolve; });
   let resolveResumedReplayStarted;
   const resumedReplayStarted = new Promise((resolve) => { resolveResumedReplayStarted = resolve; });
+  let resolveSecondReplayStarted;
+  const secondReplayStarted = new Promise((resolve) => { resolveSecondReplayStarted = resolve; });
   let releaseResumedReplay;
   const resumedReplayReleased = new Promise((resolve) => { releaseResumedReplay = resolve; });
+  let resolveRapidFifteenMinuteStarted;
+  const rapidFifteenMinuteStarted = new Promise((resolve) => { resolveRapidFifteenMinuteStarted = resolve; });
+  let releaseRapidFifteenMinute;
+  const rapidFifteenMinuteReleased = new Promise((resolve) => { releaseRapidFifteenMinute = resolve; });
+  let releaseQueuedAccount;
+  const queuedAccountReleased = new Promise((resolve) => { releaseQueuedAccount = resolve; });
+  let queuedAccountRefresh = null;
+  let holdQueuedAccount = false;
+  let holdRapidFifteenMinute = false;
+  let firstResumedReplayAborted = false;
   let resumedReplayCalls = 0;
+  let resumedReplayInFlight = 0;
+  let maxResumedReplayInFlight = 0;
   const interleavedFetch = async (url, options = {}) => {
     if (holdInterleavedStatus && url.includes("/api/lighter-micro/status")) {
       holdInterleavedStatus = false;
@@ -943,11 +957,50 @@ async function run() {
     }
     if (url.includes("/api/lighter-crypto/candles") && url.includes("interval=5m")) {
       resolveFiveMinuteStarted();
+      holdQueuedAccount = true;
+      queuedAccountRefresh = interleavedTab.refresh({
+        includeReplay: false,
+        includeAccount: true,
+        includeChart: false,
+        includeMarket: false,
+        retryCritical: false,
+      });
+    }
+    if (holdQueuedAccount && url.includes("/api/lighter-crypto/status")) {
+      holdQueuedAccount = false;
+      await queuedAccountReleased;
+    }
+    if (holdRapidFifteenMinute
+        && url.includes("/api/lighter-crypto/candles")
+        && url.includes("interval=15m")) {
+      holdRapidFifteenMinute = false;
+      resolveRapidFifteenMinuteStarted();
+      await rapidFifteenMinuteReleased;
     }
     if (url.includes("/api/lighter-micro/replay")) {
       resumedReplayCalls += 1;
-      resolveResumedReplayStarted();
-      await resumedReplayReleased;
+      resumedReplayInFlight += 1;
+      maxResumedReplayInFlight = Math.max(maxResumedReplayInFlight, resumedReplayInFlight);
+      try {
+        if (resumedReplayCalls === 1) {
+          resolveResumedReplayStarted();
+          await new Promise((resolve, reject) => {
+            const abort = () => {
+              firstResumedReplayAborted = true;
+              const error = new Error("first recovery replay aborted");
+              error.name = "AbortError";
+              reject(error);
+            };
+            if (options.signal?.aborted) abort();
+            else options.signal?.addEventListener?.("abort", abort, {once: true});
+          });
+        } else {
+          resolveSecondReplayStarted();
+          await resumedReplayReleased;
+        }
+      } finally {
+        resumedReplayInFlight -= 1;
+      }
     }
     return fetchImpl(url, options);
   };
@@ -990,17 +1043,43 @@ async function run() {
   assert.equal(interleavedTab.snapshotLoading, false);
   assert.equal(interleavedTab.statusLoading, false,
     "preemption settles the cancelled ancillary loading flag");
+  assert.ok(queuedAccountRefresh,
+    "an ordinary account refresh owns the request slot when the selected chart finishes");
+  assert.equal(resumedReplayCalls, 0,
+    "replay recovery remains queued while the ordinary refresh is active");
+  assert.equal(interleavedTab.replayRecoveryPending, true);
+  releaseQueuedAccount();
+  assert.equal(await queuedAccountRefresh, true);
   await resumedReplayStarted;
   assert.equal(resumedReplayCalls, 1,
-    "interval navigation resumes the one-time replay request cancelled during activation");
+    "the ordinary refresh finalizer releases the one-time replay request cancelled during activation");
   assert.equal(interleavedTab.replayLoading, true);
   assert.equal(interleavedTab.chartDataInterval, "5m",
     "the selected chart is usable while the recovery replay remains in flight");
+  const firstResumedReplayRefresh = interleavedTab.refreshPromise;
+  assert.ok(firstResumedReplayRefresh);
+  holdRapidFifteenMinute = true;
+  const rapidIntervalSwitch = interleavedTab.setChartInterval("15m");
+  await rapidFifteenMinuteStarted;
+  assert.equal(await firstResumedReplayRefresh, false);
+  assert.equal(firstResumedReplayAborted, true,
+    "a rapid second interval switch cancels the replay tied to the prior chart");
+  assert.equal(resumedReplayCalls, 1,
+    "the cancelled replay is not restarted against the old chart while the new chart is loading");
+  assert.equal(interleavedTab.replayRecoveryPending, true);
+  releaseRapidFifteenMinute();
+  assert.equal(await rapidIntervalSwitch, true);
+  await secondReplayStarted;
+  assert.equal(resumedReplayCalls, 2,
+    "the latest interval starts exactly one replacement replay after its chart succeeds");
+  assert.equal(maxResumedReplayInFlight, 1,
+    "rapid interval changes never overlap replay requests");
   const resumedReplayRefresh = interleavedTab.refreshPromise;
   assert.ok(resumedReplayRefresh);
   releaseResumedReplay();
   assert.equal(await resumedReplayRefresh, true);
   assert.equal(interleavedTab.replayLoading, false);
+  assert.equal(interleavedTab.chartDataInterval, "15m");
   assert.equal(interleavedTab.refs.entrySignals.textContent, "3");
   assert.notEqual(interleavedTab.refs.spread.textContent, "UNAVAILABLE");
   assert.match(interleavedTab.refs.mandatoryPrerequisites.innerHTML, /LIVE · UNAVAILABLE/);
@@ -1008,30 +1087,30 @@ async function run() {
     "automatic account/chart polling still starts after the preempted activation settles");
 
   const interleavedNormalFetch = interleavedTab.fetchImpl;
-  let releaseLateFifteenMinuteCandles;
-  const lateFifteenMinuteCandlesReleased = new Promise((resolve) => {
-    releaseLateFifteenMinuteCandles = resolve;
+  let releaseLateOneMinuteCandles;
+  const lateOneMinuteCandlesReleased = new Promise((resolve) => {
+    releaseLateOneMinuteCandles = resolve;
   });
-  let holdLateFifteenMinuteCandles = true;
+  let holdLateOneMinuteCandles = true;
   interleavedTab.fetchImpl = async (url, options) => {
-    if (holdLateFifteenMinuteCandles
+    if (holdLateOneMinuteCandles
         && url.includes("/api/lighter-crypto/candles")
-        && url.includes("interval=15m")) {
-      holdLateFifteenMinuteCandles = false;
-      await lateFifteenMinuteCandlesReleased;
+        && url.includes("interval=1m")) {
+      holdLateOneMinuteCandles = false;
+      await lateOneMinuteCandlesReleased;
     }
     return interleavedNormalFetch(url, options);
   };
-  const lateIntervalSwitch = interleavedTab.setChartInterval("15m");
+  const lateIntervalSwitch = interleavedTab.setChartInterval("1m");
   assert.equal(interleavedTab.chartLoading, true);
   interleavedTab.onTabDeactivated();
-  releaseLateFifteenMinuteCandles();
+  releaseLateOneMinuteCandles();
   assert.equal(await lateIntervalSwitch, false,
     "a candle success arriving after deactivation is rejected by abort/generation guards");
-  assert.notEqual(interleavedTab.chartDataInterval, "15m");
-  assert.equal(resumedReplayCalls, 1,
+  assert.notEqual(interleavedTab.chartDataInterval, "1m");
+  assert.equal(resumedReplayCalls, 2,
     "later interval navigation never duplicates an already completed replay");
-  assert.notEqual(interleavedStorageValues.get("skhynix_lighter_micro_interval"), "15m");
+  assert.notEqual(interleavedStorageValues.get("skhynix_lighter_micro_interval"), "1m");
   assert.equal(interleavedTab.readiness.chartMs, null);
   interleavedTab.destroy();
 

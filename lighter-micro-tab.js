@@ -595,6 +595,8 @@
       this.chartRendered = false;
       this.chartDataInterval = null;
       this.chartRequest = 0;
+      this.intervalChangeSequence = 0;
+      this.intervalChangePending = false;
       this.intervalChartController = null;
       this.chartRanges = {};
       this.entryMarkers = [];
@@ -1111,39 +1113,46 @@
     async setChartInterval(value) {
       const interval = validChartInterval(value);
       if (!interval) throw new Error("Unsupported chart interval");
-      const pendingRefresh = this.refreshPromise;
-      if (pendingRefresh) {
-        if (this.replayLoading && !this.completedReplayAvailable()) {
-          this.replayRecoveryPending = true;
-        }
-        this.cancelRefresh();
-        await pendingRefresh.catch(() => false);
-      }
-      if (!this.active) return false;
-      const changed = interval !== this.interval;
-      this.captureChartRange();
-      this.interval = interval;
-      this.beginChartReadinessCycle();
-      this.markChartDataLoading({clearSeries: changed});
-      this.renderIntervalButtons();
-      if (!this.active || interval !== this.interval) return false;
-      if (!this.chartIsStale() && this.chartDataInterval === interval) {
-        storageSet(this.storage, INTERVAL_STORAGE_KEY, interval);
-        this.resumeReplayIfMissing();
-        return true;
-      }
-      this.intervalChartController?.abort?.();
-      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-      this.intervalChartController = controller;
+      const intervalChange = ++this.intervalChangeSequence;
+      this.intervalChangePending = true;
       try {
-        const refreshed = await this.refreshChart({signal: controller?.signal || null});
-        if (refreshed && interval === this.interval) {
+        const pendingRefresh = this.refreshPromise;
+        if (pendingRefresh) {
+          if (this.replayLoading && !this.completedReplayAvailable()) {
+            this.replayRecoveryPending = true;
+          }
+          this.cancelRefresh();
+          await pendingRefresh.catch(() => false);
+        }
+        if (!this.active) return false;
+        const changed = interval !== this.interval;
+        this.captureChartRange();
+        this.interval = interval;
+        this.beginChartReadinessCycle();
+        this.markChartDataLoading({clearSeries: changed});
+        this.renderIntervalButtons();
+        if (!this.active || interval !== this.interval) return false;
+        if (!this.chartIsStale() && this.chartDataInterval === interval) {
           storageSet(this.storage, INTERVAL_STORAGE_KEY, interval);
+          return true;
+        }
+        this.intervalChartController?.abort?.();
+        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        this.intervalChartController = controller;
+        try {
+          const refreshed = await this.refreshChart({signal: controller?.signal || null});
+          if (refreshed && interval === this.interval) {
+            storageSet(this.storage, INTERVAL_STORAGE_KEY, interval);
+          }
+          return refreshed;
+        } finally {
+          if (this.intervalChartController === controller) this.intervalChartController = null;
+        }
+      } finally {
+        if (intervalChange === this.intervalChangeSequence) {
+          this.intervalChangePending = false;
           this.resumeReplayIfMissing();
         }
-        return refreshed;
-      } finally {
-        if (this.intervalChartController === controller) this.intervalChartController = null;
       }
     }
 
@@ -1506,7 +1515,8 @@
         this.replayRecoveryPending = false;
         return false;
       }
-      if (!this.active || this.replayLoading || this.refreshPromise) return false;
+      if (!this.active || this.replayLoading || this.refreshPromise || this.intervalChangePending
+          || this.chartIsStale() || !this.chartRendered || this.chartDataInterval !== this.interval) return false;
       this.replayRecoveryPending = false;
       this.rerunReplay().catch((error) => {
         if (!this.active) return false;
@@ -1657,6 +1667,7 @@
         if (this.refs.refreshButton) this.refs.refreshButton.disabled = false;
         if (this.refs.rerunButton) this.refs.rerunButton.disabled = false;
         this.renderAll();
+        this.resumeReplayIfMissing();
       });
       this.refreshPromise = trackedTask;
       return trackedTask;
@@ -2205,6 +2216,8 @@
     onTabDeactivated() {
       this.active = false;
       this.activationSequence += 1;
+      this.intervalChangeSequence += 1;
+      this.intervalChangePending = false;
       this.captureChartRange();
       this.stopPolling();
       this.stopMarketPolling();
@@ -2215,6 +2228,8 @@
     destroy() {
       this.active = false;
       this.activationSequence += 1;
+      this.intervalChangeSequence += 1;
+      this.intervalChangePending = false;
       this.stopPolling();
       this.stopMarketPolling();
       this.stopFreshnessTimer();
