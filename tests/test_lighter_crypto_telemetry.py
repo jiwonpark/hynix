@@ -56,12 +56,12 @@ class LighterCryptoTelemetrySourceTests(unittest.TestCase):
             self.account_refresh_source,
         )
 
-    def test_micro_chart_has_bounded_fresh_read_and_dedicated_deadline(self) -> None:
+    def test_micro_chart_has_coalesced_latest_read_and_dedicated_deadline(self) -> None:
         self.assertIn("LIGHTER_MICRO_CHART_LIMIT = 180", self.server_source)
         self.assertIn(
             "_lighter_micro_chart_cache = ChartResponseCache(", self.chart_source
         )
-        self.assertIn("fresh=bounded_latest", self.chart_source)
+        self.assertIn("fresh=False", self.chart_source)
         self.assertIn("allow_stale=False", self.chart_source)
         self.assertIn(
             "chart_cache = _lighter_micro_chart_cache if micro_read else",

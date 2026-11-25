@@ -2569,8 +2569,7 @@ def _is_lighter_micro_chart_request(symbol: str, interval: str, count: int,
 async def _load_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
                                      limit: int = 300,
                                      end_timestamp: Optional[int] = None,
-                                     endTime: Optional[int] = None,
-                                     *, bounded_latest: bool = False) -> Dict[str, Any]:
+                                     endTime: Optional[int] = None) -> Dict[str, Any]:
     try:
         if symbol not in LIGHTER_CRYPTO_MARKETS:
             raise ValueError("Unsupported Lighter crypto symbol")
@@ -2579,10 +2578,14 @@ async def _load_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m
         target_end = end_timestamp or endTime
         if target_end and target_end < 100_000_000_000:
             target_end *= 1000
+        # Display reads share the client's canonical latest-candle singleflight
+        # across requested tail sizes (for example micro 180 and Tab 5 500).
+        # The response cache below still bounds the micro request separately,
+        # and stale client data remains forbidden on source failure.
         rows = await lighter_client.candles(LIGHTER_CRYPTO_MARKETS[symbol], interval,
                                             min(500, max(20, limit)),
                                             end_timestamp=target_end,
-                                            fresh=bounded_latest,
+                                            fresh=False,
                                             allow_stale=False)
         bars = [{"time": int(row["t"]) // 1000, "value": float(row["c"]),
                  "open": float(row["o"]), "high": float(row["h"]),
@@ -2634,9 +2637,7 @@ async def get_lighter_crypto_candles(symbol: str = "BTC", interval: str = "15m",
     try:
         return await chart_cache.get(
             key,
-            lambda: _load_lighter_crypto_candles(
-                symbol, interval, count, target_end, bounded_latest=micro_read
-            ),
+            lambda: _load_lighter_crypto_candles(symbol, interval, count, target_end),
             ttl=3600 if target_end else 15,
         )
     except Exception as error:

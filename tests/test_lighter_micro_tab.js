@@ -913,20 +913,38 @@ async function run() {
     getItem: (key) => interleavedStorageValues.get(key) ?? null,
     setItem: (key, value) => interleavedStorageValues.set(key, String(value)),
   };
-  let releaseInterleavedAccount;
-  const interleavedAccountReleased = new Promise((resolve) => { releaseInterleavedAccount = resolve; });
-  let holdInterleavedAccount = true;
-  const interleavedFetch = async (url, options) => {
-    if (holdInterleavedAccount && url.includes("/api/lighter-crypto/status")) {
-      holdInterleavedAccount = false;
-      await interleavedAccountReleased;
+  let resolveHeldStatusStarted;
+  const heldStatusStarted = new Promise((resolve) => { resolveHeldStatusStarted = resolve; });
+  let releaseHeldStatus;
+  let heldStatusAborted = false;
+  let holdInterleavedStatus = true;
+  let resolveFiveMinuteStarted;
+  const fiveMinuteStarted = new Promise((resolve) => { resolveFiveMinuteStarted = resolve; });
+  const interleavedFetch = async (url, options = {}) => {
+    if (holdInterleavedStatus && url.includes("/api/lighter-micro/status")) {
+      holdInterleavedStatus = false;
+      resolveHeldStatusStarted();
+      await new Promise((resolve, reject) => {
+        releaseHeldStatus = resolve;
+        const abort = () => {
+          heldStatusAborted = true;
+          const error = new Error("held status request aborted");
+          error.name = "AbortError";
+          reject(error);
+        };
+        if (options.signal?.aborted) abort();
+        else options.signal?.addEventListener?.("abort", abort, {once: true});
+      });
+    }
+    if (url.includes("/api/lighter-crypto/candles") && url.includes("interval=5m")) {
+      resolveFiveMinuteStarted();
     }
     return fetchImpl(url, options);
   };
   const interleavedTab = new LighterMicroTab(new FakeHost(), {
     fetchImpl: interleavedFetch,
     apiPrefix: "/skhynix",
-    autoPoll: false,
+    autoMarketPoll: false,
     autoFreshness: false,
     chartLibrary,
     storage: interleavedStorage,
@@ -935,23 +953,38 @@ async function run() {
     retryDelayMs: 0,
   });
   const interleavedActivation = interleavedTab.onTabActivated();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(holdInterleavedAccount, false, "interleaving fixture pauses the activation account request");
+  await heldStatusStarted;
+  assert.equal(interleavedTab.chartDataInterval, "1m");
+  assert.equal(interleavedTab.accountLoading, false,
+    "the activation account request completes before the held ancillary status request");
+  assert.equal(interleavedTab.snapshotLoading, false,
+    "the activation snapshot request completes before the held ancillary status request");
+  assert.equal(interleavedTab.statusLoading, true);
   const interleavedIntervalSwitch = interleavedTab.setChartInterval("5m");
-  assert.equal(interleavedTab.interval, "5m");
-  releaseInterleavedAccount();
-  assert.equal(await interleavedActivation, true);
+  assert.equal(interleavedTab.interval, "1m",
+    "the loaded chart keeps its truthful interval label while the prior refresh aborts");
+  const fiveMinuteStartedPromptly = await Promise.race([
+    fiveMinuteStarted.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 50)),
+  ]);
+  if (!fiveMinuteStartedPromptly) releaseHeldStatus();
+  assert.equal(await interleavedActivation, false,
+    "interval navigation preempts the unrelated activation tail");
   assert.equal(await interleavedIntervalSwitch, true,
-    "interval switching waits for shared activation instead of aborting the other staged feeds");
+    "the selected interval renders without waiting for the held ancillary request");
+  assert.equal(fiveMinuteStartedPromptly, true);
+  assert.equal(heldStatusAborted, true);
   assert.equal(interleavedTab.chartDataInterval, "5m");
   assert.equal(interleavedStorageValues.get("skhynix_lighter_micro_interval"), "5m");
   assert.equal(interleavedTab.accountLoading, false);
   assert.equal(interleavedTab.snapshotLoading, false);
-  assert.equal(interleavedTab.statusLoading, false);
+  assert.equal(interleavedTab.statusLoading, false,
+    "preemption settles the cancelled ancillary loading flag");
   assert.equal(interleavedTab.replayLoading, false);
-  assert.equal(interleavedTab.refs.entrySignals.textContent, "3");
   assert.notEqual(interleavedTab.refs.spread.textContent, "UNAVAILABLE");
-  assert.match(interleavedTab.refs.mandatoryPrerequisites.innerHTML, /LIVE · PASS/);
+  assert.match(interleavedTab.refs.mandatoryPrerequisites.innerHTML, /LIVE · UNAVAILABLE/);
+  assert.ok(interleavedTab.pollTimer,
+    "automatic account/chart polling still starts after the preempted activation settles");
 
   const interleavedNormalFetch = interleavedTab.fetchImpl;
   let releaseLateFifteenMinuteCandles;

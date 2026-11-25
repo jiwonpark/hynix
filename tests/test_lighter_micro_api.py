@@ -7,6 +7,7 @@ import pytest
 pytest.importorskip("fastapi")
 
 from backend import server
+from backend.lighter_client import LighterClient
 from backend.lighter_micro_runtime import LighterMicroRuntime
 
 
@@ -349,7 +350,7 @@ def test_micro_routes_expose_no_order_or_arm_endpoint():
     assert not any("order" in path or "arm" in path for path in paths)
 
 
-def test_micro_chart_uses_bounded_fresh_read_without_changing_other_reads(
+def test_micro_chart_uses_coalesced_latest_read_without_stale_fallback(
     monkeypatch,
 ):
     calls = []
@@ -390,11 +391,67 @@ def test_micro_chart_uses_bounded_fresh_read_without_changing_other_reads(
     assert regular["success"] is True
     assert regular["stale"] is False
     assert calls[0]["count"] == 180
-    assert calls[0]["fresh"] is True
+    assert calls[0]["fresh"] is False
     assert calls[0]["allow_stale"] is False
     assert calls[1]["count"] == 181
     assert calls[1]["fresh"] is False
     assert calls[1]["allow_stale"] is False
+
+
+def test_micro_and_regular_latest_charts_share_one_upstream_candle_read(monkeypatch):
+    client = LighterClient()
+    upstream_calls = []
+    upstream_started = asyncio.Event()
+    release_upstream = asyncio.Event()
+    rows = [{
+        "t": 1_800_000_000_000 + index * 60_000,
+        "o": str(100 + index),
+        "h": str(101 + index),
+        "l": str(99 + index),
+        "c": str(100.5 + index),
+        "v": "2",
+    } for index in range(500)]
+
+    async def request(endpoint, params=None, headers=None):
+        upstream_calls.append((endpoint, dict(params or {})))
+        upstream_started.set()
+        await release_upstream.wait()
+        return {"c": rows}
+
+    class StubBot:
+        def public_state(self):
+            return {"execution_history": []}
+
+    client.request = request
+    monkeypatch.setattr(server, "lighter_client", client)
+    monkeypatch.setattr(server, "lighter_crypto_bot", StubBot())
+    monkeypatch.setattr(server, "_lighter_micro_chart_cache", server.ChartResponseCache())
+    monkeypatch.setattr(server, "_lighter_crypto_chart_cache", server.ChartResponseCache())
+
+    async def run():
+        micro_task = asyncio.create_task(
+            server.get_lighter_crypto_candles(
+                "BTC", "1m", server.LIGHTER_MICRO_CHART_LIMIT
+            )
+        )
+        await upstream_started.wait()
+        regular_task = asyncio.create_task(
+            server.get_lighter_crypto_candles("BTC", "1m", 500)
+        )
+        await asyncio.sleep(0)
+        release_upstream.set()
+        return await asyncio.gather(micro_task, regular_task)
+
+    micro, regular = asyncio.run(run())
+
+    assert len(upstream_calls) == 1
+    assert upstream_calls[0][0] == "/api/v1/candles"
+    assert upstream_calls[0][1]["count_back"] == 500
+    assert len(micro["bars"]) == server.LIGHTER_MICRO_CHART_LIMIT
+    assert len(regular["bars"]) == 500
+    assert micro["bars"] == regular["bars"][-server.LIGHTER_MICRO_CHART_LIMIT:]
+    assert micro["stale"] is False
+    assert regular["stale"] is False
 
 
 def test_micro_chart_cold_timeout_returns_explicit_error_not_stale_data(monkeypatch):

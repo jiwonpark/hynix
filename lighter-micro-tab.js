@@ -1110,15 +1110,18 @@
     async setChartInterval(value) {
       const interval = validChartInterval(value);
       if (!interval) throw new Error("Unsupported chart interval");
+      const pendingRefresh = this.refreshPromise;
+      if (pendingRefresh) {
+        this.cancelRefresh();
+        await pendingRefresh.catch(() => false);
+      }
+      if (!this.active) return false;
       const changed = interval !== this.interval;
       this.captureChartRange();
       this.interval = interval;
       this.beginChartReadinessCycle();
       this.markChartDataLoading({clearSeries: changed});
       this.renderIntervalButtons();
-      if (this.refreshPromise) {
-        await this.refreshPromise.catch(() => false);
-      }
       if (!this.active || interval !== this.interval) return false;
       if (!this.chartIsStale() && this.chartDataInterval === interval) {
         storageSet(this.storage, INTERVAL_STORAGE_KEY, interval);
@@ -1594,6 +1597,30 @@
       let trackedTask = null;
       trackedTask = task.finally(() => {
         if (this.refreshPromise !== trackedTask) return;
+        if (signal?.aborted) {
+          if (includeAccount) {
+            this.accountLoading = false;
+            if (this.account?.refresh_pending) {
+              this.account = {...this.account, account_stale: true, refresh_pending: false};
+            }
+          }
+          if (includeChart) {
+            this.chartLoading = false;
+            if (this.chartPayload?.refresh_pending) {
+              this.chartPayload = {...this.chartPayload, stale: true, refresh_pending: false};
+            }
+          }
+          if (includeMarket) {
+            this.snapshotLoading = false;
+            this.statusLoading = false;
+            if (this.snapshot?.refresh_pending) {
+              this.snapshot = {...this.snapshot, stale: true, refresh_pending: false};
+            }
+            if (this.status?.refresh_pending) {
+              this.status = {...this.status, stale: true, refresh_pending: false};
+            }
+          }
+        }
         this.refreshing = false;
         this.refreshPromise = null;
         this.refreshController = null;
