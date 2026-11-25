@@ -2228,7 +2228,12 @@ def _lighter_micro_safeguards(
         {
             "key": "legacy_one_leg_paused", "label": "Old one-leg bot paused",
             "state": "PASS" if bot_paused else "BLOCKED",
-            "detail": "Paused without flattening; exchange-native protection and existing inventory remain intact",
+            "detail": (
+                "Bot disabled; this pause sent no flatten or cancel action. "
+                "Exchange inventory and native-order state must be reconciled separately"
+                if bot_paused else
+                "Legacy one-leg bot is still enabled; micro live execution remains blocked"
+            ),
             "timestamp_ms": int(time.time() * 1000),
         },
         {

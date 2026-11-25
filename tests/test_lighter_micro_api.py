@@ -108,6 +108,40 @@ def test_account_capacity_uses_all_positions_and_never_fabricates_zero(monkeypat
     assert missing["gross_leverage"] is None
 
 
+def test_legacy_pause_safeguard_never_claims_exchange_inventory(monkeypatch):
+    state = {
+        "source": {"timestamp_ms": 1_800_000_000_000},
+        "live": {"gates": {"gates": {}}},
+        "recorder": {},
+        "config": {"runtime": {"live_min_recorded_snapshots": 1_000}},
+    }
+    account = {
+        "authenticated": False,
+        "gross_leverage": None,
+        "account_capacity_ok": False,
+    }
+    monkeypatch.setattr(
+        server.lighter_crypto_bot,
+        "state",
+        {"enabled": False, "recovery_required": True, "execution_blocked": True},
+    )
+
+    safeguards = server._lighter_micro_safeguards(state, account)
+    paused = next(row for row in safeguards if row["key"] == "legacy_one_leg_paused")
+    assert paused["state"] == "PASS"
+    assert "sent no flatten or cancel action" in paused["detail"]
+    assert "must be reconciled separately" in paused["detail"]
+    assert "remain intact" not in paused["detail"]
+
+    server.lighter_crypto_bot.state["enabled"] = True
+    enabled = next(
+        row for row in server._lighter_micro_safeguards(state, account)
+        if row["key"] == "legacy_one_leg_paused"
+    )
+    assert enabled["state"] == "BLOCKED"
+    assert "still enabled" in enabled["detail"]
+
+
 def test_empty_replay_is_explicitly_prospective_and_keeps_streams_distinct(
     tmp_path, monkeypatch
 ):
